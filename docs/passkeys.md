@@ -1352,7 +1352,7 @@ person, `outcome=refused` for the ones that failed). The row's detail:
 | `role`, `lane` | `primary` or `mfa`; `classical` or `pqc` |
 | `offered` | the algorithms offered, in order: for a registration, the list the browser was given (`pubKeyCredParams`); for a sign-in, the algorithms of the person's passkeys the ceremony could use |
 | `algorithm`, `postQuantum` | the algorithm that was used, and whether it is ML-DSA |
-| `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent |
+| `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent; then, where the browser reported its WebAuthn capabilities, `|` and those it has (`Chrome 141 on macOS 15|conditionalGet,hybridTransport`) |
 | `transports`, `attachment` | what the browser reported: `internal`, `hybrid`, `usb`...; `platform` or `cross-platform` |
 | `clientError` | for a ceremony the browser did not complete, the error name its script reported: `NotAllowedError` (declined, timed out, or no passkey — the browser does not say which), `NotSupportedError`, `InvalidStateError`, `SecurityError`, `AbortError`, ...; `other` for anything else. The error's message is never recorded |
 | `attestation` | for a registration, what its attestation was signed with, leaf to anchor, and `(PQ)` where all of it is post-quantum; led by `enterprise not listed, asked direct` where `webauthn.attestation` is `enterprise` and the RP ID is not in `webauthn.attestationEnterpriseRpIds` (for a registration that recorded an attestation) |

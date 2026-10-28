@@ -3103,9 +3103,13 @@ it only where a realm says to:
   nobody; with the passkey policy's `enterpriseSerialAttribute` set, such a
   key names no serial and is refused (`STS-AUTHN-0321`).
 * **The ceremony row** (`webauthn_ceremonies.ts`): folded into the existing
-  `attestation` detail rather than a thirteenth field (`audit.js` caps
-  twelve) — `attestationText()` leads with `enterprise not listed, asked
-  direct` where the record says `enterpriseDowngraded`. Only a door that
+  `attestation` detail rather than a thirteenth field (`audit.js` keeps
+  the first twelve and drops the rest) — `attestationText()` leads with
+  `enterprise not listed, asked direct` where the record says
+  `enterpriseDowngraded`. **That cap had been dropping `attestation`
+  itself on every row** since `capabilities` became the twelfth field:
+  the capabilities now ride on `client` after a `|`, as #1112's rule rides
+  on `offered`, and the row is twelve fields again. Only a door that
   passes the record has it, which every door does for a registration that
   completed; a registration refused before its attestation was assessed (a
   browser that gave up, a failed section 7.1 check) has no record, and its

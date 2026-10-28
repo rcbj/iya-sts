@@ -26,7 +26,10 @@
 //      not under `direct` nor at an unlisted RP ID — where the record says
 //      `conveyance: direct` and `enterpriseDowngraded: true`.
 //   D. The ceremony row's `attestation` detail leads with the downgrade,
-//      and says nothing of it for an enterprise request.
+//      and says nothing of it for an enterprise request — and is stored at
+//      all: the client's capabilities ride on `client`, so the row is
+//      within `audit.js`'s twelve fields (it was thirteen, and the cap
+//      dropped `attestation`).
 //
 // The certificates are made at run time by `webauthn_attestation_kit.js`;
 // no key material is in this repository.
@@ -46,6 +49,10 @@ const kit = require('./webauthn_attestation_kit');
 const log = require('bunyan').createLogger({
   name: 'webauthn_enterprise_attestation',
   level: process.env.LOG_LEVEL || 'info' });
+
+const CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
+  'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.54 ' +
+  'Safari/537.36';
 
 const CONVEYANCE = 'webauthn.attestation';
 const RP_IDS = 'webauthn.attestationEnterpriseRpIds';
@@ -217,8 +224,15 @@ function row(t, recorded) {
                         username: who, role: 'mfa', lane: 'classical',
                         outcome: 'success', offered: [-7],
                         algorithm: 'ES256',
+                        req: { headers: { 'user-agent': CHROME } },
+                        posted: { capabilities: { hybridTransport: true,
+                                                  conditionalGet: true } },
                         attestation: recorded[which] || null });
   });
+  const stored = audit.list().filter(function (one) {
+    return one.action === 'webauthn.ceremony' && one.actor === who;
+  });
+  const first = (stored[0] || {}).detail || {};
   const rows = audit.list().filter(function (one) {
     return one.action === 'webauthn.ceremony' && one.actor === who;
   }).map(function (one) {
@@ -230,10 +244,13 @@ function row(t, recorded) {
   const plain = rows.filter(function (text) {
     return /^ES256/.test(text) && text.indexOf('enterprise') < 0;
   });
-  t.check(rows.length === 2 && downgraded.length === 1 && plain.length === 1,
+  t.check(rows.length === 2 && downgraded.length === 1 && plain.length === 1 &&
+          Object.keys(first).length <= 12 && !first['(more)'] &&
+          first.client === 'Chrome 141 on macOS 10|conditionalGet,' +
+                           'hybridTransport',
           'D. the ceremony row\'s attestation detail leads with the ' +
           'downgrade, and an enterprise request\'s says nothing of it',
-          JSON.stringify(rows));
+          JSON.stringify([rows, first]));
   log.debug('Leaving row().');
 }
 
