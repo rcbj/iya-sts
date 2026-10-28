@@ -50,6 +50,13 @@ const UPLOAD = '/admin/risk/upload';
  */
 const METRICS_PAGE = '/admin/risk-scoring';
 
+// WHERE A LOOKUP'S ANSWER LANDS (#1084): the Lookups tab, by the id
+// `WebPages.protocolTabs()` gives the `lookup` section. Both lookups are GET
+// forms, and the runtime navigates one to its action's fragment
+// (`ConsoleRuntime.onSubmit()`); with none the page opened on its first
+// tab, Metadata, and the answer was a click away.
+const LOOKUP_ACTION = PAGE + '#risk-tab-lookup';
+
 const LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'UNSCORED'];
 
 // Each level's colour: the same four as the badge on a person's user page
@@ -448,6 +455,9 @@ class RiskPage {
   }
 
   // A format's name for a person: its id and whose file it is.
+  // Where both lookup forms go, for the test that holds it to a tab (#1084).
+  static readonly LOOKUP_ACTION = LOOKUP_ACTION;
+
   static formatLabels(view: Json): Json {
     const out = {};
     (view.formats || []).forEach(function (f: Json): void {
@@ -580,7 +590,7 @@ class RiskPage {
                     '</th><th></th></tr></thead><tbody>' + versions +
                     '</tbody></table>' : '');
     }).join('');
-    const lookupForm = '<form method="get" action="' + PAGE + '">' +
+    const lookupForm = '<form method="get" action="' + LOOKUP_ACTION + '">' +
       '<input type="hidden" name="realm" value="' + esc(view.realm) + '">' +
       '<label>' + t.html('consoleRisk.lookup.label') +
       ' <input type="text" ' +
@@ -950,7 +960,7 @@ class RiskPage {
   static authenticatorHtml(view: Json, t: Json): string {
     const esc = kit.esc.bind(kit);
     const a = view.authenticatorLookup;
-    const form = '<form method="get" action="' + PAGE + '">' +
+    const form = '<form method="get" action="' + LOOKUP_ACTION + '">' +
       '<input type="hidden" name="realm" value="' + esc(view.realm) + '">' +
       '<label>' + t.html('consoleRisk.authenticator.label') +
       ' <input type="text" name="authenticator" ' +
