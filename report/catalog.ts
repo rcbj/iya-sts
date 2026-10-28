@@ -413,7 +413,9 @@ function passkeyHistorySource(): SourceSpec {
                'classicalOnly', 'none', 'postQuantumKeys', 'count'],
       where: { op: 'eq', field: 'scope', value: 'realm' },
       orderBy: [{ field: 'day', dir: 'asc' }],
-      limit: 1000, format: 'json', mode: 'auto' }
+      // One row a day: the default synchronous cap (500) holds the default
+      // retention (400 days), so it answers at once rather than as a job.
+      limit: 500, format: 'json', mode: 'auto' }
   }, {
     id: 'passkeys-by-algorithm-by-day',
     name: 'Passkeys by algorithm by day',

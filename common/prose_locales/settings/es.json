@@ -1215,6 +1215,14 @@
     "en": "ea9f111d1308b528",
     "text": "Resumen que usan los registros nuevos de RFC 4998. Subirlo desde sha256 dispara la renovación del árbol de hash de RFC 4998 en el recuento diario del informe de llaves de acceso, en una nueva ArchiveTimeStampChain."
   },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "Historial de llaves de acceso conservado (días)"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "Cuántos días de historial de llaves de acceso conserva un dominio (#1109): el recuento diario del informe de llaves de acceso escribe una fila por dominio y por día (las personas por tipo, las llaves de acceso por algoritmo, por carril y por algoritmo de atestación, y la población de cada perfil de llave de acceso con nombre), que la aplicación de informes lee como la fuente passkeyHistory. El mismo recuento elimina las filas más antiguas que este valor. Reducirlo elimina las filas más antiguas en el siguiente recuento."
+  },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
     "text": "Modelos de autenticador permitidos (AAGUID)"
