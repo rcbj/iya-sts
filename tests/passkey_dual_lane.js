@@ -55,6 +55,10 @@
 //      self-enrolment begun first is still pending afterwards; the new
 //      key's row and the answer both carry `lane` and `enrolledBy`; the
 //      person's own confirmKeyEnrolment still drops that pending record.
+//  15. The portal's Cryptography row comes from the key's ALGORITHM (#1076):
+//      the ML-DSA key 13c left in the classical lane says post-quantum, a
+//      post-quantum lane key keeps its second-account note, and a classical
+//      key says classical whatever its lane.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -722,6 +726,36 @@ function childMain() {
          'the proved classical key in the classical lane',
          JSON.stringify([replaceDone, replaceRows,
            credentials.keyLane(replaceRows[0])]));
+
+    // 15. The Cryptography row, from the algorithm (#1076).
+    const tKeys = { html: function (key) { return '[' + key + ']'; },
+                    text: function (key) { return '[' + key + ']'; } };
+    const cryptoCell = function (row) {
+      const drawn = keysPages.passkeyRow(Object.assign({ name: 'k',
+        enrolledAt: 0, kind: 'passkey', withoutUsername: 'yes' }, row),
+        tKeys);
+      const at = drawn.indexOf('[portal.keys.lane]</th><td>');
+      return at < 0 ? null
+        : drawn.slice(at + 27, drawn.indexOf('</td>', at + 27));
+    };
+    const replacedCell = cryptoCell({ lane: 'classical',
+      algorithm: credentials.keyAlgorithm(replaceRows[0]) });
+    const pqcLaneCell = cryptoCell({ lane: 'pqc',
+      algorithm: { text: 'ML-DSA-65 (-49)', postQuantum: true } });
+    const classicalCell = cryptoCell({ lane: 'classical',
+      algorithm: { text: 'ES256 (-7)', postQuantum: false } });
+    const classicalInPqcCell = cryptoCell({ lane: 'pqc',
+      algorithm: { text: 'ES256 (-7)', postQuantum: false } });
+    note(replacedCell === '[portal.keys.cryptoPostQuantum]' &&
+         pqcLaneCell === '[portal.keys.lanePqc]' &&
+         classicalCell === '[portal.keys.laneClassical]' &&
+         classicalInPqcCell === '[portal.keys.laneClassical]',
+         '15. the portal\'s Cryptography row is read from the key\'s ' +
+         'algorithm: the ML-DSA key in the classical lane says ' +
+         'post-quantum, a post-quantum lane key keeps its second-account ' +
+         'note, a classical key says classical (#1076)',
+         JSON.stringify([replacedCell, pqcLaneCell, classicalCell,
+                         classicalInPqcCell]));
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

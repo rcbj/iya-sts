@@ -242,6 +242,7 @@
   "keys.lane": "Kryptografi",
   "keys.laneClassical": "klassisk",
   "keys.lanePqc": "postkvant (ML-DSA), visas som ett andra konto som slutar på ”+ml-dsa”",
+  "keys.cryptoPostQuantum": "postkvant (ML-DSA)",
   "keys.authenticator": "Autentiserare",
   "keys.removeLabel": "Ta bort {name}",
   "keys.remove": "Ta bort",

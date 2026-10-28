@@ -242,6 +242,7 @@
   "keys.lane": "密碼類型",
   "keys.laneClassical": "傳統",
   "keys.lanePqc": "後量子（ML-DSA），顯示為以「+ml-dsa」結尾的第二個帳戶",
+  "keys.cryptoPostQuantum": "後量子（ML-DSA）",
   "keys.authenticator": "驗證器",
   "keys.removeLabel": "移除 {name}",
   "keys.remove": "移除",

@@ -242,6 +242,7 @@
   "keys.lane": "Criptografía",
   "keys.laneClassical": "clásica",
   "keys.lanePqc": "poscuántica (ML-DSA), que aparece como una segunda cuenta terminada en «+ml-dsa»",
+  "keys.cryptoPostQuantum": "poscuántica (ML-DSA)",
   "keys.authenticator": "Autenticador",
   "keys.removeLabel": "Quitar {name}",
   "keys.remove": "Quitar",

@@ -242,6 +242,7 @@
   "keys.lane": "密码类型",
   "keys.laneClassical": "经典",
   "keys.lanePqc": "后量子（ML-DSA），显示为以“+ml-dsa”结尾的第二个账户",
+  "keys.cryptoPostQuantum": "后量子（ML-DSA）",
   "keys.authenticator": "身份验证器",
   "keys.removeLabel": "移除 {name}",
   "keys.remove": "移除",
