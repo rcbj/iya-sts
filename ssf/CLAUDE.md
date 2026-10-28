@@ -681,10 +681,14 @@ three internal receiver streams and nowhere else:
 * **Sending** is `ssf.ts`'s `broadcastAnnouncement()`, from
   `/admin/broadcast` and `POST /admin-api/broadcast/send`. It refuses
   (STS-SSF-0153) an empty or over-long message (`ssf.announcementMaxChars`)
-  and an unknown surface, and sends only to a stream marked
-  `internalSurface` whose surface was chosen — never to a remote receiver
-  that asked for every `sts` type, which has no tab to draw it in. Nothing
-  delivered is STS-SSF-0154. `everyRealm` runs it in every realm; WHO may ask
+  and an unknown surface, and sends only to the internal stream of each
+  surface chosen, found by `receivers.streamFor()` — never to a remote
+  receiver that asked for every `sts` type, which has no tab to draw it in.
+  **Never by the `internalSurface` marker alone (#1088)**: the marker is the
+  half of a record a persisted round trip can lose, and on 8081 a sender
+  that selected by it found nothing. Nothing delivered is STS-SSF-0154, and
+  the answer names each surface's reason (no stream, disabled, does not
+  take the event). `everyRealm` runs it in every realm; WHO may ask
   for that is the API's check (a service administrator in the default realm,
   `broadcastView()`), not this file's.
 * **The streams ask for it**: `seedStreams()` adds it to what they request,

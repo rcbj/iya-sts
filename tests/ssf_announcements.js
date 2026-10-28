@@ -126,6 +126,33 @@ function childMain() {
          'portal\'s streams, and not on reports\', which was not chosen',
          JSON.stringify({ sent: sent, before: before, after: after }));
 
+    // --- C2. the marker lost (#1088) ----------------------------------------
+    // `internalSurface` is the half of a record a persisted round trip can
+    // lose; on 8081 the sender found nothing by it. The stream is found by
+    // its derived id regardless.
+    const lost = receivers.streamFor('report');
+    const marker = lost.internalSurface;
+    delete lost.internalSurface;
+    const reportBefore = queued('report');
+    const noMarker = await ssf.broadcastAnnouncement({ message: 'No marker.',
+      surfaces: ['report'], by: 'a test' });
+    lost.internalSurface = marker;
+    note(noMarker.ok && noMarker.sent === 1 &&
+         queued('report') === reportBefore + 1,
+         'C2. a stream whose internalSurface marker was lost in the store is ' +
+         'still found by its derived id and sent to (#1088)',
+         JSON.stringify(noMarker));
+    const disabled = receivers.streamFor('report');
+    const wasStatus = disabled.status;
+    disabled.status = 'disabled';
+    const toDisabled = await ssf.broadcastAnnouncement({ message: 'Off.',
+      surfaces: ['report'], by: 'a test' });
+    disabled.status = wasStatus;
+    note(toDisabled.sent === 0 && /report its stream is disabled/
+           .test(String(toDisabled.why)),
+         'C3. nothing sent says which application and why',
+         JSON.stringify(toDisabled.why));
+
     // --- D. the receiver ----------------------------------------------------
     const record = receivers.streamFor('admin-console');
     const announce = function (surfaces, message, tamper) {
