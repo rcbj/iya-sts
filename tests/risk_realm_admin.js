@@ -148,6 +148,19 @@ function childMain() {
             'C1. their page has no terms, no settings and no service ' +
             'dataset, and its import form is pinned to their realm',
             page.slice(0, 300));
+    // #1084: both lookups are GET forms whose answer must open on the
+    // Lookups tab — their action carries that tab's fragment, and the tab
+    // with that id is the one holding both forms.
+    const panelAt = page.indexOf('id="risk-tab-lookup"');
+    const panelEnd = page.indexOf('</section>', panelAt);
+    const panel = panelAt >= 0 ? page.slice(panelAt, panelEnd) : '';
+    const toLookups = 'action="/admin/risk#risk-tab-lookup"';
+    t.check(panel.indexOf('name="address"') >= 0 &&
+            panel.indexOf('name="authenticator"') >= 0 &&
+            panel.split(toLookups).length - 1 === 2 &&
+            page.split(toLookups).length - 1 === 2,
+            'C3. both lookup forms are in the Lookups tab and come back to ' +
+            'it (#1084)', panel.slice(0, 400));
     const scoring = await draw(riskAdmin.METRICS_PAGE);
     t.check(scoring.length > 0 && scoring.indexOf('id="risk-process"') < 0 &&
             scoring.indexOf('id="risk-timeline"') >= 0,
