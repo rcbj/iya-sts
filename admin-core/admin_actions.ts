@@ -8126,9 +8126,10 @@ class AdminActions {
         target: String(result.dn || (result.definition &&
                                      result.definition.dn) || ''),
         channel: 'http',
-        summary: action + ' ' + String(body.name || ''),
+        // `client` is the passkey policy's learned client (#1112).
+        summary: action + ' ' + String(body.name || body.client || ''),
         detail: { via: ctx.via || '', kind: kind.id, action: action,
-                  name: String(body.name || '') }
+                  name: String(body.name || body.client || '') }
       });
       log.debug("Leaving AdminActions.policiesAction(). act " + action + ".");
       return Object.assign({ kind: kind.id }, result);

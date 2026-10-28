@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "Una persona que tiene una clave de acceso poscuántica inició sesión con una clásica"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "A un cliente dejó de ofrecérsele ML-DSA en el registro de llaves de acceso"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "La atestación de una llave de seguridad ya no es de confianza: la lista de estado de atestación de Android de Google revoca su cadena"

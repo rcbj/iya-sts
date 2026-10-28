@@ -1127,6 +1127,30 @@
     "en": "f34caf08dceeedd3",
     "text": "Lu seulement tant que la politique des clés d’accès exige une clé d’accès post-quantique à la connexion (`postQuantumRequired`), et seulement lorsque la ligne `postQuantumAllowCredentials` du profil sélectionné vaut `realm`. `narrow` (la valeur par défaut) ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans l’`allowCredentials` de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée — mais une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie (STS-AUTHN-0356), avec une page indiquant que l’application exige une clé d’accès post-quantique et où en ajouter une. Le compromis : la personne peut choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie."
   },
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "Apprendre quels clients ne peuvent pas créer de clé d’accès ML-DSA"
+  },
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "Activé, un enregistrement de clé d’accès qui a proposé ML-DSA et a échoué dans le navigateur avec NotSupportedError est compté contre son client — le navigateur et le système d’exploitation par famille et version majeure, tels que les nomment les lignes de cérémonie des clés d’accès (`Chrome 141 on macOS 15`) — et dès que `webauthn.clientLearningFailures` personnes différentes ont échoué ainsi depuis un client dans `webauthn.clientLearningWindowHours`, sans qu’aucun enregistrement depuis ce client réussisse, ce domaine cesse de proposer ML-DSA à ce client : ses enregistrements proposent la liste sans ML-DSA, comme le fait une ligne `clientRules` configurée de la politique des clés d’accès. Un enregistrement depuis ce client qui a demandé ML-DSA et a réussi supprime l’entrée, tout comme l’effacer dans Annuaire → Politiques → Politique des clés d’accès. Jamais appliqué là où une clé d’accès classique n’est pas permise. Désactivé, rien n’est compté et rien d’appris n’est appliqué ; ce qui a été appris est conservé."
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "Échecs avant qu’un client ne se voie plus proposer ML-DSA"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "Combien d’enregistrements de personnes différentes depuis un client doivent avoir demandé ML-DSA et échoué avec NotSupportedError, dans `webauthn.clientLearningWindowHours` et sans qu’aucun réussisse, avant que `webauthn.clientLearning` cesse de lui proposer ML-DSA. Une personne est comptée une fois, quel que soit le nombre de ses essais, de sorte qu’un compte ne peut rien apprendre au domaine sur le navigateur des autres."
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "Fenêtre dans laquelle les échecs sont comptés"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "Les heures pendant lesquelles un échec compte pour `webauthn.clientLearningFailures`. Un échec plus ancien est oublié, et une tâche du planificateur (`passkeys.client-learning-sweep`) supprime les entrées dont tous les échecs ont expiré. Un client déjà appris le reste jusqu’à ce qu’un enregistrement depuis ce client réussisse ou qu’il soit effacé."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Vérification de l’utilisateur"

@@ -1635,6 +1635,11 @@ class AdminApi {
               '`realm` (webauthn.pqcOnly and ' +
               'webauthn.pqcAlongsideClassical); a passkey outside what the ' +
               'profile offers is refused at registration (STS-AUTHN-0432). ' +
+              '`clientRules` (empty, #1112; optional) names the clients — ' +
+              '`<browser> on <system>`, each a family or `*` with an ' +
+              'optional major-version range, `;` between rules — whose ' +
+              'registrations offer the list less ML-DSA, where a classical ' +
+              'passkey is allowed. ' +
               'Refused: `classical-only` with `postQuantumRequired` not ' +
               '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
               'and `pq-only` or `pq-first` where the list offered names no ' +
@@ -1654,7 +1659,8 @@ class AdminApi {
                    attestationAlgorithms: 'none',
                    postQuantumAllowCredentials: 'realm',
                    registrationAlgorithms: 'realm',
-                   registrationMode: 'realm', lanes: 'realm' }
+                   registrationMode: 'realm', lanes: 'realm',
+                   clientRules: '' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {
@@ -1794,7 +1800,8 @@ class AdminApi {
           : field.type === 'enum'
             ? { type: 'string', enum: field.values,
                 description: field.what + ' Default `' + field.dflt + '`.' }
-          : field.type === 'attributes' || field.type === 'text'
+          : field.type === 'attributes' || field.type === 'text' ||
+            field.type === 'clientRules'
             ? { type: 'string',
                 description: field.what + ' Default empty.' }
           : field.type === 'attribute'
@@ -23944,6 +23951,18 @@ class AdminApi {
                      'the realm\'s own attributes, `enforced` whether it is ' +
                      'enforced (product mode), and `missingFilter` the LDAP ' +
                      'filter finding a person who lacks one.' +
+                     '\n\n**`passkey.clients` is the realm\'s learned ' +
+                     'passkey clients (#1112)**: the browsers, systems ' +
+                     'and major versions a registration stopped offering ' +
+                     'ML-DSA to under `webauthn.clientLearning` (`learning` ' +
+                     'says whether it is on, `threshold` and `windowHours` ' +
+                     'its two settings), and those still being counted, ' +
+                     'each `client`, `learned`, `learnedAt`, ' +
+                     '`learnedFailures`, `failures` (in the window), ' +
+                     '`firstAt` and `lastAt`; learned first. Paged by ' +
+                     '`clientsPage` and `clientsPer` (`paging`), apart from ' +
+                     'the profiles. `clear-passkey-client` and ' +
+                     '`clear-passkey-clients` clear them.' +
                      '\n\nIt is NOT the XACML policy repository, which ' +
                      'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',
@@ -23959,7 +23978,16 @@ class AdminApi {
                          'of the realm\'s people, so asked only on request, ' +
                          'and null where the directory is held in the store ' +
                          '(`attributes.missingFilter` is the LDAP filter ' +
-                         'that finds them there).' }
+                         'that finds them there).' },
+          // #1112: the learned passkey clients' own page.
+          { name: 'clientsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `passkey.clients.rows`, the ' +
+                         'learned passkey clients. Defaults to 1.' },
+          { name: 'clientsPer', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 200 },
+            description: 'Rows per page of `passkey.clients.rows`. ' +
+                         'Defaults to 25.' }
         ]),
         responseDescription: 'The kinds of policy, each kind\'s profile in ' +
                              'force with its field table and schema, and ' +

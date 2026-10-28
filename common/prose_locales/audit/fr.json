@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "Une personne détenant une clé d’accès post-quantique s’est connectée avec une clé classique"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "Un client ne se voit plus proposer ML-DSA à l’enregistrement d’une clé d’accès"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "L’attestation d’une clé de sécurité n’est plus fiable : la liste de statut d’attestation Android de Google révoque sa chaîne"

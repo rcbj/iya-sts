@@ -641,6 +641,12 @@ const ACTIONS = [
   { action: 'webauthn.algorithm-mismatch', category: 'authentication',
     label: 'A person holding a post-quantum passkey signed in with a ' +
            'classical one' },
+  // A CLIENT THIS REALM STOPPED OFFERING ML-DSA TO (#1112): enough
+  // registrations from one browser, system and major version failed with
+  // NotSupportedError, and none succeeded, within the window.
+  // `common/passkey_clients.ts` writes it, once per client learned.
+  { action: 'webauthn.client.learned', category: 'authentication',
+    label: 'A client stopped being offered ML-DSA at passkey registration' },
   { action: 'webauthn.attestation-revoked', category: 'authentication',
     label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
            'Android attestation status list revokes its chain' },

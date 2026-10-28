@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Tar bort varje klient som registrerats genom en OpenID Federation Trust Chain vars registrering har upphört (12.3). Varje slutpunkt besvarar redan en sådan klient som okänd; detta hindrar bara posten från att ligga kvar."
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "Rensning av inlärda passnyckelklienter"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "Tar bort de inlärda passnyckelklienterna (#1112) vars misslyckanden alla har åldrats ut ur webauthn.clientLearningWindowHours och som aldrig blev inlärda. En klient som redan är inlärd behålls tills en registrering från den lyckas eller den rensas."
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "Omräkning av nyckelrapporten"

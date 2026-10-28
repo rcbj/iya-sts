@@ -45,7 +45,11 @@
 //                  them (`webauthn_policy.algorithmIds()` of the lane, the
 //                  list `expectedAlgorithms` was checked against); for an
 //                  assertion, which has no such list, the algorithms of the
-//                  person's keys the ceremony could name, in key order
+//                  person's keys the ceremony could name, in key order;
+//                  then, where a client rule named the client (#1112),
+//                  `|` and what it did: `configured: <rule>` or `learned:
+//                  <client>` where ML-DSA was left out of the offer, or
+//                  `not applied (<why>): ...` where it was not
 //   algorithm      the algorithm used (the new key's, or the asserting
 //                  key's), '' where none was reached
 //   postQuantum    whether that algorithm is RFC 9964's ML-DSA
@@ -106,6 +110,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import audit = require('../common/audit');
 import passkeyPolicy = require('../common/passkey_policy');
+// #1112: the learned client rules, counted where this row is written.
+import passkeyClients = require('../common/passkey_clients');
 import bowser = require('bowser');
 // The COSE names of the algorithms, from the verifier: a leaf over npm
 // modules and `common/crypto`.
@@ -151,6 +157,8 @@ interface CeremonyEvent {
   posted?: Json;
   // The new key's attestation record (#941), for a registration.
   attestation?: Json;
+  // What a client rule did to the offer (#1112), or ''.
+  narrowed?: string;
   req?: Json;
 }
 
@@ -364,7 +372,8 @@ class WebauthnCeremonies {
         detail: {
           ceremony: ceremony, door: door, role: String(e.role || ''),
           lane: String(e.lane || ''),
-          offered: WebauthnCeremonies.namesOf(e.offered).join(','),
+          offered: WebauthnCeremonies.namesOf(e.offered).join(',') +
+            (e.narrowed ? '|' + String(e.narrowed).slice(0, 120) : ''),
           algorithm: algorithm,
           postQuantum: passkeyPolicy.isPostQuantum(algorithm),
           client: WebauthnCeremonies.clientOf(userAgent),
@@ -375,6 +384,11 @@ class WebauthnCeremonies {
             ? WebauthnCeremonies.attestationText(e.attestation) : ''
         }
       });
+      passkeyClients.observe({ ceremony: ceremony,
+        outcome: refused ? 'refused' : 'success', clientError: clientError,
+        offered: WebauthnCeremonies.namesOf(e.offered),
+        client: WebauthnCeremonies.clientOf(userAgent),
+        username: String(e.username || '') });
       log.debug("Leaving WebauthnCeremonies.record(). " + ceremony + ' ' +
                 (refused ? 'refused' : 'completed'));
       return row;

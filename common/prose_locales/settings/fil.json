@@ -1127,6 +1127,30 @@
     "en": "f34caf08dceeedd3",
     "text": "Binabasa lamang habang hinihingi ng passkey policy ang post-quantum na passkey sa sign-in (`postQuantumRequired`), at kapag `realm` lamang ang row na `postQuantumAllowCredentials` ng napiling profile. Ang `narrow` (ang default) ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa `allowCredentials` ng passkey step, kaya hindi kailanman inaalok ang classical — pero ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony (STS-AUTHN-0356), na may page na nagsasabing kailangan ng application ang post-quantum na passkey at kung saan magdadagdag nito. Ang kapalit: maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony."
   },
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "Alamin kung aling mga client ang hindi makagawa ng ML-DSA na passkey"
+  },
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "Kapag naka-on, ang pagpaparehistro ng passkey na nag-alok ng ML-DSA at nabigo sa browser sa NotSupportedError ay binibilang laban sa client nito — ang browser at ang operating system ayon sa pamilya at pangunahing bersyon, gaya ng pagpangalan dito ng mga row ng seremonya ng passkey (`Chrome 141 on macOS 15`) — at kapag `webauthn.clientLearningFailures` na magkakaibang tao ang nabigo nang ganoon mula sa isang client sa loob ng `webauthn.clientLearningWindowHours`, at walang pagpaparehistro mula rito ang nagtagumpay, hihinto ang realm na ito sa pag-aalok ng ML-DSA sa client na iyon: ang mga pagpaparehistro nito ay nag-aalok ng listahan nang walang ML-DSA, gaya ng ginagawa ng naka-configure na row na `clientRules` ng patakaran sa passkey. Ang pagpaparehistro mula sa client na humiling ng ML-DSA at nagtagumpay ay nag-aalis ng entry, at gayundin ang pag-clear dito sa Directory → Policies → Passkey policy. Hindi kailanman inilalapat kung saan hindi pinapayagan ang klasikong passkey. Kapag naka-off, walang binibilang at walang natutunan ang inilalapat; pinananatili ang natutunan."
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "Mga pagkabigo bago hindi na inaalok ng ML-DSA ang isang client"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "Ilang pagpaparehistro ng magkakaibang tao mula sa isang client ang dapat humiling ng ML-DSA at nabigo sa NotSupportedError, sa loob ng `webauthn.clientLearningWindowHours` at walang nagtagumpay, bago ihinto ng `webauthn.clientLearning` ang pag-aalok ng ML-DSA dito. Isang beses lang binibilang ang isang tao gaano man kadalas siyang sumubok, kaya hindi maituturo ng isang account sa realm ang anuman tungkol sa browser ng iba."
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "Window kung saan binibilang ang mga pagkabigo"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "Ang mga oras na binibilang ang isang pagkabigo para sa `webauthn.clientLearningFailures`. Nakakalimutan ang mas lumang pagkabigo, at inaalis ng isang scheduler job (`passkeys.client-learning-sweep`) ang mga entry na lahat ng pagkabigo ay lumipas na. Nananatiling natutunan ang client na natutunan na hanggang magtagumpay ang isang pagpaparehistro mula rito o ma-clear ito."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "User verification"

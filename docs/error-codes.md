@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4757** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4759** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 395
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 397
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
@@ -1587,6 +1587,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0474` | Skip was refused on a post-login activity: the allotted time since the person's first invitation has passed, so the activity is required before the sign-in finishes (#1096). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0475` | A post-login passkey registration was refused: the realm no longer offers post-quantum passkeys (webauthn.pqcAlongsideClassical and webauthn.pqcOnly are off), so the activity cannot be done here and the held sign-in is finished without it (#1096). | none (the sign-in continues) |
 | `STS-AUTHN-0476` | A passkey policy profile was not saved: `lanes` is both (a classical and a post-quantum passkey side by side) and `registrationMode` is classical-only, which makes no post-quantum passkey to hold in a second lane (#1104). | none (HTTP 400 from /admin-api/policies) |
+| `STS-AUTHN-0477` | A learned passkey client was not cleared (#1112): the request named no client, or one this realm's learned clients do not list (`clear-passkey-client` takes the name exactly as the list shows it). Nothing is changed. | none (HTTP 400 from POST /admin-api/policies/clear-passkey-client) |
+| `STS-AUTHN-0478` | A realm's learned passkey clients (#1112) are at their bound, every entry already learned, so the failures of a client not yet counted were not counted: it cannot be learned until an entry is cleared on Directory → Policies → Passkey policy or through `clear-passkey-client`. Logged once per realm per process; the registrations themselves are unchanged. | none (service log) |
 
 ## STS-OAUTH
 

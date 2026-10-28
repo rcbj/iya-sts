@@ -1159,6 +1159,14 @@
     "en": "8bc141c02b65ba53",
     "text": "`realm`（預設值）沿用 webauthn.pqcAlongsideClassical。`both` 在領域設定關閉的任何地方，讓此設定檔的人員同時持有傳統密碼金鑰與後量子密碼金鑰，各自使用自己的使用者控制代碼；`one` 在該設定開啟的任何地方只給他們一個通道。webauthn.pqcOnly 仍代表一個通道。registrationMode 為 classical-only 時拒絕 `both`。儲存時省略，則保留 `realm`。"
   },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "註冊時不提供 ML-DSA 的用戶端"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "預設為空：每個用戶端都按原樣取得清單。否則最多 20 條規則，以 `;` 分隔，每條為 `<browser> on <system>`，其中每一側都是與通行金鑰儀式紀錄中名稱一致的系列（`Chrome`、`Firefox`、`macOS`、`Android`），或用 `*` 表示任意，後面可選擇加上一個主版本範圍（`141`、`130-140`、`130-`、`-140`）：`Firefox 140- on Linux; * on Android 13`。來自相符用戶端的通行金鑰註冊提供去掉 ML-DSA 的清單（若一個都不剩則為 ES256 和 RS256）。在不允許傳統通行金鑰的地方不適用——registrationMode pq-only、webauthn.pqcOnly、postQuantumRequired registration-and-sign-in，或在 postQuantumRequired sign-in 下的登入步驟——也不適用於後量子通道，儀式紀錄會註明未適用。儲存時省略，則保持為空。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "「Create a passkey」送出的提示"
@@ -1310,6 +1318,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
     "en": "8bc141c02b65ba53",
     "text": "`realm`（預設值）沿用 webauthn.pqcAlongsideClassical。`both` 在領域設定關閉的任何地方，讓此設定檔的人員同時持有傳統密碼金鑰與後量子密碼金鑰，各自使用自己的使用者控制代碼；`one` 在該設定開啟的任何地方只給他們一個通道。webauthn.pqcOnly 仍代表一個通道。registrationMode 為 classical-only 時拒絕 `both`。儲存時省略，則保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "預設為空：每個用戶端都按原樣取得清單。否則最多 20 條規則，以 `;` 分隔，每條為 `<browser> on <system>`，其中每一側都是與通行金鑰儀式紀錄中名稱一致的系列（`Chrome`、`Firefox`、`macOS`、`Android`），或用 `*` 表示任意，後面可選擇加上一個主版本範圍（`141`、`130-140`、`130-`、`-140`）：`Firefox 140- on Linux; * on Android 13`。來自相符用戶端的通行金鑰註冊提供去掉 ML-DSA 的清單（若一個都不剩則為 ES256 和 RS256）。在不允許傳統通行金鑰的地方不適用——registrationMode pq-only、webauthn.pqcOnly、postQuantumRequired registration-and-sign-in，或在 postQuantumRequired sign-in 下的登入步驟——也不適用於後量子通道，儀式紀錄會註明未適用。儲存時省略，則保持為空。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1546,6 +1558,10 @@
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
     "text": "管理員可以在自己的瀏覽器中為某人註冊密碼金鑰，並像該人自己的密碼金鑰一樣加以驗證"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "在允許傳統通行金鑰的地方，來自 {{rules}} 的通行金鑰註冊不提供 ML-DSA"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

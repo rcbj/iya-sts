@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Inaalis ang bawat client na nakarehistro sa pamamagitan ng OpenID Federation Trust Chain na natapos na ang registration (12.3). Sinasagot na ng bawat endpoint ang ganitong client bilang hindi kilala; pinipigilan lang nito na manatili ang entry."
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "Paglilinis ng mga natutunang passkey client"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "Inaalis ang mga natutunang passkey client (#1112) na lahat ng pagkabigo ay lumipas na sa webauthn.clientLearningWindowHours at hindi kailanman natutunan. Pinananatili ang client na natutunan na hanggang magtagumpay ang isang pagpaparehistro mula rito o ma-clear ito."
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "Muling pagbilang ng ulat ng passkey"

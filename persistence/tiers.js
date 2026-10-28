@@ -396,6 +396,11 @@ const CELL_MINTED = [
   // When a person was first asked a post-login activity, until when they put
   // it off, and when they did it (#1096): somebody's, minted at their sign-in.
   'post_login.progress',
+  // The learned passkey clients (#1112): which browsers failed an ML-DSA
+  // registration here, with a digest of each person who failed. An
+  // OBSERVATION of this cell's own traffic, as `attribute_sources.status`
+  // is, and keyed by people, so it stays in the cell.
+  'passkey_clients.learned',
   // The reports application's definitions, jobs and reporter stamp (#956).
   // A report reads this cell's people and its artifact holds them, so the
   // job and its definition are this cell's; the stamp names a node, and a

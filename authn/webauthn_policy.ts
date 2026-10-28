@@ -631,7 +631,8 @@ class WebauthnPolicy {
    *
    * @param at - `sign-in` for the sign-in step's registration, which signs
    *   the person in at once; anything else for `/portal/keys`
-   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying STS-AUTHN-0420
+   * @returns `{ ok: true }`, or `{ ok: false, why, reason }` carrying
+   *   STS-AUTHN-0420; `reason` names the rule in a few words (#1112)
    */
   classicalRetryRefusal(at?: string) {
     const { log, errorCodes } = this.deps;
@@ -644,7 +645,10 @@ class WebauthnPolicy {
     if (this.registrationMode() === 'pq-only') {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). The ' +
                 'profile is post-quantum only.');
+      // `reason` (#1112): the rule in a few words, for the ceremony row of
+      // a client rule this refusal stops (`common/passkey_clients.ts`).
       return errorCodes.mark({ ok: false,
+               reason: 'registrationMode pq-only',
                why: 'The passkey policy offers post-quantum (ML-DSA) ' +
                     'passkeys only here (registrationMode is pq-only), so ' +
                     'a classical one cannot be made instead. Use a device ' +
@@ -654,6 +658,7 @@ class WebauthnPolicy {
     if (this.requestsPostQuantumOnly()) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). PQC only.');
       return errorCodes.mark({ ok: false,
+               reason: 'webauthn.pqcOnly',
                why: 'This realm requests post-quantum (ML-DSA) passkeys ' +
                     'only (webauthn.pqcOnly), so a classical one cannot be ' +
                     'made instead. Use a device or a security key that can ' +
@@ -663,6 +668,7 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at registration.');
       return errorCodes.mark({ ok: false,
+               reason: 'postQuantumRequired registration-and-sign-in',
                why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
                     'passkey at registration (postQuantumRequired is ' +
                     'registration-and-sign-in), so a classical one cannot ' +
@@ -673,6 +679,7 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at sign-in.');
       return errorCodes.mark({ ok: false,
+               reason: 'postQuantumRequired sign-in',
                why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
                     'passkey to sign in here (postQuantumRequired), so a ' +
                     'classical one made now would not sign you in. Use a ' +

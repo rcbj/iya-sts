@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Supprime chaque client enregistré via une Trust Chain OpenID Federation dont l’enregistrement est terminé (12.3). Chaque point de terminaison traite déjà un tel client comme inconnu ; ceci évite seulement que l’entrée ne subsiste."
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "Nettoyage des clients de clés d’accès appris"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "Supprime les clients de clés d’accès appris (#1112) dont tous les échecs ont expiré au-delà de webauthn.clientLearningWindowHours et qui n’ont jamais été appris. Un client déjà appris est conservé jusqu’à ce qu’un enregistrement depuis ce client réussisse ou qu’il soit effacé."
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "Recomptage du rapport des clés d’accès"

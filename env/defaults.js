@@ -251,6 +251,9 @@ var config = {
     pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
     pqcAlongsideClassical: false,                                                                                                                      // Post-quantum passkey alongside a classical one
     postQuantumAllowCredentials: "narrow",                                                                                                             // Passkeys a sign-in names where a post-quantum one is required
+    clientLearning: false,                                                                                                                             // Learn which clients cannot make an ML-DSA passkey
+    clientLearningFailures: 3,                                                                                                                         // Failures before a client is no longer offered ML-DSA
+    clientLearningWindowHours: 168,                                                                                                                    // Window the failures are counted in
     userVerification: "required",                                                                                                                      // User verification
     attestation: "direct",                                                                                                                             // Attestation conveyance
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy

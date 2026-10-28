@@ -1159,6 +1159,14 @@
     "en": "8bc141c02b65ba53",
     "text": "`realm`（默认值）沿用 webauthn.pqcAlongsideClassical。`both` 在领域设置关闭的任何地方，让此配置文件的人员同时持有经典通行密钥和后量子通行密钥，各自使用自己的用户句柄；`one` 在该设置开启的任何地方只给他们一个通道。webauthn.pqcOnly 仍然意味着一个通道。registrationMode 为 classical-only 时拒绝 `both`。保存时省略，则保留 `realm`。"
   },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "注册时不提供 ML-DSA 的客户端"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "默认为空：每个客户端都按原样获得列表。否则最多 20 条规则，以 `;` 分隔，每条为 `<browser> on <system>`，其中每一侧都是与通行密钥仪式记录中名称一致的系列（`Chrome`、`Firefox`、`macOS`、`Android`），或用 `*` 表示任意，后面可选跟一个主版本范围（`141`、`130-140`、`130-`、`-140`）：`Firefox 140- on Linux; * on Android 13`。来自匹配客户端的通行密钥注册提供去掉 ML-DSA 的列表（若一个都不剩则为 ES256 和 RS256）。在不允许经典通行密钥的地方不适用——registrationMode pq-only、webauthn.pqcOnly、postQuantumRequired registration-and-sign-in，或在 postQuantumRequired sign-in 下的登录步骤——也不适用于后量子通道，仪式记录会注明未适用。保存时省略，则保持为空。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "“创建通行密钥”发送的提示"
@@ -1310,6 +1318,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
     "en": "8bc141c02b65ba53",
     "text": "`realm`（默认值）沿用 webauthn.pqcAlongsideClassical。`both` 在领域设置关闭的任何地方，让此配置文件的人员同时持有经典通行密钥和后量子通行密钥，各自使用自己的用户句柄；`one` 在该设置开启的任何地方只给他们一个通道。webauthn.pqcOnly 仍然意味着一个通道。registrationMode 为 classical-only 时拒绝 `both`。保存时省略，则保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "默认为空：每个客户端都按原样获得列表。否则最多 20 条规则，以 `;` 分隔，每条为 `<browser> on <system>`，其中每一侧都是与通行密钥仪式记录中名称一致的系列（`Chrome`、`Firefox`、`macOS`、`Android`），或用 `*` 表示任意，后面可选跟一个主版本范围（`141`、`130-140`、`130-`、`-140`）：`Firefox 140- on Linux; * on Android 13`。来自匹配客户端的通行密钥注册提供去掉 ML-DSA 的列表（若一个都不剩则为 ES256 和 RS256）。在不允许经典通行密钥的地方不适用——registrationMode pq-only、webauthn.pqcOnly、postQuantumRequired registration-and-sign-in，或在 postQuantumRequired sign-in 下的登录步骤——也不适用于后量子通道，仪式记录会注明未适用。保存时省略，则保持为空。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1546,6 +1558,10 @@
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
     "text": "管理员可以在自己的浏览器中为某人注册通行密钥，并像该人自己的通行密钥一样加以验证"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "在允许经典通行密钥的地方，来自 {{rules}} 的通行密钥注册不提供 ML-DSA"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

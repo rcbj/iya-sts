@@ -301,7 +301,8 @@ function kinds(t) {
     t.check(view.kinds.map(function (k) {
       return k.id;
     }).join(',') ===
-              'password,authn,serviceAccount,passkey,locale,attributes' &&
+              'password,authn,serviceAccount,passkey,locale,attributes,' +
+              'postLogin' &&
             !!view.password &&
             !!view.authn && !!view.serviceAccount &&
             Array.isArray(view.password.doors) && !!view.password.generator,
@@ -313,9 +314,12 @@ function kinds(t) {
             'reset-password-policy,save-authn-policy,reset-authn-policy,' +
             'save-serviceAccount-policy,reset-serviceAccount-policy,' +
             'save-passkey-policy,reset-passkey-policy,' +
+            // #1112: the passkey policy's own two acts, its learned clients.
+            'clear-passkey-client,clear-passkey-clients,' +
             'save-locale-policy,reset-locale-policy,' +
             'save-attributes-policy,reset-attributes-policy,' +
-            'define-person-attribute,remove-person-attribute',
+            'define-person-attribute,remove-person-attribute,' +
+            'save-postLogin-policy,reset-postLogin-policy',
             'F2. the actions are every kind\'s, the password policy\'s by ' +
             'the names they always had', view.actions.join(','));
     const saved = adminActions.policiesAction(Object.assign(

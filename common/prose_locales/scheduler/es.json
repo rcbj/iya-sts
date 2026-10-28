@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Quita cada cliente registrado mediante una Trust Chain de OpenID Federation cuyo registro haya terminado (12.3). Cada endpoint ya responde a ese cliente como desconocido; esto solo evita que la entrada permanezca."
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "Limpieza de clientes de llaves de acceso aprendidos"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "Elimina los clientes de llaves de acceso aprendidos (#1112) cuyos fallos han caducado todos fuera de webauthn.clientLearningWindowHours y que nunca llegaron a aprenderse. Un cliente ya aprendido se conserva hasta que un registro suyo tenga éxito o se borre."
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "Recuento del informe de llaves de acceso"

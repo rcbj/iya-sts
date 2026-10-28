@@ -7022,6 +7022,21 @@ const CODES = [
       '`registrationMode` is classical-only, which makes no post-quantum ' +
       'passkey to hold in a second lane (#1104).',
     spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0477',
+    summary: 'A learned passkey client was not cleared (#1112): the ' +
+      'request named no client, or one this realm\'s learned clients do ' +
+      'not list (`clear-passkey-client` takes the name exactly as the ' +
+      'list shows it). Nothing is changed.',
+    spec: 'none (HTTP 400 from POST /admin-api/policies/clear-passkey-' +
+      'client)' },
+  { code: 'STS-AUTHN-0478',
+    summary: 'A realm\'s learned passkey clients (#1112) are at their ' +
+      'bound, every entry already learned, so the failures of a client not ' +
+      'yet counted were not counted: it cannot be learned until an entry ' +
+      'is cleared on Directory → Policies → Passkey policy or through ' +
+      '`clear-passkey-client`. Logged once per realm per process; the ' +
+      'registrations themselves are unchanged.',
+    spec: 'none (service log)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

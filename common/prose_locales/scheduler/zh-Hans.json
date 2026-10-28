@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "移除通过 OpenID Federation Trust Chain 注册且注册已结束的每个客户端（12.3）。每个端点早已将此类客户端视为未知；此作业只是避免条目残留。"
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "已学习通行密钥客户端清理"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "删除已学习的通行密钥客户端（#1112）中所有失败都已超出 webauthn.clientLearningWindowHours 且从未被学习的条目。已学习的客户端会保留，直到来自它的注册成功或被清除。"
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "通行密钥报告重新计数"

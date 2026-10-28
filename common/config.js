@@ -2909,6 +2909,58 @@ const SETTINGS = [
                  'trade-off: the person may pick a passkey that will be ' +
                  'refused. Either way a person holding no post-quantum ' +
                  'passkey is told before any ceremony.' },
+  // THE LEARNED CLIENT RULES (#1112), per realm, off by default:
+  // `common/passkey_clients.ts` counts the registrations that asked for
+  // ML-DSA and failed with NotSupportedError, per client, where the
+  // ceremony row is written, and stops offering ML-DSA to a client past the
+  // threshold. The configured half is the passkey policy's `clientRules`.
+  { key: 'webauthn.clientLearning', group: 'WebAuthn',
+    label: 'Learn which clients cannot make an ML-DSA passkey',
+    path: 'webauthn.clientLearning',
+    env: 'STS_WEBAUTHN_CLIENT_LEARNING', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a passkey registration that offered ML-DSA and ' +
+                 'failed in the browser with NotSupportedError is counted ' +
+                 'against its client — the browser and the operating ' +
+                 'system by family and major version, as the passkey ' +
+                 'ceremony rows name it (`Chrome 141 on macOS 15`) — and ' +
+                 'once `webauthn.clientLearningFailures` different people ' +
+                 'have failed that way from one client within ' +
+                 '`webauthn.clientLearningWindowHours`, with no ' +
+                 'registration from it succeeding, this realm stops ' +
+                 'offering ML-DSA to that client: its registrations offer ' +
+                 'the list less ML-DSA, as a configured `clientRules` row ' +
+                 'of the passkey policy does. A registration from the ' +
+                 'client that asked for ML-DSA and succeeded removes the ' +
+                 'entry, and so does clearing it on Directory → Policies → ' +
+                 'Passkey policy. Never applied where a classical passkey ' +
+                 'is not allowed. Off, nothing is counted and nothing ' +
+                 'learned is applied; what was learned is kept.' },
+  { key: 'webauthn.clientLearningFailures', group: 'WebAuthn',
+    label: 'Failures before a client is no longer offered ML-DSA',
+    path: 'webauthn.clientLearningFailures',
+    env: 'STS_WEBAUTHN_CLIENT_LEARNING_FAILURES', type: 'int', dflt: 3,
+    runtime: true, min: 1, max: 50,
+    description: 'How many different people\'s registrations from one ' +
+                 'client must have asked for ML-DSA and failed with ' +
+                 'NotSupportedError, within ' +
+                 '`webauthn.clientLearningWindowHours` and with none ' +
+                 'succeeding, before `webauthn.clientLearning` stops ' +
+                 'offering ML-DSA to it. A person is counted once however ' +
+                 'often they try, so one account cannot teach the realm ' +
+                 'anything about everybody else\'s browser.' },
+  { key: 'webauthn.clientLearningWindowHours', group: 'WebAuthn',
+    label: 'Window the failures are counted in',
+    path: 'webauthn.clientLearningWindowHours',
+    env: 'STS_WEBAUTHN_CLIENT_LEARNING_WINDOW_HOURS', type: 'int',
+    dflt: 168, runtime: true, min: 1, max: 2160,
+    description: 'The hours a failure counts towards ' +
+                 '`webauthn.clientLearningFailures`. An older failure is ' +
+                 'forgotten, and a scheduler job ' +
+                 '(`passkeys.client-learning-sweep`) removes the entries ' +
+                 'whose failures have all aged out. A client already ' +
+                 'learned stays learned until a registration from it ' +
+                 'succeeds or it is cleared.' },
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',
     env: 'STS_WEBAUTHN_USER_VERIFICATION', type: 'enum',

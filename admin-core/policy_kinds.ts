@@ -462,7 +462,54 @@ PolicyKinds.register({
   appliesTo: 'the NEXT sign-in and the NEXT passkey enrolled in this realm; ' +
              'a passkey already enrolled keeps what its authenticator stored',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
-               'built-in defaults where it has not'
+               'built-in defaults where it has not',
+  // THE LEARNED CLIENTS (#1112): the realm's register of clients it stopped
+  // offering ML-DSA to, kept by `common/passkey_clients.ts` and listed on
+  // this kind's page; clearing an entry is the way back, so the clears are
+  // this kind's acts, as the attribute policy's register is that kind's.
+  extraActions: [
+    { action: 'clear-passkey-client',
+      operationId: 'clearPasskeyClient',
+      summary: 'Offer ML-DSA again to one learned client',
+      description: 'Removes one entry from this realm\'s learned clients ' +
+                   '(`webauthn.clientLearning`): a browser, system and ' +
+                   'major version that this realm stopped offering ML-DSA ' +
+                   'to at passkey registration after ' +
+                   '`webauthn.clientLearningFailures` registrations from it ' +
+                   'failed with NotSupportedError, and none succeeded, ' +
+                   'within `webauthn.clientLearningWindowHours`. The next ' +
+                   'registration from that client is offered the list as ' +
+                   'it stands, and its failures are counted afresh. ' +
+                   '`client` is the name exactly as the list shows it ' +
+                   '(`Chrome 141 on macOS 15`); one that is not listed is ' +
+                   'refused (STS-AUTHN-0477). A configured `clientRules` ' +
+                   'row is not changed by this.',
+      auditAction: 'admin.passkey-client.clear',
+      requestBody: {
+        type: 'object',
+        properties: {
+          client: { type: 'string', maxLength: 200,
+                    description: 'The learned client, as listed.' }
+        },
+        required: ['client'],
+        examples: [{ client: 'Chrome 141 on macOS 15' }],
+        additionalProperties: false
+      } },
+    { action: 'clear-passkey-clients',
+      operationId: 'clearPasskeyClients',
+      summary: 'Offer ML-DSA again to every learned client',
+      description: 'Removes every entry from this realm\'s learned clients, ' +
+                   'and the failures being counted towards new ones. ' +
+                   '`removed` says how many entries went. A configured ' +
+                   '`clientRules` row is not changed by this.',
+      auditAction: 'admin.passkey-client.clear',
+      requestBody: {
+        type: 'object',
+        properties: {},
+        examples: [{}],
+        additionalProperties: false
+      } }
+  ]
 });
 
 // #539: the fifth kind, rcbj's "a policy default per realm that automatically
