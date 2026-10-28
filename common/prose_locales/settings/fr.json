@@ -7151,6 +7151,22 @@
     "en": "f6d2a2be3eebe16f",
     "text": "Les trois possibilités qu’autorise la section 8.1.1. Pause et disable envoient au récepteur un événement stream-updated AVANT que le flux ne s’arrête, ce qu’exige la spécification ; un flux en pause continue d’accumuler les événements et un flux désactivé abandonne ce qui attend. Delete supprime le flux et n’envoie rien, car il ne reste aucun flux sur lequel l’envoyer."
   },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "Délai d'inactivité du flux interrogé d'une personne (s)"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "L'inactivity_timeout d'un flux qu'une PERSONNE possède (créé avec un jeton d'accès émis pour elle, ou son nom et son mot de passe) et récupère par interrogation RFC 8936 — ce que crée un récepteur dans le navigateur — quand ni son application propriétaire ni ssf.inactivityTimeoutS n'en fixe un (#1094). Chaque interrogation est une activité : un flux avec un onglet ouvert n'est jamais inactif ; celui abandonné à la fermeture de son onglet est traité comme le dit ssf.personStreamInactivityAction. 0 le désactive."
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "Ce que devient le flux interrogé inactif d'une personne"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "Ce que ssf.personStreamInactivityTimeoutS fait au flux interrogé inactif d'une personne (#1094). La suppression, par défaut, libère la place qu'il occupe sous ssf.maxStreams ; le récepteur du navigateur en crée un nouveau quand la personne revient."
+  },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",
     "text": "Vérification à l’initiative de l’émetteur (s)"

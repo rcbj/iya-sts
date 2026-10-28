@@ -7151,6 +7151,22 @@
     "en": "f6d2a2be3eebe16f",
     "text": "section 8.1.1 允許的三種處置。暫停與停用會在串流停止「之前」向接收端傳送 stream-updated 事件，這是規格的要求；暫停的串流會繼續排隊，停用的串流則會捨棄等待中的內容。刪除會移除串流且不傳送任何內容，因為已沒有串流可以傳送。"
   },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "個人輪詢串流的閒置逾時（秒）"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "由個人擁有（以為其簽發的存取權杖或其使用者名稱和密碼建立）並透過 RFC 8936 輪詢收取的串流——即瀏覽器中的接收端所建立的串流——在其所屬應用程式和 ssf.inactivityTimeoutS 都未設定時使用的 inactivity_timeout（#1094）。每次輪詢都算作活動，因此有開啟分頁的串流永不閒置；分頁關閉後被遺棄的串流依 ssf.personStreamInactivityAction 處理。0 表示關閉。"
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "個人閒置輪詢串流的處理方式"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "ssf.personStreamInactivityTimeoutS 對個人閒置輪詢串流的處理（#1094）。預設的刪除會釋放它在 ssf.maxStreams 下佔用的名額；此人回來時，瀏覽器中的接收端會建立新的串流。"
+  },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",
     "text": "傳送端發起的驗證（秒）"

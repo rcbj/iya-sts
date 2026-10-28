@@ -1257,12 +1257,65 @@ class SsfStreams {
    * @returns the timeout, in seconds; 0 for none
    */
   inactivityTimeout(record?) {
-    const { log } = this.deps;
+    const { log, config } = this.deps;
     log.debug("Entering SsfStreams.inactivityTimeout().");
-    const value = Number(this.ownerSetting(record || null,
-                                           'ssf.inactivityTimeoutS').value);
+    const owned = this.ownerSetting(record || null, 'ssf.inactivityTimeoutS');
+    let value = Number(owned.value);
+    // A PERSON'S BROWSER STREAM (#1094): with no timeout from its owning
+    // application or the realm, a poll stream a person owns takes
+    // `ssf.personStreamInactivityTimeoutS`. A browser receiver polls, so a
+    // stream with a tab open is never idle; one whose tab was closed for
+    // good is. A push stream is left out for the global setting's reason.
+    if (!(value > 0) && owned.source !== 'application' &&
+        this.isPersonPollStream(record)) {
+      value = Number(config.value('ssf.personStreamInactivityTimeoutS'));
+    }
     log.debug("Leaving SsfStreams.inactivityTimeout().");
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  }
+
+  // What an idle stream becomes (#1094): `ssf.inactivityAction` (or its
+  // owning application's), except where the timeout itself is the person
+  // stream default above, which brings its own action.
+  /**
+   * Returns what a stream idle past its timeout becomes: `pause`, `disable`
+   * or `delete`.
+   *
+   * @param record - the stream
+   * @returns the action
+   */
+  inactivityAction(record?) {
+    const { log, config } = this.deps;
+    log.debug("Entering SsfStreams.inactivityAction().");
+    const owned = this.ownerSetting(record || null, 'ssf.inactivityAction');
+    const timeout = this.ownerSetting(record || null,
+                                      'ssf.inactivityTimeoutS');
+    const personDefault = !(Number(timeout.value) > 0) &&
+      timeout.source !== 'application' && owned.source !== 'application' &&
+      this.isPersonPollStream(record);
+    const out = String((personDefault
+      ? config.value('ssf.personStreamInactivityAction') : owned.value) ||
+      'pause');
+    log.debug("Leaving SsfStreams.inactivityAction(). " + out);
+    return out;
+  }
+
+  // A stream a PERSON owns and collects by poll (#1094): what a browser
+  // receiver such as rcbj/oidc-caep-client makes with the person's own token.
+  /**
+   * Says whether a stream is owned by a person and delivered by poll.
+   *
+   * @param record - the stream
+   * @returns true for a person's poll stream
+   */
+  isPersonPollStream(record?) {
+    const { log } = this.deps;
+    log.debug("Entering SsfStreams.isPersonPollStream().");
+    const out = !!record && !this.isInternal(record) &&
+      (record.delivery || {}).method === DELIVERY_POLL &&
+      !!this.ownerPersonOfRecord(record);
+    log.debug("Leaving SsfStreams.isPersonPollStream(). " + out);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -3081,6 +3134,8 @@ export = {
   streamsOwnedBy: slot.forward('streamsOwnedBy'),
   noteActivity: slot.forward('noteActivity'),
   inactivityTimeout: slot.forward('inactivityTimeout'),
+  inactivityAction: slot.forward('inactivityAction'),
+  isPersonPollStream: slot.forward('isPersonPollStream'),
   ownerSetting: slot.forward('ownerSetting'),
   isStreamUpdated: slot.forward('isStreamUpdated'),
   allowedEventsFor: slot.forward('allowedEventsFor'),

@@ -7151,6 +7151,22 @@
     "en": "f6d2a2be3eebe16f",
     "text": "Las tres cosas que permite la sección 8.1.1. Pause y disable envían al receptor un evento stream-updated ANTES de que el flujo se detenga, como exige la especificación; un flujo pausado sigue encolando y uno deshabilitado descarta lo que está esperando. Delete elimina el flujo y no envía nada, porque no queda ningún flujo por el que enviarlo."
   },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "Tiempo de inactividad del flujo sondeado de una persona (s)"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "El inactivity_timeout de un flujo que posee una PERSONA (creado con un token de acceso emitido para ella, o su nombre y contraseña) y que recoge por sondeo RFC 8936 —lo que crea un receptor en el navegador— cuando ni su aplicación propietaria ni ssf.inactivityTimeoutS fijan uno (#1094). Cada sondeo es actividad, así que un flujo con una pestaña abierta nunca está inactivo; uno abandonado al cerrarse su pestaña se trata como indique ssf.personStreamInactivityAction. 0 lo desactiva."
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "En qué se convierte el flujo sondeado inactivo de una persona"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "Lo que ssf.personStreamInactivityTimeoutS hace con el flujo sondeado inactivo de una persona (#1094). Eliminarlo, el valor por defecto, libera el lugar que ocupa bajo ssf.maxStreams; el receptor del navegador crea uno nuevo cuando la persona vuelve."
+  },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",
     "text": "Verificación iniciada por el transmisor (s)"

@@ -7151,6 +7151,22 @@
     "en": "f6d2a2be3eebe16f",
     "text": "第 8.1.1 节允许的三种处理方式。暂停和禁用会在流停止之前向接收方发送 stream-updated 事件，这是规范的要求；已暂停的流会继续排队，已禁用的流则丢弃正在等待的内容。删除会移除该流且不发送任何内容，因为已经没有流可以用来发送了。"
   },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "个人轮询流的不活动超时（秒）"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "由个人拥有（用为其签发的访问令牌或其用户名和密码创建）并通过 RFC 8936 轮询收取的流——即浏览器中的接收方所建立的流——在其所属应用和 ssf.inactivityTimeoutS 都未设置时使用的 inactivity_timeout（#1094）。每次轮询都算作活动，因此有打开标签页的流永不闲置；标签页关闭后被遗弃的流按 ssf.personStreamInactivityAction 处理。0 表示关闭。"
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "个人闲置轮询流的处理方式"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "ssf.personStreamInactivityTimeoutS 对个人闲置轮询流的处理（#1094）。默认的删除会释放它在 ssf.maxStreams 下占用的名额；当此人回来时，浏览器中的接收方会建立新的流。"
+  },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",
     "text": "发送方发起的验证（秒）"

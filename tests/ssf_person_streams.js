@@ -221,6 +221,52 @@ function child() {
            covers(legacy, issSub(people.alice)) === true,
            'a stream from before whose createdBy is a person\'s subject is ' +
            'narrowed to them');
+
+      // --- 7. a person's abandoned browser stream (#1094) ---------------------
+      // A person's POLL stream takes ssf.personStreamInactivityTimeoutS and
+      // its action when nothing else sets a timeout; a person's push stream,
+      // a client's stream and this service's own do not; the realm-wide
+      // setting still wins.
+      const browser = make(people.alice,
+                           { kind: 'person', sub: people.alice, client: 'rp' });
+      const pushed = streams.createStream(
+        { delivery: { method: streamsModule.DELIVERY_PUSH,
+                      endpoint_url: 'https://receiver.test/push' } },
+        { issuer: 'https://sts.test', principal: people.bob,
+          owner: { kind: 'person', sub: people.bob, client: 'rp' },
+          audience: 'https://receiver.test/push' }).stream;
+      const clientStream = make('a-client', { kind: 'client' });
+      const published = function (record) {
+        return streams.streamConfiguration(record, {}).inactivity_timeout;
+      };
+      note(streams.isPersonPollStream(browser) &&
+           streams.inactivityTimeout(browser) === 86400 &&
+           streams.inactivityAction(browser) === 'delete' &&
+           published(browser) === 86400,
+           'a person\'s poll stream times out after a day by default, is ' +
+           'deleted, and publishes its inactivity_timeout (#1094)',
+           JSON.stringify([streams.inactivityTimeout(browser),
+                           streams.inactivityAction(browser)]));
+      note(!!pushed && !streams.isPersonPollStream(pushed) &&
+           streams.inactivityTimeout(pushed) === 0 &&
+           streams.inactivityTimeout(clientStream) === 0 &&
+           streams.inactivityAction(clientStream) === 'pause',
+           'a person\'s push stream and a client\'s stream keep no timeout ' +
+           'and the global action', JSON.stringify(pushed ? pushed.delivery
+                                                          : null));
+      config.setOverride('ssf.inactivityTimeoutS', '300');
+      config.setOverride('ssf.inactivityAction', 'disable');
+      const globalWins = [streams.inactivityTimeout(browser),
+                          streams.inactivityAction(browser)];
+      config.clearOverride('ssf.inactivityTimeoutS');
+      config.clearOverride('ssf.inactivityAction');
+      config.setOverride('ssf.personStreamInactivityTimeoutS', '0');
+      const off = streams.inactivityTimeout(browser);
+      config.clearOverride('ssf.personStreamInactivityTimeoutS');
+      note(globalWins[0] === 300 && globalWins[1] === 'disable' && off === 0,
+           'the realm-wide timeout and action still win, and 0 turns the ' +
+           'person default off', JSON.stringify({ globalWins: globalWins,
+                                                  off: off }));
     });
 
     // --- 1. what kind of party authenticated ---------------------------------

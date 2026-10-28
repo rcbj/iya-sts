@@ -333,6 +333,14 @@ it to `paused` to test a receiver that has to enable its own stream first.
   announced with `stream-updated` first. The value is published on every stream
   configuration while it is set. It is off by default because a push receiver
   never needs to call back after creating its stream.
+* **A person's browser stream times out anyway.** A stream a person owns and
+  collects by poll — what a browser receiver such as `oidc-caep-client` makes
+  with the person's own token — takes `ssf.personStreamInactivityTimeoutS`
+  (a day by default) and `ssf.personStreamInactivityAction` (`delete`) when
+  nothing above sets a timeout. Each poll is activity, so a stream with a tab
+  open never times out; one left behind when its tab was closed, its storage
+  cleared or the person moved browser is removed, and stops counting against
+  `ssf.maxStreams`.
 * **`ssf.verificationEveryS`** (0 by default): every enabled stream is sent a
   verification event, with no `state`, when this transmitter has sent it none
   for that long. **Send a verification event** on `/admin/ssf` does the same
@@ -700,6 +708,8 @@ types from what a stream may ask for.
 | `ssf.maxStreams` | `STS_SSF_MAX_STREAMS` | `25` | yes | Streams per receiver in a realm. A create past the limit is refused with 403, and the refusal names this setting. The console's and portal's own streams do not count. |
 | `ssf.inactivityTimeoutS` | `STS_SSF_INACTIVITY_TIMEOUT_S` | `0` | yes | SSF 1.0 section 8.1.1's `inactivity_timeout`: a stream whose receiver has made no management call about it (and, for a poll stream, no poll) for this long is dealt with as `ssf.inactivityAction` says. `0`, the default, is no timeout. It is off by default because a push receiver never calls back. |
 | `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |
+| `ssf.personStreamInactivityTimeoutS` | `STS_SSF_PERSON_STREAM_INACTIVITY_TIMEOUT_S` | `86400` | yes | The inactivity timeout of a stream a person owns and collects by poll — what a browser receiver makes with the person's own token — when neither its application nor `ssf.inactivityTimeoutS` sets one. Each poll is activity, so only an abandoned stream (its tab closed for good) times out. `0` turns it off. |
+| `ssf.personStreamInactivityAction` | `STS_SSF_PERSON_STREAM_INACTIVITY_ACTION` | `delete` | yes | What that timeout does: `delete` (frees the place under `ssf.maxStreams`), `disable` or `pause`. |
 | `ssf.verificationEveryS` | `STS_SSF_VERIFICATION_EVERY_S` | `0` | yes | Sends every enabled stream a transmitter-initiated verification event (no `state`) when it has had none for this long. `0` sends none on a schedule. |
 | `ssf.streamMaintenanceSweepS` | `STS_SSF_STREAM_MAINTENANCE_SWEEP_S` | `60` | yes | How often the `ssf.stream-maintenance` scheduler job applies the two settings above. |
 | `ssf.maxSubjectsPerStream` | `STS_SSF_MAX_SUBJECTS_PER_STREAM` | `100` | yes | How many subjects one stream may name. |
