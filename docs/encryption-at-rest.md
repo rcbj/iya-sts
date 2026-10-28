@@ -163,6 +163,13 @@ The key management service options are described in detail below.
 * **A value under a data key this process does not hold yet** (one another
   node made a moment ago) is refused (`STS-KEYS-0092`), and the key rows are
   read again in the background.
+* **A replicated change is the exception: it waits for the key.** When a
+  new realm is defined, its data keys are made and its stores seeded in the
+  same moment, so the other processes meet the seed rows' changes before
+  they have read the new keys. Such a change reads the key rows again at
+  once and is then applied; only one whose key is still not held after that
+  (another build's, or a removed realm's) is skipped, and that is said once
+  per key (`STS-STORE-0089`).
 
 ### Development mode
 
