@@ -22,6 +22,10 @@
 //     with their reason.
 //   * WHAT THE DATASETS SAY ABOUT AN ADDRESS (`?address=`), which is the
 //     question an operator asks after loading one.
+//   * WHAT THE FIDO METADATA SAYS ABOUT AN AUTHENTICATOR (`?authenticator=`,
+//     #1080): an AAGUID, an AAID or an attestation certificate key
+//     identifier, answered by `risk_datasets.describeAuthenticator()`, which
+//     says why when it says nothing.
 //   * THE FAILURE HISTORY of a realm: who (a subject, or a name's digest),
 //     from which network, at which door, with which code. Never an address
 //     and never a typed name.
@@ -243,8 +247,8 @@ class RiskAdmin {
 
   // -------------------------------------------------------------------------
   // THE VIEW: what `GET /admin/risk?format=json` and `GET /admin-api/risk`
-  // both answer. `query.address` adds the lookup; `query.offset` pages the
-  // failures.
+  // both answer. `query.address` adds the lookup, `query.authenticator`
+  // the FIDO metadata's (#1080); `query.offset` pages the failures.
   //
   // THE ASSESSMENTS AND THE STANDINGS ARE PAGED (2026-09-26, rcbj), each on
   // a parameter of its own — `assessmentsPage`, `subjectsPage` — with `per`
@@ -264,7 +268,8 @@ class RiskAdmin {
    * both answer: the store, the dataset registry, the failure history, and the
    * assessments and standings, each paged in the store.
    *
-   * @param query - `address` for a lookup, and the paging parameters
+   * @param query - `address` for a lookup, `authenticator` for the FIDO
+   * metadata's, and the paging parameters
    * (`failuresPage`, `assessmentsPage`, `subjectsPage`, `per`)
    * @param realmOnly - true for a realm administrator, who sees the realm's own
    * and nothing of the service's
@@ -300,6 +305,9 @@ class RiskAdmin {
     }
     const address = String(q.address || '').trim();
     const lookup = address ? await datasets.lookup(address, realm) : null;
+    const authenticator = String(q.authenticator || '').trim();
+    const authenticatorLookup = authenticator
+      ? await datasets.describeAuthenticator(authenticator) : null;
     // `subject` narrows the assessments to one person — the link under the
     // risk badge on their Directory → Users page (#62).
     const assessmentsOpts = { name: 'assessments', noun: 'assessments' };
@@ -347,6 +355,7 @@ class RiskAdmin {
       attributions: registry.attributions,
       redistribution: registry.redistribution,
       lookup: lookup,
+      authenticatorLookup: authenticatorLookup,
       assessments: assessed.assessments,
       assessmentsPaging: adminViews.pagingJson(assessmentsPaging),
       subjects: assessed.subjects,

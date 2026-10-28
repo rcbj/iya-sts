@@ -39,6 +39,11 @@
 //      (the walk is handed the verified path, anchor included); a
 //      revocation status that cannot be established is loaded under the
 //      override, and a REVOKED chain is refused even then.
+//   L. THE ADMINISTRATOR'S LOOKUP (#1080, `describeAuthenticator()`): the
+//      kind told by the key's shape, each reason for saying nothing said
+//      (no BLOB, unlisted, the all-zero AAGUID, no key at all), the model
+//      when listed, a stale BLOB still answered and marked, the view's
+//      `authenticatorLookup` and the page that draws it.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -52,6 +57,7 @@ const riskStore = require('../risk/risk_store');
 const riskDatasets = require('../risk/risk_datasets');
 const riskTerms = require('../risk/risk_terms');
 const riskEngine = require('../risk/risk_engine');
+const riskAdmin = require('../admin-ui/risk_admin');
 
 const log = require('bunyan').createLogger({ name: 'risk_mds',
   level: process.env.LOG_LEVEL || 'info' });
@@ -184,6 +190,13 @@ async function run(t) {
           'B4. nor one whose chain ends at somebody else\'s root',
           elsewhere.reason);
 
+  // --- L0. asked before any BLOB is loaded (#1080) -------------------------
+  const before = await riskDatasets.describeAuthenticator(REVOKED);
+  t.check(!before.listed && before.why === 'no-blob' &&
+          before.keyKind === 'aaguid' && before.key === REVOKED,
+          'L0. the administrator\'s lookup says no BLOB is loaded, rather ' +
+          'than nothing', JSON.stringify(before));
+
   // --- C. imported ----------------------------------------------------------
   config.setOverride('risk.mdsTrustAnchors', fido.rootPem);
   await riskTerms.accept({ provider: 'fido-mds3', acceptedBy: 'a test',
@@ -225,6 +238,68 @@ async function run(t) {
           'F1. a revoked model is compromised; an unlisted model and the ' +
           'all-zero AAGUID are unknown', JSON.stringify(revoked));
 
+  // --- L. the administrator's lookup (#1080) ------------------------------
+  // `describeAuthenticator()`: the kind told by the key's shape, the reason
+  // said when nothing is listed, the model when it is; and the view and the
+  // page that carry it.
+  const typedUpper = await riskDatasets.describeAuthenticator(
+    '{' + REVOKED.replace(/-/g, '').toUpperCase() + '}');
+  t.check(typedUpper.listed && typedUpper.keyKind === 'aaguid' &&
+          typedUpper.key === REVOKED && typedUpper.version === 'no-6' &&
+          !typedUpper.stale && typedUpper.model.compromised === true &&
+          typedUpper.model.description === 'Synthetic key, since revoked' &&
+          typedUpper.model.certificationLevel === 'FIDO_CERTIFIED_L1' &&
+          typedUpper.model.statusReports.length === 2 &&
+          !typedUpper.model.metadataStatement.icon,
+          'L1. an AAGUID typed without dashes, in capitals and braces, is ' +
+          'found, with its model, certification, status reports and ' +
+          'statement (no icon)', JSON.stringify(typedUpper));
+  const asked = await Promise.all([
+    riskDatasets.describeAuthenticator('00000000-1111-4222-8333-444444444444'),
+    riskDatasets.describeAuthenticator('00000000-0000-0000-0000-000000000000'),
+    riskDatasets.describeAuthenticator('4E4E#4005'),
+    riskDatasets.describeAuthenticator('ab'.repeat(20)),
+    riskDatasets.describeAuthenticator('not a key'),
+    riskDatasets.describeAuthenticator('1111-2222')]);
+  t.check(asked[0].why === 'not-listed' && asked[0].version === 'no-6' &&
+          asked[1].why === 'all-zero' &&
+          asked[2].keyKind === 'aaid' && asked[2].key === '4e4e#4005' &&
+          asked[2].why === 'not-listed' &&
+          asked[3].keyKind === 'acki' && asked[3].why === 'not-listed' &&
+          asked[4].why === 'not-a-key' && asked[4].keyKind === '' &&
+          asked[5].why === 'not-a-key' &&
+          asked.every(function (a) { return !a.listed && !a.model; }),
+          'L2. each reason for saying nothing is said: unlisted, the ' +
+          'all-zero AAGUID, an AAID and a key identifier by shape, and ' +
+          'something that is no key', JSON.stringify(asked.map(function (a) {
+            return a.keyKind + ':' + a.why;
+          })));
+  const view = await riskAdmin.riskView({ authenticator: REVOKED });
+  t.check(view.authenticatorLookup && view.authenticatorLookup.listed &&
+          view.lookup === null,
+          'L3. GET /admin/risk?authenticator= (and its /admin-api twin) ' +
+          'answers it as authenticatorLookup',
+          JSON.stringify(view.authenticatorLookup));
+  const RiskPage = require('../admin-ui/web_risk');
+  const pageT = require('../admin-ui/web_kit').context({}, true).t;
+  const listedHtml = RiskPage.authenticatorHtml(
+    JSON.parse(JSON.stringify(view)), pageT);
+  const refusedHtml = RiskPage.authenticatorHtml(
+    { realm: '', authenticatorLookup: asked[4] }, pageT);
+  const formOnly = RiskPage.authenticatorHtml({ realm: '' }, pageT);
+  t.check(/name="authenticator"/.test(formOnly) &&
+          formOnly.indexOf('risk-authenticator"') < 0 &&
+          listedHtml.indexOf('Synthetic key, since revoked') >= 0 &&
+          /id="risk-authenticator-compromised"/.test(listedHtml) &&
+          listedHtml.indexOf('FIDO_CERTIFIED_L1') >= 0 &&
+          /<details><summary>Metadata statement/.test(listedHtml) &&
+          /id="risk-authenticator-why">No: that is not an AAGUID/
+            .test(refusedHtml) &&
+          refusedHtml.indexOf('<details>') < 0,
+          'L4. the page draws the form, the listed model with its ' +
+          'compromise, and the reason when nothing is listed',
+          listedHtml + ' ' + refusedHtml);
+
   // --- G. stale -------------------------------------------------------------
   const due = await riskDatasets.importVersion({ dataset: 'fido.mds3',
     format: 'fido-mds3-jwt',
@@ -233,10 +308,15 @@ async function run(t) {
   const withinGrace = await riskDatasets.lookupAuthenticator(REVOKED);
   config.setOverride('risk.mdsStaleGraceDays', 0);
   const pastGrace = await riskDatasets.lookupAuthenticator(REVOKED);
+  const staleAsked = await riskDatasets.describeAuthenticator(REVOKED);
   config.setOverride('risk.mdsStaleGraceDays', 7);
   t.check(due.ok && withinGrace !== null && pastGrace === null,
           'G1. a BLOB past its nextUpdate answers within the grace, and ' +
           'says nothing after it');
+  t.check(staleAsked.listed && staleAsked.stale &&
+          staleAsked.version === 'no-7',
+          'L5. the administrator\'s lookup still answers from a stale BLOB, ' +
+          'and says it is stale (#1080)', JSON.stringify(staleAsked));
 
   // --- H. scored -----------------------------------------------------------
   const assessed = await riskEngine.assess({ realm: '', subject:
@@ -517,6 +597,7 @@ module.exports = {
             'refused, the latest only, a revoked model found by AAGUID, ' +
             'staleness past nextUpdate, a sign-in with such a key HIGH ' +
             'even when the model scores below 0.2, and the administrator\'s ' +
-            'signature override',
+            'signature override, and the administrator\'s lookup of a key ' +
+            '(#1080)',
   run: run
 };

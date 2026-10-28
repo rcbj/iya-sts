@@ -3838,7 +3838,14 @@ class AdminApi {
                      'the `formats` a file may be in; with `address`, what ' +
                      'the active datasets say about it in `lookup` (`geo`, ' +
                      '`asn`, `lists`, the `datasets` versions that answered ' +
-                     'and any `stale` ones left out); and a page of the ' +
+                     'and any `stale` ones left out); with ' +
+                     '`authenticator`, what the active FIDO MDS3 BLOB says ' +
+                     'about that key in `authenticatorLookup` (`keyKind`, ' +
+                     '`key`, `listed`, `why` when it is not, `version`, ' +
+                     '`stale`, and the listed `model`: `description`, ' +
+                     '`protocolFamily`, `certificationLevel`, ' +
+                     '`latestStatus`, `compromised`, `statusReports`, ' +
+                     '`metadataStatement`); and a page of the ' +
                      'realm\'s refused passwords in `failures` — a subject ' +
                      'or a name\'s digest, the door, the network prefix, the ' +
                      'ASN and the code, never an address. A page of the ' +
@@ -3859,6 +3866,11 @@ class AdminApi {
           { name: 'address', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'An IPv4 or IPv6 address to look up.' },
+          { name: 'authenticator', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'An AAGUID, an AAID (`XXXX#XXXX`) or an ' +
+                         'attestation certificate key identifier (40 hex ' +
+                         'digits) to look up in the FIDO metadata (#1080).' },
           { name: 'level', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Only the assessments at this level.' },
@@ -3883,6 +3895,7 @@ class AdminApi {
                              'assessments and the standings.',
         responseSchema: { type: 'object',
           description: '`store`, `datasets`, `formats`, `lookup`, ' +
+                       '`authenticatorLookup`, ' +
                        '`failures`, `failuresPaging`, `assessments`, ' +
                        '`assessmentsPaging`, `subjects`, `subjectsPaging`.' },
         handler: function (req, res) {

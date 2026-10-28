@@ -369,6 +369,10 @@ chains to a root the service trusts.
 1. **Load the FIDO Metadata Service (MDS3) BLOB** on **Monitoring → Risk**, or
    point `risk.mdsUrl` at it. It gives the roots and the status of every
    certified model. See [The FIDO metadata](risk-scoring.md#the-fido-metadata).
+   To check what it says about one model, for example before you put its
+   AAGUID in `webauthn.attestationAllowedAaguids`, use **Look up an
+   authenticator** on the same page
+   ([Looking up an authenticator](risk-scoring.md#looking-up-an-authenticator)).
 2. **Optionally add roots of your own** in `webauthn.attestationTrustAnchors`
    (a PEM bundle): a corporate CA, a vendor root or a test root.
 3. **Choose what to require:**

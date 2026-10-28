@@ -1615,6 +1615,110 @@ class RiskDatasets {
     return model ? { model: model, version: active.version } : null;
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT THE METADATA SAYS ABOUT ONE KEY, FOR AN ADMINISTRATOR (#1080):
+  // Monitoring → Risk's *Look up an authenticator* and `GET /admin-api/risk
+  // ?authenticator=`. The two lookups above answer null for four different
+  // reasons, which is right for something that decides — unknown never
+  // denies — and useless to a person asking, so this one says which, as a
+  // token the page translates (the API stays language-free). **It
+  // decides nothing and nothing that decides reads it.**
+  //
+  // The kind is told by the key's SHAPE, so the form is one box: a UUID is
+  // an AAGUID (dashes optional, as some tools print it), `XXXX#XXXX` an AAID,
+  // forty hex digits an attestation certificate key identifier (a SHA-1).
+  // A STALE BLOB IS STILL ASKED, and the answer says `stale`: the
+  // administrator is asking what the loaded metadata says, and the
+  // attestation and the score — which ignore a stale BLOB — are unchanged.
+  // -------------------------------------------------------------------------
+  /**
+   * Says what the active FIDO metadata says about one authenticator key, and
+   * why it says nothing when it does. Never rejects; decides nothing.
+   *
+   * @param input - an AAGUID, an AAID or an attestation certificate key
+   *   identifier, as typed
+   * @returns `{ input, keyKind, key, listed, why, version, stale, model,
+   *   attributions }` — `why`, when not listed, one of `not-a-key`,
+   *   `all-zero`, `no-blob`, `not-listed`, `unreadable` (with `detail`)
+   */
+  async describeAuthenticator(input: string): Promise<Json> {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskDatasets.describeAuthenticator().");
+    const typed = String(input || '').trim();
+    const out: Json = { input: typed, keyKind: '', key: '', listed: false,
+                        why: '', version: '', stale: false, model: null,
+                        attributions: [] };
+    const bare = typed.toLowerCase().replace(/^\{|\}$/g, '');
+    const hex = bare.replace(/-/g, '');
+    if (/^[0-9a-f]{32}$/.test(hex) &&
+        (bare === hex || /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
+          .test(bare))) {
+      out.keyKind = 'aaguid';
+      out.key = hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' +
+        hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+    } else if (/^[0-9a-f]{4}#[0-9a-f]{4}$/.test(bare)) {
+      out.keyKind = 'aaid';
+      out.key = bare;
+    } else if (/^[0-9a-f]{40}$/.test(bare)) {
+      out.keyKind = 'acki';
+      out.key = bare;
+    } else {
+      out.why = 'not-a-key';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Not a key.");
+      return out;
+    }
+    if (out.keyKind === 'aaguid' && /^[0-]+$/.test(out.key)) {
+      out.why = 'all-zero';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Zero.");
+      return out;
+    }
+    let active: Json = null;
+    try {
+      active = (await this.activeVersions()).get('\u0000fido.mds3');
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.describeAuthenticator(): " +
+                ((e && e.message) || e));
+      // Said, not thrown: the page must still draw.
+      out.why = 'unreadable';
+      out.detail = String((e && e.message) || e);
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Unread.");
+      return out;
+    }
+    if (!active) {
+      out.why = 'no-blob';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). No BLOB.");
+      return out;
+    }
+    out.version = String(active.version || '');
+    out.stale = this.isStale(CATALOGUE['fido.mds3'], active, now());
+    const credit = riskTerms.attributionOf(active.provider);
+    if (credit) {
+      out.attributions.push(credit);
+    }
+    let model: Json = null;
+    try {
+      model = await store.lookupFido('fido.mds3', active.version, out.keyKind,
+                                     out.key);
+    } catch (e) {
+      log.debug("Caught in RiskDatasets.describeAuthenticator(): " +
+                ((e && e.message) || e));
+      // As above: a store that cannot answer is said on the page.
+      out.why = 'unreadable';
+      out.detail = String((e && e.message) || e);
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Failed.");
+      return out;
+    }
+    if (!model) {
+      out.why = 'not-listed';
+      log.debug("Leaving RiskDatasets.describeAuthenticator(). Unlisted.");
+      return out;
+    }
+    out.listed = true;
+    out.model = model;
+    log.debug("Leaving RiskDatasets.describeAuthenticator(). Listed.");
+    return out;
+  }
+
   // What the FIDO metadata is, for `/admin/webauthn` and its API (#105): the
   // active BLOB's serial, version, nextUpdate and whether it is stale, and
   // where the next one comes from.
@@ -2492,6 +2596,7 @@ export = {
   androidSerialKey: RiskDatasets.androidSerialKey,
   androidStatusRowsOf: RiskDatasets.androidStatusRowsOf,
   lookupAuthenticatorBy: slot.forward('lookupAuthenticatorBy'),
+  describeAuthenticator: slot.forward('describeAuthenticator'),
   mdsState: slot.forward('mdsState'),
   mdsSnapshot: slot.forward('mdsSnapshot'),
   refreshMds: slot.forward('refreshMds'),
