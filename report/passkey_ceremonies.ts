@@ -23,8 +23,9 @@
 // WHAT A ROW CARRIES is the catalog's field list and nothing else. The
 // folded `authenticator` field is read back through
 // `webauthn_ceremonies.unfold()`, which also reads a row written before
-// #1108 (separate `attachment`, `transports`, `attestation`), so the source
-// answers the same over a ring that holds both shapes. `postQuantum` and
+// #1108 (separate `attachment`, `transports`, `attestation`) and one with
+// #1114's capabilities on `client` after a `|`, so the source answers the
+// same over a ring that holds every shape. `postQuantum` and
 // `postQuantumOffered` are derived from the algorithm names with
 // `passkey_policy.isPostQuantum()`, the one test of what is post-quantum.
 // An address, a summary sentence and a session are not copied.
@@ -108,7 +109,8 @@ class PasskeyCeremonyRows {
         return n.trim();
       }).filter(Boolean) : [];
       const unfolded = mismatch
-        ? { attachment: '', transports: '', attestation: '' }
+        ? { attachment: '', transports: '', attestation: '',
+            client: String(d.client || ''), capabilities: '' }
         : ceremonies.unfold(d);
       const duration = Number(d.durationMs);
       out.push({
@@ -130,9 +132,11 @@ class PasskeyCeremonyRows {
         algorithm: algorithm,
         postQuantum: pq(algorithm),
         held: mismatch ? String(d.held || '') : '',
-        client: String(d.client || ''),
+        // The plain client, and the capabilities wherever the row kept
+        // them (their own field, or after a `|` on `client`, #1114).
+        client: String(unfolded.client || ''),
         clientError: String(d.clientError || ''),
-        capabilities: String(d.capabilities || ''),
+        capabilities: String(unfolded.capabilities || ''),
         attachment: String(unfolded.attachment || ''),
         transports: String(unfolded.transports || ''),
         attestation: String(unfolded.attestation || ''),

@@ -89,6 +89,10 @@ function ring() {
       offered: 'ML-DSA-65,ES256', algorithm: 'ML-DSA-65',
       client: 'Chrome 141 on macOS 15',
       authenticator: 'platform|internal,hybrid|ML-DSA-65 (PQ)' }),
+    // #1114's shape, between the two: capabilities on the client.
+    ceremony(9, 'success', { ceremony: 'assertion', door: 'portal',
+      algorithm: 'ES256', postQuantum: false, attachment: 'platform',
+      client: 'Chrome 141 on macOS 15|conditionalGet,hybridTransport' }),
     // A classical-only registration that failed: not an ML-DSA one.
     ceremony(5, 'refused', { ceremony: 'registration', door: 'portal',
       role: 'mfa', lane: 'classical',
@@ -153,7 +157,7 @@ function projection(t) {
   log.debug('Entering projection().');
   const sources = require('../report/sources');
   const rows = sources.passkeyCeremonyRows(ring());
-  t.equal(rows.length, 7, 'B. seven of the eight rows are ceremonies');
+  t.equal(rows.length, 8, 'B. eight of the nine rows are ceremonies');
   const one = rows[0];
   t.check(one.kind === 'ceremony' && one.ceremony === 'registration' &&
     one.outcome === 'refused' && one.errorCode === 'STS-AUTHN-0022' &&
@@ -171,7 +175,13 @@ function projection(t) {
     old.application === '',
     'B3. a row from before #1108 reads the same way, with no duration',
     JSON.stringify(old));
-  const narrowed = rows[4];
+  const between = rows[4];
+  t.check(between.client === 'Chrome 141 on macOS 15' &&
+    between.capabilities === 'conditionalGet,hybridTransport' &&
+    between.attachment === 'platform',
+    'B3-iii. a row with #1114\'s capabilities on the client reads them ' +
+    'apart', JSON.stringify(between));
+  const narrowed = rows[5];
   t.check(narrowed.offered === 'ES256,RS256' &&
     narrowed.offerRule === 'learned: Safari 18 on iOS 18' &&
     narrowed.offeredFirst === 'ES256' &&

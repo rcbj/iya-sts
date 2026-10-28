@@ -470,8 +470,9 @@ provisioned for, so this service asks for it only where you list the RP ID.
 A registration at a listed RP ID asks for `enterprise`. **At any other RP ID
 it asks for `direct`**, and says so in two places: the passkey's attestation
 record carries `conveyance: direct` and `enterpriseDowngraded: true`, and the
-registration's `webauthn.ceremony` audit row's `attestation` detail begins
-`enterprise not listed, asked direct`. A registration at a listed RP ID
+attestation part of the registration's `webauthn.ceremony` audit row
+(the third part of its `authenticator` detail) begins `enterprise not
+listed, asked direct`. A registration at a listed RP ID
 records `conveyance: enterprise`.
 
 **The device serial is read only from a statement an enterprise request
