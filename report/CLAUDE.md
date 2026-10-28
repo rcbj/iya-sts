@@ -362,8 +362,12 @@ has the design. This family's half:
   application. Paged with `page` and `per` (at most 100). Each row carries
   what the application did: the sessions it ended and the tokens of
   `sts-report` it revoked for the person.
-* The Signals page (`drawSignals()`) draws it, with sixteen `report.signals*`
-  words in every catalog.
+* **No page draws it since #1090** (rcbj: "it serves no purpose"): the
+  Signals tab, `drawSignals()` and its sixteen `report.signals*` words went.
+  The receiver stays — it acts on CAEP and RISC and takes announcements
+  (#1086) — and so does this API, whose access rules
+  `tests/report_access_policy.js` holds. Refresh moved to the top bar,
+  beside the Trust realm field.
 
 **A DISABLED OWNER'S SCHEDULES STOP.** A disable ends what the person holds
 and refuses their next sign-in, and a schedule they owned went on running

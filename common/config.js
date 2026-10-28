@@ -13552,8 +13552,10 @@ const SETTINGS = [
                  '(#1042), so that each takes delivery of every CAEP and ' +
                  'RISC event — collecting them over RFC 8936 poll from this ' +
                  'service\'s own /ssf/poll every ssf.internalPollMs (#771) — ' +
-                 'and draws what arrived at /admin/signals, /portal/signals ' +
-                 'and /report/signals. They are ORDINARY ' +
+                 'and draws what arrived at /admin/signals and ' +
+                 '/portal/signals; the reports application answers its own at ' +
+                 'GET /report-api/signals and draws no page of it (#1090). ' +
+                 'They are ORDINARY ' +
                  'streams — pause one, narrow it or delete it at /admin/ssf ' +
                  'and it stays that way until a restart.' },
 

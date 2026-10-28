@@ -213,7 +213,10 @@ const SURFACES = [
     audience: 'sts-report',
     rpSurface: 'report',
     receivePath: '/report/signals/receive',
-    inboxPath: '/report/signals',
+    // NO PAGE SINCE #1090 (rcbj: the tab served no purpose): what arrived
+    // is answered by the API alone, so that is where the sentences send a
+    // reader.
+    inboxPath: '/report-api/signals',
     sees: 'own',
     what: 'This service\'s own reports application, at /report. It takes ' +
           'every CAEP and RISC event in the realm; a report administrator ' +

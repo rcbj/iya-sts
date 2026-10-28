@@ -14,15 +14,16 @@ and the reports application at `/report`.
 Each has a stream of its own, seeded when the service starts, asking for **every
 CAEP event type and every RISC event type**. Each collects what its stream
 holds over RFC 8936 poll, from this service's own `/ssf/poll`, every
-`ssf.internalPollMs` (a second by default). And each draws what arrived on a
-page:
+`ssf.internalPollMs` (a second by default). The console and the portal draw
+what arrived on a page; the reports application has no page for it and
+answers it at `GET /report-api/signals`:
 
 | Page | Who it is for | What it shows |
 |---|---|---|
 | `/admin/signals` | an operator | every event delivered in the trust realm being read |
 | `/portal/signals` | a person | only the events whose subject is them |
-| `/report/signals` | a report administrator | every event delivered to the reports application in the realm |
-| `/report/signals` | anybody else who may use reports | only the events whose subject is them |
+| `GET /report-api/signals` | a report administrator | every event delivered to the reports application in the realm |
+| `GET /report-api/signals` | anybody else who may use reports | only the events whose subject is them |
 
 There is nothing to configure to get this. If you sign in to this service and
 then open any of these pages, what you did is on it.
@@ -195,7 +196,7 @@ These rules can't be relaxed by any policy:
 - **Development mode records what it would have done** and ends nothing,
   unless `ssf.actOnSignalsInDevelopment` is on. Product mode acts.
 
-Each row on `/admin/signals`, `/portal/signals` and `/report/signals` says
+Each row on `/admin/signals`, `/portal/signals` and `GET /report-api/signals` says
 what was done with that event: how many tokens were revoked, or why nothing
 was.
 

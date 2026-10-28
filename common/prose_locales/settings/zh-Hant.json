@@ -7088,8 +7088,8 @@
     "text": "將控制台、入口網站和報表註冊為接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "此服務是否為其自身的管理控制台、使用者入口網站和報表應用程式 (#1042) 建立 Shared Signals 串流，使每個都能接收每個 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從此服務自己的 /ssf/poll 收取 (#771)——並在 /admin/signals、/portal/signals 和 /report/signals 顯示收到的內容。它們是一般的串流——在 /admin/ssf 暫停、縮小範圍或刪除其中一個，它會維持該狀態直到重新啟動。"
+    "en": "603011e249d33c00",
+    "text": "本服務是否為其自己的管理主控台、使用者入口網站和報表應用程式建立 Shared Signals 串流（#1042），使每個都接收每個 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 和 /portal/signals 顯示收到的內容；報表應用程式在 GET /report-api/signals 回答它自己的，不為其繪製頁面（#1090）。它們是一般的串流——在 /admin/ssf 暫停、收窄或刪除其中一個，它會保持如此直到重新啟動。"
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",

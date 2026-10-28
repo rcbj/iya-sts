@@ -7088,8 +7088,8 @@
     "text": "Irehistro ang console, ang portal at ang mga ulat bilang mga receiver"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console, user portal at application ng mga ulat (#1042), upang matanggap ng bawat isa ang bawat CAEP at RISC na kaganapan — kinukuha sa pamamagitan ng RFC 8936 poll mula sa sariling /ssf/poll ng serbisyo tuwing ssf.internalPollMs (#771) — at ipinapakita ang dumating sa /admin/signals, /portal/signals at /report/signals. Mga KARANIWANG stream ang mga ito — i-pause, paliitin o burahin ang isa sa /admin/ssf at mananatili itong ganoon hanggang sa muling pag-start."
+    "en": "603011e249d33c00",
+    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console, user portal at reports application (#1042), upang matanggap ng bawat isa ang bawat CAEP at RISC event — kinukuha sa pamamagitan ng RFC 8936 poll mula sa sariling /ssf/poll ng serbisyong ito bawat ssf.internalPollMs (#771) — at ipakita ang dumating sa /admin/signals at /portal/signals; sinasagot ng reports application ang sarili nito sa GET /report-api/signals at walang pahina para dito (#1090). Mga KARANIWANG stream ang mga ito — i-pause ang isa, paliitin o burahin ito sa /admin/ssf at mananatili itong ganoon hanggang sa susunod na restart."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",

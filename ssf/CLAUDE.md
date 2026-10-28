@@ -655,8 +655,8 @@ audit row says both.
 **`/report` IS THE THIRD SURFACE** (`id: 'report'`, audience `sts-report`,
 `sees: 'own'`): a stream per realm seeded with the others, polled by the
 same job, a receive endpoint at `/report/signals/receive` for a stream set
-back to push (`report/report_app.ts`), and `GET /report-api/signals` with
-the application's Signals page. The receiver row says `own` — the portal's
+back to push (`report/report_app.ts`), and `GET /report-api/signals`
+(the application's Signals page was removed by #1090; the API stays). The receiver row says `own` — the portal's
 fail-closed rule — and the report API widens it to the realm for a report
 ADMINISTRATOR (`rights.isAdmin()`), as the console sees everything for an
 administrator; an application caller sees nothing.

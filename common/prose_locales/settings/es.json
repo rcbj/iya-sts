@@ -7088,8 +7088,8 @@
     "text": "Registrar la consola, el portal y los informes como receptores"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "Indica si este servicio crea un flujo de Shared Signals para su PROPIA consola de administración, su portal de usuario y su aplicación de informes (#1042), de modo que cada uno reciba todos los eventos CAEP y RISC —recogiéndolos por sondeo RFC 8936 desde el /ssf/poll de este servicio cada ssf.internalPollMs (#771)— y muestre lo recibido en /admin/signals, /portal/signals y /report/signals. Son flujos ORDINARIOS: pause uno, restrínjalo o elimínelo en /admin/ssf y se mantendrá así hasta un reinicio."
+    "en": "603011e249d33c00",
+    "text": "Si este servicio crea un flujo de Shared Signals para su PROPIA consola de administración, portal de usuario y aplicación de informes (#1042), de modo que cada uno reciba todos los eventos CAEP y RISC —recogiéndolos por sondeo RFC 8936 desde el /ssf/poll de este servicio cada ssf.internalPollMs (#771)— y muestre lo recibido en /admin/signals y /portal/signals; la aplicación de informes responde el suyo en GET /report-api/signals y no muestra ninguna página de él (#1090). Son flujos ORDINARIOS: pausa uno, restríngelo o elimínalo en /admin/ssf y seguirá así hasta un reinicio."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",
