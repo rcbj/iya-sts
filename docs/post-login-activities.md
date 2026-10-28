@@ -7,12 +7,14 @@ title: "Post-login activities"
 A **post-login activity** is something a realm asks a person to do after they
 sign in, before they are sent back to the application. In iya-sts it is a
 policy: you switch it on per realm, and you target it at people by group.
+[Passkeys → Post-login activities](passkeys.md#post-login-activities-moving-people-to-post-quantum-passkeys)
+walks through a rollout; this page is the reference.
 
 One activity exists today:
 
 | Activity | What the person is asked |
 |---|---|
-| `pqc-passkey-migration` | To register a **post-quantum (ML-DSA) passkey**. A person who signs in with a classical passkey is asked for one to sign in with. A person whose second factor is a classical passkey is asked for one as a second factor. A person with no passkey can be invited or required to register one. |
+| `pqc-passkey-migration` | To register a **post-quantum (ML-DSA) passkey**. A person who holds a classical passkey to sign in with is asked for an ML-DSA one to sign in with. A person whose second factor is a classical passkey is asked for one as a second factor. A person with no passkey can be invited or required to register one. |
 
 More activities will use the same policy and the same step.
 
@@ -49,7 +51,7 @@ Open **Directory → Policies → Post-login activity policy** in the
 | A person with no passkey (`noPasskey`) | `leave` | `leave`: not asked. `invite`: asked, and can always skip. `require`: asked, and can skip only until the allotted time has passed. |
 | Registered by a person with no passkey as (`noPasskeyRole`) | `primary` | `primary`: a passwordless sign-in. `mfa`: a second factor. |
 | How a classical passkey is migrated (`method`) | `automatic` | `upgrade`: the person uses the classical passkey once, then an ML-DSA passkey **replaces it in place** on the same authenticator. `alongside`: an ML-DSA passkey is added beside it. `automatic`: `alongside` where the person's passkey policy offers two lanes, `upgrade` where it offers one. |
-| A passkey counts as post-quantum when (`attestation`) | `any` | `any`: its key algorithm is ML-DSA. `post-quantum`: its recorded attestation is post-quantum too; a person whose ML-DSA passkey has a classical attestation is asked for one beside it. |
+| A passkey counts as post-quantum when (`attestation`) | `any` | `any`: its key algorithm is ML-DSA. `post-quantum`: its recorded attestation is post-quantum too; a person whose ML-DSA passkey has a classical attestation, or none recorded, is asked for one beside it, whatever `method` says. |
 | A person with no passkey whose device cannot make ML-DSA (`noPasskeyFallback`) | `none` | `none`: ML-DSA only. `classical`: a retry with the classical algorithms is offered after the ML-DSA registration fails — a classical passkey is better than a password, and the person is asked to migrate it later. |
 
 ### Targeting by group
@@ -81,8 +83,9 @@ POST /admin-api/policies/save-postLogin-policy
 1. They sign in at the sign-in screen as usual: password, passkey, one-time
    code, and so on.
 2. If they are due the activity, the session is **held, not started**. They see
-   `/authn/post-login` (**Register a post-quantum passkey**), with **Register**,
-   **Skip for N day(s)** while skipping is still allowed, and **Start over**.
+   `/authn/post-login` (**Register a post-quantum passkey**), with **Register
+   a post-quantum passkey**, **Skip for N day(s)** while skipping is still
+   allowed, and **Start over**.
 3. **Register** goes to the passkey page. For an **upgrade** the person first
    uses their classical passkey once, then creates the ML-DSA passkey on the
    same authenticator, which replaces the old one there and here: one
@@ -97,8 +100,11 @@ POST /admin-api/policies/save-postLogin-policy
 **If the device cannot make it.** When the browser reports that the ceremony
 did not complete, the person is taken back to the post-login page, which
 names the error and says what to do: register on a separate security key
-that supports ML-DSA, or ask an administrator, who can register one for them
-(Directory → Users); and Skip, while it is still allowed. Each such failure
+that supports ML-DSA, or ask an administrator; and Skip, while it is still
+allowed. On the person's page under Directory → Users an administrator can
+upgrade a classical passkey, or enrol a passkey where the person's passkey
+policy has `adminEnrolment` on
+([Passkeys](passkeys.md#an-administrator-enrols-a-passkey)). Each such failure
 leaves an audit row `authn.post-login.unsupported` with the error name and
 the browser and platform, so you can see where the move is stalling. Filter
 the audit log (`/admin/audit`) by that action.
@@ -126,6 +132,11 @@ were asked and skipped, whether they did it, when the allotted time ends, and
 whether it already has. Its page offers three predefined queries — progress
 by activity, the people past their grace period, and the people who skipped
 most. See [Reports](reporting.md#postloginprogress) for every field.
+Two more sources follow the passkeys themselves:
+[`passkeyHistory`](reporting.md#passkeyhistory), the share of people
+holding an ML-DSA passkey day by day, and
+[`passkeyCeremonies`](reporting.md#passkeyceremonies), where registrations
+fail and on which clients.
 
 ## Mail campaigns
 
@@ -151,7 +162,7 @@ the people it starts again from the beginning; that next pass sends the
 reminders.
 
 - **The mail only sends the person to sign in.** Its one link opens the
-  sign-in page. It carries no code or token and nothing about the person. The
+  user portal (`/portal`), which sends them to the sign-in page. It carries no code or token and nothing about the person. The
   activity is asked at the sign-in, as always.
 - **It goes to the address on the person's entry**, never one from a request.
   Somebody with no address, or who declined notifications on `/portal/email`,
