@@ -179,5 +179,17 @@
   "accounts.anotherHeading": "其他帳號",
   "accounts.another": "使用其他帳號",
   "accounts.full": "此瀏覽器已登入 {max} 個帳號，已達上限。請登出其中一個帳號後再使用其他帳號。",
-  "accounts.signingInFor": "登入用於：<code>{protocol}</code>"
+  "accounts.signingInFor": "登入用於：<code>{protocol}</code>",
+  "postLogin.title": "還有一步 — 身分驗證服務",
+  "postLogin.heading": "註冊後量子通行金鑰",
+  "postLogin.subClassicalPrimary": "{name}，您使用以傳統演算法建立的通行金鑰登入。請再註冊一個後量子（ML-DSA）通行金鑰用於登入；您現有的通行金鑰仍可繼續使用。",
+  "postLogin.subClassicalMfa": "{name}，您的第二因素是以傳統演算法建立的通行金鑰。請再註冊一個後量子（ML-DSA）通行金鑰作為第二因素；您現有的通行金鑰仍可繼續使用。",
+  "postLogin.subNonePrimary": "{name}，請註冊一個用於登入的通行金鑰：後量子（ML-DSA）通行金鑰。",
+  "postLogin.subNoneMfa": "{name}，請註冊一個作為第二因素的通行金鑰：後量子（ML-DSA）通行金鑰。",
+  "postLogin.device": "您的裝置或瀏覽器必須能夠建立 ML-DSA 通行金鑰。否則註冊會失敗，且不會有任何變更。",
+  "postLogin.required": "允許的期限已過：請註冊通行金鑰以完成登入。",
+  "postLogin.until": "在 {date} 之前您可以略過此步驟；之後此步驟為必要。",
+  "postLogin.registerButton": "註冊後量子通行金鑰",
+  "postLogin.skipButton": "略過 {days} 天",
+  "postLogin.passkeyHeading": "註冊您的後量子通行金鑰"
 }

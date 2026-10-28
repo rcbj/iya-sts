@@ -1571,6 +1571,10 @@
     "en": "48e0b4bbb949a879",
     "text": "必要的第二因素設定步驟"
   },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "登入後活動步驟"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "一次性代碼第二因素步驟"
@@ -1718,6 +1722,14 @@
   "endpoints.route./authn-api/mfa/:id/skip.name": {
     "en": "d412e3d8a9215328",
     "text": "忽略所提供的第二要素"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "註冊登入後活動所要求的密碼金鑰"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "延後一項登入後活動"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

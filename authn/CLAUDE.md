@@ -3782,3 +3782,31 @@ seconds, minimum 0, read at the issuance. Zero means the wait has already
 elapsed. The fact inside `common/issuance_gate.js` is computed there.
 That file is in the Kerberos COPY closure and does not require this
 module; the two readings have to stay the same.
+
+## A SESSION HELD FOR A POST-LOGIN ACTIVITY (#1096, 2026-10-28; rule 3ct)
+
+`startSessionHere()` asks `postLogin.dueFor()` LAST of its refusals, so a
+held sign-in is one that would otherwise have started. **The session is held,
+not started and interrupted**: a live session could be taken straight back to
+the application, and a required activity (rcbj: "block the sign-in") would be
+one click from skipped.
+
+* **Only the screen's own doors hold** — the eleven `said` objects marked
+  `postLoginHold: true`, every door that calls `refusedSession()` with a
+  pending record. `refusedSession()` turns `extra.postLogin` into the step
+  (`postLoginStep()`, `factor: 'post-login'`, the door's amr/acr/credential
+  kept as `held`) on `/authn/post-login`; `finishPostLogin()` starts the held
+  session with `postLoginDone` once Register's ceremony verifies or Skip is
+  taken. A door that cannot draw the step (federation, wallet, SPNEGO,
+  certificate, anything outside this file) is NOT interrupted for a
+  skippable activity and is REFUSED for a required one (STS-AUTHN-0473).
+* **A post-login step is answered to no other step's act**
+  (`mfaStepFor(id, accepts)`): a code, a recovery code or a wallet posted to
+  its id would start the held session without the activity.
+* **The registration is ML-DSA only with no classical retry** (#939's
+  `upgradeAlgorithms()`), in the post-quantum lane where both are on and the
+  one lane otherwise; and it is exempt from product mode's "no primary key at
+  the sign-in screen" (STS-AUTHN-0206), because the step exists only after a
+  complete authentication.
+* **No protocol test yet**: `tests/post_login.js` drives it over HTTP in
+  process.

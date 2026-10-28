@@ -1731,6 +1731,178 @@
     "en": "36e7b5eba26472f2",
     "text": "Hindi na tinutukoy ang custom attribute na {{name}} sa realm na ito."
   },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "Post-login activity policy"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "kung ano ang hinihinging gawin ng tao pagkatapos mag-sign in, bago siya ibalik sa application — sa ngayon, ang mag-register ng post-quantum na passkey"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "ang SUSUNOD na pag-sign in ng bawat taong naaabot ng profile sa realm na ito; hindi ginagambala ang session na nagsimula na"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "ang profile ng default na realm kung mayroon ito, at ang mga built-in na default (walang hinihingi sa sinuman) kung wala"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "post-login activity policy profile"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "Magtanong pagkatapos mag-sign in"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "4c8090556412a140",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may nakatakdang activity sa ibaba ay hinihiling na gawin ito pagkatapos mag-sign in, bago siya ibalik sa application. Ang named profile na naka-off ito ay HINDI SINASAKLAW ang mga miyembro ng mga group nito."
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "Activity"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "1c027feada595f34",
+    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Pinananatili ang classical na passkey. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "Ipinagpapaliban ito ng Skip nang"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Gaano katagal ipinagpapaliban ng Skip ang activity para sa taong iyon."
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "Itinakdang panahon"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Binibilang mula sa UNANG imbitasyon sa tao. Kapag lumipas na ito, nawawala ang Skip at pinipigil ang sign-in — walang session na sinisimulan — hanggang magawa ang activity. Ang 0 ay walang deadline: puwede itong i-skip palagi."
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "Taong walang passkey"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: hindi tinatanong. invite: hinihiling na mag-register ng post-quantum na passkey, at puwede itong i-skip palagi. require: hinihiling, at puwede lang itong i-skip hanggang lumipas ang itinakdang panahon."
+  },
+  "postLogin.FIELDS.noPasskeyRole.label": {
+    "en": "c8ec4e469545eb61",
+    "text": "Ini-register ng taong walang passkey bilang"
+  },
+  "postLogin.FIELDS.noPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: isang passwordless na sign-in. mfa: isang second factor."
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "7ac360a6d70b525c",
+    "text": "Ang class ng serbisyong ito para sa post-login activity profile: kung ano ang hinihinging gawin ng tao pagkatapos mag-sign in. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinipili ayon sa group)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "4c8090556412a140",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may nakatakdang activity sa ibaba ay hinihiling na gawin ito pagkatapos mag-sign in, bago siya ibalik sa application. Ang named profile na naka-off ito ay HINDI SINASAKLAW ang mga miyembro ng mga group nito."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "1c027feada595f34",
+    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Pinananatili ang classical na passkey. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Gaano katagal ipinagpapaliban ng Skip ang activity para sa taong iyon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Binibilang mula sa UNANG imbitasyon sa tao. Kapag lumipas na ito, nawawala ang Skip at pinipigil ang sign-in — walang session na sinisimulan — hanggang magawa ang activity. Ang 0 ay walang deadline: puwede itong i-skip palagi."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: hindi tinatanong. invite: hinihiling na mag-register ng post-quantum na passkey, at puwede itong i-skip palagi. require: hinihiling, at puwede lang itong i-skip hanggang lumipas ang itinakdang panahon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: isang passwordless na sign-in. mfa: isang second factor."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Ang mga group (cn o DN) na ang mga miyembro ay sakop ng isang named post-login profile."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Kung aling named post-login profile ang mananaig kapag ilan ang umaabot sa iisang tao: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Para saan ang profile, para sa susunod na tao."
+  },
+  "postLogin.SELECTORS.selectGroups.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Ang mga group (cn o DN) na ang mga miyembro ay sakop ng isang named post-login profile."
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Kung aling named post-login profile ang mananaig kapag ilan ang umaabot sa iisang tao: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "walang hinihingi pagkatapos mag-sign in sa sinumang naaabot ng profile na ito"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "b8a2588126ddb520",
+    "text": "ang taong may hawak na classical na passkey ay hinihiling, pagkatapos mag-sign in, na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "ipinagpapaliban ito ng Skip nang {{days}} araw"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "pagkalipas ng {{days}} araw mula sa unang imbitasyon, nawawala ang Skip at pinipigil ang sign-in hanggang magawa ito"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "puwede itong i-skip palagi"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "hindi tinatanong ang taong walang hawak na passkey"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "d5a5abd3c3057413",
+    "text": "ang taong walang hawak na passkey ay iniimbitahang mag-register ng post-quantum na passkey bilang {{role}}, at puwede itong i-skip palagi"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "7779655caba632c8",
+    "text": "ang taong walang hawak na passkey ay hinihiling na mag-register ng post-quantum na passkey bilang {{role}}, at puwede itong i-skip hanggang matapos ang grace period"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "ce39627aa02b361d",
+    "text": "nalalapat sa mga miyembro ng {{list}}, sa precedence na {{precedence}}"
+  },
+  "postLogin.sentences.param.primary": {
+    "en": "ce71e9dc4bf4e5fa",
+    "text": "kanyang pangunahing sign-in"
+  },
+  "postLogin.sentences.param.mfa": {
+    "en": "8e2d5e1b1feaf31c",
+    "text": "second factor"
+  },
+  "postLogin.sentences.param.noGroup": {
+    "en": "4a00d86d0ff8747a",
+    "text": "walang group"
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "Naka-save ang {{noun}} na \"{{name}}\" sa {{dn}}. Nalalapat ito sa {{appliesTo}}."

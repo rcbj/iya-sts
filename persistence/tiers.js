@@ -393,6 +393,9 @@ const CELL_MINTED = [
   'oauth2.grantIssued', 'oauth2.grants', 'oauth2_monitor.counters',
   'oauth2.pushedRequests', 'oauth2.redeemedCodes', 'oauth2.tenantCommandRuns',
   'oidc_rp.flows',
+  // When a person was first asked a post-login activity, until when they put
+  // it off, and when they did it (#1096): somebody's, minted at their sign-in.
+  'post_login.progress',
   // The reports application's definitions, jobs and reporter stamp (#956).
   // A report reads this cell's people and its artifact holds them, so the
   // job and its definition are this cell's; the stamp names a node, and a

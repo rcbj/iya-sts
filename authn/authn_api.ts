@@ -198,7 +198,8 @@ const OPEN_BODY = vz.object({
 
 // The pages a step's view is asked for (`?page=`), and the passkey chosen.
 const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
-                   'email-code', 'email-link', 'email-link-open'];
+                   'email-code', 'email-link', 'email-link-open',
+                   'post-login'];
 
 const MFA_QUERY = vz.object({
   page: vt.opt(vt.oneOf(MFA_PAGES)),
@@ -469,11 +470,12 @@ const OPERATIONS: Operation[] = [
     access: 'mfa', handler: 'mfaStep',
     mirrors: 'GET /authn/totp, /authn/webauthn, /authn/backup-code, ' +
              '/authn/password-factor, /authn/mfa-setup, /authn/email-code, ' +
-             '/authn/email-link, /authn/email-link/open',
+             '/authn/email-link, /authn/email-link/open, /authn/post-login',
     summary: 'What a second-factor or emailed-factor step\'s page shows',
     description: 'The step\'s view for the page `page` names (`totp`, ' +
       '`webauthn`, `backup-code`, `password`, `setup`, `email-code`, ' +
-      '`email-link`, `email-link-open`; the step\'s own where left out), ' +
+      '`email-link`, `email-link-open`, `post-login`; the step\'s own ' +
+      'where left out), ' +
       'as facts and no words: the person, the ways round the factor asked ' +
       'for, the set-up step\'s choice and its authenticator app\'s ' +
       '`otpauth:` URI, the passkey ceremony\'s description, an emailed ' +
@@ -552,6 +554,26 @@ const OPERATIONS: Operation[] = [
     summary: 'Ignores an offered second factor (#246)',
     description: 'Only where the step was offered rather than required: ' +
       'the sign-in finishes on the password.' },
+  // --- the post-login activity (#1096) -------------------------------------
+  { method: 'POST', path: API + '/mfa/:id/post-login/register',
+    operationId: 'registerPostLoginPasskey', access: 'mfa',
+    mirrors: 'POST /authn/post-login', action: 'register',
+    handler: 'mfaAct', body: EMPTY_BODY, answer: NEXT_ANSWER,
+    summary: 'Chooses to register the passkey a post-login activity asks for',
+    description: 'The next step is the passkey page\'s registration, in the ' +
+      'activity\'s role and offering ML-DSA only. Its finish starts the ' +
+      'session the sign-in was held for. Where the realm can no longer make ' +
+      'an ML-DSA passkey in that role the session starts without it ' +
+      '(STS-AUTHN-0475).' },
+  { method: 'POST', path: API + '/mfa/:id/post-login/skip',
+    operationId: 'skipPostLoginActivity', access: 'mfa',
+    mirrors: 'POST /authn/post-login', action: 'skip',
+    handler: 'mfaAct', body: EMPTY_BODY, answer: NEXT_ANSWER,
+    refusedCode: 'STS-AUTHN-0474',
+    summary: 'Puts a post-login activity off',
+    description: 'For the profile\'s `snoozeDays`; the held session ' +
+      'starts. Refused (400) once the allotted time since the first ' +
+      'invitation has passed (STS-AUTHN-0474).' },
   { method: 'POST', path: API + '/mfa/:id/email/send',
     operationId: 'sendEmailedFactor', access: 'mfa',
     mirrors: 'POST /authn/email-code, /authn/email-link', action: 'send',
@@ -1466,9 +1488,10 @@ class AuthnApi {
   private pageOf(id: string): string {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.pageOf().");
-    const step = authn.mfaStepFor(id);
+    const step = authn.mfaStepFor(id, 'any');
     const factor = String((step && step.factor) || '');
     const out = factor === 'enrol' || factor === 'enrol-totp' ? 'setup'
+      : factor === 'post-login' ? 'post-login'
       : (['totp', 'webauthn', 'password', 'email-code', 'email-link']
           .indexOf(factor) >= 0 ? factor : 'totp');
     log.debug("Leaving AuthnApi.pageOf(). " + out);
@@ -1536,6 +1559,12 @@ class AuthnApi {
         break;
       case 'ignoreOffer':
         await authn.mfaSetupAct(req, res, id, 'skip', body);
+        break;
+      case 'registerPostLoginPasskey':
+        authn.postLoginAct(req, res, id, 'register');
+        break;
+      case 'skipPostLoginActivity':
+        authn.postLoginAct(req, res, id, 'skip');
         break;
       case 'sendEmailedFactor':
         await ef.sendAct(req, res, id, body.kind);

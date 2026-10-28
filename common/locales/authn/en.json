@@ -179,5 +179,17 @@
   "accounts.anotherHeading": "Another account",
   "accounts.another": "Use another account",
   "accounts.full": "This browser is signed in to {max} accounts, the most it may hold. Sign out of one of them to use another.",
-  "accounts.signingInFor": "Signing in for: <code>{protocol}</code>"
+  "accounts.signingInFor": "Signing in for: <code>{protocol}</code>",
+  "postLogin.title": "One more step — authentication service",
+  "postLogin.heading": "Register a post-quantum passkey",
+  "postLogin.subClassicalPrimary": "{name}, you sign in with a passkey made with a classical algorithm. Register a post-quantum (ML-DSA) passkey to sign in with as well; the passkey you have keeps working.",
+  "postLogin.subClassicalMfa": "{name}, your second factor is a passkey made with a classical algorithm. Register a post-quantum (ML-DSA) passkey as a second factor as well; the passkey you have keeps working.",
+  "postLogin.subNonePrimary": "{name}, register a passkey to sign in with: a post-quantum (ML-DSA) one.",
+  "postLogin.subNoneMfa": "{name}, register a passkey as a second factor: a post-quantum (ML-DSA) one.",
+  "postLogin.device": "Your device or browser has to be able to make an ML-DSA passkey. If it cannot, the registration fails and nothing changes.",
+  "postLogin.required": "The time allowed for this has passed: register the passkey to finish signing in.",
+  "postLogin.until": "You can skip this until {date}; after that it is required.",
+  "postLogin.registerButton": "Register a post-quantum passkey",
+  "postLogin.skipButton": "Skip for {days} day(s)",
+  "postLogin.passkeyHeading": "Register your post-quantum passkey"
 }

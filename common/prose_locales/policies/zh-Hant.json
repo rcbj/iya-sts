@@ -1731,6 +1731,178 @@
     "en": "36e7b5eba26472f2",
     "text": "自訂屬性 {{name}} 已不再在此領域中定義。"
   },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "登入後活動原則"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "某人登入後、被送回應用程式之前被要求做的事——目前是註冊一個後量子密碼金鑰"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "此領域中該設定檔所涵蓋的每個人的「下一次」登入；已開始的工作階段不會被中斷"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "預設領域的設定檔（若有），否則為內建預設值（不要求任何人做任何事）"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "登入後活動原則設定檔"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "登入後詢問"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "4c8090556412a140",
+    "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」其群組的成員。"
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "活動"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "1c027feada595f34",
+    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰會保留。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "略過後延後"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "略過會為該人將活動延後多久。"
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "給定期限"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "從此人的「第一次」邀請開始計算。期限過後，略過不再可用，登入會遭到暫扣——不會開始任何工作階段——直到完成該活動。0 表示沒有截止期限：一律可以略過。"
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "沒有密碼金鑰的人"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave：不詢問。invite：被要求註冊一個後量子密碼金鑰，且一律可以略過。require：被要求註冊，且只能在給定期限過去之前略過。"
+  },
+  "postLogin.FIELDS.noPasskeyRole.label": {
+    "en": "c8ec4e469545eb61",
+    "text": "沒有密碼金鑰的人將其註冊為"
+  },
+  "postLogin.FIELDS.noPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary：無密碼登入。mfa：第二因素。"
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "7ac360a6d70b525c",
+    "text": "本服務用於登入後活動設定檔的類別：某人登入後被要求做的事。以「設定檔」命名（`cn=default`，或依群組選取的具名設定檔）。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "4c8090556412a140",
+    "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」其群組的成員。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "1c027feada595f34",
+    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰會保留。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "略過會為該人將活動延後多久。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "從此人的「第一次」邀請開始計算。期限過後，略過不再可用，登入會遭到暫扣——不會開始任何工作階段——直到完成該活動。0 表示沒有截止期限：一律可以略過。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave：不詢問。invite：被要求註冊一個後量子密碼金鑰，且一律可以略過。require：被要求註冊，且只能在給定期限過去之前略過。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary：無密碼登入。mfa：第二因素。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "具名登入後設定檔適用於其成員的群組（cn 或 DN）。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "多個具名登入後設定檔涵蓋同一人時由哪一個生效：最低者，範圍 1 至 1000。"
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此設定檔的用途，供下一位接手的人參考。"
+  },
+  "postLogin.SELECTORS.selectGroups.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "具名登入後設定檔適用於其成員的群組（cn 或 DN）。"
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "多個具名登入後設定檔涵蓋同一人時由哪一個生效：最低者，範圍 1 至 1000。"
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "此設定檔所涵蓋的任何人在登入後都不會被要求做任何事"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "b8a2588126ddb520",
+    "text": "持有傳統密碼金鑰的人會在登入後被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "略過會將其延後 {{days}} 天"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "自第一次邀請起 {{days}} 天後，略過不再可用，登入會遭到暫扣直到完成"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "一律可以略過"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "沒有密碼金鑰的人不會被詢問"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "d5a5abd3c3057413",
+    "text": "沒有密碼金鑰的人會被邀請註冊一個後量子密碼金鑰作為{{role}}，且一律可以略過"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "7779655caba632c8",
+    "text": "沒有密碼金鑰的人會被要求註冊一個後量子密碼金鑰作為{{role}}，且可在寬限期結束前略過"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "ce39627aa02b361d",
+    "text": "適用於 {{list}} 的成員，優先順序為 {{precedence}}"
+  },
+  "postLogin.sentences.param.primary": {
+    "en": "ce71e9dc4bf4e5fa",
+    "text": "其主要登入方式"
+  },
+  "postLogin.sentences.param.mfa": {
+    "en": "8e2d5e1b1feaf31c",
+    "text": "第二因素"
+  },
+  "postLogin.sentences.param.noGroup": {
+    "en": "4a00d86d0ff8747a",
+    "text": "無群組"
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "{{noun}}「{{name}}」已儲存在 {{dn}}。它適用於{{appliesTo}}。"

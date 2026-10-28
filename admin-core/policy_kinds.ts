@@ -39,6 +39,7 @@ import serviceAccountPolicy = require('../common/service_account_policy');
 import passkeyPolicy = require('../common/passkey_policy');
 import localePolicy = require('../common/locale_policy');
 import attributePolicy = require('../common/attribute_policy');
+import postLoginPolicy = require('../common/post_login_policy');
 // The page's sentences, in the reader's language (#543): the templates the
 // messages below are filled with, and the namespace `prose()` extracts.
 import serverProse = require('../common/server_prose');
@@ -562,6 +563,25 @@ PolicyKinds.register({
         additionalProperties: false
       } }
   ]
+});
+
+// #1096: the seventh kind, rcbj's "post login activity" — what a person is
+// asked to do after signing in, targeted by group membership, configurable
+// and enabled per realm. The first activity is the post-quantum passkey
+// migration.
+PolicyKinds.register({
+  id: 'postLogin',
+  label: 'Post-login activity policy',
+  container: 'ou=postLoginPolicies',
+  governs: 'what a person is asked to do after signing in, before they are ' +
+           'sent back to the application — today, to register a ' +
+           'post-quantum passkey',
+  module: postLoginPolicy as unknown as PolicyModule,
+  auditAction: 'admin.post-login-policy.change',
+  appliesTo: 'the NEXT sign-in of every person the profile reaches in this ' +
+             'realm; a session already started is not interrupted',
+  fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
+               'built-in defaults (nobody is asked anything) where it has not'
 });
 
 export = PolicyKinds;

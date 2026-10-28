@@ -2699,6 +2699,14 @@
     "en": "997e77c58a56af97",
     "text": "nag-eenrol ng authenticator app o nagsisimula ng security-key registration, pagkatapos ay itinatatag ang sign-on session"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "ISANG POST-LOGIN ACTIVITY (#1096). Kung saan naaabot ng post-login activity policy ng realm (Directory > Policies, naka-off bilang default) ang isang tao ayon sa group at may nakatakda siyang activity nito — sa ngayon, isang post-quantum (ML-DSA) na passkey sa role kung saan may hawak siyang classical, o isa kung saan wala siyang hawak — ang sign-in sa sign-in screen ay napupunta rito sa halip na ma-sign in: PINIPIGIL ang session, hindi sinisimulan. Ang Register ay papunta sa registration ng /authn/webauthn na ML-DSA lang ang iniaalok (/authn-api/mfa/{id}/post-login/register); ipinagpapaliban ito ng Skip nang snoozeDays ng profile (/authn-api/mfa/{id}/post-login/skip) at tinatanggihan kapag lumipas na ang itinakdang panahon mula sa unang imbitasyon (STS-AUTHN-0474). Alinman dito, sisimulan pagkatapos ang pinigil na session gamit ang amr at acr ng sign-in. Kailangan ng ?mfa= id na ginawa ng pinigil na sign-in, kaya ang pagsunod dito nang walang kasama ay sumasagot ng 400."
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "humihingi ng post-quantum na passkey pagkatapos ng sign-in, saka itinatatag ang sign-on session na pinigil nito"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "ANG IKALAWANG SECOND FACTOR (2026-09-10). Ang password step na nagtagumpay para sa taong may naka-enrol na authenticator app ay bumabagsak dito, at humihingi ang endpoint na ito ng anim na digit na ipinapakita ng kanilang app. Kapag nagtagumpay, nire-record ng session ang amr [\"pwd\",\"otp\"] — ang value ng RFC 8176, na ang registry entry ay nagpapangalan sa RFC 4226 at RFC 6238 — at acr \"mfa\", na siyang nag-iisang kaso kung saan tapat na masasabi ng serbisyong ito na dalawang factor. **TUNAY NA SINUSURI ANG CODE SA PAREHONG MODE**, hindi tulad ng password sa harap nito: ang one-time password verifier na tumatanggap ng anumang anim na digit ay hindi permissive, kundi sira, at ito ang argumento ng SPNEGO na binasa sa ikalawang pagkakataon. Naka-rate limit ayon sa identity AT ayon sa address, dahil isang milyong value ang anim na digit at ito ang pinakamaliit na search space sa serbisyo. ANG GET AY ANG *use a code instead* NA LINK mula sa security-key screen at walang ginagawa — iginuguhit nito ang page para sa step na umiiral na, at tinatanggihan ito para sa taong walang enrolment. **WALA ITONG INIEENROL**, na siyang buong pagkakaiba sa /authn/webauthn sa tabi nito: ang pag-enrol ay nangangahulugang ipinapakita ang shared secret, kaya nangyayari ito sa /portal/mfa o habang ginagamit ang activation link, at hindi kailanman sa sign-in screen. Isang page ng sign-in surface mula noong #572: pumupunta ang code sa /authn-api/mfa/{id}/totp."
@@ -2870,6 +2878,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC (#572, #246). Kung inalok lamang ang step: natatapos ang sign-in sa password."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC (#1096). Ang susunod na step ay ang registration ng passkey page, ML-DSA lang; sinisimulan ng pagtatapos nito ang pinigil na session."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC (#1096). Nang snoozeDays ng profile; tinatanggihan kapag lumipas na ang itinakdang panahon. Sinisimulan ang pinigil na session."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

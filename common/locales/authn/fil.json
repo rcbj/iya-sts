@@ -179,5 +179,17 @@
   "accounts.anotherHeading": "Ibang account",
   "accounts.another": "Gumamit ng ibang account",
   "accounts.full": "Naka-sign in ang browser na ito sa {max} account, ang pinakamaraming kaya nito. Mag-sign out sa isa sa mga ito para gumamit ng iba.",
-  "accounts.signingInFor": "Nagsa-sign in para sa: <code>{protocol}</code>"
+  "accounts.signingInFor": "Nagsa-sign in para sa: <code>{protocol}</code>",
+  "postLogin.title": "Isa pang hakbang — serbisyo ng pagpapatunay",
+  "postLogin.heading": "Magrehistro ng post-quantum na passkey",
+  "postLogin.subClassicalPrimary": "{name}, nagsa-sign in ka gamit ang passkey na ginawa gamit ang klasikong algorithm. Magrehistro rin ng post-quantum (ML-DSA) na passkey para mag-sign in; patuloy na gagana ang passkey mo ngayon.",
+  "postLogin.subClassicalMfa": "{name}, ang iyong pangalawang factor ay passkey na ginawa gamit ang klasikong algorithm. Magrehistro rin ng post-quantum (ML-DSA) na passkey bilang pangalawang factor; patuloy na gagana ang passkey mo ngayon.",
+  "postLogin.subNonePrimary": "{name}, magrehistro ng passkey para mag-sign in: isang post-quantum (ML-DSA).",
+  "postLogin.subNoneMfa": "{name}, magrehistro ng passkey bilang pangalawang factor: isang post-quantum (ML-DSA).",
+  "postLogin.device": "Kailangang kayang gumawa ng iyong device o browser ng ML-DSA na passkey. Kung hindi, mabibigo ang pagrehistro at walang magbabago.",
+  "postLogin.required": "Lumipas na ang itinakdang panahon: irehistro ang passkey para matapos ang pag-sign in.",
+  "postLogin.until": "Puwede mo itong laktawan hanggang {date}; pagkatapos noon, kailangan na ito.",
+  "postLogin.registerButton": "Magrehistro ng post-quantum na passkey",
+  "postLogin.skipButton": "Laktawan nang {days} araw",
+  "postLogin.passkeyHeading": "Irehistro ang iyong post-quantum na passkey"
 }

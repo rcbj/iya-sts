@@ -2699,6 +2699,14 @@
     "en": "997e77c58a56af97",
     "text": "註冊驗證器應用程式或開始安全金鑰註冊，然後建立單一登入工作階段"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "登入後活動（#1096）。當領域的登入後活動原則（「目錄 > 原則」，預設關閉）依群組涵蓋某人、且此人應完成其活動時——目前是在其持有傳統密碼金鑰的角色中註冊一個後量子（ML-DSA）密碼金鑰，或在其沒有密碼金鑰時註冊一個——在登入畫面的登入會來到這裡，而不是直接完成登入：工作階段遭到「暫扣」，而非開始。註冊會轉到只提供 ML-DSA 的 /authn/webauthn 註冊（/authn-api/mfa/{id}/post-login/register）；略過會依設定檔的 snoozeDays 延後（/authn-api/mfa/{id}/post-login/skip），一旦自第一次邀請起的給定期限已過即遭拒絕（STS-AUTHN-0474）。無論哪種方式，遭暫扣的工作階段隨後都會以該次登入的 amr 與 acr 開始。需要由遭暫扣的登入產生的 ?mfa= id，因此直接存取會回應 400。"
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "在登入後要求一個後量子密碼金鑰，然後建立其暫扣的單一登入工作階段"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "「第二種第二要素」（2026-09-10）。對於已註冊驗證器應用程式的人，成功的密碼步驟會來到這裡，此端點會要求輸入其應用程式所顯示的六位數字。成功時工作階段記錄 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其登錄項目指名 RFC 4226 與 RFC 6238——以及 acr \"mfa\"，這是本服務能誠實宣稱兩個要素的唯一情況。**代碼在兩種模式下都會真正檢查**，與其前面的密碼不同：一個接受任意六位數字的一次性密碼驗證器不是寬鬆，而是故障，這是 SPNEGO 論證的再次應用。依身分「以及」依位址進行速率限制，因為六位數字只有一百萬個值，是本服務中最小的搜尋空間。「GET 是安全金鑰畫面上的 *use a code instead* 連結」，不會建立任何東西——它為已存在的步驟繪製頁面，並對沒有註冊的人拒絕。**它不為任何人註冊**，這正是它與旁邊的 /authn/webauthn 的全部差異：註冊意味著會看到共用密鑰，因此它發生在 /portal/mfa 或使用啟用連結時，絕不在登入畫面上。自 #572 起是登入介面的一個頁面：代碼傳送至 /authn-api/mfa/{id}/totp。"
@@ -2870,6 +2878,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC（#572、#246）。僅在該步驟是提供而非要求時：登入以密碼完成。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC（#1096）。下一步是密碼金鑰頁面的註冊，僅限 ML-DSA；完成後開始遭暫扣的工作階段。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC（#1096）。依設定檔的 snoozeDays 延後；給定期限已過即遭拒絕。遭暫扣的工作階段隨即開始。"
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

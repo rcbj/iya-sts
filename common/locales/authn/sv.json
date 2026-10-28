@@ -179,5 +179,17 @@
   "accounts.anotherHeading": "Ett annat konto",
   "accounts.another": "Använd ett annat konto",
   "accounts.full": "Den här webbläsaren är inloggad på {max} konton, det högsta antal den får ha. Logga ut från ett av dem för att använda ett annat.",
-  "accounts.signingInFor": "Inloggning för: <code>{protocol}</code>"
+  "accounts.signingInFor": "Inloggning för: <code>{protocol}</code>",
+  "postLogin.title": "Ett steg till — autentiseringstjänst",
+  "postLogin.heading": "Registrera en postkvantnyckel",
+  "postLogin.subClassicalPrimary": "{name}, du loggar in med en nyckel som skapats med en klassisk algoritm. Registrera även en postkvantnyckel (ML-DSA) att logga in med; din nuvarande nyckel fortsätter att fungera.",
+  "postLogin.subClassicalMfa": "{name}, din andra faktor är en nyckel som skapats med en klassisk algoritm. Registrera även en postkvantnyckel (ML-DSA) som andra faktor; din nuvarande nyckel fortsätter att fungera.",
+  "postLogin.subNonePrimary": "{name}, registrera en nyckel att logga in med: en postkvantnyckel (ML-DSA).",
+  "postLogin.subNoneMfa": "{name}, registrera en nyckel som andra faktor: en postkvantnyckel (ML-DSA).",
+  "postLogin.device": "Din enhet eller webbläsare måste kunna skapa en ML-DSA-nyckel. Om den inte kan det misslyckas registreringen och ingenting ändras.",
+  "postLogin.required": "Den tillåtna tiden har gått ut: registrera nyckeln för att slutföra inloggningen.",
+  "postLogin.until": "Du kan hoppa över detta till och med {date}; därefter är det obligatoriskt.",
+  "postLogin.registerButton": "Registrera en postkvantnyckel",
+  "postLogin.skipButton": "Hoppa över i {days} dag(ar)",
+  "postLogin.passkeyHeading": "Registrera din postkvantnyckel"
 }

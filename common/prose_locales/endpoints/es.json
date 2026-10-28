@@ -1571,6 +1571,10 @@
     "en": "48e0b4bbb949a879",
     "text": "Paso de configuración del segundo factor obligatorio"
   },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "Paso de actividad posterior al inicio de sesión"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Paso de segundo factor con código de un solo uso"
@@ -1718,6 +1722,14 @@
   "endpoints.route./authn-api/mfa/:id/skip.name": {
     "en": "d412e3d8a9215328",
     "text": "Ignorar un segundo factor ofrecido"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "Registrar la llave de acceso que pide una actividad posterior al inicio de sesión"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "Posponer una actividad posterior al inicio de sesión"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

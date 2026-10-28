@@ -675,6 +675,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cp | `phishing_resistance.ts` (#723): OpenID Connect EAP's `phr` and `phrh`, earned, requested and required | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3cq | `recoveryAssurance` (#724): account recovery no weaker than the passkey it replaces | `common/CLAUDE.md`, `authn/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3cs | `passkey_report.ts` (#942): who holds which passkey algorithm, kept rather than counted | `common/CLAUDE.md` |
+| 3ct | `post_login_policy.ts`, `post_login.ts` (#1096): post-login activities, the session held | `common/CLAUDE.md`, `authn/CLAUDE.md` |
 | 3cw | `opaque_access_token.ts` (#501): opaque OAuth access tokens, off by default | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |

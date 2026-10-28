@@ -128,6 +128,14 @@ const STEP_ACTS: Json = {
     ignore: { op: 'skip', body: function (): Json {
       return {};
     } } },
+  // THE POST-LOGIN ACTIVITY (#1096): Register, and Skip.
+  '/authn/post-login': {
+    register: { op: 'post-login/register', body: function (): Json {
+      return {};
+    } },
+    skip: { op: 'post-login/skip', body: function (): Json {
+      return {};
+    } } },
   '/authn/email-code': {
     send: { op: 'email/send', body: function (): Json {
       return { kind: 'code' };

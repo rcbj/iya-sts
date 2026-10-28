@@ -199,6 +199,8 @@ const PAGES = [
   stepRow('/authn/backup-code', 'backup-code', WebAuthnMfa.backup),
   stepRow('/authn/password-factor', 'password', WebAuthnMfa.password),
   stepRow('/authn/mfa-setup', 'setup', WebAuthnMfa.setup),
+  // THE POST-LOGIN ACTIVITY (#1096).
+  stepRow('/authn/post-login', 'post-login', WebAuthnMfa.postLogin),
   emailRow('/authn/email-code', 'email-code'),
   emailRow('/authn/email-link', 'email-link'),
   emailRow('/authn/email-link/open', 'email-link-open'),

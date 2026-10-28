@@ -1211,6 +1211,14 @@ No service log line is written per ceremony or per failed ceremony: the
 rows are the record, and a refusal's one log line comes from the request
 itself.
 
+## Asking people to register a post-quantum passkey after they sign in
+
+To move a group of people to post-quantum passkeys, switch on the realm's
+**post-login activity policy**. People who hold a classical passkey are then
+asked, after they sign in, to register an ML-DSA passkey in the same role. You
+can let them skip it for a number of days, then require it once an allotted
+time has passed. See [Post-login activities](post-login-activities.md).
+
 ## Losing a passkey, and account recovery
 
 **Hold more than one.** The simplest recovery is a second passkey on a

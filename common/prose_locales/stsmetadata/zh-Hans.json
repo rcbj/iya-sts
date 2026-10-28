@@ -2699,6 +2699,14 @@
     "en": "997e77c58a56af97",
     "text": "注册身份验证器应用或开始安全密钥注册，然后建立单点登录会话"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "登录后活动（#1096）。当领域的登录后活动策略（“目录 > 策略”，默认关闭）按群组覆盖某人、且此人应完成其活动时——目前是在其持有经典通行密钥的角色中注册一个后量子（ML-DSA）通行密钥，或在其没有通行密钥时注册一个——在登录界面的登录会来到这里，而不是直接完成登录：会话被“暂扣”，而不是开始。注册会转到只提供 ML-DSA 的 /authn/webauthn 注册（/authn-api/mfa/{id}/post-login/register）；跳过会按配置文件的 snoozeDays 推迟（/authn-api/mfa/{id}/post-login/skip），一旦自第一次邀请起的给定期限已过则会被拒绝（STS-AUTHN-0474）。无论哪种方式，被暂扣的会话随后都会以该次登录的 amr 和 acr 开始。需要由被暂扣的登录生成的 ?mfa= id，因此直接访问会返回 400。"
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "在登录后要求一个后量子通行密钥，然后建立其暂扣的单点登录会话"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "第二种第二因素（2026-09-10）。对于已注册身份验证器应用的人，密码步骤成功后会来到这里，此端点会索要其应用上显示的六位数字。成功时会话记录 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其注册表条目引用 RFC 4226 和 RFC 6238——以及 acr \"mfa\"，这是本服务能够诚实地说出两个因素的唯一情形。**代码在两种模式下都会真正检查**，这与其前面的密码不同：接受任意六位数字的一次性密码验证器不是宽松，而是坏了，这正是把 SPNEGO 的论证再读一遍。按身份和地址两者进行速率限制，因为六位数字只有一百万个取值，这是本服务中最小的搜索空间。GET 是安全密钥界面上的“改用代码”链接，不创建任何东西——它只为已存在的步骤绘制页面，并拒绝为没有注册的人绘制。**它不为任何人注册**，这就是它与旁边的 /authn/webauthn 的全部区别：注册意味着要被展示一个共享密钥，因此它在 /portal/mfa 上或使用激活链接时进行，绝不在登录界面上进行。自 #572 起是登录界面的一个页面：代码发送到 /authn-api/mfa/{id}/totp。"
@@ -2870,6 +2878,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC（#572、#246）。仅在该步骤是被提供的时候：登录以密码完成。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC（#1096）。下一步是通行密钥页面的注册，仅限 ML-DSA；完成后开始被暂扣的会话。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC（#1096）。按配置文件的 snoozeDays 推迟；给定期限已过则被拒绝。被暂扣的会话随即开始。"
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

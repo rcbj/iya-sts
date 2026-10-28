@@ -1571,6 +1571,10 @@
     "en": "48e0b4bbb949a879",
     "text": "Hakbang ng pag-set up ng kinakailangang second factor"
   },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "Post-login activity step"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Hakbang ng one-time code bilang second factor"
@@ -1718,6 +1722,14 @@
   "endpoints.route./authn-api/mfa/:id/skip.name": {
     "en": "d412e3d8a9215328",
     "text": "Huwag pansinin ang inaalok na second factor"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "I-register ang passkey na hinihingi ng isang post-login activity"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "Ipagpaliban ang isang post-login activity"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

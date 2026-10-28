@@ -707,6 +707,26 @@
     "en": "4dfe507526bb6dd5",
     "text": "May locale policy profile na binago"
   },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "May binagong post-login activity policy profile"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "May taong hiniling na gawin ang isang post-login activity"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "May taong nag-skip ng isang post-login activity"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "May taong gumawa ng isang post-login activity"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "May sign-in na pinigil: lampas na sa takdang panahon ang isang post-login activity"
+  },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
     "text": "May emailed second factor na in-on o in-off"

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4750** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4756** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 388
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 394
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
@@ -1580,6 +1580,12 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0467` | Continue with your certificate was refused at the sign-in screen: it is not taken at this sign-in — the authentication policy does not accept a certificate as a first factor, the sign-in is a linking one, the application names the mechanisms it allows, or a security key or passkey is demanded (#1051). | the sign-in screen again (/authn-api answers next: refused) |
 | `STS-AUTHN-0468` | Continue with your certificate was refused at the sign-in screen: the certificate is from an outside certificate authority and is not stored in userCertificate on any account of the realm (#1061). | the sign-in screen again (/authn-api answers next: refused) |
 | `STS-AUTHN-0469` | Continue with your certificate was refused at the sign-in screen: the certificate is from an outside certificate authority and is stored in userCertificate on more than one account of the realm (#1061). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0470` | A post-login activity profile was not saved or reset: its name is neither default nor lower-case letters, digits and hyphens (#1096). | none (HTTP 400 from /admin-api/policies) |
+| `STS-AUTHN-0471` | A post-login activity profile was not saved: a field was missing or out of range, or a named profile named no group or a precedence outside 1 to 1000 (#1096). | none (HTTP 400 from /admin-api/policies) |
+| `STS-AUTHN-0472` | A post-login activity profile was not saved: there is no embedded directory in this process, or it is at its maximum number of entries (#1096). | none (HTTP 400 from /admin-api/policies) |
+| `STS-AUTHN-0473` | A sign-in was held: the person's post-login activity is past its allotted time and cannot be done at this door (a federated, wallet, Kerberos or certificate sign-in, or a non-interactive one); they are told to sign in at the sign-in screen, where they will be asked to do it (#1096). | the door's own refusal; no session is started |
+| `STS-AUTHN-0474` | Skip was refused on a post-login activity: the allotted time since the person's first invitation has passed, so the activity is required before the sign-in finishes (#1096). | none (HTTP 400 from /authn-api) |
+| `STS-AUTHN-0475` | A post-login passkey registration was refused: the realm no longer offers post-quantum passkeys (webauthn.pqcAlongsideClassical and webauthn.pqcOnly are off), so the activity cannot be done here and the held sign-in is finished without it (#1096). | none (the sign-in continues) |
 
 ## STS-OAUTH
 

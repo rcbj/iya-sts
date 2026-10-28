@@ -1571,6 +1571,10 @@
     "en": "48e0b4bbb949a879",
     "text": "Steg för obligatorisk inställning av andra faktor"
   },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "Steg för aktivitet efter inloggning"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Steg med engångskod som andra faktor"
@@ -1718,6 +1722,14 @@
   "endpoints.route./authn-api/mfa/:id/skip.name": {
     "en": "d412e3d8a9215328",
     "text": "Ignorera en erbjuden andra faktor"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "Registrera den nyckel som en aktivitet efter inloggning ber om"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "Skjuta upp en aktivitet efter inloggning"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

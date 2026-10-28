@@ -1689,6 +1689,31 @@ class AdminApi {
               'counts the people who lack one, where the directory is held ' +
               'in memory.',
         example: { requiredAttributes: ['givenName', 'sn', 'mail'] }
+      },
+      // #1096: the seventh kind, with named profiles chosen by group.
+      postLogin: {
+        save: 'Writes `cn=<profile>,ou=postLoginPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no ' +
+              '`default` of its own follows the default realm\'s, and named ' +
+              'profiles are the realm\'s own. **Off by default** ' +
+              '(`enabled`). On, a person the profile reaches who is due the ' +
+              '`activity` is asked after signing in, before being sent back ' +
+              'to the application: `pqc-passkey-migration` asks a person ' +
+              'holding a classical passkey (primary or second factor) and no ' +
+              'post-quantum one in that role to register an ML-DSA passkey ' +
+              'in it, and — per `noPasskey` — a person holding none to ' +
+              'register one as `noPasskeyRole`. Skip puts it off ' +
+              '`snoozeDays`; once `graceDays` (0 = never) have passed since ' +
+              'the person\'s first invitation Skip is refused ' +
+              '(STS-AUTHN-0474) and the sign-in is held until it is done, ' +
+              'and a door that cannot ask for it refuses the sign-in ' +
+              '(STS-AUTHN-0473). A named profile ' +
+              'applies to the members of `selectGroups`; the lowest ' +
+              '`precedence` wins, so a named profile with `enabled` off ' +
+              'excludes its groups.',
+        example: { enabled: true, activity: 'pqc-passkey-migration',
+                   snoozeDays: 7, graceDays: 30, noPasskey: 'invite',
+                   noPasskeyRole: 'primary' }
       }
     };
     const cap = function (text) {
