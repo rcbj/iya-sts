@@ -1061,7 +1061,10 @@ device.
 The audit ring holds only the latest `audit.maxEvents` rows. To keep a
 history, save a definition with a schedule and keep its reports. The
 [realm report](#measuring-the-move-to-post-quantum-passkeys) counts who
-holds which kind of passkey now. Before requiring ML-DSA, run both against
+holds which kind of passkey now, and the
+[`passkeyHistory` source](reporting.md#passkeyhistory)
+([#1109](https://github.com/rcbj/iya-sts/issues/1109)) shows how that
+count moved day by day. Before requiring ML-DSA, run both against
 a pilot group.
 
 ## Requiring a post-quantum passkey
