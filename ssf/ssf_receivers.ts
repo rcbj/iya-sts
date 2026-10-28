@@ -821,20 +821,42 @@ class SsfReceivers {
   // is added to what it requests and is delivered, once, and nothing else
   // moves. A stream an operator disabled is left alone; a pause holds the
   // announcement like any other SET.
+  //
+  // **SEEDING ALONE DID NOT DO IT ON A PERSISTED STORE (#1091).** Seeding
+  // runs as the module loads, in every process, before the store's copy of
+  // the streams is read, so the stored record — without the type — arrived
+  // afterwards and was the one kept; on 8081 every broadcast then answered
+  // "does not take the announcement event". `moveToPoll()` met the same
+  // trap, which is why `pollAll()` makes that move again. So this is asked
+  // there too, on the leader with the store open, and by the sender itself
+  // just before it selects (`ssf.broadcastAnnouncement()`). The requested
+  // and the delivered lists are each checked: one could hold the type and
+  // the other not.
   // ---------------------------------------------------------------------------
-  private askForAnnouncements(surface?, record?) {
+  /**
+   * Makes a surface's stream ask for, and be agreed, this service's
+   * announcement event, unless an operator disabled it.
+   *
+   * @param surface - the `SURFACES` row
+   * @param record - the surface's stream
+   * @returns true when the record was changed
+   */
+  askForAnnouncements(surface?, record?) {
     const { log, events, streams } = this.deps;
     log.debug("Entering SsfReceivers.askForAnnouncements(). " + surface.id);
     const uri = events.ANNOUNCEMENT;
     const requested = Array.isArray(record.events_requested)
       ? record.events_requested : [];
-    if (requested.indexOf(uri) >= 0 || record.status === 'disabled') {
+    const delivered = Array.isArray(record.events_delivered)
+      ? record.events_delivered : [];
+    if (record.status === 'disabled' || (requested.indexOf(uri) >= 0 &&
+                                         delivered.indexOf(uri) >= 0)) {
       log.debug("Leaving SsfReceivers.askForAnnouncements(). Nothing to do.");
       return false;
     }
-    record.events_requested = requested.concat([uri]);
-    const delivered = Array.isArray(record.events_delivered)
-      ? record.events_delivered : [];
+    if (requested.indexOf(uri) < 0) {
+      record.events_requested = requested.concat([uri]);
+    }
     if (delivered.indexOf(uri) < 0) {
       record.events_delivered = delivered.concat([uri]);
     }
@@ -1345,6 +1367,10 @@ class SsfReceivers {
                          streams.DELIVERY_POLL) {
             continue;
           }
+          // AND THE ANNOUNCEMENT EVENT, for the same reason (#1091): a
+          // stream the store carried over from before #1086 is made to ask
+          // for it here, with the store open.
+          this.askForAnnouncements(surface, record);
           // What THIS process sees waiting. A SET its replica has not yet
           // applied is collected by the next run; an empty stream is not
           // dialled at all, which is what keeps a realm nobody uses free.
@@ -2545,6 +2571,7 @@ export = {
   pollAll: slot.forward('pollAll'),
   listFor: slot.forward('listFor'),
   announcementsFor: slot.forward('announcementsFor'),
+  askForAnnouncements: slot.forward('askForAnnouncements'),
   isAbout: slot.forward('isAbout'),
   isSetTyp: SsfReceivers.isSetTyp,
   audienceNames: slot.forward('audienceNames'),
