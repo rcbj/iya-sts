@@ -749,7 +749,10 @@ async function testEveryAdvertisedEndpointAnswers(meta) {
     // (tests/tools/fresh-connections.js), so the server then ENDS the socket
     // under a paused parser and node 24.22.1's undici dies on its own
     // `assert(!this.paused)` in Parser.finish — the whole job, before the
-    // first assertion. Reading the body is what a client does anyway.
+    // first assertion. Reading the body is what a client does anyway. (The
+    // preload stops the parser pausing at all since 2026-10-28, after the
+    // same assertion killed `sts_metadata` with its bodies read: this drain
+    // made the race rarer, not impossible. It stays, being right anyway.)
     await r.arrayBuffer();
     assert.strictEqual(r.status, 200, member + " (" + meta[member] +
                        ") returned HTTP " + r.status + ".");
