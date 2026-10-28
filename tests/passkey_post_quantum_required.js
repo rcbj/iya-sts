@@ -536,7 +536,7 @@ function childMain() {
     const pqTry = await enrol('pqr-erin', { role: 'primary' }, function (b) {
       return erinPq.register(b.challenge, b.userHandle);
     });
-    note(JSON.stringify(offered.algorithms) === '[-48,-49,-50]' &&
+    note(JSON.stringify(offered.algorithms) === '[-50,-49,-48]' &&
          !classicalTry.done.ok &&
          !written.ok && written.reason === 'post-quantum' &&
          errorCodes.codeOf(written) === 'STS-AUTHN-0355' &&

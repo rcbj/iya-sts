@@ -163,10 +163,11 @@ function run(t) {
     return policy.INSECURE_ALGS.indexOf(name) < 0;
   }).every(function (name) {
     return policy.algorithmsOffered().indexOf(name) >= 0;
-  }) && ids.slice(0, 3).join(',') === '-48,-49,-50' &&
+  }) && ids.slice(0, 3).join(',') === '-50,-49,-48' &&
           ids.indexOf(-65535) < 0,
-  'the default requests EVERY algorithm the verifier checks, ML-DSA-44, ' +
-  '-65 and -87 (-48, -49, -50) first, and never RS1', ids.join(', '));
+  'the default requests EVERY algorithm the verifier checks, ML-DSA-87, ' +
+  '-65 and -44 (-50, -49, -48) first (#1078), and never RS1',
+  ids.join(', '));
 
   // -------------------------------------------------------------------------
   t.log.info('=== the two algorithm flags (2026-10-01) ===');
@@ -219,8 +220,8 @@ function run(t) {
   // webauthn.pqcOnly: ML-DSA only, all three where the list names none,
   // and it beats the insecure flag.
   withSetting('webauthn.pqcOnly', true, function () {
-    t.check(policy.algorithmIds().join(',') === '-48,-49,-50',
-      'PQC only: the default list narrows to ML-DSA-44, -65 and -87',
+    t.check(policy.algorithmIds().join(',') === '-50,-49,-48',
+      'PQC only: the default list narrows to ML-DSA-87, -65 and -44',
       policy.algorithmIds().join(','));
     withSetting('webauthn.algorithms', 'ES256,ML-DSA-87,RS256', function () {
       t.check(policy.algorithmsOffered().join(',') === 'ML-DSA-87',
@@ -229,8 +230,9 @@ function run(t) {
     });
     withSetting('webauthn.algorithms', 'ES256,RS256', function () {
       t.check(policy.algorithmsOffered().join(',') ===
-              'ML-DSA-44,ML-DSA-65,ML-DSA-87',
-        'PQC only with a list naming no ML-DSA requests all three, never a ' +
+              'ML-DSA-87,ML-DSA-65,ML-DSA-44',
+        'PQC only with a list naming no ML-DSA requests all three, strongest ' +
+        'first (#1078), never a ' +
         'classical one and never an empty list',
         policy.algorithmsOffered().join(','));
     });

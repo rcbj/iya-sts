@@ -246,7 +246,7 @@ var config = {
     rpName: "IYA STS",                                                                                                                                 // Relying party name
     rpId: "",                                                                                                                                          // RP ID override
     allowedOrigins: "",                                                                                                                                // Allowed origins
-    algorithms: "ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered
+    algorithms: "ML-DSA-87,ML-DSA-65,ML-DSA-44,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered
     insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
     pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
     pqcAlongsideClassical: false,                                                                                                                      // Post-quantum passkey alongside a classical one

@@ -2755,7 +2755,11 @@ const SETTINGS = [
     // rcbj): the post-quantum ML-DSA three first, so an authenticator that
     // can make an ML-DSA credential does, then the classical ones strongest
     // and most specific first. It was `ES256,RS256` until that day.
-    dflt: 'ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,' +
+    // THE THREE STRONGEST FIRST SINCE 2026-10-28 (#1078, rcbj): ML-DSA-87
+    // (-50), ML-DSA-65 (-49), ML-DSA-44 (-48) — an authenticator takes the
+    // first it supports, so one that can make every parameter set makes
+    // category 5. They were 44, 65, 87; nothing after them moved.
+    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,ESP256,ES256,Ed25519,EdDSA,' +
           'ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,' +
           'RS256,RS384,RS512',
     runtime: true,
