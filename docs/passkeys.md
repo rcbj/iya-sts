@@ -703,6 +703,12 @@ The list now shows two passkeys. Under each one's **Details**, the
 second account ending in “+ml-dsa”", and the **Algorithm** row names the
 algorithm.
 
+The **Cryptography** row is read from the passkey's algorithm: an ML-DSA
+passkey says post-quantum and any other says `classical`. Whether it was
+made as a second account is added for a post-quantum passkey in that lane.
+So in a realm that does not offer the two side by side, an ML-DSA passkey
+says "post-quantum (ML-DSA)" with no mention of a second account.
+
 The same question appears on the other doors that create a passkey:
 * the **activation link** (`/portal/activate`), when the person chooses a
   passkey;

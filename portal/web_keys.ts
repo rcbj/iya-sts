@@ -177,11 +177,16 @@ class KeysPages {
       (algorithm.insecure
         ? ' <strong>' + t.html('portal.keys.insecure') + '</strong>' : '') +
       '</td></tr>' +
-      // WHICH LANE IT WAS CREATED IN (#643): classical, or the post-quantum
-      // passkey a credential manager lists as a second account.
+      // CLASSICAL OR POST-QUANTUM, FROM THE KEY'S ALGORITHM (#1076). It was
+      // drawn from the LANE (#643) alone, which is `pqc` only in a realm
+      // running `webauthn.pqcAlongsideClassical` — off by default — so an
+      // ML-DSA passkey said "classical" here beside an Algorithm row saying
+      // post-quantum. A key in the post-quantum lane still says that it is
+      // listed as a second account.
       '<tr><th>' + t.html('portal.keys.lane') + '</th><td>' +
-      (one.lane === 'pqc' ? t.html('portal.keys.lanePqc')
-                          : t.html('portal.keys.laneClassical')) +
+      (!algorithm.postQuantum ? t.html('portal.keys.laneClassical')
+        : (one.lane === 'pqc' ? t.html('portal.keys.lanePqc')
+                              : t.html('portal.keys.cryptoPostQuantum'))) +
       '</td></tr>' +
       '<tr><th>' + t.html('portal.keys.authenticator') + '</th><td>' +
       KeysPages.attestationText(one.attestation, t) + '</td></tr>' +

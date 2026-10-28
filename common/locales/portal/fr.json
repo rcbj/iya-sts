@@ -242,6 +242,7 @@
   "keys.lane": "Cryptographie",
   "keys.laneClassical": "classique",
   "keys.lanePqc": "post-quantique (ML-DSA), affichée comme un second compte se terminant par « +ml-dsa »",
+  "keys.cryptoPostQuantum": "post-quantique (ML-DSA)",
   "keys.authenticator": "Authentificateur",
   "keys.removeLabel": "Supprimer {name}",
   "keys.remove": "Supprimer",
