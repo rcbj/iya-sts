@@ -470,8 +470,9 @@ provisioned for, so this service asks for it only where you list the RP ID.
 A registration at a listed RP ID asks for `enterprise`. **At any other RP ID
 it asks for `direct`**, and says so in two places: the passkey's attestation
 record carries `conveyance: direct` and `enterpriseDowngraded: true`, and the
-registration's `webauthn.ceremony` audit row's `attestation` detail begins
-`enterprise not listed, asked direct`. A registration at a listed RP ID
+attestation part of the registration's `webauthn.ceremony` audit row
+(the third part of its `authenticator` detail) begins `enterprise not
+listed, asked direct`. A registration at a listed RP ID
 records `conveyance: enterprise`.
 
 **The device serial is read only from a statement an enterprise request
@@ -921,46 +922,6 @@ The audit log's `session.start` row records which kind was used:
 
 `webauthn.maxKeysPerPerson` (default 10) counts **both lanes together**.
 
-### Which browsers and authenticators can make an ML-DSA passkey
-
-**Compatibility is still limited and varies by the browser, operating system,
-and authenticator combination.** A browser supporting WebAuthn does not mean
-its platform authenticator or passkey provider can create ML-DSA keys. The
-service does not probe that capability in advance. This status snapshot is
-dated **2026-10-23**; “reported” below means a public report, not a test by
-iya-sts.
-
-| Combination | Register an ML-DSA passkey | Sign in with one | Evidence and date |
-|---|---|---|---|
-| iya-sts in-process tests using a software authenticator (no browser or operating system) | Tested here with ML-DSA-44, -65 and -87 | Tested here with simulated assertions | Test-suite coverage, checked 2026-10-23. This verifies the service's ceremony and cryptography, not a real platform's support. |
-| Android, Firefox for Android, and an ML-DSA-capable USB security key | Reported successful | Not reported separately | A Firefox bug report's comment says creation worked on Android; the key model and exact software versions were not given. Reported around September 2026; checked 2026-10-23. [Report](https://bugzilla.mozilla.org/show_bug.cgi?id=2064183) |
-| Linux desktop, Firefox, and an ML-DSA-capable USB security key | Reported failure when only ML-DSA algorithms were offered | Firefox on Linux was reported to read credentials created on another platform | The Firefox report describes a failed WebAuthn.io registration; its tested key model and exact browser version were not given. Reported around September 2026; checked 2026-10-23. [Report](https://bugzilla.mozilla.org/show_bug.cgi?id=2064183) |
-| macOS, Firefox with the native macOS WebAuthn subsystem disabled, and an ML-DSA-capable USB security key | Reported failure, matching the Linux case | Not reported | The same Firefox report explains this test setup. Reported around September 2026; checked 2026-10-23. [Report](https://bugzilla.mozilla.org/show_bug.cgi?id=2064183) |
-| iOS, or macOS using its native autofill extension with a passkey manager that supports ML-DSA | Reported unavailable for creation | The report says assertions work on that manager's supported platforms, but does not enumerate them | A password-manager release note dated 2026-10-20. It does not identify browser, OS version, or authenticator details for each platform. [Release note](https://1password.com/blog/post-quantum-passkeys) |
-| Other browser, operating-system, and authenticator combinations | Unknown | Unknown | No result in the reports above establishes support for these combinations. |
-
-These reports are not compatibility guarantees. The Firefox report says
-registration worked with some other browser and operating-system combinations,
-but does not identify them. No real platform authenticator or security key has
-been tested by this project. No real authenticator's post-quantum attestation
-has been tested here.
-
-**Plan around the result for the person's actual device.** With the default
-algorithm list, an authenticator that cannot make ML-DSA can usually register a
-classical passkey. `webauthn.pqcAlongsideClassical` lets a person explicitly
-keep a classical passkey alongside a post-quantum one, when no policy requires
-ML-DSA for registration. `webauthn.pqcOnly` offers only ML-DSA, so a device
-that cannot make one cannot register a passkey. A passkey policy's
-`postQuantumRequired: registration-and-sign-in` has the same registration
-effect for people it selects; `sign-in` permits registration but refuses
-classical credentials at sign-in. See [when the device cannot make an ML-DSA
-passkey](#when-the-device-cannot-make-an-ml-dsa-passkey) and [requiring a
-post-quantum passkey](#requiring-a-post-quantum-passkey).
-
-The [realm report](#measuring-the-move-to-post-quantum-passkeys) shows who
-already has ML-DSA, classical-only passkeys, or no passkey, and the authenticator
-models reported at registration. The [ceremony audit rows](#watching-the-move-to-post-quantum-passkeys-the-ceremony-audit-rows) group outcomes by the browser and operating system reported in the User-Agent; they do not identify a precise device model. Use both before making ML-DSA mandatory.
-
 ### Checking that it worked
 
 | Where | What to look for |
@@ -991,13 +952,120 @@ in the list.
   the classical one on another authenticator.
 * **The two passkeys look like two accounts** in the person's password
   manager. Tell people that `alice+ml-dsa` is the same account as `alice`.
-* **Few authenticators make ML-DSA passkeys** (see above).
+* **Few authenticators make ML-DSA passkeys** (see [where ML-DSA passkeys
+  are expected to work](#where-ml-dsa-passkeys-are-expected-to-work)).
 * **Requiring a post-quantum passkey at registration changes the question.**
   While `postQuantumRequired` is `registration-and-sign-in`, only the
   post-quantum lane is offered, and the pages do not ask.
 * **The maximum counts both lanes.** A person at `webauthn.maxKeysPerPerson`
   cannot add the second kind until they remove one (`STS-AUTHN-0067`).
 * **It cannot be combined with `webauthn.pqcOnly`** (`STS-AUTHN-0353`).
+
+## Where ML-DSA passkeys are expected to work
+
+Support for ML-DSA passkeys depends on the whole chain: the browser, the
+operating system, the passkey provider or security key, and how the
+authenticator is reached. A browser that supports WebAuthn does not
+necessarily make or use an ML-DSA passkey, and the service cannot ask
+beforehand: WebAuthn has no way to report which algorithms an
+authenticator supports. This section describes the **kinds of failure** to
+plan for, what the service does about each, and how to find out which
+ones your own people meet
+([#1113](https://github.com/rcbj/iya-sts/issues/1113)). It does not list
+products or versions, because support is changing quickly and such a list
+would soon be wrong. Measure your own realm instead (below).
+
+The service verifies ML-DSA-44, ML-DSA-65 and ML-DSA-87 (RFC 9964) at
+registration and sign-in, and its tests cover all three with a software
+authenticator. No real platform authenticator or security key has been
+tested by this project.
+
+### The kinds of failure
+
+| What happens | What the person sees | What the ceremony row shows |
+|---|---|---|
+| **The whole registration fails** instead of falling back to a classical algorithm. Some platforms do not skip an offered algorithm they cannot do; they abandon the ceremony. | An error, or nothing, after the prompt. | `outcome` `refused`, `clientError` `NotSupportedError` (sometimes `NotAllowedError` or `UnknownError`), `offered` starting with ML-DSA. |
+| **The offered order is not honoured.** The client makes a classical passkey even though ML-DSA was offered first. From the service's side this looks the same as an authenticator that cannot make ML-DSA. | Nothing unusual: a passkey is registered. | `outcome` `success`, an ML-DSA `offeredFirst`, a classical `algorithm`. |
+| **A security key with no PIN set refuses to make a credential.** The service asks for user verification by default (`webauthn.userVerification` is `required`, and always for a sign-in with no username), and a key with no PIN or biometric cannot give it. Some browsers ask the person to set a PIN first; others end the ceremony. | A prompt to set a PIN, or an error. | `attachment` `cross-platform`, `outcome` `refused`, `clientError` `NotAllowedError` or `InvalidStateError`. |
+| **The key or signature is too large for the transport.** ML-DSA public keys are 1,312 to 2,592 bytes and signatures 2,420 to 4,627 bytes, against about 70 bytes for an `ES256` signature. A transport with tight message limits (some NFC, Bluetooth or cross-device paths) may fail or time out. | An error or a timeout, often only with one way of reaching the key. | `transports` names the path; compare `outcome` by `transports` and `algorithm`. |
+| **Ceremonies are slower with the larger parameter sets.** ML-DSA-87 keys and signatures are about twice the size of ML-DSA-44's, and some authenticators take noticeably longer to make them. | A longer wait at the prompt. | `durationMs`, compared by `algorithm` over many rows. |
+
+### What the service does about each
+
+* **A registration that fails outright: the classical retry.** Where a
+  classical passkey is allowed, the page offers **Try again with a
+  classical passkey** after a `NotSupportedError` (and words the same
+  advice with "if" after a less precise error). See [when the device
+  cannot make an ML-DSA passkey](#when-the-device-cannot-make-an-ml-dsa-passkey)
+  ([#944](https://github.com/rcbj/iya-sts/issues/944)).
+* **Clients known to fail: leaving ML-DSA out of the offer.** The passkey
+  policy's `clientRules`, and the clients a realm learns from failed
+  registrations, leave ML-DSA out of a registration's offer for a browser
+  and operating system known to fail, so the person never meets the
+  failure; never where a classical passkey is not allowed. See [clients
+  that cannot make an ML-DSA passkey](#clients-that-cannot-make-an-ml-dsa-passkey)
+  ([#1112](https://github.com/rcbj/iya-sts/issues/1112)). A ceremony row
+  narrowed this way shows the rule in the report's `offerRule` column.
+* **The passkey policy's registration modes** decide what a group of
+  people is offered. `pq-first` offers ML-DSA first and the classical
+  algorithms after it, so a client that can make ML-DSA does and the
+  others fall back. `pq-only` offers only ML-DSA and refuses the classical
+  retry: use it only for people whose devices you know work. `classical-only`
+  offers no ML-DSA, for a group whose devices fail the whole registration.
+  Profiles can be [selected per group or application](#different-rules-for-different-applications-or-groups),
+  so you can move a pilot group first. See
+  [the passkey policy](authentication.md#the-passkey-policy).
+* **The order of the offer.** The algorithms are offered in the order set
+  on **Protocols → WebAuthn** (`webauthn.algorithms`) or in a profile's
+  `registrationAlgorithms`. Putting `ML-DSA-44` first asks for the
+  smallest keys and signatures, which helps on tight transports and slow
+  authenticators.
+* **A person who has an ML-DSA passkey but keeps using the old one.**
+  While a post-quantum passkey is required at sign-in,
+  `postQuantumAllowCredentials: list-and-refuse` lets the person pick any
+  of their passkeys, then refuses a classical one with a page that says
+  why and links to adding a post-quantum passkey. See
+  [narrow, or list and refuse](#narrow-or-list-and-refuse)
+  ([#946](https://github.com/rcbj/iya-sts/issues/946)).
+* **A security key with no PIN.** Nothing in the service sets a PIN. Tell
+  people to set one with their key's own tool before registering; lowering
+  `webauthn.userVerification` is not the answer, because it weakens every
+  passkey in the realm.
+
+### How to find out for your realm
+
+Every registration and sign-in writes a [ceremony audit
+row](#watching-the-move-to-post-quantum-passkeys-the-ceremony-audit-rows),
+and the [`passkeyCeremonies` source in `/report`](reporting.md#passkeyceremonies)
+reads them as a table you can filter, group and schedule
+([#1107](https://github.com/rcbj/iya-sts/issues/1107),
+[#1108](https://github.com/rcbj/iya-sts/issues/1108)). Its page lists
+three predefined queries:
+
+1. **ML-DSA registrations that failed, by client**: where the whole
+   registration fails. Group by `clientError` to see how.
+2. **Registrations that asked for ML-DSA and made a classical passkey, by
+   client**: where the client cannot make ML-DSA, or does not honour the
+   order.
+3. **Classical sign-ins by people who hold an ML-DSA passkey**: who
+   requiring post-quantum at sign-in would refuse today.
+
+For the other failure kinds, start from any of them and change the
+filter: `attachment` `cross-platform` with `clientError` `NotAllowedError`
+for security keys, `transports` for the transport, and a select of
+`client`, `algorithm` and `durationMs` sorted by `durationMs` for slow
+ceremonies. The `client` column is the browser and operating system by
+name and major version, so the answer is per client family, not per
+device.
+
+The audit ring holds only the latest `audit.maxEvents` rows. To keep a
+history, save a definition with a schedule and keep its reports. The
+[realm report](#measuring-the-move-to-post-quantum-passkeys) counts who
+holds which kind of passkey now, and the
+[`passkeyHistory` source](reporting.md#passkeyhistory)
+([#1109](https://github.com/rcbj/iya-sts/issues/1109)) shows how that
+count moved day by day. Before requiring ML-DSA, run both against
+a pilot group.
 
 ## Requiring a post-quantum passkey
 
@@ -1375,9 +1443,13 @@ rebuild it from the template.
 ## Watching the move to post-quantum passkeys: the ceremony audit rows
 
 Every passkey registration and sign-in at the sign-in screen, the
-usernameless sign-in, `/portal/keys` and an activation link writes one
+usernameless sign-in, `/portal/keys`, an activation link, an upgrade, an
+administrator's enrolment and a device link on `/portal/devices` writes one
 audit row, `webauthn.ceremony`, whether it completed or not
-([#943](https://github.com/rcbj/iya-sts/issues/943)). Find them on
+([#943](https://github.com/rcbj/iya-sts/issues/943),
+[#1108](https://github.com/rcbj/iya-sts/issues/1108)). The
+[passkey ceremonies source in `/report`](reporting.md#passkeyceremonies)
+reads them back as a table you can filter and group. Find them on
 **Monitoring → Audit log** or with
 `GET /admin-api/audit?action=webauthn.ceremony` (add `actor=` for one
 person, `outcome=refused` for the ones that failed). The row's detail:
@@ -1385,14 +1457,21 @@ person, `outcome=refused` for the ones that failed). The row's detail:
 | Field | What it holds |
 |---|---|
 | `ceremony` | `registration` or `assertion` |
-| `door` | `sign-in-step`, `usernameless`, `portal` (including a device link on `/portal/devices`), `activation`, `upgrade` or `admin-enrolment` |
+| `door` | `sign-in-step`, `usernameless`, `portal`, `activation`, `upgrade`, `admin-enrolment` or `device-link` |
 | `role`, `lane` | `primary` or `mfa`; `classical` or `pqc` |
+| `application` | the application the sign-in was for (its client or relying-party id); absent at `/portal/keys`, an activation link, a device link and an administrator's enrolment |
+| `durationMs` | milliseconds from the ceremony's options being issued to its response arriving, measured by the service (never reported by the browser). It includes the time the person spent at the prompt, so compare many rows, not one |
 | `offered` | the algorithms offered, in order: for a registration, the list the browser was given (`pubKeyCredParams`); for a sign-in, the algorithms of the person's passkeys the ceremony could use |
-| `algorithm`, `postQuantum` | the algorithm that was used, and whether it is ML-DSA |
-| `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent; then, where the browser reported its WebAuthn capabilities, `|` and those it has (`Chrome 141 on macOS 15|conditionalGet,hybridTransport`) |
-| `transports`, `attachment` | what the browser reported: `internal`, `hybrid`, `usb`...; `platform` or `cross-platform` |
+| `algorithm` | the algorithm that was used; it is post-quantum when it is one of the ML-DSA algorithms |
+| `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent |
 | `clientError` | for a ceremony the browser did not complete, the error name its script reported: `NotAllowedError` (declined, timed out, or no passkey — the browser does not say which), `NotSupportedError`, `InvalidStateError`, `SecurityError`, `AbortError`, ...; `other` for anything else. The error's message is never recorded |
-| `attestation` | for a registration, what its attestation was signed with, leaf to anchor, and `(PQ)` where all of it is post-quantum; led by `enterprise not listed, asked direct` where `webauthn.attestation` is `enterprise` and the RP ID is not in `webauthn.attestationEnterpriseRpIds` (for a registration that recorded an attestation) |
+| `capabilities` | the client capabilities the browser reported as available, from a fixed list |
+| `authenticator` | three facts separated by `\|`: the attachment (`platform` or `cross-platform`), the transports the browser reported (`internal`, `hybrid`, `usb`...), and for a registration what its attestation was signed with, leaf to anchor, with `(PQ)` where all of it is post-quantum, led by `enterprise not listed, asked direct` where `webauthn.attestation` is `enterprise` and this RP ID is not on its list. For example `platform\|internal,hybrid\|ES256` |
+
+Rows written before #1108 carry `attachment`, `transports`, `attestation`
+and `postQuantum` as separate fields instead of `authenticator`, and a few
+written in between carry the capabilities on `client` after a `|`; the
+`/report` source reads all of them.
 
 A refused row carries the error code the refusal was recorded under (for a
 browser that gave up, `STS-AUTHN-0022`).
@@ -1698,8 +1777,8 @@ way, because the browser refuses the ceremony before the service sees it.
   tried; the attestation algorithms are recorded and enforced as WebAuthn
   and the ML-DSA certificate profile describe them.
 * **Device links on `/portal/devices` write `webauthn.ceremony` rows** with
-  door `portal`. The doors are `sign-in-step`, `usernameless`, `portal`,
-  `activation`, `upgrade` and `admin-enrolment`. When a browser declines a
+  door `device-link`. The doors are `sign-in-step`, `usernameless`, `portal`,
+  `activation`, `upgrade`, `admin-enrolment` and `device-link`. When a browser declines a
   registration, the existing authenticated ceremony operation records its
   allowlisted error name and the client capabilities it reported; no error
   message text is stored, and the pending ceremony remains available for its

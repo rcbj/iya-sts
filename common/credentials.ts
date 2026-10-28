@@ -9472,6 +9472,9 @@ class Credentials {
       exclude: held.filter((one) => {
         return Credentials.keyLane(one) === lane;
       }).map((one) => { return one.credentialId; }),
+      // WHEN THESE OPTIONS WERE ISSUED (#1108): the ceremony row's
+      // `durationMs` is measured from it at the finish.
+      issuedAt: Date.now(),
       expires: Date.now() + this.keyEnrolmentTtlMs()
     };
     pendingKeys.set(name.toLowerCase(), record);
@@ -9537,7 +9540,8 @@ class Credentials {
    * @param enrolmentId - the pending enrolment's id
    * @param credential - what the browser posted
    * @param opts - `origin` and `rpId`, what the browser was talking to,
-   *   and `door` (#943), `portal` or `activation`, for the ceremony's row
+   *   and `door` (#943), `portal` or `activation`, and `application`
+   *   (#1108), for the ceremony's row
    * @returns a promise of `addKey()`'s answer, or a refusal
    */
   confirmKeyEnrolment(username, enrolmentId, credential, opts?) {
@@ -9573,7 +9577,10 @@ class Credentials {
         algorithm: key ? Credentials.keyAlgorithm(key).name : '',
         posted: credential, attestation: key ? key.attestation : null,
         narrowed: held && held.clientRule
-          ? String(held.clientRule.record || '') : '' });
+          ? String(held.clientRule.record || '') : '',
+        // (#1108) No application at `/portal/keys` or an activation link.
+        application: String((opts || {}).application || ''),
+        issuedAt: held ? Number(held.issuedAt) || 0 : 0 });
       log.debug("Leaving confirmKeyEnrolment() note().");
     };
     log.debug("Leaving Credentials.confirmKeyEnrolment().");
@@ -10079,6 +10086,9 @@ class Credentials {
       upgrade: { credentialId: String(key.credentialId), mode: mode,
                  phase: 'proof', previousAlgorithm: previousAlgorithm,
                  provenAt: 0 },
+      // When the proof's options were issued (#1108); the registration's
+      // are `upgrade.provenAt`.
+      issuedAt: Date.now(),
       expires: Date.now() + this.keyEnrolmentTtlMs()
     };
     pendingKeys.set(name.toLowerCase(), record);
@@ -10163,7 +10173,9 @@ class Credentials {
         errorCode: answer && answer.ok ? ''
           : String(errorCodes.codeOf(answer) || ''),
         offered: key ? [Credentials.keyAlgorithm(key).name] : [],
-        algorithm: String(algorithm || ''), posted: assertion });
+        algorithm: String(algorithm || ''), posted: assertion,
+        application: String(options.application || ''),
+        issuedAt: Number(held.issuedAt) || 0 });
       log.debug("Leaving proveKeyUpgrade() note().");
       return answer;
     };
@@ -10314,7 +10326,11 @@ class Credentials {
                    (threw ? 'STS-AUTHN-0027' : '')),
         offered: webauthnPolicy.upgradeAlgorithmIds(),
         algorithm: key ? Credentials.keyAlgorithm(key).name : '',
-        posted: credential, attestation: key ? key.attestation : null });
+        posted: credential, attestation: key ? key.attestation : null,
+        // (#1108) The registration's options were issued when the proof
+        // was accepted.
+        application: String((opts || {}).application || ''),
+        issuedAt: Number((held.upgrade || {}).provenAt) || 0 });
       log.debug("Leaving confirmKeyUpgrade() note().");
     };
     log.debug("Leaving Credentials.confirmKeyUpgrade().");
@@ -10670,6 +10686,8 @@ class Credentials {
       // options and the verifier cannot disagree.
       offered: this.adminEnrolmentAlgorithms(lane),
       enrolledBy: { username: by.username, sub: by.sub, at: 0 },
+      // When the options were issued (#1108), for the ceremony row.
+      issuedAt: Date.now(),
       expires: Date.now() + Math.min(this.keyEnrolmentTtlMs(),
                                      Credentials.ADMIN_ENROLMENT_TTL_MS)
     };
@@ -10773,7 +10791,8 @@ class Credentials {
                    (threw ? 'STS-AUTHN-0447' : '')),
         offered: (held && held.offered) || [],
         algorithm: key ? Credentials.keyAlgorithm(key).name : '',
-        posted: credential, attestation: key ? key.attestation : null });
+        posted: credential, attestation: key ? key.attestation : null,
+        issuedAt: held ? Number(held.issuedAt) || 0 : 0 });
       log.debug("Leaving confirmAdminKeyEnrolment() note().");
     };
     log.debug("Leaving Credentials.confirmAdminKeyEnrolment().");

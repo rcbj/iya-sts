@@ -16,7 +16,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 | `device_bound_sessions.ts` | **Device Bound Session Credentials (#725)**: the registration header, `POST /authn/dbsc/register` and `/authn/dbsc/refresh`, and the bound-cookie check `sessionOf()` asks. See *The session bound to a key the browser holds*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
-| `webauthn_ceremonies.ts` | **Every WebAuthn ceremony's audit row, and the algorithm mismatch (#943)**: one `webauthn.ceremony` row per registration and assertion at the four doors that run one, and a `webauthn.algorithm-mismatch` row. A library (rule 3). See *Every ceremony leaves a row*, below. |
+| `webauthn_ceremonies.ts` | **Every WebAuthn ceremony's audit row, and the algorithm mismatch (#943)**: one `webauthn.ceremony` row per registration and assertion at every door that runs one (the device link since #1108), with the application and a server-measured duration (#1108), and a `webauthn.algorithm-mismatch` row. A library (rule 3). See *Every ceremony leaves a row*, below. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
@@ -3102,14 +3102,17 @@ it only where a realm says to:
   `enterprise`.** A serial in a statement nobody asked for that way binds
   nobody; with the passkey policy's `enterpriseSerialAttribute` set, such a
   key names no serial and is refused (`STS-AUTHN-0321`).
-* **The ceremony row** (`webauthn_ceremonies.ts`): folded into the existing
-  `attestation` detail rather than a thirteenth field (`audit.js` keeps
-  the first twelve and drops the rest) — `attestationText()` leads with
-  `enterprise not listed, asked direct` where the record says
-  `enterpriseDowngraded`. **That cap had been dropping `attestation`
-  itself on every row** since `capabilities` became the twelfth field:
-  the capabilities now ride on `client` after a `|`, as #1112's rule rides
-  on `offered`, and the row is twelve fields again. Only a door that
+* **The ceremony row** (`webauthn_ceremonies.ts`): folded into the
+  attestation part of the row's `authenticator` detail rather than a field
+  of its own (`audit.js` keeps the first twelve and drops the rest) —
+  `attestationText()` leads with `enterprise not listed, asked direct`
+  where the record says `enterpriseDowngraded`. **That cap had been
+  dropping `attestation` itself on every row** since `capabilities` became
+  the thirteenth field. #1114 first moved the capabilities onto `client`
+  after a `|`; #1108 folded the row differently at the same time, and the
+  two were reconciled into #1108's shape (*Every ceremony leaves a row*,
+  below): `client` plain, `capabilities` its own field, and `unfold()`
+  reading a row written either way. Only a door that
   passes the record has it, which every door does for a registration that
   completed; a registration refused before its attestation was assessed (a
   browser that gave up, a failed section 7.1 check) has no record, and its
@@ -3171,7 +3174,27 @@ twelve detail fields, which are what a realm-wide report reads) at:
 * **`/portal/keys` and an activation link** — `credentials.confirmKeyEnrolment()`,
   reading the pending enrolment's lane BEFORE the check drops it
   (`opts.door` names `activation`).
-* **not the device link** (`common/device_enrolment.ts`), which is owed.
+* **the device link** (#1108) — `device_enrolment.finishLink()` wraps the
+  check (`checkLink()`) and writes the row, door `device-link`, reading the
+  challenge row's `issuedAt` and named credential BEFORE the check spends
+  the challenge.
+
+**THE APPLICATION AND THE DURATION (#1108), AND THE FOLD THAT MADE ROOM.**
+Each door hands `record()` the application in play (the pending sign-in's
+`application`; '' at `/portal/keys`, an activation link, a device link and
+an administrator's enrolment) and the instant its pending ceremony's
+options were issued, and `durationMs` is measured from that, on the
+server: the step's `optionsAt` (stamped by `mfaWebauthnOptions()`), the
+screen's `passkeyChallengeAt` (`passkeyChallengeFor()`), a pending
+enrolment's `issuedAt`, an upgrade's `issuedAt` then `upgrade.provenAt`,
+a device challenge's `issuedAt`. **The row was already thirteen fields**
+(`capabilities` beside `attestation`), so `audit.js`'s cap of twelve had
+been dropping `attestation`. Two more fit without losing anything:
+`attachment`, `transports` and `attestation` are folded into
+`authenticator` (`a|t|attestation`, none of which can hold a `|`), and
+`postQuantum`, a function of `algorithm`, is no longer stored.
+`webauthn_ceremonies.unfold()` reads both shapes back, and `/report`'s
+ceremony source (#1107) reads through it.
 
 **The browser's error name comes through the ceremony's own endpoint**: both
 scripts already posted `{ error: e.name, message }` as the credential, so

@@ -65,6 +65,9 @@ import executor = require('./executor');
 // The passkey history source's projection (#1109): a library in a file of
 // its own, which reaches the passkey report lazily.
 import PasskeyHistoryRows = require('./passkey_history');
+// The passkey ceremony source's projection (#1107): a library in a file
+// of its own, which reaches the ceremony module lazily.
+import PasskeyCeremonyRows = require('./passkey_ceremonies');
 
 const log = bunyan.createLogger({ name: 'sts-report-sources' });
 
@@ -2604,6 +2607,26 @@ async function reportAuditEvents(): Promise<any[]> {
   return events;
 }
 
+// THE PASSKEY CEREMONY SOURCE (#1107): the same ring, read the same way as
+// `authActivity` — one pass over what `reportAuditEvents()` holds, offered
+// to the bounded collector, yielding every page.
+async function reportReadPasskeyCeremonies(rows: any, control: any):
+    Promise<void> {
+  log.debug("Entering reportReadPasskeyCeremonies().");
+  const flat = PasskeyCeremonyRows.rowsOf(await reportAuditEvents());
+  for (let i = 0; i < flat.length; i++) {
+    const keep = await reportOffer(flat[i], rows, control);
+    if (keep === false) {
+      log.debug("Leaving reportReadPasskeyCeremonies(). Stopped.");
+      return;
+    }
+    if (i % PAGE === PAGE - 1) {
+      await Promise.resolve();
+    }
+  }
+  log.debug("Leaving reportReadPasskeyCeremonies().");
+}
+
 async function reportReadAudit(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadAudit().");
   const events = await reportAuditEvents();
@@ -2843,6 +2866,8 @@ async function reportReadSource(plan: any, rows: any, control: any):
     await reportReadPostLogin(rows, control);
   } else if (source === 'passkeyHistory') {
     await reportReadPasskeyHistory(rows, control);
+  } else if (source === 'passkeyCeremonies') {
+    await reportReadPasskeyCeremonies(rows, control);
   }
   log.debug("Leaving reportReadSource().");
 }
@@ -3715,6 +3740,7 @@ export = {
   metricRows: reportMetricRows,
   mechanismRows: reportMechanismRows,
   activityRows: reportActivityRows,
+  passkeyCeremonyRows: PasskeyCeremonyRows.rowsOf,
   personMail: reportPersonMail,
   // One job run as the drain runs it, for the test that a disabled owner's
   // queued job fails (#1042); the drain's own gate needs a scheduler.

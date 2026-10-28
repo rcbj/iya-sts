@@ -333,7 +333,11 @@ function whereLeaves(where: any): any[] | null {
     return !!node && typeof node === 'object' && ROW_OPS.indexOf(
       String(node.op)) >= 0 && typeof node.field === 'string' &&
       (node.op === 'isNull' || typeof node.value === 'string' ||
-       typeof node.value === 'number');
+       typeof node.value === 'number' ||
+       // A boolean field's row is a true/false dropdown (#1028); a
+       // predefined query (#1107) or a saved one filters on it with a
+       // boolean, and drew no rows before.
+       typeof node.value === 'boolean');
   };
   if (leafOk(where)) {
     return [where];

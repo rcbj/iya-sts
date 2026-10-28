@@ -97,6 +97,10 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 // THE PASSKEY POLICY (#718): a key it would not let sign its owner in does
 // not link a device either. A leaf below this module.
 import passkeyPolicy = require('./passkey_policy');
+// THE CEREMONY ROW (#1108): a device link is a WebAuthn assertion, and
+// writes the row every other door does. A library over `audit` and the
+// verifier; `credentials` requires it too, so this adds no edge.
+import webauthnCeremonies = require('../authn/webauthn_ceremonies');
 
 type Json = any;
 
@@ -641,31 +645,85 @@ class DeviceEnrolment {
   }
 
   // =========================================================================
-  // A WEBAUTHN LINK, finished: `spec` is { username, sessionId, challenge,
-  // credential (what /authn/webauthn.js posted in `get` mode), origin,
-  // rpId }. The assertion is verified with the stored key and spent through
-  // `credentials.spendAssertion()`; the key's REGISTRATION attestation
-  // decides its level.
+  // A WEBAUTHN LINK, finished, AND ITS CEREMONY ROW (#1108): `checkLink()`
+  // below is the finish; this writes the `webauthn.ceremony` row however it
+  // ends — door `device-link`, an assertion by the credential the challenge
+  // names, `durationMs` from the challenge row's `issuedAt` (read BEFORE the
+  // check spends it), no application — and never lets the row change the
+  // answer. Until #1108 a device link was the one door that wrote none.
   // =========================================================================
   /**
    * Finishes a WebAuthn link: verifies the assertion with the stored key,
-   * spends it, and registers the key on the device.
+   * spends it, and registers the key on the device; and records the
+   * ceremony (#1108).
    *
-   * The key's registration attestation decides whether it is `attested`.
    * @param spec - `username`, `sessionId`, `challenge`, `credential` (what
    *   `/authn/webauthn.js` posted in `get` mode), `origin` and `rpId`
    * @returns the register's result, or a refusal
    */
   async finishLink(spec: Json): Promise<Json> {
-    const { log, credentials, webauthnVerifier, webauthnPolicy } = this.deps;
+    const { log, credentials, errorCodes } = this.deps;
     log.debug("Entering DeviceEnrolment.finishLink().");
+    const s = spec || {};
+    const username = String(s.username || '');
+    const row = challenges.get(String(s.challenge || '')) || null;
+    // Only a row issued to this person and for a link says which key.
+    const mine = !!row && row.purpose === 'webauthn' &&
+                 row.username === username;
+    const named = mine ? String((row.detail || {}).credentialId || '') : '';
+    const key = named ? (credentials.keysOf(username) || [])
+      .filter(function (k: Json) {
+        return String(k.credentialId) === named;
+      })[0] || null : null;
+    const algorithm = key ? credentials.keyAlgorithm(key).name : '';
+    const note = (answer: Json, threw?: boolean): void => {
+      log.debug("Entering finishLink() note().");
+      const ok = !!(answer && answer.ok);
+      webauthnCeremonies.record({
+        ceremony: 'assertion', door: 'device-link', username: username,
+        role: key ? String(key.role || '') : '',
+        lane: key ? credentials.keyLane(key) : '',
+        outcome: ok ? 'success' : 'refused',
+        errorCode: ok ? '' : String(errorCodes.codeOf(answer) ||
+                                    (threw ? 'STS-DEVICE-0022' : '')),
+        offered: algorithm ? [algorithm] : [],
+        algorithm: ok ? algorithm : '',
+        posted: s.credential, application: '',
+        issuedAt: mine ? Number(row.issuedAt) || 0 : 0 });
+      log.debug("Leaving finishLink() note().");
+    };
+    let answer: Json;
+    try {
+      answer = await this.checkLink(s);
+    } catch (e) {
+      log.debug("Caught in DeviceEnrolment.finishLink(): " +
+                ((e && e.message) || e));
+      note(null, true);
+      log.debug("Leaving DeviceEnrolment.finishLink(). Threw.");
+      throw e;
+    }
+    note(answer);
+    log.debug("Leaving DeviceEnrolment.finishLink(). ok=" + !!answer.ok);
+    return answer;
+  }
+
+  // =========================================================================
+  // A WEBAUTHN LINK, checked: `spec` is { username, sessionId, challenge,
+  // credential (what /authn/webauthn.js posted in `get` mode), origin,
+  // rpId }. The assertion is verified with the stored key and spent through
+  // `credentials.spendAssertion()`; the key's REGISTRATION attestation
+  // decides its level.
+  // =========================================================================
+  private async checkLink(spec: Json): Promise<Json> {
+    const { log, credentials, webauthnVerifier, webauthnPolicy } = this.deps;
+    log.debug("Entering DeviceEnrolment.checkLink().");
     const s = spec || {};
     const username = String(s.username || '');
     const challenge = String(s.challenge || '');
     const checked = this.checkChallenge(challenge, { sessionId: s.sessionId,
       username: username, purpose: 'webauthn' });
     if (!checked.ok) {
-      log.debug("Leaving DeviceEnrolment.finishLink(). Challenge.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Challenge.");
       return checked;
     }
     const detail = checked.row.detail || {};
@@ -677,7 +735,7 @@ class DeviceEnrolment {
     if (!key || named !== String(detail.credentialId) ||
         !credential.response) {
       challenges.delete(challenge);
-      log.debug("Leaving DeviceEnrolment.finishLink(). Wrong credential.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Wrong credential.");
       return this.refuse('STS-DEVICE-0022', 'The browser answered with ' +
         (credential.response ? 'a different security key from the one ' +
           'you chose' : 'no assertion — it ran no ceremony') + '.');
@@ -688,7 +746,7 @@ class DeviceEnrolment {
       String(credential.response.userHandle || ''), false);
     if (!handled.ok) {
       challenges.delete(challenge);
-      log.debug("Leaving DeviceEnrolment.finishLink(). User handle.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). User handle.");
       return this.refuse('STS-DEVICE-0022', 'The security key\'s assertion ' +
         'does not belong to this account: ' + handled.why + '.');
     }
@@ -706,7 +764,7 @@ class DeviceEnrolment {
         previousSignCount: key.signCount,
         allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed() });
     } catch (e) {
-      log.debug("Caught in DeviceEnrolment.finishLink(): " +
+      log.debug("Caught in DeviceEnrolment.checkLink(): " +
                 ((e && e.message) || e));
       verdict = { ok: false, failed: [String((e && e.message) || e)] };
     }
@@ -717,7 +775,7 @@ class DeviceEnrolment {
     }
     if (!verdict.ok) {
       challenges.delete(challenge);
-      log.debug("Leaving DeviceEnrolment.finishLink(). Assertion.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Assertion.");
       return this.refuse('STS-DEVICE-0022', 'The security key\'s assertion ' +
         'does not verify: ' + ((verdict.failed || []).map(function (f: Json) {
           return typeof f === 'string' ? f : String(f && f.name);
@@ -728,7 +786,7 @@ class DeviceEnrolment {
       challenge: challenge, ttlMs: challengeTtlMs(), flags: verdict.flags });
     challenges.delete(challenge);
     if (!spent.ok) {
-      log.debug("Leaving DeviceEnrolment.finishLink(). Not spent.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Not spent.");
       return this.refuse(spent.reason === 'store' ? 'STS-DEVICE-0028'
                                                   : 'STS-DEVICE-0016',
                          'The assertion could not be accepted: ' +
@@ -737,7 +795,7 @@ class DeviceEnrolment {
     // And at the finish (#718), for a profile changed since the challenge.
     const notPq = this.postQuantumProblem(username, key);
     if (notPq) {
-      log.debug("Leaving DeviceEnrolment.finishLink(). Not post-quantum.");
+      log.debug("Leaving DeviceEnrolment.checkLink(). Not post-quantum.");
       return notPq;
     }
     const att = key.attestation || {};
@@ -769,7 +827,7 @@ class DeviceEnrolment {
       { deviceId: detail.deviceId, label: detail.label,
                       platform: detail.platform, model: detail.model,
                       os: detail.os }, 'webauthn');
-    log.debug("Leaving DeviceEnrolment.finishLink(). ok=" + out.ok);
+    log.debug("Leaving DeviceEnrolment.checkLink(). ok=" + out.ok);
     return out;
   }
 

@@ -7054,6 +7054,10 @@ class Authn {
         // WHAT A CLIENT RULE DID TO THE OFFER (#1112), armed on the step.
         narrowed: registration && step.clientRule
           ? String(step.clientRule.record || '') : '',
+        // (#1108) The sign-in's application, and the instant
+        // `mfaWebauthnOptions()` issued the options.
+        application: String((step.authn && step.authn.application) || ''),
+        issuedAt: Number(step.optionsAt) || 0,
         req: req });
     } catch (e) {
       // Evidence, never the ceremony.
@@ -7091,7 +7095,10 @@ class Authn {
         algorithm: String(held.algorithm ||
                           (known ? credentials.keyAlgorithm(known).name
                                  : '')),
-        posted: held.posted, req: held.req });
+        posted: held.posted, req: held.req,
+        // (#1108) What `passkeySignIn()` read off the pending sign-in.
+        application: String(held.application || ''),
+        issuedAt: Number(held.issuedAt) || 0 });
     } catch (e) {
       // Evidence, never the sign-in.
       log.debug("Caught in Authn.notePasskeyCeremony(): " +
@@ -16042,11 +16049,14 @@ class Authn {
                   held.upgrade.phase !== 'registration';
     let answer: any;
     try {
+      // The sign-in's application rides along for the ceremony row (#1108).
+      const withApp = Object.assign({}, opts, { application: String(
+        (step.authn && step.authn.application) || '') });
       answer = proof
         ? await credentials.proveKeyUpgrade(name, step.upgradeId,
-                                            credential, opts)
+                                            credential, withApp)
         : await credentials.confirmKeyUpgrade(name, step.upgradeId,
-                                              credential, opts);
+                                              credential, withApp);
     } catch (e) {
       log.debug("Caught in Authn.postLoginUpgradeAct(): " +
                 ((e && e.message) || e));
@@ -16533,6 +16543,10 @@ class Authn {
     log.debug("Entering Authn.passkeyChallengeFor().");
     if (!record.passkeyChallenge) {
       record.passkeyChallenge = stsCrypto.randomBytes(32).toString('base64url');
+      // The instant the options carrying it were issued (#1108): the
+      // usernameless ceremony row's `durationMs` is measured from it. It
+      // includes the time an autofill prompt sat armed on the screen.
+      record.passkeyChallengeAt = Date.now();
       if (record.id && pending.has(record.id)) {
         pending.set(record.id, record);
       }
@@ -16609,7 +16623,10 @@ class Authn {
     // THE CHALLENGE IS TAKEN NOW, whatever follows: single-use, and the
     // screen drawn next arms a new one.
     const challenge = String(record.passkeyChallenge || '');
+    // When the screen armed it (#1108), for the ceremony row's duration.
+    const challengeAt = Number(record.passkeyChallengeAt) || 0;
     delete record.passkeyChallenge;
+    delete record.passkeyChallengeAt;
     pending.set(record.id, record);
     let credential: any = {};
     try {
@@ -16625,7 +16642,9 @@ class Authn {
     // THE CEREMONY IN HAND (#943), for its row: what was posted, and below
     // whose it is, which key, and what it signed with.
     const ceremony: any = { req: req, posted: credential, owner: '',
-                            known: null, algorithm: '' };
+                            known: null, algorithm: '',
+                            application: String(record.application || ''),
+                            issuedAt: challenge ? challengeAt : 0 };
     passkeyCeremonies.set(res, ceremony);
     if (credential.error || !credential.response) {
       // THE REAL BUTTON (the root CLAUDE.md's rule): pressed with the script
@@ -18327,8 +18346,13 @@ class Authn {
     if (facts.mode === 'create') {
       found.step.offered = ((facts.ceremony.options || {}).algorithms || [])
         .map(Number);
-      pendingMfa.set(mfaId, found.step);
     }
+    // THE INSTANT THESE OPTIONS WERE ISSUED (#1108), on the step and so in
+    // the store, from which the ceremony row's `durationMs` is measured at
+    // the act — on whichever node answers it. Each issue restarts it: the
+    // browser runs the options it was given last.
+    found.step.optionsAt = Date.now();
+    pendingMfa.set(mfaId, found.step);
     this.answerJson(res, 200, Object.assign({ ok: true }, facts.ceremony));
     log.debug('Leaving Authn.mfaWebauthnOptions(). ' + facts.mode);
   }
