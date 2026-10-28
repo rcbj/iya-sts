@@ -319,6 +319,14 @@
     "en": "d5b8faad6c0c24c4",
     "text": "Elimina del almacén compartido las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention."
   },
+  "sched.jobs.post-login.campaign-mail.title": {
+    "en": "b434164532e5f5a1",
+    "text": "Campañas de correo posteriores al inicio de sesión"
+  },
+  "sched.jobs.post-login.campaign-mail.describe": {
+    "en": "d95703ecc79a262f",
+    "text": "Envía a las personas que alcanza una campaña de correo posterior al inicio de sesión en curso (#1111) un recordatorio para iniciar sesión, donde la actividad posterior al inicio de sesión les pide entonces registrar una llave de acceso poscuántica. En cada ejecución lee un tramo de las personas de cada campaña tras un cursor, solo escribe a quienes tienen la actividad pendiente, nunca dentro del intervalo de recordatorio ni más allá del máximo de la campaña, y escribe una fila de auditoría por campaña y ejecución."
+  },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
     "text": "Informe de memoria"

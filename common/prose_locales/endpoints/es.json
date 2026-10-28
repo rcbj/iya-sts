@@ -1011,6 +1011,14 @@
     "en": "738bbc740bd914fc",
     "text": "Recontar las llaves de acceso del dominio"
   },
+  "endpoints.route./admin-api/post-login-campaigns.name": {
+    "en": "b434164532e5f5a1",
+    "text": "Campañas de correo posteriores al inicio de sesión"
+  },
+  "endpoints.route./admin-api/post-login-campaigns/:action.name": {
+    "en": "555b68a4465f2517",
+    "text": "Iniciar, pausar, reanudar o terminar una campaña de correo posterior al inicio de sesión"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Clientes SCIM salientes"

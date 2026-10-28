@@ -1895,6 +1895,18 @@
     "en": "cd923c72e2ca4fba",
     "text": "NO ESTÁNDAR (#942). recount: pone en cola el trabajo passkeys.report-recount para este dominio en el líder del planificador, que hace de un recuento nuevo de los titulares la nueva base. La única acción de la consola en esa página; se ejecuta donde se ejecuta todo trabajo, nunca en la solicitud."
   },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
+    "en": "daba792318b37b53",
+    "text": "NON-SPEC (#1111). Lo que dibuja Directorio → Campañas posteriores al inicio de sesión: cada campaña de correo del dominio con su actividad, grupo, intervalo de recordatorio, máximo de correos por persona, personas por ejecución, estado y lo que su trabajo del planificador ha hecho hasta ahora, y si hay un transporte de correo y una actividad posterior al inicio de sesión activos. A quién se escribió es la fuente postLoginProgress de la aplicación de informes. Refleja GET /admin/post-login-campaigns."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
+    "en": "d969b0654c3b6952",
+    "text": "NON-SPEC (#1111). start, con { activity, group, intervalDays, maxMails, perRun }: el trabajo post-login.campaign-mail envía a cada persona con la actividad pendiente un recordatorio para iniciar sesión, a la dirección de su entrada, con un enlace a la página de inicio de sesión y ninguna credencial en él. pause, resume y end, con { id }. Las cuatro acciones de la consola en esa página."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
+    "en": "8498beda414a4cf5",
+    "text": "inicia, pausa, reanuda o termina una campaña de correo"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NO ESTÁNDAR (#552). Lo que dibuja Protocolos → SCIM → Clientes: las entradas de aplicación declaradas para scim-client (los proveedores de servicios a los que este dominio envía sus personas y grupos), cada una con los recuentos de su cola y la pausa de espera progresiva, y con ?client= las colas de reintento y de mensajes fallidos y el descubrimiento de un cliente. Nunca una credencial."

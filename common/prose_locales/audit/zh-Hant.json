@@ -731,6 +731,14 @@
     "en": "9b31304e9f8a3131",
     "text": "一次登入遭到暫扣：一項登入後活動已逾期"
   },
+  "audit.actions.admin.post-login-campaign.change.label": {
+    "en": "036bffa6d0958a81",
+    "text": "登入後活動郵件已開始、暫停、繼續或結束"
+  },
+  "audit.actions.authn.post-login.campaign-run.label": {
+    "en": "059642245f4ca8a9",
+    "text": "登入後活動郵件寄出了提醒"
+  },
   "audit.actions.authn.post-login.unsupported.label": {
     "en": "7d131d7e4638de23",
     "text": "裝置未能建立登入後活動所要求的通行金鑰"

@@ -62,22 +62,29 @@ class PostLoginCampaignsPage {
       '</h2>' + self.startForm(v, c);
   }
 
-  // A state in the reader's words.
+  // A state in the reader's words. Each key is written out whole, so the
+  // catalog check (`tests/i18n_catalogs.js`) can find it.
   private static stateWord(t: Json, state: string): string {
-    const known = ['running', 'paused', 'ended'];
-    return known.indexOf(state) >= 0
-      ? t.html('consolePostLoginCampaigns.state.' + state)
-      : WebKit.esc(state);
+    const words: Record<string, string> = {
+      running: 'consolePostLoginCampaigns.state.running',
+      paused: 'consolePostLoginCampaigns.state.paused',
+      ended: 'consolePostLoginCampaigns.state.ended'
+    };
+    return words[state] ? t.html(words[state]) : WebKit.esc(state);
   }
 
   // One act's button, a form of its own posting `action` and `id`.
   private static actButton(t: Json, act: string, id: string): string {
+    const words: Record<string, string> = {
+      pause: 'consolePostLoginCampaigns.act.pause',
+      resume: 'consolePostLoginCampaigns.act.resume',
+      end: 'consolePostLoginCampaigns.act.end'
+    };
     return '<form method="post" action="' + PAGE + '" class="inline">' +
       '<input type="hidden" name="action" value="' + act + '">' +
       '<input type="hidden" name="id" value="' + WebKit.esc(id) + '">' +
       '<button type="submit"' + (act === 'end' ? ' class="danger"' : '') +
-      '>' + t.html('consolePostLoginCampaigns.act.' + act) +
-      '</button></form>';
+      '>' + t.html(words[act]) + '</button></form>';
   }
 
   // The Campaigns tab.
@@ -131,8 +138,13 @@ class PostLoginCampaignsPage {
   // A number field of the start form, bounded as the API bounds it.
   private static numberField(t: Json, name: string, bound: Json): string {
     const b = bound || {};
+    const words: Record<string, string> = {
+      intervalDays: 'consolePostLoginCampaigns.field.intervalDays',
+      maxMails: 'consolePostLoginCampaigns.field.maxMails',
+      perRun: 'consolePostLoginCampaigns.field.perRun'
+    };
     return '<div class="formrow"><label for="plc-' + name + '">' +
-      t.html('consolePostLoginCampaigns.field.' + name) + '</label>' +
+      t.html(words[name]) + '</label>' +
       '<input type="number" id="plc-' + name + '" name="' + name +
       '" min="' + (Number(b.min) || 1) + '" max="' + (Number(b.max) || 1) +
       '" value="' + (Number(b.dflt) || 1) + '" required></div>';

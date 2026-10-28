@@ -731,6 +731,14 @@
     "en": "9b31304e9f8a3131",
     "text": "May sign-in na pinigil: lampas na sa takdang panahon ang isang post-login activity"
   },
+  "audit.actions.admin.post-login-campaign.change.label": {
+    "en": "036bffa6d0958a81",
+    "text": "Sinimulan, na-pause, itinuloy o tinapos ang isang mail campaign pagkatapos mag-sign in"
+  },
+  "audit.actions.authn.post-login.campaign-run.label": {
+    "en": "059642245f4ca8a9",
+    "text": "Ipinadala ng isang mail campaign pagkatapos mag-sign in ang mga paalala nito"
+  },
   "audit.actions.authn.post-login.unsupported.label": {
     "en": "7d131d7e4638de23",
     "text": "Hindi nagawa ng isang device ang passkey na hiningi ng isang post-login activity"
