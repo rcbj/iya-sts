@@ -1046,7 +1046,7 @@ serviceState.start({
       // keys, the minted rows, coordination and the certificate authority are
       // restored, which is the whole of an active-passive standby's reason to
       // wait, and never in a request worker, which starts it in per-process
-      // mode for itself. A front process campaigns for `ops.scheduler`; with
+      // mode for itself. A front process contends for `ops.scheduler`; with
       // clustering off it leads at once. See cluster/scheduler.ts.
       // -------------------------------------------------------------------
       require('./cluster/scheduler').start('front');

@@ -386,7 +386,7 @@ function projections(t) {
   const OpenApi = require('../report/openapi');
   const catalog = new Catalog();
   const listed = catalog.list();
-  t.equal(listed.length, 11, 'the catalog has eleven sources');
+  t.equal(listed.length, 14, 'the catalog has fourteen sources');
   const ids = listed.map(function (src) {
     return src.id;
   });
@@ -1675,16 +1675,21 @@ function chrome(t) {
   const main = bars.indexOf('<div class="bar">');
   t.check(top === 0 && main > top, 'the top bar comes before the nav bar');
   const topHtml = bars.slice(top, main);
-  t.check(topHtml.indexOf('REALM') >= 0 && topHtml.indexOf('LANG') >= 0 &&
-    topHtml.indexOf('MENU') >= 0,
-    'the top bar holds the realm field, the language chooser and the menu');
-  t.check(topHtml.indexOf('REALM') < topHtml.indexOf('LANG') &&
+  // Refresh moved up beside the realm field with #1090 (rcbj, 2026-10-28),
+  // when the Signals tab went; the nav bar is the pages and nothing else.
+  t.check(topHtml.indexOf('REALM') >= 0 &&
+    topHtml.indexOf('data-act="refresh"') >= 0 &&
+    topHtml.indexOf('LANG') >= 0 && topHtml.indexOf('MENU') >= 0,
+    'the top bar holds the realm field, Refresh, the language chooser and ' +
+    'the menu');
+  t.check(topHtml.indexOf('REALM') < topHtml.indexOf('data-act="refresh"') &&
+    topHtml.indexOf('data-act="refresh"') < topHtml.indexOf('LANG') &&
     topHtml.indexOf('LANG') < topHtml.indexOf('MENU'),
     'in that order');
   t.check(bars.slice(main).indexOf('REALM') < 0 &&
-    bars.slice(main).indexOf('data-act="refresh"') >= 0 &&
+    bars.slice(main).indexOf('data-act="refresh"') < 0 &&
     bars.slice(main).indexOf('/logout') < 0,
-    'the nav bar holds the pages and Refresh, and no Sign out');
+    'the nav bar holds the pages, and neither Refresh nor Sign out');
 
   // The buttons: Save first in the document, disabled and hidden until
   // the Save query box is ticked, so Enter runs until then and saves after.

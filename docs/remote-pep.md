@@ -400,7 +400,7 @@ that is. So the order is always the same:
 3. Write the two halves where the PEP looks, on its mount:
 
    ```bash
-   jq -r .fullChainPem  issued.json > certs/server/pep-server.crt   # leaf + Issuing CA + Intermediate
+   jq -r .fullChainPem  issued.json > certs/server/pep-server.crt   # leaf + Issuing CA + Intermediate + Root
    jq -r .privateKeyPem issued.json > certs/server/pep-server.key
    jq -r .anchorPem     issued.json > service-root.pem              # what a client trusts
    ```

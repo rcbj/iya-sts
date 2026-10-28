@@ -219,7 +219,7 @@ looking. `ssf_cluster.ts` holds three of them; `ssf.ts` provides the capability.
   `ssf.deadStreamTimeoutS` — the same transition cannot recur inside one
   timeout); a store that cannot be asked reports anyway (`STS-SSF-0098`). **One
   process PROBES**: `leadsProbes()` is the front process of the node holding the
-  `ssf.dead-stream-probes` lease (`cluster.lead()` at require time, campaigned
+  `ssf.dead-stream-probes` lease (`cluster.lead()` at require time, contended
   on each heartbeat), never a request worker, and every process outside
   active-active as before; half-open goes with the probe. **The four dead-stream
   members stay on the record, which is last writer wins**: a node whose copy
@@ -655,8 +655,8 @@ audit row says both.
 **`/report` IS THE THIRD SURFACE** (`id: 'report'`, audience `sts-report`,
 `sees: 'own'`): a stream per realm seeded with the others, polled by the
 same job, a receive endpoint at `/report/signals/receive` for a stream set
-back to push (`report/report_app.ts`), and `GET /report-api/signals` with
-the application's Signals page. The receiver row says `own` — the portal's
+back to push (`report/report_app.ts`), and `GET /report-api/signals`
+(the application's Signals page was removed by #1090; the API stays). The receiver row says `own` — the portal's
 fail-closed rule — and the report API widens it to the realm for a report
 ADMINISTRATOR (`rights.isAdmin()`), as the console sees everything for an
 administrator; an application caller sees nothing.
@@ -669,6 +669,51 @@ the shell again, STS-ADMIN-0019 un-retired for its refusals.
 
 `tests/signal_response.js` section G, `tests/ssf_receivers.js` section A and
 `tests/report_access_policy.js` C32-C34 hold it.
+
+## AN ANNOUNCEMENT RIDES THE RECEIVER STREAMS (#1086, 2026-10-28)
+
+rcbj: an administrator broadcasts a message to everybody signed in to the
+console, the portal and reports, shown as a banner; "if the CAEP SSF stream
+can be reused for this signal, do that". So it is one more member of the `sts`
+family, `announcement` (no subject; `realm`, `message`, `surfaces`), on the
+three internal receiver streams and nowhere else:
+
+* **Sending** is `ssf.ts`'s `broadcastAnnouncement()`, from
+  `/admin/broadcast` and `POST /admin-api/broadcast/send`. It refuses
+  (STS-SSF-0153) an empty or over-long message (`ssf.announcementMaxChars`)
+  and an unknown surface, and sends only to the internal stream of each
+  surface chosen, found by `receivers.streamFor()` — never to a remote
+  receiver that asked for every `sts` type, which has no tab to draw it in.
+  **Never by the `internalSurface` marker alone (#1088)**: the marker is the
+  half of a record a persisted round trip can lose, and on 8081 a sender
+  that selected by it found nothing. Nothing delivered is STS-SSF-0154, and
+  the answer names each surface's reason (no stream, disabled, does not
+  take the event). `everyRealm` runs it in every realm; WHO may ask
+  for that is the API's check (a service administrator in the default realm,
+  `broadcastView()`), not this file's.
+* **The streams ask for it**: `seedStreams()` adds it to what they request,
+  and `askForAnnouncements()` adds it, once, to a stream seeded before it
+  existed (`moveToPoll()`'s argument; a disabled stream is left alone).
+* **The receiver keeps it**: after `actOn()`, `keepAnnouncement()` puts a
+  VERIFIED announcement naming the surface in `ssf_receivers.announcements`
+  (persisted, so the worker a tab's poll lands on has what the leader's
+  internal poll took in; rare, so replicating it costs nothing). An
+  unverified one stays in the inbox and is shown to nobody — #117's rule for
+  acting, read for showing.
+* **A tab collects it**: `announcementsFor(surface, since)`, behind
+  `/admin-api/announcements`, `/account-api/announcements` and
+  `/report-api/announcements`. The first ask answers only `now`; the tab
+  sends THAT `now` as `since` ever after (a fixed point, so a row a lagging
+  replica had not applied is found by the next ask) and skips ids it has
+  drawn. A row past `ssf.announcementKeepS` is never answered and is deleted
+  by the read that finds it — the read-side expiry, no sweep and no timer.
+* **The banner** is `common/web_announcements.ts`, one class all three
+  runtimes start (the console when its shell is fetched, again on a realm
+  switch; the portal with `/me`; reports at its first paint with a token),
+  asking through `sendOnce()` so a background poll never begins a sign-in.
+  The message is `textContent`; styles go through the CSSOM.
+
+`tests/ssf_announcements.js` holds all of it.
 
 ## THE OPT-OUT GATE, AND THE EXCEPTION WITHOUT WHICH IT IS A TRAP
 
@@ -1370,6 +1415,18 @@ event could go.
 ---
 
 ## INACTIVITY AND TRANSMITTER-INITIATED VERIFICATION ARE ONE SCHEDULER JOB (#144)
+
+**A PERSON'S POLL STREAM HAS A DEFAULT OF ITS OWN (#1094, 2026-10-28).** A
+browser receiver (rcbj/oidc-caep-client) creates its stream with the
+person's token and deletes it at sign-out; a tab closed for good left it for
+ever, and a person who kept losing the stored id reached `ssf.maxStreams`.
+`ssf_streams.ts`'s `inactivityTimeout()` / `inactivityAction()` give a
+stream that `isPersonPollStream()` — person-owned (`ownerPersonOfRecord()`),
+not internal, poll delivery — `ssf.personStreamInactivityTimeoutS` (86400)
+and `ssf.personStreamInactivityAction` (`delete`) when neither its owning
+application nor `ssf.inactivityTimeoutS` sets a timeout. Push is excluded for
+the global setting's own reason. The job's `off()` asks `inactivityTimeout()`,
+so it runs while such a stream exists. `tests/ssf_person_streams.js` 7.
 
 `ssf.stream-maintenance`: cluster, realm, every `ssf.streamMaintenanceSweepS`,
 off while both of its settings are 0, which is the default. `inactivity_timeout`

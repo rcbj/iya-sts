@@ -261,7 +261,8 @@ const WHY = {
     "way: OpenSSL sends its fatal alert and node closes the socket, and on " +
     "a busy host the close can reach the client first. Seen on the " +
     "debugger listener with the suite's other lanes running, for the " +
-    "SHA-224 probe (2026-09-26) and the SHA-1 one (2026-09-27)" },
+    "SHA-224 probe (2026-09-26), the SHA-1 one (2026-09-27) and an invalid " +
+    "KeyUpdate message type (2026-10-28)" },
   compression48Busy: { why: "openssl", reason: "the probe claims 48 " +
     "compression methods in a TLS 1.2 hello; every listener refuses it, " +
     "with decode_error on a quiet service (all 7930 probes of the script " +
@@ -781,7 +782,13 @@ const PLAN = [
     exceptions: [ex("app data split, conversation with KeyUpdate msg",
                     "Timeout", "keyUpdateLazy"),
                  ex("large KeyUpdate message", "illegal_parameter",
-                    "alertChoice")] },
+                    "alertChoice"),
+                 // A KeyUpdate whose message type is not a KeyUpdate at
+                 // all is refused with unexpected_message, and on a busy
+                 // host the close reaches the probe first (run #10 of
+                 // 2026-10-28, the debugger listener, memory mode).
+                 ex(/^invalid message_type - \d+, in KeyUpdate msg$/,
+                    "Unexpected closure from peer", "refusalCloseRace")] },
   { script: "test-tls13-large-number-of-extensions.py",
     serverKey: "rsa", skip: RSA_SERVER,
     args: ["--supgroup"],

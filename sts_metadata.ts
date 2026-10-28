@@ -4773,6 +4773,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'in the realm for a report administrator, only the signals about ' +
           'themselves for anybody else. Behind the same token as the rest ' +
           'of /report-api.' },
+  { path: '/report-api/announcements', group: 'Reporting',
+    name: 'Announcements for the reports application', specs: ['ssf'],
+    what: 'NON-SPEC (#1086). What an open reports tab collects every ' +
+          'ssf.announcementPollMs: the announcements an administrator ' +
+          'broadcast to this application, as its receiver kept them. ' +
+          'Behind the same token as the rest of /report-api.' },
   { path: '/report-api/groups', group: 'Reporting',
     name: 'The group search, for the reports application', specs: [],
     what: 'NON-SPEC. The realm\'s groups whose name or DN contains q, five ' +
@@ -5272,6 +5278,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'the leader starts at its next tick, 202 with its runId; and ' +
           'step-down: the leader gives up ops.scheduler at its next tick and ' +
           'another node takes it. The console\'s two buttons.' },
+  { path: '/admin-api/broadcast', group: 'Management API',
+    name: 'Broadcast Announcement', specs: ['openapi'],
+    what: 'NON-SPEC (#1086). What GET /admin/broadcast draws: the ' +
+          'applications an announcement can be shown in, whether the caller ' +
+          'may send it to every realm, the longest message and whether ' +
+          'anything can be delivered. Mirrors GET /admin/broadcast.' },
+  { path: '/admin-api/broadcast/:action', group: 'Management API',
+    name: 'Broadcast Announcement actions', specs: ['openapi', 'ssf'],
+    effect: 'sends an announcement to everybody signed in',
+    what: 'NON-SPEC (#1086). send, with { message, surfaces, everyRealm }: ' +
+          'this service\'s own announcement SET on the receiver streams of ' +
+          'the admin console, the user portal and the reports application, ' +
+          'drawn as a banner in every tab of them open at the time.' },
+  { path: '/admin-api/announcements', group: 'Management API',
+    name: 'Console announcements', specs: ['openapi'],
+    what: 'NON-SPEC (#1086). What an open console tab collects every ' +
+          'ssf.announcementPollMs: the announcements the console\'s ' +
+          'receiver took in after the tab\'s first ask.' },
   { path: '/admin-api/mail', group: 'Management API',
     name: 'Mail', specs: ['openapi'],
     what: 'NON-SPEC (#63). What GET /admin/mail draws, as data: the ' +
@@ -6247,6 +6271,30 @@ const ENDPOINTS: EndpointEntry[] = [
           'count of the holders the new baseline. The console\'s one act ' +
           'on that page; it runs where every job runs, never on the ' +
           'request.' },
+  { path: '/admin-api/post-login-activities', group: 'Management API',
+    name: 'Started post-login activities', specs: ['openapi'],
+    what: 'NON-SPEC (#1111, #1123). What Directory → Post-login activities ' +
+          'draws: every post-login activity started in the realm with its ' +
+          'activity, groups, reminder interval, most mails per person, ' +
+          'people per run, state and what its scheduler job has done so ' +
+          'far; whether a mail transport and a post-login activity policy ' +
+          'are on; and the start form\'s group search, a page of twenty ' +
+          'groups from the directory\'s group index (groupq, groupfrom), ' +
+          'with the groups chosen so far (groups) resolved. Who was mailed ' +
+          'is the reports application\'s postLoginProgress source. ' +
+          'Mirrors GET /admin/post-login-activities.' },
+  { path: '/admin-api/post-login-activities/:action', group: 'Management API',
+    name: 'Start, pause, resume or end a post-login activity',
+    specs: ['openapi'],
+    effect: 'starts, pauses, resumes or ends a post-login activity',
+    what: 'NON-SPEC (#1111, #1123). start, with { activity, groups, ' +
+          'intervalDays, maxMails, perRun }: the post-login.activity-mail ' +
+          'job mails each person the activity is due for — everybody in ' +
+          'the realm, or the union of the groups\' members, each person ' +
+          'once — a reminder to sign in, at the ' +
+          'address on their entry, with one link to the sign-in page and no ' +
+          'credential in it. pause, resume and end, with { id }. The ' +
+          'console\'s four acts on that page.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +
@@ -8257,6 +8305,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'by the password step, so following it bare answers 400. A page ' +
           'of the sign-in surface since #572.'
   },
+  { path: '/authn/post-login', group: 'Authentication',
+    name: 'Post-login activity step',
+    specs: ['webauthn', 'oidc'],
+    effect: 'asks for a post-quantum passkey after a sign-in, then ' +
+            'establishes the sign-on session it held',
+    what: 'A POST-LOGIN ACTIVITY (#1096). Where the realm\'s post-login ' +
+          'activity policy (Directory > Policies, off by default) reaches a ' +
+          'person by group and they are due its activity — today a ' +
+          'post-quantum (ML-DSA) passkey in the role they hold a classical ' +
+          'one in, or one where they hold none — a sign-in at the sign-in ' +
+          'screen lands here instead of being signed in: the session is ' +
+          'HELD, not started. Register goes to the /authn/webauthn ' +
+          'registration offering ML-DSA only (/authn-api/mfa/{id}/post-' +
+          'login/register); Skip puts it off for the profile\'s snoozeDays ' +
+          '(/authn-api/mfa/{id}/post-login/skip) and is refused once the ' +
+          'allotted time since the first invitation has passed ' +
+          '(STS-AUTHN-0474). Either way the held session then starts with ' +
+          'the amr and acr of the sign-in. Needs an ?mfa= id minted by the ' +
+          'held sign-in, so following it bare answers 400.'
+  },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
     specs: ['rfc6238', 'rfc4226', 'oidc'],
@@ -8474,6 +8542,16 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Ignore an offered second factor', specs: [],
     what: 'NON-SPEC (#572, #246). Only where the step was offered: the ' +
           'sign-in finishes on the password.' },
+  { path: '/authn-api/mfa/:id/post-login/register',
+    group: 'Authentication',
+    name: 'Register the passkey a post-login activity asks for',
+    specs: ['webauthn'],
+    what: 'NON-SPEC (#1096). The next step is the passkey page\'s ' +
+          'registration, ML-DSA only; its finish starts the held session.' },
+  { path: '/authn-api/mfa/:id/post-login/skip', group: 'Authentication',
+    name: 'Put a post-login activity off', specs: [],
+    what: 'NON-SPEC (#1096). For the profile\'s snoozeDays; refused once ' +
+          'the allotted time has passed. The held session starts.' },
   { path: '/authn-api/mfa/:id/email/send', group: 'Authentication',
     name: 'Mail a sign-in code or link', specs: [],
     what: 'NON-SPEC (#573). To the verified address only; a resend ' +

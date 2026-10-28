@@ -609,10 +609,23 @@ async function theCredentialsAreNotOnIt(b) {
   // sessions on it. The password is untouched, so it still signs them in.
   b = await signIn(OWNER, PROBE_PASSWORD);
   await b.client.act("/portal/mfa", { action: "start" });
-  const page = await b.draw("/portal/mfa");
-  const secret = ((page.text.match(
-    /<th>Secret<\/th><td><code>([^<]+)<\/code>/) || [])[1] || "")
-    .replace(/\s+/g, "");
+  // DRAWN AGAIN FOR A MOMENT (cluster, 2026-10-28): the started enrolment
+  // is a row of the persisted `credentials.pendingTotp` store, written on
+  // the node the start landed on and reaching the other through the change
+  // log, so a draw through the balancer can meet a node that has not pulled
+  // it yet and show no secret (run #6). Up to twenty draws a quarter of a
+  // second apart, which is a few internal polls. A bounded re-read, never
+  // an unbounded one.
+  let secret = "";
+  for (let attempt = 0; attempt < 20 && secret.length <= 10; attempt++) {
+    if (attempt > 0) {
+      await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    }
+    const page = await b.draw("/portal/mfa");
+    secret = ((page.text.match(
+      /<th>Secret<\/th><td><code>([^<]+)<\/code>/) || [])[1] || "")
+      .replace(/\s+/g, "");
+  }
   assert.ok(secret.length > 10, "no shared secret was shown on /portal/mfa.");
   const confirmed = await b.client.act("/portal/mfa",
     { action: "confirm", code: codeFor(secret) });

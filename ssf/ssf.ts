@@ -1826,8 +1826,9 @@ class SharedSignals {
         'ssf.verificationEveryS').value);
       const every = Number.isFinite(everyValue) && everyValue > 0
         ? Math.floor(everyValue) : 0;
-      const action = String(streams.ownerSetting(record,
-        'ssf.inactivityAction').value || 'pause');
+      // `inactivityAction()` (#1094): a person's poll stream timed out by
+      // its own default takes that default's action.
+      const action = streams.inactivityAction(record);
       const idle = now - Number(record.lastActivityAt ||
         Math.floor(Date.parse(record.createdAt || '') / 1000) || now);
       if (timeout && idle >= timeout) {
@@ -1907,17 +1908,19 @@ class SharedSignals {
         // Off only while BOTH are 0 for every stream: an application may
         // turn either on for its own streams when the setting is 0.
         const streams = this.deps.streams;
+        // `inactivityTimeout()` and not the setting (#1094), so a person's
+        // poll stream under its own default keeps the job on.
         const anyStream = streams.listStreams().some((record: Json) => {
           return !streams.isInternal(record) &&
-            (Number(streams.ownerSetting(record,
-              'ssf.inactivityTimeoutS').value) > 0 ||
+            (streams.inactivityTimeout(record) > 0 ||
              Number(streams.ownerSetting(record,
                'ssf.verificationEveryS').value) > 0);
         });
         return !anyStream && !Number(config.value('ssf.inactivityTimeoutS')) &&
                !Number(config.value('ssf.verificationEveryS'))
           ? 'ssf.inactivityTimeoutS and ssf.verificationEveryS are both 0, ' +
-            'and no application sets either for its streams'
+            'no application sets either for its streams, and no person ' +
+            'holds a poll stream'
           : '';
       },
       run: () => {
@@ -3671,6 +3674,180 @@ class SharedSignals {
                 'signing-key-rotated event could not be sent: ' + e.message);
       return { sent: 0, streams: candidates.length, why: e.message };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN ANNOUNCEMENT TO THE PEOPLE SIGNED IN (#1086) — this service's own
+  // `announcement` event, from Server configuration → Broadcast Announcement
+  // and `POST /admin-api/broadcast/send`. Sent ONLY to this service's own
+  // receiver streams (`ssf_receivers.ts`, the streams CAEP and RISC reach the
+  // console, the portal and reports on), for the surfaces chosen: it is a
+  // message to the people using those three applications, and a remote
+  // receiver that asked for every `sts` type has no tab to draw it in. Each
+  // surface's receiver collects it over `/ssf/poll`, keeps it, and its open
+  // tabs collect it from their own API.
+  //
+  // `everyRealm` sends it in every realm, each realm's own streams under its
+  // own issuer; WHO may ask for that is the caller's to decide (the console
+  // and the management API allow it to a service administrator in the
+  // default realm). Never throws.
+  // ---------------------------------------------------------------------------
+  /**
+   * Broadcasts an administrator's announcement to the open tabs of this
+   * service's own admin console, user portal and reports application.
+   *
+   * @param asked - `message`, `surfaces` (ids of `receivers.SURFACES`),
+   *   `everyRealm`, and `by` (who, for the audit row)
+   * @returns a promise of `{ ok, errors?, sent, streams, realms, why? }`;
+   *   it never rejects
+   */
+  async broadcastAnnouncement(asked?: Json): Promise<Json> {
+    const { log, events, streams, errorCodes, config, realms, audit,
+            receivers } = this.deps;
+    log.debug('Entering SharedSignals.broadcastAnnouncement().');
+    const a = asked || {};
+    const message = String(a.message || '').trim();
+    const known = (receivers.SURFACES as Json[]).map(function (one: Json) {
+      return String(one.id);
+    });
+    const chosen = (Array.isArray(a.surfaces) ? a.surfaces
+                                              : (a.surfaces ? [a.surfaces]
+                                                            : []))
+      .map(String).filter(function (one: string, i: number, all: string[]) {
+        return one !== '' && all.indexOf(one) === i;
+      });
+    const max = Number(config.value('ssf.announcementMaxChars'));
+    const errors: string[] = [];
+    if (!message) {
+      errors.push('An announcement needs a message.');
+    } else if (message.length > max) {
+      errors.push('The message is ' + message.length + ' characters; ' +
+                  'ssf.announcementMaxChars allows ' + max + '.');
+    }
+    if (!chosen.length) {
+      errors.push('Choose at least one application to show it in.');
+    }
+    const unknown = chosen.filter(function (one: string) {
+      return known.indexOf(one) < 0;
+    });
+    if (unknown.length) {
+      errors.push('Not an application this service has: ' +
+                  unknown.join(', ') + '. The three are: ' +
+                  known.join(', ') + '.');
+    }
+    if (errors.length) {
+      log.debug('Leaving SharedSignals.broadcastAnnouncement(). Refused.');
+      return { ok: false, code: 'STS-SSF-0153', errors: errors, sent: 0,
+               streams: 0, realms: [] };
+    }
+    const uri = events.ANNOUNCEMENT;
+    const targets = a.everyRealm ? realms.list() : [realms.current()];
+    const outcome: Json = { ok: true, sent: 0, streams: 0, realms: [] };
+    if (!this.enabled() || !receivers.enabled()) {
+      outcome.why = !this.enabled() ? 'Shared Signals is off (ssf.enabled).'
+        : 'This service\'s own receivers are off (ssf.internalReceivers).';
+    } else {
+      for (const realm of targets) {
+        await realms.run(realm, async () => {
+          const here: Json = { realm: realms.currentId(), sent: 0,
+                               streams: 0, skipped: [] };
+          // EACH SURFACE'S STREAM BY `streamFor()`, NEVER BY THE MARKER
+          // ALONE (#1088): `internalSurface` is not an SSF member and is the
+          // half of a record a persisted round trip can lose, which is why
+          // `streamFor()` asks for the derived id first. Selecting on the
+          // marker sent nothing on 8081, whose records came from the store.
+          const candidates: Json[] = [];
+          chosen.forEach((surfaceId: string) => {
+            const record = receivers.streamFor(surfaceId);
+            // A STREAM THE STORE CARRIED OVER asks for the event here, once,
+            // before it is judged (#1091): seeding's own ask ran before the
+            // store's record arrived, and `pollAll()` may not have run yet.
+            if (record) {
+              receivers.askForAnnouncements(receivers.surfaceOf(surfaceId),
+                                            record);
+            }
+            const why = !record ? 'has no receiver stream in this realm'
+              : (record.status === 'disabled' ? 'its stream is disabled'
+                : (!streams.deliversEvent(record, uri)
+                  ? 'its stream does not take the announcement event'
+                  : ''));
+            if (why) {
+              here.skipped.push(surfaceId + ' ' + why);
+            } else if (candidates.indexOf(record) < 0) {
+              candidates.push(record);
+            }
+          });
+          here.streams = candidates.length;
+          if (candidates.length) {
+            const payload = events.EVENT_BY_URI[uri].generate({
+              realm: here.realm, message: message, surfaces: chosen });
+            // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0
+            // section 4.1.9).
+            const txn = this.newTxn();
+            try {
+              const reports = await Promise.all(candidates.map(
+                (record: Json) => {
+                  return this.transmit(record, { txn: txn, uri: uri,
+                    payload: payload, toe: payload.event_timestamp });
+                }));
+              here.sent = reports.filter(function (one: Json) {
+                return one && one.ok;
+              }).length;
+            } catch (e) {
+              log.debug('Caught in SharedSignals.broadcastAnnouncement(): ' +
+                        ((e && e.message) || e));
+              log.error(errorCodes.tag('STS-SSF-0155') + 'ssf: an ' +
+                        'announcement could not be sent in the "' +
+                        here.realm + '" realm: ' + ((e && e.message) || e));
+              here.why = String((e && e.message) || e);
+            }
+          }
+          outcome.sent += here.sent;
+          outcome.streams += here.streams;
+          outcome.realms.push(here);
+        });
+      }
+      if (!outcome.sent) {
+        const reasons = [].concat(...outcome.realms.map((one: Json) => {
+          return (one.skipped || []).map((what: string) => {
+            return what + (outcome.realms.length > 1
+              ? ' (realm ' + one.realm + ')' : '');
+          });
+        }));
+        outcome.why = (reasons.length ? reasons.join('; ')
+          : 'no receiver stream of the chosen applications took it') +
+          '. See /admin/ssf.';
+      }
+    }
+    if (!outcome.sent) {
+      outcome.code = 'STS-SSF-0154';
+      log.warn(errorCodes.tag('STS-SSF-0154') + 'ssf: an announcement ' +
+               'reached no stream: ' + outcome.why);
+    }
+    audit.audit({ action: 'ssf.announcement.broadcast', category: 'signals',
+      protocol: 'SSF', channel: 'internal',
+      outcome: outcome.sent ? 'success' : 'failure',
+      errorCode: outcome.sent ? '' : 'STS-SSF-0154',
+      target: chosen.join(','),
+      summary: 'An announcement was broadcast to ' + chosen.join(', ') +
+               (a.everyRealm ? ' in every realm' : '') + ' by ' +
+               String(a.by || 'an administrator'),
+      detail: { surfaces: chosen, everyRealm: !!a.everyRealm,
+                characters: message.length, sent: outcome.sent,
+                streams: outcome.streams } });
+    // WHAT THE CONSOLE SAYS when the act is done: English, as every answer
+    // of the management API is.
+    outcome.message = outcome.sent
+      ? 'The announcement went to ' + outcome.sent + ' of ' +
+        outcome.streams + ' receiver stream(s) in ' +
+        outcome.realms.length + ' realm(s); open tabs show it within ' +
+        'seconds.'
+      : 'Nothing was sent: ' + outcome.why;
+    log.info('ssf: an announcement went to ' + outcome.sent + ' of ' +
+             outcome.streams + ' receiver stream(s) in ' +
+             outcome.realms.length + ' realm(s).');
+    log.debug('Leaving SharedSignals.broadcastAnnouncement().');
+    return outcome;
   }
 
   // ---------------------------------------------------------------------------
@@ -6137,6 +6314,7 @@ export = {
   CONSOLE_ACTIONS: SharedSignals.CONSOLE_ACTIONS,
   caepAutoEmit: slot.forward('caepAutoEmit'),
   signingKeyRotated: slot.forward('signingKeyRotated'),
+  broadcastAnnouncement: slot.forward('broadcastAnnouncement'),
   kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
   serviceKeyChanged: slot.forward('serviceKeyChanged'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),

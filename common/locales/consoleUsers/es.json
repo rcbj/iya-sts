@@ -887,5 +887,6 @@
   "mfaSection.certAddTip": "Un único certificado final. La autoridad que lo emitió va en los almacenes de confianza de clientes, no aquí.",
   "mfaSection.certAdd": "Almacenar",
   "mfaSection.certAddTitle": "Almacenar este certificado en la entrada",
-  "mfaSection.certNeedsWrite": "Almacenar o quitar uno requiere <strong>Admin Write</strong>."
+  "mfaSection.certNeedsWrite": "Almacenar o quitar uno requiere <strong>Admin Write</strong>.",
+  "mfaSection.possiblyReplaced": "Puede haber sido reemplazada en su autenticador por una llave de acceso registrada el {day} con el mismo identificador de usuario y el mismo AAGUID. No se cuenta como vía de acceso; bórrela si ya no funciona."
 }

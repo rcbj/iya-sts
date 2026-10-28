@@ -170,6 +170,10 @@ import webauthnAttestation = require('../authn/webauthn_attestation');
 // /portal/keys and an activation link verify a registration. A library over
 // the audit log and the passkey policy; it requires nothing back here.
 import webauthnCeremonies = require('../authn/webauthn_ceremonies');
+// THE CLIENTS A REGISTRATION OFFERS NO ML-DSA (#1112), asked where an
+// enrolment is armed. A library over the passkey policy and its own store,
+// requiring nothing that requires this module.
+import passkeyClients = require('./passkey_clients');
 // THE ERROR CODES (2026-09-12). A LEAF that requires nothing, so it cannot
 // close a cycle from here — which is why it is this and not `audit.js`, which
 // this file must not reach. Every refusal below RETURNS a verdict to a caller
@@ -3944,6 +3948,11 @@ class Credentials {
     }
     log.info('credentials: a security key was enrolled for ' + name +
              ' as a ' + role + ' credential.');
+    // A ROW THIS ONE MAY HAVE REPLACED ON ITS AUTHENTICATOR (#1101). Not
+    // for an upgrade, whose write already replaced or marked the old row.
+    if (!upgrading) {
+      this.markPossiblyReplaced(name, record);
+    }
     // AN ANDROID-ATTESTED KEY MOVES THE RECHECK'S REGISTRATION MARK (#615),
     // so the next recheck does not skip as "nothing changed". The key was
     // asked about at registration, so this is the belt to that brace; the
@@ -4724,6 +4733,9 @@ class Credentials {
     const outcome = this.rewriteKey(username, credentialId, (found) => {
       found.signCount = Number(signCount || 0);
       found.lastUsedAt = Date.now();
+      // IT SIGNED SOMEBODY IN, SO IT WAS NOT REPLACED (#1101).
+      delete found.possiblyReplacedBy;
+      delete found.possiblyReplacedAt;
       // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3
       // section 6.1.3: BS "can change over time"), so each assertion's is
       // kept — and BE for a key enrolled before #470 kept it, since BE
@@ -4978,8 +4990,12 @@ class Credentials {
     const removed = keys.filter((one) => {
       return one.credentialId === String(credentialId);
     })[0];
+    // A ROW MARKED AS POSSIBLY REPLACED ON ITS AUTHENTICATOR (#1101) is not
+    // counted as a way in: the credential it describes may be gone.
     const stillHasPrimary =
-        kept.some((one) => { return one.role === 'primary'; });
+        kept.some((one) => {
+          return one.role === 'primary' && !one.possiblyReplacedBy;
+        });
     if (removed && removed.role === 'primary' &&
         !this.hasPassword(name) && !stillHasPrimary) {
       log.debug("Leaving Credentials.removeKey().");
@@ -5002,6 +5018,58 @@ class Credentials {
     log.info('credentials: a security key was removed for ' + name + '.');
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A ROW A LATER REGISTRATION MAY HAVE REPLACED (#1101, 2026-10-28).
+  //
+  // A discoverable credential created on an authenticator under the same RP
+  // ID and the same user handle as one it already holds REPLACES that one
+  // on the device, while this service keeps both rows: the person and an
+  // administrator see two passkeys where the authenticator holds one, and
+  // the removal guard could count a row that signs nobody in. So when a key
+  // is written under a handle another of the person's keys uses, with the
+  // same AAGUID, the OLDER row is marked `possiblyReplacedBy` — a MARKER and
+  // never a deletion, since an AAGUID names a model, not a device, and two
+  // keys of one model are two devices. A row with no handle (from before
+  // #474) or no AAGUID (attestation `none`) is not marked: nothing says it
+  // was the same authenticator. The mark goes when the row signs somebody
+  // in (`noteKeyUsed()`), and the removal guard does not count a marked row.
+  // ---------------------------------------------------------------------------
+  private markPossiblyReplaced(name: string, record: any): void {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.markPossiblyReplaced().');
+    const handle = String(record.userHandle || '');
+    const aaguid = Credentials.aaguidString(record.aaguid);
+    if (!handle || !aaguid || record.discoverable === false) {
+      log.debug('Leaving Credentials.markPossiblyReplaced(). Not ' +
+                'comparable.');
+      return;
+    }
+    const older = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) !== String(record.credentialId) &&
+             String(one.userHandle || '') === handle &&
+             Credentials.aaguidString(one.aaguid) === aaguid &&
+             one.discoverable !== false && !one.possiblyReplacedBy;
+    });
+    older.forEach((one) => {
+      const at = Date.now();
+      const marked = this.rewriteKey(name, one.credentialId, (found) => {
+        found.possiblyReplacedBy = String(record.credentialId);
+        found.possiblyReplacedAt = at;
+        return true;
+      });
+      if (marked.reason === 'written') {
+        log.info('credentials: a passkey of ' + name + ' may have been ' +
+                 'replaced on its authenticator by the one just registered ' +
+                 '(same user handle, AAGUID ' + aaguid + '); marked.');
+        webauthnCeremonies.possiblyReplaced({ username: name,
+          credentialId: String(one.credentialId),
+          by: String(record.credentialId), aaguid: aaguid });
+      }
+    });
+    log.debug('Leaving Credentials.markPossiblyReplaced(). ' + older.length +
+              ' marked.');
   }
 
   // ---------------------------------------------------------------------------
@@ -9307,6 +9375,20 @@ class Credentials {
       }
       lane = webauthnPolicy.classicalRetryLane(lane);
     }
+    // A CLIENT KNOWN NOT TO MAKE AN ML-DSA PASSKEY (#1112): the person's
+    // profile's `clientRules`, or a client this realm learned, arms the
+    // enrolment as the classical retry from the start — never where a
+    // classical passkey is not allowed (`offerFor()` asks the retry's own
+    // refusal) nor in the post-quantum lane. Carried on the pending record
+    // with what the ceremony row records.
+    let clientRule: { narrowed: boolean; record: string } | null = null;
+    if (!classicalOnly) {
+      const decided = passkeyClients.offerFor({ lane: lane });
+      clientRule = decided.record
+        ? { narrowed: decided.narrowed, record: decided.record } : null;
+    }
+    const offerClassical = classicalOnly ||
+                           !!(clientRule && clientRule.narrowed);
     const laneAllowed = webauthnPolicy.laneRefusal(lane);
     if (!laneAllowed.ok) {
       log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
@@ -9360,13 +9442,15 @@ class Credentials {
       role: role,
       kind: kind,
       lane: lane,
-      // The classical retry (#944): the algorithms less ML-DSA.
-      classicalOnly: classicalOnly,
+      // The classical retry (#944): the algorithms less ML-DSA — asked for,
+      // or armed by a client rule (#1112).
+      classicalOnly: offerClassical,
+      clientRule: clientRule,
       // WHAT THIS CEREMONY OFFERS (#940), under the person's passkey
       // profile as selected above: the finish holds the credential to it as
       // well as to what is offered then (`heldToOffer()`), so neither a
       // client nor a profile changed in between widens it.
-      offered: webauthnPolicy.algorithmIds(lane, classicalOnly),
+      offered: webauthnPolicy.algorithmIds(lane, offerClassical),
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
@@ -9388,6 +9472,9 @@ class Credentials {
       exclude: held.filter((one) => {
         return Credentials.keyLane(one) === lane;
       }).map((one) => { return one.credentialId; }),
+      // WHEN THESE OPTIONS WERE ISSUED (#1108): the ceremony row's
+      // `durationMs` is measured from it at the finish.
+      issuedAt: Date.now(),
       expires: Date.now() + this.keyEnrolmentTtlMs()
     };
     pendingKeys.set(name.toLowerCase(), record);
@@ -9400,6 +9487,8 @@ class Credentials {
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
              role: role, kind: kind, lane: lane, classicalOnly: classicalOnly,
+             // What a client rule did to the offer (#1112), or null.
+             clientRule: clientRule,
              exclude: record.exclude.slice(),
              userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
@@ -9451,7 +9540,8 @@ class Credentials {
    * @param enrolmentId - the pending enrolment's id
    * @param credential - what the browser posted
    * @param opts - `origin` and `rpId`, what the browser was talking to,
-   *   and `door` (#943), `portal` or `activation`, for the ceremony's row
+   *   and `door` (#943), `portal` or `activation`, and `application`
+   *   (#1108), for the ceremony's row
    * @returns a promise of `addKey()`'s answer, or a refusal
    */
   confirmKeyEnrolment(username, enrolmentId, credential, opts?) {
@@ -9478,10 +9568,19 @@ class Credentials {
         errorCode: answer && answer.ok ? ''
           : String(this.deps.errorCodes.codeOf(answer) ||
                    (threw ? 'STS-AUTHN-0027' : '')),
-        offered: this.deps.webauthnPolicy.algorithmIds(
-          (held && held.lane) || 'classical'),
+        // THE OFFER AS IT WAS ARMED (#940's `offered`), so a retry's or a
+        // client rule's narrower list (#1112) is the one recorded.
+        offered: held && Array.isArray(held.offered) && held.offered.length
+          ? held.offered
+          : this.deps.webauthnPolicy.algorithmIds(
+            (held && held.lane) || 'classical'),
         algorithm: key ? Credentials.keyAlgorithm(key).name : '',
-        posted: credential, attestation: key ? key.attestation : null });
+        posted: credential, attestation: key ? key.attestation : null,
+        narrowed: held && held.clientRule
+          ? String(held.clientRule.record || '') : '',
+        // (#1108) No application at `/portal/keys` or an activation link.
+        application: String((opts || {}).application || ''),
+        issuedAt: held ? Number(held.issuedAt) || 0 : 0 });
       log.debug("Leaving confirmKeyEnrolment() note().");
     };
     log.debug("Leaving Credentials.confirmKeyEnrolment().");
@@ -9820,9 +9919,11 @@ class Credentials {
    * @param username - the person
    * @param key - one of their stored keys, or null for an id that named
    *   none of theirs
+   * @param mode - `replace` or `alongside` where the caller names it
+   *   (#1100); the lanes' `upgradeMode()` otherwise
    * @returns `{ ok: true }`, or a refusal carrying its code
    */
-  keyUpgradeRefusal(username, key) {
+  keyUpgradeRefusal(username, key, mode?) {
     const { log, webauthnPolicy, errorCodes } = this.deps;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.keyUpgradeRefusal().");
@@ -9864,7 +9965,7 @@ class Credentials {
       return coded(errorCodes.codeOf(role) || 'STS-AUTHN-0044',
                    { ok: false, reason: 'upgrade', errors: [role.why] });
     }
-    if (webauthnPolicy.upgradeMode() === 'alongside' &&
+    if ((mode || webauthnPolicy.upgradeMode()) === 'alongside' &&
         held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
       return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
@@ -9915,10 +10016,12 @@ class Credentials {
    * @param username - the person
    * @param credentialId - the classical passkey's credential id, looked up
    *   among this person's keys
+   * @param opts - `mode`: `replace` or `alongside` to name what the write
+   *   does (#1100); the lanes decide where it is left out
    * @returns `{ ok: true, upgradeId, challenge, credentialId, mode, lane,
    *   expiresAt }`, or a refusal
    */
-  beginKeyUpgrade(username, credentialId) {
+  beginKeyUpgrade(username, credentialId, opts?) {
     const { log, webauthnPolicy, crypto } = this.deps;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.beginKeyUpgrade().");
@@ -9935,12 +10038,18 @@ class Credentials {
     const key = this.keysOf(name).filter(function (one) {
       return String(one.credentialId) === String(credentialId || '');
     })[0] || null;
-    const refused = this.keyUpgradeRefusal(name, key);
+    // THE MODE A CALLER NAMES (#1100): the post-login activity asks for
+    // `replace` — the ML-DSA passkey in the classical one's place, under its
+    // handle, on its authenticator — whatever the lanes; otherwise the
+    // lanes decide (`upgradeMode()`), as they always did.
+    const mode = opts && (opts.mode === 'replace' ||
+                          opts.mode === 'alongside')
+      ? String(opts.mode) : webauthnPolicy.upgradeMode();
+    const refused = this.keyUpgradeRefusal(name, key, mode);
     if (!refused.ok) {
       log.debug("Leaving Credentials.beginKeyUpgrade(). Refused.");
       return refused;
     }
-    const mode = webauthnPolicy.upgradeMode();
     const previousAlgorithm = Credentials.keyAlgorithm(key).name;
     // THE ISSUANCE POLICY, ASKED BEFORE ANY CEREMONY with what is known
     // now: that this is an upgrade, what it does and from which
@@ -9968,7 +10077,7 @@ class Credentials {
       // registration asks for the same kind (`creationOptions()`).
       kind: Credentials.keyGroup(key) === 'security-key' ? 'security-key'
                                                          : 'passkey',
-      lane: webauthnPolicy.upgradeLane(),
+      lane: mode === 'alongside' ? 'pqc' : 'classical',
       classicalOnly: false,
       // ITS NAME, which the upgraded key keeps.
       label: String(Credentials.keyName(key) || '').slice(0, 60),
@@ -9977,6 +10086,9 @@ class Credentials {
       upgrade: { credentialId: String(key.credentialId), mode: mode,
                  phase: 'proof', previousAlgorithm: previousAlgorithm,
                  provenAt: 0 },
+      // When the proof's options were issued (#1108); the registration's
+      // are `upgrade.provenAt`.
+      issuedAt: Date.now(),
       expires: Date.now() + this.keyEnrolmentTtlMs()
     };
     pendingKeys.set(name.toLowerCase(), record);
@@ -10061,7 +10173,9 @@ class Credentials {
         errorCode: answer && answer.ok ? ''
           : String(errorCodes.codeOf(answer) || ''),
         offered: key ? [Credentials.keyAlgorithm(key).name] : [],
-        algorithm: String(algorithm || ''), posted: assertion });
+        algorithm: String(algorithm || ''), posted: assertion,
+        application: String(options.application || ''),
+        issuedAt: Number(held.issuedAt) || 0 });
       log.debug("Leaving proveKeyUpgrade() note().");
       return answer;
     };
@@ -10212,7 +10326,11 @@ class Credentials {
                    (threw ? 'STS-AUTHN-0027' : '')),
         offered: webauthnPolicy.upgradeAlgorithmIds(),
         algorithm: key ? Credentials.keyAlgorithm(key).name : '',
-        posted: credential, attestation: key ? key.attestation : null });
+        posted: credential, attestation: key ? key.attestation : null,
+        // (#1108) The registration's options were issued when the proof
+        // was accepted.
+        application: String((opts || {}).application || ''),
+        issuedAt: Number((held.upgrade || {}).provenAt) || 0 });
       log.debug("Leaving confirmKeyUpgrade() note().");
     };
     log.debug("Leaving Credentials.confirmKeyUpgrade().");
@@ -10568,6 +10686,8 @@ class Credentials {
       // options and the verifier cannot disagree.
       offered: this.adminEnrolmentAlgorithms(lane),
       enrolledBy: { username: by.username, sub: by.sub, at: 0 },
+      // When the options were issued (#1108), for the ceremony row.
+      issuedAt: Date.now(),
       expires: Date.now() + Math.min(this.keyEnrolmentTtlMs(),
                                      Credentials.ADMIN_ENROLMENT_TTL_MS)
     };
@@ -10671,7 +10791,8 @@ class Credentials {
                    (threw ? 'STS-AUTHN-0447' : '')),
         offered: (held && held.offered) || [],
         algorithm: key ? Credentials.keyAlgorithm(key).name : '',
-        posted: credential, attestation: key ? key.attestation : null });
+        posted: credential, attestation: key ? key.attestation : null,
+        issuedAt: held ? Number(held.issuedAt) || 0 : 0 });
       log.debug("Leaving confirmAdminKeyEnrolment() note().");
     };
     log.debug("Leaving Credentials.confirmAdminKeyEnrolment().");

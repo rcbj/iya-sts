@@ -402,6 +402,10 @@ const localePolicy = require('../common/locale_policy');
 // `ldap/person_editor.ts` only lazily). It is asked at every door that
 // creates or edits a person, for what that person must hold.
 const attributePolicy = require('../common/attribute_policy');
+// THE POST-LOGIN ACTIVITY POLICY (#1096, 2026-10-28),
+// `ou=postLoginPolicies`, for the six policies' reason: a LEAF whose store
+// this directory is. It selects by group, through `personGroups` below.
+const postLoginPolicy = require('../common/post_login_policy');
 const mode = require('../common/mode');
 // The attributes no outside source may write (#94), asked at the federated
 // write. A leaf.
@@ -1004,6 +1008,15 @@ function attributePoliciesDn() {
   log.debug("Entering attributePoliciesDn().");
   log.debug("Leaving attributePoliciesDn().");
   return 'ou=attributePolicies,' + baseDn();
+}
+
+// ou=postLoginPolicies is the POST-LOGIN ACTIVITY POLICY register (#1096), a
+// seventh container for the same reason. `common/post_login_policy.ts` owns
+// the schema.
+function postLoginPoliciesDn() {
+  log.debug("Entering postLoginPoliciesDn().");
+  log.debug("Leaving postLoginPoliciesDn().");
+  return 'ou=postLoginPolicies,' + baseDn();
 }
 
 function attributeDefinitionsDn() {
@@ -2323,6 +2336,181 @@ async function passkeyPopulationAsync(selectors, limit) {
             members + ' member(s).');
   return { groups: groups, rows: rows, members: members,
            complete: members <= cap };
+}
+
+/**
+ * The PEOPLE among one or more groups' members after a key cursor, in key
+ * order (#1111, #1123): a started post-login activity narrowed to groups
+ * walks their members a slice at a time, as `passkeyScanAsync()` walks the
+ * realm. Each group is resolved as `passkeyPopulationAsync()` resolves one
+ * (a cn or a DN). THE POPULATION IS THE UNION (#1123, rcbj): the member keys
+ * of every group found go into one set, so a person in two groups is one
+ * key, read once and mailed once, and one cursor walks them all. The keys
+ * are sorted, the ones after `after` taken up to `limit`, and only those
+ * fetched (`entriesAtAsync()` in a window, the realm's Map otherwise). A
+ * member that is not a person here (a nested group, an application, a
+ * dangling DN) is skipped, and the cursor still moves past it.
+ *
+ * The group entries are what is read whole, as before: a group's member
+ * list is one attribute of one entry, and the people are fetched a slice
+ * at a time.
+ *
+ * @param selectors - a group's cn or DN, or a list of them
+ * @param after - the member key the last slice ended on ('' from the start)
+ * @param limit - the member keys to read at most
+ * @returns a promise of `{ found, dn, groups: [{ asked, dn, found }],
+ *   rows: [{ id, dn }], next, done }`: `found` false when no group named
+ *   exists, `dn` the first found group's, `next` the last key read, `done`
+ *   true once no member is left after it
+ */
+async function groupMembersAfterAsync(selectors, after, limit) {
+  log.debug('Entering groupMembersAfterAsync().');
+  const asked = [].concat(selectors == null ? [] : selectors)
+    .map(function (one) {
+      return String(one == null ? '' : one).trim();
+    }).filter(function (one) {
+      return one !== '';
+    });
+  const cap = Math.max(1, Number(limit) || 1);
+  const from = String(after || '');
+  const groups = [];
+  const union = new Set();
+  asked.forEach(function (one) {
+    const dn = DN_SHAPED.test(one) ? one : groupDnFor(one);
+    const stored = getEntry(dn);
+    if (!stored || !groupRuleFor(stored)) {
+      groups.push({ asked: one, dn: dn, found: false });
+      return;
+    }
+    groups.push({ asked: one, dn: stored.dn, found: true });
+    memberKeysOf(stored).forEach(function (key) {
+      union.add(key);
+    });
+  });
+  const first = groups.filter(function (one) {
+    return one.found;
+  })[0] || null;
+  if (!first) {
+    log.debug('Leaving groupMembersAfterAsync(). No such group.');
+    return { found: false, dn: groups.length ? groups[0].dn : '',
+             groups: groups, rows: [], next: from, done: true };
+  }
+  const keys = Array.from(union).sort().filter(function (key) {
+    return key > from;
+  });
+  const slice = keys.slice(0, cap);
+  const rows = [];
+  let found = null;
+  if (directoryWindow && slice.length) {
+    found = await storeAsked(directoryWindow.entriesAtAsync(
+      realms.currentId(), slice));
+  }
+  slice.forEach(function (key) {
+    const entry = found ? found.get(key) : entries.get(key);
+    if (entry && isPersonEntry(entry)) {
+      const id = String(usernameOfEntry(entry) || '');
+      if (id) {
+        rows.push({ id: id, dn: entry.dn });
+      }
+    }
+  });
+  const next = slice.length ? slice[slice.length - 1] : from;
+  log.debug('Leaving groupMembersAfterAsync(). ' + rows.length + ' of ' +
+            slice.length + ' member(s) read from ' + groups.length +
+            ' group(s).');
+  return { found: true, dn: first.dn, groups: groups, rows: rows,
+           next: next, done: keys.length <= cap };
+}
+
+/**
+ * The groups a console chooser offers (#1123): the ambient realm's groups
+ * whose cn or DN contains what was typed, case-insensitively, sorted by cn
+ * and then DN, less the ones `exclude` names, and the `limit` from `from`
+ * of them. ASKED OF THE GROUP INDEX (`groupIndexNow()`), which holds a row
+ * per group and is rebuilt only when a group may have been written — never a
+ * walk of the directory's entries or a read of anybody's membership. A stale
+ * `from` is clamped to the first page, as `chooserPane()` clamps one.
+ *
+ * @param wanted - what was typed; '' matches every group
+ * @param from - where the page starts
+ * @param limit - the most rows answered (at most 100)
+ * @param exclude - group DNs (or cns) to leave out, before the paging
+ * @returns `{ total, matched, from, rows: [{ dn, cn }] }`
+ */
+function groupChoices(wanted, from, limit, exclude) {
+  log.debug('Entering groupChoices().');
+  const needle = String(wanted == null ? '' : wanted).trim().toLowerCase();
+  const cap = Math.min(100, Math.max(1, Number(limit) || 1));
+  const left = new Set([].concat(exclude == null ? [] : exclude)
+    .map(function (one) {
+      const asked = String(one == null ? '' : one).trim();
+      return asked ? normalizeDn(DN_SHAPED.test(asked) ? asked
+                                                       : groupDnFor(asked))
+                   : '';
+    }));
+  const index = groupIndexNow();
+  const matched = [];
+  index.byDn.forEach(function (group, key) {
+    if (left.has(key)) {
+      return;
+    }
+    const cn = String(group.cn || '');
+    if (needle && cn.toLowerCase().indexOf(needle) < 0 &&
+        String(group.dn).toLowerCase().indexOf(needle) < 0) {
+      return;
+    }
+    matched.push({ dn: group.dn, cn: cn });
+  });
+  matched.sort(function (a, b) {
+    const x = a.cn.toLowerCase();
+    const y = b.cn.toLowerCase();
+    if (x !== y) {
+      return x < y ? -1 : 1;
+    }
+    return a.dn < b.dn ? -1 : (a.dn > b.dn ? 1 : 0);
+  });
+  let at = parseInt(String(from == null ? '' : from), 10);
+  if (!isFinite(at) || at < 0 || at >= matched.length) {
+    at = 0;
+  }
+  const out = { total: index.byDn.size, matched: matched.length, from: at,
+                rows: matched.slice(at, at + cap) };
+  log.debug('Leaving groupChoices(). ' + out.rows.length + ' of ' +
+            out.matched + ' match(es) of ' + out.total + ' group(s).');
+  return out;
+}
+
+/**
+ * Resolves group names to the ambient realm's groups (#1123), each as a cn
+ * or a DN, through the group index: `{ asked, dn, cn, found }` per name, in
+ * the order given, a name asked twice answered once.
+ *
+ * @param selectors - group cns or DNs
+ * @returns the groups
+ */
+function groupsNamed(selectors) {
+  log.debug('Entering groupsNamed().');
+  const index = groupIndexNow();
+  const seen = new Set();
+  const out = [];
+  [].concat(selectors == null ? [] : selectors).forEach(function (one) {
+    const asked = String(one == null ? '' : one).trim();
+    if (!asked) {
+      return;
+    }
+    const dn = DN_SHAPED.test(asked) ? asked : groupDnFor(asked);
+    const key = normalizeDn(dn);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    const group = index.byDn.get(key);
+    out.push(group ? { asked: asked, dn: group.dn,
+                       cn: String(group.cn || ''), found: true }
+                   : { asked: asked, dn: dn, cn: '', found: false });
+  });
+  log.debug('Leaving groupsNamed(). ' + out.length + ' group(s).');
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -3740,6 +3928,10 @@ localePolicy.SCHEMA.attributes.concat(localePolicy.SCHEMA.personAttributes)
 attributePolicy.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the attribute policy schema');
 });
+// #1096: the post-login activity policy's.
+postLoginPolicy.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the post-login activity policy schema');
+});
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -5125,6 +5317,19 @@ function seed() {
       'follows the DEFAULT REALM\'s, and the built-in default (givenName, ' +
       'sn, mail) applies where neither exists. Enforced in product mode. ' +
       'common/attribute_policy.ts holds the schema; GET /admin/policies ' +
+      'publishes it.'
+  }, { origin: 'seed' });
+  // And the post-login activity policy's (#1096), for the same reason.
+  putEntry(postLoginPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'postLoginPolicies',
+    description: 'POST-LOGIN ACTIVITY profiles: what a person is asked to ' +
+      'do after signing in, before they are sent back to the application ' +
+      '(today: register a post-quantum passkey). Off by default. ' +
+      'cn=default applies everywhere; while it is absent a realm other ' +
+      'than the default one follows the DEFAULT REALM\'s. A named profile ' +
+      'applies to the members of the groups it lists. ' +
+      'common/post_login_policy.ts holds the schema; GET /admin/policies ' +
       'publishes it.'
   }, { origin: 'seed' });
   putEntry(attributeDefinitionsDn(), {
@@ -10270,6 +10475,27 @@ if (typeof attributePolicy.setDirectory === 'function') {
   log.warn('ldap: common/attribute_policy.ts offers no setDirectory(), so ' +
            'ou=attributePolicies is unreachable and the built-in attribute ' +
            'policy cannot be edited.');
+}
+// THE POST-LOGIN ACTIVITY POLICY'S CONTAINER (#1096), guarded the same way,
+// with the passkey policy's group hook (#535) for its group selection.
+if (typeof postLoginPolicy.setDirectory === 'function') {
+  postLoginPolicy.setDirectory({
+    allPostLoginPolicies: allPostLoginPolicies,
+    writePostLoginPolicy: writePostLoginPolicy,
+    deletePostLoginPolicy: deletePostLoginPolicy,
+    personGroups: function personGroups(key) {
+      log.debug("Entering personGroups().");
+      const found = groupsOfUser(key);
+      log.debug("Leaving personGroups().");
+      return (found.groups || []).map(function (group) {
+        return { cn: String(group.cn || ''), dn: String(group.dn || '') };
+      });
+    }
+  });
+} else {
+  log.warn('ldap: common/post_login_policy.ts offers no setDirectory(), so ' +
+           'ou=postLoginPolicies is unreachable and nobody is asked ' +
+           'anything after signing in.');
 }
 if (typeof serviceAccounts.setDirectory === 'function') {
   serviceAccounts.setDirectory({
@@ -22674,6 +22900,26 @@ function deleteAttributePolicy(name) {
   return deletePolicyEntryIn(attributePoliciesDn(), name);
 }
 
+// ou=postLoginPolicies (#1096): the same three, through the same helpers.
+function allPostLoginPolicies() {
+  log.debug('Entering allPostLoginPolicies().');
+  log.debug('Leaving allPostLoginPolicies().');
+  return policyEntriesIn(postLoginPoliciesDn());
+}
+
+function writePostLoginPolicy(name, attributes) {
+  log.debug('Entering writePostLoginPolicy().');
+  log.debug('Leaving writePostLoginPolicy().');
+  return writePolicyEntryIn(postLoginPoliciesDn(), 'postLoginPolicies', name,
+                            attributes, 'post-login activity policy');
+}
+
+function deletePostLoginPolicy(name) {
+  log.debug('Entering deletePostLoginPolicy().');
+  log.debug('Leaving deletePostLoginPolicy().');
+  return deletePolicyEntryIn(postLoginPoliciesDn(), name);
+}
+
 function allAttributeDefinitions() {
   log.debug('Entering allAttributeDefinitions().');
   log.debug('Leaving allAttributeDefinitions().');
@@ -28595,6 +28841,13 @@ module.exports = {
   // the report itself reaches them through its slot.
   passkeyScanAsync: passkeyScanAsync,
   passkeyPopulationAsync: passkeyPopulationAsync,
+  // A started post-login activity's walk of its groups' people after a
+  // key cursor (#1111, #1123), reached lazily from the job's body; the
+  // group chooser on its console page and the names its start resolves
+  // (#1123), both asked of the group index.
+  groupMembersAfterAsync: groupMembersAfterAsync,
+  groupChoices: groupChoices,
+  groupsNamed: groupsNamed,
   allPersons: allPersons,
   personsHolding: personsHolding,
   // Whether this process holds its people as a window onto the store

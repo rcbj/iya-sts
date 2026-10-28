@@ -254,7 +254,8 @@ class WebauthnPolicy {
   // while `withRows()` runs.
   private rowsOverride: { registrationAlgorithms: string[];
                           registrationMode: string;
-                          postQuantumRequired: string } | null = null;
+                          postQuantumRequired: string;
+                          lanes: string } | null = null;
 
   /**
    * Builds the policy over the dependencies given.
@@ -431,6 +432,12 @@ class WebauthnPolicy {
     // ML-DSA chain — so the passkey policy's list demands a trusted
     // statement too, and asks the browser for direct attestation.
     const attestationAlgorithms = passkeyPolicy.attestationAlgorithms();
+    // ENTERPRISE ATTESTATION'S RP IDs (#1114), and the conveyance they
+    // qualify: read here so `webauthn_attestation.ts` judges a statement
+    // by the same two values `attestationConveyance()` asked with.
+    const conveyance = this.oneOf(config.value('webauthn.attestation'),
+                                  ['none', 'indirect', 'direct',
+                                   'enterprise'], 'direct');
     const out = {
       configured: configured,
       policy: policy,
@@ -445,6 +452,9 @@ class WebauthnPolicy {
         config.value('webauthn.attestationAndroidSoftwareKeys') === true,
       enterpriseSerialAttribute: enterpriseSerialAttribute,
       attestationAlgorithms: attestationAlgorithms,
+      conveyance: conveyance,
+      enterpriseRpIds: WebauthnPolicy.enterpriseRpIdsOf(
+        config.value('webauthn.attestationEnterpriseRpIds')),
       demandsTrust: policy === 'require-trusted' ||
                     allowedAaguids.length > 0 ||
                     minCertificationLevel !== 'none' || requireFips ||
@@ -453,6 +463,80 @@ class WebauthnPolicy {
     };
     log.debug('Leaving WebauthnPolicy.attestationSettings(). policy=' +
               out.policy + ', demandsTrust=' + out.demandsTrust);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A REGISTRATION ASKS FOR, BY RP ID (#1114). WebAuthn Level 3
+  // section 5.4.7: `enterprise` is honoured by a client only for an RP ID
+  // its policy allows and answered by an authenticator only for one
+  // provisioned into it, so this service asks for it only for an RP ID
+  // `webauthn.attestationEnterpriseRpIds` lists. Anywhere else the request
+  // asks for `direct` — the most a request can ask without it — and
+  // `downgraded` says so, for the ceremony's row and the key's record. A
+  // policy that demands a trusted statement (#105) asks for `direct`
+  // whatever the conveyance setting, as it always did; an enterprise
+  // request satisfies it too, since it asks for more, not less.
+  // ---------------------------------------------------------------------------
+  /**
+   * The attestation conveyance a registration for `rpId` asks for (#1114).
+   *
+   * @param rpId - the ceremony's RP ID
+   * @returns `{ configured, requested, downgraded }`: the setting, what is
+   *   sent, and whether `enterprise` was set and the RP ID is not listed
+   */
+  attestationConveyance(rpId: string) {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.attestationConveyance(). rpId=' +
+              rpId);
+    const settings = this.attestationSettings();
+    const out = WebauthnPolicy.conveyanceFor(settings,
+      settings.enterpriseRpIds.indexOf(
+        String(rpId || '').trim().toLowerCase()) >= 0);
+    log.debug('Leaving WebauthnPolicy.attestationConveyance(). ' +
+              out.requested + (out.downgraded ? ' (downgraded)' : ''));
+    return out;
+  }
+
+  /**
+   * The conveyance asked for under `settings` (`attestationSettings()`),
+   * for an RP ID that is or is not on the enterprise list (#1114).
+   *
+   * @param settings - the attestation settings in force
+   * @param listed - whether the ceremony's RP ID is listed
+   * @returns `{ configured, requested, downgraded }`
+   */
+  static conveyanceFor(settings: any, listed: boolean) {
+    helpers.log.debug('Entering WebauthnPolicy.conveyanceFor().');
+    const configured = String((settings && settings.conveyance) || 'direct');
+    const downgraded = configured === 'enterprise' && !listed;
+    const requested = configured === 'enterprise'
+      ? (listed ? 'enterprise' : 'direct')
+      : (settings && settings.demandsTrust ? 'direct' : configured);
+    helpers.log.debug('Leaving WebauthnPolicy.conveyanceFor().');
+    return { configured: configured, requested: requested,
+             downgraded: downgraded };
+  }
+
+  /**
+   * The enterprise RP ID list as the setting holds it: trimmed, lower
+   * case, each once (#1114).
+   *
+   * @param raw - the setting's value, a list or comma-separated text
+   * @returns the RP IDs
+   */
+  static enterpriseRpIdsOf(raw: unknown): string[] {
+    helpers.log.debug('Entering WebauthnPolicy.enterpriseRpIdsOf().');
+    const out: string[] = [];
+    (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .forEach(function (one) {
+        const id = String(one || '').trim().toLowerCase();
+        if (id && out.indexOf(id) < 0) {
+          out.push(id);
+        }
+      });
+    helpers.log.debug('Leaving WebauthnPolicy.enterpriseRpIdsOf(). ' +
+                      out.length);
     return out;
   }
 
@@ -630,7 +714,8 @@ class WebauthnPolicy {
    *
    * @param at - `sign-in` for the sign-in step's registration, which signs
    *   the person in at once; anything else for `/portal/keys`
-   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying STS-AUTHN-0420
+   * @returns `{ ok: true }`, or `{ ok: false, why, reason }` carrying
+   *   STS-AUTHN-0420; `reason` names the rule in a few words (#1112)
    */
   classicalRetryRefusal(at?: string) {
     const { log, errorCodes } = this.deps;
@@ -643,7 +728,10 @@ class WebauthnPolicy {
     if (this.registrationMode() === 'pq-only') {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). The ' +
                 'profile is post-quantum only.');
+      // `reason` (#1112): the rule in a few words, for the ceremony row of
+      // a client rule this refusal stops (`common/passkey_clients.ts`).
       return errorCodes.mark({ ok: false,
+               reason: 'registrationMode pq-only',
                why: 'The passkey policy offers post-quantum (ML-DSA) ' +
                     'passkeys only here (registrationMode is pq-only), so ' +
                     'a classical one cannot be made instead. Use a device ' +
@@ -653,6 +741,7 @@ class WebauthnPolicy {
     if (this.requestsPostQuantumOnly()) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). PQC only.');
       return errorCodes.mark({ ok: false,
+               reason: 'webauthn.pqcOnly',
                why: 'This realm requests post-quantum (ML-DSA) passkeys ' +
                     'only (webauthn.pqcOnly), so a classical one cannot be ' +
                     'made instead. Use a device or a security key that can ' +
@@ -662,6 +751,7 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at registration.');
       return errorCodes.mark({ ok: false,
+               reason: 'postQuantumRequired registration-and-sign-in',
                why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
                     'passkey at registration (postQuantumRequired is ' +
                     'registration-and-sign-in), so a classical one cannot ' +
@@ -672,6 +762,7 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at sign-in.');
       return errorCodes.mark({ ok: false,
+               reason: 'postQuantumRequired sign-in',
                why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
                     'passkey to sign in here (postQuantumRequired), so a ' +
                     'classical one made now would not sign you in. Use a ' +
@@ -768,8 +859,9 @@ class WebauthnPolicy {
   // (`credentials.confirmKeyUpgrade()`), so the classical key is touched
   // only once the new one has verified.
   //
-  // **WHAT THE WRITE DOES FOLLOWS `webauthn.pqcAlongsideClassical`** (rcbj's
-  // decision on #939): ON, the upgrade ADDS the ML-DSA key in the
+  // **WHAT THE WRITE DOES FOLLOWS THE LANES** (rcbj's decision on #939),
+  // unless the caller names it (#1100: the post-login activity's `method`):
+  // with both lanes on, the upgrade ADDS the ML-DSA key in the
   // post-quantum lane under that lane's user handle and keeps the classical
   // one (#643's two lanes, `alongside`); OFF, the ML-DSA key REPLACES the
   // classical one in place, under the classical lane's handle — on one
@@ -783,26 +875,26 @@ class WebauthnPolicy {
   // classical one is the thing the upgrade exists not to make. There is no
   // classical retry of an upgrade (#944's): its point is ML-DSA.
   //
-  // **OFFERED BY DEFAULT** (`webauthn.pqcUpgrade`, per realm, on): it is a
-  // person's change to their own credential, proved by that credential,
-  // that can only make it stronger and that leaves the classical key as it
-  // was if anything fails. A realm that wants no such change turns it off.
-  // Nothing about it differs between development and product mode: the
+  // **WHERE IT RUNS** (#1100, 2026-10-28): at a sign-in, as the post-login
+  // activity's PQC migration (`common/post_login.ts`), and from the
+  // console on a person's behalf. It was a button on `/portal/keys` behind
+  // `webauthn.pqcUpgrade` until then; rcbj had both removed, so whether a
+  // realm's people are asked is the post-login policy's to say. Nothing
+  // about it differs between development and product mode: the
   // proof is a signature this service verifies in both, as it verifies the
   // UV flag in both, and the attestation the new key brings is held to the
   // policy in force (`attestationSettings()`, which is the mode's).
   // ---------------------------------------------------------------------------
   /**
    * Decides whether this realm offers #939's upgrade of a classical passkey
-   * to an ML-DSA one at all: WebAuthn on, `webauthn.pqcUpgrade` on, an
-   * ML-DSA algorithm the verifier can check, and — with both lanes on —
+   * to an ML-DSA one at all: WebAuthn on, an ML-DSA algorithm the verifier can check, and — with both lanes on —
    * the post-quantum lane offered. The person's own keys, role and the
    * passkey policy are asked by `credentials.keyUpgradeRefusal()`.
    *
    * @returns `{ ok: true }`, or `{ ok: false, why }` carrying STS-AUTHN-0450
    */
   upgradeRefusal() {
-    const { config, log, errorCodes } = this.deps;
+    const { log, errorCodes } = this.deps;
     log.debug('Entering WebauthnPolicy.upgradeRefusal().');
     if (!this.settings().enabled) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). WebAuthn is off.');
@@ -810,15 +902,6 @@ class WebauthnPolicy {
                why: 'Passkeys are switched off in this realm ' +
                     '(webauthn.enabled), so none can be upgraded.' },
                'STS-AUTHN-0450');
-    }
-    if (config.value('webauthn.pqcUpgrade') === false) {
-      log.debug('Leaving WebauthnPolicy.upgradeRefusal(). Not offered.');
-      return errorCodes.mark({ ok: false,
-               why: 'Upgrading a classical passkey to a post-quantum ' +
-                    '(ML-DSA) one is not offered in this realm ' +
-                    '(webauthn.pqcUpgrade). You can register a ' +
-                    'post-quantum passkey beside it instead, where ' +
-                    'passkeys may be registered here.' }, 'STS-AUTHN-0450');
     }
     if (!this.upgradeAlgorithms().length) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). No ML-DSA.');
@@ -1201,7 +1284,8 @@ class WebauthnPolicy {
   // profile's.
   private registrationRows(): { registrationAlgorithms: string[];
                                 registrationMode: string;
-                                postQuantumRequired: string } {
+                                postQuantumRequired: string;
+                                lanes?: string } {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.registrationRows().');
     const out = this.rowsOverride || passkeyPolicy.registrationRows();
@@ -1244,7 +1328,8 @@ class WebauthnPolicy {
   // and puts back what was there, however `fn` ends.
   private withRows<T>(rows: { registrationAlgorithms?: unknown;
                               registrationMode?: unknown;
-                              postQuantumRequired?: unknown } | null
+                              postQuantumRequired?: unknown;
+                              lanes?: unknown } | null
                               | undefined,
                       fn: () => T): T {
     const { log } = this.deps;
@@ -1260,7 +1345,8 @@ class WebauthnPolicy {
       registrationMode: passkeyPolicy.REGISTRATION_MODES.indexOf(
         String(rows.registrationMode || '')) >= 0
         ? String(rows.registrationMode) : 'realm',
-      postQuantumRequired: String(rows.postQuantumRequired || 'off')
+      postQuantumRequired: String(rows.postQuantumRequired || 'off'),
+      lanes: String(rows.lanes || 'realm')
     };
     try {
       const out = fn();
@@ -1401,7 +1487,11 @@ class WebauthnPolicy {
   alongsideClassical(): boolean {
     const { config, log } = this.deps;
     log.debug('Entering WebauthnPolicy.alongsideClassical().');
-    const on = config.value('webauthn.pqcAlongsideClassical') === true &&
+    // THE POPULATION'S `lanes` ROW FIRST (#1104), then the realm's switch.
+    const lanes = String(this.registrationRows().lanes || 'realm');
+    const on = (lanes === 'both' ||
+                (lanes === 'realm' &&
+                 config.value('webauthn.pqcAlongsideClassical') === true)) &&
                !this.pqcOnly() &&
                this.registrationMode() !== 'classical-only';
     log.debug('Leaving WebauthnPolicy.alongsideClassical(). ' + on);
@@ -1515,6 +1605,58 @@ class WebauthnPolicy {
                       'and a post-quantum passkey beside a classical one ' +
                       'needs a classical lane. Turn "' + other + '" off ' +
                       'first.' };
+  }
+
+  // THE RULE BETWEEN THE CONVEYANCE AND ITS RP IDs (#1114), handed to
+  // `config.js`'s `addWriteRule()` as the lanes' rule is. `enterprise` with
+  // no RP ID listed would ask for `direct` at every ceremony while the page
+  // said `enterprise`, so it is refused at the write — both ways round:
+  // choosing `enterprise` while the list is empty, and emptying the list
+  // while `enterprise` is chosen. The pair posted together is judged by
+  // both new values (`beside`, `config.withWriteBatch()`). A value that
+  // reaches the process another way (the environment, a file) is read as
+  // it is: every ceremony asks for `direct`, and says so.
+  /**
+   * Refuses a write that would leave `webauthn.attestation` `enterprise`
+   * with `webauthn.attestationEnterpriseRpIds` empty.
+   *
+   * @param key - the setting being written
+   * @param parsed - its parsed value
+   * @param inRealm - unused; the rule holds in a realm as in the process
+   * @param beside - a companion setting's value as this write leaves it
+   * @returns `{ problem, code }`, or null
+   */
+  static enterpriseWriteRule(key: string, parsed: unknown, inRealm?: boolean,
+                             beside?: (key: string) => unknown) {
+    helpers.log.debug('Entering WebauthnPolicy.enterpriseWriteRule(). ' +
+                      key);
+    const read = typeof beside === 'function' ? beside
+      : function (other: string): unknown {
+        return config.value(other);
+      };
+    let conveyance = '';
+    let listed: string[] = [];
+    if (key === 'webauthn.attestation') {
+      conveyance = String(parsed || '');
+      listed = WebauthnPolicy.enterpriseRpIdsOf(
+        read('webauthn.attestationEnterpriseRpIds'));
+    } else if (key === 'webauthn.attestationEnterpriseRpIds') {
+      conveyance = String(read('webauthn.attestation') || '');
+      listed = WebauthnPolicy.enterpriseRpIdsOf(parsed);
+    }
+    if (conveyance !== 'enterprise' || listed.length > 0) {
+      helpers.log.debug('Leaving WebauthnPolicy.enterpriseWriteRule().');
+      return null;
+    }
+    helpers.log.debug('Leaving WebauthnPolicy.enterpriseWriteRule(). ' +
+                      'Refused.');
+    return { code: 'STS-AUTHN-0500',
+             problem: '"webauthn.attestation" cannot be enterprise while ' +
+                      '"webauthn.attestationEnterpriseRpIds" is empty: ' +
+                      'enterprise attestation is asked for only for an RP ' +
+                      'ID that list names (WebAuthn Level 3 section ' +
+                      '5.4.7). List the RP IDs your authenticators are ' +
+                      'provisioned for, or choose direct.' };
   }
 
   // The COSE identifiers for `pubKeyCredParams`, in the order the names were
@@ -1737,10 +1879,9 @@ class WebauthnPolicy {
     // `indirect` let the browser strip or anonymise the statement, and a
     // realm that requires a trusted one would then refuse every enrolment
     // for a reason nobody could see on this page. `enterprise` is kept: it
-    // asks for more, not less.
-    const attestation = this.attestationSettings().demandsTrust &&
-                        live.attestation !== 'enterprise'
-      ? 'direct' : live.attestation;
+    // asks for more, not less — but only for an RP ID the realm lists
+    // (#1114, `attestationConveyance()`); elsewhere it asks for `direct`.
+    const attestation = this.attestationConveyance(rpId).requested;
     const out = {
       rp: { name: live.rpName, id: rpId },
       // THE LANE'S ALGORITHMS (#643); with no lane, or the switch off, the
@@ -1953,9 +2094,9 @@ class WebauthnPolicy {
       lanes: this.lanes().map((lane) => {
         return { lane: lane, algorithms: this.algorithmsOffered(lane) };
       }),
-      // THE UPGRADE (#939): whether it is offered, what its write does and
-      // the ML-DSA it asks for.
-      pqcUpgrade: this.postQuantumUpgradeOffered(),
+      // THE UPGRADE (#939): what its write does by default and the ML-DSA
+      // it asks for; whether anybody is asked is the post-login policy's
+      // (#1100).
       upgradeMode: this.upgradeMode(),
       upgradeAlgorithms: this.upgradeAlgorithms(),
       curves: Object.keys(webauthn.COSE_CURVES).map(function (id) {
@@ -2025,6 +2166,8 @@ slot.buildNowUnlessDeferred();
 // `tls/tls_server.js` registers its own.
 if (typeof config.addWriteRule === 'function') {
   config.addWriteRule(WebauthnPolicy.laneWriteRule);
+  // And enterprise attestation's RP ID list (#1114).
+  config.addWriteRule(WebauthnPolicy.enterpriseWriteRule);
 }
 
 /**
@@ -2084,6 +2227,11 @@ export = {
   discoverableRequestOptions: slot.forward('discoverableRequestOptions'),
   requireUserVerification: slot.forward('requireUserVerification'),
   attestationSettings: slot.forward('attestationSettings'),
+  // Enterprise attestation by RP ID (#1114).
+  attestationConveyance: slot.forward('attestationConveyance'),
+  conveyanceFor: WebauthnPolicy.conveyanceFor,
+  enterpriseRpIdsOf: WebauthnPolicy.enterpriseRpIdsOf,
+  enterpriseWriteRule: WebauthnPolicy.enterpriseWriteRule,
   ATTESTATION_FORMATS: ATTESTATION_FORMATS,
   report: slot.forward('report'),
   failureCodeFor: slot.forward('failureCodeFor'),

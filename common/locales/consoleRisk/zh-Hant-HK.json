@@ -9,7 +9,7 @@
   "tile.active": "個使用中數據集",
   "about.datasets": "風險分數讀取的外部數據集，以及它統計的被拒絕密碼（#62）。<strong>任何人登入時都不會在這裡下載任何內容</strong>：數據集以檔案形式到達，經過檢查（在指定了 SHA-256 時校驗它，比目前使用中版本小得多的版本會被視為可能被截斷的下載而拒絕），然後才會變為使用中。超過其過時期限的數據集不計入任何內容，也從不拒絕任何人。",
   "about.realmOnly": "這是 <code>{realm}</code> 領域的風險：它的評估、其人員的狀況、它的營運者允許和拒絕清單，以及它被拒絕的密碼。所有領域共用的數據集——地理位置、網絡、Tor 出口、信譽、安全金鑰元數據——及其提供者的條款和 <code>risk.</code> 設定屬於整個服務，由服務管理員管理。",
-  "lookup.heading": "查詢地址",
+  "lookup.address.heading": "查詢地址",
   "datasets.heading": "數據集",
   "import.heading": "載入數據集",
   "lookup.label": "數據集對以下地址怎麼說：",
@@ -18,5 +18,8 @@
   "providers.note": "每個提供者的條款約束下載其數據的部署，其中一些還約束任何再散布者。",
   "credits.heading": "數據致謝",
   "assessments.inDatabase": "保存在數據庫中。",
-  "assessments.inProcess": "保存在此程序中：沒有帶金鑰可用於封存它們的數據庫。"
+  "assessments.inProcess": "保存在此程序中：沒有帶金鑰可用於封存它們的數據庫。",
+  "authenticator.label": "FIDO 元數據對以下內容怎麼說",
+  "authenticator.statement": "元數據聲明",
+  "authenticator.why.unreadable": "否：無法讀取 FIDO 元數據"
 }

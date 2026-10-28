@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "持有后量子通行密钥的人使用经典通行密钥登录"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "某客户端在通行密钥注册时不再获得 ML-DSA"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "安全密钥的证明不再受信任：Google 的 Android 证明状态列表吊销了其证书链"
@@ -706,6 +710,42 @@
   "audit.actions.admin.locale-policy.change.label": {
     "en": "4dfe507526bb6dd5",
     "text": "区域设置策略配置文件被更改"
+  },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "登录后活动策略配置文件已更改"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "某人被要求完成一项登录后活动"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "某人跳过了一项登录后活动"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "某人完成了一项登录后活动"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "一次登录被暂扣：一项登录后活动已逾期"
+  },
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "登录后活动已启动、暂停、继续或结束"
+  },
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "已启动的登录后活动发送了提醒"
+  },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "设备未能创建登录后活动所要求的通行密钥"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "某个通行密钥可能已在其身份验证器上被替换"
   },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
@@ -942,6 +982,10 @@
   "audit.actions.ssf.event.transmit.label": {
     "en": "3a3cd80f6d3a215a",
     "text": "安全事件令牌已送达接收方"
+  },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "已向已登录的应用广播一条公告"
   },
   "audit.actions.ssf.event.refused.label": {
     "en": "29910e5a49b21a0c",

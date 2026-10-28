@@ -25,36 +25,51 @@
 // required writes a row of its own, `webauthn.algorithm-mismatch`.
 //
 // ---------------------------------------------------------------------------
-// THE ROW, AND IT IS THE SHAPE A REPORT READS (the realm-wide passkey page).
-// `action` `webauthn.ceremony`, category `authentication`, `actor` the
-// person where known ('' before a usernameless handle names anybody),
-// `outcome` `success` or `refused`, `errorCode` the code the door refused
-// with, and `detail` — at most twelve fields, `audit.js`'s cap:
+// THE ROW, AND IT IS THE SHAPE A REPORT READS (`/report`'s passkey ceremony
+// source, #1107). `action` `webauthn.ceremony`, category `authentication`,
+// `actor` the person where known ('' before a usernameless handle names
+// anybody), `outcome` `success` or `refused`, `errorCode` the code the door
+// refused with, and `detail` — at most twelve fields, `audit.js`'s cap:
 //
 //   ceremony       `registration` or `assertion`
 //   door           `sign-in-step`, `usernameless`, `portal`, `activation`
 //                  or `upgrade` (#939: a classical passkey's proof of
 //                  possession and the ML-DSA registration that follows it),
-//                  or `admin-enrolment` (#945: an administrator's ceremony
+//                  `admin-enrolment` (#945: an administrator's ceremony
 //                  on the person's behalf; `actor` is still the person,
-//                  and `admin.passkey.enrolled` names the administrator)
+//                  and `admin.passkey.enrolled` names the administrator),
+//                  or `device-link` (#1108: `/portal/devices` proving a
+//                  platform credential again to link it to a device)
 //   role           `primary`, `mfa` or ''
 //   lane           `classical` or `pqc` (#643)
+//   application    (#1108) the application the ceremony was for — the
+//                  pending sign-in's client or relying party — or '' where
+//                  none is in play (`/portal/keys`, a device link, an
+//                  administrator's enrolment)
+//   durationMs     (#1108) milliseconds from the options being issued to the
+//                  response being received, measured HERE from the pending
+//                  ceremony's own issue instant and never from anything the
+//                  browser says; absent where the door holds no instant (a
+//                  refusal before any options were issued). It includes the
+//                  person's own time at the prompt — what it compares is
+//                  ML-DSA-87 against ML-DSA-44 against ES256 over many rows,
+//                  not one ceremony's cost
 //   offered        the algorithms offered, IN ORDER, comma-separated: a
 //                  registration's pubKeyCredParams as the verifier enforced
 //                  them (`webauthn_policy.algorithmIds()` of the lane, the
 //                  list `expectedAlgorithms` was checked against); for an
 //                  assertion, which has no such list, the algorithms of the
-//                  person's keys the ceremony could name, in key order
+//                  person's keys the ceremony could name, in key order;
+//                  then, where a client rule named the client (#1112),
+//                  `|` and what it did: `configured: <rule>` or `learned:
+//                  <client>` where ML-DSA was left out of the offer, or
+//                  `not applied (<why>): ...` where it was not
 //   algorithm      the algorithm used (the new key's, or the asserting
 //                  key's), '' where none was reached
-//   postQuantum    whether that algorithm is RFC 9964's ML-DSA
 //   client         the browser and the operating system, FAMILY AND MAJOR
 //                  VERSION ONLY (`Chrome 141 on macOS 15`), read from the
 //                  User-Agent and NEVER more — no build, no device model, no
 //                  client hints; the header itself is not kept
-//   transports     the transports the browser reported (`internal,hybrid`)
-//   attachment     `platform`, `cross-platform` or ''
 //   clientError    the DOMException NAME the page's script reported for a
 //                  ceremony the browser did not complete (`NotAllowedError`
 //                  — declined, timed out or no credential, which WebAuthn
@@ -64,10 +79,33 @@
 //                  which is free text a page could fill with anything
 //   capabilities   the true members of a fixed allowlist of client
 //                  capabilities, where getClientCapabilities() is available
-//   attestation    for a registration that recorded one, what its
-//                  attestation was signed with (#941): the statement's
-//                  algorithm, then the chain leaf to anchor, and `PQ` where
-//                  every one is post-quantum
+//   authenticator  (#1108, FOLDED) `<attachment>|<transports>|<attestation>`:
+//                  the attachment (`platform`, `cross-platform` or ''), the
+//                  transports the browser reported (`internal,hybrid`), and
+//                  for a registration that recorded one what its attestation
+//                  was signed with (#941) — the statement's algorithm, then
+//                  the chain leaf to anchor, and `(PQ)` where every one is
+//                  post-quantum, led by `enterprise not listed, asked
+//                  direct; ` where `webauthn.attestation` is `enterprise`
+//                  and the RP ID is not on its list (#1114). '' where all
+//                  three are empty.
+//                  `WebauthnCeremonies.unfold()` reads it back.
+//
+// HOW THE ROW CAME TO TWELVE (#1108). Until #1108 the row had thirteen
+// fields — `capabilities` had been added beside `attestation` — so
+// `audit.js` kept twelve and dropped `attestation` under `(more)`. Two more
+// had to fit. Nothing is lost in the fold: `attachment`, `transports` and
+// `attestation` are three facts about the authenticator, none of which can
+// contain a `|` (the transports and attachment are allow-listed, the
+// attestation is algorithm names), so they ride in one field and come back
+// out of it exactly; and `postQuantum` was a function of `algorithm`
+// (`passkey_policy.isPostQuantum()`), so it is no longer stored and a reader
+// derives it — `unfold()` does, and so does the report source. A row
+// written before #1108 still has the old fields, and `unfold()` reads both
+// shapes. #1114 had met the same cap and moved `capabilities` onto
+// `client` after a `|`; the two were reconciled into this one shape —
+// `client` is the plain client again — and `unfold()` also reads a row
+// written that way, splitting the capabilities back off `client`.
 //
 // `webauthn.algorithm-mismatch`: `actor` the person, `detail` { used — the
 // classical algorithm that signed, held — the person's post-quantum
@@ -106,6 +144,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import audit = require('../common/audit');
 import passkeyPolicy = require('../common/passkey_policy');
+// #1112: the learned client rules, counted where this row is written.
+import passkeyClients = require('../common/passkey_clients');
 import bowser = require('bowser');
 // The COSE names of the algorithms, from the verifier: a leaf over npm
 // modules and `common/crypto`.
@@ -134,7 +174,17 @@ const DOORS: ReadonlyArray<string> = Object.freeze([
   'upgrade',
   // An administrator's enrolment on a person's behalf, in the
   // administrator's browser (#945, `credentials.confirmAdminKeyEnrolment()`).
-  'admin-enrolment']);
+  'admin-enrolment',
+  // A device link on `/portal/devices` (#1108,
+  // `device_enrolment.finishLink()`): an assertion by a platform credential.
+  'device-link']);
+
+/**
+ * The longest duration a row records, in milliseconds: a day. A pending
+ * ceremony lives minutes; anything longer is a clock that moved, and is
+ * left out rather than recorded as a measurement.
+ */
+const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
 
 interface CeremonyEvent {
   ceremony: 'registration' | 'assertion';
@@ -151,6 +201,13 @@ interface CeremonyEvent {
   posted?: Json;
   // The new key's attestation record (#941), for a registration.
   attestation?: Json;
+  // What a client rule did to the offer (#1112), or ''.
+  narrowed?: string;
+  // (#1108) The application the ceremony was for, and the instant (ms) the
+  // pending ceremony's options were issued, from which `durationMs` is
+  // measured.
+  application?: string;
+  issuedAt?: number;
   req?: Json;
 }
 
@@ -286,13 +343,97 @@ class WebauthnCeremonies {
     return out;
   }
 
+  /**
+   * The milliseconds from `issuedAt` to now (#1108), or undefined where the
+   * door held no instant or the clock disagrees with it.
+   *
+   * @param issuedAt - when the pending ceremony's options were issued, ms
+   * @param now - the instant the response was received, ms
+   * @returns the duration, or undefined
+   */
+  static durationOf(issuedAt: unknown, now: number): number | undefined {
+    log.debug("Entering WebauthnCeremonies.durationOf().");
+    const at = Number(issuedAt);
+    if (!issuedAt || !Number.isFinite(at)) {
+      log.debug("Leaving WebauthnCeremonies.durationOf(). No instant.");
+      return undefined;
+    }
+    const ms = Math.round(now - at);
+    if (ms < 0 || ms > MAX_DURATION_MS) {
+      log.debug("Leaving WebauthnCeremonies.durationOf(). Out of range.");
+      return undefined;
+    }
+    log.debug("Leaving WebauthnCeremonies.durationOf(). " + ms);
+    return ms;
+  }
+
+  /**
+   * Reads a `webauthn.ceremony` row's detail back into its facts (#1108):
+   * the folded `authenticator` field split into `attachment`, `transports`
+   * and `attestation`, `postQuantum` derived from `algorithm`, and the
+   * client apart from its capabilities. A row written before #1108, which
+   * carried those as fields of their own, and one written with #1114's
+   * capabilities on `client` after a `|`, read the same way.
+   *
+   * @param detail - the row's `detail`
+   * @returns `{ attachment, transports, attestation, postQuantum, client,
+   *   capabilities }`
+   */
+  static unfold(detail: Json): { attachment: string; transports: string;
+                                 attestation: string; postQuantum: boolean;
+                                 client: string; capabilities: string } {
+    log.debug("Entering WebauthnCeremonies.unfold().");
+    const d = detail && typeof detail === 'object' ? detail : {};
+    const parts = typeof d.authenticator === 'string'
+      ? d.authenticator.split('|') : null;
+    const out = parts
+      ? { attachment: String(parts[0] || ''),
+          transports: String(parts[1] || ''),
+          // Whatever follows the second bar is the attestation, whole.
+          attestation: parts.slice(2).join('|') }
+      : { attachment: String(d.attachment || ''),
+          transports: String(d.transports || ''),
+          attestation: String(d.attestation || '') };
+    // From the algorithm, for either shape: an older row's own
+    // `postQuantum` was computed the same way when it was written.
+    const postQuantum = passkeyPolicy.isPostQuantum(String(d.algorithm || ''));
+    // The client, and #1114's capabilities after a `|` on it where the row
+    // has no `capabilities` of its own (`clientOf()` never yields a `|`).
+    const said = String(d.client || '');
+    const cut = said.indexOf('|');
+    const client = cut >= 0 ? said.slice(0, cut) : said;
+    const capabilities = d.capabilities !== undefined
+      ? String(d.capabilities || '') : (cut >= 0 ? said.slice(cut + 1) : '');
+    log.debug("Leaving WebauthnCeremonies.unfold().");
+    return Object.assign(out, { postQuantum: postQuantum, client: client,
+                                capabilities: capabilities });
+  }
+
+  // The authenticator's three facts in one field (#1108; see the header).
+  private static foldAuthenticator(attachment: string, transports: string,
+                                   attestation: string): string {
+    log.debug("Entering WebauthnCeremonies.foldAuthenticator().");
+    const clean = function (text: string): string {
+      return String(text || '').replace(/\|/g, '/');
+    };
+    const out = attachment || transports || attestation
+      ? clean(attachment) + '|' + clean(transports) + '|' +
+        String(attestation || '')
+      : '';
+    log.debug("Leaving WebauthnCeremonies.foldAuthenticator().");
+    return out;
+  }
+
   // What a registration's attestation was signed with (#941), in a line.
   private static attestationText(rec: Json): string {
     log.debug("Entering WebauthnCeremonies.attestationText().");
+    // THE DOWNGRADE (#1114), whatever the statement was signed with.
+    const lead = rec && rec.enterpriseDowngraded === true
+      ? 'enterprise not listed, asked direct' : '';
     const a = rec && rec.algorithms;
     if (!a) {
       log.debug("Leaving WebauthnCeremonies.attestationText(). None.");
-      return '';
+      return lead;
     }
     const chain = (Array.isArray(a.certificates) ? a.certificates : [])
       .map(function (one: Json): string {
@@ -302,7 +443,8 @@ class WebauthnCeremonies {
     const text = [String(a.statement || '')].concat(
       chain.length ? [chain.join(' > ')] : []).filter(Boolean).join('; ');
     log.debug("Leaving WebauthnCeremonies.attestationText().");
-    return text ? text + (a.postQuantum === true ? ' (PQ)' : '') : '';
+    return [lead, text ? text + (a.postQuantum === true ? ' (PQ)' : '')
+                       : ''].filter(Boolean).join('; ');
   }
 
   /**
@@ -347,6 +489,8 @@ class WebauthnCeremonies {
           posted.capabilities[name] === true;
       }).join(',');
       const refused = e.outcome !== 'success';
+      const durationMs = WebauthnCeremonies.durationOf(e.issuedAt,
+                                                       Date.now());
       const row = audit.audit({
         action: 'webauthn.ceremony', category: 'authentication',
         outcome: refused ? 'refused' : 'success',
@@ -362,19 +506,28 @@ class WebauthnCeremonies {
                           : 'completed') +
                  (algorithm ? ' with ' + algorithm : ''),
         detail: {
+          // TWELVE, IN THIS ORDER (#1108): the header lists them, and
+          // `audit.js` keeps the first twelve keys of a detail.
           ceremony: ceremony, door: door, role: String(e.role || ''),
           lane: String(e.lane || ''),
-          offered: WebauthnCeremonies.namesOf(e.offered).join(','),
+          application: String(e.application || '').slice(0, 120),
+          durationMs: durationMs,
+          offered: WebauthnCeremonies.namesOf(e.offered).join(',') +
+            (e.narrowed ? '|' + String(e.narrowed).slice(0, 120) : ''),
           algorithm: algorithm,
-          postQuantum: passkeyPolicy.isPostQuantum(algorithm),
           client: WebauthnCeremonies.clientOf(userAgent),
-          transports: transports.join(','), attachment: attachment,
           clientError: clientError,
           capabilities: capabilities,
-          attestation: ceremony === 'registration'
-            ? WebauthnCeremonies.attestationText(e.attestation) : ''
+          authenticator: WebauthnCeremonies.foldAuthenticator(attachment,
+            transports.join(','), ceremony === 'registration'
+              ? WebauthnCeremonies.attestationText(e.attestation) : '')
         }
       });
+      passkeyClients.observe({ ceremony: ceremony,
+        outcome: refused ? 'refused' : 'success', clientError: clientError,
+        offered: WebauthnCeremonies.namesOf(e.offered),
+        client: WebauthnCeremonies.clientOf(userAgent),
+        username: String(e.username || '') });
       log.debug("Leaving WebauthnCeremonies.record(). " + ceremony + ' ' +
                 (refused ? 'refused' : 'completed'));
       return row;
@@ -450,6 +603,48 @@ class WebauthnCeremonies {
       return null;
     }
   }
+
+  // -------------------------------------------------------------------------
+  // A ROW A LATER REGISTRATION MAY HAVE REPLACED ON ITS AUTHENTICATOR
+  // (#1101): `credentials.ts` marks it, and this is the audit row, since
+  // that module may not reach the audit log itself.
+  // -------------------------------------------------------------------------
+  /**
+   * Records that a passkey row may have been replaced on its authenticator
+   * by a later registration under the same user handle and AAGUID (#1101).
+   *
+   * @param input - `{ username, credentialId, by, aaguid }`
+   * @returns the row written, or null
+   */
+  possiblyReplaced(input: { username: string; credentialId: string;
+                            by: string; aaguid: string }): Json {
+    const { log, audit } = this.deps;
+    log.debug("Entering WebauthnCeremonies.possiblyReplaced().");
+    try {
+      const given = input || ({} as Json);
+      const row = audit.audit({
+        action: 'webauthn.key.possibly-replaced', category: 'authentication',
+        outcome: 'success', actor: String(given.username || ''),
+        target: String(given.username || ''),
+        channel: 'http', protocol: 'WebAuthn',
+        summary: 'a passkey of ' + String(given.username || '') + ' may ' +
+                 'have been replaced on its authenticator by one registered ' +
+                 'later under the same user handle',
+        detail: { credentialId: String(given.credentialId || ''),
+                  by: String(given.by || ''),
+                  aaguid: String(given.aaguid || '') }
+      });
+      log.debug("Leaving WebauthnCeremonies.possiblyReplaced(). Recorded.");
+      return row;
+    } catch (err) {
+      // As record(): evidence, never the registration.
+      log.debug("Caught in WebauthnCeremonies.possiblyReplaced(): " +
+                ((err && err.message) || err));
+      log.debug("Leaving WebauthnCeremonies.possiblyReplaced(). Not " +
+                "recorded.");
+      return null;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -475,8 +670,12 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   record: slot.forward('record'),
   algorithmMismatch: slot.forward('algorithmMismatch'),
+  possiblyReplaced: slot.forward('possiblyReplaced'),
   clientOf: WebauthnCeremonies.clientOf,
+  unfold: WebauthnCeremonies.unfold,
+  durationOf: WebauthnCeremonies.durationOf,
   clientErrorName: WebauthnCeremonies.clientErrorName,
   CLIENT_ERRORS: CLIENT_ERRORS,
-  DOORS: DOORS
+  DOORS: DOORS,
+  MAX_DURATION_MS: MAX_DURATION_MS
 };

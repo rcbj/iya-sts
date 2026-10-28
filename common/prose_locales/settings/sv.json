@@ -1127,13 +1127,29 @@
     "en": "f34caf08dceeedd3",
     "text": "Läses bara medan nyckelpolicyn kräver en postkvantnyckel vid inloggning (`postQuantumRequired`), och bara där den valda profilens rad `postQuantumAllowCredentials` är `realm`. `narrow` (standard) anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets `allowCredentials`, så en klassisk nyckel erbjuds aldrig — men en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin (STS-AUTHN-0356), med en sida som säger att programmet kräver en postkvantnyckel och var man lägger till en. Avvägningen: personen kan välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni."
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "Uppgradera en klassisk nyckel till en postkvantnyckel"
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "Lär dig vilka klienter som inte kan skapa en ML-DSA-passnyckel"
   },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "På (standardvärdet) kan en person uppgradera en av sina klassiska nycklar till en postkvantnyckel (ML-DSA) på /portal/keys: personen använder den klassiska nyckeln en gång, för att visa att den är hens, och skapar sedan den nya, som bara erbjuds ML-DSA. Med `webauthn.pqcAlongsideClassical` på LÄGGS postkvantnyckeln TILL i ett eget spår och den klassiska behålls; av ERSÄTTER postkvantnyckeln den klassiska på plats, behåller dess namn och antecknar när den uppgraderades och från vilken algoritm. Den klassiska nyckeln ändras först när den nya har verifierats, så en misslyckad uppgradering lämnar den som den var. Den nya nyckeln uppfyller varje regel som en registrering uppfyller. Av kan ingen nyckel uppgraderas; en postkvantnyckel kan fortfarande registreras bredvid en klassisk där nycklar får registreras."
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "På räknas en passnyckelregistrering som erbjöd ML-DSA och misslyckades i webbläsaren med NotSupportedError mot sin klient — webbläsaren och operativsystemet efter familj och huvudversion, så som passnyckelceremoniernas rader namnger den (`Chrome 141 on macOS 15`) — och när `webauthn.clientLearningFailures` olika personer har misslyckats så från en klient inom `webauthn.clientLearningWindowHours`, utan att någon registrering från den lyckats, slutar den här sfären erbjuda ML-DSA till den klienten: dess registreringar erbjuder listan utan ML-DSA, som en konfigurerad rad `clientRules` i passnyckelpolicyn gör. En registrering från klienten som bad om ML-DSA och lyckades tar bort posten, och det gör också att rensa den under Katalog → Policyer → Passnyckelpolicy. Tillämpas aldrig där en klassisk passnyckel inte är tillåten. Av räknas inget och inget inlärt tillämpas; det inlärda behålls."
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "Misslyckanden innan en klient inte längre erbjuds ML-DSA"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "Hur många olika personers registreringar från en klient som måste ha bett om ML-DSA och misslyckats med NotSupportedError, inom `webauthn.clientLearningWindowHours` och utan att någon lyckats, innan `webauthn.clientLearning` slutar erbjuda den ML-DSA. En person räknas en gång hur ofta den än försöker, så ett konto kan inte lära sfären något om alla andras webbläsare."
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "Fönster som misslyckandena räknas inom"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "De timmar ett misslyckande räknas mot `webauthn.clientLearningFailures`. Ett äldre misslyckande glöms, och ett schemalagt jobb (`passkeys.client-learning-sweep`) tar bort de poster vars misslyckanden alla har åldrats ut. En klient som redan är inlärd förblir det tills en registrering från den lyckas eller den rensas."
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1148,8 +1164,16 @@
     "text": "Överföring av attestering"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "Hur mycket webbläsaren ombeds berätta för tjänsten om autentiseraren som skapade autentiseringsuppgiften. `direct` är standard här eftersom detta är en FELSÖKNINGSTJÄNST och attesteringsobjektet är en av sakerna som är värda att titta på; en driftsättning som inte har någon nytta av autentiserarens modell bör skicka `none`, vilket är vad specifikationen rekommenderar och vad som undviker en samtyckesfråga i webbläsaren om det. **Vad som GÖRS med det som kommer tillbaka är `webauthn.attestationPolicy`** (#105): varje utsaga som kommer verifieras i produktionsläge. En sfär vars policy är `require-trusted`, eller som listar AAGUID:er i `webauthn.attestationAllowedAaguids`, ber om `direct` oavsett vad detta säger — en policy som behöver en utsaga kan inte uppfyllas genom att be om ingen. Att be om `enterprise` och inte få något tillbaka är webbläsaren som vägrar, inte tjänsten."
+    "en": "1280747b772b73d1",
+    "text": "Hur mycket webbläsaren ombeds berätta för tjänsten om autentiseraren som skapade autentiseringsuppgiften. `direct` är standard här eftersom detta är en FELSÖKNINGSTJÄNST och attesteringsobjektet är en av sakerna som är värda att titta på; en driftsättning som inte har någon nytta av autentiserarens modell bör skicka `none`, vilket är vad specifikationen rekommenderar och vad som undviker en samtyckesfråga i webbläsaren om det. **Vad som GÖRS med det som kommer tillbaka är `webauthn.attestationPolicy`** (#105): varje utsaga som kommer verifieras i produktionsläge. En sfär vars policy är `require-trusted`, eller som listar AAGUID:er i `webauthn.attestationAllowedAaguids`, ber om `direct` oavsett vad detta säger — en policy som behöver en utsaga kan inte uppfyllas genom att be om ingen. **`enterprise` begärs bara för ett RP ID som listas i `webauthn.attestationEnterpriseRpIds`** (#1114); för alla andra begär förfrågan `direct`, och ceremonins rad och nyckelns attesteringspost säger det. Det kan inte väljas medan den listan är tom. Att be om `enterprise` och få en vanlig attestering tillbaka är webbläsaren eller autentiseraren som avböjer, inte tjänsten."
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "RP ID:n för företagsattestering"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "De RP ID:n för vilka en registrering ber om `enterprise`-attestering (WebAuthn Level 3 avsnitt 5.4.7), kommaseparerade värdnamn som jämförs exakt (skiftläge undantaget). Läses bara medan `webauthn.attestation` är `enterprise`, som inte kan väljas medan denna är tom (STS-AUTHN-0500), och denna kan inte tömmas medan den är det. En ceremoni vars RP ID inte listas ber om `direct` i stället, och dess `webauthn.ceremony`-rad och den nya nyckelns attesteringspost säger det. **Bara en utsaga från en företagsförfrågan får sitt enhetsserienummer läst** för passkey-policyns `enterpriseSerialAttribute`; lista här exakt de RP ID:n som era autentiserare och webbläsare är etablerade för att lämna ut företagsattestering till."
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",
@@ -1190,6 +1214,14 @@
   "webauthn.attestationEvidenceHashAlgorithm|description": {
     "en": "ea9f111d1308b528",
     "text": "Kondensat som nya RFC 4998-poster använder. Att höja det från sha256 utlöser RFC 4998-förnyelse av hashträdet vid den dagliga omräkningen av nyckelrapporten, i en ny ArchiveTimeStampChain."
+  },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "Bevarad passkey-historik (dagar)"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "Hur många dagars passkey-historik en sfär behåller (#1109): passkey-rapportens dagliga omräkning skriver en rad per sfär och dag (personer efter slag, passkeys efter algoritm, fil och attesteringsalgoritm, samt populationen för varje namngiven passkey-profil), som rapportapplikationen läser som källan passkeyHistory. Samma omräkning tar bort raderna som är äldre än detta. Att sänka värdet tar bort de äldre raderna vid nästa omräkning."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -7088,8 +7120,8 @@
     "text": "Registrera konsolen, portalen och rapporterna som mottagare"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "Om tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol, användarportal och rapportapplikation (#1042), så att var och en tar emot varje CAEP- och RISC-händelse — genom RFC 8936-hämtning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kommit på /admin/signals, /portal/signals och /report/signals. De är VANLIGA strömmar — pausa, begränsa eller ta bort en på /admin/ssf så förblir den så tills en omstart."
+    "en": "603011e249d33c00",
+    "text": "Om tjänsten skapar en Shared Signals-ström för sin EGEN administrationskonsol, användarportal och sitt rapportprogram (#1042), så att var och en tar emot varje CAEP- och RISC-händelse — hämtade genom RFC 8936-hämtning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kommit på /admin/signals och /portal/signals; rapportprogrammet besvarar sitt eget på GET /report-api/signals och visar ingen sida för det (#1090). Det är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf så förblir den så till en omstart."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",
@@ -7102,6 +7134,30 @@
   "ssf.internalPollMs|description": {
     "en": "b80cedcb611f2fd3",
     "text": "Hur ofta den här tjänstens egen administratörskonsol och användarportal hämtar det deras strömmar innehåller, via RFC 8936-pollning från /ssf/poll (schemaläggarjobbet ssf.internal-poll), upp till ssf.pollMaxEvents SET per begäran. Det är det längsta en Security Event Token väntar innan någon av ytorna ser den och agerar på den. 0 stänger av jobbet, och händelserna köas då på de två strömmarna och når ingen av sidorna."
+  },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "Hur ofta varje öppen flik söker efter meddelanden (millisekunder)"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "Hur ofta varje öppen flik i administrationskonsolen, användarportalen och rapportprogrammet frågar sitt eget API efter meddelanden som mottagaren har tagit emot (#1086). Tillsammans med ssf.internalPollMs är det den längsta tid en sändning tar att visas. En flik läser värdet när den loggar in."
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "Hur länge en mottagare behåller ett meddelande (sekunder)"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "Hur länge var och en av tjänstens tre mottagare behåller ett mottaget meddelande så att flikarna kan hämta det (#1086). En flik visar bara det som kom efter att den loggade in, så detta är inte hur länge en sen flik kan se det; det behöver bara räcka längre än en fliks kontrollintervall och en långsam hämtning."
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "Längsta meddelande (tecken)"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "Det största antalet tecken ett sänt meddelande får innehålla (#1086). Det är ren text; ett längre avvisas."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7126,6 +7182,22 @@
   "ssf.inactivityAction|description": {
     "en": "f6d2a2be3eebe16f",
     "text": "De tre saker som avsnitt 8.1.1 tillåter. Pause och disable skickar en stream-updated-händelse till mottagaren INNAN strömmen stannar, vilket specifikationen kräver; en pausad ström fortsätter att köa och en inaktiverad kastar det som väntar. Delete tar bort strömmen och skickar ingenting, eftersom det inte finns någon ström kvar att skicka det på."
+  },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "Inaktivitetsgräns för en persons hämtningsström (s)"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "inactivity_timeout för en ström som en PERSON äger (skapad med en åtkomsttoken utfärdad för personen, eller namn och lösenord) och hämtar med RFC 8936-hämtning — det en mottagare i webbläsaren skapar — när varken det ägande programmet eller ssf.inactivityTimeoutS anger någon (#1094). Varje hämtning är aktivitet, så en ström med en öppen flik är aldrig inaktiv; en som övergavs när fliken stängdes hanteras som ssf.personStreamInactivityAction anger. 0 stänger av den."
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "Vad en persons inaktiva hämtningsström blir"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "Vad ssf.personStreamInactivityTimeoutS gör med en persons inaktiva hämtningsström (#1094). Borttagning, standardvärdet, frigör platsen den har under ssf.maxStreams; mottagaren i webbläsaren skapar en ny när personen kommer tillbaka."
   },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",

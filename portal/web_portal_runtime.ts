@@ -67,6 +67,7 @@ import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
 import WebAccounts = require('../common/web_accounts');
 import DocLinks = require('../common/web_doc_links');
+import WebAnnouncements = require('../common/web_announcements');
 
 type Json = any;
 
@@ -108,6 +109,8 @@ class PortalRuntime extends SpaClient {
   private t: Json;
   private formTable: Json;
   private view: Json;
+  // The announcement banner's poller (#1086), once the person is known.
+  private announcements: WebAnnouncements | null = null;
   // What an act left to say on the next page drawn: `{ message, error }`.
   private flash: Json;
   // The path and query of the page last drawn: a `popstate` that changes
@@ -794,6 +797,8 @@ class PortalRuntime extends SpaClient {
       }
       this.me = me.json;
       this.applyLocale(this.me.locale);
+      // AN ADMINISTRATOR'S ANNOUNCEMENT (#1086): from now on, in this realm.
+      this.startAnnouncements();
       // THE BROWSER'S ACCOUNTS (#561), for the account menu, and the tab's
       // own kept from them; off, nothing is kept and the frame is today's.
       await this.readAccounts(String((this.me.user || {}).username || ''));
@@ -1200,7 +1205,38 @@ class PortalRuntime extends SpaClient {
    *
    * @returns nothing
    */
+  // THE ANNOUNCEMENT BANNER (#1086), `common/web_announcements.ts` as the
+  // console and reports run it. Through `sendOnce()`, never `apiJson()`: a
+  // poll in the background must not begin a sign-in.
+  /**
+   * Starts collecting announcements for the person's realm.
+   *
+   * @returns nothing
+   */
+  startAnnouncements(): void {
+    if (this.announcements) {
+      this.announcements.stop();
+    }
+    const self = this;
+    this.announcements = new WebAnnouncements(this.env, {
+      ask: function (since: number): Promise<Json> {
+        return self.sendOnce('GET', self.url(API + '/announcements' +
+          (since ? '?since=' + encodeURIComponent(String(since)) : '')))
+          .then(function (res: Json) {
+            return res && typeof res.json === 'function' &&
+                   res.status === 200 ? res.json() : null;
+          });
+      },
+      heading: this.t.text('portal.announcement.heading'),
+      closeLabel: this.t.text('portal.announcement.close')
+    });
+    this.announcements.start();
+  }
+
   signOut(): void {
+    if (this.announcements) {
+      this.announcements.stop();
+    }
     // WHICH ACCOUNT (#561): with several in the browser, the sign-out is
     // told the tab's, which it preselects; with the setting off the address
     // is the one it always was.
@@ -1244,6 +1280,10 @@ class PortalRuntime extends SpaClient {
    * @returns nothing
    */
   discardViews(): void {
+    if (this.announcements) {
+      this.announcements.stop();
+      this.announcements = null;
+    }
     this.me = null;
     this.nobody = null;
     this.formTable = null;

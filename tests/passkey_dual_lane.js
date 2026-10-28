@@ -55,6 +55,10 @@
 //      self-enrolment begun first is still pending afterwards; the new
 //      key's row and the answer both carry `lane` and `enrolledBy`; the
 //      person's own confirmKeyEnrolment still drops that pending record.
+//  15. The portal's Cryptography row comes from the key's ALGORITHM (#1076):
+//      the ML-DSA key 13c left in the classical lane says post-quantum, a
+//      post-quantum lane key keeps its second-account note, and a classical
+//      key says classical whatever its lane.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -200,7 +204,7 @@ function childMain() {
     const ON = 'webauthn.pqcAlongsideClassical';
     // The default `webauthn.algorithms`, as COSE identifiers: what a realm
     // that never turned the switch on has always been sent (the snapshot).
-    const CONFIGURED = [-48, -49, -50, -9, -7, -19, -8, -51, -35, -52, -36,
+    const CONFIGURED = [-50, -49, -48, -9, -7, -19, -8, -51, -35, -52, -36,
                         -53, -47, -37, -38, -39, -257, -258, -259];
     config.setOverride('oauth2.consentRequired', false);
     passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
@@ -339,7 +343,7 @@ function childMain() {
       return pqcOn.algorithms.indexOf(a) >= 0;
     });
     note(JSON.stringify(webauthnPolicy.lanes()) === '["classical","pqc"]' &&
-         ids(pqcOn) === '[-48,-49,-50]' &&
+         ids(pqcOn) === '[-50,-49,-48]' &&
          ids(classicalOn) === JSON.stringify(CONFIGURED.slice(3)) &&
          overlap.length === 0,
          '3a. on: two lanes, ML-DSA alone in the post-quantum one and the ' +
@@ -361,7 +365,7 @@ function childMain() {
          pqcBegun.exclude.length === 0 &&
          pending.user === 'pkl-alice+ml-dsa' &&
          pending.display === 'pkl-alice (ML-DSA)' &&
-         ids(pending.options) === '[-48,-49,-50]',
+         ids(pending.options) === '[-50,-49,-48]',
          '3b. the post-quantum lane has its own handle, excludes none of the ' +
          'classical keys, and is named pkl-alice+ml-dsa / "pkl-alice ' +
          '(ML-DSA)" at creation', JSON.stringify(pending).slice(0, 300));
@@ -578,9 +582,7 @@ function childMain() {
     const proveUpgrade = await credentials.proveKeyUpgrade('pkl-upgrade',
       beginUpgrade.upgradeId, upOld.assert(beginUpgrade.challenge),
       { origin: ORIGIN, rpId: RPID });
-    const proofView = view('pkl-upgrade').upgrade || {};
-    const proofHtml = keysPages.upgradeBlock(proofView,
-      { html: function (key) { return '[' + key + ']'; } });
+    const proofView = view('pkl-upgrade');
     const upNew = await makeAuthenticator(-49, RPID, ORIGIN);
     const sideDone = await credentials.confirmKeyUpgrade('pkl-upgrade',
       beginUpgrade.upgradeId,
@@ -597,20 +599,23 @@ function childMain() {
     const upgradeOps = new accountKeys.AccountKeys(
       accountKeys.AccountKeys.defaultDeps()).accountOperations({
         BASE: '/account-api', PORTAL: '/portal' });
+    // #1100: the portal has no upgrade any more — no operation, no block,
+    // and an upgrade in progress is not drawn as an enrolment either.
     note(upSeed.done.ok && beginUpgrade.ok && proveUpgrade.ok &&
-         proofView.pending && proofView.pending.phase === 'registration' &&
-         proofView.pending.options.algorithms.join(',') === '-48,-49,-50' &&
-         proofHtml.indexOf('data-mode="create"') >= 0 &&
-         upgradeOps.some(function (op) {
-           return op.operationId === 'upgradeKey' &&
+         proofView.upgrade === undefined && !proofView.enrol.pending &&
+         webauthnPolicy.upgradeCreationOptions(RPID, 'passkey').algorithms
+           .join(',') === '-50,-49,-48' &&
+         !upgradeOps.some(function (op) {
+           return op.operationId === 'upgradeKey' ||
                   op.path === '/account-api/keys/upgrade';
          }) &&
          sideDone.ok && sideDone.mode === 'alongside' &&
          sideRows.length === 2 && oldSide.upgradedTo === upNew.credentialId &&
          sideHistory.previousAlgorithm === 'ES256' &&
          sideHistory.mode === 'alongside',
-         '13a. the portal exposes an ML-DSA-only upgrade after proof, and ' +
-         'the alongside write records both keys and upgrade history',
+         '13a. the upgrade is ML-DSA only after proof, the portal exposes ' +
+         'none of it (#1100), and the alongside write records both keys and ' +
+         'upgrade history',
          JSON.stringify([beginUpgrade, proveUpgrade, sideDone, sideHistory]));
     const failOld = await makeAuthenticator(-7, RPID, ORIGIN);
     const failSeed = await enrol('pkl-failure',
@@ -722,6 +727,36 @@ function childMain() {
          'the proved classical key in the classical lane',
          JSON.stringify([replaceDone, replaceRows,
            credentials.keyLane(replaceRows[0])]));
+
+    // 15. The Cryptography row, from the algorithm (#1076).
+    const tKeys = { html: function (key) { return '[' + key + ']'; },
+                    text: function (key) { return '[' + key + ']'; } };
+    const cryptoCell = function (row) {
+      const drawn = keysPages.passkeyRow(Object.assign({ name: 'k',
+        enrolledAt: 0, kind: 'passkey', withoutUsername: 'yes' }, row),
+        tKeys);
+      const at = drawn.indexOf('[portal.keys.lane]</th><td>');
+      return at < 0 ? null
+        : drawn.slice(at + 27, drawn.indexOf('</td>', at + 27));
+    };
+    const replacedCell = cryptoCell({ lane: 'classical',
+      algorithm: credentials.keyAlgorithm(replaceRows[0]) });
+    const pqcLaneCell = cryptoCell({ lane: 'pqc',
+      algorithm: { text: 'ML-DSA-65 (-49)', postQuantum: true } });
+    const classicalCell = cryptoCell({ lane: 'classical',
+      algorithm: { text: 'ES256 (-7)', postQuantum: false } });
+    const classicalInPqcCell = cryptoCell({ lane: 'pqc',
+      algorithm: { text: 'ES256 (-7)', postQuantum: false } });
+    note(replacedCell === '[portal.keys.cryptoPostQuantum]' &&
+         pqcLaneCell === '[portal.keys.lanePqc]' &&
+         classicalCell === '[portal.keys.laneClassical]' &&
+         classicalInPqcCell === '[portal.keys.laneClassical]',
+         '15. the portal\'s Cryptography row is read from the key\'s ' +
+         'algorithm: the ML-DSA key in the classical lane says ' +
+         'post-quantum, a post-quantum lane key keeps its second-account ' +
+         'note, a classical key says classical (#1076)',
+         JSON.stringify([replacedCell, pqcLaneCell, classicalCell,
+                         classicalInPqcCell]));
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

@@ -427,7 +427,13 @@ class PoliciesPage {
           label: t.text('consolePolicies.sub.new'),
           html: '<h3>' + t.html('consolePolicies.named.addHeading') +
             '</h3>' + named.add }
-      ]) + PoliciesPage.policySchemaTables(member.schema, t);
+      ].concat(member.clients ? [
+        // THE LEARNED CLIENTS (#1112), the realm's register, beside the
+        // profiles whose `clientRules` row is the configured half.
+        { id: kind.id + '-sub-clients',
+          label: t.text('consolePolicies.sub.clients'),
+          html: PoliciesPage.passkeyClientsSection(member.clients, t) }
+      ] : [])) + PoliciesPage.policySchemaTables(member.schema, t);
     }
     const out = head +
       PoliciesPage.policyProblems(member.profile, t) +
@@ -438,6 +444,66 @@ class PoliciesPage {
       (Array.isArray(member.named)
         ? PoliciesPage.namedProfilesSection(kind, member, t) : '') +
       PoliciesPage.policySchemaTables(member.schema, t);
+    return out;
+  }
+
+  /**
+   * Draws the passkey policy's learned clients (#1112): the switch and its
+   * thresholds, a page of the register — learned first — each with a Clear
+   * form, and Clear all. Each form posts the kind's own act, which the
+   * runtime sends to `POST /admin-api/policies/{action}`.
+   *
+   * @param clients - `passkey.clients` of the policies view
+   * @param t - the page's translator (#539)
+   * @returns the section as HTML
+   */
+  static passkeyClientsSection(clients, t) {
+    const pg = clients.paging || { page: 1, pages: 1, per: 25, total: 0 };
+    const firstRow = pg.total ? (pg.page - 1) * pg.per + 1 : 0;
+    const nav = kit.pageNavPair('/admin/policies', {}, {
+      page: pg.page, pages: pg.pages, param: 'clientsPage',
+      noun: t.text('consolePolicies.clients.noun'), total: pg.total,
+      firstRow: firstRow,
+      lastRow: Math.min(pg.total, firstRow + clients.rows.length - 1) }, t);
+    const clearForm = function (action, client, label) {
+      return '<form method="post" action="/admin/policies" class="inline">' +
+        '<input type="hidden" name="action" value="' + kit.esc(action) +
+        '">' + (client === null ? ''
+          : '<input type="hidden" name="client" value="' +
+            kit.esc(client) + '">') +
+        '<button class="secondary">' + label + '</button></form>';
+    };
+    const out = '<h3 id="passkey-clients">' +
+      t.html('consolePolicies.clients.heading') + '</h3>' +
+      kit.note(t.html('consolePolicies.clients.note', {
+        threshold: String(clients.threshold),
+        hours: String(clients.windowHours) })) +
+      (clients.learning ? ''
+        : kit.warn(t.html('consolePolicies.clients.learningOff'))) +
+      (clients.rows.length
+        ? nav.head + '<table><tr><th>' +
+          t.html('consolePolicies.clients.client') + '</th><th>' +
+          t.html('consolePolicies.clients.state') + '</th><th>' +
+          t.html('consolePolicies.clients.failures') + '</th><th>' +
+          t.html('consolePolicies.clients.last') + '</th><th></th></tr>' +
+          clients.rows.map(function (row) {
+            return '<tr><td><code>' + kit.esc(row.client) + '</code></td>' +
+              '<td>' + (row.learned
+                ? t.html('consolePolicies.clients.learned',
+                         { at: row.learnedAt })
+                : '<span class="state-none">' +
+                  t.html('consolePolicies.clients.counting') + '</span>') +
+              '</td><td>' + kit.esc(String(row.failures)) + '</td><td>' +
+              kit.esc(row.lastAt) + '</td><td>' +
+              clearForm(clients.actions.clear, row.client,
+                        t.html('consolePolicies.clients.clear')) +
+              '</td></tr>';
+          }).join('') + '</table>' + nav.foot +
+          '<p>' + clearForm(clients.actions.clearAll, null,
+                            t.html('consolePolicies.clients.clearAll')) +
+          '</p>'
+        : '<p class="state-none">' + t.html('consolePolicies.clients.none') +
+          '</p>');
     return out;
   }
 
@@ -925,6 +991,13 @@ class PoliciesPage {
             t.html('consolePolicies.field.textAnd') + '{kind}' +
             t.html('consolePolicies.field.textAfter')
           : t.html('consolePolicies.field.attributes')) + '</span>';
+    } else if (field.type === 'clientRules') {
+      // THE CLIENT RULES (#1112), typed: `<browser> on <system>` with `;`
+      // between rules. The save says what it could not read.
+      control = '<input type="text" id="' + kit.esc(id) + '" name="' +
+        kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
+        ' size="60" maxlength="1200"' + hint + '> <span class="sub">' +
+        t.html('consolePolicies.field.clientRules') + '</span>';
     } else if (field.type === 'locale') {
       // A BCP 47 LANGUAGE TAG (#539), typed: any tag is a locale, and the
       // save says whether it is well-formed.

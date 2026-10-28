@@ -1151,6 +1151,22 @@
     "en": "1466dbe275c566e7",
     "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
   },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "En klassisk nyckel och en postkvantnyckel sida vid sida"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcAlongsideClassical. `both` ger den här profilens personer en klassisk nyckel och en postkvantnyckel sida vid sida, var och en under sitt eget användarhandtag, varhelst sfärens inställning är avstängd; `one` ger dem ett spår varhelst den är påslagen. webauthn.pqcOnly innebär fortfarande ett spår. Nekas som `both` med registrationMode classical-only. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "Klienter som en registrering inte erbjuder ML-DSA"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "TOMT SOM STANDARD: varje klient erbjuds listan som den är. Annars upp till 20 regler åtskilda av `;`, var och en `<browser> on <system>`, där varje sida är en familj så som passnyckelceremoniernas rader namnger den (`Chrome`, `Firefox`, `macOS`, `Android`) eller `*` för vilken som helst, eventuellt följd av ett intervall av huvudversioner (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. En passnyckelregistrering från en matchande klient erbjuder listan utan ML-DSA (ES256 och RS256 om inget blir kvar). Tillämpas inte där en klassisk passnyckel inte är tillåten — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, eller i inloggningssteget under postQuantumRequired sign-in — och inte heller på det postkvantsäkra spåret, och ceremonins rad säger att den inte tillämpades. Utelämnad vid en sparning behålls tomt."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Tips som ”Skapa en nyckel” skickar"
@@ -1298,6 +1314,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
     "en": "1466dbe275c566e7",
     "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcAlongsideClassical. `both` ger den här profilens personer en klassisk nyckel och en postkvantnyckel sida vid sida, var och en under sitt eget användarhandtag, varhelst sfärens inställning är avstängd; `one` ger dem ett spår varhelst den är påslagen. webauthn.pqcOnly innebär fortfarande ett spår. Nekas som `both` med registrationMode classical-only. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "TOMT SOM STANDARD: varje klient erbjuds listan som den är. Annars upp till 20 regler åtskilda av `;`, var och en `<browser> on <system>`, där varje sida är en familj så som passnyckelceremoniernas rader namnger den (`Chrome`, `Firefox`, `macOS`, `Android`) eller `*` för vilken som helst, eventuellt följd av ett intervall av huvudversioner (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. En passnyckelregistrering från en matchande klient erbjuder listan utan ML-DSA (ES256 och RS256 om inget blir kvar). Tillämpas inte där en klassisk passnyckel inte är tillåten — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, eller i inloggningssteget under postQuantumRequired sign-in — och inte heller på det postkvantsäkra spåret, och ceremonins rad säger att den inte tillämpades. Utelämnad vid en sparning behålls tomt."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1523,9 +1547,21 @@
     "en": "62dd60f1d67057b4",
     "text": "sfärens webauthn.algorithms"
   },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "en person får ha en klassisk nyckel och en postkvantnyckel sida vid sida, var och en under sitt eget användarhandtag"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "en person har sina nycklar i ett spår, oavsett vad sfärens webauthn.pqcAlongsideClassical säger"
+  },
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
     "text": "en administratör får registrera en nyckel för en person, i administratörens egen webbläsare, verifierad som personens egen"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "en passnyckelregistrering från {{rules}} erbjuder inte ML-DSA, där en klassisk passnyckel är tillåten"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
@@ -1730,6 +1766,238 @@
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "Det anpassade attributet {{name}} är inte längre definierat i den här sfären."
+  },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "Policy för aktivitet efter inloggning"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "vad en person ombeds göra efter inloggningen, innan den skickas tillbaka till programmet — i dag att registrera en postkvantnyckel"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "NÄSTA inloggning för varje person som profilen når i den här sfären; en redan påbörjad session avbryts inte"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "standardsfärens profil där den har en, och de inbyggda standardvärdena (ingen ombeds något) där den inte har det"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "profilen för policyn för aktivitet efter inloggning"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "Fråga efter inloggning"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "4c8090556412a140",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR medlemmarna i dess grupper."
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "Aktivitet"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "9514d5e70b9d4eaa",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "Hoppa över skjuter upp den i"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Hur länge Hoppa över skjuter upp aktiviteten för den personen."
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "Tilldelad tid"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Räknas från personens FÖRSTA inbjudan. När den har gått försvinner Hoppa över och inloggningen hålls kvar — ingen session startas — tills aktiviteten är utförd. 0 betyder ingen tidsgräns: den kan alltid hoppas över."
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "En person utan nyckel"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.FIELDS.noPasskeyRole.label": {
+    "en": "c8ec4e469545eb61",
+    "text": "Registreras av en person utan nyckel som"
+  },
+  "postLogin.FIELDS.noPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: en lösenordsfri inloggning. mfa: en andra faktor."
+  },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "Hur en klassisk nyckel migreras"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: personen använder sin klassiska nyckel en gång, sedan ersätter en ML-DSA-nyckel den på plats på samma autentiserare — en nyckel, ingenting lämnas kvar. alongside: en ML-DSA-nyckel läggs till bredvid den, i postkvantspåret där sfären erbjuder två spår, eller på en annan autentiserare där den erbjuder ett. automatic: alongside där personens nyckelpolicy erbjuder två spår, upgrade där den erbjuder ett."
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "En nyckel räknas som postkvant när"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: dess nyckelalgoritm är ML-DSA. post-quantum: dess nyckelalgoritm är ML-DSA OCH dess registrerade attestering signerades med postkvantalgoritmer hela vägen; en nyckel med en klassisk attestering, eller utan registrerad attestering, räknas inte, och dess innehavare ombeds om en som gör det."
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "En person utan nyckel vars enhet inte kan skapa ML-DSA"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: endast ML-DSA. classical: efter att en ML-DSA-registrering misslyckats på enheten erbjuds ett nytt försök med de klassiska algoritmerna (där nyckelpolicyn tillåter ett) — en klassisk nyckel är bättre än ett lösenord, och dess innehavare ombeds om migreringen senare precis som alla andra."
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "7ac360a6d70b525c",
+    "text": "Den här tjänstens klass för en profil för aktivitet efter inloggning: vad en person ombeds göra efter inloggningen. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som väljs per grupp)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "4c8090556412a140",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR medlemmarna i dess grupper."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "9514d5e70b9d4eaa",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Hur länge Hoppa över skjuter upp aktiviteten för den personen."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Räknas från personens FÖRSTA inbjudan. När den har gått försvinner Hoppa över och inloggningen hålls kvar — ingen session startas — tills aktiviteten är utförd. 0 betyder ingen tidsgräns: den kan alltid hoppas över."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: en lösenordsfri inloggning. mfa: en andra faktor."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: personen använder sin klassiska nyckel en gång, sedan ersätter en ML-DSA-nyckel den på plats på samma autentiserare — en nyckel, ingenting lämnas kvar. alongside: en ML-DSA-nyckel läggs till bredvid den, i postkvantspåret där sfären erbjuder två spår, eller på en annan autentiserare där den erbjuder ett. automatic: alongside där personens nyckelpolicy erbjuder två spår, upgrade där den erbjuder ett."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: dess nyckelalgoritm är ML-DSA. post-quantum: dess nyckelalgoritm är ML-DSA OCH dess registrerade attestering signerades med postkvantalgoritmer hela vägen; en nyckel med en klassisk attestering, eller utan registrerad attestering, räknas inte, och dess innehavare ombeds om en som gör det."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: endast ML-DSA. classical: efter att en ML-DSA-registrering misslyckats på enheten erbjuds ett nytt försök med de klassiska algoritmerna (där nyckelpolicyn tillåter ett) — en klassisk nyckel är bättre än ett lösenord, och dess innehavare ombeds om migreringen senare precis som alla andra."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Grupperna (cn eller DN) vars medlemmar en namngiven profil för aktivitet efter inloggning gäller för."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Vilken namngiven profil för aktivitet efter inloggning som vinner där flera når samma person: den lägsta, från 1 till 1000."
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "postLogin.SELECTORS.selectGroups.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Grupperna (cn eller DN) vars medlemmar en namngiven profil för aktivitet efter inloggning gäller för."
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Vilken namngiven profil för aktivitet efter inloggning som vinner där flera når samma person: den lägsta, från 1 till 1000."
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "ingen som profilen når ombeds något efter inloggningen"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "b8a2588126ddb520",
+    "text": "en person som har en klassisk nyckel ombeds efter inloggningen att registrera en postkvantnyckel (ML-DSA) i samma roll"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "ML-DSA-nyckeln ersätter den klassiska på plats, efter att personen använt den klassiska en gång"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "ML-DSA-nyckeln läggs till bredvid den klassiska"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "ML-DSA-nyckeln läggs till bredvid den klassiska där två spår erbjuds, och ersätter den på plats där ett erbjuds"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "en nyckel räknas som postkvant när dess nyckelalgoritm är ML-DSA"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "en nyckel räknas som postkvant bara när både dess nyckelalgoritm och dess registrerade attestering är postkvant"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "en person utan nyckel vars enhet inte kan skapa ML-DSA erbjuds en klassisk nyckel i stället"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "Hoppa över skjuter upp den i {{days}} dag(ar)"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "efter {{days}} dag(ar) från den första inbjudan försvinner Hoppa över och inloggningen hålls kvar tills den är utförd"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "den kan alltid hoppas över"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "en person utan nyckel tillfrågas inte"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "d5a5abd3c3057413",
+    "text": "en person utan nyckel bjuds in att registrera en postkvantnyckel som {{role}}, och får alltid hoppa över det"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "7779655caba632c8",
+    "text": "en person utan nyckel ombeds registrera en postkvantnyckel som {{role}}, och får hoppa över det tills respitperioden tar slut"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "ce39627aa02b361d",
+    "text": "gäller för medlemmarna i {{list}}, med prioritet {{precedence}}"
+  },
+  "postLogin.sentences.param.primary": {
+    "en": "ce71e9dc4bf4e5fa",
+    "text": "sin primära inloggning"
+  },
+  "postLogin.sentences.param.mfa": {
+    "en": "8e2d5e1b1feaf31c",
+    "text": "andra faktor"
+  },
+  "postLogin.sentences.param.noGroup": {
+    "en": "4a00d86d0ff8747a",
+    "text": "ingen grupp"
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

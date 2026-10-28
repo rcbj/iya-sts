@@ -1519,6 +1519,20 @@ const SECTIONS = [
       // profiles `credentials.setPassword()` checks. Different sections,
       // different containers; the label is the one rcbj asked for.
       // -------------------------------------------------------------------
+      // POST-LOGIN ACTIVITIES (#1111, #1123), beside the policies whose
+      // rules a started post-login activity follows. Drawn by the static
+      // console (`admin-ui/web_post_login_activities.ts`) from `GET
+      // /admin-api/post-login-activities`. The CONTROLS only: where each
+      // person stands is the reports application's postLoginProgress
+      // source (#1110), rcbj's decision.
+      { path: '/admin/post-login-activities', label: 'Post-login activities',
+        blurb: 'Start a post-login activity for the realm or for groups ' +
+               'chosen by search, and a scheduler job mails each ' +
+               'person the activity is due for a reminder to sign in, ' +
+               'every so many days up to a maximum per person. The mail ' +
+               'only opens the sign-in page; the post-login activity does ' +
+               'the registration. Pause, resume and end it here; who was ' +
+               'mailed is a report in <a href="/report">Reports</a>.' },
       { path: '/admin/policies', label: 'Policies',
         blurb: 'The rules this realm holds a CREDENTIAL to, starting with ' +
                'the <strong>password policy</strong>: a minimum length, how ' +
@@ -2508,6 +2522,15 @@ const SECTIONS = [
                'points, a test message, and the wording of each message ' +
                'per language. A realm may override the service\'s ' +
                'transport. No secret is ever shown here.' },
+      // #1086: an announcement to everybody signed in, sent as this
+      // service's own Shared Signals event to its three applications.
+      { path: '/admin/broadcast', label: 'Broadcast Announcement',
+        blurb: 'Show a short message to everybody signed in to the admin ' +
+               'console, the user portal or the reports application, in a ' +
+               'banner at the top of every open tab. It travels as this ' +
+               'service\'s own Shared Signals event on the three ' +
+               'applications\' receiver streams; a service administrator ' +
+               'may send it to every realm.' },
       { path: '/admin/rbac', label: 'Admin roles',
         blurb: 'Who holds the two roles that grant this console — Admin ' +
                'Read and Admin Write — granted and revoked here. They are ' +

@@ -242,6 +242,7 @@
   "keys.lane": "Cryptography",
   "keys.laneClassical": "classical",
   "keys.lanePqc": "post-quantum (ML-DSA), ipinapakita bilang pangalawang account na nagtatapos sa “+ml-dsa”",
+  "keys.cryptoPostQuantum": "post-quantum (ML-DSA)",
   "keys.authenticator": "Authenticator",
   "keys.removeLabel": "Alisin ang {name}",
   "keys.remove": "Alisin",
@@ -548,5 +549,8 @@
   "accounts.anotherTitle": "Mag-sign in bilang ibang tao sa tab na ito. Mananatiling naka-sign in ang mga account na naka-sign in na sa browser na ito, at pananatilihin ng ibang mga tab ang kanila.",
   "accounts.none": "Wala pang ibang account na naka-sign in sa browser na ito.",
   "accounts.kept": "Mananatiling naka-sign in ang account na iiwan ng tab na ito, kaya makakabalik ka rito.",
-  "accounts.unsaved": "May mga pagbabago sa pahinang ito na hindi pa nase-save. Lumipat pa rin ng account? Mawawala ang mga ito."
+  "accounts.unsaved": "May mga pagbabago sa pahinang ito na hindi pa nase-save. Lumipat pa rin ng account? Mawawala ang mga ito.",
+  "announcement.heading": "Anunsyo",
+  "announcement.close": "Isara",
+  "keys.possiblyReplaced": "Maaaring napalitan ang passkey na ito sa authenticator na iyon ng isa pang passkey na ini-register noong {day} sa parehong account sa parehong modelo ng authenticator. Kung hindi na gumagana ang passkey na ito, alisin ito."
 }

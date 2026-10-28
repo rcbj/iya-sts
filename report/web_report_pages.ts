@@ -24,6 +24,7 @@ import WebI18n = require('../common/web_i18n');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
+import WebAnnouncements = require('../common/web_announcements');
 
 const CLIENT_ID = 'sts-report';
 const SCOPE = 'openid profile email offline_access report:use report:admin';
@@ -141,11 +142,14 @@ function navLink(href: string, label: string, current: boolean): string {
 
 // Two bars (#986). The top one is smaller and right-justified and holds
 // the controls about the reader rather than the pages: the realm field,
-// the language chooser and the user menu, which holds Sign out. The bar
-// under it is the pages and Refresh.
+// Refresh beside it (rcbj, #1090), the language chooser and the user menu,
+// which holds Sign out. The bar under it is the pages.
 function navHtml(t: any, realm: string, accounts: string, chooser: string,
                  path: string): string {
-  return '<div class="topbar">' + realm + chooser + accounts + '</div>' +
+  return '<div class="topbar">' + realm +
+    '<button type="button" class="btn" data-act="refresh">' +
+    esc(t.text('report.refresh')) + '</button>' + chooser + accounts +
+    '</div>' +
     '<div class="bar"><nav class="nav">' +
     navLink(BASE, t.text('report.catalog'), navCurrent(path, '')) +
     navLink(BASE + '/query', t.text('report.newQuery'),
@@ -154,10 +158,6 @@ function navHtml(t: any, realm: string, accounts: string, chooser: string,
       navCurrent(path, '/definitions')) +
     navLink(BASE + '/jobs', t.text('report.jobs'),
       navCurrent(path, '/jobs')) +
-    navLink(BASE + '/signals', t.text('report.signals'),
-      navCurrent(path, '/signals')) +
-    '<button type="button" class="btn" data-act="refresh">' +
-    esc(t.text('report.refresh')) + '</button>' +
     '</nav></div>';
 }
 
@@ -333,7 +333,11 @@ function whereLeaves(where: any): any[] | null {
     return !!node && typeof node === 'object' && ROW_OPS.indexOf(
       String(node.op)) >= 0 && typeof node.field === 'string' &&
       (node.op === 'isNull' || typeof node.value === 'string' ||
-       typeof node.value === 'number');
+       typeof node.value === 'number' ||
+       // A boolean field's row is a true/false dropdown (#1028); a
+       // predefined query (#1107) or a saved one filters on it with a
+       // boolean, and drew no rows before.
+       typeof node.value === 'boolean');
   };
   if (leafOk(where)) {
     return [where];
@@ -1024,6 +1028,8 @@ function queryDocument(form: any, locale: any): any {
  */
 class ReportRuntime extends SpaClient {
   private username: string;
+  // The announcement banner's poller (#1086), once the tab holds a token.
+  private announcements: WebAnnouncements | null = null;
   private i18n: any;
   private t: any;
   private accountsListening: boolean;
@@ -1625,6 +1631,31 @@ class ReportRuntime extends SpaClient {
     return { status: res.status, bytes: bytes, media: type, res: res };
   }
 
+  // THE ANNOUNCEMENT BANNER (#1086), `common/web_announcements.ts` as the
+  // console and the portal run it. Through `sendOnce()`, never `call()`: a
+  // poll in the background must not begin a sign-in.
+  /**
+   * Starts collecting announcements for this tab's realm.
+   *
+   * @returns nothing
+   */
+  startAnnouncements(): void {
+    const self = this;
+    this.announcements = new WebAnnouncements(this.env, {
+      ask: function (since: number): Promise<any> {
+        return self.sendOnce('GET', self.url('/report-api/announcements' +
+          (since ? '?since=' + encodeURIComponent(String(since)) : '')))
+          .then(function (res: any) {
+            return res && typeof res.json === 'function' &&
+                   res.status === 200 ? res.json() : null;
+          });
+      },
+      heading: this.t.text('report.announcement.heading'),
+      closeLabel: this.t.text('report.announcement.close')
+    });
+    this.announcements.start();
+  }
+
   /**
    * Loads the translator for this page.
    *
@@ -1645,6 +1676,11 @@ class ReportRuntime extends SpaClient {
    * @returns nothing
    */
   paint(body: string): void {
+    // AN ADMINISTRATOR'S ANNOUNCEMENT (#1086): once this tab holds a token,
+    // it collects what the reports receiver took in from then on.
+    if (!this.announcements && this.accessToken) {
+      this.startAnnouncements();
+    }
     const accounts = ReportRuntime.accountMenu(this);
     const chooser = this.i18n.chooser(this.t, this.here());
     const chrome = this.chrome || {};
@@ -1978,9 +2014,21 @@ class ReportRuntime extends SpaClient {
       esc(src.retention) + '</p>' : '';
     const indexedNote = anyIndexed ? '<p class="sub">' +
       esc(t.text('report.indexedNote')) + '</p>' : '';
+    // PREDEFINED QUERIES (#1110): each a link to New Query with its
+    // document filled in, which runs nothing until somebody presses Run.
+    const presets = Array.isArray(src.presets) ? src.presets : [];
+    const presetList = presets.length ? '<h3>' +
+      esc(t.text('report.presets')) + '</h3><p class="sub">' +
+      esc(t.text('report.presetsNote')) + '</p><ul class="presets">' +
+      presets.map(function (one: any): string {
+        return '<li><a href="' + esc(BASE + '/query?source=' +
+          encodeURIComponent(src.id) + '&preset=' +
+          encodeURIComponent(String(one.id))) + '">' +
+          esc(String(one.name)) + '</a></li>';
+      }).join('') + '</ul>' : '';
     this.paint('<p><a href="' + esc(BASE + '/query?source=' + src.id) +
       '">' + esc(this.t.text('report.newQuery')) + '</a></p>' +
-      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote +
+      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote + presetList +
       tableHtml([
         esc(this.t.text('report.fields')),
         esc(this.t.text('report.type')),
@@ -1998,7 +2046,7 @@ class ReportRuntime extends SpaClient {
    * @param sourceId - the source, when the address names one
    * @returns nothing
    */
-  async drawQuery(sourceId: string): Promise<void> {
+  async drawQuery(sourceId: string, presetId?: string): Promise<void> {
     const answer = await this.call('GET', API + '/catalog');
     if (!answer || !answer.json || !answer.json.sources) {
       this.paint(problemHtml(this.t, answer && answer.json &&
@@ -2008,9 +2056,20 @@ class ReportRuntime extends SpaClient {
     const sources = answer.json.sources;
     this.catalogSources = sources;
     const self = this;
+    // A PREDEFINED QUERY (#1110) fills the form and the name a save would
+    // take; one the source does not offer leaves the form empty.
+    const preset = presetId ? ((sources.filter(function (src: any): boolean {
+      return src.id === sourceId;
+    })[0] || {}).presets || []).filter(function (one: any): boolean {
+      return one.id === presetId;
+    })[0] : null;
+    const start = preset && preset.document ? preset.document
+                                            : { source: sourceId || '' };
     this.paint('<form class="query-form" data-form="query">' +
+      (preset ? '<p class="sub">' + esc(self.t.text('report.presetFrom',
+        { name: String(preset.name) })) + '</p>' : '') +
       '<div data-query-block>' +
-      queryFormHtml(self.t, sources, { source: sourceId || '' }) +
+      queryFormHtml(self.t, sources, start) +
       '</div>' +
       // Save query (#986): the Name field and the Save button appear only
       // once the box is ticked; unticked, the form runs and saves nothing.
@@ -2020,7 +2079,8 @@ class ReportRuntime extends SpaClient {
       '<div class="field save-only" hidden><label' +
       tip(self.t, 'report.tipName') + '>' +
       esc(self.t.text('report.name')) +
-      '</label><input name="definitionName"></div>' +
+      '</label><input name="definitionName"' + (preset ? ' value="' +
+        esc(String(preset.name)) + '"' : '') + '></div>' +
       actionsHtml(self.t) + '</form>');
   }
 
@@ -2542,71 +2602,6 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
-   * Draws this application's Shared Signals inbox (#1042): what its own
-   * stream delivered, and what it did with each signal.
-   *
-   * @param query - the page's query
-   * @returns nothing
-   */
-  async drawSignals(query: any): Promise<void> {
-    const answer = await this.call('GET', API + '/signals' +
-      pageQuery(query));
-    if (!answer) {
-      return;
-    }
-    const json = answer.json || {};
-    const list = json.rows;
-    if (!Array.isArray(list)) {
-      this.paint(problemHtml(this.t, json.error_description));
-      return;
-    }
-    const t = this.t;
-    let head = '<p class="sub">' + esc(t.text(json.scope === 'realm'
-      ? 'report.signalsRealm' : 'report.signalsOwn')) + '</p>';
-    if (!json.receiving) {
-      head += '<p class="err">' + esc(t.text('report.signalsOff')) +
-        '</p>' + (Array.isArray(json.why) && json.why.length
-        ? '<ul>' + json.why.map(function (one: any): string {
-          return '<li>' + esc(String(one)) + '</li>';
-        }).join('') + '</ul>' : '');
-    }
-    if (!list.length) {
-      this.paint(head + '<p class="sub">' +
-        esc(t.text('report.signalsNone')) + '</p>');
-      return;
-    }
-    const rows = list.map(function (row: any): string[] {
-      const done = (row.reactions || []).map(function (r: any): string {
-        if (r.failed) {
-          return t.text('report.signalsFailed');
-        }
-        if (r.skipped) {
-          return t.text('report.signalsSkipped', { why: r.skipped });
-        }
-        if (r.observed) {
-          return t.text('report.signalsObserved');
-        }
-        return t.text('report.signalsActed', {
-          sessions: String(Number(r.ended) || 0),
-          tokens: String(Number(r.revoked) || 0) });
-      }).join(' ');
-      return [esc(String(row.at || '')), esc(String(row.name || '')),
-        esc(String(row.vocabulary || '')), esc(String(row.subject || '')),
-        esc(t.text(row.verified ? 'report.yes' : 'report.no')),
-        esc(done || t.text('report.signalsNothing'))];
-    });
-    const pager = pagerHtml(t, BASE + '/signals', json);
-    this.paint(head + pager + tableHtml([
-      esc(t.text('report.signalsAt')),
-      esc(t.text('report.signalsEvent')),
-      esc(t.text('report.signalsVocabulary')),
-      esc(t.text('report.signalsSubject')),
-      esc(t.text('report.signalsVerified')),
-      esc(t.text('report.signalsDone'))
-    ], rows) + pager);
-  }
-
-  /**
    * Draws one job.
    *
    * @param id - the job id
@@ -2823,7 +2818,8 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (path === BASE + '/query') {
-      await this.drawQuery(String(query.source || ''));
+      await this.drawQuery(String(query.source || ''),
+        String(query.preset || ''));
       return;
     }
     if (path === BASE + '/definitions') {
@@ -2837,10 +2833,6 @@ class ReportRuntime extends SpaClient {
     }
     if (path === BASE + '/jobs') {
       await this.drawJobs(query);
-      return;
-    }
-    if (path === BASE + '/signals') {
-      await this.drawSignals(query);
       return;
     }
     if (path.indexOf(BASE + '/jobs/') === 0) {

@@ -136,5 +136,7 @@
   "title.wsfed": "WS-Federation",
   "title.tls": "TLS / mutual TLS",
   "title.vc-verifier-config": "Request ng verifier",
-  "title.worker-pools": "Mga worker pool"
+  "title.worker-pools": "Mga worker pool",
+  "title.broadcast": "Mag-broadcast ng Anunsyo",
+  "title.post-login-activities": "Mga aktibidad pagkatapos mag-sign in"
 }

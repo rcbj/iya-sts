@@ -38,12 +38,14 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The eleven sources and their fields, and which operators the store indexes (`indexed`, #985). Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The fourteen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
+| `passkey_ceremonies.ts` | The `passkeyCeremonies` source's projection of the ceremony audit rows (#1107). A library; reaches `authn/webauthn_ceremonies` lazily. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
+| `passkey_history.ts` | The `passkeyHistory` source's projection (#1109): one stored day of `passkey_report.history` into a row per `scope`. A library; reaches `common/passkey_report` lazily. |
 | `rights.ts` | The caller as held ∩ carried, and every question about the API, a definition or a job put to `common/access_gate.ts`. It decides nothing (#1030). |
 | `jobs.ts` | Definitions, the queue, the six scheduler jobs, and the registration of `staging.ts`'s seventh. |
 | `staging.ts` | A job's report built as a file in `risk.uploadDirectory`, its room checked first, removed when the job ends; the per-process `report.build-cleanup` job (#1045). |
@@ -362,8 +364,12 @@ has the design. This family's half:
   application. Paged with `page` and `per` (at most 100). Each row carries
   what the application did: the sessions it ended and the tokens of
   `sts-report` it revoked for the person.
-* The Signals page (`drawSignals()`) draws it, with sixteen `report.signals*`
-  words in every catalog.
+* **No page draws it since #1090** (rcbj: "it serves no purpose"): the
+  Signals tab, `drawSignals()` and its sixteen `report.signals*` words went.
+  The receiver stays — it acts on CAEP and RISC and takes announcements
+  (#1086) — and so does this API, whose access rules
+  `tests/report_access_policy.js` holds. Refresh moved to the top bar,
+  beside the Trust realm field.
 
 **A DISABLED OWNER'S SCHEDULES STOP.** A disable ends what the person holds
 and refuses their next sign-in, and a schedule they owned went on running
@@ -377,6 +383,77 @@ that has not loaded the directory has nobody to disable. `rights.ts`'s
 comment that the read "walks the directory" was wrong — it is one indexed
 lookup — and now says where the question is asked instead.
 `tests/report_query.js`'s `disabledOwner()` holds it.
+
+## Post-login progress, and predefined queries (#1110, 2026-10-28)
+
+rcbj: post-login progress (#1096) and a started post-login activity's
+per-person mail progress (#1111; its column `mailedBy` since #1123) are
+reported HERE, as a source, and not on a console
+page. `postLoginProgress` reads `post_login.progress` through
+`common/post_login.ts`'s `eachProgressAsync()`, which is the store's
+`scanAsync()`: the rows this process holds, then the store a page at a
+time with the event loop given back between pages. **A `false` from the
+callback ends the walk** (added to `realms.map()`'s `scanAsync()` for
+this; `undefined` goes on, so its one older caller is unchanged), and the
+reader hands every row to `reportOfferNow()` — `reportOffer()`'s body,
+synchronous, because the store's callback cannot await — so a limit, the
+time budget and a cancellation stop the paging and not just the taking.
+
+* **Not anchored, not indexed.** The store has no index the planner could
+  ask, and the rows are the people a realm has asked or mailed, not the
+  population; so nothing is refused at acceptance, an unordered read stops
+  at its limit, and a sorted or counted read walks under the caps.
+* **The row says what applied when it was written.** `post_login.ts`
+  stamps `profile`, `role` and `graceDays` on every write (`stamp()`), so
+  a report does not ask the directory for each person's profile. A row
+  written before #1110 has none; for it alone the reader asks
+  `post_login_policy.forPerson()`, once per person. **`askedBy` (#1126)**
+  is the row's own the same way — `policy`, or the started activity that
+  asked at a sign-in — and is never inferred for an older row: empty there
+  is the truth, nobody recorded who asked.
+* **`progress` is one word** (`done`, `past-grace`, `snoozed`, `asked`,
+  `mailed`, the first that holds) because the New Query form groups by ONE
+  field: "progress by activity" is that word counted, filtered to the
+  activity, which the form can draw and save.
+* **PRESETS ARE DATA ON THE CATALOG** (`SourceSpec.presets`: `id`, `name`,
+  `document`), published by `reportPublicSource()` and the OpenAPI
+  `Source` schema, listed on the source's page and opened by
+  `/report/query?source=…&preset=…` with the form filled and the save name
+  set. They are not stored definitions — a definition has an owner, a
+  realm and a share list, and seeding one per realm would give every
+  realm an owner nobody chose. Each preset is a document the form can
+  draw (one filter leaf, one order, one group), so starting from it and
+  saving it keeps it; `tests/report_post_login.js` holds that, and that
+  each validates.
+
+`tests/report_post_login.js` drives the source over a real `PostLogin`
+on a Map with a moved clock.
+
+## Passkey history (#1109, 2026-10-28)
+
+`passkeyHistory` reads `passkey_report.history`: one row per realm per
+UTC day that the passkey report's recount writes and prunes
+(`common/CLAUDE.md` 3cs argues the writing). Reported HERE, as a source
+with presets, and not as a tab of Monitoring → Passkeys: all reports
+live in `/report`.
+
+* **One stored day is several rows, told apart by `scope`** (`realm`,
+  `profile`, `algorithm`, `lane`, `attestation`), because the document has
+  one aggregate and no pivot: a trend is one `scope` filtered and `day`
+  ordered, which is a query the form draws. The alternative, a column per
+  algorithm, would be a catalog that changes with the algorithms a realm
+  happens to hold. Every row carries every field, `null` where its scope
+  has none, so a CSV's columns do not move.
+* **Bounded by its retention, not by an index.** The store is a few hundred
+  small rows per realm, held in memory, read whole by
+  `passkey_report.historyRows()` and offered to the collector a row at a
+  time; nothing is anchored or indexed, and the directory is never read.
+* **`postQuantumShare` is null, not 0, where nobody holds a passkey**: a 0
+  would read as "nobody migrated" on a day there was nobody to migrate.
+* Three presets, each one leaf on `scope` and one order on `day`: the
+  adoption by day (the one #1109 names), passkeys by algorithm by day, and
+  adoption by profile by day. `tests/passkey_history.js` holds them, the
+  source and the row, in process and over `/report-api`.
 
 ## Every source run against 8081 (#1040, 2026-10-27)
 
@@ -1039,6 +1116,41 @@ in-process map is never written anywhere and stays plain.
 Audit detail is the source, the field ids and the job id. The query
 document is not written on the row.
 
+## Passkey ceremonies, and their predefined queries (#1107, 2026-10-28)
+
+**`passkeyCeremonies` reads the audit ring as `authActivity` does**:
+`reportAuditEvents()` (the `fresh()` wait, the `audit.maxEvents` cap),
+then `passkey_ceremonies.ts`'s `rowsOf()` keeps the `webauthn.ceremony`
+and `webauthn.algorithm-mismatch` rows and projects them, and
+`reportOffer()` takes them into the bounded collector. No index: the ring
+is a list in memory and the audit store indexes no detail field, so
+nothing is declared and nothing scans a store. The row shape is
+`authn/webauthn_ceremonies.ts`'s header; the folded `authenticator`
+(#1108) is read back with its `unfold()`, which reads a pre-#1108 row
+too, and `postQuantum` / `postQuantumOffered` are
+`passkey_policy.isPostQuantum()` of the names. A mismatch row's
+`ceremony` is empty so a count by ceremony does not count it twice. A
+ceremony row's `offered` may carry, after its first `|`, the client rule
+that narrowed the offer or would have (#1112); the source splits there and
+publishes it as `offerRule`, and reads the algorithm names before it.
+The doors are listed in the catalog (`CEREMONY_DOORS`) rather than read
+from the ceremony module, which the browser bundle would then carry;
+`tests/report_passkey_ceremonies.js` holds the door field to naming every
+door the module writes. The
+source's extra groupable fields are its own list (`CEREMONY_GROUPABLE`),
+not `GROUPABLE`, which applies to every source's field of that id.
+
+**ITS PREDEFINED QUERIES ARE #1110's `presets`** (`{ id, name, document }`
+on the source; `PresetSpec`, `source()`'s fifth argument). #1107 asked for
+predefined definitions and was built beside #1110, which brought the
+mechanism — data, not stored definitions, published by
+`reportPublicSource()` and the OpenAPI `Source`, listed on the source page,
+`/report/query?source=…&preset=…` filling the form — so this branch carries
+#1110's hunks for it verbatim rather than a second mechanism. The form
+draws a flat `and` of comparisons, so a preset is written that way, and
+`whereLeaves()` now takes a boolean value (a saved or preset filter on a
+boolean field drew no rows before).
+
 ## What the tests hold
 
 `tests/report_query.js` holds the document, the three formats, the fixed
@@ -1050,12 +1162,18 @@ lookups against a directory double (#985). It does not open a listener. A
 refusal's HTTP status, the DPoP gate and a scheduled run against a
 directory are not asserted here; issuance and the policy's every case are
 `tests/report_access_policy.js`'s (#1030).
+`tests/report_passkey_ceremonies.js` holds the `passkeyCeremonies` source
+(#1107): its fields, the projection over both row shapes, the three
+predefined queries run against a known ring, rows the ceremony module
+writes reaching it, and the definitions published and filling the form.
 
 ## The sources
 
-The eleven sources are `users`, `groups`, `applications`, `federation`,
+The fourteen sources are `users`, `groups`, `applications`, `federation`,
 `authMechanisms`, `auditEvents`, `authActivity`, `serviceMetrics`,
-`reportJobs` and `attributeSources`. `authMechanisms` is the realm policy
+`reportJobs`, `attributeSources`, `credentialHolders`,
+`postLoginProgress`, `passkeyHistory` and `passkeyCeremonies` (above,
+#1107). `authMechanisms` is the realm policy
 (application `realm`) plus one row per value an application lists in
 `appAuthnMechanism` or `appMfaMechanism`. An empty list inherits the
 realm policy and adds no row. `authActivity` is the four attempt actions

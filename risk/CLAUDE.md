@@ -489,6 +489,19 @@ of the asks with a counting subquery each, index-only, 0.4 ms on 8081). It
 runs beside the population count, not after it. A driver without the
 batched door is asked one at a time, as before. `tests/risk_distinct_batch.js`.
 
+**THE POPULATION COUNT IS NEVER WAITED FOR ONCE HELD (#1074, 2026-10-28).**
+`populationUserCount()` (#779) kept the realm's user count for
+`risk.populationUsersCacheS`, and the sign-in that found it due counted
+again AND WAITED: on 8081 (a million people, the pages cold, the machine
+busy) an administrator's password step took 11 s, 9.6 s of it this
+`count(*)`. Now a held count past its time is answered, and
+`recountPopulation()` counts again behind it — one at a time, never
+rejecting; a failed recount keeps the held number and the next due sign-in
+asks again. Only a realm's FIRST count is waited for, and a realm under
+`POPULATION_KEPT_FROM` is still counted every time (it is never held). So a
+score may use a count up to one recount old: it enters as 1/n.
+`tests/risk_population_users.js` U2/U3, U8.
+
 ## RISK IS DECIDED BY THE ISSUANCE POLICY (P3, 2026-09-22)
 
 **rcbj's directive: every authorization decision is XACML policy**, so the
@@ -759,6 +772,16 @@ here changed for it rather than a second MDS client being written:
   above the active one is not imported (the ordinary day, and not a rollback
   worth an audit row); a download that fails is `STS-RISK-0027`.
   `mdsState()` / `mdsSnapshot()` report the active BLOB to `/admin/webauthn`.
+* **`describeAuthenticator(input)`** (#1080) is the administrator's lookup —
+  Monitoring → Risk's *Look up an authenticator*, `GET /admin-api/risk
+  ?authenticator=`, answered as the view's `authenticatorLookup`. The two
+  lookups above answer null for four reasons, right for something that
+  decides; this one tells the kind by the key's shape (UUID, `XXXX#XXXX`,
+  forty hex digits), says WHY in a token the page translates (`not-a-key`,
+  `all-zero`, `no-blob`, `not-listed`, `unreadable`), and **asks a stale
+  BLOB too, saying `stale`** — an administrator asking what the loaded data
+  says is not deciding on it. Nothing that decides reads it.
+  `tests/risk_mds.js` L0–L5.
 
 `authn/webauthn_attestation.ts` refuses a registration from a model this data
 calls compromised (`STS-AUTHN-0237`) — the same `compromised` flag the scorer

@@ -242,6 +242,7 @@
   "keys.lane": "Cryptography",
   "keys.laneClassical": "classical",
   "keys.lanePqc": "post-quantum (ML-DSA), listed as a second account ending in “+ml-dsa”",
+  "keys.cryptoPostQuantum": "post-quantum (ML-DSA)",
   "keys.authenticator": "Authenticator",
   "keys.removeLabel": "Remove {name}",
   "keys.remove": "Remove",
@@ -548,5 +549,8 @@
   "accounts.anotherTitle": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs.",
   "accounts.none": "No other account is signed in in this browser yet.",
   "accounts.kept": "The account this tab leaves stays signed in, so you can switch back to it here.",
-  "accounts.unsaved": "This page has changes that have not been saved. Switch account anyway? They will be lost."
+  "accounts.unsaved": "This page has changes that have not been saved. Switch account anyway? They will be lost.",
+  "announcement.heading": "Announcement",
+  "announcement.close": "Close",
+  "keys.possiblyReplaced": "Another passkey registered on {day} under the same account on the same model of authenticator may have replaced this one on that authenticator. If this passkey no longer works, remove it."
 }

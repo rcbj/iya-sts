@@ -384,8 +384,20 @@ async function test() {
   const codes = started.json || {};
   const pending = await hop(null, "POST", TOKEN, { form: form(client, {
     grant_type: DEVICE_GRANT, device_code: codes.device_code }) });
-  const slow = await hop(null, "POST", TOKEN, { form: form(client, {
+  // POLL AGAIN FOR A MOMENT (cluster, 2026-10-28): the record's
+  // lastPolledAt is written on the node the first poll landed on and
+  // reaches the other through the change log, so a second poll through the
+  // balancer can meet a node that has not seen the first and answer
+  // authorization_pending once more. Up to eight polls, all inside the
+  // one-second interval set above: whichever node answers twice says
+  // slow_down. A bounded re-read, never an unbounded one.
+  let slow = await hop(null, "POST", TOKEN, { form: form(client, {
     grant_type: DEVICE_GRANT, device_code: codes.device_code }) });
+  for (let attempt = 0; attempt < 7 && slow.json &&
+       slow.json.error === "authorization_pending"; attempt++) {
+    slow = await hop(null, "POST", TOKEN, { form: form(client, {
+      grant_type: DEVICE_GRANT, device_code: codes.device_code }) });
+  }
   check("codes are issued; polling answers authorization_pending, then " +
         "slow_down", function () {
     assert.strictEqual(started.status, 200, started.text.slice(0, 300));

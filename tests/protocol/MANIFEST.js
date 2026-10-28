@@ -592,6 +592,20 @@ const JOBS = [
   // missing token, the wrong body type. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_admin_risk_upload.js',    browser: false },
+  // AN ANNOUNCEMENT TO EVERYBODY SIGNED IN (#1086): the broadcast page's
+  // view, a refusal, the send to the three receiver streams, and an open
+  // console tab's ask finding it once the internal poll has collected it —
+  // through the balancer in `cluster`. `local: true`: this repository's own
+  // /admin-api.
+  { file: 'sts_broadcast_announcement.js', browser: false },
+  // POST-LOGIN ACTIVITIES (#1096): in a throwaway realm, the policy's kind
+  // on GET /admin-api/policies, off by default; then on, a person with no
+  // passkey invited to register a post-quantum one is held at
+  // /authn/post-login with no session, Skip starts the held session and the
+  // code reaches the client, and the next sign-in is not asked; a named
+  // profile chosen by group. `local: true`: this repository's own /authn
+  // and /admin-api.
+  { file: 'sts_post_login_activity.js', browser: false },
   // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
   // uploaded through POST /admin-api/risk/upload with no terms to accept,
   // active with a row per REVOKED or SUSPENDED entry, named by
@@ -1147,6 +1161,13 @@ const JOBS = [
   // Recount now queued on the scheduler. `local: true`: this repository's
   // console and management API.
   { file: 'sts_passkey_report.js',       browser: false },
+  // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123): the
+  // console page's shell, the five operations in the document and the gate,
+  // the view and its group chooser, the refusals (a missing group 0530),
+  // and a post-login activity narrowed to two groups made here started,
+  // paused, resumed and ended. `local: true`: this repository's console and
+  // management API.
+  { file: 'sts_post_login_activities.js', browser: false },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

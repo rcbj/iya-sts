@@ -206,6 +206,23 @@ class OpenApi {
               }
             })
         },
+        '/report-api/announcements': {
+          get: operation('Announcements for everybody signed in',
+            'What an administrator broadcast to this application (#1086) ' +
+            'after `since` — the `now` this operation answered the tab\'s ' +
+            'first ask with — within ssf.announcementKeepS, oldest first. ' +
+            'With no `since` it answers only `now`. `everyMs` is how often ' +
+            'an open tab asks again.', {
+              parameters: [
+                { name: 'since', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 0 } }
+              ],
+              responses: {
+                '200': answered('`now`, `everyMs` and `announcements`.',
+                  { type: 'object' })
+              }
+            })
+        },
         '/report-api/schedules': {
           get: operation('The scheduled definitions and their runs',
             'Every definition that carries a schedule, with when it next ' +
@@ -625,7 +642,19 @@ class OpenApi {
               relationships: { type: 'array', maxItems: 0,
                 items: { type: 'string' } },
               fields: { type: 'array',
-                items: { $ref: '#/components/schemas/Field' } }
+                items: { $ref: '#/components/schemas/Field' } },
+              presets: { type: 'array',
+                description: 'Predefined queries (#1110): a name and a ' +
+                  'whole query document the page offers as a starting ' +
+                  'point. Data, not a stored definition: nobody owns one ' +
+                  'and nothing runs it until somebody does.',
+                items: { type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    name: { type: 'string' },
+                    document: { type: 'object',
+                                additionalProperties: true }
+                  } } }
             }
           },
           Catalog: {

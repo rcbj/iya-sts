@@ -843,7 +843,7 @@ function stallClause() {
 /**
  * Renews this node's membership and leases once; exits the process when the
  * membership has lapsed or the service lease is lost in active-passive mode,
- * then campaigns for any role it does not hold.
+ * then contends for any role it does not hold.
  *
  * @returns a promise that settles when the beat is done
  */
@@ -890,7 +890,7 @@ function beat() {
       }
     });
     refreshState();
-    return campaign();
+    return contend();
   }, function (err) {
     heartbeatFailures += 1;
     lastHeartbeatError = err.message;
@@ -914,8 +914,8 @@ function beat() {
 // Asks for every role some module wants led and this node does not hold —
 // except one this node STOOD DOWN from a moment ago (`stepDown()`), which it
 // does not ask for again until its hold-off has passed.
-function campaign() {
-  log.debug("Entering campaign().");
+function contend() {
+  log.debug("Entering contend().");
   let chain = Promise.resolve();
   const nowMono = monotonicMs();
   roles.forEach(function (handlers, name) {
@@ -931,13 +931,13 @@ function campaign() {
           try {
             handlers.onGain(answer.token);
           } catch (e) {
-            log.debug("Caught in campaign(): " + ((e && e.message) || e));
+            log.debug("Caught in contend(): " + ((e && e.message) || e));
           }
         }
       });
     });
   });
-  log.debug("Leaving campaign().");
+  log.debug("Leaving contend().");
   return chain;
 }
 
@@ -1012,11 +1012,11 @@ function waitForServiceLease() {
   });
 }
 
-// A module that wants a role led by exactly one node. The role is campaigned
+// A module that wants a role led by exactly one node. The role is contended
 // for on every heartbeat; `onGain(token)` and `onLose()` say when this node
 // starts and stops holding it.
 /**
- * Registers a role to be led by exactly one node, campaigned for on every
+ * Registers a role to be led by exactly one node, contended for on every
  * heartbeat. Unclustered, `onGain(0)` is called at once.
  *
  * @param name - the role's lease name
@@ -1032,7 +1032,7 @@ function lead(name, handlers) {
     }
     return;
   }
-  campaign();
+  contend();
 }
 
 /**
@@ -1054,10 +1054,10 @@ function holds(name) {
 // The lease is EXPIRED in the store at the token this node holds it at (the
 // driver's `releaseLease()`, which a lease that already changed hands does
 // not touch), `onLose()` is called as a lost lease's is, and this node does
-// not campaign for the role again for `holdOffMs` — without that it would
+// not contend for the role again for `holdOffMs` — without that it would
 // take the lease straight back on its next heartbeat, before any other node
 // had asked. The hold-off defaults to three heartbeats: every other node
-// campaigns once a heartbeat, so one of them has asked at least twice.
+// contends once a heartbeat, so one of them has asked at least twice.
 //
 // Resolves `{ ok: true, token }` or `{ ok: false, reason }`, never rejects.
 // A service that is not clustered has no other node to hand to, and says so.
@@ -1066,7 +1066,7 @@ const standingDownUntil = new Map();
 
 /**
  * Hands a held role over: expires its lease at this node's token, calls
- * `onLose()`, and does not campaign for it again for the hold-off.
+ * `onLose()`, and does not contend for it again for the hold-off.
  *
  * @param name - the lease's name
  * @param holdOffMs - how long not to ask again; three heartbeats by default

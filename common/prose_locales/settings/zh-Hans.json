@@ -1127,13 +1127,29 @@
     "en": "f34caf08dceeedd3",
     "text": "仅在通行密钥策略要求登录时使用后量子通行密钥（`postQuantumRequired`）时读取，且仅当所选配置文件的 `postQuantumAllowCredentials` 行为 `realm` 时。`narrow`（默认值）在通行密钥步骤的 `allowCredentials` 中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥——但设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥（STS-AUTHN-0356），同时显示一个页面，说明该应用要求后量子通行密钥以及在哪里添加。代价是：此人可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。"
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "将经典通行密钥升级为后量子通行密钥"
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "学习哪些客户端无法创建 ML-DSA 通行密钥"
   },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "开启（默认）时，一个人可以在 /portal/keys 上将自己的一个经典通行密钥升级为后量子（ML-DSA）通行密钥：先使用一次经典通行密钥，以证明它属于自己，然后创建新的，新的只提供 ML-DSA。`webauthn.pqcAlongsideClassical` 开启时，后量子通行密钥被加入自己的通道，经典通行密钥保留；关闭时，后量子通行密钥就地替换经典通行密钥，保留其名称，并记录何时升级、从哪种算法升级。经典通行密钥只在新的通过验证之后才改变，因此失败的升级让它保持原样。新通行密钥满足注册所满足的每一条规则。关闭时，任何通行密钥都不能升级；在允许注册通行密钥的地方，后量子通行密钥仍可以注册在经典通行密钥旁边。"
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "开启时，提供了 ML-DSA 并在浏览器中以 NotSupportedError 失败的通行密钥注册会计入其客户端——按系列和主版本区分的浏览器和操作系统，与通行密钥仪式记录中的名称一致（`Chrome 141 on macOS 15`）——一旦在 `webauthn.clientLearningWindowHours` 内有 `webauthn.clientLearningFailures` 个不同的人以这种方式从同一客户端失败，且来自它的注册没有一次成功，此领域就不再向该客户端提供 ML-DSA：它的注册提供去掉 ML-DSA 的列表，就像通行密钥策略中已配置的 `clientRules` 行那样。来自该客户端、请求了 ML-DSA 并成功的注册会删除该条目，在 目录 → 策略 → 通行密钥策略 中清除它也会。在不允许经典通行密钥的地方从不适用。关闭时，不计数任何内容，也不应用任何已学习的内容；已学习的内容会保留。"
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "客户端不再获得 ML-DSA 之前的失败次数"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "在 `webauthn.clientLearning` 不再向某客户端提供 ML-DSA 之前，需要有多少个不同人员来自该客户端的注册在 `webauthn.clientLearningWindowHours` 内请求了 ML-DSA 并以 NotSupportedError 失败，且没有一次成功。一个人无论尝试多少次只计一次，因此一个账户无法让领域学到关于其他所有人浏览器的任何内容。"
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "统计失败的时间窗口"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "一次失败计入 `webauthn.clientLearningFailures` 的小时数。更早的失败会被遗忘，调度作业（`passkeys.client-learning-sweep`）会删除所有失败都已过期的条目。已学习的客户端会一直保持学习状态，直到来自它的注册成功或被清除。"
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1148,8 +1164,16 @@
     "text": "证明传达方式"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "要求浏览器向本服务透露多少关于创建凭据的身份验证器的信息。这里默认为 `direct`，因为这是一个调试服务，而证明对象是值得查看的内容之一；用不到身份验证器型号的部署应发送 `none`，这是规范所推荐的，也能避免浏览器就此弹出同意提示。**如何处理返回的内容由 `webauthn.attestationPolicy` 决定**（#105）：在产品模式下，到达的每个声明都会被验证。策略为 `require-trusted`、或在 `webauthn.attestationAllowedAaguids` 中列出了 AAGUID 的领域，无论此项如何设置都会请求 `direct`——需要声明的策略无法通过请求 none 来满足。请求 `enterprise` 却什么也没得到，是浏览器在拒绝，而不是本服务。"
+    "en": "1280747b772b73d1",
+    "text": "要求浏览器向本服务透露多少关于创建凭据的身份验证器的信息。这里默认为 `direct`，因为这是一个调试服务，而证明对象是值得查看的内容之一；用不到身份验证器型号的部署应发送 `none`，这是规范所推荐的，也能避免浏览器就此弹出同意提示。**如何处理返回的内容由 `webauthn.attestationPolicy` 决定**（#105）：在产品模式下，到达的每个声明都会被验证。策略为 `require-trusted`、或在 `webauthn.attestationAllowedAaguids` 中列出了 AAGUID 的领域，无论此项如何设置都会请求 `direct`——需要声明的策略无法通过请求 none 来满足。**仅对 `webauthn.attestationEnterpriseRpIds` 中列出的 RP ID 请求 `enterprise`**（#1114）；对其他 RP ID，请求改为 `direct`，仪式记录行和密钥的证明记录都会注明。该列表为空时不能选择它。请求 `enterprise` 却收到普通证明，是浏览器或身份验证器拒绝了，而不是本服务。"
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "企业证明的 RP ID"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "注册时请求 `enterprise` 证明（WebAuthn Level 3 第 5.4.7 节）的 RP ID，以逗号分隔的主机名，精确比较（不区分大小写）。仅在 `webauthn.attestation` 为 `enterprise` 时读取；此列表为空时不能选择该值（STS-AUTHN-0500），选择该值时也不能清空此列表。RP ID 未列出的仪式改为请求 `direct`，其 `webauthn.ceremony` 记录行和新密钥的证明记录都会注明。**只有来自企业请求的声明才会读取设备序列号**，用于通行密钥策略的 `enterpriseSerialAttribute`；请在此精确列出你的身份验证器和浏览器已配置为可释放企业证明的 RP ID。"
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",
@@ -1190,6 +1214,14 @@
   "webauthn.attestationEvidenceHashAlgorithm|description": {
     "en": "ea9f111d1308b528",
     "text": "新的 RFC 4998 记录使用的摘要。把它从 sha256 提高会在每日通行密钥报告重新计数时触发 RFC 4998 散列树续期，进入一条新的 ArchiveTimeStampChain。"
+  },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "保留的通行密钥历史（天）"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "一个领域保留多少天的通行密钥历史（#1109）：通行密钥报告的每日重新计数为每个领域每天写入一行（按类型统计的人员，按算法、通道和证明算法统计的通行密钥，以及每个已命名通行密钥配置文件的人群），报告应用将其作为 passkeyHistory 数据源读取。同一次重新计数会删除早于此值的行。调低此值会在下一次重新计数时删除较旧的行。"
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -7088,8 +7120,8 @@
     "text": "将控制台、门户和报表注册为接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "此服务是否为其自身的管理控制台、用户门户和报表应用程序 (#1042) 创建 Shared Signals 流，使每个都能接收每个 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 通过 RFC 8936 轮询从此服务自己的 /ssf/poll 收取 (#771)——并在 /admin/signals、/portal/signals 和 /report/signals 显示收到的内容。它们是普通的流——在 /admin/ssf 暂停、收窄或删除其中一个，它会保持该状态直到重启。"
+    "en": "603011e249d33c00",
+    "text": "本服务是否为其自己的管理控制台、用户门户和报表应用建立 Shared Signals 流（#1042），使每个都接收每个 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 通过 RFC 8936 轮询从本服务自己的 /ssf/poll 收取（#771）——并在 /admin/signals 和 /portal/signals 显示收到的内容；报表应用在 GET /report-api/signals 回答它自己的，不为其绘制页面（#1090）。它们是普通的流——在 /admin/ssf 暂停、收窄或删除其中一个，它会保持如此直到重启。"
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",
@@ -7102,6 +7134,30 @@
   "ssf.internalPollMs|description": {
     "en": "b80cedcb611f2fd3",
     "text": "本服务自己的管理控制台和用户门户多久收取一次其流中保存的内容：通过 RFC 8936 轮询从 /ssf/poll 收取（ssf.internal-poll 调度作业），每个请求最多 ssf.pollMaxEvents 个 SET。这是安全事件令牌（Security Event Token）在任一界面看到并据此行动之前最长的等待时间。0 关闭该作业，此时事件会在两个流上排队，不会到达任一页面。"
+  },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "每个打开的标签页检查公告的间隔（毫秒）"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "管理控制台、用户门户和报表应用的每个打开的标签页多久向自己的 API 询问一次其接收方收到的公告（#1086）。与 ssf.internalPollMs 一起，这是广播出现所需的最长时间。标签页在登录时读取该值。"
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "接收方保留公告的时长（秒）"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "本服务的三个接收方各自保留收到的公告供其标签页收取的时长（#1086）。标签页只显示登录之后到达的内容，因此这不是较晚打开的标签页能看到公告的时长；它只需超过标签页的检查间隔和一次较慢的轮询。"
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "最长公告（字符）"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "广播公告最多可包含的字符数（#1086）。它是纯文本；更长的会被拒绝。"
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7126,6 +7182,22 @@
   "ssf.inactivityAction|description": {
     "en": "f6d2a2be3eebe16f",
     "text": "第 8.1.1 节允许的三种处理方式。暂停和禁用会在流停止之前向接收方发送 stream-updated 事件，这是规范的要求；已暂停的流会继续排队，已禁用的流则丢弃正在等待的内容。删除会移除该流且不发送任何内容，因为已经没有流可以用来发送了。"
+  },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "个人轮询流的不活动超时（秒）"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "由个人拥有（用为其签发的访问令牌或其用户名和密码创建）并通过 RFC 8936 轮询收取的流——即浏览器中的接收方所建立的流——在其所属应用和 ssf.inactivityTimeoutS 都未设置时使用的 inactivity_timeout（#1094）。每次轮询都算作活动，因此有打开标签页的流永不闲置；标签页关闭后被遗弃的流按 ssf.personStreamInactivityAction 处理。0 表示关闭。"
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "个人闲置轮询流的处理方式"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "ssf.personStreamInactivityTimeoutS 对个人闲置轮询流的处理（#1094）。默认的删除会释放它在 ssf.maxStreams 下占用的名额；当此人回来时，浏览器中的接收方会建立新的流。"
   },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",

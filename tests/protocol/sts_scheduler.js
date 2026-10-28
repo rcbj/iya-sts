@@ -81,7 +81,13 @@ function check(what, fn) {
 // One request, no redirect followed, the body read both ways.
 async function call(method, url, options) {
   log.debug("Entering call(). " + method + " " + url);
-  const opts = Object.assign({ method: method, redirect: "manual" },
+  // BOUNDED (cluster, 2026-10-28): in run #5 one GET /admin-api/scheduler,
+  // the first after a realm's removal, never answered, and the job sat
+  // silent until the launcher killed it at 300 s with nothing in its log to
+  // say which request. A request that takes a minute has failed; it fails
+  // here, naming itself, so the next hang is a line in this log.
+  const opts = Object.assign({ method: method, redirect: "manual",
+                               signal: AbortSignal.timeout(60000) },
                              options || {});
   const r = await fetch(url, opts);
   const text = await r.text();

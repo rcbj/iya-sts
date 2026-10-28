@@ -37,6 +37,7 @@ started the sign-in.
 | One-time code step | `/authn/totp` | Types the code from an authenticator app | Yes |
 | Recovery code step | `/authn/backup-code` | Types one recovery code instead of the usual second factor | Yes |
 | Password as the second factor | `/authn/password-factor` | Types a password after a passkey or wallet first factor | Yes |
+| Post-login activity | `/authn/post-login` | After signing in, registers a post-quantum passkey the realm asks for, or skips it while allowed ([Post-login activities](post-login-activities.md)) | Yes |
 | Emailed code | `/authn/email-code` | Types the code that was mailed | Yes |
 | Emailed sign-in link | `/authn/email-link`, `/authn/email-link/open` | Waits for the link, then opens it | Yes |
 | Wallet sign-in | `/authn/wallet`, `/authn/wallet/wait` | Presents a credential from a wallet, on this device or by QR code | Yes |

@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "HINDI MULA SA SPEC. Ang natanggap ng application ng mga ulat, isang receiver ng sariling transmitter ng serbisyong ito (#1042): bawat signal sa realm para sa isang report administrator, at para sa iba ang mga signal lamang tungkol sa kanila. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086). Ang kinukuha ng bukas na reports tab bawat ssf.announcementPollMs: ang mga anunsyong na-broadcast ng administrator sa application na ito, gaya ng pagtatago ng receiver nito. Sa likod ng parehong token gaya ng iba pang /report-api."
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC. Ang mga grupo ng realm na ang pangalan o DN ay naglalaman ng q, lima bawat pahina, bawat isa may sariling mail attribute (#989): ang pane ng pahina ng definition. Ang mga grupo ng isang definition ang pinapadalhan ng email ng resulta nito. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "NON-SPEC (#49). run, na may { job, realm?, params? }: isang naka-queue na run na sisimulan ng leader sa susunod nitong tick, 202 na may runId nito; at step-down: binibitawan ng leader ang ops.scheduler sa susunod nitong tick at kinukuha ito ng ibang node. Ang dalawang button ng console."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086). Ang iginuguhit ng GET /admin/broadcast: ang mga application kung saan maipapakita ang anunsyo, kung maaaring ipadala ito ng tumatawag sa lahat ng realm, ang pinakamahabang mensahe at kung may maipapadala. Sinasalamin ang GET /admin/broadcast."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086). send, kasama ang { message, surfaces, everyRealm }: ang sariling announcement SET ng serbisyong ito sa mga receiver stream ng admin console, user portal at reports application, ipinapakita bilang banner sa bawat bukas na tab nila sa sandaling iyon."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "nagpapadala ng anunsyo sa lahat ng naka-sign in"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086). Ang kinukuha ng bukas na console tab bawat ssf.announcementPollMs: ang mga anunsyong natanggap ng receiver ng console pagkatapos ng unang tanong ng tab."
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",
@@ -1874,6 +1894,18 @@
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "NON-SPEC (#942). recount: inilalagay sa pila ang job na passkeys.report-recount para sa realm na ito sa leader ng scheduler, na ginagawang bagong baseline ang isang bagong bilang ng mga may hawak. Ang nag-iisang aksyon ng console sa page na iyon; tumatakbo ito kung saan tumatakbo ang bawat job, hindi kailanman sa request."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123). Ang iginuguhit ng Directory → Post-login activities: bawat aktibidad pagkatapos mag-sign in na sinimulan sa realm kasama ang aktibidad, mga grupo, pagitan ng paalala, pinakamaraming mail bawat tao, mga tao bawat takbo, kalagayan at ang nagawa na ng naka-iskedyul na job nito; kung naka-on ang isang mail transport at isang post-login activity policy; at ang paghahanap ng grupo ng start form, isang pahina ng dalawampung grupo mula sa group index ng directory (groupq, groupfrom), kasama ang mga grupong napili na (groups) na naresolba. Ang sino ang nasulatan ay ang source na postLoginProgress ng reports application. Sinasalamin ang GET /admin/post-login-activities."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123). start, may { activity, groups, intervalDays, maxMails, perRun }: pinapadalhan ng job na post-login.activity-mail ang bawat taong may nakabinbing aktibidad — lahat sa realm, o ang unyon ng mga miyembro ng mga grupo, isang beses bawat tao — ng paalala na mag-sign in, sa address sa kanilang entry, na may isang link sa pahina ng pag-sign in at walang kredensyal. pause, resume at end, may { id }. Ang apat na kilos ng console sa pahinang iyon."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "nagsisimula, nagpa-pause, nagtutuloy o nagtatapos ng isang aktibidad pagkatapos mag-sign in"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2679,6 +2711,14 @@
     "en": "997e77c58a56af97",
     "text": "nag-eenrol ng authenticator app o nagsisimula ng security-key registration, pagkatapos ay itinatatag ang sign-on session"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "ISANG POST-LOGIN ACTIVITY (#1096). Kung saan naaabot ng post-login activity policy ng realm (Directory > Policies, naka-off bilang default) ang isang tao ayon sa group at may nakatakda siyang activity nito — sa ngayon, isang post-quantum (ML-DSA) na passkey sa role kung saan may hawak siyang classical, o isa kung saan wala siyang hawak — ang sign-in sa sign-in screen ay napupunta rito sa halip na ma-sign in: PINIPIGIL ang session, hindi sinisimulan. Ang Register ay papunta sa registration ng /authn/webauthn na ML-DSA lang ang iniaalok (/authn-api/mfa/{id}/post-login/register); ipinagpapaliban ito ng Skip nang snoozeDays ng profile (/authn-api/mfa/{id}/post-login/skip) at tinatanggihan kapag lumipas na ang itinakdang panahon mula sa unang imbitasyon (STS-AUTHN-0474). Alinman dito, sisimulan pagkatapos ang pinigil na session gamit ang amr at acr ng sign-in. Kailangan ng ?mfa= id na ginawa ng pinigil na sign-in, kaya ang pagsunod dito nang walang kasama ay sumasagot ng 400."
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "humihingi ng post-quantum na passkey pagkatapos ng sign-in, saka itinatatag ang sign-on session na pinigil nito"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "ANG IKALAWANG SECOND FACTOR (2026-09-10). Ang password step na nagtagumpay para sa taong may naka-enrol na authenticator app ay bumabagsak dito, at humihingi ang endpoint na ito ng anim na digit na ipinapakita ng kanilang app. Kapag nagtagumpay, nire-record ng session ang amr [\"pwd\",\"otp\"] — ang value ng RFC 8176, na ang registry entry ay nagpapangalan sa RFC 4226 at RFC 6238 — at acr \"mfa\", na siyang nag-iisang kaso kung saan tapat na masasabi ng serbisyong ito na dalawang factor. **TUNAY NA SINUSURI ANG CODE SA PAREHONG MODE**, hindi tulad ng password sa harap nito: ang one-time password verifier na tumatanggap ng anumang anim na digit ay hindi permissive, kundi sira, at ito ang argumento ng SPNEGO na binasa sa ikalawang pagkakataon. Naka-rate limit ayon sa identity AT ayon sa address, dahil isang milyong value ang anim na digit at ito ang pinakamaliit na search space sa serbisyo. ANG GET AY ANG *use a code instead* NA LINK mula sa security-key screen at walang ginagawa — iginuguhit nito ang page para sa step na umiiral na, at tinatanggihan ito para sa taong walang enrolment. **WALA ITONG INIEENROL**, na siyang buong pagkakaiba sa /authn/webauthn sa tabi nito: ang pag-enrol ay nangangahulugang ipinapakita ang shared secret, kaya nangyayari ito sa /portal/mfa o habang ginagamit ang activation link, at hindi kailanman sa sign-in screen. Isang page ng sign-in surface mula noong #572: pumupunta ang code sa /authn-api/mfa/{id}/totp."
@@ -2850,6 +2890,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC (#572, #246). Kung inalok lamang ang step: natatapos ang sign-in sa password."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC (#1096). Ang susunod na step ay ang registration ng passkey page, ML-DSA lang; sinisimulan ng pagtatapos nito ang pinigil na session."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC (#1096). Nang snoozeDays ng profile; tinatanggihan kapag lumipas na ang itinakdang panahon. Sinisimulan ang pinigil na session."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

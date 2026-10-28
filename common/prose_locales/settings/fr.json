@@ -1127,13 +1127,29 @@
     "en": "f34caf08dceeedd3",
     "text": "Lu seulement tant que la politique des clés d’accès exige une clé d’accès post-quantique à la connexion (`postQuantumRequired`), et seulement lorsque la ligne `postQuantumAllowCredentials` du profil sélectionné vaut `realm`. `narrow` (la valeur par défaut) ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans l’`allowCredentials` de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée — mais une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie (STS-AUTHN-0356), avec une page indiquant que l’application exige une clé d’accès post-quantique et où en ajouter une. Le compromis : la personne peut choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie."
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "Mettre à niveau une clé d’accès classique vers une clé post-quantique"
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "Apprendre quels clients ne peuvent pas créer de clé d’accès ML-DSA"
   },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "Activé (la valeur par défaut), une personne peut mettre à niveau l’une de ses clés d’accès classiques vers une clé post-quantique (ML-DSA) sur /portal/keys : elle utilise la clé d’accès classique une fois, pour montrer qu’elle est la sienne, puis crée la nouvelle, à laquelle seul ML-DSA est proposé. Avec `webauthn.pqcAlongsideClassical` activé, la clé d’accès post-quantique est AJOUTÉE dans sa propre voie et la classique est conservée ; désactivé, la clé d’accès post-quantique REMPLACE la classique sur place, en gardant son nom et en enregistrant quand elle a été mise à niveau et depuis quel algorithme. La clé d’accès classique n’est modifiée qu’une fois la nouvelle vérifiée, de sorte qu’une mise à niveau échouée la laisse telle qu’elle était. La nouvelle clé d’accès satisfait chaque règle qu’un enregistrement satisfait. Désactivé, aucune clé d’accès ne peut être mise à niveau ; une clé d’accès post-quantique peut encore être enregistrée à côté d’une classique là où les clés d’accès peuvent être enregistrées."
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "Activé, un enregistrement de clé d’accès qui a proposé ML-DSA et a échoué dans le navigateur avec NotSupportedError est compté contre son client — le navigateur et le système d’exploitation par famille et version majeure, tels que les nomment les lignes de cérémonie des clés d’accès (`Chrome 141 on macOS 15`) — et dès que `webauthn.clientLearningFailures` personnes différentes ont échoué ainsi depuis un client dans `webauthn.clientLearningWindowHours`, sans qu’aucun enregistrement depuis ce client réussisse, ce domaine cesse de proposer ML-DSA à ce client : ses enregistrements proposent la liste sans ML-DSA, comme le fait une ligne `clientRules` configurée de la politique des clés d’accès. Un enregistrement depuis ce client qui a demandé ML-DSA et a réussi supprime l’entrée, tout comme l’effacer dans Annuaire → Politiques → Politique des clés d’accès. Jamais appliqué là où une clé d’accès classique n’est pas permise. Désactivé, rien n’est compté et rien d’appris n’est appliqué ; ce qui a été appris est conservé."
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "Échecs avant qu’un client ne se voie plus proposer ML-DSA"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "Combien d’enregistrements de personnes différentes depuis un client doivent avoir demandé ML-DSA et échoué avec NotSupportedError, dans `webauthn.clientLearningWindowHours` et sans qu’aucun réussisse, avant que `webauthn.clientLearning` cesse de lui proposer ML-DSA. Une personne est comptée une fois, quel que soit le nombre de ses essais, de sorte qu’un compte ne peut rien apprendre au domaine sur le navigateur des autres."
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "Fenêtre dans laquelle les échecs sont comptés"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "Les heures pendant lesquelles un échec compte pour `webauthn.clientLearningFailures`. Un échec plus ancien est oublié, et une tâche du planificateur (`passkeys.client-learning-sweep`) supprime les entrées dont tous les échecs ont expiré. Un client déjà appris le reste jusqu’à ce qu’un enregistrement depuis ce client réussisse ou qu’il soit effacé."
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1148,8 +1164,16 @@
     "text": "Transmission de l’attestation"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "Ce que l’on demande au navigateur de dire à ce service sur l’authentificateur qui a créé l’identifiant. `direct` est la valeur par défaut ici parce qu’il s’agit d’un service de DÉBOGAGE et que l’objet d’attestation est l’une des choses qui méritent d’être examinées ; un déploiement qui n’a que faire du modèle de l’authentificateur devrait envoyer `none`, ce que recommande la spécification et ce qui évite une demande de consentement du navigateur à ce sujet. **Ce qui est FAIT de ce qui revient relève de `webauthn.attestationPolicy`** (#105) : chaque déclaration reçue est vérifiée en mode produit. Un domaine dont la politique est `require-trusted`, ou qui liste des AAGUID dans `webauthn.attestationAllowedAaguids`, demande `direct` quoi qu’indique ce paramètre — une politique qui a besoin d’une déclaration ne peut pas être satisfaite en n’en demandant aucune. Demander `enterprise` et ne rien recevoir, c’est le navigateur qui refuse, pas ce service."
+    "en": "1280747b772b73d1",
+    "text": "Ce que l’on demande au navigateur de dire à ce service sur l’authentificateur qui a créé l’identifiant. `direct` est la valeur par défaut ici parce qu’il s’agit d’un service de DÉBOGAGE et que l’objet d’attestation est l’une des choses qui méritent d’être examinées ; un déploiement qui n’a que faire du modèle de l’authentificateur devrait envoyer `none`, ce que recommande la spécification et ce qui évite une demande de consentement du navigateur à ce sujet. **Ce qui est FAIT de ce qui revient relève de `webauthn.attestationPolicy`** (#105) : chaque déclaration reçue est vérifiée en mode produit. Un domaine dont la politique est `require-trusted`, ou qui liste des AAGUID dans `webauthn.attestationAllowedAaguids`, demande `direct` quoi qu’indique ce paramètre — une politique qui a besoin d’une déclaration ne peut pas être satisfaite en n’en demandant aucune. **`enterprise` n’est demandé que pour un RP ID listé dans `webauthn.attestationEnterpriseRpIds`** (#1114) ; pour tout autre, la requête demande `direct`, et la ligne de la cérémonie ainsi que l’enregistrement d’attestation de la clé l’indiquent. Il ne peut pas être choisi tant que cette liste est vide. Demander `enterprise` et recevoir une attestation ordinaire, c’est le navigateur ou l’authentificateur qui refuse, pas ce service."
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "RP ID de l’attestation d’entreprise"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "Les RP ID pour lesquels un enregistrement demande l’attestation `enterprise` (WebAuthn Level 3 section 5.4.7), des noms d’hôte séparés par des virgules, comparés exactement (casse mise à part). Lu seulement tant que `webauthn.attestation` vaut `enterprise`, qui ne peut pas être choisi tant que cette liste est vide (STS-AUTHN-0500), et cette liste ne peut pas être vidée tant qu’il l’est. Une cérémonie dont le RP ID n’est pas listé demande `direct` à la place, et sa ligne `webauthn.ceremony` ainsi que l’enregistrement d’attestation de la nouvelle clé l’indiquent. **Seule une déclaration issue d’une requête d’entreprise voit son numéro de série d’appareil lu** pour l’`enterpriseSerialAttribute` de la politique des clés d’accès ; listez ici exactement les RP ID pour lesquels vos authentificateurs et navigateurs sont configurés pour libérer l’attestation d’entreprise."
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",
@@ -1190,6 +1214,14 @@
   "webauthn.attestationEvidenceHashAlgorithm|description": {
     "en": "ea9f111d1308b528",
     "text": "Condensé utilisé par les nouveaux enregistrements RFC 4998. Le relever au-dessus de sha256 déclenche le renouvellement de l’arbre de hachage RFC 4998 lors du recomptage quotidien du rapport des clés d’accès, dans une nouvelle ArchiveTimeStampChain."
+  },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "Historique des clés d’accès conservé (jours)"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "Combien de jours d’historique des clés d’accès un domaine conserve (#1109) : le recomptage quotidien du rapport des clés d’accès écrit une ligne par domaine et par jour (les personnes par type, les clés d’accès par algorithme, par voie et par algorithme d’attestation, et la population de chaque profil de clé d’accès nommé), que l’application de rapports lit comme la source passkeyHistory. Le même recomptage supprime les lignes plus anciennes que cette valeur. La réduire supprime les lignes plus anciennes au prochain recomptage."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -7088,8 +7120,8 @@
     "text": "Enregistrer la console, le portail et les rapports comme récepteurs"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration, son portail utilisateur et son application de rapports (#1042), afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 depuis le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals, /portal/signals et /report/signals. Ce sont des flux ORDINAIRES : mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il reste ainsi jusqu’à un redémarrage."
+    "en": "603011e249d33c00",
+    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d'administration, son portail utilisateur et son application de rapports (#1042), afin que chacun reçoive chaque événement CAEP et RISC — en les récupérant par interrogation RFC 8936 depuis le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals et /portal/signals ; l'application de rapports répond le sien à GET /report-api/signals et n'en affiche aucune page (#1090). Ce sont des flux ORDINAIRES : mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu'au prochain redémarrage."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",
@@ -7102,6 +7134,30 @@
   "ssf.internalPollMs|description": {
     "en": "b80cedcb611f2fd3",
     "text": "À quelle fréquence la console d’administration et le portail utilisateur de ce service collectent ce que contiennent leurs flux, par interrogation RFC 8936 sur /ssf/poll (la tâche planifiée ssf.internal-poll), jusqu’à ssf.pollMaxEvents SET par requête. C’est le plus long délai qu’un Security Event Token attend avant que l’une ou l’autre surface le voie et agisse en conséquence. 0 désactive la tâche ; les événements s’accumulent alors sur les deux flux et n’atteignent aucune des deux pages."
+  },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "Intervalle de vérification des annonces dans chaque onglet ouvert (millisecondes)"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "Fréquence à laquelle chaque onglet ouvert de la console d'administration, du portail utilisateur et de l'application de rapports interroge sa propre API pour les annonces que son récepteur a reçues (#1086). Avec ssf.internalPollMs, c'est le délai maximal d'apparition d'une diffusion. Un onglet lit la valeur à la connexion."
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "Durée de conservation d'une annonce par un récepteur (secondes)"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "Durée pendant laquelle chacun des trois récepteurs de ce service conserve une annonce reçue pour que ses onglets la récupèrent (#1086). Un onglet n'affiche que ce qui est arrivé après sa connexion ; ce n'est donc pas le délai pendant lequel un onglet tardif peut en voir une : il suffit de dépasser l'intervalle de vérification d'un onglet et une interrogation lente."
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "Annonce la plus longue (caractères)"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "Nombre maximal de caractères d'une annonce diffusée (#1086). C'est du texte brut ; une annonce plus longue est refusée."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7126,6 +7182,22 @@
   "ssf.inactivityAction|description": {
     "en": "f6d2a2be3eebe16f",
     "text": "Les trois possibilités qu’autorise la section 8.1.1. Pause et disable envoient au récepteur un événement stream-updated AVANT que le flux ne s’arrête, ce qu’exige la spécification ; un flux en pause continue d’accumuler les événements et un flux désactivé abandonne ce qui attend. Delete supprime le flux et n’envoie rien, car il ne reste aucun flux sur lequel l’envoyer."
+  },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "Délai d'inactivité du flux interrogé d'une personne (s)"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "L'inactivity_timeout d'un flux qu'une PERSONNE possède (créé avec un jeton d'accès émis pour elle, ou son nom et son mot de passe) et récupère par interrogation RFC 8936 — ce que crée un récepteur dans le navigateur — quand ni son application propriétaire ni ssf.inactivityTimeoutS n'en fixe un (#1094). Chaque interrogation est une activité : un flux avec un onglet ouvert n'est jamais inactif ; celui abandonné à la fermeture de son onglet est traité comme le dit ssf.personStreamInactivityAction. 0 le désactive."
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "Ce que devient le flux interrogé inactif d'une personne"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "Ce que ssf.personStreamInactivityTimeoutS fait au flux interrogé inactif d'une personne (#1094). La suppression, par défaut, libère la place qu'il occupe sous ssf.maxStreams ; le récepteur du navigateur en crée un nouveau quand la personne revient."
   },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",

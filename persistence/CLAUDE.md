@@ -1447,7 +1447,18 @@ applied once more; `prefetch()` does that read ONCE for the page before it
 splits the keys, so the page's rows stay in its one batched read. A key still
 not held after a read is another build's or a removed realm's: the change is
 skipped under STS-STORE-0089, said once per key, and changes under it for the
-next two seconds are skipped without another read. `nameOfChangeHalf()` does
+next two seconds are skipped without another read.
+
+**ONE READ WAS NOT ENOUGH (#1118, 2026-10-28).** Run #7's cluster mode
+skipped a new realm's first minted change (`audit.nums`) on node-b under
+STS-STORE-0089 for a key node-a had made 0.8 s earlier: the one read could be
+a refresh already in flight, sent before the key's row committed
+(`refreshDekRows()` hands back the running one), or the page's read in
+`prefetch()`, which noted the key unheld. Now `waitForDek()` reads up to five
+times, each `refreshDekRows({ fresh: true })` — a read that starts after the
+call, waiting out one in flight — 200 ms apart, the directory applier's
+`keyedRetries` shape; every change under one key shares the wait, and only
+then is the key noted for the two-second skip. `prefetch()` notes nothing. `nameOfChangeHalf()` does
 not remember such a name as unopenable, or the second asking would hit the
 remembered null. STS-STORE-0014 keeps its meaning — a key not of the shape
 `recordChanges()` writes. `tests/minted_unheld_dek.js`.
@@ -2212,7 +2223,10 @@ memory mode, development, and every in-process test.
   index instead (`revokeWhere()`'s `candidates`). A walk a request waits on is
   `scanAsync()`, which gives the event loop back between pages: /admin-api's
   revoke-all, by kind and by user (`revokeWhereAsync()`, which also yields
-  every 500 revocations), so the process answers others meanwhile.
+  every 500 revocations), so the process answers others meanwhile. A
+  callback answering `false` ends `scanAsync()`'s walk (#1110): the reports
+  application's `postLoginProgress` source stops at its limit or its time
+  budget without paging the rest of the store.
 
 **A PER-ORIGIN STORE ON DEMAND (#1001, 2026-10-27).** `admin_stats.users`
 is the first store that is both `merge: 'own'` and `onDemand`, and the reader
@@ -3324,7 +3338,12 @@ definition global, its person members in their cell — `splitGroup()` and
 name. `tests/cell_tiers.js` reads every `persist:` in the tree and fails on
 one in neither list: a default tier would be a default answer to a residency
 question, and the wrong default is a person's data in another country with
-nothing failing. A GLOBAL minted store is the exception that is argued beside
+nothing failing. **The scan reads LITERALS**: a handle passed as a constant
+is invisible to it. `passkey_report.baseline` and `passkey_report.changes`
+(#942) are declared that way, are in neither list, and are sealed for the
+cell tier only through `tierOfHandle()`'s unclassified fallback; #1109's
+`passkey_report.history` is written as a literal for that reason and is
+listed. A GLOBAL minted store is the exception that is argued beside
 its name — configuration, a revocation every cell must see, or a replay set a
 CLIENT chooses the keys of (a DPoP `jti`, a Kerberos authenticator), which a
 per-cell set would accept once per cell.

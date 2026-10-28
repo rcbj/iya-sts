@@ -242,6 +242,7 @@
   "keys.lane": "Criptografía",
   "keys.laneClassical": "clásica",
   "keys.lanePqc": "poscuántica (ML-DSA), que aparece como una segunda cuenta terminada en «+ml-dsa»",
+  "keys.cryptoPostQuantum": "poscuántica (ML-DSA)",
   "keys.authenticator": "Autenticador",
   "keys.removeLabel": "Quitar {name}",
   "keys.remove": "Quitar",
@@ -548,5 +549,8 @@
   "accounts.anotherTitle": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya.",
   "accounts.none": "Todavía no hay otra cuenta con la sesión iniciada en este navegador.",
   "accounts.kept": "La cuenta que deja esta pestaña conserva la sesión iniciada, así que puede volver a ella desde aquí.",
-  "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán."
+  "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán.",
+  "announcement.heading": "Anuncio",
+  "announcement.close": "Cerrar",
+  "keys.possiblyReplaced": "Otra llave de acceso registrada el {day} con la misma cuenta en el mismo modelo de autenticador puede haber reemplazado a esta en ese autenticador. Si esta llave de acceso ya no funciona, quítela."
 }

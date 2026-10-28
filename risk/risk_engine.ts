@@ -330,6 +330,11 @@ const POPULATION = '*';
 // every time, as before) — and asked ONCE however many sign-ins want it at
 // the moment it is due, rather than once each.
 //
+// **AND A SIGN-IN NEVER WAITS FOR IT ONCE ONE IS HELD (#1074, 2026-10-28).**
+// Past its time the held count is answered and counted again behind it; on
+// 8081 (a million people) the sign-in that found it due waited 9.6 s for a
+// cold scan. Only a realm's first count is waited for.
+//
 // **ONLY FOR A REALM OF AT LEAST `POPULATION_KEPT_FROM` PEOPLE.** Below that
 // the scan is a few rows, and the count is a large part of each score: a
 // realm's first sign-ins are what the smoothing is for, and a count held at
@@ -362,8 +367,9 @@ const populationUsersCount = cacheRegistry.register({
     'realms.maxCount realms beside the default.',
   lifetime: function (): string {
     return 'risk.populationUsersCacheS seconds (' +
-      String(config.value('risk.populationUsersCacheS')) + '), then asked ' +
-      'again at the next sign-in.';
+      String(config.value('risk.populationUsersCacheS')) + '), then ' +
+      'counted again in the background by the next sign-in, which ' +
+      'answers the held count meanwhile.';
   },
   entries: function (): unknown[] {
     const out: unknown[] = [];
@@ -1447,7 +1453,9 @@ class RiskEngine {
   }
 
   // The realm's user count (#779): held for risk.populationUsersCacheS, and
-  // one count in flight per realm. See `populationUsers`.
+  // one count in flight per realm. See `populationUsers`. A held count past
+  // its time is ANSWERED while it is counted again in the background (#1074):
+  // only a realm with no count yet makes a sign-in wait for one.
   private populationUserCount(realm: string, subject: string,
                               sealing: boolean): Promise<number> {
     const { log, store } = this.deps;
@@ -1457,15 +1465,30 @@ class RiskEngine {
     const key = String(realm || '') + '|' + (sealing ? 's' : 'p');
     const held = populationUsers.get(key);
     const now = Date.now();
-    if (ttl && held && held.pending) {
-      populationUsersCount.hit();
-      log.debug("Leaving RiskEngine.populationUserCount(). In flight.");
-      return held.pending;
-    }
-    if (ttl && held && now - held.at < ttl) {
+    if (ttl && held && held.at && now - held.at < ttl) {
       populationUsersCount.hit();
       log.debug("Leaving RiskEngine.populationUserCount(). Held.");
       return Promise.resolve(held.n);
+    }
+    if (ttl && held && held.at) {
+      // DUE, AND ANSWERED FROM WHAT IS HELD (#1074). On 8081 a sign-in
+      // after a quiet minute waited 9.6 s for this count (a million rows
+      // read cold); a number that enters the score as 1/n and moves by one
+      // per new person is no worse a minute or two late. One recount at a
+      // time; the sign-ins meanwhile answer the held number too.
+      populationUsersCount.hit();
+      if (!held.pending) {
+        this.recountPopulation(key, held, realm, subject, sealing);
+      }
+      log.debug("Leaving RiskEngine.populationUserCount(). Held past its " +
+                "time; counting again behind it.");
+      return Promise.resolve(held.n);
+    }
+    if (ttl && held && held.pending) {
+      // The realm's first count, in flight: there is nothing to answer yet.
+      populationUsersCount.hit();
+      log.debug("Leaving RiskEngine.populationUserCount(). In flight.");
+      return held.pending;
     }
     populationUsersCount.miss();
     const asked = Promise.resolve(store.distinctValues(realm, subject, 'user',
@@ -1474,8 +1497,7 @@ class RiskEngine {
       log.debug("Leaving RiskEngine.populationUserCount(). Not kept.");
       return asked;
     }
-    const entry: HeldUsers = { n: held ? held.n : 0, at: held ? held.at : 0,
-                               pending: null };
+    const entry: HeldUsers = { n: 0, at: 0, pending: null };
     entry.pending = asked.then(function (n: number): number {
       entry.n = Number(n) || 0;
       entry.at = Date.now();
@@ -1496,6 +1518,34 @@ class RiskEngine {
     populationUsers.set(key, entry);
     log.debug("Leaving RiskEngine.populationUserCount(). Counting.");
     return entry.pending;
+  }
+
+  // A held count counted again in the background (#1074). Nobody waits on
+  // it, so it never rejects: a count that fails leaves the held number in
+  // place, and the next sign-in to find it due asks again.
+  private recountPopulation(key: string, held: HeldUsers, realm: string,
+                            subject: string, sealing: boolean): void {
+    const { log, store } = this.deps;
+    log.debug("Entering RiskEngine.recountPopulation().");
+    populationUsersCount.miss();
+    held.pending = Promise.resolve().then(function (): Promise<number> {
+      return Promise.resolve(store.distinctValues(realm, subject, 'user', '',
+                                                  sealing));
+    }).then(function (n: number): number {
+      held.n = Number(n) || 0;
+      held.at = Date.now();
+      held.pending = null;
+      if (held.n < POPULATION_KEPT_FROM) {
+        populationUsers.delete(key);
+      }
+      return held.n;
+    }, function (e: Json): number {
+      log.debug("Caught in RiskEngine.recountPopulation(): " +
+                ((e && e.message) || e));
+      held.pending = null;
+      return held.n;
+    });
+    log.debug("Leaving RiskEngine.recountPopulation().");
   }
 
   // -------------------------------------------------------------------------

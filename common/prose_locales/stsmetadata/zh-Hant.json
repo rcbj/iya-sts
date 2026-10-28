@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "非規範。報表應用程式作為此服務自身傳送方的接收方 (#1042) 所收到的內容：報表管理員可看到領域中的每個訊號，其他人只能看到與自己有關的訊號。與 /report-api 其餘部分使用同一權杖。"
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086)。開啟的報表分頁每隔 ssf.announcementPollMs 收取的內容：管理員向此應用程式廣播、並由其接收端保留的公告。與 /report-api 其餘部分使用相同權杖。"
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC。領域中名稱或 DN 包含 q 的群組，每頁五個，各自帶有自己的 mail 屬性（#989）：定義頁面的窗格。定義的群組即其結果的電子郵件收件者。與 /report-api 的其餘部分使用同一權杖。"
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "非規格端點（#49）。run，附 { job, realm?, params? }：一次排入佇列、由領導者在下一個週期啟動的執行，回應 202 並附其 runId；以及 step-down：領導者在下一個週期放棄 ops.scheduler，由另一個節點接手。主控台的兩個按鈕。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086)。GET /admin/broadcast 繪製的內容：可顯示公告的應用程式、呼叫端能否傳送到所有領域、最長訊息以及能否傳遞任何內容。對應 GET /admin/broadcast。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086)。send，帶 { message, surfaces, everyRealm }：本服務自己的公告 SET，傳送到管理主控台、使用者入口網站和報表應用程式的接收端串流，並在當時開啟的每個分頁中以橫幅顯示。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "向所有已登入的人傳送公告"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086)。開啟的主控台分頁每隔 ssf.announcementPollMs 收取的內容：主控台接收端在該分頁首次詢問之後收到的公告。"
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",
@@ -1874,6 +1894,18 @@
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "非規格端點（#942）。recount：在排程器的主節點上為此領域排入 passkeys.report-recount 工作，該工作把對持有者的一次全新計數作為新的基準。這是主控台在該頁面上的唯一操作；它在所有工作執行的地方執行，絕不在請求中執行。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123)。目錄 → 登入後活動 繪製的內容：領域中已啟動的每個登入後活動及其活動、群組、提醒間隔、每人最多郵件數、每次執行人數、狀態以及其排程工作迄今所做的事；是否啟用了郵件傳輸和登入後活動原則；以及啟動表單的群組搜尋——來自目錄群組索引的一頁二十個群組（groupq、groupfrom），並解析迄今已選的群組（groups）。誰收到了郵件見報告應用的 postLoginProgress 資料來源。對應 GET /admin/post-login-activities。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123)。start，帶 { activity, groups, intervalDays, maxMails, perRun }：post-login.activity-mail 工作向每個有待完成該活動的人——領域中的所有人，或各群組成員的聯集，每人一次——寄送登入提醒，寄往其條目上的地址，帶一個指向登入頁面的連結，不含憑證。pause、resume 和 end，帶 { id }。主控台在該頁面上的四個操作。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "啟動、暫停、繼續或結束登入後活動"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2679,6 +2711,14 @@
     "en": "997e77c58a56af97",
     "text": "註冊驗證器應用程式或開始安全金鑰註冊，然後建立單一登入工作階段"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "登入後活動（#1096）。當領域的登入後活動原則（「目錄 > 原則」，預設關閉）依群組涵蓋某人、且此人應完成其活動時——目前是在其持有傳統密碼金鑰的角色中註冊一個後量子（ML-DSA）密碼金鑰，或在其沒有密碼金鑰時註冊一個——在登入畫面的登入會來到這裡，而不是直接完成登入：工作階段遭到「暫扣」，而非開始。註冊會轉到只提供 ML-DSA 的 /authn/webauthn 註冊（/authn-api/mfa/{id}/post-login/register）；略過會依設定檔的 snoozeDays 延後（/authn-api/mfa/{id}/post-login/skip），一旦自第一次邀請起的給定期限已過即遭拒絕（STS-AUTHN-0474）。無論哪種方式，遭暫扣的工作階段隨後都會以該次登入的 amr 與 acr 開始。需要由遭暫扣的登入產生的 ?mfa= id，因此直接存取會回應 400。"
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "在登入後要求一個後量子密碼金鑰，然後建立其暫扣的單一登入工作階段"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "「第二種第二要素」（2026-09-10）。對於已註冊驗證器應用程式的人，成功的密碼步驟會來到這裡，此端點會要求輸入其應用程式所顯示的六位數字。成功時工作階段記錄 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其登錄項目指名 RFC 4226 與 RFC 6238——以及 acr \"mfa\"，這是本服務能誠實宣稱兩個要素的唯一情況。**代碼在兩種模式下都會真正檢查**，與其前面的密碼不同：一個接受任意六位數字的一次性密碼驗證器不是寬鬆，而是故障，這是 SPNEGO 論證的再次應用。依身分「以及」依位址進行速率限制，因為六位數字只有一百萬個值，是本服務中最小的搜尋空間。「GET 是安全金鑰畫面上的 *use a code instead* 連結」，不會建立任何東西——它為已存在的步驟繪製頁面，並對沒有註冊的人拒絕。**它不為任何人註冊**，這正是它與旁邊的 /authn/webauthn 的全部差異：註冊意味著會看到共用密鑰，因此它發生在 /portal/mfa 或使用啟用連結時，絕不在登入畫面上。自 #572 起是登入介面的一個頁面：代碼傳送至 /authn-api/mfa/{id}/totp。"
@@ -2850,6 +2890,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC（#572、#246）。僅在該步驟是提供而非要求時：登入以密碼完成。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC（#1096）。下一步是密碼金鑰頁面的註冊，僅限 ML-DSA；完成後開始遭暫扣的工作階段。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC（#1096）。依設定檔的 snoozeDays 延後；給定期限已過即遭拒絕。遭暫扣的工作階段隨即開始。"
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

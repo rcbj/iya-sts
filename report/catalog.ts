@@ -53,7 +53,10 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'action', 'outcome', 'format', 'family', 'application', 'day',
   'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
-  'lane', 'factors', 'hasPassword', 'channel', 'format'];
+  'lane', 'factors', 'hasPassword', 'channel', 'format',
+  // The post-login progress source (#1110, #1111).
+  'activity', 'profile', 'done', 'graceEnded', 'mailedBy', 'progress',
+  'askedBy'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -137,6 +140,18 @@ const HOLDER_INDEXED: Record<string, string[]> = {
   entryUuid: INDEXED.entryUuid
 };
 
+// A PREDEFINED QUERY (#1110): a name and a document the page offers as a
+// starting point on the source's own page and in New Query. It is DATA, not
+// a stored definition: nobody owns it, it runs nothing by itself, and the
+// person who starts from it saves their own copy if they want one. Each
+// document validates (`tests/report_query.js`), so a catalog change that
+// breaks one fails the suite rather than the page.
+interface PresetSpec {
+  id: string;
+  name: string;
+  document: Record<string, any>;
+}
+
 interface SourceSpec {
   id: string;
   bounded: boolean;
@@ -151,6 +166,7 @@ interface SourceSpec {
   paging: string;
   relationships: string[];
   fields: FieldSpec[];
+  presets?: PresetSpec[];
 }
 
 function field(id: string, type: string, meaning: string,
@@ -177,7 +193,8 @@ function field(id: string, type: string, meaning: string,
 }
 
 function source(id: string, retention: string,
-                fields: FieldSpec[], anchored?: boolean): SourceSpec {
+                fields: FieldSpec[], anchored?: boolean,
+                presets?: PresetSpec[]): SourceSpec {
   log.debug("Entering source().");
   const spec: SourceSpec = {
     id: id,
@@ -190,7 +207,247 @@ function source(id: string, retention: string,
   if (anchored) {
     spec.anchored = true;
   }
+  if (presets && presets.length) {
+    spec.presets = presets.map(function (one: PresetSpec): PresetSpec {
+      return { id: one.id, name: one.name,
+               document: JSON.parse(JSON.stringify(one.document)) };
+    });
+  }
   log.debug("Leaving source().");
+  return spec;
+}
+
+// THE POST-LOGIN PROGRESS SOURCE (#1110): `post_login.progress` read back,
+// one row per person and activity the realm has asked or mailed — the
+// post-quantum passkey migration's progress (#1096), and since #1111 what a
+// started activity's mail did for each person. Read from the store, not the
+// directory, so it is neither anchored nor indexed: an unordered read stops
+// at its limit, and an ordered read or a count walks the rows a page at a
+// time under the usual time caps.
+const POST_LOGIN_ACTIVITIES = ['pqc-passkey-migration'];
+const POST_LOGIN_ROLES = ['primary', 'mfa'];
+// Where a person stands, ONE word (the page groups by one field): done; past
+// the allotted time and not done; put off by Skip; asked and not done;
+// mailed by a started activity and never asked at a sign-in.
+const POST_LOGIN_PROGRESS = ['done', 'past-grace', 'snoozed', 'asked',
+  'mailed'];
+
+function postLoginProgressSource(): SourceSpec {
+  log.debug("Entering postLoginProgressSource().");
+  const spec = source('postLoginProgress',
+    'One row per person and post-login activity this realm has asked at a ' +
+    'sign-in or mailed about, as the post-login progress store ' +
+    'holds it now (#1110). Somebody never asked and never mailed has no ' +
+    'row. The profile, role and allotted time are the ones that applied ' +
+    'when the row was last written.',
+    [field('username', 'string', 'The directory uid of the person.'),
+     field('activity', 'string',
+       'The post-login activity: pqc-passkey-migration, a post-quantum ' +
+       '(ML-DSA) passkey where the person holds a classical one or none.',
+       undefined, POST_LOGIN_ACTIVITIES),
+     field('profile', 'string',
+       'The post-login profile that reached the person when the row was ' +
+       'last written (default, or a named profile chosen by group).'),
+     field('role', 'string',
+       'The role the passkey is asked for: primary (passwordless sign-in) ' +
+       'or mfa (a second factor).', undefined, POST_LOGIN_ROLES),
+     field('progress', 'string',
+       'Where the person stands, in one word, the first that holds: done; ' +
+       'past-grace (the allotted time ended and it is not done); snoozed ' +
+       '(Skip put it off and the time has not run out); asked (at a ' +
+       'sign-in, not done); mailed (by a started activity, never asked at a ' +
+       'sign-in).', undefined, POST_LOGIN_PROGRESS),
+     field('invitedAt', 'timestamp',
+       'When the person was first asked at a sign-in; the allotted time ' +
+       'counts from here. Null when they were only mailed.'),
+     field('snoozedUntil', 'timestamp',
+       'Until when Skip put the activity off, or null.'),
+     field('asks', 'number', 'How many sign-ins asked the person.'),
+     field('skips', 'number', 'How many times the person chose Skip.'),
+     field('done', 'boolean', 'Whether the person did the activity.'),
+     field('doneAt', 'timestamp', 'When the person did it, or null.'),
+     field('deadline', 'timestamp',
+       'When the allotted time (graceDays from the first invitation) ends, ' +
+       'or null where there is none.'),
+     field('graceEnded', 'boolean',
+       'Whether the allotted time has ended and the activity is not done: ' +
+       'Skip is gone and the next sign-in is held until it is.'),
+     field('askedBy', 'string',
+       'Who asked the person at a sign-in (#1126): policy (the post-login ' +
+       'profile itself is on for them), or the id (pla-…) of the running ' +
+       'started post-login activity whose groups hold them; empty when they ' +
+       'were never asked at a sign-in.'),
+     field('mailedBy', 'string',
+       'The started post-login activity (its id, pla-…) that last mailed ' +
+       'the person (#1111), or empty.'),
+     field('mails', 'number',
+       'How many mails the started activity named in mailedBy sent the ' +
+       'person about the activity.'),
+     field('firstMailedAt', 'timestamp',
+       'When that started activity\'s first mail went, or null.'),
+     field('lastMailedAt', 'timestamp',
+       'When the last reminder mail went, or null.')], false,
+    // Each document is one the New Query form can draw — one filter leaf,
+    // one order, one group — so starting from it and saving it keeps it.
+    [{ id: 'progress-by-activity', name: 'Progress by activity',
+       document: { source: 'postLoginProgress',
+                   select: ['progress'],
+                   where: { op: 'eq', field: 'activity',
+                            value: 'pqc-passkey-migration' },
+                   aggregate: 'count', groupBy: ['progress'],
+                   orderBy: [{ field: 'progress', dir: 'asc' }],
+                   limit: 100, format: 'json', mode: 'auto' } },
+     { id: 'past-grace-period', name: 'People past their grace period',
+       document: { source: 'postLoginProgress',
+                   select: ['username', 'activity', 'profile', 'role',
+                            'invitedAt', 'deadline', 'asks', 'skips',
+                            'mails', 'lastMailedAt'],
+                   where: { op: 'eq', field: 'graceEnded', value: true },
+                   orderBy: [{ field: 'deadline', dir: 'asc' }],
+                   limit: 1000, format: 'json', mode: 'auto' } },
+     { id: 'skipped-most', name: 'People who skipped most',
+       document: { source: 'postLoginProgress',
+                   select: ['username', 'activity', 'profile', 'skips',
+                            'asks', 'done', 'snoozedUntil', 'deadline'],
+                   where: { op: 'gt', field: 'skips', value: 0 },
+                   orderBy: [{ field: 'skips', dir: 'desc' }],
+                   limit: 100, format: 'json', mode: 'auto' } }]);
+  log.debug("Leaving postLoginProgressSource().");
+  return spec;
+}
+
+// ---------------------------------------------------------------------------
+// PASSKEY HISTORY (#1109): `passkey_report.history`, one stored row per realm
+// per UTC day written by the passkey report's daily recount, projected by
+// `report/passkey_history.ts` into several rows told apart by `scope` — the
+// realm's people and passkeys, each named profile's population, and the
+// passkeys by algorithm, by lane and by attestation algorithm. The read is
+// the store held in memory, at most `webauthn.passkeyHistoryDays` days, so
+// nothing is indexed and nothing needs to be: the source is bounded by its
+// retention. In a block of its own so a source added beside it merges
+// cleanly.
+// ---------------------------------------------------------------------------
+const HISTORY_SCOPES = ['realm', 'profile', 'algorithm', 'lane',
+  'attestation'];
+// Fields of this source a count may group by, beyond `GROUPABLE`'s.
+const HISTORY_GROUPABLE = ['scope', 'name', 'postQuantum',
+  'postQuantumRequired', 'complete', 'counted'];
+
+function passkeyHistorySource(): SourceSpec {
+  log.debug("Entering passkeyHistorySource().");
+  const people = 'On a realm or profile row; null on the others.';
+  const fields = [
+    field('day', 'string',
+      'The UTC calendar day the row counts, yyyy-mm-dd. A later recount ' +
+      'the same day replaced the day\'s rows.'),
+    field('countedAt', 'timestamp',
+      'When the recount that wrote the day finished.'),
+    field('scope', 'string',
+      'What the row counts: realm (the realm\'s people and passkeys, one ' +
+      'a day), profile (a named passkey profile\'s population), algorithm ' +
+      '(passkeys of one algorithm in one lane), lane (passkeys in one ' +
+      'lane) or attestation (passkeys whose attestation certificate one ' +
+      'algorithm signed). Filter on it: the scopes count the same ' +
+      'passkeys more than once.', undefined, HISTORY_SCOPES),
+    field('name', 'string',
+      'The profile, algorithm (JOSE name), lane or attestation ' +
+      'certificate algorithm the row is for; empty on a realm row.'),
+    field('coseAlg', 'number',
+      'The COSE algorithm identifier of an algorithm row, or of an ' +
+      'attestation row\'s algorithm where it has one; null otherwise.'),
+    field('lane', 'string',
+      'classical or pqc (#643) on an algorithm or lane row; empty ' +
+      'otherwise.', undefined, ['classical', 'pqc']),
+    field('postQuantum', 'boolean',
+      'Whether an algorithm or attestation row\'s algorithm is ML-DSA; ' +
+      'null on the other scopes. The kind is the algorithm, never the ' +
+      'lane.'),
+    field('count', 'number',
+      'Passkeys counted in the row: all of them on a realm or profile ' +
+      'row, those of the row\'s algorithm, lane or attestation algorithm ' +
+      'otherwise.'),
+    field('people', 'number',
+      'People in the realm, or in the profile\'s population as far as it ' +
+      'was read. ' + people),
+    field('holding', 'number',
+      'People holding at least one passkey. ' + people),
+    field('postQuantumOnly', 'number',
+      'People whose passkeys are all ML-DSA. ' + people),
+    field('classicalOnly', 'number',
+      'People whose passkeys are all classical. ' + people),
+    field('both', 'number',
+      'People holding an ML-DSA and a classical passkey. ' + people),
+    field('none', 'number',
+      'People holding no passkey; null where the realm\'s count of its ' +
+      'people could not be read. ' + people),
+    field('withPostQuantum', 'number',
+      'People holding at least one ML-DSA passkey (postQuantumOnly plus ' +
+      'both). ' + people),
+    field('postQuantumShare', 'number',
+      'withPostQuantum as a percentage of holding, to one decimal: the ' +
+      'adoption figure. Null where nobody holds a passkey. ' + people),
+    field('postQuantumKeys', 'number',
+      'ML-DSA passkeys among count. ' + people),
+    field('postQuantumRequired', 'string',
+      'A profile row\'s postQuantumRequired setting on the day (#718); ' +
+      'empty otherwise.'),
+    field('members', 'number',
+      'A profile row\'s members, as the profile\'s groups list them; ' +
+      'null otherwise.'),
+    field('complete', 'boolean',
+      'Whether a profile row read every member: false where the ' +
+      'population was larger than the passkey report reads for a filter, ' +
+      'and the numbers cover the members read. Null otherwise.'),
+    field('counted', 'boolean',
+      'False on a profile row the day did not count: past the profiles a ' +
+      'day counts, or a population that could not be read. True ' +
+      'otherwise.')
+  ];
+  fields.forEach(function (spec: FieldSpec): void {
+    if (HISTORY_GROUPABLE.indexOf(spec.id) >= 0) {
+      spec.group = true;
+    }
+  });
+  // THE PREDEFINED QUERIES (#1109), in #1110's `presets` shape: each one
+  // filter leaf on `scope`, one order on `day`, so the form draws it and
+  // a save keeps it. Their longer descriptions are in `docs/reporting.md`.
+  const presets: PresetSpec[] = [{
+    id: 'post-quantum-adoption-by-day',
+    name: 'Post-quantum adoption by day',
+    document: { source: 'passkeyHistory',
+      select: ['day', 'people', 'holding', 'withPostQuantum',
+               'postQuantumShare', 'postQuantumOnly', 'both',
+               'classicalOnly', 'none', 'postQuantumKeys', 'count'],
+      where: { op: 'eq', field: 'scope', value: 'realm' },
+      orderBy: [{ field: 'day', dir: 'asc' }],
+      // One row a day: the default synchronous cap (500) holds the default
+      // retention (400 days), so it answers at once rather than as a job.
+      limit: 500, format: 'json', mode: 'auto' }
+  }, {
+    id: 'passkeys-by-algorithm-by-day',
+    name: 'Passkeys by algorithm by day',
+    document: { source: 'passkeyHistory',
+      select: ['day', 'name', 'coseAlg', 'lane', 'postQuantum', 'count'],
+      where: { op: 'eq', field: 'scope', value: 'algorithm' },
+      orderBy: [{ field: 'day', dir: 'asc' }],
+      limit: 1000, format: 'json', mode: 'auto' }
+  }, {
+    id: 'profile-adoption-by-day',
+    name: 'Post-quantum adoption by passkey profile by day',
+    document: { source: 'passkeyHistory',
+      select: ['day', 'name', 'postQuantumRequired', 'members', 'complete',
+               'holding', 'withPostQuantum', 'postQuantumShare', 'counted'],
+      where: { op: 'eq', field: 'scope', value: 'profile' },
+      orderBy: [{ field: 'day', dir: 'asc' }],
+      limit: 1000, format: 'json', mode: 'auto' }
+  }];
+  const spec = source('passkeyHistory',
+    'One stored row per realm per UTC day, written by the passkey ' +
+    'report\'s daily recount (#1109) and kept for ' +
+    'webauthn.passkeyHistoryDays days; each day is read as several rows, ' +
+    'one per scope. A day the recount did not run has no rows. Read from ' +
+    'the history store, never the directory.', fields, false, presets);
+  log.debug("Leaving passkeyHistorySource().");
   return spec;
 }
 
@@ -412,10 +669,182 @@ function standardSources(): SourceSpec[] {
        field('onFailure', 'string',
          'keep or refuse, as the source is configured.', undefined,
          ['keep', 'refuse']),
-       field('enabled', 'boolean', 'Whether the source is enabled.')])
+       field('enabled', 'boolean', 'Whether the source is enabled.')]),
+    postLoginProgressSource(),
+    passkeyHistorySource(),
+    passkeyCeremonySource()
   ];
   log.debug("Leaving standardSources().");
   return sources;
+}
+
+// ---------------------------------------------------------------------------
+// PASSKEY CEREMONIES (#1107): every `webauthn.ceremony` and
+// `webauthn.algorithm-mismatch` row still in the audit ring, one row each —
+// what an operator moving a realm to ML-DSA passkeys reads to see where
+// registrations and sign-ins with post-quantum keys fail, and for which
+// clients. The row shape is `authn/webauthn_ceremonies.ts`'s (#943, folded
+// by #1108); `report/passkey_ceremonies.ts` projects it. The ring is a list
+// in memory capped by `audit.maxEvents` and the audit store indexes no
+// detail field, so no field here declares an index, and none is needed:
+// the read is bounded by the ring, as `authActivity`'s is.
+//
+// In a block of its own so a source added beside it merges cleanly.
+// ---------------------------------------------------------------------------
+// The doors a ceremony row may name: `webauthn_ceremonies.ts`'s `DOORS`,
+// which `tests/report_passkey_ceremonies.js` holds the door field's meaning
+// to naming every one of. The catalog cannot require that module, which
+// the web bundle would then carry.
+const CEREMONY_DOORS = ['sign-in-step', 'usernameless', 'portal',
+  'activation', 'upgrade', 'admin-enrolment', 'device-link'];
+// Fields of this source a count may group by, beyond `GROUPABLE`'s.
+const CEREMONY_GROUPABLE = ['kind', 'ceremony', 'door', 'client',
+  'clientError', 'attachment', 'offeredFirst', 'postQuantum',
+  'postQuantumOffered', 'errorCode', 'held', 'offerRule'];
+
+function passkeyCeremonySource(): SourceSpec {
+  log.debug("Entering passkeyCeremonySource().");
+  const fields = [
+    field('timestamp', 'timestamp', 'When the ceremony\'s row was recorded.'),
+    field('day', 'string',
+      'The UTC calendar day of timestamp, yyyy-mm-dd, so a count can ' +
+      'group ceremonies per day.'),
+    field('kind', 'string',
+      'ceremony for a webauthn.ceremony row (one registration or sign-in, ' +
+      'completed or not); algorithm-mismatch for a sign-in with a ' +
+      'classical passkey by a person who holds an ML-DSA one, where ' +
+      'post-quantum was not required. Filter on it before counting, so a ' +
+      'mismatch is not counted twice with its ceremony.', undefined,
+      ['ceremony', 'algorithm-mismatch']),
+    field('ceremony', 'string',
+      'registration or assertion (a sign-in); empty on a mismatch row.',
+      undefined, ['registration', 'assertion']),
+    field('door', 'string',
+      'Where it ran: ' + CEREMONY_DOORS.slice(0, -1).join(', ') + ' or ' +
+      CEREMONY_DOORS[CEREMONY_DOORS.length - 1] + ' (portal is ' +
+      '/portal/keys); on a mismatch row, the sign-in\'s own name for its ' +
+      'way in.'),
+    field('outcome', 'string', 'success or refused.', undefined,
+      ['success', 'refused']),
+    field('errorCode', 'string',
+      'The error code a refused ceremony was recorded under ' +
+      '(STS-AUTHN-0022 where the browser gave up); empty on success.'),
+    field('actor', 'string',
+      'The person, where known; empty before a usernameless passkey ' +
+      'names anybody.'),
+    field('application', 'string',
+      'The application the sign-in was for, its client or relying-party ' +
+      'id; empty at /portal/keys, an activation link, a device link and ' +
+      'an administrator\'s enrolment, and on rows written before #1108.'),
+    field('role', 'string', 'primary or mfa; empty where none applied.',
+      undefined, ['primary', 'mfa']),
+    field('lane', 'string', 'classical or pqc (#643).', undefined,
+      ['classical', 'pqc']),
+    field('offered', 'string',
+      'The algorithms offered, in order, comma-separated: a ' +
+      'registration\'s list as the browser was given it; for a sign-in, ' +
+      'the algorithms of the person\'s passkeys the ceremony could use.'),
+    field('offerRule', 'string',
+      'The client rule that narrowed this registration\'s offer, or ' +
+      'would have, where one applied (#1112): configured: <rule>, ' +
+      'learned: <client>, or not applied (<why>): ...; empty otherwise.'),
+    field('offeredFirst', 'string',
+      'The first algorithm offered: the one a client honouring the order ' +
+      'makes when it can.'),
+    field('postQuantumOffered', 'boolean',
+      'Whether an ML-DSA algorithm was among those offered.'),
+    field('algorithm', 'string',
+      'The algorithm used: the new passkey\'s, or the signing one\'s. ' +
+      'Empty where the ceremony reached none. On a mismatch row, the ' +
+      'classical algorithm that signed.'),
+    field('postQuantum', 'boolean',
+      'Whether the algorithm used is an ML-DSA algorithm.'),
+    field('held', 'string',
+      'On a mismatch row, the ML-DSA algorithms of the person\'s ' +
+      'passkeys; empty otherwise.'),
+    field('client', 'string',
+      'The browser and operating system by name and major version only ' +
+      '(Chrome 141 on macOS 15), from the User-Agent.'),
+    field('clientError', 'string',
+      'For a ceremony the browser did not complete, the error name its ' +
+      'script reported (NotAllowedError, NotSupportedError, ' +
+      'InvalidStateError, ...), or other; never its message.'),
+    field('capabilities', 'string',
+      'The client capabilities the browser reported as available, ' +
+      'comma-separated, from a fixed list.'),
+    field('attachment', 'string',
+      'platform or cross-platform, as the browser reported it.', undefined,
+      ['platform', 'cross-platform']),
+    field('transports', 'string',
+      'The transports the browser reported, comma-separated (internal, ' +
+      'hybrid, usb, nfc, ble).'),
+    field('attestation', 'string',
+      'For a registration, what its attestation was signed with, leaf to ' +
+      'anchor, and (PQ) where all of it is post-quantum.'),
+    field('durationMs', 'number',
+      'Milliseconds from the ceremony\'s options being issued to its ' +
+      'response, measured by the service (#1108). It includes the ' +
+      'person\'s time at the prompt; compare many rows. Null on rows ' +
+      'written before #1108 and where no options were issued.')
+  ];
+  fields.forEach(function (spec: FieldSpec): void {
+    if (CEREMONY_GROUPABLE.indexOf(spec.id) >= 0) {
+      spec.group = true;
+    }
+  });
+  // THE PREDEFINED QUERIES (#1107), in #1110's `presets` shape: what an
+  // operator moving a realm to ML-DSA passkeys asks first. Their longer
+  // descriptions are in `docs/reporting.md`.
+  const presets: PresetSpec[] = [{
+    // Registrations that offered ML-DSA and did not complete, per client;
+    // group by clientError instead to see how they failed.
+    id: 'ml-dsa-registrations-failed-by-client',
+    name: 'ML-DSA registrations that failed, by client',
+    document: {
+      source: 'passkeyCeremonies',
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'kind', value: 'ceremony' },
+        { op: 'eq', field: 'ceremony', value: 'registration' },
+        { op: 'eq', field: 'postQuantumOffered', value: true },
+        { op: 'eq', field: 'outcome', value: 'refused' }] },
+      aggregate: 'count', groupBy: ['client'], limit: 100
+    }
+  }, {
+    // Completed registrations that offered ML-DSA and produced a classical
+    // passkey: clients that cannot make ML-DSA yet, or do not honour the
+    // offered order.
+    id: 'ml-dsa-asked-classical-made-by-client',
+    name: 'Registrations that asked for ML-DSA and made a classical ' +
+      'passkey, by client',
+    document: {
+      source: 'passkeyCeremonies',
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'kind', value: 'ceremony' },
+        { op: 'eq', field: 'ceremony', value: 'registration' },
+        { op: 'eq', field: 'outcome', value: 'success' },
+        { op: 'eq', field: 'postQuantumOffered', value: true },
+        { op: 'eq', field: 'postQuantum', value: false }] },
+      aggregate: 'count', groupBy: ['client'], limit: 100
+    }
+  }, {
+    // Sign-ins with a classical passkey by people who hold an ML-DSA one:
+    // who requiring post-quantum at sign-in would refuse today.
+    id: 'classical-sign-ins-by-ml-dsa-holders',
+    name: 'Classical sign-ins by people who hold an ML-DSA passkey',
+    document: {
+      source: 'passkeyCeremonies',
+      where: { op: 'eq', field: 'kind', value: 'algorithm-mismatch' },
+      aggregate: 'count', groupBy: ['client'], limit: 100
+    }
+  }];
+  const spec = source('passkeyCeremonies',
+    'Passkey registrations and sign-ins still in the same audit ring as ' +
+    'auditEvents (webauthn.ceremony and webauthn.algorithm-mismatch rows, ' +
+    '#943), capped by audit.maxEvents. Not a warehouse of ceremonies: run ' +
+    'it on a schedule to keep a history. Nothing here is indexed; the ' +
+    'read is bounded by the ring.', fields, false, presets);
+  log.debug("Leaving passkeyCeremonySource().");
+  return spec;
 }
 
 /**
@@ -526,6 +955,26 @@ class Catalog {
     }
     log.debug("Leaving Catalog.source().");
     return found;
+  }
+
+  /**
+   * One predefined query of a source (#1110).
+   *
+   * @param sourceId - the source name
+   * @param presetId - the preset's id
+   * @returns a copy of the preset, or null
+   */
+  preset(sourceId: string, presetId: string): PresetSpec | null {
+    log.debug("Entering Catalog.preset().");
+    const src = this.source(sourceId);
+    const found = (src && src.presets ? src.presets : [])
+      .filter(function (one: PresetSpec): boolean {
+        return one.id === presetId;
+      })[0] || null;
+    log.debug("Leaving Catalog.preset(). " + (found ? 'Found.' : 'None.'));
+    return found ? { id: found.id, name: found.name,
+                     document: JSON.parse(JSON.stringify(found.document)) }
+                 : null;
   }
 
   /**

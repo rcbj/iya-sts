@@ -29,6 +29,13 @@
 //   E. `passkey_rules.js`'s strict reading gives the same reason and code
 //      as the issuance policy for each of those questions.
 //   F. The console's and the API's key row carries the reading.
+//   G. The credential's algorithm and the attestation's are recorded
+//      INDEPENDENTLY (#1114): an ML-DSA-65 credential attested by a
+//      classical (ES256) leaf, and an ES256 credential attested by an
+//      ML-DSA chain, each record the credential's algorithm from the
+//      credential and the attestation's from the statement and its chain —
+//      and `attestationAlgorithms` `post-quantum` takes the second and
+//      refuses the first, whatever the credential is.
 //
 // THE ML-DSA CHAIN IS A FIXTURE MADE HERE, AT RUN TIME, with this service's
 // own post-quantum certificate encoder (`common/crypto_impl/x509.js` over
@@ -352,6 +359,69 @@ function shown(t, recorded) {
   log.debug('Leaving shown().');
 }
 
+// G. An ML-DSA credential under a classical leaf, and the reverse (#1114).
+async function independent(t, chain, aaguid) {
+  log.debug('Entering independent().');
+  const classical = await kit.root('Classical Vendor');
+  config.setOverride('webauthn.attestationPolicy', 'verify-if-present');
+  config.setOverride('webauthn.attestationTrustAnchors',
+                     chain.root.pem + '\n' + classical.pem);
+  const name = 'pai-' + require('crypto').randomBytes(3).toString('hex');
+  ldap.createUser(name, { invent: false });
+  try {
+    const pqCtx = await kit.ceremony({ alg: -49 });
+    const pqVerdict = webauthn.verifyRegistration(
+      pqCtx.input(await kit.packed(pqCtx, classical)));
+    const pqUnderEc = await attestation.assess(pqVerdict);
+    const ecCtx = await kit.ceremony({ alg: -7, aaguid: aaguid });
+    const ecVerdict = webauthn.verifyRegistration(
+      ecCtx.input(await packedMldsa(ecCtx, chain)));
+    const ecUnderPq = await attestation.assess(ecVerdict);
+    const a = (pqUnderEc.attestation || {}).algorithms || {};
+    const b = (ecUnderPq.attestation || {}).algorithms || {};
+    t.check(pqVerdict.ok && pqUnderEc.ok &&
+            pqVerdict.algorithm === 'ML-DSA-65' && pqVerdict.coseAlg === -49 &&
+            a.statement === 'ES256' && a.postQuantum === false &&
+            ecVerdict.ok && ecUnderPq.ok &&
+            ecVerdict.algorithm === 'ES256' && ecVerdict.coseAlg === -7 &&
+            b.statement === 'ML-DSA-65' && b.postQuantum === true,
+            'G. an ML-DSA-65 credential under a classical leaf records ' +
+            'ML-DSA-65 and an ES256 attestation, and an ES256 credential ' +
+            'under an ML-DSA chain records ES256 and a post-quantum one',
+            JSON.stringify([pqVerdict.algorithm, a, ecVerdict.algorithm, b]));
+    const key = function (verdict, att, n) {
+      log.debug('Entering independent() key().');
+      log.debug('Leaving independent() key().');
+      return { credentialId: 'pai-cred-' + n,
+               publicKeyJwk: verdict.publicKeyJwk,
+               algorithm: verdict.algorithm, coseAlg: verdict.coseAlg,
+               attestation: att };
+    };
+    withRow('post-quantum');
+    const pqKey = credentials.addKey(name,
+      key(pqVerdict, pqUnderEc.attestation, 1), 'mfa');
+    const ecKey = credentials.addKey(name,
+      key(ecVerdict, ecUnderPq.attestation, 2), 'mfa');
+    const held = credentials.keysOf(name).filter(function (one) {
+      return one.credentialId === 'pai-cred-2';
+    })[0] || null;
+    t.check(!pqKey.ok && errorCodes.codeOf(pqKey) === 'STS-AUTHN-0411' &&
+            ecKey.ok && held &&
+            credentials.keyAlgorithm(held).name === 'ES256' &&
+            credentials.attestationAlgorithms(held).postQuantum === true,
+            'G2. attestationAlgorithms post-quantum refuses the ML-DSA ' +
+            'credential with a classical attestation and takes the ES256 ' +
+            'one with a post-quantum attestation, the key keeping both ' +
+            'readings apart',
+            JSON.stringify([pqKey, ecKey.ok, held && held.algorithm]));
+  } finally {
+    passkeyPolicy.reset('default');
+    config.clearOverride('webauthn.attestationPolicy');
+    config.clearOverride('webauthn.attestationTrustAnchors');
+  }
+  log.debug('Leaving independent().');
+}
+
 module.exports = {
   name: 'passkey_attestation_algorithm',
   describe: 'what a passkey\'s attestation is signed with, recorded and ' +
@@ -367,6 +437,7 @@ module.exports = {
     await atSignIn(t, recorded);
     agrees(t, recorded);
     shown(t, recorded);
+    await independent(t, chain, aaguid);
     log.debug('Leaving run().');
   }
 };

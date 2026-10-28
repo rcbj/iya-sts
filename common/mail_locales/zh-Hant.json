@@ -75,6 +75,11 @@
       "text": "使用者 {{username}} 的報表 {{definition}} 已{{status}}。\n\n開啟它：\n\n{{report}}\n",
       "html": "<p>使用者 {{username}} 的報表 <strong>{{definition}}</strong> 已{{status}}。</p><p><a href=\"{{report}}\">開啟它</a>。</p>"
     },
+    "post-login-reminder": {
+      "subject": "為 {{service}} 註冊後量子通行金鑰",
+      "text": "{{service}} 請 {{username}} 註冊一個使用後量子密碼（ML-DSA）的新通行金鑰。\n\n請在此登入，登入後會立即要求您註冊：\n\n{{signin}}\n\n此連結只會開啟登入頁面。它不會讓您登入，也不包含任何關於您帳戶的資訊。如果您沒有預期收到這封郵件，可以忽略它，或詢問管理您帳戶的人員。\n",
+      "html": "<p>{{service}} 請 <strong>{{username}}</strong> 註冊一個使用後量子密碼（ML-DSA）的新通行金鑰。</p><p><a href=\"{{signin}}\">登入</a>後會立即要求您註冊。</p><p>此連結只會開啟登入頁面。它不會讓您登入，也不包含任何關於您帳戶的資訊。如果您沒有預期收到這封郵件，可以忽略它，或詢問管理您帳戶的人員。</p>"
+    },
     "reset-refused-attempt": {
       "subject": "有人試圖重設您的 {{service}} 密碼",
       "text": "{{when}}，有人要求重設帳戶 {{username}} 的密碼，填寫了此地址，並提供了一個不屬於您的復原碼。沒有任何變更，也沒有寄出重設連結。\n\n如果是您本人，請使用一個未用過的復原碼重試。如果不是，表示有人知道您的帳戶名稱和地址；請聯絡您的帳戶管理員。\n",

@@ -887,5 +887,6 @@
   "mfaSection.certAddTip": "一张叶证书。颁发它的机构应放入客户端信任存储，而不是这里。",
   "mfaSection.certAdd": "存储",
   "mfaSection.certAddTitle": "将此证书存储到条目上",
-  "mfaSection.certNeedsWrite": "存储或移除证书需要 <strong>Admin Write</strong>。"
+  "mfaSection.certNeedsWrite": "存储或移除证书需要 <strong>Admin Write</strong>。",
+  "mfaSection.possiblyReplaced": "可能已在其身份验证器上被于 {day} 以相同用户句柄和 AAGUID 注册的通行密钥替换。它不计为登录途径；如果它已无法使用，请清除它。"
 }

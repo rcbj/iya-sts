@@ -16,7 +16,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 | `device_bound_sessions.ts` | **Device Bound Session Credentials (#725)**: the registration header, `POST /authn/dbsc/register` and `/authn/dbsc/refresh`, and the bound-cookie check `sessionOf()` asks. See *The session bound to a key the browser holds*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
-| `webauthn_ceremonies.ts` | **Every WebAuthn ceremony's audit row, and the algorithm mismatch (#943)**: one `webauthn.ceremony` row per registration and assertion at the four doors that run one, and a `webauthn.algorithm-mismatch` row. A library (rule 3). See *Every ceremony leaves a row*, below. |
+| `webauthn_ceremonies.ts` | **Every WebAuthn ceremony's audit row, and the algorithm mismatch (#943)**: one `webauthn.ceremony` row per registration and assertion at every door that runs one (the device link since #1108), with the application and a server-measured duration (#1108), and a `webauthn.algorithm-mismatch` row. A library (rule 3). See *Every ceremony leaves a row*, below. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
@@ -2899,6 +2899,38 @@ with the classical algorithms only. What holds it together:
 
 **Tests**: `tests/passkey_post_quantum_fallback.js` sections A-C and E.
 
+## CLIENTS THAT CANNOT MAKE AN ML-DSA PASSKEY (#1112, 2026-10-28)
+
+The passkey policy's `clientRules` and the learned register
+(`common/CLAUDE.md` 3ch, `common/passkey_clients.ts`) name clients whose
+registrations are offered the list less ML-DSA. What the doors do:
+
+* **AN AUTOMATIC CLASSICAL RETRY.** `passkeyClients.offerFor()` is asked
+  where a registration is armed, after the person's profile is selected:
+  `mfaWebauthnOptions()` (`at: 'sign-in'`) and
+  `credentials.beginKeyEnrolment()` (`/portal/keys`, an activation link).
+  Narrowed, the step's or the pending enrolment's `classicalOnly` is set as
+  #944's retry sets it, so the offer, section 7.1's offered-algorithm check
+  and the lane follow with nothing new; `clientRule` (`{ narrowed, record
+  }`) rides beside it. A request that IS the retry is not asked. Not a
+  post-login step or an upgrade (their point is ML-DSA), and not an
+  administrator's enrolment, which offers its own list.
+* **NOT A RETRY ON THE PAGE**: the facts' `fallback.retrying` is false for a
+  narrowing, so no retry's words are drawn and nothing is offered after a
+  failure.
+* **THE ROW SAYS IT.** `webauthn_ceremonies.record()` takes `narrowed`, the
+  decision's `record`, and folds it into `offered` after a `|` (the row is
+  at `audit.js`'s twelve fields). `noteStepCeremony()` and
+  `confirmKeyEnrolment()` now record the offer AS ARMED (`step.offered`,
+  the pending record's `offered`), so a retry's or a rule's narrower list is
+  the one on the row, where both recorded the lane's list before.
+* **THE COUNT** is made in `record()` (`passkeyClients.observe()`), so every
+  registration door feeds it — the upgrade and the post-login migration
+  included — without a line at any of them.
+
+**Tests**: `tests/passkey_client_rules.js` (in process, a fake User-Agent
+per client).
+
 ## LIST AND REFUSE WHERE A POST-QUANTUM PASSKEY IS REQUIRED (#946, 2026-10-23)
 
 `passkeyPolicy.postQuantumAllowCredentials()` — the profile's row, or the
@@ -2915,12 +2947,13 @@ ceremony in both**: no pick of theirs could succeed.
 **The panel.** `refusedSession()` passes `postQuantumRequired` to
 `screenRefused()` for 0356, which marks the pending record (cleared by the
 next refusal, the next screen act and Start over); `screenView()` answers
-`postQuantumRequired` as `postQuantumHelp()`'s `{ register, upgrade }` and
+`postQuantumRequired` as `postQuantumHelp()`'s `{ register }` and
 the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
 `WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
 translated, under the English sentence. `register` is `/portal/keys` where
-passkeys may be registered here; `upgrade` is '' until #939 makes
-`webauthnPolicy.postQuantumUpgradeOffered()` answer true. The usernameless
+passkeys may be registered here. (#939's upgrade link went with the
+portal's Upgrade button, #1100: the post-login activity upgrades a classical
+passkey at a sign-in.) The usernameless
 sign-in, never narrowable, gets the same panel.
 
 **Tests**: `tests/passkey_post_quantum_fallback.js` section D.
@@ -3029,9 +3062,63 @@ header; what a maintainer of THIS directory needs is where it sits:
 
 `tests/webauthn_attestation.js` (with `tests/webauthn_attestation_kit.js`, a
 software authenticator in all eight formats) and
-`tests/protocol/sts_webauthn_attestation.js` are the tests. Not done:
-enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
-deferred.
+`tests/protocol/sts_webauthn_attestation.js` are the tests.
+
+## ENTERPRISE ATTESTATION, BY RP ID (#1114, 2026-10-28)
+
+Section 5.4.7: a client passes `enterprise` through only for an RP ID its
+own policy allows, and an authenticator releases a uniquely identifying
+attestation only for an RP ID provisioned into it. So this service asks for
+it only where a realm says to:
+
+* **`webauthn.attestationEnterpriseRpIds`** (csv, per realm) is read only
+  while `webauthn.attestation` is `enterprise`.
+  `webauthn_policy.attestationConveyance(rpId)` — over the static
+  `conveyanceFor(settings, listed)` — answers `{ configured, requested,
+  downgraded }`: `enterprise` at a listed RP ID (case aside), `direct`
+  elsewhere with `downgraded`; any other conveyance as before (a demand for
+  trust still asks `direct`). `creationOptions()` sends `requested`, and the
+  sign-in step's technical fold (`authn.ts`'s two facts builders) shows it.
+* **Refused at the write both ways round** (`enterpriseWriteRule()`,
+  `STS-AUTHN-0500`): `enterprise` with the list empty, and the list emptied
+  under `enterprise`. A section's Save posts both fields at once and
+  `set-many` checks each against the values in force, so the rule reads its
+  companion through the fourth argument `config.addWriteRule()` now hands a
+  rule, `beside(key)`, which answers the value POSTED BESIDE IT while
+  `config.withWriteBatch()` holds the post — `admin_actions.ts`'s
+  `set-many` wraps both its check loop and its write loop (`setOverride()`
+  re-checks each write). A value from the environment or a file is read as
+  it is: every ceremony asks `direct` and says so.
+* **What the ceremony asked is recomputed at the finish**, not stored with
+  the pending ceremony: every door redraws its options from the settings at
+  each draw, and the doors keep pending records of different shapes.
+  `webauthn_attestation.ts`'s `conveyanceOf()` finds the listed RP ID whose
+  SHA-256 is the authenticator data's `rpIdHash` (already held to the
+  ceremony's RP ID by `verifyRegistration()`) and asks `conveyanceFor()`
+  — the same answer the browser was sent unless a setting changed while the
+  ceremony was in flight. The record carries `conveyance` and
+  `enterpriseDowngraded`.
+* **The device serial (#532) is read only when `conveyance` is
+  `enterprise`.** A serial in a statement nobody asked for that way binds
+  nobody; with the passkey policy's `enterpriseSerialAttribute` set, such a
+  key names no serial and is refused (`STS-AUTHN-0321`).
+* **The ceremony row** (`webauthn_ceremonies.ts`): folded into the
+  attestation part of the row's `authenticator` detail rather than a field
+  of its own (`audit.js` keeps the first twelve and drops the rest) —
+  `attestationText()` leads with `enterprise not listed, asked direct`
+  where the record says `enterpriseDowngraded`. **That cap had been
+  dropping `attestation` itself on every row** since `capabilities` became
+  the thirteenth field. #1114 first moved the capabilities onto `client`
+  after a `|`; #1108 folded the row differently at the same time, and the
+  two were reconciled into #1108's shape (*Every ceremony leaves a row*,
+  below): `client` plain, `capabilities` its own field, and `unfold()`
+  reading a row written either way. Only a door that
+  passes the record has it, which every door does for a registration that
+  completed; a registration refused before its attestation was assessed (a
+  browser that gave up, a failed section 7.1 check) has no record, and its
+  row does not say what was asked.
+
+`tests/webauthn_enterprise_attestation.js` holds it.
 
 ## WHAT AN ATTESTATION IS SIGNED WITH (#941, 2026-10-23)
 
@@ -3062,8 +3149,14 @@ fields; what this directory needs is where they come from and go:
   (`webauthn_policy.attestationSettings()`), so `demandedBy()` names it.
 
 `tests/passkey_attestation_algorithm.js` holds it over an ML-DSA chain
-made at run time with the service's own post-quantum certificate encoder.
-**No real post-quantum authenticator's attestation has been tested.**
+made at run time with the service's own post-quantum certificate encoder,
+and (section G, #1114) holds the credential's algorithm and the
+attestation's apart: an ML-DSA-65 credential under a classical leaf, and an
+ES256 credential under an ML-DSA chain. **No real post-quantum
+authenticator's attestation has been tested**;
+`tests/webauthn_captured_replay.js` replays one once a capture is dropped
+into `tests/fixtures/webauthn-captured/` (`tests/CLAUDE.md`, *Captured
+WebAuthn registrations*).
 
 ## EVERY CEREMONY LEAVES A ROW (#943, 2026-10-23)
 
@@ -3081,7 +3174,27 @@ twelve detail fields, which are what a realm-wide report reads) at:
 * **`/portal/keys` and an activation link** — `credentials.confirmKeyEnrolment()`,
   reading the pending enrolment's lane BEFORE the check drops it
   (`opts.door` names `activation`).
-* **not the device link** (`common/device_enrolment.ts`), which is owed.
+* **the device link** (#1108) — `device_enrolment.finishLink()` wraps the
+  check (`checkLink()`) and writes the row, door `device-link`, reading the
+  challenge row's `issuedAt` and named credential BEFORE the check spends
+  the challenge.
+
+**THE APPLICATION AND THE DURATION (#1108), AND THE FOLD THAT MADE ROOM.**
+Each door hands `record()` the application in play (the pending sign-in's
+`application`; '' at `/portal/keys`, an activation link, a device link and
+an administrator's enrolment) and the instant its pending ceremony's
+options were issued, and `durationMs` is measured from that, on the
+server: the step's `optionsAt` (stamped by `mfaWebauthnOptions()`), the
+screen's `passkeyChallengeAt` (`passkeyChallengeFor()`), a pending
+enrolment's `issuedAt`, an upgrade's `issuedAt` then `upgrade.provenAt`,
+a device challenge's `issuedAt`. **The row was already thirteen fields**
+(`capabilities` beside `attestation`), so `audit.js`'s cap of twelve had
+been dropping `attestation`. Two more fit without losing anything:
+`attachment`, `transports` and `attestation` are folded into
+`authenticator` (`a|t|attestation`, none of which can hold a `|`), and
+`postQuantum`, a function of `algorithm`, is no longer stored.
+`webauthn_ceremonies.unfold()` reads both shapes back, and `/report`'s
+ceremony source (#1107) reads through it.
 
 **The browser's error name comes through the ceremony's own endpoint**: both
 scripts already posted `{ error: e.name, message }` as the credential, so
@@ -3782,3 +3895,46 @@ seconds, minimum 0, read at the issuance. Zero means the wait has already
 elapsed. The fact inside `common/issuance_gate.js` is computed there.
 That file is in the Kerberos COPY closure and does not require this
 module; the two readings have to stay the same.
+
+## A SESSION HELD FOR A POST-LOGIN ACTIVITY (#1096, 2026-10-28; rule 3ct)
+
+`startSessionHere()` asks `postLogin.dueFor()` LAST of its refusals, so a
+held sign-in is one that would otherwise have started. **The session is held,
+not started and interrupted**: a live session could be taken straight back to
+the application, and a required activity (rcbj: "block the sign-in") would be
+one click from skipped.
+
+* **Only the screen's own doors hold** — the eleven `said` objects marked
+  `postLoginHold: true`, every door that calls `refusedSession()` with a
+  pending record. `refusedSession()` turns `extra.postLogin` into the step
+  (`postLoginStep()`, `factor: 'post-login'`, the door's amr/acr/credential
+  kept as `held`) on `/authn/post-login`; `finishPostLogin()` starts the held
+  session with `postLoginDone` once Register's ceremony verifies or Skip is
+  taken. A door that cannot draw the step (federation, wallet, SPNEGO,
+  certificate, anything outside this file) is NOT interrupted for a
+  skippable activity and is REFUSED for a required one (STS-AUTHN-0473).
+* **A post-login step is answered to no other step's act**
+  (`mfaStepFor(id, accepts)`): a code, a recovery code or a wallet posted to
+  its id would start the held session without the activity.
+* **An upgrade (#1100) is the passkey page twice**: `postLoginAct()` begins
+  #939's upgrade and marks the step `upgradeId`; `webauthnFacts()` hands off
+  to `upgradeStepFacts()` (the proof's `get`, then the registration's
+  `create`, from the pending upgrade) and `mfaWebauthnAct()` to
+  `postLoginUpgradeAct()`, which re-begins a dropped upgrade so the page can
+  try again. `stepProblem('webauthn')` refuses a step whose upgrade is gone.
+* **A ceremony the device did not complete (#1105)** sends the person back
+  to `/authn/post-login` with `postLogin.failed` (the error NAME) and writes
+  `authn.post-login.unsupported` — except where #1103's classical retry is
+  the page's next offer.
+* **The registration is ML-DSA only with no classical retry** (#939's
+  `upgradeAlgorithms()`), in the post-quantum lane where both are on and the
+  one lane otherwise; and it is exempt from product mode's "no primary key at
+  the sign-in screen" (STS-AUTHN-0206), because the step exists only after a
+  complete authentication.
+* **The pending step carries `askedBy`** (#1126: `policy`, or the started
+  activity that asked), so Skip and done stamp the progress row with the
+  source that asked, as the ask did; the asked, skipped and held audit rows
+  carry it too. Who may be due is `common/CLAUDE.md` 3ct's — a running
+  started activity asks its population even where the policy is off.
+* **No protocol test yet**: `tests/post_login.js` drives it over HTTP in
+  process; `tests/post_login_started.js` holds #1126's selection.

@@ -2232,8 +2232,8 @@
     "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何用戶名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "此服務是否為其「自己的」管理主控台、用戶入口網站與報表應用程式（#1042）植入 Shared Signals 串流，使三者各自接收每個 CAEP 與 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals、/portal/signals 與 /report/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。"
+    "en": "603011e249d33c00",
+    "text": "本服務是否為其自己的管理控制台、用戶門戶和報表應用程式建立 Shared Signals 串流（#1042），使每個都接收每個 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 和 /portal/signals 顯示收到的內容；報表應用程式在 GET /report-api/signals 回答它自己的，不為其繪製頁面（#1090）。它們是一般的串流——在 /admin/ssf 暫停、收窄或刪除其中一個，它會保持如此直到重新啟動。"
   },
   "ssf.internalPollMs|description": {
     "en": "b80cedcb611f2fd3",

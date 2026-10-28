@@ -1127,13 +1127,29 @@
     "en": "f34caf08dceeedd3",
     "text": "僅在密碼金鑰原則要求登入時使用後量子密碼金鑰（`postQuantumRequired`）時讀取，且僅當所選設定檔的 `postQuantumAllowCredentials` 列為 `realm` 時。`narrow`（預設值）在密碼金鑰步驟的 `allowCredentials` 中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰——但裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰（STS-AUTHN-0356），同時顯示一個頁面，說明該應用程式要求後量子密碼金鑰以及在哪裡新增。代價是：此人可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。"
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "將傳統密碼金鑰升級為後量子密碼金鑰"
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "學習哪些用戶端無法建立 ML-DSA 通行金鑰"
   },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "開啟（預設）時，一個人可以在 /portal/keys 上將自己的一個傳統密碼金鑰升級為後量子（ML-DSA）密碼金鑰：先使用一次傳統密碼金鑰，以證明它屬於自己，然後建立新的，新的只提供 ML-DSA。`webauthn.pqcAlongsideClassical` 開啟時，後量子密碼金鑰被加入自己的通道，傳統密碼金鑰保留；關閉時，後量子密碼金鑰就地取代傳統密碼金鑰，保留其名稱，並記錄何時升級、從哪種演算法升級。傳統密碼金鑰只在新的通過驗證之後才改變，因此失敗的升級讓它保持原樣。新密碼金鑰滿足註冊所滿足的每一條規則。關閉時，任何密碼金鑰都不能升級；在允許註冊密碼金鑰的地方，後量子密碼金鑰仍可以註冊在傳統密碼金鑰旁邊。"
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "開啟時，提供了 ML-DSA 並在瀏覽器中以 NotSupportedError 失敗的通行金鑰註冊會計入其用戶端——依系列和主版本區分的瀏覽器和作業系統，與通行金鑰儀式紀錄中的名稱一致（`Chrome 141 on macOS 15`）——一旦在 `webauthn.clientLearningWindowHours` 內有 `webauthn.clientLearningFailures` 位不同的人以這種方式從同一用戶端失敗，且來自它的註冊沒有一次成功，此領域就不再向該用戶端提供 ML-DSA：它的註冊提供去掉 ML-DSA 的清單，就像通行金鑰原則中已設定的 `clientRules` 列那樣。來自該用戶端、要求了 ML-DSA 並成功的註冊會刪除該項目，在 目錄 → 原則 → 通行金鑰原則 中清除它也會。在不允許傳統通行金鑰的地方從不適用。關閉時，不計數任何內容，也不套用任何已學習的內容；已學習的內容會保留。"
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "用戶端不再取得 ML-DSA 之前的失敗次數"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "在 `webauthn.clientLearning` 不再向某用戶端提供 ML-DSA 之前，需要有多少位不同人員來自該用戶端的註冊在 `webauthn.clientLearningWindowHours` 內要求了 ML-DSA 並以 NotSupportedError 失敗，且沒有一次成功。一個人無論嘗試多少次只計一次，因此一個帳戶無法讓領域學到關於其他所有人瀏覽器的任何內容。"
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "統計失敗的時間視窗"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "一次失敗計入 `webauthn.clientLearningFailures` 的小時數。更早的失敗會被遺忘，排程工作（`passkeys.client-learning-sweep`）會刪除所有失敗都已過期的項目。已學習的用戶端會一直保持學習狀態，直到來自它的註冊成功或被清除。"
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1148,8 +1164,16 @@
     "text": "證明傳遞"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "要求瀏覽器告訴本服務多少關於建立認證之驗證器的資訊。此處預設為 `direct`，因為這是一個「偵錯」服務，而證明物件正是值得查看的內容之一；不需要驗證器型號的部署應送出 `none`，這是規格建議的做法，也能避免瀏覽器為此跳出同意提示。**如何處理回傳的內容由 `webauthn.attestationPolicy` 決定**（#105）：在產品模式下，每個抵達的陳述都會被驗證。原則為 `require-trusted`，或在 `webauthn.attestationAllowedAaguids` 中列出 AAGUID 的領域，無論此處如何設定都會要求 `direct`——需要陳述的原則，無法靠要求 none 來滿足。要求 `enterprise` 卻什麼都沒得到，是瀏覽器拒絕，而不是本服務。"
+    "en": "1280747b772b73d1",
+    "text": "要求瀏覽器告訴本服務多少關於建立認證之驗證器的資訊。此處預設為 `direct`，因為這是一個「偵錯」服務，而證明物件正是值得查看的內容之一；不需要驗證器型號的部署應送出 `none`，這是規格建議的做法，也能避免瀏覽器為此跳出同意提示。**如何處理回傳的內容由 `webauthn.attestationPolicy` 決定**（#105）：在產品模式下，每個抵達的陳述都會被驗證。原則為 `require-trusted`，或在 `webauthn.attestationAllowedAaguids` 中列出 AAGUID 的領域，無論此處如何設定都會要求 `direct`——需要陳述的原則，無法靠要求 none 來滿足。**僅對 `webauthn.attestationEnterpriseRpIds` 中列出的 RP ID 要求 `enterprise`**（#1114）；對其他 RP ID，要求改為 `direct`，儀式記錄列與金鑰的證明記錄都會註明。該清單為空時不能選擇它。要求 `enterprise` 卻收到一般證明，是瀏覽器或驗證器拒絕，而不是本服務。"
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "企業證明的 RP ID"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "註冊時要求 `enterprise` 證明（WebAuthn Level 3 第 5.4.7 節）的 RP ID，以逗號分隔的主機名稱，精確比對（不分大小寫）。僅在 `webauthn.attestation` 為 `enterprise` 時讀取；此清單為空時不能選擇該值（STS-AUTHN-0500），選擇該值時也不能清空此清單。RP ID 未列出的儀式改為要求 `direct`，其 `webauthn.ceremony` 記錄列與新金鑰的證明記錄都會註明。**只有來自企業要求的陳述才會讀取裝置序號**，供通行金鑰原則的 `enterpriseSerialAttribute` 使用；請在此精確列出您的驗證器與瀏覽器已佈建為可釋出企業證明的 RP ID。"
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",
@@ -1190,6 +1214,14 @@
   "webauthn.attestationEvidenceHashAlgorithm|description": {
     "en": "ea9f111d1308b528",
     "text": "新的 RFC 4998 記錄使用的摘要。把它從 sha256 提高會在每日密碼金鑰報告重新計數時觸發 RFC 4998 雜湊樹續期，進入一條新的 ArchiveTimeStampChain。"
+  },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "保留的通行金鑰歷史（天）"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "一個領域保留多少天的通行金鑰歷史（#1109）：通行金鑰報告的每日重新計數為每個領域每天寫入一列（依類型統計的人員，依演算法、通道和證明演算法統計的通行金鑰，以及每個已命名通行金鑰設定檔的人群），報告應用程式將其作為 passkeyHistory 資料來源讀取。同一次重新計數會刪除早於此值的列。調低此值會在下一次重新計數時刪除較舊的列。"
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -7088,8 +7120,8 @@
     "text": "將控制台、入口網站和報表註冊為接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "此服務是否為其自身的管理控制台、使用者入口網站和報表應用程式 (#1042) 建立 Shared Signals 串流，使每個都能接收每個 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從此服務自己的 /ssf/poll 收取 (#771)——並在 /admin/signals、/portal/signals 和 /report/signals 顯示收到的內容。它們是一般的串流——在 /admin/ssf 暫停、縮小範圍或刪除其中一個，它會維持該狀態直到重新啟動。"
+    "en": "603011e249d33c00",
+    "text": "本服務是否為其自己的管理主控台、使用者入口網站和報表應用程式建立 Shared Signals 串流（#1042），使每個都接收每個 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 和 /portal/signals 顯示收到的內容；報表應用程式在 GET /report-api/signals 回答它自己的，不為其繪製頁面（#1090）。它們是一般的串流——在 /admin/ssf 暫停、收窄或刪除其中一個，它會保持如此直到重新啟動。"
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",
@@ -7102,6 +7134,30 @@
   "ssf.internalPollMs|description": {
     "en": "b80cedcb611f2fd3",
     "text": "此服務自己的管理主控台與使用者入口網站多久收取一次其串流中保存的內容：透過 RFC 8936 輪詢從 /ssf/poll 收取（ssf.internal-poll 排程工作），每個請求最多 ssf.pollMaxEvents 個 SET。這是安全事件權杖（Security Event Token）在任一介面看到並據以行動之前最長的等待時間。0 會關閉此工作，此時事件會在兩個串流上排隊，而不會到達任一頁面。"
+  },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "每個開啟的分頁檢查公告的間隔（毫秒）"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "管理主控台、使用者入口網站和報表應用程式的每個開啟分頁多久向自己的 API 詢問一次其接收端收到的公告（#1086）。與 ssf.internalPollMs 一起，這是廣播出現所需的最長時間。分頁在登入時讀取該值。"
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "接收端保留公告的時間（秒）"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "本服務的三個接收端各自保留收到的公告供其分頁收取的時間（#1086）。分頁只顯示登入之後抵達的內容，因此這不是較晚開啟的分頁能看到公告的時間；它只需超過分頁的檢查間隔和一次較慢的輪詢。"
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "最長公告（字元）"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "廣播公告最多可包含的字元數（#1086）。它是純文字；較長的會被拒絕。"
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7126,6 +7182,22 @@
   "ssf.inactivityAction|description": {
     "en": "f6d2a2be3eebe16f",
     "text": "section 8.1.1 允許的三種處置。暫停與停用會在串流停止「之前」向接收端傳送 stream-updated 事件，這是規格的要求；暫停的串流會繼續排隊，停用的串流則會捨棄等待中的內容。刪除會移除串流且不傳送任何內容，因為已沒有串流可以傳送。"
+  },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "個人輪詢串流的閒置逾時（秒）"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "由個人擁有（以為其簽發的存取權杖或其使用者名稱和密碼建立）並透過 RFC 8936 輪詢收取的串流——即瀏覽器中的接收端所建立的串流——在其所屬應用程式和 ssf.inactivityTimeoutS 都未設定時使用的 inactivity_timeout（#1094）。每次輪詢都算作活動，因此有開啟分頁的串流永不閒置；分頁關閉後被遺棄的串流依 ssf.personStreamInactivityAction 處理。0 表示關閉。"
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "個人閒置輪詢串流的處理方式"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "ssf.personStreamInactivityTimeoutS 對個人閒置輪詢串流的處理（#1094）。預設的刪除會釋放它在 ssf.maxStreams 下佔用的名額；此人回來時，瀏覽器中的接收端會建立新的串流。"
   },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",

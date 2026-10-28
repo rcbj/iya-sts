@@ -2755,7 +2755,11 @@ const SETTINGS = [
     // rcbj): the post-quantum ML-DSA three first, so an authenticator that
     // can make an ML-DSA credential does, then the classical ones strongest
     // and most specific first. It was `ES256,RS256` until that day.
-    dflt: 'ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,' +
+    // THE THREE STRONGEST FIRST SINCE 2026-10-28 (#1078, rcbj): ML-DSA-87
+    // (-50), ML-DSA-65 (-49), ML-DSA-44 (-48) — an authenticator takes the
+    // first it supports, so one that can make every parameter set makes
+    // category 5. They were 44, 65, 87; nothing after them moved.
+    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,ESP256,ES256,Ed25519,EdDSA,' +
           'ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,' +
           'RS256,RS384,RS512',
     runtime: true,
@@ -2905,32 +2909,58 @@ const SETTINGS = [
                  'trade-off: the person may pick a passkey that will be ' +
                  'refused. Either way a person holding no post-quantum ' +
                  'passkey is told before any ceremony.' },
-  // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, rule 3ct), per
-  // realm, ON by default: a person's change to their own credential,
-  // proved by that credential, which leaves it as it was if anything
-  // fails. `authn/webauthn_policy.ts` reads it (`upgradeRefusal()`).
-  { key: 'webauthn.pqcUpgrade', group: 'WebAuthn',
-    label: 'Upgrade a classical passkey to a post-quantum one',
-    path: 'webauthn.pqcUpgrade',
-    env: 'STS_WEBAUTHN_PQC_UPGRADE', type: 'bool', dflt: true,
+  // THE LEARNED CLIENT RULES (#1112), per realm, off by default:
+  // `common/passkey_clients.ts` counts the registrations that asked for
+  // ML-DSA and failed with NotSupportedError, per client, where the
+  // ceremony row is written, and stops offering ML-DSA to a client past the
+  // threshold. The configured half is the passkey policy's `clientRules`.
+  { key: 'webauthn.clientLearning', group: 'WebAuthn',
+    label: 'Learn which clients cannot make an ML-DSA passkey',
+    path: 'webauthn.clientLearning',
+    env: 'STS_WEBAUTHN_CLIENT_LEARNING', type: 'bool', dflt: false,
     runtime: true,
-    description: 'On (the default), a person may upgrade one of their ' +
-                 'classical passkeys to a post-quantum (ML-DSA) one on ' +
-                 '/portal/keys: they use the classical passkey once, to ' +
-                 'show it is theirs, and then create the new one, which is ' +
-                 'offered ML-DSA only. With ' +
-                 '`webauthn.pqcAlongsideClassical` on, the post-quantum ' +
-                 'passkey is ADDED in its own lane and the classical one ' +
-                 'is kept; with it off, the post-quantum passkey REPLACES ' +
-                 'the classical one in place, keeping its name and ' +
-                 'recording when it was upgraded and from which ' +
-                 'algorithm. The classical passkey is changed only once ' +
-                 'the new one has been verified, so a failed upgrade ' +
-                 'leaves it as it was. The new passkey meets every rule a ' +
-                 'registration does. Off, no passkey can be upgraded; a ' +
-                 'post-quantum passkey can still be registered beside a ' +
-                 'classical one where passkeys may be registered.' },
-
+    description: 'On, a passkey registration that offered ML-DSA and ' +
+                 'failed in the browser with NotSupportedError is counted ' +
+                 'against its client — the browser and the operating ' +
+                 'system by family and major version, as the passkey ' +
+                 'ceremony rows name it (`Chrome 141 on macOS 15`) — and ' +
+                 'once `webauthn.clientLearningFailures` different people ' +
+                 'have failed that way from one client within ' +
+                 '`webauthn.clientLearningWindowHours`, with no ' +
+                 'registration from it succeeding, this realm stops ' +
+                 'offering ML-DSA to that client: its registrations offer ' +
+                 'the list less ML-DSA, as a configured `clientRules` row ' +
+                 'of the passkey policy does. A registration from the ' +
+                 'client that asked for ML-DSA and succeeded removes the ' +
+                 'entry, and so does clearing it on Directory → Policies → ' +
+                 'Passkey policy. Never applied where a classical passkey ' +
+                 'is not allowed. Off, nothing is counted and nothing ' +
+                 'learned is applied; what was learned is kept.' },
+  { key: 'webauthn.clientLearningFailures', group: 'WebAuthn',
+    label: 'Failures before a client is no longer offered ML-DSA',
+    path: 'webauthn.clientLearningFailures',
+    env: 'STS_WEBAUTHN_CLIENT_LEARNING_FAILURES', type: 'int', dflt: 3,
+    runtime: true, min: 1, max: 50,
+    description: 'How many different people\'s registrations from one ' +
+                 'client must have asked for ML-DSA and failed with ' +
+                 'NotSupportedError, within ' +
+                 '`webauthn.clientLearningWindowHours` and with none ' +
+                 'succeeding, before `webauthn.clientLearning` stops ' +
+                 'offering ML-DSA to it. A person is counted once however ' +
+                 'often they try, so one account cannot teach the realm ' +
+                 'anything about everybody else\'s browser.' },
+  { key: 'webauthn.clientLearningWindowHours', group: 'WebAuthn',
+    label: 'Window the failures are counted in',
+    path: 'webauthn.clientLearningWindowHours',
+    env: 'STS_WEBAUTHN_CLIENT_LEARNING_WINDOW_HOURS', type: 'int',
+    dflt: 168, runtime: true, min: 1, max: 2160,
+    description: 'The hours a failure counts towards ' +
+                 '`webauthn.clientLearningFailures`. An older failure is ' +
+                 'forgotten, and a scheduler job ' +
+                 '(`passkeys.client-learning-sweep`) removes the entries ' +
+                 'whose failures have all aged out. A client already ' +
+                 'learned stays learned until a registration from it ' +
+                 'succeeds or it is cleared.' },
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',
     env: 'STS_WEBAUTHN_USER_VERIFICATION', type: 'enum',
@@ -2972,9 +3002,39 @@ const SETTINGS = [
                  'policy is `require-trusted`, or that lists AAGUIDs in ' +
                  '`webauthn.attestationAllowedAaguids`, asks for `direct` ' +
                  'whatever this says — a policy that needs a statement ' +
-                 'cannot be met by asking for none. Asking for `enterprise` ' +
-                 'and getting nothing back is the browser refusing, not ' +
-                 'this service.' },
+                 'cannot be met by asking for none. **`enterprise` is asked ' +
+                 'only for an RP ID listed in ' +
+                 '`webauthn.attestationEnterpriseRpIds`** (#1114); for any ' +
+                 'other the request asks for `direct`, and the ceremony\'s ' +
+                 'row and the key\'s attestation record say so. It cannot ' +
+                 'be chosen while that list is empty. Asking for ' +
+                 '`enterprise` and getting an ordinary attestation back is ' +
+                 'the browser or the authenticator declining, not this ' +
+                 'service.' },
+
+  // ENTERPRISE ATTESTATION'S RP IDs (#1114). WebAuthn Level 3 section
+  // 5.4.7: a client passes `enterprise` through only for an RP ID its own
+  // policy allows, and an authenticator answers with a uniquely
+  // identifying attestation only for an RP ID provisioned into it. This
+  // service asks for it only where it was told to, by RP ID, per realm.
+  { key: 'webauthn.attestationEnterpriseRpIds', group: 'WebAuthn',
+    label: 'Enterprise attestation RP IDs',
+    path: 'webauthn.attestationEnterpriseRpIds',
+    env: 'STS_WEBAUTHN_ATTESTATION_ENTERPRISE_RP_IDS', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'The RP IDs for which a registration asks for ' +
+                 '`enterprise` attestation (WebAuthn Level 3 section ' +
+                 '5.4.7), comma-separated host names, compared exactly ' +
+                 '(case aside). Read only while `webauthn.attestation` is ' +
+                 '`enterprise`, which cannot be chosen while this is empty ' +
+                 '(STS-AUTHN-0500), nor this emptied while it is. A ' +
+                 'ceremony whose RP ID is not listed asks for `direct` ' +
+                 'instead, and its `webauthn.ceremony` row and the new ' +
+                 'key\'s attestation record say so. **Only a statement from ' +
+                 'an enterprise request has its device serial read** for ' +
+                 'the passkey policy\'s `enterpriseSerialAttribute`; list ' +
+                 'here exactly the RP IDs your authenticators and browsers ' +
+                 'are provisioned to release enterprise attestation for.' },
 
   // -------------------------------------------------------------------
   // THE ATTESTATION POLICY (#105, 2026-09-23). What this service does with
@@ -3054,6 +3114,18 @@ const SETTINGS = [
     description: 'Digest used by new RFC 4998 records. Raising this from ' +
       'sha256 triggers RFC 4998 hash-tree renewal on the daily passkey ' +
       'report recount, into a new ArchiveTimeStampChain.' },
+  { key: 'webauthn.passkeyHistoryDays', group: 'WebAuthn',
+    label: 'Passkey history kept (days)',
+    path: 'webauthn.passkeyHistoryDays',
+    env: 'STS_WEBAUTHN_PASSKEY_HISTORY_DAYS', type: 'int', dflt: 400,
+    min: 1, max: 3660, runtime: true,
+    description: 'How many days of passkey history a realm keeps (#1109): ' +
+      'the daily passkey report recount writes one row per realm per day ' +
+      '(people by kind, passkeys by algorithm, lane and attestation ' +
+      'algorithm, and each named passkey profile\'s population), which ' +
+      'the reports application reads as the passkeyHistory source. The ' +
+      'same recount removes the rows older than this. Lowering it removes ' +
+      'the older rows at the next recount.' },
 
   { key: 'webauthn.attestationAllowedAaguids', group: 'WebAuthn',
     label: 'Allowed authenticator models (AAGUIDs)',
@@ -13548,8 +13620,10 @@ const SETTINGS = [
                  '(#1042), so that each takes delivery of every CAEP and ' +
                  'RISC event — collecting them over RFC 8936 poll from this ' +
                  'service\'s own /ssf/poll every ssf.internalPollMs (#771) — ' +
-                 'and draws what arrived at /admin/signals, /portal/signals ' +
-                 'and /report/signals. They are ORDINARY ' +
+                 'and draws what arrived at /admin/signals and ' +
+                 '/portal/signals; the reports application answers its own at ' +
+                 'GET /report-api/signals and draws no page of it (#1090). ' +
+                 'They are ORDINARY ' +
                  'streams — pause one, narrow it or delete it at /admin/ssf ' +
                  'and it stays that way until a restart.' },
 
@@ -13572,6 +13646,39 @@ const SETTINGS = [
                  'sees it and acts on it. 0 turns the job off, and the ' +
                  'events then queue on the two streams and reach neither ' +
                  'page.' },
+
+  // -------------------------------------------------------------------------
+  // AN ANNOUNCEMENT TO THE PEOPLE SIGNED IN (#1086): an administrator's
+  // message, sent as this service's own `announcement` SET on the three
+  // internal receiver streams above, kept by each receiver for a short time
+  // and collected by every open tab of the console, the portal and reports.
+  // -------------------------------------------------------------------------
+  { key: 'ssf.announcementPollMs', group: 'SSF',
+    label: 'Announcement check interval in each open tab (milliseconds)',
+    env: 'STS_SSF_ANNOUNCEMENT_POLL_MS', type: 'int', dflt: 5000,
+    min: 1000, max: 60000, runtime: true,
+    description: 'How often each open tab of the admin console, the user ' +
+                 'portal and the reports application asks its own API for ' +
+                 'announcements its receiver has taken in (#1086). With ' +
+                 'ssf.internalPollMs it is the longest a broadcast takes to ' +
+                 'appear. A tab reads the value when it signs in.' },
+
+  { key: 'ssf.announcementKeepS', group: 'SSF',
+    label: 'How long a receiver keeps an announcement (seconds)',
+    env: 'STS_SSF_ANNOUNCEMENT_KEEP_S', type: 'int', dflt: 60, min: 10,
+    max: 3600, runtime: true,
+    description: 'How long each of this service\'s three receivers keeps an ' +
+                 'announcement it took in for its tabs to collect (#1086). ' +
+                 'A tab shows only what arrived after it signed in, so this ' +
+                 'is not how long a late tab can see one; it only has to ' +
+                 'outlast a tab\'s check interval and a slow poll.' },
+
+  { key: 'ssf.announcementMaxChars', group: 'SSF',
+    label: 'Longest announcement (characters)',
+    env: 'STS_SSF_ANNOUNCEMENT_MAX_CHARS', type: 'int', dflt: 500, min: 20,
+    max: 2000, runtime: true,
+    description: 'The most characters a broadcast announcement may hold ' +
+                 '(#1086). It is plain text; a longer one is refused.' },
 
   { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per receiver',
     env: 'STS_SSF_MAX_STREAMS', type: 'int', dflt: 25, min: 1, max: 1000,
@@ -13610,6 +13717,35 @@ const SETTINGS = [
                  'stream keeps queueing and a disabled one drops what is ' +
                  'waiting. Delete removes the stream and sends nothing, ' +
                  'because there is no stream left to send it on.' },
+
+  // -------------------------------------------------------------------------
+  // A PERSON'S ABANDONED BROWSER STREAM (#1094). A browser receiver (rcbj/
+  // oidc-caep-client) creates a stream with the person's own token and
+  // polls it; it deletes it at sign-out, and nothing does when a tab is
+  // closed for good. ssf.inactivityTimeoutS stays 0 by default for push
+  // receivers; these two give a person's POLL stream a default of its own.
+  // -------------------------------------------------------------------------
+  { key: 'ssf.personStreamInactivityTimeoutS', group: 'SSF',
+    label: 'Inactivity timeout for a person\'s poll stream (s)',
+    env: 'STS_SSF_PERSON_STREAM_INACTIVITY_TIMEOUT_S', type: 'int',
+    dflt: 86400, min: 0, max: 31536000, runtime: true,
+    description: 'The inactivity_timeout of a stream a PERSON owns (created ' +
+                 'with an access token issued for them, or their name and ' +
+                 'password) and collects by RFC 8936 poll — what a browser ' +
+                 'receiver makes — when neither its owning application nor ' +
+                 'ssf.inactivityTimeoutS sets one (#1094). Every poll is ' +
+                 'activity, so a stream with a tab open is never idle; one ' +
+                 'abandoned when its tab was closed is dealt with as ' +
+                 'ssf.personStreamInactivityAction says. 0 turns it off.' },
+
+  { key: 'ssf.personStreamInactivityAction', group: 'SSF',
+    label: 'What an inactive person\'s poll stream becomes',
+    env: 'STS_SSF_PERSON_STREAM_INACTIVITY_ACTION', type: 'enum',
+    enumValues: ['pause', 'disable', 'delete'], dflt: 'delete', runtime: true,
+    description: 'What ssf.personStreamInactivityTimeoutS does to a person\'s ' +
+                 'idle poll stream (#1094). Delete, the default, frees the ' +
+                 'place it holds under ssf.maxStreams; the browser receiver ' +
+                 'makes a new one when the person comes back.' },
 
   { key: 'ssf.verificationEveryS', group: 'SSF',
     label: 'Transmitter-initiated verification (s)',
@@ -19473,9 +19609,11 @@ const writeRules = [];
 /**
  * Adds a rule every override is checked against.
  *
- * @param fn - `(key, parsed, inRealm)` answering `{ problem, code }` or
- *   null; `inRealm` is true for a write that lands in a realm's overrides
- *   (#472: a rule over the process's settings leaves those to realms.js)
+ * @param fn - `(key, parsed, inRealm, beside)` answering `{ problem, code }`
+ *   or null; `inRealm` is true for a write that lands in a realm's
+ *   overrides (#472: a rule over the process's settings leaves those to
+ *   realms.js); `beside(key)` is a companion setting's value as this write
+ *   leaves it (#1114, `withWriteBatch()`)
  */
 function addWriteRule(fn) {
   log.debug("Entering addWriteRule().");
@@ -19485,13 +19623,65 @@ function addWriteRule(fn) {
   log.debug("Leaving addWriteRule(). " + writeRules.length);
 }
 
+// ---------------------------------------------------------------------------
+// THE OTHER VALUES OF ONE WRITE (#1114). `set-many` checks every posted
+// value before writing any and then writes them one by one, so a rule
+// between two settings asked about the first of a pair posted TOGETHER
+// would see the second's OLD value — and refuse `webauthn.attestation`
+// `enterprise` beside the RP ID list that makes it legal, both in the
+// check loop and in `setOverride()`'s own re-check during the writes.
+// `withWriteBatch()` holds the posted values for the length of one
+// synchronous call, and a rule reads a companion setting through the
+// fourth argument it is handed, `beside(key)`: the posted value, parsed,
+// where the batch carries a valid one, and `value(key)` otherwise. A rule
+// that ignores the argument behaves exactly as before.
+// ---------------------------------------------------------------------------
+/** @type {Object<string, *>|null} */
+let writeBatch = null;
+
+/**
+ * Runs `fn` while the write rules may read `values` as the other settings
+ * of the same write.
+ *
+ * @param values - the posted settings, raw, by key
+ * @param fn - the synchronous checks and writes
+ * @returns what `fn` returns
+ */
+function withWriteBatch(values, fn) {
+  log.debug("Entering withWriteBatch().");
+  const before = writeBatch;
+  writeBatch = values && typeof values === 'object' ? values : null;
+  try {
+    const out = fn();
+    log.debug("Leaving withWriteBatch().");
+    return out;
+  } finally {
+    writeBatch = before;
+  }
+}
+
+// A companion setting's value as a rule should judge it: the batch's, where
+// it carries a valid one, else the value in force.
+function besideValue(other) {
+  log.debug("Entering besideValue(). key=" + other);
+  const setting = byKey[other];
+  if (writeBatch && setting &&
+      Object.prototype.hasOwnProperty.call(writeBatch, other) &&
+      !TYPES[setting.type].check(writeBatch[other], setting)) {
+    log.debug("Leaving besideValue(). From the batch.");
+    return TYPES[setting.type].parse(writeBatch[other], setting);
+  }
+  log.debug("Leaving besideValue().");
+  return value(other);
+}
+
 // The first rule's refusal, or null. A rule that throws refuses nothing.
 function writeRuleProblem(key, parsed, inRealm) {
   log.debug("Entering writeRuleProblem(). key=" + key);
   for (const rule of writeRules) {
     let answer = null;
     try {
-      answer = rule(key, parsed, !!inRealm);
+      answer = rule(key, parsed, !!inRealm, besideValue);
     } catch (e) {
       log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a rule between ' +
                'settings failed on ' + key + ' (' +
@@ -20550,5 +20740,6 @@ module.exports = {
   onOverridesChanged: onOverridesChanged,
   TLS_LISTENERS: TLS_LISTENERS,
   PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
-  addWriteRule: addWriteRule
+  addWriteRule: addWriteRule,
+  withWriteBatch: withWriteBatch
 };

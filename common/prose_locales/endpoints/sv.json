@@ -475,6 +475,10 @@
     "en": "fa5ff98584c701fb",
     "text": "Rapportapplikationens inkorg för Shared Signals"
   },
+  "endpoints.route./report-api/announcements.name": {
+    "en": "3adb83b8075c6a3a",
+    "text": "Meddelanden för rapportprogrammet"
+  },
   "endpoints.route./report-api/groups.name": {
     "en": "e30ed85f8fa2f141",
     "text": "Gruppsökningen, för rapportapplikationen"
@@ -702,6 +706,18 @@
   "endpoints.route./admin-api/scheduler/:action.name": {
     "en": "3483d9e9aab04915",
     "text": "Schemaläggaråtgärder"
+  },
+  "endpoints.route./admin-api/broadcast.name": {
+    "en": "7ca7feaebe5215c0",
+    "text": "Sänd ett meddelande"
+  },
+  "endpoints.route./admin-api/broadcast/:action.name": {
+    "en": "6e79d056a66502f2",
+    "text": "Åtgärder för att sända meddelanden"
+  },
+  "endpoints.route./admin-api/announcements.name": {
+    "en": "c4061b1ad0320a47",
+    "text": "Konsolens meddelanden"
   },
   "endpoints.route./admin-api/mail/:action.name": {
     "en": "cff7055c2db49c6a",
@@ -994,6 +1010,14 @@
   "endpoints.route./admin-api/passkey-report/:action.name": {
     "en": "738bbc740bd914fc",
     "text": "Räkna om sfärens nycklar"
+  },
+  "endpoints.route./admin-api/post-login-activities.name": {
+    "en": "d37435b7e29d739b",
+    "text": "Startade aktiviteter efter inloggning"
+  },
+  "endpoints.route./admin-api/post-login-activities/:action.name": {
+    "en": "6bfc2bea96fee884",
+    "text": "Starta, pausa, återuppta eller avsluta en aktivitet efter inloggning"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1555,6 +1579,10 @@
     "en": "48e0b4bbb949a879",
     "text": "Steg för obligatorisk inställning av andra faktor"
   },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "Steg för aktivitet efter inloggning"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "Steg med engångskod som andra faktor"
@@ -1702,6 +1730,14 @@
   "endpoints.route./authn-api/mfa/:id/skip.name": {
     "en": "d412e3d8a9215328",
     "text": "Ignorera en erbjuden andra faktor"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "Registrera den nyckel som en aktivitet efter inloggning ber om"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "Skjuta upp en aktivitet efter inloggning"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

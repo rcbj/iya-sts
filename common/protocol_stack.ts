@@ -295,6 +295,10 @@ class ProtocolStack {
     this.build('common/i18n', require('./i18n'), 'I18n');
     this.build('common/locale_policy', require('./locale_policy'),
                'LocalePolicy');
+    // #1096: the post-login activity policy, the seventh kind — a library
+    // over the directory slot like the five above.
+    this.build('common/post_login_policy', require('./post_login_policy'),
+               'PostLoginPolicy');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     // #105: a registration's attestation statement, verified. A library
@@ -310,6 +314,9 @@ class ProtocolStack {
                require('../authn/webauthn_ceremonies'),
                'WebauthnCeremonies');
     this.build('common/credentials', require('./credentials'), 'Credentials');
+    // #1096: who is due a post-login activity — over the credential store,
+    // the WebAuthn policy and the post-login policy, so after all three.
+    this.build('common/post_login', require('./post_login'), 'PostLogin');
     this.build('common/account_state', require('./account_state'),
                'AccountState');
     // #130: the device register (ou=devices), a library over the directory
@@ -1317,6 +1324,21 @@ class ProtocolStack {
     // would build a default instance the root could then not install.
     this.build('common/passkey_report', require('./passkey_report'),
                'PasskeyReport');
+    // 18j-v. THE CLIENTS A PASSKEY REGISTRATION OFFERS NO ML-DSA (#1112):
+    // a library that registers its sweep job when built, and no route —
+    // here for the same reason as the report above. The ceremony module
+    // (built near the top) and the credential store require it at load,
+    // and reach its facades only at a ceremony, never while loading.
+    this.build('common/passkey_clients', require('./passkey_clients'),
+               'PasskeyClients');
+    // 18j-vi. STARTED POST-LOGIN ACTIVITIES (#1111): a library that registers
+    // its scheduler job when built, and no route — so here, with the
+    // scheduler in hand, beside the passkey report. It reaches the
+    // directory, the mail uses and the post-login module LAZILY, at run
+    // time; requiring `ldap/ldap_server` (21) from here would drag its
+    // routes forward.
+    this.build('common/post_login_activities',
+               require('./post_login_activities'), 'PostLoginActivities');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
@@ -1519,6 +1541,11 @@ class ProtocolStack {
     this.build('mgmt-api/passkey_report_api',
                require('../mgmt-api/passkey_report_api'),
                'PasskeyReportApi');
+    // #1111: the started post-login activities' operations, spread by
+    // `mgmt-api/admin_api` into its table as the passkey report's are.
+    this.build('mgmt-api/post_login_activities_api',
+               require('../mgmt-api/post_login_activities_api'),
+               'PostLoginActivitiesApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',

@@ -8126,9 +8126,10 @@ class AdminActions {
         target: String(result.dn || (result.definition &&
                                      result.definition.dn) || ''),
         channel: 'http',
-        summary: action + ' ' + String(body.name || ''),
+        // `client` is the passkey policy's learned client (#1112).
+        summary: action + ' ' + String(body.name || body.client || ''),
         detail: { via: ctx.via || '', kind: kind.id, action: action,
-                  name: String(body.name || '') }
+                  name: String(body.name || body.client || '') }
       });
       log.debug("Leaving AdminActions.policiesAction(). act " + action + ".");
       return Object.assign({ kind: kind.id }, result);
@@ -9152,13 +9153,22 @@ class AdminActions {
       // The first refusal's own code (#263: STS-PKI-0215 for a pinned
       // signer), as `setOverride()` would have marked it.
       let firstRefusal = '';
+      // THE OTHER POSTED VALUES (#1114): a rule between two settings
+      // judges a pair posted together by both new values — here and in
+      // `setOverride()`'s re-check below (`config.withWriteBatch()`).
+      const batch = {};
       wanted.forEach(function (key) {
-        const problem = config.checkWrite(key, body[key]);
-        if (problem) {
-          errors.push(problem);
-          firstRefusal = firstRefusal ||
-                         config.checkWriteCode(key, body[key]);
-        }
+        batch[key] = body[key];
+      });
+      config.withWriteBatch(batch, function () {
+        wanted.forEach(function (key) {
+          const problem = config.checkWrite(key, body[key]);
+          if (problem) {
+            errors.push(problem);
+            firstRefusal = firstRefusal ||
+                           config.checkWriteCode(key, body[key]);
+          }
+        });
       });
       if (errors.length) {
         log.debug("Leaving AdminActions.configAction(). set-many refused: " +
@@ -9169,10 +9179,12 @@ class AdminActions {
                             { ok: false, errors: errors });
       }
       const changed = [];
-      wanted.forEach(function (key) {
-        const before = config.text(key);
-        config.setOverride(key, body[key]);
-        if (config.text(key) !== before) changed.push(key);
+      config.withWriteBatch(batch, function () {
+        wanted.forEach(function (key) {
+          const before = config.text(key);
+          config.setOverride(key, body[key]);
+          if (config.text(key) !== before) changed.push(key);
+        });
       });
       log.debug("Leaving AdminActions.configAction(). set-many ok, " +
                 changed.length + " " +

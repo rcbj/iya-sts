@@ -242,6 +242,7 @@
   "keys.lane": "密碼類型",
   "keys.laneClassical": "傳統",
   "keys.lanePqc": "後量子（ML-DSA），顯示為以「+ml-dsa」結尾的第二個帳戶",
+  "keys.cryptoPostQuantum": "後量子（ML-DSA）",
   "keys.authenticator": "驗證器",
   "keys.removeLabel": "移除 {name}",
   "keys.remove": "移除",
@@ -548,5 +549,8 @@
   "accounts.anotherTitle": "在此分頁中以另一個人的身分登入。已在此瀏覽器中登入的帳戶會保持登入，其他分頁保留各自的帳戶。",
   "accounts.none": "此瀏覽器中尚無其他已登入的帳戶。",
   "accounts.kept": "此分頁離開的帳戶仍保持登入，您可以在這裡切換回去。",
-  "accounts.unsaved": "此頁面有尚未儲存的變更。仍要切換帳戶嗎？這些變更將會遺失。"
+  "accounts.unsaved": "此頁面有尚未儲存的變更。仍要切換帳戶嗎？這些變更將會遺失。",
+  "announcement.heading": "公告",
+  "announcement.close": "關閉",
+  "keys.possiblyReplaced": "於 {day} 以同一個帳戶在同一型號的驗證器上註冊的另一個密碼金鑰，可能已在該驗證器上取代此密碼金鑰。如果此密碼金鑰已無法使用，請將其移除。"
 }

@@ -129,6 +129,13 @@ class KeysPages {
       ' · ' + (one.role === 'primary' ? t.html('portal.keys.rolePrimary')
                                       : t.html('portal.keys.roleMfa')) +
       '</div>' +
+      // A ROW A LATER REGISTRATION MAY HAVE REPLACED ON ITS AUTHENTICATOR
+      // (#1101): the Remove button below is the way to clear it.
+      (one.possiblyReplaced
+        ? '<div class="meta passkey-possibly-replaced">' +
+          t.html('portal.keys.possiblyReplaced',
+                 { day: day(one.possiblyReplaced.at) }) + '</div>'
+        : '') +
       // A SYNCED KEY THE REALM NO LONGER TAKES (#528).
       (one.syncedRefused
         ? '<div class="meta" id="passkey-synced-refused">' +
@@ -177,11 +184,16 @@ class KeysPages {
       (algorithm.insecure
         ? ' <strong>' + t.html('portal.keys.insecure') + '</strong>' : '') +
       '</td></tr>' +
-      // WHICH LANE IT WAS CREATED IN (#643): classical, or the post-quantum
-      // passkey a credential manager lists as a second account.
+      // CLASSICAL OR POST-QUANTUM, FROM THE KEY'S ALGORITHM (#1076). It was
+      // drawn from the LANE (#643) alone, which is `pqc` only in a realm
+      // running `webauthn.pqcAlongsideClassical` — off by default — so an
+      // ML-DSA passkey said "classical" here beside an Algorithm row saying
+      // post-quantum. A key in the post-quantum lane still says that it is
+      // listed as a second account.
       '<tr><th>' + t.html('portal.keys.lane') + '</th><td>' +
-      (one.lane === 'pqc' ? t.html('portal.keys.lanePqc')
-                          : t.html('portal.keys.laneClassical')) +
+      (!algorithm.postQuantum ? t.html('portal.keys.laneClassical')
+        : (one.lane === 'pqc' ? t.html('portal.keys.lanePqc')
+                              : t.html('portal.keys.cryptoPostQuantum'))) +
       '</td></tr>' +
       '<tr><th>' + t.html('portal.keys.authenticator') + '</th><td>' +
       KeysPages.attestationText(one.attestation, t) + '</td></tr>' +
@@ -194,13 +206,6 @@ class KeysPages {
           kit.esc(one.upgrade.previousAlgorithm || '') + '</code> (' +
           kit.esc(one.upgrade.mode || '') + ')</td></tr>' : '') +
       '</table></details></div><div class="acts">' +
-      (one.upgradable
-        ? '<form method="post" action="' + PATH + '/upgrade">' +
-          '<input type="hidden" name="action" value="begin">' +
-          '<input type="hidden" name="credentialId" value="' +
-          kit.esc(one.credentialId) + '">' +
-          '<button class="secondary">Upgrade to post-quantum</button>' +
-          '</form>' : '') +
       '<form method="post" action="' + kit.BASE + '/remove-key">' +
       '<input type="hidden" name="credentialId" value="' +
       kit.esc(one.credentialId) + '"><button class="danger" aria-label="' +
@@ -469,70 +474,6 @@ class KeysPages {
       }).join('') + '</div></form>';
   }
 
-  // THE CLASSICAL KEY UPGRADE (#939): first an assertion by the selected
-  // key, then an ML-DSA-only registration. Each POST is tied to the pending
-  // upgrade id; the ordinary portal WebAuthn runtime handles both phases.
-  /**
-   * The upgrade panel and any ceremony the server has armed.
-   *
-   * @param upgrade - the view's upgrade facts
-   * @param t - the translator
-   * @returns the HTML
-   */
-  static upgradeBlock(upgrade: Json, t: Json): string {
-    const facts = upgrade || {};
-    if (!facts.offered) {
-      return '';
-    }
-    const pending = facts.pending;
-    if (!pending) {
-      return '<section class="passkey-upgrade"><h2>Upgrade a passkey</h2>' +
-        '<p class="note">Prove your existing classical passkey, then ' +
-        'register an ML-DSA passkey. If registration fails, your existing ' +
-        'passkey stays unchanged. Each passkey that can be upgraded has an ' +
-        'Upgrade to post-quantum button.</p></section>';
-    }
-    const proof = pending.phase === 'proof';
-    const mode = proof ? 'get' : 'create';
-    const options = proof
-      ? { rpId: pending.rpId, userVerification: 'required',
-          timeout: 60000 }
-      : (pending.options || {});
-    const data = '<div id="wa-data" data-challenge="' +
-      kit.esc(pending.challenge) + '" data-rpid="' +
-      kit.esc(pending.rpId) + '" data-user="' +
-      kit.esc(pending.user || '') + '" data-userid="' +
-      kit.esc(pending.userHandle || '') + '" data-display="' +
-      kit.esc(pending.display || '') + '" data-allow="' +
-      kit.esc((pending.allow || []).join(',')) + '" data-exclude="' +
-      kit.esc((pending.exclude || []).join(',')) + '" data-options="' +
-      kit.esc(JSON.stringify(options)) + '" data-mode="' + mode + '"' +
-      (proof ? '' : ' data-fallback="' +
-        kit.esc(JSON.stringify(pending.fallback || {})) + '"') +
-      '></div>';
-    const action = proof ? 'prove' : 'finish';
-    return '<section class="passkey-upgrade"><h2>Upgrade ' +
-      kit.esc(pending.name || 'passkey') + '</h2>' +
-      '<p class="note">' + (proof
-        ? 'First, use this classical passkey to prove you hold it.'
-        : 'Now register the post-quantum passkey on the same authenticator.') +
-      '</p>' + data +
-      '<button id="wa-go" type="button">' + (proof
-        ? 'Prove with this passkey' : 'Create post-quantum passkey') +
-      '</button><form method="post" action="' + PATH + '/upgrade" ' +
-      'id="wa-form"><input type="hidden" name="action" value="' + action +
-      '"><input type="hidden" name="upgrade_id" value="' +
-      kit.esc(pending.id) + '">' +
-      '<input type="hidden" name="credential" id="wa-credential">' +
-      '<button class="secondary">' + t.html('portal.key.didNotAsk') +
-      '</button></form>' +
-      (!proof ? KeysPages.fallback(pending, t) : '') +
-      '<form method="post" action="' + PATH + '/upgrade">' +
-      '<input type="hidden" name="action" value="cancel">' +
-      '<button class="secondary">' + t.html('portal.enrol.cancel') +
-      '</button></form></section>';
-  }
-
   // THE SIGNAL API'S DATA (#470), read by the runtime: never while a
   // ceremony is armed, and only under a user handle this service minted.
   // ONE ELEMENT PER LANE (#643): `#wa-signal` for the classical lane and
@@ -607,7 +548,6 @@ class KeysPages {
             : t.html('portal.keys.noneSecond')) + ' ' +
           t.html('portal.keys.lastWayIn') + '</p>'
         : '<p class="note">' + t.html('portal.keys.noneYet') + '</p>') +
-      KeysPages.upgradeBlock(view.upgrade, t) +
       KeysPages.enrolBlock(view, t) + KeysPages.signalBlock(view.signals) +
       '</div>';
   }

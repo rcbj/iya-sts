@@ -932,13 +932,9 @@ function prefetch(changes) {
   if (unheld.size) {
     log.debug("Leaving prefetch(). The data-key rows first.");
     return refreshForUnheld(null).then(function () {
-      // What the read did not bring is noted, so `applyChange()` skips it
-      // rather than reading the data-key rows again for each change.
-      unheld.forEach(function (key, id) {
-        if (unheldDekOfChange(key)) {
-          noteUnheldAfterRefresh(id);
-        }
-      });
+      // WHAT THE READ DID NOT BRING IS NOT NOTED HERE (#1118): one read may
+      // be too early, and `applyChange()` waits for such a key (a few fresh
+      // reads, shared per key) before it skips anything.
       return prefetchPage(changes);
     });
   }
@@ -1100,7 +1096,8 @@ function endPrefetch() {
 // 2026-10-05, closed here the same way: a name under a key not held is told
 // apart from a malformed one, the data-key rows are read again
 // (`keystore.refreshDekRows()`), and the change is applied once more. Only a
-// name whose key is STILL not held after that is skipped — another build's,
+// name whose key is STILL not held after that — since #1118, after five FRESH
+// reads with a pause between, `waitForDek()` — is skipped: another build's,
 // or a realm's that was removed — under STS-STORE-0089, said once per key, so
 // STS-STORE-0014 keeps its meaning. `prefetch()` does the read once for the
 // page before splitting, so a page of a new realm's seed rows costs one read
@@ -1111,6 +1108,18 @@ function endPrefetch() {
 // so a page of another build's rows is not a read of the data-key rows each.
 const unheldAfterRefresh = new Map();
 const UNHELD_RECHECK_MS = 2000;
+// THE READS BEFORE A CHANGE IS SKIPPED (#1118, 2026-10-28). One read of the
+// data-key rows was not enough: it could be a read already in flight, sent
+// before the new key's row committed, and run #7 dropped a new realm's first
+// minted change that way on the other node (STS-STORE-0089 for a key made a
+// second earlier). Like the directory applier's `keyedRetries`
+// (`persistence_replication.js`), a key is read for up to UNHELD_READS times,
+// each a FRESH read (`refreshDekRows({ fresh: true })`), a pause between, and
+// every change under that key shares the one wait.
+const UNHELD_READS = 5;
+const UNHELD_READ_PAUSE_MS = 200;
+// The wait in progress for a key, by key id: a promise of whether it is held.
+const unheldWaits = new Map();
 // The keys STS-STORE-0089 has been said for.
 const unheldWarned = new Set();
 const UNHELD_TRACKED_MAX = 1000;
@@ -1149,12 +1158,12 @@ function worthRefreshFor(id) {
   return at === undefined || Date.now() - at >= UNHELD_RECHECK_MS;
 }
 
-// Reads the data-key rows again for a change under key `id`, and notes the
-// key as still missing when the read did not bring it.
+// Reads the data-key rows again for a change under key `id` — a read that
+// starts after this call (#1118).
 function refreshForUnheld(id) {
   log.debug("Entering refreshForUnheld(). dek=" + (id || 'the page'));
   const refreshing = typeof keystore.refreshDekRows === 'function'
-    ? keystore.refreshDekRows() : Promise.resolve(0);
+    ? keystore.refreshDekRows({ fresh: true }) : Promise.resolve(0);
   log.debug("Leaving refreshForUnheld().");
   return Promise.resolve(refreshing).then(function () {
     return null;
@@ -1164,6 +1173,47 @@ function refreshForUnheld(id) {
     log.debug("Caught in refreshForUnheld(): " + ((e && e.message) || e));
     return null;
   });
+}
+
+// Waits, for a change whose name half `half` is sealed under key `id`, until
+// the key is held or UNHELD_READS fresh reads have not brought it (#1118).
+// One wait per key: every change under it shares the answer. A key still
+// not held is noted, so changes under it in the next UNHELD_RECHECK_MS are
+// skipped without another read.
+function waitForDek(id, half) {
+  log.debug("Entering waitForDek(). dek=" + id);
+  const running = unheldWaits.get(id);
+  if (running) {
+    log.debug("Leaving waitForDek(). Shared.");
+    return running;
+  }
+  const waiting = (async function () {
+    for (let i = 0; i < UNHELD_READS; i++) {
+      await refreshForUnheld(id);
+      if (!unheldDekOfHalf(half)) {
+        return true;
+      }
+      if (i + 1 < UNHELD_READS) {
+        await new Promise(function (resolve) {
+          setTimeout(resolve, UNHELD_READ_PAUSE_MS);
+        });
+      }
+    }
+    noteUnheldAfterRefresh(id);
+    return false;
+  })().then(function (held) {
+    unheldWaits.delete(id);
+    return held;
+  }, function (e) {
+    // A read that throws is answered as the key not held; the change is
+    // skipped under STS-STORE-0089 as it would be after the reads.
+    unheldWaits.delete(id);
+    log.debug("Caught in waitForDek(): " + ((e && e.message) || e));
+    return false;
+  });
+  unheldWaits.set(id, waiting);
+  log.debug("Leaving waitForDek(). Reading.");
+  return waiting;
 }
 
 // Records that key `id` was still missing after a read of the data-key rows.
@@ -1269,17 +1319,16 @@ function applyChange(change, refreshed) {
   if (storedName === null) {
     // NOT HELD YET, OR NOT OURS — told apart from malformed (#1070): see
     // unheldDekOfHalf() above.
-    const dekId = unheldDekOfHalf(text.slice(at + 1));
+    const half = text.slice(at + 1);
+    const dekId = unheldDekOfHalf(half);
     if (dekId && !refreshed && worthRefreshFor(dekId)) {
-      log.debug("Leaving applyChange(). Reading the data-key rows again.");
-      return refreshForUnheld(dekId).then(function () {
-        return applyChange(change, true);
+      log.debug("Leaving applyChange(). Waiting for its key.");
+      return waitForDek(dekId, half).then(function (held) {
+        return held ? applyChange(change, true)
+                    : skipUnheld(change, handle || '?', dekId);
       });
     }
     if (dekId) {
-      if (refreshed) {
-        noteUnheldAfterRefresh(dekId);
-      }
       log.debug("Leaving applyChange(). Its key is not held.");
       return skipUnheld(change, handle || '?', dekId);
     }
@@ -3994,6 +4043,7 @@ function reset() {
   indexBackfilled.clear();
   unheldAfterRefresh.clear();
   unheldWarned.clear();
+  unheldWaits.clear();
   generation = 0;
   observedGeneration = 0;
   observational.clear();

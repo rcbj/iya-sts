@@ -240,9 +240,18 @@ class WebAuthnMfa {
     const create = w.mode === 'create';
     const choosing = Array.isArray(w.choices) && w.choices.length > 0;
     const href = WebAuthnMfa.href('/authn/webauthn', v);
-    return '<h1>' + (create ? t.html('authn.webauthn.headingCreate')
-                            : t.html('authn.webauthn.headingGet')) +
-      '</h1><p class="sub">' + (v.passwordless
+    // A POST-LOGIN STEP'S REGISTRATION (#1096) is named for what it makes.
+    // An upgrade's proof (#1100) is the classical passkey, used once.
+    const proving = !create && w.postLogin && w.postLogin.upgrade;
+    return '<h1>' + (proving ? t.html('authn.postLogin.proofHeading')
+      : create && w.postLogin
+      ? t.html('authn.postLogin.passkeyHeading')
+      : (create ? t.html('authn.webauthn.headingCreate')
+                : t.html('authn.webauthn.headingGet'))) +
+      '</h1>' + (proving ? '<p class="sub">' +
+        t.html('authn.postLogin.proofSub', {
+          name: String(w.postLogin.upgrade.name || '') }) + '</p>' : '') +
+      '<p class="sub">' + (v.passwordless
         ? t.html('authn.webauthn.subPasswordless',
                  { name: String(v.username) })
         : t.html('authn.webauthn.subSecond', { name: String(v.username) })) +
@@ -445,6 +454,70 @@ class WebAuthnMfa {
   }
 
   /**
+   * `/authn/post-login` (#1096): what the realm asks after signing in —
+   * today, a post-quantum passkey in a role — with Register, and Skip where
+   * the allotted time has not passed.
+   *
+   * @param v - the view
+   * @param ctx - the context
+   * @returns the body
+   */
+  static postLogin(v: Json, ctx: Json): string {
+    const t = ctx.t;
+    const p = v.postLogin || {};
+    const name = String(v.username);
+    const button = function (action: string, label: string,
+                             secondary: boolean): string {
+      return '<form method="post" action="/authn/post-login">' +
+        '<div class="row"><button type="submit" id="post-login-' + action +
+        '"' + (secondary ? ' class="secondary"' : '') + ' name="action" ' +
+        'value="' + action + '">' + label + '</button></div></form>';
+    };
+    // An upgrade REPLACES the classical passkey (#1100), so its sentence is
+    // not the one that says the old passkey keeps working.
+    const why = p.reason === 'none'
+      ? (p.role === 'mfa' ? 'authn.postLogin.subNoneMfa'
+                          : 'authn.postLogin.subNonePrimary')
+      // An ML-DSA passkey whose attestation falls short (#1102).
+      : p.reason === 'attestation'
+      ? (p.role === 'mfa' ? 'authn.postLogin.subAttestationMfa'
+                          : 'authn.postLogin.subAttestationPrimary')
+      : (p.method === 'upgrade'
+        ? (p.role === 'mfa' ? 'authn.postLogin.subUpgradeMfa'
+                            : 'authn.postLogin.subUpgradePrimary')
+        : (p.role === 'mfa' ? 'authn.postLogin.subClassicalMfa'
+                            : 'authn.postLogin.subClassicalPrimary'));
+    const how = p.method === 'upgrade' ? 'authn.postLogin.methodUpgrade'
+      : (p.separate ? 'authn.postLogin.methodSeparate' : '');
+    const until = String(p.deadline || '').slice(0, 10);
+    return '<h1>' + t.html('authn.postLogin.heading') + '</h1>' +
+      '<p class="sub">' + t.html(why, { name: name }) + '</p>' +
+      WebAuthnMfa.error(ctx) +
+      // THE LAST CEREMONY DID NOT COMPLETE (#1105): what happened, and what
+      // to do — another authenticator, an administrator, or Skip.
+      (p.failed
+        ? '<div class="warn" id="post-login-failed"><p>' +
+          t.html('authn.postLogin.failed', { error: String(p.failed) }) +
+          '</p><p>' + t.html('authn.postLogin.failedHelp') + '</p>' +
+          (p.canSkip ? '<p>' + t.html('authn.postLogin.failedSkip') +
+                       '</p>' : '') + '</div>'
+        : '') +
+      (how ? '<p>' + t.html(how) + '</p>' : '') +
+      '<p>' + t.html('authn.postLogin.device') + '</p>' +
+      (p.required ? '<p><strong>' + t.html('authn.postLogin.required') +
+                    '</strong></p>'
+        : (until ? '<p>' + t.html('authn.postLogin.until',
+                                  { date: until }) + '</p>' : '')) +
+      button('register', t.html('authn.postLogin.registerButton'), false) +
+      (p.canSkip
+        ? button('skip', t.html('authn.postLogin.skipButton',
+                                { days: Number(p.snoozeDays) || 1 }), true)
+        : '') +
+      WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      t.html('authn.mfaSetup.meta') + '</div>';
+  }
+
+  /**
    * The document's title for a step's page.
    *
    * @param v - the view
@@ -454,6 +527,9 @@ class WebAuthnMfa {
   static title(v: Json, ctx: Json): string {
     const t = ctx.t;
     const page = String((v && v.page) || '');
+    if (page === 'post-login') {
+      return t.text('authn.postLogin.title');
+    }
     if (page === 'setup') {
       return t.text('authn.mfaSetup.titleSuffix', {
         title: v.setup && v.setup.state === 'totp'

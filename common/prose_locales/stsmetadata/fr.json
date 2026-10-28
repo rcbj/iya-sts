@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "HORS SPÉCIFICATION. Ce qu’a reçu l’application de rapports, récepteur du propre émetteur de ce service (#1042) : chaque signal du domaine pour un administrateur des rapports, seulement les signaux qui le concernent pour quiconque d’autre. Derrière le même jeton que le reste de /report-api."
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086). Ce que récupère un onglet de rapports ouvert toutes les ssf.announcementPollMs : les annonces qu'un administrateur a diffusées à cette application, telles que son récepteur les a conservées. Derrière le même jeton que le reste de /report-api."
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC. Les groupes du domaine dont le nom ou le DN contient q, cinq par page, chacun avec son propre attribut mail (#989) : le volet de la page de définition. Les groupes d’une définition sont ceux à qui son résultat est envoyé par courriel. Derrière le même jeton que le reste de /report-api."
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "NON-SPEC (#49). run, avec { job, realm?, params? } : une exécution mise en file que le leader démarre à son prochain cycle, 202 avec son runId ; et step-down : le leader abandonne ops.scheduler à son prochain cycle et un autre nœud le reprend. Les deux boutons de la console."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086). Ce qu'affiche GET /admin/broadcast : les applications où une annonce peut être affichée, si l'appelant peut l'envoyer à tous les domaines, le message le plus long et si quelque chose peut être distribué. Reflète GET /admin/broadcast."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086). send, avec { message, surfaces, everyRealm } : le SET d'annonce propre à ce service sur les flux récepteurs de la console d'administration, du portail utilisateur et de l'application de rapports, affiché en bandeau dans chacun de leurs onglets ouverts à ce moment."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "envoie une annonce à toutes les personnes connectées"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086). Ce que récupère un onglet de console ouvert toutes les ssf.announcementPollMs : les annonces que le récepteur de la console a reçues après la première demande de l'onglet."
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",
@@ -1874,6 +1894,18 @@
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "NON-SPEC (#942). recount : met en file la tâche passkeys.report-recount pour ce domaine auprès du meneur du planificateur, qui fait d’un nouveau comptage des détenteurs la nouvelle base. La seule action de la console sur cette page ; elle s’exécute là où s’exécute toute tâche, jamais dans la requête."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123). Ce qu'affiche Annuaire → Activités après connexion : chaque activité après connexion lancée dans le domaine avec son activité, ses groupes, son intervalle de rappel, le maximum de courriers par personne, les personnes par exécution, son état et ce que sa tâche planifiée a fait jusqu'ici ; si un transport de courrier et une politique d'activité après connexion sont actifs ; et la recherche de groupes du formulaire de lancement, une page de vingt groupes tirée de l'index des groupes de l'annuaire (groupq, groupfrom), avec les groupes choisis jusqu'ici (groups) résolus. Qui a reçu un courrier relève de la source postLoginProgress de l'application de rapports. Reflète GET /admin/post-login-activities."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123). start, avec { activity, groups, intervalDays, maxMails, perRun } : la tâche post-login.activity-mail envoie à chaque personne à qui l'activité est due — tout le domaine, ou l'union des membres des groupes, chaque personne une fois — un rappel de se connecter, à l'adresse de son entrée, avec un lien vers la page de connexion et aucun identifiant. pause, resume et end, avec { id }. Les quatre actions de la console sur cette page."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "lance, met en pause, reprend ou termine une activité après connexion"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2679,6 +2711,14 @@
     "en": "997e77c58a56af97",
     "text": "enrôle une application d’authentification ou démarre l’enregistrement d’une clé de sécurité, puis établit la session de connexion"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "UNE ACTIVITÉ APRÈS CONNEXION (#1096). Là où la politique d’activité après connexion du domaine (Annuaire > Politiques, désactivée par défaut) atteint une personne par groupe et que celle-ci doit effectuer son activité — aujourd’hui une clé d’accès post-quantique (ML-DSA) dans le rôle où elle détient une clé classique, ou une là où elle n’en détient aucune —, une connexion à l’écran de connexion aboutit ici au lieu de connecter la personne : la session est RETENUE, non démarrée. Enregistrer mène à l’enregistrement de /authn/webauthn ne proposant que ML-DSA (/authn-api/mfa/{id}/post-login/register) ; Ignorer la reporte du snoozeDays du profil (/authn-api/mfa/{id}/post-login/skip) et est refusé une fois écoulé le délai accordé depuis la première invitation (STS-AUTHN-0474). Dans les deux cas, la session retenue démarre ensuite avec l’amr et l’acr de la connexion. Nécessite un identifiant ?mfa= émis par la connexion retenue ; le suivre tel quel répond donc 400."
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "demande une clé d’accès post-quantique après une connexion, puis établit la session de connexion qu’elle retenait"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "LE SECOND SECOND FACTEUR (2026-09-10). Une étape de mot de passe réussie pour quelqu’un ayant une application d’authentification enrôlée aboutit ici, et ce point de terminaison demande les six chiffres qu’affiche son application. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] — la valeur de la RFC 8176, dont l’entrée de registre nomme la RFC 4226 et la RFC 6238 — et acr \"mfa\", le seul cas où ce service peut honnêtement parler de deux facteurs. **LE CODE EST RÉELLEMENT VÉRIFIÉ DANS LES DEUX MODES**, contrairement au mot de passe qui le précède : un vérificateur de mot de passe à usage unique qui accepterait n’importe quels six chiffres ne serait pas permissif, il serait cassé, et c’est l’argument de SPNEGO lu une seconde fois. Débit limité par identité ET par adresse, car six chiffres représentent un million de valeurs et c’est le plus petit espace de recherche du service. LE GET EST LE LIEN *utiliser plutôt un code* de l’écran de clé de sécurité et ne crée rien — il affiche la page pour une étape qui existe déjà, et la refuse à quelqu’un qui ne détient aucun enrôlement. **IL N’ENRÔLE PERSONNE**, ce qui fait toute la différence avec /authn/webauthn à côté : enrôler signifie se voir montrer un secret partagé, cela se fait donc sur /portal/mfa ou lors de l’utilisation d’un lien d’activation, et jamais sur un écran de connexion. Une page de la surface de connexion depuis #572 : le code est envoyé à /authn-api/mfa/{id}/totp."
@@ -2850,6 +2890,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC (#572, #246). Uniquement là où l’étape a été proposée : la connexion s’achève sur le mot de passe."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC (#1096). L’étape suivante est l’enregistrement de la page des clés d’accès, ML-DSA uniquement ; sa fin démarre la session retenue."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC (#1096). Pour le snoozeDays du profil ; refusé une fois le délai accordé écoulé. La session retenue démarre."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

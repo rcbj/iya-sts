@@ -1151,6 +1151,22 @@
     "en": "1466dbe275c566e7",
     "text": "`realm` (el valor predeterminado) sigue webauthn.pqcOnly y webauthn.pqcAlongsideClassical. `pq-only` solo ofrece ML-DSA y rechaza un reintento con los algoritmos clásicos. `pq-first` ofrece primero ML-DSA y después los algoritmos clásicos, incluso donde el dominio solo pide ML-DSA. `classical-only` no ofrece ningún ML-DSA ni ninguna llave de acceso poscuántica junto a una clásica, para las personas cuyos dispositivos fallan en un registro ML-DSA. Se rechaza con postQuantumRequired distinto de off o con attestationAlgorithms definido (classical-only), y donde los algoritmos ofrecidos no nombran ningún ML-DSA (pq-only, pq-first). Si se omite en un guardado, se conserva `realm`."
   },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "Una llave de acceso clásica y una poscuántica lado a lado"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (el valor predeterminado) sigue webauthn.pqcAlongsideClassical. `both` da a las personas de este perfil una llave de acceso clásica y una poscuántica lado a lado, cada una con su propio identificador de usuario, dondequiera que la configuración del dominio esté desactivada; `one` les da una sola vía dondequiera que esté activada. webauthn.pqcOnly sigue significando una sola vía. Se rechaza como `both` con registrationMode classical-only. Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "Clientes a los que un registro no ofrece ML-DSA"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "VACÍO POR DEFECTO: a cada cliente se le ofrece la lista tal como está. Si no, hasta 20 reglas separadas por `;`, cada una `<browser> on <system>`, donde cada lado es una familia tal como la nombran las filas de ceremonias de llaves de acceso (`Chrome`, `Firefox`, `macOS`, `Android`) o `*` para cualquiera, seguida opcionalmente de un rango de versión principal (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. Un registro de llave de acceso desde un cliente que coincida ofrece la lista sin ML-DSA (ES256 y RS256 si no queda ninguno). No se aplica donde no se permite una llave de acceso clásica —registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, o en el paso de inicio de sesión con postQuantumRequired sign-in— ni en el carril poscuántico, y la fila de la ceremonia indica que no se aplicó. Si se omite al guardar, se mantiene vacío."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Sugerencias que envía \"Crear una llave de acceso\""
@@ -1298,6 +1314,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
     "en": "1466dbe275c566e7",
     "text": "`realm` (el valor predeterminado) sigue webauthn.pqcOnly y webauthn.pqcAlongsideClassical. `pq-only` solo ofrece ML-DSA y rechaza un reintento con los algoritmos clásicos. `pq-first` ofrece primero ML-DSA y después los algoritmos clásicos, incluso donde el dominio solo pide ML-DSA. `classical-only` no ofrece ningún ML-DSA ni ninguna llave de acceso poscuántica junto a una clásica, para las personas cuyos dispositivos fallan en un registro ML-DSA. Se rechaza con postQuantumRequired distinto de off o con attestationAlgorithms definido (classical-only), y donde los algoritmos ofrecidos no nombran ningún ML-DSA (pq-only, pq-first). Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (el valor predeterminado) sigue webauthn.pqcAlongsideClassical. `both` da a las personas de este perfil una llave de acceso clásica y una poscuántica lado a lado, cada una con su propio identificador de usuario, dondequiera que la configuración del dominio esté desactivada; `one` les da una sola vía dondequiera que esté activada. webauthn.pqcOnly sigue significando una sola vía. Se rechaza como `both` con registrationMode classical-only. Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "VACÍO POR DEFECTO: a cada cliente se le ofrece la lista tal como está. Si no, hasta 20 reglas separadas por `;`, cada una `<browser> on <system>`, donde cada lado es una familia tal como la nombran las filas de ceremonias de llaves de acceso (`Chrome`, `Firefox`, `macOS`, `Android`) o `*` para cualquiera, seguida opcionalmente de un rango de versión principal (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. Un registro de llave de acceso desde un cliente que coincida ofrece la lista sin ML-DSA (ES256 y RS256 si no queda ninguno). No se aplica donde no se permite una llave de acceso clásica —registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, o en el paso de inicio de sesión con postQuantumRequired sign-in— ni en el carril poscuántico, y la fila de la ceremonia indica que no se aplicó. Si se omite al guardar, se mantiene vacío."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1523,9 +1547,21 @@
     "en": "62dd60f1d67057b4",
     "text": "el webauthn.algorithms del dominio"
   },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "una persona puede tener una llave de acceso clásica y una poscuántica lado a lado, cada una con su propio identificador de usuario"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "una persona tiene sus llaves de acceso en una sola vía, diga lo que diga el webauthn.pqcAlongsideClassical del dominio"
+  },
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
     "text": "un administrador puede registrar una llave de acceso para una persona, en el propio navegador del administrador, verificada como lo está la de la persona"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "un registro de llave de acceso desde {{rules}} no ofrece ML-DSA, donde se permite una llave de acceso clásica"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",
@@ -1730,6 +1766,238 @@
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "El atributo personalizado {{name}} ya no está definido en este dominio."
+  },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "Política de actividad posterior al inicio de sesión"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "lo que se pide a una persona después de iniciar sesión, antes de devolverla a la aplicación: hoy, registrar una llave de acceso poscuántica"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "al SIGUIENTE inicio de sesión de cada persona a la que alcanza el perfil en este dominio; una sesión ya iniciada no se interrumpe"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "el perfil del dominio predeterminado si tiene uno, y los valores predeterminados integrados (no se pide nada a nadie) si no"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "perfil de política de actividad posterior al inicio de sesión"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "Pedir después del inicio de sesión"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "4c8090556412a140",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a cada persona a la que alcanza este perfil y que tiene pendiente la actividad siguiente se le pide hacerla después de iniciar sesión, antes de devolverla a la aplicación. Un perfil con nombre con esto desactivado EXCLUYE a los miembros de sus grupos."
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "Actividad"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "9514d5e70b9d4eaa",
+    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "Omitir la pospone durante"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Cuánto tiempo pospone Omitir la actividad para esa persona."
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "Plazo concedido"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Contado desde la PRIMERA invitación de la persona. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene (no se inicia ninguna sesión) hasta que se hace la actividad. 0 es sin fecha límite: siempre se puede omitir."
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "Una persona sin llave de acceso"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: no se le pide nada. invite: se le pide registrar una llave de acceso poscuántica, y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que haya pasado el plazo concedido."
+  },
+  "postLogin.FIELDS.noPasskeyRole.label": {
+    "en": "c8ec4e469545eb61",
+    "text": "Registrada por una persona sin llave de acceso como"
+  },
+  "postLogin.FIELDS.noPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: un inicio de sesión sin contraseña. mfa: un segundo factor."
+  },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "Cómo se migra una llave de acceso clásica"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: la persona usa su llave de acceso clásica una vez y después una llave de acceso ML-DSA la reemplaza en su lugar, en el mismo autenticador — una sola llave de acceso, sin dejar nada atrás. alongside: se añade una llave de acceso ML-DSA junto a ella, en la vía poscuántica donde el dominio ofrece dos vías, o en otro autenticador donde ofrece una. automatic: alongside donde la política de llaves de acceso de la persona ofrece dos vías, upgrade donde ofrece una."
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "Una llave de acceso cuenta como poscuántica cuando"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: su algoritmo de clave es ML-DSA. post-quantum: su algoritmo de clave es ML-DSA Y su atestación registrada se firmó con algoritmos poscuánticos de principio a fin; una llave de acceso con una atestación clásica, o sin ninguna registrada, no cuenta, y a quien la tiene se le pide una que sí cuente."
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "Una persona sin llave de acceso cuyo dispositivo no puede crear ML-DSA"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: solo ML-DSA. classical: después de que un registro ML-DSA falle en el dispositivo, se ofrece un reintento con los algoritmos clásicos (donde la política de llaves de acceso lo permita) — una llave de acceso clásica es mejor que una contraseña, y a quien la tiene se le pide la migración más adelante como a cualquier otra persona."
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "7ac360a6d70b525c",
+    "text": "La clase de este servicio para un perfil de actividad posterior al inicio de sesión: lo que se pide a una persona después de iniciar sesión. Nombrada por el PERFIL (`cn=default`, o un perfil con nombre elegido por grupo)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "4c8090556412a140",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a cada persona a la que alcanza este perfil y que tiene pendiente la actividad siguiente se le pide hacerla después de iniciar sesión, antes de devolverla a la aplicación. Un perfil con nombre con esto desactivado EXCLUYE a los miembros de sus grupos."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "9514d5e70b9d4eaa",
+    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Cuánto tiempo pospone Omitir la actividad para esa persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Contado desde la PRIMERA invitación de la persona. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene (no se inicia ninguna sesión) hasta que se hace la actividad. 0 es sin fecha límite: siempre se puede omitir."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: no se le pide nada. invite: se le pide registrar una llave de acceso poscuántica, y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que haya pasado el plazo concedido."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: un inicio de sesión sin contraseña. mfa: un segundo factor."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: la persona usa su llave de acceso clásica una vez y después una llave de acceso ML-DSA la reemplaza en su lugar, en el mismo autenticador — una sola llave de acceso, sin dejar nada atrás. alongside: se añade una llave de acceso ML-DSA junto a ella, en la vía poscuántica donde el dominio ofrece dos vías, o en otro autenticador donde ofrece una. automatic: alongside donde la política de llaves de acceso de la persona ofrece dos vías, upgrade donde ofrece una."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: su algoritmo de clave es ML-DSA. post-quantum: su algoritmo de clave es ML-DSA Y su atestación registrada se firmó con algoritmos poscuánticos de principio a fin; una llave de acceso con una atestación clásica, o sin ninguna registrada, no cuenta, y a quien la tiene se le pide una que sí cuente."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: solo ML-DSA. classical: después de que un registro ML-DSA falle en el dispositivo, se ofrece un reintento con los algoritmos clásicos (donde la política de llaves de acceso lo permita) — una llave de acceso clásica es mejor que una contraseña, y a quien la tiene se le pide la migración más adelante como a cualquier otra persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Los grupos (cn o DN) a cuyos miembros se aplica un perfil posterior al inicio de sesión con nombre."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Qué perfil posterior al inicio de sesión con nombre prevalece cuando varios alcanzan a una persona: el más bajo, de 1 a 1000."
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Para qué sirve el perfil, para la siguiente persona."
+  },
+  "postLogin.SELECTORS.selectGroups.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Los grupos (cn o DN) a cuyos miembros se aplica un perfil posterior al inicio de sesión con nombre."
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Qué perfil posterior al inicio de sesión con nombre prevalece cuando varios alcanzan a una persona: el más bajo, de 1 a 1000."
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "no se pide nada después de iniciar sesión a nadie a quien alcance este perfil"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "b8a2588126ddb520",
+    "text": "a una persona que tiene una llave de acceso clásica se le pide, después de iniciar sesión, registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "la llave de acceso ML-DSA reemplaza a la clásica en su lugar, después de que la persona use la clásica una vez"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "la llave de acceso ML-DSA se añade junto a la clásica"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "la llave de acceso ML-DSA se añade junto a la clásica donde se ofrecen dos vías, y la reemplaza en su lugar donde se ofrece una"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "una llave de acceso cuenta como poscuántica cuando su algoritmo de clave es ML-DSA"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "una llave de acceso solo cuenta como poscuántica cuando su algoritmo de clave y su atestación registrada son poscuánticos"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "a una persona sin llave de acceso cuyo dispositivo no puede crear ML-DSA se le ofrece en su lugar una llave de acceso clásica"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "Omitir la pospone durante {{days}} día(s)"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "a los {{days}} día(s) de la primera invitación, Omitir desaparece y el inicio de sesión se retiene hasta que se haga"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "siempre se puede omitir"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "no se pide nada a una persona que no tiene llave de acceso"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "d5a5abd3c3057413",
+    "text": "a una persona que no tiene llave de acceso se la invita a registrar una llave de acceso poscuántica como {{role}}, y siempre puede omitirlo"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "7779655caba632c8",
+    "text": "a una persona que no tiene llave de acceso se le pide registrar una llave de acceso poscuántica como {{role}}, y puede omitirlo hasta que termine el periodo de gracia"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "ce39627aa02b361d",
+    "text": "se aplica a los miembros de {{list}}, con precedencia {{precedence}}"
+  },
+  "postLogin.sentences.param.primary": {
+    "en": "ce71e9dc4bf4e5fa",
+    "text": "su inicio de sesión principal"
+  },
+  "postLogin.sentences.param.mfa": {
+    "en": "8e2d5e1b1feaf31c",
+    "text": "segundo factor"
+  },
+  "postLogin.sentences.param.noGroup": {
+    "en": "4a00d86d0ff8747a",
+    "text": "ningún grupo"
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

@@ -12412,7 +12412,7 @@ The two doors are argued in `oauth-oidc/CLAUDE.md` and `gnap/CLAUDE.md`;
 rcbj: "I want to be able to define custom listeners and map the hosted
 applications to specific listeners ... I want to be able to advertise services
 on multiple listeners potentially. it's up to the administrator and their use
-case." His answers on the ticket, D1–D6, are what this section holds to.
+case." rcbj's answers on the ticket, D1–D6, are what this section holds to.
 
 * **`hosted_applications.js` IS THE CATALOGUE, CLOSED.** An application is an
   id, a label and the paths it answers (prefixes on a segment boundary, and
@@ -12448,7 +12448,11 @@ case." His answers on the ticket, D1–D6, are what this section holds to.
   `management-api` off the listener the request arrived on unless it says
   `confirm` (D6, 0156; the ambient request is `jose_certificate_header.js`'s).
   The process's writes reach it through `config.addWriteRule()`, which since
-  #472 is told whether the write lands in a realm; a realm's through
+  #472 is told whether the write lands in a realm (and since #1114 hands a
+  rule `beside(key)`, a companion setting's value as the same `set-many`
+  posts it while `config.withWriteBatch()` holds the post, so a pair that
+  is legal only together is not refused for being checked one at a time —
+  `authn/CLAUDE.md`, *Enterprise attestation, by RP ID*); a realm's through
   `realms.js`'s `listenerOverrideProblem()`. **A reset is not a write and
   asks no rule**, so the Listeners page and the API write an empty value
   instead of clearing one. What the process STARTED with is judged by
@@ -12750,6 +12754,61 @@ ticket's "per realm, or per policy". `postQuantumAllowCredentials()`
 resolves it and `question()` sends it resolved as a policy fact no built-in
 rule reads. It decides nothing: `authn/CLAUDE.md` (*List and refuse*) says
 what the passkey step does with it.
+
+**#1112 ADDED `clientRules` AND THE LEARNED CLIENTS (2026-10-28)**: a
+registration from a client known not to make an ML-DSA passkey is offered
+the list less ML-DSA — #944's classical retry, armed from the start. rcbj's
+decision: both halves, configured and learned.
+
+* **Configured**: `clientRules` (`stsPasskeyClientRules`, a new row type,
+  empty, optional on a save), on the default and named profiles: up to 20
+  rules `<browser> on <system>`, each side a family or `*` with an optional
+  major-version range. `parseClientRules()` writes one canonical text and
+  `clientRuleFor()` answers the first rule naming a client.
+* **ONE READING OF THE USER-AGENT.** A rule is matched against the CLIENT
+  NAME the ceremony row records (`webauthn_ceremonies.clientOf()`, `Chrome
+  141 on macOS 15`), read back into its four parts by `clientParts()` —
+  never a second parse of the header. The learned entries are keyed by the
+  same name, so the row, the rule and the register cannot disagree about a
+  client. This leaf cannot require the ceremonies module, so the caller
+  hands the name in.
+* **Learned**: `common/passkey_clients.ts`, per realm, behind
+  `webauthn.clientLearning` (off), `webauthn.clientLearningFailures` (3)
+  and `webauthn.clientLearningWindowHours` (168). Its store,
+  `passkey_clients.learned`, is cell-tier: an observation of the cell's own
+  traffic, keyed with a digest of each person who failed.
+* **COUNTED WHERE THE ROW IS WRITTEN, NOT BY READING ROWS.**
+  `webauthn_ceremonies.record()` hands `observe()` the ceremony, outcome,
+  error name, offer and client as it writes the row: one get and one set of
+  a bounded entry, only while the switch is on and only for a registration
+  that asked for ML-DSA. A scan of audit rows per request was ruled out (the
+  log is per process and capped), and so was a scheduler job over the rows:
+  it would see one process's rows, learn late by its period, and still be a
+  scan. The module header argues it.
+* **PEOPLE, NOT ATTEMPTS.** One person counts once in the window, so one
+  account cannot teach a realm to stop offering ML-DSA to everybody on that
+  browser. A success that asked for ML-DSA removes the entry, which is how
+  "none succeeded" holds and the way back. The entry is a new object at
+  every write (#999).
+* **The periodic half is a scheduler job**, `passkeys.client-learning-sweep`
+  (cluster, per realm, hourly), removing entries never learned whose
+  failures aged out; the window is applied at every count as well, which is
+  the correctness half. The store is bounded (500 a realm): a full one
+  displaces the oldest entry not yet learned, and with every entry learned a
+  new client is not counted (`STS-AUTHN-0478`, once per realm per process).
+* **NEVER WHERE A CLASSICAL KEY IS NOT ALLOWED.** `offerFor()` asks
+  `webauthn_policy.classicalRetryRefusal(at)`, the one statement of that,
+  whose refusals now carry a short `reason`; and not in the post-quantum lane
+  with both lanes on. The decision's `record` is what the ceremony row
+  carries, applied or `not applied (<reason>)`.
+* **The register's console and API.** The passkey kind gained two acts of
+  its own (`policy_kinds.ts`'s `extraActions`, #396's arrangement):
+  `clear-passkey-client` (`STS-AUTHN-0477` for one not listed) and
+  `clear-passkey-clients`, answered by `act()` here, which reaches the
+  register lazily. `policiesView()` carries `passkey.clients`, paged by
+  `clientsPage`/`clientsPer` apart from the profiles. The doors that arm a
+  registration are `authn/CLAUDE.md`'s (*Clients that cannot make an ML-DSA
+  passkey*).
 
 **`web_webauthn.ts` (#944)** holds what both static surfaces do when a
 registration that asked for ML-DSA fails on the device: `failureKind()`,
@@ -13582,7 +13641,27 @@ what a maintainer must not undo:
   requires this one, and the composition root builds this one at 18j-iv,
   before the directory at 21. Which values are keys is `credentials.ts`'s
   (`keysOfValues()`, the rule `keysOf()` uses), never this file's.
-* Codes `STS-AUTHN-0413` to `0418`. `tests/passkey_report.js` and
+* **THE HISTORY IS WRITTEN BY THE RECOUNT ITSELF** (#1109): one row of
+  `passkey_report.history` (cell tier, per realm, keyed by the UTC day)
+  right after the baseline, from the count just made — people by kind,
+  passkeys by algorithm, lane and attestation algorithm, and each named
+  profile's population through `populationAsync()` (bounded as the filter
+  is, at most `HISTORY_PROFILES` profiles; the default profile and a
+  profile with no group select nobody and are not rows). Not a sibling job:
+  the scheduler orders no job after another, so a sibling would have to
+  discover whether a recount had run, and would snapshot the baseline plus
+  whatever changes had been noted since rather than the count itself. A
+  later recount the same day replaces the day's row. The same run prunes
+  past `webauthn.passkeyHistoryDays` — a walk of a few hundred keys, so no
+  job of its own and nothing periodic outside the scheduler. A run fenced
+  while counting the profiles writes no row (a row missing some profiles
+  would look whole). Writing and pruning NEVER fail the recount
+  (`STS-AUTHN-0520`, `0521`); an unreadable population is recorded as
+  `counted: false` (`0522`). The model table is not kept: up to
+  `MAX_MODELS` rows a day for a question #1109 did not ask. Read in
+  `/report` as `passkeyHistory` (`report/CLAUDE.md`).
+* Codes `STS-AUTHN-0413` to `0418`, and `0520` to `0522` for the history.
+  `tests/passkey_report.js`, `tests/passkey_history.js` and
   `tests/protocol/sts_passkey_report.js` hold it.
 
 ## `passkey_evidence.ts`: RFC 4998 EVIDENCE FOR A VERIFIED CLASSICAL PASSKEY (#947)
@@ -13598,3 +13677,173 @@ prior chain. The admin export is served by `mgmt-api/passkey_report_api.ts` and
 linked from the person page. `tests/passkey_evidence.js` uses a local OpenSSL
 TSA fixture. This module uses the shared `crypto.js` digest boundary and
 PKIjs; it sends no data to a TSA unless the feature is enabled.
+
+## 3ct. `post_login_policy.ts`, `post_login.ts`: POST-LOGIN ACTIVITIES (#1096, 2026-10-28)
+
+rcbj: a "post login activity", targeted by group and enabled per realm;
+the first is the post-quantum passkey migration. rcbj's answers on #1096: the administrator chooses what a
+person holding no passkey is asked (`noPasskey`, `noPasskeyRole`); Skip
+snoozes for `snoozeDays`, and an optional `graceDays` from the FIRST
+invitation ends Skip; a required activity BLOCKS the sign-in; off by
+default, and done inside the sign-in flow.
+
+* **`post_login_policy.ts` is the seventh kind on Directory → Policies**,
+  `locale_policy.ts`'s pattern with the passkey policy's group selection
+  (`selectGroups`, `precedence`). Exclusion is a disabled named profile at a
+  lower precedence — no second list.
+* **`post_login.ts` answers the per-person question** (`dueFor()`) and keeps
+  `post_login.progress` (cell-tier, on demand): first invitation, snooze,
+  done. "Post-quantum" is the key's ALGORITHM, never its lane — a realm with
+  one lane makes ML-DSA keys in the classical lane. Nothing is due where the
+  realm cannot make an ML-DSA passkey in that role (`canRegister()`), so a
+  sign-in is never held for something that cannot be done.
+* **The hold is in `authn.startSessionHere()`, last of the refusals** —
+  `authn/CLAUDE.md` argues it.
+### 3ct, continued: started post-login activities (#1111, 2026-10-28; #1123)
+
+rcbj: an administrator STARTS a post-login activity (optionally narrowed to
+groups) from the console and `/admin-api`; a cluster scheduler job mails
+each person still due, reminders every N days up to a maximum per person;
+pause, resume, end; the mail sends the person to sign in and the post-login
+activity does the registration — no credential in any link.
+`post_login_activities.ts`'s header argues the rest; what reaches outside
+it:
+
+* **ONE CONCEPT (#1123, rcbj).** #1111 gave what the page starts a name of
+  its own; rcbj's word is that it IS a post-login activity, and the old name
+  went from the page, the API paths, the identifiers, the file names, the
+  stores, the job, the audit actions, the error-code text, the report
+  column, the mail prose, every catalog and the docs. The post-login
+  activity POLICY KIND (Directory → Policies, `post_login_policy.ts`)
+  stays: it is the rules a started activity follows. In prose the record
+  is a *started* activity where the two must be told apart; in code it is
+  a `StartedActivity` (`id` `pla-…`), and on a person's progress row the
+  one that last mailed them is `mailedBy`. **No migration**: no released
+  data held a row; a row under the old store names on a development
+  instance is orphaned, not read.
+* **Two stores, one writer each.** `post_login.activities` (the decision:
+  activity, groups, numbers, state) is written by the console and the API
+  only; `post_login.activityRuns` (cursor, passes, counts) by the job only.
+  The job runs on a request worker (#408) and a Pause is answered by any
+  process, so one row would have each writing back the other's stale half.
+  Both cell-tier: the cursor is a person's DN.
+* **The walk is the directory's key cursor**, never a scan per request:
+  `passkeyScanAsync({ attribute: '' })` for the realm and
+  `groupMembersAfterAsync()` for groups (`ldap/CLAUDE.md`), `perRun` at a
+  time. Whether a person is mailed is `dueFor()` — which already says
+  nobody who has done it and nobody the realm cannot ask — then the
+  interval (the person's last mail from ANY started activity) and the
+  maximum (THIS one's count: `noteMailed()` resets `mails` when another
+  started activity writes the row).
+* **SEVERAL GROUPS, THEIR UNION (#1123, rcbj).** `groups` is a list (at
+  most `MAX_GROUPS`, fifty); `groupMembersAfterAsync()` takes the list and
+  puts every group's member keys in ONE sorted set walked by ONE cursor, so
+  a person in two groups is read once and mailed once, and a pass is one
+  pass over the union. The alternative — a cursor per group, a person
+  de-duplicated by asking whether an earlier group held them — costs a
+  membership question per person and a cursor shape per started activity.
+  A start resolves each name through the group index (`groupsNamed()`) and
+  refuses one the realm does not have by name (STS-AUTHN-0530) rather than
+  dropping it; the duplicate check (0492) compares the SET of DNs. A group
+  deleted later is logged under 0493 and its members are simply not read.
+* **The console chooses the groups by search** (`chooserPane()`, a slice
+  of twenty cut by `view()` from the page's `groupq`/`groupfrom`/`groups`
+  — `admin-ui/CLAUDE.md` argues the list in the query). The search reads
+  `ldap_server.js`'s `groupChoices()`: the group INDEX, a row per group
+  rebuilt only when a group may have been written, never the directory's
+  entries or anybody's membership.
+* **A mail is not an invitation**: `invitedAt`, from which the allotted
+  time counts, is still only written at a sign-in.
+* **The message is `post-login-reminder`, a NOTIFICATION** (a person may
+  decline it on `/portal/email`; the activity is asked at their next
+  sign-in whatever they chose), sent by `mail_uses.ts`'s
+  `postLoginReminder()` to the address on the entry, its one link `/portal`
+  on the pinned origin (3ba's rules unchanged).
+* **The console page is the CONTROLS** (`admin-ui/web_post_login_activities.ts`,
+  Directory, beside Policies); the per-person progress is the
+  `postLoginProgress` report source (#1110).
+
+* **Progress is REPORTED in `/report`, never on a console page** (#1110,
+  rcbj): the `postLoginProgress` source reads the store through
+  `eachProgressAsync()`. Each write stamps the profile, role and
+  `graceDays` that applied (`stamp()`), and `graceOf()` is the one
+  computation of the deadline the report shows. `report/CLAUDE.md` argues
+  the source.
+
+### 3ct, continued: a started activity asks its groups at sign-in (#1126, 2026-10-28)
+
+rcbj chose option (a) on #1126: starting an activity for a group and signing
+in as a member asked nothing, because the default realm had no saved policy
+and the built-in `default` is off; the page read as if starting it asked the
+group. **A RUNNING started activity now turns the sign-in invitation on for
+its population** (the union of its groups by DN, or the realm where it names
+none) for its activity. What reaches outside `post_login.ts`'s header:
+
+* **The rules are still the policy's.** `dueFor()` reads the profile
+  `forPerson()` selects; a started activity overrides only `enabled`. So
+  method, snoozeDays, graceDays, noPasskey, noPasskeyRole, attestation and
+  noPasskeyFallback come from the same profile whoever asks, and there is
+  still one place to set them.
+* **Exclusion is unchanged, and `default` off is not one.** The selected
+  profile is the matching named profile of lowest precedence; a NAMED one
+  with `enabled` off excludes its people from every started activity too.
+  `default` off excludes nobody — it is the built-in state of every realm,
+  and letting it veto would make a started activity ask nobody anywhere a
+  policy was never saved, which is the bug.
+* **The cheap question stays cheap.** `dueFor()` asks
+  `post_login_activities.runningOf()` first and `anyEnabled()` second; with
+  neither, it reads no keys, no group and no row. `runningOf()` is a walk of
+  the started store already held in the process — a persisted, NOT
+  on-demand `realms.map()` bounded at `KEEP` (fifty) rows, its writes from
+  another process arriving by the change log as the job's own pause check
+  already relies on — so it keeps no cache: a second copy would have to be
+  kept in step for nothing. The person's groups are the directory's
+  `personGroups()` hook (#535's, the passkey policy's), asked AT MOST ONCE
+  a question (`forPerson(username, groupsOf)` shares the answer with the
+  started activities) and only where a named profile exists or a running
+  activity names groups; never a member walk.
+* **Several running activities reaching one person: the OLDEST asks**, so
+  `askedBy` does not move when another is started.
+* **`askedBy` on the progress row** (`policy`, or the started activity's
+  id) is written at the ask, Skip and done — the pending step carries it
+  (`authn/CLAUDE.md`) — and NEVER by a mail (`noteMailed()` leaves it);
+  `mailedBy` stays the mail's. The `postLoginProgress` source reports it
+  (`report/CLAUDE.md`).
+* **The mail follows for free.** The job's `decide()` was already
+  `dueFor()`, which with the policy off answered null for everybody, so a
+  started activity mailed nobody unless the policy was also on (the page's
+  `noActivity` warning said so). It now mails its people; the warning and
+  its key are gone from the page and the seven catalogs, and the API's
+  `activityEnabled` is described as the POLICY's own answer.
+* **No new code.** Nothing new refuses or fails: a started store that
+  cannot be read asks nobody through it (`runningActivities()` answers
+  none), and the policy still asks whom it enables.
+
+### 3ct, continued: the migration's method, and what replaced the portal's Upgrade button (#1100–#1105, 2026-10-28)
+
+**rcbj: the post-login activity's PQC migration REPLACES the "Upgrade to
+post-quantum" button on `/portal/keys` (#939), and the configuration that
+went with it is deleted.** So `POST /account-api/keys/upgrade`, its page
+block and `webauthn.pqcUpgrade` are gone; #939's ceremony
+(`credentials.beginKeyUpgrade()` / `proveKeyUpgrade()` /
+`confirmKeyUpgrade()`) stays, run by the sign-in step and by the console on a
+person's behalf. Whether a realm's people are asked is the post-login
+policy's to say; there is no second switch.
+
+* **`method`** (#1100): `upgrade` runs that ceremony with
+  `beginKeyUpgrade(..., { mode: 'replace' })` — proof by the classical
+  passkey, then an ML-DSA registration under ITS handle with it left out of
+  the exclude list, then one write in its place. A plain registration in a
+  one-lane realm was the lockout trap the method exists to avoid: the
+  authenticator holding the classical credential is excluded, so the person
+  is refused there, and if it were not excluded the new credential would
+  overwrite it on the device while both rows stayed here. `alongside` adds
+  an ML-DSA passkey beside it (the post-quantum lane; with one lane, another
+  authenticator, and the page says so). `automatic` asks the lanes.
+* **`attestation`** (#1102) and **`noPasskeyFallback`** (#1103) are read by
+  `post_login.ts`'s `roleFor()` and by `authn.ts`'s `webauthnFacts()`.
+* **The `possiblyReplacedBy` marker** (#1101) lives in `credentials.ts`
+  (`markPossiblyReplaced()`), its audit row in `webauthn_ceremonies.ts`
+  because `credentials.ts` may not reach the audit log.
+* **`lanes`** on the passkey policy (#1104) feeds
+  `webauthnPolicy.alongsideClassical()` through `registrationRows()`.

@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "移除透過 OpenID Federation Trust Chain 註冊、且註冊已結束的每個用戶端（12.3）。每個端點都已將此類用戶端視為未知；此作業只是讓其項目不再殘留。"
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "已學習通行金鑰用戶端清理"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "刪除已學習的通行金鑰用戶端（#1112）中所有失敗都已超出 webauthn.clientLearningWindowHours 且從未被學習的項目。已學習的用戶端會保留，直到來自它的註冊成功或被清除。"
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "密碼金鑰報告重新計數"
@@ -310,6 +318,14 @@
   "sched.jobs.persistence.tombstone-purge.describe": {
     "en": "d5b8faad6c0c24c4",
     "text": "從共用儲存區刪除已結束之產生資料列中早於 persistence.mintedRetention 的墓碑。"
+  },
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
+    "text": "登入後活動郵件"
+  },
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "向進行中的登入後活動涵蓋的人員（#1111）寄送登入提醒，登入後該活動會請他們註冊後量子通行金鑰。每次執行在游標之後讀取每個已啟動活動人群（領域，或其各群組的聯集）的一批，只向有待完成該活動的人寄送，絕不在提醒間隔內或超過其上限寄送，並為每個已啟動活動的每次執行寫一筆稽核紀錄。"
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",

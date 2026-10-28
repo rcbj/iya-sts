@@ -98,6 +98,27 @@
 // certificate algorithm is also a COSE name (ML-DSA-44/65/87), empty
 // otherwise, and `1` when that certificate's signature is post-quantum.
 //
+// **THE HISTORY (#1109).** The baseline is the latest count and nothing
+// kept yesterday's, so a migration to ML-DSA passkeys could be read for
+// today and never as a trend. The RECOUNT itself now writes one row of
+// `passkey_report.history` per realm per UTC day, keyed by the day, right
+// after it writes the baseline: people by kind, passkeys by algorithm, by
+// lane and by attestation algorithm, and each named passkey profile's
+// population (bounded, as the filter is). In the same job and not a
+// sibling one, for three reasons: the snapshot is then EXACTLY the count
+// just made, with no changes noted under the new epoch yet; the scheduler
+// orders no job after another, so a sibling would have to find out whether
+// a recount had run since its last run; and a Recount now that the
+// operator asks for updates the day's row with the rest. A later recount on
+// the same day replaces that day's row: the latest count is the truth, as
+// it is for the baseline. The same run then removes the rows older than
+// `webauthn.passkeyHistoryDays` — the store holds a few hundred small rows
+// per realm, so the prune is a walk of keys already in memory, and nothing
+// periodic runs outside the scheduler. A failure to write or prune is
+// logged (`STS-AUTHN-0520`, `0521`) and never fails the recount: the
+// baseline it exists for is already written. The reports application reads
+// the rows as its `passkeyHistory` source (`report/passkey_history.ts`).
+//
 // A LIBRARY (rule 3): it registers no route. It requires `helpers`,
 // `error_codes`, `realms`, `credentials` (a leaf), `instance_slot` and the
 // replication fan-in, none of which requires it back; the scheduler, the
@@ -176,6 +197,11 @@ interface Store {
   delete(key: string): unknown;
 }
 
+// The history store also hands out its keys, for the prune and the read.
+interface HistoryStore extends Store {
+  keys(): Iterable<string>;
+}
+
 interface PasskeyReportDeps {
   log: typeof helpers.log;
   errorCodes: typeof errorCodes;
@@ -183,6 +209,8 @@ interface PasskeyReportDeps {
   credentials: Json;
   baseline: Store;
   changes: Store;
+  history: HistoryStore;
+  historyDays(): number;
   remoteRows(handle: string, realmId: undefined, key: string): any[];
   refreshContributions(handles: string[]): Promise<unknown>;
   scheduler(): Json;
@@ -196,6 +224,7 @@ const BASELINE_HANDLE = 'passkey_report.baseline';
 const CHANGES_HANDLE = 'passkey_report.changes';
 const BASELINE_KEY = 'baseline';
 const CHANGES_KEY = 'changes';
+const HISTORY_HANDLE = 'passkey_report.history';
 
 /** The scheduler job that counts the baseline. */
 const RECOUNT_JOB = 'passkeys.report-recount';
@@ -226,6 +255,14 @@ const MAX_MODELS = 1000;
 const PER_DEFAULT = 50;
 const PER_MAX = 500;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// How many named passkey profiles a history row counts the population of
+// (#1109). Each is a bounded read of up to POPULATION_LIMIT members, once a
+// day; past this many profiles the rest are named in the row as skipped,
+// so a realm with hundreds of profiles does not turn the daily recount
+// into hundreds of population reads.
+const HISTORY_PROFILES = 25;
+// The retention when the setting cannot be read: `config.js`'s default.
+const HISTORY_DAYS_DEFAULT = 400;
 
 // The baseline is the latest count, whole: an ASSIGNMENT.
 const baselineStore = realms.map({ persist: BASELINE_HANDLE });
@@ -237,6 +274,11 @@ const baselineStore = realms.map({ persist: BASELINE_HANDLE });
 const changesStore = realms.map({ persist: CHANGES_HANDLE, merge: 'own',
                                   contributionsOnRead: true,
                                   observation: true });
+// THE HISTORY (#1109): one row per UTC day, keyed `yyyy-mm-dd`, whole-valued
+// as the baseline is (a later recount the same day replaces the day's row).
+// The handle is written out rather than named by the constant above, so
+// `tests/cell_tiers.js`, which reads every `persist:` literal, sees it.
+const historyStore = realms.map({ persist: 'passkey_report.history' });
 
 /**
  * The passkey report (#942): passkeys by algorithm and lane, people by kind,
@@ -287,6 +329,12 @@ class PasskeyReport {
       credentials: credentials,
       baseline: baselineStore as Store,
       changes: changesStore as Store,
+      history: historyStore as HistoryStore,
+      historyDays: function (): number {
+        const days = Number(config.value('webauthn.passkeyHistoryDays'));
+        return Number.isFinite(days) && days >= 1 ? Math.floor(days)
+                                                  : HISTORY_DAYS_DEFAULT;
+      },
       remoteRows: function (handle, realmId, key) {
         return replication.remoteRows(handle, realmId, key);
       },
@@ -690,12 +738,218 @@ class PasskeyReport {
     baseline.set(BASELINE_KEY, row);
     log.info('passkey report: realm ' + realms.currentId() + ' counted ' +
              holders + ' passkey holder(s) in ' + row.durationMs + ' ms.');
+    // THE DAY'S HISTORY ROW (#1109), from the count just made. It never
+    // throws: the baseline is written, and that is what the run is for.
+    const kept = await this.writeHistoryAsync(row, ctx);
     log.debug("Leaving PasskeyReport.recountAsync().");
     return { summary: 'Counted ' + holders + ' passkey holder(s) in ' +
-                      row.durationMs + ' ms.',
+                      row.durationMs + ' ms' + (kept.written
+                        ? '; the history row for ' + kept.day +
+                          ' was written'
+                        : '; no history row was written') +
+                      (kept.pruned ? ' and ' + kept.pruned +
+                       ' older one(s) removed.' : '.'),
+             history: kept,
              holders: holders, durationMs: row.durationMs,
              evidenceRenewed: evidenceRenewed,
              evidenceFailures: evidenceFailures };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE HISTORY (#1109): the day's row, written by the recount, and the
+  // rows older than the retention removed by the same run.
+  // -------------------------------------------------------------------------
+  /**
+   * The UTC calendar day of an instant, `yyyy-mm-dd`: a history row's key.
+   *
+   * @param ms - the instant, in milliseconds
+   * @returns the day
+   */
+  static dayOf(ms: number): string {
+    helpers.log.debug("Entering PasskeyReport.dayOf().");
+    helpers.log.debug("Leaving PasskeyReport.dayOf().");
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+
+  // A count with the model facets left out. A history row keeps no model
+  // table (#1109 asks for kinds, algorithms, lanes and attestation; the
+  // model table is up to MAX_MODELS rows a day), and `tablesOf()` given no
+  // `m|` facet looks no model name up.
+  private static withoutModels(counts: Record<string, number>):
+      Record<string, number> {
+    helpers.log.debug("Entering PasskeyReport.withoutModels().");
+    const out: Record<string, number> = {};
+    Object.keys(counts || {}).forEach(function (facet: string): void {
+      if (facet.indexOf('m|') !== 0) {
+        out[facet] = counts[facet];
+      }
+    });
+    helpers.log.debug("Leaving PasskeyReport.withoutModels().");
+    return out;
+  }
+
+  // Each named profile's population, counted as the profile filter counts
+  // it (`populationAsync()`, at most POPULATION_LIMIT members, `complete`
+  // false past it), for at most HISTORY_PROFILES profiles. The default
+  // profile selects nobody by group, and a profile with no group selects
+  // nobody either, so neither is a population. Null when the run stopped
+  // being this process's between two profiles: the caller then writes no
+  // row, rather than one that silently lacks the later profiles.
+  private async historyProfilesAsync(ctx?: Json): Promise<Json[] | null> {
+    const { log, errorCodes, realms } = this.deps;
+    log.debug("Entering PasskeyReport.historyProfilesAsync().");
+    const named = this.profiles().filter(function (p: Json): boolean {
+      return p.name !== 'default' && p.selectGroups.length > 0;
+    });
+    const out: Json[] = [];
+    for (let i = 0; i < named.length; i += 1) {
+      const p = named[i];
+      const head = { name: p.name, postQuantumRequired: p.postQuantumRequired,
+                     selectGroups: p.selectGroups.slice() };
+      if (i >= HISTORY_PROFILES) {
+        out.push(Object.assign(head, { counted: false,
+          why: 'past the ' + HISTORY_PROFILES + ' profiles a history row ' +
+               'counts' }));
+        continue;
+      }
+      if (ctx && typeof ctx.stillOwner === 'function' && !ctx.stillOwner()) {
+        log.debug("Leaving PasskeyReport.historyProfilesAsync(). Fenced.");
+        return null;
+      }
+      try {
+        const pop = await this.populationAsync(p.selectGroups);
+        const t = this.tablesOf(PasskeyReport.withoutModels(pop.counts), {},
+                                pop.rows.length);
+        out.push(Object.assign(head, {
+          counted: true, members: pop.members, read: pop.rows.length,
+          complete: pop.complete, people: t.people,
+          keys: { total: t.keys.total, postQuantum: t.keys.postQuantum,
+                  classical: t.keys.classical } }));
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0522') + 'passkey history: ' +
+                  'the population of passkey profile ' + p.name + ' in ' +
+                  'realm ' + realms.currentId() + ' could not be read; the ' +
+                  'day\'s row is written without it: ' +
+                  ((e && e.message) || e));
+        out.push(Object.assign(head, { counted: false,
+          why: 'its population could not be read' }));
+      }
+    }
+    log.debug("Leaving PasskeyReport.historyProfilesAsync(). " + out.length);
+    return out;
+  }
+
+  /**
+   * Writes the day's history row from the baseline a recount just wrote,
+   * and removes the rows older than `webauthn.passkeyHistoryDays` (#1109).
+   * It never throws: a failure is logged and said in the answer.
+   *
+   * @param base - the baseline row the recount wrote
+   * @param ctx - the scheduler's run context, for `stillOwner()`
+   * @returns `{ written, day, pruned, profiles }`
+   */
+  async writeHistoryAsync(base: Json, ctx?: Json): Promise<Json> {
+    const { log, errorCodes, realms, history, now } = this.deps;
+    log.debug("Entering PasskeyReport.writeHistoryAsync().");
+    const day = PasskeyReport.dayOf(Date.parse(base.countedAt) || now());
+    let written = false;
+    let profiles: Json[] | null = [];
+    try {
+      let people: number | null = null;
+      try {
+        people = Number((this.directory as PasskeyDirectory)
+          .personCount()) || 0;
+      } catch (e) {
+        log.debug("Caught in PasskeyReport.writeHistoryAsync(): " +
+                  ((e && e.message) || e));
+        // Unknown, not zero: the row's `none` and `total` are then null.
+        people = null;
+      }
+      const t = this.tablesOf(PasskeyReport.withoutModels(base.counts), {},
+                              people);
+      profiles = await this.historyProfilesAsync(ctx);
+      if (profiles === null) {
+        log.info('passkey history: realm ' + realms.currentId() + '\'s ' +
+                 'row for ' + day + ' was not written: the run stopped ' +
+                 'being this process\'s while it counted the profiles.');
+        log.debug("Leaving PasskeyReport.writeHistoryAsync(). Fenced.");
+        return { written: false, day: day, pruned: 0, profiles: 0 };
+      }
+      history.set(day, {
+        day: day, countedAt: base.countedAt, epoch: base.epoch,
+        trigger: base.trigger, holders: base.holders,
+        durationMs: base.durationMs,
+        people: t.people,
+        keys: { total: t.keys.total, postQuantum: t.keys.postQuantum,
+                classical: t.keys.classical, byLane: t.keys.byLane,
+                byAlgorithm: t.keys.byAlgorithm },
+        attestation: t.attestation.rows,
+        profiles: profiles
+      });
+      written = true;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0520') + 'passkey history: ' +
+                'realm ' + realms.currentId() + '\'s row for ' + day +
+                ' could not be written, and the baseline stands: ' +
+                ((e && e.message) || e));
+    }
+    const pruned = this.pruneHistory(now());
+    log.debug("Leaving PasskeyReport.writeHistoryAsync().");
+    return { written: written, day: day, pruned: pruned,
+             profiles: profiles ? profiles.length : 0 };
+  }
+
+  /**
+   * Removes this realm's history rows older than
+   * `webauthn.passkeyHistoryDays` days before `at` (#1109); the day of `at`
+   * is the first of those days. Never throws.
+   *
+   * @param at - the instant the retention counts back from
+   * @returns how many rows were removed
+   */
+  pruneHistory(at: number): number {
+    const { log, errorCodes, realms, history, historyDays } = this.deps;
+    log.debug("Entering PasskeyReport.pruneHistory().");
+    let removed = 0;
+    try {
+      const first = PasskeyReport.dayOf(at - (historyDays() - 1) * DAY_MS);
+      // Collected, then deleted: a delete inside the keys' own iteration
+      // is legal for a Map and still harder to read.
+      const old = Array.from(history.keys()).filter(function (k: string) {
+        return String(k) < first;
+      });
+      old.forEach(function (k: string): void {
+        history.delete(k);
+      });
+      removed = old.length;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0521') + 'passkey history: ' +
+                'realm ' + realms.currentId() + '\'s rows past the ' +
+                'retention could not be removed; the next recount tries ' +
+                'again: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving PasskeyReport.pruneHistory(). " + removed);
+    return removed;
+  }
+
+  /**
+   * This realm's history rows, oldest day first (#1109): what the reports
+   * application's `passkeyHistory` source reads. At most
+   * `webauthn.passkeyHistoryDays` (plus a day) rows, held in memory.
+   *
+   * @returns the rows, as written
+   */
+  historyRows(): Json[] {
+    const { log, history } = this.deps;
+    log.debug("Entering PasskeyReport.historyRows().");
+    const keys = Array.from(history.keys()).map(String).sort();
+    const rows = keys.map(function (k: string): Json {
+      return history.get(k);
+    }).filter(function (row: Json): boolean {
+      return !!row && typeof row === 'object';
+    });
+    log.debug("Leaving PasskeyReport.historyRows(). " + rows.length);
+    return rows;
   }
 
   // The baseline and every process's changes under its epoch, added.
@@ -1422,15 +1676,20 @@ class PasskeyReport {
     return true;
   }
 
-  // Tests only: forget this realm's baseline and this process's changes.
+  // Tests only: forget this realm's baseline, this process's changes and
+  // the realm's history (#1109).
   /**
-   * Forgets this realm's baseline and this process's changes. Tests only.
+   * Forgets this realm's baseline, this process's changes and the realm's
+   * history rows. Tests only.
    */
   resetForTests(): void {
     const { log, baseline, changes } = this.deps;
     log.debug("Entering PasskeyReport.resetForTests().");
     baseline.delete(BASELINE_KEY);
     changes.delete(CHANGES_KEY);
+    Array.from(this.deps.history.keys()).forEach((k: string): void => {
+      this.deps.history.delete(k);
+    });
     log.debug("Leaving PasskeyReport.resetForTests().");
   }
 }
@@ -1466,6 +1725,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   RECOUNT_JOB: RECOUNT_JOB,
+  HISTORY_HANDLE: HISTORY_HANDLE,
+  HISTORY_PROFILES: HISTORY_PROFILES,
+  dayOf: PasskeyReport.dayOf,
   KINDS: KINDS,
   LISTS: LISTS,
   LIST_SCAN: LIST_SCAN,
@@ -1477,6 +1739,9 @@ export = {
   facetsOfValues: slot.forward('facetsOfValues'),
   noteKeysChanged: slot.forward('noteKeysChanged'),
   recountAsync: slot.forward('recountAsync'),
+  writeHistoryAsync: slot.forward('writeHistoryAsync'),
+  pruneHistory: slot.forward('pruneHistory'),
+  historyRows: slot.forward('historyRows'),
   filterOf: slot.forward('filterOf'),
   reportAsync: slot.forward('reportAsync'),
   listAsync: slot.forward('listAsync'),

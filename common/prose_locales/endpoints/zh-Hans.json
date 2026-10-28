@@ -475,6 +475,10 @@
     "en": "fa5ff98584c701fb",
     "text": "报表应用程序的 Shared Signals 收件箱"
   },
+  "endpoints.route./report-api/announcements.name": {
+    "en": "3adb83b8075c6a3a",
+    "text": "报表应用的公告"
+  },
   "endpoints.route./report-api/groups.name": {
     "en": "e30ed85f8fa2f141",
     "text": "组搜索，供报表应用使用"
@@ -702,6 +706,18 @@
   "endpoints.route./admin-api/scheduler/:action.name": {
     "en": "3483d9e9aab04915",
     "text": "调度器操作"
+  },
+  "endpoints.route./admin-api/broadcast.name": {
+    "en": "7ca7feaebe5215c0",
+    "text": "广播公告"
+  },
+  "endpoints.route./admin-api/broadcast/:action.name": {
+    "en": "6e79d056a66502f2",
+    "text": "广播公告操作"
+  },
+  "endpoints.route./admin-api/announcements.name": {
+    "en": "c4061b1ad0320a47",
+    "text": "控制台公告"
   },
   "endpoints.route./admin-api/mail/:action.name": {
     "en": "cff7055c2db49c6a",
@@ -994,6 +1010,14 @@
   "endpoints.route./admin-api/passkey-report/:action.name": {
     "en": "738bbc740bd914fc",
     "text": "重新统计领域的通行密钥"
+  },
+  "endpoints.route./admin-api/post-login-activities.name": {
+    "en": "d37435b7e29d739b",
+    "text": "已启动的登录后活动"
+  },
+  "endpoints.route./admin-api/post-login-activities/:action.name": {
+    "en": "6bfc2bea96fee884",
+    "text": "启动、暂停、继续或结束登录后活动"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1555,6 +1579,10 @@
     "en": "48e0b4bbb949a879",
     "text": "必需的第二因素设置步骤"
   },
+  "endpoints.route./authn/post-login.name": {
+    "en": "69876d051e66729c",
+    "text": "登录后活动步骤"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "一次性代码第二因素步骤"
@@ -1702,6 +1730,14 @@
   "endpoints.route./authn-api/mfa/:id/skip.name": {
     "en": "d412e3d8a9215328",
     "text": "忽略所提供的第二因素"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/register.name": {
+    "en": "ea3fbaf33423ccc9",
+    "text": "注册登录后活动所要求的通行密钥"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/skip.name": {
+    "en": "3d081a5b28f53bd6",
+    "text": "推迟一项登录后活动"
   },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",

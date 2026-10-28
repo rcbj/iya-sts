@@ -136,5 +136,7 @@
   "title.wsfed": "WS-Federation",
   "title.tls": "TLS / mutual TLS",
   "title.vc-verifier-config": "Verifier request",
-  "title.worker-pools": "Worker pools"
+  "title.worker-pools": "Worker pools",
+  "title.broadcast": "Broadcast Announcement",
+  "title.post-login-activities": "Post-login activities"
 }

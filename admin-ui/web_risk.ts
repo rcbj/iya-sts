@@ -50,6 +50,13 @@ const UPLOAD = '/admin/risk/upload';
  */
 const METRICS_PAGE = '/admin/risk-scoring';
 
+// WHERE A LOOKUP'S ANSWER LANDS (#1084): the Lookups tab, by the id
+// `WebPages.protocolTabs()` gives the `lookup` section. Both lookups are GET
+// forms, and the runtime navigates one to its action's fragment
+// (`ConsoleRuntime.onSubmit()`); with none the page opened on its first
+// tab, Metadata, and the answer was a click away.
+const LOOKUP_ACTION = PAGE + '#risk-tab-lookup';
+
 const LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'UNSCORED'];
 
 // Each level's colour: the same four as the badge on a person's user page
@@ -448,6 +455,9 @@ class RiskPage {
   }
 
   // A format's name for a person: its id and whose file it is.
+  // Where both lookup forms go, for the test that holds it to a tab (#1084).
+  static readonly LOOKUP_ACTION = LOOKUP_ACTION;
+
   static formatLabels(view: Json): Json {
     const out = {};
     (view.formats || []).forEach(function (f: Json): void {
@@ -580,7 +590,7 @@ class RiskPage {
                     '</th><th></th></tr></thead><tbody>' + versions +
                     '</tbody></table>' : '');
     }).join('');
-    const lookupForm = '<form method="get" action="' + PAGE + '">' +
+    const lookupForm = '<form method="get" action="' + LOOKUP_ACTION + '">' +
       '<input type="hidden" name="realm" value="' + esc(view.realm) + '">' +
       '<label>' + t.html('consoleRisk.lookup.label') +
       ' <input type="text" ' +
@@ -740,8 +750,14 @@ class RiskPage {
     const assessments = this.assessmentsHtml(ctx, view);
     // EACH SECTION A TAB (2026-10-12; `WebPages.protocolTabs()`): the tiles,
     // the note and the data credits are Metadata.
+    // Two lookups in one tab (#1082): the tab's label is its heading, so
+    // the heading names both and each form has its own.
     const lookup = '<h3 data-tab="lookup">' +
-      t.html('consoleRisk.lookup.heading') + '</h3>' + lookupForm;
+      t.html('consoleRisk.lookup.heading') + '</h3>' +
+      '<h4>' + t.html('consoleRisk.lookup.address.heading') + '</h4>' +
+      lookupForm +
+      '<h4>' + t.html('consoleRisk.authenticator.heading') + '</h4>' +
+      RiskPage.authenticatorHtml(view, t);
     const datasets = '<h3 data-tab="datasets">' +
       t.html('consoleRisk.datasets.heading') + '</h3>' + rows;
     if (view.realmOnly) {
@@ -925,6 +941,108 @@ class RiskPage {
     return said || unknown
       ? t.html('consoleRisk.model.model') + ' ' + said +
         (said && unknown ? ' · ' : '') + unknown : '';
+  }
+
+  // WHAT THE FIDO METADATA SAYS ABOUT ONE AUTHENTICATOR (#1080): the form
+  // and its answer, `view.authenticatorLookup` from
+  // `risk_datasets.describeAuthenticator()`. A GET form of its own beside
+  // the address lookup, so each sends only its own box. The answer is a
+  // table of what a person asks first — the model, its certification, its
+  // latest status, whether it is compromised — and the metadata statement
+  // as kept, folded, because it runs to pages (the attestation roots).
+  /**
+   * Draws the authenticator lookup form and its answer.
+   *
+   * @param view - the page's view
+   * @param t - the page's translator (#539)
+   * @returns the form, and the answer when there is one
+   */
+  static authenticatorHtml(view: Json, t: Json): string {
+    const esc = kit.esc.bind(kit);
+    const a = view.authenticatorLookup;
+    const form = '<form method="get" action="' + LOOKUP_ACTION + '">' +
+      '<input type="hidden" name="realm" value="' + esc(view.realm) + '">' +
+      '<label>' + t.html('consoleRisk.authenticator.label') +
+      ' <input type="text" name="authenticator" ' +
+      'id="risk-lookup-authenticator" size="40" placeholder="' +
+      esc(t.text('consoleRisk.authenticator.placeholder')) + '" value="' +
+      esc(a ? a.input : '') + '"></label> ' +
+      '<button type="submit" id="risk-lookup-authenticator-go">' +
+      t.html('consoleRisk.lookup.button') + '</button></form>';
+    if (!a) {
+      return form;
+    }
+    const row = function (label: string, value: string): string {
+      return '<tr><th scope="row">' + label + '</th><td>' + value +
+        '</td></tr>';
+    };
+    // Each key named whole, so the catalog test can find it.
+    const kinds: Json = {
+      aaguid: 'consoleRisk.authenticator.kind.aaguid',
+      aaid: 'consoleRisk.authenticator.kind.aaid',
+      acki: 'consoleRisk.authenticator.kind.acki'
+    };
+    const whys: Json = {
+      'not-a-key': 'consoleRisk.authenticator.why.not-a-key',
+      'all-zero': 'consoleRisk.authenticator.why.all-zero',
+      'no-blob': 'consoleRisk.authenticator.why.no-blob',
+      'not-listed': 'consoleRisk.authenticator.why.not-listed',
+      unreadable: 'consoleRisk.authenticator.why.unreadable'
+    };
+    const rows = [];
+    if (kinds[a.keyKind]) {
+      rows.push(row(t.html('consoleRisk.authenticator.kind'),
+                    t.html(kinds[a.keyKind])));
+      rows.push(row(t.html('consoleRisk.authenticator.key'),
+                    '<code>' + esc(a.key) + '</code>'));
+    }
+    if (a.version) {
+      rows.push(row(t.html('consoleRisk.authenticator.version'),
+                    '<code>' + esc(a.version) + '</code>' +
+                    (a.stale ? ' ' + t.html('consoleRisk.authenticator.stale')
+                             : '')));
+    }
+    const m = a.model;
+    if (a.listed && m) {
+      rows.push(row(t.html('consoleRisk.authenticator.description'),
+                    esc(m.description || '—')));
+      rows.push(row(t.html('consoleRisk.authenticator.protocolFamily'),
+                    esc(m.protocolFamily || '—')));
+      rows.push(row(t.html('consoleRisk.authenticator.certificationLevel'),
+                    esc(m.certificationLevel || '—')));
+      rows.push(row(t.html('consoleRisk.authenticator.latestStatus'),
+                    esc(m.latestStatus || '—') +
+                    (m.latestStatusAt
+                      ? ' (' + esc(RiskPage.when(m.latestStatusAt)) + ')'
+                      : '')));
+      rows.push(row(t.html('consoleRisk.authenticator.compromised'),
+                    m.compromised
+                      ? '<strong id="risk-authenticator-compromised">' +
+                        t.html('consoleRisk.authenticator.compromisedYes') +
+                        '</strong>'
+                      : t.html('consoleRisk.authenticator.compromisedNo')));
+      rows.push(row(t.html('consoleRisk.authenticator.statusReports'),
+                    (m.statusReports || []).map(function (r: Json): string {
+                      return esc(r.status) + (r.effectiveDate
+                        ? ' (' + esc(r.effectiveDate) + ')' : '');
+                    }).join('<br>') || '—'));
+    } else {
+      rows.push(row(t.html('consoleRisk.authenticator.listed'),
+                    '<span id="risk-authenticator-why">' +
+                    t.html(whys[a.why] || whys['not-listed']) +
+                    (a.detail ? ': ' + esc(a.detail) : '') + '</span>'));
+    }
+    return form + '<table class="grid" id="risk-authenticator">' +
+      '<tbody>' + rows.join('') + '</tbody></table>' +
+      (a.listed && m
+        ? '<details><summary>' +
+          t.html('consoleRisk.authenticator.statement') + '</summary><pre>' +
+          esc(JSON.stringify(m.metadataStatement || {}, null, 2)) +
+          '</pre></details>' : '') +
+      (a.attributions || []).map(function (c: Json): string {
+        return '<p class="attribution"><small>' + RiskPage.credit(c, t) +
+          '</small></p>';
+      }).join('');
   }
 
   // A provider's credit as its licence asks (`risk_terms.attributionOf()`):

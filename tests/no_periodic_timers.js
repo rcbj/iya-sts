@@ -108,7 +108,15 @@ const ALLOWED = {
     '(#574), where a <meta> refresh was' },
   'authn/authn.bundle.js|schedule|timeout': { permanent:
     'the same poll in the sign-in surface\'s bundle, which the image ' +
-    'build writes from oid4vc/web_vc_signin.ts' }
+    'build writes from oid4vc/web_vc_signin.ts' },
+  // AN ANNOUNCEMENT, COLLECTED BY EVERY OPEN TAB (#1086): the console's,
+  // the portal's and reports' runtimes each ask their own API for what
+  // their Shared Signals receiver kept. In a person's browser, stopped at
+  // sign-out; the service's half (the receiver's poll of /ssf/poll) is
+  // already the ssf.internal-poll scheduler job.
+  'common/web_announcements.ts|tick|timeout': { permanent:
+    'not this service\'s work: each open console, portal and reports tab ' +
+    'asking for a broadcast announcement, in the browser (#1086)' }
 };
 
 function walk(dir, out) {

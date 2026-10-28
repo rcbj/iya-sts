@@ -199,5 +199,7 @@
   "shell.menu.switch.none": "No other account is signed in in this browser yet.",
   "shell.menu.switch.kept": "The account this tab leaves stays signed in, so you can switch back to it here.",
   "shell.menu.another": "Sign in with another account",
-  "shell.menu.another.title": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs."
+  "shell.menu.another.title": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs.",
+  "nav.broadcast": "Broadcast Announcement",
+  "nav.post-login-activities": "Post-login activities"
 }

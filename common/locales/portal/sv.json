@@ -242,6 +242,7 @@
   "keys.lane": "Kryptografi",
   "keys.laneClassical": "klassisk",
   "keys.lanePqc": "postkvant (ML-DSA), visas som ett andra konto som slutar på ”+ml-dsa”",
+  "keys.cryptoPostQuantum": "postkvant (ML-DSA)",
   "keys.authenticator": "Autentiserare",
   "keys.removeLabel": "Ta bort {name}",
   "keys.remove": "Ta bort",
@@ -548,5 +549,8 @@
   "accounts.anotherTitle": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
   "accounts.none": "Inget annat konto är inloggat i den här webbläsaren ännu.",
   "accounts.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
-  "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade."
+  "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade.",
+  "announcement.heading": "Meddelande",
+  "announcement.close": "Stäng",
+  "keys.possiblyReplaced": "En annan nyckel som registrerades {day} under samma konto på samma modell av autentiserare kan ha ersatt den här på den autentiseraren. Om den här nyckeln inte längre fungerar, ta bort den."
 }

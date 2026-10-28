@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "Una persona que tiene una clave de acceso poscuántica inició sesión con una clásica"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "A un cliente dejó de ofrecérsele ML-DSA en el registro de llaves de acceso"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "La atestación de una llave de seguridad ya no es de confianza: la lista de estado de atestación de Android de Google revoca su cadena"
@@ -706,6 +710,42 @@
   "audit.actions.admin.locale-policy.change.label": {
     "en": "4dfe507526bb6dd5",
     "text": "Se modificó un perfil de política de configuración regional"
+  },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "Se cambió un perfil de política de actividad posterior al inicio de sesión"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "Se pidió a una persona que hiciera una actividad posterior al inicio de sesión"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "Una persona omitió una actividad posterior al inicio de sesión"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "Una persona hizo una actividad posterior al inicio de sesión"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "Se retuvo un inicio de sesión: una actividad posterior al inicio de sesión está vencida"
+  },
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "Se inició, pausó, reanudó o terminó una actividad posterior al inicio de sesión"
+  },
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "Una actividad posterior al inicio de sesión iniciada envió sus recordatorios"
+  },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "Un dispositivo no pudo crear la clave de acceso que pedía una actividad posterior al inicio de sesión"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "Es posible que una clave de acceso se haya reemplazado en su autenticador"
   },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
@@ -942,6 +982,10 @@
   "audit.actions.ssf.event.transmit.label": {
     "en": "3a3cd80f6d3a215a",
     "text": "Se entregó un Security Event Token a un receptor"
+  },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "Se difundió un anuncio a las aplicaciones con sesión iniciada"
   },
   "audit.actions.ssf.event.refused.label": {
     "en": "29910e5a49b21a0c",

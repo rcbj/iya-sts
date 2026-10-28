@@ -393,6 +393,23 @@ const CELL_MINTED = [
   'oauth2.grantIssued', 'oauth2.grants', 'oauth2_monitor.counters',
   'oauth2.pushedRequests', 'oauth2.redeemedCodes', 'oauth2.tenantCommandRuns',
   'oidc_rp.flows',
+  // When a person was first asked a post-login activity, until when they put
+  // it off, and when they did it (#1096): somebody's, minted at their sign-in.
+  'post_login.progress',
+  // The learned passkey clients (#1112): which browsers failed an ML-DSA
+  // registration here, with a digest of each person who failed. An
+  // OBSERVATION of this cell's own traffic, as `attribute_sources.status`
+  // is, and keyed by people, so it stays in the cell.
+  'passkey_clients.learned',
+  // The passkey history (#1109): a realm's counts per day — people by kind,
+  // passkeys by algorithm, each named profile's population. Counted from
+  // this cell's people, as the passkey report's baseline is, so it stays
+  // with them.
+  'passkey_report.history',
+  // A started post-login activity (#1111, #1123) and what its runs did: the
+  // record names the administrator who started it, and its run row holds a
+  // key cursor that is a person's DN — and it walks this cell's people.
+  'post_login.activityRuns', 'post_login.activities',
   // The reports application's definitions, jobs and reporter stamp (#956).
   // A report reads this cell's people and its artifact holds them, so the
   // job and its definition are this cell's; the stamp names a node, and a
@@ -411,6 +428,9 @@ const CELL_MINTED = [
   'security.rateLimitBuckets', 'spiffe.joinTokens',
   'spiffe.recordedConnections', 'spnego.pending',
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
+  // An announcement a surface's receiver took in (#1086), for its own tabs:
+  // minted here, beside the inbox it came out of.
+  'ssf_receivers.announcements',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.streams', 'tls.listenerAnnounced',
   // Each node's own listener key (2026-10-08), sealed: a node is a member of

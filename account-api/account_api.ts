@@ -546,6 +546,25 @@ class AccountApi {
             locale: self.localeData(who.username),
             version: self.versionData() });
         } },
+      // AN ANNOUNCEMENT (#1086), collected by every open portal tab. NOT A
+      // PAGE'S DOOR either: the banner it feeds is drawn over every page.
+      { method: 'GET', path: BASE + '/announcements',
+        operationId: 'getAnnouncements', tag: 'API', access: 'person',
+        query: z.object({ since: z.string().regex(/^[0-9]{1,16}$/)
+          .optional() }),
+        summary: 'Announcements for everybody signed in to the portal',
+        description: 'What an administrator broadcast to the user portal ' +
+          'after `since` — the `now` this operation answered your tab\'s ' +
+          'first ask with — within `ssf.announcementKeepS`, oldest first. ' +
+          'With no `since` it answers only `now`, so a tab shows what ' +
+          'arrived after it signed in. `everyMs` is how often to ask again.',
+        handler: function (req: Json, res: Json, caller: AccountCaller | null,
+                           input: Json): unknown {
+          const since = Number((input && input.query &&
+                                input.query.since) || 0) || 0;
+          return self.json(res, 200, require('../ssf/ssf_receivers')
+            .announcementsFor('user-portal', since));
+        } },
       { method: 'GET', path: BASE + '/locale', operationId: 'getLocale',
         tag: 'API', access: 'public',
         query: z.object({}),

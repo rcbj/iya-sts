@@ -601,7 +601,9 @@ too, and so does completing a reset link. `caep.autoEmitTypes` and
 
 **Directory → Policies** holds every kind of policy a realm has.
 `GET /admin-api/policies` answers each as a member, and
-`POST /admin-api/policies/{save,reset}-{password,authn}-policy` writes them.
+`POST /admin-api/policies/save-<kind>-policy` and `reset-<kind>-policy`
+write them, where the kind is `password`, `authn`, `serviceAccount`,
+`passkey`, `locale`, `attributes` or `postLogin`.
 
 **The password policy** is a minimum length (12), how many previous passwords
 may not be reused (5), a minimum number of symbols (1), and whether an uppercase
@@ -694,6 +696,30 @@ post-quantum one is required** (`postQuantumAllowCredentials`, #946) —
 `realm` (follow `webauthn.postQuantumAllowCredentials` on Protocols →
 WebAuthn), `narrow` or `list-and-refuse`
 ([Narrow, or list and refuse](passkeys.md#narrow-or-list-and-refuse)).
+
+**The post-login activity policy** (#1096) asks the people it reaches to do
+something after they sign in, before they are sent back to the application:
+today, register a post-quantum (ML-DSA) passkey. It is off by default, has a
+`default` profile and named profiles that select groups by precedence, and
+says how long Skip puts it off, when it becomes required, what a person with
+no passkey is asked, and how a classical passkey is moved (upgraded in place
+or added alongside). See
+[Post-login activities](post-login-activities.md) and the walk-through in
+[Passkeys](passkeys.md#post-login-activities-moving-people-to-post-quantum-passkeys).
+
+### Post-login activities — `/admin/post-login-activities`
+
+[Start a post-login activity](post-login-activities.md#starting-an-activity)
+for the realm or for groups, then pause, resume or end it. On the **Start an
+activity** tab, search for groups (twenty results a page) and pick one or more
+to build the list; the activity reaches the members of every group on it, each
+person once, or everybody when the list is empty. A scheduler job mails each
+person the activity is due for a reminder to sign in, every so many days up to
+a maximum per person. The **Activities** tab lists each started activity with
+its groups and its own counts; who was mailed and where each person stands is
+the `postLoginProgress` report in [Reports](reporting.md#postloginprogress),
+not a console page. `GET /admin-api/post-login-activities` and
+`POST /admin-api/post-login-activities/{start,pause,resume,end}`.
 
 ### Groups — `/admin/groups`
 

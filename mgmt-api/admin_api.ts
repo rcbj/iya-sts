@@ -634,6 +634,8 @@ interface AdminApiDeps {
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
   // Monitoring → Passkeys' operations (#942).
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
+  // Directory → Post-login activities' operations (#1111).
+  loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
   // The outbound SCIM clients' operations (#552).
   loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
@@ -751,6 +753,9 @@ class AdminApi {
       },
       loadPasskeyReportApi: function () {
         return require('./passkey_report_api');
+      },
+      loadPostLoginActivitiesApi: function () {
+        return require('./post_login_activities_api');
       },
       loadScimClientsApi: function () {
         return require('./scim_clients_api');
@@ -1434,6 +1439,51 @@ class AdminApi {
     });
   }
 
+  // THE BROADCAST PAGE'S VIEW (#1086): what `GET /admin-api/broadcast`
+  // answers, and what the POST checks `everyRealm` against.
+  /**
+   * Builds the broadcast page's view for the caller.
+   *
+   * @param req - the request, for the caller's gate state
+   * @returns the view
+   */
+  broadcastView(req) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminApi.broadcastView().");
+    const realmsMod = require('../common/realms');
+    const receivers = require('../ssf/ssf_receivers');
+    let state = null;
+    try {
+      state = adminViews.gateStateFor(req);
+    } catch (e) {
+      log.debug("Caught in AdminApi.broadcastView(): " +
+                ((e && e.message) || e));
+      // No gate state: treated as a realm administrator, the narrower reach.
+      state = null;
+    }
+    const realm = realmsMod.currentId();
+    const serviceAdmin = !!state && state.authority !== 'realm';
+    const ssfOn = !!config.value('ssf.enabled');
+    const receiversOn = !!receivers.enabled();
+    const view = {
+      realm: realm,
+      surfaces: receivers.SURFACES.map(function (one) {
+        return { id: one.id, label: one.label };
+      }),
+      everyRealm: serviceAdmin && realm === realmsMod.DEFAULT_ID,
+      realmCount: realmsMod.count(),
+      maxChars: Number(config.value('ssf.announcementMaxChars')),
+      pollMs: Number(config.value('ssf.announcementPollMs')),
+      keepS: Number(config.value('ssf.announcementKeepS')),
+      ready: ssfOn && receiversOn,
+      why: !ssfOn ? 'Shared Signals is off (ssf.enabled).'
+        : (!receiversOn ? 'This service\'s own receivers are off ' +
+                          '(ssf.internalReceivers).' : '')
+    };
+    log.debug("Leaving AdminApi.broadcastView().");
+    return view;
+  }
+
   /**
    * Returns the body with `action` set from the path parameter, over whatever
    * the body carried.
@@ -1590,6 +1640,11 @@ class AdminApi {
               '`realm` (webauthn.pqcOnly and ' +
               'webauthn.pqcAlongsideClassical); a passkey outside what the ' +
               'profile offers is refused at registration (STS-AUTHN-0432). ' +
+              '`clientRules` (empty, #1112; optional) names the clients — ' +
+              '`<browser> on <system>`, each a family or `*` with an ' +
+              'optional major-version range, `;` between rules — whose ' +
+              'registrations offer the list less ML-DSA, where a classical ' +
+              'passkey is allowed. ' +
               'Refused: `classical-only` with `postQuantumRequired` not ' +
               '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
               'and `pq-only` or `pq-first` where the list offered names no ' +
@@ -1609,7 +1664,8 @@ class AdminApi {
                    attestationAlgorithms: 'none',
                    postQuantumAllowCredentials: 'realm',
                    registrationAlgorithms: 'realm',
-                   registrationMode: 'realm' }
+                   registrationMode: 'realm', lanes: 'realm',
+                   clientRules: '' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {
@@ -1644,6 +1700,40 @@ class AdminApi {
               'counts the people who lack one, where the directory is held ' +
               'in memory.',
         example: { requiredAttributes: ['givenName', 'sn', 'mail'] }
+      },
+      // #1096: the seventh kind, with named profiles chosen by group.
+      postLogin: {
+        save: 'Writes `cn=<profile>,ou=postLoginPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there; a realm with no ' +
+              '`default` of its own follows the default realm\'s, and named ' +
+              'profiles are the realm\'s own. **Off by default** ' +
+              '(`enabled`). On, a person the profile reaches who is due the ' +
+              '`activity` is asked after signing in, before being sent back ' +
+              'to the application: `pqc-passkey-migration` asks a person ' +
+              'holding a classical passkey (primary or second factor) and no ' +
+              'post-quantum one in that role to register an ML-DSA passkey ' +
+              'in it, and — per `noPasskey` — a person holding none to ' +
+              'register one as `noPasskeyRole`. Skip puts it off ' +
+              '`snoozeDays`; once `graceDays` (0 = never) have passed since ' +
+              'the person\'s first invitation Skip is refused ' +
+              '(STS-AUTHN-0474) and the sign-in is held until it is done, ' +
+              'and a door that cannot ask for it refuses the sign-in ' +
+              '(STS-AUTHN-0473). A named profile ' +
+              'applies to the members of `selectGroups`; the lowest ' +
+              '`precedence` wins, so a named profile with `enabled` off ' +
+              'excludes its groups. `method` (#1100) is how a classical ' +
+              'passkey is migrated: `upgrade` (proved once, then replaced ' +
+              'in place on its authenticator), `alongside` (an ML-DSA ' +
+              'passkey beside it) or `automatic` (the lanes decide). ' +
+              '`attestation` (#1102): `post-quantum` counts an ML-DSA ' +
+              'passkey as migrated only where its recorded attestation is ' +
+              'post-quantum too. `noPasskeyFallback` (#1103): `classical` ' +
+              'offers a person with no passkey a classical retry where ' +
+              'their device cannot make ML-DSA.',
+        example: { enabled: true, activity: 'pqc-passkey-migration',
+                   snoozeDays: 7, graceDays: 30, noPasskey: 'invite',
+                   noPasskeyRole: 'primary', method: 'automatic',
+                   attestation: 'any', noPasskeyFallback: 'none' }
       }
     };
     const cap = function (text) {
@@ -1715,7 +1805,8 @@ class AdminApi {
           : field.type === 'enum'
             ? { type: 'string', enum: field.values,
                 description: field.what + ' Default `' + field.dflt + '`.' }
-          : field.type === 'attributes' || field.type === 'text'
+          : field.type === 'attributes' || field.type === 'text' ||
+            field.type === 'clientRules'
             ? { type: 'string',
                 description: field.what + ' Default empty.' }
           : field.type === 'attribute'
@@ -2858,7 +2949,8 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi, loadSecretDestinationsApi,
-            loadPasskeyReportApi, loadScimClientsApi,
+            loadPasskeyReportApi, loadPostLoginActivitiesApi,
+            loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
@@ -3481,6 +3573,167 @@ class AdminApi {
         ] },
 
       // ---------------------------------------------------------------------
+      // BROADCAST AN ANNOUNCEMENT (#1086): Server configuration → Broadcast
+      // Announcement, and its rule 7 twin. The view says who may reach what
+      // — a realm administrator their realm, a service administrator in the
+      // default realm every realm as well — and the action is
+      // `ssf.broadcastAnnouncement()`, the one place an announcement is
+      // built and sent. Both reach `ssf/` LAZILY, at request time: a require
+      // from here when this file loads would load the family out of the
+      // require order.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/broadcast', tag: 'Shared Signals',
+        operationId: 'getBroadcast',
+        summary: 'What an announcement can reach from this realm',
+        description: 'The applications an announcement can be shown in ' +
+                     '(`surfaces`: `id` and `label` — the admin console, ' +
+                     'the user portal and the reports application, this ' +
+                     'service\'s own Shared Signals receivers), whether the ' +
+                     'caller may send to `everyRealm` (a service ' +
+                     'administrator in the default realm), the longest ' +
+                     'message (`maxChars`), how often an open tab checks ' +
+                     '(`pollMs`), and whether anything can be delivered ' +
+                     '(`ready`, with `why` when not). Sending is POST ' +
+                     '/admin-api/broadcast/send.',
+        mirrors: 'GET /admin/broadcast',
+        responseDescription: 'The broadcast view.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `surfaces`, `everyRealm`, `maxChars`, ' +
+                       '`pollMs`, `keepS`, `ready`, `why`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API broadcast endpoint.");
+          self.sendJson(res, 200, self.broadcastView(req));
+          log.debug("Leaving the management API broadcast endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/broadcast/:action',
+        tag: 'Shared Signals',
+        mirrors: 'POST /admin/broadcast',
+        handler: function (req, res) {
+          log.debug("Entering the management API broadcast action.");
+          const body = self.withAction(req, parseBody(req));
+          const refuse = function (errors) {
+            errorCodes.mark(res, 'STS-SSF-0153');
+            self.sendJson(res, 400, { ok: false, errors: errors });
+          };
+          if (String(body.action || '') !== 'send') {
+            refuse(['Unknown action "' + String(body.action || '') +
+                    '". The one is: send.']);
+            log.debug("Leaving the management API broadcast action. " +
+                      "Unknown action.");
+            return;
+          }
+          const view = self.broadcastView(req);
+          const everyRealm = ['true', 'on', 'yes', '1', 'every']
+            .indexOf(String(body.everyRealm || body.scope || '')
+              .toLowerCase()) >= 0 || body.everyRealm === true;
+          if (everyRealm && !view.everyRealm) {
+            refuse(['Only a service administrator in the default realm ' +
+                    'may broadcast to every realm; this goes to the "' +
+                    view.realm + '" realm only.']);
+            log.debug("Leaving the management API broadcast action. Not " +
+                      "every realm.");
+            return;
+          }
+          const surfaces = [].concat(body.surfaces == null ? []
+                                                           : body.surfaces)
+            .reduce(function (all, one) {
+              return all.concat(String(one).split(',').map(function (x) {
+                return x.trim();
+              }));
+            }, []);
+          let state = null;
+          try {
+            state = adminViews.gateStateFor(req);
+          } catch (e) {
+            log.debug("Caught in the management API broadcast action: " +
+                      ((e && e.message) || e));
+            // No gate state to read: the audit row names the door instead.
+            state = null;
+          }
+          require('../ssf/ssf').broadcastAnnouncement({
+            message: body.message, surfaces: surfaces,
+            everyRealm: everyRealm,
+            by: (state && state.username) ||
+                'the management API at /admin-api/broadcast'
+          }).then(function (result) {
+            if (!result.ok) {
+              errorCodes.mark(res, result.code || 'STS-SSF-0153');
+            }
+            self.sendJson(res, result.ok ? 200 : 400, result);
+            log.debug("Leaving the management API broadcast action.");
+          });
+        },
+        actions: [
+          { action: 'send', operationId: 'sendBroadcast',
+            summary: 'Show an announcement to everybody signed in',
+            description: 'Sends this service\'s own `announcement` ' +
+                         'Security Event Token on the receiver streams of ' +
+                         'the chosen applications, and every tab of them ' +
+                         'open at the time shows `message` in a banner ' +
+                         'within `ssf.internalPollMs` + ' +
+                         '`ssf.announcementPollMs`. A tab opened later does ' +
+                         'not. `everyRealm` sends it in every realm, and is ' +
+                         'refused (STS-SSF-0153) to anybody but a service ' +
+                         'administrator in the default realm. Answers how ' +
+                         'many streams took it per realm; `sent: 0` with ' +
+                         '`why` (STS-SSF-0154) when none did.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                message: { type: 'string',
+                           description: 'Plain text, at most ' +
+                             'ssf.announcementMaxChars characters.' },
+                surfaces: { type: 'array', items: { type: 'string',
+                  enum: ['admin-console', 'user-portal', 'report'] },
+                  description: 'Which applications show it.' },
+                everyRealm: { type: 'boolean',
+                              description: 'Every realm, not only this ' +
+                                           'one.' }
+              },
+              required: ['message', 'surfaces'],
+              examples: [{ message: 'Maintenance at 18:00 UTC.',
+                           surfaces: ['admin-console', 'user-portal',
+                                      'report'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many receiver streams took it.' }
+        ] },
+
+      // The console's own open tabs ask this every ssf.announcementPollMs.
+      { method: 'GET', path: BASE + '/announcements', tag: 'Shared Signals',
+        operationId: 'getConsoleAnnouncements',
+        summary: 'Announcements the console\'s receiver took in',
+        // In words, as `/me`'s is: the banner every console page draws is
+        // not a page, and the send it answers for is `POST /admin/broadcast`.
+        mirrors: 'no console page — the announcement banner every console ' +
+                 'page draws, fed by POST /admin/broadcast (#1086)',
+        description: 'What an open console tab collects (#1086): the ' +
+                     'announcements this realm\'s admin-console receiver ' +
+                     'took in after `since` — the `now` this operation ' +
+                     'answered the tab\'s FIRST ask with — and within ' +
+                     '`ssf.announcementKeepS`, oldest first. With no ' +
+                     '`since` it answers only `now`, so a tab shows what ' +
+                     'arrived after it signed in. `everyMs` is how often to ' +
+                     'ask again.',
+        parameters: [
+          { name: 'since', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 0 },
+            description: 'The `now` of the first answer, in milliseconds.' }
+        ],
+        responseDescription: '`now`, `everyMs` and `announcements`.',
+        responseSchema: { type: 'object',
+          description: '`now`, `everyMs`, `announcements` (each `id`, ' +
+                       '`at`, `message`).' },
+        handler: function (req, res) {
+          log.debug("Entering the management API announcements endpoint.");
+          self.sendJson(res, 200, require('../ssf/ssf_receivers')
+            .announcementsFor('admin-console', Number(req.query.since) || 0));
+          log.debug("Leaving the management API announcements endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
       // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s
       // `report()` for the realm the call is in, the function `/admin/mode`
       // answers — and nothing else. It CHANGES nothing: `global.mode` is set
@@ -3838,7 +4091,14 @@ class AdminApi {
                      'the `formats` a file may be in; with `address`, what ' +
                      'the active datasets say about it in `lookup` (`geo`, ' +
                      '`asn`, `lists`, the `datasets` versions that answered ' +
-                     'and any `stale` ones left out); and a page of the ' +
+                     'and any `stale` ones left out); with ' +
+                     '`authenticator`, what the active FIDO MDS3 BLOB says ' +
+                     'about that key in `authenticatorLookup` (`keyKind`, ' +
+                     '`key`, `listed`, `why` when it is not, `version`, ' +
+                     '`stale`, and the listed `model`: `description`, ' +
+                     '`protocolFamily`, `certificationLevel`, ' +
+                     '`latestStatus`, `compromised`, `statusReports`, ' +
+                     '`metadataStatement`); and a page of the ' +
                      'realm\'s refused passwords in `failures` — a subject ' +
                      'or a name\'s digest, the door, the network prefix, the ' +
                      'ASN and the code, never an address. A page of the ' +
@@ -3859,6 +4119,11 @@ class AdminApi {
           { name: 'address', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'An IPv4 or IPv6 address to look up.' },
+          { name: 'authenticator', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'An AAGUID, an AAID (`XXXX#XXXX`) or an ' +
+                         'attestation certificate key identifier (40 hex ' +
+                         'digits) to look up in the FIDO metadata (#1080).' },
           { name: 'level', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Only the assessments at this level.' },
@@ -3883,6 +4148,7 @@ class AdminApi {
                              'assessments and the standings.',
         responseSchema: { type: 'object',
           description: '`store`, `datasets`, `formats`, `lookup`, ' +
+                       '`authenticatorLookup`, ' +
                        '`failures`, `failuresPaging`, `assessments`, ' +
                        '`assessmentsPaging`, `subjects`, `subjectsPaging`.' },
         handler: function (req, res) {
@@ -18167,8 +18433,9 @@ class AdminApi {
                          'answer for it — and keeps no copy of the ' +
                          'key, so nothing can read it back. To put the pair ' +
                          'in the container, write `fullChainPem` (the leaf ' +
-                         'followed by its Issuing CA and the realm ' +
-                         'Intermediate) and `privateKeyPem` to the files ' +
+                         'followed by its Issuing CA, the realm ' +
+                         'Intermediate and, since #1064, the service Root) ' +
+                         'and `privateKeyPem` to the files ' +
                          '`PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name; the PEP ' +
                          'picks up a pair written after it started. ' +
                          '`anchorPem` is the service Root a client of that ' +
@@ -23690,6 +23957,18 @@ class AdminApi {
                      'the realm\'s own attributes, `enforced` whether it is ' +
                      'enforced (product mode), and `missingFilter` the LDAP ' +
                      'filter finding a person who lacks one.' +
+                     '\n\n**`passkey.clients` is the realm\'s learned ' +
+                     'passkey clients (#1112)**: the browsers, systems ' +
+                     'and major versions a registration stopped offering ' +
+                     'ML-DSA to under `webauthn.clientLearning` (`learning` ' +
+                     'says whether it is on, `threshold` and `windowHours` ' +
+                     'its two settings), and those still being counted, ' +
+                     'each `client`, `learned`, `learnedAt`, ' +
+                     '`learnedFailures`, `failures` (in the window), ' +
+                     '`firstAt` and `lastAt`; learned first. Paged by ' +
+                     '`clientsPage` and `clientsPer` (`paging`), apart from ' +
+                     'the profiles. `clear-passkey-client` and ' +
+                     '`clear-passkey-clients` clear them.' +
                      '\n\nIt is NOT the XACML policy repository, which ' +
                      'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',
@@ -23705,7 +23984,16 @@ class AdminApi {
                          'of the realm\'s people, so asked only on request, ' +
                          'and null where the directory is held in the store ' +
                          '(`attributes.missingFilter` is the LDAP filter ' +
-                         'that finds them there).' }
+                         'that finds them there).' },
+          // #1112: the learned passkey clients' own page.
+          { name: 'clientsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `passkey.clients.rows`, the ' +
+                         'learned passkey clients. Defaults to 1.' },
+          { name: 'clientsPer', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 200 },
+            description: 'Rows per page of `passkey.clients.rows`. ' +
+                         'Defaults to 25.' }
         ]),
         responseDescription: 'The kinds of policy, each kind\'s profile in ' +
                              'force with its field table and schema, and ' +
@@ -24828,6 +25116,9 @@ class AdminApi {
       // MONITORING → PASSKEYS (#942): who holds which passkey algorithm,
       // its export and its Recount now (`mgmt-api/passkey_report_api.ts`).
       ...loadPasskeyReportApi().ROUTES,
+      // DIRECTORY → POST-LOGIN ACTIVITIES (#1111): the started activities
+      // and their four acts (`mgmt-api/post_login_activities_api.ts`).
+      ...loadPostLoginActivitiesApi().ROUTES,
       // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
       // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
       ...loadScimClientsApi().ROUTES,

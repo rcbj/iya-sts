@@ -330,9 +330,25 @@ async function development() {
   });
   await sleep(1500);
   const exactlyOne = await testPeer.received(tenantId, "bcl", since);
+  // ONE TOKEN, COUNTED BY ITS `jti` (cluster, 2026-10-28): the delivery is
+  // claimed with a LEASE, not a lock (backchannel_logout.ts, point 4), so a
+  // first attempt that outlives its lease and a later attempt can both POST
+  // the SAME token, which Back-Channel Logout section 2.6 has the relying
+  // party deduplicate on. Run #6 saw two arrivals of one token behind the
+  // balancer. Two arrivals is at-least-once delivery; two TOKENS would be
+  // two sign-outs, and that is what this check refuses.
   check(DEV + ": exactly one token was sent for that sign-out", function () {
-    assert.strictEqual(exactlyOne.events.length, 1,
+    const jtis = exactlyOne.events.map(function (one) {
+      return String((one.claims && one.claims.jti) || "");
+    }).filter(function (one, i, all) {
+      return all.indexOf(one) === i;
+    });
+    assert.strictEqual(jtis.length, 1,
+                       exactlyOne.events.length + " arrival(s) carrying " +
+                       jtis.length + " distinct jti: " +
                        JSON.stringify(exactlyOne.events).slice(0, 400));
+    assert.ok(jtis[0], "the Logout Token carries no jti: " +
+              JSON.stringify(exactlyOne.events).slice(0, 400));
   });
   const second = await signIn(DEV);
   since = await testPeer.mark(tenantId);

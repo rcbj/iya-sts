@@ -641,6 +641,12 @@ const ACTIONS = [
   { action: 'webauthn.algorithm-mismatch', category: 'authentication',
     label: 'A person holding a post-quantum passkey signed in with a ' +
            'classical one' },
+  // A CLIENT THIS REALM STOPPED OFFERING ML-DSA TO (#1112): enough
+  // registrations from one browser, system and major version failed with
+  // NotSupportedError, and none succeeded, within the window.
+  // `common/passkey_clients.ts` writes it, once per client learned.
+  { action: 'webauthn.client.learned', category: 'authentication',
+    label: 'A client stopped being offered ML-DSA at passkey registration' },
   { action: 'webauthn.attestation-revoked', category: 'authentication',
     label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
            'Android attestation status list revokes its chain' },
@@ -851,6 +857,38 @@ const ACTIONS = [
   // applications.
   { action: 'admin.locale-policy.change', category: 'admin',
     label: 'A locale policy profile was changed' },
+
+  // A POST-LOGIN ACTIVITY POLICY PROFILE WAS SAVED OR PUT BACK (#1096): what
+  // a realm asks people after they sign in, and which groups it reaches.
+  { action: 'admin.post-login-policy.change', category: 'admin',
+    label: 'A post-login activity policy profile was changed' },
+  // A PERSON WAS ASKED, SKIPPED, OR DID A POST-LOGIN ACTIVITY (#1096). The
+  // activity, the role and the outcome; never a credential.
+  { action: 'authn.post-login.asked', category: 'authentication',
+    label: 'A person was asked to do a post-login activity' },
+  { action: 'authn.post-login.skipped', category: 'authentication',
+    label: 'A person skipped a post-login activity' },
+  { action: 'authn.post-login.done', category: 'authentication',
+    label: 'A person did a post-login activity' },
+  { action: 'authn.post-login.held', category: 'authentication',
+    label: 'A sign-in was held: a post-login activity is overdue' },
+  // A POST-LOGIN ACTIVITY WAS STARTED, PAUSED, RESUMED OR ENDED (#1111,
+  // #1123), with the act in the detail; and ONE ROW PER STARTED ACTIVITY PER
+  // RUN of its job, the counts of the run — never a row per person mailed.
+  { action: 'admin.post-login-activity.change', category: 'admin',
+    label: 'A post-login activity was started, paused, resumed or ended' },
+  { action: 'authn.post-login.activity-run', category: 'authentication',
+    label: 'A started post-login activity mailed its reminders' },
+  // A DEVICE THAT COULD NOT MAKE THE ML-DSA PASSKEY (#1105): the browser's
+  // error name and its user agent, so the move's stalls can be found.
+  { action: 'authn.post-login.unsupported', category: 'authentication',
+    label: 'A device could not make the passkey a post-login activity ' +
+           'asked for' },
+  // A PASSKEY ROW A LATER REGISTRATION MAY HAVE REPLACED ON ITS
+  // AUTHENTICATOR (#1101): same user handle, same AAGUID. A marker, never a
+  // deletion.
+  { action: 'webauthn.key.possibly-replaced', category: 'authentication',
+    label: 'A passkey may have been replaced on its authenticator' },
 
   // A PERSON'S EMAILED SECOND FACTOR WAS TURNED ON OR OFF (#64): by them on
   // /portal/mfa, by an administrator, or by this service at the failure
@@ -1078,6 +1116,9 @@ const ACTIONS = [
     label: 'A subject was added to or removed from a stream' },
   { action: 'ssf.event.transmit', category: 'signals',
     label: 'A Security Event Token was delivered to a receiver' },
+  // #1086: an administrator's announcement to the signed-in applications.
+  { action: 'ssf.announcement.broadcast', category: 'signals',
+    label: 'An announcement was broadcast to the signed-in applications' },
   { action: 'ssf.event.refused', category: 'signals',
     label: 'A receiver refused a Security Event Token' },
   { action: 'ssf.stream.dead', category: 'signals',

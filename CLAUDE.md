@@ -527,6 +527,8 @@ preference; this table says what the constraint is and the named file says why.
 | 18j | `risk/risk_store`, `risk_datasets`, `risk_failures`, `risk_upload`, `risk_engine`, then `admin-ui/risk_admin` | 18a's placement and reason (#62): libraries, then the page, after the scheduler. **Nothing requires the libraries earlier** — they are reached lazily. | `risk/CLAUDE.md` |
 | 18j-iii | `common/attestation_revocation` | Inside 18j, after `risk/risk_datasets` (#256). A library: registers scheduler jobs, no route; reached lazily. | `common/CLAUDE.md` (3cf) |
 | 18j-iv | `common/passkey_report` | After 18j-iii, before `ldap/ldap_server` (21), whose require fills its directory slot and whose key-writing doors note there (#942). A library: a scheduler job, no route. | `common/CLAUDE.md` (3cs) |
+| 18j-v | `common/passkey_clients` | After the report (18j-iv), for its reason (#1112): a library whose build registers a scheduler job. The ceremony module and the credential store require it at load and reach its facades only at a ceremony. | `common/CLAUDE.md` 3ch |
+| 18j-vi | `common/post_login_activities` | Beside the passkey report, after the scheduler (#1111): a library that registers its job when built, and no route. Reaches `ldap/ldap_server` (21), the mail uses and the post-login module LAZILY. | `common/CLAUDE.md` (3ct) |
 | 18j-ii | `admin-ui/geo_map`, then `admin-ui/geolocation_admin` | 18a's placement and reason (#255), after the risk libraries whose assessments it counts. | `admin-ui/CLAUDE.md` |
 | 18k | `admin-ui/mode_admin` | 18a's placement and 18a's reason (#181). | `admin-ui/CLAUDE.md` |
 | 18k-iii | `admin-ui/listeners_admin` | 18a's placement and reason (#423); `tls/tls_server` (20) and `tls/listeners` are reached lazily. Its paths are in `NEVER_DISPATCHED`. | `tls/CLAUDE.md` |
@@ -675,6 +677,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cp | `phishing_resistance.ts` (#723): OpenID Connect EAP's `phr` and `phrh`, earned, requested and required | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3cq | `recoveryAssurance` (#724): account recovery no weaker than the passkey it replaces | `common/CLAUDE.md`, `authn/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3cs | `passkey_report.ts` (#942): who holds which passkey algorithm, kept rather than counted | `common/CLAUDE.md` |
+| 3ct | `post_login_policy.ts`, `post_login.ts` (#1096, #1100–#1105): post-login activities, the session held, the PQC migration's upgrade ceremony (#939's, which replaced the portal's Upgrade button); `post_login_activities.ts` (#1111, #1123): a post-login activity started for the realm or the union of groups chosen by search, and its reminder mail; their progress a `/report` source (#1110) | `common/CLAUDE.md`, `authn/CLAUDE.md`, `report/CLAUDE.md` |
 | 3cw | `opaque_access_token.ts` (#501): opaque OAuth access tokens, off by default | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |

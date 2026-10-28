@@ -6225,7 +6225,8 @@ const CODES = [
       'a yes-or-no value, or not one of its values — discouraged, ' +
       'preferred, required; allow, disallow; or a minimum PIN length ' +
       'outside 4 to 63; or a hint list that is not one, or contradicts ' +
-      'the attachment its request sends (#527, #528, #529, #531).',
+      'the attachment its request sends; or a `clientRules` rule that ' +
+      'cannot be read (#527, #528, #529, #531, #1112).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0310',
     summary: 'There is no embedded directory in this process, so a passkey ' +
@@ -6842,62 +6843,72 @@ const CODES = [
     spec: 'HTTP 400 from /admin-api/users/finish-passkey-enrolment' },
   // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, rule 3ct):
   // `authn/webauthn_policy.ts`'s `upgradeRefusal()` and
-  // `common/credentials.ts`'s upgrade ceremony. A failed upgrade leaves the
+  // `common/credentials.ts`'s upgrade ceremony, run by the post-login
+  // activity's step (#1100, which replaced the portal's Upgrade button) and
+  // by an administrator on a person's behalf. A failed upgrade leaves the
   // classical passkey as it was, whichever of these refused it.
   { code: 'STS-AUTHN-0450',
     summary: 'A passkey upgrade to a post-quantum (ML-DSA) one was ' +
-      'refused before it began: the realm does not offer it ' +
-      '(webauthn.pqcUpgrade is off, or WebAuthn is), the verifier knows no ' +
+      'refused before it began: WebAuthn is off, the verifier knows no ' +
       'ML-DSA, or — with both lanes on — the post-quantum lane is not ' +
       'offered. Nothing was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0451',
     summary: 'A passkey upgrade named a credential id that is not one of ' +
       'the caller\'s own passkeys. Nothing was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0452',
     summary: 'A passkey upgrade named a passkey that is already ' +
       'post-quantum (ML-DSA): there is nothing to upgrade.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0453',
     summary: 'A passkey upgrade named a classical passkey that was already ' +
       'upgraded with a post-quantum passkey beside it, and that ' +
       'post-quantum passkey is still held. Remove it first to upgrade ' +
       'again.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0454',
     summary: 'A passkey upgrade\'s proof or registration arrived with no ' +
       'upgrade in progress: it expired, it was cancelled, another ' +
       'enrolment replaced it, or it names a different upgrade than the ' +
       'one in progress. Nothing was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0455',
     summary: 'A passkey upgrade\'s proof of possession was refused before ' +
       'it was checked: the browser ran no assertion (it reported an error ' +
       'or posted nothing), or the assertion was made with a different ' +
       'credential than the passkey being upgraded. The upgrade is dropped; ' +
       'the classical passkey is unchanged.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0456',
     summary: 'A passkey upgrade\'s steps arrived out of order: a ' +
       'registration before the proof of possession, a second proof, or an ' +
       'upgrade in progress finished through the ordinary enrolment\'s ' +
       'finish (or an ordinary enrolment through the upgrade\'s). Nothing ' +
       'was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys or ' +
-      '/account-api/keys/upgrade' },
+    spec: 'HTTP 400 from POST /account-api/keys, ' +
+      'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0457',
     summary: 'A passkey upgrade\'s new post-quantum passkey verified, but ' +
       'the classical passkey it upgrades was removed or upgraded by ' +
       'another request since the proof of possession, so nothing was ' +
       'written.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0458',
     summary: 'A passkey upgrade\'s registration was not completed by the ' +
       'browser: it reported an error, or posted no credential. No ' +
       'classical retry is offered for an upgrade, whose point is ML-DSA; ' +
       'the upgrade is dropped and the classical passkey is unchanged.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0459',
     summary: 'A sign-in that must earn phrh (OpenID Connect EAP ACR Values ' +
       '1.0) reached the passkey step, and none of the keys held for that ' +
@@ -6973,6 +6984,127 @@ const CODES = [
       'and is stored in userCertificate on more than one account of the ' +
       'realm (#1061).',
     spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0470',
+    summary: 'A post-login activity profile was not saved or reset: its ' +
+      'name is neither default nor lower-case letters, digits and hyphens ' +
+      '(#1096).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0471',
+    summary: 'A post-login activity profile was not saved: a field was ' +
+      'missing or out of range, or a named profile named no group or a ' +
+      'precedence outside 1 to 1000 (#1096).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0472',
+    summary: 'A post-login activity profile was not saved: there is no ' +
+      'embedded directory in this process, or it is at its maximum number ' +
+      'of entries (#1096).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0473',
+    summary: 'A sign-in was held: the person\'s post-login activity is past ' +
+      'its allotted time and cannot be done at this door (a federated, ' +
+      'wallet, Kerberos or certificate sign-in, or a non-interactive one); ' +
+      'they are told to sign in at the sign-in screen, where they will be ' +
+      'asked to do it (#1096).',
+    spec: 'the door\'s own refusal; no session is started' },
+  { code: 'STS-AUTHN-0474',
+    summary: 'Skip was refused on a post-login activity: the allotted time ' +
+      'since the person\'s first invitation has passed, so the activity is ' +
+      'required before the sign-in finishes (#1096).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0475',
+    summary: 'A post-login passkey registration was refused: the realm can ' +
+      'no longer make the ML-DSA passkey asked for (`canRegister()`: ' +
+      'passkeys off, the role not allowed, no ML-DSA algorithm offered at ' +
+      'registration — webauthn.algorithms, whose default list holds them ' +
+      '— the post-quantum lane refused where both lanes are on, or an ' +
+      'upgrade refused for the upgrade method), so the activity cannot be ' +
+      'done here and the held sign-in is finished without it (#1096).',
+    spec: 'none (the sign-in continues)' },
+  { code: 'STS-AUTHN-0476',
+    summary: 'A passkey policy profile was not saved: `lanes` is both ' +
+      '(a classical and a post-quantum passkey side by side) and ' +
+      '`registrationMode` is classical-only, which makes no post-quantum ' +
+      'passkey to hold in a second lane (#1104).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0477',
+    summary: 'A learned passkey client was not cleared (#1112): the ' +
+      'request named no client, or one this realm\'s learned clients do ' +
+      'not list (`clear-passkey-client` takes the name exactly as the ' +
+      'list shows it). Nothing is changed.',
+    spec: 'none (HTTP 400 from POST /admin-api/policies/clear-passkey-' +
+      'client)' },
+  { code: 'STS-AUTHN-0478',
+    summary: 'A realm\'s learned passkey clients (#1112) are at their ' +
+      'bound, every entry already learned, so the failures of a client not ' +
+      'yet counted were not counted: it cannot be learned until an entry ' +
+      'is cleared on Directory → Policies → Passkey policy or through ' +
+      '`clear-passkey-client`. Logged once per realm per process; the ' +
+      'registrations themselves are unchanged.',
+    spec: 'none (service log)' },
+  { code: 'STS-AUTHN-0490',
+    summary: 'A post-login activity was not started: an unknown ' +
+      'activity, a number out of its bounds (intervalDays, maxMails, ' +
+      'perRun), or more groups than a started activity may name (#1111, ' +
+      '#1123).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/start)' },
+  { code: 'STS-AUTHN-0491',
+    summary: 'A started post-login activity act was refused: an unknown ' +
+      'action, no such started activity in this realm, or one whose state ' +
+      'the act does not move (pause needs running, resume paused, end ' +
+      'either) (#1111).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/:action)' },
+  { code: 'STS-AUTHN-0492',
+    summary: 'A post-login activity was not started: one for the same ' +
+      'activity and the same people (the realm, or the same groups) is ' +
+      'already running or paused. End it first (#1111).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/start)' },
+  { code: 'STS-AUTHN-0493',
+    summary: 'A started post-login activity\'s run could not read its ' +
+      'population (the directory refused, or one of its groups is gone); ' +
+      'nobody was mailed by it this run and its cursor did not move, or ' +
+      'the gone group\'s members were not read (#1111, #1123).',
+    spec: 'none (logged; the scheduler run row)' },
+  { code: 'STS-AUTHN-0494',
+    summary: 'The mail channel refused a started post-login activity\'s ' +
+      'reminder to some people this run: no address on the entry, the ' +
+      'notification declined, or a ceiling. Counted on the started ' +
+      'activity and the run\'s audit row; Monitoring → Mail names each ' +
+      '(#1111).',
+    spec: 'none (audit row authn.post-login.activity-run)' },
+  { code: 'STS-AUTHN-0495',
+    summary: 'A post-login activity is running in a realm with no ' +
+      'mail transport: its run mailed nobody and moved no cursor (#1111).',
+    spec: 'none (logged; the scheduler run row)' },
+  { code: 'STS-AUTHN-0500',
+    summary: 'A settings write was refused (#1114): it would leave ' +
+      'webauthn.attestation `enterprise` with ' +
+      'webauthn.attestationEnterpriseRpIds empty — choosing enterprise ' +
+      'with no RP ID listed, or emptying the list while it is chosen. ' +
+      'Enterprise attestation is asked for only for a listed RP ID ' +
+      '(WebAuthn Level 3 section 5.4.7). Nothing is changed.',
+    spec: 'none (HTTP 400 from the console\'s and /admin-api\'s ' +
+      'settings writes)' },
+  { code: 'STS-AUTHN-0520',
+    summary: 'The passkey report\'s recount counted the realm and wrote ' +
+      'its baseline, but the day\'s passkey history row (#1109) could not ' +
+      'be written. The baseline stands; the day has no history row until ' +
+      'the next recount writes one.',
+    spec: 'none — logged; the recount\'s run is not failed' },
+  { code: 'STS-AUTHN-0521',
+    summary: 'The passkey history rows older than ' +
+      'webauthn.passkeyHistoryDays could not be pruned after a recount ' +
+      '(#1109). They are kept, and the next recount tries again.',
+    spec: 'none — logged' },
+  { code: 'STS-AUTHN-0522',
+    summary: 'A named passkey profile\'s population could not be read for ' +
+      'the day\'s passkey history row (#1109). The row is written without ' +
+      'that profile\'s counts and says so.',
+    spec: 'none — logged; the history row records the profile as unread' },
+  { code: 'STS-AUTHN-0530',
+    summary: 'A post-login activity was not started: a group it names is ' +
+      'not one this realm has. Each missing name is listed; nothing was ' +
+      'started (#1123).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/start)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -17314,6 +17446,22 @@ const CODES = [
       'endpoint is from an outside certificate authority and is stored ' +
       'in userCertificate on more than one entry of the realm (#1061).',
     spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0153',
+    summary: 'An announcement broadcast was refused: no message, a message ' +
+      'longer than ssf.announcementMaxChars, no application chosen or one ' +
+      'this service does not have, or every realm asked for by somebody who ' +
+      'is not a service administrator in the default realm (#1086).',
+    spec: 'HTTP 400 {ok: false, errors} from /admin-api/broadcast/send' },
+  { code: 'STS-SSF-0154',
+    summary: 'An announcement broadcast reached no stream: Shared Signals is ' +
+      'off, ssf.internalReceivers is off, or the chosen applications\' ' +
+      'receiver streams are disabled or do not take the announcement event ' +
+      '(#1086).',
+    spec: 'HTTP 200 {ok: true, sent: 0, why} — nothing was sent' },
+  { code: 'STS-SSF-0155',
+    summary: 'An announcement broadcast could not be sent in a realm: ' +
+      'building or queueing its Security Event Token failed (#1086).',
+    spec: 'none: logged; the answer names the realm' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

@@ -1127,13 +1127,29 @@
     "en": "f34caf08dceeedd3",
     "text": "Solo se lee mientras la política de llaves de acceso exige una llave de acceso poscuántica al iniciar sesión (`postQuantumRequired`), y solo donde la fila `postQuantumAllowCredentials` del perfil seleccionado es `realm`. `narrow` (el valor predeterminado) nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en el `allowCredentials` del paso de llave de acceso, de modo que nunca se ofrece una clásica — pero una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia (STS-AUTHN-0356), con una página que dice que la aplicación exige una llave de acceso poscuántica y dónde añadir una. La contrapartida: la persona puede elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia."
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "Actualizar una llave de acceso clásica a una poscuántica"
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "Aprender qué clientes no pueden crear una llave de acceso ML-DSA"
   },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "Activado (el valor predeterminado), una persona puede actualizar una de sus llaves de acceso clásicas a una poscuántica (ML-DSA) en /portal/keys: usa la llave clásica una vez, para mostrar que es suya, y luego crea la nueva, a la que solo se le ofrece ML-DSA. Con `webauthn.pqcAlongsideClassical` activado, la llave poscuántica se AÑADE en su propia vía y la clásica se conserva; desactivado, la llave poscuántica SUSTITUYE a la clásica en su lugar, conservando su nombre y anotando cuándo se actualizó y desde qué algoritmo. La llave clásica solo cambia una vez verificada la nueva, de modo que una actualización fallida la deja como estaba. La nueva llave cumple cada regla que cumple un registro. Desactivado, ninguna llave puede actualizarse; una llave poscuántica aún puede registrarse junto a una clásica donde se puedan registrar llaves."
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "Activado, un registro de llave de acceso que ofreció ML-DSA y falló en el navegador con NotSupportedError se cuenta contra su cliente —el navegador y el sistema operativo por familia y versión principal, tal como lo nombran las filas de ceremonias de llaves de acceso (`Chrome 141 on macOS 15`)— y, cuando `webauthn.clientLearningFailures` personas distintas han fallado así desde un cliente dentro de `webauthn.clientLearningWindowHours`, sin que ningún registro suyo tenga éxito, este dominio deja de ofrecer ML-DSA a ese cliente: sus registros ofrecen la lista sin ML-DSA, como lo hace una fila `clientRules` configurada de la política de llaves de acceso. Un registro del cliente que pidió ML-DSA y tuvo éxito elimina la entrada, y también borrarla en Directorio → Políticas → Política de llaves de acceso. Nunca se aplica donde no se permite una llave de acceso clásica. Desactivado, no se cuenta nada ni se aplica nada aprendido; lo aprendido se conserva."
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "Fallos antes de que a un cliente deje de ofrecérsele ML-DSA"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "Cuántos registros de personas distintas desde un cliente deben haber pedido ML-DSA y fallado con NotSupportedError, dentro de `webauthn.clientLearningWindowHours` y sin que ninguno tenga éxito, antes de que `webauthn.clientLearning` deje de ofrecerle ML-DSA. Una persona se cuenta una vez por mucho que lo intente, de modo que una cuenta no puede enseñar al dominio nada sobre el navegador de los demás."
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "Ventana en la que se cuentan los fallos"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "Las horas durante las que un fallo cuenta para `webauthn.clientLearningFailures`. Un fallo más antiguo se olvida, y un trabajo del planificador (`passkeys.client-learning-sweep`) elimina las entradas cuyos fallos han caducado todos. Un cliente ya aprendido sigue aprendido hasta que un registro suyo tenga éxito o se borre."
   },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
@@ -1148,8 +1164,16 @@
     "text": "Transmisión de la atestación"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "Cuánto se pide al navegador que cuente a este servicio sobre el autenticador que creó la credencial. `direct` es el valor predeterminado aquí porque este es un servicio de DEPURACIÓN y el objeto de atestación es una de las cosas que vale la pena mirar; un despliegue al que no le sirve el modelo del autenticador debería enviar `none`, que es lo que recomienda la especificación y lo que evita una petición de consentimiento del navegador al respecto. **Lo que se HACE con lo que vuelve es `webauthn.attestationPolicy`** (#105): cada declaración que llega se verifica en modo producto. Un dominio cuya política es `require-trusted`, o que enumera AAGUID en `webauthn.attestationAllowedAaguids`, pide `direct` diga lo que diga esto — una política que necesita una declaración no puede cumplirse pidiendo ninguna. Pedir `enterprise` y no recibir nada es el navegador negándose, no este servicio."
+    "en": "1280747b772b73d1",
+    "text": "Cuánto se pide al navegador que cuente a este servicio sobre el autenticador que creó la credencial. `direct` es el valor predeterminado aquí porque este es un servicio de DEPURACIÓN y el objeto de atestación es una de las cosas que vale la pena mirar; un despliegue al que no le sirve el modelo del autenticador debería enviar `none`, que es lo que recomienda la especificación y lo que evita una petición de consentimiento del navegador al respecto. **Lo que se HACE con lo que vuelve es `webauthn.attestationPolicy`** (#105): cada declaración que llega se verifica en modo producto. Un dominio cuya política es `require-trusted`, o que enumera AAGUID en `webauthn.attestationAllowedAaguids`, pide `direct` diga lo que diga esto — una política que necesita una declaración no puede cumplirse pidiendo ninguna. **`enterprise` solo se pide para un RP ID enumerado en `webauthn.attestationEnterpriseRpIds`** (#1114); para cualquier otro la solicitud pide `direct`, y la fila de la ceremonia y el registro de atestación de la clave lo indican. No puede elegirse mientras esa lista esté vacía. Pedir `enterprise` y recibir una atestación ordinaria es el navegador o el autenticador declinando, no este servicio."
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "RP ID de la atestación empresarial"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "Los RP ID para los que un registro pide la atestación `enterprise` (WebAuthn Level 3 sección 5.4.7), nombres de host separados por comas, comparados exactamente (salvo mayúsculas). Solo se lee mientras `webauthn.attestation` es `enterprise`, que no puede elegirse mientras esta lista esté vacía (STS-AUTHN-0500), ni esta vaciarse mientras lo sea. Una ceremonia cuyo RP ID no está enumerado pide `direct` en su lugar, y su fila `webauthn.ceremony` y el registro de atestación de la nueva clave lo indican. **Solo de una declaración procedente de una solicitud empresarial se lee el número de serie del dispositivo** para el `enterpriseSerialAttribute` de la política de llaves de acceso; enumere aquí exactamente los RP ID para los que sus autenticadores y navegadores están aprovisionados para liberar la atestación empresarial."
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",
@@ -1190,6 +1214,14 @@
   "webauthn.attestationEvidenceHashAlgorithm|description": {
     "en": "ea9f111d1308b528",
     "text": "Resumen que usan los registros nuevos de RFC 4998. Subirlo desde sha256 dispara la renovación del árbol de hash de RFC 4998 en el recuento diario del informe de llaves de acceso, en una nueva ArchiveTimeStampChain."
+  },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "Historial de llaves de acceso conservado (días)"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "Cuántos días de historial de llaves de acceso conserva un dominio (#1109): el recuento diario del informe de llaves de acceso escribe una fila por dominio y por día (las personas por tipo, las llaves de acceso por algoritmo, por carril y por algoritmo de atestación, y la población de cada perfil de llave de acceso con nombre), que la aplicación de informes lee como la fuente passkeyHistory. El mismo recuento elimina las filas más antiguas que este valor. Reducirlo elimina las filas más antiguas en el siguiente recuento."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -7088,8 +7120,8 @@
     "text": "Registrar la consola, el portal y los informes como receptores"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "Indica si este servicio crea un flujo de Shared Signals para su PROPIA consola de administración, su portal de usuario y su aplicación de informes (#1042), de modo que cada uno reciba todos los eventos CAEP y RISC —recogiéndolos por sondeo RFC 8936 desde el /ssf/poll de este servicio cada ssf.internalPollMs (#771)— y muestre lo recibido en /admin/signals, /portal/signals y /report/signals. Son flujos ORDINARIOS: pause uno, restrínjalo o elimínelo en /admin/ssf y se mantendrá así hasta un reinicio."
+    "en": "603011e249d33c00",
+    "text": "Si este servicio crea un flujo de Shared Signals para su PROPIA consola de administración, portal de usuario y aplicación de informes (#1042), de modo que cada uno reciba todos los eventos CAEP y RISC —recogiéndolos por sondeo RFC 8936 desde el /ssf/poll de este servicio cada ssf.internalPollMs (#771)— y muestre lo recibido en /admin/signals y /portal/signals; la aplicación de informes responde el suyo en GET /report-api/signals y no muestra ninguna página de él (#1090). Son flujos ORDINARIOS: pausa uno, restríngelo o elimínalo en /admin/ssf y seguirá así hasta un reinicio."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",
@@ -7102,6 +7134,30 @@
   "ssf.internalPollMs|description": {
     "en": "b80cedcb611f2fd3",
     "text": "Con qué frecuencia la consola de administración y el portal de usuario de este servicio recogen lo que contienen sus flujos, mediante sondeo de RFC 8936 en /ssf/poll (la tarea programada ssf.internal-poll), hasta ssf.pollMaxEvents SET por solicitud. Es lo máximo que un Security Event Token espera antes de que cualquiera de las dos superficies lo vea y actúe en consecuencia. 0 desactiva la tarea, y entonces los eventos se encolan en los dos flujos y no llegan a ninguna de las dos páginas."
+  },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "Intervalo de comprobación de anuncios en cada pestaña abierta (milisegundos)"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "Con qué frecuencia cada pestaña abierta de la consola de administración, el portal de usuario y la aplicación de informes consulta a su propia API los anuncios que su receptor ha recibido (#1086). Junto con ssf.internalPollMs, es lo máximo que tarda en aparecer una difusión. Una pestaña lee el valor al iniciar sesión."
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "Cuánto tiempo conserva un receptor un anuncio (segundos)"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "Cuánto tiempo conserva cada uno de los tres receptores de este servicio un anuncio recibido para que sus pestañas lo recojan (#1086). Una pestaña solo muestra lo que llegó después de iniciar sesión, así que no es cuánto tiempo puede verlo una pestaña tardía; solo tiene que superar el intervalo de comprobación de una pestaña y una consulta lenta."
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "Anuncio más largo (caracteres)"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "El número máximo de caracteres de un anuncio difundido (#1086). Es texto sin formato; uno más largo se rechaza."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7126,6 +7182,22 @@
   "ssf.inactivityAction|description": {
     "en": "f6d2a2be3eebe16f",
     "text": "Las tres cosas que permite la sección 8.1.1. Pause y disable envían al receptor un evento stream-updated ANTES de que el flujo se detenga, como exige la especificación; un flujo pausado sigue encolando y uno deshabilitado descarta lo que está esperando. Delete elimina el flujo y no envía nada, porque no queda ningún flujo por el que enviarlo."
+  },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "Tiempo de inactividad del flujo sondeado de una persona (s)"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "El inactivity_timeout de un flujo que posee una PERSONA (creado con un token de acceso emitido para ella, o su nombre y contraseña) y que recoge por sondeo RFC 8936 —lo que crea un receptor en el navegador— cuando ni su aplicación propietaria ni ssf.inactivityTimeoutS fijan uno (#1094). Cada sondeo es actividad, así que un flujo con una pestaña abierta nunca está inactivo; uno abandonado al cerrarse su pestaña se trata como indique ssf.personStreamInactivityAction. 0 lo desactiva."
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "En qué se convierte el flujo sondeado inactivo de una persona"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "Lo que ssf.personStreamInactivityTimeoutS hace con el flujo sondeado inactivo de una persona (#1094). Eliminarlo, el valor por defecto, libera el lugar que ocupa bajo ssf.maxStreams; el receptor del navegador crea uno nuevo cuando la persona vuelve."
   },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",

@@ -77,7 +77,8 @@ protocol's section of the sidebar:
 [Shared Signals](configure-shared-signals.md) ·
 [Certificate enrollment: ACME, EST, SCEP](configure-enrollment.md) ·
 [SPIFFE](configure-spiffe.md) ·
-[Passkeys and WebAuthn](passkeys.md).
+[Passkeys and WebAuthn](passkeys.md) ·
+[Post-login activities](post-login-activities.md).
 
 **Sessions and signals** —
 [Sessions](sessions.md) ·
@@ -92,6 +93,14 @@ protocol's section of the sidebar:
 [Secret push destinations](secret-destinations.md) ·
 [CAEP events](caep-events.md) ·
 [Signals received](signals-received.md)
+
+**Client libraries** —
+[Authentication libraries](client-libraries.md): client libraries tested
+against iya-sts, each signing a person in with the OpenID Connect
+Authorization Code flow as a public client and receiving their CAEP signals —
+one for browser single-page applications (JavaScript and TypeScript), one for
+native macOS apps (Swift). More will be added as libraries are tested or
+written.
 
 **Operating it** —
 [The compose stack](docker-compose.md) ·

@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Quita cada cliente registrado mediante una Trust Chain de OpenID Federation cuyo registro haya terminado (12.3). Cada endpoint ya responde a ese cliente como desconocido; esto solo evita que la entrada permanezca."
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "Limpieza de clientes de llaves de acceso aprendidos"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "Elimina los clientes de llaves de acceso aprendidos (#1112) cuyos fallos han caducado todos fuera de webauthn.clientLearningWindowHours y que nunca llegaron a aprenderse. Un cliente ya aprendido se conserva hasta que un registro suyo tenga éxito o se borre."
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "Recuento del informe de llaves de acceso"
@@ -310,6 +318,14 @@
   "sched.jobs.persistence.tombstone-purge.describe": {
     "en": "d5b8faad6c0c24c4",
     "text": "Elimina del almacén compartido las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention."
+  },
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
+    "text": "Correo de actividades posteriores al inicio de sesión"
+  },
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "Envía a las personas a las que llega una actividad posterior al inicio de sesión en curso (#1111) un recordatorio para iniciar sesión, donde la actividad les pide registrar una clave de acceso poscuántica. Lee en cada ejecución un tramo de la población de cada actividad iniciada (el ámbito, o la unión de sus grupos) tras un cursor, escribe solo a quienes tienen la actividad pendiente, nunca dentro del intervalo de recordatorio ni por encima de su máximo, y escribe una fila de auditoría por actividad iniciada y ejecución."
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",

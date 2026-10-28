@@ -242,6 +242,7 @@
   "keys.lane": "Cryptographie",
   "keys.laneClassical": "classique",
   "keys.lanePqc": "post-quantique (ML-DSA), affichée comme un second compte se terminant par « +ml-dsa »",
+  "keys.cryptoPostQuantum": "post-quantique (ML-DSA)",
   "keys.authenticator": "Authentificateur",
   "keys.removeLabel": "Supprimer {name}",
   "keys.remove": "Supprimer",
@@ -548,5 +549,8 @@
   "accounts.anotherTitle": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur.",
   "accounts.none": "Aucun autre compte n’est encore connecté dans ce navigateur.",
   "accounts.kept": "Le compte que cet onglet quitte reste connecté : vous pouvez y revenir d’ici.",
-  "accounts.unsaved": "Cette page contient des modifications non enregistrées. Changer de compte quand même ? Elles seront perdues."
+  "accounts.unsaved": "Cette page contient des modifications non enregistrées. Changer de compte quand même ? Elles seront perdues.",
+  "announcement.heading": "Annonce",
+  "announcement.close": "Fermer",
+  "keys.possiblyReplaced": "Une autre clé d’accès enregistrée le {day} sous le même compte, sur le même modèle d’authentificateur, a peut-être remplacé celle-ci sur cet authentificateur. Si cette clé d’accès ne fonctionne plus, supprimez-la."
 }

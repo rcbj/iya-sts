@@ -119,12 +119,15 @@ const CONSOLE: Record<string, string> = {
   '/admin/listeners': 'listeners.html',
   '/admin/logout': 'signing-out.html',
   '/admin/mail': 'mail.html',
+  '/admin/broadcast': 'shared-signals.html#broadcast-announcements',
   '/admin/mail/outbox': 'mail.html#where-to-look',
   '/admin/metrics': 'admin-console.html#metrics--adminmetrics',
   '/admin/mode': 'what-is-not-checked.html',
   '/admin/node-health': 'admin-console.html#node-health--adminnode-health',
   '/admin/oauth2': 'oauth-oidc.html',
   '/admin/oauth2/monitor': 'oauth-oidc.html',
+  '/admin/post-login-activities':
+    'post-login-activities.html#starting-an-activity',
   '/admin/passkey-report':
     'admin-console.html#passkeys--adminpasskey-report',
   '/admin/pki': 'pki.html',

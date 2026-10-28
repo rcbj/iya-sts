@@ -887,5 +887,6 @@
   "mfaSection.certAddTip": "One leaf certificate. The authority that issued it goes in the Client Truststores, not here.",
   "mfaSection.certAdd": "Store",
   "mfaSection.certAddTitle": "Store this certificate on the entry",
-  "mfaSection.certNeedsWrite": "Storing or removing one needs <strong>Admin Write</strong>."
+  "mfaSection.certNeedsWrite": "Storing or removing one needs <strong>Admin Write</strong>.",
+  "mfaSection.possiblyReplaced": "May have been replaced on its authenticator by a passkey registered on {day} under the same user handle and AAGUID. It is not counted as a way in; clear it if it no longer works."
 }

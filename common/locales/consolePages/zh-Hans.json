@@ -136,5 +136,7 @@
   "title.wsfed": "WS-Federation",
   "title.tls": "TLS / 双向 TLS",
   "title.vc-verifier-config": "验证方请求",
-  "title.worker-pools": "工作线程池"
+  "title.worker-pools": "工作线程池",
+  "title.broadcast": "广播公告",
+  "title.post-login-activities": "登录后活动"
 }

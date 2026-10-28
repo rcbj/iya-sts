@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "En person med en postkvantnyckel loggade in med en klassisk nyckel"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "En klient slutade erbjudas ML-DSA vid passnyckelregistrering"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "En säkerhetsnyckels attestering är inte längre betrodd: Googles statuslista för Android-attestering återkallar dess kedja"
@@ -706,6 +710,42 @@
   "audit.actions.admin.locale-policy.change.label": {
     "en": "4dfe507526bb6dd5",
     "text": "En profil för språkpolicyn ändrades"
+  },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "En profil för policyn för aktivitet efter inloggning ändrades"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "En person ombads utföra en aktivitet efter inloggning"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "En person hoppade över en aktivitet efter inloggning"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "En person utförde en aktivitet efter inloggning"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "En inloggning hölls kvar: en aktivitet efter inloggning är försenad"
+  },
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "En aktivitet efter inloggning startades, pausades, återupptogs eller avslutades"
+  },
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "En startad aktivitet efter inloggning skickade sina påminnelser"
+  },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "En enhet kunde inte skapa nyckeln som en aktivitet efter inloggning bad om"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "En nyckel kan ha ersatts på sin autentiserare"
   },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
@@ -942,6 +982,10 @@
   "audit.actions.ssf.event.transmit.label": {
     "en": "3a3cd80f6d3a215a",
     "text": "En Security Event Token levererades till en mottagare"
+  },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "Ett meddelande sändes till de inloggade programmen"
   },
   "audit.actions.ssf.event.refused.label": {
     "en": "29910e5a49b21a0c",

@@ -90,7 +90,12 @@ three (`model: ip ×… · ua ×… · user ×…` on Monitoring → Risk, and
   have signed in, over this person's share of the realm's sign-ins
   (`signals[0].terms`). It is 1 for a person who signs in as often as the
   average, above 1 for one who signs in less, and the same whatever address
-  or browser they use.
+  or browser they use. The number of people is counted once and kept for
+  `risk.populationUsersCacheS` seconds (60). When it is due, the sign-in
+  that finds it so is scored with the kept number while it is counted again
+  in the background, so no sign-in waits for the count except a realm's
+  very first. A realm of fewer than 1,000 people is counted at every
+  sign-in.
 
 **When a lookup finds nothing.** A private, loopback or container-bridge
 address is in no dataset, and without the ASN and geolocation datasets (or
@@ -776,6 +781,38 @@ once the active BLOB is overdue), under the same acceptance and the same
 checks. An authenticator the metadata does not list, including one that
 attests nothing (the all-zero AAGUID), is simply unknown.
 
+### Looking up an authenticator
+
+To see what the loaded BLOB says about one authenticator model, open the
+**Lookups** tab of Monitoring → Risk and use **Look up an authenticator**, or
+call `GET /admin-api/risk?authenticator=<key>`. The key can be any of the
+three the BLOB lists models under, and its kind is told by its shape:
+
+| Key | Looks like |
+|---|---|
+| an AAGUID (FIDO2 / WebAuthn) | a UUID, with or without dashes, `{…}` or capitals |
+| an AAID (FIDO UAF) | `XXXX#XXXX`, hex |
+| an attestation certificate key identifier (FIDO U2F) | 40 hex digits |
+
+For a listed model the answer gives its description, protocol family,
+certification level, latest status and date, whether it is **compromised**
+(any status report of REVOKED, USER_VERIFICATION_BYPASS or a KEY_COMPROMISE —
+a passkey from it is refused at registration and HIGH at sign-in), every
+status report, and the metadata statement as kept (without its icon). The
+API answers it as `authenticatorLookup`: `keyKind`, `key`, `listed`,
+`version`, `stale` and `model`.
+
+When nothing is listed it says why, in `why`: `no-blob` (no BLOB is
+loaded), `not-listed`, `all-zero` (the all-zero AAGUID, which an
+authenticator that attests nothing sends), `not-a-key` (none of the three
+shapes) or `unreadable` (the store could not answer; `detail` says what
+happened).
+
+A stale BLOB is still asked, and the answer says `stale`, so you can see
+what it says while you wait for the next one. Attestation and risk scoring
+still ignore a stale BLOB. The lookup only reads the metadata; nothing that
+decides a registration or a score reads its answer.
+
 **The same BLOB serves WebAuthn attestation (#105).** A security key's
 registration is checked against it: the model's attestation root
 certificates anchor its attestation chain, and a model a status report calls
@@ -943,12 +980,13 @@ kept in step with `common/config.js`.
 This service's own console and portal receive the CAEP `risk-level-change`
 events it sends. At `HIGH`, each one ends its own sessions for that person
 (product mode), as the `signal-response` policy permits. See
-[Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal).
+[Signals received](signals-received.md#what-the-three-applications-do-with-a-signal).
 
 ## In the running service
 
 - **Monitoring → Risk** (`/admin/risk`) shows everything on this page: the
-  assessments, people by current standing, a lookup of any address, every
+  assessments, people by current standing, a lookup of any address and of
+  any authenticator in the FIDO metadata, every
   dataset and its versions, the providers, their terms and who accepted
   them, and the refused passwords. It also shows the data credits and these
   settings. `?subject=` narrows the assessments to one person. The

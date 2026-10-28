@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "持有後量子通行金鑰的人使用傳統通行金鑰登入"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "某用戶端在通行金鑰註冊時不再取得 ML-DSA"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "安全金鑰的證明不再受信任：Google 的 Android 證明狀態清單撤銷了其鏈結"
@@ -706,6 +710,42 @@
   "audit.actions.admin.locale-policy.change.label": {
     "en": "4dfe507526bb6dd5",
     "text": "變更了地區設定原則設定檔"
+  },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "登入後活動原則設定檔已變更"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "某人被要求完成一項登入後活動"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "某人略過了一項登入後活動"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "某人完成了一項登入後活動"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "一次登入遭到暫扣：一項登入後活動已逾期"
+  },
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "登入後活動已啟動、暫停、繼續或結束"
+  },
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "已啟動的登入後活動寄送了提醒"
+  },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "裝置未能建立登入後活動所要求的通行金鑰"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "某個通行金鑰可能已在其驗證器上遭到取代"
   },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
@@ -942,6 +982,10 @@
   "audit.actions.ssf.event.transmit.label": {
     "en": "3a3cd80f6d3a215a",
     "text": "Security Event Token 已傳遞給接收端"
+  },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "已向已登入的應用程式廣播一則公告"
   },
   "audit.actions.ssf.event.refused.label": {
     "en": "29910e5a49b21a0c",

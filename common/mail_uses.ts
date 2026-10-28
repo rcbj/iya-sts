@@ -34,6 +34,10 @@
 //   5. **AN ACCESS REQUEST WAITING FOR ITS OWNER** (#432 phase 6), a
 //      notification a person may decline: a GNAP grant a client asked for
 //      while they were not there, waiting on /portal/ciba.
+//   6. **A STARTED POST-LOGIN ACTIVITY'S REMINDER** (#1111), a notification
+//      a person may decline: sign in, and the post-login activity asks you
+//      to register a post-quantum passkey. The one link is the portal's path;
+//      it carries no credential (`common/post_login_activities.ts`).
 //
 // A LIBRARY (rule 3). Its requires of the credential store and the account
 // signals are LAZY, at the moment of use: `ssf/account_signals.ts` calls
@@ -876,6 +880,52 @@ class MailUses {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // 6. A STARTED POST-LOGIN ACTIVITY'S REMINDER (#1111): to the address on
+  // the person's entry, never one a request names; the link is the portal's
+  // path on this service's pinned origin, which signs nobody in. The dedup
+  // key names the started activity and the mail's number, so a run repeated on
+  // another node inside `mail.dedupWindowS` queues it once.
+  // -------------------------------------------------------------------------
+  /**
+   * Mails a person a started post-login activity's reminder to sign in.
+   *
+   * @param username - the person
+   * @param facts - `started` (its id), `mails` (how many it sent them
+   *   before this one), `actor` (who started it)
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  postLoginReminder(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.postLoginReminder(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.postLoginReminder(). Nobody, or no " +
+                  "transport.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'post-login-reminder',
+        values: { username: username },
+        links: { signin: '/portal' },
+        dedupKey: 'post-login-reminder:' + String(f.started || '') + ':' +
+                  username + ':' + String(Number(f.mails) || 0),
+        via: 'a started post-login activity', actor: String(f.actor || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.postLoginReminder(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0494') + 'mail: the post-login ' +
+               'reminder for ' + username + ' in the "' + realms.currentId() +
+               '" realm could not be queued: ' + ((e && e.message) || e));
+      out = { ok: false, skipped: 'threw' };
+    }
+    log.debug("Leaving MailUses.postLoginReminder().");
+    return out;
+  }
+
   // An account was disabled (`common/account_state.ts`), by `by`.
   /**
    * Sends the account-disabled notice.
@@ -985,5 +1035,6 @@ export = {
   accountDisabled: slot.forward('accountDisabled'),
   sessionsEnded: slot.forward('sessionsEnded'),
   addressChanged: slot.forward('addressChanged'),
-  accessRequested: slot.forward('accessRequested')
+  accessRequested: slot.forward('accessRequested'),
+  postLoginReminder: slot.forward('postLoginReminder')
 };

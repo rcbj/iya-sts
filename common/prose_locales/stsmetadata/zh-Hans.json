@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "非规范。报表应用程序作为此服务自身发送方的接收方 (#1042) 所收到的内容：报表管理员可看到领域中的每个信号，其他人只能看到与自己有关的信号。与 /report-api 其余部分使用同一令牌。"
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086)。打开的报表标签页每隔 ssf.announcementPollMs 收取的内容：管理员向此应用广播、并由其接收方保留的公告。与 /report-api 的其余部分使用同一令牌。"
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC。领域中名称或 DN 包含 q 的组，每页五个，各自带有自己的 mail 属性（#989）：定义页面的面板。定义的组即其结果的电子邮件收件人。与 /report-api 的其余部分使用同一令牌。"
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "非规范（#49）。run，带 { job, realm?, params? }：领导者在下一个时钟周期启动的排队运行，返回 202 及其 runId；以及 step-down：领导者在下一个时钟周期放弃 ops.scheduler，由另一个节点接管。控制台的两个按钮。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086)。GET /admin/broadcast 绘制的内容：可显示公告的应用、调用方能否发送到所有领域、最长消息以及能否投递任何内容。对应 GET /admin/broadcast。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086)。send，带 { message, surfaces, everyRealm }：本服务自己的公告 SET，发送到管理控制台、用户门户和报表应用的接收方流，并在当时打开的每个标签页中以横幅显示。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "向所有已登录的人发送公告"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086)。打开的控制台标签页每隔 ssf.announcementPollMs 收取的内容：控制台接收方在该标签页首次询问之后收到的公告。"
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",
@@ -1874,6 +1894,18 @@
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "非规范（#942）。recount：在调度器的主节点上为此领域排入 passkeys.report-recount 作业，该作业把对持有者的一次全新计数作为新的基线。这是控制台在该页面上的唯一操作；它在所有作业运行的地方运行，绝不在请求中运行。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123)。目录 → 登录后活动 绘制的内容：领域中已启动的每个登录后活动及其活动、组、提醒间隔、每人最多邮件数、每次运行人数、状态以及其调度作业迄今所做的事；是否启用了邮件传输和登录后活动策略；以及启动表单的组搜索——来自目录组索引的一页二十个组（groupq、groupfrom），并解析迄今已选的组（groups）。谁收到了邮件见报告应用的 postLoginProgress 数据源。对应 GET /admin/post-login-activities。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123)。start，带 { activity, groups, intervalDays, maxMails, perRun }：post-login.activity-mail 作业向每个有待完成该活动的人——领域中的所有人，或各组成员的并集，每人一次——发送登录提醒，发往其条目上的地址，带一个指向登录页面的链接，不含凭据。pause、resume 和 end，带 { id }。控制台在该页面上的四个操作。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "启动、暂停、继续或结束登录后活动"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -2679,6 +2711,14 @@
     "en": "997e77c58a56af97",
     "text": "注册身份验证器应用或开始安全密钥注册，然后建立单点登录会话"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "登录后活动（#1096）。当领域的登录后活动策略（“目录 > 策略”，默认关闭）按群组覆盖某人、且此人应完成其活动时——目前是在其持有经典通行密钥的角色中注册一个后量子（ML-DSA）通行密钥，或在其没有通行密钥时注册一个——在登录界面的登录会来到这里，而不是直接完成登录：会话被“暂扣”，而不是开始。注册会转到只提供 ML-DSA 的 /authn/webauthn 注册（/authn-api/mfa/{id}/post-login/register）；跳过会按配置文件的 snoozeDays 推迟（/authn-api/mfa/{id}/post-login/skip），一旦自第一次邀请起的给定期限已过则会被拒绝（STS-AUTHN-0474）。无论哪种方式，被暂扣的会话随后都会以该次登录的 amr 和 acr 开始。需要由被暂扣的登录生成的 ?mfa= id，因此直接访问会返回 400。"
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "在登录后要求一个后量子通行密钥，然后建立其暂扣的单点登录会话"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "第二种第二因素（2026-09-10）。对于已注册身份验证器应用的人，密码步骤成功后会来到这里，此端点会索要其应用上显示的六位数字。成功时会话记录 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其注册表条目引用 RFC 4226 和 RFC 6238——以及 acr \"mfa\"，这是本服务能够诚实地说出两个因素的唯一情形。**代码在两种模式下都会真正检查**，这与其前面的密码不同：接受任意六位数字的一次性密码验证器不是宽松，而是坏了，这正是把 SPNEGO 的论证再读一遍。按身份和地址两者进行速率限制，因为六位数字只有一百万个取值，这是本服务中最小的搜索空间。GET 是安全密钥界面上的“改用代码”链接，不创建任何东西——它只为已存在的步骤绘制页面，并拒绝为没有注册的人绘制。**它不为任何人注册**，这就是它与旁边的 /authn/webauthn 的全部区别：注册意味着要被展示一个共享密钥，因此它在 /portal/mfa 上或使用激活链接时进行，绝不在登录界面上进行。自 #572 起是登录界面的一个页面：代码发送到 /authn-api/mfa/{id}/totp。"
@@ -2850,6 +2890,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC（#572、#246）。仅在该步骤是被提供的时候：登录以密码完成。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC（#1096）。下一步是通行密钥页面的注册，仅限 ML-DSA；完成后开始被暂扣的会话。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC（#1096）。按配置文件的 snoozeDays 推迟；给定期限已过则被拒绝。被暂扣的会话随即开始。"
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "Une personne détenant une clé d’accès post-quantique s’est connectée avec une clé classique"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "Un client ne se voit plus proposer ML-DSA à l’enregistrement d’une clé d’accès"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "L’attestation d’une clé de sécurité n’est plus fiable : la liste de statut d’attestation Android de Google révoque sa chaîne"
@@ -706,6 +710,42 @@
   "audit.actions.admin.locale-policy.change.label": {
     "en": "4dfe507526bb6dd5",
     "text": "Un profil de politique de langue a été modifié"
+  },
+  "audit.actions.admin.post-login-policy.change.label": {
+    "en": "e74a408dc31b37db",
+    "text": "Un profil de politique d’activité après connexion a été modifié"
+  },
+  "audit.actions.authn.post-login.asked.label": {
+    "en": "ec90327ee62f8401",
+    "text": "Une personne a été invitée à effectuer une activité après connexion"
+  },
+  "audit.actions.authn.post-login.skipped.label": {
+    "en": "484d440e21fbde9e",
+    "text": "Une personne a reporté une activité après connexion"
+  },
+  "audit.actions.authn.post-login.done.label": {
+    "en": "f9ec190773672fc7",
+    "text": "Une personne a effectué une activité après connexion"
+  },
+  "audit.actions.authn.post-login.held.label": {
+    "en": "9b31304e9f8a3131",
+    "text": "Une connexion a été retenue : une activité après connexion est en retard"
+  },
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "Une activité après connexion a été lancée, mise en pause, reprise ou terminée"
+  },
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "Une activité après connexion lancée a envoyé ses rappels"
+  },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "Un appareil n’a pas pu créer la clé d’accès demandée par une activité après connexion"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "Une clé d’accès a peut-être été remplacée sur son authentificateur"
   },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
@@ -942,6 +982,10 @@
   "audit.actions.ssf.event.transmit.label": {
     "en": "3a3cd80f6d3a215a",
     "text": "Un Security Event Token a été remis à un récepteur"
+  },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "Une annonce a été diffusée aux applications connectées"
   },
   "audit.actions.ssf.event.refused.label": {
     "en": "29910e5a49b21a0c",

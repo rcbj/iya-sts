@@ -245,6 +245,11 @@ holding the population. Each source says `paging: "limit"` and
 `relationships: []`. There is no second page key and no join. An `offset`,
 a `sources` key, or `source` sent as an array, is `invalid_query`.
 
+A source may also carry `presets`: predefined queries, each a name and a
+whole query document, which the source's page lists and New Query opens
+filled in. They are not saved definitions; nobody owns them, and nothing
+runs until somebody presses Run.
+
 A field has an id, a type (`string`, `number`, `timestamp` or `boolean`),
 an English meaning, and whether it can be filtered, sorted or grouped. A
 field that can hold only certain values lists them as `values`, and the
@@ -614,6 +619,199 @@ How many passkeys there are, by role and algorithm:
   "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
   "aggregate": "count",
   "groupBy": ["role", "algorithm"]
+}
+```
+
+### `postLoginProgress`
+
+Where each person stands on a [post-login activity](post-login-activities.md):
+one row per person and activity that this realm has asked at a sign-in or
+mailed by a [started activity](post-login-activities.md#starting-an-activity). Somebody who
+was never asked and never mailed has no row. The rows come from the
+post-login progress store, not from the directory, so a filter on any field
+is allowed; an unordered query stops at its limit, and a sorted or counted
+one reads the rows a page at a time under the usual time limits.
+
+The profile, role and allotted time on a row are the ones that applied when
+the row was last written, so a report shows which profile asked a person
+without the directory being asked again for every row.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `username` | string | The person's uid. | yes | yes | no |
+| `activity` | string | The post-login activity: `pqc-passkey-migration`. | yes | yes | yes |
+| `profile` | string | The post-login profile that reached the person (`default`, or a named profile). | yes | yes | yes |
+| `role` | string | The role the passkey is asked for: `primary` or `mfa`. | yes | yes | yes |
+| `progress` | string | Where the person stands, the first that holds: `done`, `past-grace`, `snoozed`, `asked`, `mailed`. | yes | yes | yes |
+| `invitedAt` | timestamp | When the person was first asked at a sign-in; the allotted time counts from here. Null when they were only mailed. | yes | yes | no |
+| `snoozedUntil` | timestamp | Until when Skip put the activity off. | yes | yes | no |
+| `asks` | number | How many sign-ins asked the person. | yes | yes | no |
+| `skips` | number | How many times the person chose Skip. | yes | yes | no |
+| `done` | boolean | Whether the person did the activity. | yes | yes | yes |
+| `doneAt` | timestamp | When they did it. | yes | yes | no |
+| `deadline` | timestamp | When the allotted time ends, or null where there is none. | yes | yes | no |
+| `graceEnded` | boolean | The allotted time has ended and the activity is not done: Skip is gone and the next sign-in is held. | yes | yes | yes |
+| `askedBy` | string | Who asked the person at a sign-in: `policy`, or the id (`pla-…`) of the started post-login activity whose groups hold them. Empty when they were never asked at a sign-in. | yes | yes | yes |
+| `mailedBy` | string | The started post-login activity (its id, `pla-…`) that last mailed the person. | yes | yes | yes |
+| `mails` | number | How many mails the started activity named in `mailedBy` sent the person. | yes | yes | no |
+| `firstMailedAt` | timestamp | When that started activity's first mail went. | yes | yes | no |
+| `lastMailedAt` | timestamp | When the last reminder mail went. | yes | yes | no |
+
+Three **predefined queries** come with it. The source's page lists them; each
+opens New Query with its query filled in, and nothing runs until you press
+Run. Save it to keep your own copy as a definition.
+
+| Predefined query | What it asks |
+|---|---|
+| Progress by activity | How many people of the post-quantum passkey migration are at each `progress`. |
+| People past their grace period | Everybody whose `graceEnded` is true, the earliest deadline first. |
+| People who skipped most | Everybody who skipped at least once, the most skips first. |
+
+On the API the catalog carries them as `presets`, each an `id`, a `name` and
+the whole query `document`, ready to post to `/report-api/queries`:
+
+```json
+{
+  "source": "postLoginProgress",
+  "select": ["progress"],
+  "where": { "op": "eq", "field": "activity", "value": "pqc-passkey-migration" },
+  "aggregate": "count",
+  "groupBy": ["progress"],
+  "orderBy": [{ "field": "progress", "dir": "asc" }]
+}
+```
+
+### `passkeyHistory`
+
+The move to post-quantum passkeys, day by day. The daily
+[passkey report](passkeys.md#the-move-over-time) recount keeps one stored
+row per realm per day, for `webauthn.passkeyHistoryDays` days (400 by
+default), and this source reads each day as several rows, told apart by
+`scope`:
+
+| `scope` | One row per day for | What it counts |
+|---|---|---|
+| `realm` | the realm | its people by kind, and its passkeys |
+| `profile` | each named passkey profile that selects people by group | the same numbers over that profile's people |
+| `algorithm` | each algorithm and lane | `count` passkeys |
+| `lane` | each lane | `count` passkeys |
+| `attestation` | each attestation certificate algorithm | `count` passkeys whose attestation it signed |
+
+The scopes count the same passkeys more than once, so filter on `scope`
+before reading or counting. The rows come from the history store, never
+the directory, and there are at most a few hundred a day, so any field may
+be filtered. A day on which the recount did not run has no rows; a later
+recount on the same day replaces that day's rows.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `day` | string | The UTC day, `yyyy-mm-dd`. | yes | yes | yes |
+| `countedAt` | timestamp | When the recount that wrote the day finished. | yes | yes | no |
+| `scope` | string | `realm`, `profile`, `algorithm`, `lane` or `attestation`. | yes | yes | yes |
+| `name` | string | The profile, algorithm, lane or attestation algorithm; empty on a `realm` row. | yes | yes | yes |
+| `coseAlg` | number | The COSE identifier of an algorithm, where it has one. | yes | yes | no |
+| `lane` | string | `classical` or `pqc` on an `algorithm` or `lane` row. | yes | yes | yes |
+| `postQuantum` | boolean | Whether an `algorithm` or `attestation` row's algorithm is ML-DSA. | yes | yes | yes |
+| `count` | number | Passkeys counted in the row. | yes | yes | no |
+| `people` | number | People in the realm, or in the profile's population. | yes | yes | no |
+| `holding` | number | People holding at least one passkey. | yes | yes | no |
+| `postQuantumOnly` | number | People whose passkeys are all ML-DSA. | yes | yes | no |
+| `classicalOnly` | number | People whose passkeys are all classical. | yes | yes | no |
+| `both` | number | People holding both kinds. | yes | yes | no |
+| `none` | number | People holding no passkey. | yes | yes | no |
+| `withPostQuantum` | number | People holding at least one ML-DSA passkey. | yes | yes | no |
+| `postQuantumShare` | number | `withPostQuantum` as a percentage of `holding`, to one decimal; empty when nobody holds a passkey. | yes | yes | no |
+| `postQuantumKeys` | number | ML-DSA passkeys among `count`. | yes | yes | no |
+| `postQuantumRequired` | string | A profile's `postQuantumRequired` on the day. | yes | yes | yes |
+| `members` | number | A profile's members. | yes | yes | no |
+| `complete` | boolean | Whether every member of the profile was read (at most 50,000 are). | yes | yes | yes |
+| `counted` | boolean | False on a profile the day did not count (past the 25 counted a day, or its group could not be read). | yes | yes | yes |
+
+The people fields are empty on the `algorithm`, `lane` and `attestation`
+rows.
+
+| Predefined query | What it asks |
+|---|---|
+| Post-quantum adoption by day | The realm's row for each day, oldest first: people holding a passkey, those holding an ML-DSA one, the share, and the counts by kind. |
+| Passkeys by algorithm by day | Each day's passkeys by algorithm and lane. |
+| Post-quantum adoption by passkey profile by day | Each named profile's numbers for each day. |
+
+```json
+{
+  "source": "passkeyHistory",
+  "select": ["day", "holding", "withPostQuantum", "postQuantumShare"],
+  "where": { "op": "eq", "field": "scope", "value": "realm" },
+  "orderBy": [{ "field": "day", "dir": "asc" }]
+}
+```
+
+### `passkeyCeremonies`
+
+Every passkey registration and sign-in still in the same audit ring as
+`auditEvents`: one row per `webauthn.ceremony` audit row, and one per
+`webauthn.algorithm-mismatch` row
+([#1107](https://github.com/rcbj/iya-sts/issues/1107)). The same cap
+applies, and the read waits for the other processes' rows as
+`auditEvents` does. It is the source to read while moving a realm to
+ML-DSA passkeys: which clients make one when asked, which fail and how,
+and who still signs in with a classical passkey after making an ML-DSA
+one. [Passkeys](passkeys.md#watching-the-move-to-post-quantum-passkeys-the-ceremony-audit-rows)
+describes the audit rows themselves. Nothing here is indexed: the ring is
+a list in memory, and the read is bounded by its cap. To keep a history
+longer than the ring, schedule a definition and keep its reports.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `timestamp` | timestamp | When the row was recorded. | yes | yes | no |
+| `day` | string | The UTC calendar day, `yyyy-mm-dd`. | yes | yes | yes |
+| `kind` | string | `ceremony`, or `algorithm-mismatch` for a classical sign-in by a person who holds an ML-DSA passkey. Filter on it before counting, so a mismatch is not counted beside its ceremony. | yes | yes | yes |
+| `ceremony` | string | `registration` or `assertion` (a sign-in); empty on a mismatch row. | yes | yes | yes |
+| `door` | string | `sign-in-step`, `usernameless`, `portal`, `activation`, `upgrade`, `admin-enrolment` or `device-link`. | yes | yes | yes |
+| `outcome` | string | `success` or `refused`. | yes | yes | yes |
+| `errorCode` | string | The code a refused ceremony was recorded under. | yes | yes | yes |
+| `actor` | string | The person, where known. | yes | yes | no |
+| `application` | string | The application the sign-in was for; empty where none was in play. | yes | yes | yes |
+| `role`, `lane` | string | `primary` or `mfa`; `classical` or `pqc`. | yes | yes | yes |
+| `offered` | string | The algorithms offered, in order. | yes | yes | no |
+| `offerRule` | string | The client rule that narrowed the offer, or would have, where one applied ([#1112](https://github.com/rcbj/iya-sts/issues/1112)); empty otherwise. | yes | yes | yes |
+| `offeredFirst` | string | The first algorithm offered. | yes | yes | yes |
+| `postQuantumOffered` | boolean | Whether an ML-DSA algorithm was offered. | yes | yes | yes |
+| `algorithm` | string | The algorithm used; on a mismatch row, the classical one that signed. | yes | yes | yes |
+| `postQuantum` | boolean | Whether the algorithm used is ML-DSA. | yes | yes | yes |
+| `held` | string | On a mismatch row, the person's ML-DSA algorithms. | yes | yes | yes |
+| `client` | string | The browser and operating system, by name and major version. | yes | yes | yes |
+| `clientError` | string | The error name the browser reported for a ceremony it did not complete. | yes | yes | yes |
+| `capabilities` | string | The client capabilities the browser reported. | yes | yes | no |
+| `attachment` | string | `platform` or `cross-platform`. | yes | yes | yes |
+| `transports` | string | The transports the browser reported. | yes | yes | no |
+| `attestation` | string | What a registration's attestation was signed with. | yes | yes | no |
+| `durationMs` | number | Milliseconds from the options being issued to the response, measured by the service; null on rows written before the field existed. It includes the person's time at the prompt, so compare many rows. | yes | yes | no |
+
+**Predefined queries.** The source carries three, listed on its page in
+`/report` and as `presets` on `GET /report-api/catalog/passkeyCeremonies`.
+Opening one fills the query form; run it as it is, or change it and save
+it as your own definition:
+
+* **ML-DSA registrations that failed, by client**: `kind` is `ceremony`,
+  `ceremony` is `registration`, `postQuantumOffered` is true and
+  `outcome` is `refused`, counted by `client`. Group by `clientError`
+  instead to see how they failed.
+* **Registrations that asked for ML-DSA and made a classical passkey, by
+  client**: the same, with `outcome` `success` and `postQuantum` false.
+* **Classical sign-ins by people who hold an ML-DSA passkey**: `kind` is
+  `algorithm-mismatch`, counted by `client`.
+
+How long ML-DSA ceremonies take, against classical ones, by client:
+
+```json
+{
+  "source": "passkeyCeremonies",
+  "select": ["client", "algorithm", "ceremony", "durationMs"],
+  "where": { "op": "and", "args": [
+    { "op": "eq", "field": "kind", "value": "ceremony" },
+    { "op": "eq", "field": "outcome", "value": "success" } ] },
+  "orderBy": [{ "field": "durationMs", "dir": "desc" }],
+  "limit": 500
 }
 ```
 
