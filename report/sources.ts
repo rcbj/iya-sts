@@ -62,6 +62,9 @@ import Catalog = require('./catalog');
 import Limits = require('./limits');
 import Rows = require('./rows');
 import executor = require('./executor');
+// The passkey history source's projection (#1109): a library in a file of
+// its own, which reaches the passkey report lazily.
+import PasskeyHistoryRows = require('./passkey_history');
 
 const log = bunyan.createLogger({ name: 'sts-report-sources' });
 
@@ -2790,6 +2793,26 @@ async function reportReadPostLogin(rows: any, control: any): Promise<void> {
   log.debug("Leaving reportReadPostLogin(). " + offered + " row(s).");
 }
 
+// THE PASSKEY HISTORY SOURCE (#1109): the ambient realm's history rows, a
+// few hundred at most and already in memory, projected and offered to the
+// bounded collector one by one, yielding every page.
+async function reportReadPasskeyHistory(rows: any, control: any):
+    Promise<void> {
+  log.debug("Entering reportReadPasskeyHistory().");
+  const flat = PasskeyHistoryRows.rowsOf(PasskeyHistoryRows.stored());
+  for (let i = 0; i < flat.length; i++) {
+    const keep = await reportOffer(flat[i], rows, control);
+    if (keep === false) {
+      log.debug("Leaving reportReadPasskeyHistory(). Stopped.");
+      return;
+    }
+    if (i % PAGE === PAGE - 1) {
+      await Promise.resolve();
+    }
+  }
+  log.debug("Leaving reportReadPasskeyHistory().");
+}
+
 async function reportReadSource(plan: any, rows: any, control: any):
     Promise<void> {
   log.debug("Entering reportReadSource().");
@@ -2818,6 +2841,8 @@ async function reportReadSource(plan: any, rows: any, control: any):
     await reportReadCredentialHolders(rows, control);
   } else if (source === 'postLoginProgress') {
     await reportReadPostLogin(rows, control);
+  } else if (source === 'passkeyHistory') {
+    await reportReadPasskeyHistory(rows, control);
   }
   log.debug("Leaving reportReadSource().");
 }
@@ -3664,6 +3689,8 @@ export = {
   // service's own.
   installPostLogin: reportInstallPostLogin,
   postLoginRow: reportPostLoginRow,
+  // The passkey history source's projection (#1109), for its test.
+  passkeyHistoryRows: PasskeyHistoryRows.rowsOf,
   // The mechanism ids, for the test that holds the catalog's enumeration
   // (#1007) equal to the table (the catalog cannot require this module).
   mechanismIds: function (): string[] {

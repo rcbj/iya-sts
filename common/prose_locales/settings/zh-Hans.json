@@ -1215,6 +1215,14 @@
     "en": "ea9f111d1308b528",
     "text": "新的 RFC 4998 记录使用的摘要。把它从 sha256 提高会在每日通行密钥报告重新计数时触发 RFC 4998 散列树续期，进入一条新的 ArchiveTimeStampChain。"
   },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "保留的通行密钥历史（天）"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "一个领域保留多少天的通行密钥历史（#1109）：通行密钥报告的每日重新计数为每个领域每天写入一行（按类型统计的人员，按算法、通道和证明算法统计的通行密钥，以及每个已命名通行密钥配置文件的人群），报告应用将其作为 passkeyHistory 数据源读取。同一次重新计数会删除早于此值的行。调低此值会在下一次重新计数时删除较旧的行。"
+  },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
     "text": "允许的身份验证器型号（AAGUID）"

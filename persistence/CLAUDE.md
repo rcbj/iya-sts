@@ -3338,7 +3338,12 @@ definition global, its person members in their cell — `splitGroup()` and
 name. `tests/cell_tiers.js` reads every `persist:` in the tree and fails on
 one in neither list: a default tier would be a default answer to a residency
 question, and the wrong default is a person's data in another country with
-nothing failing. A GLOBAL minted store is the exception that is argued beside
+nothing failing. **The scan reads LITERALS**: a handle passed as a constant
+is invisible to it. `passkey_report.baseline` and `passkey_report.changes`
+(#942) are declared that way, are in neither list, and are sealed for the
+cell tier only through `tierOfHandle()`'s unclassified fallback; #1109's
+`passkey_report.history` is written as a literal for that reason and is
+listed. A GLOBAL minted store is the exception that is argued beside
 its name — configuration, a revocation every cell must see, or a replay set a
 CLIENT chooses the keys of (a DPoP `jti`, a Kerberos authenticator), which a
 per-cell set would accept once per cell.

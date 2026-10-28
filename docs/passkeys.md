@@ -1270,6 +1270,43 @@ The counts are kept as passkeys are written and recounted once a day, so they
 are current without reading the directory. Under a group or profile filter
 the members are read (at most 50,000). The answer's `counted` says which.
 
+### The move over time
+
+Monitoring → Passkeys shows today. To see whether the share of people
+holding an ML-DSA passkey is rising, or where it stalled, read the
+**passkey history** in the [reports application](reporting.md#passkeyhistory)
+(`/report`).
+
+Each time the daily recount runs, it also keeps one row for the realm for
+that day: the people by kind, the passkeys by algorithm, by lane and by
+attestation algorithm, and the population of each named passkey profile
+that selects people by group. A recount you start with **Recount now**
+replaces that day's row with its newer count. The rows are kept for
+`webauthn.passkeyHistoryDays` days (400 by default), and the same recount
+removes older ones.
+
+1. Open `/report`, choose the source `passkeyHistory`, and pick the
+   predefined query **Post-quantum adoption by day**. Press Run. You get
+   one row a day: the people holding a passkey, how many of them hold an
+   ML-DSA one, and that as a percentage (`postQuantumShare`).
+2. **Post-quantum adoption by passkey profile by day** gives the same
+   numbers for each named profile's group, so you can see which group to
+   remind, or which is ready for `postQuantumRequired`.
+3. Save a query as a definition and schedule it to keep a copy of the
+   numbers outside the service, or to have it emailed.
+
+Things to know:
+
+* **A day on which the recount did not run has no row.** The recount is a
+  scheduler job (`passkeys.report-recount`); if it is off, or the scheduler
+  is paused, the history stops too.
+* **A profile's numbers cover at most 50,000 of its members**, as the
+  profile filter on Monitoring → Passkeys does; `complete` is false on a
+  day when there were more. At most 25 profiles are counted a day; the rest
+  appear with `counted` false.
+* **The numbers are the realm's at the moment of the recount.** Passkeys
+  registered later that day appear in the next day's row.
+
 ## Requiring a post-quantum attestation
 
 The passkey policy row `attestationAlgorithms`
@@ -1500,6 +1537,7 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.attestationEvidenceTsaUrl` | `STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL` | empty (disabled) |
 | `webauthn.attestationEvidenceTsaTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TSA_TRUST_ANCHORS` | empty |
 | `webauthn.attestationEvidenceHashAlgorithm` | `STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM` | `sha256` |
+| `webauthn.passkeyHistoryDays` | `STS_WEBAUTHN_PASSKEY_HISTORY_DAYS` | `400` |
 | `webauthn.attestationAllowedAaguids` | `STS_WEBAUTHN_ATTESTATION_ALLOWED_AAGUIDS` | empty |
 | `webauthn.attestationMinCertificationLevel` | `STS_WEBAUTHN_ATTESTATION_MIN_CERTIFICATION` | `none` |
 | `webauthn.attestationRequireFips` | `STS_WEBAUTHN_ATTESTATION_REQUIRE_FIPS` | `false` |

@@ -680,6 +680,70 @@ the whole query `document`, ready to post to `/report-api/queries`:
 }
 ```
 
+### `passkeyHistory`
+
+The move to post-quantum passkeys, day by day. The daily
+[passkey report](passkeys.md#the-move-over-time) recount keeps one stored
+row per realm per day, for `webauthn.passkeyHistoryDays` days (400 by
+default), and this source reads each day as several rows, told apart by
+`scope`:
+
+| `scope` | One row per day for | What it counts |
+|---|---|---|
+| `realm` | the realm | its people by kind, and its passkeys |
+| `profile` | each named passkey profile that selects people by group | the same numbers over that profile's people |
+| `algorithm` | each algorithm and lane | `count` passkeys |
+| `lane` | each lane | `count` passkeys |
+| `attestation` | each attestation certificate algorithm | `count` passkeys whose attestation it signed |
+
+The scopes count the same passkeys more than once, so filter on `scope`
+before reading or counting. The rows come from the history store, never
+the directory, and there are at most a few hundred a day, so any field may
+be filtered. A day on which the recount did not run has no rows; a later
+recount on the same day replaces that day's rows.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `day` | string | The UTC day, `yyyy-mm-dd`. | yes | yes | yes |
+| `countedAt` | timestamp | When the recount that wrote the day finished. | yes | yes | no |
+| `scope` | string | `realm`, `profile`, `algorithm`, `lane` or `attestation`. | yes | yes | yes |
+| `name` | string | The profile, algorithm, lane or attestation algorithm; empty on a `realm` row. | yes | yes | yes |
+| `coseAlg` | number | The COSE identifier of an algorithm, where it has one. | yes | yes | no |
+| `lane` | string | `classical` or `pqc` on an `algorithm` or `lane` row. | yes | yes | yes |
+| `postQuantum` | boolean | Whether an `algorithm` or `attestation` row's algorithm is ML-DSA. | yes | yes | yes |
+| `count` | number | Passkeys counted in the row. | yes | yes | no |
+| `people` | number | People in the realm, or in the profile's population. | yes | yes | no |
+| `holding` | number | People holding at least one passkey. | yes | yes | no |
+| `postQuantumOnly` | number | People whose passkeys are all ML-DSA. | yes | yes | no |
+| `classicalOnly` | number | People whose passkeys are all classical. | yes | yes | no |
+| `both` | number | People holding both kinds. | yes | yes | no |
+| `none` | number | People holding no passkey. | yes | yes | no |
+| `withPostQuantum` | number | People holding at least one ML-DSA passkey. | yes | yes | no |
+| `postQuantumShare` | number | `withPostQuantum` as a percentage of `holding`, to one decimal; empty when nobody holds a passkey. | yes | yes | no |
+| `postQuantumKeys` | number | ML-DSA passkeys among `count`. | yes | yes | no |
+| `postQuantumRequired` | string | A profile's `postQuantumRequired` on the day. | yes | yes | yes |
+| `members` | number | A profile's members. | yes | yes | no |
+| `complete` | boolean | Whether every member of the profile was read (at most 50,000 are). | yes | yes | yes |
+| `counted` | boolean | False on a profile the day did not count (past the 25 counted a day, or its group could not be read). | yes | yes | yes |
+
+The people fields are empty on the `algorithm`, `lane` and `attestation`
+rows.
+
+| Predefined query | What it asks |
+|---|---|
+| Post-quantum adoption by day | The realm's row for each day, oldest first: people holding a passkey, those holding an ML-DSA one, the share, and the counts by kind. |
+| Passkeys by algorithm by day | Each day's passkeys by algorithm and lane. |
+| Post-quantum adoption by passkey profile by day | Each named profile's numbers for each day. |
+
+```json
+{
+  "source": "passkeyHistory",
+  "select": ["day", "holding", "withPostQuantum", "postQuantumShare"],
+  "where": { "op": "eq", "field": "scope", "value": "realm" },
+  "orderBy": [{ "field": "day", "dir": "asc" }]
+}
+```
+
 ## The query document
 
 The keys are `source`, `select`, `where`, `orderBy`, `limit`, `format`,

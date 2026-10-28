@@ -1215,6 +1215,14 @@
     "en": "ea9f111d1308b528",
     "text": "Digest na ginagamit ng mga bagong tala ng RFC 4998. Ang pagtataas nito mula sa sha256 ay nagti-trigger ng pag-renew ng hash tree ng RFC 4998 sa araw-araw na muling pagbilang ng passkey report, sa isang bagong ArchiveTimeStampChain."
   },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "Kasaysayan ng passkey na itinatago (mga araw)"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "Ilang araw ng kasaysayan ng passkey ang itinatago ng isang realm (#1109): ang pang-araw-araw na muling pagbilang ng ulat ng passkey ay sumusulat ng isang hilera bawat realm bawat araw (ang mga tao ayon sa uri, ang mga passkey ayon sa algorithm, lane at algorithm ng attestation, at ang populasyon ng bawat pinangalanang passkey profile), na binabasa ng reports application bilang source na passkeyHistory. Ang parehong muling pagbilang ang nag-aalis ng mga hilerang mas luma kaysa rito. Kapag ibinaba ito, aalisin ang mas lumang mga hilera sa susunod na muling pagbilang."
+  },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
     "text": "Mga pinapayagang model ng authenticator (AAGUID)"

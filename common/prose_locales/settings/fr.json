@@ -1215,6 +1215,14 @@
     "en": "ea9f111d1308b528",
     "text": "Condensé utilisé par les nouveaux enregistrements RFC 4998. Le relever au-dessus de sha256 déclenche le renouvellement de l’arbre de hachage RFC 4998 lors du recomptage quotidien du rapport des clés d’accès, dans une nouvelle ArchiveTimeStampChain."
   },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "Historique des clés d’accès conservé (jours)"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "Combien de jours d’historique des clés d’accès un domaine conserve (#1109) : le recomptage quotidien du rapport des clés d’accès écrit une ligne par domaine et par jour (les personnes par type, les clés d’accès par algorithme, par voie et par algorithme d’attestation, et la population de chaque profil de clé d’accès nommé), que l’application de rapports lit comme la source passkeyHistory. Le même recomptage supprime les lignes plus anciennes que cette valeur. La réduire supprime les lignes plus anciennes au prochain recomptage."
+  },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
     "text": "Modèles d’authentificateur autorisés (AAGUID)"

@@ -13641,7 +13641,27 @@ what a maintainer must not undo:
   requires this one, and the composition root builds this one at 18j-iv,
   before the directory at 21. Which values are keys is `credentials.ts`'s
   (`keysOfValues()`, the rule `keysOf()` uses), never this file's.
-* Codes `STS-AUTHN-0413` to `0418`. `tests/passkey_report.js` and
+* **THE HISTORY IS WRITTEN BY THE RECOUNT ITSELF** (#1109): one row of
+  `passkey_report.history` (cell tier, per realm, keyed by the UTC day)
+  right after the baseline, from the count just made — people by kind,
+  passkeys by algorithm, lane and attestation algorithm, and each named
+  profile's population through `populationAsync()` (bounded as the filter
+  is, at most `HISTORY_PROFILES` profiles; the default profile and a
+  profile with no group select nobody and are not rows). Not a sibling job:
+  the scheduler orders no job after another, so a sibling would have to
+  discover whether a recount had run, and would snapshot the baseline plus
+  whatever changes had been noted since rather than the count itself. A
+  later recount the same day replaces the day's row. The same run prunes
+  past `webauthn.passkeyHistoryDays` — a walk of a few hundred keys, so no
+  job of its own and nothing periodic outside the scheduler. A run fenced
+  while counting the profiles writes no row (a row missing some profiles
+  would look whole). Writing and pruning NEVER fail the recount
+  (`STS-AUTHN-0520`, `0521`); an unreadable population is recorded as
+  `counted: false` (`0522`). The model table is not kept: up to
+  `MAX_MODELS` rows a day for a question #1109 did not ask. Read in
+  `/report` as `passkeyHistory` (`report/CLAUDE.md`).
+* Codes `STS-AUTHN-0413` to `0418`, and `0520` to `0522` for the history.
+  `tests/passkey_report.js`, `tests/passkey_history.js` and
   `tests/protocol/sts_passkey_report.js` hold it.
 
 ## `passkey_evidence.ts`: RFC 4998 EVIDENCE FOR A VERIFIED CLASSICAL PASSKEY (#947)

@@ -1215,6 +1215,14 @@
     "en": "ea9f111d1308b528",
     "text": "新的 RFC 4998 記錄使用的摘要。把它從 sha256 提高會在每日密碼金鑰報告重新計數時觸發 RFC 4998 雜湊樹續期，進入一條新的 ArchiveTimeStampChain。"
   },
+  "webauthn.passkeyHistoryDays|label": {
+    "en": "6c6bae6fe49e1518",
+    "text": "保留的通行金鑰歷史（天）"
+  },
+  "webauthn.passkeyHistoryDays|description": {
+    "en": "b9ea351d351f4cb3",
+    "text": "一個領域保留多少天的通行金鑰歷史（#1109）：通行金鑰報告的每日重新計數為每個領域每天寫入一列（依類型統計的人員，依演算法、通道和證明演算法統計的通行金鑰，以及每個已命名通行金鑰設定檔的人群），報告應用程式將其作為 passkeyHistory 資料來源讀取。同一次重新計數會刪除早於此值的列。調低此值會在下一次重新計數時刪除較舊的列。"
+  },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
     "text": "允許的驗證器型號（AAGUID）"

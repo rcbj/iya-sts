@@ -7077,6 +7077,22 @@ const CODES = [
       '(WebAuthn Level 3 section 5.4.7). Nothing is changed.',
     spec: 'none (HTTP 400 from the console\'s and /admin-api\'s ' +
       'settings writes)' },
+  { code: 'STS-AUTHN-0520',
+    summary: 'The passkey report\'s recount counted the realm and wrote ' +
+      'its baseline, but the day\'s passkey history row (#1109) could not ' +
+      'be written. The baseline stands; the day has no history row until ' +
+      'the next recount writes one.',
+    spec: 'none — logged; the recount\'s run is not failed' },
+  { code: 'STS-AUTHN-0521',
+    summary: 'The passkey history rows older than ' +
+      'webauthn.passkeyHistoryDays could not be pruned after a recount ' +
+      '(#1109). They are kept, and the next recount tries again.',
+    spec: 'none — logged' },
+  { code: 'STS-AUTHN-0522',
+    summary: 'A named passkey profile\'s population could not be read for ' +
+      'the day\'s passkey history row (#1109). The row is written without ' +
+      'that profile\'s counts and says so.',
+    spec: 'none — logged; the history row records the profile as unread' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
