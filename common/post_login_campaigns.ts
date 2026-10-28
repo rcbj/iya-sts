@@ -490,7 +490,7 @@ class PostLoginCampaigns {
     if (!move) {
       log.debug("Leaving PostLoginCampaigns.move(). Unknown act.");
       return this.refused('STS-AUTHN-0491', ['Unknown action "' +
-        String(act || '') + '". The actions are start, ' +
+        String(act || '') + '". The actions are: start, ' +
         Object.keys(MOVES).join(', ') + '.']);
     }
     const campaign = this.get(id);
