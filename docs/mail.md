@@ -248,7 +248,7 @@ when it is saved. It is never sent on its own.
 |---|---|---|
 | Security notices | disabled, sessions ended, password changed, compromised, recovery started, address changed, a sign-in code or link (#64), a refused reset | **no** |
 | Links somebody asked for | reset, activation, verification, test | **no** |
-| Notifications | a finished report, an access request waiting on the portal, a post-login campaign's reminder | yes, on `/portal/email` |
+| Notifications | a finished report, an access request waiting on the portal, a started post-login activity's reminder | yes, on `/portal/email` |
 
 ## The uses
 
@@ -309,8 +309,8 @@ activation choice on `/admin/users/new`, have a **mail the link** box. It is
 ticked whenever the realm has a transport. The API equivalent is `deliver:
 "mail"`. A mailed link is not shown to the administrator.
 
-**A post-login campaign's reminder** (#1111) asks a person to sign in, where
-the [post-login activity](post-login-activities.md#mail-campaigns) then asks
+**A started post-login activity's reminder** (#1111) asks a person to sign
+in, where the [post-login activity](post-login-activities.md#starting-an-activity) then asks
 them to register a post-quantum passkey. It goes to the address on their entry,
 and its one link opens the user portal on this service's own address, which
 sends them to sign in. The

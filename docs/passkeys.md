@@ -49,7 +49,7 @@ rather than repeating them. Every setting in full is in
 | Who holds which factor, across the realm | **Directory → Users** | `GET /admin-api/mfa` |
 | Who holds which passkey algorithm, across the realm | **Monitoring → Passkeys** (`/admin/passkey-report`) | `GET /admin-api/passkey-report`, `/export`, `POST /admin-api/passkey-report/recount` |
 | The post-login activity policy (who is asked to register an ML-DSA passkey after signing in) | **Directory → Policies**, **Post-login activity policy** tab | `GET /admin-api/policies` (the `postLogin` member); `POST /admin-api/policies/save-postLogin-policy` and `reset-postLogin-policy` |
-| Mail reminders to sign in and register one | **Directory → Post-login campaigns** (`/admin/post-login-campaigns`) | `GET /admin-api/post-login-campaigns`; `POST /admin-api/post-login-campaigns/{start,pause,resume,end}` |
+| Mail reminders to sign in and register one | **Directory → Post-login activities** (`/admin/post-login-activities`) | `GET /admin-api/post-login-activities`; `POST /admin-api/post-login-activities/{start,pause,resume,end}` |
 | The move over time, ceremonies by client, each person's progress | the reports application, `/report`: the sources `passkeyHistory`, `passkeyCeremonies` and `postLoginProgress` | the [report API](reporting.md), `/report-api` |
 | A passkey's long-term attestation evidence | **Directory → Users**, the person's page, **Passkeys (WebAuthn)** | `GET /admin-api/passkey-report/evidence?username=<name>&credentialId=<id>` |
 | A new person with an activation link | **Directory → Users → New user** (`/admin/users/new`) | `POST /admin-api/users/create` |
@@ -1433,9 +1433,10 @@ activity does not interrupt them. A required one refuses them
 
 The activity is asked only at a sign-in, so somebody who rarely signs in may
 reach a deadline without being asked. An administrator can start mail
-reminders for the activity on **Directory → Post-login campaigns**
-(`/admin/post-login-campaigns`, or the `/admin-api` operations of the same
-name): the people it is due for, optionally only some groups' members, are
+reminders by starting the activity on **Directory → Post-login activities**
+(`/admin/post-login-activities`, or the `/admin-api` operations of the same
+name): the people it is due for, optionally only the members of groups
+chosen by search (each person once), are
 mailed every so many days, up to a maximum per person, until it is paused
 or ended.
 
@@ -1444,7 +1445,7 @@ nothing about the person, it goes to the address on their entry, and a
 person may decline it on `/portal/email`. A mail is not an invitation: the
 allotted time still starts at the first sign-in that asks them. The fields
 and the scheduler job are in
-[Post-login activities](post-login-activities.md#mail-campaigns).
+[Post-login activities](post-login-activities.md#starting-an-activity).
 
 ### Watching progress
 
@@ -1853,7 +1854,7 @@ Every console control has an API operation. The request bodies are in
 | `POST /admin-api/policies/clear-passkey-client`, `clear-passkey-clients` | clear one learned client (`client`), or all of them |
 | `POST /admin-api/policies/save-authn-policy`, `reset-authn-policy` | save the authentication policy, or go back to inheriting |
 | `POST /admin-api/policies/save-postLogin-policy`, `reset-postLogin-policy` | save a post-login activity profile (optionally named with `profile`), or remove it |
-| `GET /admin-api/post-login-campaigns`; `POST /admin-api/post-login-campaigns/start`, `/pause`, `/resume`, `/end` | the post-login activity's mail reminders: list them, start them, or change their state |
+| `GET /admin-api/post-login-activities`; `POST /admin-api/post-login-activities/start`, `/pause`, `/resume`, `/end` | started post-login activities and their mail reminders: list them, search the groups to start one for, start one, or change its state |
 | `POST /admin-api/config/set`, `/config/reset` | change or reset a setting |
 
 The person's own operations are on the [Account API](account-api.md)

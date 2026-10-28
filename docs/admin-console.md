@@ -707,16 +707,19 @@ or added alongside). See
 [Post-login activities](post-login-activities.md) and the walk-through in
 [Passkeys](passkeys.md#post-login-activities-moving-people-to-post-quantum-passkeys).
 
-### Post-login campaigns — `/admin/post-login-campaigns`
+### Post-login activities — `/admin/post-login-activities`
 
-Mail campaigns for a [post-login activity](post-login-activities.md#mail-campaigns):
-start one for the realm or one group, then pause, resume or end it. A scheduler
-job mails each person the activity is due for a reminder to sign in, every so
-many days up to a maximum per person. The page lists each campaign with its
-own counts; who was mailed and where each person stands is the
-`postLoginProgress` report in [Reports](reporting.md#postloginprogress), not a
-console page. `GET /admin-api/post-login-campaigns` and
-`POST /admin-api/post-login-campaigns/{start,pause,resume,end}`.
+[Start a post-login activity](post-login-activities.md#starting-an-activity)
+for the realm or for groups, then pause, resume or end it. On the **Start an
+activity** tab, search for groups (twenty results a page) and pick one or more
+to build the list; the activity reaches the members of every group on it, each
+person once, or everybody when the list is empty. A scheduler job mails each
+person the activity is due for a reminder to sign in, every so many days up to
+a maximum per person. The **Activities** tab lists each started activity with
+its groups and its own counts; who was mailed and where each person stands is
+the `postLoginProgress` report in [Reports](reporting.md#postloginprogress),
+not a console page. `GET /admin-api/post-login-activities` and
+`POST /admin-api/post-login-activities/{start,pause,resume,end}`.
 
 ### Groups — `/admin/groups`
 
