@@ -18180,8 +18180,9 @@ class AdminApi {
                          'answer for it — and keeps no copy of the ' +
                          'key, so nothing can read it back. To put the pair ' +
                          'in the container, write `fullChainPem` (the leaf ' +
-                         'followed by its Issuing CA and the realm ' +
-                         'Intermediate) and `privateKeyPem` to the files ' +
+                         'followed by its Issuing CA, the realm ' +
+                         'Intermediate and, since #1064, the service Root) ' +
+                         'and `privateKeyPem` to the files ' +
                          '`PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name; the PEP ' +
                          'picks up a pair written after it started. ' +
                          '`anchorPem` is the service Root a client of that ' +

@@ -1696,12 +1696,25 @@ async function theListenerServesARealmCertificate() {
       " " + String(issued.text).slice(0, 400));
     assert.ok(/BEGIN PRIVATE KEY/.test(String(got.privateKeyPem || "")),
       "the reply carries the private key");
-    assert.ok((String(got.fullChainPem || "").match(/BEGIN CERTIFICATE/g) ||
-               []).length === 3,
-      "fullChainPem is the leaf, its Issuing CA and the realm Intermediate — " +
-      "three certificates, no Root; it holds " +
-      (String(got.fullChainPem || "").match(/BEGIN CERTIFICATE/g) || [])
-        .length);
+    // SINCE #1064 (2026-10-27) EVERY REPORTED CHAIN ENDS AT THE SERVICE
+    // ROOT (pki.chainThroughRoot()), so the chain is four certificates and
+    // the last of them is `anchorPem`. Until then it was three, "no Root",
+    // and this check said so; run #6 of 2026-10-28 found it still saying so.
+    const chainCerts = String(got.fullChainPem || "")
+      .split(/(?<=-----END CERTIFICATE-----)/)
+      .map(function (one) {
+        return one.replace(/\s+/g, "");
+      }).filter(function (one) {
+        return one.length > 0;
+      });
+    assert.ok(chainCerts.length === 4,
+      "fullChainPem is the leaf, its Issuing CA, the realm Intermediate and " +
+      "the service Root (#1064) — four certificates; it holds " +
+      chainCerts.length);
+    assert.strictEqual(chainCerts[chainCerts.length - 1],
+                       String(got.anchorPem || "").replace(/\s+/g, ""),
+      "and the last certificate of fullChainPem is anchorPem, the service " +
+      "Root a client installs");
     assert.strictEqual(got.realm, REALM,
       "it was issued by the realm the PEP registered to");
     assert.ok(got.dnsNames.concat(got.ipAddresses).indexOf(host) >= 0 &&
