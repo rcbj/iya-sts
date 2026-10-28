@@ -1161,12 +1161,13 @@ const JOBS = [
   // Recount now queued on the scheduler. `local: true`: this repository's
   // console and management API.
   { file: 'sts_passkey_report.js',       browser: false },
-  // DIRECTORY → POST-LOGIN CAMPAIGNS (#1111, 2026-10-28): the console
-  // page's shell, the five operations in the document and the gate, the
-  // view, the refusals, and a campaign narrowed to a group made here
-  // started, paused, resumed and ended. `local: true`: this repository's
-  // console and management API.
-  { file: 'sts_post_login_campaigns.js', browser: false },
+  // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123): the
+  // console page's shell, the five operations in the document and the gate,
+  // the view and its group chooser, the refusals (a missing group 0530),
+  // and a post-login activity narrowed to two groups made here started,
+  // paused, resumed and ended. `local: true`: this repository's console and
+  // management API.
+  { file: 'sts_post_login_activities.js', browser: false },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

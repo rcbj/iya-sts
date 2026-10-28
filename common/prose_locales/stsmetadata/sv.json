@@ -1895,17 +1895,17 @@
     "en": "cd923c72e2ca4fba",
     "text": "ICKE-SPEC (#942). recount: köar jobbet passkeys.report-recount för den här sfären hos schemaläggarens ledare, som gör en ny räkning av innehavarna till den nya baslinjen. Konsolens enda åtgärd på den sidan; den körs där varje jobb körs, aldrig i begäran."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
-    "en": "daba792318b37b53",
-    "text": "NON-SPEC (#1111). Det Katalog → Kampanjer efter inloggning ritar: varje e-postkampanj i sfären med dess aktivitet, grupp, påminnelseintervall, högsta antal meddelanden per person, personer per körning, läge och vad dess schemalagda jobb har gjort hittills, och om en e-posttransport och en aktivitet efter inloggning är påslagna. Vilka som fick e-post är rapportprogrammets källa postLoginProgress. Speglar GET /admin/post-login-campaigns."
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123). Det Katalog → Aktiviteter efter inloggning ritar: varje aktivitet efter inloggning som startats i realmen med dess aktivitet, grupper, påminnelseintervall, högsta antal mejl per person, personer per körning, läge och vad dess schemalagda jobb har gjort hittills; om en e-posttransport och en policy för aktivitet efter inloggning är på; och startformulärets gruppsökning, en sida med tjugo grupper ur katalogens gruppindex (groupq, groupfrom), med de hittills valda grupperna (groups) uppslagna. Vem som fick mejl är rapportprogrammets källa postLoginProgress. Speglar GET /admin/post-login-activities."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
-    "en": "d969b0654c3b6952",
-    "text": "NON-SPEC (#1111). start, med { activity, group, intervalDays, maxMails, perRun }: jobbet post-login.campaign-mail skickar varje person som har aktiviteten att göra en påminnelse om att logga in, till adressen i deras post, med en länk till inloggningssidan och inga inloggningsuppgifter i den. pause, resume och end, med { id }. Konsolens fyra åtgärder på den sidan."
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123). start, med { activity, groups, intervalDays, maxMails, perRun }: jobbet post-login.activity-mail skickar till varje person som har aktiviteten att göra — alla i realmen, eller unionen av gruppernas medlemmar, varje person en gång — en påminnelse om att logga in, till adressen på deras post, med en länk till inloggningssidan och ingen inloggningsuppgift. pause, resume och end, med { id }. Konsolens fyra handlingar på den sidan."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
-    "en": "8498beda414a4cf5",
-    "text": "startar, pausar, återupptar eller avslutar en e-postkampanj"
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "startar, pausar, återupptar eller avslutar en aktivitet efter inloggning"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",

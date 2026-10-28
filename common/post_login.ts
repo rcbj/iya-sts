@@ -55,8 +55,9 @@
 // `postLoginProgress` source), the profile, the role and the allotted time
 // that applied when it was last written, so a report says which profile
 // asked a person without asking the directory again for every row. A
-// campaign's mail (`common/post_login_campaigns.ts`) adds the campaign,
-// how many mails went and when the first and the last did. A mail is NOT an
+// started activity's mail (`common/post_login_activities.ts`) adds which
+// started activity mailed them (`mailedBy`), how many mails went and when
+// the first and the last did. A mail is NOT an
 // invitation: the allotted time still starts at the first time the person
 // is asked at a sign-in, because that is the first time they can act on it.
 //
@@ -89,7 +90,7 @@ const ROLES = ['primary', 'mfa'];
 
 // ---------------------------------------------------------------------------
 // THE STORE: `<username>|<activity>` → `{ invitedAt, snoozedUntil, asks,
-// skips, doneAt, profile, role, graceDays, campaign, mails, firstMailedAt,
+// skips, doneAt, profile, role, graceDays, mailedBy, mails, firstMailedAt,
 // lastMailedAt }`, times in milliseconds. Declared here, per realm, and
 // nowhere else (rule: a store becomes per realm at its declaration).
 // ---------------------------------------------------------------------------
@@ -525,29 +526,30 @@ class PostLogin {
   }
 
   /**
-   * Records that a campaign mailed a person about an activity (#1111): the
-   * campaign, how many mails went, and when the first and the last did. It
-   * is not an invitation — the allotted time starts at a sign-in.
+   * Records that a started activity mailed a person about it (#1111): which
+   * started activity, how many mails went, and when the first and the last
+   * did. It is not an invitation — the allotted time starts at a sign-in.
    *
    * @param username - the person
    * @param due - what they are due, as `dueFor()` answered
-   * @param campaign - the campaign's id
+   * @param mailedBy - the started activity's id
    * @returns the row now held
    */
-  noteMailed(username: string, due: Due, campaign: string):
+  noteMailed(username: string, due: Due, mailedBy: string):
       Record<string, any> {
     const { log, now } = this.deps;
     log.debug("Entering PostLogin.noteMailed().");
     const row = this.stateOf(username, due.activity);
     const at = now();
-    // THE COUNTS ARE THE NAMED CAMPAIGN'S: a later campaign mailing the same
-    // person starts its own count, so its maximum is its own. `lastMailedAt`
-    // is still the last mail of any campaign — the interval is the person's.
-    if (String(row.campaign || '') !== String(campaign || '')) {
+    // THE COUNTS ARE THE NAMED STARTED ACTIVITY'S: a later one mailing the
+    // same person starts its own count, so its maximum is its own.
+    // `lastMailedAt` is still the last mail of any of them — the interval is
+    // the person's.
+    if (String(row.mailedBy || '') !== String(mailedBy || '')) {
       row.mails = 0;
       row.firstMailedAt = 0;
     }
-    row.campaign = String(campaign || '');
+    row.mailedBy = String(mailedBy || '');
     row.mails = (Number(row.mails) || 0) + 1;
     if (!row.firstMailedAt) {
       row.firstMailedAt = at;

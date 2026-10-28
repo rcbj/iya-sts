@@ -1011,13 +1011,13 @@
     "en": "738bbc740bd914fc",
     "text": "Recontar las llaves de acceso del dominio"
   },
-  "endpoints.route./admin-api/post-login-campaigns.name": {
-    "en": "b434164532e5f5a1",
-    "text": "Campañas de correo posteriores al inicio de sesión"
+  "endpoints.route./admin-api/post-login-activities.name": {
+    "en": "d37435b7e29d739b",
+    "text": "Actividades posteriores al inicio de sesión iniciadas"
   },
-  "endpoints.route./admin-api/post-login-campaigns/:action.name": {
-    "en": "555b68a4465f2517",
-    "text": "Iniciar, pausar, reanudar o terminar una campaña de correo posterior al inicio de sesión"
+  "endpoints.route./admin-api/post-login-activities/:action.name": {
+    "en": "6bfc2bea96fee884",
+    "text": "Iniciar, pausar, reanudar o terminar una actividad posterior al inicio de sesión"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",

@@ -55,7 +55,7 @@ const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
   'lane', 'factors', 'hasPassword', 'channel', 'format',
   // The post-login progress source (#1110, #1111).
-  'activity', 'profile', 'done', 'graceEnded', 'campaign', 'progress'];
+  'activity', 'profile', 'done', 'graceEnded', 'mailedBy', 'progress'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -219,7 +219,7 @@ function source(id: string, retention: string,
 // THE POST-LOGIN PROGRESS SOURCE (#1110): `post_login.progress` read back,
 // one row per person and activity the realm has asked or mailed — the
 // post-quantum passkey migration's progress (#1096), and since #1111 what a
-// mail campaign did for each person. Read from the store, not the
+// started activity's mail did for each person. Read from the store, not the
 // directory, so it is neither anchored nor indexed: an unordered read stops
 // at its limit, and an ordered read or a count walks the rows a page at a
 // time under the usual time caps.
@@ -227,7 +227,7 @@ const POST_LOGIN_ACTIVITIES = ['pqc-passkey-migration'];
 const POST_LOGIN_ROLES = ['primary', 'mfa'];
 // Where a person stands, ONE word (the page groups by one field): done; past
 // the allotted time and not done; put off by Skip; asked and not done;
-// mailed by a campaign and never asked at a sign-in.
+// mailed by a started activity and never asked at a sign-in.
 const POST_LOGIN_PROGRESS = ['done', 'past-grace', 'snoozed', 'asked',
   'mailed'];
 
@@ -235,7 +235,7 @@ function postLoginProgressSource(): SourceSpec {
   log.debug("Entering postLoginProgressSource().");
   const spec = source('postLoginProgress',
     'One row per person and post-login activity this realm has asked at a ' +
-    'sign-in or mailed in a campaign, as the post-login progress store ' +
+    'sign-in or mailed about, as the post-login progress store ' +
     'holds it now (#1110). Somebody never asked and never mailed has no ' +
     'row. The profile, role and allotted time are the ones that applied ' +
     'when the row was last written.',
@@ -254,7 +254,7 @@ function postLoginProgressSource(): SourceSpec {
        'Where the person stands, in one word, the first that holds: done; ' +
        'past-grace (the allotted time ended and it is not done); snoozed ' +
        '(Skip put it off and the time has not run out); asked (at a ' +
-       'sign-in, not done); mailed (by a campaign, never asked at a ' +
+       'sign-in, not done); mailed (by a started activity, never asked at a ' +
        'sign-in).', undefined, POST_LOGIN_PROGRESS),
      field('invitedAt', 'timestamp',
        'When the person was first asked at a sign-in; the allotted time ' +
@@ -271,15 +271,16 @@ function postLoginProgressSource(): SourceSpec {
      field('graceEnded', 'boolean',
        'Whether the allotted time has ended and the activity is not done: ' +
        'Skip is gone and the next sign-in is held until it is.'),
-     field('campaign', 'string',
-       'The mail campaign that last mailed the person (#1111), or empty.'),
+     field('mailedBy', 'string',
+       'The started post-login activity (its id, pla-…) that last mailed ' +
+       'the person (#1111), or empty.'),
      field('mails', 'number',
-       'How many mails the campaign named in campaign sent the person ' +
-       'about the activity.'),
+       'How many mails the started activity named in mailedBy sent the ' +
+       'person about the activity.'),
      field('firstMailedAt', 'timestamp',
-       'When that campaign\'s first mail went, or null.'),
+       'When that started activity\'s first mail went, or null.'),
      field('lastMailedAt', 'timestamp',
-       'When the last campaign mail went, or null.')], false,
+       'When the last reminder mail went, or null.')], false,
     // Each document is one the New Query form can draw — one filter leaf,
     // one order, one group — so starting from it and saving it keeps it.
     [{ id: 'progress-by-activity', name: 'Progress by activity',

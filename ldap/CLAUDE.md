@@ -761,12 +761,21 @@ ldif or multi-cell service is unchanged.
     `notePasskeysChanged()`, which hands the report the values before and
     after — **a new door that writes or drops a person's keys owes that
     call** (`common/CLAUDE.md` 3cs).
-  - **`groupMembersAfterAsync(selector, after, limit)` (#1111)** is the
-    group-shaped twin of `passkeyScanAsync()`: a group's member keys sorted,
-    the `limit` after a cursor fetched together (`entriesAtAsync()`), the
-    people among them handed back with the next cursor. A post-login mail
-    campaign narrowed to a group walks its members with it, a slice per run
+  - **`groupMembersAfterAsync(selectors, after, limit)` (#1111, #1123)** is
+    the group-shaped twin of `passkeyScanAsync()`: the member keys of one
+    group or of several — their UNION, one set, so a person in two groups
+    is one key — sorted, the `limit` after a cursor fetched together
+    (`entriesAtAsync()`), the people among them handed back with the next
+    cursor and each group's `found`. A started post-login activity narrowed
+    to groups walks their members with it, a slice per run
     (`common/CLAUDE.md` 3ct). Nothing here walks a group tree.
+  - **`groupChoices(wanted, from, limit, exclude)` and `groupsNamed()`
+    (#1123)** answer the console's group chooser and a start's names from
+    the GROUP INDEX (`groupIndexNow()`): a row per group, rebuilt only when a
+    group may have been written. A search is a filter and a sort of the
+    realm's groups (never its people, never a membership), a page of at
+    most 100 from a clamped offset, the excluded DNs left out before the
+    paging; `groupsNamed()` resolves cns or DNs, a name asked twice once.
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
   - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,

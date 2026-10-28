@@ -731,13 +731,13 @@
     "en": "9b31304e9f8a3131",
     "text": "En inloggning hölls kvar: en aktivitet efter inloggning är försenad"
   },
-  "audit.actions.admin.post-login-campaign.change.label": {
-    "en": "036bffa6d0958a81",
-    "text": "En e-postkampanj efter inloggning startades, pausades, återupptogs eller avslutades"
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "En aktivitet efter inloggning startades, pausades, återupptogs eller avslutades"
   },
-  "audit.actions.authn.post-login.campaign-run.label": {
-    "en": "059642245f4ca8a9",
-    "text": "En e-postkampanj efter inloggning skickade sina påminnelser"
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "En startad aktivitet efter inloggning skickade sina påminnelser"
   },
   "audit.actions.authn.post-login.unsupported.label": {
     "en": "7d131d7e4638de23",

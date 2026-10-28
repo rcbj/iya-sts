@@ -3,30 +3,35 @@
 
 "use strict";
 //
-// File: sts_post_login_campaigns.js
+// File: sts_post_login_activities.js
 //
 // ---------------------------------------------------------------------------
-// DIRECTORY → POST-LOGIN CAMPAIGNS OVER HTTP (#1111, 2026-10-28).
+// DIRECTORY → POST-LOGIN ACTIVITIES OVER HTTP (#1111, 2026-10-28; #1123).
 //
-// A post-login mail campaign's controls, as `/admin-api/post-login-campaigns`
-// answers them and `/admin/post-login-campaigns` draws them. Against the
-// running service, in every mode:
+// A started post-login activity's controls, as
+// `/admin-api/post-login-activities` answers them and
+// `/admin/post-login-activities` draws them. Against the running service, in
+// every mode:
 //
 //   a. the console page answers its shell, the five operations are in the
 //      OpenAPI document, and the view refuses a caller with no token;
-//   b. the view answers the activities, the bounds, the job and the
-//      campaigns;
+//   b. the view answers the activities, the bounds, the job, the started
+//      activities, and its group chooser: a search for the two groups made
+//      here finds both, and with one chosen (`groups`, one name a line) it
+//      is resolved and left out of the results;
 //   c. a start with a value out of its bounds, an unknown activity, a group
-//      this realm does not have, and an unknown action are refused 400;
-//   d. a campaign narrowed to a group made here starts, is listed running,
-//      a second for the same group is refused, and it pauses, resumes and
-//      ends; an ended campaign does not pause.
+//      this realm does not have (STS-AUTHN-0530, by name), and an unknown
+//      action are refused 400;
+//   d. a post-login activity narrowed to the two groups starts, is listed
+//      running with both DNs, a second for the same groups in the other
+//      order is refused, and it pauses, resumes and ends; an ended one does
+//      not pause.
 //
-// The campaign is narrowed to a group made here, which holds nobody, so the
-// job — which runs every few minutes on the stack this job shares — mails
-// nobody for it, and it is ended before the job finishes. What the job mails
+// It is narrowed to groups made here, which hold nobody, so the job — which
+// runs every few minutes on the stack this job shares — mails nobody for
+// it, and it is ended before the job finishes. What the job mails
 // and what the reports application reads back is
-// `tests/post_login_campaigns.js`'s, in process, through the real channel.
+// `tests/post_login_activities.js`'s, in process, through the real channel.
 //
 // OWNED HERE (local: true): this repository's own console and management API
 // (tests/CLAUDE.md, *where a new test goes*, rule 1).
@@ -46,7 +51,7 @@ try {
   appconfig = {};
 }
 var bunyan = require("bunyan");
-var log = bunyan.createLogger({ name: "sts_post_login_campaigns",
+var log = bunyan.createLogger({ name: "sts_post_login_activities",
                                 level: appconfig.LOG_LEVEL || "info" });
 if (appconfigProblem) {
   log.debug("CONFIG_FILE could not be read, so the configuration is empty: " +
@@ -56,7 +61,7 @@ if (appconfigProblem) {
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
-const OPERATION = "/admin-api/post-login-campaigns";
+const OPERATION = "/admin-api/post-login-activities";
 const STAMP = Date.now().toString(36);
 
 let checks = 0;
@@ -120,10 +125,10 @@ function send(method, path, options) {
 
 async function test() {
   log.debug("Entering test().");
-  log.info("Directory → Post-login campaigns at " + base);
+  log.info("Directory → Post-login activities at " + base);
 
   log.info("=== a. the page, the document and the gate ===");
-  const shell = await send("GET", "/admin/post-login-campaigns",
+  const shell = await send("GET", "/admin/post-login-activities",
                            { headers: { accept: "text/html" } });
   const doc = await send("GET", "/admin-api/openapi.json");
   const anonymous = await send("GET", OPERATION, { bare: true });
@@ -140,63 +145,92 @@ async function test() {
     assert.strictEqual(anonymous.status, 401, anonymous.raw.slice(0, 200));
   });
 
-  log.info("=== b. the view ===");
-  const view = await send("GET", OPERATION);
-  check("the view answers the activities, the bounds, the job and the " +
-        "campaigns", function () {
+  log.info("=== b. the view and its group chooser ===");
+  const group = "pla-group-" + STAMP;
+  const other = "pla-other-" + STAMP;
+  const madeGroup = await send("POST", "/admin-api/groups/create",
+                               { json: { group: group } });
+  const madeOther = await send("POST", "/admin-api/groups/create",
+                               { json: { group: other } });
+  const view = await send("GET", OPERATION + "?groupq=" +
+                          encodeURIComponent(STAMP));
+  const narrowed = await send("GET", OPERATION + "?groupq=" +
+                              encodeURIComponent(STAMP) + "&groups=" +
+                              encodeURIComponent(group + "\nnope-" +
+                                                 STAMP));
+  check("the view answers the activities, the bounds, the job, the " +
+        "started activities and its group chooser", function () {
+    assert.ok(madeGroup.status === 200 || madeGroup.status === 201,
+              madeGroup.raw.slice(0, 300));
+    assert.ok(madeOther.status === 200 || madeOther.status === 201,
+              madeOther.raw.slice(0, 300));
     assert.strictEqual(view.status, 200, view.raw.slice(0, 300));
     const v = view.json || {};
-    assert.ok(Array.isArray(v.campaigns), view.raw.slice(0, 300));
+    assert.ok(Array.isArray(v.started), view.raw.slice(0, 300));
+    const pane = (v.groupChooser || {}).pane || {};
+    assert.strictEqual(pane.matched, 2, JSON.stringify(v.groupChooser));
+    assert.strictEqual(pane.from, 0);
+    const n = (narrowed.json || {}).groupChooser || {};
+    assert.strictEqual((n.pane || {}).matched, 1, JSON.stringify(n));
+    assert.strictEqual(n.pane.shown[0].cn, other, JSON.stringify(n));
+    assert.deepStrictEqual((n.chosen || []).map(function (g) {
+      return g.found;
+    }), [true, false], JSON.stringify(n.chosen));
     assert.ok(v.activities.indexOf("pqc-passkey-migration") >= 0,
               JSON.stringify(v.activities));
-    assert.strictEqual(v.job, "post-login.campaign-mail");
+    assert.strictEqual(v.job, "post-login.activity-mail");
     assert.ok(v.limits && v.limits.maxMails && v.limits.intervalDays &&
               v.limits.perRun, JSON.stringify(v.limits));
     assert.strictEqual(typeof v.mailAvailable, "boolean");
   });
 
   log.info("=== c. refusals ===");
-  const group = "plc-group-" + STAMP;
-  const madeGroup = await send("POST", "/admin-api/groups/create",
-                               { json: { group: group } });
   const badNumber = await send("POST", OPERATION + "/start",
-                               { json: { group: group, maxMails: 99 } });
+                               { json: { groups: [group], maxMails: 99 } });
   const badActivity = await send("POST", OPERATION + "/start",
                                  { json: { activity: "nonsense" } });
   const badGroup = await send("POST", OPERATION + "/start",
-                              { json: { group: "plc-nobody-" + STAMP } });
+                              { json: { groups: [group,
+                                                 "pla-nobody-" + STAMP] } });
   const badAction = await send("POST", OPERATION + "/nonsense",
                                { json: { id: "x" } });
   check("a value out of bounds, an unknown activity, an unknown group and " +
         "an unknown action are refused", function () {
-    assert.ok(madeGroup.status === 200 || madeGroup.status === 201,
-              madeGroup.raw.slice(0, 300));
     assert.strictEqual(badNumber.status, 400, badNumber.raw.slice(0, 300));
     assert.strictEqual(badActivity.status, 400,
                        badActivity.raw.slice(0, 300));
     assert.strictEqual(badGroup.status, 400, badGroup.raw.slice(0, 300));
+    assert.strictEqual(badGroup.json.errorCode, "STS-AUTHN-0530",
+                       badGroup.raw.slice(0, 300));
+    assert.ok(/pla-nobody-/.test(JSON.stringify(badGroup.json.errors)),
+              badGroup.raw.slice(0, 300));
     assert.strictEqual(badAction.status, 400, badAction.raw.slice(0, 300));
   });
 
   log.info("=== d. start, pause, resume, end ===");
   const started = await send("POST", OPERATION + "/start",
                              { json: { activity: "pqc-passkey-migration",
-                                       group: group, intervalDays: 7,
-                                       maxMails: 2, perRun: 100 } });
-  const id = started.json && started.json.campaign &&
-             started.json.campaign.id;
+                                       groups: [group, other],
+                                       intervalDays: 7, maxMails: 2,
+                                       perRun: 100 } });
+  const id = started.json && started.json.started &&
+             started.json.started.id;
   try {
     const listed = await send("GET", OPERATION);
     const again = await send("POST", OPERATION + "/start",
-                             { json: { group: group } });
-    check("a campaign narrowed to a group starts and is listed running, " +
-          "and a second for the same group is refused", function () {
+                             { json: { groups: [other, group] } });
+    check("a post-login activity narrowed to two groups starts and is " +
+          "listed running, and a second for the same groups is refused",
+          function () {
       assert.strictEqual(started.status, 200, started.raw.slice(0, 300));
       assert.ok(id, started.raw.slice(0, 300));
-      assert.ok(/^cn=/i.test(started.json.campaign.group),
-                started.raw.slice(0, 300));
-      const row = (listed.json.campaigns || []).filter(function (c) {
-        return c.id === id;
+      assert.strictEqual(started.json.started.groups.length, 2,
+                         started.raw.slice(0, 300));
+      assert.ok(started.json.started.groups.every(function (dn) {
+        return /^cn=/i.test(dn);
+      }), started.raw.slice(0, 300));
+      const row = (listed.json.started || []).filter(function (one) {
+        return one.id === id;
       })[0];
       assert.ok(row && row.state === "running", listed.raw.slice(0, 300));
       assert.strictEqual(again.status, 400, again.raw.slice(0, 300));
@@ -207,9 +241,9 @@ async function test() {
                                { json: { id: id } });
     check("it pauses and resumes", function () {
       assert.strictEqual(paused.status, 200, paused.raw.slice(0, 300));
-      assert.strictEqual(paused.json.campaign.state, "paused");
+      assert.strictEqual(paused.json.started.state, "paused");
       assert.strictEqual(resumed.status, 200, resumed.raw.slice(0, 300));
-      assert.strictEqual(resumed.json.campaign.state, "running");
+      assert.strictEqual(resumed.json.started.state, "running");
     });
   } finally {
     if (id) {
@@ -217,9 +251,9 @@ async function test() {
                                { json: { id: id } });
       const afterEnd = await send("POST", OPERATION + "/pause",
                                   { json: { id: id } });
-      check("it ends, and an ended campaign does not pause", function () {
+      check("it ends, and an ended one does not pause", function () {
         assert.strictEqual(ended.status, 200, ended.raw.slice(0, 300));
-        assert.strictEqual(ended.json.campaign.state, "ended");
+        assert.strictEqual(ended.json.started.state, "ended");
         assert.strictEqual(afterEnd.status, 400,
                            afterEnd.raw.slice(0, 300));
       });
@@ -235,8 +269,9 @@ async function test() {
 
 const program = new Command();
 program
-  .name("sts_post_login_campaigns")
-  .description("Directory → Post-login campaigns over HTTP (#1111).")
+  .name("sts_post_login_activities")
+  .description("Directory → Post-login activities over HTTP (#1111, " +
+               "#1123).")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

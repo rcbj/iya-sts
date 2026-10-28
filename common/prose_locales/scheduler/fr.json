@@ -319,13 +319,13 @@
     "en": "d5b8faad6c0c24c4",
     "text": "Supprime du magasin partagé les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention."
   },
-  "sched.jobs.post-login.campaign-mail.title": {
-    "en": "b434164532e5f5a1",
-    "text": "Campagnes de courrier après connexion"
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
+    "text": "Courrier des activités après connexion"
   },
-  "sched.jobs.post-login.campaign-mail.describe": {
-    "en": "d95703ecc79a262f",
-    "text": "Envoie aux personnes qu'atteint une campagne de courrier après connexion en cours (#1111) un rappel de se connecter, où l'activité après connexion leur demande alors d'enregistrer une clé d'accès post-quantique. Lit à chaque exécution une tranche des personnes de chaque campagne après un curseur, n'écrit qu'aux personnes à qui l'activité est due, jamais dans l'intervalle de rappel ni au-delà du maximum de la campagne, et écrit une ligne d'audit par campagne et par exécution."
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "Envoie aux personnes qu'atteint une activité après connexion en cours (#1111) un rappel de se connecter, où l'activité leur demande alors d'enregistrer une clé d'accès post-quantique. Lit à chaque exécution une tranche de la population de chaque activité lancée (le domaine, ou l'union de ses groupes) après un curseur, n'écrit qu'aux personnes à qui l'activité est due, jamais dans l'intervalle de rappel ni au-delà de son maximum, et écrit une ligne d'audit par activité lancée et par exécution."
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",

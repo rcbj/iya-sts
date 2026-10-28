@@ -1895,17 +1895,17 @@
     "en": "cd923c72e2ca4fba",
     "text": "NON-SPEC (#942). recount: inilalagay sa pila ang job na passkeys.report-recount para sa realm na ito sa leader ng scheduler, na ginagawang bagong baseline ang isang bagong bilang ng mga may hawak. Ang nag-iisang aksyon ng console sa page na iyon; tumatakbo ito kung saan tumatakbo ang bawat job, hindi kailanman sa request."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
-    "en": "daba792318b37b53",
-    "text": "NON-SPEC (#1111). Ang iginuguhit ng Directory → Post-login campaigns: bawat mail campaign ng realm kasama ang aktibidad, grupo, pagitan ng paalala, pinakamaraming email bawat tao, mga tao bawat takbo, kalagayan at ang nagawa na ng trabaho nito sa scheduler, at kung naka-on ang isang mail transport at isang aktibidad pagkatapos mag-sign in. Kung sino ang sinulatan ay ang source na postLoginProgress ng reports application. Sinasalamin ang GET /admin/post-login-campaigns."
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123). Ang iginuguhit ng Directory → Post-login activities: bawat aktibidad pagkatapos mag-sign in na sinimulan sa realm kasama ang aktibidad, mga grupo, pagitan ng paalala, pinakamaraming mail bawat tao, mga tao bawat takbo, kalagayan at ang nagawa na ng naka-iskedyul na job nito; kung naka-on ang isang mail transport at isang post-login activity policy; at ang paghahanap ng grupo ng start form, isang pahina ng dalawampung grupo mula sa group index ng directory (groupq, groupfrom), kasama ang mga grupong napili na (groups) na naresolba. Ang sino ang nasulatan ay ang source na postLoginProgress ng reports application. Sinasalamin ang GET /admin/post-login-activities."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
-    "en": "d969b0654c3b6952",
-    "text": "NON-SPEC (#1111). start, may { activity, group, intervalDays, maxMails, perRun }: pinapadalhan ng trabahong post-login.campaign-mail ang bawat taong may nakabinbing aktibidad ng paalala na mag-sign in, sa address ng kanilang entry, na may isang link sa pahina ng pag-sign in at walang kredensyal dito. pause, resume at end, may { id }. Ang apat na kilos ng console sa pahinang iyon."
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123). start, may { activity, groups, intervalDays, maxMails, perRun }: pinapadalhan ng job na post-login.activity-mail ang bawat taong may nakabinbing aktibidad — lahat sa realm, o ang unyon ng mga miyembro ng mga grupo, isang beses bawat tao — ng paalala na mag-sign in, sa address sa kanilang entry, na may isang link sa pahina ng pag-sign in at walang kredensyal. pause, resume at end, may { id }. Ang apat na kilos ng console sa pahinang iyon."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
-    "en": "8498beda414a4cf5",
-    "text": "nagsisimula, nagpa-pause, nagtutuloy o nagtatapos ng isang mail campaign"
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "nagsisimula, nagpa-pause, nagtutuloy o nagtatapos ng isang aktibidad pagkatapos mag-sign in"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",

@@ -201,5 +201,5 @@
   "shell.menu.another": "Iniciar sesión con otra cuenta",
   "shell.menu.another.title": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya.",
   "nav.broadcast": "Difundir un anuncio",
-  "nav.post-login-campaigns": "Campañas posteriores al inicio de sesión"
+  "nav.post-login-activities": "Actividades posteriores al inicio de sesión"
 }

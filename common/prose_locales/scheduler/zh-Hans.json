@@ -319,13 +319,13 @@
     "en": "d5b8faad6c0c24c4",
     "text": "从共享存储中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑。"
   },
-  "sched.jobs.post-login.campaign-mail.title": {
-    "en": "b434164532e5f5a1",
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
     "text": "登录后活动邮件"
   },
-  "sched.jobs.post-login.campaign-mail.describe": {
-    "en": "d95703ecc79a262f",
-    "text": "向进行中的登录后活动邮件（#1111）所覆盖的人发送登录提醒，登录后，登录后活动会请他们注册后量子通行密钥。每次运行在游标之后读取每个活动邮件的一批人员，只给有待完成该活动的人发送，绝不在提醒间隔内或超出该活动邮件的上限，并为每个活动邮件每次运行写一行审计记录。"
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "向进行中的登录后活动覆盖的人员（#1111）发送登录提醒，登录后该活动会请他们注册后量子通行密钥。每次运行在游标之后读取每个已启动活动人群（领域，或其各组的并集）的一批，只向有待完成该活动的人发送，绝不在提醒间隔内或超过其上限发送，并为每个已启动活动的每次运行写一条审计记录。"
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
