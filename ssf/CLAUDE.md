@@ -1416,6 +1416,18 @@ event could go.
 
 ## INACTIVITY AND TRANSMITTER-INITIATED VERIFICATION ARE ONE SCHEDULER JOB (#144)
 
+**A PERSON'S POLL STREAM HAS A DEFAULT OF ITS OWN (#1094, 2026-10-28).** A
+browser receiver (rcbj/oidc-caep-client) creates its stream with the
+person's token and deletes it at sign-out; a tab closed for good left it for
+ever, and a person who kept losing the stored id reached `ssf.maxStreams`.
+`ssf_streams.ts`'s `inactivityTimeout()` / `inactivityAction()` give a
+stream that `isPersonPollStream()` — person-owned (`ownerPersonOfRecord()`),
+not internal, poll delivery — `ssf.personStreamInactivityTimeoutS` (86400)
+and `ssf.personStreamInactivityAction` (`delete`) when neither its owning
+application nor `ssf.inactivityTimeoutS` sets a timeout. Push is excluded for
+the global setting's own reason. The job's `off()` asks `inactivityTimeout()`,
+so it runs while such a stream exists. `tests/ssf_person_streams.js` 7.
+
 `ssf.stream-maintenance`: cluster, realm, every `ssf.streamMaintenanceSweepS`,
 off while both of its settings are 0, which is the default. `inactivity_timeout`
 (section 8.1.1) is `ssf.inactivityTimeoutS`. Activity is any management call a

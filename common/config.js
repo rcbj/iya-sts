@@ -13650,6 +13650,35 @@ const SETTINGS = [
                  'waiting. Delete removes the stream and sends nothing, ' +
                  'because there is no stream left to send it on.' },
 
+  // -------------------------------------------------------------------------
+  // A PERSON'S ABANDONED BROWSER STREAM (#1094). A browser receiver (rcbj/
+  // oidc-caep-client) creates a stream with the person's own token and
+  // polls it; it deletes it at sign-out, and nothing does when a tab is
+  // closed for good. ssf.inactivityTimeoutS stays 0 by default for push
+  // receivers; these two give a person's POLL stream a default of its own.
+  // -------------------------------------------------------------------------
+  { key: 'ssf.personStreamInactivityTimeoutS', group: 'SSF',
+    label: 'Inactivity timeout for a person\'s poll stream (s)',
+    env: 'STS_SSF_PERSON_STREAM_INACTIVITY_TIMEOUT_S', type: 'int',
+    dflt: 86400, min: 0, max: 31536000, runtime: true,
+    description: 'The inactivity_timeout of a stream a PERSON owns (created ' +
+                 'with an access token issued for them, or their name and ' +
+                 'password) and collects by RFC 8936 poll — what a browser ' +
+                 'receiver makes — when neither its owning application nor ' +
+                 'ssf.inactivityTimeoutS sets one (#1094). Every poll is ' +
+                 'activity, so a stream with a tab open is never idle; one ' +
+                 'abandoned when its tab was closed is dealt with as ' +
+                 'ssf.personStreamInactivityAction says. 0 turns it off.' },
+
+  { key: 'ssf.personStreamInactivityAction', group: 'SSF',
+    label: 'What an inactive person\'s poll stream becomes',
+    env: 'STS_SSF_PERSON_STREAM_INACTIVITY_ACTION', type: 'enum',
+    enumValues: ['pause', 'disable', 'delete'], dflt: 'delete', runtime: true,
+    description: 'What ssf.personStreamInactivityTimeoutS does to a person\'s ' +
+                 'idle poll stream (#1094). Delete, the default, frees the ' +
+                 'place it holds under ssf.maxStreams; the browser receiver ' +
+                 'makes a new one when the person comes back.' },
+
   { key: 'ssf.verificationEveryS', group: 'SSF',
     label: 'Transmitter-initiated verification (s)',
     env: 'STS_SSF_VERIFICATION_EVERY_S', type: 'int', dflt: 0, min: 0,

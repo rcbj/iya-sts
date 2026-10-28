@@ -1054,6 +1054,8 @@ var config = {
     maxStreams: 25,                                                                                                                                       // Streams per receiver
     inactivityTimeoutS: 0,                                                                                                                                // Stream inactivity timeout (s)
     inactivityAction: "pause",                                                                                                                            // What an inactive stream becomes
+    personStreamInactivityTimeoutS: 86400,                                                                                                                // Inactivity timeout for a person's poll stream (s)
+    personStreamInactivityAction: "delete",                                                                                                               // What an inactive person's poll stream becomes
     verificationEveryS: 0,                                                                                                                                // Transmitter-initiated verification (s)
     streamMaintenanceSweepS: 60,                                                                                                                          // Stream maintenance sweep interval (s)
     maxSubjectsPerStream: 100,                                                                                                                            // Subjects per stream

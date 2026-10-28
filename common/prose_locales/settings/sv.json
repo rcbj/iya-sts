@@ -7151,6 +7151,22 @@
     "en": "f6d2a2be3eebe16f",
     "text": "De tre saker som avsnitt 8.1.1 tillåter. Pause och disable skickar en stream-updated-händelse till mottagaren INNAN strömmen stannar, vilket specifikationen kräver; en pausad ström fortsätter att köa och en inaktiverad kastar det som väntar. Delete tar bort strömmen och skickar ingenting, eftersom det inte finns någon ström kvar att skicka det på."
   },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "Inaktivitetsgräns för en persons hämtningsström (s)"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "inactivity_timeout för en ström som en PERSON äger (skapad med en åtkomsttoken utfärdad för personen, eller namn och lösenord) och hämtar med RFC 8936-hämtning — det en mottagare i webbläsaren skapar — när varken det ägande programmet eller ssf.inactivityTimeoutS anger någon (#1094). Varje hämtning är aktivitet, så en ström med en öppen flik är aldrig inaktiv; en som övergavs när fliken stängdes hanteras som ssf.personStreamInactivityAction anger. 0 stänger av den."
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "Vad en persons inaktiva hämtningsström blir"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "Vad ssf.personStreamInactivityTimeoutS gör med en persons inaktiva hämtningsström (#1094). Borttagning, standardvärdet, frigör platsen den har under ssf.maxStreams; mottagaren i webbläsaren skapar en ny när personen kommer tillbaka."
+  },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",
     "text": "Sändarinitierad verifiering (s)"

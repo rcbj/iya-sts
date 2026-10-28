@@ -1826,8 +1826,9 @@ class SharedSignals {
         'ssf.verificationEveryS').value);
       const every = Number.isFinite(everyValue) && everyValue > 0
         ? Math.floor(everyValue) : 0;
-      const action = String(streams.ownerSetting(record,
-        'ssf.inactivityAction').value || 'pause');
+      // `inactivityAction()` (#1094): a person's poll stream timed out by
+      // its own default takes that default's action.
+      const action = streams.inactivityAction(record);
       const idle = now - Number(record.lastActivityAt ||
         Math.floor(Date.parse(record.createdAt || '') / 1000) || now);
       if (timeout && idle >= timeout) {
@@ -1907,17 +1908,19 @@ class SharedSignals {
         // Off only while BOTH are 0 for every stream: an application may
         // turn either on for its own streams when the setting is 0.
         const streams = this.deps.streams;
+        // `inactivityTimeout()` and not the setting (#1094), so a person's
+        // poll stream under its own default keeps the job on.
         const anyStream = streams.listStreams().some((record: Json) => {
           return !streams.isInternal(record) &&
-            (Number(streams.ownerSetting(record,
-              'ssf.inactivityTimeoutS').value) > 0 ||
+            (streams.inactivityTimeout(record) > 0 ||
              Number(streams.ownerSetting(record,
                'ssf.verificationEveryS').value) > 0);
         });
         return !anyStream && !Number(config.value('ssf.inactivityTimeoutS')) &&
                !Number(config.value('ssf.verificationEveryS'))
           ? 'ssf.inactivityTimeoutS and ssf.verificationEveryS are both 0, ' +
-            'and no application sets either for its streams'
+            'no application sets either for its streams, and no person ' +
+            'holds a poll stream'
           : '';
       },
       run: () => {

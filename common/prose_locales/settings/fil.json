@@ -7151,6 +7151,22 @@
     "en": "f6d2a2be3eebe16f",
     "text": "Ang tatlong bagay na pinapayagan ng section 8.1.1. Ang pause at disable ay nagpapadala sa receiver ng stream-updated event BAGO huminto ang stream, na hinihingi ng specification; patuloy na nagki-queue ang naka-pause na stream at itinatapon ng naka-disable ang naghihintay. Inaalis ng delete ang stream at walang ipinapadala, dahil wala nang stream na mapagpapadalhan nito."
   },
+  "ssf.personStreamInactivityTimeoutS|label": {
+    "en": "de5582789ea73061",
+    "text": "Inactivity timeout para sa poll stream ng isang tao (s)"
+  },
+  "ssf.personStreamInactivityTimeoutS|description": {
+    "en": "f99bd6dfe227ba31",
+    "text": "Ang inactivity_timeout ng stream na pagmamay-ari ng isang TAO (ginawa gamit ang access token na inisyu para sa kanya, o ang kanyang pangalan at password) at kinukuha sa pamamagitan ng RFC 8936 poll — ang ginagawa ng receiver sa browser — kapag hindi ito itinatakda ng application na may-ari nito o ng ssf.inactivityTimeoutS (#1094). Ang bawat poll ay aktibidad, kaya hindi kailanman idle ang stream na may bukas na tab; ang naiwan nang isara ang tab nito ay hinaharap ayon sa ssf.personStreamInactivityAction. Ang 0 ay pinapatay ito."
+  },
+  "ssf.personStreamInactivityAction|label": {
+    "en": "6ac7d59f8084256e",
+    "text": "Ano ang nangyayari sa idle na poll stream ng isang tao"
+  },
+  "ssf.personStreamInactivityAction|description": {
+    "en": "f1fc5ec269e3da3b",
+    "text": "Ang ginagawa ng ssf.personStreamInactivityTimeoutS sa idle na poll stream ng isang tao (#1094). Ang pagbura, ang default, ay nagpapalaya sa puwestong hawak nito sa ilalim ng ssf.maxStreams; gagawa ng bago ang receiver sa browser kapag bumalik ang tao."
+  },
   "ssf.verificationEveryS|label": {
     "en": "4cdcdd88c7b28397",
     "text": "Verification na sinimulan ng transmitter (s)"
