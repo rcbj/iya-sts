@@ -1164,8 +1164,16 @@
     "text": "Transmission de l’attestation"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "Ce que l’on demande au navigateur de dire à ce service sur l’authentificateur qui a créé l’identifiant. `direct` est la valeur par défaut ici parce qu’il s’agit d’un service de DÉBOGAGE et que l’objet d’attestation est l’une des choses qui méritent d’être examinées ; un déploiement qui n’a que faire du modèle de l’authentificateur devrait envoyer `none`, ce que recommande la spécification et ce qui évite une demande de consentement du navigateur à ce sujet. **Ce qui est FAIT de ce qui revient relève de `webauthn.attestationPolicy`** (#105) : chaque déclaration reçue est vérifiée en mode produit. Un domaine dont la politique est `require-trusted`, ou qui liste des AAGUID dans `webauthn.attestationAllowedAaguids`, demande `direct` quoi qu’indique ce paramètre — une politique qui a besoin d’une déclaration ne peut pas être satisfaite en n’en demandant aucune. Demander `enterprise` et ne rien recevoir, c’est le navigateur qui refuse, pas ce service."
+    "en": "1280747b772b73d1",
+    "text": "Ce que l’on demande au navigateur de dire à ce service sur l’authentificateur qui a créé l’identifiant. `direct` est la valeur par défaut ici parce qu’il s’agit d’un service de DÉBOGAGE et que l’objet d’attestation est l’une des choses qui méritent d’être examinées ; un déploiement qui n’a que faire du modèle de l’authentificateur devrait envoyer `none`, ce que recommande la spécification et ce qui évite une demande de consentement du navigateur à ce sujet. **Ce qui est FAIT de ce qui revient relève de `webauthn.attestationPolicy`** (#105) : chaque déclaration reçue est vérifiée en mode produit. Un domaine dont la politique est `require-trusted`, ou qui liste des AAGUID dans `webauthn.attestationAllowedAaguids`, demande `direct` quoi qu’indique ce paramètre — une politique qui a besoin d’une déclaration ne peut pas être satisfaite en n’en demandant aucune. **`enterprise` n’est demandé que pour un RP ID listé dans `webauthn.attestationEnterpriseRpIds`** (#1114) ; pour tout autre, la requête demande `direct`, et la ligne de la cérémonie ainsi que l’enregistrement d’attestation de la clé l’indiquent. Il ne peut pas être choisi tant que cette liste est vide. Demander `enterprise` et recevoir une attestation ordinaire, c’est le navigateur ou l’authentificateur qui refuse, pas ce service."
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "RP ID de l’attestation d’entreprise"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "Les RP ID pour lesquels un enregistrement demande l’attestation `enterprise` (WebAuthn Level 3 section 5.4.7), des noms d’hôte séparés par des virgules, comparés exactement (casse mise à part). Lu seulement tant que `webauthn.attestation` vaut `enterprise`, qui ne peut pas être choisi tant que cette liste est vide (STS-AUTHN-0500), et cette liste ne peut pas être vidée tant qu’il l’est. Une cérémonie dont le RP ID n’est pas listé demande `direct` à la place, et sa ligne `webauthn.ceremony` ainsi que l’enregistrement d’attestation de la nouvelle clé l’indiquent. **Seule une déclaration issue d’une requête d’entreprise voit son numéro de série d’appareil lu** pour l’`enterpriseSerialAttribute` de la politique des clés d’accès ; listez ici exactement les RP ID pour lesquels vos authentificateurs et navigateurs sont configurés pour libérer l’attestation d’entreprise."
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",

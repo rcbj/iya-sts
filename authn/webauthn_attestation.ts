@@ -92,6 +92,16 @@
 //     MDS status reports above are for.
 //
 // ---------------------------------------------------------------------------
+// ENTERPRISE ATTESTATION (#1114). Section 5.4.7 makes a uniquely identifying
+// attestation something the relying party ASKS for, and a client and an
+// authenticator release only for an RP ID provisioned for it. The record
+// says what was asked (`conveyance`, and `enterpriseDowngraded` where
+// `enterprise` was configured but the RP ID is not on the realm's list), and
+// the device serial #532 binds is read only from a statement an enterprise
+// request produced. What was asked is recomputed here from `rpIdHash`
+// (`conveyanceOf()`), not carried from the ceremony's begin.
+//
+// ---------------------------------------------------------------------------
 // THIS IS RULE 3: A LIBRARY. It registers no route. It requires
 // `common/config`, `common/helpers`, `common/crypto`, `common/pki`,
 // `common/error_codes`, `common/instance_slot` and `./webauthn_policy`, and

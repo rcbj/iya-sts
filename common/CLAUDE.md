@@ -12448,7 +12448,11 @@ case." rcbj's answers on the ticket, D1–D6, are what this section holds to.
   `management-api` off the listener the request arrived on unless it says
   `confirm` (D6, 0156; the ambient request is `jose_certificate_header.js`'s).
   The process's writes reach it through `config.addWriteRule()`, which since
-  #472 is told whether the write lands in a realm; a realm's through
+  #472 is told whether the write lands in a realm (and since #1114 hands a
+  rule `beside(key)`, a companion setting's value as the same `set-many`
+  posts it while `config.withWriteBatch()` holds the post, so a pair that
+  is legal only together is not refused for being checked one at a time —
+  `authn/CLAUDE.md`, *Enterprise attestation, by RP ID*); a realm's through
   `realms.js`'s `listenerOverrideProblem()`. **A reset is not a write and
   asks no rule**, so the Listeners page and the API write an empty value
   instead of clearing one. What the process STARTED with is judged by

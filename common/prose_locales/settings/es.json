@@ -1164,8 +1164,16 @@
     "text": "Transmisión de la atestación"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "Cuánto se pide al navegador que cuente a este servicio sobre el autenticador que creó la credencial. `direct` es el valor predeterminado aquí porque este es un servicio de DEPURACIÓN y el objeto de atestación es una de las cosas que vale la pena mirar; un despliegue al que no le sirve el modelo del autenticador debería enviar `none`, que es lo que recomienda la especificación y lo que evita una petición de consentimiento del navegador al respecto. **Lo que se HACE con lo que vuelve es `webauthn.attestationPolicy`** (#105): cada declaración que llega se verifica en modo producto. Un dominio cuya política es `require-trusted`, o que enumera AAGUID en `webauthn.attestationAllowedAaguids`, pide `direct` diga lo que diga esto — una política que necesita una declaración no puede cumplirse pidiendo ninguna. Pedir `enterprise` y no recibir nada es el navegador negándose, no este servicio."
+    "en": "1280747b772b73d1",
+    "text": "Cuánto se pide al navegador que cuente a este servicio sobre el autenticador que creó la credencial. `direct` es el valor predeterminado aquí porque este es un servicio de DEPURACIÓN y el objeto de atestación es una de las cosas que vale la pena mirar; un despliegue al que no le sirve el modelo del autenticador debería enviar `none`, que es lo que recomienda la especificación y lo que evita una petición de consentimiento del navegador al respecto. **Lo que se HACE con lo que vuelve es `webauthn.attestationPolicy`** (#105): cada declaración que llega se verifica en modo producto. Un dominio cuya política es `require-trusted`, o que enumera AAGUID en `webauthn.attestationAllowedAaguids`, pide `direct` diga lo que diga esto — una política que necesita una declaración no puede cumplirse pidiendo ninguna. **`enterprise` solo se pide para un RP ID enumerado en `webauthn.attestationEnterpriseRpIds`** (#1114); para cualquier otro la solicitud pide `direct`, y la fila de la ceremonia y el registro de atestación de la clave lo indican. No puede elegirse mientras esa lista esté vacía. Pedir `enterprise` y recibir una atestación ordinaria es el navegador o el autenticador declinando, no este servicio."
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "RP ID de la atestación empresarial"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "Los RP ID para los que un registro pide la atestación `enterprise` (WebAuthn Level 3 sección 5.4.7), nombres de host separados por comas, comparados exactamente (salvo mayúsculas). Solo se lee mientras `webauthn.attestation` es `enterprise`, que no puede elegirse mientras esta lista esté vacía (STS-AUTHN-0500), ni esta vaciarse mientras lo sea. Una ceremonia cuyo RP ID no está enumerado pide `direct` en su lugar, y su fila `webauthn.ceremony` y el registro de atestación de la nueva clave lo indican. **Solo de una declaración procedente de una solicitud empresarial se lee el número de serie del dispositivo** para el `enterpriseSerialAttribute` de la política de llaves de acceso; enumere aquí exactamente los RP ID para los que sus autenticadores y navegadores están aprovisionados para liberar la atestación empresarial."
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",

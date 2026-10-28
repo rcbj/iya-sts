@@ -3062,9 +3062,56 @@ header; what a maintainer of THIS directory needs is where it sits:
 
 `tests/webauthn_attestation.js` (with `tests/webauthn_attestation_kit.js`, a
 software authenticator in all eight formats) and
-`tests/protocol/sts_webauthn_attestation.js` are the tests. Not done:
-enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
-deferred.
+`tests/protocol/sts_webauthn_attestation.js` are the tests.
+
+## ENTERPRISE ATTESTATION, BY RP ID (#1114, 2026-10-28)
+
+Section 5.4.7: a client passes `enterprise` through only for an RP ID its
+own policy allows, and an authenticator releases a uniquely identifying
+attestation only for an RP ID provisioned into it. So this service asks for
+it only where a realm says to:
+
+* **`webauthn.attestationEnterpriseRpIds`** (csv, per realm) is read only
+  while `webauthn.attestation` is `enterprise`.
+  `webauthn_policy.attestationConveyance(rpId)` — over the static
+  `conveyanceFor(settings, listed)` — answers `{ configured, requested,
+  downgraded }`: `enterprise` at a listed RP ID (case aside), `direct`
+  elsewhere with `downgraded`; any other conveyance as before (a demand for
+  trust still asks `direct`). `creationOptions()` sends `requested`, and the
+  sign-in step's technical fold (`authn.ts`'s two facts builders) shows it.
+* **Refused at the write both ways round** (`enterpriseWriteRule()`,
+  `STS-AUTHN-0500`): `enterprise` with the list empty, and the list emptied
+  under `enterprise`. A section's Save posts both fields at once and
+  `set-many` checks each against the values in force, so the rule reads its
+  companion through the fourth argument `config.addWriteRule()` now hands a
+  rule, `beside(key)`, which answers the value POSTED BESIDE IT while
+  `config.withWriteBatch()` holds the post — `admin_actions.ts`'s
+  `set-many` wraps both its check loop and its write loop (`setOverride()`
+  re-checks each write). A value from the environment or a file is read as
+  it is: every ceremony asks `direct` and says so.
+* **What the ceremony asked is recomputed at the finish**, not stored with
+  the pending ceremony: every door redraws its options from the settings at
+  each draw, and the doors keep pending records of different shapes.
+  `webauthn_attestation.ts`'s `conveyanceOf()` finds the listed RP ID whose
+  SHA-256 is the authenticator data's `rpIdHash` (already held to the
+  ceremony's RP ID by `verifyRegistration()`) and asks `conveyanceFor()`
+  — the same answer the browser was sent unless a setting changed while the
+  ceremony was in flight. The record carries `conveyance` and
+  `enterpriseDowngraded`.
+* **The device serial (#532) is read only when `conveyance` is
+  `enterprise`.** A serial in a statement nobody asked for that way binds
+  nobody; with the passkey policy's `enterpriseSerialAttribute` set, such a
+  key names no serial and is refused (`STS-AUTHN-0321`).
+* **The ceremony row** (`webauthn_ceremonies.ts`): folded into the existing
+  `attestation` detail rather than a thirteenth field (`audit.js` caps
+  twelve) — `attestationText()` leads with `enterprise not listed, asked
+  direct` where the record says `enterpriseDowngraded`. Only a door that
+  passes the record has it, which every door does for a registration that
+  completed; a registration refused before its attestation was assessed (a
+  browser that gave up, a failed section 7.1 check) has no record, and its
+  row does not say what was asked.
+
+`tests/webauthn_enterprise_attestation.js` holds it.
 
 ## WHAT AN ATTESTATION IS SIGNED WITH (#941, 2026-10-23)
 
@@ -3095,8 +3142,14 @@ fields; what this directory needs is where they come from and go:
   (`webauthn_policy.attestationSettings()`), so `demandedBy()` names it.
 
 `tests/passkey_attestation_algorithm.js` holds it over an ML-DSA chain
-made at run time with the service's own post-quantum certificate encoder.
-**No real post-quantum authenticator's attestation has been tested.**
+made at run time with the service's own post-quantum certificate encoder,
+and (section G, #1114) holds the credential's algorithm and the
+attestation's apart: an ML-DSA-65 credential under a classical leaf, and an
+ES256 credential under an ML-DSA chain. **No real post-quantum
+authenticator's attestation has been tested**;
+`tests/webauthn_captured_replay.js` replays one once a capture is dropped
+into `tests/fixtures/webauthn-captured/` (`tests/CLAUDE.md`, *Captured
+WebAuthn registrations*).
 
 ## EVERY CEREMONY LEAVES A ROW (#943, 2026-10-23)
 

@@ -1164,8 +1164,16 @@
     "text": "證明傳遞"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "要求瀏覽器告訴本服務多少關於建立認證之驗證器的資訊。此處預設為 `direct`，因為這是一個「偵錯」服務，而證明物件正是值得查看的內容之一；不需要驗證器型號的部署應送出 `none`，這是規格建議的做法，也能避免瀏覽器為此跳出同意提示。**如何處理回傳的內容由 `webauthn.attestationPolicy` 決定**（#105）：在產品模式下，每個抵達的陳述都會被驗證。原則為 `require-trusted`，或在 `webauthn.attestationAllowedAaguids` 中列出 AAGUID 的領域，無論此處如何設定都會要求 `direct`——需要陳述的原則，無法靠要求 none 來滿足。要求 `enterprise` 卻什麼都沒得到，是瀏覽器拒絕，而不是本服務。"
+    "en": "1280747b772b73d1",
+    "text": "要求瀏覽器告訴本服務多少關於建立認證之驗證器的資訊。此處預設為 `direct`，因為這是一個「偵錯」服務，而證明物件正是值得查看的內容之一；不需要驗證器型號的部署應送出 `none`，這是規格建議的做法，也能避免瀏覽器為此跳出同意提示。**如何處理回傳的內容由 `webauthn.attestationPolicy` 決定**（#105）：在產品模式下，每個抵達的陳述都會被驗證。原則為 `require-trusted`，或在 `webauthn.attestationAllowedAaguids` 中列出 AAGUID 的領域，無論此處如何設定都會要求 `direct`——需要陳述的原則，無法靠要求 none 來滿足。**僅對 `webauthn.attestationEnterpriseRpIds` 中列出的 RP ID 要求 `enterprise`**（#1114）；對其他 RP ID，要求改為 `direct`，儀式記錄列與金鑰的證明記錄都會註明。該清單為空時不能選擇它。要求 `enterprise` 卻收到一般證明，是瀏覽器或驗證器拒絕，而不是本服務。"
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "企業證明的 RP ID"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "註冊時要求 `enterprise` 證明（WebAuthn Level 3 第 5.4.7 節）的 RP ID，以逗號分隔的主機名稱，精確比對（不分大小寫）。僅在 `webauthn.attestation` 為 `enterprise` 時讀取；此清單為空時不能選擇該值（STS-AUTHN-0500），選擇該值時也不能清空此清單。RP ID 未列出的儀式改為要求 `direct`，其 `webauthn.ceremony` 記錄列與新金鑰的證明記錄都會註明。**只有來自企業要求的陳述才會讀取裝置序號**，供通行金鑰原則的 `enterpriseSerialAttribute` 使用；請在此精確列出您的驗證器與瀏覽器已佈建為可釋出企業證明的 RP ID。"
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",

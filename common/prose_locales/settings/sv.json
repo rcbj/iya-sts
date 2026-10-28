@@ -1164,8 +1164,16 @@
     "text": "Överföring av attestering"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "Hur mycket webbläsaren ombeds berätta för tjänsten om autentiseraren som skapade autentiseringsuppgiften. `direct` är standard här eftersom detta är en FELSÖKNINGSTJÄNST och attesteringsobjektet är en av sakerna som är värda att titta på; en driftsättning som inte har någon nytta av autentiserarens modell bör skicka `none`, vilket är vad specifikationen rekommenderar och vad som undviker en samtyckesfråga i webbläsaren om det. **Vad som GÖRS med det som kommer tillbaka är `webauthn.attestationPolicy`** (#105): varje utsaga som kommer verifieras i produktionsläge. En sfär vars policy är `require-trusted`, eller som listar AAGUID:er i `webauthn.attestationAllowedAaguids`, ber om `direct` oavsett vad detta säger — en policy som behöver en utsaga kan inte uppfyllas genom att be om ingen. Att be om `enterprise` och inte få något tillbaka är webbläsaren som vägrar, inte tjänsten."
+    "en": "1280747b772b73d1",
+    "text": "Hur mycket webbläsaren ombeds berätta för tjänsten om autentiseraren som skapade autentiseringsuppgiften. `direct` är standard här eftersom detta är en FELSÖKNINGSTJÄNST och attesteringsobjektet är en av sakerna som är värda att titta på; en driftsättning som inte har någon nytta av autentiserarens modell bör skicka `none`, vilket är vad specifikationen rekommenderar och vad som undviker en samtyckesfråga i webbläsaren om det. **Vad som GÖRS med det som kommer tillbaka är `webauthn.attestationPolicy`** (#105): varje utsaga som kommer verifieras i produktionsläge. En sfär vars policy är `require-trusted`, eller som listar AAGUID:er i `webauthn.attestationAllowedAaguids`, ber om `direct` oavsett vad detta säger — en policy som behöver en utsaga kan inte uppfyllas genom att be om ingen. **`enterprise` begärs bara för ett RP ID som listas i `webauthn.attestationEnterpriseRpIds`** (#1114); för alla andra begär förfrågan `direct`, och ceremonins rad och nyckelns attesteringspost säger det. Det kan inte väljas medan den listan är tom. Att be om `enterprise` och få en vanlig attestering tillbaka är webbläsaren eller autentiseraren som avböjer, inte tjänsten."
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "RP ID:n för företagsattestering"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "De RP ID:n för vilka en registrering ber om `enterprise`-attestering (WebAuthn Level 3 avsnitt 5.4.7), kommaseparerade värdnamn som jämförs exakt (skiftläge undantaget). Läses bara medan `webauthn.attestation` är `enterprise`, som inte kan väljas medan denna är tom (STS-AUTHN-0500), och denna kan inte tömmas medan den är det. En ceremoni vars RP ID inte listas ber om `direct` i stället, och dess `webauthn.ceremony`-rad och den nya nyckelns attesteringspost säger det. **Bara en utsaga från en företagsförfrågan får sitt enhetsserienummer läst** för passkey-policyns `enterpriseSerialAttribute`; lista här exakt de RP ID:n som era autentiserare och webbläsare är etablerade för att lämna ut företagsattestering till."
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",
