@@ -411,6 +411,9 @@ const CELL_MINTED = [
   'security.rateLimitBuckets', 'spiffe.joinTokens',
   'spiffe.recordedConnections', 'spnego.pending',
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
+  // An announcement a surface's receiver took in (#1086), for its own tabs:
+  // minted here, beside the inbox it came out of.
+  'ssf_receivers.announcements',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.streams', 'tls.listenerAnnounced',
   // Each node's own listener key (2026-10-08), sealed: a node is a member of

@@ -3658,6 +3658,10 @@ class AdminApi {
       { method: 'GET', path: BASE + '/announcements', tag: 'Shared Signals',
         operationId: 'getConsoleAnnouncements',
         summary: 'Announcements the console\'s receiver took in',
+        // In words, as `/me`'s is: the banner every console page draws is
+        // not a page, and the send it answers for is `POST /admin/broadcast`.
+        mirrors: 'no console page — the announcement banner every console ' +
+                 'page draws, fed by POST /admin/broadcast (#1086)',
         description: 'What an open console tab collects (#1086): the ' +
                      'announcements this realm\'s admin-console receiver ' +
                      'took in after `since` — the `now` this operation ' +
