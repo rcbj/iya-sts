@@ -2699,6 +2699,14 @@
     "en": "997e77c58a56af97",
     "text": "registra una aplicación de autenticación o inicia el registro de una llave de seguridad, y después establece la sesión de inicio de sesión"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "UNA ACTIVIDAD POSTERIOR AL INICIO DE SESIÓN (#1096). Donde la política de actividad posterior al inicio de sesión del dominio (Directorio > Políticas, desactivada de forma predeterminada) alcanza a una persona por grupo y esta tiene pendiente su actividad (hoy, una llave de acceso poscuántica (ML-DSA) en el papel en que tiene una clásica, o una donde no tiene ninguna), un inicio de sesión en la pantalla de inicio de sesión llega aquí en lugar de iniciar la sesión: la sesión queda RETENIDA, no iniciada. Registrar lleva al registro de /authn/webauthn que ofrece solo ML-DSA (/authn-api/mfa/{id}/post-login/register); Omitir la pospone durante el snoozeDays del perfil (/authn-api/mfa/{id}/post-login/skip) y se rechaza una vez que ha pasado el plazo concedido desde la primera invitación (STS-AUTHN-0474). En ambos casos, la sesión retenida se inicia después con el amr y el acr del inicio de sesión. Necesita un id ?mfa= emitido por el inicio de sesión retenido, así que seguirlo sin más responde 400."
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "pide una llave de acceso poscuántica después de un inicio de sesión y luego establece la sesión de inicio de sesión que retenía"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "EL SEGUNDO SEGUNDO FACTOR (2026-09-10). Un paso de contraseña que tuvo éxito para alguien con una aplicación de autenticación registrada llega aquí, y este endpoint pide los seis dígitos que muestra su aplicación. Si tiene éxito, la sesión registra amr [\"pwd\",\"otp\"] (el valor de RFC 8176, cuya entrada en el registro nombra RFC 4226 y RFC 6238) y acr \"mfa\", que es el único caso en que este servicio puede decir dos factores con honestidad. **EL CÓDIGO SE COMPRUEBA DE VERDAD EN AMBOS MODOS**, a diferencia de la contraseña que lo precede: un verificador de contraseñas de un solo uso que aceptara cualesquiera seis dígitos no sería permisivo, estaría roto, y es el argumento de SPNEGO leído por segunda vez. Con límite de frecuencia por identidad Y por dirección, porque seis dígitos son un millón de valores y este es el espacio de búsqueda más pequeño del servicio. EL GET ES EL ENLACE *usar un código en su lugar* de la pantalla de llave de seguridad y no crea nada: dibuja la página para un paso que ya existe, y la rechaza para alguien que no tiene ningún registro. **NO REGISTRA A NADIE**, que es toda la diferencia con /authn/webauthn a su lado: registrarse significa que se le muestre a uno un secreto compartido, así que ocurre en /portal/mfa o mientras se gasta un enlace de activación, y nunca en una pantalla de inicio de sesión. Una página de la superficie de inicio de sesión desde #572: el código va a /authn-api/mfa/{id}/totp."
@@ -2870,6 +2878,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC (#572, #246). Solo donde el paso se ofreció: el inicio de sesión termina con la contraseña."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC (#1096). El siguiente paso es el registro de la página de llaves de acceso, solo ML-DSA; su finalización inicia la sesión retenida."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC (#1096). Durante el snoozeDays del perfil; se rechaza una vez que ha pasado el plazo concedido. La sesión retenida se inicia."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

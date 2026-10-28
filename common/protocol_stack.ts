@@ -295,6 +295,10 @@ class ProtocolStack {
     this.build('common/i18n', require('./i18n'), 'I18n');
     this.build('common/locale_policy', require('./locale_policy'),
                'LocalePolicy');
+    // #1096: the post-login activity policy, the seventh kind — a library
+    // over the directory slot like the five above.
+    this.build('common/post_login_policy', require('./post_login_policy'),
+               'PostLoginPolicy');
     this.build('authn/webauthn_policy', require('../authn/webauthn_policy'),
                'WebauthnPolicy');
     // #105: a registration's attestation statement, verified. A library
@@ -310,6 +314,9 @@ class ProtocolStack {
                require('../authn/webauthn_ceremonies'),
                'WebauthnCeremonies');
     this.build('common/credentials', require('./credentials'), 'Credentials');
+    // #1096: who is due a post-login activity — over the credential store,
+    // the WebAuthn policy and the post-login policy, so after all three.
+    this.build('common/post_login', require('./post_login'), 'PostLogin');
     this.build('common/account_state', require('./account_state'),
                'AccountState');
     // #130: the device register (ou=devices), a library over the directory

@@ -2699,6 +2699,14 @@
     "en": "997e77c58a56af97",
     "text": "enrôle une application d’authentification ou démarre l’enregistrement d’une clé de sécurité, puis établit la session de connexion"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "UNE ACTIVITÉ APRÈS CONNEXION (#1096). Là où la politique d’activité après connexion du domaine (Annuaire > Politiques, désactivée par défaut) atteint une personne par groupe et que celle-ci doit effectuer son activité — aujourd’hui une clé d’accès post-quantique (ML-DSA) dans le rôle où elle détient une clé classique, ou une là où elle n’en détient aucune —, une connexion à l’écran de connexion aboutit ici au lieu de connecter la personne : la session est RETENUE, non démarrée. Enregistrer mène à l’enregistrement de /authn/webauthn ne proposant que ML-DSA (/authn-api/mfa/{id}/post-login/register) ; Ignorer la reporte du snoozeDays du profil (/authn-api/mfa/{id}/post-login/skip) et est refusé une fois écoulé le délai accordé depuis la première invitation (STS-AUTHN-0474). Dans les deux cas, la session retenue démarre ensuite avec l’amr et l’acr de la connexion. Nécessite un identifiant ?mfa= émis par la connexion retenue ; le suivre tel quel répond donc 400."
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "demande une clé d’accès post-quantique après une connexion, puis établit la session de connexion qu’elle retenait"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "LE SECOND SECOND FACTEUR (2026-09-10). Une étape de mot de passe réussie pour quelqu’un ayant une application d’authentification enrôlée aboutit ici, et ce point de terminaison demande les six chiffres qu’affiche son application. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] — la valeur de la RFC 8176, dont l’entrée de registre nomme la RFC 4226 et la RFC 6238 — et acr \"mfa\", le seul cas où ce service peut honnêtement parler de deux facteurs. **LE CODE EST RÉELLEMENT VÉRIFIÉ DANS LES DEUX MODES**, contrairement au mot de passe qui le précède : un vérificateur de mot de passe à usage unique qui accepterait n’importe quels six chiffres ne serait pas permissif, il serait cassé, et c’est l’argument de SPNEGO lu une seconde fois. Débit limité par identité ET par adresse, car six chiffres représentent un million de valeurs et c’est le plus petit espace de recherche du service. LE GET EST LE LIEN *utiliser plutôt un code* de l’écran de clé de sécurité et ne crée rien — il affiche la page pour une étape qui existe déjà, et la refuse à quelqu’un qui ne détient aucun enrôlement. **IL N’ENRÔLE PERSONNE**, ce qui fait toute la différence avec /authn/webauthn à côté : enrôler signifie se voir montrer un secret partagé, cela se fait donc sur /portal/mfa ou lors de l’utilisation d’un lien d’activation, et jamais sur un écran de connexion. Une page de la surface de connexion depuis #572 : le code est envoyé à /authn-api/mfa/{id}/totp."
@@ -2870,6 +2878,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC (#572, #246). Uniquement là où l’étape a été proposée : la connexion s’achève sur le mot de passe."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC (#1096). L’étape suivante est l’enregistrement de la page des clés d’accès, ML-DSA uniquement ; sa fin démarre la session retenue."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC (#1096). Pour le snoozeDays du profil ; refusé une fois le délai accordé écoulé. La session retenue démarre."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

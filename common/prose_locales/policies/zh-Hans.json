@@ -1731,6 +1731,178 @@
     "en": "36e7b5eba26472f2",
     "text": "自定义属性 {{name}} 已不再在此领域中定义。"
   },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "登录后活动策略"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "某人登录后、被送回应用之前被要求做的事——目前是注册一个后量子通行密钥"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "此领域中该配置文件所覆盖的每个人的“下一次”登录；已开始的会话不会被打断"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "默认领域的配置文件（若有），否则为内置默认值（不要求任何人做任何事）"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "登录后活动策略配置文件"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "登录后询问"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "4c8090556412a140",
+    "text": "默认关闭。开启时，此配置文件所覆盖、且应完成下方活动的每个人，都会在登录后、被送回应用之前被要求完成该活动。关闭此项的命名配置文件会“排除”其群组的成员。"
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "活动"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "1c027feada595f34",
+    "text": "所要求的内容。pqc-passkey-migration：持有以经典算法创建的通行密钥作为主要登录方式或第二因素的人，会被要求以相同角色注册一个后量子（ML-DSA）通行密钥。经典通行密钥会保留。在注册时不提供任何 ML-DSA 算法的领域中，不会要求任何人（默认的 webauthn.algorithms 提供了）。"
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "跳过后推迟"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "跳过会为该人将活动推迟多久。"
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "给定期限"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "从此人的“第一次”邀请开始计算。期限过后，跳过不再可用，登录会被暂扣——不会开始任何会话——直到完成该活动。0 表示没有截止期限：始终可以跳过。"
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "没有通行密钥的人"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave：不询问。invite：被要求注册一个后量子通行密钥，并且始终可以跳过。require：被要求注册，并且只能在给定期限过去之前跳过。"
+  },
+  "postLogin.FIELDS.noPasskeyRole.label": {
+    "en": "c8ec4e469545eb61",
+    "text": "没有通行密钥的人将其注册为"
+  },
+  "postLogin.FIELDS.noPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary：无密码登录。mfa：第二因素。"
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "7ac360a6d70b525c",
+    "text": "本服务用于登录后活动配置文件的类：某人登录后被要求做的事。以“配置文件”命名（`cn=default`，或按群组选择的命名配置文件）。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "4c8090556412a140",
+    "text": "默认关闭。开启时，此配置文件所覆盖、且应完成下方活动的每个人，都会在登录后、被送回应用之前被要求完成该活动。关闭此项的命名配置文件会“排除”其群组的成员。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "1c027feada595f34",
+    "text": "所要求的内容。pqc-passkey-migration：持有以经典算法创建的通行密钥作为主要登录方式或第二因素的人，会被要求以相同角色注册一个后量子（ML-DSA）通行密钥。经典通行密钥会保留。在注册时不提供任何 ML-DSA 算法的领域中，不会要求任何人（默认的 webauthn.algorithms 提供了）。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "跳过会为该人将活动推迟多久。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "从此人的“第一次”邀请开始计算。期限过后，跳过不再可用，登录会被暂扣——不会开始任何会话——直到完成该活动。0 表示没有截止期限：始终可以跳过。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave：不询问。invite：被要求注册一个后量子通行密钥，并且始终可以跳过。require：被要求注册，并且只能在给定期限过去之前跳过。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary：无密码登录。mfa：第二因素。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "命名登录后配置文件适用于其成员的群组（cn 或 DN）。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "多个命名登录后配置文件覆盖同一人时哪一个生效：最低者，取值 1 到 1000。"
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此配置文件的用途，供下一位接手的人参考。"
+  },
+  "postLogin.SELECTORS.selectGroups.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "命名登录后配置文件适用于其成员的群组（cn 或 DN）。"
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "多个命名登录后配置文件覆盖同一人时哪一个生效：最低者，取值 1 到 1000。"
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "此配置文件所覆盖的任何人在登录后都不会被要求做任何事"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "b8a2588126ddb520",
+    "text": "持有经典通行密钥的人会在登录后被要求以相同角色注册一个后量子（ML-DSA）通行密钥"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "跳过会将其推迟 {{days}} 天"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "自第一次邀请起 {{days}} 天后，跳过不再可用，登录会被暂扣直到完成"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "始终可以跳过"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "没有通行密钥的人不会被询问"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "d5a5abd3c3057413",
+    "text": "没有通行密钥的人会被邀请注册一个后量子通行密钥作为{{role}}，并且始终可以跳过"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "7779655caba632c8",
+    "text": "没有通行密钥的人会被要求注册一个后量子通行密钥作为{{role}}，并且可以在宽限期结束前跳过"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "ce39627aa02b361d",
+    "text": "适用于 {{list}} 的成员，优先级为 {{precedence}}"
+  },
+  "postLogin.sentences.param.primary": {
+    "en": "ce71e9dc4bf4e5fa",
+    "text": "其主要登录方式"
+  },
+  "postLogin.sentences.param.mfa": {
+    "en": "8e2d5e1b1feaf31c",
+    "text": "第二因素"
+  },
+  "postLogin.sentences.param.noGroup": {
+    "en": "4a00d86d0ff8747a",
+    "text": "无群组"
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "{{noun}}“{{name}}”已保存在 {{dn}}。它适用于{{appliesTo}}。"

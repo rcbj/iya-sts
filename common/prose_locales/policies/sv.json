@@ -1731,6 +1731,178 @@
     "en": "36e7b5eba26472f2",
     "text": "Det anpassade attributet {{name}} är inte längre definierat i den här sfären."
   },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "Policy för aktivitet efter inloggning"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "vad en person ombeds göra efter inloggningen, innan den skickas tillbaka till programmet — i dag att registrera en postkvantnyckel"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "NÄSTA inloggning för varje person som profilen når i den här sfären; en redan påbörjad session avbryts inte"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "standardsfärens profil där den har en, och de inbyggda standardvärdena (ingen ombeds något) där den inte har det"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "profilen för policyn för aktivitet efter inloggning"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "Fråga efter inloggning"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "4c8090556412a140",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR medlemmarna i dess grupper."
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "Aktivitet"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "1c027feada595f34",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Den klassiska nyckeln behålls. Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "Hoppa över skjuter upp den i"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Hur länge Hoppa över skjuter upp aktiviteten för den personen."
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "Tilldelad tid"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Räknas från personens FÖRSTA inbjudan. När den har gått försvinner Hoppa över och inloggningen hålls kvar — ingen session startas — tills aktiviteten är utförd. 0 betyder ingen tidsgräns: den kan alltid hoppas över."
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "En person utan nyckel"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.FIELDS.noPasskeyRole.label": {
+    "en": "c8ec4e469545eb61",
+    "text": "Registreras av en person utan nyckel som"
+  },
+  "postLogin.FIELDS.noPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: en lösenordsfri inloggning. mfa: en andra faktor."
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "7ac360a6d70b525c",
+    "text": "Den här tjänstens klass för en profil för aktivitet efter inloggning: vad en person ombeds göra efter inloggningen. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som väljs per grupp)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "4c8090556412a140",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR medlemmarna i dess grupper."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "1c027feada595f34",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Den klassiska nyckeln behålls. Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Hur länge Hoppa över skjuter upp aktiviteten för den personen."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Räknas från personens FÖRSTA inbjudan. När den har gått försvinner Hoppa över och inloggningen hålls kvar — ingen session startas — tills aktiviteten är utförd. 0 betyder ingen tidsgräns: den kan alltid hoppas över."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary: en lösenordsfri inloggning. mfa: en andra faktor."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Grupperna (cn eller DN) vars medlemmar en namngiven profil för aktivitet efter inloggning gäller för."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Vilken namngiven profil för aktivitet efter inloggning som vinner där flera når samma person: den lägsta, från 1 till 1000."
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Vad profilen är till för, för nästa person."
+  },
+  "postLogin.SELECTORS.selectGroups.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Grupperna (cn eller DN) vars medlemmar en namngiven profil för aktivitet efter inloggning gäller för."
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Vilken namngiven profil för aktivitet efter inloggning som vinner där flera når samma person: den lägsta, från 1 till 1000."
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "ingen som profilen når ombeds något efter inloggningen"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "b8a2588126ddb520",
+    "text": "en person som har en klassisk nyckel ombeds efter inloggningen att registrera en postkvantnyckel (ML-DSA) i samma roll"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "Hoppa över skjuter upp den i {{days}} dag(ar)"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "efter {{days}} dag(ar) från den första inbjudan försvinner Hoppa över och inloggningen hålls kvar tills den är utförd"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "den kan alltid hoppas över"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "en person utan nyckel tillfrågas inte"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "d5a5abd3c3057413",
+    "text": "en person utan nyckel bjuds in att registrera en postkvantnyckel som {{role}}, och får alltid hoppa över det"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "7779655caba632c8",
+    "text": "en person utan nyckel ombeds registrera en postkvantnyckel som {{role}}, och får hoppa över det tills respitperioden tar slut"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "ce39627aa02b361d",
+    "text": "gäller för medlemmarna i {{list}}, med prioritet {{precedence}}"
+  },
+  "postLogin.sentences.param.primary": {
+    "en": "ce71e9dc4bf4e5fa",
+    "text": "sin primära inloggning"
+  },
+  "postLogin.sentences.param.mfa": {
+    "en": "8e2d5e1b1feaf31c",
+    "text": "andra faktor"
+  },
+  "postLogin.sentences.param.noGroup": {
+    "en": "4a00d86d0ff8747a",
+    "text": "ingen grupp"
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "Följande har sparats på {{dn}}: {{noun}} ”{{name}}”. Den gäller för {{appliesTo}}."

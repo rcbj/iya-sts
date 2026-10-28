@@ -77,7 +77,8 @@ protocol's section of the sidebar:
 [Shared Signals](configure-shared-signals.md) ·
 [Certificate enrollment: ACME, EST, SCEP](configure-enrollment.md) ·
 [SPIFFE](configure-spiffe.md) ·
-[Passkeys and WebAuthn](passkeys.md).
+[Passkeys and WebAuthn](passkeys.md) ·
+[Post-login activities](post-login-activities.md).
 
 **Sessions and signals** —
 [Sessions](sessions.md) ·

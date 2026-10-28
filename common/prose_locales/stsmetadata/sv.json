@@ -2699,6 +2699,14 @@
     "en": "997e77c58a56af97",
     "text": "registrerar en autentiseringsapp eller startar en registrering av säkerhetsnyckel, och etablerar sedan inloggningssessionen"
   },
+  "stsmetadata.endpoints./authn/post-login.what": {
+    "en": "8e0ee59a28aa2c8c",
+    "text": "EN AKTIVITET EFTER INLOGGNING (#1096). Där sfärens policy för aktivitet efter inloggning (Katalog > Policyer, avstängd som standard) når en person via grupp och personen står i tur för dess aktivitet — i dag en postkvantnyckel (ML-DSA) i den roll där personen har en klassisk, eller en där personen inte har någon — hamnar en inloggning på inloggningsskärmen här i stället för att loggas in: sessionen HÅLLS KVAR, startas inte. Registrera leder till registreringen på /authn/webauthn som bara erbjuder ML-DSA (/authn-api/mfa/{id}/post-login/register); Hoppa över skjuter upp den i profilens snoozeDays (/authn-api/mfa/{id}/post-login/skip) och nekas när den tilldelade tiden sedan den första inbjudan har gått (STS-AUTHN-0474). I båda fallen startar sedan den kvarhållna sessionen med inloggningens amr och acr. Kräver ett ?mfa=-id som den kvarhållna inloggningen skapat, så att följa den utan det ger 400."
+  },
+  "stsmetadata.endpoints./authn/post-login.effect": {
+    "en": "9547cda6898c37a6",
+    "text": "ber om en postkvantnyckel efter en inloggning och etablerar sedan inloggningssessionen som den höll kvar"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "DEN ANDRA ANDRA FAKTORN (2026-09-10). Ett lösenordssteg som lyckades för någon som har en autentiseringsapp registrerad landar här, och den här slutpunkten ber om de sex siffror som deras app visar. Vid framgång registrerar sessionen amr [\"pwd\",\"otp\"] — RFC 8176:s värde, vars registerpost namnger RFC 4226 och RFC 6238 — och acr \"mfa\", vilket är det enda fall där den här tjänsten ärligt kan säga två faktorer. **KODEN KONTROLLERAS PÅ RIKTIGT I BÅDA LÄGENA**, till skillnad från lösenordet framför den: en verifierare av engångslösenord som godtog vilka sex siffror som helst vore inte tillåtande, den vore trasig, och det är SPNEGO-argumentet läst en andra gång. Hastighetsbegränsad per identitet OCH per adress, eftersom sex siffror är en miljon värden och detta är det minsta sökutrymmet i tjänsten. GET ÄR LÄNKEN *använd en kod i stället* från säkerhetsnyckelskärmen och skapar ingenting — den ritar sidan för ett steg som redan finns, och vägrar ett för någon som inte har någon registrering. **DEN REGISTRERAR INGEN**, vilket är hela skillnaden mot /authn/webauthn bredvid: att registrera innebär att få se en delad hemlighet, så det sker på /portal/mfa eller medan en aktiveringslänk förbrukas, och aldrig på en inloggningsskärm. En sida på inloggningsytan sedan #572: koden går till /authn-api/mfa/{id}/totp."
@@ -2870,6 +2878,14 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
     "en": "cac68486550dfe19",
     "text": "NON-SPEC (#572, #246). Endast där steget erbjöds: inloggningen avslutas på lösenordet."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": {
+    "en": "ea4c1915568c4ae4",
+    "text": "NON-SPEC (#1096). Nästa steg är nyckelsidans registrering, enbart ML-DSA; när den slutförs startar den kvarhållna sessionen."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": {
+    "en": "b1be682232332278",
+    "text": "NON-SPEC (#1096). I profilens snoozeDays; nekas när den tilldelade tiden har gått. Den kvarhållna sessionen startar."
   },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",

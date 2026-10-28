@@ -12412,7 +12412,7 @@ The two doors are argued in `oauth-oidc/CLAUDE.md` and `gnap/CLAUDE.md`;
 rcbj: "I want to be able to define custom listeners and map the hosted
 applications to specific listeners ... I want to be able to advertise services
 on multiple listeners potentially. it's up to the administrator and their use
-case." His answers on the ticket, D1–D6, are what this section holds to.
+case." rcbj's answers on the ticket, D1–D6, are what this section holds to.
 
 * **`hosted_applications.js` IS THE CATALOGUE, CLOSED.** An application is an
   id, a label and the paths it answers (prefixes on a segment boundary, and
@@ -13598,3 +13598,25 @@ prior chain. The admin export is served by `mgmt-api/passkey_report_api.ts` and
 linked from the person page. `tests/passkey_evidence.js` uses a local OpenSSL
 TSA fixture. This module uses the shared `crypto.js` digest boundary and
 PKIjs; it sends no data to a TSA unless the feature is enabled.
+
+## 3ct. `post_login_policy.ts`, `post_login.ts`: POST-LOGIN ACTIVITIES (#1096, 2026-10-28)
+
+rcbj: a "post login activity", targeted by group and enabled per realm;
+the first is the post-quantum passkey migration. rcbj's answers on #1096: the administrator chooses what a
+person holding no passkey is asked (`noPasskey`, `noPasskeyRole`); Skip
+snoozes for `snoozeDays`, and an optional `graceDays` from the FIRST
+invitation ends Skip; a required activity BLOCKS the sign-in; off by
+default, and done inside the sign-in flow.
+
+* **`post_login_policy.ts` is the seventh kind on Directory → Policies**,
+  `locale_policy.ts`'s pattern with the passkey policy's group selection
+  (`selectGroups`, `precedence`). Exclusion is a disabled named profile at a
+  lower precedence — no second list.
+* **`post_login.ts` answers the per-person question** (`dueFor()`) and keeps
+  `post_login.progress` (cell-tier, on demand): first invitation, snooze,
+  done. "Post-quantum" is the key's ALGORITHM, never its lane — a realm with
+  one lane makes ML-DSA keys in the classical lane. Nothing is due where the
+  realm cannot make an ML-DSA passkey in that role (`canRegister()`), so a
+  sign-in is never held for something that cannot be done.
+* **The hold is in `authn.startSessionHere()`, last of the refusals** —
+  `authn/CLAUDE.md` argues it.

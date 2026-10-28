@@ -852,6 +852,21 @@ const ACTIONS = [
   { action: 'admin.locale-policy.change', category: 'admin',
     label: 'A locale policy profile was changed' },
 
+  // A POST-LOGIN ACTIVITY POLICY PROFILE WAS SAVED OR PUT BACK (#1096): what
+  // a realm asks people after they sign in, and which groups it reaches.
+  { action: 'admin.post-login-policy.change', category: 'admin',
+    label: 'A post-login activity policy profile was changed' },
+  // A PERSON WAS ASKED, SKIPPED, OR DID A POST-LOGIN ACTIVITY (#1096). The
+  // activity, the role and the outcome; never a credential.
+  { action: 'authn.post-login.asked', category: 'authentication',
+    label: 'A person was asked to do a post-login activity' },
+  { action: 'authn.post-login.skipped', category: 'authentication',
+    label: 'A person skipped a post-login activity' },
+  { action: 'authn.post-login.done', category: 'authentication',
+    label: 'A person did a post-login activity' },
+  { action: 'authn.post-login.held', category: 'authentication',
+    label: 'A sign-in was held: a post-login activity is overdue' },
+
   // A PERSON'S EMAILED SECOND FACTOR WAS TURNED ON OR OFF (#64): by them on
   // /portal/mfa, by an administrator, or by this service at the failure
   // limit. The kind, never a code.

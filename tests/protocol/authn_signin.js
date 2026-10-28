@@ -475,7 +475,9 @@ const STEP_PAGES = {
   "/authn/backup-code": "backup-code", "/authn/password-factor": "password",
   "/authn/mfa-setup": "setup", "/authn/email-code": "email-code",
   "/authn/email-link": "email-link",
-  "/authn/email-link/open": "email-link-open"
+  "/authn/email-link/open": "email-link-open",
+  // The post-login activity (#1096).
+  "/authn/post-login": "post-login"
 };
 
 /**

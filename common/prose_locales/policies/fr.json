@@ -1731,6 +1731,178 @@
     "en": "36e7b5eba26472f2",
     "text": "L’attribut personnalisé {{name}} n’est plus défini dans ce domaine."
   },
+  "kinds.postLogin.label": {
+    "en": "22a1a1f2caf79722",
+    "text": "Politique d’activité après connexion"
+  },
+  "kinds.postLogin.governs": {
+    "en": "7e688e7ccf60004e",
+    "text": "ce qu’il est demandé à une personne de faire après s’être connectée, avant d’être renvoyée vers l’application — aujourd’hui, enregistrer une clé d’accès post-quantique"
+  },
+  "kinds.postLogin.appliesTo": {
+    "en": "92a6fbd367b6cbfa",
+    "text": "à la PROCHAINE connexion de chaque personne que le profil atteint dans ce domaine ; une session déjà commencée n’est pas interrompue"
+  },
+  "kinds.postLogin.fallsBackTo": {
+    "en": "a9788373941865d0",
+    "text": "le profil du domaine par défaut s’il en a un, et les valeurs par défaut intégrées (rien n’est demandé à personne) sinon"
+  },
+  "kinds.postLogin.param.noun": {
+    "en": "faa1ddd124e8b913",
+    "text": "profil de politique d’activité après connexion"
+  },
+  "postLogin.FIELDS.enabled.label": {
+    "en": "73f5d3d4be6db5a1",
+    "text": "Demander après la connexion"
+  },
+  "postLogin.FIELDS.enabled.what": {
+    "en": "4c8090556412a140",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT les membres de ses groupes."
+  },
+  "postLogin.FIELDS.activity.label": {
+    "en": "38da1505ca837328",
+    "text": "Activité"
+  },
+  "postLogin.FIELDS.activity.what": {
+    "en": "1c027feada595f34",
+    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. La clé d’accès classique est conservée. Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
+  },
+  "postLogin.FIELDS.snoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.snoozeDays.label": {
+    "en": "cb9807cfc3d1cb67",
+    "text": "Ignorer la reporte de"
+  },
+  "postLogin.FIELDS.snoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Pendant combien de temps Ignorer reporte l’activité pour cette personne."
+  },
+  "postLogin.FIELDS.graceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.graceDays.label": {
+    "en": "89547df9079ab954",
+    "text": "Délai accordé"
+  },
+  "postLogin.FIELDS.graceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne. Une fois écoulé, Ignorer disparaît et la connexion est retenue — aucune session n’est démarrée — jusqu’à ce que l’activité soit effectuée. 0 signifie aucune échéance : elle peut toujours être ignorée."
+  },
+  "postLogin.FIELDS.noPasskey.label": {
+    "en": "422700e42ff800bb",
+    "text": "Une personne sans clé d’accès"
+  },
+  "postLogin.FIELDS.noPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave : rien n’est demandé. invite : invitée à enregistrer une clé d’accès post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à l’expiration du délai accordé."
+  },
+  "postLogin.FIELDS.noPasskeyRole.label": {
+    "en": "c8ec4e469545eb61",
+    "text": "Enregistrée par une personne sans clé d’accès comme"
+  },
+  "postLogin.FIELDS.noPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary : une connexion sans mot de passe. mfa : un second facteur."
+  },
+  "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
+    "en": "7ac360a6d70b525c",
+    "text": "La classe de ce service pour un profil d’activité après connexion : ce qu’il est demandé à une personne de faire après s’être connectée. Nommée par le PROFIL (`cn=default`, ou un profil nommé choisi par groupe)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
+    "en": "4c8090556412a140",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT les membres de ses groupes."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
+    "en": "1c027feada595f34",
+    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. La clé d’accès classique est conservée. Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
+    "en": "26d3b7bf4511a4e5",
+    "text": "Pendant combien de temps Ignorer reporte l’activité pour cette personne."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginGraceDays.what": {
+    "en": "7c820005033f3514",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne. Une fois écoulé, Ignorer disparaît et la connexion est retenue — aucune session n’est démarrée — jusqu’à ce que l’activité soit effectuée. 0 signifie aucune échéance : elle peut toujours être ignorée."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
+    "en": "b3a902aa631de14e",
+    "text": "leave : rien n’est demandé. invite : invitée à enregistrer une clé d’accès post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à l’expiration du délai accordé."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b009a5eae7bbd7a7",
+    "text": "primary : une connexion sans mot de passe. mfa : un second facteur."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Les groupes (cn ou DN) aux membres desquels s’applique un profil après connexion nommé."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Quel profil après connexion nommé l’emporte lorsque plusieurs atteignent une même personne : le plus bas, de 1 à 1000."
+  },
+  "postLogin.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "À quoi sert le profil, pour la personne suivante."
+  },
+  "postLogin.SELECTORS.selectGroups.what": {
+    "en": "5fdad032c7e1e1e7",
+    "text": "Les groupes (cn ou DN) aux membres desquels s’applique un profil après connexion nommé."
+  },
+  "postLogin.SELECTORS.precedence.what": {
+    "en": "dbc9cfe2efed4348",
+    "text": "Quel profil après connexion nommé l’emporte lorsque plusieurs atteignent une même personne : le plus bas, de 1 à 1000."
+  },
+  "postLogin.sentences.off": {
+    "en": "f22422aec6b67033",
+    "text": "rien n’est demandé après la connexion aux personnes que ce profil atteint"
+  },
+  "postLogin.sentences.pqcMigration": {
+    "en": "b8a2588126ddb520",
+    "text": "une personne qui détient une clé d’accès classique est invitée, après s’être connectée, à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle"
+  },
+  "postLogin.sentences.snooze": {
+    "en": "f3c3ff82c8da1f59",
+    "text": "Ignorer la reporte de {{days}} jour(s)"
+  },
+  "postLogin.sentences.grace": {
+    "en": "2c906ed9b00f8c75",
+    "text": "{{days}} jour(s) après la première invitation, Ignorer disparaît et la connexion est retenue jusqu’à ce qu’elle soit effectuée"
+  },
+  "postLogin.sentences.noGrace": {
+    "en": "9163ad95dcc9e4c5",
+    "text": "elle peut toujours être ignorée"
+  },
+  "postLogin.sentences.noPasskeyLeave": {
+    "en": "646cbd76d74e7834",
+    "text": "rien n’est demandé à une personne qui ne détient aucune clé d’accès"
+  },
+  "postLogin.sentences.noPasskeyInvite": {
+    "en": "d5a5abd3c3057413",
+    "text": "une personne qui ne détient aucune clé d’accès est invitée à enregistrer une clé d’accès post-quantique comme {{role}}, et peut toujours l’ignorer"
+  },
+  "postLogin.sentences.noPasskeyRequire": {
+    "en": "7779655caba632c8",
+    "text": "une personne qui ne détient aucune clé d’accès est priée d’enregistrer une clé d’accès post-quantique comme {{role}}, et peut l’ignorer jusqu’à la fin du délai de grâce"
+  },
+  "postLogin.sentences.appliesTo": {
+    "en": "ce39627aa02b361d",
+    "text": "s’applique aux membres de {{list}}, avec la priorité {{precedence}}"
+  },
+  "postLogin.sentences.param.primary": {
+    "en": "ce71e9dc4bf4e5fa",
+    "text": "sa connexion principale"
+  },
+  "postLogin.sentences.param.mfa": {
+    "en": "8e2d5e1b1feaf31c",
+    "text": "second facteur"
+  },
+  "postLogin.sentences.param.noGroup": {
+    "en": "4a00d86d0ff8747a",
+    "text": "aucun groupe"
+  },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
     "text": "Le {{noun}} « {{name}} » est enregistré sous {{dn}}. Il s’applique {{appliesTo}}."

@@ -6973,6 +6973,39 @@ const CODES = [
       'and is stored in userCertificate on more than one account of the ' +
       'realm (#1061).',
     spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0470',
+    summary: 'A post-login activity profile was not saved or reset: its ' +
+      'name is neither default nor lower-case letters, digits and hyphens ' +
+      '(#1096).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0471',
+    summary: 'A post-login activity profile was not saved: a field was ' +
+      'missing or out of range, or a named profile named no group or a ' +
+      'precedence outside 1 to 1000 (#1096).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0472',
+    summary: 'A post-login activity profile was not saved: there is no ' +
+      'embedded directory in this process, or it is at its maximum number ' +
+      'of entries (#1096).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
+  { code: 'STS-AUTHN-0473',
+    summary: 'A sign-in was held: the person\'s post-login activity is past ' +
+      'its allotted time and cannot be done at this door (a federated, ' +
+      'wallet, Kerberos or certificate sign-in, or a non-interactive one); ' +
+      'they are told to sign in at the sign-in screen, where they will be ' +
+      'asked to do it (#1096).',
+    spec: 'the door\'s own refusal; no session is started' },
+  { code: 'STS-AUTHN-0474',
+    summary: 'Skip was refused on a post-login activity: the allotted time ' +
+      'since the person\'s first invitation has passed, so the activity is ' +
+      'required before the sign-in finishes (#1096).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0475',
+    summary: 'A post-login passkey registration was refused: the realm no ' +
+      'longer offers post-quantum passkeys (webauthn.pqcAlongsideClassical ' +
+      'and webauthn.pqcOnly are off), so the activity cannot be done here ' +
+      'and the held sign-in is finished without it (#1096).',
+    spec: 'none (the sign-in continues)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

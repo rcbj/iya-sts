@@ -8281,6 +8281,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'by the password step, so following it bare answers 400. A page ' +
           'of the sign-in surface since #572.'
   },
+  { path: '/authn/post-login', group: 'Authentication',
+    name: 'Post-login activity step',
+    specs: ['webauthn', 'oidc'],
+    effect: 'asks for a post-quantum passkey after a sign-in, then ' +
+            'establishes the sign-on session it held',
+    what: 'A POST-LOGIN ACTIVITY (#1096). Where the realm\'s post-login ' +
+          'activity policy (Directory > Policies, off by default) reaches a ' +
+          'person by group and they are due its activity — today a ' +
+          'post-quantum (ML-DSA) passkey in the role they hold a classical ' +
+          'one in, or one where they hold none — a sign-in at the sign-in ' +
+          'screen lands here instead of being signed in: the session is ' +
+          'HELD, not started. Register goes to the /authn/webauthn ' +
+          'registration offering ML-DSA only (/authn-api/mfa/{id}/post-' +
+          'login/register); Skip puts it off for the profile\'s snoozeDays ' +
+          '(/authn-api/mfa/{id}/post-login/skip) and is refused once the ' +
+          'allotted time since the first invitation has passed ' +
+          '(STS-AUTHN-0474). Either way the held session then starts with ' +
+          'the amr and acr of the sign-in. Needs an ?mfa= id minted by the ' +
+          'held sign-in, so following it bare answers 400.'
+  },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
     specs: ['rfc6238', 'rfc4226', 'oidc'],
@@ -8498,6 +8518,16 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Ignore an offered second factor', specs: [],
     what: 'NON-SPEC (#572, #246). Only where the step was offered: the ' +
           'sign-in finishes on the password.' },
+  { path: '/authn-api/mfa/:id/post-login/register',
+    group: 'Authentication',
+    name: 'Register the passkey a post-login activity asks for',
+    specs: ['webauthn'],
+    what: 'NON-SPEC (#1096). The next step is the passkey page\'s ' +
+          'registration, ML-DSA only; its finish starts the held session.' },
+  { path: '/authn-api/mfa/:id/post-login/skip', group: 'Authentication',
+    name: 'Put a post-login activity off', specs: [],
+    what: 'NON-SPEC (#1096). For the profile\'s snoozeDays; refused once ' +
+          'the allotted time has passed. The held session starts.' },
   { path: '/authn-api/mfa/:id/email/send', group: 'Authentication',
     name: 'Mail a sign-in code or link', specs: [],
     what: 'NON-SPEC (#573). To the verified address only; a resend ' +

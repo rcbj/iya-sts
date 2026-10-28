@@ -598,6 +598,14 @@ const JOBS = [
   // through the balancer in `cluster`. `local: true`: this repository's own
   // /admin-api.
   { file: 'sts_broadcast_announcement.js', browser: false },
+  // POST-LOGIN ACTIVITIES (#1096): in a throwaway realm, the policy's kind
+  // on GET /admin-api/policies, off by default; then on, a person with no
+  // passkey invited to register a post-quantum one is held at
+  // /authn/post-login with no session, Skip starts the held session and the
+  // code reaches the client, and the next sign-in is not asked; a named
+  // profile chosen by group. `local: true`: this repository's own /authn
+  // and /admin-api.
+  { file: 'sts_post_login_activity.js', browser: false },
   // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
   // uploaded through POST /admin-api/risk/upload with no terms to accept,
   // active with a row per REVOKED or SUSPENDED entry, named by
