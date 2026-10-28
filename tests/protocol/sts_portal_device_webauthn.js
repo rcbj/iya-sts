@@ -454,35 +454,43 @@ async function signIn(driver, withKey) {
 // 2026-10-28 (rcbj) that press is the whole request: the armed page runs
 // `navigator.credentials.create()` as soon as it is drawn, with no second
 // button, and the virtual authenticator answers it. Then give the key a
-// nickname in the form the page opens once it is registered.
+// nickname through its own row's Rename fold — the nickname box the page
+// drew at the top after a registration went on 2026-10-28 (rcbj).
 async function enrol(driver, kind, label) {
   log.debug("Entering enrol(). kind=" + kind);
   await openPage(driver, "/portal/keys");
+  const before = (await driver.findElements(
+    By.css("form[action$='/rename-key']"))).length;
   const buttons = await driver.findElements(
     By.css("button[name='kind'][value='" + kind + "']"));
   assert.ok(buttons.length === 1,
     "/portal/keys offers no \"" + kind + "\" call to action, so a person " +
     "cannot ask for one");
   await buttons[0].click();
-  // THE NICKNAME FORM IS WHAT A FINISHED CEREMONY DRAWS (`named=`), so its
-  // arrival is the one condition that says the ceremony ran and the page
-  // came back; `#wa-data` alone could be read before the armed page is
-  // drawn at all.
+  // ONE MORE ROW IS WHAT A FINISHED CEREMONY DRAWS, so a new Rename form
+  // beside the ones already there is the one condition that says the
+  // ceremony ran and the page came back; `#wa-data` alone could be read
+  // before the armed page is drawn at all.
   await waitFor(driver, async function () {
     return !(await present(driver, "#wa-data")) &&
-      await present(driver, "form[action$='/rename-key'] input[name='label']");
+      (await driver.findElements(
+        By.css("form[action$='/rename-key']"))).length > before;
   }, "the " + kind + " ceremony never finished: the page never came back " +
-     "with the registered key's nickname form");
-  // THE NICKNAME PROMPT, open at the top of the page with the default name.
+     "with one more passkey row");
+  // THE ROW'S RENAME, folded: open the LAST row's fold (the new key is
+  // listed after the ones registered before it) and name it there.
+  const folds = await driver.findElements(By.xpath(
+    "//details[.//form[contains(@action,'/rename-key')]]/summary"));
+  assert.ok(folds.length >= 1,
+    "no Rename fold on any row after the " + kind + " was registered: " +
+    (await bodyText(driver)).slice(0, 400));
+  await folds[folds.length - 1].click();
   const nickname = await driver.findElements(
     By.css("form[action$='/rename-key'] input[name='label']"));
-  assert.ok(nickname.length >= 1,
-    "no nickname was asked for after the " + kind + " was registered: " +
-    (await bodyText(driver)).slice(0, 400));
-  await nickname[0].clear();
-  await nickname[0].sendKeys(label);
+  await nickname[nickname.length - 1].clear();
+  await nickname[nickname.length - 1].sendKeys(label);
   await driver.findElement(By.xpath(
-    "(//form[contains(@action,'/rename-key')])[1]//button")).click();
+    "(//form[contains(@action,'/rename-key')])[last()]//button")).click();
   await waitFor(driver, async function () {
     return /Renamed to/.test(await bodyText(driver));
   }, "the nickname was not saved");

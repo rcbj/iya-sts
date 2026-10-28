@@ -384,7 +384,8 @@ The name is a label for the owner, and nothing this service decides reads it.
   Level 3 section 5.4.3). A passkey's authenticator hands it back, and an
   assertion whose handle is not the one its key was created under is
   refused (section 7.2, step 6).
-* The new passkey is offered a nickname straight after it is created.
+* The new passkey appears on its row under a default name, its provider's or
+  *Passkey* or *Security key*; rename it there with the row's **Rename**.
 * A person renames one on `/portal/keys` (`POST /account-api/keys/rename`),
   an operator with `POST /admin-api/users/rename-key`. An empty name restores the default.
 

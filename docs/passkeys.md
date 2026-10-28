@@ -119,7 +119,8 @@ row on (`securityKeySecondFactor`, default on).
    passkey**, **How will you use it?**, choose **As a second step after my
    password**. Then press **Create a passkey** (a passkey on this device or a
    phone) or **Use a security key**. The browser asks them to create the
-   passkey. The page then offers to give it a nickname.
+   passkey. The new passkey then appears on its row under a default name,
+   and its row's **Rename** gives it a nickname.
 2. **At the sign-in screen.** Type the username and password and tick **Use a
    passkey as a second step (WebAuthn)**. If the person holds no second factor
    yet, this step registers a passkey. If they already hold any second factor,

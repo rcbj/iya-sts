@@ -521,8 +521,14 @@ What that changed, and why each piece is the way it is:
 * **The name comes after the ceremony, not before.**
   - The box before it is gone.
   - A key defaults to its provider's name, else "Passkey" or "Security key".
-  - The success redirect carries `named=<credentialId>`, and the page opens
-    that key's rename form at the top.
+  - ~~The success redirect carries `named=<credentialId>`, and the page opens
+    that key's rename form at the top.~~ **Gone on 2026-10-28 (rcbj)**: the
+    box at the top ("give your passkey a nickname", the rename form drawn
+    open) said what the row's own Rename says and read as a second step.
+    The finish lands on the plain page, the new key sits on its row under
+    its default name, and it is renamed there like any other. `named` left
+    the query, the view and `REFRESH_KEPT` with it; the two protocol jobs
+    rename through the row's fold.
 * **`POST /portal/rename-key`** follows `remove-key`'s A01 rule: the id comes
   from the body and is looked up among the session's own keys.
   `credentials.renameKey()` is the one writer, also used by

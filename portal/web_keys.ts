@@ -70,30 +70,29 @@ class KeysPages {
     return kit.esc(text);
   }
 
-  // RENAME, as a fold with a form in it (#470). `open` draws it unfolded,
-  // for the nickname prompt after an enrolment. An empty name puts the
-  // default back (`credentials.renameKey()`).
+  // RENAME, as a fold with a form in it (#470), on every row alike: the
+  // unfolded variant for a nickname prompt after an enrolment went on
+  // 2026-10-28 (rcbj) with that prompt. An empty name puts the default back
+  // (`credentials.renameKey()`).
   /**
-   * The rename form.
+   * The rename form, folded.
    *
    * @param one - the key's row
-   * @param open - whether it is drawn unfolded
    * @param t - the translator
    * @returns the HTML
    */
-  static renameForm(one: Json, open: boolean, t: Json): string {
+  static renameForm(one: Json, t: Json): string {
     const id = 'rn-' + String(one.credentialId).slice(0, 16)
       .replace(/[^A-Za-z0-9_-]/g, '');
     const form = '<form method="post" action="' + kit.BASE + '/rename-key">' +
       '<input type="hidden" name="credentialId" value="' +
       kit.esc(one.credentialId) + '"><label for="' + id + '">' +
-      (open ? t.html('portal.keys.nickname') : t.html('portal.keys.newName')) +
+      t.html('portal.keys.newName') +
       '</label><input type="text" id="' + id + '" name="label" ' +
       'maxlength="60" value="' + kit.esc(one.name) + '">' +
       '<button>' + t.html('portal.keys.save') + '</button></form>';
-    return open ? form
-                : '<details><summary>' + t.html('portal.keys.rename') +
-                  '</summary>' + form + '</details>';
+    return '<details><summary>' + t.html('portal.keys.rename') +
+           '</summary>' + form + '</details>';
   }
 
   // ONE ROW OF THE PASSKEY LIST (#470). The dates stay ISO days: they are
@@ -161,7 +160,7 @@ class KeysPages {
         ? '<div class="meta" id="passkey-pin-refused">' +
           kit.esc(one.pinRefused) + '</div>'
         : '') +
-      KeysPages.renameForm(one, false, t) +
+      KeysPages.renameForm(one, t) +
       '<details><summary>' + t.html('portal.keys.details') +
       '</summary><table>' +
       '<tr><th>' + t.html('portal.keys.used') + '</th><td>' +
@@ -526,18 +525,12 @@ class KeysPages {
     const securityKeys = keys.filter(function (one: Json): boolean {
       return one.group === 'security-key';
     });
-    // THE NICKNAME, ASKED FOR AFTER THE CEREMONY (#470): the answer to a
-    // registration names the key, and its rename form is drawn open at the
-    // top of the page with the default name in it.
-    const fresh = view.named ? keys.filter(function (one: Json): boolean {
-      return one.credentialId === view.named;
-    })[0] : null;
-    const nickname = fresh
-      ? '<div class="ok">' + (fresh.group === 'security-key'
-          ? t.html('portal.keys.nicknameSecurityKey')
-          : t.html('portal.keys.nicknamePasskey')) +
-        KeysPages.renameForm(fresh, true, t) + '</div>'
-      : '';
+    // NO NICKNAME BOX AFTER THE CEREMONY (rcbj, 2026-10-28). #470 drew the
+    // new key's rename form open at the top of the page, under "give your
+    // passkey a nickname"; it said the same thing as the Rename on the
+    // key's own row and read as a second step. A registered key takes its
+    // default name (its provider's, else "Passkey" or "Security key") and
+    // is renamed on its row like any other.
     const group = function (title: string, icon: string, list: Json[]) {
       return list.length
         ? '<h2 class="pkgroup">' + icon + kit.esc(title) + '</h2>' +
@@ -546,7 +539,7 @@ class KeysPages {
           }).join('') + '</ul>'
         : '';
     };
-    return '<div class="card">' + nickname +
+    return '<div class="card">' +
       '<p class="sub">' + kit.ICONS.passkey + t.html('portal.keys.intro') +
       '</p>' + KeysPages.learnMore(view, t) +
       (keys.length

@@ -47,7 +47,7 @@ type Json = any;
  * `<list>Page`.
  */
 const REFRESH_KEPT = ['page', 'per', 'stepup', 'gnapstepup', 'enrolled',
-                      'named',
+                      // `named` (#470's nickname prompt) went 2026-10-28.
                       // The DID `/portal/self-issued/did` shows (2026-10-20).
                       'subject'];
 

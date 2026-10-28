@@ -17,9 +17,10 @@
 // (`credentials.keyGroup()`), each row a name (the owner's, else the
 // provider's, else the group's), *Created* and *Last used*, Rename and Remove,
 // and everything technical folded into a *Details* fold. Two calls to action,
-// *Create a passkey* and *Use a security key*, and a nickname asked for AFTER
-// the ceremony: the success lands on `?named=<id>` and the page opens that
-// key's rename form. The view carries every one of those facts COMPUTED here,
+// *Create a passkey* and *Use a security key*; a registered key takes its
+// default name and is renamed on its row (the nickname prompt #470 opened at
+// the top after a ceremony went on 2026-10-28, rcbj: it repeated the row's
+// own Rename). The view carries every one of those facts COMPUTED here,
 // because the renderer reads no store: the group, the name, the provider, the
 // algorithm, what the attestation proved, and the three refusals the realm's
 // passkey policy makes of a key at sign-in (#528, #529, #530).
@@ -64,12 +65,10 @@ type AccountCaller = import('../types/account-api').AccountCaller;
 const vz = validation.z;
 const vt = validation.types;
 
-// `/portal/keys`' query (#470): `named`, the passkey just registered, whose
-// nickname form the page opens.
-const KEYS_QUERY = vz.object({
-  named: vt.opt(vt.base64url)
-    .describe('The passkey just registered: its rename form is drawn open.')
-});
+// `/portal/keys`' query: nothing since 2026-10-28 (rcbj). #470's `named`,
+// the passkey just registered whose nickname form the page opened, went
+// with that prompt; a `?named=` still on a bookmarked address is ignored.
+const KEYS_QUERY = vz.object({});
 
 // ENROLLING ONE (2026-09-10). `credential` is the browser's ceremony result
 // as JSON — a string here and parsed in the handler, exactly as `authn.ts`'s
@@ -413,10 +412,9 @@ class AccountKeys {
    *
    * @param caller - the signed-in person
    * @param base - the base the request arrived on
-   * @param named - the passkey just registered, or ''
    * @returns the view
    */
-  view(caller: AccountCaller, base: string, named?: string): Json {
+  view(caller: AccountCaller, base: string): Json {
     const { log, credentials, passkeyPolicy } = this.deps;
     const self = this;
     log.debug("Entering AccountKeys.view().");
@@ -425,9 +423,6 @@ class AccountKeys {
     const mechanisms: Json = credentials.mechanismsFor(caller.username);
     const keys: Json[] = mechanisms.keys || [];
     const enrol = this.enrolView(caller, mechanisms, base);
-    const held = keys.some(function (one: Json): boolean {
-      return one.credentialId === String(named || '');
-    });
     log.debug("Leaving AccountKeys.view(). " + keys.length + " key(s).");
     return {
       password: !!mechanisms.password,
@@ -435,7 +430,6 @@ class AccountKeys {
       keys: keys.map(function (one: Json): Json {
         return self.keyRow(one);
       }),
-      named: held ? String(named) : '',
       enrol: enrol,
       // ONE PER LANE (#643); none while a ceremony is armed.
       signals: enrol.pending ? []
@@ -622,15 +616,15 @@ class AccountKeys {
       log.info('portal: ' + username + ' created a "' + done.role +
                '" passkey and now holds ' + done.held + '.');
       const t = ctx.translatorFor(username);
-      // THE NICKNAME PROMPT (#470): `named` opens the new passkey's rename
-      // form at the top of the page.
+      // THE PLAIN PAGE, with the new key on its row under its default name
+      // (rcbj, 2026-10-28; #470 steered to `?named=` and a nickname prompt
+      // at the top, which repeated the row's own Rename).
       log.debug("Leaving AccountKeys.enrol(). Enrolled.");
       return ctx.json(res, 200, { ok: true,
         message: done.held > 1
           ? t.text('portal.done.passkeyMany', { n: Number(done.held) })
           : t.text('portal.done.passkeyOne'),
-        go: ctx.PORTAL + '/keys?named=' +
-            encodeURIComponent(String(done.credentialId || '')) });
+        go: ctx.PORTAL + '/keys' });
     }
 
     log.debug("Leaving AccountKeys.enrol(). Unknown action.");
@@ -768,8 +762,7 @@ class AccountKeys {
         query: KEYS_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
-          return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req),
-            String(input.query.named || '')));
+          return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/keys', operationId: 'enrolKey',
         tag: 'Passkeys', access: 'person',

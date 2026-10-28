@@ -928,16 +928,21 @@ async function thePortalCanEnrolAKey(first) {
       String(enrolled.done.text).slice(0, 500));
   });
 
-  check("THE NICKNAME IS ASKED FOR AFTER THE CEREMONY (#470): the answer " +
-        "names the new passkey and the page opens its rename form, filled " +
-        "with the default name — a security key's, since this one cannot be " +
-        "backed up and is cross-platform", function () {
-    assert.ok(/[?&]named=/.test(String(enrolled.done.location)),
-      "the answer names no passkey: " + enrolled.done.location);
-    assert.ok(/Give your security key a nickname/.test(enrolled.prompt.text),
-      "no nickname prompt: " + String(enrolled.prompt.text).slice(0, 600));
-    assert.ok(/name="label"[^>]*value="Security key"/.test(
-      enrolled.prompt.text), "the prompt does not hold the default name");
+  check("NO NICKNAME BOX AFTER THE CEREMONY (rcbj, 2026-10-28; #470 drew " +
+        "one): the answer lands on the plain page, which names no passkey " +
+        "and asks for nothing, and the new key's row carries the default " +
+        "name — a security key's, since this one cannot be backed up and " +
+        "is cross-platform — in its own folded Rename, through which it " +
+        "is renamed like any other", function () {
+    assert.ok(!/[?&]named=/.test(String(enrolled.done.location)),
+      "the answer still steers to a nickname prompt: " +
+      enrolled.done.location);
+    assert.ok(!/nickname/i.test(enrolled.prompt.text),
+      "a nickname box is still drawn: " +
+      String(enrolled.prompt.text).slice(0, 600));
+    assert.ok(/<details><summary>[^<]*<\/summary><form[^>]*\/rename-key"[^]*?name="label"[^>]*value="Security key"/.test(
+      enrolled.prompt.text), "the new key's row does not hold the default " +
+      "name in its folded Rename");
     assert.strictEqual(enrolled.renamed && enrolled.renamed.status, 200,
       "the rename answered " + (enrolled.renamed && enrolled.renamed.status));
   });
