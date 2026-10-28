@@ -312,7 +312,8 @@ ticked whenever the realm has a transport. The API equivalent is `deliver:
 **A post-login campaign's reminder** (#1111) asks a person to sign in, where
 the [post-login activity](post-login-activities.md#mail-campaigns) then asks
 them to register a post-quantum passkey. It goes to the address on their entry,
-and its one link opens the sign-in page on this service's own address. The
+and its one link opens the user portal on this service's own address, which
+sends them to sign in. The
 link signs nobody in and carries nothing about the person. It is a
 notification, so a person may decline it; the activity is still asked at their
 next sign-in.
