@@ -7103,6 +7103,30 @@
     "en": "b80cedcb611f2fd3",
     "text": "本服务自己的管理控制台和用户门户多久收取一次其流中保存的内容：通过 RFC 8936 轮询从 /ssf/poll 收取（ssf.internal-poll 调度作业），每个请求最多 ssf.pollMaxEvents 个 SET。这是安全事件令牌（Security Event Token）在任一界面看到并据此行动之前最长的等待时间。0 关闭该作业，此时事件会在两个流上排队，不会到达任一页面。"
   },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "每个打开的标签页检查公告的间隔（毫秒）"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "管理控制台、用户门户和报表应用的每个打开的标签页多久向自己的 API 询问一次其接收方收到的公告（#1086）。与 ssf.internalPollMs 一起，这是广播出现所需的最长时间。标签页在登录时读取该值。"
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "接收方保留公告的时长（秒）"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "本服务的三个接收方各自保留收到的公告供其标签页收取的时长（#1086）。标签页只显示登录之后到达的内容，因此这不是较晚打开的标签页能看到公告的时长；它只需超过标签页的检查间隔和一次较慢的轮询。"
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "最长公告（字符）"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "广播公告最多可包含的字符数（#1086）。它是纯文本；更长的会被拒绝。"
+  },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
     "text": "每个接收方的流数"

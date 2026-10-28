@@ -1078,6 +1078,9 @@ const ACTIONS = [
     label: 'A subject was added to or removed from a stream' },
   { action: 'ssf.event.transmit', category: 'signals',
     label: 'A Security Event Token was delivered to a receiver' },
+  // #1086: an administrator's announcement to the signed-in applications.
+  { action: 'ssf.announcement.broadcast', category: 'signals',
+    label: 'An announcement was broadcast to the signed-in applications' },
   { action: 'ssf.event.refused', category: 'signals',
     label: 'A receiver refused a Security Event Token' },
   { action: 'ssf.stream.dead', category: 'signals',

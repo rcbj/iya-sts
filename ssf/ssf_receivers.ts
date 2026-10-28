@@ -261,6 +261,20 @@ const inbox = realms.map({
     return isFinite(at) ? at + INBOX_KEEP_MS : null;
   }
 });
+// ---------------------------------------------------------------------------
+// THE ANNOUNCEMENTS EACH SURFACE TOOK IN (#1086), for its open tabs to
+// collect. An announcement arrives as an ordinary SET in the inbox above;
+// this is the short list a tab reads every `ssf.announcementPollMs`, so that
+// a poll from every open tab never reads a surface's whole inbox. Keyed
+// `<surface>|<jti>`, written once, PERSISTED so that the worker a tab's poll
+// lands on holds what the leader's internal poll took in, and so rare (an
+// administrator's act) that replicating it costs nothing. A row past
+// `ssf.announcementKeepS` is never answered (`announcementsFor()`) and is
+// deleted by the read that finds it — the read-side expiry check, not a
+// sweep, so no timer is owed.
+// ---------------------------------------------------------------------------
+const announcements = realms.map({ persist: 'ssf_receivers.announcements' });
+
 // Records since this process last trimmed each realm's surface (#820).
 const recordedSinceTrim = new Map<string, number>();
 
@@ -666,9 +680,13 @@ class SsfReceivers {
     // what this transmitter supports, so `caep.enabled` off means a stream that
     // asks for CAEP and is delivered none of it — which is the specification's
     // own arrangement and is visible on both `/admin/ssf` and the inbox page.
+    // AND THIS SERVICE'S OWN `announcement` (#1086): the administrator's
+    // broadcast to the people using these three applications rides the
+    // stream that already reaches each of them, rather than a fourth.
     const wanted = events.SSF_EVENTS.map((row) => {
       return row.uri;
-    }).concat(events.CAEP_EVENT_URIS).concat(events.RISC_EVENT_URIS);
+    }).concat(events.CAEP_EVENT_URIS).concat(events.RISC_EVENT_URIS)
+      .concat([events.ANNOUNCEMENT]);
 
     let made = 0;
     SURFACES.forEach((surface) => {
@@ -678,6 +696,7 @@ class SsfReceivers {
       const existing = this.streamFor(surface.id);
       if (existing) {
         this.moveToPoll(surface, existing);
+        this.askForAnnouncements(surface, existing);
         log.debug('seedStreams(): ' + surface.id + ' already has a stream in ' +
                   'this realm and it was left alone.');
         return;
@@ -790,6 +809,39 @@ class SsfReceivers {
       summary: 'The ' + surface.label + '\'s receiver stream in the "' +
         realms.currentId() + '" realm moved from push to poll delivery' });
     log.debug("Leaving SsfReceivers.moveToPoll(). Moved.");
+    return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A STREAM SEEDED BEFORE #1086, ASKED FOR ANNOUNCEMENTS.
+  //
+  // `moveToPoll()`'s reasoning, for one more member: a stream seeded before
+  // the `announcement` type existed asks for every CAEP and RISC type because
+  // that is how it was seeded, not because anybody narrowed it, so the type
+  // is added to what it requests and is delivered, once, and nothing else
+  // moves. A stream an operator disabled is left alone; a pause holds the
+  // announcement like any other SET.
+  // ---------------------------------------------------------------------------
+  private askForAnnouncements(surface?, record?) {
+    const { log, events, streams } = this.deps;
+    log.debug("Entering SsfReceivers.askForAnnouncements(). " + surface.id);
+    const uri = events.ANNOUNCEMENT;
+    const requested = Array.isArray(record.events_requested)
+      ? record.events_requested : [];
+    if (requested.indexOf(uri) >= 0 || record.status === 'disabled') {
+      log.debug("Leaving SsfReceivers.askForAnnouncements(). Nothing to do.");
+      return false;
+    }
+    record.events_requested = requested.concat([uri]);
+    const delivered = Array.isArray(record.events_delivered)
+      ? record.events_delivered : [];
+    if (delivered.indexOf(uri) < 0) {
+      record.events_delivered = delivered.concat([uri]);
+    }
+    streams.note(record, 'events', 'Now asks for this service\'s own ' +
+      'announcement event (#1086), so that an administrator\'s broadcast ' +
+      'reaches the ' + surface.label + '.');
+    log.debug("Leaving SsfReceivers.askForAnnouncements(). Added.");
     return true;
   }
 
@@ -1057,6 +1109,7 @@ class SsfReceivers {
     // so the row says it: rows are written once and never rewritten.
     entry.reactions = this.actOn(surface, entry);
     this.record_(surface.id, entry);
+    this.keepAnnouncement(surface, entry);
     audit.audit({ action: 'ssf.event.receive', category: 'signals',
       protocol: 'SSF', channel: how.via === 'poll' ? 'poll' : 'http',
       outcome: (read.problem || !entry.audienceOk || !entry.issuerOk ||
@@ -1884,6 +1937,101 @@ class SsfReceivers {
   }
 
   // ---------------------------------------------------------------------------
+  // AN ANNOUNCEMENT TAKEN IN (#1086), kept for the surface's open tabs.
+  //
+  // Only one that passed every check `accept()` makes AND verified — #117's
+  // rule for acting on a SET, read for showing one: a banner in front of
+  // everybody signed in is the most visible thing a SET can cause here, so
+  // an unverified one is recorded in the inbox and shown to nobody. And only
+  // where the SET names this surface among the ones it is for.
+  // ---------------------------------------------------------------------------
+  private keepAnnouncement(surface?, entry?) {
+    const { log, events, realms } = this.deps;
+    log.debug("Entering SsfReceivers.keepAnnouncement(). " + surface.id);
+    const payloads = (entry && entry.claims && entry.claims.events) || {};
+    const body = payloads[events.ANNOUNCEMENT];
+    if (!body) {
+      log.debug("Leaving SsfReceivers.keepAnnouncement(). Not one.");
+      return false;
+    }
+    if (entry.problem || !entry.typOk || !entry.issuerOk ||
+        !entry.audienceOk || !entry.verified) {
+      log.debug("Leaving SsfReceivers.keepAnnouncement(). It failed a " +
+                "check, so nobody is shown it.");
+      return false;
+    }
+    const surfaces = Array.isArray(body.surfaces) ? body.surfaces.map(String)
+                                                  : [];
+    if (surfaces.indexOf(surface.id) < 0) {
+      log.debug("Leaving SsfReceivers.keepAnnouncement(). Not for this " +
+                "surface.");
+      return false;
+    }
+    const atMs = Date.parse(String(entry.at || '')) || Date.now();
+    announcements.set(surface.id + '|' + entry.jti, {
+      surface: surface.id, jti: String(entry.jti), atMs: atMs,
+      realm: realms.currentId(), message: String(body.message || '')
+    });
+    log.debug("Leaving SsfReceivers.keepAnnouncement(). Kept.");
+    return true;
+  }
+
+  // WHAT A TAB COLLECTS (#1086): the announcements this surface took in after
+  // `sinceMs` and within `ssf.announcementKeepS`, oldest first, with this
+  // process's clock as `now` and how often to ask again. A FIRST ask (no
+  // `since`) answers no announcement and only `now`, and the tab sends THAT
+  // `now` on every later ask — a fixed point, never the latest answer's, so
+  // a row a lagging replica had not applied when one ask was answered is
+  // still found by the next. The tab skips the ids it has already shown.
+  // So a tab shows what arrived after it signed in, and never compares
+  // against its own clock.
+  /**
+   * Returns the announcements a surface took in after a moment, for its open
+   * tabs.
+   *
+   * @param surfaceId - the surface's id
+   * @param sinceMs - the `now` the tab's first ask was answered with; 0 for
+   *   that first ask
+   * @returns `{ now, everyMs, announcements }`, each `{ id, at, message }`
+   */
+  announcementsFor(surfaceId?, sinceMs?) {
+    const { log, config } = this.deps;
+    log.debug("Entering SsfReceivers.announcementsFor(). " + surfaceId);
+    const now = Date.now();
+    const keepMs = Number(config.value('ssf.announcementKeepS')) * 1000;
+    const since = Number(sinceMs) || 0;
+    const found: Loose[] = [];
+    const stale: string[] = [];
+    announcements.forEach((row, key) => {
+      if (!row || now - Number(row.atMs) > keepMs) {
+        stale.push(key);
+        return;
+      }
+      if (since > 0 && row.surface === String(surfaceId || '') &&
+          Number(row.atMs) > since) {
+        found.push(row);
+      }
+    });
+    stale.forEach((key) => {
+      announcements.delete(key);
+    });
+    found.sort((a, b) => {
+      return Number(a.atMs) - Number(b.atMs);
+    });
+    const out = {
+      now: now,
+      everyMs: Number(config.value('ssf.announcementPollMs')),
+      announcements: found.map((row) => {
+        return { id: row.jti, at: new Date(Number(row.atMs)).toISOString(),
+                 message: row.message };
+      })
+    };
+    log.debug("Leaving SsfReceivers.announcementsFor(). " + found.length +
+              ' new.');
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // IS THIS EVENT ABOUT THIS PERSON?
   //
   // **THE RULE THAT DECIDES EVERY DOUBTFUL CASE: WHEN IN DOUBT, NO.** Showing
@@ -2396,6 +2544,7 @@ export = {
   authorizesPoll: slot.forward('authorizesPoll'),
   pollAll: slot.forward('pollAll'),
   listFor: slot.forward('listFor'),
+  announcementsFor: slot.forward('announcementsFor'),
   isAbout: slot.forward('isAbout'),
   isSetTyp: SsfReceivers.isSetTyp,
   audienceNames: slot.forward('audienceNames'),

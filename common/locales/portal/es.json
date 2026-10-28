@@ -549,5 +549,7 @@
   "accounts.anotherTitle": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya.",
   "accounts.none": "Todavía no hay otra cuenta con la sesión iniciada en este navegador.",
   "accounts.kept": "La cuenta que deja esta pestaña conserva la sesión iniciada, así que puede volver a ella desde aquí.",
-  "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán."
+  "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán.",
+  "announcement.heading": "Anuncio",
+  "announcement.close": "Cerrar"
 }

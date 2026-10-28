@@ -4773,6 +4773,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'in the realm for a report administrator, only the signals about ' +
           'themselves for anybody else. Behind the same token as the rest ' +
           'of /report-api.' },
+  { path: '/report-api/announcements', group: 'Reporting',
+    name: 'Announcements for the reports application', specs: ['ssf'],
+    what: 'NON-SPEC (#1086). What an open reports tab collects every ' +
+          'ssf.announcementPollMs: the announcements an administrator ' +
+          'broadcast to this application, as its receiver kept them. ' +
+          'Behind the same token as the rest of /report-api.' },
   { path: '/report-api/groups', group: 'Reporting',
     name: 'The group search, for the reports application', specs: [],
     what: 'NON-SPEC. The realm\'s groups whose name or DN contains q, five ' +
@@ -5272,6 +5278,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'the leader starts at its next tick, 202 with its runId; and ' +
           'step-down: the leader gives up ops.scheduler at its next tick and ' +
           'another node takes it. The console\'s two buttons.' },
+  { path: '/admin-api/broadcast', group: 'Management API',
+    name: 'Broadcast Announcement', specs: ['openapi'],
+    what: 'NON-SPEC (#1086). What GET /admin/broadcast draws: the ' +
+          'applications an announcement can be shown in, whether the caller ' +
+          'may send it to every realm, the longest message and whether ' +
+          'anything can be delivered. Mirrors GET /admin/broadcast.' },
+  { path: '/admin-api/broadcast/:action', group: 'Management API',
+    name: 'Broadcast Announcement actions', specs: ['openapi', 'ssf'],
+    effect: 'sends an announcement to everybody signed in',
+    what: 'NON-SPEC (#1086). send, with { message, surfaces, everyRealm }: ' +
+          'this service\'s own announcement SET on the receiver streams of ' +
+          'the admin console, the user portal and the reports application, ' +
+          'drawn as a banner in every tab of them open at the time.' },
+  { path: '/admin-api/announcements', group: 'Management API',
+    name: 'Console announcements', specs: ['openapi'],
+    what: 'NON-SPEC (#1086). What an open console tab collects every ' +
+          'ssf.announcementPollMs: the announcements the console\'s ' +
+          'receiver took in after the tab\'s first ask.' },
   { path: '/admin-api/mail', group: 'Management API',
     name: 'Mail', specs: ['openapi'],
     what: 'NON-SPEC (#63). What GET /admin/mail draws, as data: the ' +

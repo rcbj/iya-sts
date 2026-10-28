@@ -1,0 +1,16 @@
+{
+  "about": "Nagpapakita ng maikling mensahe sa lahat ng naka-sign in sa admin console, sa user portal o sa reports application, sa isang banner sa itaas ng bawat bukas na tab nila. Ipinapadala ito bilang sariling Shared Signals event ng serbisyong ito sa receiver stream ng bawat application, at lumalabas ito sa isang tab sa loob ng mga {seconds, plural, one {# segundo} other {# segundo}}. Kusang nagsasara ang banner pagkalipas ng sampung segundo. Hindi ito ipinapakita ng tab na binuksan pagkatapos.",
+  "notReady": "Walang maipapadala sa ngayon:",
+  "readOnly": "Kailangan ng Admin Write para magpadala ng anunsyo.",
+  "message": "Mensahe",
+  "maxChars": "Plain text, hanggang {max} na character.",
+  "surfaces": "Ipakita sa",
+  "scope.legend": "Ipadala sa",
+  "scope.realm": "Ang realm na ito (<code>{realm}</code>)",
+  "scope.every": "Lahat ng realm ({count, plural, one {# realm} other {# realm}})",
+  "scope.only": "Ipinapadala ito sa mga naka-sign in sa realm na ito, <code>{realm}</code>.",
+  "send": "I-broadcast",
+  "streamsLink": "Ang mga receiver stream na dinadaanan nito (Shared Signals)",
+  "banner.heading": "Anunsyo",
+  "banner.close": "Isara"
+}

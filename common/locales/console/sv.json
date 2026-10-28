@@ -199,5 +199,6 @@
   "shell.menu.switch.none": "Inget annat konto är inloggat i den här webbläsaren ännu.",
   "shell.menu.switch.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
   "shell.menu.another": "Logga in med ett annat konto",
-  "shell.menu.another.title": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina."
+  "shell.menu.another.title": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
+  "nav.broadcast": "Sänd ett meddelande"
 }

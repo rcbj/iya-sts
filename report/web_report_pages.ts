@@ -24,6 +24,7 @@ import WebI18n = require('../common/web_i18n');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
+import WebAnnouncements = require('../common/web_announcements');
 
 const CLIENT_ID = 'sts-report';
 const SCOPE = 'openid profile email offline_access report:use report:admin';
@@ -1024,6 +1025,8 @@ function queryDocument(form: any, locale: any): any {
  */
 class ReportRuntime extends SpaClient {
   private username: string;
+  // The announcement banner's poller (#1086), once the tab holds a token.
+  private announcements: WebAnnouncements | null = null;
   private i18n: any;
   private t: any;
   private accountsListening: boolean;
@@ -1625,6 +1628,31 @@ class ReportRuntime extends SpaClient {
     return { status: res.status, bytes: bytes, media: type, res: res };
   }
 
+  // THE ANNOUNCEMENT BANNER (#1086), `common/web_announcements.ts` as the
+  // console and the portal run it. Through `sendOnce()`, never `call()`: a
+  // poll in the background must not begin a sign-in.
+  /**
+   * Starts collecting announcements for this tab's realm.
+   *
+   * @returns nothing
+   */
+  startAnnouncements(): void {
+    const self = this;
+    this.announcements = new WebAnnouncements(this.env, {
+      ask: function (since: number): Promise<any> {
+        return self.sendOnce('GET', self.url('/report-api/announcements' +
+          (since ? '?since=' + encodeURIComponent(String(since)) : '')))
+          .then(function (res: any) {
+            return res && typeof res.json === 'function' &&
+                   res.status === 200 ? res.json() : null;
+          });
+      },
+      heading: this.t.text('report.announcement.heading'),
+      closeLabel: this.t.text('report.announcement.close')
+    });
+    this.announcements.start();
+  }
+
   /**
    * Loads the translator for this page.
    *
@@ -1645,6 +1673,11 @@ class ReportRuntime extends SpaClient {
    * @returns nothing
    */
   paint(body: string): void {
+    // AN ADMINISTRATOR'S ANNOUNCEMENT (#1086): once this tab holds a token,
+    // it collects what the reports receiver took in from then on.
+    if (!this.announcements && this.accessToken) {
+      this.startAnnouncements();
+    }
     const accounts = ReportRuntime.accountMenu(this);
     const chooser = this.i18n.chooser(this.t, this.here());
     const chrome = this.chrome || {};

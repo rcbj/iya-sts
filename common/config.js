@@ -13577,6 +13577,39 @@ const SETTINGS = [
                  'events then queue on the two streams and reach neither ' +
                  'page.' },
 
+  // -------------------------------------------------------------------------
+  // AN ANNOUNCEMENT TO THE PEOPLE SIGNED IN (#1086): an administrator's
+  // message, sent as this service's own `announcement` SET on the three
+  // internal receiver streams above, kept by each receiver for a short time
+  // and collected by every open tab of the console, the portal and reports.
+  // -------------------------------------------------------------------------
+  { key: 'ssf.announcementPollMs', group: 'SSF',
+    label: 'Announcement check interval in each open tab (milliseconds)',
+    env: 'STS_SSF_ANNOUNCEMENT_POLL_MS', type: 'int', dflt: 5000,
+    min: 1000, max: 60000, runtime: true,
+    description: 'How often each open tab of the admin console, the user ' +
+                 'portal and the reports application asks its own API for ' +
+                 'announcements its receiver has taken in (#1086). With ' +
+                 'ssf.internalPollMs it is the longest a broadcast takes to ' +
+                 'appear. A tab reads the value when it signs in.' },
+
+  { key: 'ssf.announcementKeepS', group: 'SSF',
+    label: 'How long a receiver keeps an announcement (seconds)',
+    env: 'STS_SSF_ANNOUNCEMENT_KEEP_S', type: 'int', dflt: 60, min: 10,
+    max: 3600, runtime: true,
+    description: 'How long each of this service\'s three receivers keeps an ' +
+                 'announcement it took in for its tabs to collect (#1086). ' +
+                 'A tab shows only what arrived after it signed in, so this ' +
+                 'is not how long a late tab can see one; it only has to ' +
+                 'outlast a tab\'s check interval and a slow poll.' },
+
+  { key: 'ssf.announcementMaxChars', group: 'SSF',
+    label: 'Longest announcement (characters)',
+    env: 'STS_SSF_ANNOUNCEMENT_MAX_CHARS', type: 'int', dflt: 500, min: 20,
+    max: 2000, runtime: true,
+    description: 'The most characters a broadcast announcement may hold ' +
+                 '(#1086). It is plain text; a longer one is refused.' },
+
   { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per receiver',
     env: 'STS_SSF_MAX_STREAMS', type: 'int', dflt: 25, min: 1, max: 1000,
     runtime: true,

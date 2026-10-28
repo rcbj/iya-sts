@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "UTANFÖR SPECIFIKATION. Vad rapportapplikationen, en mottagare av tjänstens egen sändare (#1042), har tagit emot: varje signal i sfären för en rapportadministratör, och för alla andra bara signalerna om dem själva. Bakom samma token som resten av /report-api."
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086). Det en öppen rapportflik hämtar var ssf.announcementPollMs: de meddelanden en administratör har sänt till programmet, så som mottagaren behöll dem. Bakom samma token som resten av /report-api."
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC. Sfärens grupper vars namn eller DN innehåller q, fem per sida, var och en med sitt eget mail-attribut (#989): definitionssidans panel. En definitions grupper är de som får dess resultat med e-post. Bakom samma token som resten av /report-api."
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "ICKE-SPEC (#49). run, med { job, realm?, params? }: en köad körning som ledaren startar vid sitt nästa tick, 202 med dess runId; och step-down: ledaren lämnar ifrån sig ops.scheduler vid sitt nästa tick och en annan nod tar över. Konsolens två knappar."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086). Det GET /admin/broadcast ritar: programmen ett meddelande kan visas i, om anroparen får skicka det till alla sfärer, det längsta meddelandet och om något kan levereras. Speglar GET /admin/broadcast."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086). send, med { message, surfaces, everyRealm }: tjänstens eget meddelande-SET på mottagarströmmarna för administrationskonsolen, användarportalen och rapportprogrammet, visat som en banderoll i varje öppen flik just då."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "sänder ett meddelande till alla som är inloggade"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086). Det en öppen konsolflik hämtar var ssf.announcementPollMs: de meddelanden konsolens mottagare tog emot efter flikens första fråga."
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",

@@ -199,5 +199,6 @@
   "shell.menu.switch.none": "Aucun autre compte n’est encore connecté dans ce navigateur.",
   "shell.menu.switch.kept": "Le compte que cet onglet quitte reste connecté : vous pouvez y revenir d’ici.",
   "shell.menu.another": "Se connecter avec un autre compte",
-  "shell.menu.another.title": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur."
+  "shell.menu.another.title": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur.",
+  "nav.broadcast": "Diffuser une annonce"
 }

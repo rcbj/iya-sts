@@ -206,6 +206,23 @@ class OpenApi {
               }
             })
         },
+        '/report-api/announcements': {
+          get: operation('Announcements for everybody signed in',
+            'What an administrator broadcast to this application (#1086) ' +
+            'after `since` — the `now` this operation answered the tab\'s ' +
+            'first ask with — within ssf.announcementKeepS, oldest first. ' +
+            'With no `since` it answers only `now`. `everyMs` is how often ' +
+            'an open tab asks again.', {
+              parameters: [
+                { name: 'since', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 0 } }
+              ],
+              responses: {
+                '200': answered('`now`, `everyMs` and `announcements`.',
+                  { type: 'object' })
+              }
+            })
+        },
         '/report-api/schedules': {
           get: operation('The scheduled definitions and their runs',
             'Every definition that carries a schedule, with when it next ' +

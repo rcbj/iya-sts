@@ -157,5 +157,7 @@
   "signalsSkipped": "Nothing: {why}.",
   "signalsObserved": "Nothing: development mode only observes.",
   "signalsFailed": "It could not be acted on.",
-  "signalsNothing": "Nothing: the policy asks for no reaction."
+  "signalsNothing": "Nothing: the policy asks for no reaction.",
+  "announcement.heading": "Announcement",
+  "announcement.close": "Close"
 }

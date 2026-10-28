@@ -1048,6 +1048,9 @@ var config = {
     authClientCert: true,                                                                                                                                 // Offer TLS client certificates
     internalReceivers: true,                                                                                                                              // Register the console, the portal and reports as receivers; restart to apply
     internalPollMs: 1000,                                                                                                                                 // Console and portal poll interval (milliseconds)
+    announcementPollMs: 5000,                                                                                                                             // Announcement check interval in each open tab (milliseconds)
+    announcementKeepS: 60,                                                                                                                                // How long a receiver keeps an announcement (seconds)
+    announcementMaxChars: 500,                                                                                                                            // Longest announcement (characters)
     maxStreams: 25,                                                                                                                                       // Streams per receiver
     inactivityTimeoutS: 0,                                                                                                                                // Stream inactivity timeout (s)
     inactivityAction: "pause",                                                                                                                            // What an inactive stream becomes

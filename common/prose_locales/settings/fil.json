@@ -7103,6 +7103,30 @@
     "en": "b80cedcb611f2fd3",
     "text": "Gaano kadalas kinokolekta ng sariling admin console at user portal ng serbisyong ito ang laman ng kanilang mga stream, sa RFC 8936 poll mula sa /ssf/poll (ang ssf.internal-poll na scheduler job), hanggang ssf.pollMaxEvents na SET bawat request. Ito ang pinakamatagal na hinihintay ng isang Security Event Token bago ito makita at aksyunan ng alinmang surface. Pinapatay ng 0 ang job, at naka-queue na lang ang mga event sa dalawang stream at hindi umaabot sa alinmang page."
   },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "Interval ng pagsuri ng anunsyo sa bawat bukas na tab (milliseconds)"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "Gaano kadalas nagtatanong ang bawat bukas na tab ng admin console, user portal at reports application sa sarili nitong API para sa mga anunsyong natanggap ng receiver nito (#1086). Kasama ang ssf.internalPollMs, ito ang pinakamatagal bago lumabas ang isang broadcast. Binabasa ng tab ang halaga kapag nag-sign in ito."
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "Gaano katagal itinatago ng receiver ang anunsyo (segundo)"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "Gaano katagal itinatago ng bawat isa sa tatlong receiver ng serbisyong ito ang natanggap na anunsyo para makuha ng mga tab nito (#1086). Ipinapakita lang ng tab ang dumating pagkatapos itong mag-sign in, kaya hindi ito ang tagal na makikita ng huling tab; kailangan lang nitong lumampas sa interval ng pagsuri ng tab at sa mabagal na poll."
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "Pinakamahabang anunsyo (character)"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "Ang pinakamaraming character na maaaring laman ng na-broadcast na anunsyo (#1086). Plain text ito; tinatanggihan ang mas mahaba."
+  },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
     "text": "Mga stream kada receiver"

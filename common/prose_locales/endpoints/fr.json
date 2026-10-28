@@ -475,6 +475,10 @@
     "en": "fa5ff98584c701fb",
     "text": "La boîte de réception Shared Signals de l’application de rapports"
   },
+  "endpoints.route./report-api/announcements.name": {
+    "en": "3adb83b8075c6a3a",
+    "text": "Annonces pour l'application de rapports"
+  },
   "endpoints.route./report-api/groups.name": {
     "en": "e30ed85f8fa2f141",
     "text": "La recherche de groupes, pour l’application de rapports"
@@ -702,6 +706,18 @@
   "endpoints.route./admin-api/scheduler/:action.name": {
     "en": "3483d9e9aab04915",
     "text": "Actions du planificateur"
+  },
+  "endpoints.route./admin-api/broadcast.name": {
+    "en": "7ca7feaebe5215c0",
+    "text": "Diffuser une annonce"
+  },
+  "endpoints.route./admin-api/broadcast/:action.name": {
+    "en": "6e79d056a66502f2",
+    "text": "Actions de diffusion d'annonce"
+  },
+  "endpoints.route./admin-api/announcements.name": {
+    "en": "c4061b1ad0320a47",
+    "text": "Annonces de la console"
   },
   "endpoints.route./admin-api/mail/:action.name": {
     "en": "cff7055c2db49c6a",

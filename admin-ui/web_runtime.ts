@@ -62,6 +62,7 @@
 
 import kit = require('./web_kit');
 import SpaClient = require('../common/web_spa_client');
+import WebAnnouncements = require('../common/web_announcements');
 import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
@@ -113,6 +114,8 @@ class ConsoleRuntime extends SpaClient {
   private t: Json;
   private shellPrefix: string;
   private me: Json;
+  // The announcement banner's poller (#1086), once the shell is in hand.
+  private announcements: WebAnnouncements | null = null;
   private formTable: Json;
   private view: Json;
   // The path and query of the page last drawn: a `popstate` that changes
@@ -1226,6 +1229,9 @@ class ConsoleRuntime extends SpaClient {
       this.shellPrefix = this.prefix;
       const me = await this.apiJson('GET', '/admin-api/me');
       this.me = me && me.status === 200 ? me.json : {};
+      // AN ADMINISTRATOR'S ANNOUNCEMENT (#1086): this tab collects what the
+      // console's receiver took in, from now on, for the realm the shell is.
+      this.startAnnouncements();
       // THE BROWSER'S ACCOUNTS (#561), for the account menu, and the tab's
       // own kept from them; off, nothing is kept and the menu is today's.
       const gate = (this.shell && this.shell.gate) || {};
@@ -2972,7 +2978,41 @@ class ConsoleRuntime extends SpaClient {
    *
    * @returns nothing
    */
+  // THE ANNOUNCEMENT BANNER (#1086), `common/web_announcements.ts` as the
+  // portal and reports run it: started when the shell is fetched, so again
+  // in a realm switched to, which has announcements of its own.
+  /**
+   * Starts collecting announcements for the realm the shell is in.
+   *
+   * @returns nothing
+   */
+  startAnnouncements(): void {
+    if (this.announcements) {
+      this.announcements.stop();
+    }
+    const self = this;
+    this.announcements = new WebAnnouncements(this.env, {
+      // THROUGH `sendOnce()`, NEVER `api()`: a poll in the background must
+      // not begin a sign-in. A token the next page needs renewed is renewed
+      // there; until then the poll answers nothing.
+      ask: function (since: number): Promise<Json> {
+        return self.sendOnce('GET', self.url('/admin-api/announcements' +
+          (since ? '?since=' + encodeURIComponent(String(since)) : '')))
+          .then(function (res: Json) {
+            return res && typeof res.json === 'function' &&
+                   res.status === 200 ? res.json() : null;
+          });
+      },
+      heading: this.t.text('consoleBroadcast.banner.heading'),
+      closeLabel: this.t.text('consoleBroadcast.banner.close')
+    });
+    this.announcements.start();
+  }
+
   signOut(): void {
+    if (this.announcements) {
+      this.announcements.stop();
+    }
     // WHICH ACCOUNT (#561): with several in the browser, the sign-out is
     // told the tab's, which it preselects; with the setting off the address
     // is the one it always was.

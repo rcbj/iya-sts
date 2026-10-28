@@ -1434,6 +1434,51 @@ class AdminApi {
     });
   }
 
+  // THE BROADCAST PAGE'S VIEW (#1086): what `GET /admin-api/broadcast`
+  // answers, and what the POST checks `everyRealm` against.
+  /**
+   * Builds the broadcast page's view for the caller.
+   *
+   * @param req - the request, for the caller's gate state
+   * @returns the view
+   */
+  broadcastView(req) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminApi.broadcastView().");
+    const realmsMod = require('../common/realms');
+    const receivers = require('../ssf/ssf_receivers');
+    let state = null;
+    try {
+      state = adminViews.gateStateFor(req);
+    } catch (e) {
+      log.debug("Caught in AdminApi.broadcastView(): " +
+                ((e && e.message) || e));
+      // No gate state: treated as a realm administrator, the narrower reach.
+      state = null;
+    }
+    const realm = realmsMod.currentId();
+    const serviceAdmin = !!state && state.authority !== 'realm';
+    const ssfOn = !!config.value('ssf.enabled');
+    const receiversOn = !!receivers.enabled();
+    const view = {
+      realm: realm,
+      surfaces: receivers.SURFACES.map(function (one) {
+        return { id: one.id, label: one.label };
+      }),
+      everyRealm: serviceAdmin && realm === realmsMod.DEFAULT_ID,
+      realmCount: realmsMod.count(),
+      maxChars: Number(config.value('ssf.announcementMaxChars')),
+      pollMs: Number(config.value('ssf.announcementPollMs')),
+      keepS: Number(config.value('ssf.announcementKeepS')),
+      ready: ssfOn && receiversOn,
+      why: !ssfOn ? 'Shared Signals is off (ssf.enabled).'
+        : (!receiversOn ? 'This service\'s own receivers are off ' +
+                          '(ssf.internalReceivers).' : '')
+    };
+    log.debug("Leaving AdminApi.broadcastView().");
+    return view;
+  }
+
   /**
    * Returns the body with `action` set from the path parameter, over whatever
    * the body carried.
@@ -3479,6 +3524,163 @@ class AdminApi {
             responseDescription: '`{ ok: true, target }`, or a refusal ' +
                                  'naming why.' }
         ] },
+
+      // ---------------------------------------------------------------------
+      // BROADCAST AN ANNOUNCEMENT (#1086): Server configuration → Broadcast
+      // Announcement, and its rule 7 twin. The view says who may reach what
+      // — a realm administrator their realm, a service administrator in the
+      // default realm every realm as well — and the action is
+      // `ssf.broadcastAnnouncement()`, the one place an announcement is
+      // built and sent. Both reach `ssf/` LAZILY, at request time: a require
+      // from here when this file loads would load the family out of the
+      // require order.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/broadcast', tag: 'Shared Signals',
+        operationId: 'getBroadcast',
+        summary: 'What an announcement can reach from this realm',
+        description: 'The applications an announcement can be shown in ' +
+                     '(`surfaces`: `id` and `label` — the admin console, ' +
+                     'the user portal and the reports application, this ' +
+                     'service\'s own Shared Signals receivers), whether the ' +
+                     'caller may send to `everyRealm` (a service ' +
+                     'administrator in the default realm), the longest ' +
+                     'message (`maxChars`), how often an open tab checks ' +
+                     '(`pollMs`), and whether anything can be delivered ' +
+                     '(`ready`, with `why` when not). Sending is POST ' +
+                     '/admin-api/broadcast/send.',
+        mirrors: 'GET /admin/broadcast',
+        responseDescription: 'The broadcast view.',
+        responseSchema: { type: 'object',
+          description: '`realm`, `surfaces`, `everyRealm`, `maxChars`, ' +
+                       '`pollMs`, `keepS`, `ready`, `why`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API broadcast endpoint.");
+          self.sendJson(res, 200, self.broadcastView(req));
+          log.debug("Leaving the management API broadcast endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/broadcast/:action',
+        tag: 'Shared Signals',
+        mirrors: 'POST /admin/broadcast',
+        handler: function (req, res) {
+          log.debug("Entering the management API broadcast action.");
+          const body = self.withAction(req, parseBody(req));
+          const refuse = function (errors) {
+            errorCodes.mark(res, 'STS-SSF-0153');
+            self.sendJson(res, 400, { ok: false, errors: errors });
+          };
+          if (String(body.action || '') !== 'send') {
+            refuse(['Unknown action "' + String(body.action || '') +
+                    '". The one is: send.']);
+            log.debug("Leaving the management API broadcast action. " +
+                      "Unknown action.");
+            return;
+          }
+          const view = self.broadcastView(req);
+          const everyRealm = ['true', 'on', 'yes', '1', 'every']
+            .indexOf(String(body.everyRealm || body.scope || '')
+              .toLowerCase()) >= 0 || body.everyRealm === true;
+          if (everyRealm && !view.everyRealm) {
+            refuse(['Only a service administrator in the default realm ' +
+                    'may broadcast to every realm; this goes to the "' +
+                    view.realm + '" realm only.']);
+            log.debug("Leaving the management API broadcast action. Not " +
+                      "every realm.");
+            return;
+          }
+          const surfaces = [].concat(body.surfaces == null ? []
+                                                           : body.surfaces)
+            .reduce(function (all, one) {
+              return all.concat(String(one).split(',').map(function (x) {
+                return x.trim();
+              }));
+            }, []);
+          let state = null;
+          try {
+            state = adminViews.gateStateFor(req);
+          } catch (e) {
+            log.debug("Caught in the management API broadcast action: " +
+                      ((e && e.message) || e));
+            // No gate state to read: the audit row names the door instead.
+            state = null;
+          }
+          require('../ssf/ssf').broadcastAnnouncement({
+            message: body.message, surfaces: surfaces,
+            everyRealm: everyRealm,
+            by: (state && state.username) ||
+                'the management API at /admin-api/broadcast'
+          }).then(function (result) {
+            if (!result.ok) {
+              errorCodes.mark(res, result.code || 'STS-SSF-0153');
+            }
+            self.sendJson(res, result.ok ? 200 : 400, result);
+            log.debug("Leaving the management API broadcast action.");
+          });
+        },
+        actions: [
+          { action: 'send', operationId: 'sendBroadcast',
+            summary: 'Show an announcement to everybody signed in',
+            description: 'Sends this service\'s own `announcement` ' +
+                         'Security Event Token on the receiver streams of ' +
+                         'the chosen applications, and every tab of them ' +
+                         'open at the time shows `message` in a banner ' +
+                         'within `ssf.internalPollMs` + ' +
+                         '`ssf.announcementPollMs`. A tab opened later does ' +
+                         'not. `everyRealm` sends it in every realm, and is ' +
+                         'refused (STS-SSF-0153) to anybody but a service ' +
+                         'administrator in the default realm. Answers how ' +
+                         'many streams took it per realm; `sent: 0` with ' +
+                         '`why` (STS-SSF-0154) when none did.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                message: { type: 'string',
+                           description: 'Plain text, at most ' +
+                             'ssf.announcementMaxChars characters.' },
+                surfaces: { type: 'array', items: { type: 'string',
+                  enum: ['admin-console', 'user-portal', 'report'] },
+                  description: 'Which applications show it.' },
+                everyRealm: { type: 'boolean',
+                              description: 'Every realm, not only this ' +
+                                           'one.' }
+              },
+              required: ['message', 'surfaces'],
+              examples: [{ message: 'Maintenance at 18:00 UTC.',
+                           surfaces: ['admin-console', 'user-portal',
+                                      'report'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'How many receiver streams took it.' }
+        ] },
+
+      // The console's own open tabs ask this every ssf.announcementPollMs.
+      { method: 'GET', path: BASE + '/announcements', tag: 'Shared Signals',
+        operationId: 'getConsoleAnnouncements',
+        summary: 'Announcements the console\'s receiver took in',
+        description: 'What an open console tab collects (#1086): the ' +
+                     'announcements this realm\'s admin-console receiver ' +
+                     'took in after `since` — the `now` this operation ' +
+                     'answered the tab\'s FIRST ask with — and within ' +
+                     '`ssf.announcementKeepS`, oldest first. With no ' +
+                     '`since` it answers only `now`, so a tab shows what ' +
+                     'arrived after it signed in. `everyMs` is how often to ' +
+                     'ask again.',
+        parameters: [
+          { name: 'since', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 0 },
+            description: 'The `now` of the first answer, in milliseconds.' }
+        ],
+        responseDescription: '`now`, `everyMs` and `announcements`.',
+        responseSchema: { type: 'object',
+          description: '`now`, `everyMs`, `announcements` (each `id`, ' +
+                       '`at`, `message`).' },
+        handler: function (req, res) {
+          log.debug("Entering the management API announcements endpoint.");
+          self.sendJson(res, 200, require('../ssf/ssf_receivers')
+            .announcementsFor('admin-console', Number(req.query.since) || 0));
+          log.debug("Leaving the management API announcements endpoint.");
+        } },
 
       // ---------------------------------------------------------------------
       // THE MODE (#181). `modeAdmin.modeView()` — `common/mode.js`'s

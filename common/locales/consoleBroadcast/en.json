@@ -1,0 +1,16 @@
+{
+  "about": "Shows a short message to everybody signed in to the admin console, the user portal or the reports application, in a banner at the top of every tab of them open now. It is sent as this service's own Shared Signals event on each application's receiver stream, and a tab shows it within about {seconds, plural, one {# second} other {# seconds}}. The banner closes itself after ten seconds. A tab opened later does not show it.",
+  "notReady": "Nothing can be delivered at the moment:",
+  "readOnly": "Sending an announcement needs Admin Write.",
+  "message": "Message",
+  "maxChars": "Plain text, at most {max} characters.",
+  "surfaces": "Show it in",
+  "scope.legend": "Send it to",
+  "scope.realm": "This realm (<code>{realm}</code>)",
+  "scope.every": "Every realm ({count, plural, one {# realm} other {# realms}})",
+  "scope.only": "It goes to the people signed in to this realm, <code>{realm}</code>.",
+  "send": "Broadcast",
+  "streamsLink": "The receiver streams it travels on (Shared Signals)",
+  "banner.heading": "Announcement",
+  "banner.close": "Close"
+}

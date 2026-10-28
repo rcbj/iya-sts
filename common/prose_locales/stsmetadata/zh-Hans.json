@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "非规范。报表应用程序作为此服务自身发送方的接收方 (#1042) 所收到的内容：报表管理员可看到领域中的每个信号，其他人只能看到与自己有关的信号。与 /report-api 其余部分使用同一令牌。"
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086)。打开的报表标签页每隔 ssf.announcementPollMs 收取的内容：管理员向此应用广播、并由其接收方保留的公告。与 /report-api 的其余部分使用同一令牌。"
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC。领域中名称或 DN 包含 q 的组，每页五个，各自带有自己的 mail 属性（#989）：定义页面的面板。定义的组即其结果的电子邮件收件人。与 /report-api 的其余部分使用同一令牌。"
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "非规范（#49）。run，带 { job, realm?, params? }：领导者在下一个时钟周期启动的排队运行，返回 202 及其 runId；以及 step-down：领导者在下一个时钟周期放弃 ops.scheduler，由另一个节点接管。控制台的两个按钮。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086)。GET /admin/broadcast 绘制的内容：可显示公告的应用、调用方能否发送到所有领域、最长消息以及能否投递任何内容。对应 GET /admin/broadcast。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086)。send，带 { message, surfaces, everyRealm }：本服务自己的公告 SET，发送到管理控制台、用户门户和报表应用的接收方流，并在当时打开的每个标签页中以横幅显示。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "向所有已登录的人发送公告"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086)。打开的控制台标签页每隔 ssf.announcementPollMs 收取的内容：控制台接收方在该标签页首次询问之后收到的公告。"
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",

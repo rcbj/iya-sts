@@ -1100,6 +1100,18 @@ function reportServeGroups(req: any, res: any): void {
   log.debug("Leaving reportServeGroups().");
 }
 
+// AN ANNOUNCEMENT (#1086), collected by every open report tab: what an
+// administrator broadcast to this application, as its receiver kept it.
+// Everybody signed in to it sees the same announcements — they are about
+// nobody — so there is no narrowing by person here.
+function reportServeAnnouncements(req: any, res: any): void {
+  log.debug("Entering reportServeAnnouncements().");
+  const since = Number(((req && req.query) || {}).since || 0) || 0;
+  reportJson(res, 200, require('../ssf/ssf_receivers')
+    .announcementsFor('report', since));
+  log.debug("Leaving reportServeAnnouncements().");
+}
+
 // THIS APPLICATION'S SHARED SIGNALS INBOX (#1042): what its own stream
 // delivered in the realm, as `ssf/ssf_receivers.ts` recorded it. A report
 // ADMINISTRATOR sees every signal, as an administrator does on the console;
@@ -1766,6 +1778,8 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     reportServeGroups(req, res);
   } else if (a === 'signals' && !b && method === 'GET') {
     await reportServeSignals(req, res, who);
+  } else if (a === 'announcements' && !b && method === 'GET') {
+    reportServeAnnouncements(req, res);
   } else if (a === 'schedules' && !b && method === 'GET') {
     reportServeSchedules(req, res, who);
   } else if (a === 'queries' && !b && method === 'POST') {
@@ -1907,6 +1921,9 @@ class ReportApi {
       reportAnswer(req, res);
     });
     app.get(BASE + '/signals', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/announcements', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
     app.get(BASE + '/schedules', function (req: any, res: any): void {

@@ -157,5 +157,7 @@
   "signalsSkipped": "无操作：{why}。",
   "signalsObserved": "无操作：开发模式仅作观察。",
   "signalsFailed": "无法对其执行操作。",
-  "signalsNothing": "无操作：策略未要求任何响应。"
+  "signalsNothing": "无操作：策略未要求任何响应。",
+  "announcement.heading": "公告",
+  "announcement.close": "关闭"
 }

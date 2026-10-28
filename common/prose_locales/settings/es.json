@@ -7103,6 +7103,30 @@
     "en": "b80cedcb611f2fd3",
     "text": "Con qué frecuencia la consola de administración y el portal de usuario de este servicio recogen lo que contienen sus flujos, mediante sondeo de RFC 8936 en /ssf/poll (la tarea programada ssf.internal-poll), hasta ssf.pollMaxEvents SET por solicitud. Es lo máximo que un Security Event Token espera antes de que cualquiera de las dos superficies lo vea y actúe en consecuencia. 0 desactiva la tarea, y entonces los eventos se encolan en los dos flujos y no llegan a ninguna de las dos páginas."
   },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "Intervalo de comprobación de anuncios en cada pestaña abierta (milisegundos)"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "Con qué frecuencia cada pestaña abierta de la consola de administración, el portal de usuario y la aplicación de informes consulta a su propia API los anuncios que su receptor ha recibido (#1086). Junto con ssf.internalPollMs, es lo máximo que tarda en aparecer una difusión. Una pestaña lee el valor al iniciar sesión."
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "Cuánto tiempo conserva un receptor un anuncio (segundos)"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "Cuánto tiempo conserva cada uno de los tres receptores de este servicio un anuncio recibido para que sus pestañas lo recojan (#1086). Una pestaña solo muestra lo que llegó después de iniciar sesión, así que no es cuánto tiempo puede verlo una pestaña tardía; solo tiene que superar el intervalo de comprobación de una pestaña y una consulta lenta."
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "Anuncio más largo (caracteres)"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "El número máximo de caracteres de un anuncio difundido (#1086). Es texto sin formato; uno más largo se rechaza."
+  },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
     "text": "Flujos por receptor"

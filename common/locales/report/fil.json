@@ -157,5 +157,7 @@
   "signalsSkipped": "Wala: {why}.",
   "signalsObserved": "Wala: nagmamasid lamang ang development mode.",
   "signalsFailed": "Hindi ito natugunan.",
-  "signalsNothing": "Wala: walang hinihinging tugon ang patakaran."
+  "signalsNothing": "Wala: walang hinihinging tugon ang patakaran.",
+  "announcement.heading": "Anunsyo",
+  "announcement.close": "Isara"
 }

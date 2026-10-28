@@ -549,5 +549,7 @@
   "accounts.anotherTitle": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs.",
   "accounts.none": "No other account is signed in in this browser yet.",
   "accounts.kept": "The account this tab leaves stays signed in, so you can switch back to it here.",
-  "accounts.unsaved": "This page has changes that have not been saved. Switch account anyway? They will be lost."
+  "accounts.unsaved": "This page has changes that have not been saved. Switch account anyway? They will be lost.",
+  "announcement.heading": "Announcement",
+  "announcement.close": "Close"
 }

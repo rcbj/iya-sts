@@ -549,5 +549,7 @@
   "accounts.anotherTitle": "在此标签页中以另一个人的身份登录。已在此浏览器中登录的账户保持登录状态，其他标签页保持各自的账户。",
   "accounts.none": "此浏览器中尚无其他已登录的账户。",
   "accounts.kept": "此标签页离开的账户仍保持登录，您可以在这里切换回去。",
-  "accounts.unsaved": "此页面有尚未保存的更改。仍要切换账户吗？这些更改将会丢失。"
+  "accounts.unsaved": "此页面有尚未保存的更改。仍要切换账户吗？这些更改将会丢失。",
+  "announcement.heading": "公告",
+  "announcement.close": "关闭"
 }

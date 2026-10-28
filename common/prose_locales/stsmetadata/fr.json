@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "HORS SPÉCIFICATION. Ce qu’a reçu l’application de rapports, récepteur du propre émetteur de ce service (#1042) : chaque signal du domaine pour un administrateur des rapports, seulement les signaux qui le concernent pour quiconque d’autre. Derrière le même jeton que le reste de /report-api."
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086). Ce que récupère un onglet de rapports ouvert toutes les ssf.announcementPollMs : les annonces qu'un administrateur a diffusées à cette application, telles que son récepteur les a conservées. Derrière le même jeton que le reste de /report-api."
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC. Les groupes du domaine dont le nom ou le DN contient q, cinq par page, chacun avec son propre attribut mail (#989) : le volet de la page de définition. Les groupes d’une définition sont ceux à qui son résultat est envoyé par courriel. Derrière le même jeton que le reste de /report-api."
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "NON-SPEC (#49). run, avec { job, realm?, params? } : une exécution mise en file que le leader démarre à son prochain cycle, 202 avec son runId ; et step-down : le leader abandonne ops.scheduler à son prochain cycle et un autre nœud le reprend. Les deux boutons de la console."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086). Ce qu'affiche GET /admin/broadcast : les applications où une annonce peut être affichée, si l'appelant peut l'envoyer à tous les domaines, le message le plus long et si quelque chose peut être distribué. Reflète GET /admin/broadcast."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086). send, avec { message, surfaces, everyRealm } : le SET d'annonce propre à ce service sur les flux récepteurs de la console d'administration, du portail utilisateur et de l'application de rapports, affiché en bandeau dans chacun de leurs onglets ouverts à ce moment."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "envoie une annonce à toutes les personnes connectées"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086). Ce que récupère un onglet de console ouvert toutes les ssf.announcementPollMs : les annonces que le récepteur de la console a reçues après la première demande de l'onglet."
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",

@@ -592,6 +592,12 @@ const JOBS = [
   // missing token, the wrong body type. `local: true`: this repository's own
   // /admin and /admin-api.
   { file: 'sts_admin_risk_upload.js',    browser: false },
+  // AN ANNOUNCEMENT TO EVERYBODY SIGNED IN (#1086): the broadcast page's
+  // view, a refusal, the send to the three receiver streams, and an open
+  // console tab's ask finding it once the internal poll has collected it —
+  // through the balancer in `cluster`. `local: true`: this repository's own
+  // /admin-api.
+  { file: 'sts_broadcast_announcement.js', browser: false },
   // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
   // uploaded through POST /admin-api/risk/upload with no terms to accept,
   // active with a row per REVOKED or SUSPENDED entry, named by
