@@ -408,7 +408,7 @@ async function test() {
     assert.ok(/^[A-Za-z0-9_-]{86}$/.test(c.pending.userHandle) &&
               /^[A-Za-z0-9_-]{86}$/.test(p.pending.userHandle));
     assert.notStrictEqual(c.pending.userHandle, p.pending.userHandle);
-    assert.deepStrictEqual(p.pending.options.algorithms, [-48, -49, -50]);
+    assert.deepStrictEqual(p.pending.options.algorithms, [-50, -49, -48]);
     assert.ok(c.pending.options.algorithms.every(function (a) {
       return [-48, -49, -50].indexOf(a) < 0;
     }), "the classical lane offers ML-DSA: " +
@@ -481,7 +481,7 @@ async function test() {
     assert.strictEqual(upgradeBegin.status, 200,
       JSON.stringify(upgradeBegin.json).slice(0, 300));
     assert.deepStrictEqual(registrationCeremony.options.algorithms,
-                           [-48, -49, -50]);
+                           [-50, -49, -48]);
     assert.ok(upgradeProof.status === 200 &&
               registrationCeremony.user.id !== c.pending.userHandle,
       JSON.stringify(upgradeProof.json).slice(0, 300));
@@ -546,7 +546,7 @@ async function test() {
       "the person's admin detail page did not draw the enrollment control");
     assert.strictEqual(adminBegin.status, 200,
       JSON.stringify(adminBegin.json).slice(0, 300));
-    assert.deepStrictEqual(adminCeremony.options.algorithms, [-48, -49, -50]);
+    assert.deepStrictEqual(adminCeremony.options.algorithms, [-50, -49, -48]);
     assert.strictEqual(adminFinish.status, 200,
       JSON.stringify(adminFinish.json).slice(0, 300));
      assert.strictEqual(adminFinish.json.enrolledBy.username, ADMIN);

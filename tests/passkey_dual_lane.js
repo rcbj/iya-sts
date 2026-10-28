@@ -204,7 +204,7 @@ function childMain() {
     const ON = 'webauthn.pqcAlongsideClassical';
     // The default `webauthn.algorithms`, as COSE identifiers: what a realm
     // that never turned the switch on has always been sent (the snapshot).
-    const CONFIGURED = [-48, -49, -50, -9, -7, -19, -8, -51, -35, -52, -36,
+    const CONFIGURED = [-50, -49, -48, -9, -7, -19, -8, -51, -35, -52, -36,
                         -53, -47, -37, -38, -39, -257, -258, -259];
     config.setOverride('oauth2.consentRequired', false);
     passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
@@ -343,7 +343,7 @@ function childMain() {
       return pqcOn.algorithms.indexOf(a) >= 0;
     });
     note(JSON.stringify(webauthnPolicy.lanes()) === '["classical","pqc"]' &&
-         ids(pqcOn) === '[-48,-49,-50]' &&
+         ids(pqcOn) === '[-50,-49,-48]' &&
          ids(classicalOn) === JSON.stringify(CONFIGURED.slice(3)) &&
          overlap.length === 0,
          '3a. on: two lanes, ML-DSA alone in the post-quantum one and the ' +
@@ -365,7 +365,7 @@ function childMain() {
          pqcBegun.exclude.length === 0 &&
          pending.user === 'pkl-alice+ml-dsa' &&
          pending.display === 'pkl-alice (ML-DSA)' &&
-         ids(pending.options) === '[-48,-49,-50]',
+         ids(pending.options) === '[-50,-49,-48]',
          '3b. the post-quantum lane has its own handle, excludes none of the ' +
          'classical keys, and is named pkl-alice+ml-dsa / "pkl-alice ' +
          '(ML-DSA)" at creation', JSON.stringify(pending).slice(0, 300));
@@ -603,7 +603,7 @@ function childMain() {
         BASE: '/account-api', PORTAL: '/portal' });
     note(upSeed.done.ok && beginUpgrade.ok && proveUpgrade.ok &&
          proofView.pending && proofView.pending.phase === 'registration' &&
-         proofView.pending.options.algorithms.join(',') === '-48,-49,-50' &&
+         proofView.pending.options.algorithms.join(',') === '-50,-49,-48' &&
          proofHtml.indexOf('data-mode="create"') >= 0 &&
          upgradeOps.some(function (op) {
            return op.operationId === 'upgradeKey' &&

@@ -624,10 +624,12 @@ const POST_QUANTUM_REQUIRED_VALUES = ['off', 'sign-in',
  * The post-quantum WebAuthn signature algorithms (#718): RFC 9964's ML-DSA,
  * as JOSE names. THE ONE COPY: `authn/webauthn_policy.ts`'s `PQC_ALGS` is
  * this list, because that module requires this one and this one, a leaf,
- * cannot require it back.
+ * cannot require it back. IN PREFERENCE ORDER, strongest first (#1078): it is
+ * what a post-quantum-only or pq-first request offers when its list names no
+ * ML-DSA, so it follows `webauthn.algorithms`' default.
  */
 const POST_QUANTUM_ALGORITHMS: ReadonlyArray<string> =
-  Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
+  Object.freeze(['ML-DSA-87', 'ML-DSA-65', 'ML-DSA-44']);
 /**
  * What `attestationAlgorithms` may list (#941): `post-quantum` allows any
  * post-quantum signature (ML-DSA, SLH-DSA, composite ML-DSA), the others
