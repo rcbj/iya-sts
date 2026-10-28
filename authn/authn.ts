@@ -15867,7 +15867,10 @@ class Authn {
       // in the page's language (#539).
       rpId: rpId, widened: !!options.rpId,
       challenge: String(step.challenge || ''),
-      attestation: String(options.attestation || ''),
+      // What the registration ASKS for at this RP ID (#1114): enterprise
+      // only where the realm lists the RP ID, else direct.
+      attestation: String(
+        webauthnPolicy.attestationConveyance(rpId).requested || ''),
       // The lane's algorithms where a registration is drawn (#643); the
       // configured list otherwise, and with the switch off.
       algorithms: (postLoginAlgs || (mode === 'create'
@@ -15963,7 +15966,10 @@ class Authn {
       postQuantumHelp: null, postQuantumAllowCredentials: '',
       fallback: fallback, rpId: rpId, widened: !!options.rpId,
       challenge: String(held.challenge || ''),
-      attestation: String(options.attestation || ''),
+      // What the registration ASKS for at this RP ID (#1114): enterprise
+      // only where the realm lists the RP ID, else direct.
+      attestation: String(
+        webauthnPolicy.attestationConveyance(rpId).requested || ''),
       algorithms: (proof ? (options.algorithms || [])
                          : webauthnPolicy.upgradeAlgorithms()).map(String),
       postLogin: { role: String((step.postLogin || {}).role || ''),

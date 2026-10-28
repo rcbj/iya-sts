@@ -7068,6 +7068,15 @@ const CODES = [
     summary: 'A post-login mail campaign is running in a realm with no ' +
       'mail transport: its run mailed nobody and moved no cursor (#1111).',
     spec: 'none (logged; the scheduler run row)' },
+  { code: 'STS-AUTHN-0500',
+    summary: 'A settings write was refused (#1114): it would leave ' +
+      'webauthn.attestation `enterprise` with ' +
+      'webauthn.attestationEnterpriseRpIds empty — choosing enterprise ' +
+      'with no RP ID listed, or emptying the list while it is chosen. ' +
+      'Enterprise attestation is asked for only for a listed RP ID ' +
+      '(WebAuthn Level 3 section 5.4.7). Nothing is changed.',
+    spec: 'none (HTTP 400 from the console\'s and /admin-api\'s ' +
+      'settings writes)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

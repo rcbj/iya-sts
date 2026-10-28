@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4765** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4766** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 403
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 404
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
@@ -1595,6 +1595,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0493` | A post-login mail campaign's run could not read its population (the directory refused, or its group is gone); nobody was mailed by it this run and its cursor did not move (#1111). | none (logged; the scheduler run row) |
 | `STS-AUTHN-0494` | The mail channel refused a post-login campaign's reminder to some people this run: no address on the entry, the notification declined, or a ceiling. Counted on the campaign and the run's audit row; Monitoring → Mail names each (#1111). | none (audit row authn.post-login.campaign-run) |
 | `STS-AUTHN-0495` | A post-login mail campaign is running in a realm with no mail transport: its run mailed nobody and moved no cursor (#1111). | none (logged; the scheduler run row) |
+| `STS-AUTHN-0500` | A settings write was refused (#1114): it would leave webauthn.attestation `enterprise` with webauthn.attestationEnterpriseRpIds empty — choosing enterprise with no RP ID listed, or emptying the list while it is chosen. Enterprise attestation is asked for only for a listed RP ID (WebAuthn Level 3 section 5.4.7). Nothing is changed. | none (HTTP 400 from the console's and /admin-api's settings writes) |
 
 ## STS-OAUTH
 

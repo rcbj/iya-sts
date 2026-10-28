@@ -71,7 +71,9 @@
 //   attestation    for a registration that recorded one, what its
 //                  attestation was signed with (#941): the statement's
 //                  algorithm, then the chain leaf to anchor, and `PQ` where
-//                  every one is post-quantum
+//                  every one is post-quantum; led by `enterprise not
+//                  listed, asked direct` where `webauthn.attestation` is
+//                  `enterprise` and the RP ID is not on its list (#1114)
 //
 // `webauthn.algorithm-mismatch`: `actor` the person, `detail` { used — the
 // classical algorithm that signed, held — the person's post-quantum
@@ -297,10 +299,13 @@ class WebauthnCeremonies {
   // What a registration's attestation was signed with (#941), in a line.
   private static attestationText(rec: Json): string {
     log.debug("Entering WebauthnCeremonies.attestationText().");
+    // THE DOWNGRADE (#1114), whatever the statement was signed with.
+    const lead = rec && rec.enterpriseDowngraded === true
+      ? 'enterprise not listed, asked direct' : '';
     const a = rec && rec.algorithms;
     if (!a) {
       log.debug("Leaving WebauthnCeremonies.attestationText(). None.");
-      return '';
+      return lead;
     }
     const chain = (Array.isArray(a.certificates) ? a.certificates : [])
       .map(function (one: Json): string {
@@ -310,7 +315,8 @@ class WebauthnCeremonies {
     const text = [String(a.statement || '')].concat(
       chain.length ? [chain.join(' > ')] : []).filter(Boolean).join('; ');
     log.debug("Leaving WebauthnCeremonies.attestationText().");
-    return text ? text + (a.postQuantum === true ? ' (PQ)' : '') : '';
+    return [lead, text ? text + (a.postQuantum === true ? ' (PQ)' : '')
+                       : ''].filter(Boolean).join('; ');
   }
 
   /**

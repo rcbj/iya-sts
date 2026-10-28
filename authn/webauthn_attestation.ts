@@ -292,8 +292,18 @@ class WebauthnAttestation {
       // read off the statement as it ARRIVED — so under the policy `off`
       // they are what the authenticator claimed, and `verified` beside
       // them says so. A trusted chain adds its anchor's below.
-      algorithms: this.algorithmsOf(format, verdict && verdict.attStmt, null)
+      algorithms: this.algorithmsOf(format, verdict && verdict.attStmt, null),
+      // WHAT THE REQUEST ASKED FOR (#1114): `enterprise` only for an RP ID
+      // `webauthn.attestationEnterpriseRpIds` lists, else `direct` with
+      // `enterpriseDowngraded` — the record's half of the ceremony row's
+      // note. Only a statement from an enterprise request has its device
+      // serial read, below.
+      conveyance: '',
+      enterpriseDowngraded: false
     };
+    const asked = this.conveyanceOf(verdict, settings);
+    base.conveyance = asked.requested;
+    base.enterpriseDowngraded = asked.downgraded;
     if (settings.policy === 'off' && !settings.demandsTrust) {
       log.debug("Leaving WebauthnAttestation.assess(). The policy is off.");
       return { ok: true, attestation: base };
@@ -311,6 +321,29 @@ class WebauthnAttestation {
         why: 'The authenticator\'s attestation statement could not be ' +
              'checked: ' + ((e && e.message) || e) }, 'STS-AUTHN-0241');
     }
+  }
+
+  // THE CONVEYANCE THE REGISTRATION WAS ASKED WITH (#1114), from the RP ID
+  // the authenticator data names: `verifyRegistration()` has already held
+  // `rpIdHash` to the ceremony's RP ID, so the listed RP ID whose SHA-256
+  // it is, is the ceremony's. The options a door draws are recomputed at
+  // each draw rather than stored with the pending ceremony, so this asks
+  // `webauthn_policy.conveyanceFor()` — the function `creationOptions()`
+  // asks — with the same RP ID, and answers what the browser was sent
+  // unless the settings changed while the ceremony was in flight.
+  private conveyanceOf(verdict: Json, settings: Json): Json {
+    const { log, crypto, policy } = this.deps;
+    log.debug("Entering WebauthnAttestation.conveyanceOf().");
+    const hash = Buffer.from((verdict && verdict.rpIdHash) || []);
+    const listed = (settings.enterpriseRpIds || []).some(
+      function (rpId: string): boolean {
+        return hash.length === 32 &&
+               crypto.digest('sha256', String(rpId)).equals(hash);
+      });
+    const out = policy.conveyanceFor(settings, listed);
+    log.debug("Leaving WebauthnAttestation.conveyanceOf(). " +
+              out.requested);
+    return out;
   }
 
   private async assessUnder(verdict: Json, settings: Json,
@@ -357,9 +390,14 @@ class WebauthnAttestation {
       (keyLeaf ? this.deps.pki.attestationKeyIdentifier(keyLeaf) : '');
     // THE DEVICE SERIAL AN ENTERPRISE ATTESTATION NAMES (#532), read off the
     // attestation certificate and recorded on the key; the passkey policy
-    // binds it to the person in `credentials.addKey()`.
-    const serial = keyLeaf ? this.deps.pki.attestationDeviceSerial(keyLeaf)
-                           : null;
+    // binds it to the person in `credentials.addKey()`. ONLY FROM AN
+    // ENTERPRISE REQUEST (#1114): section 5.4.7 makes a uniquely
+    // identifying attestation something a relying party asks for and an
+    // authenticator releases only for an RP ID provisioned into it, so a
+    // serial in a statement this service did not ask for that way is not
+    // one it may bind anybody by — and is not recorded.
+    const serial = keyLeaf && base.conveyance === 'enterprise'
+      ? this.deps.pki.attestationDeviceSerial(keyLeaf) : null;
     if (serial) {
       recorded.deviceSerial = serial.serial;
       recorded.deviceSerialSource = serial.source;

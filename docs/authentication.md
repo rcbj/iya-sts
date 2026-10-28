@@ -700,11 +700,15 @@ A key whose certificate names no readable serial is refused
 console and on `/portal/keys`.
 
 **Enterprise attestation must be switched on outside this service.** Set
-`webauthn.attestation` to `enterprise`, and arrange with the key's vendor or
+`webauthn.attestation` to `enterprise`, list this service's RP ID in
+`webauthn.attestationEnterpriseRpIds`, and arrange with the key's vendor or
 the platform (a managed browser policy, or the vendor's RP ID list) for
-enterprise attestation to be released to this service's RP ID. Without that,
-the browser quietly sends ordinary attestation, which carries no serial, and
-every registration is refused.
+enterprise attestation to be released to that RP ID. Without that, the
+browser quietly sends ordinary attestation, which carries no serial, and
+every registration is refused. **The serial is read only from a statement an
+enterprise request produced**: a registration at an RP ID the list does not
+name asks for `direct`, and any serial its certificate carries is ignored
+([Enterprise attestation](passkeys.md#enterprise-attestation)).
 
 **The names a passkey prompt shows** (`userDisplayName`, `rpNameExtras`,
 `credentialLabel`). When a browser or phone asks somebody to create or use a

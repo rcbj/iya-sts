@@ -256,6 +256,7 @@ var config = {
     clientLearningWindowHours: 168,                                                                                                                    // Window the failures are counted in
     userVerification: "required",                                                                                                                      // User verification
     attestation: "direct",                                                                                                                             // Attestation conveyance
+    attestationEnterpriseRpIds: "",                                                                                                                    // Enterprise attestation RP IDs
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
     attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
     attestationEvidenceTsaUrl: "",                                                                                                                     // Passkey evidence timestamp authority URL

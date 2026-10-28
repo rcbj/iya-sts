@@ -446,7 +446,45 @@ attestation, the passkey policy's `enterpriseSerialAttribute` lets a security
 key register only for the person whose entry lists its serial number
 (`STS-AUTHN-0320`, `STS-AUTHN-0321`). It needs set-up outside this service.
 See *Binding security keys to the people they were issued to* under
-[the passkey policy](authentication.md#the-passkey-policy).
+[the passkey policy](authentication.md#the-passkey-policy), and
+[Enterprise attestation](#enterprise-attestation) below: the serial is read
+only from an enterprise request.
+
+### Enterprise attestation
+
+Enterprise attestation (WebAuthn Level 3 section 5.4.7) is an attestation
+that may identify the individual authenticator, for example by its serial
+number. A browser passes the request through only for an RP ID its own
+policy allows, and an authenticator answers it only for an RP ID it was
+provisioned for, so this service asks for it only where you list the RP ID.
+
+1. List the RP IDs in `webauthn.attestationEnterpriseRpIds`, comma-separated
+   (for example `sts.example.com`). These must be the RP IDs your browsers
+   and authenticators are provisioned to release enterprise attestation for.
+2. Set `webauthn.attestation` to `enterprise`. Both are on **Protocols →
+   WebAuthn**; saving `enterprise` with the list empty is refused
+   (`STS-AUTHN-0500`), and so is emptying the list while `enterprise` is
+   chosen. Saving both in one form, or in one
+   `POST /admin-api/config/set-many`, works.
+
+A registration at a listed RP ID asks for `enterprise`. **At any other RP ID
+it asks for `direct`**, and says so in two places: the passkey's attestation
+record carries `conveyance: direct` and `enterpriseDowngraded: true`, and the
+registration's `webauthn.ceremony` audit row's `attestation` detail begins
+`enterprise not listed, asked direct`. A registration at a listed RP ID
+records `conveyance: enterprise`.
+
+**The device serial is read only from a statement an enterprise request
+produced.** A serial number in the certificate of an ordinary `direct`
+attestation is not recorded and binds nobody, so with
+`enterpriseSerialAttribute` set, a security key registered at an unlisted RP
+ID names no serial and is refused (`STS-AUTHN-0321`).
+
+What the attestation is signed with is recorded separately from the
+passkey's own algorithm: an ML-DSA passkey may come with an attestation
+certificate signed with a classical algorithm, and an ES256 passkey with an
+ML-DSA one. `attestationAlgorithms` (above) is about the attestation;
+`postQuantumRequired` is about the passkey.
 
 ### Other passkey policy rows
 
@@ -1317,7 +1355,7 @@ person, `outcome=refused` for the ones that failed). The row's detail:
 | `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent |
 | `transports`, `attachment` | what the browser reported: `internal`, `hybrid`, `usb`...; `platform` or `cross-platform` |
 | `clientError` | for a ceremony the browser did not complete, the error name its script reported: `NotAllowedError` (declined, timed out, or no passkey — the browser does not say which), `NotSupportedError`, `InvalidStateError`, `SecurityError`, `AbortError`, ...; `other` for anything else. The error's message is never recorded |
-| `attestation` | for a registration, what its attestation was signed with, leaf to anchor, and `(PQ)` where all of it is post-quantum |
+| `attestation` | for a registration, what its attestation was signed with, leaf to anchor, and `(PQ)` where all of it is post-quantum; led by `enterprise not listed, asked direct` where `webauthn.attestation` is `enterprise` and the RP ID is not in `webauthn.attestationEnterpriseRpIds` (for a registration that recorded an attestation) |
 
 A refused row carries the error code the refusal was recorded under (for a
 browser that gave up, `STS-AUTHN-0022`).
@@ -1456,6 +1494,7 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.clientLearningWindowHours` | `STS_WEBAUTHN_CLIENT_LEARNING_WINDOW_HOURS` | `168` |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` |
+| `webauthn.attestationEnterpriseRpIds` | `STS_WEBAUTHN_ATTESTATION_ENTERPRISE_RP_IDS` | empty |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` |
 | `webauthn.attestationTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS` | empty |
 | `webauthn.attestationEvidenceTsaUrl` | `STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL` | empty (disabled) |
@@ -1573,6 +1612,7 @@ browser or a client. Look a code up in the audit log with
 | `STS-AUTHN-0440` | an administrator's passkey enrolment, where the person's profile has `adminEnrolment` off. `0441`–`0448` are the other refusals of that ceremony |
 | `STS-AUTHN-0450` | a passkey upgrade, where the realm cannot make an ML-DSA passkey. `0451`–`0458` are the other refusals of that ceremony |
 | `STS-AUTHN-0461` | a passkey policy requires a device-bound session while `authn.deviceBoundSessions` is off |
+| `STS-AUTHN-0500` | `webauthn.attestation` `enterprise` with `webauthn.attestationEnterpriseRpIds` empty |
 | `STS-ADMIN-0522` | an administrator's removal of a passkey was refused |
 
 **When the browser shows no prompt at all**, the passkey step has a link,
