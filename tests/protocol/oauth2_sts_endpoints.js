@@ -741,6 +741,16 @@ async function testEveryAdvertisedEndpointAnswers(meta) {
   for (const member of simple) {
     assert.ok(meta[member], "the metadata should advertise " + member + ".");
     const r = await get(meta[member]);
+    // THE BODY IS DRAINED (cluster, 2026-10-28). Only the status is asserted,
+    // and a body left unread pauses node's HTTP parser once it is past the 64
+    // KiB it buffers — which the default realm's JWKS became when #1064 put
+    // the Root in every x5c (65,282 → 67,480 bytes). In the cluster mode
+    // every request is dispatched with Connection: close
+    // (tests/tools/fresh-connections.js), so the server then ENDS the socket
+    // under a paused parser and node 24.22.1's undici dies on its own
+    // `assert(!this.paused)` in Parser.finish — the whole job, before the
+    // first assertion. Reading the body is what a client does anyway.
+    await r.arrayBuffer();
     assert.strictEqual(r.status, 200, member + " (" + meta[member] +
                        ") returned HTTP " + r.status + ".");
   }
