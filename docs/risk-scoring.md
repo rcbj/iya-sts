@@ -784,7 +784,7 @@ attests nothing (the all-zero AAGUID), is simply unknown.
 ### Looking up an authenticator
 
 To see what the loaded BLOB says about one authenticator model, open the
-**Lookup** tab of Monitoring → Risk and use **Look up an authenticator**, or
+**Lookups** tab of Monitoring → Risk and use **Look up an authenticator**, or
 call `GET /admin-api/risk?authenticator=<key>`. The key can be any of the
 three the BLOB lists models under, and its kind is told by its shape:
 

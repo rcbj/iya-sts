@@ -740,8 +740,12 @@ class RiskPage {
     const assessments = this.assessmentsHtml(ctx, view);
     // EACH SECTION A TAB (2026-10-12; `WebPages.protocolTabs()`): the tiles,
     // the note and the data credits are Metadata.
+    // Two lookups in one tab (#1082): the tab's label is its heading, so
+    // the heading names both and each form has its own.
     const lookup = '<h3 data-tab="lookup">' +
-      t.html('consoleRisk.lookup.heading') + '</h3>' + lookupForm +
+      t.html('consoleRisk.lookup.heading') + '</h3>' +
+      '<h4>' + t.html('consoleRisk.lookup.address.heading') + '</h4>' +
+      lookupForm +
       '<h4>' + t.html('consoleRisk.authenticator.heading') + '</h4>' +
       RiskPage.authenticatorHtml(view, t);
     const datasets = '<h3 data-tab="datasets">' +
