@@ -20,11 +20,16 @@
 //       opens, and lands in the store — no STS-STORE-0014;
 //   U2. a page naming such a key reads the data-key rows ONCE, in
 //       prefetch(), and its row is in the page's one batched read;
-//   U3. a change under a key no row holds is skipped after one read, said
-//       ONCE at warn under STS-STORE-0089, and the next change under it is
-//       skipped without another read;
+//   U3. a change under a key no row holds is skipped after FIVE fresh reads
+//       (#1118), said ONCE at warn under STS-STORE-0089, and the next change
+//       under it is skipped without another read;
 //   U4. a name that is malformed — its key held, or no key at all — is still
-//       STS-STORE-0014 at error.
+//       STS-STORE-0014 at error;
+//   U5. a key whose row a read does not bring yet — a read already in
+//       flight, sent before the row committed — is read again, FRESH, and the
+//       change applied, not skipped (#1118, run #7's STS-STORE-0089);
+//   U6. a page whose one read in prefetch() misses such a key does not mark
+//       it unheld: the change is applied once the key's row is read.
 //
 // In a child process: it installs a stand-in driver and stands in for the
 // keystore's data-key questions, and reads the module's log on stdout.
@@ -80,7 +85,11 @@ function child() {
     // is; `dekHeld` always is.
     const held = new Set(['dekHeld']);
     const arriving = new Set(['dekNew']);
+    // A key whose row arrives only at the Nth read (#1118): the reads before
+    // it are the stale ones.
+    const late = new Map();
     let refreshes = 0;
+    let freshAsked = 0;
     const dekOf = function (text) {
       const parts = String(text || '').split('$');
       return parts.length === 3 ? parts[1] : null;
@@ -90,10 +99,18 @@ function child() {
       const id = dekOf(text);
       return !!id && !held.has(id);
     };
-    keystore.refreshDekRows = function () {
+    keystore.refreshDekRows = function (opts) {
       refreshes += 1;
+      if (opts && opts.fresh) {
+        freshAsked += 1;
+      }
       arriving.forEach(function (id) {
         held.add(id);
+      });
+      late.forEach(function (at, id) {
+        if (refreshes >= at) {
+          held.add(id);
+        }
       });
       return Promise.resolve(arriving.size);
     };
@@ -176,10 +193,11 @@ function child() {
     const gone = await minted.applyChange(change('dekGone', 'row-u3'));
     const goneAgain = await minted.applyChange(change('dekGone', 'row-u3b'));
     const said = codes('STS-STORE-0089');
-    note(gone === false && goneAgain === false && refreshes === 1 &&
+    note(gone === false && goneAgain === false && refreshes === 5 &&
          store.get('row-u3') === undefined,
-         'U3. a change under a key no row holds is skipped after one read ' +
-         'of the data-key rows, and the next is skipped without another',
+         'U3. a change under a key no row holds is skipped after five ' +
+         'fresh reads of the data-key rows, and the next is skipped ' +
+         'without another',
          JSON.stringify({ gone: gone, goneAgain: goneAgain,
                           refreshes: refreshes }));
     note(said.length === 1 && said[0].level === 40 &&
@@ -199,6 +217,37 @@ function child() {
          'U4. a malformed name is still STS-STORE-0014 at error, with no ' +
          'read of the data-key rows', JSON.stringify({ lines: malformed,
                                                        refreshes: refreshes }));
+
+    // U5. The first read is stale; the key's row arrives at the second.
+    refreshes = 0;
+    freshAsked = 0;
+    late.clear();
+    late.set('dekLate', 2);
+    const saidBefore = codes('STS-STORE-0089').length;
+    const lateApplied = await minted.applyChange(change('dekLate', 'row-u5'));
+    const u5 = store.get('row-u5');
+    note(lateApplied === true && refreshes === 2 && freshAsked === 2 &&
+         u5 && u5.n === 7 && codes('STS-STORE-0089').length === saidBefore,
+         'U5. a key a stale read does not bring is read again, fresh, and ' +
+         'the change is applied — not skipped under STS-STORE-0089',
+         JSON.stringify({ lateApplied: lateApplied, refreshes: refreshes,
+                          freshAsked: freshAsked, u5: u5 }));
+
+    // U6. The page's one read misses the key; the applier waits for it.
+    refreshes = 0;
+    late.clear();
+    late.set('dekPageLate', 2);
+    const pageLate = change('dekPageLate', 'row-u6');
+    await minted.prefetch([pageLate]);
+    const pageLateApplied = await minted.applyChange(pageLate);
+    minted.endPrefetch();
+    const u6 = store.get('row-u6');
+    note(pageLateApplied === true && refreshes === 2 && u6 && u6.n === 7 &&
+         codes('STS-STORE-0089').length === saidBefore,
+         'U6. a page whose read missed the key does not mark it unheld; ' +
+         'the change is applied once the key is read',
+         JSON.stringify({ pageLateApplied: pageLateApplied,
+                          refreshes: refreshes, u6: u6 }));
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {

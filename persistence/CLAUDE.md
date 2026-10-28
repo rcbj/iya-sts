@@ -1447,7 +1447,18 @@ applied once more; `prefetch()` does that read ONCE for the page before it
 splits the keys, so the page's rows stay in its one batched read. A key still
 not held after a read is another build's or a removed realm's: the change is
 skipped under STS-STORE-0089, said once per key, and changes under it for the
-next two seconds are skipped without another read. `nameOfChangeHalf()` does
+next two seconds are skipped without another read.
+
+**ONE READ WAS NOT ENOUGH (#1118, 2026-10-28).** Run #7's cluster mode
+skipped a new realm's first minted change (`audit.nums`) on node-b under
+STS-STORE-0089 for a key node-a had made 0.8 s earlier: the one read could be
+a refresh already in flight, sent before the key's row committed
+(`refreshDekRows()` hands back the running one), or the page's read in
+`prefetch()`, which noted the key unheld. Now `waitForDek()` reads up to five
+times, each `refreshDekRows({ fresh: true })` — a read that starts after the
+call, waiting out one in flight — 200 ms apart, the directory applier's
+`keyedRetries` shape; every change under one key shares the wait, and only
+then is the key noted for the two-second skip. `prefetch()` notes nothing. `nameOfChangeHalf()` does
 not remember such a name as unopenable, or the second asking would hit the
 remembered null. STS-STORE-0014 keeps its meaning — a key not of the shape
 `recordChanges()` writes. `tests/minted_unheld_dek.js`.

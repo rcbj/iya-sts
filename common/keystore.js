@@ -3215,11 +3215,22 @@ function reloadDekRows() {
  *
  * @returns a promise of how many DEKs were adopted
  */
-function refreshDekRows() {
+function refreshDekRows(opts) {
   log.debug("Entering refreshDekRows().");
   if (!deksStored()) {
     log.debug("Leaving refreshDekRows(). Nothing is stored.");
     return Promise.resolve(0);
+  }
+  // A FRESH READ (#1118) is one that STARTS after the caller asked: a read
+  // already running may have been sent before the row the caller is
+  // waiting for committed, so it is waited out and another one is made.
+  // Callers that arrive while that one runs share it — it, too, started
+  // after them.
+  if (dekReloading && opts && opts.fresh) {
+    log.debug("Leaving refreshDekRows(). After the one running.");
+    return dekReloading.then(function () {
+      return refreshDekRows();
+    });
   }
   if (dekReloading) {
     log.debug("Leaving refreshDekRows(). One is running.");
