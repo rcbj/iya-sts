@@ -1151,6 +1151,14 @@
     "en": "1466dbe275c566e7",
     "text": "`realm`（預設值）沿用 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，並拒絕改用傳統演算法重試。`pq-first` 先提供 ML-DSA，再提供傳統演算法，即使領域只要求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在傳統密碼金鑰之外提供後量子密碼金鑰，適用於裝置無法完成 ML-DSA 註冊的人員。當 postQuantumRequired 不為 off 或已設定 attestationAlgorithms 時（classical-only），以及所提供的演算法未列出任何 ML-DSA 時（pq-only、pq-first），將被拒絕。儲存時省略，則保留 `realm`。"
   },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "傳統密碼金鑰與後量子密碼金鑰並存"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm`（預設值）沿用 webauthn.pqcAlongsideClassical。`both` 在領域設定關閉的任何地方，讓此設定檔的人員同時持有傳統密碼金鑰與後量子密碼金鑰，各自使用自己的使用者控制代碼；`one` 在該設定開啟的任何地方只給他們一個通道。webauthn.pqcOnly 仍代表一個通道。registrationMode 為 classical-only 時拒絕 `both`。儲存時省略，則保留 `realm`。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "「Create a passkey」送出的提示"
@@ -1298,6 +1306,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
     "en": "1466dbe275c566e7",
     "text": "`realm`（預設值）沿用 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，並拒絕改用傳統演算法重試。`pq-first` 先提供 ML-DSA，再提供傳統演算法，即使領域只要求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在傳統密碼金鑰之外提供後量子密碼金鑰，適用於裝置無法完成 ML-DSA 註冊的人員。當 postQuantumRequired 不為 off 或已設定 attestationAlgorithms 時（classical-only），以及所提供的演算法未列出任何 ML-DSA 時（pq-only、pq-first），將被拒絕。儲存時省略，則保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm`（預設值）沿用 webauthn.pqcAlongsideClassical。`both` 在領域設定關閉的任何地方，讓此設定檔的人員同時持有傳統密碼金鑰與後量子密碼金鑰，各自使用自己的使用者控制代碼；`one` 在該設定開啟的任何地方只給他們一個通道。webauthn.pqcOnly 仍代表一個通道。registrationMode 為 classical-only 時拒絕 `both`。儲存時省略，則保留 `realm`。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1522,6 +1534,14 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "該領域的 webauthn.algorithms"
+  },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "一個人可以同時持有傳統密碼金鑰與後量子密碼金鑰，各自使用自己的使用者控制代碼"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "一個人的密碼金鑰都放在同一個通道中，無論領域的 webauthn.pqcAlongsideClassical 如何設定"
   },
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
@@ -1807,6 +1827,30 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary：無密碼登入。mfa：第二因素。"
   },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "傳統密碼金鑰的移轉方式"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade：此人先使用一次其傳統密碼金鑰，接著由 ML-DSA 密碼金鑰在同一個驗證器上就地取代它——只有一個密碼金鑰，不留下任何東西。alongside：在其旁邊新增一個 ML-DSA 密碼金鑰，領域提供兩個通道時放在後量子通道中，只提供一個通道時放在另一個驗證器上。automatic：此人的密碼金鑰原則提供兩個通道時為 alongside，提供一個通道時為 upgrade。"
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "密碼金鑰在下列情況下視為後量子"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any：其金鑰演算法為 ML-DSA。post-quantum：其金鑰演算法為 ML-DSA，且其記錄的證明自始至終都以後量子演算法簽署；具有傳統證明或沒有記錄證明的密碼金鑰不算數，其持有人會被要求提供一個符合條件的密碼金鑰。"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "沒有密碼金鑰且裝置無法建立 ML-DSA 的人"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "7ac360a6d70b525c",
     "text": "本服務用於登入後活動設定檔的類別：某人登入後被要求做的事。以「設定檔」命名（`cn=default`，或依群組選取的具名設定檔）。"
@@ -1835,6 +1879,18 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary：無密碼登入。mfa：第二因素。"
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade：此人先使用一次其傳統密碼金鑰，接著由 ML-DSA 密碼金鑰在同一個驗證器上就地取代它——只有一個密碼金鑰，不留下任何東西。alongside：在其旁邊新增一個 ML-DSA 密碼金鑰，領域提供兩個通道時放在後量子通道中，只提供一個通道時放在另一個驗證器上。automatic：此人的密碼金鑰原則提供兩個通道時為 alongside，提供一個通道時為 upgrade。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any：其金鑰演算法為 ML-DSA。post-quantum：其金鑰演算法為 ML-DSA，且其記錄的證明自始至終都以後量子演算法簽署；具有傳統證明或沒有記錄證明的密碼金鑰不算數，其持有人會被要求提供一個符合條件的密碼金鑰。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
+  },
   "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "具名登入後設定檔適用於其成員的群組（cn 或 DN）。"
@@ -1862,6 +1918,30 @@
   "postLogin.sentences.pqcMigration": {
     "en": "b8a2588126ddb520",
     "text": "持有傳統密碼金鑰的人會在登入後被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "此人使用一次傳統密碼金鑰後，ML-DSA 密碼金鑰會就地取代它"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "ML-DSA 密碼金鑰會新增在傳統密碼金鑰旁邊"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "提供兩個通道時，ML-DSA 密碼金鑰會新增在傳統密碼金鑰旁邊；只提供一個通道時，則就地取代它"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "密碼金鑰的金鑰演算法為 ML-DSA 時即視為後量子"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "只有當密碼金鑰的金鑰演算法及其記錄的證明都是後量子時，密碼金鑰才視為後量子"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "沒有密碼金鑰且裝置無法建立 ML-DSA 的人會改為獲得傳統密碼金鑰"
   },
   "postLogin.sentences.snooze": {
     "en": "f3c3ff82c8da1f59",

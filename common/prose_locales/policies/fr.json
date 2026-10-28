@@ -1151,6 +1151,14 @@
     "en": "1466dbe275c566e7",
     "text": "`realm` (la valeur par défaut) suit webauthn.pqcOnly et webauthn.pqcAlongsideClassical. `pq-only` ne propose que ML-DSA et refuse une nouvelle tentative avec les algorithmes classiques. `pq-first` propose ML-DSA en premier et les algorithmes classiques ensuite, même là où le domaine ne demande que ML-DSA. `classical-only` ne propose aucun ML-DSA ni aucune clé d’accès post-quantique à côté d’une clé classique, pour les personnes dont les appareils échouent à un enregistrement ML-DSA. Refusé avec postQuantumRequired autre que off ou avec attestationAlgorithms défini (classical-only), et là où les algorithmes proposés ne nomment aucun ML-DSA (pq-only, pq-first). Omis d’un enregistrement, `realm` est conservé."
   },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "Une clé d’accès classique et une clé d’accès post-quantique côte à côte"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (la valeur par défaut) suit webauthn.pqcAlongsideClassical. `both` donne aux personnes de ce profil une clé d’accès classique et une clé d’accès post-quantique côte à côte, chacune sous son propre identifiant d’utilisateur, partout où le paramètre du domaine est désactivé ; `one` leur donne une seule voie partout où il est activé. webauthn.pqcOnly signifie toujours une seule voie. Refusé en tant que `both` avec registrationMode classical-only. Omis d’un enregistrement, `realm` est conservé."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Indications qu’envoie « Créer une clé d’accès »"
@@ -1298,6 +1306,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
     "en": "1466dbe275c566e7",
     "text": "`realm` (la valeur par défaut) suit webauthn.pqcOnly et webauthn.pqcAlongsideClassical. `pq-only` ne propose que ML-DSA et refuse une nouvelle tentative avec les algorithmes classiques. `pq-first` propose ML-DSA en premier et les algorithmes classiques ensuite, même là où le domaine ne demande que ML-DSA. `classical-only` ne propose aucun ML-DSA ni aucune clé d’accès post-quantique à côté d’une clé classique, pour les personnes dont les appareils échouent à un enregistrement ML-DSA. Refusé avec postQuantumRequired autre que off ou avec attestationAlgorithms défini (classical-only), et là où les algorithmes proposés ne nomment aucun ML-DSA (pq-only, pq-first). Omis d’un enregistrement, `realm` est conservé."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm` (la valeur par défaut) suit webauthn.pqcAlongsideClassical. `both` donne aux personnes de ce profil une clé d’accès classique et une clé d’accès post-quantique côte à côte, chacune sous son propre identifiant d’utilisateur, partout où le paramètre du domaine est désactivé ; `one` leur donne une seule voie partout où il est activé. webauthn.pqcOnly signifie toujours une seule voie. Refusé en tant que `both` avec registrationMode classical-only. Omis d’un enregistrement, `realm` est conservé."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1522,6 +1534,14 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "le paramètre webauthn.algorithms du domaine"
+  },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "une personne peut détenir une clé d’accès classique et une clé d’accès post-quantique côte à côte, chacune sous son propre identifiant d’utilisateur"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "une personne détient ses clés d’accès dans une seule voie, quoi qu’indique le paramètre webauthn.pqcAlongsideClassical du domaine"
   },
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
@@ -1807,6 +1827,30 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary : une connexion sans mot de passe. mfa : un second facteur."
   },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "Comment une clé d’accès classique est migrée"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade : la personne utilise une fois sa clé d’accès classique, puis une clé d’accès ML-DSA la remplace sur place sur le même authentificateur — une seule clé d’accès, rien n’est laissé derrière. alongside : une clé d’accès ML-DSA est ajoutée à côté, dans la voie post-quantique là où le domaine propose deux voies, ou sur un autre authentificateur là où il en propose une. automatic : alongside là où la politique de clé d’accès de la personne propose deux voies, upgrade là où elle en propose une."
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "Une clé d’accès compte comme post-quantique lorsque"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any : son algorithme de clé est ML-DSA. post-quantum : son algorithme de clé est ML-DSA ET son attestation enregistrée a été signée avec des algorithmes post-quantiques de bout en bout ; une clé d’accès avec une attestation classique, ou sans attestation enregistrée, ne compte pas, et son détenteur est invité à en fournir une qui compte."
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "Une personne sans clé d’accès dont l’appareil ne peut pas créer de ML-DSA"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "7ac360a6d70b525c",
     "text": "La classe de ce service pour un profil d’activité après connexion : ce qu’il est demandé à une personne de faire après s’être connectée. Nommée par le PROFIL (`cn=default`, ou un profil nommé choisi par groupe)."
@@ -1835,6 +1879,18 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary : une connexion sans mot de passe. mfa : un second facteur."
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade : la personne utilise une fois sa clé d’accès classique, puis une clé d’accès ML-DSA la remplace sur place sur le même authentificateur — une seule clé d’accès, rien n’est laissé derrière. alongside : une clé d’accès ML-DSA est ajoutée à côté, dans la voie post-quantique là où le domaine propose deux voies, ou sur un autre authentificateur là où il en propose une. automatic : alongside là où la politique de clé d’accès de la personne propose deux voies, upgrade là où elle en propose une."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any : son algorithme de clé est ML-DSA. post-quantum : son algorithme de clé est ML-DSA ET son attestation enregistrée a été signée avec des algorithmes post-quantiques de bout en bout ; une clé d’accès avec une attestation classique, ou sans attestation enregistrée, ne compte pas, et son détenteur est invité à en fournir une qui compte."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
+  },
   "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "Les groupes (cn ou DN) aux membres desquels s’applique un profil après connexion nommé."
@@ -1862,6 +1918,30 @@
   "postLogin.sentences.pqcMigration": {
     "en": "b8a2588126ddb520",
     "text": "une personne qui détient une clé d’accès classique est invitée, après s’être connectée, à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "la clé d’accès ML-DSA remplace sur place la clé classique, après que la personne a utilisé une fois la clé classique"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "la clé d’accès ML-DSA est ajoutée à côté de la clé classique"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "la clé d’accès ML-DSA est ajoutée à côté de la clé classique là où deux voies sont proposées, et la remplace sur place là où une seule l’est"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "une clé d’accès compte comme post-quantique lorsque son algorithme de clé est ML-DSA"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "une clé d’accès ne compte comme post-quantique que lorsque son algorithme de clé et son attestation enregistrée sont post-quantiques"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "une personne sans clé d’accès dont l’appareil ne peut pas créer de ML-DSA se voit proposer une clé d’accès classique à la place"
   },
   "postLogin.sentences.snooze": {
     "en": "f3c3ff82c8da1f59",

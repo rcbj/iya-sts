@@ -866,6 +866,16 @@ const ACTIONS = [
     label: 'A person did a post-login activity' },
   { action: 'authn.post-login.held', category: 'authentication',
     label: 'A sign-in was held: a post-login activity is overdue' },
+  // A DEVICE THAT COULD NOT MAKE THE ML-DSA PASSKEY (#1105): the browser's
+  // error name and its user agent, so the move's stalls can be found.
+  { action: 'authn.post-login.unsupported', category: 'authentication',
+    label: 'A device could not make the passkey a post-login activity ' +
+           'asked for' },
+  // A PASSKEY ROW A LATER REGISTRATION MAY HAVE REPLACED ON ITS
+  // AUTHENTICATOR (#1101): same user handle, same AAGUID. A marker, never a
+  // deletion.
+  { action: 'webauthn.key.possibly-replaced', category: 'authentication',
+    label: 'A passkey may have been replaced on its authenticator' },
 
   // A PERSON'S EMAILED SECOND FACTOR WAS TURNED ON OR OFF (#64): by them on
   // /portal/mfa, by an administrator, or by this service at the failure

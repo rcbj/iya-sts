@@ -116,7 +116,6 @@
   "pqRequired.text": "La clé d’accès que vous avez utilisée signe avec un algorithme classique, et cette application n’accepte qu’une clé d’accès post-quantique (ML-DSA). Vous n’avez pas été connecté.",
   "pqRequired.how": "Utilisez une clé d’accès post-quantique si vous en avez une. Sinon, ajoutez-en une sur la page de votre compte, en vous y connectant autrement, puis revenez.",
   "pqRequired.register": "Ajouter une clé d’accès post-quantique",
-  "pqRequired.upgrade": "Remplacer cette clé d’accès par une clé post-quantique",
   "webauthn.noPrompt": "Mon navigateur ne m’a rien demandé — pourquoi ?",
   "webauthn.details": "Détails techniques",
   "webauthn.rpId": "RP ID : <code>{rpId}</code> — la cérémonie est liée à cette origine.",
@@ -191,5 +190,16 @@
   "postLogin.until": "Vous pouvez ignorer cette étape jusqu’au {date} ; ensuite, elle sera obligatoire.",
   "postLogin.registerButton": "Enregistrer une clé d’accès post-quantique",
   "postLogin.skipButton": "Ignorer pendant {days} jour(s)",
-  "postLogin.passkeyHeading": "Enregistrer votre clé d’accès post-quantique"
+  "postLogin.passkeyHeading": "Enregistrer votre clé d’accès post-quantique",
+  "postLogin.subUpgradePrimary": "{name}, vous vous connectez avec une clé d’accès créée avec un algorithme classique. Mettez-la à niveau vers une clé d’accès post-quantique (ML-DSA).",
+  "postLogin.subUpgradeMfa": "{name}, votre second facteur est une clé d’accès créée avec un algorithme classique. Mettez-la à niveau vers une clé d’accès post-quantique (ML-DSA).",
+  "postLogin.methodUpgrade": "Vous utilisez une fois votre clé d’accès actuelle, pour prouver qu’elle est la vôtre, puis vous créez la clé d’accès post-quantique sur le même authentificateur. Elle y remplace l’ancienne : vous gardez donc une seule clé d’accès.",
+  "postLogin.methodSeparate": "Créez-la sur un autre authentificateur que celui qui contient votre clé d’accès actuelle — une clé de sécurité prenant en charge ML-DSA, par exemple.",
+  "postLogin.proofHeading": "D’abord, utilisez votre clé d’accès actuelle",
+  "postLogin.proofSub": "Utilisez une fois la clé d’accès <strong>{name}</strong>, pour prouver qu’elle est la vôtre. La clé d’accès post-quantique est créée ensuite, sur le même authentificateur.",
+  "postLogin.subAttestationPrimary": "{name}, la clé d’accès post-quantique avec laquelle vous vous connectez n’a pas été attestée avec des algorithmes post-quantiques. Enregistrez-en une qui l’est.",
+  "postLogin.subAttestationMfa": "{name}, la clé d’accès post-quantique que vous utilisez comme second facteur n’a pas été attestée avec des algorithmes post-quantiques. Enregistrez-en une qui l’est.",
+  "postLogin.failed": "Votre appareil n’a pas créé la clé d’accès ({error}).",
+  "postLogin.failedHelp": "Si votre appareil ou votre navigateur ne peut pas créer de clé d’accès ML-DSA, enregistrez-la sur une clé de sécurité distincte prenant en charge ML-DSA, ou adressez-vous à un administrateur, qui peut en enregistrer une pour vous.",
+  "postLogin.failedSkip": "Vous pouvez aussi ignorer cette étape pour l’instant."
 }

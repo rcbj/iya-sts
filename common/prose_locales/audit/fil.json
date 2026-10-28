@@ -727,6 +727,14 @@
     "en": "9b31304e9f8a3131",
     "text": "May sign-in na pinigil: lampas na sa takdang panahon ang isang post-login activity"
   },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "Hindi nagawa ng isang device ang passkey na hiningi ng isang post-login activity"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "Maaaring napalitan ang isang passkey sa authenticator nito"
+  },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
     "text": "May emailed second factor na in-on o in-off"

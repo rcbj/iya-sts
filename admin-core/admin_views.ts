@@ -15029,6 +15029,12 @@ class AdminViews {
                  // (#532), or null.
                  deviceSerial: (one.attestation &&
                                 one.attestation.deviceSerial) || null,
+                 // A LATER REGISTRATION MAY HAVE REPLACED IT ON ITS
+                 // AUTHENTICATOR (#1101): the newer key's id and when, or
+                 // null.
+                 possiblyReplaced: one.possiblyReplacedBy
+                   ? { by: String(one.possiblyReplacedBy),
+                       at: Number(one.possiblyReplacedAt) || 0 } : null,
                  // WHETHER IT SIGNS IN WITH NO USERNAME (#474), and why not.
                  withoutUsername: credentials.withoutUsername(one),
                  // A CLASSICAL KEY THE PERSON'S PROFILE NO LONGER LETS SIGN

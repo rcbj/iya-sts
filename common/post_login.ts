@@ -92,13 +92,22 @@ interface Due {
   // The role the passkey is registered in.
   role: string;
   // `classical`: they hold a classical passkey in the role and no
-  // post-quantum one; `none`: they hold no passkey at all.
-  reason: 'classical' | 'none';
+  // post-quantum one; `attestation`: their ML-DSA passkeys in the role all
+  // fall short of a required post-quantum attestation (#1102); `none`:
+  // they hold no passkey at all.
+  reason: 'classical' | 'none' | 'attestation';
   // Past the allotted time: Skip is gone and the sign-in is held.
   required: boolean;
   // Whether it can ever be required: a classical passkey to migrate, or a
   // person with none under `noPasskey: require`; never `invite`.
   enforceable: boolean;
+  // HOW it is done (#1100): `upgrade` (#939's ceremony: prove the
+  // classical passkey, then an ML-DSA one replaces it in place),
+  // `alongside` (an ML-DSA passkey beside it) or `register` (a person with
+  // no passkey registers one).
+  method: string;
+  // For a person with no passkey (#1103): `none` or `classical`.
+  fallback: string;
   snoozeDays: number;
   graceDays: number;
   // When the person was first asked (0 when they never were), and when the
@@ -198,12 +207,13 @@ class PostLogin {
    * @param role - `primary` or `mfa`
    * @returns true where it can
    */
-  canRegister(role: string): boolean {
+  canRegister(role: string, method?: string): boolean {
     const { log, webauthnPolicy } = this.deps;
     log.debug("Entering PostLogin.canRegister(). " + role);
     let out = false;
     try {
       out = webauthnPolicy.offered() === true &&
+        (method !== 'upgrade' || webauthnPolicy.upgradeRefusal().ok === true) &&
         webauthnPolicy.roleAllowed(role).ok === true &&
         webauthnPolicy.offersPostQuantum() === true &&
         webauthnPolicy.upgradeAlgorithms().length > 0 &&
@@ -220,24 +230,72 @@ class PostLogin {
   }
 
   /**
-   * The lane the activity's passkey is made in: the post-quantum lane where
-   * both are offered, the one lane otherwise (where it is made with an
-   * ML-DSA algorithm).
+   * The lane the activity's passkey is made in: an upgrade's replaces the
+   * classical key in ITS lane; otherwise the post-quantum lane where both
+   * are offered, the one lane where they are not (made with an ML-DSA
+   * algorithm there).
    *
+   * @param method - the due's `method`
    * @returns `pqc` or `classical`
    */
-  lane(): string {
+  lane(method?: string): string {
     const { log, webauthnPolicy } = this.deps;
     log.debug("Entering PostLogin.lane().");
-    const out = webauthnPolicy.alongsideClassical() ? 'pqc' : 'classical';
+    const out = method !== 'upgrade' && webauthnPolicy.alongsideClassical()
+      ? 'pqc' : 'classical';
     log.debug("Leaving PostLogin.lane(). " + out);
+    return out;
+  }
+
+  // THE METHOD FOR ONE PERSON (#1100): the profile's, `automatic` resolved
+  // by the lanes the person's passkey policy offers; `register` for a
+  // person with no passkey to migrate.
+  private methodFor(rules: Record<string, any>, reason: string): string {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering PostLogin.methodFor().");
+    const asked = String(rules.method || 'automatic');
+    const out = reason === 'none' ? 'register'
+      : reason === 'attestation' ? 'alongside'
+      : (asked === 'upgrade' || asked === 'alongside' ? asked
+        : (webauthnPolicy.alongsideClassical() ? 'alongside' : 'upgrade'));
+    log.debug("Leaving PostLogin.methodFor(). " + out);
+    return out;
+  }
+
+  /**
+   * The classical passkey an upgrade replaces (#1100): of the person's
+   * classical passkeys in the role, the one named (the passkey this
+   * sign-in used, where it is one), else the one used last.
+   *
+   * @param username - the person
+   * @param role - `primary` or `mfa`
+   * @param prefer - a credential id to prefer, or ''
+   * @returns the stored key, or null
+   */
+  keyToUpgrade(username: string, role: string, prefer?: string): any {
+    const { log, credentials } = this.deps;
+    log.debug("Entering PostLogin.keyToUpgrade().");
+    const classical = ((credentials.keysOf(username) || []) as any[])
+      .filter(function (one) {
+        return one.role === role &&
+               credentials.keyAlgorithm(one).postQuantum !== true;
+      });
+    const named = classical.filter(function (one) {
+      return prefer && String(one.credentialId) === String(prefer);
+    })[0];
+    const out = named || classical.slice().sort(function (a, b) {
+      return Number(b.lastUsedAt || b.createdAt || 0) -
+             Number(a.lastUsedAt || a.createdAt || 0);
+    })[0] || null;
+    log.debug("Leaving PostLogin.keyToUpgrade(). " + (out ? 'Found.'
+                                                         : 'None.'));
     return out;
   }
 
   // The role a person's keys make them due, and why; null where none.
   private roleFor(username: string,
                   rules: Record<string, any>):
-      { role: string; reason: 'classical' | 'none' } | null {
+      { role: string; reason: 'classical' | 'none' | 'attestation' } | null {
     const { log, credentials } = this.deps;
     log.debug("Entering PostLogin.roleFor().");
     const keys = (credentials.keysOf(username) || []) as any[];
@@ -252,16 +310,33 @@ class PostLogin {
                 (out ? out.role : 'nothing'));
       return out;
     }
+    // WHAT COUNTS (#1102): the key's algorithm, and — where the profile
+    // says so — its recorded attestation's too.
+    const counts = function (one: any): boolean {
+      if (credentials.keyAlgorithm(one).postQuantum !== true) {
+        return false;
+      }
+      if (rules.attestation !== 'post-quantum') {
+        return true;
+      }
+      const att = credentials.attestationAlgorithms(one) || {};
+      return att.recorded === true && att.postQuantum === true;
+    };
     for (const role of ROLES) {
       const inRole = keys.filter(function (one) {
         return one.role === role;
       });
-      const pq = inRole.filter(function (one) {
-        return credentials.keyAlgorithm(one).postQuantum === true;
-      });
-      if (inRole.length && !pq.length && this.canRegister(role)) {
-        log.debug("Leaving PostLogin.roleFor(). " + role);
-        return { role: role, reason: 'classical' };
+      const pq = inRole.filter(counts);
+      // `attestation` where every key of the role is ML-DSA and only its
+      // attestation falls short: nothing classical to upgrade, so the new
+      // passkey goes beside it.
+      const reason = inRole.some(function (one) {
+        return credentials.keyAlgorithm(one).postQuantum !== true;
+      }) ? 'classical' as const : 'attestation' as const;
+      if (inRole.length && !pq.length &&
+          this.canRegister(role, this.methodFor(rules, reason))) {
+        log.debug("Leaving PostLogin.roleFor(). " + role + ", " + reason);
+        return { role: role, reason: reason };
       }
     }
     log.debug("Leaving PostLogin.roleFor(). Nothing due.");
@@ -313,7 +388,7 @@ class PostLogin {
       const graceDays = Number(rules.graceDays) || 0;
       const deadline = graceDays > 0 && state.invitedAt
         ? Number(state.invitedAt) + graceDays * DAY_MS : 0;
-      const enforceable = found.reason === 'classical' ||
+      const enforceable = found.reason !== 'none' ||
                           rules.noPasskey === 'require';
       const required = enforceable && deadline > 0 && at >= deadline;
       if (!required && Number(state.snoozedUntil) > at) {
@@ -324,6 +399,10 @@ class PostLogin {
       const out: Due = {
         activity: PQC_MIGRATION, role: found.role, reason: found.reason,
         required: required, enforceable: enforceable,
+        method: this.methodFor(rules, found.reason),
+        fallback: found.reason === 'none' &&
+                  rules.noPasskeyFallback === 'classical' ? 'classical'
+                                                          : 'none',
         snoozeDays: Number(rules.snoozeDays) || 1,
         graceDays: graceDays, invitedAt: Number(state.invitedAt) || 0,
         deadline: enforceable ? deadline : 0, profile: String(rules.name)
@@ -455,6 +534,7 @@ export = {
   stateOf: slot.forward('stateOf'),
   canRegister: slot.forward('canRegister'),
   lane: slot.forward('lane'),
+  keyToUpgrade: slot.forward('keyToUpgrade'),
   dueFor: slot.forward('dueFor'),
   noteAsked: slot.forward('noteAsked'),
   noteSkipped: slot.forward('noteSkipped'),

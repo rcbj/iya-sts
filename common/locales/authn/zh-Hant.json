@@ -116,7 +116,6 @@
   "pqRequired.text": "您使用的密碼金鑰以傳統演算法簽署，而此應用程式只接受後量子（ML-DSA）密碼金鑰。您尚未登入。",
   "pqRequired.how": "如果您有後量子密碼金鑰，請使用它。否則請在您的帳戶頁面新增一個（以其他方式在那裡登入），然後返回。",
   "pqRequired.register": "新增後量子密碼金鑰",
-  "pqRequired.upgrade": "將此密碼金鑰升級為後量子密碼金鑰",
   "webauthn.noPrompt": "瀏覽器沒有提示 — 告訴我原因",
   "webauthn.details": "技術詳細資料",
   "webauthn.rpId": "RP ID：<code>{rpId}</code> — 此儀式綁定到此來源。",
@@ -191,5 +190,16 @@
   "postLogin.until": "在 {date} 之前您可以略過此步驟；之後此步驟為必要。",
   "postLogin.registerButton": "註冊後量子通行金鑰",
   "postLogin.skipButton": "略過 {days} 天",
-  "postLogin.passkeyHeading": "註冊您的後量子通行金鑰"
+  "postLogin.passkeyHeading": "註冊您的後量子通行金鑰",
+  "postLogin.subUpgradePrimary": "{name}，您使用以傳統演算法建立的通行金鑰登入。請將其升級為後量子（ML-DSA）通行金鑰。",
+  "postLogin.subUpgradeMfa": "{name}，您的第二因素是以傳統演算法建立的通行金鑰。請將其升級為後量子（ML-DSA）通行金鑰。",
+  "postLogin.methodUpgrade": "您先使用一次現有的通行金鑰，以證明它屬於您，接著在同一個驗證器上建立後量子通行金鑰。它會在那裡取代舊的通行金鑰，因此您仍只有一個通行金鑰。",
+  "postLogin.methodSeparate": "請在與存放您現有通行金鑰的驗證器不同的驗證器上建立它——例如支援 ML-DSA 的安全金鑰。",
+  "postLogin.proofHeading": "首先，使用您現有的通行金鑰",
+  "postLogin.proofSub": "請使用一次通行金鑰 <strong>{name}</strong>，以證明它屬於您。接著會在同一個驗證器上建立後量子通行金鑰。",
+  "postLogin.subAttestationPrimary": "{name}，您用於登入的後量子通行金鑰並未以後量子演算法進行證明。請註冊一個經過後量子演算法證明的通行金鑰。",
+  "postLogin.subAttestationMfa": "{name}，您用作第二因素的後量子通行金鑰並未以後量子演算法進行證明。請註冊一個經過後量子演算法證明的通行金鑰。",
+  "postLogin.failed": "您的裝置未能建立通行金鑰（{error}）。",
+  "postLogin.failedHelp": "如果您的裝置或瀏覽器無法建立 ML-DSA 通行金鑰，請在支援 ML-DSA 的獨立安全金鑰上註冊，或洽詢管理員，管理員可以為您註冊一個。",
+  "postLogin.failedSkip": "您也可以暫時略過此步驟。"
 }

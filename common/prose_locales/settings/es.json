@@ -1127,14 +1127,6 @@
     "en": "f34caf08dceeedd3",
     "text": "Solo se lee mientras la política de llaves de acceso exige una llave de acceso poscuántica al iniciar sesión (`postQuantumRequired`), y solo donde la fila `postQuantumAllowCredentials` del perfil seleccionado es `realm`. `narrow` (el valor predeterminado) nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en el `allowCredentials` del paso de llave de acceso, de modo que nunca se ofrece una clásica — pero una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia (STS-AUTHN-0356), con una página que dice que la aplicación exige una llave de acceso poscuántica y dónde añadir una. La contrapartida: la persona puede elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia."
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "Actualizar una llave de acceso clásica a una poscuántica"
-  },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "Activado (el valor predeterminado), una persona puede actualizar una de sus llaves de acceso clásicas a una poscuántica (ML-DSA) en /portal/keys: usa la llave clásica una vez, para mostrar que es suya, y luego crea la nueva, a la que solo se le ofrece ML-DSA. Con `webauthn.pqcAlongsideClassical` activado, la llave poscuántica se AÑADE en su propia vía y la clásica se conserva; desactivado, la llave poscuántica SUSTITUYE a la clásica en su lugar, conservando su nombre y anotando cuándo se actualizó y desde qué algoritmo. La llave clásica solo cambia una vez verificada la nueva, de modo que una actualización fallida la deja como estaba. La nueva llave cumple cada regla que cumple un registro. Desactivado, ninguna llave puede actualizarse; una llave poscuántica aún puede registrarse junto a una clásica donde se puedan registrar llaves."
-  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Verificación del usuario"

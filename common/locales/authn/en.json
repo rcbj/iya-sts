@@ -116,7 +116,6 @@
   "pqRequired.text": "The passkey you used signs with a classical algorithm, and this application accepts only a post-quantum (ML-DSA) passkey. You were not signed in.",
   "pqRequired.how": "Use a post-quantum passkey if you have one. Otherwise add one on your account page, signing in there another way, and come back.",
   "pqRequired.register": "Add a post-quantum passkey",
-  "pqRequired.upgrade": "Upgrade this passkey to a post-quantum one",
   "webauthn.noPrompt": "My browser did not ask — tell me why",
   "webauthn.details": "Technical details",
   "webauthn.rpId": "RP ID: <code>{rpId}</code> — the ceremony is bound to this origin.",
@@ -191,5 +190,16 @@
   "postLogin.until": "You can skip this until {date}; after that it is required.",
   "postLogin.registerButton": "Register a post-quantum passkey",
   "postLogin.skipButton": "Skip for {days} day(s)",
-  "postLogin.passkeyHeading": "Register your post-quantum passkey"
+  "postLogin.passkeyHeading": "Register your post-quantum passkey",
+  "postLogin.subUpgradePrimary": "{name}, you sign in with a passkey made with a classical algorithm. Upgrade it to a post-quantum (ML-DSA) passkey.",
+  "postLogin.subUpgradeMfa": "{name}, your second factor is a passkey made with a classical algorithm. Upgrade it to a post-quantum (ML-DSA) passkey.",
+  "postLogin.methodUpgrade": "You use your current passkey once, to show it is yours, and then create the post-quantum passkey on the same authenticator. It replaces the old one there, so you keep one passkey.",
+  "postLogin.methodSeparate": "Create it on a different authenticator from the one that holds your current passkey — a security key that supports ML-DSA, for example.",
+  "postLogin.proofHeading": "First, use your current passkey",
+  "postLogin.proofSub": "Use the passkey <strong>{name}</strong> once, to show it is yours. The post-quantum passkey is created next, on the same authenticator.",
+  "postLogin.subAttestationPrimary": "{name}, the post-quantum passkey you sign in with was not attested with post-quantum algorithms. Register one that is.",
+  "postLogin.subAttestationMfa": "{name}, the post-quantum passkey you use as a second factor was not attested with post-quantum algorithms. Register one that is.",
+  "postLogin.failed": "Your device did not create the passkey ({error}).",
+  "postLogin.failedHelp": "If your device or browser cannot make an ML-DSA passkey, register it on a separate security key that supports ML-DSA, or ask an administrator, who can register one for you.",
+  "postLogin.failedSkip": "You can also skip this for now."
 }

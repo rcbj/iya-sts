@@ -236,7 +236,9 @@ async function test() {
   await ok(realmApi + "/policies/save-postLogin-policy", {
     profile: "default", enabled: true, activity: "pqc-passkey-migration",
     snoozeDays: 2, graceDays: 0, noPasskey: "invite",
-    noPasskeyRole: "primary" }, "switched the policy on");
+    noPasskeyRole: "primary", method: "automatic", attestation: "any",
+    noPasskeyFallback: "none" },
+    "switched the policy on");
   b = browser();
   answer = await signIn(b);
   check("the sign-in is held at /authn/post-login",
@@ -294,7 +296,9 @@ async function test() {
   await ok(realmApi + "/policies/save-postLogin-policy", {
     profile: "pilot", selectGroups: [GROUP], precedence: 10,
     enabled: false, activity: "pqc-passkey-migration", snoozeDays: 7,
-    graceDays: 30, noPasskey: "require", noPasskeyRole: "mfa" },
+    graceDays: 30, noPasskey: "require", noPasskeyRole: "mfa",
+    method: "upgrade", attestation: "post-quantum",
+    noPasskeyFallback: "classical" },
     "saved a named profile");
   const named = await send(realmApi + "/policies");
   check("the named profile is read back with its group and precedence",

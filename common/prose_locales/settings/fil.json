@@ -1127,14 +1127,6 @@
     "en": "f34caf08dceeedd3",
     "text": "Binabasa lamang habang hinihingi ng passkey policy ang post-quantum na passkey sa sign-in (`postQuantumRequired`), at kapag `realm` lamang ang row na `postQuantumAllowCredentials` ng napiling profile. Ang `narrow` (ang default) ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa `allowCredentials` ng passkey step, kaya hindi kailanman inaalok ang classical — pero ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony (STS-AUTHN-0356), na may page na nagsasabing kailangan ng application ang post-quantum na passkey at kung saan magdadagdag nito. Ang kapalit: maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony."
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "I-upgrade ang classical na passkey sa post-quantum"
-  },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "Kapag naka-on (ang default), maaaring i-upgrade ng isang tao ang isa sa kanyang classical na passkey sa post-quantum (ML-DSA) sa /portal/keys: ginamit niya ang classical na passkey nang isang beses, para ipakita na kanya ito, at saka ginawa ang bago, na inaalok lang ng ML-DSA. Kapag naka-on ang `webauthn.pqcAlongsideClassical`, IDINAGDAG ang post-quantum na passkey sa sarili nitong lane at pinananatili ang classical; kapag naka-off, PINAPALITAN ng post-quantum na passkey ang classical sa lugar, pinapanatili ang pangalan nito at itinatala kung kailan ito na-upgrade at mula sa aling algorithm. Binabago lang ang classical na passkey kapag na-verify na ang bago, kaya ang bigong upgrade ay iniiwan ito kung ano ito. Tinutugunan ng bagong passkey ang bawat panuntunang tinutugunan ng isang pagrehistro. Kapag naka-off, walang passkey na maaaring i-upgrade; maaari pa ring irehistro ang post-quantum na passkey sa tabi ng classical kung saan maaaring magrehistro ng mga passkey."
-  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "User verification"

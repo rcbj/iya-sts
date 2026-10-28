@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4756** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4757** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 394
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 395
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
@@ -1560,15 +1560,15 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0446` | An administrator's passkey enrolment was finished on an address whose host is not one this realm's RP ID fits (webauthn.rpId), the rule the person's own ceremony applies. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
 | `STS-AUTHN-0447` | An administrator's passkey enrolment could not be finished: the verification or the write threw. | HTTP 500 from /admin-api/users/finish-passkey-enrolment |
 | `STS-AUTHN-0448` | An administrator's passkey enrolment was finished with no ceremony result: `credential` is absent or is not JSON. The browser's own refusal (a cancelled prompt, an authenticator that cannot do what was asked) arrives as JSON and is recorded as the person's own is (STS-AUTHN-0022). | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
-| `STS-AUTHN-0450` | A passkey upgrade to a post-quantum (ML-DSA) one was refused before it began: the realm does not offer it (webauthn.pqcUpgrade is off, or WebAuthn is), the verifier knows no ML-DSA, or — with both lanes on — the post-quantum lane is not offered. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
-| `STS-AUTHN-0451` | A passkey upgrade named a credential id that is not one of the caller's own passkeys. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
-| `STS-AUTHN-0452` | A passkey upgrade named a passkey that is already post-quantum (ML-DSA): there is nothing to upgrade. | HTTP 400 from POST /account-api/keys/upgrade |
-| `STS-AUTHN-0453` | A passkey upgrade named a classical passkey that was already upgraded with a post-quantum passkey beside it, and that post-quantum passkey is still held. Remove it first to upgrade again. | HTTP 400 from POST /account-api/keys/upgrade |
-| `STS-AUTHN-0454` | A passkey upgrade's proof or registration arrived with no upgrade in progress: it expired, it was cancelled, another enrolment replaced it, or it names a different upgrade than the one in progress. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
-| `STS-AUTHN-0455` | A passkey upgrade's proof of possession was refused before it was checked: the browser ran no assertion (it reported an error or posted nothing), or the assertion was made with a different credential than the passkey being upgraded. The upgrade is dropped; the classical passkey is unchanged. | HTTP 400 from POST /account-api/keys/upgrade |
-| `STS-AUTHN-0456` | A passkey upgrade's steps arrived out of order: a registration before the proof of possession, a second proof, or an upgrade in progress finished through the ordinary enrolment's finish (or an ordinary enrolment through the upgrade's). Nothing was changed. | HTTP 400 from POST /account-api/keys or /account-api/keys/upgrade |
-| `STS-AUTHN-0457` | A passkey upgrade's new post-quantum passkey verified, but the classical passkey it upgrades was removed or upgraded by another request since the proof of possession, so nothing was written. | HTTP 400 from POST /account-api/keys/upgrade |
-| `STS-AUTHN-0458` | A passkey upgrade's registration was not completed by the browser: it reported an error, or posted no credential. No classical retry is offered for an upgrade, whose point is ML-DSA; the upgrade is dropped and the classical passkey is unchanged. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0450` | A passkey upgrade to a post-quantum (ML-DSA) one was refused before it began: WebAuthn is off, the verifier knows no ML-DSA, or — with both lanes on — the post-quantum lane is not offered. Nothing was changed. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0451` | A passkey upgrade named a credential id that is not one of the caller's own passkeys. Nothing was changed. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0452` | A passkey upgrade named a passkey that is already post-quantum (ML-DSA): there is nothing to upgrade. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0453` | A passkey upgrade named a classical passkey that was already upgraded with a post-quantum passkey beside it, and that post-quantum passkey is still held. Remove it first to upgrade again. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0454` | A passkey upgrade's proof or registration arrived with no upgrade in progress: it expired, it was cancelled, another enrolment replaced it, or it names a different upgrade than the one in progress. Nothing was changed. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0455` | A passkey upgrade's proof of possession was refused before it was checked: the browser ran no assertion (it reported an error or posted nothing), or the assertion was made with a different credential than the passkey being upgraded. The upgrade is dropped; the classical passkey is unchanged. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0456` | A passkey upgrade's steps arrived out of order: a registration before the proof of possession, a second proof, or an upgrade in progress finished through the ordinary enrolment's finish (or an ordinary enrolment through the upgrade's). Nothing was changed. | HTTP 400 from POST /account-api/keys, the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0457` | A passkey upgrade's new post-quantum passkey verified, but the classical passkey it upgrades was removed or upgraded by another request since the proof of possession, so nothing was written. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
+| `STS-AUTHN-0458` | A passkey upgrade's registration was not completed by the browser: it reported an error, or posted no credential. No classical retry is offered for an upgrade, whose point is ML-DSA; the upgrade is dropped and the classical passkey is unchanged. | the post-login step's passkey page again (/authn-api answers next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade |
 | `STS-AUTHN-0459` | A sign-in that must earn phrh (OpenID Connect EAP ACR Values 1.0) reached the passkey step, and none of the keys held for that step's role has recorded evidence that can earn it: trusted attestation and backup eligibility clear. Said before the ceremony is armed, and again if an assertion names some other key of the role. A discoverable sign-in cannot be narrowed this way and is refused afterwards (STS-OAUTH-0971). | HTTP 400 from the passkey step when acr_values or a required detail acr is phrh |
 | `STS-AUTHN-0460` | A Secure-Session-Skipped header was not an RFC 9651 list of sf-tokens, or a session_identifier in it was not an sf-string. Recorded on the log and the audit row. The request continues and the session is not marked skipped (#743). | log and audit; the request is not refused |
 | `STS-AUTHN-0461` | A passkey policy save was refused: it requires a device-bound session (deviceBoundRequired) while authn.deviceBoundSessions is off, so no browser would be offered the registration the requirement asks for (#740). | HTTP 400 (management API) |
@@ -1586,6 +1586,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0473` | A sign-in was held: the person's post-login activity is past its allotted time and cannot be done at this door (a federated, wallet, Kerberos or certificate sign-in, or a non-interactive one); they are told to sign in at the sign-in screen, where they will be asked to do it (#1096). | the door's own refusal; no session is started |
 | `STS-AUTHN-0474` | Skip was refused on a post-login activity: the allotted time since the person's first invitation has passed, so the activity is required before the sign-in finishes (#1096). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0475` | A post-login passkey registration was refused: the realm no longer offers post-quantum passkeys (webauthn.pqcAlongsideClassical and webauthn.pqcOnly are off), so the activity cannot be done here and the held sign-in is finished without it (#1096). | none (the sign-in continues) |
+| `STS-AUTHN-0476` | A passkey policy profile was not saved: `lanes` is both (a classical and a post-quantum passkey side by side) and `registrationMode` is classical-only, which makes no post-quantum passkey to hold in a second lane (#1104). | none (HTTP 400 from /admin-api/policies) |
 
 ## STS-OAUTH
 

@@ -1151,6 +1151,14 @@
     "en": "1466dbe275c566e7",
     "text": "`realm`（默认值）沿用 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，并拒绝改用经典算法重试。`pq-first` 先提供 ML-DSA，再提供经典算法，即使领域只请求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在经典通行密钥之外提供后量子通行密钥，适用于设备无法完成 ML-DSA 注册的人员。当 postQuantumRequired 不为 off 或已设置 attestationAlgorithms 时（classical-only），以及所提供的算法未列出任何 ML-DSA 时（pq-only、pq-first），将被拒绝。保存时省略，则保留 `realm`。"
   },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "经典通行密钥与后量子通行密钥并存"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm`（默认值）沿用 webauthn.pqcAlongsideClassical。`both` 在领域设置关闭的任何地方，让此配置文件的人员同时持有经典通行密钥和后量子通行密钥，各自使用自己的用户句柄；`one` 在该设置开启的任何地方只给他们一个通道。webauthn.pqcOnly 仍然意味着一个通道。registrationMode 为 classical-only 时拒绝 `both`。保存时省略，则保留 `realm`。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "“创建通行密钥”发送的提示"
@@ -1298,6 +1306,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
     "en": "1466dbe275c566e7",
     "text": "`realm`（默认值）沿用 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，并拒绝改用经典算法重试。`pq-first` 先提供 ML-DSA，再提供经典算法，即使领域只请求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在经典通行密钥之外提供后量子通行密钥，适用于设备无法完成 ML-DSA 注册的人员。当 postQuantumRequired 不为 off 或已设置 attestationAlgorithms 时（classical-only），以及所提供的算法未列出任何 ML-DSA 时（pq-only、pq-first），将被拒绝。保存时省略，则保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "`realm`（默认值）沿用 webauthn.pqcAlongsideClassical。`both` 在领域设置关闭的任何地方，让此配置文件的人员同时持有经典通行密钥和后量子通行密钥，各自使用自己的用户句柄；`one` 在该设置开启的任何地方只给他们一个通道。webauthn.pqcOnly 仍然意味着一个通道。registrationMode 为 classical-only 时拒绝 `both`。保存时省略，则保留 `realm`。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1522,6 +1534,14 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "该领域的 webauthn.algorithms"
+  },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "一个人可以同时持有经典通行密钥和后量子通行密钥，各自使用自己的用户句柄"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "一个人的通行密钥都放在一个通道中，无论领域的 webauthn.pqcAlongsideClassical 如何设置"
   },
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
@@ -1807,6 +1827,30 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary：无密码登录。mfa：第二因素。"
   },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "经典通行密钥的迁移方式"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade：此人先使用一次其经典通行密钥，然后由 ML-DSA 通行密钥在同一身份验证器上原地替换它——只有一个通行密钥，不留下任何东西。alongside：在其旁边添加一个 ML-DSA 通行密钥，领域提供两个通道时放在后量子通道中，只提供一个通道时放在另一个身份验证器上。automatic：此人的通行密钥策略提供两个通道时为 alongside，提供一个通道时为 upgrade。"
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "通行密钥在以下情况下算作后量子"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any：其密钥算法为 ML-DSA。post-quantum：其密钥算法为 ML-DSA，并且其记录的证明自始至终都使用后量子算法签名；带有经典证明或没有记录证明的通行密钥不算数，其持有人会被要求提供一个符合条件的通行密钥。"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "没有通行密钥且设备无法创建 ML-DSA 的人"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none：仅限 ML-DSA。classical：ML-DSA 注册在设备上失败后，提供使用经典算法重试（在通行密钥策略允许时）——经典通行密钥总比密码好，其持有人之后会像其他人一样被要求迁移。"
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "7ac360a6d70b525c",
     "text": "本服务用于登录后活动配置文件的类：某人登录后被要求做的事。以“配置文件”命名（`cn=default`，或按群组选择的命名配置文件）。"
@@ -1835,6 +1879,18 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary：无密码登录。mfa：第二因素。"
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade：此人先使用一次其经典通行密钥，然后由 ML-DSA 通行密钥在同一身份验证器上原地替换它——只有一个通行密钥，不留下任何东西。alongside：在其旁边添加一个 ML-DSA 通行密钥，领域提供两个通道时放在后量子通道中，只提供一个通道时放在另一个身份验证器上。automatic：此人的通行密钥策略提供两个通道时为 alongside，提供一个通道时为 upgrade。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any：其密钥算法为 ML-DSA。post-quantum：其密钥算法为 ML-DSA，并且其记录的证明自始至终都使用后量子算法签名；带有经典证明或没有记录证明的通行密钥不算数，其持有人会被要求提供一个符合条件的通行密钥。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none：仅限 ML-DSA。classical：ML-DSA 注册在设备上失败后，提供使用经典算法重试（在通行密钥策略允许时）——经典通行密钥总比密码好，其持有人之后会像其他人一样被要求迁移。"
+  },
   "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "命名登录后配置文件适用于其成员的群组（cn 或 DN）。"
@@ -1862,6 +1918,30 @@
   "postLogin.sentences.pqcMigration": {
     "en": "b8a2588126ddb520",
     "text": "持有经典通行密钥的人会在登录后被要求以相同角色注册一个后量子（ML-DSA）通行密钥"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "此人使用一次经典通行密钥后，ML-DSA 通行密钥会原地替换它"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "ML-DSA 通行密钥会添加在经典通行密钥旁边"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "提供两个通道时，ML-DSA 通行密钥会添加在经典通行密钥旁边；只提供一个通道时，则原地替换它"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "通行密钥的密钥算法为 ML-DSA 时即算作后量子"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "只有当通行密钥的密钥算法及其记录的证明都是后量子时，通行密钥才算作后量子"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "没有通行密钥且设备无法创建 ML-DSA 的人会改为获得经典通行密钥"
   },
   "postLogin.sentences.snooze": {
     "en": "f3c3ff82c8da1f59",

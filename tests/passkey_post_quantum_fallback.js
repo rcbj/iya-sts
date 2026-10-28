@@ -34,8 +34,8 @@
 //      `webauthn.postQuantumAllowCredentials: list-and-refuse` names both, a
 //      classical assertion is refused after the ceremony (STS-AUTHN-0356, a
 //      `session.refuse` row, NO `session.start` row) and the screen's view
-//      carries the panel's links (registration, and #939's upgrade while
-//      `webauthn.pqcUpgrade` offers it, which it does by default), and the
+//      carries the panel's link (registration; #939's upgrade link went with
+//      the portal's Upgrade button, #1100), and the
 //      post-quantum key signs in; the profile's row
 //      overrides the realm's setting both ways; the question carries the
 //      resolved value; a person holding only classical keys is still told
@@ -327,9 +327,9 @@ function childMain() {
     passkeyPolicy.save('default', withDefaults());
     config.setOverride('webauthn.pqcAlongsideClassical', true);
     const laneOn = webauthnPolicy.classicalRetryLane('pqc');
-    // #939 offers the upgrade by default (`webauthn.pqcUpgrade`), including
-    // while the two lanes run alongside. Alongside decides where the new
-    // key is written; it does not withdraw the offer.
+    // #939's upgrade is offered by the realm (no switch since #1100, the
+    // post-login policy decides who is asked), including while the two
+    // lanes run alongside. Alongside decides where the new key is written.
     const offeredAlongside = webauthnPolicy.postQuantumUpgradeOffered();
     config.clearOverride('webauthn.pqcAlongsideClassical');
     const offered = webauthnPolicy.postQuantumUpgradeOffered();
@@ -516,11 +516,11 @@ function childMain() {
            refusedBefore + 1 &&
          rows('session.start', 'pqf-cat') === startsBefore &&
          panel && panel.register === '/portal/keys' &&
-         panel.upgrade === '/portal/keys?upgrade=post-quantum',
+         panel.upgrade === undefined,
          'D2. list-and-refuse names both keys; the classical assertion is ' +
          'refused after the ceremony (STS-AUTHN-0356) with no session.start ' +
-         'row, and the screen carries the panel: registration and #939\'s ' +
-         'upgrade',
+         'row, and the screen carries the panel: registration, and no ' +
+         'upgrade link (#1100)',
          JSON.stringify([listed.allow.length, classicalAnswer.next, panel]));
     const again = await allowOf('pqf-cat');
     const pqAnswer = again.armed.json && again.armed.json.ok
@@ -634,7 +634,7 @@ function childMain() {
          'another error or a page with no guidance, and reports every ' +
          'failure to the #943 hook', JSON.stringify(reports));
     const drawnPanel = WebAuthnLogin.postQuantumPanel(
-      { register: '/portal/keys', upgrade: '' }, T);
+      { register: '/portal/keys' }, T);
     const drawnFallback = WebAuthnMfa.fallback({ asksPostQuantum: true,
       classical: true, retrying: false }, T);
     note(drawnPanel.indexOf('[authn.pqRequired.heading]') >= 0 &&

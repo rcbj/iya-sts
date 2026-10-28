@@ -727,6 +727,14 @@
     "en": "9b31304e9f8a3131",
     "text": "一次登入遭到暫扣：一項登入後活動已逾期"
   },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "裝置未能建立登入後活動所要求的通行金鑰"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "某個通行金鑰可能已在其驗證器上遭到取代"
+  },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
     "text": "以電子郵件傳送的第二因素被開啟或關閉"

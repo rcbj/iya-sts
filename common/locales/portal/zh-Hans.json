@@ -551,5 +551,6 @@
   "accounts.kept": "此标签页离开的账户仍保持登录，您可以在这里切换回去。",
   "accounts.unsaved": "此页面有尚未保存的更改。仍要切换账户吗？这些更改将会丢失。",
   "announcement.heading": "公告",
-  "announcement.close": "关闭"
+  "announcement.close": "关闭",
+  "keys.possiblyReplaced": "于 {day} 以同一账户在同一型号的身份验证器上注册的另一个通行密钥，可能已在该身份验证器上替换了此通行密钥。如果此通行密钥已无法使用，请将其移除。"
 }

@@ -1127,14 +1127,6 @@
     "en": "f34caf08dceeedd3",
     "text": "Lu seulement tant que la politique des clés d’accès exige une clé d’accès post-quantique à la connexion (`postQuantumRequired`), et seulement lorsque la ligne `postQuantumAllowCredentials` du profil sélectionné vaut `realm`. `narrow` (la valeur par défaut) ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans l’`allowCredentials` de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée — mais une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie (STS-AUTHN-0356), avec une page indiquant que l’application exige une clé d’accès post-quantique et où en ajouter une. Le compromis : la personne peut choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie."
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "Mettre à niveau une clé d’accès classique vers une clé post-quantique"
-  },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "Activé (la valeur par défaut), une personne peut mettre à niveau l’une de ses clés d’accès classiques vers une clé post-quantique (ML-DSA) sur /portal/keys : elle utilise la clé d’accès classique une fois, pour montrer qu’elle est la sienne, puis crée la nouvelle, à laquelle seul ML-DSA est proposé. Avec `webauthn.pqcAlongsideClassical` activé, la clé d’accès post-quantique est AJOUTÉE dans sa propre voie et la classique est conservée ; désactivé, la clé d’accès post-quantique REMPLACE la classique sur place, en gardant son nom et en enregistrant quand elle a été mise à niveau et depuis quel algorithme. La clé d’accès classique n’est modifiée qu’une fois la nouvelle vérifiée, de sorte qu’une mise à niveau échouée la laisse telle qu’elle était. La nouvelle clé d’accès satisfait chaque règle qu’un enregistrement satisfait. Désactivé, aucune clé d’accès ne peut être mise à niveau ; une clé d’accès post-quantique peut encore être enregistrée à côté d’une classique là où les clés d’accès peuvent être enregistrées."
-  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Vérification de l’utilisateur"

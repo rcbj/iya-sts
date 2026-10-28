@@ -434,6 +434,8 @@ interface RegistrationRows {
   registrationAlgorithms: string[];
   registrationMode: string;
   postQuantumRequired: string;
+  // #1104: `realm`, `both` or `one`.
+  lanes: string;
 }
 
 /**
@@ -524,6 +526,10 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   registrationClassicalOnly: 'a passkey registration offers only classical ' +
     'algorithms, from {{algorithms}}: no post-quantum passkey is made',
   'param.realmAlgorithms': 'the realm\'s webauthn.algorithms',
+  lanesBoth: 'a person may hold a classical and a post-quantum passkey side ' +
+    'by side, each under its own user handle',
+  lanesOne: 'a person holds their passkeys in one lane, whatever the ' +
+    'realm\'s webauthn.pqcAlongsideClassical says',
   adminEnrolment: 'an administrator may enrol a passkey for a person, in ' +
     'the administrator\'s own browser, verified as the person\'s own is'
 });
@@ -648,6 +654,9 @@ const POST_QUANTUM_ALLOW_CREDENTIALS = ['realm', 'narrow', 'list-and-refuse'];
  * and webauthn.pqcAlongsideClassical.
  */
 const REGISTRATION_MODES = ['realm', 'pq-only', 'pq-first', 'classical-only'];
+
+// The `lanes` row's values (#1104).
+const LANES_VALUES = ['realm', 'both', 'one'];
 /**
  * How an empty `registrationAlgorithms` is written (#940): the realm's
  * webauthn.algorithms, so the word is `realm` and not `none`.
@@ -854,6 +863,20 @@ const FIELDS: PolicyField[] = [
           'attestationAlgorithms set (classical-only), and where the ' +
           'algorithms offered name no ML-DSA (pq-only, pq-first). Left out ' +
           'of a save, `realm` is kept.' },
+  // TWO LANES PER POPULATION (#1104): a classical and a post-quantum passkey
+  // side by side (#643) for THIS profile's people, or not, whatever the
+  // realm's `webauthn.pqcAlongsideClassical` says. `webauthn.pqcOnly` and a
+  // `classical-only` mode still leave one lane.
+  { key: 'lanes', attribute: 'stsPasskeyLanes', type: 'enum',
+    values: LANES_VALUES.slice(), dflt: 'realm', optional: true,
+    label: 'A classical and a post-quantum passkey side by side',
+    what: '`realm` (the default) follows webauthn.pqcAlongsideClassical. ' +
+          '`both` gives this profile\'s people a classical and a ' +
+          'post-quantum passkey side by side, each under its own user ' +
+          'handle, wherever the realm\'s setting is off; `one` gives them ' +
+          'one lane wherever it is on. webauthn.pqcOnly still means one ' +
+          'lane. Refused as `both` with registrationMode classical-only. ' +
+          'Left out of a save, `realm` is kept.' },
   { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
     values: HINTS.slice(), dflt: 'client-device,hybrid',
     label: 'Hints "Create a passkey" sends',
@@ -1949,7 +1972,9 @@ class PasskeyPolicy {
       registrationMode: this.registrationMode(rules),
       postQuantumRequired: POST_QUANTUM_REQUIRED_VALUES.indexOf(
         String(rules.postQuantumRequired)) >= 0
-        ? String(rules.postQuantumRequired) : 'off'
+        ? String(rules.postQuantumRequired) : 'off',
+      lanes: LANES_VALUES.indexOf(String(rules.lanes)) >= 0
+        ? String(rules.lanes) : 'realm'
     };
     log.debug("Leaving PasskeyPolicy.registrationRows(). " +
               out.registrationMode);
@@ -2940,8 +2965,11 @@ class PasskeyPolicy {
         : (mode === 'classical-only' ? SENTENCES.registrationClassicalOnly
           : (list.length ? SENTENCES.registrationList : '')));
     log.debug("Leaving PasskeyPolicy.registrationSentences(). " + mode);
-    return template ? [serverProse.fill(template,
-                                        { algorithms: algorithms })] : [];
+    const lanes = String(rules.lanes || 'realm');
+    return (template ? [serverProse.fill(template,
+                                         { algorithms: algorithms })] : [])
+      .concat(lanes === 'both' ? [SENTENCES.lanesBoth]
+        : (lanes === 'one' ? [SENTENCES.lanesOne] : []));
   }
 
   // A hint list in words (#531).
@@ -3110,6 +3138,16 @@ class PasskeyPolicy {
                         'can never satisfy that requirement, so this ' +
                         'profile\'s people could register nothing that ' +
                         'signs them in. Set one of the two differently.' };
+    }
+    if (mode === 'classical-only' && rows.lanes === 'both') {
+      log.debug("Leaving PasskeyPolicy.registrationContradiction(). " +
+                "Classical only, two lanes.");
+      return { code: 'STS-AUTHN-0476',
+               problem: modeLabel + ', and `lanes` (' +
+                        FIELD_BY_KEY.lanes.label + ') is both: a ' +
+                        'classical-only population makes no post-quantum ' +
+                        'passkey, so there is no second lane to hold one ' +
+                        'in. Set one of the two differently.' };
     }
     const attested = String(values.attestationAlgorithms || NO_HINTS);
     if (mode === 'classical-only' && attested !== NO_HINTS) {

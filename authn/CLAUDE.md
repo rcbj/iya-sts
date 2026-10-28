@@ -2915,12 +2915,13 @@ ceremony in both**: no pick of theirs could succeed.
 **The panel.** `refusedSession()` passes `postQuantumRequired` to
 `screenRefused()` for 0356, which marks the pending record (cleared by the
 next refusal, the next screen act and Start over); `screenView()` answers
-`postQuantumRequired` as `postQuantumHelp()`'s `{ register, upgrade }` and
+`postQuantumRequired` as `postQuantumHelp()`'s `{ register }` and
 the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
 `WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
 translated, under the English sentence. `register` is `/portal/keys` where
-passkeys may be registered here; `upgrade` is '' until #939 makes
-`webauthnPolicy.postQuantumUpgradeOffered()` answer true. The usernameless
+passkeys may be registered here. (#939's upgrade link went with the
+portal's Upgrade button, #1100: the post-login activity upgrades a classical
+passkey at a sign-in.) The usernameless
 sign-in, never narrowable, gets the same panel.
 
 **Tests**: `tests/passkey_post_quantum_fallback.js` section D.
@@ -3803,6 +3804,16 @@ one click from skipped.
 * **A post-login step is answered to no other step's act**
   (`mfaStepFor(id, accepts)`): a code, a recovery code or a wallet posted to
   its id would start the held session without the activity.
+* **An upgrade (#1100) is the passkey page twice**: `postLoginAct()` begins
+  #939's upgrade and marks the step `upgradeId`; `webauthnFacts()` hands off
+  to `upgradeStepFacts()` (the proof's `get`, then the registration's
+  `create`, from the pending upgrade) and `mfaWebauthnAct()` to
+  `postLoginUpgradeAct()`, which re-begins a dropped upgrade so the page can
+  try again. `stepProblem('webauthn')` refuses a step whose upgrade is gone.
+* **A ceremony the device did not complete (#1105)** sends the person back
+  to `/authn/post-login` with `postLogin.failed` (the error NAME) and writes
+  `authn.post-login.unsupported` — except where #1103's classical retry is
+  the page's next offer.
 * **The registration is ML-DSA only with no classical retry** (#939's
   `upgradeAlgorithms()`), in the post-quantum lane where both are on and the
   one lane otherwise; and it is exempt from product mode's "no primary key at

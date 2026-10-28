@@ -3944,6 +3944,11 @@ class Credentials {
     }
     log.info('credentials: a security key was enrolled for ' + name +
              ' as a ' + role + ' credential.');
+    // A ROW THIS ONE MAY HAVE REPLACED ON ITS AUTHENTICATOR (#1101). Not
+    // for an upgrade, whose write already replaced or marked the old row.
+    if (!upgrading) {
+      this.markPossiblyReplaced(name, record);
+    }
     // AN ANDROID-ATTESTED KEY MOVES THE RECHECK'S REGISTRATION MARK (#615),
     // so the next recheck does not skip as "nothing changed". The key was
     // asked about at registration, so this is the belt to that brace; the
@@ -4724,6 +4729,9 @@ class Credentials {
     const outcome = this.rewriteKey(username, credentialId, (found) => {
       found.signCount = Number(signCount || 0);
       found.lastUsedAt = Date.now();
+      // IT SIGNED SOMEBODY IN, SO IT WAS NOT REPLACED (#1101).
+      delete found.possiblyReplacedBy;
+      delete found.possiblyReplacedAt;
       // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3
       // section 6.1.3: BS "can change over time"), so each assertion's is
       // kept — and BE for a key enrolled before #470 kept it, since BE
@@ -4978,8 +4986,12 @@ class Credentials {
     const removed = keys.filter((one) => {
       return one.credentialId === String(credentialId);
     })[0];
+    // A ROW MARKED AS POSSIBLY REPLACED ON ITS AUTHENTICATOR (#1101) is not
+    // counted as a way in: the credential it describes may be gone.
     const stillHasPrimary =
-        kept.some((one) => { return one.role === 'primary'; });
+        kept.some((one) => {
+          return one.role === 'primary' && !one.possiblyReplacedBy;
+        });
     if (removed && removed.role === 'primary' &&
         !this.hasPassword(name) && !stillHasPrimary) {
       log.debug("Leaving Credentials.removeKey().");
@@ -5002,6 +5014,58 @@ class Credentials {
     log.info('credentials: a security key was removed for ' + name + '.');
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A ROW A LATER REGISTRATION MAY HAVE REPLACED (#1101, 2026-10-28).
+  //
+  // A discoverable credential created on an authenticator under the same RP
+  // ID and the same user handle as one it already holds REPLACES that one
+  // on the device, while this service keeps both rows: the person and an
+  // administrator see two passkeys where the authenticator holds one, and
+  // the removal guard could count a row that signs nobody in. So when a key
+  // is written under a handle another of the person's keys uses, with the
+  // same AAGUID, the OLDER row is marked `possiblyReplacedBy` — a MARKER and
+  // never a deletion, since an AAGUID names a model, not a device, and two
+  // keys of one model are two devices. A row with no handle (from before
+  // #474) or no AAGUID (attestation `none`) is not marked: nothing says it
+  // was the same authenticator. The mark goes when the row signs somebody
+  // in (`noteKeyUsed()`), and the removal guard does not count a marked row.
+  // ---------------------------------------------------------------------------
+  private markPossiblyReplaced(name: string, record: any): void {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.markPossiblyReplaced().');
+    const handle = String(record.userHandle || '');
+    const aaguid = Credentials.aaguidString(record.aaguid);
+    if (!handle || !aaguid || record.discoverable === false) {
+      log.debug('Leaving Credentials.markPossiblyReplaced(). Not ' +
+                'comparable.');
+      return;
+    }
+    const older = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) !== String(record.credentialId) &&
+             String(one.userHandle || '') === handle &&
+             Credentials.aaguidString(one.aaguid) === aaguid &&
+             one.discoverable !== false && !one.possiblyReplacedBy;
+    });
+    older.forEach((one) => {
+      const at = Date.now();
+      const marked = this.rewriteKey(name, one.credentialId, (found) => {
+        found.possiblyReplacedBy = String(record.credentialId);
+        found.possiblyReplacedAt = at;
+        return true;
+      });
+      if (marked.reason === 'written') {
+        log.info('credentials: a passkey of ' + name + ' may have been ' +
+                 'replaced on its authenticator by the one just registered ' +
+                 '(same user handle, AAGUID ' + aaguid + '); marked.');
+        webauthnCeremonies.possiblyReplaced({ username: name,
+          credentialId: String(one.credentialId),
+          by: String(record.credentialId), aaguid: aaguid });
+      }
+    });
+    log.debug('Leaving Credentials.markPossiblyReplaced(). ' + older.length +
+              ' marked.');
   }
 
   // ---------------------------------------------------------------------------
@@ -9820,9 +9884,11 @@ class Credentials {
    * @param username - the person
    * @param key - one of their stored keys, or null for an id that named
    *   none of theirs
+   * @param mode - `replace` or `alongside` where the caller names it
+   *   (#1100); the lanes' `upgradeMode()` otherwise
    * @returns `{ ok: true }`, or a refusal carrying its code
    */
-  keyUpgradeRefusal(username, key) {
+  keyUpgradeRefusal(username, key, mode?) {
     const { log, webauthnPolicy, errorCodes } = this.deps;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.keyUpgradeRefusal().");
@@ -9864,7 +9930,7 @@ class Credentials {
       return coded(errorCodes.codeOf(role) || 'STS-AUTHN-0044',
                    { ok: false, reason: 'upgrade', errors: [role.why] });
     }
-    if (webauthnPolicy.upgradeMode() === 'alongside' &&
+    if ((mode || webauthnPolicy.upgradeMode()) === 'alongside' &&
         held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
       return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
@@ -9915,10 +9981,12 @@ class Credentials {
    * @param username - the person
    * @param credentialId - the classical passkey's credential id, looked up
    *   among this person's keys
+   * @param opts - `mode`: `replace` or `alongside` to name what the write
+   *   does (#1100); the lanes decide where it is left out
    * @returns `{ ok: true, upgradeId, challenge, credentialId, mode, lane,
    *   expiresAt }`, or a refusal
    */
-  beginKeyUpgrade(username, credentialId) {
+  beginKeyUpgrade(username, credentialId, opts?) {
     const { log, webauthnPolicy, crypto } = this.deps;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.beginKeyUpgrade().");
@@ -9935,12 +10003,18 @@ class Credentials {
     const key = this.keysOf(name).filter(function (one) {
       return String(one.credentialId) === String(credentialId || '');
     })[0] || null;
-    const refused = this.keyUpgradeRefusal(name, key);
+    // THE MODE A CALLER NAMES (#1100): the post-login activity asks for
+    // `replace` — the ML-DSA passkey in the classical one's place, under its
+    // handle, on its authenticator — whatever the lanes; otherwise the
+    // lanes decide (`upgradeMode()`), as they always did.
+    const mode = opts && (opts.mode === 'replace' ||
+                          opts.mode === 'alongside')
+      ? String(opts.mode) : webauthnPolicy.upgradeMode();
+    const refused = this.keyUpgradeRefusal(name, key, mode);
     if (!refused.ok) {
       log.debug("Leaving Credentials.beginKeyUpgrade(). Refused.");
       return refused;
     }
-    const mode = webauthnPolicy.upgradeMode();
     const previousAlgorithm = Credentials.keyAlgorithm(key).name;
     // THE ISSUANCE POLICY, ASKED BEFORE ANY CEREMONY with what is known
     // now: that this is an upgrade, what it does and from which
@@ -9968,7 +10042,7 @@ class Credentials {
       // registration asks for the same kind (`creationOptions()`).
       kind: Credentials.keyGroup(key) === 'security-key' ? 'security-key'
                                                          : 'passkey',
-      lane: webauthnPolicy.upgradeLane(),
+      lane: mode === 'alongside' ? 'pqc' : 'classical',
       classicalOnly: false,
       // ITS NAME, which the upgraded key keeps.
       label: String(Credentials.keyName(key) || '').slice(0, 60),

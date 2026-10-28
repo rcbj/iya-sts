@@ -727,6 +727,14 @@
     "en": "9b31304e9f8a3131",
     "text": "Une connexion a été retenue : une activité après connexion est en retard"
   },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "Un appareil n’a pas pu créer la clé d’accès demandée par une activité après connexion"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "Une clé d’accès a peut-être été remplacée sur son authentificateur"
+  },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
     "text": "Un second facteur par courriel a été activé ou désactivé"

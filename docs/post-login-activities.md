@@ -48,6 +48,9 @@ Open **Directory → Policies → Post-login activity policy** in the
 | Allotted time (`graceDays`) | 0 | Counted from the person's **first** invitation. Once it has passed, Skip is gone and the sign-in is held until the activity is done. 0 means no deadline. |
 | A person with no passkey (`noPasskey`) | `leave` | `leave`: not asked. `invite`: asked, and can always skip. `require`: asked, and can skip only until the allotted time has passed. |
 | Registered by a person with no passkey as (`noPasskeyRole`) | `primary` | `primary`: a passwordless sign-in. `mfa`: a second factor. |
+| How a classical passkey is migrated (`method`) | `automatic` | `upgrade`: the person uses the classical passkey once, then an ML-DSA passkey **replaces it in place** on the same authenticator. `alongside`: an ML-DSA passkey is added beside it. `automatic`: `alongside` where the person's passkey policy offers two lanes, `upgrade` where it offers one. |
+| A passkey counts as post-quantum when (`attestation`) | `any` | `any`: its key algorithm is ML-DSA. `post-quantum`: its recorded attestation is post-quantum too; a person whose ML-DSA passkey has a classical attestation is asked for one beside it. |
+| A person with no passkey whose device cannot make ML-DSA (`noPasskeyFallback`) | `none` | `none`: ML-DSA only. `classical`: a retry with the classical algorithms is offered after the ML-DSA registration fails — a classical passkey is better than a password, and the person is asked to migrate it later. |
 
 ### Targeting by group
 
@@ -80,12 +83,25 @@ POST /admin-api/policies/save-postLogin-policy
 2. If they are due the activity, the session is **held, not started**. They see
    `/authn/post-login` (**Register a post-quantum passkey**), with **Register**,
    **Skip for N day(s)** while skipping is still allowed, and **Start over**.
-3. **Register** goes to the passkey page, which offers ML-DSA only. When the
-   passkey is registered, the session the sign-in was held for starts and the
-   person goes back to the application. Their classical passkey stays
-   registered; they can remove it at `/portal/keys`.
+3. **Register** goes to the passkey page. For an **upgrade** the person first
+   uses their classical passkey once, then creates the ML-DSA passkey on the
+   same authenticator, which replaces the old one there and here: one
+   passkey, nothing left behind. For **alongside** the ML-DSA passkey is
+   added beside the classical one — in its own lane, or on another
+   authenticator where the realm has one lane (the page says which). Either
+   way only ML-DSA is offered. When it is done, the session the sign-in was
+   held for starts and the person goes back to the application.
 4. **Skip** puts the activity off for `snoozeDays`. The held session then
    starts.
+
+**If the device cannot make it.** When the browser reports that the ceremony
+did not complete, the person is taken back to the post-login page, which
+names the error and says what to do: register on a separate security key
+that supports ML-DSA, or ask an administrator, who can register one for them
+(Directory → Users); and Skip, while it is still allowed. Each such failure
+leaves an audit row `authn.post-login.unsupported` with the error name and
+the browser and platform, so you can see where the move is stalling. Filter
+the audit log (`/admin/audit`) by that action.
 
 The new passkey does not change how this sign-in authenticated. The session
 keeps the `amr` and `acr` of the sign-in the person had already completed.
@@ -121,6 +137,8 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | `authn.post-login.skipped` | A person skipped; the row includes when the skip ends. |
 | `authn.post-login.done` | A person registered the passkey; the row includes its algorithm. |
 | `authn.post-login.held` | A required activity refused a sign-in at a door that can't ask for it. |
+| `authn.post-login.unsupported` | The person's device did not complete the passkey ceremony; the error name, the browser and the platform. |
+| `webauthn.key.possibly-replaced` | A new passkey under the same user handle and AAGUID may have replaced an older one on its authenticator ([Passkeys](passkeys.md#a-passkey-that-may-have-been-replaced-on-its-authenticator)). |
 | `admin.post-login-policy.change` | A profile was saved or reset. |
 
 ## Error codes you will meet
@@ -131,13 +149,14 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | STS-AUTHN-0473 | A required activity refused a sign-in at a door that can't ask for it. |
 | STS-AUTHN-0474 | Skip was refused because the allotted time has passed. |
 | STS-AUTHN-0475 | The realm could no longer make an ML-DSA passkey, so the held session started without one. |
+| STS-AUTHN-0450 – 0458 | An upgrade ceremony did not complete; the classical passkey is unchanged. |
 
 See [error codes](error-codes.md) for the full list.
 
 ## Related
 
-- [Passkeys and WebAuthn](passkeys.md): lanes, algorithms, requiring a
-  post-quantum passkey at sign-in, and upgrading a classical one at
-  `/portal/keys`.
+- [Passkeys and WebAuthn](passkeys.md): lanes (and `lanes` per population
+  on the passkey policy), algorithms, requiring a post-quantum passkey at
+  sign-in, and the upgrade ceremony.
 - [Authentication](authentication.md)
 - [Admin console](admin-console.md)

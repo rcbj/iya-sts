@@ -887,5 +887,6 @@
   "mfaSection.certAddTip": "Isang leaf na sertipiko. Ang authority na nag-isyu nito ay inilalagay sa mga Client Truststore, hindi rito.",
   "mfaSection.certAdd": "Iimbak",
   "mfaSection.certAddTitle": "Iimbak ang sertipikong ito sa entry",
-  "mfaSection.certNeedsWrite": "Kailangan ng <strong>Admin Write</strong> para mag-imbak o mag-alis nito."
+  "mfaSection.certNeedsWrite": "Kailangan ng <strong>Admin Write</strong> para mag-imbak o mag-alis nito.",
+  "mfaSection.possiblyReplaced": "Maaaring napalitan na ito sa authenticator nito ng passkey na ini-register noong {day} sa parehong user handle at AAGUID. Hindi ito binibilang bilang daan papasok; i-clear ito kung hindi na ito gumagana."
 }
