@@ -421,10 +421,11 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  // Twenty-five since #1104's lanes, after #945's adminEnrolment, #740's
-  // deviceBoundRequired, #940's registration list and mode, #941's
-  // attestationAlgorithms and #946's postQuantumAllowCredentials.
-  t.check(!!view.passkey && view.passkey.fields.length === 25 &&
+  // Twenty-six since #1112's clientRules, after #1104's lanes, #945's
+  // adminEnrolment, #740's deviceBoundRequired, #940's registration list
+  // and mode, #941's attestationAlgorithms and #946's
+  // postQuantumAllowCredentials.
+  t.check(!!view.passkey && view.passkey.fields.length === 26 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'adminEnrolment';
           }) &&
@@ -441,6 +442,9 @@ function kind(t) {
           }) && view.passkey.fields.some(function (field) {
             return field.key === 'lanes' && field.type === 'enum' &&
                    field.values.length === 3;
+          }) && view.passkey.fields.some(function (field) {
+            return field.key === 'clientRules' &&
+                   field.type === 'clientRules';
           }),
           'P7b. the page\'s view draws it from its fields',
           JSON.stringify(view.passkey && view.passkey.fields));

@@ -146,7 +146,9 @@ const CLEAR_ALL = 'clear-passkey-clients';
 // never the held one changed in place: a row changed in place is never
 // journalled (#999).
 // ---------------------------------------------------------------------------
-const learned = realms.map({ persist: STORE_HANDLE });
+// The handle is written out, not STORE_HANDLE: `tests/cell_tiers.js` reads
+// every `persist:` literal in the tree.
+const learned = realms.map({ persist: 'passkey_clients.learned' });
 
 interface Store {
   get(key: string): Json;
