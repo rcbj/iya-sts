@@ -1159,6 +1159,14 @@
     "en": "8bc141c02b65ba53",
     "text": "`realm` (el valor predeterminado) sigue webauthn.pqcAlongsideClassical. `both` da a las personas de este perfil una llave de acceso clásica y una poscuántica lado a lado, cada una con su propio identificador de usuario, dondequiera que la configuración del dominio esté desactivada; `one` les da una sola vía dondequiera que esté activada. webauthn.pqcOnly sigue significando una sola vía. Se rechaza como `both` con registrationMode classical-only. Si se omite en un guardado, se conserva `realm`."
   },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "Clientes a los que un registro no ofrece ML-DSA"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "VACÍO POR DEFECTO: a cada cliente se le ofrece la lista tal como está. Si no, hasta 20 reglas separadas por `;`, cada una `<browser> on <system>`, donde cada lado es una familia tal como la nombran las filas de ceremonias de llaves de acceso (`Chrome`, `Firefox`, `macOS`, `Android`) o `*` para cualquiera, seguida opcionalmente de un rango de versión principal (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. Un registro de llave de acceso desde un cliente que coincida ofrece la lista sin ML-DSA (ES256 y RS256 si no queda ninguno). No se aplica donde no se permite una llave de acceso clásica —registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, o en el paso de inicio de sesión con postQuantumRequired sign-in— ni en el carril poscuántico, y la fila de la ceremonia indica que no se aplicó. Si se omite al guardar, se mantiene vacío."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Sugerencias que envía \"Crear una llave de acceso\""
@@ -1310,6 +1318,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
     "en": "8bc141c02b65ba53",
     "text": "`realm` (el valor predeterminado) sigue webauthn.pqcAlongsideClassical. `both` da a las personas de este perfil una llave de acceso clásica y una poscuántica lado a lado, cada una con su propio identificador de usuario, dondequiera que la configuración del dominio esté desactivada; `one` les da una sola vía dondequiera que esté activada. webauthn.pqcOnly sigue significando una sola vía. Se rechaza como `both` con registrationMode classical-only. Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "VACÍO POR DEFECTO: a cada cliente se le ofrece la lista tal como está. Si no, hasta 20 reglas separadas por `;`, cada una `<browser> on <system>`, donde cada lado es una familia tal como la nombran las filas de ceremonias de llaves de acceso (`Chrome`, `Firefox`, `macOS`, `Android`) o `*` para cualquiera, seguida opcionalmente de un rango de versión principal (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. Un registro de llave de acceso desde un cliente que coincida ofrece la lista sin ML-DSA (ES256 y RS256 si no queda ninguno). No se aplica donde no se permite una llave de acceso clásica —registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, o en el paso de inicio de sesión con postQuantumRequired sign-in— ni en el carril poscuántico, y la fila de la ceremonia indica que no se aplicó. Si se omite al guardar, se mantiene vacío."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1546,6 +1558,10 @@
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
     "text": "un administrador puede registrar una llave de acceso para una persona, en el propio navegador del administrador, verificada como lo está la de la persona"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "un registro de llave de acceso desde {{rules}} no ofrece ML-DSA, donde se permite una llave de acceso clásica"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

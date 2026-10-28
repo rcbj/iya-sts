@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "Nag-sign in gamit ang classical na passkey ang taong may post-quantum na passkey"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "Hindi na inalok ng ML-DSA ang isang client sa pagpaparehistro ng passkey"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "Hindi na pinagkakatiwalaan ang attestation ng isang security key: binabawi ng Android attestation status list ng Google ang chain nito"

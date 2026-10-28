@@ -1127,6 +1127,30 @@
     "en": "f34caf08dceeedd3",
     "text": "仅在通行密钥策略要求登录时使用后量子通行密钥（`postQuantumRequired`）时读取，且仅当所选配置文件的 `postQuantumAllowCredentials` 行为 `realm` 时。`narrow`（默认值）在通行密钥步骤的 `allowCredentials` 中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥——但设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥（STS-AUTHN-0356），同时显示一个页面，说明该应用要求后量子通行密钥以及在哪里添加。代价是：此人可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。"
   },
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "学习哪些客户端无法创建 ML-DSA 通行密钥"
+  },
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "开启时，提供了 ML-DSA 并在浏览器中以 NotSupportedError 失败的通行密钥注册会计入其客户端——按系列和主版本区分的浏览器和操作系统，与通行密钥仪式记录中的名称一致（`Chrome 141 on macOS 15`）——一旦在 `webauthn.clientLearningWindowHours` 内有 `webauthn.clientLearningFailures` 个不同的人以这种方式从同一客户端失败，且来自它的注册没有一次成功，此领域就不再向该客户端提供 ML-DSA：它的注册提供去掉 ML-DSA 的列表，就像通行密钥策略中已配置的 `clientRules` 行那样。来自该客户端、请求了 ML-DSA 并成功的注册会删除该条目，在 目录 → 策略 → 通行密钥策略 中清除它也会。在不允许经典通行密钥的地方从不适用。关闭时，不计数任何内容，也不应用任何已学习的内容；已学习的内容会保留。"
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "客户端不再获得 ML-DSA 之前的失败次数"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "在 `webauthn.clientLearning` 不再向某客户端提供 ML-DSA 之前，需要有多少个不同人员来自该客户端的注册在 `webauthn.clientLearningWindowHours` 内请求了 ML-DSA 并以 NotSupportedError 失败，且没有一次成功。一个人无论尝试多少次只计一次，因此一个账户无法让领域学到关于其他所有人浏览器的任何内容。"
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "统计失败的时间窗口"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "一次失败计入 `webauthn.clientLearningFailures` 的小时数。更早的失败会被遗忘，调度作业（`passkeys.client-learning-sweep`）会删除所有失败都已过期的条目。已学习的客户端会一直保持学习状态，直到来自它的注册成功或被清除。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "用户验证"

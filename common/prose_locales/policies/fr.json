@@ -1159,6 +1159,14 @@
     "en": "8bc141c02b65ba53",
     "text": "`realm` (la valeur par défaut) suit webauthn.pqcAlongsideClassical. `both` donne aux personnes de ce profil une clé d’accès classique et une clé d’accès post-quantique côte à côte, chacune sous son propre identifiant d’utilisateur, partout où le paramètre du domaine est désactivé ; `one` leur donne une seule voie partout où il est activé. webauthn.pqcOnly signifie toujours une seule voie. Refusé en tant que `both` avec registrationMode classical-only. Omis d’un enregistrement, `realm` est conservé."
   },
+  "passkey.FIELDS.clientRules.label": {
+    "en": "678fdc15babf767d",
+    "text": "Clients auxquels un enregistrement ne propose pas ML-DSA"
+  },
+  "passkey.FIELDS.clientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "VIDE PAR DÉFAUT : chaque client se voit proposer la liste telle quelle. Sinon jusqu’à 20 règles séparées par `;`, chacune `<browser> on <system>`, où chaque côté est une famille telle que la nomment les lignes de cérémonie des clés d’accès (`Chrome`, `Firefox`, `macOS`, `Android`) ou `*` pour n’importe laquelle, éventuellement suivie d’une plage de versions majeures (`141`, `130-140`, `130-`, `-140`) : `Firefox 140- on Linux; * on Android 13`. Un enregistrement de clé d’accès depuis un client correspondant propose la liste sans ML-DSA (ES256 et RS256 s’il n’en reste aucun). Non appliqué là où une clé d’accès classique n’est pas permise — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, ou à l’étape de connexion sous postQuantumRequired sign-in — ni à la voie post-quantique, et la ligne de cérémonie indique qu’il ne l’a pas été. Omis lors d’un enregistrement, la valeur vide est conservée."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Indications qu’envoie « Créer une clé d’accès »"
@@ -1310,6 +1318,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
     "en": "8bc141c02b65ba53",
     "text": "`realm` (la valeur par défaut) suit webauthn.pqcAlongsideClassical. `both` donne aux personnes de ce profil une clé d’accès classique et une clé d’accès post-quantique côte à côte, chacune sous son propre identifiant d’utilisateur, partout où le paramètre du domaine est désactivé ; `one` leur donne une seule voie partout où il est activé. webauthn.pqcOnly signifie toujours une seule voie. Refusé en tant que `both` avec registrationMode classical-only. Omis d’un enregistrement, `realm` est conservé."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyClientRules.what": {
+    "en": "888532a818f8776d",
+    "text": "VIDE PAR DÉFAUT : chaque client se voit proposer la liste telle quelle. Sinon jusqu’à 20 règles séparées par `;`, chacune `<browser> on <system>`, où chaque côté est une famille telle que la nomment les lignes de cérémonie des clés d’accès (`Chrome`, `Firefox`, `macOS`, `Android`) ou `*` pour n’importe laquelle, éventuellement suivie d’une plage de versions majeures (`141`, `130-140`, `130-`, `-140`) : `Firefox 140- on Linux; * on Android 13`. Un enregistrement de clé d’accès depuis un client correspondant propose la liste sans ML-DSA (ES256 et RS256 s’il n’en reste aucun). Non appliqué là où une clé d’accès classique n’est pas permise — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, ou à l’étape de connexion sous postQuantumRequired sign-in — ni à la voie post-quantique, et la ligne de cérémonie indique qu’il ne l’a pas été. Omis lors d’un enregistrement, la valeur vide est conservée."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1546,6 +1558,10 @@
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
     "text": "un administrateur peut enregistrer une clé d’accès pour une personne, dans le propre navigateur de l’administrateur, vérifiée comme l’est celle de la personne"
+  },
+  "passkey.sentences.clientRules": {
+    "en": "1081afaa606e937a",
+    "text": "un enregistrement de clé d’accès depuis {{rules}} ne propose pas ML-DSA, là où une clé d’accès classique est permise"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

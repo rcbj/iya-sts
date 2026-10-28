@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "En person med en postkvantnyckel loggade in med en klassisk nyckel"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "En klient slutade erbjudas ML-DSA vid passnyckelregistrering"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "En säkerhetsnyckels attestering är inte längre betrodd: Googles statuslista för Android-attestering återkallar dess kedja"

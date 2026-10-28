@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "移除透過 OpenID Federation Trust Chain 註冊、且註冊已結束的每個用戶端（12.3）。每個端點都已將此類用戶端視為未知；此作業只是讓其項目不再殘留。"
   },
+  "sched.jobs.passkeys.client-learning-sweep.title": {
+    "en": "a39be3abd70bfed2",
+    "text": "已學習通行金鑰用戶端清理"
+  },
+  "sched.jobs.passkeys.client-learning-sweep.describe": {
+    "en": "b55c8d9ce90a0914",
+    "text": "刪除已學習的通行金鑰用戶端（#1112）中所有失敗都已超出 webauthn.clientLearningWindowHours 且從未被學習的項目。已學習的用戶端會保留，直到來自它的註冊成功或被清除。"
+  },
   "sched.jobs.passkeys.report-recount.title": {
     "en": "484d9dcdbd9a681e",
     "text": "密碼金鑰報告重新計數"

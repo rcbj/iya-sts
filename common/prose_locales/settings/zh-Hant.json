@@ -1127,6 +1127,30 @@
     "en": "f34caf08dceeedd3",
     "text": "僅在密碼金鑰原則要求登入時使用後量子密碼金鑰（`postQuantumRequired`）時讀取，且僅當所選設定檔的 `postQuantumAllowCredentials` 列為 `realm` 時。`narrow`（預設值）在密碼金鑰步驟的 `allowCredentials` 中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰——但裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰（STS-AUTHN-0356），同時顯示一個頁面，說明該應用程式要求後量子密碼金鑰以及在哪裡新增。代價是：此人可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。"
   },
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "學習哪些用戶端無法建立 ML-DSA 通行金鑰"
+  },
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "開啟時，提供了 ML-DSA 並在瀏覽器中以 NotSupportedError 失敗的通行金鑰註冊會計入其用戶端——依系列和主版本區分的瀏覽器和作業系統，與通行金鑰儀式紀錄中的名稱一致（`Chrome 141 on macOS 15`）——一旦在 `webauthn.clientLearningWindowHours` 內有 `webauthn.clientLearningFailures` 位不同的人以這種方式從同一用戶端失敗，且來自它的註冊沒有一次成功，此領域就不再向該用戶端提供 ML-DSA：它的註冊提供去掉 ML-DSA 的清單，就像通行金鑰原則中已設定的 `clientRules` 列那樣。來自該用戶端、要求了 ML-DSA 並成功的註冊會刪除該項目，在 目錄 → 原則 → 通行金鑰原則 中清除它也會。在不允許傳統通行金鑰的地方從不適用。關閉時，不計數任何內容，也不套用任何已學習的內容；已學習的內容會保留。"
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "用戶端不再取得 ML-DSA 之前的失敗次數"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "在 `webauthn.clientLearning` 不再向某用戶端提供 ML-DSA 之前，需要有多少位不同人員來自該用戶端的註冊在 `webauthn.clientLearningWindowHours` 內要求了 ML-DSA 並以 NotSupportedError 失敗，且沒有一次成功。一個人無論嘗試多少次只計一次，因此一個帳戶無法讓領域學到關於其他所有人瀏覽器的任何內容。"
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "統計失敗的時間視窗"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "一次失敗計入 `webauthn.clientLearningFailures` 的小時數。更早的失敗會被遺忘，排程工作（`passkeys.client-learning-sweep`）會刪除所有失敗都已過期的項目。已學習的用戶端會一直保持學習狀態，直到來自它的註冊成功或被清除。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "使用者驗證"

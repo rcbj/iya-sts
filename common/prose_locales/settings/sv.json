@@ -1127,6 +1127,30 @@
     "en": "f34caf08dceeedd3",
     "text": "Läses bara medan nyckelpolicyn kräver en postkvantnyckel vid inloggning (`postQuantumRequired`), och bara där den valda profilens rad `postQuantumAllowCredentials` är `realm`. `narrow` (standard) anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets `allowCredentials`, så en klassisk nyckel erbjuds aldrig — men en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin (STS-AUTHN-0356), med en sida som säger att programmet kräver en postkvantnyckel och var man lägger till en. Avvägningen: personen kan välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni."
   },
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "Lär dig vilka klienter som inte kan skapa en ML-DSA-passnyckel"
+  },
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "På räknas en passnyckelregistrering som erbjöd ML-DSA och misslyckades i webbläsaren med NotSupportedError mot sin klient — webbläsaren och operativsystemet efter familj och huvudversion, så som passnyckelceremoniernas rader namnger den (`Chrome 141 on macOS 15`) — och när `webauthn.clientLearningFailures` olika personer har misslyckats så från en klient inom `webauthn.clientLearningWindowHours`, utan att någon registrering från den lyckats, slutar den här sfären erbjuda ML-DSA till den klienten: dess registreringar erbjuder listan utan ML-DSA, som en konfigurerad rad `clientRules` i passnyckelpolicyn gör. En registrering från klienten som bad om ML-DSA och lyckades tar bort posten, och det gör också att rensa den under Katalog → Policyer → Passnyckelpolicy. Tillämpas aldrig där en klassisk passnyckel inte är tillåten. Av räknas inget och inget inlärt tillämpas; det inlärda behålls."
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "Misslyckanden innan en klient inte längre erbjuds ML-DSA"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "Hur många olika personers registreringar från en klient som måste ha bett om ML-DSA och misslyckats med NotSupportedError, inom `webauthn.clientLearningWindowHours` och utan att någon lyckats, innan `webauthn.clientLearning` slutar erbjuda den ML-DSA. En person räknas en gång hur ofta den än försöker, så ett konto kan inte lära sfären något om alla andras webbläsare."
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "Fönster som misslyckandena räknas inom"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "De timmar ett misslyckande räknas mot `webauthn.clientLearningFailures`. Ett äldre misslyckande glöms, och ett schemalagt jobb (`passkeys.client-learning-sweep`) tar bort de poster vars misslyckanden alla har åldrats ut. En klient som redan är inlärd förblir det tills en registrering från den lyckas eller den rensas."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Användarverifiering"

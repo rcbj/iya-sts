@@ -1127,6 +1127,30 @@
     "en": "f34caf08dceeedd3",
     "text": "Solo se lee mientras la política de llaves de acceso exige una llave de acceso poscuántica al iniciar sesión (`postQuantumRequired`), y solo donde la fila `postQuantumAllowCredentials` del perfil seleccionado es `realm`. `narrow` (el valor predeterminado) nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en el `allowCredentials` del paso de llave de acceso, de modo que nunca se ofrece una clásica — pero una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia (STS-AUTHN-0356), con una página que dice que la aplicación exige una llave de acceso poscuántica y dónde añadir una. La contrapartida: la persona puede elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia."
   },
+  "webauthn.clientLearning|label": {
+    "en": "dddede96b863e242",
+    "text": "Aprender qué clientes no pueden crear una llave de acceso ML-DSA"
+  },
+  "webauthn.clientLearning|description": {
+    "en": "fbfe7b921fd67e80",
+    "text": "Activado, un registro de llave de acceso que ofreció ML-DSA y falló en el navegador con NotSupportedError se cuenta contra su cliente —el navegador y el sistema operativo por familia y versión principal, tal como lo nombran las filas de ceremonias de llaves de acceso (`Chrome 141 on macOS 15`)— y, cuando `webauthn.clientLearningFailures` personas distintas han fallado así desde un cliente dentro de `webauthn.clientLearningWindowHours`, sin que ningún registro suyo tenga éxito, este dominio deja de ofrecer ML-DSA a ese cliente: sus registros ofrecen la lista sin ML-DSA, como lo hace una fila `clientRules` configurada de la política de llaves de acceso. Un registro del cliente que pidió ML-DSA y tuvo éxito elimina la entrada, y también borrarla en Directorio → Políticas → Política de llaves de acceso. Nunca se aplica donde no se permite una llave de acceso clásica. Desactivado, no se cuenta nada ni se aplica nada aprendido; lo aprendido se conserva."
+  },
+  "webauthn.clientLearningFailures|label": {
+    "en": "ded32790ec269d03",
+    "text": "Fallos antes de que a un cliente deje de ofrecérsele ML-DSA"
+  },
+  "webauthn.clientLearningFailures|description": {
+    "en": "113e2b2309630029",
+    "text": "Cuántos registros de personas distintas desde un cliente deben haber pedido ML-DSA y fallado con NotSupportedError, dentro de `webauthn.clientLearningWindowHours` y sin que ninguno tenga éxito, antes de que `webauthn.clientLearning` deje de ofrecerle ML-DSA. Una persona se cuenta una vez por mucho que lo intente, de modo que una cuenta no puede enseñar al dominio nada sobre el navegador de los demás."
+  },
+  "webauthn.clientLearningWindowHours|label": {
+    "en": "26bb37525581db04",
+    "text": "Ventana en la que se cuentan los fallos"
+  },
+  "webauthn.clientLearningWindowHours|description": {
+    "en": "10b68ce2207699be",
+    "text": "Las horas durante las que un fallo cuenta para `webauthn.clientLearningFailures`. Un fallo más antiguo se olvida, y un trabajo del planificador (`passkeys.client-learning-sweep`) elimina las entradas cuyos fallos han caducado todos. Un cliente ya aprendido sigue aprendido hasta que un registro suyo tenga éxito o se borre."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Verificación del usuario"

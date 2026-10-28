@@ -313,6 +313,8 @@ function kinds(t) {
             'reset-password-policy,save-authn-policy,reset-authn-policy,' +
             'save-serviceAccount-policy,reset-serviceAccount-policy,' +
             'save-passkey-policy,reset-passkey-policy,' +
+            // #1112: the passkey policy's own two acts, its learned clients.
+            'clear-passkey-client,clear-passkey-clients,' +
             'save-locale-policy,reset-locale-policy,' +
             'save-attributes-policy,reset-attributes-policy,' +
             'define-person-attribute,remove-person-attribute',

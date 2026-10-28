@@ -475,6 +475,10 @@
     "en": "712b402391b059c6",
     "text": "持有後量子通行金鑰的人使用傳統通行金鑰登入"
   },
+  "audit.actions.webauthn.client.learned.label": {
+    "en": "6bc383e0e6f3432f",
+    "text": "某用戶端在通行金鑰註冊時不再取得 ML-DSA"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "安全金鑰的證明不再受信任：Google 的 Android 證明狀態清單撤銷了其鏈結"
