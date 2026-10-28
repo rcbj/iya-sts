@@ -142,10 +142,10 @@ class PostLoginCampaignsApi {
           try {
             self.sendJson(res, 200, loadCampaigns().view());
           } catch (e) {
-            log.error(errorCodes.tag('STS-AUTHN-0480') + 'post-login ' +
+            log.error(errorCodes.tag('STS-AUTHN-0493') + 'post-login ' +
                       'campaigns could not be read: ' +
                       ((e && e.message) || e));
-            errorCodes.mark(res, 'STS-AUTHN-0480');
+            errorCodes.mark(res, 'STS-AUTHN-0493');
             self.sendJson(res, 500, { ok: false, errors: [
               'The campaigns could not be read.'] });
           }
@@ -168,15 +168,15 @@ class PostLoginCampaignsApi {
             if (!result.ok) {
               // error-code: none — the act's own code, read off the result
               errorCodes.mark(res, String(result.errorCode ||
-                                          'STS-AUTHN-0478'));
+                                          'STS-AUTHN-0491'));
             }
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API campaigns action. " +
                       "ok=" + result.ok);
           }, function (e: any): void {
-            log.error(errorCodes.tag('STS-AUTHN-0480') + 'post-login ' +
+            log.error(errorCodes.tag('STS-AUTHN-0493') + 'post-login ' +
                       'campaign act failed: ' + ((e && e.message) || e));
-            errorCodes.mark(res, 'STS-AUTHN-0480');
+            errorCodes.mark(res, 'STS-AUTHN-0493');
             self.sendJson(res, 500, { ok: false, errors: [
               'The campaign could not be changed.'] });
             log.debug("Leaving the management API campaigns action. " +
@@ -198,7 +198,7 @@ class PostLoginCampaignsApi {
               'credential, and the post-login activity does the ' +
               'registration. `group` narrows the people to one group\'s ' +
               'members. A second campaign for the same activity and people ' +
-              'is refused (STS-AUTHN-0479); bad values are STS-AUTHN-0477.',
+              'is refused (STS-AUTHN-0492); bad values are STS-AUTHN-0490.',
             requestBodyRequired: false,
             requestBody: {
               type: 'object',
@@ -230,7 +230,7 @@ class PostLoginCampaignsApi {
           { action: 'pause', operationId: 'pausePostLoginCampaign',
             summary: 'Pause a post-login mail campaign',
             description: 'A running campaign stops mailing, within the ' +
-              'slice a run is in; its cursor is kept. STS-AUTHN-0478 for ' +
+              'slice a run is in; its cursor is kept. STS-AUTHN-0491 for ' +
               'no such campaign or one that is not running.',
             requestBodyRequired: true,
             requestBody: {
@@ -244,7 +244,7 @@ class PostLoginCampaignsApi {
           { action: 'resume', operationId: 'resumePostLoginCampaign',
             summary: 'Resume a paused post-login mail campaign',
             description: 'A paused campaign mails again from where its ' +
-              'cursor stopped. STS-AUTHN-0478 for no such campaign or one ' +
+              'cursor stopped. STS-AUTHN-0491 for no such campaign or one ' +
               'that is not paused.',
             requestBodyRequired: true,
             requestBody: {
@@ -259,7 +259,7 @@ class PostLoginCampaignsApi {
             summary: 'End a post-login mail campaign',
             description: 'A running or paused campaign ends for good: it ' +
               'mails nobody again, and what it did stays on the page and ' +
-              'on each person\'s progress row. STS-AUTHN-0478 for no such ' +
+              'on each person\'s progress row. STS-AUTHN-0491 for no such ' +
               'campaign or one already ended.',
             requestBodyRequired: true,
             requestBody: {

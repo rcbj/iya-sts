@@ -2643,6 +2643,6 @@ and `POST /admin-api/post-login-campaigns/{start,pause,resume,end}`
 — a start writes a row and the scheduler job mails — and nothing here
 reports who was mailed: that is the `postLoginProgress` source in
 `/report` (rcbj on #1110). A refusal is 400 with the act's own code
-(`STS-AUTHN-0477`..`0479`); a failure to read or write the store is 500,
-`STS-AUTHN-0480`. `activity` is a closed set held at the gate.
+(`STS-AUTHN-0490`..`0492`); a failure to read or write the store is 500,
+`STS-AUTHN-0493`. `activity` is a closed set held at the gate.
 `tests/post_login_campaigns.js` B drives it.

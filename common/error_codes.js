@@ -7037,34 +7037,34 @@ const CODES = [
       '`clear-passkey-client`. Logged once per realm per process; the ' +
       'registrations themselves are unchanged.',
     spec: 'none (service log)' },
-  { code: 'STS-AUTHN-0477',
+  { code: 'STS-AUTHN-0490',
     summary: 'A post-login mail campaign was not started: an unknown ' +
       'activity, a number out of its bounds (intervalDays, maxMails, ' +
       'perRun), or a group this realm does not have (#1111).',
     spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/start)' },
-  { code: 'STS-AUTHN-0478',
+  { code: 'STS-AUTHN-0491',
     summary: 'A post-login mail campaign act was refused: an unknown ' +
       'action, no such campaign in this realm, or a campaign whose state ' +
       'the act does not move (pause needs running, resume paused, end ' +
       'either) (#1111).',
     spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/:action)' },
-  { code: 'STS-AUTHN-0479',
+  { code: 'STS-AUTHN-0492',
     summary: 'A post-login mail campaign was not started: one for the same ' +
       'activity and the same people (the realm, or the same group) is ' +
       'already running or paused. End it first (#1111).',
     spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/start)' },
-  { code: 'STS-AUTHN-0480',
+  { code: 'STS-AUTHN-0493',
     summary: 'A post-login mail campaign\'s run could not read its ' +
       'population (the directory refused, or its group is gone); nobody ' +
       'was mailed by it this run and its cursor did not move (#1111).',
     spec: 'none (logged; the scheduler run row)' },
-  { code: 'STS-AUTHN-0481',
+  { code: 'STS-AUTHN-0494',
     summary: 'The mail channel refused a post-login campaign\'s reminder ' +
       'to some people this run: no address on the entry, the ' +
       'notification declined, or a ceiling. Counted on the campaign and ' +
       'the run\'s audit row; Monitoring → Mail names each (#1111).',
     spec: 'none (audit row authn.post-login.campaign-run)' },
-  { code: 'STS-AUTHN-0482',
+  { code: 'STS-AUTHN-0495',
     summary: 'A post-login mail campaign is running in a realm with no ' +
       'mail transport: its run mailed nobody and moved no cursor (#1111).',
     spec: 'none (logged; the scheduler run row)' },

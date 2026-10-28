@@ -917,7 +917,7 @@ class MailUses {
     } catch (e) {
       log.debug("Caught in MailUses.postLoginReminder(): " +
                 ((e && e.message) || e));
-      log.warn(errorCodes.tag('STS-AUTHN-0481') + 'mail: the post-login ' +
+      log.warn(errorCodes.tag('STS-AUTHN-0494') + 'mail: the post-login ' +
                'reminder for ' + username + ' in the "' + realms.currentId() +
                '" realm could not be queued: ' + ((e && e.message) || e));
       out = { ok: false, skipped: 'threw' };

@@ -18,12 +18,12 @@
 //
 //   A. IN PROCESS, over doubles and a clock this file moves
 //      (`PostLoginCampaigns` built with its own dependencies): a start's
-//      refusals (0477, 0479), the acts and their refusals (0478); a run
+//      refusals (0490, 0492), the acts and their refusals (0491); a run
 //      reading a slice after a key cursor, mailing only the people due, the
 //      cursor moving and starting over at the end of the people; the
 //      interval and the maximum holding a person back; a refusal by the
-//      channel counted (0481); no transport mailing nobody and moving
-//      nothing (0482); a paused campaign mailing nobody; a group's walk; one
+//      channel counted (0494); no transport mailing nobody and moving
+//      nothing (0495); a paused campaign mailing nobody; a group's walk; one
 //      audit row per campaign per run; `offIn()`.
 //   B. IN A CHILD PROCESS with the whole stack on an ephemeral port: the
 //      job registered with the scheduler; GET and POST
@@ -178,18 +178,18 @@ async function inProcess(t) {
 
   // Refusals of a start.
   let r = await c.act({ action: 'start', activity: 'nope' }, ctx);
-  t.equal(r.ok === false && r.errorCode, 'STS-AUTHN-0477',
+  t.equal(r.ok === false && r.errorCode, 'STS-AUTHN-0490',
     'an unknown activity is refused');
   r = await c.act({ action: 'start', intervalDays: 0 }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0477', 'an interval of 0 is refused');
+  t.equal(r.errorCode, 'STS-AUTHN-0490', 'an interval of 0 is refused');
   r = await c.act({ action: 'start', maxMails: 21 }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0477', 'a maximum past 20 is refused');
+  t.equal(r.errorCode, 'STS-AUTHN-0490', 'a maximum past 20 is refused');
   r = await c.act({ action: 'start', perRun: 1.5 }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0477', 'a fraction is refused');
+  t.equal(r.errorCode, 'STS-AUTHN-0490', 'a fraction is refused');
   r = await c.act({ action: 'start', group: 'nobody-here' }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0477', 'an unknown group is refused');
+  t.equal(r.errorCode, 'STS-AUTHN-0490', 'an unknown group is refused');
   r = await c.act({ action: 'frobnicate', id: 'x' }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0478', 'an unknown action is refused');
+  t.equal(r.errorCode, 'STS-AUTHN-0491', 'an unknown action is refused');
 
   // A start, and the second one refused.
   r = await c.act({ action: 'start', activity: 'pqc-passkey-migration',
@@ -200,7 +200,7 @@ async function inProcess(t) {
   t.equal(d.audits.length && d.audits[d.audits.length - 1].action,
     'admin.post-login-campaign.change', 'the start is audited');
   r = await c.act({ action: 'start' }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0479',
+  t.equal(r.errorCode, 'STS-AUTHN-0492',
     'a second campaign for the same people is refused');
   t.equal(c.offIn('default'), '', 'the job is on with one running');
 
@@ -257,12 +257,12 @@ async function inProcess(t) {
   t.equal(d.real.stateOf('ben').mails, 2,
     'never past the maximum (' + JSON.stringify(out.campaigns[0]) + ')');
 
-  // A refusal by the channel is counted, and audited with 0481.
+  // A refusal by the channel is counted, and audited with 0494.
   d.clock.now += 30 * DAY;
   const r2 = await c.act({ action: 'end', id: id }, ctx);
   t.equal(r2.ok && r2.campaign.state, 'ended', 'end ends it');
   r = await c.act({ action: 'pause', id: id }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0478', 'an ended campaign cannot pause');
+  t.equal(r.errorCode, 'STS-AUTHN-0491', 'an ended campaign cannot pause');
   r = await c.act({ action: 'start', maxMails: 5, perRun: 10 }, ctx);
   const id2 = r.campaign && r.campaign.id;
   t.check(r.ok && id2 && id2 !== id, 'a new campaign once the first ended');
@@ -270,8 +270,8 @@ async function inProcess(t) {
   out = await c.runAsync({});
   one = out.campaigns[0];
   t.equal(one.refused, 1, 'a refusal by the channel is counted');
-  t.equal(d.audits[d.audits.length - 1].errorCode, 'STS-AUTHN-0481',
-    'and the run row carries 0481');
+  t.equal(d.audits[d.audits.length - 1].errorCode, 'STS-AUTHN-0494',
+    'and the run row carries 0494');
   t.equal(d.real.stateOf('ben').mails, 1,
     'a new campaign counts its own mails');
 
@@ -285,11 +285,11 @@ async function inProcess(t) {
   r = c.move('resume', id2, ctx);
   t.equal(r.ok && r.campaign.state, 'running', 'resume resumes');
   r = c.move('resume', id2, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0478', 'a running one cannot resume');
+  t.equal(r.errorCode, 'STS-AUTHN-0491', 'a running one cannot resume');
   d.mailState.available = false;
   const sentBefore = d.sent.length;
   out = await c.runAsync({});
-  t.equal(out.errorCode, 'STS-AUTHN-0482', 'no transport is 0482');
+  t.equal(out.errorCode, 'STS-AUTHN-0495', 'no transport is 0495');
   t.equal(d.sent.length, sentBefore, 'and nobody is mailed');
   d.mailState.available = true;
   c.move('end', id2, ctx);

@@ -210,10 +210,10 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | STS-AUTHN-0474 | Skip was refused because the allotted time has passed. |
 | STS-AUTHN-0475 | The realm could no longer make an ML-DSA passkey, so the held session started without one. |
 | STS-AUTHN-0450 – 0458 | An upgrade ceremony did not complete; the classical passkey is unchanged. |
-| STS-AUTHN-0477, 0478, 0479 | A campaign was not started or changed: bad values, no such campaign or the wrong state, or one already running for the same people. |
-| STS-AUTHN-0480 | A campaign's run could not read its people; its place did not move. |
-| STS-AUTHN-0481 | The mail channel refused some reminders (no address, declined, a ceiling). |
-| STS-AUTHN-0482 | A campaign is running in a realm with no mail transport. |
+| STS-AUTHN-0490, 0491, 0492 | A campaign was not started or changed: bad values, no such campaign or the wrong state, or one already running for the same people. |
+| STS-AUTHN-0493 | A campaign's run could not read its people; its place did not move. |
+| STS-AUTHN-0494 | The mail channel refused some reminders (no address, declined, a ceiling). |
+| STS-AUTHN-0495 | A campaign is running in a realm with no mail transport. |
 
 See [error codes](error-codes.md) for the full list.
 

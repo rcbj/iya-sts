@@ -426,7 +426,7 @@ class PostLoginCampaigns {
     }
     if (errors.length) {
       log.debug("Leaving PostLoginCampaigns.start(). Refused.");
-      return this.refused('STS-AUTHN-0477', errors);
+      return this.refused('STS-AUTHN-0490', errors);
     }
     const same = this.list().filter(function (one: Campaign): boolean {
       return one.state !== 'ended' && one.activity === activity &&
@@ -434,7 +434,7 @@ class PostLoginCampaigns {
     })[0];
     if (same) {
       log.debug("Leaving PostLoginCampaigns.start(). One is running.");
-      return this.refused('STS-AUTHN-0479', [
+      return this.refused('STS-AUTHN-0492', [
         'Campaign ' + same.id + ' is already ' + same.state + ' for ' +
         activity + (group ? ' in ' + group : ' across the realm') +
         '. End it before starting another for the same people.']);
@@ -489,19 +489,19 @@ class PostLoginCampaigns {
     const move = MOVES[String(act || '')];
     if (!move) {
       log.debug("Leaving PostLoginCampaigns.move(). Unknown act.");
-      return this.refused('STS-AUTHN-0478', ['Unknown action "' +
+      return this.refused('STS-AUTHN-0491', ['Unknown action "' +
         String(act || '') + '". The actions are start, ' +
         Object.keys(MOVES).join(', ') + '.']);
     }
     const campaign = this.get(id);
     if (!campaign) {
       log.debug("Leaving PostLoginCampaigns.move(). No campaign.");
-      return this.refused('STS-AUTHN-0478', ['There is no campaign "' +
+      return this.refused('STS-AUTHN-0491', ['There is no campaign "' +
         String(id || '') + '" in this realm.']);
     }
     if (move.from.indexOf(campaign.state) < 0) {
       log.debug("Leaving PostLoginCampaigns.move(). Wrong state.");
-      return this.refused('STS-AUTHN-0478', ['Campaign ' + campaign.id +
+      return this.refused('STS-AUTHN-0491', ['Campaign ' + campaign.id +
         ' is ' + campaign.state + '; ' + act + ' needs one that is ' +
         move.from.join(' or ') + '.']);
     }
@@ -629,14 +629,14 @@ class PostLoginCampaigns {
     try {
       slice = await this.sliceOf(campaign, run.cursor);
     } catch (e) {
-      log.error(errorCodes.tag('STS-AUTHN-0480') + 'post-login: campaign ' +
+      log.error(errorCodes.tag('STS-AUTHN-0493') + 'post-login: campaign ' +
                 campaign.id + ' in realm "' + realms.currentId() + '" could ' +
                 'not read its population: ' + ((e && e.message) || e));
       log.debug("Leaving PostLoginCampaigns.runOne(). No population.");
-      return { campaign: campaign.id, error: 'STS-AUTHN-0480' };
+      return { campaign: campaign.id, error: 'STS-AUTHN-0493' };
     }
     if (!slice.found) {
-      log.warn(errorCodes.tag('STS-AUTHN-0480') + 'post-login: campaign ' +
+      log.warn(errorCodes.tag('STS-AUTHN-0493') + 'post-login: campaign ' +
                campaign.id + '\'s group ' + campaign.group + ' is gone; ' +
                'nobody was mailed.');
     }
@@ -699,7 +699,7 @@ class PostLoginCampaigns {
     };
     runs.set(campaign.id, next);
     if (counts.refused > 0) {
-      log.warn(errorCodes.tag('STS-AUTHN-0481') + 'post-login: campaign ' +
+      log.warn(errorCodes.tag('STS-AUTHN-0494') + 'post-login: campaign ' +
                campaign.id + ': the mail channel refused ' + counts.refused +
                ' reminder(s) this run (no address, a declined notification ' +
                'or a ceiling); Monitoring → Mail says which.');
@@ -707,7 +707,7 @@ class PostLoginCampaigns {
     this.deps.audit.audit({
       action: 'authn.post-login.campaign-run',
       outcome: counts.refused && !counts.mailed ? 'refused' : 'success',
-      errorCode: counts.refused ? 'STS-AUTHN-0481' : '',
+      errorCode: counts.refused ? 'STS-AUTHN-0494' : '',
       actor: 'scheduler', target: campaign.id, channel: 'scheduler',
       summary: 'Post-login mail campaign ' + campaign.id + ': ' +
                next.lastSummary,
@@ -748,13 +748,13 @@ class PostLoginCampaigns {
       available = false;
     }
     if (!available) {
-      log.warn(errorCodes.tag('STS-AUTHN-0482') + 'post-login: ' +
+      log.warn(errorCodes.tag('STS-AUTHN-0495') + 'post-login: ' +
                running.length + ' campaign(s) running in realm "' +
                realms.currentId() + '" and no mail transport: nobody was ' +
                'mailed, and no cursor moved.');
       log.debug("Leaving PostLoginCampaigns.runAsync(). No transport.");
       return { summary: 'No mail transport in this realm; nobody was ' +
-                        'mailed.', errorCode: 'STS-AUTHN-0482' };
+                        'mailed.', errorCode: 'STS-AUTHN-0495' };
     }
     const results: Json[] = [];
     for (const campaign of running) {
@@ -764,10 +764,10 @@ class PostLoginCampaigns {
       try {
         results.push(await this.runOne(campaign, ctx));
       } catch (e) {
-        log.error(errorCodes.tag('STS-AUTHN-0480') + 'post-login: campaign ' +
+        log.error(errorCodes.tag('STS-AUTHN-0493') + 'post-login: campaign ' +
                   campaign.id + ' failed this run: ' +
                   ((e && e.message) || e));
-        results.push({ campaign: campaign.id, error: 'STS-AUTHN-0480' });
+        results.push({ campaign: campaign.id, error: 'STS-AUTHN-0493' });
       }
     }
     const mailed = results.reduce(function (n: number, r: Json): number {
