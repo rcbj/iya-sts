@@ -238,9 +238,9 @@ false about a real device.
 
 ML-DSA passkey creation and assertion support depends on the browser,
 operating system and authenticator, and is not implied by ordinary WebAuthn
-support. See the dated [ML-DSA browser and authenticator compatibility
-snapshot](passkeys.md#which-browsers-and-authenticators-can-make-an-ml-dsa-passkey)
-before requiring post-quantum passkeys for a population.
+support. See [where ML-DSA passkeys are expected to
+work](passkeys.md#where-ml-dsa-passkeys-are-expected-to-work), and measure
+your own realm, before requiring post-quantum passkeys for a population.
 
 **Optional long-term evidence for trusted classical attestations (#947).**
 Configure `webauthn.attestationEvidenceTsaUrl` with an HTTPS RFC 3161 timestamp
