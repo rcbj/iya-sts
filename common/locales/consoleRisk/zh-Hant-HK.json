@@ -18,5 +18,8 @@
   "providers.note": "每個提供者的條款約束下載其數據的部署，其中一些還約束任何再散布者。",
   "credits.heading": "數據致謝",
   "assessments.inDatabase": "保存在數據庫中。",
-  "assessments.inProcess": "保存在此程序中：沒有帶金鑰可用於封存它們的數據庫。"
+  "assessments.inProcess": "保存在此程序中：沒有帶金鑰可用於封存它們的數據庫。",
+  "authenticator.label": "FIDO 元數據對以下內容怎麼說",
+  "authenticator.statement": "元數據聲明",
+  "authenticator.why.unreadable": "否：無法讀取 FIDO 元數據"
 }

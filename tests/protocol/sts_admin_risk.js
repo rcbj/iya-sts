@@ -14,7 +14,8 @@
 // postgres driver's `sts_risk_*` tables that answer:
 //
 //   1. THE VIEW: every dataset in the catalogue, the store named, and the
-//      page drawn with its lookup form;
+//      page drawn with its lookup form; the FIDO metadata's lookup of a
+//      key (#1080) saying why nothing is listed;
 //   2. IMPORT AND LOOK UP: an operator deny list imported through the API is
 //      active, and a lookup of an address inside it names the list and the
 //      version that answered;
@@ -190,6 +191,24 @@ async function theView(consoleClient) {
     assert.ok(page.text.indexOf('id="risk-lookup"') >= 0,
               "no lookup form on the page");
   });
+  // #1080: the FIDO metadata's lookup, the API twin of the page's second
+  // form. Whether a BLOB is loaded depends on the stack, so an unlisted
+  // AAGUID may be either reason; a string that is no key is always said.
+  const notAKey = await api("GET", "/admin-api/risk?authenticator=" +
+                            encodeURIComponent("not a key"));
+  const unlisted = await api("GET", "/admin-api/risk?authenticator=" +
+                             "00000000-1111-4222-8333-444444444444");
+  check("GET /admin-api/risk?authenticator= says why nothing is listed",
+        function () {
+          assert.strictEqual(notAKey.status, 200, notAKey.text.slice(0, 300));
+          const a = notAKey.body.authenticatorLookup;
+          assert.ok(a && a.why === "not-a-key" && a.listed === false,
+                    JSON.stringify(a));
+          const u = unlisted.body.authenticatorLookup;
+          assert.ok(u && u.keyKind === "aaguid" && u.listed === false &&
+                    ["no-blob", "not-listed"].indexOf(u.why) >= 0,
+                    JSON.stringify(u));
+        });
   log.debug("Leaving theView().");
   return r.body;
 }

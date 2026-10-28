@@ -772,6 +772,16 @@ here changed for it rather than a second MDS client being written:
   above the active one is not imported (the ordinary day, and not a rollback
   worth an audit row); a download that fails is `STS-RISK-0027`.
   `mdsState()` / `mdsSnapshot()` report the active BLOB to `/admin/webauthn`.
+* **`describeAuthenticator(input)`** (#1080) is the administrator's lookup —
+  Monitoring → Risk's *Look up an authenticator*, `GET /admin-api/risk
+  ?authenticator=`, answered as the view's `authenticatorLookup`. The two
+  lookups above answer null for four reasons, right for something that
+  decides; this one tells the kind by the key's shape (UUID, `XXXX#XXXX`,
+  forty hex digits), says WHY in a token the page translates (`not-a-key`,
+  `all-zero`, `no-blob`, `not-listed`, `unreadable`), and **asks a stale
+  BLOB too, saying `stale`** — an administrator asking what the loaded data
+  says is not deciding on it. Nothing that decides reads it.
+  `tests/risk_mds.js` L0–L5.
 
 `authn/webauthn_attestation.ts` refuses a registration from a model this data
 calls compromised (`STS-AUTHN-0237`) — the same `compromised` flag the scorer
