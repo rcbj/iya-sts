@@ -2648,7 +2648,8 @@ a failure to read or write the store is 500, `STS-AUTHN-0493`. `activity` is
 a closed set held at the gate. **Since #1123 the start takes `groups`, a
 list** (the union of their members, each person once; none for the realm),
 and the GET takes the console's chooser parameters — `groupq`, `groupfrom`,
-and `groups` as ONE string, a name a line — and answers `groupChooser`, so
+and `groups` as ONE string, its names separated by `;` (a query value may
+hold no control character, so a line break is refused at the gate) — and answers `groupChooser`, so
 the page's search is this operation's and nothing console-only (rule 7).
 `tests/post_login_activities.js` B and
 `tests/protocol/sts_post_login_activities.js` drive it.

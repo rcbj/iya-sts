@@ -17,7 +17,7 @@
 //      OpenAPI document, and the view refuses a caller with no token;
 //   b. the view answers the activities, the bounds, the job, the started
 //      activities, and its group chooser: a search for the two groups made
-//      here finds both, and with one chosen (`groups`, one name a line) it
+//      here finds both, and with one chosen (`groups`, `;`-separated) it
 //      is resolved and left out of the results;
 //   c. a start with a value out of its bounds, an unknown activity, a group
 //      this realm does not have (STS-AUTHN-0530, by name), and an unknown
@@ -156,7 +156,7 @@ async function test() {
                           encodeURIComponent(STAMP));
   const narrowed = await send("GET", OPERATION + "?groupq=" +
                               encodeURIComponent(STAMP) + "&groups=" +
-                              encodeURIComponent(group + "\nnope-" +
+                              encodeURIComponent(group + ";nope-" +
                                                  STAMP));
   check("the view answers the activities, the bounds, the job, the " +
         "started activities and its group chooser", function () {

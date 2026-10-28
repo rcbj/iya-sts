@@ -30,7 +30,7 @@
 //      refused (0490), the same set in another order refused (0492), the
 //      union walked with one cursor and a member of two groups mailed once,
 //      and the chooser's slice (twenty, paged, the offset clamped, the
-//      chosen left out, the `groups` parameter one name a line).
+//      chosen left out, the `groups` parameter `;`-separated).
 //   B. IN A CHILD PROCESS with the whole stack on an ephemeral port: the
 //      job registered with the scheduler; GET and POST
 //      /admin-api/post-login-activities (a start, a second refused, a bad
@@ -382,10 +382,10 @@ async function inProcess(t) {
   c.move('end', gid, ctx);
 
   // Two groups: their UNION, dan (in both) read and mailed once.
-  r = await c.act({ action: 'start', groups: 'staff\ncn=ops', perRun: 2 },
+  r = await c.act({ action: 'start', groups: 'staff;cn=ops', perRun: 2 },
                   ctx);
   t.equal(r.ok && r.started.groups.join(';'), 'cn=staff;cn=ops',
-    'a list given one name a line is resolved to DNs, in order');
+    'a `;`-separated list is resolved to DNs, in order');
   const uid = r.started && r.started.id;
   r = await c.act({ action: 'start', groups: ['ops', 'staff'] }, ctx);
   t.equal(r.errorCode, 'STS-AUTHN-0492',
@@ -435,7 +435,7 @@ async function chooser(t) {
     'the next page holds the last five');
   g = c.view({ groupq: 'team', groupfrom: '400' }).groupChooser;
   t.equal(g.pane.from, 0, 'a stale offset is clamped to the first page');
-  g = c.view({ groupq: 'team', groups: 'team-03\ncn=team-07\nnope' })
+  g = c.view({ groupq: 'team', groups: 'team-03;cn=team-07;nope' })
     .groupChooser;
   t.equal(g.pane.matched, 23, 'the chosen are left out of the results');
   t.equal(g.chosen.map(function (one) {
@@ -443,8 +443,9 @@ async function chooser(t) {
   }).join(','), 'cn=team-03:true,cn=team-07:true,cn=nope:false',
     'the list is resolved, a missing group marked');
   t.equal(require('../common/post_login_activities')
-    .groupNamesOf(['a\r\n b', '', 'c']).join('|'), 'a|b|c',
-    'groupNamesOf splits lines and drops empties');
+    .groupNamesOf(['a; b', '', 'cn=c\\;d,ou=x;']).join('|'),
+    'a|b|cn=c\\;d,ou=x',
+    'groupNamesOf splits on `;`, keeps an escaped one, drops empties');
   log.debug("Leaving chooser().");
 }
 
@@ -612,7 +613,7 @@ function childMain() {
     g = await pane('?groupq=' + encodeURIComponent(TEAM) + '&groupfrom=900');
     note(g && g.pane.from === 0, 'B7c. a stale offset is clamped');
     g = await pane('?groupq=' + encodeURIComponent(TEAM) + '&groups=' +
-                   encodeURIComponent(TEAM + '00\n' + TEAM + '01'));
+                   encodeURIComponent(TEAM + '00;' + TEAM + '01'));
     note(g && g.pane.matched === 23 && g.chosen.length === 2 &&
          g.chosen.every(function (one) {
            return one.found && /^cn=/i.test(one.dn);

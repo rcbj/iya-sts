@@ -56,8 +56,13 @@
 // console's chooser asks `groupChoices()` (the group index, never the
 // directory's entries) for a page of twenty — `chooserPane()`'s `slice`, cut
 // here by `view()` from the page's own query: `groupq` (the search),
-// `groupfrom` (the offset, clamped) and `groups` (the list being built,
-// newline-separated, its groups left out of the results).
+// `groupfrom` (the offset, clamped) and `groups` (the list being built, its
+// groups left out of the results). THE LIST IS ONE PARAMETER, ITS NAMES
+// SEPARATED BY `;`: a DN's commas would split a comma list, the console's
+// `pageParamsOf()` keeps only the first of a repeated parameter, and a query
+// value may hold no control character (`common/validation.js`), so a line
+// break is refused at the gate. RFC 4514 escapes a `;` inside a DN value
+// (`\;`), so an unescaped one is never part of a DN.
 //
 // TWO STORES, AND WHY TWO. `post_login.activities` holds what an
 // administrator decided — the activity, the groups, the numbers, the state —
@@ -261,9 +266,11 @@ class PostLoginActivities {
   }
 
   /**
-   * The group names a request carries, as a list: an array, or one string
-   * holding them a line each (the console's `groups` query parameter, which
-   * keeps a DN's commas intact), each trimmed, the empty ones dropped.
+   * The group names a request carries, as a list: an array, or strings
+   * holding several separated by `;` (the console's `groups` query
+   * parameter — see the header), each trimmed, the empty ones dropped. A
+   * `;` escaped with a backslash, as RFC 4514 writes one inside a DN value,
+   * does not separate.
    *
    * @param given - what the request carried
    * @returns the names
@@ -271,16 +278,30 @@ class PostLoginActivities {
   static groupNamesOf(given: any): string[] {
     log.debug("Entering PostLoginActivities.groupNamesOf().");
     const out: string[] = [];
+    const keep = function (name: string): void {
+      const trimmed = name.trim();
+      if (trimmed) {
+        out.push(trimmed);
+      }
+    };
     ([] as any[]).concat(given === undefined || given === null ? []
                                                                : given)
       .forEach(function (one: any): void {
-        String(one == null ? '' : one).split(/\r?\n/)
-          .forEach(function (name: string): void {
-            const trimmed = name.trim();
-            if (trimmed) {
-              out.push(trimmed);
-            }
-          });
+        const text = String(one == null ? '' : one);
+        let name = '';
+        for (let i = 0; i < text.length; i++) {
+          const c = text.charAt(i);
+          if (c === '\\' && i + 1 < text.length) {
+            name += c + text.charAt(i + 1);
+            i += 1;
+          } else if (c === ';') {
+            keep(name);
+            name = '';
+          } else {
+            name += c;
+          }
+        }
+        keep(name);
       });
     log.debug("Leaving PostLoginActivities.groupNamesOf(). " + out.length);
     return out;
@@ -523,7 +544,7 @@ class PostLoginActivities {
    * Starts a post-login activity in the ambient realm.
    *
    * @param body - `activity`, `groups` (optional: groups' cns or DNs, a list
-   *   or one per line; none for everybody in the realm), `intervalDays`,
+   *   or `;`-separated; none for everybody in the realm), `intervalDays`,
    *   `maxMails`, `perRun`
    * @param ctx - `{ actor, via }`: who started it, and through which door
    * @returns `{ ok, started }`, or `{ ok: false, errorCode, errors }`

@@ -23,7 +23,9 @@
 // cut (`groupChooser.pane`: twenty from the clamped `groupfrom`), because a
 // realm's groups are a catalogue too big to send whole. A result is a LINK
 // back to this page that ADDS the group to the list; the list is the page's
-// own query parameter `groups`, one DN per line, so it survives the search,
+// own query parameter `groups`, its DNs separated by `;` (a DN escapes one
+// inside a value; `common/post_login_activities.ts` argues the separator),
+// so it survives the search,
 // its paging and a reload with no state held anywhere, as `grantto` and
 // `person` do on the pages that pick one thing. Each chosen group has a
 // Remove link (the same list without it), and the start form carries the
@@ -106,7 +108,7 @@ class PostLoginActivitiesPage {
       '>' + t.html(words[act]) + '</button></form>';
   }
 
-  // A started activity's groups, one DN a line, or everybody.
+  // A started activity's groups, a DN a line, or everybody.
   private static groupsCell(t: Json, groups: Json): string {
     const list = Array.isArray(groups) ? groups : [];
     if (!list.length) {
@@ -191,7 +193,7 @@ class PostLoginActivitiesPage {
     const carried = WebKit.pageParamsOf(query);
     delete carried.groupfrom;
     return PAGE + WebKit.queryWith(carried,
-      { groups: groups.join('\n') }) + '#' + LIST_ANCHOR;
+      { groups: groups.join(';') }) + '#' + LIST_ANCHOR;
   }
 
   // The groups chosen so far: a table with a Remove each, or the note that

@@ -161,8 +161,9 @@ class PostLoginActivitiesApi {
             description: 'Where the page of the group search starts.' },
           { name: 'groups', in: 'query', required: false,
             schema: { type: 'string', maxLength: 65536 },
-            description: 'The groups chosen so far, one cn or DN per line ' +
-                         '(a line break keeps a DN\'s commas intact); ' +
+            description: 'The groups chosen so far, cns or DNs separated ' +
+                         'by `;` (a DN\'s commas stay intact; a `;` inside ' +
+                         'a DN value is escaped, `\\;`); ' +
                          'resolved into `groupChooser.chosen` and left out ' +
                          'of the search.' }
         ],
