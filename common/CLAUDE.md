@@ -13770,6 +13770,55 @@ it:
   computation of the deadline the report shows. `report/CLAUDE.md` argues
   the source.
 
+### 3ct, continued: a started activity asks its groups at sign-in (#1126, 2026-10-28)
+
+rcbj chose option (a) on #1126: starting an activity for a group and signing
+in as a member asked nothing, because the default realm had no saved policy
+and the built-in `default` is off; the page read as if starting it asked the
+group. **A RUNNING started activity now turns the sign-in invitation on for
+its population** (the union of its groups by DN, or the realm where it names
+none) for its activity. What reaches outside `post_login.ts`'s header:
+
+* **The rules are still the policy's.** `dueFor()` reads the profile
+  `forPerson()` selects; a started activity overrides only `enabled`. So
+  method, snoozeDays, graceDays, noPasskey, noPasskeyRole, attestation and
+  noPasskeyFallback come from the same profile whoever asks, and there is
+  still one place to set them.
+* **Exclusion is unchanged, and `default` off is not one.** The selected
+  profile is the matching named profile of lowest precedence; a NAMED one
+  with `enabled` off excludes its people from every started activity too.
+  `default` off excludes nobody — it is the built-in state of every realm,
+  and letting it veto would make a started activity ask nobody anywhere a
+  policy was never saved, which is the bug.
+* **The cheap question stays cheap.** `dueFor()` asks
+  `post_login_activities.runningOf()` first and `anyEnabled()` second; with
+  neither, it reads no keys, no group and no row. `runningOf()` is a walk of
+  the started store already held in the process — a persisted, NOT
+  on-demand `realms.map()` bounded at `KEEP` (fifty) rows, its writes from
+  another process arriving by the change log as the job's own pause check
+  already relies on — so it keeps no cache: a second copy would have to be
+  kept in step for nothing. The person's groups are the directory's
+  `personGroups()` hook (#535's, the passkey policy's), asked AT MOST ONCE
+  a question (`forPerson(username, groupsOf)` shares the answer with the
+  started activities) and only where a named profile exists or a running
+  activity names groups; never a member walk.
+* **Several running activities reaching one person: the OLDEST asks**, so
+  `askedBy` does not move when another is started.
+* **`askedBy` on the progress row** (`policy`, or the started activity's
+  id) is written at the ask, Skip and done — the pending step carries it
+  (`authn/CLAUDE.md`) — and NEVER by a mail (`noteMailed()` leaves it);
+  `mailedBy` stays the mail's. The `postLoginProgress` source reports it
+  (`report/CLAUDE.md`).
+* **The mail follows for free.** The job's `decide()` was already
+  `dueFor()`, which with the policy off answered null for everybody, so a
+  started activity mailed nobody unless the policy was also on (the page's
+  `noActivity` warning said so). It now mails its people; the warning and
+  its key are gone from the page and the seven catalogs, and the API's
+  `activityEnabled` is described as the POLICY's own answer.
+* **No new code.** Nothing new refuses or fails: a started store that
+  cannot be read asks nobody through it (`runningActivities()` answers
+  none), and the policy still asks whom it enables.
+
 ### 3ct, continued: the migration's method, and what replaced the portal's Upgrade button (#1100–#1105, 2026-10-28)
 
 **rcbj: the post-login activity's PQC migration REPLACES the "Upgrade to

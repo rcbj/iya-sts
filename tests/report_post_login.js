@@ -62,7 +62,8 @@ function catalogChecks(t) {
   });
   ['username', 'activity', 'profile', 'role', 'progress', 'invitedAt',
    'snoozedUntil', 'asks', 'skips', 'done', 'doneAt', 'deadline',
-   'graceEnded', 'mailedBy', 'mails', 'firstMailedAt', 'lastMailedAt']
+   'graceEnded', 'askedBy', 'mailedBy', 'mails', 'firstMailedAt',
+   'lastMailedAt']
     .forEach(function (id) {
       t.check(ids.indexOf(id) >= 0, 'postLoginProgress has ' + id);
     });
@@ -120,7 +121,8 @@ function due(extra) {
   const out = Object.assign({ activity: 'pqc-passkey-migration',
     role: 'primary', reason: 'classical', required: false,
     enforceable: true, method: 'upgrade', fallback: 'none', snoozeDays: 7,
-    graceDays: 30, invitedAt: 0, deadline: 0, profile: 'staff' },
+    graceDays: 30, invitedAt: 0, deadline: 0, profile: 'staff',
+    askedBy: 'policy' },
   extra || {});
   log.debug("Leaving due().");
   return out;
@@ -147,9 +149,9 @@ async function rowChecks(t) {
   // ada: asked once, today.
   pl.noteAsked('ada', due());
   // bob: asked and skipped twice.
-  pl.noteAsked('bob', due({ role: 'mfa' }));
-  pl.noteSkipped('bob', due({ role: 'mfa' }));
-  pl.noteSkipped('bob', due({ role: 'mfa' }));
+  pl.noteAsked('bob', due({ role: 'mfa', askedBy: 'pla-9' }));
+  pl.noteSkipped('bob', due({ role: 'mfa', askedBy: 'pla-9' }));
+  pl.noteSkipped('bob', due({ role: 'mfa', askedBy: 'pla-9' }));
   // cy: asked forty days ago, never did it: past a thirty-day grace.
   built.clock.now = T0 - 40 * DAY;
   pl.noteAsked('cy', due());
@@ -172,7 +174,7 @@ async function rowChecks(t) {
     const all = await rowsOf(sources, { source: 'postLoginProgress',
       select: ['username', 'activity', 'profile', 'role', 'progress',
         'invitedAt', 'asks', 'skips', 'done', 'deadline', 'graceEnded',
-        'mailedBy', 'mails', 'firstMailedAt', 'lastMailedAt'],
+        'askedBy', 'mailedBy', 'mails', 'firstMailedAt', 'lastMailedAt'],
       orderBy: [{ field: 'username', dir: 'asc' }], limit: 50 });
     t.equal(all.ok, true, 'the source answers', all.description);
     const by = {};
@@ -190,6 +192,12 @@ async function rowChecks(t) {
       new Date(T0 + 30 * DAY).toISOString(),
       'the deadline is graceDays from the first invitation');
     t.equal(by.bob && by.bob.skips, 2, 'bob skipped twice');
+    t.equal(by.ada && by.ada.askedBy, 'policy',
+      'askedBy: the policy asked ada (#1126)');
+    t.equal(by.bob && by.bob.askedBy, 'pla-9',
+      'and a started activity asked bob');
+    t.equal(by.eve && by.eve.askedBy, '',
+      'a person only mailed was asked by nobody');
     t.equal(by.bob && by.bob.role, 'mfa', 'in the role he was asked in');
     t.equal(by.bob && by.bob.progress, 'snoozed', 'and is put off');
     t.equal(by.cy && by.cy.graceEnded, true, 'cy is past the allotted time');

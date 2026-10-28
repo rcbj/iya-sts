@@ -651,6 +651,7 @@ without the directory being asked again for every row.
 | `doneAt` | timestamp | When they did it. | yes | yes | no |
 | `deadline` | timestamp | When the allotted time ends, or null where there is none. | yes | yes | no |
 | `graceEnded` | boolean | The allotted time has ended and the activity is not done: Skip is gone and the next sign-in is held. | yes | yes | yes |
+| `askedBy` | string | Who asked the person at a sign-in: `policy`, or the id (`pla-…`) of the started post-login activity whose groups hold them. Empty when they were never asked at a sign-in. | yes | yes | yes |
 | `mailedBy` | string | The started post-login activity (its id, `pla-…`) that last mailed the person. | yes | yes | yes |
 | `mails` | number | How many mails the started activity named in `mailedBy` sent the person. | yes | yes | no |
 | `firstMailedAt` | timestamp | When that started activity's first mail went. | yes | yes | no |

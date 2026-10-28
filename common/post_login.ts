@@ -61,9 +61,32 @@
 // invitation: the allotted time still starts at the first time the person
 // is asked at a sign-in, because that is the first time they can act on it.
 //
+// WHO ASKS (#1126, rcbj's option (a)). Two sources turn the invitation on
+// for a person: the POLICY (the profile `selectionFor()` picks for them,
+// with `enabled` on) and a RUNNING STARTED activity
+// (`common/post_login_activities.ts`) whose population — the union of its
+// groups by DN, or the whole realm where it names none — holds them. The
+// RULES are the selected profile's either way (method, snoozeDays,
+// graceDays, noPasskey, noPasskeyRole, attestation, noPasskeyFallback);
+// a started activity overrides only `enabled`. EXCLUSION STILL HOLDS: the
+// selected profile is the matching named profile of lowest precedence, so
+// when it is a NAMED profile with `enabled` off the person is excluded
+// from every started activity too — the policy's one way to exclude a
+// group. `default` off excludes nobody: off is its built-in state, and a
+// started activity that `default` could veto would ask nobody in every
+// realm that never saved a policy. Paused or ended, the activity asks
+// nobody; a person the policy itself enables is still asked. Membership
+// is the person's own groups (`postLoginPolicy.personGroups()`, the
+// passkey policy's hook), asked once a sign-in and only where a running
+// activity names groups or a named profile exists — never a member walk.
+// Which source asked is `askedBy` on the progress row: `policy`, or the
+// started activity's id.
+//
 // A LIBRARY (rule 3): it registers no route. It requires the credential
 // store, the WebAuthn and passkey policies and the post-login policy, none of
-// which requires it, so it closes no cycle.
+// which requires it, so it closes no cycle. The started activities are
+// reached LAZILY (`started()`): that module reaches this one lazily too,
+// and neither is loaded by the other's require.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -90,9 +113,10 @@ const ROLES = ['primary', 'mfa'];
 
 // ---------------------------------------------------------------------------
 // THE STORE: `<username>|<activity>` → `{ invitedAt, snoozedUntil, asks,
-// skips, doneAt, profile, role, graceDays, mailedBy, mails, firstMailedAt,
-// lastMailedAt }`, times in milliseconds. Declared here, per realm, and
-// nowhere else (rule: a store becomes per realm at its declaration).
+// skips, doneAt, profile, role, graceDays, askedBy, mailedBy, mails,
+// firstMailedAt, lastMailedAt }`, times in milliseconds. Declared here, per
+// realm, and nowhere else (rule: a store becomes per realm at its
+// declaration).
 // ---------------------------------------------------------------------------
 const progress = realms.map({ persist: 'post_login.progress',
                               onDemand: { maxEntries: 20000 } });
@@ -128,6 +152,9 @@ interface Due {
   invitedAt: number;
   deadline: number;
   profile: string;
+  // WHO ASKED (#1126): `policy`, or the id (`pla-…`) of the running
+  // started activity whose population holds the person.
+  askedBy: string;
 }
 
 /**
@@ -148,6 +175,9 @@ interface PostLoginDeps {
   webauthnPolicy: any;
   progress: any;
   now: () => number;
+  // The started activities (#1126), lazily; absent in a test's deps, when
+  // no started activity asks anybody.
+  started?: () => any;
 }
 
 /**
@@ -186,6 +216,9 @@ class PostLogin {
              webauthnPolicy: webauthnPolicy, progress: progress,
              now: function () {
                return Date.now();
+             },
+             started: function () {
+               return require('./post_login_activities');
              } };
   }
 
@@ -212,18 +245,23 @@ class PostLogin {
     log.debug("Leaving PostLogin.stateOf(). " + (row ? 'Held.' : 'None.'));
     return Object.assign({ invitedAt: 0, snoozedUntil: 0, asks: 0, skips: 0,
                            doneAt: 0, mails: 0, firstMailedAt: 0,
-                           lastMailedAt: 0 }, row || {});
+                           lastMailedAt: 0, askedBy: '' }, row || {});
   }
 
   // WHAT APPLIED WHEN THE ROW WAS WRITTEN (#1110): the profile, the role and
   // the allotted time of the due that wrote it, kept beside the counts so
   // the report reads them off the row.
-  private stamp(row: Record<string, any>, due: Due): void {
+  private stamp(row: Record<string, any>, due: Due, asked: boolean): void {
     const { log } = this.deps;
     log.debug("Entering PostLogin.stamp().");
     row.profile = String(due.profile || '');
     row.role = String(due.role || '');
     row.graceDays = due.enforceable ? Number(due.graceDays) || 0 : 0;
+    // Who asked at a sign-in (#1126). A mail is not an ask, so
+    // `noteMailed()` leaves it as it was.
+    if (asked) {
+      row.askedBy = String(due.askedBy || '');
+    }
     log.debug("Leaving PostLogin.stamp().");
   }
 
@@ -379,9 +417,66 @@ class PostLogin {
     return null;
   }
 
+  // THE RUNNING STARTED ACTIVITIES of the PQC migration in this realm
+  // (#1126), oldest first; none where the module cannot be asked — a
+  // started activity that cannot be read asks nobody, and the policy still
+  // does.
+  private runningActivities(): { id: string; groups: string[] }[] {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.runningActivities().");
+    let out: { id: string; groups: string[] }[] = [];
+    try {
+      const started = typeof this.deps.started === 'function'
+        ? this.deps.started() : null;
+      out = started && typeof started.runningOf === 'function'
+        ? (started.runningOf(PQC_MIGRATION) || []) : [];
+    } catch (e) {
+      log.debug("Caught in PostLogin.runningActivities(): " +
+                ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving PostLogin.runningActivities(). " + out.length);
+    return out;
+  }
+
+  // THE FIRST RUNNING STARTED ACTIVITY WHOSE POPULATION HOLDS THE PERSON
+  // (#1126): one naming no group holds everybody; otherwise one of its
+  // group DNs is one of the person's. Oldest first, so the answer does not
+  // move when another is started. null where none does.
+  private startedReaching(running: { id: string; groups: string[] }[],
+                          groupsOf: () => { cn?: string; dn?: string }[]):
+      { id: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.startedReaching().");
+    let dns: string[] | null = null;
+    for (const one of running) {
+      if (!one.groups.length) {
+        log.debug("Leaving PostLogin.startedReaching(). " + one.id +
+                  ", the realm.");
+        return one;
+      }
+      if (dns === null) {
+        dns = (groupsOf() || []).map(function (g: any): string {
+          return String((g && g.dn) || '').toLowerCase();
+        }).filter(Boolean);
+      }
+      const mine = dns;
+      if (one.groups.some(function (dn: string): boolean {
+        return mine.indexOf(dn) >= 0;
+      })) {
+        log.debug("Leaving PostLogin.startedReaching(). " + one.id + ".");
+        return one;
+      }
+    }
+    log.debug("Leaving PostLogin.startedReaching(). None.");
+    return null;
+  }
+
   /**
    * Answers whether a person is due a post-login activity at this sign-in:
-   * the profile that reaches them, on; a role their passkeys make them due;
+   * the profile that reaches them, on — or a running started activity
+   * whose population holds them and no named profile off excluding them
+   * (#1126); a role their passkeys make them due;
    * and not put off — unless the allotted time has passed, when it is due
    * and REQUIRED whatever was put off.
    *
@@ -400,16 +495,51 @@ class PostLogin {
       return null;
     }
     try {
-      // THE CHEAP QUESTION FIRST: a realm with every profile off — every
-      // realm, by default — reads no keys and no row.
-      if (!postLoginPolicy.anyEnabled()) {
+      // THE CHEAP QUESTION FIRST: a realm with every profile off and no
+      // started activity running — every realm, by default — reads no
+      // keys, no group and no row.
+      const running = this.runningActivities();
+      if (!running.length && !postLoginPolicy.anyEnabled()) {
         log.debug("Leaving PostLogin.dueFor(). Off in this realm.");
         return null;
       }
-      const rules = postLoginPolicy.forPerson(username);
-      if (rules.enabled !== true || rules.activity !== PQC_MIGRATION) {
-        log.debug("Leaving PostLogin.dueFor(). Off for " + rules.name + ".");
+      // The person's groups, asked of the directory at most once for both
+      // the profile's selection and a started activity's groups.
+      let held: { cn?: string; dn?: string }[] | null = null;
+      const groupsOf = function (): { cn?: string; dn?: string }[] {
+        if (held === null) {
+          held = postLoginPolicy.personGroups(username) || [];
+        }
+        return held as { cn?: string; dn?: string }[];
+      };
+      const selected = postLoginPolicy.forPerson(username, groupsOf);
+      let rules = selected;
+      let askedBy = '';
+      if (selected.enabled === true) {
+        if (selected.activity !== PQC_MIGRATION) {
+          log.debug("Leaving PostLogin.dueFor(). " + selected.name +
+                    " asks another activity.");
+          return null;
+        }
+        askedBy = 'policy';
+      } else if (String(selected.name) !==
+                 String(postLoginPolicy.DEFAULT_PROFILE || 'default')) {
+        // A NAMED profile off is how the policy excludes a group, and it
+        // excludes them from a started activity too.
+        log.debug("Leaving PostLogin.dueFor(). Excluded by " +
+                  selected.name + ".");
         return null;
+      } else {
+        const by = this.startedReaching(running, groupsOf);
+        if (!by) {
+          log.debug("Leaving PostLogin.dueFor(). Off for " + selected.name +
+                    ", and no started activity reaches them.");
+          return null;
+        }
+        // The selected profile's rules; only `enabled` is the activity's.
+        rules = Object.assign({}, selected, { enabled: true,
+                                              activity: PQC_MIGRATION });
+        askedBy = by.id;
       }
       // The WebAuthn policy reads the passkey profile selected for this
       // person and application (#535, #940).
@@ -441,10 +571,12 @@ class PostLogin {
                                                           : 'none',
         snoozeDays: Number(rules.snoozeDays) || 1,
         graceDays: graceDays, invitedAt: Number(state.invitedAt) || 0,
-        deadline: enforceable ? deadline : 0, profile: String(rules.name)
+        deadline: enforceable ? deadline : 0, profile: String(rules.name),
+        askedBy: askedBy
       };
       log.debug("Leaving PostLogin.dueFor(). " + out.role +
-                (out.required ? ', required.' : ', skippable.'));
+                (out.required ? ', required' : ', skippable') +
+                ', asked by ' + askedBy + '.');
       return out;
     } catch (e) {
       // A question that cannot be answered holds nobody's sign-in.
@@ -470,7 +602,7 @@ class PostLogin {
       row.invitedAt = now();
     }
     row.asks = (Number(row.asks) || 0) + 1;
-    this.stamp(row, due);
+    this.stamp(row, due, true);
     this.write(username, due.activity, row);
     log.debug("Leaving PostLogin.noteAsked().");
     return row;
@@ -498,7 +630,7 @@ class PostLogin {
     }
     row.skips = (Number(row.skips) || 0) + 1;
     row.snoozedUntil = now() + (Number(due.snoozeDays) || 1) * DAY_MS;
-    this.stamp(row, due);
+    this.stamp(row, due, true);
     this.write(username, due.activity, row);
     log.debug("Leaving PostLogin.noteSkipped().");
     return { ok: true, snoozedUntil: row.snoozedUntil };
@@ -519,7 +651,7 @@ class PostLogin {
     const row = this.stateOf(username, due.activity);
     row.doneAt = now();
     row.snoozedUntil = 0;
-    this.stamp(row, due);
+    this.stamp(row, due, true);
     this.write(username, due.activity, row);
     log.debug("Leaving PostLogin.noteDone().");
     return row;
@@ -555,7 +687,7 @@ class PostLogin {
       row.firstMailedAt = at;
     }
     row.lastMailedAt = at;
-    this.stamp(row, due);
+    this.stamp(row, due, false);
     this.write(username, due.activity, row);
     log.debug("Leaving PostLogin.noteMailed(). " + row.mails + '.');
     return row;

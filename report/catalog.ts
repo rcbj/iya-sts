@@ -55,7 +55,8 @@ const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
   'lane', 'factors', 'hasPassword', 'channel', 'format',
   // The post-login progress source (#1110, #1111).
-  'activity', 'profile', 'done', 'graceEnded', 'mailedBy', 'progress'];
+  'activity', 'profile', 'done', 'graceEnded', 'mailedBy', 'progress',
+  'askedBy'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -271,6 +272,11 @@ function postLoginProgressSource(): SourceSpec {
      field('graceEnded', 'boolean',
        'Whether the allotted time has ended and the activity is not done: ' +
        'Skip is gone and the next sign-in is held until it is.'),
+     field('askedBy', 'string',
+       'Who asked the person at a sign-in (#1126): policy (the post-login ' +
+       'profile itself is on for them), or the id (pla-…) of the running ' +
+       'started post-login activity whose groups hold them; empty when they ' +
+       'were never asked at a sign-in.'),
      field('mailedBy', 'string',
        'The started post-login activity (its id, pla-…) that last mailed ' +
        'the person (#1111), or empty.'),

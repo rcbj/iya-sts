@@ -2652,4 +2652,7 @@ and `groups` as ONE string, its names separated by `;` (a query value may
 hold no control character, so a line break is refused at the gate) — and answers `groupChooser`, so
 the page's search is this operation's and nothing console-only (rule 7).
 `tests/post_login_activities.js` B and
-`tests/protocol/sts_post_login_activities.js` drive it.
+`tests/protocol/sts_post_login_activities.js` drive it. **Since #1126 a
+running started activity also asks its people at sign-in**, so the start,
+pause, resume and end descriptions say both, and `activityEnabled` is the
+POLICY's own answer, no longer whether a start does anything.

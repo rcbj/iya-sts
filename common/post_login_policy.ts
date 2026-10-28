@@ -16,7 +16,11 @@
 // realm's own — and its rows are one ACTIVITY's settings:
 //
 //   enabled        OFF by default (rcbj's answer 4). Off, nobody in the
-//                  profile's reach is asked anything.
+//                  profile's reach is asked anything BY THE POLICY; a
+//                  RUNNING STARTED activity (#1126) still asks its own
+//                  population at sign-in under these rules, except where
+//                  this is a NAMED profile — `default` off excludes nobody
+//                  from a started activity, a named one off does.
 //   activity       What is asked. One today, `pqc-passkey-migration`: a person
 //                  holding a CLASSICAL passkey in a role (primary, or second
 //                  factor) and no post-quantum one in it is asked to register
@@ -657,14 +661,44 @@ class PostLoginPolicy {
   }
 
   /**
+   * The groups a person is in, as the directory's group hook answers (#535's
+   * `personGroups()`, the passkey policy's): each `{ cn, dn }`, from the
+   * person's own membership and never a walk of any group's members. Empty
+   * where there is no directory or no hook; throws where the hook does, for
+   * the caller to decide what a failure means.
+   *
+   * @param username - the person
+   * @returns the groups
+   */
+  personGroups(username: unknown): { cn: string; dn: string }[] {
+    const { log } = this.deps;
+    log.debug("Entering PostLoginPolicy.personGroups().");
+    const hook = this.haveDirectory() && this.directory
+      ? this.directory.personGroups : null;
+    const out = username && typeof hook === 'function'
+      ? (hook.call(this.directory, String(username)) || [])
+        .map(function (g: any) {
+          return { cn: String((g && g.cn) || ''),
+                   dn: String((g && g.dn) || '') };
+        })
+      : [];
+    log.debug("Leaving PostLoginPolicy.personGroups(). " + out.length);
+    return out;
+  }
+
+  /**
    * Returns the name of the profile that reaches a person: the named profile
    * of lowest precedence one of whose groups they are in (ties by name), else
    * `default`.
    *
    * @param username - the person
+   * @param groupsOf - optional; answers the person's groups, so a caller
+   *   that needs them too (`post_login.ts`, for a started activity's
+   *   groups, #1126) asks the directory once; `personGroups()` otherwise
    * @returns the profile name
    */
-  profileNameFor(username: unknown): string {
+  profileNameFor(username: unknown,
+                 groupsOf?: () => { cn?: string; dn?: string }[]): string {
     const { log } = this.deps;
     log.debug("Entering PostLoginPolicy.profileNameFor().");
     if (!username || !this.haveDirectory()) {
@@ -678,16 +712,15 @@ class PostLoginPolicy {
           return String(one.name || '').toLowerCase() !== DEFAULT_PROFILE;
         });
       if (named.length) {
-        const hook = this.directory.personGroups;
-        const groups = typeof hook === 'function'
-          ? (hook.call(this.directory, String(username)) || [])
-            .map(function (g: any) {
-              return [String(g.cn || '').toLowerCase(),
-                      String(g.dn || '').toLowerCase()];
-            }).reduce(function (all: string[], two: string[]) {
-              return all.concat(two);
-            }, []).filter(Boolean)
-          : [];
+        const held = typeof groupsOf === 'function' ? groupsOf()
+          : this.personGroups(username);
+        const groups = (held || [])
+          .map(function (g: any) {
+            return [String(g.cn || '').toLowerCase(),
+                    String(g.dn || '').toLowerCase()];
+          }).reduce(function (all: string[], two: string[]) {
+            return all.concat(two);
+          }, []).filter(Boolean);
         const hit = named.map((entry) => {
           const at = entry.attributes || {};
           return {
@@ -722,12 +755,15 @@ class PostLoginPolicy {
    * Reads the profile that reaches a person.
    *
    * @param username - the person
+   * @param groupsOf - optional; as `profileNameFor()` takes it
    * @returns the profile
    */
-  forPerson(username: unknown): PostLoginProfile {
+  forPerson(username: unknown,
+            groupsOf?: () => { cn?: string; dn?: string }[]):
+      PostLoginProfile {
     const { log } = this.deps;
     log.debug("Entering PostLoginPolicy.forPerson().");
-    const out = this.read(this.profileNameFor(username));
+    const out = this.read(this.profileNameFor(username, groupsOf));
     log.debug("Leaving PostLoginPolicy.forPerson(). " + out.name);
     return out;
   }
@@ -1043,6 +1079,7 @@ export = {
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),
   list: slot.forward('list'),
+  personGroups: slot.forward('personGroups'),
   profileNameFor: slot.forward('profileNameFor'),
   forPerson: slot.forward('forPerson'),
   anyEnabled: slot.forward('anyEnabled'),

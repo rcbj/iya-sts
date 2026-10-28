@@ -139,7 +139,9 @@ class PostLoginActivitiesApi {
           '`activities` an administrator may start, the `limits` of the ' +
           'numbers and of `groups`, whether a mail transport is ' +
           '`mailAvailable`, whether any post-login profile is ' +
-          '`activityEnabled`, the job and how often it runs; and ' +
+          '`activityEnabled` (the POLICY asking anybody by itself; a ' +
+          'running started activity asks its own people at sign-in ' +
+          'whatever it says, #1126), the job and how often it runs; and ' +
           '`groupChooser`, the start form\'s group search (#1123): ' +
           '`chosen` (the `groups` asked, each resolved — `found` false for ' +
           'a name this realm does not have) and `pane`, one page of the ' +
@@ -226,11 +228,15 @@ class PostLoginActivitiesApi {
         actions: [
           { action: 'start', operationId: 'startPostLoginActivity',
             summary: 'Start a post-login activity',
-            description: 'Starts a post-login activity in this realm. From ' +
-              'the next run of the scheduler job ' +
+            description: 'Starts a post-login activity in this realm. AT ' +
+              'SIGN-IN, from now, each person it reaches is asked to do ' +
+              'it (#1126), under the rules of the post-login profile that ' +
+              'reaches them — even where that profile is off, unless it is ' +
+              'a NAMED profile that is off, which excludes them. BY MAIL, ' +
+              'from the next run of the scheduler job ' +
               '`post-login.activity-mail` (every few minutes, or Run now ' +
               'on Monitoring → Scheduler) each person the activity is DUE ' +
-              'for — the post-login policy reaches them, the realm can make ' +
+              'for — it reaches them, the realm can make ' +
               'the passkey, they have not done it — is mailed at the ' +
               'address on their entry a reminder to sign in, at most ' +
               '`maxMails` times and never twice inside `intervalDays`. ' +
@@ -276,8 +282,10 @@ class PostLoginActivitiesApi {
             responseDescription: 'The post-login activity started.' },
           { action: 'pause', operationId: 'pausePostLoginActivity',
             summary: 'Pause a started post-login activity',
-            description: 'A running post-login activity stops mailing, ' +
-              'within the slice a run is in; its cursor is kept. ' +
+            description: 'A running post-login activity stops asking at ' +
+              'sign-in and stops mailing, within the slice a run is in; ' +
+              'its cursor is kept. A person the post-login policy itself ' +
+              'switches on is still asked. ' +
               'STS-AUTHN-0491 for no such started activity or one that is ' +
               'not running.',
             requestBodyRequired: true,
@@ -285,7 +293,8 @@ class PostLoginActivitiesApi {
             responseDescription: 'The post-login activity paused.' },
           { action: 'resume', operationId: 'resumePostLoginActivity',
             summary: 'Resume a paused post-login activity',
-            description: 'A paused post-login activity mails again from ' +
+            description: 'A paused post-login activity asks at sign-in ' +
+              'again, and mails again from ' +
               'where its cursor stopped. STS-AUTHN-0491 for no such ' +
               'started activity or one that is not paused.',
             requestBodyRequired: true,
@@ -294,7 +303,8 @@ class PostLoginActivitiesApi {
           { action: 'end', operationId: 'endPostLoginActivity',
             summary: 'End a started post-login activity',
             description: 'A running or paused post-login activity ends for ' +
-              'good: it mails nobody again, and what it did stays on the ' +
+              'good: it asks nobody at sign-in and mails nobody again, and ' +
+              'what it did stays on the ' +
               'page and on each person\'s progress row. STS-AUTHN-0491 for ' +
               'no such started activity or one already ended.',
             requestBodyRequired: true,

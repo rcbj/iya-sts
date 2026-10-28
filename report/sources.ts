@@ -2724,7 +2724,9 @@ async function reportReadJobRows(rows: any, control: any): Promise<void> {
 // profile, role and allotted time are the row's own (written with it since
 // #1110); a row written before carries none, and only then is the profile
 // that reaches the person now asked of the post-login policy, once per
-// person. The module is reached here, lazily, like every source's.
+// person. `askedBy` (#1126) is the row's own too — `policy`, or the started
+// activity that asked at a sign-in — and empty on a row nobody asked yet.
+// The module is reached here, lazily, like every source's.
 let reportPostLoginModule: any = null;
 
 function reportInstallPostLogin(module: any): void {
@@ -2776,6 +2778,7 @@ function reportPostLoginRow(entry: any, postLogin: any,
     doneAt: reportIso(row.doneAt || null),
     deadline: reportIso(grace.deadline || null),
     graceEnded: grace.ended === true,
+    askedBy: String(row.askedBy || ''),
     mailedBy: String(row.mailedBy || ''),
     mails: Number(row.mails) || 0,
     firstMailedAt: reportIso(row.firstMailedAt || null),

@@ -1,7 +1,7 @@
 {
-  "about": "Una actividad posterior al inicio de sesión iniciada envía a las personas que la tienen pendiente un recordatorio para iniciar sesión, donde la actividad les pide hacerla. Una tarea programada lee las personas de cada actividad en curso por tramos, aproximadamente cada {minutes, plural, one {# minuto} other {# minutos}}, y solo escribe a quienes tienen la actividad pendiente — nunca dos veces dentro del intervalo de recordatorio, y nunca más que el máximo de la actividad. El único enlace del correo abre la página de inicio de sesión; no lleva ninguna credencial. Las reglas que sigue cada actividad son las de su perfil posterior al inicio de sesión, en Directorio → Políticas.",
+  "about": "Una actividad posterior al inicio de sesión iniciada hace dos cosas. Al iniciar sesión pide a las personas a las que llega — los miembros de sus grupos, o todo el ámbito — que hagan la actividad, con las reglas del perfil posterior al inicio de sesión que llega a cada persona en Directorio → Políticas, aunque ese perfil esté desactivado. Por correo, una tarea programada lee las personas de cada actividad en curso por tramos, aproximadamente cada {minutes, plural, one {# minuto} other {# minutos}}, y envía a quienes tienen la actividad pendiente un recordatorio para iniciar sesión — nunca dos veces dentro del intervalo de recordatorio, y nunca más que el máximo de la actividad. El único enlace del correo abre la página de inicio de sesión; no lleva ninguna credencial.",
   "noMail": "No hay ningún transporte de correo configurado en este ámbito, así que una actividad posterior al inicio de sesión en curso no escribe a nadie. Configure uno en Configuración del servidor → Correo.",
-  "noActivity": "Ningún perfil posterior al inicio de sesión de este ámbito tiene una actividad activada, así que nadie la tiene pendiente y una actividad iniciada no escribiría a nadie. Active una en Directorio → Políticas.",
+  "signIn": "Mientras una actividad está en curso, a las personas a las que llega se les pide en su próximo inicio de sesión. Un perfil posterior al inicio de sesión con nombre que llega a una persona y está desactivado la excluye, igual que de la política; que el perfil predeterminado esté desactivado no excluye a nadie. En pausa o terminada, una actividad no pide nada a nadie al iniciar sesión ni escribe a nadie; a quien la propia política activa se le sigue pidiendo.",
   "reportLink": "A quién se escribió y en qué punto está cada persona: el informe postLoginProgress",
   "activities": "Actividades",
   "start": "Iniciar una actividad",
@@ -25,7 +25,7 @@
   "field.intervalDays": "Días entre recordatorios",
   "field.maxMails": "Correos como máximo por persona",
   "field.perRun": "Personas leídas por ejecución",
-  "groupsHint": "Busque grupos y elija uno o más resultados para formar la lista. La actividad escribe a los miembros de cada grupo de la lista, una vez por persona; sin grupos, a todo el ámbito.",
+  "groupsHint": "Busque grupos y elija uno o más resultados para formar la lista. La actividad pide la actividad a los miembros de cada grupo de la lista al iniciar sesión y les escribe, una vez por persona; sin grupos, a todo el ámbito.",
   "noGroups": "Ningún grupo elegido: la actividad llega a todo el ámbito.",
   "chosenGroups": "Grupos elegidos",
   "groupName": "Grupo",
@@ -37,7 +37,7 @@
   "noGroupMatches": "Ningún grupo coincide con esa búsqueda.",
   "noGroupsAtAll": "Este ámbito no tiene ningún grupo.",
   "groupsFull": "Hay {max} grupos elegidos, el máximo que puede nombrar una actividad.",
-  "startNote": "Los envíos empiezan en la próxima ejecución de la tarea. No se escribe a quien ya hizo la actividad ni a quien el ámbito no puede pedírsela.",
+  "startNote": "Al iniciarla se pide a las personas a las que llega desde su próximo inicio de sesión; los envíos empiezan en la próxima ejecución de la tarea. A quien ya hizo la actividad, a quien el ámbito no puede pedírsela, o a quien excluye un perfil con nombre desactivado, no se le pide ni se le escribe.",
   "startButton": "Iniciar",
   "readOnly": "Iniciar, pausar y terminar una actividad posterior al inicio de sesión requiere Admin Write."
 }
