@@ -137,5 +137,6 @@
   "title.tls": "TLS / mutual TLS",
   "title.vc-verifier-config": "Verifier request",
   "title.worker-pools": "Worker pools",
-  "title.broadcast": "Broadcast Announcement"
+  "title.broadcast": "Broadcast Announcement",
+  "title.post-login-campaigns": "Post-login campaigns"
 }

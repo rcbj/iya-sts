@@ -6271,6 +6271,25 @@ const ENDPOINTS: EndpointEntry[] = [
           'count of the holders the new baseline. The console\'s one act ' +
           'on that page; it runs where every job runs, never on the ' +
           'request.' },
+  { path: '/admin-api/post-login-campaigns', group: 'Management API',
+    name: 'Post-login mail campaigns', specs: ['openapi'],
+    what: 'NON-SPEC (#1111). What Directory → Post-login campaigns draws: ' +
+          'every mail campaign of the realm with its activity, group, ' +
+          'reminder interval, most mails per person, people per run, state ' +
+          'and what its scheduler job has done so far, and whether a mail ' +
+          'transport and a post-login activity are on. Who was mailed is ' +
+          'the reports application\'s postLoginProgress source. Mirrors GET ' +
+          '/admin/post-login-campaigns.' },
+  { path: '/admin-api/post-login-campaigns/:action', group: 'Management API',
+    name: 'Start, pause, resume or end a post-login mail campaign',
+    specs: ['openapi'],
+    effect: 'starts, pauses, resumes or ends a mail campaign',
+    what: 'NON-SPEC (#1111). start, with { activity, group, intervalDays, ' +
+          'maxMails, perRun }: the post-login.campaign-mail job mails each ' +
+          'person the activity is due for a reminder to sign in, at the ' +
+          'address on their entry, with one link to the sign-in page and no ' +
+          'credential in it. pause, resume and end, with { id }. The ' +
+          'console\'s four acts on that page.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +

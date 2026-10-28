@@ -2338,6 +2338,60 @@ async function passkeyPopulationAsync(selectors, limit) {
            complete: members <= cap };
 }
 
+/**
+ * The PEOPLE among a group's members after a key cursor, in key order (#1111):
+ * a post-login mail campaign narrowed to a group walks its members a slice
+ * at a time, as `passkeyScanAsync()` walks the realm. The group is resolved
+ * as `passkeyPopulationAsync()` resolves one (a cn or a DN); its member keys
+ * are sorted, the ones after `after` taken up to `limit`, and only those
+ * fetched (`entriesAtAsync()` in a window, the realm's Map otherwise). A
+ * member that is not a person here (a nested group, an application, a
+ * dangling DN) is skipped, and the cursor still moves past it.
+ *
+ * @param selector - the group's cn or DN
+ * @param after - the member key the last slice ended on ('' from the start)
+ * @param limit - the member keys to read at most
+ * @returns a promise of `{ found, dn, rows: [{ id, dn }], next, done }`:
+ *   `found` false for no such group, `next` the last key read, `done` true
+ *   once no member is left after it
+ */
+async function groupMembersAfterAsync(selector, after, limit) {
+  log.debug('Entering groupMembersAfterAsync().');
+  const asked = String(selector == null ? '' : selector).trim();
+  const cap = Math.max(1, Number(limit) || 1);
+  const from = String(after || '');
+  const dn = DN_SHAPED.test(asked) ? asked : groupDnFor(asked);
+  const stored = asked ? getEntry(dn) : null;
+  if (!stored || !groupRuleFor(stored)) {
+    log.debug('Leaving groupMembersAfterAsync(). No such group.');
+    return { found: false, dn: dn, rows: [], next: from, done: true };
+  }
+  const keys = memberKeysOf(stored).slice().sort().filter(function (key) {
+    return key > from;
+  });
+  const slice = keys.slice(0, cap);
+  const rows = [];
+  let found = null;
+  if (directoryWindow && slice.length) {
+    found = await storeAsked(directoryWindow.entriesAtAsync(
+      realms.currentId(), slice));
+  }
+  slice.forEach(function (key) {
+    const entry = found ? found.get(key) : entries.get(key);
+    if (entry && isPersonEntry(entry)) {
+      const id = String(usernameOfEntry(entry) || '');
+      if (id) {
+        rows.push({ id: id, dn: entry.dn });
+      }
+    }
+  });
+  const next = slice.length ? slice[slice.length - 1] : from;
+  log.debug('Leaving groupMembersAfterAsync(). ' + rows.length + ' of ' +
+            slice.length + ' member(s) read.');
+  return { found: true, dn: stored.dn, rows: rows, next: next,
+           done: keys.length <= cap };
+}
+
 // ---------------------------------------------------------------------------
 // THE USERNAME INDEX, AND WHY IT IS INCREMENTAL WHERE THE GROUP INDEX IS NOT.
 //
@@ -28666,6 +28720,9 @@ module.exports = {
   // the report itself reaches them through its slot.
   passkeyScanAsync: passkeyScanAsync,
   passkeyPopulationAsync: passkeyPopulationAsync,
+  // A post-login mail campaign's walk of one group's people after a key
+  // cursor (#1111), reached lazily from the job's body.
+  groupMembersAfterAsync: groupMembersAfterAsync,
   allPersons: allPersons,
   personsHolding: personsHolding,
   // Whether this process holds its people as a window onto the store

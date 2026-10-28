@@ -695,6 +695,17 @@ post-quantum one is required** (`postQuantumAllowCredentials`, #946) —
 WebAuthn), `narrow` or `list-and-refuse`
 ([Narrow, or list and refuse](passkeys.md#narrow-or-list-and-refuse)).
 
+### Post-login campaigns — `/admin/post-login-campaigns`
+
+Mail campaigns for a [post-login activity](post-login-activities.md#mail-campaigns):
+start one for the realm or one group, then pause, resume or end it. A scheduler
+job mails each person the activity is due for a reminder to sign in, every so
+many days up to a maximum per person. The page lists each campaign with its
+own counts; who was mailed and where each person stands is the
+`postLoginProgress` report in [Reports](reporting.md#postloginprogress), not a
+console page. `GET /admin-api/post-login-campaigns` and
+`POST /admin-api/post-login-campaigns/{start,pause,resume,end}`.
+
 ### Groups — `/admin/groups`
 
 `/admin/groups` reports the *directory* rather than what this service has

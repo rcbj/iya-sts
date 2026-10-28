@@ -408,7 +408,14 @@ function reportPublicSource(src: any): any {
     // A directory-backed source (rcbj, 2026-10-27): a filter has to name
     // an indexed field, and the page offers only those in a first row.
     anchored: src.anchored === true,
-    fields: fields
+    fields: fields,
+    // The predefined queries (#1110), each a name and a whole document the
+    // page fills its form from; an empty list where the source has none.
+    presets: (Array.isArray(src.presets) ? src.presets : [])
+      .map(function (one: any): any {
+        return { id: String(one.id), name: String(one.name),
+                 document: JSON.parse(JSON.stringify(one.document)) };
+      })
   };
   log.debug("Leaving reportPublicSource().");
   return out;

@@ -143,5 +143,8 @@
   "perPage.rows": "{n} 列",
   "tipPerPage": "每頁顯示多少列。變更後從第一頁開始。",
   "announcement.heading": "公告",
-  "announcement.close": "關閉"
+  "announcement.close": "關閉",
+  "presets": "預先定義的查詢",
+  "presetsNote": "每一項都會開啟「新增查詢」並填好其查詢。在您按下「執行」之前不會執行任何動作，儲存後會成為您自己的定義。",
+  "presetFrom": "從預先定義的查詢 {name} 開始。"
 }

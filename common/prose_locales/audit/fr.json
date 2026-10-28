@@ -731,6 +731,14 @@
     "en": "9b31304e9f8a3131",
     "text": "Une connexion a été retenue : une activité après connexion est en retard"
   },
+  "audit.actions.admin.post-login-campaign.change.label": {
+    "en": "036bffa6d0958a81",
+    "text": "Une campagne de courrier après connexion a été lancée, mise en pause, reprise ou terminée"
+  },
+  "audit.actions.authn.post-login.campaign-run.label": {
+    "en": "059642245f4ca8a9",
+    "text": "Une campagne de courrier après connexion a envoyé ses rappels"
+  },
   "audit.actions.authn.post-login.unsupported.label": {
     "en": "7d131d7e4638de23",
     "text": "Un appareil n’a pas pu créer la clé d’accès demandée par une activité après connexion"

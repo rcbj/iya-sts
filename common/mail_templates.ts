@@ -340,6 +340,30 @@ const BUILT_IN: TemplateSpec[] = [
     html: '<p>The report <strong>{{definition}}</strong> for ' +
           '{{username}} is {{status}}.</p><p><a href="{{report}}">Open ' +
           'it</a>.</p>' },
+  // #1111: a post-login mail campaign's reminder. A NOTIFICATION, so a
+  // person may decline it: it asks them to sign in, and the activity itself
+  // is asked at the sign-in whatever they chose here. The one link is the
+  // portal's path on this service's own origin; it signs nobody in and
+  // carries nothing about the person.
+  { id: 'post-login-reminder', category: 'notification',
+    title: 'A reminder to register a post-quantum passkey',
+    values: ['username'],
+    links: ['signin'],
+    subject: 'Register a post-quantum passkey for {{service}}',
+    text: '{{service}} asks {{username}} to register a new passkey that ' +
+          'uses post-quantum cryptography (ML-DSA).\n\nSign in here, and ' +
+          'you will be asked to register it right after you sign in:\n\n' +
+          '{{signin}}\n\nThe link only opens the sign-in page. It does not ' +
+          'sign you in and carries nothing about your account. If you did ' +
+          'not expect this message, ignore it, or ask whoever manages your ' +
+          'account.\n',
+    html: '<p>{{service}} asks <strong>{{username}}</strong> to register a ' +
+          'new passkey that uses post-quantum cryptography (ML-DSA).</p>' +
+          '<p><a href="{{signin}}">Sign in</a>, and you will be asked to ' +
+          'register it right after you sign in.</p><p>The link only opens ' +
+          'the sign-in page. It does not sign you in and carries nothing ' +
+          'about your account. If you did not expect this message, ignore ' +
+          'it, or ask whoever manages your account.</p>' },
   { id: 'reset-refused-attempt', category: 'security',
     title: 'A password reset was refused',
     values: ['username', 'when'],

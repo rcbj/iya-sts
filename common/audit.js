@@ -872,6 +872,13 @@ const ACTIONS = [
     label: 'A person did a post-login activity' },
   { action: 'authn.post-login.held', category: 'authentication',
     label: 'A sign-in was held: a post-login activity is overdue' },
+  // A POST-LOGIN MAIL CAMPAIGN WAS STARTED, PAUSED, RESUMED OR ENDED (#1111),
+  // with the act in the detail; and ONE ROW PER CAMPAIGN PER RUN of its
+  // job, the counts of the run — never a row per person mailed.
+  { action: 'admin.post-login-campaign.change', category: 'admin',
+    label: 'A post-login mail campaign was started, paused, resumed or ended' },
+  { action: 'authn.post-login.campaign-run', category: 'authentication',
+    label: 'A post-login mail campaign mailed its reminders' },
   // A DEVICE THAT COULD NOT MAKE THE ML-DSA PASSKEY (#1105): the browser's
   // error name and its user agent, so the move's stalls can be found.
   { action: 'authn.post-login.unsupported', category: 'authentication',

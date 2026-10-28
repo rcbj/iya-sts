@@ -75,6 +75,11 @@
       "text": "用户 {{username}} 的报表 {{definition}} 已{{status}}。\n\n打开它：\n\n{{report}}\n",
       "html": "<p>用户 {{username}} 的报表 <strong>{{definition}}</strong> 已{{status}}。</p><p><a href=\"{{report}}\">打开它</a>。</p>"
     },
+    "post-login-reminder": {
+      "subject": "为 {{service}} 注册后量子通行密钥",
+      "text": "{{service}} 请 {{username}} 注册一个使用后量子密码（ML-DSA）的新通行密钥。\n\n请在此登录，登录后会立即要求您注册：\n\n{{signin}}\n\n该链接只会打开登录页面。它不会让您登录，也不包含任何关于您账户的信息。如果您没有预料到这封邮件，可以忽略它，或询问管理您账户的人员。\n",
+      "html": "<p>{{service}} 请 <strong>{{username}}</strong> 注册一个使用后量子密码（ML-DSA）的新通行密钥。</p><p><a href=\"{{signin}}\">登录</a>后会立即要求您注册。</p><p>该链接只会打开登录页面。它不会让您登录，也不包含任何关于您账户的信息。如果您没有预料到这封邮件，可以忽略它，或询问管理您账户的人员。</p>"
+    },
     "reset-refused-attempt": {
       "subject": "有人试图重置您的 {{service}} 密码",
       "text": "{{when}}，有人请求重置账户 {{username}} 的密码，填写了此地址，并提供了一个不属于您的恢复码。没有任何更改，也没有发送重置链接。\n\n如果是您本人，请使用一个未用过的恢复码重试。如果不是，说明有人知道您的账户名和地址；请联系您的账户管理员。\n",

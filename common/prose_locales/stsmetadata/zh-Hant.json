@@ -1895,6 +1895,18 @@
     "en": "cd923c72e2ca4fba",
     "text": "非規格端點（#942）。recount：在排程器的主節點上為此領域排入 passkeys.report-recount 工作，該工作把對持有者的一次全新計數作為新的基準。這是主控台在該頁面上的唯一操作；它在所有工作執行的地方執行，絕不在請求中執行。"
   },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
+    "en": "daba792318b37b53",
+    "text": "NON-SPEC (#1111)。目錄 → 登入後活動郵件 繪製的內容：領域的每個活動郵件及其活動、群組、提醒間隔、每人最多郵件數、每次執行人數、狀態及其排程器工作迄今所做的事，以及郵件傳輸和登入後活動是否開啟。寄給了誰是報告應用程式的 postLoginProgress 資料來源。對應 GET /admin/post-login-campaigns。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
+    "en": "d969b0654c3b6952",
+    "text": "NON-SPEC (#1111)。start，帶 { activity, group, intervalDays, maxMails, perRun }：工作 post-login.campaign-mail 向每個有待完成該活動的人寄送登入提醒，寄往其項目上的地址，附一個指向登入頁面的連結，其中不含任何憑證。pause、resume 和 end，帶 { id }。主控台在該頁面上的四個動作。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
+    "en": "8498beda414a4cf5",
+    "text": "開始、暫停、繼續或結束活動郵件"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非規格端點（#552）。協定 → SCIM → 用戶端所繪製的內容：宣告為 scim-client 的應用程式項目——此領域將其人員與群組推送至的服務提供者——各附其佇列計數與退避暫停，指定 ?client= 時則為單一用戶端的重試與無法投遞佇列以及探索資訊。絕不含認證資訊。"

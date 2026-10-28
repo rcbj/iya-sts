@@ -13675,6 +13675,47 @@ default, and done inside the sign-in flow.
   sign-in is never held for something that cannot be done.
 * **The hold is in `authn.startSessionHere()`, last of the refusals** —
   `authn/CLAUDE.md` argues it.
+### 3ct, continued: mail campaigns (#1111, 2026-10-28)
+
+rcbj: an administrator STARTS a campaign for one post-login activity
+(optionally narrowed by group) from the console and `/admin-api`; a cluster
+scheduler job mails each person still due, reminders every N days up to a
+maximum per person; pause, resume, end; the mail sends the person to sign
+in and the post-login activity does the registration — no credential in any
+link. `post_login_campaigns.ts`'s header argues the rest; what reaches
+outside it:
+
+* **Two stores, one writer each.** `post_login.campaigns` (the decision:
+  activity, group, numbers, state) is written by the console and the API
+  only; `post_login.campaignRuns` (cursor, passes, counts) by the job only.
+  The job runs on a request worker (#408) and a Pause is answered by any
+  process, so one row would have each writing back the other's stale half.
+  Both cell-tier: the cursor is a person's DN.
+* **The walk is the directory's key cursor**, never a scan per request:
+  `passkeyScanAsync({ attribute: '' })` for the realm and the new
+  `groupMembersAfterAsync()` for a group (`ldap/CLAUDE.md`), `perRun` at a
+  time. Whether a person is mailed is `dueFor()` — which already says
+  nobody who has done it and nobody the realm cannot ask — then the
+  interval (the person's last mail from ANY campaign) and the maximum (THIS
+  campaign's count: `noteMailed()` resets `mails` when another campaign
+  writes the row).
+* **A mail is not an invitation**: `invitedAt`, from which the allotted
+  time counts, is still only written at a sign-in.
+* **The message is `post-login-reminder`, a NOTIFICATION** (a person may
+  decline it on `/portal/email`; the activity is asked at their next
+  sign-in whatever they chose), sent by `mail_uses.ts`'s
+  `postLoginReminder()` to the address on the entry, its one link `/portal`
+  on the pinned origin (3ba's rules unchanged).
+* **The console page is the CONTROLS** (`admin-ui/web_post_login_campaigns.ts`,
+  Directory, beside Policies); the per-person progress is the
+  `postLoginProgress` report source (#1110).
+
+* **Progress is REPORTED in `/report`, never on a console page** (#1110,
+  rcbj): the `postLoginProgress` source reads the store through
+  `eachProgressAsync()`. Each write stamps the profile, role and
+  `graceDays` that applied (`stamp()`), and `graceOf()` is the one
+  computation of the deadline the report shows. `report/CLAUDE.md` argues
+  the source.
 
 ### 3ct, continued: the migration's method, and what replaced the portal's Upgrade button (#1100–#1105, 2026-10-28)
 

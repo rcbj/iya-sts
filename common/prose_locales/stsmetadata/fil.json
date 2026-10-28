@@ -1895,6 +1895,18 @@
     "en": "cd923c72e2ca4fba",
     "text": "NON-SPEC (#942). recount: inilalagay sa pila ang job na passkeys.report-recount para sa realm na ito sa leader ng scheduler, na ginagawang bagong baseline ang isang bagong bilang ng mga may hawak. Ang nag-iisang aksyon ng console sa page na iyon; tumatakbo ito kung saan tumatakbo ang bawat job, hindi kailanman sa request."
   },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
+    "en": "daba792318b37b53",
+    "text": "NON-SPEC (#1111). Ang iginuguhit ng Directory → Post-login campaigns: bawat mail campaign ng realm kasama ang aktibidad, grupo, pagitan ng paalala, pinakamaraming email bawat tao, mga tao bawat takbo, kalagayan at ang nagawa na ng trabaho nito sa scheduler, at kung naka-on ang isang mail transport at isang aktibidad pagkatapos mag-sign in. Kung sino ang sinulatan ay ang source na postLoginProgress ng reports application. Sinasalamin ang GET /admin/post-login-campaigns."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
+    "en": "d969b0654c3b6952",
+    "text": "NON-SPEC (#1111). start, may { activity, group, intervalDays, maxMails, perRun }: pinapadalhan ng trabahong post-login.campaign-mail ang bawat taong may nakabinbing aktibidad ng paalala na mag-sign in, sa address ng kanilang entry, na may isang link sa pahina ng pag-sign in at walang kredensyal dito. pause, resume at end, may { id }. Ang apat na kilos ng console sa pahinang iyon."
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
+    "en": "8498beda414a4cf5",
+    "text": "nagsisimula, nagpa-pause, nagtutuloy o nagtatapos ng isang mail campaign"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NON-SPEC (#552). Ang iginuguhit ng Protocols → SCIM → Clients: ang mga application entry na idineklara para sa scim-client — ang mga service provider na pinu-push-an ng realm na ito ng mga tao at group nito — bawat isa kasama ang mga bilang ng queue at backoff pause nito, at kapag may ?client=, ang retry at dead-letter queue at discovery ng isang client. Hindi kailanman credential."

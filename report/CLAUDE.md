@@ -38,7 +38,7 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The eleven sources and their fields, and which operators the store indexes (`indexed`, #985). Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The twelve sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
@@ -381,6 +381,47 @@ that has not loaded the directory has nobody to disable. `rights.ts`'s
 comment that the read "walks the directory" was wrong — it is one indexed
 lookup — and now says where the question is asked instead.
 `tests/report_query.js`'s `disabledOwner()` holds it.
+
+## Post-login progress, and predefined queries (#1110, 2026-10-28)
+
+rcbj: post-login progress (#1096) and a campaign's per-person mail
+progress (#1111) are reported HERE, as a source, and not on a console
+page. `postLoginProgress` reads `post_login.progress` through
+`common/post_login.ts`'s `eachProgressAsync()`, which is the store's
+`scanAsync()`: the rows this process holds, then the store a page at a
+time with the event loop given back between pages. **A `false` from the
+callback ends the walk** (added to `realms.map()`'s `scanAsync()` for
+this; `undefined` goes on, so its one older caller is unchanged), and the
+reader hands every row to `reportOfferNow()` — `reportOffer()`'s body,
+synchronous, because the store's callback cannot await — so a limit, the
+time budget and a cancellation stop the paging and not just the taking.
+
+* **Not anchored, not indexed.** The store has no index the planner could
+  ask, and the rows are the people a realm has asked or mailed, not the
+  population; so nothing is refused at acceptance, an unordered read stops
+  at its limit, and a sorted or counted read walks under the caps.
+* **The row says what applied when it was written.** `post_login.ts`
+  stamps `profile`, `role` and `graceDays` on every write (`stamp()`), so
+  a report does not ask the directory for each person's profile. A row
+  written before #1110 has none; for it alone the reader asks
+  `post_login_policy.forPerson()`, once per person.
+* **`progress` is one word** (`done`, `past-grace`, `snoozed`, `asked`,
+  `mailed`, the first that holds) because the New Query form groups by ONE
+  field: "progress by activity" is that word counted, filtered to the
+  activity, which the form can draw and save.
+* **PRESETS ARE DATA ON THE CATALOG** (`SourceSpec.presets`: `id`, `name`,
+  `document`), published by `reportPublicSource()` and the OpenAPI
+  `Source` schema, listed on the source's page and opened by
+  `/report/query?source=…&preset=…` with the form filled and the save name
+  set. They are not stored definitions — a definition has an owner, a
+  realm and a share list, and seeding one per realm would give every
+  realm an owner nobody chose. Each preset is a document the form can
+  draw (one filter leaf, one order, one group), so starting from it and
+  saving it keeps it; `tests/report_post_login.js` holds that, and that
+  each validates.
+
+`tests/report_post_login.js` drives the source over a real `PostLogin`
+on a Map with a moved clock.
 
 ## Every source run against 8081 (#1040, 2026-10-27)
 
@@ -1057,9 +1098,10 @@ directory are not asserted here; issuance and the policy's every case are
 
 ## The sources
 
-The eleven sources are `users`, `groups`, `applications`, `federation`,
+The twelve sources are `users`, `groups`, `applications`, `federation`,
 `authMechanisms`, `auditEvents`, `authActivity`, `serviceMetrics`,
-`reportJobs` and `attributeSources`. `authMechanisms` is the realm policy
+`reportJobs`, `attributeSources`, `credentialHolders` and
+`postLoginProgress`. `authMechanisms` is the realm policy
 (application `realm`) plus one row per value an application lists in
 `appAuthnMechanism` or `appMfaMechanism`. An empty list inherits the
 realm policy and adds no row. `authActivity` is the four attempt actions

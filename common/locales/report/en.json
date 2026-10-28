@@ -143,5 +143,8 @@
   "perPage.rows": "{n} rows",
   "tipPerPage": "How many rows a page shows. Changing it starts from the first page.",
   "announcement.heading": "Announcement",
-  "announcement.close": "Close"
+  "announcement.close": "Close",
+  "presets": "Predefined queries",
+  "presetsNote": "Each opens New Query with its query filled in. Nothing runs until you press Run, and saving it makes a definition of your own.",
+  "presetFrom": "Started from the predefined query {name}."
 }

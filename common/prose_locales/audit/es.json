@@ -731,6 +731,14 @@
     "en": "9b31304e9f8a3131",
     "text": "Se retuvo un inicio de sesión: una actividad posterior al inicio de sesión está vencida"
   },
+  "audit.actions.admin.post-login-campaign.change.label": {
+    "en": "036bffa6d0958a81",
+    "text": "Se inició, pausó, reanudó o terminó una campaña de correo posterior al inicio de sesión"
+  },
+  "audit.actions.authn.post-login.campaign-run.label": {
+    "en": "059642245f4ca8a9",
+    "text": "Una campaña de correo posterior al inicio de sesión envió sus recordatorios"
+  },
   "audit.actions.authn.post-login.unsupported.label": {
     "en": "7d131d7e4638de23",
     "text": "Un dispositivo no pudo crear la clave de acceso que pedía una actividad posterior al inicio de sesión"

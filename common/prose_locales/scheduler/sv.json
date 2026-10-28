@@ -319,6 +319,14 @@
     "en": "d5b8faad6c0c24c4",
     "text": "Tar bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från det delade lagret."
   },
+  "sched.jobs.post-login.campaign-mail.title": {
+    "en": "b434164532e5f5a1",
+    "text": "E-postkampanjer efter inloggning"
+  },
+  "sched.jobs.post-login.campaign-mail.describe": {
+    "en": "d95703ecc79a262f",
+    "text": "Skickar en påminnelse om att logga in till dem som en pågående e-postkampanj efter inloggning når (#1111), och där ber aktiviteten efter inloggning dem sedan att registrera en postkvantnyckel. Läser per körning en del av varje kampanjs personer efter en markör, skriver bara till dem som har aktiviteten att göra, aldrig inom påminnelseintervallet eller utöver kampanjens maximum, och skriver en granskningsrad per kampanj och körning."
+  },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
     "text": "Minnesrapport"

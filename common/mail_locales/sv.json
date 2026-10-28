@@ -75,6 +75,11 @@
       "text": "Rapporten {{definition}} för {{username}} är {{status}}.\n\nÖppna den:\n\n{{report}}\n",
       "html": "<p>Rapporten <strong>{{definition}}</strong> för {{username}} är {{status}}.</p><p><a href=\"{{report}}\">Öppna den</a>.</p>"
     },
+    "post-login-reminder": {
+      "subject": "Registrera en postkvantnyckel för {{service}}",
+      "text": "{{service}} ber {{username}} att registrera en ny nyckel som använder postkvantkryptografi (ML-DSA).\n\nLogga in här, så blir du ombedd att registrera den direkt efter inloggningen:\n\n{{signin}}\n\nLänken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller ingenting om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.\n",
+      "html": "<p>{{service}} ber <strong>{{username}}</strong> att registrera en ny nyckel som använder postkvantkryptografi (ML-DSA).</p><p><a href=\"{{signin}}\">Logga in</a>, så blir du ombedd att registrera den direkt efter inloggningen.</p><p>Länken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller ingenting om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "Någon försökte återställa ditt lösenord för {{service}}",
       "text": "{{when}} bad någon om att lösenordet för kontot {{username}} skulle återställas, angav den här adressen och lämnade en återställningskod som inte är någon av dina. Ingenting ändrades och ingen återställningslänk skickades.\n\nOm det var du, försök igen med en oanvänd återställningskod. Om det inte var du känner någon till ditt kontonamn och din adress; kontakta den som administrerar ditt konto.\n",

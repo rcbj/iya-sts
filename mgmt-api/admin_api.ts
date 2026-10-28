@@ -634,6 +634,8 @@ interface AdminApiDeps {
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
   // Monitoring → Passkeys' operations (#942).
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
+  // Directory → Post-login campaigns' operations (#1111).
+  loadPostLoginCampaignsApi(): typeof import('./post_login_campaigns_api');
   // The outbound SCIM clients' operations (#552).
   loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
@@ -751,6 +753,9 @@ class AdminApi {
       },
       loadPasskeyReportApi: function () {
         return require('./passkey_report_api');
+      },
+      loadPostLoginCampaignsApi: function () {
+        return require('./post_login_campaigns_api');
       },
       loadScimClientsApi: function () {
         return require('./scim_clients_api');
@@ -2944,7 +2949,8 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi, loadSecretDestinationsApi,
-            loadPasskeyReportApi, loadScimClientsApi,
+            loadPasskeyReportApi, loadPostLoginCampaignsApi,
+            loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
@@ -25110,6 +25116,9 @@ class AdminApi {
       // MONITORING → PASSKEYS (#942): who holds which passkey algorithm,
       // its export and its Recount now (`mgmt-api/passkey_report_api.ts`).
       ...loadPasskeyReportApi().ROUTES,
+      // DIRECTORY → POST-LOGIN CAMPAIGNS (#1111): the campaigns and their
+      // four acts (`mgmt-api/post_login_campaigns_api.ts`).
+      ...loadPostLoginCampaignsApi().ROUTES,
       // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
       // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
       ...loadScimClientsApi().ROUTES,

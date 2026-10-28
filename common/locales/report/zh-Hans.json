@@ -143,5 +143,8 @@
   "perPage.rows": "{n} 行",
   "tipPerPage": "每页显示多少行。更改后从第一页开始。",
   "announcement.heading": "公告",
-  "announcement.close": "关闭"
+  "announcement.close": "关闭",
+  "presets": "预定义查询",
+  "presetsNote": "每一项都会打开“新建查询”并填好其查询。在您按“运行”之前不会执行任何操作，保存后会成为您自己的定义。",
+  "presetFrom": "从预定义查询 {name} 开始。"
 }

@@ -200,5 +200,6 @@
   "shell.menu.switch.kept": "此分頁離開的帳戶仍保持登入，您可以在這裡切換回去。",
   "shell.menu.another": "使用其他帳戶登入",
   "shell.menu.another.title": "在此分頁中以另一個人的身分登入。已在此瀏覽器中登入的帳戶會保持登入，其他分頁保留各自的帳戶。",
-  "nav.broadcast": "廣播公告"
+  "nav.broadcast": "廣播公告",
+  "nav.post-login-campaigns": "登入後活動郵件"
 }

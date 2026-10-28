@@ -1895,6 +1895,18 @@
     "en": "cd923c72e2ca4fba",
     "text": "非规范（#942）。recount：在调度器的主节点上为此领域排入 passkeys.report-recount 作业，该作业把对持有者的一次全新计数作为新的基线。这是控制台在该页面上的唯一操作；它在所有作业运行的地方运行，绝不在请求中运行。"
   },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
+    "en": "daba792318b37b53",
+    "text": "NON-SPEC (#1111)。目录 → 登录后活动邮件 绘制的内容：领域的每个活动邮件及其活动、组、提醒间隔、每人最多邮件数、每次运行人数、状态及其调度程序作业迄今所做的事，以及邮件传输和登录后活动是否开启。发给了谁是报告应用的 postLoginProgress 数据源。对应 GET /admin/post-login-campaigns。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
+    "en": "d969b0654c3b6952",
+    "text": "NON-SPEC (#1111)。start，带 { activity, group, intervalDays, maxMails, perRun }：作业 post-login.campaign-mail 向每个有待完成该活动的人发送登录提醒，发往其条目上的地址，带一个指向登录页面的链接，其中不含任何凭据。pause、resume 和 end，带 { id }。控制台在该页面上的四个操作。"
+  },
+  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
+    "en": "8498beda414a4cf5",
+    "text": "开始、暂停、继续或结束活动邮件"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非规范（#552）。协议 → SCIM → 客户端所绘制的内容：声明用于 scim-client 的应用条目——本领域向其推送人员和组的服务提供方——每个附带其队列计数和退避暂停，带 ?client= 时为某个客户端的重试队列、死信队列和发现信息。从不包含凭据。"
