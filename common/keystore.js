@@ -5995,6 +5995,9 @@ module.exports = {
   ensureDek: ensureDek,
   reloadDekRows: reloadDekRows,
   refreshDekRows: refreshDekRows,
+  // For a reader that has to tell "not held YET" from "malformed" before it
+  // gives a sealed value up (#1070, `persistence_minted.js`'s change names).
+  namesUnheldDek: namesUnheldDek,
   dataKeys: dataKeys,
   // THE DEK LIFECYCLE (#391 P2), for `common/data_key_rotation.ts`.
   rotateDeks: rotateDeks,

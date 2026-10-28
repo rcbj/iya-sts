@@ -1432,6 +1432,26 @@ read with its `key` as its name. Both new places are on `EXTRA_SEALED`, so the
 re-encryption job re-seals them. `cell_convert.js` carries `key_sealed` with
 the row.
 
+**A CHANGE'S SEALED NAME UNDER A DATA KEY NOT HELD YET IS WAITED FOR, NOT
+DROPPED (#1070, 2026-10-28).** A worker that defines a realm makes its data
+keys and seeds its stores in one second, every seed name sealed under the new
+key; the data-key rows land first (`flush()` waits on `settleDeks()`), but the
+pulling process has not read them, and `keystore.open()` answers null for
+"not held" and for "malformed" alike. So `applyChange()` reported every such
+change as STS-STORE-0014 at error (~1,400 lines a full run, half of them
+`ssf_streams.streams`) and dropped it: the new realm's seed rows never
+arrived by the log. Now `keystore.namesUnheldDek()` tells the two apart: a
+name under a key not held reads the data-key rows again
+(`keystore.refreshDekRows()`, `keystore.writeAfterDeks()`'s remedy) and is
+applied once more; `prefetch()` does that read ONCE for the page before it
+splits the keys, so the page's rows stay in its one batched read. A key still
+not held after a read is another build's or a removed realm's: the change is
+skipped under STS-STORE-0089, said once per key, and changes under it for the
+next two seconds are skipped without another read. `nameOfChangeHalf()` does
+not remember such a name as unopenable, or the second asking would hit the
+remembered null. STS-STORE-0014 keeps its meaning — a key not of the shape
+`recordChanges()` writes. `tests/minted_unheld_dek.js`.
+
 ## SECRET SETTINGS ARE SEALED AT THE DRIVER'S DOOR (#222, 2026-10-01)
 
 A runtime setting marked `secret: true` in `common/config.js` (today only

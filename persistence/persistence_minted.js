@@ -919,6 +919,36 @@ let prefetched = null;
  */
 function prefetch(changes) {
   log.debug("Entering prefetch().");
+  // A PAGE NAMING A DATA ENCRYPTION KEY NOT HELD YET READS THE DATA-KEY ROWS
+  // ONCE FIRST (#1070), so its names open and its rows are in the one query.
+  // One change key per missing key id, to ask again after the read.
+  const unheld = new Map();
+  (changes || []).forEach(function (change) {
+    const id = unheldDekOfChange(change.key);
+    if (id && !unheld.has(id) && worthRefreshFor(id)) {
+      unheld.set(id, change.key);
+    }
+  });
+  if (unheld.size) {
+    log.debug("Leaving prefetch(). The data-key rows first.");
+    return refreshForUnheld(null).then(function () {
+      // What the read did not bring is noted, so `applyChange()` skips it
+      // rather than reading the data-key rows again for each change.
+      unheld.forEach(function (key, id) {
+        if (unheldDekOfChange(key)) {
+          noteUnheldAfterRefresh(id);
+        }
+      });
+      return prefetchPage(changes);
+    });
+  }
+  log.debug("Leaving prefetch().");
+  return prefetchPage(changes);
+}
+
+// prefetch()'s read, once every name the page can open opens.
+function prefetchPage(changes) {
+  log.debug("Entering prefetchPage().");
   // **THE PAGE'S ROWS ACCUMULATE (2026-10-21).** `minted` and `minted-own`
   // are two kinds, each with its own `prepare`, and replication prepares
   // every kind of a page before it applies any — so this began by dropping
@@ -927,7 +957,7 @@ function prefetch(changes) {
   // reads a second. Each prepare adds its rows to the page's map now;
   // `endPrefetch()`, once the page is applied, still drops it.
   if (!driver || typeof driver.readMintedMany !== 'function') {
-    log.debug("Leaving prefetch().");
+    log.debug("Leaving prefetchPage().");
     return Promise.resolve(0);
   }
   const refs = [];
@@ -974,10 +1004,10 @@ function prefetch(changes) {
                 name: parsed.storedName });
   });
   if (!refs.length) {
-    log.debug("Leaving prefetch().");
+    log.debug("Leaving prefetchPage().");
     return Promise.resolve(0);
   }
-  log.debug("Leaving prefetch().");
+  log.debug("Leaving prefetchPage().");
   return driver.readMintedMany(refs.map(function (ref) {
     return { handle: ref.handle, realm: ref.realm, key: ref.key };
   })).then(function (rows) {
@@ -1051,6 +1081,121 @@ function endPrefetch() {
   log.debug("Leaving endPrefetch().");
 }
 
+// ---------------------------------------------------------------------------
+// A CHANGE WHOSE NAME IS SEALED UNDER A DATA ENCRYPTION KEY NOT HELD YET
+// (#1070, 2026-10-28).
+//
+// A request worker that defines a realm makes the realm's data encryption
+// keys and seeds its stores in the same second, and every seed row's NAME is
+// sealed under the new key (`columnsFor()`, `minted-key`). The data-key rows
+// land before the minted rows do (`flush()` waits on `settleDeks()`), but the
+// process that PULLS the change log has not read them: it meets a name it
+// cannot open. `keystore.open()` answers null for that and for a malformed
+// envelope alike, so every such change was reported as "not the shape
+// recordChanges() writes" (STS-STORE-0014, at error, ~1,400 lines a full run,
+// a third of them `ssf_streams.streams`) and DROPPED — the pulling process
+// never applied the new realm's seed rows from the log.
+//
+// The case `keystore.writeAfterDeks()` closed for key and authority rows on
+// 2026-10-05, closed here the same way: a name under a key not held is told
+// apart from a malformed one, the data-key rows are read again
+// (`keystore.refreshDekRows()`), and the change is applied once more. Only a
+// name whose key is STILL not held after that is skipped — another build's,
+// or a realm's that was removed — under STS-STORE-0089, said once per key, so
+// STS-STORE-0014 keeps its meaning. `prefetch()` does the read once for the
+// page before splitting, so a page of a new realm's seed rows costs one read
+// of the data-key rows and its rows are still read in one query.
+// ---------------------------------------------------------------------------
+// When a key was last found missing AFTER a read of the data-key rows, by key
+// id: a change under it within the interval is skipped without another read,
+// so a page of another build's rows is not a read of the data-key rows each.
+const unheldAfterRefresh = new Map();
+const UNHELD_RECHECK_MS = 2000;
+// The keys STS-STORE-0089 has been said for.
+const unheldWarned = new Set();
+const UNHELD_TRACKED_MAX = 1000;
+
+// The id of the data encryption key a sealed name half names, when this
+// process does not hold it; null otherwise (held, or not sealed at all).
+function unheldDekOfHalf(half) {
+  log.debug("Entering unheldDekOfHalf().");
+  const text = String(half || '');
+  if (text.indexOf('$') < 0 || typeof keystore.namesUnheldDek !== 'function' ||
+      !keystore.namesUnheldDek(text)) {
+    log.debug("Leaving unheldDekOfHalf(). Not a key missing here.");
+    return null;
+  }
+  // Lazily, as `persistence.js` does: a leaf this file needs only here.
+  const id = require('../common/crypto').dekIdOf(text);
+  log.debug("Leaving unheldDekOfHalf().");
+  return id || null;
+}
+
+// The same question of a whole change key.
+function unheldDekOfChange(key) {
+  log.debug("Entering unheldDekOfChange().");
+  const text = String(key == null ? '' : key);
+  const at = text.indexOf('.');
+  log.debug("Leaving unheldDekOfChange().");
+  return at < 0 ? null : unheldDekOfHalf(text.slice(at + 1));
+}
+
+// Whether a change under key `id` is worth a read of the data-key rows: not
+// when one, made a moment ago, already found the key missing.
+function worthRefreshFor(id) {
+  log.debug("Entering worthRefreshFor().");
+  const at = unheldAfterRefresh.get(id);
+  log.debug("Leaving worthRefreshFor().");
+  return at === undefined || Date.now() - at >= UNHELD_RECHECK_MS;
+}
+
+// Reads the data-key rows again for a change under key `id`, and notes the
+// key as still missing when the read did not bring it.
+function refreshForUnheld(id) {
+  log.debug("Entering refreshForUnheld(). dek=" + (id || 'the page'));
+  const refreshing = typeof keystore.refreshDekRows === 'function'
+    ? keystore.refreshDekRows() : Promise.resolve(0);
+  log.debug("Leaving refreshForUnheld().");
+  return Promise.resolve(refreshing).then(function () {
+    return null;
+  }, function (e) {
+    // The refresh resolves on a failed read already; this is belt and
+    // braces, and the change is then judged on what is held.
+    log.debug("Caught in refreshForUnheld(): " + ((e && e.message) || e));
+    return null;
+  });
+}
+
+// Records that key `id` was still missing after a read of the data-key rows.
+function noteUnheldAfterRefresh(id) {
+  log.debug("Entering noteUnheldAfterRefresh().");
+  if (unheldAfterRefresh.size >= UNHELD_TRACKED_MAX) {
+    unheldAfterRefresh.clear();
+  }
+  unheldAfterRefresh.set(id, Date.now());
+  log.debug("Leaving noteUnheldAfterRefresh().");
+}
+
+// A change skipped because its name's key is not held: said once per key.
+function skipUnheld(change, handle, id) {
+  log.debug("Entering skipUnheld(). dek=" + id);
+  if (!unheldWarned.has(id)) {
+    if (unheldWarned.size < UNHELD_TRACKED_MAX) {
+      unheldWarned.add(id);
+    }
+    log.warn(errorCodes.tag('STS-STORE-0089') +
+             'persistence: a minted change to "' + handle + '" names its ' +
+             'row under the data encryption key "' + id + '", which this ' +
+             'process does not hold after reading the data-key rows again. ' +
+             'Skipped; said once per key.');
+  } else {
+    log.debug('skipUnheld(): ' + change.key + ' skipped, its key "' + id +
+              '" not held.');
+  }
+  log.debug("Leaving skipUnheld().");
+  return Promise.resolve(false);
+}
+
 // The change key's two halves, or null. Shared by prefetch() and applyChange()
 // so the encoding is read in one place.
 function splitChangeKey(key) {
@@ -1085,7 +1230,7 @@ function splitChangeKey(key) {
  * @param change - the change-log row, `{ key, realm, ... }`
  * @returns a promise of true when the change was applied
  */
-function applyChange(change) {
+function applyChange(change, refreshed) {
   log.debug('Entering applyChange(). key=' + change.key);
   if (!driver || typeof driver.readMinted !== 'function') {
     log.debug("Leaving applyChange().");
@@ -1117,11 +1262,27 @@ function applyChange(change) {
     handle = Buffer.from(text.slice(0, at), 'base64url').toString('utf8');
     // Sealed since #222, or base64url of the name.
     storedName = nameOfChangeHalf(text.slice(at + 1));
-    if (storedName === null) {
-      throw new Error('the sealed name did not open');
-    }
   } catch (e) {
     log.debug("Caught in applyChange(): " + ((e && e.message) || e));
+    storedName = null;
+  }
+  if (storedName === null) {
+    // NOT HELD YET, OR NOT OURS — told apart from malformed (#1070): see
+    // unheldDekOfHalf() above.
+    const dekId = unheldDekOfHalf(text.slice(at + 1));
+    if (dekId && !refreshed && worthRefreshFor(dekId)) {
+      log.debug("Leaving applyChange(). Reading the data-key rows again.");
+      return refreshForUnheld(dekId).then(function () {
+        return applyChange(change, true);
+      });
+    }
+    if (dekId) {
+      if (refreshed) {
+        noteUnheldAfterRefresh(dekId);
+      }
+      log.debug("Leaving applyChange(). Its key is not held.");
+      return skipUnheld(change, handle || '?', dekId);
+    }
     log.error(errorCodes.tag('STS-STORE-0014') +
               'persistence: a minted change names "' + change.key + '", ' +
               'which is not the shape recordChanges() writes. Skipped.');
@@ -2984,6 +3145,13 @@ function nameOfChangeHalf(text) {
     }
     const opened = keystore.open(half, NAME_LABEL);
     const name = opened === undefined ? null : opened;
+    // A NAME UNDER A DATA ENCRYPTION KEY NOT HELD YET IS NOT REMEMBERED AS
+    // UNOPENABLE (#1070): `applyChange()` reads the data-key rows again and
+    // asks once more, and a remembered null would answer that second asking.
+    if (name === null && unheldDekOfHalf(half)) {
+      log.debug("Leaving nameOfChangeHalf(). Its key is not held yet.");
+      return null;
+    }
     if (openedNames.size >= OPENED_NAMES_MAX) {
       openedNames.clear();
     }
@@ -3824,6 +3992,8 @@ function reset() {
   flushInFlight = null;
   indexComplete.clear();
   indexBackfilled.clear();
+  unheldAfterRefresh.clear();
+  unheldWarned.clear();
   generation = 0;
   observedGeneration = 0;
   observational.clear();

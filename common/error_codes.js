@@ -1809,6 +1809,12 @@ const CODES = [
     summary: 'A replicated directory change of a realm this process never ' +
       'came to define waited ten minutes for the realm and was dropped.',
     spec: '' },
+  { code: 'STS-STORE-0089',
+    summary: 'A replicated minted-row change names its row under a data ' +
+      'encryption key this process does not hold, even after reading the ' +
+      'data-key rows again, and was skipped (another build\'s or a removed ' +
+      'realm\'s); said once per key.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
