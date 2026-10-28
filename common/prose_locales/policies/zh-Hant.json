@@ -1800,8 +1800,8 @@
     "text": "活動"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "1c027feada595f34",
-    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰會保留。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
+    "en": "9514d5e70b9d4eaa",
+    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰是被原地替換還是保留在旁邊，由方法決定（見下文）。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1876,8 +1876,8 @@
     "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」其群組的成員。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "1c027feada595f34",
-    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰會保留。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
+    "en": "9514d5e70b9d4eaa",
+    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰是被原地替換還是保留在旁邊，由方法決定（見下文）。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",

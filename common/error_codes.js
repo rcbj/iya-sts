@@ -6225,7 +6225,8 @@ const CODES = [
       'a yes-or-no value, or not one of its values — discouraged, ' +
       'preferred, required; allow, disallow; or a minimum PIN length ' +
       'outside 4 to 63; or a hint list that is not one, or contradicts ' +
-      'the attachment its request sends (#527, #528, #529, #531).',
+      'the attachment its request sends; or a `clientRules` rule that ' +
+      'cannot be read (#527, #528, #529, #531, #1112).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0310',
     summary: 'There is no embedded directory in this process, so a passkey ' +
@@ -7011,10 +7012,13 @@ const CODES = [
       'required before the sign-in finishes (#1096).',
     spec: 'none (HTTP 400 from /authn-api)' },
   { code: 'STS-AUTHN-0475',
-    summary: 'A post-login passkey registration was refused: the realm no ' +
-      'longer offers post-quantum passkeys (webauthn.pqcAlongsideClassical ' +
-      'and webauthn.pqcOnly are off), so the activity cannot be done here ' +
-      'and the held sign-in is finished without it (#1096).',
+    summary: 'A post-login passkey registration was refused: the realm can ' +
+      'no longer make the ML-DSA passkey asked for (`canRegister()`: ' +
+      'passkeys off, the role not allowed, no ML-DSA algorithm offered at ' +
+      'registration — webauthn.algorithms, whose default list holds them ' +
+      '— the post-quantum lane refused where both lanes are on, or an ' +
+      'upgrade refused for the upgrade method), so the activity cannot be ' +
+      'done here and the held sign-in is finished without it (#1096).',
     spec: 'none (the sign-in continues)' },
   { code: 'STS-AUTHN-0476',
     summary: 'A passkey policy profile was not saved: `lanes` is both ' +

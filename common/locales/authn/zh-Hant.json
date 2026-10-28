@@ -200,6 +200,6 @@
   "postLogin.subAttestationPrimary": "{name}，您用於登入的後量子通行金鑰並未以後量子演算法進行證明。請註冊一個經過後量子演算法證明的通行金鑰。",
   "postLogin.subAttestationMfa": "{name}，您用作第二因素的後量子通行金鑰並未以後量子演算法進行證明。請註冊一個經過後量子演算法證明的通行金鑰。",
   "postLogin.failed": "您的裝置未能建立通行金鑰（{error}）。",
-  "postLogin.failedHelp": "如果您的裝置或瀏覽器無法建立 ML-DSA 通行金鑰，請在支援 ML-DSA 的獨立安全金鑰上註冊，或洽詢管理員，管理員可以為您註冊一個。",
+  "postLogin.failedHelp": "如果您的裝置或瀏覽器無法建立 ML-DSA 通行金鑰，請在支援 ML-DSA 的獨立安全金鑰上註冊，或洽詢管理員：在您的通行金鑰原則允許管理員為您註冊通行金鑰的情況下，管理員可以為您註冊一個，並且可以從主控台升級您的通行金鑰。",
   "postLogin.failedSkip": "您也可以暫時略過此步驟。"
 }

@@ -980,7 +980,7 @@ kept in step with `common/config.js`.
 This service's own console and portal receive the CAEP `risk-level-change`
 events it sends. At `HIGH`, each one ends its own sessions for that person
 (product mode), as the `signal-response` policy permits. See
-[Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal).
+[Signals received](signals-received.md#what-the-three-applications-do-with-a-signal).
 
 ## In the running service
 

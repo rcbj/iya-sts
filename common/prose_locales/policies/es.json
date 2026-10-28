@@ -1800,8 +1800,8 @@
     "text": "Actividad"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "1c027feada595f34",
-    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. La llave de acceso clásica se conserva. No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1876,8 +1876,8 @@
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a cada persona a la que alcanza este perfil y que tiene pendiente la actividad siguiente se le pide hacerla después de iniciar sesión, antes de devolverla a la aplicación. Un perfil con nombre con esto desactivado EXCLUYE a los miembros de sus grupos."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "1c027feada595f34",
-    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. La llave de acceso clásica se conserva. No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",

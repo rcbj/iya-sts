@@ -200,6 +200,6 @@
   "postLogin.subAttestationPrimary": "{name}，您用于登录的后量子通行密钥并未使用后量子算法进行证明。请注册一个经过后量子算法证明的通行密钥。",
   "postLogin.subAttestationMfa": "{name}，您用作第二因素的后量子通行密钥并未使用后量子算法进行证明。请注册一个经过后量子算法证明的通行密钥。",
   "postLogin.failed": "您的设备未能创建通行密钥（{error}）。",
-  "postLogin.failedHelp": "如果您的设备或浏览器无法创建 ML-DSA 通行密钥，请在支持 ML-DSA 的单独安全密钥上注册，或联系管理员，管理员可以为您注册一个。",
+  "postLogin.failedHelp": "如果您的设备或浏览器无法创建 ML-DSA 通行密钥，请在支持 ML-DSA 的单独安全密钥上注册，或联系管理员：在您的通行密钥策略允许管理员为您注册通行密钥的情况下，管理员可以为您注册一个，并且可以从控制台升级您的通行密钥。",
   "postLogin.failedSkip": "您也可以暂时跳过此步骤。"
 }

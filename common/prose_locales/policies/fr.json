@@ -1800,8 +1800,8 @@
     "text": "Activité"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "1c027feada595f34",
-    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. La clé d’accès classique est conservée. Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. Le remplacement sur place de la clé d’accès classique, ou sa conservation à côté, dépend de la méthode (ci-dessous). Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1876,8 +1876,8 @@
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT les membres de ses groupes."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "1c027feada595f34",
-    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. La clé d’accès classique est conservée. Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. Le remplacement sur place de la clé d’accès classique, ou sa conservation à côté, dépend de la méthode (ci-dessous). Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",

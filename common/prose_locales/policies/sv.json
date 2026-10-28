@@ -1800,8 +1800,8 @@
     "text": "Aktivitet"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "1c027feada595f34",
-    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Den klassiska nyckeln behålls. Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1876,8 +1876,8 @@
     "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR medlemmarna i dess grupper."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "1c027feada595f34",
-    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Den klassiska nyckeln behålls. Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",

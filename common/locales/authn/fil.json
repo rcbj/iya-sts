@@ -200,6 +200,6 @@
   "postLogin.subAttestationPrimary": "{name}, hindi na-attest gamit ang mga post-quantum na algorithm ang post-quantum na passkey na ginagamit mo sa pag-sign in. Magrehistro ng isang na-attest nang ganoon.",
   "postLogin.subAttestationMfa": "{name}, hindi na-attest gamit ang mga post-quantum na algorithm ang post-quantum na passkey na ginagamit mo bilang pangalawang factor. Magrehistro ng isang na-attest nang ganoon.",
   "postLogin.failed": "Hindi nagawa ng iyong device ang passkey ({error}).",
-  "postLogin.failedHelp": "Kung hindi kayang gumawa ng iyong device o browser ng ML-DSA na passkey, irehistro ito sa hiwalay na security key na sumusuporta sa ML-DSA, o lumapit sa isang administrator, na puwedeng magrehistro ng isa para sa iyo.",
+  "postLogin.failedHelp": "Kung hindi kayang gumawa ng iyong device o browser ng ML-DSA na passkey, irehistro ito sa hiwalay na security key na sumusuporta sa ML-DSA, o lumapit sa isang administrator: kung pinapayagan ng iyong passkey policy ang isang administrator na magrehistro ng passkey para sa iyo, magagawa niya iyon, at maaari niyang i-upgrade ang iyong passkey mula sa console.",
   "postLogin.failedSkip": "Puwede mo rin itong laktawan muna sa ngayon."
 }
