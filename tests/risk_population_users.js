@@ -14,12 +14,15 @@
 // for `risk.populationUsersCacheS` now.
 //
 //   U1. fifty assessments in a row ask the store for the count once;
-//   U2. fifty asked AT ONCE while it is due ask once, and all get the count;
-//   U3. that is past risk.populationUsersCacheS, so it is the NEW number;
+//   U2. fifty asked AT ONCE while it is due ask once;
+//   U3. and none of them waits for that count (#1074): each is answered the
+//       HELD number, and the sign-in after the recount gets the new one;
 //   U4. 0 asks the store every time, as before;
 //   U5. a count that failed is not kept: the next one asks again;
 //   U6. each realm has its own count, and /admin/caches describes them;
-//   U7. a realm of fewer than 1,000 people is counted every time.
+//   U7. a realm of fewer than 1,000 people is counted every time;
+//   U8. a recount that fails keeps the held number, and the next due
+//       sign-in asks again (#1074).
 //
 // In a child process: it replaces the store's distinctValues and changes a
 // setting.
@@ -92,15 +95,33 @@ function child() {
     };
     users = 5001;
     asked = 0;
-    const together = await Promise.all(Array.from({ length: 50 },
-      function () {
+    let waited = false;
+    const together = await Promise.race([
+      Promise.all(Array.from({ length: 50 }, function () {
         return count('r1');
-      }));
-    note(asked === 1 && together.every(function (n) {
-      return n === 5001;
-    }), 'U2/U3. past risk.populationUsersCacheS it is counted again — ' +
-         'fifty asked at once ask once, and all get the NEW count',
-         'asked ' + asked);
+      })),
+      // The store answers after 20 ms: an answer before that did not wait.
+      new Promise(function (resolve) {
+        setTimeout(function () {
+          waited = true;
+          resolve(null);
+        }, 10);
+      })]);
+    note(asked === 1 && !waited && Array.isArray(together) &&
+         together.every(function (n) {
+           return n === 5000;
+         }), 'U2/U3. past risk.populationUsersCacheS it is counted again ' +
+         'once for fifty asked at once, and NONE OF THEM WAITS: each is ' +
+         'answered the held count (#1074)',
+         JSON.stringify({ asked: asked, waited: waited }));
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 60);
+    });
+    const fresh = await count('r1');
+    note(fresh === 5001 && asked === 1,
+         'U3. and once the recount is in, the next sign-in gets the NEW ' +
+         'count without asking again', JSON.stringify({ fresh: fresh,
+                                                        asked: asked }));
     Date.now = realNow;
 
     config.setOverride('risk.populationUsersCacheS', '0');
@@ -135,6 +156,28 @@ function child() {
     note(failed && after === 5001 && asked === 2,
          'U5. a count that failed is not kept: the next sign-in asks again',
          'asked ' + asked);
+
+    // U8: r1 is held at 5001; due again, and its recount fails.
+    Date.now = function () {
+      return realNow() + 122000;
+    };
+    asked = 0;
+    failNext = true;
+    const duringFailure = await count('r1');
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 30);
+    });
+    const afterFailure = await count('r1');
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 60);
+    });
+    const recovered = await count('r1');
+    Date.now = realNow;
+    note(duringFailure === 5001 && afterFailure === 5001 &&
+         recovered === 5001 && asked === 2,
+         'U8. a recount that fails keeps the held count, and the next due ' +
+         'sign-in counts again', JSON.stringify({ duringFailure: duringFailure,
+           afterFailure: afterFailure, recovered: recovered, asked: asked }));
 
     asked = 0;
     const other = await count('other');
