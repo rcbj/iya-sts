@@ -38,12 +38,13 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The twelve sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The thirteen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
+| `passkey_history.ts` | The `passkeyHistory` source's projection (#1109): one stored day of `passkey_report.history` into a row per `scope`. A library; reaches `common/passkey_report` lazily. |
 | `rights.ts` | The caller as held ∩ carried, and every question about the API, a definition or a job put to `common/access_gate.ts`. It decides nothing (#1030). |
 | `jobs.ts` | Definitions, the queue, the six scheduler jobs, and the registration of `staging.ts`'s seventh. |
 | `staging.ts` | A job's report built as a file in `risk.uploadDirectory`, its room checked first, removed when the job ends; the per-process `report.build-cleanup` job (#1045). |
@@ -422,6 +423,32 @@ time budget and a cancellation stop the paging and not just the taking.
 
 `tests/report_post_login.js` drives the source over a real `PostLogin`
 on a Map with a moved clock.
+
+## Passkey history (#1109, 2026-10-28)
+
+`passkeyHistory` reads `passkey_report.history`: one row per realm per
+UTC day that the passkey report's recount writes and prunes
+(`common/CLAUDE.md` 3cs argues the writing). Reported HERE, as a source
+with presets, and not as a tab of Monitoring → Passkeys: all reports
+live in `/report`.
+
+* **One stored day is several rows, told apart by `scope`** (`realm`,
+  `profile`, `algorithm`, `lane`, `attestation`), because the document has
+  one aggregate and no pivot: a trend is one `scope` filtered and `day`
+  ordered, which is a query the form draws. The alternative, a column per
+  algorithm, would be a catalog that changes with the algorithms a realm
+  happens to hold. Every row carries every field, `null` where its scope
+  has none, so a CSV's columns do not move.
+* **Bounded by its retention, not by an index.** The store is a few hundred
+  small rows per realm, held in memory, read whole by
+  `passkey_report.historyRows()` and offered to the collector a row at a
+  time; nothing is anchored or indexed, and the directory is never read.
+* **`postQuantumShare` is null, not 0, where nobody holds a passkey**: a 0
+  would read as "nobody migrated" on a day there was nobody to migrate.
+* Three presets, each one leaf on `scope` and one order on `day`: the
+  adoption by day (the one #1109 names), passkeys by algorithm by day, and
+  adoption by profile by day. `tests/passkey_history.js` holds them, the
+  source and the row, in process and over `/report-api`.
 
 ## Every source run against 8081 (#1040, 2026-10-27)
 
@@ -1098,10 +1125,10 @@ directory are not asserted here; issuance and the policy's every case are
 
 ## The sources
 
-The twelve sources are `users`, `groups`, `applications`, `federation`,
+The thirteen sources are `users`, `groups`, `applications`, `federation`,
 `authMechanisms`, `auditEvents`, `authActivity`, `serviceMetrics`,
-`reportJobs`, `attributeSources`, `credentialHolders` and
-`postLoginProgress`. `authMechanisms` is the realm policy
+`reportJobs`, `attributeSources`, `credentialHolders`,
+`postLoginProgress` and `passkeyHistory`. `authMechanisms` is the realm policy
 (application `realm`) plus one row per value an application lists in
 `appAuthnMechanism` or `appMfaMechanism`. An empty list inherits the
 realm policy and adds no row. `authActivity` is the four attempt actions
