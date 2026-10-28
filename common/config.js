@@ -3002,9 +3002,39 @@ const SETTINGS = [
                  'policy is `require-trusted`, or that lists AAGUIDs in ' +
                  '`webauthn.attestationAllowedAaguids`, asks for `direct` ' +
                  'whatever this says — a policy that needs a statement ' +
-                 'cannot be met by asking for none. Asking for `enterprise` ' +
-                 'and getting nothing back is the browser refusing, not ' +
-                 'this service.' },
+                 'cannot be met by asking for none. **`enterprise` is asked ' +
+                 'only for an RP ID listed in ' +
+                 '`webauthn.attestationEnterpriseRpIds`** (#1114); for any ' +
+                 'other the request asks for `direct`, and the ceremony\'s ' +
+                 'row and the key\'s attestation record say so. It cannot ' +
+                 'be chosen while that list is empty. Asking for ' +
+                 '`enterprise` and getting an ordinary attestation back is ' +
+                 'the browser or the authenticator declining, not this ' +
+                 'service.' },
+
+  // ENTERPRISE ATTESTATION'S RP IDs (#1114). WebAuthn Level 3 section
+  // 5.4.7: a client passes `enterprise` through only for an RP ID its own
+  // policy allows, and an authenticator answers with a uniquely
+  // identifying attestation only for an RP ID provisioned into it. This
+  // service asks for it only where it was told to, by RP ID, per realm.
+  { key: 'webauthn.attestationEnterpriseRpIds', group: 'WebAuthn',
+    label: 'Enterprise attestation RP IDs',
+    path: 'webauthn.attestationEnterpriseRpIds',
+    env: 'STS_WEBAUTHN_ATTESTATION_ENTERPRISE_RP_IDS', type: 'csv',
+    dflt: '', runtime: true,
+    description: 'The RP IDs for which a registration asks for ' +
+                 '`enterprise` attestation (WebAuthn Level 3 section ' +
+                 '5.4.7), comma-separated host names, compared exactly ' +
+                 '(case aside). Read only while `webauthn.attestation` is ' +
+                 '`enterprise`, which cannot be chosen while this is empty ' +
+                 '(STS-AUTHN-0500), nor this emptied while it is. A ' +
+                 'ceremony whose RP ID is not listed asks for `direct` ' +
+                 'instead, and its `webauthn.ceremony` row and the new ' +
+                 'key\'s attestation record say so. **Only a statement from ' +
+                 'an enterprise request has its device serial read** for ' +
+                 'the passkey policy\'s `enterpriseSerialAttribute`; list ' +
+                 'here exactly the RP IDs your authenticators and browsers ' +
+                 'are provisioned to release enterprise attestation for.' },
 
   // -------------------------------------------------------------------
   // THE ATTESTATION POLICY (#105, 2026-09-23). What this service does with
@@ -19567,9 +19597,11 @@ const writeRules = [];
 /**
  * Adds a rule every override is checked against.
  *
- * @param fn - `(key, parsed, inRealm)` answering `{ problem, code }` or
- *   null; `inRealm` is true for a write that lands in a realm's overrides
- *   (#472: a rule over the process's settings leaves those to realms.js)
+ * @param fn - `(key, parsed, inRealm, beside)` answering `{ problem, code }`
+ *   or null; `inRealm` is true for a write that lands in a realm's
+ *   overrides (#472: a rule over the process's settings leaves those to
+ *   realms.js); `beside(key)` is a companion setting's value as this write
+ *   leaves it (#1114, `withWriteBatch()`)
  */
 function addWriteRule(fn) {
   log.debug("Entering addWriteRule().");
@@ -19579,13 +19611,65 @@ function addWriteRule(fn) {
   log.debug("Leaving addWriteRule(). " + writeRules.length);
 }
 
+// ---------------------------------------------------------------------------
+// THE OTHER VALUES OF ONE WRITE (#1114). `set-many` checks every posted
+// value before writing any and then writes them one by one, so a rule
+// between two settings asked about the first of a pair posted TOGETHER
+// would see the second's OLD value — and refuse `webauthn.attestation`
+// `enterprise` beside the RP ID list that makes it legal, both in the
+// check loop and in `setOverride()`'s own re-check during the writes.
+// `withWriteBatch()` holds the posted values for the length of one
+// synchronous call, and a rule reads a companion setting through the
+// fourth argument it is handed, `beside(key)`: the posted value, parsed,
+// where the batch carries a valid one, and `value(key)` otherwise. A rule
+// that ignores the argument behaves exactly as before.
+// ---------------------------------------------------------------------------
+/** @type {Object<string, *>|null} */
+let writeBatch = null;
+
+/**
+ * Runs `fn` while the write rules may read `values` as the other settings
+ * of the same write.
+ *
+ * @param values - the posted settings, raw, by key
+ * @param fn - the synchronous checks and writes
+ * @returns what `fn` returns
+ */
+function withWriteBatch(values, fn) {
+  log.debug("Entering withWriteBatch().");
+  const before = writeBatch;
+  writeBatch = values && typeof values === 'object' ? values : null;
+  try {
+    const out = fn();
+    log.debug("Leaving withWriteBatch().");
+    return out;
+  } finally {
+    writeBatch = before;
+  }
+}
+
+// A companion setting's value as a rule should judge it: the batch's, where
+// it carries a valid one, else the value in force.
+function besideValue(other) {
+  log.debug("Entering besideValue(). key=" + other);
+  const setting = byKey[other];
+  if (writeBatch && setting &&
+      Object.prototype.hasOwnProperty.call(writeBatch, other) &&
+      !TYPES[setting.type].check(writeBatch[other], setting)) {
+    log.debug("Leaving besideValue(). From the batch.");
+    return TYPES[setting.type].parse(writeBatch[other], setting);
+  }
+  log.debug("Leaving besideValue().");
+  return value(other);
+}
+
 // The first rule's refusal, or null. A rule that throws refuses nothing.
 function writeRuleProblem(key, parsed, inRealm) {
   log.debug("Entering writeRuleProblem(). key=" + key);
   for (const rule of writeRules) {
     let answer = null;
     try {
-      answer = rule(key, parsed, !!inRealm);
+      answer = rule(key, parsed, !!inRealm, besideValue);
     } catch (e) {
       log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a rule between ' +
                'settings failed on ' + key + ' (' +
@@ -20644,5 +20728,6 @@ module.exports = {
   onOverridesChanged: onOverridesChanged,
   TLS_LISTENERS: TLS_LISTENERS,
   PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
-  addWriteRule: addWriteRule
+  addWriteRule: addWriteRule,
+  withWriteBatch: withWriteBatch
 };

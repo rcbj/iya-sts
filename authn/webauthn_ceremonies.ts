@@ -56,7 +56,10 @@
 //   client         the browser and the operating system, FAMILY AND MAJOR
 //                  VERSION ONLY (`Chrome 141 on macOS 15`), read from the
 //                  User-Agent and NEVER more — no build, no device model, no
-//                  client hints; the header itself is not kept
+//                  client hints; the header itself is not kept; then,
+//                  where getClientCapabilities() answered, `|` and the
+//                  true members of a fixed allowlist of client
+//                  capabilities (`conditionalGet,hybridTransport`)
 //   transports     the transports the browser reported (`internal,hybrid`)
 //   attachment     `platform`, `cross-platform` or ''
 //   clientError    the DOMException NAME the page's script reported for a
@@ -66,12 +69,17 @@
 //                  `InvalidStateError`, `SecurityError`, `AbortError`, ...),
 //                  one of `CLIENT_ERRORS` or `other`; NEVER its message,
 //                  which is free text a page could fill with anything
-//   capabilities   the true members of a fixed allowlist of client
-//                  capabilities, where getClientCapabilities() is available
 //   attestation    for a registration that recorded one, what its
 //                  attestation was signed with (#941): the statement's
 //                  algorithm, then the chain leaf to anchor, and `PQ` where
-//                  every one is post-quantum
+//                  every one is post-quantum; led by `enterprise not
+//                  listed, asked direct` where `webauthn.attestation` is
+//                  `enterprise` and the RP ID is not on its list (#1114)
+//
+// THE CAPABILITIES RIDE ON `client` (#1114). They were a thirteenth field,
+// and `audit.js` keeps the first twelve and drops the rest, so the
+// `attestation` field after them was never stored; folded in as #1112
+// folded its rule into `offered`.
 //
 // `webauthn.algorithm-mismatch`: `actor` the person, `detail` { used — the
 // classical algorithm that signed, held — the person's post-quantum
@@ -297,10 +305,13 @@ class WebauthnCeremonies {
   // What a registration's attestation was signed with (#941), in a line.
   private static attestationText(rec: Json): string {
     log.debug("Entering WebauthnCeremonies.attestationText().");
+    // THE DOWNGRADE (#1114), whatever the statement was signed with.
+    const lead = rec && rec.enterpriseDowngraded === true
+      ? 'enterprise not listed, asked direct' : '';
     const a = rec && rec.algorithms;
     if (!a) {
       log.debug("Leaving WebauthnCeremonies.attestationText(). None.");
-      return '';
+      return lead;
     }
     const chain = (Array.isArray(a.certificates) ? a.certificates : [])
       .map(function (one: Json): string {
@@ -310,7 +321,8 @@ class WebauthnCeremonies {
     const text = [String(a.statement || '')].concat(
       chain.length ? [chain.join(' > ')] : []).filter(Boolean).join('; ');
     log.debug("Leaving WebauthnCeremonies.attestationText().");
-    return text ? text + (a.postQuantum === true ? ' (PQ)' : '') : '';
+    return [lead, text ? text + (a.postQuantum === true ? ' (PQ)' : '')
+                       : ''].filter(Boolean).join('; ');
   }
 
   /**
@@ -376,10 +388,10 @@ class WebauthnCeremonies {
             (e.narrowed ? '|' + String(e.narrowed).slice(0, 120) : ''),
           algorithm: algorithm,
           postQuantum: passkeyPolicy.isPostQuantum(algorithm),
-          client: WebauthnCeremonies.clientOf(userAgent),
+          client: WebauthnCeremonies.clientOf(userAgent) +
+            (capabilities ? '|' + capabilities : ''),
           transports: transports.join(','), attachment: attachment,
           clientError: clientError,
-          capabilities: capabilities,
           attestation: ceremony === 'registration'
             ? WebauthnCeremonies.attestationText(e.attestation) : ''
         }

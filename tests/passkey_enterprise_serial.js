@@ -13,8 +13,9 @@
 //      serialNumber, and from Yubico's serial extension, and finds none in a
 //      certificate with neither.
 //   2. The attribute set demands a TRUSTED statement, as an AAGUID list
-//      does, and a packed attestation under a trusted anchor records the
-//      serial its certificate names — both places.
+//      does, and a packed attestation under a trusted anchor, from an
+//      enterprise request (#1114), records the serial its certificate
+//      names — both places.
 //   3. `credentials.addKey()`, the one writer, takes a key whose serial is
 //      one of the person's values (case and spaces aside), and refuses one
 //      that is not (STS-AUTHN-0320) and one that names none
@@ -76,6 +77,10 @@ async function recorded(t, root) {
   withAttribute('serialNumber');
   config.setOverride('webauthn.attestationPolicy', 'verify-if-present');
   config.setOverride('webauthn.attestationTrustAnchors', root.pem);
+  // AN ENTERPRISE REQUEST AT THE KIT'S RP ID (#1114): a serial is read only
+  // from a statement one produced. The list first, so the write rule holds.
+  config.setOverride('webauthn.attestationEnterpriseRpIds', 'localhost');
+  config.setOverride('webauthn.attestation', 'enterprise');
   try {
     t.check(webauthnPolicy.attestationSettings().demandsTrust === true &&
             /binds security-key serials/.test(
@@ -97,10 +102,12 @@ async function recorded(t, root) {
             one.attestation.deviceSerial === 'SN-77' &&
             two.ok && two.attestation.deviceSerial === '5550001' &&
             two.attestation.deviceSerialSource === 'yubico-extension',
-            '2b. a trusted packed attestation records the serial its ' +
-            'certificate names, from either place',
+            '2b. a trusted packed attestation from an enterprise request ' +
+            'records the serial its certificate names, from either place',
             JSON.stringify([one.attestation, two.attestation]));
   } finally {
+    config.clearOverride('webauthn.attestation');
+    config.clearOverride('webauthn.attestationEnterpriseRpIds');
     config.clearOverride('webauthn.attestationPolicy');
     config.clearOverride('webauthn.attestationTrustAnchors');
     passkeyPolicy.reset('default');

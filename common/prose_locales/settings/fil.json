@@ -1164,8 +1164,16 @@
     "text": "Attestation conveyance"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "Gaano karami ang hinihiling sa browser na sabihin sa serbisyong ito tungkol sa authenticator na gumawa ng credential. `direct` ang default dito dahil DEBUGGING service ito at ang attestation object ay isa sa mga bagay na sulit tingnan; ang deployment na walang pakinabang sa model ng authenticator ay dapat magpadala ng `none`, na siyang inirerekomenda ng specification at umiiwas sa browser consent prompt tungkol dito. **Ang GINAGAWA sa bumabalik ay ang `webauthn.attestationPolicy`** (#105): vine-verify sa product mode ang bawat statement na dumarating. Ang realm na ang policy ay `require-trusted`, o naglilista ng mga AAGUID sa `webauthn.attestationAllowedAaguids`, ay humihingi ng `direct` anuman ang sinasabi nito — ang policy na nangangailangan ng statement ay hindi matutugunan sa paghingi ng wala. Ang paghingi ng `enterprise` at walang natanggap pabalik ay ang browser ang tumatanggi, hindi ang serbisyong ito."
+    "en": "1280747b772b73d1",
+    "text": "Gaano karami ang hinihiling sa browser na sabihin sa serbisyong ito tungkol sa authenticator na gumawa ng credential. `direct` ang default dito dahil DEBUGGING service ito at ang attestation object ay isa sa mga bagay na sulit tingnan; ang deployment na walang pakinabang sa model ng authenticator ay dapat magpadala ng `none`, na siyang inirerekomenda ng specification at umiiwas sa browser consent prompt tungkol dito. **Ang GINAGAWA sa bumabalik ay ang `webauthn.attestationPolicy`** (#105): vine-verify sa product mode ang bawat statement na dumarating. Ang realm na ang policy ay `require-trusted`, o naglilista ng mga AAGUID sa `webauthn.attestationAllowedAaguids`, ay humihingi ng `direct` anuman ang sinasabi nito — ang policy na nangangailangan ng statement ay hindi matutugunan sa paghingi ng wala. **Hinihingi lamang ang `enterprise` para sa RP ID na nakalista sa `webauthn.attestationEnterpriseRpIds`** (#1114); para sa iba, `direct` ang hinihingi ng request, at sinasabi ito ng row ng ceremony at ng attestation record ng key. Hindi ito mapipili habang walang laman ang listahang iyon. Ang paghingi ng `enterprise` at pagtanggap ng ordinaryong attestation ay ang browser o ang authenticator ang tumatanggi, hindi ang serbisyong ito."
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "Mga RP ID ng enterprise attestation"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "Ang mga RP ID kung saan humihingi ang isang registration ng `enterprise` attestation (WebAuthn Level 3 section 5.4.7), mga host name na pinaghihiwalay ng kuwit, eksaktong ikinukumpara (maliban sa malaki o maliit na titik). Binabasa lamang habang `enterprise` ang `webauthn.attestation`, na hindi mapipili habang walang laman ito (STS-AUTHN-0500), at hindi rin ito maaaring alisan ng laman habang ganoon. Ang ceremony na hindi nakalista ang RP ID ay humihingi ng `direct` sa halip, at sinasabi ito ng `webauthn.ceremony` row nito at ng attestation record ng bagong key. **Mula lamang sa statement ng isang enterprise request binabasa ang serial ng device** para sa `enterpriseSerialAttribute` ng passkey policy; ilista rito nang eksakto ang mga RP ID kung saan naka-provision ang inyong mga authenticator at browser na maglabas ng enterprise attestation."
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",

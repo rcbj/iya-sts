@@ -1164,8 +1164,16 @@
     "text": "证明传达方式"
   },
   "webauthn.attestation|description": {
-    "en": "69096955c5497984",
-    "text": "要求浏览器向本服务透露多少关于创建凭据的身份验证器的信息。这里默认为 `direct`，因为这是一个调试服务，而证明对象是值得查看的内容之一；用不到身份验证器型号的部署应发送 `none`，这是规范所推荐的，也能避免浏览器就此弹出同意提示。**如何处理返回的内容由 `webauthn.attestationPolicy` 决定**（#105）：在产品模式下，到达的每个声明都会被验证。策略为 `require-trusted`、或在 `webauthn.attestationAllowedAaguids` 中列出了 AAGUID 的领域，无论此项如何设置都会请求 `direct`——需要声明的策略无法通过请求 none 来满足。请求 `enterprise` 却什么也没得到，是浏览器在拒绝，而不是本服务。"
+    "en": "1280747b772b73d1",
+    "text": "要求浏览器向本服务透露多少关于创建凭据的身份验证器的信息。这里默认为 `direct`，因为这是一个调试服务，而证明对象是值得查看的内容之一；用不到身份验证器型号的部署应发送 `none`，这是规范所推荐的，也能避免浏览器就此弹出同意提示。**如何处理返回的内容由 `webauthn.attestationPolicy` 决定**（#105）：在产品模式下，到达的每个声明都会被验证。策略为 `require-trusted`、或在 `webauthn.attestationAllowedAaguids` 中列出了 AAGUID 的领域，无论此项如何设置都会请求 `direct`——需要声明的策略无法通过请求 none 来满足。**仅对 `webauthn.attestationEnterpriseRpIds` 中列出的 RP ID 请求 `enterprise`**（#1114）；对其他 RP ID，请求改为 `direct`，仪式记录行和密钥的证明记录都会注明。该列表为空时不能选择它。请求 `enterprise` 却收到普通证明，是浏览器或身份验证器拒绝了，而不是本服务。"
+  },
+  "webauthn.attestationEnterpriseRpIds|label": {
+    "en": "68a28100e76d23e2",
+    "text": "企业证明的 RP ID"
+  },
+  "webauthn.attestationEnterpriseRpIds|description": {
+    "en": "9f2b1c99de86ba4a",
+    "text": "注册时请求 `enterprise` 证明（WebAuthn Level 3 第 5.4.7 节）的 RP ID，以逗号分隔的主机名，精确比较（不区分大小写）。仅在 `webauthn.attestation` 为 `enterprise` 时读取；此列表为空时不能选择该值（STS-AUTHN-0500），选择该值时也不能清空此列表。RP ID 未列出的仪式改为请求 `direct`，其 `webauthn.ceremony` 记录行和新密钥的证明记录都会注明。**只有来自企业请求的声明才会读取设备序列号**，用于通行密钥策略的 `enterpriseSerialAttribute`；请在此精确列出你的身份验证器和浏览器已配置为可释放企业证明的 RP ID。"
   },
   "webauthn.attestationPolicy|label": {
     "en": "9f03b4390a1ed7fe",

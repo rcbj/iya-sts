@@ -1012,7 +1012,27 @@ says. `webauthn.attestationAllowSafetynet` and
 `webauthn.attestationAndroidSoftwareKeys` are weaker options, off, each with a
 warning in its description. `direct` is the conveyance default because this is
 a debugging service and the object is worth looking at; a deployment with no
-use for the authenticator's model sends `none`.
+use for the authenticator's model sends `none`. `enterprise` is asked only for
+the RP IDs `webauthn.attestationEnterpriseRpIds` lists (a client passes it
+through, and an authenticator answers it, only for an RP ID provisioned for it);
+any other RP ID is asked for `direct`, which the ceremony's audit row and the
+key's attestation record note.
+
+### Enterprise attestation
+
+Set `webauthn.attestation` to `enterprise` and list, in
+`webauthn.attestationEnterpriseRpIds`, exactly the RP IDs your authenticators
+and browsers are provisioned to release enterprise attestation for — choosing
+`enterprise` with the list empty is refused (`STS-AUTHN-0500`), and so is
+emptying the list while it is chosen; the console's WebAuthn section saves the
+two together. A registration at a listed RP ID asks for `enterprise`; one
+anywhere else asks for `direct`, and its `webauthn.ceremony` audit row's
+`attestation` detail begins `enterprise not listed, asked direct`, as the key's
+attestation record carries `conveyance: direct` and `enterpriseDowngraded:
+true`. **The device serial the passkey policy's `enterpriseSerialAttribute`
+binds is read only from a statement an enterprise request produced**, so with
+that attribute set, a security key registered at an unlisted RP ID names no
+serial and is refused (`STS-AUTHN-0321`).
 
 **`webauthn.rpId` may only WIDEN the RP ID**, to a registrable domain suffix of
 the host this service was reached on — `example.com` at `sts.example.com`. That
@@ -2303,7 +2323,8 @@ client author asks this service for a ceremony of a particular shape — with
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | On, a person may hold a classical passkey and a post-quantum (ML-DSA) passkey at once, on one authenticator where it can make both: each passkey is created in a lane the person chooses — classical (`webauthn.algorithms` without ML-DSA, `ES256` and `RS256` where that leaves none) or post-quantum (ML-DSA only) — with its own user handle and exclude list. The post-quantum one is shown as `<username>+ml-dsa`, later `<username>+ml-dsa-65`, which is never a sign-in name. `webauthn.maxKeysPerPerson` counts both. Refused while `webauthn.pqcOnly` is on (`STS-AUTHN-0353`). Off, every ceremony is as it was; a post-quantum passkey already held still signs in and no new one can be created. Per realm. |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | On, only the post-quantum passkey algorithms are requested — RFC 9964's `ML-DSA-44`, `ML-DSA-65` and `ML-DSA-87` that `webauthn.algorithms` names, or all three where it names none — so a new passkey must be ML-DSA. Keys already enrolled with another algorithm go on signing in. Most authenticators support no ML-DSA yet. Per realm. |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the PERSON — a PIN, a fingerprint, a face — as well as prove possession. **THIS SERVICE ALSO ENFORCES IT**, as it does the algorithms offered and the RP ID: `required` is sent to the browser and the UV flag in the signed authenticator data is then checked. **It does not change what a session CLAIMS** — a passwordless sign-in still records `amr ["hwk"]` and `acr "1"`, because RFC 8176 has no value for *the authenticator verified the user* this service could honestly assert. |
-| `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | How much the browser is asked to say about the authenticator. `direct` is the default because this is a debugging service and the attestation object is worth looking at; a deployment with no use for the model should send `none`. What is DONE with the statement is `webauthn.attestationPolicy`; a realm that demands a trusted statement asks for `direct` whatever this says. |
+| `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | How much the browser is asked to say about the authenticator. `direct` is the default because this is a debugging service and the attestation object is worth looking at; a deployment with no use for the model should send `none`. What is DONE with the statement is `webauthn.attestationPolicy`; a realm that demands a trusted statement asks for `direct` whatever this says. `enterprise` is asked only for an RP ID `webauthn.attestationEnterpriseRpIds` lists, and cannot be chosen while that list is empty (`STS-AUTHN-0500`). |
+| `webauthn.attestationEnterpriseRpIds` | `STS_WEBAUTHN_ATTESTATION_ENTERPRISE_RP_IDS` | *(empty)* | yes | The RP IDs, comma-separated, for which a registration asks for `enterprise` attestation (WebAuthn Level 3 section 5.4.7), read only while `webauthn.attestation` is `enterprise`. Any other RP ID is asked for `direct`, and the ceremony's row and the key's attestation record say so. Only a statement from an enterprise request has its device serial read for the passkey policy's `enterpriseSerialAttribute`. It cannot be emptied while `enterprise` is chosen (`STS-AUTHN-0500`). Per realm. |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` | yes | What a registration's attestation statement must be (#105). `verify-if-present` verifies every statement in all eight WebAuthn Level 3 section 8 formats and refuses one that does not verify; its chain is checked against the anchors below and the FIDO Metadata Service's roots, a model MDS lists must chain to its roots, a model MDS reports compromised is refused, and revocation is consulted; `none`, self attestation and an unanchored chain are accepted as untrusted. `require-trusted` refuses anything that does not chain to an anchor — and so every synced passkey. `by-mode` is `verify-if-present` in product and `off` in development. **`off` verifies nothing — WARNING: a forged statement is recorded as the authenticator's — and is development only.** |
 | `webauthn.attestationTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS` | *(empty)* | yes | Root certificates, as PEM, an attestation certificate may chain to beside the roots MDS lists for each model — a corporate TPM CA, a vendor's root, a test root. Nothing is shipped. |
 | `webauthn.attestationEvidenceTsaUrl` | `STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL` | *(empty)* | yes | Optional HTTPS RFC 3161 timestamp authority for RFC 4998 evidence records. When configured together with the TSA trust anchors below, newly registered, verified and trusted classical attestations are timestamped; the service refuses that registration if the TSA cannot provide a verifiable token. |
