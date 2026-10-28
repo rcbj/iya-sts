@@ -1480,11 +1480,11 @@ class Scheduler {
   // -------------------------------------------------------------------------
   // STARTING. `server.js` calls `start('front')` once the service's state is
   // restored; `common/request_worker.ts` calls `start('per-process')`. A
-  // front process campaigns for the lease; with clustering off `lead()`
+  // front process contends for the lease; with clustering off `lead()`
   // answers at once. Idempotent.
   // -------------------------------------------------------------------------
   /**
-   * Starts the scheduler: a front process campaigns for the leader's lease and
+   * Starts the scheduler: a front process contends for the leader's lease and
    * runs per-process jobs; a request worker runs per-process jobs only.
    * Idempotent.
    *

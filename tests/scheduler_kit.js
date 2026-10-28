@@ -196,7 +196,7 @@ function world(options) {
           handlers.onGain(0);
           return;
         }
-        w.campaign(node);
+        w.contend(node);
       },
       holds: function (lease) {
         return !w.clustered || node.held.has(lease);
@@ -271,7 +271,7 @@ function world(options) {
   };
 
   // A node asks for every role it wants and does not hold.
-  w.campaign = function (node) {
+  w.contend = function (node) {
     if (!node.alive || !w.clustered) {
       return;
     }
@@ -297,7 +297,7 @@ function world(options) {
   };
 
   // The heartbeat: every live node renews what it holds, learns what it
-  // lost, and campaigns.
+  // lost, and contends.
   w.beat = function () {
     w.nodes.forEach(function (node) {
       if (!node.alive || !w.clustered) {
@@ -317,7 +317,7 @@ function world(options) {
           h.onLose();
         }
       });
-      w.campaign(node);
+      w.contend(node);
     });
   };
 
