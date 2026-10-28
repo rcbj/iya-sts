@@ -7103,6 +7103,30 @@
     "en": "b80cedcb611f2fd3",
     "text": "Hur ofta den här tjänstens egen administratörskonsol och användarportal hämtar det deras strömmar innehåller, via RFC 8936-pollning från /ssf/poll (schemaläggarjobbet ssf.internal-poll), upp till ssf.pollMaxEvents SET per begäran. Det är det längsta en Security Event Token väntar innan någon av ytorna ser den och agerar på den. 0 stänger av jobbet, och händelserna köas då på de två strömmarna och når ingen av sidorna."
   },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "Hur ofta varje öppen flik söker efter meddelanden (millisekunder)"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "Hur ofta varje öppen flik i administrationskonsolen, användarportalen och rapportprogrammet frågar sitt eget API efter meddelanden som mottagaren har tagit emot (#1086). Tillsammans med ssf.internalPollMs är det den längsta tid en sändning tar att visas. En flik läser värdet när den loggar in."
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "Hur länge en mottagare behåller ett meddelande (sekunder)"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "Hur länge var och en av tjänstens tre mottagare behåller ett mottaget meddelande så att flikarna kan hämta det (#1086). En flik visar bara det som kom efter att den loggade in, så detta är inte hur länge en sen flik kan se det; det behöver bara räcka längre än en fliks kontrollintervall och en långsam hämtning."
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "Längsta meddelande (tecken)"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "Det största antalet tecken ett sänt meddelande får innehålla (#1086). Det är ren text; ett längre avvisas."
+  },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
     "text": "Strömmar per mottagare"

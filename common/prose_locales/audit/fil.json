@@ -943,6 +943,10 @@
     "en": "3a3cd80f6d3a215a",
     "text": "May Security Event Token na naihatid sa isang receiver"
   },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "May anunsyong na-broadcast sa mga naka-sign in na application"
+  },
   "audit.actions.ssf.event.refused.label": {
     "en": "29910e5a49b21a0c",
     "text": "May receiver na tumanggi sa isang Security Event Token"

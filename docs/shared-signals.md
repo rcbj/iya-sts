@@ -565,6 +565,39 @@ verified event the `signal-response` policy permits revokes the tokens the
 receiving application's own client holds for the person it names (product
 mode; development records it). An unverified event is never acted on.
 
+### Broadcast announcements
+
+An administrator can show a short message to everybody signed in to the
+admin console, the user portal or the reports application. Open
+**Server configuration → Broadcast Announcement** (`/admin/broadcast`), type
+the message, choose the applications (all three are ticked) and press
+**Broadcast**. Every tab of those applications that is open at that moment
+shows it in a banner at the top of the screen. The banner closes itself after
+ten seconds, or at once with its **×**. A tab opened afterwards does not show
+it.
+
+It travels as a Shared Signals event of this service's own,
+`urn:iya:sts:secevent:event-type:announcement`, on the receiver streams the
+three applications already have for CAEP and RISC, and only on those. Each
+application's receiver collects it from `/ssf/poll` like any other event,
+checks it, and keeps a verified one for `ssf.announcementKeepS` seconds. Each
+open tab asks its own API every `ssf.announcementPollMs` milliseconds:
+`/admin-api/announcements`, `/account-api/announcements` or
+`/report-api/announcements`. An announcement whose signature does not verify
+is recorded on the application's Signals page and shown to nobody.
+
+- **Who can send it**: anybody with Admin Write. A realm administrator
+  reaches the people signed in to their own realm. A service administrator in
+  the default realm can also choose **Every realm**.
+- **The message** is plain text, at most `ssf.announcementMaxChars`
+  characters.
+- **From a script**: `POST /admin-api/broadcast/send` with
+  `{ "message": "…", "surfaces": ["admin-console", "user-portal", "report"],
+  "everyRealm": false }`. The answer says how many receiver streams took it in
+  each realm; `sent: 0` with `why` means nothing could be delivered (for
+  example `ssf.internalReceivers` is off, or a stream was disabled at
+  `/admin/ssf`).
+
 ### Deliberate defects
 
 A transmitter that is always correct is hard to write error handling against,
@@ -660,6 +693,9 @@ types from what a stream may ask for.
 | `ssf.authBasic` | `STS_SSF_AUTH_BASIC` | `true` | yes | Whether HTTP Basic is accepted and advertised. |
 | `ssf.authClientCert` | `STS_SSF_AUTH_CLIENT_CERT` | `true` | yes | Whether a receiver's TLS client certificate is accepted and `urn:ietf:rfc:8705` advertised. |
 | `ssf.internalReceivers` | `STS_SSF_INTERNAL_RECEIVERS` | `true` | **no** | Seeds the console's, the portal's and the reports application's own receiver streams. |
+| `ssf.announcementPollMs` | `STS_SSF_ANNOUNCEMENT_POLL_MS` | `5000` | yes | How often each open console, portal and reports tab asks for a [broadcast announcement](#broadcast-announcements). |
+| `ssf.announcementKeepS` | `STS_SSF_ANNOUNCEMENT_KEEP_S` | `60` | yes | How long each application's receiver keeps an announcement for its tabs to collect. |
+| `ssf.announcementMaxChars` | `STS_SSF_ANNOUNCEMENT_MAX_CHARS` | `500` | yes | The longest announcement, in characters. |
 | `ssf.maxStreams` | `STS_SSF_MAX_STREAMS` | `25` | yes | Streams per receiver in a realm. A create past the limit is refused with 403, and the refusal names this setting. The console's and portal's own streams do not count. |
 | `ssf.inactivityTimeoutS` | `STS_SSF_INACTIVITY_TIMEOUT_S` | `0` | yes | SSF 1.0 section 8.1.1's `inactivity_timeout`: a stream whose receiver has made no management call about it (and, for a poll stream, no poll) for this long is dealt with as `ssf.inactivityAction` says. `0`, the default, is no timeout. It is off by default because a push receiver never calls back. |
 | `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |

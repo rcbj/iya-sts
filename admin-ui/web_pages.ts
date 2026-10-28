@@ -66,6 +66,7 @@ import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import MetricsPage = require('./web_metrics');
 import ModePage = require('./web_mode');
+import BroadcastPage = require('./web_broadcast');
 import NodeHealthPage = require('./web_node_health');
 import PasskeyReportPage = require('./web_passkey_report');
 import PkiPage = require('./web_pki');
@@ -753,6 +754,8 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/mode', title: 'Mode', operation: '/admin-api/mode',
     render: ModePage.render },
+  { path: '/admin/broadcast', title: 'Broadcast Announcement',
+    operation: '/admin-api/broadcast', render: BroadcastPage.render },
   { path: '/admin/node-health', title: 'Node health',
     operation: '/admin-api/node-health', render: NodeHealthPage.render },
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',

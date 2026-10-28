@@ -549,5 +549,7 @@
   "accounts.anotherTitle": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
   "accounts.none": "Inget annat konto är inloggat i den här webbläsaren ännu.",
   "accounts.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
-  "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade."
+  "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade.",
+  "announcement.heading": "Meddelande",
+  "announcement.close": "Stäng"
 }

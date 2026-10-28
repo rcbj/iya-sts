@@ -475,6 +475,10 @@
     "en": "fa5ff98584c701fb",
     "text": "Ang inbox ng Shared Signals ng application ng mga ulat"
   },
+  "endpoints.route./report-api/announcements.name": {
+    "en": "3adb83b8075c6a3a",
+    "text": "Mga anunsyo para sa reports application"
+  },
   "endpoints.route./report-api/groups.name": {
     "en": "e30ed85f8fa2f141",
     "text": "Ang paghahanap ng grupo, para sa reports application"
@@ -702,6 +706,18 @@
   "endpoints.route./admin-api/scheduler/:action.name": {
     "en": "3483d9e9aab04915",
     "text": "Mga action ng scheduler"
+  },
+  "endpoints.route./admin-api/broadcast.name": {
+    "en": "7ca7feaebe5215c0",
+    "text": "Mag-broadcast ng Anunsyo"
+  },
+  "endpoints.route./admin-api/broadcast/:action.name": {
+    "en": "6e79d056a66502f2",
+    "text": "Mga aksyon sa pag-broadcast ng anunsyo"
+  },
+  "endpoints.route./admin-api/announcements.name": {
+    "en": "c4061b1ad0320a47",
+    "text": "Mga anunsyo ng console"
   },
   "endpoints.route./admin-api/mail/:action.name": {
     "en": "cff7055c2db49c6a",

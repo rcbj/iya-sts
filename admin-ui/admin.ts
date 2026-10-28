@@ -2508,6 +2508,15 @@ const SECTIONS = [
                'points, a test message, and the wording of each message ' +
                'per language. A realm may override the service\'s ' +
                'transport. No secret is ever shown here.' },
+      // #1086: an announcement to everybody signed in, sent as this
+      // service's own Shared Signals event to its three applications.
+      { path: '/admin/broadcast', label: 'Broadcast Announcement',
+        blurb: 'Show a short message to everybody signed in to the admin ' +
+               'console, the user portal or the reports application, in a ' +
+               'banner at the top of every open tab. It travels as this ' +
+               'service\'s own Shared Signals event on the three ' +
+               'applications\' receiver streams; a service administrator ' +
+               'may send it to every realm.' },
       { path: '/admin/rbac', label: 'Admin roles',
         blurb: 'Who holds the two roles that grant this console — Admin ' +
                'Read and Admin Write — granted and revoked here. They are ' +

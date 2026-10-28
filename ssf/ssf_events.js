@@ -1283,7 +1283,50 @@ const STS_EVENTS = [
           'made at that start. A receiver that pins the certificate or its ' +
           'anchor fetches them again. Sent to every realm\'s streams, ' +
           'because the listener is the whole service\'s.'
-  })
+  }),
+  // AN ANNOUNCEMENT TO THE PEOPLE SIGNED IN (#1086). An administrator's
+  // short message for everybody using this service's own three
+  // applications, sent only to their internal receiver streams
+  // (`ssf/ssf_receivers.ts`) and drawn as a banner in every tab open at the
+  // time. A URN of this service's own, as the rest of this family: no
+  // specification defines the event. No subject — it is about nobody.
+  {
+    uri: STS_PREFIX + 'announcement',
+    family: 'sts',
+    name: 'Announcement',
+    subject: 'none',
+    members: [
+      { name: 'realm', required: true, type: 'string',
+        what: 'The trust realm the announcement is for.' },
+      { name: 'message', required: true, type: 'string',
+        what: 'The text to show, plain and at most ' +
+              'ssf.announcementMaxChars characters.' },
+      { name: 'surfaces', required: true, type: 'strings',
+        what: 'Which of this service\'s applications show it: ' +
+              '"admin-console", "user-portal", "report".' },
+      { name: 'event_timestamp', required: false, type: 'number',
+        what: 'When it was sent, in seconds since the epoch.' }
+    ],
+    required: ['realm', 'message', 'surfaces'],
+    what: 'NON-SPEC, this service\'s own. An administrator\'s announcement ' +
+          'for everybody signed in to this service\'s admin console, user ' +
+          'portal or reports application; each draws it as a banner in the ' +
+          'tabs open when it arrives.',
+    generate: function (values) {
+      log.debug("Entering generate().");
+      const v = values || {};
+      const payload = {
+        realm: String(v.realm || 'default'),
+        message: String(v.message || ''),
+        surfaces: (Array.isArray(v.surfaces) ? v.surfaces : [])
+          .map(String),
+        event_timestamp: Number(v.event_timestamp) ||
+                         Math.floor(Date.now() / 1000)
+      };
+      log.debug("Leaving generate().");
+      return payload;
+    }
+  }
 ];
 
 // One row of the key-event family above: the shared shape, with the address
@@ -2200,6 +2243,11 @@ module.exports = {
    * This service's event type for a rotation of a realm's signing keys.
    */
   SIGNING_KEY_ROTATED: STS_PREFIX + 'signing-key-rotated',
+  /**
+   * This service's event type for an administrator's announcement to the
+   * people signed in to its own three applications (#1086).
+   */
+  ANNOUNCEMENT: STS_PREFIX + 'announcement',
   /**
    * This service's event type for a krbtgt key rotated with nothing kept, which
    * invalidates every ticket-granting ticket the realm issued.

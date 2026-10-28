@@ -235,6 +235,7 @@
   "audit.actions.ssf.stream.status.label": "A stream was enabled, paused or disabled",
   "audit.actions.ssf.subject.change.label": "A subject was added to or removed from a stream",
   "audit.actions.ssf.event.transmit.label": "A Security Event Token was delivered to a receiver",
+  "audit.actions.ssf.announcement.broadcast.label": "An announcement was broadcast to the signed-in applications",
   "audit.actions.ssf.event.refused.label": "A receiver refused a Security Event Token",
   "audit.actions.ssf.stream.dead.label": "A push stream was declared dead after only failed pushes",
   "audit.actions.ssf.stream.revived.label": "A dead push stream was revived",

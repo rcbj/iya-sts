@@ -157,5 +157,7 @@
   "signalsSkipped": "無動作：{why}。",
   "signalsObserved": "無動作：開發模式僅作觀察。",
   "signalsFailed": "無法對其執行動作。",
-  "signalsNothing": "無動作：原則未要求任何回應。"
+  "signalsNothing": "無動作：原則未要求任何回應。",
+  "announcement.heading": "公告",
+  "announcement.close": "關閉"
 }

@@ -136,5 +136,6 @@
   "title.wsfed": "WS-Federation",
   "title.tls": "TLS / TLS mutuo",
   "title.vc-verifier-config": "Solicitud del verificador",
-  "title.worker-pools": "Grupos de workers"
+  "title.worker-pools": "Grupos de workers",
+  "title.broadcast": "Difundir un anuncio"
 }

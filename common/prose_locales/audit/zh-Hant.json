@@ -943,6 +943,10 @@
     "en": "3a3cd80f6d3a215a",
     "text": "Security Event Token 已傳遞給接收端"
   },
+  "audit.actions.ssf.announcement.broadcast.label": {
+    "en": "1e249bba761a1865",
+    "text": "已向已登入的應用程式廣播一則公告"
+  },
   "audit.actions.ssf.event.refused.label": {
     "en": "29910e5a49b21a0c",
     "text": "接收端拒絕了 Security Event Token"

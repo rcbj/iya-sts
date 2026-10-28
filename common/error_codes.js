@@ -17314,6 +17314,22 @@ const CODES = [
       'endpoint is from an outside certificate authority and is stored ' +
       'in userCertificate on more than one entry of the realm (#1061).',
     spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0153',
+    summary: 'An announcement broadcast was refused: no message, a message ' +
+      'longer than ssf.announcementMaxChars, no application chosen or one ' +
+      'this service does not have, or every realm asked for by somebody who ' +
+      'is not a service administrator in the default realm (#1086).',
+    spec: 'HTTP 400 {ok: false, errors} from /admin-api/broadcast/send' },
+  { code: 'STS-SSF-0154',
+    summary: 'An announcement broadcast reached no stream: Shared Signals is ' +
+      'off, ssf.internalReceivers is off, or the chosen applications\' ' +
+      'receiver streams are disabled or do not take the announcement event ' +
+      '(#1086).',
+    spec: 'HTTP 200 {ok: true, sent: 0, why} — nothing was sent' },
+  { code: 'STS-SSF-0155',
+    summary: 'An announcement broadcast could not be sent in a realm: ' +
+      'building or queueing its Security Event Token failed (#1086).',
+    spec: 'none: logged; the answer names the realm' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

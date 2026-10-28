@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "HINDI MULA SA SPEC. Ang natanggap ng application ng mga ulat, isang receiver ng sariling transmitter ng serbisyong ito (#1042): bawat signal sa realm para sa isang report administrator, at para sa iba ang mga signal lamang tungkol sa kanila. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086). Ang kinukuha ng bukas na reports tab bawat ssf.announcementPollMs: ang mga anunsyong na-broadcast ng administrator sa application na ito, gaya ng pagtatago ng receiver nito. Sa likod ng parehong token gaya ng iba pang /report-api."
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC. Ang mga grupo ng realm na ang pangalan o DN ay naglalaman ng q, lima bawat pahina, bawat isa may sariling mail attribute (#989): ang pane ng pahina ng definition. Ang mga grupo ng isang definition ang pinapadalhan ng email ng resulta nito. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "NON-SPEC (#49). run, na may { job, realm?, params? }: isang naka-queue na run na sisimulan ng leader sa susunod nitong tick, 202 na may runId nito; at step-down: binibitawan ng leader ang ops.scheduler sa susunod nitong tick at kinukuha ito ng ibang node. Ang dalawang button ng console."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086). Ang iginuguhit ng GET /admin/broadcast: ang mga application kung saan maipapakita ang anunsyo, kung maaaring ipadala ito ng tumatawag sa lahat ng realm, ang pinakamahabang mensahe at kung may maipapadala. Sinasalamin ang GET /admin/broadcast."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086). send, kasama ang { message, surfaces, everyRealm }: ang sariling announcement SET ng serbisyong ito sa mga receiver stream ng admin console, user portal at reports application, ipinapakita bilang banner sa bawat bukas na tab nila sa sandaling iyon."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "nagpapadala ng anunsyo sa lahat ng naka-sign in"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086). Ang kinukuha ng bukas na console tab bawat ssf.announcementPollMs: ang mga anunsyong natanggap ng receiver ng console pagkatapos ng unang tanong ng tab."
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",

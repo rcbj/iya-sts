@@ -1,0 +1,16 @@
+{
+  "about": "Visar ett kort meddelande för alla som är inloggade i administrationskonsolen, användarportalen eller rapportprogrammet, i en banderoll överst i varje öppen flik. Det skickas som tjänstens egen Shared Signals-händelse på varje programs mottagarström, och en flik visar det inom ungefär {seconds, plural, one {# sekund} other {# sekunder}}. Banderollen stängs av sig själv efter tio sekunder. En flik som öppnas senare visar det inte.",
+  "notReady": "Ingenting kan levereras just nu:",
+  "readOnly": "Att skicka ett meddelande kräver Admin Write.",
+  "message": "Meddelande",
+  "maxChars": "Ren text, högst {max} tecken.",
+  "surfaces": "Visa det i",
+  "scope.legend": "Skicka det till",
+  "scope.realm": "Den här sfären (<code>{realm}</code>)",
+  "scope.every": "Alla sfärer ({count, plural, one {# sfär} other {# sfärer}})",
+  "scope.only": "Det skickas till dem som är inloggade i den här sfären, <code>{realm}</code>.",
+  "send": "Sänd",
+  "streamsLink": "Mottagarströmmarna det färdas på (Shared Signals)",
+  "banner.heading": "Meddelande",
+  "banner.close": "Stäng"
+}

@@ -157,5 +157,7 @@
   "signalsSkipped": "Rien : {why}.",
   "signalsObserved": "Rien : le mode développement se contente d’observer.",
   "signalsFailed": "Il n’a pas pu être traité.",
-  "signalsNothing": "Rien : la politique ne demande aucune réaction."
+  "signalsNothing": "Rien : la politique ne demande aucune réaction.",
+  "announcement.heading": "Annonce",
+  "announcement.close": "Fermer"
 }

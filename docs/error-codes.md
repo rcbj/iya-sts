@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4747** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4750** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 131
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
@@ -3889,6 +3889,9 @@ Raised from: ssf/.
 | `STS-SSF-0150` | A TLS client certificate presented alone to a Shared Signals endpoint was refused on revocation (#1049); the certificate's own code is on the audit row beside it. | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 | `STS-SSF-0151` | A TLS client certificate presented alone to a Shared Signals endpoint is from an outside certificate authority and is not stored in userCertificate on any entry of the realm (#1061). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 | `STS-SSF-0152` | A TLS client certificate presented alone to a Shared Signals endpoint is from an outside certificate authority and is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0153` | An announcement broadcast was refused: no message, a message longer than ssf.announcementMaxChars, no application chosen or one this service does not have, or every realm asked for by somebody who is not a service administrator in the default realm (#1086). | HTTP 400 {ok: false, errors} from /admin-api/broadcast/send |
+| `STS-SSF-0154` | An announcement broadcast reached no stream: Shared Signals is off, ssf.internalReceivers is off, or the chosen applications' receiver streams are disabled or do not take the announcement event (#1086). | HTTP 200 {ok: true, sent: 0, why} — nothing was sent |
+| `STS-SSF-0155` | An announcement broadcast could not be sent in a realm: building or queueing its Security Event Token failed (#1086). | none: logged; the answer names the realm |
 
 ## STS-RISK
 

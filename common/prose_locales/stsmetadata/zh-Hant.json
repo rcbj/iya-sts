@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "非規範。報表應用程式作為此服務自身傳送方的接收方 (#1042) 所收到的內容：報表管理員可看到領域中的每個訊號，其他人只能看到與自己有關的訊號。與 /report-api 其餘部分使用同一權杖。"
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086)。開啟的報表分頁每隔 ssf.announcementPollMs 收取的內容：管理員向此應用程式廣播、並由其接收端保留的公告。與 /report-api 其餘部分使用相同權杖。"
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NON-SPEC。領域中名稱或 DN 包含 q 的群組，每頁五個，各自帶有自己的 mail 屬性（#989）：定義頁面的窗格。定義的群組即其結果的電子郵件收件者。與 /report-api 的其餘部分使用同一權杖。"
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "非規格端點（#49）。run，附 { job, realm?, params? }：一次排入佇列、由領導者在下一個週期啟動的執行，回應 202 並附其 runId；以及 step-down：領導者在下一個週期放棄 ops.scheduler，由另一個節點接手。主控台的兩個按鈕。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086)。GET /admin/broadcast 繪製的內容：可顯示公告的應用程式、呼叫端能否傳送到所有領域、最長訊息以及能否傳遞任何內容。對應 GET /admin/broadcast。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086)。send，帶 { message, surfaces, everyRealm }：本服務自己的公告 SET，傳送到管理主控台、使用者入口網站和報表應用程式的接收端串流，並在當時開啟的每個分頁中以橫幅顯示。"
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "向所有已登入的人傳送公告"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086)。開啟的主控台分頁每隔 ssf.announcementPollMs 收取的內容：主控台接收端在該分頁首次詢問之後收到的公告。"
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",

@@ -7103,6 +7103,30 @@
     "en": "b80cedcb611f2fd3",
     "text": "此服務自己的管理主控台與使用者入口網站多久收取一次其串流中保存的內容：透過 RFC 8936 輪詢從 /ssf/poll 收取（ssf.internal-poll 排程工作），每個請求最多 ssf.pollMaxEvents 個 SET。這是安全事件權杖（Security Event Token）在任一介面看到並據以行動之前最長的等待時間。0 會關閉此工作，此時事件會在兩個串流上排隊，而不會到達任一頁面。"
   },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "每個開啟的分頁檢查公告的間隔（毫秒）"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "管理主控台、使用者入口網站和報表應用程式的每個開啟分頁多久向自己的 API 詢問一次其接收端收到的公告（#1086）。與 ssf.internalPollMs 一起，這是廣播出現所需的最長時間。分頁在登入時讀取該值。"
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "接收端保留公告的時間（秒）"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "本服務的三個接收端各自保留收到的公告供其分頁收取的時間（#1086）。分頁只顯示登入之後抵達的內容，因此這不是較晚開啟的分頁能看到公告的時間；它只需超過分頁的檢查間隔和一次較慢的輪詢。"
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "最長公告（字元）"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "廣播公告最多可包含的字元數（#1086）。它是純文字；較長的會被拒絕。"
+  },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
     "text": "每個接收端的串流數"

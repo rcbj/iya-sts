@@ -549,5 +549,7 @@
   "accounts.anotherTitle": "Mag-sign in bilang ibang tao sa tab na ito. Mananatiling naka-sign in ang mga account na naka-sign in na sa browser na ito, at pananatilihin ng ibang mga tab ang kanila.",
   "accounts.none": "Wala pang ibang account na naka-sign in sa browser na ito.",
   "accounts.kept": "Mananatiling naka-sign in ang account na iiwan ng tab na ito, kaya makakabalik ka rito.",
-  "accounts.unsaved": "May mga pagbabago sa pahinang ito na hindi pa nase-save. Lumipat pa rin ng account? Mawawala ang mga ito."
+  "accounts.unsaved": "May mga pagbabago sa pahinang ito na hindi pa nase-save. Lumipat pa rin ng account? Mawawala ang mga ito.",
+  "announcement.heading": "Anunsyo",
+  "announcement.close": "Isara"
 }

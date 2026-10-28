@@ -475,6 +475,10 @@
     "en": "fa5ff98584c701fb",
     "text": "报表应用程序的 Shared Signals 收件箱"
   },
+  "endpoints.route./report-api/announcements.name": {
+    "en": "3adb83b8075c6a3a",
+    "text": "报表应用的公告"
+  },
   "endpoints.route./report-api/groups.name": {
     "en": "e30ed85f8fa2f141",
     "text": "组搜索，供报表应用使用"
@@ -702,6 +706,18 @@
   "endpoints.route./admin-api/scheduler/:action.name": {
     "en": "3483d9e9aab04915",
     "text": "调度器操作"
+  },
+  "endpoints.route./admin-api/broadcast.name": {
+    "en": "7ca7feaebe5215c0",
+    "text": "广播公告"
+  },
+  "endpoints.route./admin-api/broadcast/:action.name": {
+    "en": "6e79d056a66502f2",
+    "text": "广播公告操作"
+  },
+  "endpoints.route./admin-api/announcements.name": {
+    "en": "c4061b1ad0320a47",
+    "text": "控制台公告"
   },
   "endpoints.route./admin-api/mail/:action.name": {
     "en": "cff7055c2db49c6a",

@@ -7103,6 +7103,30 @@
     "en": "b80cedcb611f2fd3",
     "text": "À quelle fréquence la console d’administration et le portail utilisateur de ce service collectent ce que contiennent leurs flux, par interrogation RFC 8936 sur /ssf/poll (la tâche planifiée ssf.internal-poll), jusqu’à ssf.pollMaxEvents SET par requête. C’est le plus long délai qu’un Security Event Token attend avant que l’une ou l’autre surface le voie et agisse en conséquence. 0 désactive la tâche ; les événements s’accumulent alors sur les deux flux et n’atteignent aucune des deux pages."
   },
+  "ssf.announcementPollMs|label": {
+    "en": "9e301d792f2f6a04",
+    "text": "Intervalle de vérification des annonces dans chaque onglet ouvert (millisecondes)"
+  },
+  "ssf.announcementPollMs|description": {
+    "en": "b0b652a087fa40cc",
+    "text": "Fréquence à laquelle chaque onglet ouvert de la console d'administration, du portail utilisateur et de l'application de rapports interroge sa propre API pour les annonces que son récepteur a reçues (#1086). Avec ssf.internalPollMs, c'est le délai maximal d'apparition d'une diffusion. Un onglet lit la valeur à la connexion."
+  },
+  "ssf.announcementKeepS|label": {
+    "en": "ca077283afad7055",
+    "text": "Durée de conservation d'une annonce par un récepteur (secondes)"
+  },
+  "ssf.announcementKeepS|description": {
+    "en": "26151744d4e3787d",
+    "text": "Durée pendant laquelle chacun des trois récepteurs de ce service conserve une annonce reçue pour que ses onglets la récupèrent (#1086). Un onglet n'affiche que ce qui est arrivé après sa connexion ; ce n'est donc pas le délai pendant lequel un onglet tardif peut en voir une : il suffit de dépasser l'intervalle de vérification d'un onglet et une interrogation lente."
+  },
+  "ssf.announcementMaxChars|label": {
+    "en": "a7e6403caf63da77",
+    "text": "Annonce la plus longue (caractères)"
+  },
+  "ssf.announcementMaxChars|description": {
+    "en": "2d2546689189ab47",
+    "text": "Nombre maximal de caractères d'une annonce diffusée (#1086). C'est du texte brut ; une annonce plus longue est refusée."
+  },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
     "text": "Flux par récepteur"

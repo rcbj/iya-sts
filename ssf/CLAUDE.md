@@ -670,6 +670,47 @@ the shell again, STS-ADMIN-0019 un-retired for its refusals.
 `tests/signal_response.js` section G, `tests/ssf_receivers.js` section A and
 `tests/report_access_policy.js` C32-C34 hold it.
 
+## AN ANNOUNCEMENT RIDES THE RECEIVER STREAMS (#1086, 2026-10-28)
+
+rcbj: an administrator broadcasts a message to everybody signed in to the
+console, the portal and reports, shown as a banner; "if the CAEP SSF stream
+can be reused for this signal, do that". So it is one more member of the `sts`
+family, `announcement` (no subject; `realm`, `message`, `surfaces`), on the
+three internal receiver streams and nowhere else:
+
+* **Sending** is `ssf.ts`'s `broadcastAnnouncement()`, from
+  `/admin/broadcast` and `POST /admin-api/broadcast/send`. It refuses
+  (STS-SSF-0153) an empty or over-long message (`ssf.announcementMaxChars`)
+  and an unknown surface, and sends only to a stream marked
+  `internalSurface` whose surface was chosen — never to a remote receiver
+  that asked for every `sts` type, which has no tab to draw it in. Nothing
+  delivered is STS-SSF-0154. `everyRealm` runs it in every realm; WHO may ask
+  for that is the API's check (a service administrator in the default realm,
+  `broadcastView()`), not this file's.
+* **The streams ask for it**: `seedStreams()` adds it to what they request,
+  and `askForAnnouncements()` adds it, once, to a stream seeded before it
+  existed (`moveToPoll()`'s argument; a disabled stream is left alone).
+* **The receiver keeps it**: after `actOn()`, `keepAnnouncement()` puts a
+  VERIFIED announcement naming the surface in `ssf_receivers.announcements`
+  (persisted, so the worker a tab's poll lands on has what the leader's
+  internal poll took in; rare, so replicating it costs nothing). An
+  unverified one stays in the inbox and is shown to nobody — #117's rule for
+  acting, read for showing.
+* **A tab collects it**: `announcementsFor(surface, since)`, behind
+  `/admin-api/announcements`, `/account-api/announcements` and
+  `/report-api/announcements`. The first ask answers only `now`; the tab
+  sends THAT `now` as `since` ever after (a fixed point, so a row a lagging
+  replica had not applied is found by the next ask) and skips ids it has
+  drawn. A row past `ssf.announcementKeepS` is never answered and is deleted
+  by the read that finds it — the read-side expiry, no sweep and no timer.
+* **The banner** is `common/web_announcements.ts`, one class all three
+  runtimes start (the console when its shell is fetched, again on a realm
+  switch; the portal with `/me`; reports at its first paint with a token),
+  asking through `sendOnce()` so a background poll never begins a sign-in.
+  The message is `textContent`; styles go through the CSSOM.
+
+`tests/ssf_announcements.js` holds all of it.
+
 ## THE OPT-OUT GATE, AND THE EXCEPTION WITHOUT WHICH IT IS A TRAP
 
 RISC section 2.8 gives an account three states — `opt-in`,

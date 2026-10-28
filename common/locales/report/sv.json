@@ -157,5 +157,7 @@
   "signalsSkipped": "Ingenting: {why}.",
   "signalsObserved": "Ingenting: utvecklingsläget observerar bara.",
   "signalsFailed": "Det gick inte att agera på den.",
-  "signalsNothing": "Ingenting: policyn begär ingen reaktion."
+  "signalsNothing": "Ingenting: policyn begär ingen reaktion.",
+  "announcement.heading": "Meddelande",
+  "announcement.close": "Stäng"
 }

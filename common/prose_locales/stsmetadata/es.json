@@ -1239,6 +1239,10 @@
     "en": "f00e66637d8d4146",
     "text": "FUERA DE ESPECIFICACIÓN. Lo que ha recibido la aplicación de informes, receptora del propio transmisor de este servicio (#1042): todas las señales del dominio para un administrador de informes y, para cualquier otro, solo las señales sobre sí mismo. Detrás del mismo token que el resto de /report-api."
   },
+  "stsmetadata.endpoints./report-api/announcements.what": {
+    "en": "0f75f226eeb86f05",
+    "text": "NON-SPEC (#1086). Lo que recoge una pestaña de informes abierta cada ssf.announcementPollMs: los anuncios que un administrador difundió a esta aplicación, tal como los conservó su receptor. Tras el mismo token que el resto de /report-api."
+  },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",
     "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Los grupos del dominio cuyo nombre o DN contiene q, cinco por página, cada uno con su propio atributo mail (#989): el panel de la página de definición. Los grupos de una definición son a quienes se envía por correo su resultado. Tras el mismo token que el resto de /report-api."
@@ -1490,6 +1494,22 @@
   "stsmetadata.endpoints./admin-api/scheduler/:action.what": {
     "en": "19026a816b3b38f7",
     "text": "NO ESTÁNDAR (#49). run, con { job, realm?, params? }: una ejecución encolada que el líder inicia en su siguiente ciclo, 202 con su runId; y step-down: el líder abandona ops.scheduler en su siguiente ciclo y otro nodo lo asume. Los dos botones de la consola."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast.what": {
+    "en": "e06baf8f63ef8a70",
+    "text": "NON-SPEC (#1086). Lo que dibuja GET /admin/broadcast: las aplicaciones en las que se puede mostrar un anuncio, si quien llama puede enviarlo a todos los dominios, el mensaje más largo y si se puede entregar algo. Refleja GET /admin/broadcast."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.what": {
+    "en": "2d360dbe3bb5511b",
+    "text": "NON-SPEC (#1086). send, con { message, surfaces, everyRealm }: el SET de anuncio propio de este servicio en los flujos receptores de la consola de administración, el portal de usuario y la aplicación de informes, mostrado como aviso en cada pestaña suya abierta en ese momento."
+  },
+  "stsmetadata.endpoints./admin-api/broadcast/:action.effect": {
+    "en": "68267cc7fc14e984",
+    "text": "envía un anuncio a todas las personas con sesión iniciada"
+  },
+  "stsmetadata.endpoints./admin-api/announcements.what": {
+    "en": "384f3766f3da8c15",
+    "text": "NON-SPEC (#1086). Lo que recoge una pestaña de consola abierta cada ssf.announcementPollMs: los anuncios que el receptor de la consola recibió después de la primera consulta de la pestaña."
   },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",

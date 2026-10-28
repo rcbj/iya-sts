@@ -157,5 +157,7 @@
   "signalsSkipped": "Nada: {why}.",
   "signalsObserved": "Nada: el modo de desarrollo solo observa.",
   "signalsFailed": "No se pudo actuar sobre él.",
-  "signalsNothing": "Nada: la política no pide ninguna reacción."
+  "signalsNothing": "Nada: la política no pide ninguna reacción.",
+  "announcement.heading": "Anuncio",
+  "announcement.close": "Cerrar"
 }
