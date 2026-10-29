@@ -836,8 +836,11 @@ rows are deleted after `risk.supersededRetentionDays`; its record stays.
 
 **Remove** is on every version whose rows are loaded, in the Datasets tab
 (`POST /admin-api/risk/delete`). It deletes that version's rows, and the
-version's record stays, marked `deleted`, so it cannot be loaded or
-activated again. Removing the **active** version unloads the dataset. It
+version's record stays, marked `deleted`. It cannot be activated, and the
+scheduled downloads, the dataset directory and the install-time loader treat
+it as already recorded. **An administrator can upload or import the same
+version again** (console upload or paste, `POST /admin-api/risk/import` or
+`/upload`). Its record is reused and loaded like a new one. Removing the **active** version unloads the dataset. It
 then has no active version and risk scores stop reading it. Nothing else is
 activated in its place, and **Roll back** is still offered when there is an
 earlier version. A version that is still loading cannot be removed.

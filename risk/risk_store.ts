@@ -518,19 +518,26 @@ class RiskStore {
   /**
    * Records a new version as `loading`.
    *
+   * With `reloadDeleted` (#1155, an administrator's door only) a version
+   * whose record is `deleted` is begun again: the record is reused, its
+   * provenance replaced and its state back to `loading`. Any other state
+   * is still "already recorded".
    * @param v - the version's realm, dataset, version and provenance
+   * @param opts - `{ reloadDeleted }`
    * @returns false when that version already exists
    */
-  beginVersion(v: Json): Promise<boolean> {
+  beginVersion(v: Json, opts?: Json): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.beginVersion(). " + v.dataset + " " +
               v.version);
+    const reload = !!(opts && opts.reloadDeleted);
     if (this.driver) {
       log.debug("Leaving RiskStore.beginVersion(). Database.");
-      return Promise.resolve(this.driver.riskBeginVersion(v));
+      return Promise.resolve(this.driver.riskBeginVersion(v, reload));
     }
     const k = RiskStore.key(v.realm, v.dataset, v.version);
-    if (this.versions.has(k)) {
+    const held = this.versions.get(k);
+    if (held && !(reload && held.state === 'deleted')) {
       log.debug("Leaving RiskStore.beginVersion(). Already recorded.");
       return Promise.resolve(false);
     }

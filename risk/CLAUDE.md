@@ -233,6 +233,14 @@ imported into memory costs memory; postgres is where that belongs.
   Nothing is activated in its place; the registry still offers Roll back,
   reading `previousVersion` off the dataset row because `activeVersions()`
   has no entry for an empty dataset.
+* **A removed version can be loaded again by an administrator (#1155,
+  rcbj).** The console's upload and paste and `/admin-api/risk/import` and
+  `/upload` pass `reloadDeleted`. `beginVersion()` then reuses a `deleted`
+  record: postgres does it in the same `INSERT … ON CONFLICT DO UPDATE …
+  WHERE state = 'deleted'`, so any other state still returns no row. The
+  scheduled downloads, the directory job and the loader do not pass it, so
+  a job never undoes a Remove. FIDO's rollback check is unchanged: it reads
+  the `active` and `superseded` serials.
 
 **Retention is a scheduler job**, `risk.retention` (hourly, cluster):
 superseded versions past `risk.supersededRetentionDays` and refused versions

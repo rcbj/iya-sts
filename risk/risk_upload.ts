@@ -552,6 +552,9 @@ class RiskUpload {
       datasets.importVersion(Object.assign({}, f, {
         path: target, fileSha256: stored.sha256, source: door.source,
         sourceUri: '', actor: door.actor,
+        // Both upload doors are an administrator's: a version they removed
+        // may be uploaded again (#1155).
+        reloadDeleted: true,
         onBegun: function (what: Json): void {
           log.debug("Entering onBegun(). " + what.version);
           answer({ status: 202, code: '', body: {

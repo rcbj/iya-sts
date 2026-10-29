@@ -617,6 +617,24 @@ class RiskDatasets {
   // The question above, asked ahead of an upload (#215): null when the
   // import may begin, the refusal otherwise. Records nothing but the
   // refusal's audit row.
+  // A VERSION REMOVED IS UPLOADED AGAIN ONLY BY AN ADMINISTRATOR (#1155,
+  // rcbj): the console's upload and paste and `/admin-api/risk/import` and
+  // `/upload` pass `reloadDeleted`. The scheduled downloads, the dataset
+  // directory and the install-time loader do not, so a version an
+  // administrator removed is not brought back behind their back.
+  /**
+   * The `beginVersion()` options an import asks for.
+   *
+   * @param o - the import's fields
+   * @returns `{ reloadDeleted }`
+   */
+  private reloadOf(o: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.reloadOf().");
+    log.debug("Leaving RiskDatasets.reloadOf().");
+    return { reloadDeleted: o.reloadDeleted === true };
+  }
+
   /**
    * Asks, ahead of an upload, whether an import may begin: the dataset,
    * format, realm, provider and accepted terms.
@@ -710,7 +728,7 @@ class RiskDatasets {
       log.debug("Leaving RiskDatasets.importVersion(). Android status.");
       return this.importAndroidStatus(o, meta);
     }
-    const began = await store.beginVersion(meta);
+    const began = await store.beginVersion(meta, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importVersion(). Already recorded.");
       return { ok: true, duplicate: true, dataset: o.dataset, version: version,
@@ -1043,7 +1061,7 @@ class RiskDatasets {
         legalHeader: String(payload.legalHeader || '').slice(0, 500) },
         overridden ? { signatureOverride: overridden.slice(0, 500),
                        signatureOverrideBy: String(o.actor || '') } : {}) });
-    const began = await store.beginVersion(staged);
+    const began = await store.beginVersion(staged, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importMds(). Already recorded.");
       return { ok: true, duplicate: true, dataset: staged.dataset,
@@ -1262,7 +1280,7 @@ class RiskDatasets {
     const staged = Object.assign({}, meta, {
       version: String(o.version || 'sha-' + meta.sha256.slice(0, 16)),
       verification: o.source === 'url' ? 'tls' : meta.verification });
-    const began = await store.beginVersion(staged);
+    const began = await store.beginVersion(staged, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importAndroidStatus(). Already " +
                 "recorded.");

@@ -4325,7 +4325,9 @@ class AdminApi {
                      'shrink). A refusal found before the version is ' +
                      'recorded — the dataset, format, realm or provider, ' +
                      'terms not accepted — is the answer (400), as is a ' +
-                     'version already recorded (200, `duplicate: true`). ' +
+                     'version already recorded (200, `duplicate: true`), ' +
+                     'unless its record is `deleted`: a removed version is ' +
+                     'loaded again (#1155). ' +
                      'Send a `Content-Length`: without one the whole of ' +
                      'risk.uploadMaxBytes must be free.',
         mirrors: 'POST /admin/risk/upload',
@@ -4449,7 +4451,9 @@ class AdminApi {
                          'has more than risk.datasetShrinkLimitPercent ' +
                          'fewer rows than the active version. A version ' +
                          'already recorded is not loaded again ' +
-                         '(`duplicate: true`). The provider\'s current ' +
+                         '(`duplicate: true`), unless its record is ' +
+                         '`deleted` (removed): that one is loaded again ' +
+                         '(#1155). The provider\'s current ' +
                          'terms must have been accepted (accept-terms, or ' +
                          '`acceptTerms: true` here) unless the list is the ' +
                          'operator\'s own. `activate: false` loads ' +
