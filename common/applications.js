@@ -20193,11 +20193,77 @@ function debuggerApplications() {
 // **A RESOURCE IS NEVER A CLIENT.** Its kind is `oauth2-resource-server`
 // and nothing else, and `oauth-oidc/oauth2.ts` refuses its client_id at
 // every endpoint a client presents itself at, in every mode
-// (STS-OAUTH-0985). Emptying the grant lists would not have done it: an
+// (STS-OAUTH-0985). Emptying the grant-type lists would not have done it: an
 // entry declaring no grant type is held to none (`declaredFlowsOf()`), and
 // development verifies no client credential. So it carries no secret, no
-// registration access token, no redirect URI and no grant.
+// registration access token, no redirect URI and no grant type.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PERMISSIONS EACH OF THIS SERVICE'S APIS DEFINES (#1141, 2026-10-29),
+// and the one table both their seeding and `common/scope_policy.ts` read.
+//
+// rcbj's decision on #1141: for these three APIs a DELEGATED PERMISSION GRANT
+// on the API's object is the client's half of "may this client ask for this
+// scope" — Microsoft Entra ID's `requiredResourceAccess`, the shape
+// `common/app_permissions.ts` already keeps for the debugger — replacing the
+// registration's `scope` (`oauthAllowedScope`, #110), which listing one of
+// these words no longer satisfies. ROLES ARE UNCHANGED as the subject's half
+// (`common/role_permissions.ts`): a delegated permission grant says what a
+// client may ASK for, never whether the person or application holds the
+// right. "Grant" in this file's #1141 prose is always a delegated permission
+// grant, never RFC 6749's authorization grant (rcbj, 2026-10-29).
+//
+// **A FIXED `urn:sts:` BASE, NOT THE API'S URL.** A permission is identified
+// by its base followed by its name (`urn:sts:admin-api:admin:read`), and the
+// delegated permission grant is that string on the client's
+// `oauthDelegatedPermission`. The API's audience is a URL under whatever name
+// this service is reached by (#1140), so a URL base would make every
+// delegated permission grant depend on a host name; the debugger's
+// `urn:sts:debugger-api:` is the precedent. A client still asks for the BARE
+// word with `resource` naming the API — what the console, the portal and the
+// reports application send — and `scope_policy.ts` reads the delegated
+// permission grant for it.
+// ---------------------------------------------------------------------------
+/**
+ * The permissions this service's own APIs define, by resource object (#1141).
+ */
+const API_PERMISSIONS = Object.freeze({
+  'sts-management-api': Object.freeze({ base: 'urn:sts:admin-api:',
+    permissions: Object.freeze([
+      ['admin:read', 'Every read on /admin-api (ADMIN_READ)'],
+      ['admin:write', 'Every /admin-api operation that changes anything ' +
+                      '(ADMIN_WRITE)'],
+      ['admin:console', 'The admin console\'s own operations under ' +
+                        '/admin-api/console (ADMIN_CONSOLE)'],
+      ['owner:read', 'Read what the person owns, through /admin-api ' +
+                     '(OWNER_READ)'],
+      ['owner:write', 'Change what the person owns, through /admin-api ' +
+                      '(OWNER_WRITE)']]) }),
+  'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
+    permissions: Object.freeze([
+      ['account:manage', 'The person\'s own account, through /account-api']
+    ]) }),
+  'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
+    permissions: Object.freeze([
+      ['report:use', 'Reports as a user (REPORT_USE)'],
+      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) })
+});
+
+// The delegated permission grants a seeded client holds, as
+// `oauthDelegatedPermission` values, from the table: `{ api: [names] }`.
+function delegatedPermissionGrants(wanted) {
+  log.debug("Entering delegatedPermissionGrants().");
+  const out = [];
+  Object.keys(wanted).forEach(function (api) {
+    wanted[api].forEach(function (name) {
+      out.push(API_PERMISSIONS[api].base + name);
+    });
+  });
+  log.debug("Leaving delegatedPermissionGrants(). " + out.length +
+            " delegated permission grant(s).");
+  return out;
+}
+
 /**
  * The resource objects for this service's own APIs, one row each.
  *
@@ -20216,6 +20282,7 @@ function apiResourceApplications(base) {
     : base + realms.currentPrefix();
   const row = function (identifier, name, audiences, what) {
     const unique = [];
+    const defined = API_PERMISSIONS[identifier];
     audiences.forEach(function (one) {
       const text = String(one || '').trim();
       if (text && unique.indexOf(text) < 0) {
@@ -20230,7 +20297,16 @@ function apiResourceApplications(base) {
       realmScope: 'every',
       description: 'seeded at startup: ' + what + ', as an OAuth 2.0 ' +
                    'resource (applications.seedInternal)',
-      attributes: { appAllowedProtocol: ['oauth2'], oauthAudience: unique },
+      attributes: Object.assign({ appAllowedProtocol: ['oauth2'],
+                                  oauthAudience: unique },
+        // THE SCOPES IT DEFINES (#1141), as permissions under its fixed base;
+        // the default resource defines none.
+        defined ? {
+          oauthPermissionBaseUri: defined.base,
+          oauthPermission: defined.permissions.map(function (one) {
+            return permissionValueOf(one[0], one[1]);
+          })
+        } : {}),
       registration: {
         client_id: identifier,
         client_name: name,
@@ -20244,7 +20320,8 @@ function apiResourceApplications(base) {
       }
     };
   };
-  const adminApi = helpers.rebaseTo(realmBase, 'management-api') + '/admin-api';
+  const adminApi = helpers.rebaseTo(realmBase, 'management-api') +
+    '/admin-api';
   const rows = [
     row('sts-management-api', 'Management API',
         [adminApi].concat(realms.isDefault()
@@ -20291,7 +20368,12 @@ function internalApplications() {
   log.debug("Entering internalApplications().");
   const base = internalBaseUrl();
   const issued = nowSec();
-  const rows = [
+  // THE API OBJECTS FIRST (#1141): a permission is defined before anything
+  // holds a delegated permission grant of it, the debugger's rule, and the
+  // clients below hold delegated permission grants of them.
+  // Two shapes in one list (a resource and a client), which the checker would
+  // otherwise type by the first; an edit for the checker, the same program.
+  const rows = /** @type {any[]} */ (apiResourceApplications(base)).concat([
     { identifier: 'sts-admin-console',
       name: 'Admin console',
       kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -20335,7 +20417,14 @@ function internalApplications() {
       // `appProtocol`; the console's protocol checkboxes and the issuance
       // policy read `appAllowedProtocol`, which nothing seeded, so the
       // service's own client read as declared for nothing.
+      // THE DELEGATED PERMISSION GRANTS ARE THE CLIENT'S HALF (#1141): of
+      // the three admin permissions on `sts-management-api`, which
+      // `scope_policy.ts` reads where `oauthAllowedScope` used to list the
+      // words.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-management-api': ['admin:read', 'admin:write',
+                                             'admin:console'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'admin:read',
                                          'admin:write', 'admin:console'] },
@@ -20359,8 +20448,7 @@ function internalApplications() {
         // them to the roles the person holds. `admin:console` (#454) is the
         // console's own operations', authorized by the ADMIN_CONSOLE role
         // this client confers.
-        scope: 'openid profile email offline_access admin:read admin:write ' +
-               'admin:console',
+        scope: 'openid profile email offline_access',
         // A PUBLIC CLIENT SINCE THE CUTOVER (#446, rcbj's decision 1): the
         // console is a static application signing in in the browser with
         // PKCE, so it holds no credential — and every token issued to it is
@@ -20402,7 +20490,13 @@ function internalApplications() {
       // (#607) for the same reason: what a person owns is theirs to
       // administer, and the policy's owner rule — not a consent screen —
       // is what bounds it.
+      // Delegated permission grants of `account:manage` on
+      // `sts-account-api` and the owner pair on `sts-management-api`
+      // (#1141), the client's half of each.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-account-api': ['account:manage'],
+                      'sts-management-api': ['owner:read', 'owner:write'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access',
                                          'account:manage', 'owner:read',
@@ -20426,8 +20520,7 @@ function internalApplications() {
         // owner's two on `/admin-api` (#607), which the authorization server
         // issues only to a person who owns something (OWNER_READ,
         // OWNER_WRITE).
-        scope: 'openid profile email offline_access account:manage ' +
-               'owner:read owner:write',
+        scope: 'openid profile email offline_access',
         // A PUBLIC CLIENT SINCE #568 (rcbj's decision 1, the console's
         // #446 pattern): the portal is a static application signing in in
         // the browser with PKCE, so it holds no credential — and every token
@@ -20440,14 +20533,16 @@ function internalApplications() {
     // application signing in in the browser as the public client
     // `sts-report`, PKCE, every token DPoP-bound. `/report` reads the
     // ambient realm's session, so a realm without this entry could not
-    // sign anybody in. The two report scopes are declared here, as
-    // `admin:read` and `admin:write` are declared on the console, and the
-    // native roles REPORT_USE and REPORT_ADMIN decide at issuance who is
-    // issued them (`common/roles.js`, `common/role_permissions.ts`). Until
-    // #1030 (2026-10-27) a resource application `sts-report-api` DEFINED
-    // the two as delegated permissions and this client was granted them:
-    // the browser asks for the bare words with `resource`, which never
-    // consults a grant, so the grant decided nothing and both are gone.
+    // sign anybody in. It holds delegated permission grants of the two
+    // report scopes (#1141), as the console holds them of `admin:read` and
+    // `admin:write`, and the native roles REPORT_USE and REPORT_ADMIN
+    // decide at issuance who is issued them (`common/roles.js`,
+    // `common/role_permissions.ts`). Until #1030 (2026-10-27) a resource
+    // application `sts-report-api` DEFINED the two as delegated permissions
+    // and this client held delegated permission grants of them, but the
+    // browser asks for the bare words with `resource`, which then never
+    // consulted a delegated permission grant, so it decided nothing and both
+    // went. #1141 brought both back and made that path consult it.
     { identifier: 'sts-report',
       name: 'Reports',
       kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -20455,7 +20550,11 @@ function internalApplications() {
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own reports at ' +
                    '/report (applications.seedInternal)',
+      // Delegated permission grants of both report permissions on
+      // `sts-report-api` (#1141).
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-report-api': ['report:use', 'report:admin'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'report:use',
                                          'report:admin'] },
@@ -20474,8 +20573,7 @@ function internalApplications() {
                                     '/report'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access report:use ' +
-               'report:admin',
+        scope: 'openid profile email offline_access',
         token_endpoint_auth_method: 'none'
       } },
     // THE CLIENT EVERY MACHINE CALLER HERE STARTS AS (#1139, 2026-10-29). It
@@ -20511,7 +20609,12 @@ function internalApplications() {
                    '(/report-api) are called as (applications.seedInternal)',
       // Declared OAuth 2.0 alone, the console's reason: a client_credentials
       // client with no ID Token, so not OpenID Connect.
-      attributes: { appAllowedProtocol: ['oauth2'] },
+      // Delegated permission grants of admin:read, admin:write and
+      // report:use (#1141).
+      attributes: { appAllowedProtocol: ['oauth2'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-management-api': ['admin:read', 'admin:write'],
+                      'sts-report-api': ['report:use'] }) },
       registration: {
         client_id: 'sts-api-client',
         client_name: 'API client',
@@ -20542,10 +20645,10 @@ function internalApplications() {
         redirect_uris: [],
         grant_types: ['client_credentials'],
         response_types: [],
-        scope: 'admin:read admin:write report:use',
+        scope: '',
         token_endpoint_auth_method: 'client_secret_basic'
       } }
-  ].concat(/** @type {any} */ (apiResourceApplications(base)));
+  ]);
   rows.push.apply(rows, /** @type {any} */ (debuggerApplications()));
   log.debug("Leaving internalApplications(). " + rows.length + " row(s).");
   return rows;
@@ -20996,6 +21099,7 @@ module.exports = {
   // Two lookups rather than one that tries both — see forClientId()'s header.
   forClientId: forClientId,
   isResourceServer: isResourceServer,
+  API_PERMISSIONS: API_PERMISSIONS,
   // And the WS-Trust / SAML spelling of forAudience(), exported for
   // wstrust.js's delegation act. Its header says why it reads two attributes
   // where the other two read one.

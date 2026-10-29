@@ -224,6 +224,44 @@ and CIBA endpoints, in every mode, with `invalid_client` (`STS-OAUTH-0985`).
 To call one of these APIs, use a client application configured for it, such
 as `sts-api-client`, or create one of your own.
 
+**The three APIs also define their scopes, and a client holds a delegated
+permission grant of each one it may ask for.**
+`sts-management-api` defines `admin:read`, `admin:write`, `admin:console`,
+`owner:read` and `owner:write`; `sts-account-api` defines `account:manage`;
+`sts-report-api` defines `report:use` and `report:admin`. Each is a delegated
+permission under a fixed base, `urn:sts:admin-api:`, `urn:sts:account-api:`
+or `urn:sts:report-api:`, so the permission `admin:read` is
+`urn:sts:admin-api:admin:read` whatever host name the service is reached by.
+**A delegated permission grant of the permission is the client's half** of
+being issued the
+scope: listing one of these words in `oauthAllowedScope` does not declare
+it. A client still asks for the bare word with `resource` naming the API.
+The roles that authorize each scope (`ADMIN_READ`, `REPORT_USE` and the
+rest) are the subject's half, as before. (A delegated permission grant is
+configuration on the client's application entry, `oauthDelegatedPermission`;
+it is not an OAuth authorization grant or `grant_type`, and not a Grant
+Management grant.) The seeded clients hold the delegated permission grants
+they use:
+
+| Client | Delegated permission grants |
+|---|---|
+| `sts-admin-console` | `admin:read`, `admin:write`, `admin:console` |
+| `sts-user-portal` | `account:manage`, `owner:read`, `owner:write` |
+| `sts-report` | `report:use`, `report:admin` |
+| `sts-api-client` | `admin:read`, `admin:write`, `report:use` |
+
+On the client's **Configuration → OAuth 2.0 / OpenID Connect** sub-tab, the
+`oauthAllowedScope` list also shows each scope a delegated permission grant
+declares, marked with a key icon. These entries are read-only: their tooltip
+names the permission and the application that defines it, and their link
+opens the Permissions tab, where the delegated permission grant itself is
+changed. They are not stored in `oauthAllowedScope`.
+
+Give a client a delegated permission grant on its **Permissions** tab
+([Admin console → Delegated permissions](admin-console.md#delegated-permissions))
+or with `POST /admin-api/permissions/grant-permission`
+(`{"client": "<id>", "permission": "urn:sts:admin-api:admin:read"}`).
+
 The console, portal and debugger entries carry `oauthGlobalConsent` for
 `openid`, `profile`, `email` and `offline_access` (and the debugger's
 permission), so a person is not asked whether they consent to this service

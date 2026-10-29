@@ -611,11 +611,13 @@ async function aRealmTokenStaysInItsRealm() {
   });
   // DECLARED BY AN ADMINISTRATOR, the other client is a door too: ONE RULE
   // for every realm since #110 — the client declares the scope — where it was
-  // "only the realm's sts-management-api" (STS-API-0111, retired).
+  // "only the realm's sts-management-api" (STS-API-0111, retired). Since
+  // #1141 the declaration is a delegated permission grant on the realm's
+  // sts-management-api, not a word in oauthAllowedScope.
   for (const scope of ["admin:read", "admin:write"]) {
-    const declared = await api("POST", R + "/admin-api/applications/add",
-      { application: rogueId, attribute: "oauthAllowedScope",
-        value: scope });
+    const declared = await api("POST",
+      R + "/admin-api/permissions/grant-permission",
+      { client: rogueId, permission: "urn:sts:admin-api:" + scope });
     assert.ok(declared.status === 200, "precondition: declaring " + scope +
               " answered " + declared.status + " " +
               declared.text.slice(0, 200));
@@ -655,9 +657,9 @@ async function aRealmTokenStaysInItsRealm() {
                        "it answered " + rogueRead.status + " " +
                        rogueRead.text.slice(0, 200));
   });
-  const withdrawn = await api("POST", R + "/admin-api/applications/remove",
-    { application: rogueId, attribute: "oauthAllowedScope",
-      value: "admin:read" });
+  const withdrawn = await api("POST",
+    R + "/admin-api/permissions/revoke-permission",
+    { client: rogueId, permission: "urn:sts:admin-api:admin:read" });
   assert.ok(withdrawn.status === 200, "precondition: withdrawing admin:read " +
             "answered " + withdrawn.status);
   const afterWithdrawal = await apiAs(rogueToken, "GET",

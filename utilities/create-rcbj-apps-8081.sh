@@ -47,6 +47,13 @@
 #                            Unset: one is generated and printed ONCE.
 #   TESTER_PASSWORD          tester1's and tester2's password when created.
 #                            Unset: each gets one generated, printed ONCE.
+#   RCBJ_GIVEN_NAME, RCBJ_SURNAME, RCBJ_MAIL
+#                            rcbj's givenName, sn and mail when created.
+#                            Unset: the username, and <username>@example.com.
+#
+# THE ATTRIBUTE POLICY (#396): product mode requires every person to hold uid,
+# cn, sn, givenName and mail, so each user is created with all of them; a
+# service account gets the username for each name and <name>@example.com.
 set -euo pipefail
 
 BASE="${STS_BASE:-https://localhost:8081}"
@@ -126,7 +133,8 @@ post() {
 # create_user NAME PASSWORD — creates uid=NAME,ou=users when absent; an
 # existing entry is left as it is, password unchanged.
 create_user() {
-  local name="$1" password="$2" dn body pw err
+  local name="$1" password="$2" given="${3:-$1}" surname="${4:-$1}"
+  local mail="${5:-$1@example.com}" dn body pw err attrs cn
   echo "== User ${name}"
   dn="uid=${name},ou=users,dc=example,dc=com"
   if get "/ldap/directory?q=uid%3D${name}&per=50" |
@@ -134,11 +142,16 @@ create_user() {
     echo "  already there; left as it is (password unchanged)"
     return
   fi
+  cn="$given $surname"
+  [ "$given" = "$surname" ] && cn="$given"
+  attrs="$(jq -n --arg cn "$cn" --arg g "$given" --arg s "$surname" \
+    --arg m "$mail" '{cn:$cn, givenName:$g, sn:$s, mail:$m}')"
   if [ -n "$password" ]; then
-    body="$(jq -n --arg u "$name" --arg p "$password" \
-      '{username:$u, invent:false, credential:"password", password:$p, passwordConfirm:$p}')"
+    body="$(jq -n --arg u "$name" --arg p "$password" --argjson a "$attrs" \
+      '{username:$u, invent:false, attributes:$a, credential:"password", password:$p, passwordConfirm:$p}')"
   else
-    body="$(jq -n --arg u "$name" '{username:$u, invent:false, credential:"generate"}')"
+    body="$(jq -n --arg u "$name" --argjson a "$attrs" \
+      '{username:$u, invent:false, attributes:$a, credential:"generate"}')"
   fi
   post /users/create "$body"
   pw="$(jq -r '.password // empty' <<<"$REPLY_BODY")"
@@ -149,7 +162,8 @@ create_user() {
 }
 
 USER_DN="uid=${USER_NAME},ou=users,dc=example,dc=com"
-create_user "$USER_NAME" "${RCBJ_PASSWORD:-}"
+create_user "$USER_NAME" "${RCBJ_PASSWORD:-}" "${RCBJ_GIVEN_NAME:-}" \
+  "${RCBJ_SURNAME:-}" "${RCBJ_MAIL:-}"
 
 # The service accounts. set-service-account's `owners` REPLACES the list the
 # account names, so running this again leaves rcbj its one owner.

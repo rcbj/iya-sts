@@ -48,6 +48,8 @@
   "grid.delete": "Delete this value",
   "grid.deleteN": "Delete value {n} of {attribute}",
   "grid.noValues": "no values",
+  "grid.delegatedTip": "Declared by a delegated permission grant of {permission} on {api}. It is not stored in oauthAllowedScope and cannot be removed here: change the delegated permission grant on the Permissions tab.",
+  "grid.delegatedLink": "Permissions tab",
   "grid.add": "Add a value",
   "grid.addTo": "Add a value to {attribute}",
   "grid.generate.tip": "Mint a client secret the way POST /oauth2/register does and put it in this box. Nothing is written until the application is created. Everything else you have typed on this page is kept.",

@@ -48,6 +48,8 @@
   "grid.delete": "Ta bort det här värdet",
   "grid.deleteN": "Ta bort värde {n} av {attribute}",
   "grid.noValues": "inga värden",
+  "grid.delegatedTip": "Deklarerad av en delegerad behörighetstilldelning av {permission} på {api}. Den lagras inte i oauthAllowedScope och kan inte tas bort här: ändra den delegerade behörighetstilldelningen på fliken Behörigheter.",
+  "grid.delegatedLink": "fliken Behörigheter",
   "grid.add": "Lägg till ett värde",
   "grid.addTo": "Lägg till ett värde i {attribute}",
   "grid.generate.tip": "Skapa en klienthemlighet på samma sätt som POST /oauth2/register gör och lägg den i den här rutan. Inget skrivs förrän applikationen skapas. Allt annat du har skrivit på sidan behålls.",

@@ -48,6 +48,8 @@
   "grid.delete": "Eliminar este valor",
   "grid.deleteN": "Eliminar el valor {n} de {attribute}",
   "grid.noValues": "sin valores",
+  "grid.delegatedTip": "Declarado por una concesión de permiso delegado de {permission} en {api}. No se guarda en oauthAllowedScope y no se puede quitar aquí: cambie la concesión de permiso delegado en la pestaña Permisos.",
+  "grid.delegatedLink": "pestaña Permisos",
   "grid.add": "Agregar un valor",
   "grid.addTo": "Agregar un valor a {attribute}",
   "grid.generate.tip": "Genera un secreto de cliente igual que lo hace POST /oauth2/register y lo pone en este cuadro. No se guarda nada hasta que se crea la aplicación. Todo lo demás que haya escrito en esta página se conserva.",

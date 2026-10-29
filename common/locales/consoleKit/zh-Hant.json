@@ -48,6 +48,8 @@
   "grid.delete": "刪除此值",
   "grid.deleteN": "刪除 {attribute} 的第 {n} 個值",
   "grid.noValues": "沒有值",
+  "grid.delegatedTip": "由 {api} 上 {permission} 的委派權限授予宣告。它不儲存在 oauthAllowedScope 中，無法在此移除：請在「權限」索引標籤上變更委派權限授予。",
+  "grid.delegatedLink": "「權限」索引標籤",
   "grid.add": "新增值",
   "grid.addTo": "為 {attribute} 新增值",
   "grid.generate.tip": "以 POST /oauth2/register 的方式產生用戶端密碼，並放入此方塊。在建立應用程式之前不會寫入任何內容。您在此頁面上輸入的其他內容都會保留。",
