@@ -81,6 +81,7 @@ surface without touching the rest:
 | **Application assertions** | realm | The signing key pairs issued for RFC 7521 / 7523 — to applications, and to PEOPLE as well (`target=person`, written onto the person's own entry as `stsAssertion*`; see [JWT assertions](jwt-assertions.md)). This is the Issuing CA this page had before the others existed. |
 | **TLS listeners** | **process** | The certificate served on the main port, LDAPS 636 and the embedded debugger's listener. |
 | **SPIFFE authority** | realm | **Every X509-SVID minted in this realm**. The one Issuing CA here with `pathLen: 1` rather than `0`, because `NewDownstreamX509CA` asks it for a CA and not a leaf; the realm Intermediate above it is widened to `2` to match. See [SPIFFE below](#spiffe-takes-its-authority-from-here-now). |
+| **Message signing** | realm | The certificates a person or an application signs a WS-Trust request with (#521): `digitalSignature` only, no extended key usage, the holder's `urn:sts:person:` or `urn:sts:application:` name. Issued by an administrator; see [below](#a-message-signing-certificate-for-a-ws-trust-requester). |
 | **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
 
 **A realm branch built before a use case existed gets that Issuing CA added**,
@@ -642,6 +643,71 @@ curl --cert alice-laptop-tls-client-chain.pem \
      --key alice-laptop-tls-client-key.pem --pass '<file password>' \
      https://localhost:8081/tls/sign-in
 ```
+
+## A message-signing certificate for a WS-Trust requester
+
+A **message-signing certificate** is what a person or an application signs a
+[WS-Trust](ws-trust.md) request with: a WS-Security 1.1 signature over the SOAP
+Body and the Timestamp, with the certificate in a `BinarySecurityToken`. It
+comes from the realm's own **Message Signing Issuing CA** and is one thing
+only:
+
+* it carries `digitalSignature` and no extended key usage, `CN=<holder>` and a
+  `urn:sts:person:<username>` or `urn:sts:application:<identifier>`
+  subjectAltName — the name a signed request is mapped back to, with nothing
+  else registered;
+* **an administrator issues it** — to a person from their `/admin/users` page
+  (**Message-signing certificates**, beside Stored certificates), to an
+  application from the **Credentials** section of its `/admin/applications`
+  page (drawn for a WS-Trust relying party, and for any application already
+  holding one) — never the person on the user portal;
+* the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384), a label and a
+  **file password** typed twice are chosen there, and the page that comes back
+  offers a `.p12`, an encrypted `-key.pem` and a `-chain.pem`, **once**.
+  Nothing keeps the private key; lost, it is revoked and another issued.
+
+**It is not a TLS client certificate, and a TLS client certificate is not
+one.** Every authority here chains to the one Root, so what a certificate may
+do is said by WHICH authority issued it: a message-signing certificate signs
+nobody in over TLS, and a TLS client certificate from this service signs no
+request.
+
+A holder may hold up to `pki.messageSigningCertificateMax` (5) valid ones —
+several for a rotation in progress, or one per signing host; past it the issue
+is refused (`STS-PKI-0220`) rather than revoking one still in use. Each has a
+**Revoke**; revocation is published on the Issuing CA's CRL and OCSP responder,
+and a request signed with a revoked certificate is refused.
+
+```bash
+H="Authorization: Bearer $ADMIN_TOKEN"
+
+# To a person. `files` holds the PKCS#12 (base64), the key and the chain:
+# this reply is the only copy of the private key.
+curl -sk -X POST https://localhost:8081/admin-api/users/issue-signing-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"user":"alice","password":"correct horse battery","keyAlg":"ec-p256",
+       "label":"signer 1"}'
+
+# To an application.
+curl -sk -X POST \
+  https://localhost:8081/admin-api/applications/issue-signing-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"application":"my-wstrust-client","password":"correct horse battery"}'
+
+# Revoke one, by its serial (from the reply above, `mfa.signing` of
+# GET /admin-api/users?user=alice, or `credentials.signing` of
+# GET /admin-api/applications?application=my-wstrust-client).
+curl -sk -X POST https://localhost:8081/admin-api/users/revoke-signing-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"user":"alice","serialHex":"1a2b3c","reason":"keyCompromise"}'
+```
+
+A serial the holder does not hold — another holder's, or one of their TLS
+client certificates — matches nothing (`STS-PKI-0221`). The other refusals:
+the file password (`STS-ADMIN-0902`), an application the registry does not
+hold (`STS-ADMIN-0904`), a person with no entry (`STS-ADMIN-0905`, and none is
+created), and anything else about the issue (`STS-ADMIN-0901`) or the revoke
+(`STS-ADMIN-0903`).
 
 ## Revocation is published, and consulted
 
@@ -1521,6 +1587,7 @@ is checked — see
 | `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit counted per client address, for everybody behind one NAT or proxy. |
 | `pki.personTlsClientCertificateMax` | `STS_PKI_PERSON_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates one person may issue themselves on the portal; past it the portal refuses (`STS-PKI-0170`) rather than revoking an older one. |
 | `pki.applicationTlsClientCertificateMax` | `STS_PKI_APPLICATION_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates an administrator may issue one application; past it the issue is refused (`STS-PKI-0180`). |
+| `pki.messageSigningCertificateMax` | `STS_PKI_MESSAGE_SIGNING_CERTIFICATE_MAX` | `5` | yes | Valid message-signing certificates (what a WS-Trust requester signs its request with) an administrator may issue one person or one application; past it the issue is refused (`STS-PKI-0220`). |
 | `pki.enrollmentMaxCertificatesPerEntry` | `STS_PKI_ENROLLMENT_MAX_CERTIFICATES_PER_ENTRY` | `20` | yes | Certificates issued over [ACME](acme.md), [EST](est.md) or [SCEP](scep.md) one entry may carry at once; past it a request is refused (`STS-ENROLL-0040`) rather than an older certificate being forgotten. |
 
 Settings this page discusses that are not `pki.*`: the twelve
