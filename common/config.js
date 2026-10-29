@@ -2767,14 +2767,18 @@ const SETTINGS = [
     // unticked, in the order they had. `webauthn.pqcOnly` still narrows the
     // request to the first three. Until then the default requested all
     // nineteen.
-    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256',
+    // SIX SINCE 2026-10-29 (#1166, rcbj): ES384 is no longer requested by
+    // default — certain browsers on Windows are incompatible with it. It
+    // stays on the page, unticked, among the others in the order it had,
+    // and an administrator may still tick it.
+    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256',
     runtime: true,
     // Mirrors authn/webauthn_policy.ts's ALG_IDS, the verifier's COSE_ALGS
     // inverted.
-    // The default's seven first, in its order (#1150), then the rest in the
-    // order they had.
-    csvValues: ['ML-DSA-87', 'ML-DSA-65', 'ML-DSA-44', 'ES384', 'EdDSA',
-                'ES256', 'RS256', 'ESP256', 'Ed25519', 'ESP384', 'ESP512',
+    // The default's six first, in its order (#1150, #1166), then the rest
+    // in the order they had.
+    csvValues: ['ML-DSA-87', 'ML-DSA-65', 'ML-DSA-44', 'EdDSA', 'ES256',
+                'RS256', 'ESP256', 'Ed25519', 'ESP384', 'ES384', 'ESP512',
                 'ES512', 'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512',
                 'RS384', 'RS512', 'RS1'],
     // AN ORDERED CHOICE (2026-10-01, rcbj: "explicitly choose, by
@@ -2836,11 +2840,13 @@ const SETTINGS = [
                  '7.1). A name outside that table is dropped with a warning ' +
                  'rather than sent, because offering an algorithm this ' +
                  'service cannot verify produces a credential that enrols ' +
-                 'and then never works. **The default requests seven, in ' +
+                 'and then never works. **The default requests six, in ' +
                  'this order: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, ' +
-                 '`ES384`, `EdDSA`, `ES256`, `RS256`**; an authenticator ' +
-                 'takes the first it supports, so the order is a ' +
-                 'preference, and every other algorithm may be ticked. ' +
+                 '`EdDSA`, `ES256`, `RS256`**; an authenticator takes the ' +
+                 'first it supports, so the order is a preference, and ' +
+                 'every other algorithm may be ticked. `ES384` is not ' +
+                 'requested by default, because certain browsers on ' +
+                 'Windows are incompatible with it. ' +
                  'SHA-1\'s `RS1` ' +
                  '(-65535) may be named but is offered and accepted only ' +
                  'while `webauthn.insecureAlgorithms` is on (development ' +

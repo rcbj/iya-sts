@@ -158,22 +158,25 @@ function run(t) {
   // SEVEN BY DEFAULT, IN rcbj'S ORDER (#1150, 2026-10-29): ML-DSA-87, -65,
   // -44, ES384, EdDSA, ES256, RS256. It was every algorithm the verifier
   // checks (2026-10-01) until then; the others may still be ticked.
+  // SIX SINCE #1166 (the same day): ES384 left the default, because
+  // certain browsers on Windows are incompatible with it.
   const ids = policy.algorithmIds();
   t.check(policy.algorithmsOffered().join(',') ===
-            'ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256' &&
-          ids.join(',') === '-50,-49,-48,-35,-8,-7,-257' &&
+            'ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256' &&
+          ids.join(',') === '-50,-49,-48,-8,-7,-257' &&
           ids.indexOf(-65535) < 0,
-  'the default requests ML-DSA-87, ML-DSA-65, ML-DSA-44, ES384, EdDSA, ' +
-  'ES256 and RS256, in that order, and never RS1 (#1150)', ids.join(', '));
+  'the default requests ML-DSA-87, ML-DSA-65, ML-DSA-44, EdDSA, ES256 ' +
+  'and RS256, in that order, and never ES384 (#1166) or RS1',
+  ids.join(', '));
   const row = require('../common/config').SETTINGS.filter(function (one) {
     return one.key === 'webauthn.algorithms';
   })[0];
-  t.check(row && row.csvValues.slice(0, 7).join(',') ===
-            'ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256' &&
+  t.check(row && row.csvValues.slice(0, 6).join(',') ===
+            'ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256' &&
           verifiable.every(function (name) {
             return row.csvValues.indexOf(name) >= 0;
           }),
-  'the page offers every algorithm, the default\'s seven first (#1150)',
+  'the page offers every algorithm, the default\'s six first (#1166)',
   JSON.stringify(row && row.csvValues));
 
   // -------------------------------------------------------------------------
