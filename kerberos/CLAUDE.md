@@ -175,8 +175,9 @@ Five things about it are load-bearing:
    is already in progress — the same argument `federation.loginButtons` makes,
    and it lands harder here: whether somebody can use a ticket is a fact about
    THEIR MACHINE and not about the relying party.
-2. **`appAuthnMechanism: spnego`** on an application entry — that application's
-   people never see the screen.
+2. **`spnego` alone in the named authentication policy an application entry
+   names** (`appAuthnPolicy`, #1148; `appAuthnMechanism: spnego` on the entry
+   until then) — that application's people never see the screen.
 3. **`fedAuthnMechanism: spnego`** on an identity-provider-side federation
    relationship — a foreign partner that has never heard of Kerberos is
    satisfied by a ticket.
@@ -849,13 +850,14 @@ AS, TGS and SPNEGO pages to build a real service ticket, spends it at
 the session that comes back. It covers: that a real AP-REQ produces a real
 session; that the session satisfies `/oauth2/authorize` with no screen drawn;
 that the ID Token's `sub`, `amr` and `acr` are the ones read off the ticket;
-that `appAuthnMechanism: spnego` on an application entry sends an authorization
-request straight to this door instead of to the password screen; that a REPLAYED
-AP-REQ is refused and mints nothing (the replay cache is the one check here
-whose absence would be a security bug rather than a fidelity one); and that
-`krb5.spnegoAuthentication` off answers 403 NAMING THE SETTING and signs nobody
-in. Each of those three was mutation-tested against a deliberately broken mock
-before it was committed.
+that `spnego` as an application's one allowed mechanism (`appAuthnMechanism:
+spnego` when this was written, the named policy `appAuthnPolicy` names since
+#1148) sends an authorization request straight to this door instead of to the
+password screen; that a REPLAYED AP-REQ is refused and mints nothing (the replay
+cache is the one check here whose absence would be a security bug rather than a
+fidelity one); and that `krb5.spnegoAuthentication` off answers 403 NAMING THE
+SETTING and signs nobody in. Each of those three was mutation-tested against a
+deliberately broken mock before it was committed.
 
 **THE BROWSER DOES NOT ANSWER THE CHALLENGE THERE, AND THAT IS A DECISION RATHER
 THAN A GAP.** RFC 4559 is answered from GSSAPI, which needs a credential cache

@@ -163,8 +163,13 @@ class PoliciesPage {
           t.html('consolePolicies.authn.noMailLink') + '</a>.')) +
 
       kit.warn('<strong>' + t.html('consolePolicies.authn.emailWarning') +
-        '</strong> ' + kit.esc(ap.nistWarning)) +
-
+        '</strong> ' + kit.esc(ap.nistWarning));
+    // THREE SUB-TABS, AS THE PASSKEY POLICY HAS (rcbj, 2026-10-29): Default
+    // (the realm's own policy, its forms and what it accepts now), Named
+    // policies (each one an application may name, #1148) and New policy.
+    // The schema is reference for all three, so it stays under them.
+    const named = PoliciesPage.namedAuthnPoliciesSection(ap, t);
+    const byDefault =
       PoliciesPage.policyProblems(profile, t) +
 
       kit.note(profile.from === 'realm'
@@ -189,13 +194,17 @@ class PoliciesPage {
           yesNo(m.primary, m.active) + '</td><td>' +
           yesNo(m.secondFactor, m.active) + '</td></tr>';
       }).join('') + '</table>' +
-      kit.note(t.html('consolePolicies.authn.dash')) +
-
-      PoliciesPage.namedAuthnPoliciesSection(ap, t) +
-
+      kit.note(t.html('consolePolicies.authn.dash'));
+    return out + kit.subTabbedPanels(kind.label, [
+      { id: 'authn-sub-default',
+        label: t.text('consolePolicies.sub.default'), html: byDefault },
+      { id: 'authn-sub-named',
+        label: t.text('consolePolicies.sub.named'), html: named.list },
+      { id: 'authn-sub-new',
+        label: t.text('consolePolicies.sub.new'), html: named.add }
+    ]) +
       '<h3 id="authn-schema">' + t.html('consolePolicies.schema') + '</h3>' +
       PoliciesPage.policySchemaTables(ap.schema, t);
-    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -208,11 +217,12 @@ class PoliciesPage {
   // and the save replaces a policy of the same name.
   // ---------------------------------------------------------------------------
   /**
-   * Draws the named authentication policies part of the authentication tab.
+   * Draws the named authentication policies of the authentication tab: the
+   * list for its Named policies sub-tab and the form for its New policy one.
    *
    * @param ap - the authentication policy's member of the policies view
    * @param t - the page's translator (#539)
-   * @returns the part as HTML
+   * @returns `{ list, add }`, each as HTML
    */
   static namedAuthnPoliciesSection(ap, t) {
     const vocabulary = ap.vocabulary || { mechanisms: [], secondFactors: [] };
@@ -282,18 +292,22 @@ class PoliciesPage {
           : '') + '>' + t.html('consolePolicies.authnNamed.delete') +
         '</button></form></td></tr>';
     }).join('');
-    return '<h3 id="authn-named">' +
-      t.html('consolePolicies.authnNamed.heading') + '</h3>' +
-      kit.note(t.html('consolePolicies.authnNamed.lead')) +
-      '<table><tr><th>' + t.html('consolePolicies.authnNamed.name') +
-      '</th><th>' + t.html('consolePolicies.authnNamed.first') + '</th><th>' +
-      t.html('consolePolicies.authnNamed.second') + '</th><th>' +
-      t.html('consolePolicies.authnNamed.namedBy') + '</th><th></th></tr>' +
-      (rows || '<tr><td colspan="5" class="sub">' +
-        t.html('consolePolicies.authnNamed.empty') + '</td></tr>') +
-      '</table>' +
-      '<h4>' + t.html('consolePolicies.authnNamed.newHeading') + '</h4>' +
-      form(null);
+    return {
+      list: '<h3 id="authn-named">' +
+        t.html('consolePolicies.authnNamed.heading') + '</h3>' +
+        kit.note(t.html('consolePolicies.authnNamed.lead')) +
+        '<table><tr><th>' + t.html('consolePolicies.authnNamed.name') +
+        '</th><th>' + t.html('consolePolicies.authnNamed.first') +
+        '</th><th>' + t.html('consolePolicies.authnNamed.second') +
+        '</th><th>' + t.html('consolePolicies.authnNamed.namedBy') +
+        '</th><th></th></tr>' +
+        (rows || '<tr><td colspan="5" class="sub">' +
+          t.html('consolePolicies.authnNamed.empty') + '</td></tr>') +
+        '</table>',
+      add: '<h3 id="authn-new">' +
+        t.html('consolePolicies.authnNamed.newHeading') + '</h3>' +
+        form(null)
+    };
   }
 
   // ---------------------------------------------------------------------------

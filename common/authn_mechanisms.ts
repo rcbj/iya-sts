@@ -9,15 +9,17 @@
 // WHICH SIGN-IN MECHANISMS A SESSION HAS SATISFIED, AND WHICH AN APPLICATION
 // ALLOWS (#457, 2026-10-06).
 //
-// `appAuthnMechanism` on an application entry is the list of the mechanisms
-// its people may sign in to it with — `federation.MECHANISM_IDS`: password,
-// password-mfa, webauthn, federation, spnego, wallet — and none listed allows
-// every one. `webauthn` names EVERY passkey the person holds alike since
-// #1135 (until then, a key enrolled in the `primary` role): a key has no
-// role, and this list, over the realm's policy, decides whether any key may
-// sign somebody in to this application on its own. Until #457 it was one
-// value and only ROUTED a sign-in; nothing
-// refused a person whose session stood on another mechanism. Now the issuance
+// The list of the mechanisms an application's people may sign in to it with
+// was `appAuthnMechanism` on its entry until #1148, and is since then the
+// first-factor list (`stsAuthnPolicyMechanism`) of the NAMED AUTHENTICATION
+// POLICY the entry names (`appAuthnPolicy`) — `federation.MECHANISM_IDS`:
+// password, password-mfa, webauthn, federation, spnego, wallet — and none
+// listed allows every one. `webauthn` names EVERY passkey the person holds
+// alike since #1135 (until then, a key enrolled in the `primary` role): a
+// key has no role, and this list, over the realm's policy, decides whether
+// any key may sign somebody in to this application on its own. Until #457
+// it was one value and only ROUTED a sign-in; nothing refused a person
+// whose session stood on another mechanism. Now the issuance
 // policy decides it at every BROWSER issuance (rcbj: browser-based
 // authentication only, both modes, a re-prompt rather than a refusal), and
 // this module supplies its two facts:

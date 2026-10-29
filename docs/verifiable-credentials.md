@@ -244,7 +244,9 @@ of:
 The session records `amr ["pop"]`, or more where a key attestation the issuer
 verified says so. A wallet can be followed by a second factor, or be the
 second factor after a password. To send one application's people straight to
-the wallet, list `wallet` in that application's `appAuthnMechanism`. See
+the wallet, point that application's `appAuthnPolicy` at a [named
+authentication policy](authentication.md#named-authentication-policies)
+whose only first factor is `wallet`. See
 [Sign in with a wallet](configure-oid4vp.md#sign-in-with-a-wallet) and
 [What the session says](oid4vp.md#what-the-session-says).
 
@@ -461,8 +463,9 @@ authenticated.
   `none`, `authorization_code`, and the configurations' scopes in `oauthScope`.
   Not needed for a pre-authorized offer. See
   [Configuring OpenID4VCI](configure-oid4vci.md#authorization-code-flow-wallet-initiated).
-* **`appAuthnMechanism` `wallet`** sends that application's people straight
-  to the wallet sign-in.
+* **`wallet` as the only first factor of the named authentication policy**
+  an application names in `appAuthnPolicy` sends its people straight to the
+  wallet sign-in.
 * **`oauthAllowedScope` `did`** lets a client be told the preferred DID.
 * **An application's own DID**: declare it for the DID family and generate a
   key on its **Credentials** tab. See

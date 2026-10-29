@@ -5,7 +5,9 @@
 
 // ===========================================================================
 // tests/oid4vp_wallet_mfa.js — A WALLET AS A FACTOR (#38's follow-ups), AND
-// `appAuthnMechanism: wallet`.
+// `wallet` AS THE ONE FIRST FACTOR OF THE AUTHENTICATION POLICY AN
+// APPLICATION NAMES (`appAuthnPolicy`, #1148; `appAuthnMechanism: wallet`
+// until then).
 //
 // #38 withheld the wallet from any request that demanded two factors: a
 // presentation proves possession of one key. It is a FIRST factor that a
@@ -30,8 +32,9 @@
 //      authentication is attested too; an attestation nobody trusts is
 //      refused at issuance, and `oid4vci.keyAttestationRequired` refuses a
 //      proof without one;
-//   5. `appAuthnMechanism: wallet` on an application entry sends its people
-//      straight to the wallet door, and says so when the door is shut.
+//   5. `wallet` alone in the named authentication policy an application
+//      entry names (`appAuthnPolicy`) sends its people straight to the
+//      wallet door, and says so when the door is shut.
 //
 // In a CHILD PROCESS, for `admin_credential_controls.js`'s reason.
 // ===========================================================================

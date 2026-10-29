@@ -8039,8 +8039,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'verification is real, the account policy is not. It is AVAILABLE ' +
           'TO EVERY APPLICATION and registered for none: a button on ' +
           '/authn/login offers it for whatever flow is already in progress, ' +
-          'appAuthnMechanism: spnego on an application entry sends that ' +
-          'application\'s people straight here, and fedAuthnMechanism: ' +
+          'spnego as the one first factor of the authentication policy an ' +
+          'application names (appAuthnPolicy) sends that application\'s ' +
+          'people straight here, and fedAuthnMechanism: ' +
           'spnego on an identity-provider-side federation relationship makes ' +
           'a Kerberos ticket satisfy a foreign partner that has never heard ' +
           'of Kerberos. What the session then claims is read off the ' +
@@ -8078,8 +8079,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'signs anybody in — as the directory entry it was issued for. ' +
           'amr ["pop"] and acr "1", or hwk and acr "mfa" where a verified ' +
           'key attestation says so; a request demanding two factors is ' +
-          'asked for a second after the wallet. appAuthnMechanism: wallet ' +
-          'sends an application\'s people straight here. oid4vp.signIn ' +
+          'asked for a second after the wallet. wallet as the one first ' +
+          'factor of the authentication policy an application names ' +
+          '(appAuthnPolicy) sends its people straight here. oid4vp.signIn ' +
           'turns it off, and it then answers 403 saying so.' },
   { path: '/authn/wallet/wait', group: 'Authentication',
     name: 'Wallet sign-in: wait, and finish',

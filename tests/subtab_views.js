@@ -13,7 +13,8 @@
 // in) and an advanced one (every field), except a sub-tab of fewer than six
 // fields, which has none. The Every protocol and OAuth 2.0 / OpenID Connect
 // sub-tabs' simple fields are what rcbj's two working applications hold,
-// with `appMfaMechanism` added on Every protocol (rcbj). What is held:
+// with `appMfaMechanism` added on Every protocol (rcbj) — since #1148 the
+// one reference `appAuthnPolicy` in its place. What is held:
 //
 //   1. those two sub-tabs' simple fields are that set — no more, no fewer —
 //      and every name in `SIMPLE_FIELD_ATTRIBUTES` is a field the grid has.

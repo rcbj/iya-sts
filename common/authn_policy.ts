@@ -231,15 +231,15 @@ const MECHANISMS: Mechanism[] = [
     what: 'Any passkey (WebAuthn credential) the person holds, signing them ' +
           'in with no password. A passkey has no role: this row says, at ' +
           'each sign-in, whether any of them may be a first factor in this ' +
-          'realm, unless an application\'s own list (appAuthnMechanism) ' +
-          'says otherwise.' },
+          'realm, unless the first factors of the authentication policy ' +
+          'an application names (appAuthnPolicy) say otherwise.' },
   { id: 'securityKey', label: 'Passkey (second factor)', primary: null,
     secondFactor: true,
     what: 'Any passkey (WebAuthn credential) the person holds, asked for ' +
           'after a first factor. A passkey has no role: this row says, at ' +
           'each sign-in, whether any of them may be a second factor in ' +
-          'this realm, unless an application\'s own list (appMfaMechanism) ' +
-          'says otherwise.' },
+          'this realm, unless the second factors of the authentication ' +
+          'policy an application names (appAuthnPolicy) say otherwise.' },
   { id: 'totp', label: 'Authenticator app (TOTP)', primary: null,
     secondFactor: true,
     what: 'An RFC 6238 one-time code. Never a first factor: this service ' +

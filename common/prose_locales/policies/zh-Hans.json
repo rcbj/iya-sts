@@ -304,16 +304,16 @@
     "text": "通行密钥（无密码）——作为第一因素"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "此人持有的任何通行密钥（WebAuthn 凭据），无需密码即可让其登录。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第一因素，除非某个应用自己的列表（appAuthnMechanism）另有规定。"
+    "en": "1cab77157f5d6263",
+    "text": "此人持有的任何通行密钥（WebAuthn 凭据），无需密码即可让其登录。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第一因素，除非某个应用所指定的身份验证策略（appAuthnPolicy）的第一因素另有规定。"
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
     "en": "4e99afea50969c29",
     "text": "通行密钥（第二因素）——作为第二因素"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "此人持有的任何通行密钥（WebAuthn 凭据），在第一因素之后被要求。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第二因素，除非某个应用自己的列表（appMfaMechanism）另有规定。"
+    "en": "5577b57e8d01187e",
+    "text": "此人持有的任何通行密钥（WebAuthn 凭据），在第一因素之后被要求。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第二因素，除非某个应用所指定的身份验证策略（appAuthnPolicy）的第二因素另有规定。"
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "登录界面上的密码。作为第二因素时，它是在钱包或其他无密码第一因素之后要求提供的密码。"
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "此人持有的任何通行密钥（WebAuthn 凭据），无需密码即可让其登录。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第一因素，除非某个应用自己的列表（appAuthnMechanism）另有规定。"
+    "en": "1cab77157f5d6263",
+    "text": "此人持有的任何通行密钥（WebAuthn 凭据），无需密码即可让其登录。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第一因素，除非某个应用所指定的身份验证策略（appAuthnPolicy）的第一因素另有规定。"
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "此人持有的任何通行密钥（WebAuthn 凭据），在第一因素之后被要求。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第二因素，除非某个应用自己的列表（appMfaMechanism）另有规定。"
+    "en": "5577b57e8d01187e",
+    "text": "此人持有的任何通行密钥（WebAuthn 凭据），在第一因素之后被要求。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第二因素，除非某个应用所指定的身份验证策略（appAuthnPolicy）的第二因素另有规定。"
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -571,6 +571,14 @@
     "en": "93538e6b201100c5",
     "text": "此配置文件的用途，留给下一个人看。"
   },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "9c184b4ac272a663",
+    "text": "在命名身份验证策略上（#1148）：指定此策略的应用（appAuthnPolicy）所允许的一种第一因素机制——password、password-mfa、webauthn、spnego、wallet 或 federation，每个值一种。一个都不列则允许领域所允许的每一种。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "b59799bd06b5022d",
+    "text": "在命名身份验证策略上（#1148）：指定此策略的应用所允许的一种第二因素——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每个值一种。一个都不列则保持领域的身份验证策略不变。"
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "此人选择启用的电子邮件第二因素：`code` 或 `link`。不存在：无。在 /portal/mfa 上设置，在 /admin/mfa 上以及连续失败次数过多后清除。"
@@ -592,16 +600,16 @@
     "text": "通行密钥（无密码）"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "此人持有的任何通行密钥（WebAuthn 凭据），无需密码即可让其登录。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第一因素，除非某个应用自己的列表（appAuthnMechanism）另有规定。"
+    "en": "1cab77157f5d6263",
+    "text": "此人持有的任何通行密钥（WebAuthn 凭据），无需密码即可让其登录。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第一因素，除非某个应用所指定的身份验证策略（appAuthnPolicy）的第一因素另有规定。"
   },
   "authn.MECHANISMS.securityKey.label": {
     "en": "7474add07b92939d",
     "text": "通行密钥（第二因素）"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "ea543723944fb410",
-    "text": "此人持有的任何通行密钥（WebAuthn 凭据），在第一因素之后被要求。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第二因素，除非某个应用自己的列表（appMfaMechanism）另有规定。"
+    "en": "5577b57e8d01187e",
+    "text": "此人持有的任何通行密钥（WebAuthn 凭据），在第一因素之后被要求。通行密钥没有角色：此行在每次登录时说明其中任何一个是否可以在本领域作为第二因素，除非某个应用所指定的身份验证策略（appAuthnPolicy）的第二因素另有规定。"
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1064,8 +1072,8 @@
     "text": "要求不输入用户名的通行密钥登录"
   },
   "passkey.FIELDS.requireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "默认关闭。开启时，身份验证机制只有通行密钥（仅 appAuthnMechanism `webauthn`）的应用会得到一个没有用户名字段的登录界面：*使用通行密钥登录* 是唯一的入口，指明某人的登录会被拒绝。需要上一行开启。领域的 `default` 配置文件不会将其应用于管理控制台、调试器或用户门户；选择该应用的命名配置文件则会。"
+    "en": "3f8988c76401d34a",
+    "text": "默认关闭。开启时，身份验证机制只有通行密钥（其指定的身份验证策略 appAuthnPolicy 只列出 `webauthn`）的应用会得到一个没有用户名字段的登录界面：*使用通行密钥登录* 是唯一的入口，指明某人的登录会被拒绝。需要上一行开启。领域的 `default` 配置文件不会将其应用于管理控制台、调试器或用户门户；选择该应用的命名配置文件则会。"
   },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
@@ -1272,8 +1280,8 @@
     "text": "默认开启。开启时，登录界面提供 *使用通行密钥登录* 以及用户名字段的自动填充，它们会向浏览器请求此领域的任何可发现凭据（WebAuthn Level 3 第 5.4 节，`allowCredentials` 为空），并登录其用户句柄所指明的账户，要求并检查用户验证。关闭时，两者都不提供，登录总是先指明此人。取代设置 webauthn.usernameless。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "默认关闭。开启时，身份验证机制只有通行密钥（仅 appAuthnMechanism `webauthn`）的应用会得到一个没有用户名字段的登录界面：*使用通行密钥登录* 是唯一的入口，指明某人的登录会被拒绝。需要上一行开启。领域的 `default` 配置文件不会将其应用于管理控制台、调试器或用户门户；选择该应用的命名配置文件则会。"
+    "en": "3f8988c76401d34a",
+    "text": "默认关闭。开启时，身份验证机制只有通行密钥（其指定的身份验证策略 appAuthnPolicy 只列出 `webauthn`）的应用会得到一个没有用户名字段的登录界面：*使用通行密钥登录* 是唯一的入口，指明某人的登录会被拒绝。需要上一行开启。领域的 `default` 配置文件不会将其应用于管理控制台、调试器或用户门户；选择该应用的命名配置文件则会。"
   },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",

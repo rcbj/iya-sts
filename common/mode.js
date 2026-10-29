@@ -2502,13 +2502,12 @@ const REQUIREMENTS = [
              'answered exactly as a wrong password, and counted against the ' +
              'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
              'log only) — whenever they hold an authenticator app or any ' +
-             'passkey where the realm (or the application\'s own list) ' +
-             'accepts a passkey as a second factor, or a second factor is ' +
-             'required of them (stsMfaRequired, the authentication ' +
-             'policy). An APP ' +
-             'PASSWORD ' +
-             'they made on /portal/app-passwords, scoped to the door, is ' +
-             'accepted instead. authn.passwordAloneDoors names doors that ' +
+             'passkey where the realm (or the authentication policy the ' +
+             'application names) accepts a passkey as a second factor, or ' +
+             'a second factor is required of them (stsMfaRequired, the ' +
+             'authentication policy). An APP PASSWORD they made on ' +
+             '/portal/app-passwords, scoped to the door, is accepted ' +
+             'instead. authn.passwordAloneDoors names doors that ' +
              'accept the password anyway, which lowers every such person to ' +
              'one factor there.',
     where: 'common/credentials.ts, common/app_passwords.ts' },
@@ -2535,10 +2534,10 @@ const REQUIREMENTS = [
              'after the password verified (a wrong one is still ' +
              'KDC_ERR_PREAUTH_FAILED), whenever the person holds an ' +
              'authenticator app or any passkey where the realm (or the ' +
-             'application\'s own list) accepts a passkey as a second ' +
-             'factor, or a second factor is required of them. A person ' +
-             'with an ' +
-             'authenticator app gets a ticket through RFC 6113 FAST armor ' +
+             'authentication policy the application names) accepts a ' +
+             'passkey as a second factor, or a second factor is required ' +
+             'of them. A person with an authenticator app gets a ticket ' +
+             'through RFC 6113 FAST armor ' +
              'with RFC 6560 OTP pre-authentication — password and code in ' +
              'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
              'app password is never a Kerberos key.',

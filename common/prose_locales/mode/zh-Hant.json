@@ -236,8 +236,8 @@
     "text": "LDAP 簡單繫結、WS-Security UsernameToken、SCIM 與 SSF HTTP Basic 以及 EST Basic，會像接受每個密碼一樣接受該密碼；登入畫面仍會要求第二因素。"
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "c06e9e3a02393490",
-    "text": "在這五個入口，只要該人持有驗證器應用程式或 任何密碼金鑰（在本領域或應用程式自己的清單接受密碼金鑰作為第二因素的情況下），或被要求提供第二因素（stsMfaRequired、驗證原則），其本人的密碼就會被拒絕——回應方式與密碼錯誤完全相同，並同樣計入速率限制（STS-AUTHN-0213 僅出現在稽核列與記錄中）。改為接受他們在 /portal/app-passwords 建立、限定於該入口的「應用程式密碼」。authn.passwordAloneDoors 指名仍然接受密碼的入口，這會讓每位此類人員在那裡降為單一因素。"
+    "en": "a4d4c20c45b2d573",
+    "text": "在這五個入口，只要該人持有驗證器應用程式或 任何密碼金鑰（在本領域或應用程式所指名的驗證原則接受密碼金鑰作為第二因素的情況下），或被要求提供第二因素（stsMfaRequired、驗證原則），其本人的密碼就會被拒絕——回應方式與密碼錯誤完全相同，並同樣計入速率限制（STS-AUTHN-0213 僅出現在稽核列與記錄中）。改為接受他們在 /portal/app-passwords 建立、限定於該入口的「應用程式密碼」。authn.passwordAloneDoors 指名仍然接受密碼的入口，這會讓每位此類人員在那裡降為單一因素。"
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "KDC 會對僅以密碼預先驗證（PA-ENC-TIMESTAMP，或 FAST 的 PA-ENCRYPTED-CHALLENGE）的 AS-REQ 簽發 TGT，就像它接受每個密碼一樣。"
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "a1e60b4ee5cac599",
-    "text": "只要該人持有驗證器應用程式或 任何密碼金鑰（在本領域或應用程式自己的清單接受密碼金鑰作為第二因素的情況下），或被要求提供第二因素，該 AS-REQ 就會在密碼通過驗證後以 KDC_ERR_POLICY（12）拒絕，STS-KRB-0135（密碼錯誤時仍為 KDC_ERR_PREAUTH_FAILED）。擁有驗證器應用程式的人，可透過 RFC 6113 FAST armor 搭配 RFC 6560 OTP 預先驗證取得票證——密碼與代碼在同一次交換中——且票證攜帶 RFC 8129 指示符 `otp`。應用程式密碼絕不會成為 Kerberos 金鑰。"
+    "en": "ab8a6af4d276b0bc",
+    "text": "只要該人持有驗證器應用程式或 任何密碼金鑰（在本領域或應用程式所指名的驗證原則接受密碼金鑰作為第二因素的情況下），或被要求提供第二因素，該 AS-REQ 就會在密碼通過驗證後以 KDC_ERR_POLICY（12）拒絕，STS-KRB-0135（密碼錯誤時仍為 KDC_ERR_PREAUTH_FAILED）。擁有驗證器應用程式的人，可透過 RFC 6113 FAST armor 搭配 RFC 6560 OTP 預先驗證取得票證——密碼與代碼在同一次交換中——且票證攜帶 RFC 8129 指示符 `otp`。應用程式密碼絕不會成為 Kerberos 金鑰。"
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",

@@ -10508,8 +10508,9 @@ class Authn {
                (broker.problem ? ' — and it cannot be done: ' + broker.problem
                                : '') + '.');
       log.debug("Leaving Authn.mechanismFor(). The relationship decided it.");
-      // The application's own list (#457) rides along: the policy holds the
-      // sign-in to it whichever of the two routed it.
+      // The application's list (#457; its named authentication policy's
+      // since #1148) rides along: the policy holds the sign-in to it
+      // whichever of the two routed it.
       return { mechanism: broker.mechanism || 'password',
                source: 'relationship', federation: home, via: broker.via,
                problem: broker.problem,
@@ -15288,8 +15289,8 @@ class Authn {
   //     and where the factor was DEMANDED — a security key by the relying
   //     party or on risk, or any factor on risk — and the list leaves the
   //     person nothing that answers it (STS-AUTHN-0307): a step-up never
-  //     enrols (#62 P3), and a demand the application's own list forbids
-  //     cannot be met at all.
+  //     enrols (#62 P3), and a demand the application's named policy
+  //     forbids cannot be met at all.
   // ---------------------------------------------------------------------------
   private enrolmentOfferedFor(allowed: string[], anyUse?: boolean) {
     const { log } = this.deps;

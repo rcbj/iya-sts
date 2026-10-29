@@ -823,14 +823,20 @@ Firefox's `network.negotiate-auth.trusted-uris`.
 walks through it.
 
 **Only Kerberos for one application.** To send an application's people
-straight to `/authn/spnego` without the sign-in screen, make `spnego` its
-only allowed mechanism:
+straight to `/authn/spnego` without the sign-in screen, point it at a
+[named authentication
+policy](authentication.md#named-authentication-policies) whose only allowed
+mechanism is `spnego`:
 
-* **Console:** on the application's **Configuration** tab, **Every
-  protocol** sub-tab, tick `spnego` in `appAuthnMechanism` and **Save**.
+* **Console:** on **Directory → Policies**, tab **Authentication policy**,
+  sub-tab **New policy**, create a named policy (`kerberos-only`, say) with only `spnego` ticked
+  under the first-factor mechanisms. Then on the application's
+  **Configuration** tab, **Every protocol** sub-tab, choose it in
+  `appAuthnPolicy` and click **Save Every protocol**.
 * **API:**
   ```bash
-  api applications/add '{"application":"my-app","attribute":"appAuthnMechanism","value":"spnego"}'
+  api policies/save-named-authn-policy '{"name":"kerberos-only","mechanisms":["spnego"],"secondFactors":[]}'
+  api applications/set '{"application":"my-app","attribute":"appAuthnPolicy","value":"kerberos-only"}'
   ```
 
 This is enforced at every browser sign-in to that application, in both

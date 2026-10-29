@@ -1582,8 +1582,9 @@ class AdminApi {
               'its own follows the default realm\'s. `allowUsernameless` ' +
               '(on by default) offers a passkey sign-in with no username. ' +
               '`requireUsernameless` (off, #608) makes it the only way in ' +
-              'for an application whose `appAuthnMechanism` is `webauthn` ' +
-              'alone: no username field, and a sign-in naming a person ' +
+              'for an application whose named authentication policy ' +
+              '(`appAuthnPolicy`) lists `webauthn` alone as its first ' +
+              'factor: no username field, and a sign-in naming a person ' +
               'refused; it needs `allowUsernameless`, and the `default` ' +
               'profile never applies it to the admin console, the debugger ' +
               'or the user portal. ' +

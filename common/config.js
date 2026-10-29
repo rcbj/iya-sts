@@ -3276,9 +3276,10 @@ const SETTINGS = [
     path: 'webauthn.primaryAllowed', env: 'STS_WEBAUTHN_PRIMARY_ALLOWED',
     type: 'bool', dflt: true, runtime: true,
     description: 'Whether a passkey may be a first factor in this realm — ' +
-                 'a passwordless sign-in, `amr ["hwk"]` — unless an ' +
-                 'application\'s own list (`appAuthnMechanism`) says ' +
-                 'otherwise. It is what the realm supports, beside the ' +
+                 'a passwordless sign-in, `amr ["hwk"]` — unless the ' +
+                 'first factors of the authentication policy an ' +
+                 'application names (`appAuthnPolicy`) say otherwise. It ' +
+                 'is what the realm supports, beside the ' +
                  'authentication policy\'s passkey row, and is asked at ' +
                  'every sign-in, of every passkey a person holds alike: a ' +
                  'passkey has no role (#1135), so this decides what each ' +
@@ -3299,9 +3300,10 @@ const SETTINGS = [
     path: 'webauthn.mfaAllowed', env: 'STS_WEBAUTHN_MFA_ALLOWED',
     type: 'bool', dflt: true, runtime: true,
     description: 'Whether a passkey may be a second factor in this realm, ' +
-                 'after a password or another first factor, unless an ' +
-                 'application\'s own list (`appMfaMechanism`) says ' +
-                 'otherwise. It is what the realm supports, beside the ' +
+                 'after a password or another first factor, unless the ' +
+                 'second factors of the authentication policy an ' +
+                 'application names (`appAuthnPolicy`) say otherwise. It ' +
+                 'is what the realm supports, beside the ' +
                  'authentication policy\'s second-factor passkey row, and ' +
                  'is asked at every sign-in, of every passkey a person ' +
                  'holds alike: a passkey has no role (#1135). Off, the ' +

@@ -39,10 +39,12 @@
 //      request carrying `shire` is answered by default and refused with
 //      saml11SpInitiatedSso FALSE.
 //   E. The mechanism re-prompt on /saml2/unsolicited (#457), set up through
-//      `appAuthnMechanism` on the entry: a session signed in on a password,
-//      for a service provider that allows only `webauthn`, is sent to sign
-//      in again; back from that one trip (`reprompted=1`) still on a
-//      password, it is answered RequestDenied rather than sent round again.
+//      a named authentication policy the entry names (`appAuthnPolicy`,
+//      #1148; `appAuthnMechanism` until then): a session signed in on a
+//      password, for a service provider that allows only `webauthn`, is
+//      sent to sign in again; back from that one trip (`reprompted=1`)
+//      still on a password, it is answered RequestDenied rather than sent
+//      round again.
 //
 // NOT HERE, AND WHY: section D of the in-process file, the step-up on risk.
 // A session's risk comes from the sign-in's assessment over datasets the

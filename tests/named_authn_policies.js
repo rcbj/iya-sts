@@ -204,8 +204,9 @@ function childMain() {
            'the applications naming it', JSON.stringify([viaAct, shown]));
 
       // --- F. The markup ----------------------------------------------------
-      const html = page.namedAuthnPoliciesSection(ap,
+      const parts = page.namedAuthnPoliciesSection(ap,
         WebKit.context({}, true).t);
+      const html = parts.list + parts.add;
       note(/id="authn-named"/.test(html) &&
            /<code>wallet-or-key<\/code>/.test(html) &&
            /value="delete-named-authn-policy"[^]*?<button class="secondary" disabled/
@@ -219,9 +220,24 @@ function childMain() {
            'it, Delete disabled while named, a Change form each and one for ' +
            'a new policy, each group posting an empty value first',
            html.slice(0, 600));
+      const tab = page.authnPolicySection(view, WebKit.context({}, true).t);
+      const at = function (id) {
+        return tab.indexOf('class="subpanel' +
+                           (id === 'default' ? ' first' : '') +
+                           '" id="authn-sub-' + id + '"');
+      };
+      note(at('default') > 0 && at('named') > at('default') &&
+           at('new') > at('named') &&
+           tab.indexOf('id="authn-named"') > at('named') &&
+           tab.indexOf('id="authn-named"') < at('new') &&
+           tab.indexOf('id="authn-new"') > at('new') &&
+           tab.indexOf('id="authn-schema"') > at('new'),
+           'F2. the tab is three sub-tabs, as the passkey policy\'s: ' +
+           'Default, Named policies and New policy, the schema under them',
+           tab.slice(0, 400));
     });
 
-    // --- G. A policy is its realm's -------------------------------------------
+    // --- G. A policy is its realm's ------------------------------------------
     await realms.run(realmB, async function () {
       note(authnPolicy.named().length === 0 &&
            !authnPolicy.namedPolicy('wallet-or-key'),

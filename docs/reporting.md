@@ -439,15 +439,18 @@ The realm's configured federation relationships, as they are now.
 ### `authMechanisms`
 
 The realm authentication policy, one row per mechanism with `application`
-`realm`, plus one row per mechanism an application lists. An application
-that lists none inherits the realm policy and adds no row. This is not a
-count of sign-ins. Non-browser doors are outside `appAuthnMechanism`.
+`realm`, plus one row per mechanism the [named authentication
+policy](authentication.md#named-authentication-policies) an application
+names in `appAuthnPolicy` lists. An application on `default`, or whose
+policy lists none, inherits the realm policy and adds no row; so does one
+naming a policy that does not exist. This is not a count of sign-ins.
+Non-browser doors are outside the policy.
 
 | Field | Type | Meaning | Filter | Sort | Group |
 |---|---|---|---|---|---|
 | `id` | string | The mechanism id. Realm rows use the policy names. An application row uses the value it lists. | yes | yes | no |
-| `type` | string | `both`, `primary`, `second` or `other` for a realm row. `primary` for `appAuthnMechanism` and `second` for `appMfaMechanism`. | yes | yes | yes |
-| `enabled` | boolean | For a realm row, whether that policy flag is on. For an application row, `true` because the application lists it. A listed second factor the realm has switched off stays off at sign-in. | yes | yes | yes |
+| `type` | string | `both`, `primary`, `second` or `other` for a realm row. `primary` for a first-factor mechanism of the application's authentication policy and `second` for a second factor. | yes | yes | yes |
+| `enabled` | boolean | For a realm row, whether that policy flag is on. For an application row, `true` because its policy lists it. A listed second factor the realm has switched off stays off at sign-in. | yes | yes | yes |
 | `application` | string | `realm`, or the application identifier. | yes | yes | yes |
 
 ### `auditEvents`

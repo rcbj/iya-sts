@@ -368,9 +368,10 @@ The button appears only when:
 * the realm's authentication policy (**Directory → Policies**,
   **Authentication policy** tab, or `GET /admin-api/policies`) has **TLS
   client certificate — as a first factor** on, which it is by default;
-* the application does not restrict sign-in mechanisms
-  (`appAuthnMechanism`): a certificate is not one of the mechanisms an
-  application can name;
+* the application does not restrict sign-in mechanisms (the [named
+  authentication policy](authentication.md#named-authentication-policies)
+  it names in `appAuthnPolicy` lists none): a certificate is not one of the
+  mechanisms a policy can list;
 * the sign-in is not linking a federated account, and no security key or
   passkey is demanded.
 

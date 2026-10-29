@@ -14,9 +14,10 @@
 // harness):
 //
 //   * a save requiring it without `allowUsernameless` is refused;
-//   * where it is on, an application whose appAuthnMechanism is `webauthn`
-//     alone gets a view with `usernameless` set, and a sign-in naming a
-//     person is refused with STS-AUTHN-0333;
+//   * where it is on, an application whose named authentication policy
+//     (appAuthnPolicy, #1148) lists `webauthn` alone gets a view with
+//     `usernameless` set, and a sign-in naming a person is refused with
+//     STS-AUTHN-0333;
 //   * an application with another mechanism beside it keeps its screen;
 //   * the `default` profile never holds a hosted surface (the console, the
 //     portal, the debugger) to it, and a named profile selecting one does;
