@@ -35,7 +35,8 @@
 // multipart/form-data form with no script, streamed to disk and expanded as
 // it is read by `risk/risk_upload.ts` — a DB-IP city file of hundreds of
 // megabytes arrives this way), activate one, roll back to the previous, or
-// delete a version that is not active. Rule 7: every one of those is
+// remove a version — the active one included, which unloads the dataset
+// (#1152). Rule 7: every one of those is
 // `/admin-api/risk/:action` or `POST /admin-api/risk/upload`, which call
 // `riskAction()` and `uploadDoor()` below, and `GET /admin-api/risk` answers
 // `riskView()`.

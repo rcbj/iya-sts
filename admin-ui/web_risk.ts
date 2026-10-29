@@ -543,10 +543,12 @@ class RiskPage {
           ((v.state === 'ready' || v.state === 'superseded')
             ? self.form('activate', d, v.version,
                         t.text('consoleRisk.dataset.activate')) : '') +
-          (v.state !== 'active' && v.state !== 'loading' &&
-           v.state !== 'deleted'
+          // REMOVE ON EVERY LOADED VERSION (#1152), the active one included:
+          // removing it leaves the dataset with no active version. A version
+          // still loading, or already deleted, has no rows to remove.
+          (v.state !== 'loading' && v.state !== 'deleted'
             ? self.form('delete', d, v.version,
-                        t.text('consoleRisk.dataset.deleteRows')) : '');
+                        t.text('consoleRisk.dataset.remove')) : '');
         return '<tr><td><code>' + esc(v.version) + '</code></td><td>' +
           esc(v.state) + (v.refusal ? '<br><small>' + esc(v.refusal) +
                           '</small>' : '') + '</td><td class="num">' +

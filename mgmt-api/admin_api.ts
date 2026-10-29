@@ -4528,8 +4528,12 @@ class AdminApi {
               additionalProperties: false },
             responseDescription: 'The acceptance recorded.' },
           { action: 'delete', operationId: 'deleteRiskDatasetVersion',
-            summary: 'Delete the rows of a version that is not active',
-            description: 'Its record stays, as `deleted`.',
+            summary: 'Remove a version: delete its rows',
+            description: 'Its record stays, as `deleted`. A version still ' +
+              'loading is refused. Removing the ACTIVE version unloads it ' +
+              '(#1152): the dataset has no active version afterwards, ' +
+              'nothing else is activated in its place, and `rollback` is ' +
+              'offered when there is an earlier version.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
               properties: { dataset: { type: 'string',
