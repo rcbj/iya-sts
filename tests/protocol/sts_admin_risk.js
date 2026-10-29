@@ -26,7 +26,8 @@
 //      answered by BOTH, which is the `risk-dataset` change row at work;
 //   5. RULE 7: an unknown action is refused in the sentence the API's own
 //      tests parse, and a superseded version's rows can be deleted — and,
-//      since #1152, the active one's, which unloads the dataset;
+//      since #1152, the active one's, which unloads the dataset, and since
+//      #1155 an administrator imports the removed version again;
 //   5b. TERMS: every provider is listed with its terms; accepting FireHOL's
 //      through the API is recorded, GeoLite2's cannot be, and a FireHOL list
 //      then imports (the second licence review on #62);
@@ -365,6 +366,26 @@ async function ruleSeven() {
                        JSON.stringify(row.activeVersion));
     assert.strictEqual(record.state, "deleted", JSON.stringify(record));
   });
+  // UPLOADED AGAIN (#1155): the administrator's import of the removed
+  // version loads it once more — the postgres driver's ON CONFLICT DO
+  // UPDATE … WHERE state = 'deleted' — and every node reads it again.
+  const again = await api("POST", "/admin-api/risk/import", {
+    dataset: DATASET, realm: REALM, format: "ip-list", content: listOf(10),
+    version: "run-" + STAMP + "-a" });
+  check("the removed version imported again by an administrator is loaded " +
+        "and active", function () {
+          assert.strictEqual(again.status, 200, again.text.slice(0, 400));
+          assert.ok(!again.body.duplicate, again.text.slice(0, 400));
+          assert.strictEqual(again.body.rows, 5, again.text.slice(0, 400));
+          assert.strictEqual(again.body.activated, true);
+        });
+  for (let i = 0; i < 4; i++) {
+    await until("every node to read the reloaded version", async function () {
+      const v = await lookup("198.18.12.34");
+      return denyVersionIn(v) === "run-" + STAMP + "-a" ? v : null;
+    });
+  }
+  check("and every node reads it again", function () {});
   log.debug("Leaving ruleSeven().");
 }
 

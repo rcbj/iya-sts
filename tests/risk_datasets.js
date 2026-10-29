@@ -534,6 +534,37 @@ async function partL(t) {
   t.check(again.ok && again.rows === 0 && !again.unloaded && !reactivate.ok,
           'L5. removing it again deletes nothing, and it cannot be made ' +
           'active', JSON.stringify(again) + ' ' + JSON.stringify(reactivate));
+
+  // UPLOADED AGAIN (#1155): an administrator's door may load the version
+  // they removed; a job (no `reloadDeleted`) still finds it recorded.
+  const sameFile = { dataset: 'asn', format: 'dbip-asn-csv',
+    version: 'asn-L', source: 'upload',
+    content: '203.0.113.0,203.0.113.255,64511,Removal Test Networks' };
+  const byJob = await riskDatasets.importVersion(sameFile);
+  t.check(byJob.ok && byJob.duplicate === true,
+          'L6. a removed version imported by a door that is not an ' +
+          'administrator\'s is still already recorded, and nothing loads',
+          JSON.stringify(byJob));
+  config.setOverride('risk.datasetShrinkLimitPercent', 100);
+  const byAdmin = await riskDatasets.importVersion(
+    Object.assign({ reloadDeleted: true, actor: 'a test' }, sameFile));
+  config.setOverride('risk.datasetShrinkLimitPercent', 50);
+  const back = await riskDatasets.lookup('203.0.113.9', 'default');
+  const reloaded = (await riskStore.listVersions('', 'asn'))
+    .filter(function (v) {
+      return v.version === 'asn-L';
+    })[0];
+  t.check(byAdmin.ok && !byAdmin.duplicate && byAdmin.activated &&
+          back.asn && back.asn.asn === 64511 &&
+          reloaded.state === 'active' && reloaded.rowsDeletedAt === 0,
+          'L7. AN ADMINISTRATOR UPLOADS THE REMOVED VERSION AGAIN: the ' +
+          'record is reused, loaded, made active and answers lookups',
+          JSON.stringify(byAdmin) + ' ' + JSON.stringify(reloaded));
+  const notDeleted = await riskDatasets.importVersion(
+    Object.assign({ reloadDeleted: true }, sameFile));
+  t.check(notDeleted.ok && notDeleted.duplicate === true,
+          'L8. a version that is not deleted is still already recorded, ' +
+          'whoever imports it', JSON.stringify(notDeleted));
   log.debug("Leaving partL().");
 }
 

@@ -8728,7 +8728,12 @@ function create(options) {
     // A version begun: its row in `loading`, or false when that version of
     // that dataset is already recorded — a second node importing the same
     // file, or the same file seen again, loads nothing twice.
-    riskBeginVersion: function (v) {
+    // With `reloadDeleted` (#1155, an administrator's door) a version whose
+    // record is `deleted` is begun again in the same statement: the conflict
+    // updates that row — new provenance, `loading`, every later stamp and
+    // count cleared — and only when it is `deleted`, so any other state
+    // still returns no row and reads as "already recorded".
+    riskBeginVersion: function (v, reloadDeleted) {
       log.debug("Entering riskBeginVersion(). " + v.dataset + " " +
                 v.version);
       log.debug("Leaving riskBeginVersion().");
@@ -8738,7 +8743,21 @@ function create(options) {
         'sha256, byte_count, parameters, verification, published_at, ' +
         'next_update_at, fetched_at, state, origin) VALUES ($1, $2, $3, $4, ' +
         '$5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, ' +
-        '\'loading\', $17) ON CONFLICT (realm, dataset, version) DO NOTHING ' +
+        '\'loading\', $17) ON CONFLICT (realm, dataset, version) ' +
+        (reloadDeleted
+          ? 'DO UPDATE SET format = EXCLUDED.format, provider = ' +
+            'EXCLUDED.provider, licence = EXCLUDED.licence, attribution = ' +
+            'EXCLUDED.attribution, source = EXCLUDED.source, source_uri = ' +
+            'EXCLUDED.source_uri, sha256 = EXCLUDED.sha256, byte_count = ' +
+            'EXCLUDED.byte_count, parameters = EXCLUDED.parameters, ' +
+            'verification = EXCLUDED.verification, published_at = ' +
+            'EXCLUDED.published_at, next_update_at = EXCLUDED.next_update_at, ' +
+            'fetched_at = EXCLUDED.fetched_at, state = \'loading\', ' +
+            'origin = EXCLUDED.origin, row_count = 0, loaded_at = 0, ' +
+            'activated_at = 0, superseded_at = 0, rows_deleted_at = 0, ' +
+            'refusal = \'\', error_code = \'\' ' +
+            'WHERE sts_risk_dataset_versions.state = \'deleted\' '
+          : 'DO NOTHING ') +
         'RETURNING version',
         [v.realm || '', v.dataset, v.version, v.format, v.provider,
          v.licence, v.attribution || '', v.source, v.sourceUri || '',

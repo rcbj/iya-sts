@@ -447,6 +447,8 @@ class RiskAdmin {
         // provider's current terms as part of this import, for this actor.
         acceptTerms: b.acceptTerms === true || b.acceptTerms === 'true' ||
                      b.acceptTerms === 'on',
+        // An administrator may load a version they removed again (#1155).
+        reloadDeleted: true,
         actor: who });
     } else if (action === 'activate' || action === 'delete') {
       const version = String(b.version || '').trim();
