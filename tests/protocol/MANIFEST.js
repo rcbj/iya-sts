@@ -1028,6 +1028,10 @@ const JOBS = [
     timeoutMs: 1500000 },
   { file: 'sts_xacml_editor.js',         browser: true },
   { file: 'sts_xacml_endpoints.js',      browser: false },
+  // THE AUTHZEN API OVER HTTP (#563, #1165): the interop Todo scenario in
+  // ALFA, the doors, the batch and the metadata, in a realm of its own.
+  // `local: true`: the API is ours.
+  { file: 'sts_authzen.js',              browser: false },
   { file: 'sts_xacml_remote_pep.js',     browser: false,
     docker: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK

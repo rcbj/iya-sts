@@ -37,6 +37,13 @@ of its own when its semantics are settled, and none is advertised until then.
 `tests/authzen_evaluation.js` drives the route over real handshakes in a child
 process, in a throwaway realm whose root policy it wrote;
 `tests/authzen_admin.js` holds the tab's view and acts.
+`tests/protocol/sts_authzen.js` (`local: true`, #1165) asks a running service
+the same questions over HTTP in a throwaway realm, and carries the **AuthZEN
+interop "Todo" scenario** — its five people, five actions and owner rule
+written in ALFA as the realm's root policy — through mutual TLS, the default
+door. The bearer door is held in process only: issuing a client a delegated
+permission grant and a token over the network is a second stack's worth of
+setup for checks the report API's jobs already drive.
 
 ## The mapping, in one table
 
