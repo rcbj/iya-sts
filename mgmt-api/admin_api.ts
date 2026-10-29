@@ -1710,10 +1710,11 @@ class AdminApi {
               '(`enabled`). On, a person the profile reaches who is due the ' +
               '`activity` is asked after signing in, before being sent back ' +
               'to the application: `pqc-passkey-migration` asks a person ' +
-              'holding a classical passkey (primary or second factor) and no ' +
-              'post-quantum one in that role to register an ML-DSA passkey ' +
-              'in it, and — per `noPasskey` — a person holding none to ' +
-              'register one as `noPasskeyRole`. Skip puts it off ' +
+              'holding a classical passkey and no post-quantum one to ' +
+              'register an ML-DSA passkey, and — per `noPasskey` — a ' +
+              'person holding none to register one. A passkey has no role ' +
+              '(#1135): `noPasskeyRole` is accepted and ignored. Skip puts ' +
+              'it off ' +
               '`snoozeDays`; once `graceDays` (0 = never) have passed since ' +
               'the person\'s first invitation Skip is refused ' +
               '(STS-AUTHN-0474) and the sign-in is held until it is done, ' +
@@ -1732,7 +1733,7 @@ class AdminApi {
               'their device cannot make ML-DSA.',
         example: { enabled: true, activity: 'pqc-passkey-migration',
                    snoozeDays: 7, graceDays: 30, noPasskey: 'invite',
-                   noPasskeyRole: 'primary', method: 'automatic',
+                   method: 'automatic',
                    attestation: 'any', noPasskeyFallback: 'none' }
       }
     };
@@ -1831,6 +1832,19 @@ class AdminApi {
                 description: field.what + ' Between ' + field.min + ' and ' +
                              field.max + '. Default ' + field.dflt + '.' };
       });
+      // A RETIRED FIELD STILL ACCEPTED (#1135): the post-login profile's
+      // `noPasskeyRole` left `FIELDS` when a passkey lost its role, and a
+      // body that still carries it — a caller written before, a vendored
+      // test — would otherwise be refused by `additionalProperties: false`.
+      // `PostLoginPolicy.validate()` reads `FIELDS` only, so it is ignored.
+      if (kind.id === 'postLogin') {
+        properties.noPasskeyRole = {
+          type: 'string',
+          description: 'Ignored since #1135: a passkey has no role, so a ' +
+                       'person with none registers a passkey and nothing ' +
+                       'else is asked. Accepted so that an older body is ' +
+                       'not refused; not stored, not answered.' };
+      }
       out.push({
         action: policyKinds.saveAction(kind),
         operationId: 'save' + cap(kind.id) + 'Policy',
@@ -8041,16 +8055,18 @@ class AdminApi {
                                  'what the sign-out ended.' },
 
           { action: 'disable-primary-keys', operationId: 'disableUserPasskeys',
-            summary: 'Remove every primary security key, so a passkey no ' +
-                     'longer signs somebody in',
-            description: 'Removes every WebAuthn credential enrolled in the ' +
-                         '`primary` role — the ones that sign the person in ' +
-                         'with no password. A key in the `mfa` role is ' +
-                         'untouched.\n\n**Refused where it would leave no ' +
-                         'way in**: a person with no password whose primary ' +
-                         'keys are their only credential. Reset their ' +
-                         'password or issue a reset link first. Refused too ' +
-                         'for somebody holding no primary key.\n\n**Shared ' +
+            summary: 'Remove every passkey somebody holds',
+            description: 'Removes every passkey (WebAuthn credential) the ' +
+                         'person holds. Until #1135 it removed only the keys ' +
+                         'enrolled in the `primary` role; a passkey has no ' +
+                         'role since, so it takes all of them, and they sign ' +
+                         'in with their password afterwards.\n\n**Refused ' +
+                         'where it would leave no way in** ' +
+                         '(STS-AUTHN-0161): a person with no password, in a ' +
+                         'realm where a passkey may be a first factor, whose ' +
+                         'passkeys are their way in. Reset their password or ' +
+                         'issue a reset link first. Refused too for somebody ' +
+                         'holding no passkey (STS-AUTHN-0160).\n\n**Shared ' +
                          'Signals**: a CAEP `credential-change` ' +
                          '(`fido2-roaming`, `delete`) per key, ' +
                          'with its label as `friendly_name`.',
@@ -8068,8 +8084,9 @@ class AdminApi {
               examples: [{ user: 'alice' }],
               additionalProperties: false
             },
-            responseDescription: 'The keys removed — id, role, label and ' +
-                                 'when enrolled; never a public key. ' +
+            responseDescription: 'The keys removed — id, label and ' +
+                                 'when enrolled; never a public key, and no ' +
+                                 'role since #1135. ' +
                                  '`sessionsEnded` counts the sessions ' +
                                  'those keys signed in, which were ended ' +
                                  '(#963); every other stays.' },
@@ -8077,10 +8094,15 @@ class AdminApi {
           { action: 'disable-mfa', operationId: 'disableUserSecondFactors',
             summary: 'Remove every second factor somebody holds',
             description: 'Removes the authenticator app enrolment, every ' +
-                         'security key in the `mfa` role and the recovery ' +
-                         'codes, in one act. It cannot lock anybody out, ' +
-                         'because none of ' +
-                         'those is a way in. If a second factor is still ' +
+                         'passkey and the recovery codes, in one act. Until ' +
+                         '#1135 it took only the keys enrolled in the `mfa` ' +
+                         'role; a passkey has no role since, and any of them ' +
+                         'may answer the second step, so it takes all of ' +
+                         'them. **Refused where the passkeys are their way ' +
+                         'in** (STS-AUTHN-0161): a person with no password, ' +
+                         'in a realm where a passkey may be a first factor, ' +
+                         'who holds one. Reset their password or issue a ' +
+                         'reset link first. If a second factor is still ' +
                          'REQUIRED ' +
                          'of the person — `require-mfa`, or ' +
                          'the realm\'s authentication policy — their next ' +
@@ -8118,9 +8140,9 @@ class AdminApi {
             description: 'Sets `stsMfaRequired` on the person\'s entry. At ' +
                          'the sign-in screen they are then asked for a ' +
                          'second factor — and, while they hold none, shown a ' +
-                         'step to enrol an authenticator app or a security ' +
-                         'key before any session is started. A passwordless ' +
-                         'security-key sign-in is refused while it is ' +
+                         'step to enrol an authenticator app or a passkey ' +
+                         'before any session is started. A passwordless ' +
+                         'passkey sign-in is refused while it is ' +
                          'required.\n\nIn product mode it also refuses ' +
                          'their own password at the five password-only ' +
                          'doors — an LDAP bind, a WS-Trust UsernameToken, ' +
@@ -9299,8 +9321,11 @@ class AdminApi {
                          'passkey policy\'s `adminEnrolment` is `on` ' +
                          '(STS-AUTHN-0440, off by default), the person is ' +
                          'in this realm\'s directory (STS-AUTHN-0441), the ' +
-                         'caller is a person (STS-AUTHN-0445), and the role, ' +
-                         'lane and `webauthn.maxKeysPerPerson` allow it. ' +
+                         'caller is a person (STS-AUTHN-0445), the realm ' +
+                         'accepts a passkey at all (STS-AUTHN-0531), and the ' +
+                         'lane and `webauthn.maxKeysPerPerson` allow it. No ' +
+                         'role is asked: a passkey has none since #1135, and ' +
+                         'the realm decides at each sign-in how it is used. ' +
                          'There is no import of a registration made ' +
                          'elsewhere.',
             requestBodyRequired: true,
@@ -9312,10 +9337,12 @@ class AdminApi {
                           'The person, as /admin-api/users names them.' },
                 username: { type: 'string',
                             description: 'Accepted for `user`.' },
-                role: { type: 'string', enum: ['primary', 'mfa'],
-                        description: '`mfa` (the default): a second factor ' +
-                                     'beside a password; `primary`: signs ' +
-                                     'them in on its own.' },
+                // ACCEPTED AND IGNORED (#1135), so an older body is not
+                // refused by `additionalProperties: false`.
+                role: { type: 'string',
+                        description: 'Ignored since #1135: a passkey has ' +
+                                     'no role. Accepted so that an older ' +
+                                     'body is not refused.' },
                 lane: { type: 'string', enum: ['classical', 'pqc'],
                         description: 'The lane (#643) where the realm ' +
                                      'offers both (webauthn.' +
@@ -9327,12 +9354,11 @@ class AdminApi {
                                      'decides either way.' }
               },
               required: ['user'],
-              examples: [{ user: 'alice', role: 'mfa',
-                           kind: 'security-key' }],
+              examples: [{ user: 'alice', kind: 'security-key' }],
               additionalProperties: false
             },
-            responseDescription: '`enrolmentId`, `expiresAt`, `role`, ' +
-                                 '`lane` and `ceremony`, or why it was not ' +
+            responseDescription: '`enrolmentId`, `expiresAt`, `lane`, ' +
+                                 '`kind` and `ceremony`, or why it was not ' +
                                  'begun.' },
 
           { action: 'finish-passkey-enrolment',
@@ -9385,7 +9411,8 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The new passkey\'s `credentialId`, ' +
-                                 '`role`, `lane`, how many the person now ' +
+                                 '`lane` (no `role` since #1135), how many ' +
+                                 'the person now ' +
                                  'holds (`held`) and `enrolledBy`, or why ' +
                                  'it was not registered.' }
         ] },
@@ -10840,11 +10867,16 @@ class AdminApi {
           'Who holds a second factor, and how RFC 6238 is configured here',
         description: 'One row per person — this realm\'s directory people ' +
                      'and everybody this service has SEEN, unioned — saying ' +
-                     'whether they hold a password, how many security keys ' +
-                     'are marked as a SECOND factor, and whether an ' +
-                     'authenticator app is enrolled.\n\n**TWO MECHANISMS ' +
-                     'COUNT AS A SECOND FACTOR HERE**: a WebAuthn credential ' +
-                     'enrolled in the `mfa` role, and an RFC 6238 ' +
+                     'whether they hold a password, how many of their ' +
+                     'passkeys may sign them in on their own ' +
+                     '(`primaryKeys`) and may be a SECOND factor ' +
+                     '(`mfaKeys`), and whether an authenticator app is ' +
+                     'enrolled. A passkey has no role since #1135: both ' +
+                     'counts are of the same keys, by what the realm lets ' +
+                     'a key do, so each is every key the person holds or ' +
+                     'none.\n\n**TWO MECHANISMS ' +
+                     'COUNT AS A SECOND FACTOR HERE**: any passkey, where ' +
+                     'the realm lets one be a second factor, and an RFC 6238 ' +
                      'authenticator app. A person holding either is asked ' +
                      'for it at the sign-in screen and a password alone will ' +
                      'not sign them in; `secondFactor` says which one they ' +

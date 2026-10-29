@@ -300,20 +300,20 @@
     "text": "Una contraseña en la pantalla de inicio de sesión. Como SEGUNDO factor es la contraseña que se pide después de una wallet u otro primer factor sin contraseña."
   },
   "authn.FIELDS.passkeyPrimary.label": {
-    "en": "2f59d674bec89e1d",
-    "text": "Llave de seguridad o llave de acceso (sin contraseña) — como primer factor"
+    "en": "c825f70e98df3fa4",
+    "text": "Llave de acceso (sin contraseña) — como primer factor"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Una credencial WebAuthn registrada en el rol principal, que inicia sesión sin contraseña."
+    "en": "a85fd3ef50432e75",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que la lista propia de una aplicación (appAuthnMechanism) diga otra cosa."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
-    "en": "62611e734d22b2fe",
-    "text": "Llave de seguridad (segundo factor) — como segundo factor"
+    "en": "4e99afea50969c29",
+    "text": "Llave de acceso (segundo factor) — como segundo factor"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Una credencial WebAuthn registrada en el rol mfa, que se pide después de un primer factor."
+    "en": "ea543723944fb410",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que la lista propia de una aplicación (appMfaMechanism) diga otra cosa."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Una contraseña en la pantalla de inicio de sesión. Como SEGUNDO factor es la contraseña que se pide después de una wallet u otro primer factor sin contraseña."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Una credencial WebAuthn registrada en el rol principal, que inicia sesión sin contraseña."
+    "en": "a85fd3ef50432e75",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que la lista propia de una aplicación (appAuthnMechanism) diga otra cosa."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Una credencial WebAuthn registrada en el rol mfa, que se pide después de un primer factor."
+    "en": "ea543723944fb410",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que la lista propia de una aplicación (appMfaMechanism) diga otra cosa."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -588,20 +588,20 @@
     "text": "Una contraseña en la pantalla de inicio de sesión. Como SEGUNDO factor es la contraseña que se pide después de una wallet u otro primer factor sin contraseña."
   },
   "authn.MECHANISMS.passkey.label": {
-    "en": "84a03e8c438f4cfa",
-    "text": "Llave de seguridad o llave de acceso (sin contraseña)"
+    "en": "b6471f84ac5db5d7",
+    "text": "Llave de acceso (sin contraseña)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Una credencial WebAuthn registrada en el rol principal, que inicia sesión sin contraseña."
+    "en": "a85fd3ef50432e75",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que la lista propia de una aplicación (appAuthnMechanism) diga otra cosa."
   },
   "authn.MECHANISMS.securityKey.label": {
-    "en": "f7b41914800bf87a",
-    "text": "Llave de seguridad (segundo factor)"
+    "en": "7474add07b92939d",
+    "text": "Llave de acceso (segundo factor)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Una credencial WebAuthn registrada en el rol mfa, que se pide después de un primer factor."
+    "en": "ea543723944fb410",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que la lista propia de una aplicación (appMfaMechanism) diga otra cosa."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1800,8 +1800,8 @@
     "text": "Actividad"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
+    "en": "93b1483272fe7b46",
+    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico se le pide registrar una llave de acceso poscuántica (ML-DSA). Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1834,14 +1834,6 @@
   "postLogin.FIELDS.noPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave: no se le pide nada. invite: se le pide registrar una llave de acceso poscuántica, y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que haya pasado el plazo concedido."
-  },
-  "postLogin.FIELDS.noPasskeyRole.label": {
-    "en": "c8ec4e469545eb61",
-    "text": "Registrada por una persona sin llave de acceso como"
-  },
-  "postLogin.FIELDS.noPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary: un inicio de sesión sin contraseña. mfa: un segundo factor."
   },
   "postLogin.FIELDS.method.label": {
     "en": "e5beebb729b34546",
@@ -1876,8 +1868,8 @@
     "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a cada persona a la que alcanza este perfil y que tiene pendiente la actividad siguiente se le pide hacerla después de iniciar sesión, antes de devolverla a la aplicación. Un perfil con nombre con esto desactivado EXCLUYE a los miembros de sus grupos."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico como inicio de sesión principal, o como segundo factor, se le pide registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel. Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
+    "en": "93b1483272fe7b46",
+    "text": "Lo que se pide. pqc-passkey-migration: a una persona que tiene una llave de acceso creada con un algoritmo clásico se le pide registrar una llave de acceso poscuántica (ML-DSA). Si la llave de acceso clásica se sustituye en su lugar o se conserva a su lado lo dice el método (más abajo). No se pide nada a nadie donde el dominio no ofrece ningún algoritmo ML-DSA en el registro (el valor predeterminado de webauthn.algorithms sí lo ofrece)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",
@@ -1890,10 +1882,6 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave: no se le pide nada. invite: se le pide registrar una llave de acceso poscuántica, y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que haya pasado el plazo concedido."
-  },
-  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary: un inicio de sesión sin contraseña. mfa: un segundo factor."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
     "en": "b028cf1ddda71c5d",
@@ -1919,6 +1907,10 @@
     "en": "93538e6b201100c5",
     "text": "Para qué sirve el perfil, para la siguiente persona."
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b56a731743cd58be",
+    "text": "Retirado (#1135): el papel en el que una persona sin llave de acceso registraba una. Una llave de acceso no tiene papel; nada lo lee."
+  },
   "postLogin.SELECTORS.selectGroups.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "Los grupos (cn o DN) a cuyos miembros se aplica un perfil posterior al inicio de sesión con nombre."
@@ -1932,8 +1924,8 @@
     "text": "no se pide nada después de iniciar sesión a nadie a quien alcance este perfil"
   },
   "postLogin.sentences.pqcMigration": {
-    "en": "b8a2588126ddb520",
-    "text": "a una persona que tiene una llave de acceso clásica se le pide, después de iniciar sesión, registrar una llave de acceso poscuántica (ML-DSA) en el mismo papel"
+    "en": "f5a41f8e1962f73d",
+    "text": "a una persona que tiene una llave de acceso clásica se le pide, después de iniciar sesión, registrar una llave de acceso poscuántica (ML-DSA)"
   },
   "postLogin.sentences.methodUpgrade": {
     "en": "70079684df361766",
@@ -1976,24 +1968,16 @@
     "text": "no se pide nada a una persona que no tiene llave de acceso"
   },
   "postLogin.sentences.noPasskeyInvite": {
-    "en": "d5a5abd3c3057413",
-    "text": "a una persona que no tiene llave de acceso se la invita a registrar una llave de acceso poscuántica como {{role}}, y siempre puede omitirlo"
+    "en": "f1e2e6217d3d9180",
+    "text": "a una persona que no tiene llave de acceso se la invita a registrar una llave de acceso poscuántica, y siempre puede omitirlo"
   },
   "postLogin.sentences.noPasskeyRequire": {
-    "en": "7779655caba632c8",
-    "text": "a una persona que no tiene llave de acceso se le pide registrar una llave de acceso poscuántica como {{role}}, y puede omitirlo hasta que termine el periodo de gracia"
+    "en": "988144ad40324fa8",
+    "text": "a una persona que no tiene llave de acceso se le pide registrar una llave de acceso poscuántica, y puede omitirlo hasta que termine el periodo de gracia"
   },
   "postLogin.sentences.appliesTo": {
     "en": "ce39627aa02b361d",
     "text": "se aplica a los miembros de {{list}}, con precedencia {{precedence}}"
-  },
-  "postLogin.sentences.param.primary": {
-    "en": "ce71e9dc4bf4e5fa",
-    "text": "su inicio de sesión principal"
-  },
-  "postLogin.sentences.param.mfa": {
-    "en": "8e2d5e1b1feaf31c",
-    "text": "segundo factor"
   },
   "postLogin.sentences.param.noGroup": {
     "en": "4a00d86d0ff8747a",

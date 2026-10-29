@@ -217,14 +217,25 @@ const MECHANISMS: Mechanism[] = [
     what: 'A password on the sign-in screen. As a SECOND factor it is the ' +
           'password asked for after a wallet or other passwordless first ' +
           'factor.' },
-  { id: 'passkey', label: 'Security key or passkey (passwordless)',
+  // TWO ROWS AND ONE KIND OF KEY (#1135). Until then `passkey` was a key
+  // enrolled in the `primary` role and `securityKey` one in the `mfa` role.
+  // A key has no role now: both rows are asked at each sign-in, of every key
+  // a person holds (`webauthnPolicy.useAllowed()`), and a key may be enrolled
+  // while either accepts one. The ids are stored attribute names and stay.
+  { id: 'passkey', label: 'Passkey (passwordless)',
     primary: true, secondFactor: null,
-    what: 'A WebAuthn credential enrolled in the primary role, signing in ' +
-          'with no password.' },
-  { id: 'securityKey', label: 'Security key (second factor)', primary: null,
+    what: 'Any passkey (WebAuthn credential) the person holds, signing them ' +
+          'in with no password. A passkey has no role: this row says, at ' +
+          'each sign-in, whether any of them may be a first factor in this ' +
+          'realm, unless an application\'s own list (appAuthnMechanism) ' +
+          'says otherwise.' },
+  { id: 'securityKey', label: 'Passkey (second factor)', primary: null,
     secondFactor: true,
-    what: 'A WebAuthn credential enrolled in the mfa role, asked for after a ' +
-          'first factor.' },
+    what: 'Any passkey (WebAuthn credential) the person holds, asked for ' +
+          'after a first factor. A passkey has no role: this row says, at ' +
+          'each sign-in, whether any of them may be a second factor in ' +
+          'this realm, unless an application\'s own list (appMfaMechanism) ' +
+          'says otherwise.' },
   { id: 'totp', label: 'Authenticator app (TOTP)', primary: null,
     secondFactor: true,
     what: 'An RFC 6238 one-time code. Never a first factor: this service ' +

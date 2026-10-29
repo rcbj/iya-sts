@@ -300,20 +300,20 @@
     "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
   },
   "authn.FIELDS.passkeyPrimary.label": {
-    "en": "2f59d674bec89e1d",
-    "text": "Säkerhetsnyckel eller nyckel (lösenordsfri) — som första faktor"
+    "en": "c825f70e98df3fa4",
+    "text": "Nyckel (lösenordsfri) — som första faktor"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "En WebAuthn-inloggningsuppgift registrerad i den primära rollen, som loggar in utan lösenord."
+    "en": "a85fd3ef50432e75",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte en applikations egen lista (appAuthnMechanism) säger något annat."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
-    "en": "62611e734d22b2fe",
-    "text": "Säkerhetsnyckel (andra faktor) — som andra faktor"
+    "en": "4e99afea50969c29",
+    "text": "Nyckel (andra faktor) — som andra faktor"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "En WebAuthn-inloggningsuppgift registrerad i mfa-rollen, som efterfrågas efter en första faktor."
+    "en": "ea543723944fb410",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte en applikations egen lista (appMfaMechanism) säger något annat."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "En WebAuthn-inloggningsuppgift registrerad i den primära rollen, som loggar in utan lösenord."
+    "en": "a85fd3ef50432e75",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte en applikations egen lista (appAuthnMechanism) säger något annat."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "En WebAuthn-inloggningsuppgift registrerad i mfa-rollen, som efterfrågas efter en första faktor."
+    "en": "ea543723944fb410",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte en applikations egen lista (appMfaMechanism) säger något annat."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -588,20 +588,20 @@
     "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
   },
   "authn.MECHANISMS.passkey.label": {
-    "en": "84a03e8c438f4cfa",
-    "text": "Säkerhetsnyckel eller nyckel (lösenordsfri)"
+    "en": "b6471f84ac5db5d7",
+    "text": "Nyckel (lösenordsfri)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "fa5464ced243d64c",
-    "text": "En WebAuthn-inloggningsuppgift registrerad i den primära rollen, som loggar in utan lösenord."
+    "en": "a85fd3ef50432e75",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte en applikations egen lista (appAuthnMechanism) säger något annat."
   },
   "authn.MECHANISMS.securityKey.label": {
-    "en": "f7b41914800bf87a",
-    "text": "Säkerhetsnyckel (andra faktor)"
+    "en": "7474add07b92939d",
+    "text": "Nyckel (andra faktor)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "En WebAuthn-inloggningsuppgift registrerad i mfa-rollen, som efterfrågas efter en första faktor."
+    "en": "ea543723944fb410",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte en applikations egen lista (appMfaMechanism) säger något annat."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1800,8 +1800,8 @@
     "text": "Aktivitet"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+    "en": "93b1483272fe7b46",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm ombeds registrera en postkvantnyckel (ML-DSA). Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1834,14 +1834,6 @@
   "postLogin.FIELDS.noPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
-  },
-  "postLogin.FIELDS.noPasskeyRole.label": {
-    "en": "c8ec4e469545eb61",
-    "text": "Registreras av en person utan nyckel som"
-  },
-  "postLogin.FIELDS.noPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary: en lösenordsfri inloggning. mfa: en andra faktor."
   },
   "postLogin.FIELDS.method.label": {
     "en": "e5beebb729b34546",
@@ -1876,8 +1868,8 @@
     "text": "AVSTÄNGD SOM STANDARD. Påslagen ombeds varje person som profilen når och som står i tur för aktiviteten nedan att utföra den efter inloggningen, innan den skickas tillbaka till programmet. En namngiven profil där detta är avstängt UNDANTAR medlemmarna i dess grupper."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm som sin primära inloggning, eller som andra faktor, ombeds registrera en postkvantnyckel (ML-DSA) i samma roll. Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
+    "en": "93b1483272fe7b46",
+    "text": "Vad som efterfrågas. pqc-passkey-migration: en person som har en nyckel skapad med en klassisk algoritm ombeds registrera en postkvantnyckel (ML-DSA). Om den klassiska nyckeln ersätts på plats eller behålls bredvid avgörs av metoden (nedan). Ingen ombeds något där sfären inte erbjuder någon ML-DSA-algoritm vid registrering (standardvärdet för webauthn.algorithms gör det)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",
@@ -1890,10 +1882,6 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: ombeds, och får hoppa över det bara tills den tilldelade tiden har gått."
-  },
-  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary: en lösenordsfri inloggning. mfa: en andra faktor."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
     "en": "b028cf1ddda71c5d",
@@ -1919,6 +1907,10 @@
     "en": "93538e6b201100c5",
     "text": "Vad profilen är till för, för nästa person."
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b56a731743cd58be",
+    "text": "Utgången (#1135): rollen som en person utan nyckel registrerade en i. En nyckel har ingen roll; inget läser den."
+  },
   "postLogin.SELECTORS.selectGroups.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "Grupperna (cn eller DN) vars medlemmar en namngiven profil för aktivitet efter inloggning gäller för."
@@ -1932,8 +1924,8 @@
     "text": "ingen som profilen når ombeds något efter inloggningen"
   },
   "postLogin.sentences.pqcMigration": {
-    "en": "b8a2588126ddb520",
-    "text": "en person som har en klassisk nyckel ombeds efter inloggningen att registrera en postkvantnyckel (ML-DSA) i samma roll"
+    "en": "f5a41f8e1962f73d",
+    "text": "en person som har en klassisk nyckel ombeds, efter inloggning, registrera en postkvantnyckel (ML-DSA)"
   },
   "postLogin.sentences.methodUpgrade": {
     "en": "70079684df361766",
@@ -1976,24 +1968,16 @@
     "text": "en person utan nyckel tillfrågas inte"
   },
   "postLogin.sentences.noPasskeyInvite": {
-    "en": "d5a5abd3c3057413",
-    "text": "en person utan nyckel bjuds in att registrera en postkvantnyckel som {{role}}, och får alltid hoppa över det"
+    "en": "f1e2e6217d3d9180",
+    "text": "en person utan nyckel bjuds in att registrera en postkvantnyckel, och får alltid hoppa över det"
   },
   "postLogin.sentences.noPasskeyRequire": {
-    "en": "7779655caba632c8",
-    "text": "en person utan nyckel ombeds registrera en postkvantnyckel som {{role}}, och får hoppa över det tills respitperioden tar slut"
+    "en": "988144ad40324fa8",
+    "text": "en person utan nyckel ombeds registrera en postkvantnyckel, och får hoppa över det tills respitperioden är slut"
   },
   "postLogin.sentences.appliesTo": {
     "en": "ce39627aa02b361d",
     "text": "gäller för medlemmarna i {{list}}, med prioritet {{precedence}}"
-  },
-  "postLogin.sentences.param.primary": {
-    "en": "ce71e9dc4bf4e5fa",
-    "text": "sin primära inloggning"
-  },
-  "postLogin.sentences.param.mfa": {
-    "en": "8e2d5e1b1feaf31c",
-    "text": "andra faktor"
   },
   "postLogin.sentences.param.noGroup": {
     "en": "4a00d86d0ff8747a",

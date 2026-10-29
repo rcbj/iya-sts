@@ -1974,6 +1974,18 @@ names the realm the call was made in. **`reset-password` answers `password` and
 `issue-password-reset` answers `resetUrl` in the JSON body, once** — neither is
 retrievable afterwards, and neither is in the audit row.
 
+**Since #1135 a passkey has no role**, and the two removals say so:
+`disable-primary-keys` (its name kept) removes every passkey and
+`disable-mfa` the authenticator app, the recovery codes and every passkey;
+both are refused (STS-AUTHN-0161) where the person has no password and a
+passkey is their way in. `begin-passkey-enrolment` still ACCEPTS a `role`
+and ignores it, and `savePostLoginPolicy` still accepts `noPasskeyRole`
+and ignores it — each declared in its schema as ignored, because
+`additionalProperties: false` would otherwise refuse a body written before,
+and the vendored protocol jobs must never be edited. No answer carries a
+key's `role` any more; `primaryKeys` and `mfaKeys` on the user and MFA
+views are the same keys counted by what the realm lets a key do.
+
 ## WHO MAY ACT FOR WHOM (#108, 2026-09-23)
 
 The delegation policy for WS-Trust and RFC 8693 (`../common/CLAUDE.md`, rule

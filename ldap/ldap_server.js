@@ -12028,8 +12028,10 @@ function anybodyHoldsACredential() {
 //
 // MULTI-VALUED, because a person may hold several — a laptop and a phone is the
 // ordinary case and is why WebAuthn has a credential id at all. Each value is
-// one JSON record carrying the credential id, the public key, the signature
-// counter and the ROLE (primary or mfa).
+// one JSON record carrying the credential id, the public key and the
+// signature counter. Until #1135 it carried a ROLE (primary or mfa) as well; a
+// value written then may still hold one, and `common/credentials.ts` drops it
+// as the value becomes a key, so no reader here or there sees it.
 //
 // **THE PUBLIC KEY IS NOT HASHED AND MUST NOT BE.** That is the one place this
 // departs from `userPassword` beside it: a WebAuthn public key is published by
@@ -14846,10 +14848,11 @@ function censusOfEntry(stored) {
 //     names — `common/credentials.ts` names them, since what an enrolment
 //     is decided there — each handed over RAW, exactly as
 //     `credentialCensus()` hands a named person over, for that file to
-//     interpret by its own rules (key roles, the sealed TOTP verdict, the
-//     emailed factor under the realm's policy). In a windowed process they
-//     are the store's holders (`holders()`, the `attr_names` probe), read
-//     back through the window; in memory the same pass collects them.
+//     interpret by its own rules (what the keys count as, the sealed TOTP
+//     verdict, the emailed factor under the realm's policy). In a windowed
+//     process they are the store's holders (`holders()`, the `attr_names`
+//     probe), read back through the window; in memory the same pass collects
+//     them.
 //
 // So the store reads O(holders) entries and counts the rest, and the memory
 // pass is O(people in the realm) — **a walk, said here**: the in-memory

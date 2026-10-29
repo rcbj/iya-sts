@@ -469,17 +469,20 @@ class UsersPage {
 
   // WHAT THIS PERSON CAN ACTUALLY GET IN WITH, which is a different question
   // from the Second factor column beside it and is the one an operator asks
-  // first. A second factor is never a way in on its own — neither a one-time
-  // code nor an `mfa` key — so a person with an entry, no password and no
-  // `primary` key cannot sign in at all however much is enrolled on them. That
+  // first. A second factor is never a way in on its own, so a person with an
+  // entry, no password and no passkey the realm lets sign them in on its own
+  // cannot sign in at all however much is enrolled on them. (Until #1135 that
+  // was "no `primary` key"; a key has no role since, and `primaryKeys` is
+  // every key they hold where the realm lets a key be a way in.) That
   // state is the ordinary one for somebody provisioned and not yet activated,
   // and saying "none" plainly is what sends the reader to the activation link
   // — offered when a person is created, and issued for an existing person by
   // `POST /admin-api/users/issue-activation` alone (their row has no button
   // for it).
   /**
-   * Draws what a person can sign in with (a password and primary security
-   * keys), or "nothing yet" when they hold neither.
+   * Draws what a person can sign in with (a password, and passkeys where the
+   * realm lets one sign somebody in on its own), or "nothing yet" when they
+   * hold neither.
    *
    * @param t - the page's translator
    * @param factors - the person's credential facts, or null when unknown
@@ -496,8 +499,8 @@ class UsersPage {
     }
     if (factors.primaryKeys) {
       parts.push(t.text(factors.primaryKeys > 1
-        ? 'consoleUsers.credentialCell.primaryKeys'
-        : 'consoleUsers.credentialCell.primaryKey',
+        ? 'consoleUsers.credentialCell.passkeys'
+        : 'consoleUsers.credentialCell.passkey',
         { count: factors.primaryKeys }));
     }
     if (!parts.length) {
@@ -514,7 +517,7 @@ class UsersPage {
   // shared cell here is one: this one carries the `unreadable` state, and a
   // second copy of that branch would be the copy that forgot it.
   /**
-   * Draws a person's second factors (security keys and authenticator app),
+   * Draws a person's second factors (passkeys and authenticator app),
    * marking an enrolment this process cannot read.
    *
    * @param t - the page's translator
@@ -532,12 +535,19 @@ class UsersPage {
     }
     // Each part is markup already (the cell joins them unescaped, as it
     // always did), so the words are drawn with t.html.
+    // THE KEYS ARE COUNTED ONCE ON A ROW (#1135): a key has no role, so the
+    // keys that answer the second step are the same keys the Sign in with
+    // column counts where the realm lets a key be a way in. Counted there,
+    // they are only named here; counted nowhere else (a realm where a key
+    // is only ever a second factor), they are counted here.
     const parts = [];
     if (factors.mfaKeys) {
-      parts.push(t.html(factors.mfaKeys > 1
-        ? 'consoleUsers.secondFactorCell.securityKeys'
-        : 'consoleUsers.secondFactorCell.securityKey',
-        { count: factors.mfaKeys }));
+      parts.push(factors.primaryKeys
+        ? t.html('consoleUsers.secondFactorCell.passkeyNamed')
+        : t.html(factors.mfaKeys > 1
+          ? 'consoleUsers.secondFactorCell.passkeys'
+          : 'consoleUsers.secondFactorCell.passkey',
+          { count: factors.mfaKeys }));
     }
     if (factors.totp) {
       parts.push(factors.totpUsable
@@ -1712,10 +1722,12 @@ class UsersPage {
     const totpLive = data.totp;
     const keyLive = data.webauthn;
     const recoveryLive = data.recovery;
-    const mfaKeys = (mech.keys || []).filter(function (
-        one) { return one.role === 'mfa'; });
-    const primaryKeys = (mech.keys || []).filter(function (
-        one) { return one.role === 'primary'; });
+    // EVERY KEY, IN ONE LIST (#1135). Until then the keys were split by
+    // their stored role, `mfa` and `primary`; a key carries none now, and
+    // whether one may sign them in on its own or answer the second step is
+    // the realm's to say at each sign-in — `mech.primaryKeys` and
+    // `mech.mfaKeys` are the same keys counted by those uses.
+    const allKeys = (mech.keys || []).slice();
     const carryBack = '<input type="hidden" name="back" value="' +
                       kit.esc(back) +
                       '"><input ' +
@@ -1723,7 +1735,8 @@ class UsersPage {
 
     // WHAT THEY CAN GET IN WITH, first and on its own, because it is the
     // question underneath the other two: a person with no password and no
-    // primary key cannot sign in at all, however much is enrolled on them, and
+    // passkey the realm lets sign them in cannot sign in at all, however
+    // much is enrolled on them, and
     // an operator reading a long list of second factors on such an account
     // would otherwise draw exactly the wrong conclusion.
     // The second factor the sign-in screen asks for is one word of a
@@ -1739,10 +1752,12 @@ class UsersPage {
         : '<span class="state-none">' +
           t.html('consoleUsers.secondFactorCell.none') + '</span>') +
       '</td></tr>' +
-      '<tr><th>' + t.html('consoleUsers.mfaSection.primaryKey') +
-      '</th><td>' + (primaryKeys.length
-        ? '<span class="state-valid">' + kit.esc(String(primaryKeys.length)) +
-          '</span>' + t.html('consoleUsers.mfaSection.primaryKeyNote')
+      '<tr><th>' + t.html('consoleUsers.mfaSection.passkeysHeld') +
+      '</th><td>' + (allKeys.length
+        ? '<span class="state-valid">' + kit.esc(String(allKeys.length)) +
+          '</span>' + (mech.primaryKeys > 0
+            ? t.html('consoleUsers.mfaSection.passkeysNote')
+            : t.html('consoleUsers.mfaSection.passkeysNotWayIn'))
         : '<span class="state-none">' +
           t.html('consoleUsers.secondFactorCell.none') + '</span>') +
       '</td></tr>' +
@@ -1897,15 +1912,12 @@ class UsersPage {
           : '') + '</td>' +
         '<td>' + kit.esc(one.group === 'security-key'
           ? t.text('consoleUsers.mfaSection.onSecurityKey')
-          : t.text('consoleUsers.mfaSection.onDevices')) + '</td>' +
-        '<td>' + (one.role === 'primary'
-          ? '<span class="state-valid" title="' +
-            kit.esc(t.text('consoleUsers.mfaSection.primaryTitle')) + '">' +
-            t.html('consoleUsers.mfaSection.primary') + '</span>'
-          : t.html('consoleUsers.mfaSection.secondFactor')) +
+          : t.text('consoleUsers.mfaSection.onDevices')) +
         // WHETHER IT SIGNS IN WITH NO USERNAME (#474), from the view, whose
-        // sentence is drawn as it comes after the translated lead.
-        (one.role === 'primary' && one.withoutUsername
+        // sentence is drawn as it comes after the translated lead. Under
+        // the device grouping since #1135, when the Role column it sat in
+        // went: a key has no role, and this is about the authenticator.
+        (one.withoutUsername
           ? '<div class="note">' +
             kit.esc(t.text('consoleUsers.mfaSection.withoutUsername',
                            { text: one.withoutUsername.text })) +
@@ -1946,9 +1958,7 @@ class UsersPage {
             '<input type="hidden" name="credentialId" value="' +
             kit.esc(one.credentialId || '') + '">' + carryBack +
             '<button class="danger" title="' +
-            kit.esc(one.role === 'primary'
-              ? t.text('consoleUsers.mfaSection.removePrimaryTitle')
-              : t.text('consoleUsers.mfaSection.removeTitle')) + '">' +
+            kit.esc(t.text('consoleUsers.mfaSection.removeKeyTitle')) + '">' +
             t.html('consoleUsers.mfaSection.remove') + '</button></form>' +
             (keyLive.enabled && !one.algorithm.postQuantum
               ? '<form method="post" action="/admin/users" ' +
@@ -1964,13 +1974,13 @@ class UsersPage {
                 '</button></form>' : '')
           : '') + '</td></tr>';
     };
-    const allKeys = mfaKeys.concat(primaryKeys);
+    // NO ROLE IS SENT (#1135): the enrolment asks nothing but the key.
     const adminEnrol = state.write && keyLive.enabled
       ? '<form method="post" action="/admin/users" ' +
         'data-admin-passkey-enrolment="true"><input type="hidden" ' +
         'name="action" value="begin-passkey-enrolment">' +
         '<input type="hidden" name="user" value="' + kit.esc(key) +
-        '"><input type="hidden" name="role" value="mfa">' +
+        '">' +
         '<button title="' + kit.esc(t.text('consoleUsers.mfaSection.enrolTitle')) +
         '">' + t.html('consoleUsers.mfaSection.enrol') +
         '</button><p class="note">' +
@@ -1980,7 +1990,7 @@ class UsersPage {
       (allKeys.length
         ? '<table><tr><th>' + t.html('consoleUsers.mfaSection.thName') +
           '</th><th>' + t.html('consoleUsers.mfaSection.thWhere') +
-          '</th><th>' + t.html('consoleUsers.mfaSection.thRole') + '</th>' +
+          '</th>' +
           '<th>' + t.html('consoleUsers.mfaSection.thCredentialId') +
           '</th>' +
           '<th class="num">' + t.html('consoleUsers.mfaSection.thSignCount') +
@@ -2681,16 +2691,18 @@ class UsersPage {
   // forty people could not have: this section can say what the enrolment IS —
   // which digest, how many digits, how long a step, when it was set up, when it
   // was last used, whether the secret is sealed — and it can list a person's
-  // security keys one at a time with the role each is in.
+  // passkeys one at a time.
   //
   // ---------------------------------------------------------------------------
   // TWO MECHANISMS, AND THE WEBAUTHN HALF IS THE ONE THAT NEEDS EXPLAINING.
   //
-  // A WebAuthn key is here only where it is a SECOND FACTOR — the `mfa` role. A
-  // `primary` key is a way IN rather than a second factor, so it is reported
-  // under what this person can sign in with and not as an MFA credential.
-  // `credentials.js`'s ROLES table is what tells them apart, and this section
-  // reads it rather than deciding.
+  // A PASSKEY HAS NO ROLE SINCE #1135. Until then each key was enrolled
+  // `primary` (a way IN) or `mfa` (a second factor), and this section listed
+  // them apart. Every key is listed together now, and whether a key may sign
+  // somebody in on its own or answer the second step is the realm's
+  // `webauthn.primaryAllowed` / `webauthn.mfaAllowed` and authentication
+  // policy, asked at each sign-in (`webauthnPolicy.useAllowed()`) — the
+  // section says which, and does not decide.
   //
   // ---------------------------------------------------------------------------
   // THE TWO REMOVALS ARE NOT THE SAME ACT AND THE BUTTONS SAY SO.
@@ -3968,7 +3980,18 @@ class UsersPage {
     const requirement = factors.mfaRequirement ||
       { required: false, byUser: false, byRealm: false };
     const link = factors.passwordResetLink;
-    const holdsSecond = factors.totp || factors.mfaKeys > 0 ||
+    // EVERY KEY THEY HOLD (#1135): both removals below take all of them,
+    // so it is the keys held that decide what is offered, not the keys
+    // counted by a use. `keys` is the detail's list; a caller without it
+    // falls back to the larger use count, which is the same number
+    // wherever either use is allowed.
+    const keysHeld = Array.isArray(factors.keys) ? factors.keys.length
+      : Math.max(factors.primaryKeys || 0, factors.mfaKeys || 0);
+    // The keys are their way in: no password, and the realm lets a key sign
+    // somebody in on its own — what STS-AUTHN-0161 refuses both removals.
+    const keysAreWayIn = keysHeld > 0 && !factors.password &&
+      factors.primaryKeys > 0;
+    const holdsSecond = factors.totp || keysHeld > 0 ||
       !!(factors.backupCodes && factors.backupCodes.present);
     const state = '<table class="key"><tr><th>' +
       t.html('consoleUsers.mfaSection.thWhat') + '</th><th>' +
@@ -4011,7 +4034,7 @@ class UsersPage {
       '</th><td>' + (factors.primaryKeys > 0
         ? '<span class="state-valid">' + kit.esc(String(factors.primaryKeys)) +
           '</span>' +
-          t.html('consoleUsers.controls.primaryKeys')
+          t.html('consoleUsers.controls.passkeysCount')
         : '<span class="state-none">' +
           t.html('consoleUsers.secondFactorCell.none') + '</span>') +
       '</td></tr>' +
@@ -4080,11 +4103,11 @@ class UsersPage {
              undefined, t));
     const passkeys = '<h3>' +
       t.html('consoleUsers.controls.passwordlessHeading') +
-      '</h3>' + (factors.primaryKeys > 0
-      ? (factors.password
+      '</h3>' + (keysHeld > 0
+      ? (!keysAreWayIn
           ? kit.note(t.html(
               'consoleUsers.controls.disableKeysNote',
-              { count: String(factors.primaryKeys) })) +
+              { count: String(keysHeld) })) +
             form('disable-primary-keys',
                  t.html('consoleUsers.controls.disableKeys'),
                  t.text(
@@ -4095,12 +4118,15 @@ class UsersPage {
       : kit.note(t.html('consoleUsers.controls.noKeys')));
     const mfa = '<h3>' + t.html('consoleUsers.detail.tabFactors') + '</h3>' +
       (holdsSecond
-      ? kit.note(t.html('consoleUsers.controls.disableMfaNote',
-                        { required: requirement.required ? 'yes' : 'no' })) +
-        form('disable-mfa',
-             t.html('consoleUsers.controls.disableMfa'),
-             t.text('consoleUsers.controls.disableMfaTitle'),
-             true)
+      ? (keysAreWayIn
+          ? kit.warn(t.html('consoleUsers.controls.noPasswordMfa'))
+          : kit.note(t.html('consoleUsers.controls.disableMfaNote',
+                            { required: requirement.required ? 'yes'
+                                                             : 'no' })) +
+            form('disable-mfa',
+                 t.html('consoleUsers.controls.disableMfa'),
+                 t.text('consoleUsers.controls.disableMfaTitle'),
+                 true))
       : kit.note(t.html('consoleUsers.controls.noSecond'))) +
       (requirement.byUser
         ? kit.note(t.html('consoleUsers.controls.requiredOfThem')) +

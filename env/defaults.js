@@ -271,8 +271,8 @@ var config = {
     timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
     authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
     credProps: true,                                                                                                                                   // Ask for the credProps extension
-    primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
-    mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
+    primaryAllowed: true,                                                                                                                              // A passkey may sign in on its own
+    mfaAllowed: true,                                                                                                                                  // A passkey may be a SECOND factor
     maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },
 

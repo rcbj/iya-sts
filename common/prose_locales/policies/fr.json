@@ -300,20 +300,20 @@
     "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
   },
   "authn.FIELDS.passkeyPrimary.label": {
-    "en": "2f59d674bec89e1d",
-    "text": "Clé de sécurité ou clé d’accès (sans mot de passe) — comme premier facteur"
+    "en": "c825f70e98df3fa4",
+    "text": "Clé d’accès (sans mot de passe) — comme premier facteur"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Un identifiant WebAuthn enregistré dans le rôle principal, qui connecte sans mot de passe."
+    "en": "a85fd3ef50432e75",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si la liste propre d’une application (appAuthnMechanism) en dispose autrement."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
-    "en": "62611e734d22b2fe",
-    "text": "Clé de sécurité (second facteur) — comme second facteur"
+    "en": "4e99afea50969c29",
+    "text": "Clé d’accès (second facteur) — comme second facteur"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Un identifiant WebAuthn enregistré dans le rôle mfa, demandé après un premier facteur."
+    "en": "ea543723944fb410",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si la liste propre d’une application (appMfaMechanism) en dispose autrement."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Un identifiant WebAuthn enregistré dans le rôle principal, qui connecte sans mot de passe."
+    "en": "a85fd3ef50432e75",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si la liste propre d’une application (appAuthnMechanism) en dispose autrement."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Un identifiant WebAuthn enregistré dans le rôle mfa, demandé après un premier facteur."
+    "en": "ea543723944fb410",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si la liste propre d’une application (appMfaMechanism) en dispose autrement."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -588,20 +588,20 @@
     "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
   },
   "authn.MECHANISMS.passkey.label": {
-    "en": "84a03e8c438f4cfa",
-    "text": "Clé de sécurité ou clé d’accès (sans mot de passe)"
+    "en": "b6471f84ac5db5d7",
+    "text": "Clé d’accès (sans mot de passe)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Un identifiant WebAuthn enregistré dans le rôle principal, qui connecte sans mot de passe."
+    "en": "a85fd3ef50432e75",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si la liste propre d’une application (appAuthnMechanism) en dispose autrement."
   },
   "authn.MECHANISMS.securityKey.label": {
-    "en": "f7b41914800bf87a",
-    "text": "Clé de sécurité (second facteur)"
+    "en": "7474add07b92939d",
+    "text": "Clé d’accès (second facteur)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Un identifiant WebAuthn enregistré dans le rôle mfa, demandé après un premier facteur."
+    "en": "ea543723944fb410",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si la liste propre d’une application (appMfaMechanism) en dispose autrement."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1800,8 +1800,8 @@
     "text": "Activité"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. Le remplacement sur place de la clé d’accès classique, ou sa conservation à côté, dépend de la méthode (ci-dessous). Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
+    "en": "93b1483272fe7b46",
+    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique est invitée à enregistrer une clé d’accès post-quantique (ML-DSA). Le remplacement sur place de la clé d’accès classique, ou sa conservation à côté, dépend de la méthode (ci-dessous). Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1834,14 +1834,6 @@
   "postLogin.FIELDS.noPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave : rien n’est demandé. invite : invitée à enregistrer une clé d’accès post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à l’expiration du délai accordé."
-  },
-  "postLogin.FIELDS.noPasskeyRole.label": {
-    "en": "c8ec4e469545eb61",
-    "text": "Enregistrée par une personne sans clé d’accès comme"
-  },
-  "postLogin.FIELDS.noPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary : une connexion sans mot de passe. mfa : un second facteur."
   },
   "postLogin.FIELDS.method.label": {
     "en": "e5beebb729b34546",
@@ -1876,8 +1868,8 @@
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT les membres de ses groupes."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique comme connexion principale, ou comme second facteur, est invitée à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle. Le remplacement sur place de la clé d’accès classique, ou sa conservation à côté, dépend de la méthode (ci-dessous). Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
+    "en": "93b1483272fe7b46",
+    "text": "Ce qui est demandé. pqc-passkey-migration : une personne qui détient une clé d’accès créée avec un algorithme classique est invitée à enregistrer une clé d’accès post-quantique (ML-DSA). Le remplacement sur place de la clé d’accès classique, ou sa conservation à côté, dépend de la méthode (ci-dessous). Rien n’est demandé à personne là où le domaine ne propose aucun algorithme ML-DSA à l’enregistrement (la valeur par défaut de webauthn.algorithms en propose)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",
@@ -1890,10 +1882,6 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave : rien n’est demandé. invite : invitée à enregistrer une clé d’accès post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à l’expiration du délai accordé."
-  },
-  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary : une connexion sans mot de passe. mfa : un second facteur."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
     "en": "b028cf1ddda71c5d",
@@ -1919,6 +1907,10 @@
     "en": "93538e6b201100c5",
     "text": "À quoi sert le profil, pour la personne suivante."
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b56a731743cd58be",
+    "text": "Retiré (#1135) : le rôle dans lequel une personne sans clé d’accès en enregistrait une. Une clé d’accès n’a pas de rôle ; rien ne le lit."
+  },
   "postLogin.SELECTORS.selectGroups.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "Les groupes (cn ou DN) aux membres desquels s’applique un profil après connexion nommé."
@@ -1932,8 +1924,8 @@
     "text": "rien n’est demandé après la connexion aux personnes que ce profil atteint"
   },
   "postLogin.sentences.pqcMigration": {
-    "en": "b8a2588126ddb520",
-    "text": "une personne qui détient une clé d’accès classique est invitée, après s’être connectée, à enregistrer une clé d’accès post-quantique (ML-DSA) dans le même rôle"
+    "en": "f5a41f8e1962f73d",
+    "text": "une personne qui détient une clé d’accès classique est invitée, après sa connexion, à enregistrer une clé d’accès post-quantique (ML-DSA)"
   },
   "postLogin.sentences.methodUpgrade": {
     "en": "70079684df361766",
@@ -1976,24 +1968,16 @@
     "text": "rien n’est demandé à une personne qui ne détient aucune clé d’accès"
   },
   "postLogin.sentences.noPasskeyInvite": {
-    "en": "d5a5abd3c3057413",
-    "text": "une personne qui ne détient aucune clé d’accès est invitée à enregistrer une clé d’accès post-quantique comme {{role}}, et peut toujours l’ignorer"
+    "en": "f1e2e6217d3d9180",
+    "text": "une personne qui ne détient aucune clé d’accès est invitée à enregistrer une clé d’accès post-quantique, et peut toujours l’ignorer"
   },
   "postLogin.sentences.noPasskeyRequire": {
-    "en": "7779655caba632c8",
-    "text": "une personne qui ne détient aucune clé d’accès est priée d’enregistrer une clé d’accès post-quantique comme {{role}}, et peut l’ignorer jusqu’à la fin du délai de grâce"
+    "en": "988144ad40324fa8",
+    "text": "une personne qui ne détient aucune clé d’accès est invitée à enregistrer une clé d’accès post-quantique, et peut l’ignorer jusqu’à la fin du délai de grâce"
   },
   "postLogin.sentences.appliesTo": {
     "en": "ce39627aa02b361d",
     "text": "s’applique aux membres de {{list}}, avec la priorité {{precedence}}"
-  },
-  "postLogin.sentences.param.primary": {
-    "en": "ce71e9dc4bf4e5fa",
-    "text": "sa connexion principale"
-  },
-  "postLogin.sentences.param.mfa": {
-    "en": "8e2d5e1b1feaf31c",
-    "text": "second facteur"
   },
   "postLogin.sentences.param.noGroup": {
     "en": "4a00d86d0ff8747a",

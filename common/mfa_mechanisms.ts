@@ -13,7 +13,11 @@
 // factors its people may use — the authentication policy's second-factor
 // mechanisms (`common/authn_policy.ts`'s MECHANISMS, the ones that can take
 // that role): password, securityKey, totp, recoveryCode, emailCode,
-// emailLink, wallet. None listed leaves the realm's policy as it is. It is
+// emailLink, wallet. `securityKey` names EVERY passkey the person holds
+// alike since #1135 (until then, a key enrolled in the `mfa` role): a key
+// has no role, and this list, over the realm's policy, decides whether any
+// key may answer the second step for this application. None listed leaves
+// the realm's policy as it is. It is
 // `appAuthnMechanism`'s (#457) companion, and its four rules are rcbj's
 // (2026-10-07):
 //
@@ -45,7 +49,8 @@
 //
 //   * `webauthn` → securityKey, when a first factor precedes it (`pwd` or
 //     `pop` in the `amr`). A passkey on its own is a FIRST factor (#474) and
-//     gives none.
+//     gives none. Any key may be either since #1135; the event says which
+//     it was.
 //   * `totp` → totp; `backup-code` → recoveryCode.
 //   * `email-code` / `email-link` → emailCode / emailLink.
 //   * `password` → password (after a wallet); `wallet` → wallet (after a

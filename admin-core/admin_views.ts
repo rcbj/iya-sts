@@ -13306,11 +13306,12 @@ class AdminViews {
         return f.password && !f.mfaRequired;
       }),
       unreadable: counted(function (f) { return f.totp && !f.totpUsable; }),
-      // NOBODY CAN SIGN IN AS THEM. A person with an entry and no password and
-      // no primary key — the ordinary state of somebody provisioned and not yet
-      // activated, and the state an activation link exists to end. It is
-      // counted beside the second-factor tiles because it is the OTHER question
-      // an operator brings to a roster of people.
+      // NOBODY CAN SIGN IN AS THEM. A person with an entry, no password and
+      // no passkey the realm lets sign them in on its own — the ordinary
+      // state of somebody provisioned and not yet activated, and the state
+      // an activation link exists to end. It is counted beside the
+      // second-factor tiles because it is the OTHER question an operator
+      // brings to a roster of people.
       noCredential: counted(function (f, r) {
         return !f.usable && !r.isClient;
       })
@@ -15026,7 +15027,10 @@ class AdminViews {
       // holding `admin:read` is handed a working second factor.
       backupCodes: mech.backupCodes,
       keys: (mech.keys || []).map(function (one, index) {
-        return { credentialId: one.credentialId, role: one.role,
+        // NO `role` SINCE #1135: a key carries none, and the realm's
+        // settings decide at each sign-in how it may be used —
+        // `primaryKeys` and `mfaKeys` below are those uses, counted.
+        return { credentialId: one.credentialId,
                  label: one.label || null, signCount: one.signCount || 0,
                  enrolledAt: one.enrolledAt || 0,
                  // WHAT THE ATTESTATION PROVED (#105), the record

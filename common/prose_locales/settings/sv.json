@@ -1288,20 +1288,20 @@
     "text": "Skickar `extensions: { credProps: true }` vid registrering, vilket ber webbläsaren rapportera om autentiseringsuppgiften den skapade faktiskt är upptäckbar. Det är det enda sättet att ta reda på det: `residentKey: \"preferred\"` kan ge en eller inte, och inget i attesteringen säger vilket. Tjänsten REGISTRERAR svaret bredvid nyckeln och avgör ingenting utifrån det. Av är sättet att se vad en klient gör utan några tilläggsresultat alls."
   },
   "webauthn.primaryAllowed|label": {
-    "en": "babf8baa8c13cb1d",
-    "text": "Tillåt en nyckel som PRIMÄR autentiseringsuppgift"
+    "en": "0692ab5332b96080",
+    "text": "Tillåt en nyckel som FÖRSTA faktor (lösenordsfri)"
   },
   "webauthn.primaryAllowed|description": {
-    "en": "2922360bf8d031ec",
-    "text": "Om en säkerhetsnyckel får vara den ENDA autentiseringsuppgiften på ett konto — en lösenordslös inloggning, `amr [\"hwk\"]`. Att stänga av den låter nycklar fortsätta fungera som ANDRA faktor och vägrar den lösenordslösa vägen på inloggningsskärmen och valet `primary` i portalen. **Den inaktiverar inte en primär nyckel som någon redan har**, av samma skäl som för `webauthn.enabled` — och här finns en skarpare kant: någon vars enda autentiseringsuppgift är en primär nyckel skulle låsas ute från sitt eget konto av en operatör som slår om en brytare, vilket inte är något en inställning ska kunna göra."
+    "en": "b7a0b2eefdb42a05",
+    "text": "Om en nyckel får vara en första faktor i den här sfären — en lösenordsfri inloggning, `amr [\"hwk\"]` — om inte en applikations egen lista (`appAuthnMechanism`) säger något annat. Det är vad sfären stöder, bredvid autentiseringspolicyns nyckelrad, och frågas vid varje inloggning, lika för varje nyckel en person har: en nyckel har ingen roll (#1135), så detta avgör vad var och en får göra, inte vad den registrerades som. Avstängd försvinner den lösenordsfria vägen från inloggningsskärmen och en nyckel svarar bara på det andra steget efter ett lösenord, där `webauthn.mfaAllowed` tillåter det. **Avstängd kan den vars enda autentiseringsuppgift är en nyckel inte logga in** förrän de får ett lösenord (en återställningslänk, till exempel): fram till #1135 nekade den här brytaren bara en registrering, och en nyckel de redan hade fortsatte att logga in dem. En nyckel får registreras medan denna eller `webauthn.mfaAllowed` är på; med båda avstängda nekas registreringen."
   },
   "webauthn.mfaAllowed|label": {
-    "en": "662710b8b41f9e04",
+    "en": "ca70f14ff60f2006",
     "text": "Tillåt en nyckel som ANDRA faktor"
   },
   "webauthn.mfaAllowed|description": {
-    "en": "9c50c02bf162b58c",
-    "text": "Om en säkerhetsnyckel får registreras som andra faktor bredvid ett lösenord. Av är den återstående andra faktorn autentiseringsappen (autentiseringspolicyns TOTP-rad), och en driftsättning med båda avstängda erbjuder ingen andra faktor alls — vilket är en konfiguration som stöds och vad tjänsten gjorde innan någon av dem fanns. **En registrerad `mfa`-nyckel fortsätter att krävas på inloggningsskärmen**, eftersom kontot fortfarande är konfigurerat för två faktorer; se `webauthn.enabled`."
+    "en": "37b9c4c2beaade6e",
+    "text": "Om en nyckel får vara en andra faktor i den här sfären, efter ett lösenord eller en annan första faktor, om inte en applikations egen lista (`appMfaMechanism`) säger något annat. Det är vad sfären stöder, bredvid autentiseringspolicyns rad för nyckel som andra faktor, och frågas vid varje inloggning, lika för varje nyckel en person har: en nyckel har ingen roll (#1135). Avstängd är den återstående andra faktorn autentiseringsappen (TOTP-raden i autentiseringspolicyn), och en driftsättning med båda avstängda erbjuder ingen andra faktor alls — vilket är en konfiguration som stöds och är vad den här tjänsten gjorde innan någon av dem fanns. **Avstängd svarar ingen nyckel på det andra steget**, och en person vars enda andra faktor är en nyckel har ingen, sett från inloggningsskärmen. En nyckel får registreras medan denna eller `webauthn.primaryAllowed` är på; med båda avstängda nekas registreringen."
   },
   "webauthn.maxKeysPerPerson|label": {
     "en": "420a47f86dc03485",

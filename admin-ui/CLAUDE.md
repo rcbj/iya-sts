@@ -6864,11 +6864,26 @@ things are this console's.
   a password is held, whether it must be changed, whether a reset link is
   outstanding (and until when), how many keys can sign in on their own, and
   whether a second factor is required (by the account, by the realm, or both).
-  **Disable passkeys** is drawn only while the person holds a primary key AND a
-  password — without the password it would lock them out, so the section warns
-  instead; **Disable all MFA** only while a second factor is held; **Require**
-  and **Stop requiring** swap on the account flag. Everything is for Admin
-  Write only, the rule the two sections above follow.
+  **Remove every passkey** (`disable-primary-keys`, its name kept) is drawn
+  while the person holds any passkey, and **Disable all MFA** (`disable-mfa`)
+  while a second factor is held; where they have no password and the realm
+  lets a passkey sign somebody in on its own, the section warns instead of
+  drawing either, because both take every key and both are refused there
+  (STS-AUTHN-0161). **Require** and **Stop requiring** swap on the account
+  flag. Everything is for Admin Write only, the rule the two sections above
+  follow.
+* **A PASSKEY HAS NO ROLE SINCE #1135**, so nothing on this page tells a
+  passwordless key from a second-factor one. Until then the Second factors
+  section listed the keys in two groups with a Role column, the list counted
+  "primary keys" and "security keys" apart, `disable-primary-keys` took only
+  the `primary` keys and `disable-mfa` only the `mfa` ones, and the
+  administrator's enrolment posted a role. Now the keys are one table (the
+  device grouping — on their devices, on a security key — stays, being about
+  the authenticator), counted once on a list row (in *Sign in with* where the
+  realm lets a key be a way in, else in *Second factor*), the realm's
+  `webauthn.primaryAllowed` / `webauthn.mfaAllowed` are said beside them as
+  what is asked at every sign-in of every key, both removals take every key,
+  and the enrolment form sends no role.
 * **A RESET AND A RESET LINK ANSWER WITH A PAGE.** `credentialResetPage()`, from
   the `POST /admin/users` handler, whenever the result carries `password` or
   `resetUrl` and the request is not JSON — `/admin/users/new`'s argument: a
