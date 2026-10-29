@@ -520,8 +520,11 @@ function childMain() {
       protocols: ['oauth2'],
       fields: { oauthClientId: CLIENT,
                 oauthTokenEndpointAuthMethod: ['client_secret_basic'],
-                oauthAllowedScope: ['openid', 'report:use',
-                                    'report:admin'] } });
+                oauthAllowedScope: ['openid'],
+                // The report scopes are grants since #1141.
+                oauthDelegatedPermission: [
+                  'urn:sts:report-api:report:use',
+                  'urn:sts:report-api:report:admin'] } });
     const ran = await realms.run(realms.DEFAULT_REALM, function () {
       return report.recountAsync({ stillOwner: function () {
         return true;

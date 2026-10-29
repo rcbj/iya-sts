@@ -166,13 +166,18 @@ function setUp(t) {
     applications.createApplication({ identifier: CLIENT,
       protocols: ['oauth2'],
       fields: { oauthClientId: CLIENT,
-                oauthAllowedScope: ['openid', 'admin:read', 'admin:write',
-                                    PERMISSION] } }),
+                oauthAllowedScope: ['openid', PERMISSION],
+                // The admin scopes are grants since #1141.
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
+                                           'urn:sts:admin-api:admin:write']
+              } }),
     applications.createApplication({ identifier: MACHINE,
       protocols: ['oauth2'],
       fields: { oauthClientId: MACHINE,
-                oauthAllowedScope: ['admin:read', 'admin:write',
-                                    'device:compliance', PERMISSION] } }),
+                oauthAllowedScope: ['device:compliance', PERMISSION],
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
+                                           'urn:sts:admin-api:admin:write']
+              } }),
     applications.createApplication({ identifier: RESOURCE,
       protocols: ['oauth2'],
       fields: { oauthClientId: RESOURCE,

@@ -189,8 +189,8 @@ api() {   # api <path under the API> '<json body>'
 # 1. A random secret, made by the service. This call stores nothing.
 APP_SECRET=$(api applications/generate-secret '{}' | jq -r .clientSecret)
 
-# 2. The application: an OAuth 2.0 client on client_credentials that
-#    declares the two admin scopes. The secret becomes its credential.
+# 2. The application: an OAuth 2.0 client on client_credentials. The
+#    secret becomes its credential.
 api applications/create '{
   "identifier": "'"$APP"'", "name": "'"$APP"'",
   "protocols": ["oauth2"],
@@ -198,11 +198,14 @@ api applications/create '{
     "oauthClientId": ["'"$APP"'"],
     "oauthClientSecret": "'"$APP_SECRET"'",
     "oauthGrantType": ["client_credentials"],
-    "oauthTokenEndpointAuthMethod": "client_secret_basic",
-    "oauthAllowedScope": ["admin:read", "admin:write"]
+    "oauthTokenEndpointAuthMethod": "client_secret_basic"
   }}'
 
-# 3. The two roles.
+# 3. Grants of the two admin permissions the management API defines.
+api permissions/grant-permission '{"client":"'"$APP"'","permission":"urn:sts:admin-api:admin:read"}'
+api permissions/grant-permission '{"client":"'"$APP"'","permission":"urn:sts:admin-api:admin:write"}'
+
+# 4. The two roles.
 api roles/add-member '{"role":"ADMIN_READ","kind":"application","member":"'"$APP"'"}'
 api roles/add-member '{"role":"ADMIN_WRITE","kind":"application","member":"'"$APP"'"}'
 ```
@@ -234,20 +237,26 @@ place the act hands it out.
    Copy the value before you create the application.
 2. On the application's page, in **Change what it is allowed to do**: tick
    `client_secret_basic` under `oauthTokenEndpointAuthMethod` and nothing
-   else, add `client_credentials` to `oauthGrantType`, and add `admin:read`
-   and `admin:write` to `oauthAllowedScope`.
-3. On `/admin/roles`, under **Give a person, a group or an application a
+   else, and add `client_credentials` to `oauthGrantType`.
+3. On the application's **Permissions** tab, grant it
+   `urn:sts:admin-api:admin:read` and `urn:sts:admin-api:admin:write`, the
+   two permissions the `sts-management-api` application defines
+   ([Admin console → Delegated permissions](admin-console.md#delegated-permissions)).
+4. On `/admin/roles`, under **Give a person, a group or an application a
    role**, choose the role `ADMIN_READ`, the kind *application* and your
    application's identifier, and click **Add**. Do the same for
    `ADMIN_WRITE`.
 
-**Why it needs both the scopes and the roles.** The token endpoint issues
-`admin:read` and `admin:write` only to a client whose `oauthAllowedScope`
-declares them, and each one only while the client is a member of the role
-that authorizes it: `ADMIN_READ` for `admin:read`, `ADMIN_WRITE` for
-`admin:write`. The API checks both again on every call. So if you take the
-application out of a role, or remove a scope from its `oauthAllowedScope`,
-the tokens it already holds stop working at their next call. That is also how
+**Why it needs both the grants and the roles.** The grant is the client's
+half: the token endpoint issues `admin:read` and `admin:write` only to a
+client holding a grant of that permission on `sts-management-api`. The role
+is the subject's half: each scope is issued only while the client is a member
+of the role that authorizes it, `ADMIN_READ` for `admin:read` and
+`ADMIN_WRITE` for `admin:write`. Listing the words in `oauthAllowedScope` no
+longer counts for these scopes. The API checks both again on every call. So
+if you take the application out of a role, or revoke a grant
+(`permissions/revoke-permission`), the tokens it already holds stop working
+at their next call. That is also how
 to retire the application.
 
 In development mode, outside [RFC 9700 and OAuth 2.1 mode](oauth-security.md),
@@ -522,9 +531,9 @@ still told so; every other console operation needs `ADMIN_READ` too, or
 `ADMIN_WRITE` for a form helper. A token without `admin:console`, such as
 `sts-api-client`'s, is refused 403 (`STS-API-0127`).
 
-A console client entry persisted before #454 does not declare
-`admin:console`. Add it to that entry's `oauthAllowedScope` and
-`oauthGlobalConsent` and sign in again.
+The console client, `sts-admin-console`, holds grants of
+`urn:sts:admin-api:admin:read`, `…:admin:write` and `…:admin:console`; a
+client is never declared these scopes through `oauthAllowedScope`.
 
 ### Request bodies
 

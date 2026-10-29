@@ -28,10 +28,12 @@
 //                                                 its keytab (#595)
 //
 // **ITS OWN CLIENT.** `COMPANION_CLIENT_ID` and `COMPANION_CLIENT_SECRET`
-// name an application an operator registered: it declares the two scopes,
-// is a member of ADMIN_READ and ADMIN_WRITE (`mgmt-api/CLAUDE.md`: an
-// application holds them by being a member), and lists the companion's
-// completion page as a redirect URI, which is what lets a product realm
+// name an application an operator registered: it holds grants of the two
+// scopes on sts-management-api (`urn:sts:admin-api:admin:read` and
+// `…:admin:write`, #1141), is a member of ADMIN_READ and ADMIN_WRITE
+// (`mgmt-api/CLAUDE.md`: an application holds them by being a member), and
+// lists the companion's completion page as a redirect URI, which is what
+// lets a product realm
 // accept it as the address a wallet is sent to. **Or the companion registers
 // itself**: given the seeded `sts-api-client` client's secret
 // (`COMPANION_BOOTSTRAP_SECRET`, the `adminApi.clientSecret` a stack pins),
@@ -246,7 +248,6 @@ class StsClient {
       identifier: this.clientId, kind: "oauth2-client",
       name: "iya-sts development companion", protocols: ["oauth2"],
       fields: { oauthClientId: [this.clientId],
-                oauthAllowedScope: SCOPE.split(" "),
                 oauthClientSecret: secret,
                 oauthTokenEndpointAuthMethod: "client_secret_basic",
                 oauthRedirectUri: this.redirectUris } });
@@ -272,6 +273,15 @@ class StsClient {
                                          attribute: "oauthRedirectUri",
                                          value: uri });
       }
+    }
+    // THE GRANT IS THE CLIENT'S HALF (#1141): admin:read and admin:write are
+    // delegated permissions on sts-management-api, not words in
+    // oauthAllowedScope; the roles below are the subject's half. Already
+    // granted is the state wanted, whatever is answered.
+    for (const scope of SCOPE.split(" ")) {
+      await api("/permissions/grant-permission",
+                { client: this.clientId,
+                  permission: "urn:sts:admin-api:" + scope });
     }
     for (const role of ["ADMIN_READ", "ADMIN_WRITE"]) {
       // Already a member is the state wanted, whatever is answered.

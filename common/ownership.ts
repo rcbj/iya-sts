@@ -602,8 +602,11 @@ class Ownership {
                        ', which no owner may administer');
         }
         const permissions = this.protectedPermissions();
+        // Declared, or since #1141 granted on one of this service's APIs.
         const declared = (this.deps.scopePolicy().declaredScopes(wanted) ||
-                          []).filter(function (one: string) {
+                          []).concat(this.deps.scopePolicy()
+                            .grantedScopes(wanted))
+          .filter(function (one: string) {
           return permissions.indexOf(one) >= 0;
         });
         if (declared.length) {

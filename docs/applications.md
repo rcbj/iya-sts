@@ -224,6 +224,32 @@ and CIBA endpoints, in every mode, with `invalid_client` (`STS-OAUTH-0985`).
 To call one of these APIs, use a client application configured for it, such
 as `sts-api-client`, or create one of your own.
 
+**The three APIs also define their scopes, and a client is granted them.**
+`sts-management-api` defines `admin:read`, `admin:write`, `admin:console`,
+`owner:read` and `owner:write`; `sts-account-api` defines `account:manage`;
+`sts-report-api` defines `report:use` and `report:admin`. Each is a delegated
+permission under a fixed base, `urn:sts:admin-api:`, `urn:sts:account-api:`
+or `urn:sts:report-api:`, so the permission `admin:read` is
+`urn:sts:admin-api:admin:read` whatever host name the service is reached by.
+**A grant of the permission is the client's half** of being issued the
+scope: listing one of these words in `oauthAllowedScope` does not declare
+it. A client still asks for the bare word with `resource` naming the API.
+The roles that authorize each scope (`ADMIN_READ`, `REPORT_USE` and the
+rest) are the subject's half, as before. The seeded clients hold the grants
+they use:
+
+| Client | Granted |
+|---|---|
+| `sts-admin-console` | `admin:read`, `admin:write`, `admin:console` |
+| `sts-user-portal` | `account:manage`, `owner:read`, `owner:write` |
+| `sts-report` | `report:use`, `report:admin` |
+| `sts-api-client` | `admin:read`, `admin:write`, `report:use` |
+
+Grant a permission on the client's **Permissions** tab
+([Admin console → Delegated permissions](admin-console.md#delegated-permissions))
+or with `POST /admin-api/permissions/grant-permission`
+(`{"client": "<id>", "permission": "urn:sts:admin-api:admin:read"}`).
+
 The console, portal and debugger entries carry `oauthGlobalConsent` for
 `openid`, `profile`, `email` and `offline_access` (and the debugger's
 permission), so a person is not asked whether they consent to this service

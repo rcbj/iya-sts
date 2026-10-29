@@ -353,20 +353,91 @@ class ScopePolicy {
     return answer;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SCOPES A GRANT DECLARES (#1141, 2026-10-29). For this service's own
+  // three APIs — `/admin-api`, `/account-api`, `/report-api` — the client's
+  // half of "may it ask for this scope" is a DELEGATED PERMISSION GRANT on the
+  // API's resource object (rcbj's decision on #1141), and not the
+  // registration's `oauthAllowedScope`: `applications.js`'s `API_PERMISSIONS`
+  // is the vocabulary, `oauthDelegatedPermission` on the client the grant.
+  // Listing one of these words in `oauthAllowedScope` no longer declares it —
+  // `declaredScopes()` takes them off — so the grant is the one way. The
+  // permission must still be DEFINED by that API's own object (an operator
+  // entry defining `urn:sts:admin-api:admin:read` does not stand in for it),
+  // and roles still decide whether the subject holds the right.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the API whose object a grant-governed scope belongs to, or ''.
+   *
+   * @param scope - a scope word
+   * @returns the resource object's identifier, or ''
+   */
+  grantedBy(scope: string): string {
+    const { log, applications } = this.deps;
+    log.debug("Entering ScopePolicy.grantedBy().");
+    const name = String(scope == null ? '' : scope);
+    const table = applications.API_PERMISSIONS;
+    const api = Object.keys(table).filter(function (one: string) {
+      return table[one].permissions.some(function (row: string[]) {
+        return row[0] === name;
+      });
+    })[0] || '';
+    log.debug("Leaving ScopePolicy.grantedBy(). " + (api || 'None.'));
+    return api;
+  }
+
+  /**
+   * Returns the grant-governed scopes a client holds a grant of (#1141): each
+   * permission its `oauthDelegatedPermission` names that the API's own object
+   * defines.
+   *
+   * @param clientId - the client_id
+   * @returns the scope words
+   */
+  grantedScopes(clientId: unknown): string[] {
+    const { log, applications } = this.deps;
+    log.debug("Entering ScopePolicy.grantedScopes().");
+    const who = String(clientId == null ? '' : clientId).trim();
+    const out: string[] = [];
+    if (!who) {
+      log.debug("Leaving ScopePolicy.grantedScopes(). No client.");
+      return out;
+    }
+    const table = applications.API_PERMISSIONS;
+    Object.keys(table).forEach(function (api: string) {
+      table[api].permissions.forEach(function (row: string[]) {
+        const id = table[api].base + row[0];
+        const defined = applications.forPermission(id);
+        if (defined && defined.identifier === api &&
+            applications.holdsPermission(who, id) &&
+            out.indexOf(row[0]) < 0) {
+          out.push(row[0]);
+        }
+      });
+    });
+    log.debug("Leaving ScopePolicy.grantedScopes(). " + out.length + ".");
+    return out;
+  }
+
   // The client's declared list, or null when it declares none.
   /**
    * Returns a client's declared scopes (`oauthAllowedScope`) in the ambient
-   * realm.
+   * realm, less the words a delegated permission grant declares instead
+   * (#1141).
    *
    * @param clientId - the client_id
    * @returns the declared list, or null when the client declares none
    */
   declaredScopes(clientId: unknown): string[] | null {
     const { log, applications } = this.deps;
+    const self = this;
     log.debug("Entering ScopePolicy.declaredScopes().");
     const held = applications.allowedScopesOf(clientId);
+    const out = held ? held.filter(function (one: string) {
+      return !self.grantedBy(one);
+    }) : held;
     log.debug("Leaving ScopePolicy.declaredScopes().");
-    return held;
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -388,8 +459,14 @@ class ScopePolicy {
   declares(clientId: unknown, scope: string): boolean {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.declares().");
-    const held = this.declaredScopes(clientId);
     const name = String(scope);
+    // A grant-governed word (#1141): the grant, and nothing else.
+    if (this.grantedBy(name)) {
+      const granted = this.grantedScopes(clientId).indexOf(name) >= 0;
+      log.debug("Leaving ScopePolicy.declares(). " + granted + " (a grant).");
+      return granted;
+    }
+    const held = this.declaredScopes(clientId);
     // An exact listing, or — for a Shared Signals name — declared names
     // granting every permission it grants, write including read (#334).
     // Other scopes stay an exact match.
@@ -484,8 +561,9 @@ class ScopePolicy {
           scopeVerdicts.resourceFact(A.SCOPE_PROTECTED,
                                      protectedNames.indexOf(one) >= 0),
           scopeVerdicts.resourceFact(A.SCOPE_DECLARED,
-            !!declared && (declared.indexOf(one) >= 0 ||
-              ssfScopes.declarationCovers(declared, one))),
+            self.grantedBy(one) ? self.declares(clientId, one)
+              : (!!declared && (declared.indexOf(one) >= 0 ||
+                 ssfScopes.declarationCovers(declared, one)))),
           scopeVerdicts.resourceFact(A.SCOPE_NAMES_PARTY,
                                      self.namesAnotherParty(one)),
           scopeVerdicts.resourceFact(A.SCOPE_IN_DEFAULTS,
@@ -574,8 +652,12 @@ class ScopePolicy {
           (judged.protectedRefused.length === 1 ? 'scope' : 'scopes') +
           ', issued in every mode only to a client that declares ' +
           (judged.protectedRefused.length === 1 ? 'it' : 'them') + ', and ' +
-          client + ' does not.' + where + ' A dynamic registration cannot ' +
-          'declare one; an administrator does.' };
+          client + ' does not.' + where + ' An admin, owner, account or ' +
+          'report scope is declared instead by a delegated permission ' +
+          'grant on that API\'s object — urn:sts:admin-api:, ' +
+          'urn:sts:account-api: or urn:sts:report-api: followed by the ' +
+          'scope (POST /admin-api/permissions/grant-permission, #1141). A ' +
+          'dynamic registration cannot declare one; an administrator does.' };
     }
     if (judged.nativeSsoRefused.length) {
       log.debug("Leaving ScopePolicy.refusal(). Native SSO.");
@@ -796,6 +878,8 @@ export = {
   isProtected: slot.forward('isProtected'),
   declaredScopes: slot.forward('declaredScopes'),
   declares: slot.forward('declares'),
+  grantedBy: slot.forward('grantedBy'),
+  grantedScopes: slot.forward('grantedScopes'),
   defaultScopes: slot.forward('defaultScopes'),
   judge: slot.forward('judge'),
   refusal: slot.forward('refusal'),

@@ -549,8 +549,11 @@ function childMain() {
       protocols: ['oauth2'],
       fields: { oauthClientId: CLIENT,
                 oauthTokenEndpointAuthMethod: ['client_secret_basic'],
-                oauthAllowedScope: ['openid', 'report:use',
-                                    'report:admin'] } });
+                oauthAllowedScope: ['openid'],
+                // The report scopes are grants since #1141.
+                oauthDelegatedPermission: [
+                  'urn:sts:report-api:report:use',
+                  'urn:sts:report-api:report:admin'] } });
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });

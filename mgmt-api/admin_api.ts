@@ -27063,12 +27063,16 @@ class AdminApi {
             'This access token carries "' + neededScope + '", and the ' +
             'client it was issued to, ' +
             JSON.stringify(claims.client_id || null) + ', does not declare ' +
-            'it: a token is honoured here only while its client\'s ' +
-            'oauthAllowedScope lists the scope it uses. ' + (mdmFeed
-              ? 'Declare device:compliance on the MDM feed\'s application.'
-              : 'The seeded sts-api-client declares both admin ' +
-                'scopes. Declare it on the application (POST ' +
-                '/admin-api/applications/add) or use that client.')] });
+            'it: a token is honoured here only while its client still ' +
+            'holds the scope it uses. ' + (mdmFeed
+              ? 'Declare device:compliance on the MDM feed\'s ' +
+                'application\'s oauthAllowedScope.'
+              : 'An admin or owner scope is held by a delegated permission ' +
+                'grant on sts-management-api (#1141): grant the client ' +
+                'urn:sts:admin-api:' + neededScope + ' (POST ' +
+                '/admin-api/permissions/grant-permission), or use ' +
+                'sts-api-client, which is granted admin:read and ' +
+                'admin:write.')] });
         }
         if (effective.withdrawn.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0125');

@@ -16,8 +16,8 @@
 // policy. In a CHILD PROCESS with the whole stack on an ephemeral port:
 //
 //   A. THE ROLES. REPORT_USE and REPORT_ADMIN are native roles seeded with
-//      the groups report-users and report-admins; no resource application
-//      defines the scopes, and sts-report holds no delegated permission.
+//      the groups report-users and report-admins; sts-report-api defines
+//      the scopes as permissions and a client holds a grant of them (#1141).
 //   B. ISSUANCE. A member of report-users is issued report:use and not
 //      report:admin; a member of report-admins the reverse; an outsider
 //      neither, and report:use alone is invalid_scope; an application that
@@ -183,18 +183,25 @@ function childMain() {
         protocols: ['oauth2'],
         fields: { oauthClientId: CLIENT,
                   oauthTokenEndpointAuthMethod: ['client_secret_basic'],
-                  oauthAllowedScope: ['openid', 'report:use',
-                                      'report:admin'] } }),
+                  oauthAllowedScope: ['openid'],
+                  // The report scopes are grants since #1141.
+                  oauthDelegatedPermission: [
+                    'urn:sts:report-api:report:use',
+                    'urn:sts:report-api:report:admin'] } }),
       applications.createApplication({ identifier: APP,
         protocols: ['oauth2'],
         fields: { oauthClientId: APP,
                   oauthTokenEndpointAuthMethod: ['client_secret_basic'],
-                  oauthAllowedScope: ['report:use', 'report:admin'] } }),
+                  oauthDelegatedPermission: [
+                    'urn:sts:report-api:report:use',
+                    'urn:sts:report-api:report:admin'] } }),
       applications.createApplication({ identifier: APP2,
         protocols: ['oauth2'],
         fields: { oauthClientId: APP2,
                   oauthTokenEndpointAuthMethod: ['client_secret_basic'],
-                  oauthAllowedScope: ['report:use', 'report:admin'] } })
+                  oauthDelegatedPermission: [
+                    'urn:sts:report-api:report:use',
+                    'urn:sts:report-api:report:admin'] } })
     ];
     note(made.every(function (one) { return one && one.ok; }),
          'precondition: a confidential client for the people, and two ' +
@@ -229,12 +236,12 @@ function childMain() {
          'A3. both groups exist in the directory');
     const reportClient = applications.get('sts-report');
     const reportApi = applications.get('sts-report-api');
-    note(!!reportClient &&
-         !(reportClient.fields || {}).oauthDelegatedPermission &&
-         !!reportApi && !(reportApi.fields || {}).oauthPermission,
+    note(!!reportClient && !!reportApi &&
+         String((reportApi.fields || {}).oauthPermissionBaseUri) ===
+           'urn:sts:report-api:',
          'A4. sts-report-api, the reports API\'s resource object (#1139), ' +
-         'defines no permission and sts-report holds no delegated ' +
-         'permission', JSON.stringify(reportApi && reportApi.kinds));
+         'defines the report permissions its clients are granted (#1141)',
+         JSON.stringify(reportApi && reportApi.fields));
     note(gate.RESOURCE.REPORT_API === 'report-api',
          'A5. the gate names the resource the policy\'s third rule targets');
 
