@@ -883,6 +883,18 @@
     "en": "9a9264e25acb9778",
     "text": "一次 AuthZEN 访问评估已作出决策"
   },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "添加或替换了一行 AuthZEN 属性目录"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "删除了一行 AuthZEN 属性目录"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "设置了 AuthZEN 调用方的应用范围"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "签发 PEP 拒绝让本服务铸造某项内容"

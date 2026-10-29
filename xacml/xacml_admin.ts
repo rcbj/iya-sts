@@ -338,8 +338,10 @@ class XacmlAdmin {
       // a path that table does not carry — which is right for the pages that
       // file generates and wrong for one drawn here. It cost a 500 on this page
       // and nothing else, because it is the only caller outside that table.
+      // XACML's own group: AuthZEN's, homed on this page too (#563), is
+      // drawn on its own tab from GET /admin-api/xacml/authzen.
       settings: admin.configSettingsJson
-        ? admin.configSettingsJson('/admin/xacml') : null
+        ? admin.configSettingsJson('/admin/xacml', ['XACML']) : null
     };
     log.debug('Leaving XacmlAdmin.overviewJson().');
     return json;

@@ -171,6 +171,7 @@ uploaded instead.
 | `stsBootstrapAdministrator`, `stsConsoleClaimedAt` | the bootstrap `admin`, and when it first claimed the console |
 | `stsNotDelegated` | sensitive and cannot be delegated (Kerberos's NOT_DELEGATED) (#108) |
 | `stsMayAct` | the one party this person named as a delegate. It becomes `may_act` in their access tokens |
+| `stsAuthzenApplication` | the applications this person or service account may ask the AuthZEN API about, one per value; set by an administrator only (#563) |
 | `stsMailVerified` | the address they proved they receive mail at (#63) |
 | `stsMailVerifyToken`, `stsMailVerifyExpires`, `stsMailVerifyAddress` | a pending verification link. The token is **withheld** |
 
@@ -214,6 +215,7 @@ draws it with a description of every field.
 | OAuth client | `oauthClientId`, `oauthConfidential`, `oauthClientSecret` (**withheld**; one JSON record per secret, each with its own expiry, sealed at rest where keys persist), `oauthTokenEndpointAuthMethod`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthScope`, `oauthAllowedScope`, `oauthAudience`, `oauthSubjectType`, `oauthSectorIdentifierUri` |
 | Logout | `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthRevokeRefreshOnLogout` |
 | Requests and responses | `oauthRequestUri`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge` |
+| AuthZEN (#563) | `authzenAttribute` (a catalogue row, on `sts-authzen-api`), `appAuthzenApplication` (an application caller's scope) |
 | Resource server and consent | `oauthPermissionBaseUri`, `oauthPermission`, `oauthDelegatedPermission`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthGlobalConsent`, `oauthGlobalConsentWithdrawn` |
 | Token lifetimes | `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthTokenExchangeRefreshToken` |
 | Mutual TLS (RFC 8705) | `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint` |

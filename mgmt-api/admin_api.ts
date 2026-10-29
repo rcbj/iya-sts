@@ -632,6 +632,8 @@ interface AdminApiDeps {
     typeof import('../attribute-sources/attribute_sources_api');
   // The secret push destinations' operations (#221 P3).
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
+  // The AuthZEN tab's operations (#563).
+  loadAuthzenApi(): typeof import('./authzen_api');
   // Monitoring → Passkeys' operations (#942).
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // Directory → Post-login activities' operations (#1111).
@@ -750,6 +752,9 @@ class AdminApi {
       },
       loadSecretDestinationsApi: function () {
         return require('./secret_destinations_api');
+      },
+      loadAuthzenApi: function () {
+        return require('./authzen_api');
       },
       loadPasskeyReportApi: function () {
         return require('./passkey_report_api');
@@ -2963,7 +2968,7 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
-            loadAttributeSourcesApi, loadSecretDestinationsApi,
+            loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
@@ -11898,8 +11903,9 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/config/:action', tag: 'Configuration',
-        mirrors: 'POST /admin/config and POST ' +
-                 '/admin/xacml#xacml-tab-settings',
+        mirrors: 'POST /admin/config, POST ' +
+                 '/admin/xacml#xacml-tab-settings and POST ' +
+                 '/admin/xacml#xacml-tab-authzen',
         handler: function (req, res) {
           log.debug("Entering the management API configuration action " +
                     "endpoint.");
@@ -25386,6 +25392,9 @@ class AdminApi {
       // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
       // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
       ...loadSecretDestinationsApi().ROUTES,
+      // THE AUTHZEN TAB (#563): the API's settings, its attribute catalogue
+      // and its callers' scopes, the console's own (`mgmt-api/authzen_api.ts`).
+      ...loadAuthzenApi().ROUTES,
       // MONITORING → PASSKEYS (#942): who holds which passkey algorithm,
       // its export and its Recount now (`mgmt-api/passkey_report_api.ts`).
       ...loadPasskeyReportApi().ROUTES,

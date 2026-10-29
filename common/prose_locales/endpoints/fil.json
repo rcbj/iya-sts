@@ -999,6 +999,14 @@
     "en": "f8f3c83e76dc9f4c",
     "text": "Baguhin ang mga destinasyon ng secret push"
   },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "Ang katalogo at mga tumatawag ng AuthZEN API"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "Baguhin ang katalogo ng AuthZEN o ang saklaw ng isang tumatawag"
+  },
   "endpoints.route./admin-api/passkey-report.name": {
     "en": "9c856324242bc19b",
     "text": "Sino ang may hawak ng aling algorithm ng passkey"

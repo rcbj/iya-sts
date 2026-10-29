@@ -883,6 +883,18 @@
     "en": "9a9264e25acb9778",
     "text": "一次 AuthZEN 存取評估已做出決策"
   },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "新增或取代了一列 AuthZEN 屬性目錄"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "移除了一列 AuthZEN 屬性目錄"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "設定了 AuthZEN 呼叫方的應用程式範圍"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "簽發 PEP 拒絕讓本服務產生某項內容"

@@ -183,6 +183,35 @@ A member that AuthZEN 1.0 does not define, at the top level or inside
 `urn:sts:xacml:obligation:log` is the one obligation this service carries out;
 it is recorded in the audit log.
 
+## The console and the management API
+
+**Protocols → XACML → AuthZEN** (`/admin/xacml`, the AuthZEN tab) shows whether
+the API answers in the realm, how callers authenticate, the AuthZEN settings,
+the attribute catalogue, and the members of the `AUTHZEN_PEPS` group with
+their application scope. From there an administrator adds, replaces or
+removes a catalogue row, and sets a caller's scope.
+
+The same operations are on the management API:
+
+| Operation | What it does |
+|---|---|
+| `GET /admin-api/xacml/authzen` | the tab, as JSON; `?caller=<name or DN>` looks one caller up |
+| `POST /admin-api/xacml/authzen/set-attribute` | add a row, or replace the row for the same `object` and `property` |
+| `POST /admin-api/xacml/authzen/remove-attribute` | remove the row for an `object` and `property` |
+| `POST /admin-api/xacml/authzen/set-scope` | replace a caller's application scope: `caller` and `applications` |
+
+```
+POST /admin-api/xacml/authzen/set-attribute
+{"object":"resource","property":"classification",
+ "attributeId":"urn:example:classification"}
+
+POST /admin-api/xacml/authzen/set-scope
+{"caller":"todo-pep","applications":["todo-app"]}
+```
+
+`GET /admin-api/openapi.json` carries every member and refusal. The scope can
+also be set on an application's own page, as `appAuthzenApplication`.
+
 ## Configuration
 
 Each setting is per realm and can be changed at run time on `/admin/xacml`

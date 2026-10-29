@@ -1443,7 +1443,8 @@ function childMain() {
       : '';
     const xacmlTabIds = [
       'xacml-tab-metadata', 'xacml-tab-settings', 'xacml-tab-policies',
-      'xacml-tab-editor', 'xacml-tab-peps', 'xacml-tab-decide'
+      'xacml-tab-editor', 'xacml-tab-peps', 'xacml-tab-decide',
+      'xacml-tab-authzen'
     ];
     const xacmlTabs = {};
     xacmlTabIds.forEach(function (id) {

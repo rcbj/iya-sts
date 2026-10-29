@@ -201,6 +201,10 @@ const ldapMatching = require('./ldap_matching');
 // by the console long before this one) and so is handed the two functions it
 // needs through its setDirectory(), filled below.
 const personEditor = require('./person_editor');
+// THE AUTHZEN TAB'S DIRECTORY (#563), the same arrangement: a library the
+// management API loads at 19, handed what it needs through setDirectory(),
+// filled below. It requires only the engine's model and the helpers.
+const authzenAdmin = require('../authzen/authzen_admin');
 // The revocation register, for the CRL container below. A LEAF (rule 3): it
 // registers no route, so requiring it here moves nothing.
 const pkiRevocation = require('../common/pki_revocation');
@@ -10262,6 +10266,45 @@ personEditor.setDirectory({
                .map(function (pair) { return pair.attribute; }) };
   },
   write: writePersonAttribute
+});
+
+// AN AUTHZEN CALLER'S APPLICATION SCOPE (#563), the same shape as the editor
+// above: `authzen/authzen_admin.ts` lists the members of the group granting
+// AUTHZEN_PEPS and replaces a person's `stsAuthzenApplication`, the one
+// attribute it writes, which no other door here offers (an `sts*` name is
+// refused by the person editor, SCIM, federation and attribute sources).
+authzenAdmin.setDirectory({
+  locate: function locate(key) {
+    log.debug('Entering the AuthZEN locate(). key=' + key);
+    const stored = locateEntry(String(key || '')).stored;
+    if (!stored) {
+      log.debug('Leaving the AuthZEN locate(). Nobody.');
+      return null;
+    }
+    const attributes = attributeSnapshot(stored);
+    log.debug('Leaving the AuthZEN locate(). ' + stored.dn);
+    return { dn: stored.dn, person: isPersonEntry(stored),
+             name: String(((stored.attributes.uid || [])[0]) ||
+                          ((stored.attributes.cn || [])[0]) || stored.dn),
+             serviceAccount:
+               (stored.attributes.stsserviceaccount || []).length > 0,
+             attributes: attributes };
+  },
+  members: function members(group) {
+    log.debug('Entering the AuthZEN members(). group=' + group);
+    const entry = readGroupEntry(groupDnFor(String(group || '')));
+    const out = entry ? entry.members.map(function (one) {
+      return String(one.dn || one.value || '');
+    }).filter(Boolean) : [];
+    log.debug('Leaving the AuthZEN members(). ' + out.length);
+    return out;
+  },
+  write: function write(dn, name, values) {
+    log.debug('Entering the AuthZEN write(). dn=' + dn);
+    log.debug('Leaving the AuthZEN write().');
+    return name === authzenAdmin.PERSON_SCOPE &&
+           writePersonAttribute(dn, name, values);
+  }
 });
 
 // ---------------------------------------------------------------------------

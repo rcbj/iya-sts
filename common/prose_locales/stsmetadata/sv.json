@@ -1887,6 +1887,14 @@
     "en": "15a8c6d83ed6bc92",
     "text": "ICKE-SPEC (#221). add-destination, update-destination, remove-destination och test-push (en kanarieversion skriven till en testhemlighet): konsolens fyra handlingar, var och en granskad. Skrivbehörighetsuppgiften tas emot och returneras aldrig."
   },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "13078c3a299db762",
+    "text": "ICKE-SPECIFICERAT (#563). Det som fliken AuthZEN på /admin/xacml visar: om /access/v1 svarar i sfären, hur dess anropare autentiserar sig, AuthZEN-inställningarna, attributkatalogen på sts-authzen-api och medlemmarna i roles.authzenPepGroup med de applikationer var och en får fråga om."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "7efc1c9a3697b22a",
+    "text": "ICKE-SPECIFICERAT (#563). set-attribute, remove-attribute och set-scope: flikens tre åtgärder, var och en granskad. En katalograd mot en reserverad identifierare avvisas här som vid varje skrivning."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
     "text": "ICKE-SPEC (#942). Det som Övervakning → Nycklar ritar: sfärens nycklar per algoritm och spår, dess personer per sort (endast postkvant, endast klassisk, båda, ingen), vilka autentiserarmodeller som har vilka algoritmer och varje nyckelprofils postQuantumRequired; filtrerat per grupp, nyckelprofil eller applikation, med en markörsidad lista över personerna bakom varje siffra. Siffrorna är ett aggregat som hålls aktuellt — en daglig omräkning av innehavarna plus de ändringar som noteras när nycklar skrivs — aldrig en genomsökning av katalogen per begäran."

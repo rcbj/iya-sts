@@ -999,6 +999,14 @@
     "en": "f8f3c83e76dc9f4c",
     "text": "Modifier les destinations de publication des secrets"
   },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "Le catalogue et les appelants de l'API AuthZEN"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "Modifier le catalogue AuthZEN ou la portée d'un appelant"
+  },
   "endpoints.route./admin-api/passkey-report.name": {
     "en": "9c856324242bc19b",
     "text": "Qui détient quel algorithme de clé d’accès"

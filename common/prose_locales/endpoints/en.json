@@ -249,6 +249,8 @@
   "endpoints.route./admin-api/attribute-sources/:action.name": "Change the attribute sources",
   "endpoints.route./admin-api/secret-destinations.name": "Secret push destinations",
   "endpoints.route./admin-api/secret-destinations/:action.name": "Change the secret push destinations",
+  "endpoints.route./admin-api/xacml/authzen.name": "The AuthZEN API's catalogue and callers",
+  "endpoints.route./admin-api/xacml/authzen/:action.name": "Change the AuthZEN catalogue or a caller's scope",
   "endpoints.route./admin-api/passkey-report.name": "Who holds which passkey algorithm",
   "endpoints.route./admin-api/passkey-report/export.name": "Export the people behind a passkey count",
   "endpoints.route./admin-api/passkey-report/evidence.name": "One passkey's RFC 4998 evidence record",

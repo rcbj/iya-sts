@@ -883,6 +883,18 @@
     "en": "9a9264e25acb9778",
     "text": "Napagpasyahan ang isang AuthZEN access evaluation"
   },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "Idinagdag o pinalitan ang isang row ng katalogo ng attribute ng AuthZEN"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "Inalis ang isang row ng katalogo ng attribute ng AuthZEN"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "Itinakda ang saklaw ng application ng isang tumatawag sa AuthZEN"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Tumanggi ang issuance PEP na hayaan ang serbisyong ito na mag-mint ng isang bagay"
