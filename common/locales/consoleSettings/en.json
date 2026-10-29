@@ -20,6 +20,8 @@
   "ordered.order": "Order",
   "ordered.value": "Value",
   "ordered.note": "Tick what is requested and number it: <strong>1 is the most preferred</strong>, and an authenticator uses the first it supports. A number on an unticked row is ignored; two rows with the same number keep the order they are drawn in.",
+  "ordered.selectAll": "Select all",
+  "ordered.chooseOne": "Choose at least one before saving: a list with nothing in it is not saved.",
   "row.emptyDefault": "(empty — the default)",
   "row.reset": "Reset",
   "row.restart": "Restart to apply:",

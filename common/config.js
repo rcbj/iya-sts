@@ -2775,6 +2775,17 @@ const SETTINGS = [
     // value rather than a text box, and folds them back into this list.
     // `csvValueNotes` is the sentence drawn beside each value.
     ordered: true,
+    // WHAT SELECT ALL TICKS (#1130, rcbj: it "must obey the PQC enabled,
+    // insecure enabled/disabled settings"). `onlyWhileOn`: these values are
+    // ticked only while that switch is on — RS1 is neither requested nor
+    // accepted otherwise. `aloneWhileOn`: while that switch is on, only
+    // these are ticked — the request is narrowed to ML-DSA anyway. Every
+    // other ordered row's Select all ticks everything.
+    selectAll: {
+      onlyWhileOn: { 'webauthn.insecureAlgorithms': ['RS1'] },
+      aloneWhileOn: { 'webauthn.pqcOnly': ['ML-DSA-87', 'ML-DSA-65',
+                                           'ML-DSA-44'] }
+    },
     csvValueNotes: {
       'ML-DSA-44': 'COSE -48 · post-quantum, RFC 9964 (NIST category 2)',
       'ML-DSA-65': 'COSE -49 · post-quantum, RFC 9964 (NIST category 3)',
@@ -20166,6 +20177,35 @@ function applyPersistedOverrides(saved) {
 // OpenAPI document's example. A second shape for any of them is how a console
 // and an API start disagreeing about what the service is configured with.
 // ---------------------------------------------------------------------------
+// WHAT AN ORDERED ROW'S SELECT ALL TICKS (#1130), described for the console:
+// each rule names the switch it follows, the values it governs, whether that
+// switch is on now, and whether it CAN be on here — `webauthn.
+// insecureAlgorithms` cannot in product mode (its `onlyWhile`), where a
+// stored true is ignored, so a Select all there never ticks RS1 whatever
+// the form's own control reads.
+/**
+ * Describes the rules an ordered row's Select all follows.
+ *
+ * @param setting - the setting's row, carrying `selectAll`
+ * @returns `{ onlyWhileOn, aloneWhileOn }`, each a list of
+ *   `{ setting, values, on, canBeOn }`
+ */
+function selectAllRules(setting) {
+  log.debug("Entering selectAllRules(). key=" + setting.key);
+  const mode = require('./mode');
+  const out = {};
+  ['onlyWhileOn', 'aloneWhileOn'].forEach(function (kind) {
+    const rules = setting.selectAll[kind] || {};
+    out[kind] = Object.keys(rules).map(function (key) {
+      const canBeOn = mode.allowsValue(key, true);
+      return { setting: key, values: rules[key].slice(),
+               on: canBeOn && value(key) === true, canBeOn: canBeOn };
+    });
+  });
+  log.debug("Leaving selectAllRules().");
+  return out;
+}
+
 /**
  * Describes one setting in the one shape the console, the management API
  * and the OpenAPI example all use.
@@ -20199,6 +20239,9 @@ function describe(setting) {
     // drawn beside each of its values — absent on every other row.
     ordered: setting.ordered ? true : undefined,
     csvValueNotes: setting.csvValueNotes || undefined,
+    // WHAT AN ORDERED ROW'S SELECT ALL TICKS (#1130), absent on every row
+    // that does not narrow it.
+    selectAll: setting.selectAll ? selectAllRules(setting) : undefined,
     // The int bounds, where a row narrows them. `undefined` is dropped by
     // JSON.stringify, so a row that carries none of them describes exactly as
     // it did before they existed — which is what keeps the management API's

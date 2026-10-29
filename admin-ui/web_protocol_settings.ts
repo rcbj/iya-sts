@@ -322,15 +322,33 @@ class ProtocolSettingsPage {
     const state = function (cls: string, words: string): string {
       return '<span class="' + cls + '">' + words + '</span>';
     };
+    // IN THE ORDER THEY ARE REQUESTED (#1130), as the report lists them: the
+    // offered rows numbered as `pubKeyCredParams` sends them, the rest with
+    // the reason each is not offered.
+    const notOffered: Record<string, string> = {
+      'insecure-off': 'consoleProtocolSettings.waNotOfferedInsecure',
+      'post-quantum-only': 'consoleProtocolSettings.waNotOfferedPqcOnly',
+      'classical-only': 'consoleProtocolSettings.waNotOfferedClassicalOnly'
+    };
     const algorithmRows = info.algorithms.map(function (alg) {
-      return '<tr><td><code>' + kit.esc(alg.name) + '</code></td>' +
+      return '<tr><td class="num">' +
+        (alg.rank ? kit.esc(String(alg.rank)) : '') + '</td>' +
+        '<td><code>' + kit.esc(alg.name) + '</code></td>' +
         '<td class="num"><code>' + kit.esc(String(alg.coseAlg)) +
         '</code></td><td>' + (alg.offered
           ? state('state-valid', t.html('consoleProtocolSettings.offered'))
-          : state('state-none',
-                  t.html('consoleProtocolSettings.verifiableNotOffered'))) +
+          : state('state-none', t.html(notOffered[alg.notOfferedBecause] ||
+                  'consoleProtocolSettings.verifiableNotOffered'))) +
         '</td></tr>';
     }).join('');
+    // WHERE THE LIST CAME FROM (#1130): the Settings tab's
+    // webauthn.algorithms, or a passkey profile's list that replaces it.
+    const source = info.algorithmsSource === 'passkey-profile'
+      ? kit.warn(t.html('consoleProtocolSettings.waAlgFromProfile1') +
+        '<a href="/admin/policies#passkey">' +
+        t.html('consoleProtocolSettings.passkeyPolicyLink') + '</a>' +
+        t.html('consoleProtocolSettings.waAlgFromProfile2'))
+      : kit.note(t.html('consoleProtocolSettings.waAlgFromRealm'));
     // Every link is markup a message cannot carry (#539), so the prose is
     // split around each one; the view's own strings stay outside messages.
     const html = '<h2>' + t.html('consoleProtocolSettings.waHeading') +
@@ -431,9 +449,10 @@ class ProtocolSettingsPage {
       '</table>' +
       '<h3>' + t.html('consoleProtocolSettings.waAlgorithmsHeading') +
       '</h3>' +
-      kit.note(t.html('consoleProtocolSettings.waAlgNote')) +
-      '<table><tr><th>' + t.html('consoleProtocolSettings.thAlgorithm') +
-      '</th><th ' +
+      kit.note(t.html('consoleProtocolSettings.waAlgNote')) + source +
+      '<table><tr><th class="num">' +
+      t.html('consoleProtocolSettings.thOrder') + '</th><th>' +
+      t.html('consoleProtocolSettings.thAlgorithm') + '</th><th ' +
       'class="num">COSE</th><th>' + t.html('consoleProtocolSettings.thState') +
       '</th></tr>' +
       algorithmRows + '</table>' +
