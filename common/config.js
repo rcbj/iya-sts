@@ -8494,7 +8494,7 @@ const SETTINGS = [
                    'a secret changed while running would be a value nothing ' +
                    'reads until the next start — and the client would go on ' +
                    'authenticating with the old one meanwhile.',
-    description: 'The `client_secret` of the seeded `sts-management-api` ' +
+    description: 'The `client_secret` of the seeded `sts-api-client` ' +
                  'client, which is what a caller exchanges for an access ' +
                  'token. EMPTY means one is minted at every start — fine ' +
                  'while this API was open, and a BOOTSTRAP HOLE now that it ' +

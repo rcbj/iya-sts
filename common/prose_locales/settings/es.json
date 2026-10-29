@@ -4120,8 +4120,8 @@
     "text": "Secreto del cliente de la API de gestión"
   },
   "adminApi.clientSecret|description": {
-    "en": "117556c1e8418751",
-    "text": "El `client_secret` del cliente sembrado `sts-management-api`, que es lo que quien llama intercambia por un token de acceso. VACÍO significa que se genera uno en cada arranque — aceptable mientras esta API estaba abierta, y un AGUJERO DE ARRANQUE ahora que no lo está: el secreto solo puede leerse A TRAVÉS de la API que desbloquea, así que un reinicio dejaría a nadie capaz de entrar. Defínalo y el cliente conserva ese secreto entre reinicios, que es lo que necesitan una implementación y todo lanzador de pruebas."
+    "en": "ecfbd09786778c40",
+    "text": "El `client_secret` del cliente sembrado `sts-api-client`, que es lo que quien llama intercambia por un token de acceso. VACÍO significa que se genera uno en cada arranque — aceptable mientras esta API estaba abierta, y un AGUJERO DE ARRANQUE ahora que no lo está: el secreto solo puede leerse A TRAVÉS de la API que desbloquea, así que un reinicio dejaría a nadie capaz de entrar. Defínalo y el cliente conserva ese secreto entre reinicios, que es lo que necesitan una implementación y todo lanzador de pruebas."
   },
   "adminApi.clientSecret|restartReason": {
     "en": "e0a892bf56763f7b",

@@ -276,7 +276,7 @@ no object class and gains one on its next save.
 (`appRequiredRole` on an application). Which of an application's permissions need a role at all is
 `oauthRoleGatedPermission` on the resource application. Every realm is seeded with two roles, `ADMIN_READ` and
 `ADMIN_WRITE`, which authorize `admin:read` and `admin:write`. Their groups come from `admin.readGroup` and
-`admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. A third seeded role,
+`admin.writeGroup` and are not stored on the entry; `sts-api-client` is a member of both. A third seeded role,
 `DEVICE_COMPLIANCE`, authorizes `device:compliance` and has no members until the MDM feed's application is added
 (#309). A fourth, `ADMIN_CONSOLE`, authorizes `admin:console` and has no members either: it is conferred by the
 console's client, `sts-admin-console`, on everybody who signs in to the console (#454). Two more, `SSF_READ` and

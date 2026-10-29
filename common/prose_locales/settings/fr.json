@@ -4120,8 +4120,8 @@
     "text": "Secret du client de l’API de gestion"
   },
   "adminApi.clientSecret|description": {
-    "en": "117556c1e8418751",
-    "text": "Le `client_secret` du client préinstallé `sts-management-api`, que l’appelant échange contre un jeton d’accès. VIDE signifie qu’un secret est créé à chaque démarrage — acceptable tant que cette API était ouverte, et une FAILLE D’AMORÇAGE maintenant qu’elle ne l’est plus : le secret n’est lisible QUE VIA l’API qu’il déverrouille, si bien qu’un redémarrage ne laisserait plus personne capable d’entrer. Définissez-le et le client conserve ce secret à travers les redémarrages, ce dont ont besoin un déploiement et chaque lanceur de tests."
+    "en": "ecfbd09786778c40",
+    "text": "Le `client_secret` du client préinstallé `sts-api-client`, que l’appelant échange contre un jeton d’accès. VIDE signifie qu’un secret est créé à chaque démarrage — acceptable tant que cette API était ouverte, et une FAILLE D’AMORÇAGE maintenant qu’elle ne l’est plus : le secret n’est lisible QUE VIA l’API qu’il déverrouille, si bien qu’un redémarrage ne laisserait plus personne capable d’entrer. Définissez-le et le client conserve ce secret à travers les redémarrages, ce dont ont besoin un déploiement et chaque lanceur de tests."
   },
   "adminApi.clientSecret|restartReason": {
     "en": "e0a892bf56763f7b",

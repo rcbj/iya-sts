@@ -127,6 +127,14 @@
     "en": "348a7be2ebfe0753",
     "text": "在授权端点或令牌端点出示的 client_id。"
   },
+  "applications.kinds.oauth2-resource-server.label": {
+    "en": "1a0aa8de22952147",
+    "text": "OAuth 2.0 资源服务器"
+  },
+  "applications.kinds.oauth2-resource-server.what": {
+    "en": "58cc9baf4b862f48",
+    "text": "访问令牌所指向的 API，由其 oauthAudience 命名。它从不是客户端：在客户端出示自身的每个端点上，其 client_id 都会被拒绝。"
+  },
   "applications.kinds.oidc-relying-party.label": {
     "en": "d1c72d0dc209cf8d",
     "text": "OpenID Connect 依赖方"

@@ -172,7 +172,7 @@ about two people who differ only in a directory attribute neither of them sends.
 ### 1. Get a management API token
 
 Everything under `/admin-api` needs an OAuth 2.0 access token audienced to that
-API. Pin the seeded client's secret with `adminApi.clientSecret`
+API. Pin the seeded client `sts-api-client`'s secret with `adminApi.clientSecret`
 (`ADMIN_API_CLIENT_SECRET`) before starting the service, or the secret is minted
 per start and readable only through the API it unlocks. On the compose stack
 the secret is in OpenBao instead, and any application of your own that holds
@@ -180,7 +180,7 @@ the admin roles works here too
 ([Management API → Getting a token](management-api.md#getting-a-token)).
 
 ```bash
-TOKEN=$(curl -sk -u sts-management-api:$ADMIN_API_CLIENT_SECRET \
+TOKEN=$(curl -sk -u sts-api-client:$ADMIN_API_CLIENT_SECRET \
   -X POST https://localhost:8081/oauth2/token \
   -d grant_type=client_credentials -d 'scope=admin:read admin:write' \
   --data-urlencode 'resource=https://localhost:8081/admin-api' \

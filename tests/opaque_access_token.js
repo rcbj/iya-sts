@@ -61,7 +61,7 @@ function claimsFor(jti, iat, exp) {
   log.debug("Leaving claimsFor().");
   return {
     typ: 'Bearer', jti: jti, iat: iat, exp: exp, sub: 'ada',
-    client_id: 'sts-management-api', scope: 'openid'
+    client_id: 'sts-api-client', scope: 'openid'
   };
 }
 
@@ -252,7 +252,7 @@ function childMain() {
                                 '/oauth-oidc/opaque_access_token');
     configChild.setOverride('oauth2.accessTokenFormat', 'opaque');
     const base = 'https://opaque.example';
-    const opts = { client_id: 'sts-management-api', username: 'ada',
+    const opts = { client_id: 'sts-api-client', username: 'ada',
                    scope: 'openid' };
     const handle = String(oauth2.accessToken(base, opts) || '');
     note(handle.indexOf('.') < 0 && handle.length === 43 &&

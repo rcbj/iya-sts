@@ -239,8 +239,8 @@ opens that realm. Add `?realm=<id>` to choose a different one, or
 `/admin` or `/portal` never asks.
 
 **The management API.** `/admin-api` accepts a token from the default realm's
-`sts-management-api` client everywhere. Under `/realm/<id>/admin-api` it also
-accepts a token that realm's own `sts-management-api` client was issued, with
+client `sts-api-client` everywhere. Under `/realm/<id>/admin-api` it also
+accepts a token that realm's own `sts-api-client` was issued, with
 the realm's issuer and audience, and refuses that token the same service-wide
 operations the console refuses the realm's administrators.
 

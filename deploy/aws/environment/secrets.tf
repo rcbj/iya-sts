@@ -17,7 +17,7 @@
 #                            read by the service (STS_DATABASE_PASSWORD_PROVIDER=aws)
 #                            and set on the role by the schema-init container
 #   db-master-password       the RDS master user's, used by schema-init only
-#   admin-api-client-secret  the seeded `sts-management-api` client's secret,
+#   admin-api-client-secret  the seeded `sts-api-client` client's secret,
 #                            injected by ECS; the workflow mints its token with it
 #
 # AND, IN PRODUCT MODE ONLY (2026-09-17):

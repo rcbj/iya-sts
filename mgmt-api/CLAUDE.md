@@ -566,8 +566,8 @@ scopes** (`common/roles.js`, seeded in every realm), and
   Write in the realm issuing the token — so the open console is honoured
   (the API is its machine door, rule 7) and the bootstrap administrator
   before its claim is not (#103).
-* **AN APPLICATION holds them by being a member** — `sts-management-api` is
-  seeded in both, in every realm; any other client needs `add-member` on
+* **AN APPLICATION holds them by being a member** — `sts-api-client` is
+  seeded in both, in every realm (`sts-management-api` until #1139, below); any other client needs `add-member` on
   `/admin/roles`. Declaring the scope is still required (the gate re-checks
   it, #110) and is no longer enough.
 
@@ -614,8 +614,21 @@ mode only since #446 (below). What is no longer
 true by default is the third: anybody who can reach this port can no longer
 grant themselves both roles here.
 
+**THE API IS AN APPLICATION OBJECT, AND ITS CALLER IS ANOTHER ONE (#1139,
+2026-10-29).** `sts-management-api` is this API's own entry now — an
+`oauth2-resource-server` holding the audience (base + `/admin-api`, and in the
+default realm `adminApi.audience` too), never a client: its client_id is
+refused at every endpoint a client presents itself at, in every mode
+(`STS-OAUTH-0985`). Until #1139 that identifier WAS the bootstrap client, and
+everything this file says of "the seeded client" before that date is said of
+`sts-api-client` today. The gate's audience check is unchanged — it reads
+`wantedAudiences()`, not the entry — and refusing a token whose audience no
+object holds is #1140, planned. `common/CLAUDE.md` (`applications.js`, the
+internal applications) carries the four resource objects and the guard.
+
 **AND IT ACQUIRED A BOOTSTRAP HOLE THAT HAS TO BE CLOSED BY CONFIGURATION.**
-The seeded `sts-management-api` client's secret is minted at every start and is
+The seeded `sts-api-client`'s secret (`sts-management-api`'s until #1139) is
+minted at every start and is
 readable only THROUGH the API it unlocks, so a service that has restarted is a
 service nobody can get a token for. `adminApi.clientSecret` pins it, every path
 that starts a service for the suite sets it per run — **before that service
@@ -1282,7 +1295,7 @@ is removed. rcbj's decision on #446:
   sentence under *IT IS A DIFFERENT CREDENTIAL FROM THE CONSOLE'S* is now true
   without an exception.
 * **The recovery path in product is `adminApi.clientSecret`**, pinned before
-  the start, so the seeded `sts-management-api` client can always mint a token.
+  the start, so the seeded `sts-api-client` can always mint a token.
   The bootstrap paragraph above already says a deployment that does not set it
   has an administrative surface it cannot reach; with the fallback gone that is
   the whole of the way back in.
@@ -1804,7 +1817,8 @@ in the same change as the page (rule 7):
   resource, because the secret is an application attribute and the mint is
   `applications.regenerateClientSecret()`. **The reply is the one place this
   act hands the value out**; the audit row names the attribute. It refuses
-  `sts-management-api` while `adminApi.clientSecret` pins that secret, because
+  `sts-api-client` (`sts-management-api` until #1139) while
+  `adminApi.clientSecret` pins that secret, because
   every token for this API is minted with the setting and seeding never
   rewrites an existing entry — regenerating it would be this API locking its
   own bootstrap out wherever a secret is checked.
@@ -2065,7 +2079,8 @@ session.
 
 A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7
 owes them this API as well as the console. rcbj chose a realm-scoped
-`sts-management-api` token per realm over reusing the service token. The gate
+`sts-management-api` token per realm over reusing the service token — the
+realm's `sts-api-client` since #1139. The gate
 keeps the SERVICE credential exactly as it was and adds a second, narrower one:
 
 * **TRIED SECOND, AND ONLY UNDER A REALM PREFIX.** A token that does not verify
@@ -2091,7 +2106,7 @@ keeps the SERVICE credential exactly as it was and adds a second, narrower one:
   operation needs: 403 `STS-API-0123` if not, and an undeclared scope the
   operation does not need is dropped before the roles are read. Removing a
   declaration therefore cuts off tokens already issued. The seeded
-  `sts-management-api` and `sts-admin-console` (the API explorer mints as the
+  `sts-api-client` and `sts-admin-console` (the API explorer mints as the
   console) declare both in every realm; an administrator may declare them on
   any other client, which is then a door too.
 * **THE CONSOLE'S SCOPE, READ OFF THE OPERATION** (`STS-API-0112`).
@@ -2103,7 +2118,7 @@ keeps the SERVICE credential exactly as it was and adds a second, narrower one:
 The realm's client secret is minted per start and is not pinned by
 `adminApi.clientSecret`, which is the service client's; a realm administrator
 reads or regenerates it on their realm's console
-(`/realm/<id>/admin/applications?application=sts-management-api`). The
+(`/realm/<id>/admin/applications?application=sts-api-client`). The
 pinned-secret refusal on `regenerate-secret` applies in the default realm only.
 With `adminApi.authRequired` off, a console SESSION reaching this API is confined
 the same way when its authority is a realm's.

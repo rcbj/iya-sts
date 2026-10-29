@@ -4127,7 +4127,7 @@ than by refusing the roster. rcbj's four decisions are the design:
 | Who is on a realm's roster | the realm's own `cn=admin-read` and `cn=admin-write`, and a seeded `admin` with a forced password change |
 | What a realm administrator reaches | their realm; service pages, actions and settings are hidden and refused |
 | How the plain `/admin` and `/portal` pick a realm | a chooser — a list of every realm, remembered on the `sts_realm` cookie |
-| The machine door | a realm-scoped `sts-management-api` token per realm |
+| The machine door | a realm-scoped `sts-api-client` token per realm (`sts-management-api` until #1139) |
 
 **THE DEFAULT REALM'S ROSTER IS STILL THE SERVICE ROSTER** and administers every
 realm exactly as before, which rcbj stated as a requirement in its own right.
@@ -6569,8 +6569,9 @@ console's.
 `tests/protocol/sts_admin_console.js` presses every button it finds, and on an
 application page that now includes Regenerate and Take off: both are safe to
 press on any entry the walk reaches (the console's and portal's own clients
-read their secret fresh on every sign-in, and `sts-management-api` is refused
-while `adminApi.clientSecret` pins it).
+read their secret fresh on every sign-in, and `sts-api-client` is refused
+while `adminApi.clientSecret` pins it; `sts-management-api` has had no secret
+since #1139).
 
 ## THE CERTIFICATE DETAILS DIALOG, ON `/admin/pki` AND `/admin/crypto-metadata` (2026-09-13)
 

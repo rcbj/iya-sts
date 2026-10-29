@@ -15477,7 +15477,7 @@ class AdminApi {
                          'the attribute and never the value — though `GET ' +
                          '/admin-api/applications?application=` reads the ' +
                          'entry back for an `admin:read` token, as it always ' +
-                         'has.\n\n`sts-management-api` is REFUSED while ' +
+                         'has.\n\n`sts-api-client` is REFUSED while ' +
                          '`adminApi.clientSecret` pins its secret: every ' +
                          'token for this API is minted with that setting, ' +
                          'and seeding never writes over an existing entry.',
@@ -15563,7 +15563,7 @@ class AdminApi {
                          'are in the application\'s `credentials.clientSecret' +
                          '.secrets`); it stops authenticating at once. The ' +
                          'secret `adminApi.clientSecret` pins on ' +
-                         '`sts-management-api` is refused.',
+                         '`sts-api-client` is refused.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -26092,7 +26092,8 @@ class AdminApi {
   // (STS-API-0111). The token endpoint now issues `admin:*` only to a client
   // whose `oauthAllowedScope` lists it, and this asks the same question again
   // on every call, so an allowance removed from a client stops the tokens it
-  // already holds. The seeded `sts-management-api` and `sts-admin-console`
+  // already holds. The seeded `sts-api-client` (`sts-management-api` until
+  // #1139) and `sts-admin-console`
   // declare both in every realm.
   // ---------------------------------------------------------------------------
   /**
@@ -26672,7 +26673,7 @@ class AdminApi {
         // when the request is under a realm prefix, so a realm's key is never
         // tried at `/admin-api` itself or at another realm's. What such a token
         // may do is then bounded three ways below: its issuer and audience are
-        // this realm's, it was issued to this realm's `sts-management-api`
+        // this realm's, it was issued to this realm's `sts-api-client`
         // client, and `admin-ui/admin_scope.ts` refuses it every service-wide
         // operation.
         //
@@ -27065,7 +27066,7 @@ class AdminApi {
             'it: a token is honoured here only while its client\'s ' +
             'oauthAllowedScope lists the scope it uses. ' + (mdmFeed
               ? 'Declare device:compliance on the MDM feed\'s application.'
-              : 'The seeded sts-management-api declares both admin ' +
+              : 'The seeded sts-api-client declares both admin ' +
                 'scopes. Declare it on the application (POST ' +
                 '/admin-api/applications/add) or use that client.')] });
         }
@@ -27794,7 +27795,7 @@ function startupBanner(operations: number): string {
              'scope admin:read to read and admin:write to write, checked as ' +
              'a XACML access decision against the ADMIN_READ and ADMIN_WRITE ' +
              'roles. Get one from the client_credentials grant as the seeded ' +
-             'application sts-management-api, whose secret is ' +
+             'application sts-api-client, whose secret is ' +
              'adminApi.clientSecret. THAT SETTING IS THE BOOTSTRAP: this ' +
              'surface used to be the way back in when nobody held a console ' +
              'role, and it is only still that if the secret was pinned ' +

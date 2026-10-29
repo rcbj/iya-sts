@@ -380,8 +380,9 @@ the seeder when it is within thirty days of expiry. It is mounted at
 user the service runs as. The service is not root, so the mode is what keeps
 another user from reading the key.
 
-**The management API's client secret is kept apart from these, where the
-service's identity cannot read it.** It is at `secret/sts-admin`. At each
+**The bootstrap client's secret (`sts-api-client`, which calls the management
+API) is kept apart from these, where the service's identity cannot read it.**
+It is at `secret/sts-admin`. At each
 `docker compose up` the seeder writes the service a single-use,
 response-wrapped token for that path. The container's start command unwraps
 it as root, reads the secret, revokes the token, and hands the value to the

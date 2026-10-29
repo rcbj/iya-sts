@@ -561,7 +561,7 @@ async function runBody(t) {
     const saved = process.env.ADMIN_API_CLIENT_SECRET;
     process.env.ADMIN_API_CLIENT_SECRET = 'appcred-pinned-secret';
     try {
-      const pinned = applications.regenerateClientSecret('sts-management-api');
+      const pinned = applications.regenerateClientSecret('sts-api-client');
       t.equal(codeOf(pinned), 'STS-REG-0061',
               'THE MANAGEMENT API\'S OWN SECRET IS NOT REGENERATED WHILE ' +
               'adminApi.clientSecret PINS IT — every /admin-api token is ' +

@@ -514,7 +514,7 @@ base64url, as a registration mints one — and replaces the old one at once.
 Wherever the token endpoint checks a secret (RFC 9700 mode, product mode) the old
 one stops working on the next request. The new value is shown on the page and in
 the API reply; the audit log names the attribute and never the value.
-`sts-management-api`'s secret is refused while `adminApi.clientSecret` pins it,
+`sts-api-client`'s secret is refused while `adminApi.clientSecret` pins it,
 because every token for `/admin-api` is minted with that setting.
 
 ```bash

@@ -33,7 +33,7 @@
 // application holds them by being a member), and lists the companion's
 // completion page as a redirect URI, which is what lets a product realm
 // accept it as the address a wallet is sent to. **Or the companion registers
-// itself**: given the seeded `sts-management-api` client's secret
+// itself**: given the seeded `sts-api-client` client's secret
 // (`COMPANION_BOOTSTRAP_SECRET`, the `adminApi.clientSecret` a stack pins),
 // it creates that application once — or, after a restart, mints itself a
 // new secret on it — and from then on uses only its own. The bootstrap
@@ -229,10 +229,10 @@ class StsClient {
       log.debug("Leaving StsClient.ensureRegistered(). No way in.");
       throw new Error("the companion has no client of its own: set " +
                       "COMPANION_CLIENT_ID and COMPANION_CLIENT_SECRET, or " +
-                      "COMPANION_BOOTSTRAP_SECRET (the sts-management-api " +
+                      "COMPANION_BOOTSTRAP_SECRET (the sts-api-client " +
                       "client's secret) for it to register itself.");
     }
-    const admin = (await this.mint("sts-management-api",
+    const admin = (await this.mint("sts-api-client",
                                    this.bootstrapSecret)).access_token;
     const api = async (path, body) => {
       log.debug("Entering api(). " + path);

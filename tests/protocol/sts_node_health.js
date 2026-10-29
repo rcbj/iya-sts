@@ -326,10 +326,10 @@ async function aRealmTokenIsRefused() {
   const R = "/realm/" + REALM;
   const regenerated = await api("POST", R +
     "/admin-api/applications/regenerate-secret",
-    { application: "sts-management-api" });
+    { application: "sts-api-client" });
   const secret = regenerated.body && regenerated.body.clientSecret;
   assert.ok(secret, "precondition: regenerating the realm's " +
-    "sts-management-api secret answered " + regenerated.status);
+    "sts-api-client secret answered " + regenerated.status);
   // ASKED AGAIN FOR A MOMENT (cluster, 2026-10-27): the secret was written
   // on the node the regenerate landed on, sealed under the new realm's data
   // key, and the token request may land on the other node, which reads the
@@ -340,7 +340,7 @@ async function aRealmTokenIsRefused() {
     minted = await call("POST", base + R + "/oauth2/token", {
       headers: { "Content-Type": "application/x-www-form-urlencoded",
                  Authorization: "Basic " +
-                   Buffer.from("sts-management-api:" + secret)
+                   Buffer.from("sts-api-client:" + secret)
                      .toString("base64") },
       body: new URLSearchParams({ grant_type: "client_credentials",
                                   scope: "admin:read admin:write",

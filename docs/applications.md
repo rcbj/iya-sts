@@ -191,7 +191,11 @@ startup, under `ou=applications` with everything else:
 |---|---|---|
 | `sts-admin-console` | The admin console at `/admin`: a PUBLIC client on the authorization code grant with PKCE, its tokens always DPoP-bound and audienced to the realm's `/admin-api`, redirect URI `/admin/callback` | every realm |
 | `sts-user-portal` | The user portal at `/portal`: a confidential OpenID Connect relying party on the authorization code grant, redirect URI `/portal/callback` | every realm |
-| `sts-management-api` | The [management API](management-api.md): a confidential OAuth client on `client_credentials`, with `client_secret_basic`, scope `admin:read admin:write`, and no redirect URI | every realm |
+| `sts-api-client` | The client a program calls this service's own APIs as: a confidential OAuth client on `client_credentials`, with `client_secret_basic`, scope `admin:read admin:write report:use`, no redirect URI, and a member of the `ADMIN_READ`, `ADMIN_WRITE` and `REPORT_USE` roles. It calls the [management API](management-api.md#getting-a-token) and the [reports API](reporting.md#from-another-program) | every realm |
+| `sts-management-api` | The [management API](management-api.md), `/admin-api`, as an OAuth 2.0 resource. Until 2026-10-29 this identifier was the client that `sts-api-client` is now | every realm |
+| `sts-account-api` | The [account API](account-api.md), `/account-api`, as an OAuth 2.0 resource: the user portal's only door | every realm |
+| `sts-report-api` | The [reports API](reporting.md), `/report-api`, as an OAuth 2.0 resource | every realm |
+| `sts-resource` | The default resource, `<issuer base>/resource`: the audience a token gets when its request names no `resource`, which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management accept | every realm |
 | `sts-debugger-api` | The [embedded protocol debugger's](admin-console.md#the-embedded-protocol-debugger) api: a resource server that defines one delegated permission, `urn:sts:debugger-api:debugger` | default realm, whether or not the debugger is embedded |
 | `sts-debugger-ui` | The embedded debugger's browser client: a relying party granted that permission | default realm, whether or not the debugger is embedded |
 
@@ -201,10 +205,24 @@ service's own authorization server: an unauthenticated request is sent to
 `/oauth2/authorize` with the entry's `client_id`, comes back to its redirect
 URI with a code, and the code is redeemed at `/oauth2/token`. The three hosted
 surfaces authenticate there with `private_key_jwt`, using a key this service
-issued them; the management API has a `client_secret`. Each entry also carries
-a registration access token, so `GET /oauth2/register/sts-admin-console`
+issued them; `sts-api-client` has a `client_secret`. Each client entry also
+carries a registration access token, so `GET /oauth2/register/sts-admin-console`
 returns the registration to whoever holds it. RFC 9700 mode checks these
 clients by the same rules as anybody else's.
+
+**`sts-management-api`, `sts-account-api`, `sts-report-api` and
+`sts-resource` are not clients.** Each represents one of this service's own
+APIs as an OAuth 2.0 resource: it holds the audience a token for that API
+names, in `oauthAudience` (the realm's base address followed by the API's
+path; the default realm's management API also holds `adminApi.audience`).
+Their kind is `oauth2-resource-server`, shown on `/admin/applications` as
+*OAuth 2.0 resource server*. They carry no secret, no grant type and no
+redirect URI, and **the authorization server refuses the client_id of an
+entry of that kind** (one that is not also an `oauth2-client`) at the
+authorization, token, PAR, introspection, revocation, device authorization
+and CIBA endpoints, in every mode, with `invalid_client` (`STS-OAUTH-0985`).
+To call one of these APIs, use a client application configured for it, such
+as `sts-api-client`, or create one of your own.
 
 The console, portal and debugger entries carry `oauthGlobalConsent` for
 `openid`, `profile`, `email` and `offline_access` (and the debugger's
@@ -1121,7 +1139,8 @@ The live source for every setting is its console page and
 | `oauth2.softwareStatementOpensRegistration` | `STS_OAUTH2_SOFTWARE_STATEMENT_OPENS_REGISTRATION` | `true` | yes | A trusted statement is accepted where registration is otherwise closed (product mode with `oauth2.openRegistration` off). |
 | `oauth2.softwareStatementRequired` | `STS_OAUTH2_SOFTWARE_STATEMENT_REQUIRED` | `false` | yes | Refuse a registration or update that carries no statement. |
 
-`adminApi.clientSecret` pins the management API client's secret; it is on
+`adminApi.clientSecret` pins the secret of `sts-api-client`, the seeded
+client that calls the management API; it is on
 [Management API](management-api.md#configuration).
 
 ## Design decisions

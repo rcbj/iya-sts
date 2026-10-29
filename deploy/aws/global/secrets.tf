@@ -120,7 +120,7 @@ data "aws_kms_key" "global" {
 #                             sealed with, and a product node whose keys will
 #                             not open does not start (common/keystore.js,
 #                             common/secrets.js)
-#   admin-api-client-secret   the seeded `sts-management-api` entry is
+#   admin-api-client-secret   the seeded `sts-api-client` entry is
 #                             written ONCE and never over an existing one
 #                             (common/applications.js, the seed and
 #                             regenerateClientSecret's STS-REG-0061), so the

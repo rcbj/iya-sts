@@ -228,10 +228,13 @@ function childMain() {
          !!ldap.entries.get('cn=report-admins,' + ldap.groupsDn()),
          'A3. both groups exist in the directory');
     const reportClient = applications.get('sts-report');
-    note(!applications.get('sts-report-api') && !!reportClient &&
-         !(reportClient.fields || {}).oauthDelegatedPermission,
-         'A4. no resource application defines the scopes and sts-report ' +
-         'holds no delegated permission');
+    const reportApi = applications.get('sts-report-api');
+    note(!!reportClient &&
+         !(reportClient.fields || {}).oauthDelegatedPermission &&
+         !!reportApi && !(reportApi.fields || {}).oauthPermission,
+         'A4. sts-report-api, the reports API\'s resource object (#1139), ' +
+         'defines no permission and sts-report holds no delegated ' +
+         'permission', JSON.stringify(reportApi && reportApi.kinds));
     note(gate.RESOURCE.REPORT_API === 'report-api',
          'A5. the gate names the resource the policy\'s third rule targets');
 

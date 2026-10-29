@@ -116,8 +116,8 @@
     "text": "Shared Signals 寫入。授權 ssf.manage 權限。僅當某人屬於此角色的群組（種子群組名為 ssf-manage），且其登入的應用程式是此角色的成員時，才會向其簽發該權限。僅當應用程式本身是成員時，才會在其自身的權杖上簽發該權限。該權限不授權 ssf.read。"
   },
   "roles.native.REPORT_USE.what": {
-    "en": "3dc6cff824e184e8",
-    "text": "報表，作為使用者。授權 report:use 權限：報表應用程式與 /report-api，範圍是持有者擁有或被共用的定義與工作，由存取控制原則決定。個人透過此角色的群組（初始化為 report-users）、作為直接成員，或在主控台名冊上（Admin Read 或 Admin Write）持有；應用程式作為成員持有，並在其自身權杖上取得該權限，只能存取其自行定義的定義與工作。"
+    "en": "7457776f7906d309",
+    "text": "報表，作為使用者。授權 report:use 權限：報表應用程式與 /report-api，範圍是持有者擁有或被共用的定義與工作，由存取控制原則決定。個人透過此角色的群組（初始化為 report-users）、作為直接成員，或在主控台名冊上（Admin Read 或 Admin Write）持有；應用程式作為成員持有，並在其自身權杖上取得該權限，只能存取其自行定義的定義與工作。引導用戶端 sts-api-client 作為成員預置。"
   },
   "roles.native.REPORT_ADMIN.what": {
     "en": "d17c8f34f20ced92",

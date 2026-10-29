@@ -51,8 +51,8 @@ holds ADMIN_READ and ADMIN_WRITE by being a member).
 
 **Its own client, or it registers itself.** `COMPANION_CLIENT_ID` /
 `COMPANION_CLIENT_SECRET` name an application an operator registered.
-Without them, `COMPANION_BOOTSTRAP_SECRET` — the seeded `sts-management-api`
-client's secret, the `ADMIN_API_CLIENT_SECRET` a stack pins — is used for
+Without them, `COMPANION_BOOTSTRAP_SECRET` — the seeded `sts-api-client`'s
+secret (`sts-management-api`'s until #1139), the `ADMIN_API_CLIENT_SECRET` a stack pins — is used for
 exactly three calls: create the `iya-sts-companion` application (declaring
 the two scopes and listing the completion page as a redirect URI), add it to
 the two roles, or after a restart mint it a new secret

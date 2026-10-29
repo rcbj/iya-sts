@@ -10577,6 +10577,14 @@ const CODES = [
     summary: 'An opaque access token was not minted: three fresh 256-bit ' +
       'handles each collided with a digest already stored (#501).',
     spec: 'none — the mint throws; no token is issued' },
+  { code: 'STS-OAUTH-0985',
+    summary: 'A request at an endpoint a client presents itself at ' +
+      '(authorization, token, PAR, introspection, revocation, device ' +
+      'authorization, CIBA) named the client_id of an API resource object ' +
+      '(kind oauth2-resource-server). A resource is never a client; refused ' +
+      'in every mode (#1139).',
+    spec: 'invalid_client (RFC 6749 section 5.2), HTTP 401; HTTP 400 at the ' +
+      'authorization endpoint, never redirected' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -23396,7 +23404,7 @@ const CODES = [
       'uploaded-realm-ca and uploaded-external-ca.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0061',
-    summary: 'Regenerating the client secret of sts-management-api was ' +
+    summary: 'Regenerating the client secret of sts-api-client was ' +
       'refused because adminApi.clientSecret pins it.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // Reserved block STS-REG-0070..0079 (2026-09-13).
@@ -23834,7 +23842,7 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-REG-0210',
     summary: 'The client secret pinned by adminApi.clientSecret on ' +
-      'sts-management-api was not removed: every /admin-api token is ' +
+      'sts-api-client was not removed: every /admin-api token is ' +
       'minted with it.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-REG-0211',

@@ -127,6 +127,14 @@
     "en": "348a7be2ebfe0753",
     "text": "Un client_id présenté au point de terminaison d’autorisation ou de jeton."
   },
+  "applications.kinds.oauth2-resource-server.label": {
+    "en": "1a0aa8de22952147",
+    "text": "Serveur de ressources OAuth 2.0"
+  },
+  "applications.kinds.oauth2-resource-server.what": {
+    "en": "58cc9baf4b862f48",
+    "text": "Une API à laquelle des jetons d'accès sont adressés, nommée par son oauthAudience. Ce n'est jamais un client : son client_id est refusé à chaque point de terminaison où un client se présente."
+  },
   "applications.kinds.oidc-relying-party.label": {
     "en": "d1c72d0dc209cf8d",
     "text": "Partie de confiance OpenID Connect"

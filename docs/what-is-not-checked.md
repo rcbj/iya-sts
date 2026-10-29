@@ -773,13 +773,15 @@ is the way in.
 
 An OAuth 2.0 access token audienced to the API, carrying `admin:read` to read and
 `admin:write` to change anything, obtained with the client-credentials grant as
-the seeded `sts-management-api` client and the secret in
+the seeded client `sts-api-client` and the secret in
 `adminApi.clientSecret` (one is generated at each start when that is empty).
 Those scopes are issued only to a client whose `oauthAllowedScope` declares
 them, in both modes, and the API asks again on every call: a token whose client
 no longer declares the scope an operation needs is refused 403
-(`STS-API-0123`). The seeded `sts-management-api` and `sts-admin-console` declare
-both, in every realm.
+(`STS-API-0123`). The seeded `sts-api-client` and `sts-admin-console` declare
+both, in every realm. `sts-management-api` is the API's own application object,
+an OAuth 2.0 resource holding the audience, and is refused as a client in every
+mode (`STS-OAUTH-0985`).
 
 `adminApi.authRequired=false` is a development setting. **In development** it
 opens the API to anybody who can reach the port. **In product** it is refused

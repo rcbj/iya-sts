@@ -200,7 +200,8 @@ volume. rcbj's four decisions, and what each became:
   0644 key is fixed without a new credential. `secrets.js` reads it once per
   start.
 * **The management API secret is at `secret/sts-admin`, a separate path read
-  at start through a narrower policy.** "Narrower" needs a second credential,
+  at start through a narrower policy.** It is `sts-api-client`'s since #1139
+  (`sts-management-api`'s until then, now the API's resource object). "Narrower" needs a second credential,
   since one identity with both policies is one identity: each node gets a
   RESPONSE-WRAPPED, single-use token minted from the `sts-admin-secret` role
   (orphan, `admin-secret.hcl` only, ten minutes and two uses once unwrapped,
@@ -237,7 +238,7 @@ the second.
 
 **What a restart costs.** `docker compose restart sts` runs no seeder, so the
 node finds no wrapping token and starts without the start-up secrets (it says
-so); the management API client then has a secret minted per start, and an
+so); `sts-api-client` then has a secret minted per start, and an
 application of your own still works. `docker compose up` re-runs the seeder.
 
 ---

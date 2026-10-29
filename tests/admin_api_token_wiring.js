@@ -42,7 +42,7 @@
 // because a launcher is not something a job can look at.
 //
 // **THE ORDERING IS THE PART WORTH PINNING AND IT IS NOT OBVIOUS.**
-// `applications.js` seeds `sts-management-api` with a secret minted at every
+// `applications.js` seeds `sts-api-client` with a secret minted at every
 // start, readable only THROUGH the API it unlocks. So a secret chosen after
 // the child is up is a secret nobody can present, and the mint that follows it
 // fails with a message about a client secret rather than about ordering. Both

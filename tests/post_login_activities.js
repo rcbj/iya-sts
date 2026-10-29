@@ -559,7 +559,7 @@ function childMain() {
     const admin = await inDefault(function () {
       return oauth2.accessTokenAsync(base, {
         audience: base + '/admin-api', scope: 'admin:read admin:write',
-        client_id: 'sts-management-api', sub: 'sts-management-api' });
+        client_id: 'sts-api-client', sub: 'sts-api-client' });
     });
     const reporter = await oauth2.accessTokenAsync(base, {
       audience: base + '/report-api', client_id: CLIENT, username: ADMIN,

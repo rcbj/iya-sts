@@ -83,7 +83,7 @@ function nothingElse(t) {
 
 function applications(t) {
   log.debug("Entering applications().");
-  ['sts-admin-console', 'sts-portal', 'sts-management-api'
+  ['sts-admin-console', 'sts-portal', 'sts-management-api', 'sts-api-client'
   ].forEach(function (identifier) {
     t.check(!reset.isSuiteApplication({ identifier: identifier,
                                         registeredBy: 'startup' }),

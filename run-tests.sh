@@ -969,7 +969,7 @@ COMPOSE_ENV=(
   "XACML_PEP_SERVER_CERT_DIR=/usr/src/sts/tests/report/pep-credential/server"
   # ---- the management API's client secret, pinned for this run ------------
   # `/admin-api` requires an access token, and the token is obtained by the
-  # seeded `sts-management-api` client with `client_credentials`. That client's
+  # seeded `sts-api-client` client with `client_credentials`. That client's
   # secret is minted at every start and is readable only THROUGH the API it
   # unlocks — a bootstrap hole — so `adminApi.clientSecret` exists to pin it.
   #

@@ -751,7 +751,7 @@ function childMain() {
 
     // --- k. /admin-api as a resource server -----------------------------------
     config.setOverride('adminApi.authRequired', true);
-    const adminBasic = 'Basic ' + Buffer.from('sts-management-api:' +
+    const adminBasic = 'Basic ' + Buffer.from('sts-api-client:' +
       process.env.ADMIN_API_CLIENT_SECRET).toString('base64');
     r = await request('POST', '/oauth2/token', {
       headers: { authorization: adminBasic },

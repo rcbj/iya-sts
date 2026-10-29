@@ -21275,6 +21275,54 @@ class OAuth2Server {
     });
 
     // -------------------------------------------------------------------------
+    // AN API RESOURCE OBJECT IS NEVER A CLIENT (#1139, 2026-10-29), IN EVERY
+    // MODE. rcbj: the API application objects "will never be used to
+    // authenticate an application." An entry of kind
+    // `oauth2-resource-server` alone (`applications.isResourceServer()`) is
+    // refused wherever a request names it as a client — the query or form
+    // `client_id`, the Basic user, a client assertion's `sub`
+    // (`presentedClientIdsOf()`) — at every endpoint a client presents itself
+    // at. ONE GUARD AHEAD OF THEM ALL, and not a check in each handler,
+    // because development verifies no client credential and an entry
+    // declaring no grant type is held to none (`declaredFlowsOf()`): without
+    // this, `client_id=sts-management-api` minted a token in development.
+    // The authorization endpoint answers 400 and never redirects (RFC 6749
+    // section 4.1.2.1: an invalid client is not redirected to); the others
+    // answer RFC 6749 section 5.2's `invalid_client`, 401.
+    // -------------------------------------------------------------------------
+    app.use(['/oauth2/authorize', '/oauth2/token', '/oauth2/par',
+             '/oauth2/introspect', '/oauth2/revoke',
+             '/oauth2/device_authorization', '/oauth2/bc-authorize',
+             '/:as/oauth2/authorize', '/:as/oauth2/token', '/:as/oauth2/par',
+             '/:as/oauth2/introspect', '/:as/oauth2/revoke',
+             '/:as/oauth2/device_authorization', '/:as/oauth2/bc-authorize'],
+            function (req: Req, res: Res, next: () => void): void {
+      log.debug("Entering the resource-object guard.");
+      const named = self.presentedClientIdsOf(req).filter(function (id) {
+        return applications.isResourceServer(id);
+      });
+      if (!named.length) {
+        log.debug("Leaving the resource-object guard. No resource named.");
+        next();
+        return;
+      }
+      // `req.path` is relative to the mount point inside `app.use()`; the
+      // mounted path is `req.baseUrl`.
+      const authorize = /\/oauth2\/authorize$/.test(String(req.baseUrl || ''));
+      if (!authorize &&
+          /^Basic\s/i.test(String(req.headers.authorization || ''))) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      errorCodes.mark(res, 'STS-OAUTH-0985');
+      log.debug("Leaving the resource-object guard. " + named[0] +
+                " is an API resource object.");
+      self.oauthError(res, authorize ? 400 : 401, 'invalid_client',
+        '"' + named[0] + '" is an API resource object (an OAuth 2.0 ' +
+        'resource server), and a resource is never a client. Call this ' +
+        'API as a client application configured to call it.');
+    });
+
+    // -------------------------------------------------------------------------
     // `x-fapi-interaction-id` ON THIS SERVICE'S PROTECTED RESOURCES (#176).
     // FAPI 1.0 Baseline section 6.2.1 items 11 and 13: a resource server
     // "shall set the response header x-fapi-interaction-id to the value

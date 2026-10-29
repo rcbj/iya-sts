@@ -138,9 +138,9 @@ function claimA(t) {
       config.clearOverride('global.mode');
     }
   });
-  t.check(scopePolicy.declares('sts-management-api', 'admin:read') &&
-          scopePolicy.declares('sts-management-api', 'admin:write'),
-          'the seeded sts-management-api declares both admin scopes');
+  t.check(scopePolicy.declares('sts-api-client', 'admin:read') &&
+          scopePolicy.declares('sts-api-client', 'admin:write'),
+          'the seeded sts-api-client declares both admin scopes');
   t.check(scopePolicy.declares('sts-admin-console', 'admin:write'),
           'and so does sts-admin-console, whose explorer mints admin tokens');
   t.check(scopePolicy.isProtected('report:use') &&
@@ -158,8 +158,15 @@ function claimA(t) {
   // THE DELEGATED GRANT IS GONE (#1030): no resource application defines
   // the two words, and sts-report holds no grant — the browser asks for
   // the bare words with `resource`, which never consulted one.
-  t.check(!applications.get('sts-report-api'),
-          'sts-report-api is not seeded (#1030)');
+  // THE IDENTIFIER CAME BACK AS THE REPORTS API'S RESOURCE OBJECT (#1139):
+  // it defines no delegated permission and nobody holds a grant of one.
+  const reportApi = applications.get('sts-report-api');
+  t.check(!!reportApi &&
+          reportApi.kinds.indexOf('oauth2-resource-server') >= 0 &&
+          !(reportApi.fields || {}).oauthPermission,
+          'sts-report-api is the reports API\'s resource object and defines ' +
+          'no permission (#1139)',
+          JSON.stringify(reportApi && reportApi.kinds));
   const reportClient = applications.get('sts-report');
   t.check(!!reportClient && !(reportClient.fields || {})
             .oauthDelegatedPermission,
@@ -173,10 +180,10 @@ function claimA(t) {
           JSON.stringify(made));
   realms.run(realms.get('report-api-seed'), function () {
     t.check(!!applications.get('sts-report') &&
-            !applications.get('sts-report-api') &&
+            !!applications.get('sts-report-api') &&
             !applications.get('sts-debugger-api'),
-            'a new realm gets the reports client, and neither a report ' +
-            'API application nor the debugger');
+            'a new realm gets the reports client and the reports API\'s ' +
+            'resource object (#1139), and not the debugger');
     t.check(scopePolicy.declares('sts-report', 'report:use') &&
             scopePolicy.declares('sts-report', 'report:admin'),
             'and that realm\'s sts-report declares both report scopes');

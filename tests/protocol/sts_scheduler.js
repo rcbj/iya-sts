@@ -547,14 +547,14 @@ async function aRealmTokenIsConfined() {
   const R = "/realm/" + REALM;
   const regenerated = await api("POST", R +
     "/admin-api/applications/regenerate-secret",
-    { application: "sts-management-api" });
+    { application: "sts-api-client" });
   const secret = regenerated.body && regenerated.body.clientSecret;
   assert.ok(secret, "precondition: regenerating the realm's " +
-    "sts-management-api secret answered " + regenerated.status);
+    "sts-api-client secret answered " + regenerated.status);
   const minted = await call("POST", base + R + "/oauth2/token", {
     headers: { "Content-Type": "application/x-www-form-urlencoded",
                Authorization: "Basic " +
-                 Buffer.from("sts-management-api:" + secret)
+                 Buffer.from("sts-api-client:" + secret)
                    .toString("base64") },
     body: new URLSearchParams({ grant_type: "client_credentials",
                                 scope: "admin:read admin:write",
