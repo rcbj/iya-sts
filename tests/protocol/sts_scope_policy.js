@@ -22,7 +22,8 @@
 //      refuses THAT SAME TOKEN (403).
 //   2. SHARED SIGNALS, the same three steps.
 //   3. /admin-api. A client that is not the management client is refused
-//      `admin:read` at issuance; declared but holding no role, it is still
+//      `admin:read` at issuance; declared (since #1141 by a delegated
+//      permission grant on sts-management-api) but holding no role, it is still
 //      refused (#303 — a scope is a request, and ADMIN_READ is what
 //      authorizes it); in ADMIN_READ as well, its token reaches the API;
 //      taken out of the role, the token it holds is refused 403
@@ -150,6 +151,17 @@ async function declare(api, identifier, scope, mode) {
   log.debug("Leaving declare().");
 }
 
+// An admin scope's declaration is a delegated permission grant on the
+// management API's object (#1141), not `oauthAllowedScope`.
+async function grantAdmin(api, identifier, scope, mode) {
+  log.debug("Entering grantAdmin().");
+  const action = (mode || "grant") + "-permission";
+  await ok(api + "/permissions/" + action,
+           { client: identifier, permission: "urn:sts:admin-api:" + scope },
+           action + " " + scope + " for " + identifier);
+  log.debug("Leaving grantAdmin().");
+}
+
 function refusedInvalidScope(r) {
   log.debug("Entering refusedInvalidScope().");
   assert.strictEqual(r.status, 400, r.text.slice(0, 300));
@@ -239,7 +251,7 @@ async function managementApi() {
           "admin:read at issuance", function () {
       refusedInvalidScope(r);
     });
-    await declare(api, ADMIN_CLIENT, "admin:read");
+    await grantAdmin(api, ADMIN_CLIENT, "admin:read");
     r = await token(base, ADMIN_CLIENT, "admin:read", audience);
     check("declared but holding no role, it is still refused invalid_scope " +
           "(#303: the role authorizes the scope, not the declaration)",
@@ -276,13 +288,13 @@ async function managementApi() {
     r = await call("GET", api + "/status", undefined, auth);
     assert.strictEqual(r.status, 200, "precondition: back in the role, the " +
                        "same token works again: " + r.text.slice(0, 300));
-    await declare(api, ADMIN_CLIENT, "admin:read", "remove");
+    await grantAdmin(api, ADMIN_CLIENT, "admin:read", "revoke");
     r = await call("GET", api + "/status", undefined, auth);
     check("withdrawn, the token it already holds is refused 403 — the " +
           "default realm no longer accepts the scope from any client",
           function () {
       assert.strictEqual(r.status, 403, r.text.slice(0, 300));
-      assert.ok(/oauthAllowedScope/.test(r.text), r.text);
+      assert.ok(/delegated permission grant/.test(r.text), r.text);
     });
   } finally {
     // An administrative client is not left behind in the default realm, and
@@ -291,6 +303,9 @@ async function managementApi() {
     await call("POST", api + "/roles/remove-member",
                { role: "ADMIN_READ", kind: "application",
                  member: ADMIN_CLIENT });
+    await call("POST", api + "/permissions/revoke-permission",
+               { client: ADMIN_CLIENT,
+                 permission: "urn:sts:admin-api:admin:read" });
     await call("POST", api + "/applications/forget",
                { application: ADMIN_CLIENT });
   }
