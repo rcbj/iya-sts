@@ -31,7 +31,7 @@
 //   4. A NAME IS NOT AN AUTHORITY. The service administrator's own username,
 //      signed in through the realm, is that realm's person and is confined.
 //   5. A REALM'S OWN TOKEN. Minted at the realm's token endpoint by its
-//      `sts-management-api` client it reaches the realm's operations, is
+//      `sts-api-client` client it reaches the realm's operations, is
 //      refused everywhere else and refused the service-wide operations, and
 //      the same scopes are not issued to any other client in the realm unless
 //      an administrator declares them on it (#110) — and withdrawing that
@@ -523,12 +523,12 @@ async function aRealmTokenStaysInItsRealm() {
   const R = "/realm/" + REALM;
   const regenerated = await api("POST", R +
     "/admin-api/applications/regenerate-secret",
-    { application: "sts-management-api" });
+    { application: "sts-api-client" });
   const secret = regenerated.body && regenerated.body.clientSecret;
   assert.ok(secret, "precondition: regenerating the realm's " +
-    "sts-management-api secret answered " + regenerated.status + " " +
+    "sts-api-client secret answered " + regenerated.status + " " +
     regenerated.text.slice(0, 200));
-  const minted = await tokenFor(REALM, "sts-management-api", secret);
+  const minted = await tokenFor(REALM, "sts-api-client", secret);
   const token = minted.body && minted.body.access_token;
   assert.ok(token, "precondition: the realm's token endpoint answered " +
             minted.status + " " + minted.text.slice(0, 200));

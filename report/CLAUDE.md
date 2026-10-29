@@ -20,6 +20,19 @@ delegated permissions and `sts-report` held the grant**; the bare words
 with `resource` never consult a grant, so it decided nothing and both
 are gone (*Who may run one*, below). `common/applications.js` seeds
 `sts-report`, in every realm.
+**`sts-report-api` IS BACK SINCE #1139 (2026-10-29), as something else**:
+the reports API's own application object, an OAuth 2.0 RESOURCE of kind
+`oauth2-resource-server` holding the audience (`oauthAudience`, the seeded
+base + `/report-api`) — rcbj's model, in which every API is an object and a
+caller is always a separate client configured to call it. It defines no
+permission and holds no grant, so #1030's argument still stands, and it is
+NEVER a client: `oauth-oidc/oauth2.ts` refuses its client_id everywhere a
+client presents itself (`STS-OAUTH-0985`; `common/CLAUDE.md` has the four
+resource objects). The machine caller is `sts-api-client`, seeded a member
+of REPORT_USE (`common/roles.js`) and declaring `report:use`; as an
+application it reaches only what it defined (`ownerKind`, below), and its
+`client_credentials` token is unbound, so it arrives as `Bearer`.
+`docs/reporting.md`'s *From another program* is the operator's half.
 With `authn.multipleAccounts` on, the account control is the console's
 menu: the summary is the account this tab is, and the panel lists the
 browser's other signed-in accounts as switch buttons, plus a sign-in as

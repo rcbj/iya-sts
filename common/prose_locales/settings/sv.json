@@ -4120,8 +4120,8 @@
     "text": "Hantering-API-klientens hemlighet"
   },
   "adminApi.clientSecret|description": {
-    "en": "117556c1e8418751",
-    "text": "`client_secret` för den förinstallerade klienten `sts-management-api`, vilket är det en anropare byter mot en åtkomsttoken. TOMT betyder att en skapas vid varje start — det gick bra medan detta API var öppet, och är ett BOOTSTRAPHÅL nu när det inte är det: hemligheten kan bara läsas GENOM det API som den låser upp, så en omstart skulle lämna ingen som kan komma in. Ange den så behåller klienten den hemligheten över omstarter, vilket en driftsättning och varje teststartare behöver."
+    "en": "ecfbd09786778c40",
+    "text": "`client_secret` för den förinstallerade klienten `sts-api-client`, vilket är det en anropare byter mot en åtkomsttoken. TOMT betyder att en skapas vid varje start — det gick bra medan detta API var öppet, och är ett BOOTSTRAPHÅL nu när det inte är det: hemligheten kan bara läsas GENOM det API som den låser upp, så en omstart skulle lämna ingen som kan komma in. Ange den så behåller klienten den hemligheten över omstarter, vilket en driftsättning och varje teststartare behöver."
   },
   "adminApi.clientSecret|restartReason": {
     "en": "e0a892bf56763f7b",

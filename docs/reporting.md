@@ -80,6 +80,43 @@ something else — a helpdesk group that may read everything, shares that
 may edit — writes an override of `access-control` into its own policies
 (`/admin/xacml/policies`); the built-in rules are documented there.
 
+## From another program
+
+The reports API is represented in every realm by the application
+**`sts-report-api`**. It holds the audience a token for `/report-api` names
+(this realm's base address followed by `/report-api`), and it is an OAuth 2.0
+resource, **never a client**: the authorization server refuses its client_id
+at every endpoint a client presents itself at (`STS-OAUTH-0985`). A report
+generator, a scheduler or a script calls the API as a client application
+configured to call it.
+
+The seeded client **`sts-api-client`** is one. It is a member of
+`REPORT_USE` and declares `report:use`, so it can mint a token with the
+client credentials grant and use it at once. Its secret is the one the
+[management API](management-api.md#the-client-secret) describes:
+
+```bash
+BASE=https://localhost:8081
+
+TOKEN=$(curl -sk -u "sts-api-client:$ADMIN_API_CLIENT_SECRET" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode scope=report:use \
+  --data-urlencode "resource=$BASE/report-api" \
+  "$BASE/oauth2/token" | jq -r .access_token)
+
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/report-api/catalog" | jq
+```
+
+That token is not bound to a key, so it is sent as `Bearer`; a token bound
+with DPoP or a client certificate is presented the way it was bound. Like
+every application, **`sts-api-client` reaches only the definitions and jobs
+it defined itself**, whichever role it holds; it does not see a person's
+reports. For anything that lasts, create an application of your own in the
+realm, give it a client secret, declare `report:use` in its
+`oauthAllowedScope` and add it to `REPORT_USE`, as
+[An application of your own](management-api.md#an-application-of-your-own-for-every-token-after-that)
+does for the admin roles.
+
 ## The page
 
 Every report page has the same chrome. A small right-justified bar at
@@ -1196,8 +1233,9 @@ clear, readable only by the service's own user. See
 
 Send `Authorization: DPoP` and the proof. The token is for `sts-report`,
 audienced to this realm's `/report-api`, with `report:use` or
-`report:admin`. Paths sit after the realm prefix. The default realm has
-none.
+`report:admin`. An application's client-credentials token is sent as
+`Bearer` unless it is bound ([From another program](#from-another-program)).
+Paths sit after the realm prefix. The default realm has none.
 
 A job id, a definition id and a share are not credentials. Retrieving a
 result takes the same token the query took. Group share is run and

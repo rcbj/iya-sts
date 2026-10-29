@@ -127,6 +127,14 @@
     "en": "348a7be2ebfe0753",
     "text": "Ett client_id som presenteras vid auktoriserings- eller tokenslutpunkten."
   },
+  "applications.kinds.oauth2-resource-server.label": {
+    "en": "1a0aa8de22952147",
+    "text": "OAuth 2.0-resursserver"
+  },
+  "applications.kinds.oauth2-resource-server.what": {
+    "en": "58cc9baf4b862f48",
+    "text": "Ett API som åtkomsttoken adresseras till, namngivet av dess oauthAudience. Det är aldrig en klient: dess client_id avvisas vid varje slutpunkt där en klient presenterar sig."
+  },
   "applications.kinds.oidc-relying-party.label": {
     "en": "d1c72d0dc209cf8d",
     "text": "Förlitande part i OpenID Connect"

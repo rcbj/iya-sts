@@ -3587,9 +3587,12 @@ a protected scope would be a client granting itself Admin Write:
 (`STS-REG-0173`), in both modes and whatever the software statement says. An
 RFC 7592 update may KEEP one an administrator already declared on the entry and
 may not add one. The seeded rows are this service's own and declare theirs
-through the same registration document: `sts-management-api` and
-`sts-admin-console` `admin:read admin:write` (the explorer mints its token as the
-console), `sts-debugger-ui` the debugger permission.
+through the same registration document: `sts-api-client` and
+`sts-admin-console` `admin:read admin:write` (the explorer mints its token as
+the console; `sts-api-client` declares `report:use` too), `sts-debugger-ui`
+the debugger permission. The four API resource objects (#1139) declare
+nothing, and `oauth2.ts` refuses their client_id wherever a client presents
+itself (`STS-OAUTH-0985`) — `common/CLAUDE.md`, the internal applications.
 
 ### The token endpoint now records `oauthScope`, and that is not cosmetic
 

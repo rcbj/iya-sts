@@ -116,8 +116,8 @@
     "text": "Escritura de Shared Signals. Autoriza el permiso ssf.manage. Una persona lo recibe solo mientras pertenece al grupo de este rol, sembrado como ssf-manage, y la aplicación en la que inicia sesión es miembro de este rol. Una aplicación lo recibe en su propio token solo mientras es miembro. No autoriza ssf.read."
   },
   "roles.native.REPORT_USE.what": {
-    "en": "3dc6cff824e184e8",
-    "text": "Informes, como usuario. Autoriza el permiso report:use: la aplicación de informes y /report-api para las definiciones y los trabajos que el titular posee o que se le comparten, según decida la política de control de acceso. Una persona lo tiene a través del grupo de este rol, sembrado como report-users, como miembro directo, o en la lista de la consola (Admin Read o Admin Write); una aplicación lo tiene como miembro y lo recibe en su propio token, alcanzando solo las definiciones y los trabajos que ella definió."
+    "en": "7457776f7906d309",
+    "text": "Informes, como usuario. Autoriza el permiso report:use: la aplicación de informes y /report-api para las definiciones y los trabajos que el titular posee o que se le comparten, según decida la política de control de acceso. Una persona lo tiene a través del grupo de este rol, sembrado como report-users, como miembro directo, o en la lista de la consola (Admin Read o Admin Write); una aplicación lo tiene como miembro y lo recibe en su propio token, alcanzando solo las definiciones y los trabajos que ella definió. El cliente de arranque, sts-api-client, se siembra como miembro."
   },
   "roles.native.REPORT_ADMIN.what": {
     "en": "d17c8f34f20ced92",

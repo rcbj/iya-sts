@@ -211,11 +211,11 @@ async function mintTheScimToken() {
     const r = await fetch(base.replace(/\/+$/, "") +
                           "/admin-api/applications/add", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ application: "sts-management-api",
+      body: JSON.stringify({ application: "sts-api-client",
                              attribute: "oauthAllowedScope", value: scope }) });
     const text = await r.text();
     assert.ok(r.status === 200 || /already/i.test(text),
-      "declaring " + scope + " on sts-management-api answered " + r.status +
+      "declaring " + scope + " on sts-api-client answered " + r.status +
       " " + text.slice(0, 200));
   }
   const token = await adminApiToken.mint(base, secret, {

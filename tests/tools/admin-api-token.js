@@ -15,9 +15,11 @@
 // deliberately out of that path.
 //
 // THE CLIENT IS SEEDED, WHICH IS WHY THIS IS SHORT. `common/applications.js`
-// puts `sts-management-api` in the registry at startup —
+// puts `sts-api-client` in the registry at startup —
 // `client_credentials`, `client_secret_basic`,
-// `scope: 'admin:read admin:write'` — so a run does not register anything.
+// `scope: 'admin:read admin:write report:use'` — so a run does not register
+// anything. It was `sts-management-api` until #1139 made that identifier the
+// management API's resource object, which is never a client.
 // The SECRET is pinned by `adminApi.clientSecret` (`ADMIN_API_CLIENT_SECRET`):
 // every launcher chooses one per run, starts the service with it, and hands
 // it to this file as `STS_ADMIN_API_CLIENT_SECRET`. Only without that is it
@@ -75,7 +77,7 @@ async function secretFor(base) {
     return process.env.STS_ADMIN_API_CLIENT_SECRET;
   }
   const reply = await request(base + '/admin-api/applications?identifier=' +
-                              encodeURIComponent('sts-management-api'));
+                              encodeURIComponent('sts-api-client'));
   if (reply.status !== 200) {
     log.debug("Leaving secretFor().");
     return '';
@@ -85,7 +87,7 @@ async function secretFor(base) {
     const rows = body.applications ||
                  (body.application ? [body.application] : []);
     const row = rows.filter(function (one) {
-      return one && one.identifier === 'sts-management-api';
+      return one && one.identifier === 'sts-api-client';
     })[0];
     log.debug("Leaving secretFor().");
     return (row && row.registration && row.registration.client_secret) || '';
@@ -131,7 +133,7 @@ async function mint(base, secret, options) {
       'content-type': 'application/x-www-form-urlencoded',
       'content-length': Buffer.byteLength(form),
       authorization: 'Basic ' +
-        Buffer.from('sts-management-api:' + secret).toString('base64')
+        Buffer.from('sts-api-client:' + secret).toString('base64')
     }
   }, form);
   if (reply.status !== 200) {
@@ -151,7 +153,7 @@ async function tokenFor(base, options) {
   log.debug("Entering tokenFor().");
   const secret = await secretFor(base);
   if (!secret) {
-    throw new Error('could not read the sts-management-api client secret from ' +
+    throw new Error('could not read the sts-api-client client secret from ' +
                     base + '. Set STS_ADMIN_API_CLIENT_SECRET, or start the ' +
                     'service with adminApi.authRequired=false to read it.');
   }

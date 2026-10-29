@@ -268,7 +268,7 @@ straight away, so two things have to exist before you destroy it:
   `usw2` cell's key (a restored database keeps its snapshot's key);
 - a **carry-over secret**, `iya-sts/carryover/testidp`, that holds the
   values the database was written with: the key-encryption key, the
-  management API client's secret, the bootstrap administrator's password
+  secret of `sts-api-client`, the bootstrap administrator's password
   and the Kerberos service password.
 
 `deploy/aws/convert-to-cells.sh` checks both and makes them. Run it with no

@@ -220,6 +220,12 @@ const certificateSubject = require('./certificate_subject');
 const KINDS = [
   { kind: 'oauth2-client', label: 'OAuth 2.0 client',
     what: 'A client_id presented at the authorization or token endpoint.' },
+  // #1139: this service's own APIs as resources, and any API an operator
+  // registers the same way. The one OAuth kind that is never a client.
+  { kind: 'oauth2-resource-server', label: 'OAuth 2.0 resource server',
+    what: 'An API access tokens are addressed to, named by its ' +
+          'oauthAudience. It is never a client: its client_id is refused ' +
+          'at every endpoint a client presents itself at.' },
   { kind: 'oidc-relying-party', label: 'OpenID Connect relying party',
     what: 'The same client_id where the request asked for the openid scope — ' +
           'a relying party is an OAuth client that also wants an ID Token, ' +
@@ -16557,7 +16563,9 @@ function sweepClientSecrets(nowMs) {
   return out;
 }
 
-// THE MANAGEMENT API'S OWN CLIENT, WHILE ITS SECRET IS PINNED. Seeding writes
+// THE BOOTSTRAP CLIENT, WHILE ITS SECRET IS PINNED — `sts-api-client` since
+// #1139, `sts-management-api` until that identifier became the management
+// API's resource object. Seeding writes
 // `adminApi.clientSecret` onto a FRESH entry and never over an existing one,
 // so a secret regenerated, rotated out or removed here would go on
 // disagreeing with the setting every launcher and deployment mints its API
@@ -16567,7 +16575,7 @@ function sweepClientSecrets(nowMs) {
 function pinnedSecretOf(identifier) {
   log.debug("Entering pinnedSecretOf().");
   log.debug("Leaving pinnedSecretOf().");
-  return String(identifier) === 'sts-management-api' && realms.isDefault()
+  return String(identifier) === 'sts-api-client' && realms.isDefault()
     ? String(config.value('adminApi.clientSecret') || '') : '';
 }
 
@@ -16823,7 +16831,7 @@ function removeClientSecret(identifier, options) {
   if (pinned && target.secret === pinned) {
     log.debug("Leaving removeClientSecret(). The pinned secret.");
     return errorCodes.mark({ ok: false, errors: ['That client secret of ' +
-      '"sts-management-api" is pinned by the adminApi.clientSecret ' +
+      '"sts-api-client" is pinned by the adminApi.clientSecret ' +
       'setting, which is what every token for /admin-api is minted with. ' +
       'Change the setting instead.'] }, 'STS-REG-0210');
   }
@@ -16889,7 +16897,7 @@ function regenerateClientSecret(identifier, options) {
   if (pinnedSecretOf(identifier)) {
     log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
     return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
-                             '"sts-management-api" is pinned by the ' +
+                             '"sts-api-client" is pinned by the ' +
                              'adminApi.clientSecret setting, which is what ' +
                              'every token for /admin-api is minted with. ' +
                              'Regenerating it here would leave the entry and ' +
@@ -19600,6 +19608,33 @@ function didClaimWithPairwiseOf(clientId) {
   return on;
 }
 
+// AN API AS A RESOURCE, NEVER A CLIENT (#1139): whether the entry a client_id
+// (or registry identifier) names is an `oauth2-resource-server` and NOT an
+// OAuth client as well. `oauth-oidc/oauth2.ts` refuses such a client_id at
+// every endpoint a client presents itself at, in every mode. An entry
+// carrying both kinds is a client that also defines an API, which RFC 9767
+// allows a GNAP resource server and nothing here forbids an OAuth one.
+/**
+ * Says whether a client_id names a resource object that is no client.
+ *
+ * @param clientId - a client_id or registry identifier
+ * @returns true for an `oauth2-resource-server` without `oauth2-client`
+ */
+function isResourceServer(clientId) {
+  log.debug("Entering isResourceServer().");
+  const id = String(clientId == null ? '' : clientId).trim();
+  if (!id) {
+    log.debug("Leaving isResourceServer(). Nothing was asked for.");
+    return false;
+  }
+  const entry = forClientId(id) || get(id);
+  const kinds = (entry && entry.kinds) || [];
+  const resource = kinds.indexOf('oauth2-resource-server') >= 0 &&
+    kinds.indexOf('oauth2-client') < 0;
+  log.debug("Leaving isResourceServer(). " + resource);
+  return resource;
+}
+
 /**
  * Returns the application whose `oauthClientId` lists a value, matched exactly.
  *
@@ -20124,6 +20159,114 @@ function debuggerApplications() {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// THIS SERVICE'S OWN APIS, AS OAUTH 2.0 RESOURCES (#1139, 2026-10-29).
+//
+// rcbj: "They represent the APIs as an OAuth2 Resource. They hold the
+// audience and scope information that is valid. To call this API, a separate
+// application object must be created that is configured to call the desired
+// API object." Until #1139 none of these APIs was an object: the audiences
+// were recognised by code (`common/registered_targets.ts`'s
+// `ownResourceServer()`), and `sts-management-api` was a client. Four rows,
+// in every realm:
+//
+//   * `sts-management-api` — `/admin-api`. The identifier was the bootstrap
+//     CLIENT until #1139; that client is `sts-api-client` now (above).
+//   * `sts-account-api` — `/account-api`, the user portal's only door.
+//   * `sts-report-api` — `/report-api`, the reports application's. A resource
+//     object of this name existed until #1030 deleted it for a grant that
+//     decided nothing (`report/CLAUDE.md`); this is the object back, as the
+//     API's representation rather than a grant's home.
+//   * `sts-resource` — `<issuer base>/resource`, the default resource
+//     indicator RFC 9068 section 3 requires for a request that names none,
+//     which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management
+//     accept (`jwt_access_token.ts`'s `isOwnResourceAudience()`).
+//
+// **THE AUDIENCE IS THE PINNED NAME** (rcbj's decision on #1139): the
+// seeded base (`internalBaseUrl()`: `global.publicBaseUrl` with the realm's
+// prefix, else `localhost:<port>`), moved onto the listener that serves the
+// API (`helpers.rebaseTo()`). The default realm's management API carries
+// `adminApi.audience` as well, which is what `/admin-api` has always
+// required a token to name; it is the same value unless an operator pinned
+// another.
+//
+// **A RESOURCE IS NEVER A CLIENT.** Its kind is `oauth2-resource-server`
+// and nothing else, and `oauth-oidc/oauth2.ts` refuses its client_id at
+// every endpoint a client presents itself at, in every mode
+// (STS-OAUTH-0985). Emptying the grant lists would not have done it: an
+// entry declaring no grant type is held to none (`declaredFlowsOf()`), and
+// development verifies no client credential. So it carries no secret, no
+// registration access token, no redirect URI and no grant.
+// ---------------------------------------------------------------------------
+/**
+ * The resource objects for this service's own APIs, one row each.
+ *
+ * @param base - the seeded base, with the realm's prefix
+ * @returns the rows
+ */
+function apiResourceApplications(base) {
+  log.debug("Entering apiResourceApplications().");
+  const issued = nowSec();
+  // `internalBaseUrl()` carries the realm's prefix only where
+  // `global.publicBaseUrl` is pinned (its own comment says why: development
+  // LEARNS a surface's callback past it). An audience is learnt from
+  // nothing, so a realm's must carry its prefix either way, or every realm's
+  // management API would answer to the default realm's.
+  const realmBase = helpers.pinnedBaseUrl() ? base
+    : base + realms.currentPrefix();
+  const row = function (identifier, name, audiences, what) {
+    const unique = [];
+    audiences.forEach(function (one) {
+      const text = String(one || '').trim();
+      if (text && unique.indexOf(text) < 0) {
+        unique.push(text);
+      }
+    });
+    return {
+      identifier: identifier,
+      name: name,
+      kinds: ['oauth2-resource-server'],
+      protocols: ['OAuth 2.0'],
+      realmScope: 'every',
+      description: 'seeded at startup: ' + what + ', as an OAuth 2.0 ' +
+                   'resource (applications.seedInternal)',
+      attributes: { appAllowedProtocol: ['oauth2'], oauthAudience: unique },
+      registration: {
+        client_id: identifier,
+        client_name: name,
+        client_id_issued_at: issued,
+        client_uri: unique[0],
+        application_type: 'web',
+        redirect_uris: [],
+        grant_types: [],
+        response_types: [],
+        scope: ''
+      }
+    };
+  };
+  const adminApi = helpers.rebaseTo(realmBase, 'management-api') + '/admin-api';
+  const rows = [
+    row('sts-management-api', 'Management API',
+        [adminApi].concat(realms.isDefault()
+          ? [String(config.value('adminApi.audience') || '')] : []),
+        'this service\'s own management API at /admin-api'),
+    row('sts-account-api', 'Account API',
+        [helpers.rebaseTo(realmBase, 'portal') + '/account-api'],
+        'this service\'s own account API at /account-api, the user ' +
+        'portal\'s'),
+    row('sts-report-api', 'Reporting API',
+        [helpers.rebaseTo(realmBase, 'report') + '/report-api'],
+        'this service\'s own reports API at /report-api'),
+    row('sts-resource', 'Default resource',
+        [helpers.rebaseTo(realmBase, 'oauth-oidc') + '/resource'],
+        'this service\'s default resource indicator (UserInfo, SCIM, ' +
+        'Shared Signals, OpenID4VCI, Grant Management)')
+  ];
+  log.debug("Leaving apiResourceApplications(). " + rows.length +
+            " row(s).");
+  return rows;
+}
+
 // THE CLIENTS THIS SERVICE'S OWN HOSTED SURFACES SIGN IN AS — the three rows
 // above and below, by identifier, and `common/oidc_rp.ts`'s SURFACES by
 // clientId (`tests/oidc_core_units.js` holds the two lists equal). Each is
@@ -20335,8 +20478,22 @@ function internalApplications() {
                'report:admin',
         token_endpoint_auth_method: 'none'
       } },
-    { identifier: 'sts-management-api',
-      name: 'Management API',
+    // THE CLIENT EVERY MACHINE CALLER HERE STARTS AS (#1139, 2026-10-29). It
+    // was `sts-management-api` until #1139 made that identifier the
+    // management API ITSELF, as a resource (`apiResourceApplications()`,
+    // below): rcbj, "The API application object ... will never be used to
+    // authenticate an application. A separate application object has to be
+    // created for any API client." This is that separate object, and it took
+    // over everything the old client carried — `adminApi.clientSecret`, the
+    // OpenBao seeding, the test launchers, the companion, the AWS reset.
+    //
+    // It calls `/admin-api` and `/report-api`: a member of ADMIN_READ,
+    // ADMIN_WRITE and REPORT_USE (`common/roles.js`'s `seedApplications`),
+    // declaring the three scopes those roles authorize. NOT `/account-api`,
+    // which acts only on a person (rcbj's decision on #1139): a
+    // client_credentials token has no account there to act on.
+    { identifier: 'sts-api-client',
+      name: 'API client',
       kinds: ['oauth2-client'],
       protocols: ['OAuth 2.0'],
       // EVERY REALM SINCE 2026-09-14 (#32), and it was the default realm only.
@@ -20346,16 +20503,18 @@ function internalApplications() {
       // at `/realm/<id>/admin-api` and nowhere else, and never at a
       // service-wide operation (`mgmt-api/admin_api.ts`'s gate and
       // `admin-ui/admin_scope.ts`). The default realm's copy is still the
-      // service's and works everywhere.
+      // service's and works everywhere. (Written of `sts-management-api`;
+      // carried over with the rest by #1139.)
       realmScope: 'every',
-      description: 'seeded at startup: this service\'s own management API at ' +
-                   '/admin-api (applications.seedInternal)',
+      description: 'seeded at startup: the client this service\'s own ' +
+                   'management API (/admin-api) and reports API ' +
+                   '(/report-api) are called as (applications.seedInternal)',
       // Declared OAuth 2.0 alone, the console's reason: a client_credentials
       // client with no ID Token, so not OpenID Connect.
       attributes: { appAllowedProtocol: ['oauth2'] },
       registration: {
-        client_id: 'sts-management-api',
-        client_name: 'Management API',
+        client_id: 'sts-api-client',
+        client_name: 'API client',
         client_id_issued_at: issued,
         // CONFIGURED WHERE THERE IS ONE, and minted otherwise. Since
         // `/admin-api` began requiring an access token, a secret that is
@@ -20373,7 +20532,7 @@ function internalApplications() {
         client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
-                                 '/oauth2/register/sts-management-api',
+                                 '/oauth2/register/sts-api-client',
         client_uri: helpers.rebaseTo(base, 'admin-console') +
                     '/admin/api-explorer',
         application_type: 'web',
@@ -20383,10 +20542,11 @@ function internalApplications() {
         redirect_uris: [],
         grant_types: ['client_credentials'],
         response_types: [],
-        scope: 'admin:read admin:write',
+        scope: 'admin:read admin:write report:use',
         token_endpoint_auth_method: 'client_secret_basic'
       } }
-  ].concat(/** @type {any} */ (debuggerApplications()));
+  ].concat(/** @type {any} */ (apiResourceApplications(base)));
+  rows.push.apply(rows, /** @type {any} */ (debuggerApplications()));
   log.debug("Leaving internalApplications(). " + rows.length + " row(s).");
   return rows;
 }
@@ -20835,6 +20995,7 @@ module.exports = {
   // The client_id lookup beside it, exported for oauth2.js's audienceScopes().
   // Two lookups rather than one that tries both — see forClientId()'s header.
   forClientId: forClientId,
+  isResourceServer: isResourceServer,
   // And the WS-Trust / SAML spelling of forAudience(), exported for
   // wstrust.js's delegation act. Its header says why it reads two attributes
   // where the other two read one.

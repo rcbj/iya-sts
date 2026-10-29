@@ -47,7 +47,7 @@ the wire is invented: the `client_assertion_type` is RFC 7522's URN exactly.
 ```bash
 # 0. An /admin-api token. The management API takes one; see Configuration.
 ADMIN=$(curl -sk -X POST https://localhost:8081/oauth2/token \
-  -d grant_type=client_credentials -d client_id=sts-management-api \
+  -d grant_type=client_credentials -d client_id=sts-api-client \
   -d client_secret="$ADMIN_API_CLIENT_SECRET" \
   -d 'scope=admin:read admin:write' \
   --data-urlencode "resource=https://localhost:8081/admin-api" \

@@ -4120,8 +4120,8 @@
     "text": "Secret ng management API client"
   },
   "adminApi.clientSecret|description": {
-    "en": "117556c1e8418751",
-    "text": "Ang `client_secret` ng na-seed na `sts-management-api` client, na siyang ipinapalit ng caller para sa access token. Ang WALANG LAMAN ay nangangahulugang may mina-mint sa bawat start — ayos habang bukas ang API na ito, at isang BOOTSTRAP NA BUTAS ngayong hindi na: nababasa lang ang secret SA PAMAMAGITAN ng API na binubuksan nito, kaya pagkatapos ng restart ay walang makakapasok. Itakda ito at pinapanatili ng client ang secret na iyon kahit mag-restart, na siyang kailangan ng isang deployment at ng bawat test launcher."
+    "en": "ecfbd09786778c40",
+    "text": "Ang `client_secret` ng na-seed na `sts-api-client` client, na siyang ipinapalit ng caller para sa access token. Ang WALANG LAMAN ay nangangahulugang may mina-mint sa bawat start — ayos habang bukas ang API na ito, at isang BOOTSTRAP NA BUTAS ngayong hindi na: nababasa lang ang secret SA PAMAMAGITAN ng API na binubuksan nito, kaya pagkatapos ng restart ay walang makakapasok. Itakda ito at pinapanatili ng client ang secret na iyon kahit mag-restart, na siyang kailangan ng isang deployment at ng bawat test launcher."
   },
   "adminApi.clientSecret|restartReason": {
     "en": "e0a892bf56763f7b",

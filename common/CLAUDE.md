@@ -4454,8 +4454,9 @@ with `Cannot find module` naming a file the operator never mentioned.
      `/portal` reads the ambient realm's session; the console's since
      2026-09-11, when its code flow moved to the ambient realm (it was the
      DEFAULT realm's alone until then); the management API's since 2026-09-14
-     (#32), for a realm's own administrators. The embedded debugger's two
-     entries are the default realm's alone.
+     (#32), for a realm's own administrators — that client is `sts-api-client`
+     since #1139, below. The embedded debugger's two entries are the default
+     realm's alone.
    * **BOTH CARRY `oauthGlobalConsent`.** `oauth2.consentRequired` is on by
      default and is the only policy here that is, so without it a person
      signing in to look at their own account would first be asked to consent to
@@ -4479,6 +4480,60 @@ with `Cannot find module` naming a file the operator never mentioned.
      at all (it passed one object where `updateApplication()` takes an
      identifier and a change), so this bullet described a behaviour nothing had
      ever performed. `common/oidc_rp.ts`'s `ensureRedirectUri()` carries both.
+
+   **THIS SERVICE'S OWN APIS ARE APPLICATION OBJECTS SINCE #1139 (2026-10-29),
+   AND THE IDENTIFIER `sts-management-api` CHANGED MEANING.** rcbj's model: an
+   API object represents the API as an OAuth 2.0 RESOURCE — the audience and
+   the scopes valid at it — and NEVER authenticates; a caller is always a
+   separate client application configured to call it. Until then the
+   audiences were recognised by code alone (`registered_targets.ts`'s
+   `ownResourceServer()`) and `sts-management-api` was the bootstrap CLIENT.
+   `apiResourceApplications()` seeds four rows in every realm, kind
+   `oauth2-resource-server` (a new entry in `KINDS`, label *OAuth 2.0 resource
+   server*), with no secret, no registration access token, no redirect URI,
+   no grant and an empty `scope`:
+
+   | Identifier | Name | `oauthAudience` |
+   |---|---|---|
+   | `sts-management-api` | Management API | base + `/admin-api`; the default realm's also carries `adminApi.audience` |
+   | `sts-account-api` | Account API | base + `/account-api` |
+   | `sts-report-api` | Reporting API | base + `/report-api` (#1030 deleted an object of this name as a grant's home; this is the API's representation, `report/CLAUDE.md`) |
+   | `sts-resource` | Default resource | base + `/resource`, RFC 9068's default for a request naming none, which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management accept |
+
+   The base is `internalBaseUrl()` (`global.publicBaseUrl` with the realm's
+   prefix, else `localhost:<port>`), moved onto the API's listener by
+   `helpers.rebaseTo()`. **The audience is the pinned name** (rcbj's
+   decision): a service reached under another name does not add one here.
+
+   **A RESOURCE IS NEVER A CLIENT, AND THAT IS ENFORCED, NOT IMPLIED.**
+   `isResourceServer()` answers for an entry that is `oauth2-resource-server`
+   and NOT also `oauth2-client` (a client that defines an API is allowed, as
+   RFC 9767 allows a GNAP resource server), and `oauth-oidc/oauth2.ts`
+   refuses such a client_id at the authorization, token, PAR, introspection,
+   revocation, device authorization and CIBA endpoints, in every mode
+   (`STS-OAUTH-0985`: `invalid_client`, 401; 400 at the authorization
+   endpoint, never redirected). Emptying the grant lists would not have done
+   it: an entry declaring no grant type is held to none
+   (`declaredFlowsOf()`), and development verifies no client credential.
+
+   **THE BOOTSTRAP CLIENT IS `sts-api-client`** (*API client*), which took over
+   everything the old client carried: confidential, `client_secret_basic`,
+   `client_credentials` only, scope `admin:read admin:write report:use`, in
+   every realm, seeded a member of ADMIN_READ, ADMIN_WRITE and REPORT_USE
+   (`roles.js`). `adminApi.clientSecret` (and OpenBao's
+   `secret/sts-admin` field `adminApiClientSecret`) pins ITS secret, in the
+   default realm only (`pinnedSecretOf()`, `STS-REG-0061`, `STS-REG-0210`);
+   a realm's copy is minted, the #32 machine door. It does NOT call
+   `/account-api`, which acts only on a person (rcbj's decision): a
+   `client_credentials` token has no account there. `tests/tools/
+   admin-api-token.js` is still the one place the client id is written for
+   the launchers.
+
+   **PLANNED, NOT BUILT:** #1140 refuses any token whose audience no
+   application object holds, in both modes — which these four rows exist to
+   make possible; #1141 makes a delegated permission grant on one of these
+   objects the CLIENT's half of the scope check. Until then the scope check is
+   still `declares()` (3au) plus the roles (3u).
 
    **NO APPLICATION CREDENTIAL IS STORED IN THE CLEAR UNDER A DURABLE KEY SINCE
    2026-10-01.** `appRegistrationAccessToken` is sealed in `setField()` and
@@ -5103,7 +5158,10 @@ before #110 is left alone by `seedInternalApplication()` and carries no
 declaration: add `admin:read admin:write` to its `oauthAllowedScope` on the
 console (the application's page — the console's own gate is a session, which
 this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
-tokens; or delete the entry and restart.
+tokens; or delete the entry and restart. **The same rule meets #1139**: a
+store persisted before it keeps `sts-management-api` as the CLIENT it was
+written as (a seeded row never overwrites), and gains `sts-api-client` beside
+it; deleting the old entry and restarting reseeds it as the resource.
 
 ## 3az. `delegation_policy.ts`: who may act for whom, and as what (#108, 2026-09-23; #186, 2026-10-03)
 
@@ -5961,7 +6019,8 @@ is written down.
 **ADMIN_READ AND ADMIN_WRITE ARE THE TWO CONSOLE ROLES.** Configured entries
 seeded in every realm (`seedConsoleRoles()`, beside the internal
 applications), each authorizing its own admin scope, each held by the
-realm's `sts-management-api`. Their groups are `admin.readGroup` /
+realm's `sts-api-client` (`sts-management-api` until #1139 made that the
+management API's resource object). Their groups are `admin.readGroup` /
 `admin.writeGroup`, read when the entry is read rather than stored; a PERSON's
 membership is answered by the console roster (`admin_rbac.ts`), which carries
 development's open console and the bootstrap administrator's claim to the API
@@ -5977,7 +6036,7 @@ each authorizes one native permission, is seeded in every realm, cannot be
 deleted and cannot authorize anything else. DEVICE_COMPLIANCE is otherwise an
 ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 (rcbj's decision): no client is the MDM feed until an operator adds it, and
-`sts-management-api` is not one — the separation #164 decision 2 made.
+`sts-api-client` is not one — the separation #164 decision 2 made.
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
 

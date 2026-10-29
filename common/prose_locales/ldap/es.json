@@ -127,6 +127,14 @@
     "en": "348a7be2ebfe0753",
     "text": "Un client_id presentado en el endpoint de autorización o de token."
   },
+  "applications.kinds.oauth2-resource-server.label": {
+    "en": "1a0aa8de22952147",
+    "text": "Servidor de recursos OAuth 2.0"
+  },
+  "applications.kinds.oauth2-resource-server.what": {
+    "en": "58cc9baf4b862f48",
+    "text": "Una API a la que se dirigen los tokens de acceso, nombrada por su oauthAudience. Nunca es un cliente: su client_id se rechaza en todo endpoint en el que un cliente se presenta."
+  },
   "applications.kinds.oidc-relying-party.label": {
     "en": "d1c72d0dc209cf8d",
     "text": "Parte que confía OpenID Connect"

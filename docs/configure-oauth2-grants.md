@@ -327,7 +327,7 @@ make it a member of a role whose `rolePermission` names the permission — an
 app role of the resource (`<role>@<resource>`) or a realm role. Without one the
 permission is left off the token, and a request asking for nothing else is
 refused with `invalid_scope`. See
-[Permissions on another application](oauth-oidc.md#permissions-on-another-application-delegated-or-the-applications-own). The seeded `sts-management-api` client is a
+[Permissions on another application](oauth-oidc.md#permissions-on-another-application-delegated-or-the-applications-own). The seeded client `sts-api-client` is a
 working example of this grant.
 
 ### This service's own scopes

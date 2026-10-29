@@ -127,6 +127,14 @@
     "en": "348a7be2ebfe0753",
     "text": "Isang client_id na ipinakita sa authorization o token endpoint."
   },
+  "applications.kinds.oauth2-resource-server.label": {
+    "en": "1a0aa8de22952147",
+    "text": "OAuth 2.0 resource server"
+  },
+  "applications.kinds.oauth2-resource-server.what": {
+    "en": "58cc9baf4b862f48",
+    "text": "Isang API na pinagtutukuyan ng mga access token, na pinangalanan ng oauthAudience nito. Hindi ito kailanman isang client: tinatanggihan ang client_id nito sa bawat endpoint kung saan nagpapakilala ang isang client."
+  },
   "applications.kinds.oidc-relying-party.label": {
     "en": "d1c72d0dc209cf8d",
     "text": "OpenID Connect relying party"

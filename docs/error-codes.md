@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4797** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4798** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 409
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 733
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
@@ -2350,6 +2350,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0982` | A presented opaque access token has been revoked, either on its stored row or in the token register (#501). | HTTP 401 invalid_token |
 | `STS-OAUTH-0983` | Too many presented strings that are not stored opaque access tokens arrived from one address. Further misses wait (#501). A known token, a JWT and a success are not counted. | HTTP 429 invalid_token, Retry-After |
 | `STS-OAUTH-0984` | An opaque access token was not minted: three fresh 256-bit handles each collided with a digest already stored (#501). | none — the mint throws; no token is issued |
+| `STS-OAUTH-0985` | A request at an endpoint a client presents itself at (authorization, token, PAR, introspection, revocation, device authorization, CIBA) named the client_id of an API resource object (kind oauth2-resource-server). A resource is never a client; refused in every mode (#1139). | invalid_client (RFC 6749 section 5.2), HTTP 401; HTTP 400 at the authorization endpoint, never redirected |
 
 ## STS-SAML
 
@@ -5284,7 +5285,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0052` | A confirm-address or discard-address carried no address. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0053` | An ssfAllowedEvents value was neither caep, risc nor an event type URI this transmitter knows. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0060` | A write of oauthAssertionKeySource or oauthSamlAssertionKeySource named a value outside issued, uploaded-realm-ca and uploaded-external-ca. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-REG-0061` | Regenerating the client secret of sts-management-api was refused because adminApi.clientSecret pins it. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0061` | Regenerating the client secret of sts-api-client was refused because adminApi.clientSecret pins it. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0070` | A client registration (RFC 7591 or 7592) named a redirect_uri, post_logout_redirect_uri, frontchannel_logout_uri or backchannel_logout_uri that is not a usable address — not http(s) with a host, not a private-use scheme named for a domain, or (for the two logout URIs) not http(s). | invalid_redirect_uri or invalid_client_metadata (HTTP 400) |
 | `STS-REG-0071` | A console or /admin-api write put an unusable address on oauthRedirectUri, oauthPostLogoutRedirectUri, oauthFrontchannelLogoutUri or oauthBackchannelLogoutUri. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0072` | An RFC 7591 registration or RFC 7592 update named an RFC 9701 introspection_signed_response_alg, introspection_encrypted_response_alg or introspection_encrypted_response_enc this service cannot honour, or an enc with no alg. | invalid_client_metadata (HTTP 400) |
@@ -5373,7 +5374,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0207` | An application's token endpoint authentication methods (oauthTokenEndpointAuthMethod) were refused: "none" declares a public client and cannot be held beside any other method. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0208` | A client secret was not added or rotated in: the application already holds oauth2.clientSecretsMax secrets. Remove one first. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0209` | A client secret was not removed: no secret on the application has the id named. | none (a console or management API refusal, HTTP 400) |
-| `STS-REG-0210` | The client secret pinned by adminApi.clientSecret on sts-management-api was not removed: every /admin-api token is minted with it. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0210` | The client secret pinned by adminApi.clientSecret on sts-api-client was not removed: every /admin-api token is minted with it. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0211` | A client secret was not added: its lifetime or description is not one this service accepts. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0212` | A sealed client secret will not open under this process's key-encryption key — it was written under a different one — so it authenticates nothing until it is replaced. | none (logged; the token endpoint answers invalid_client) |
 | `STS-REG-0213` | A client secret could not be sealed, so it was not written: storing it in the clear where keys persist would put a working client credential in every directory dump. | none (a console or management API refusal, HTTP 400) |

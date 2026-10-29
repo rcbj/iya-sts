@@ -127,6 +127,14 @@
     "en": "348a7be2ebfe0753",
     "text": "在授權或權杖端點出示的 client_id。"
   },
+  "applications.kinds.oauth2-resource-server.label": {
+    "en": "1a0aa8de22952147",
+    "text": "OAuth 2.0 資源伺服器"
+  },
+  "applications.kinds.oauth2-resource-server.what": {
+    "en": "58cc9baf4b862f48",
+    "text": "存取權杖所指向的 API，由其 oauthAudience 命名。它從不是用戶端：在用戶端出示自身的每個端點上，其 client_id 都會被拒絕。"
+  },
   "applications.kinds.oidc-relying-party.label": {
     "en": "d1c72d0dc209cf8d",
     "text": "OpenID Connect 依賴方"

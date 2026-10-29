@@ -544,7 +544,7 @@ async function anUnconfiguredRealmRefusesNobody() {
                      row.name === "REPORT_USE" || row.name === "REPORT_ADMIN";
       assert.ok(row.native === true && row.console === !unheld &&
                 (unheld ? row.applications.length === 0
-                        : row.applications.indexOf("sts-management-api") >=
+                        : row.applications.indexOf("sts-api-client") >=
                           0) &&
                 (row.name !== "ADMIN_CONSOLE" ||
                  (row.conferredBy || []).indexOf("sts-admin-console") >= 0) &&
@@ -559,7 +559,7 @@ async function anUnconfiguredRealmRefusesNobody() {
                 row.permissions.length === 1 &&
                 row.permissions[0] === wanted[row.name],
                 "each authorizes its own native permission; the console " +
-                "roles are held by sts-management-api, and " +
+                "roles are held by sts-api-client, and " +
                 "DEVICE_COMPLIANCE, ADMIN_CONSOLE, SSF_READ, SSF_MANAGE, " +
                 "REPORT_USE and REPORT_ADMIN by no application: " +
                 JSON.stringify(row));

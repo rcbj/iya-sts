@@ -31,6 +31,8 @@
   "ldap.peps.sourceOfTruth": "Almost every attribute here is a RECORD this service wrote as a PEP registered, pulled or reported. The two that are not are xacmlPepEnabled, which an administrator sets and a reconnecting PEP does not clear, and xacmlPepNotifyUrl, which is one of the three addresses this service dials.",
   "applications.kinds.oauth2-client.label": "OAuth 2.0 client",
   "applications.kinds.oauth2-client.what": "A client_id presented at the authorization or token endpoint.",
+  "applications.kinds.oauth2-resource-server.label": "OAuth 2.0 resource server",
+  "applications.kinds.oauth2-resource-server.what": "An API access tokens are addressed to, named by its oauthAudience. It is never a client: its client_id is refused at every endpoint a client presents itself at.",
   "applications.kinds.oidc-relying-party.label": "OpenID Connect relying party",
   "applications.kinds.oidc-relying-party.what": "The same client_id where the request asked for the openid scope — a relying party is an OAuth client that also wants an ID Token, so a record commonly carries both kinds.",
   "applications.kinds.saml2-service-provider.label": "SAML 2.0 service provider",

@@ -246,7 +246,7 @@ allowTheSuitesAddress() {
     say "no egress address to allow-list"
     return 0
   fi
-  token="$(curl -fsS -u "sts-management-api:${CLIENT_SECRET}" \
+  token="$(curl -fsS -u "sts-api-client:${CLIENT_SECRET}" \
     -d grant_type=client_credentials \
     --data-urlencode 'scope=admin:read admin:write' \
     --data-urlencode "resource=${URL}/admin-api" "${URL}/oauth2/token" |

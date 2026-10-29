@@ -55,7 +55,7 @@
 // (#32) the page is a service page — `admin_scope.ts` hides and refuses it to a
 // realm administrator, because handing one a service token would make them a
 // service administrator. A realm administrator's machine door is their realm's
-// own `sts-management-api` token; this page becomes a realm page only once it
+// own `sts-api-client` token; this page becomes a realm page only once it
 // can mint that for a realm authority.
 //
 // ---------------------------------------------------------------------------

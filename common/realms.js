@@ -4990,7 +4990,7 @@ function realmSupport() {
             'the realm it is reached in, and the plain /admin and /portal ' +
             'ask which realm first when realms are defined. /admin-api takes ' +
             'the default realm\'s token everywhere and a realm\'s own ' +
-            'sts-management-api token in that realm only.' },
+            'sts-api-client token in that realm only.' },
     { family: 'LDAP (389 / 636)', state: 'full', by: 'dn',
       cards: ['LDAP'],
       note: 'A DIRECTORY PER REALM behind one socket — a separate store, not ' +

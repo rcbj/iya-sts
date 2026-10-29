@@ -220,7 +220,14 @@ server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded
-debugger's api is such an application, seeded in every install.
+debugger's api is such an application, seeded in every install. So are this
+service's own four, seeded in every realm as applications of the kind
+`oauth2-resource-server` that hold each audience: `sts-resource`,
+`sts-management-api`, `sts-account-api` and `sts-report-api`
+([Applications](applications.md#the-applications-that-are-this-service)).
+**A resource object is never a client**: its client_id is refused at the
+authorization, token, PAR, introspection, revocation, device authorization
+and CIBA endpoints, in every mode (`invalid_client`, `STS-OAUTH-0985`).
 Anything else is `invalid_target` (RFC 8707 section 2): redirected to the
 client from the authorization endpoint, a 400 from PAR and from the token
 endpoint. Development mode accepts any absolute URI, as before.
@@ -609,7 +616,7 @@ records what the client has asked for.
   `/admin-api`, SCIM and Shared Signals ask again on every call, so withdrawing
   a declaration cuts off tokens already issued. A registration cannot declare
   one (`invalid_client_metadata`); an administrator does. The seeded
-  `sts-management-api` and `sts-admin-console` declare the admin scopes.
+  `sts-api-client` and `sts-admin-console` declare the admin scopes.
 * **Every other scope, in product mode**, is issued only when the list names it.
   A client with **no list** has the default set: `openid`, `profile`, `email`,
   `address`, `phone`, `offline_access` and this realm's OpenID4VCI credential
