@@ -367,6 +367,141 @@ class XacmlPage {
   }
 
   /**
+   * Draws the AuthZEN tab (#563) from `GET /admin-api/xacml/authzen`: the
+   * API's state and settings, its attribute catalogue with the form that
+   * adds a row, and the callers in the AUTHZEN_PEPS group with their scopes.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the tab's view
+   * @returns the body as HTML
+   */
+  static authzenBody(ctx, json) {
+    const t = ctx.t;
+    const self = this;
+    const writable = ctx.write;
+    // Moved onto the tab by `WebPages.xacmlTabLinks()`, as the other tabs'
+    // forms are: `/admin/xacml#xacml-tab-authzen`, which the operations
+    // mirror.
+    const PAGE = '/admin/xacml/authzen';
+    const view = json || {};
+    const cat = view.catalogue || { rows: [], problems: [], objects: [],
+                                    categories: [], dataTypes: [],
+                                    multiplicities: [] };
+    const tail = function (uri) {
+      return String(uri || '').replace(/^.*[#:]/, '');
+    };
+    const tiles = '<div class="tiles">' +
+      kit.tile(view.enabled && view.xacmlEnabled && view.apiObject
+        ? t.text('consoleXacml.yes') : t.text('consoleXacml.no'),
+               t.text('consoleXacml.authzen.tile.answers')) +
+      kit.tile(view.callerAuthentication || 'mtls',
+               t.text('consoleXacml.authzen.tile.door')) +
+      kit.tile(cat.rows.length, t.text('consoleXacml.authzen.tile.rows')) +
+      kit.tile(view.callersTotal || 0,
+               t.text('consoleXacml.authzen.tile.callers')) +
+      '</div>';
+    const what = kit.note(
+      '<p>' + t.html('consoleXacml.authzen.p1') + '</p><p>' +
+      t.html('consoleXacml.authzen.p2') + '</p>',
+      t.text('consoleXacml.authzen.label'));
+    const missing = view.apiObject ? '' : kit.warn(
+      t.html('consoleXacml.authzen.noObject'),
+      t.text('consoleXacml.authzen.noObjectLabel'));
+    const problems = cat.problems.length ? kit.warn(
+      cat.problems.map(esc).join('<br>'),
+      t.text('consoleXacml.authzen.problemsLabel')) : '';
+    const rows = cat.rows.map(function (row) {
+      const remove = writable
+        ? '<form method="post" action="' + PAGE + '" style="display:inline">' +
+          self.hidden('action', 'remove-attribute') +
+          self.hidden('object', row.object) +
+          self.hidden('property', row.property) +
+          '<button type="submit">' +
+          t.html('consoleXacml.authzen.remove') + '</button></form>'
+        : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
+      return '<tr><td><code>' + esc(row.object + '.' + row.property) +
+        '</code>' + (row.description
+          ? '<div class="sub">' + esc(row.description) + '</div>' : '') +
+        '</td><td><code>' + esc(row.attributeId) + '</code></td><td>' +
+        esc(tail(row.category)) + '</td><td>' + esc(tail(row.dataType)) +
+        '</td><td>' + esc(row.multiplicity) + '</td><td>' + remove +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="6">' +
+      t.html('consoleXacml.authzen.noRows') + '</td></tr>';
+    const options = function (values, blank?) {
+      return (blank ? [{ value: '', label: blank }] : []).concat(
+        (values || []).map(function (one) {
+          return { value: one, label: one };
+        }));
+    };
+    const add = writable
+      ? '<h3>' + t.html('consoleXacml.authzen.addHeading') + '</h3>' +
+        '<form method="post" action="' + PAGE + '">' +
+        self.hidden('action', 'set-attribute') +
+        '<table><tr><td>' + t.html('consoleXacml.authzen.object') +
+        '</td><td>' + self.select('object', options(cat.objects), '') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.property') +
+        '</td><td>' + self.textField('property', '', 30) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.attributeId') +
+        '</td><td>' + self.textField('attributeId', '', 50) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.category') +
+        '</td><td>' + self.select('category', options(cat.categories,
+          t.text('consoleXacml.authzen.objectsOwn')), '') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.dataType') +
+        '</td><td>' + self.select('dataType', options(cat.dataTypes),
+                                  'string') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.multiplicity') +
+        '</td><td>' + self.select('multiplicity',
+                                  options(cat.multiplicities), 'single') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.description') +
+        '</td><td>' + self.textField('description', '', 50) +
+        '</td></tr></table><p class="sub">' +
+        t.html('consoleXacml.authzen.reserved') + '</p>' +
+        '<button type="submit">' + t.html('consoleXacml.authzen.save') +
+        '</button></form>'
+      : '';
+    const callers = (view.callers || []).map(function (one) {
+      return '<tr><td><code>' + esc(one.name) + '</code><div class="sub">' +
+        esc(one.dn || '') + '</div></td><td>' + esc(one.kind) + '</td><td>' +
+        ((one.applications || []).length
+          ? (one.applications || []).map(function (app) {
+            return '<code>' + esc(app) + '</code>';
+          }).join(', ')
+          : '<em>' + t.html('consoleXacml.authzen.noScope') + '</em>') +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="3">' +
+      t.html('consoleXacml.authzen.noCallers') + '</td></tr>';
+    const scope = writable
+      ? '<h3>' + t.html('consoleXacml.authzen.scopeHeading') + '</h3>' +
+        '<form method="post" action="' + PAGE + '">' +
+        self.hidden('action', 'set-scope') +
+        '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
+        '</td><td>' + self.textField('caller', '', 40) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.applications') +
+        '</td><td>' + self.textField('applications', '', 50) +
+        '</td></tr></table><button type="submit">' +
+        t.html('consoleXacml.authzen.setScope') + '</button></form>'
+      : '';
+    return tiles + missing + what +
+      (view.settings ? SettingsForms.forms(view.settings, PAGE, ['AuthZEN'],
+                                           t) : '') +
+      '<h2>' + t.html('consoleXacml.authzen.catalogueHeading') + '</h2>' +
+      problems + '<table><thead><tr><th>' +
+      t.html('consoleXacml.authzen.property') + '</th><th>' +
+      t.html('consoleXacml.authzen.attributeId') + '</th><th>' +
+      t.html('consoleXacml.authzen.category') + '</th><th>' +
+      t.html('consoleXacml.authzen.dataType') + '</th><th>' +
+      t.html('consoleXacml.authzen.multiplicity') + '</th><th></th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>' + add +
+      '<h2>' + t.html('consoleXacml.authzen.callersHeading') + '</h2>' +
+      '<p class="sub">' + t.html('consoleXacml.authzen.callersNote') +
+      '</p><table><thead><tr><th>' + t.html('consoleXacml.authzen.caller') +
+      '</th><th>' + t.html('consoleXacml.authzen.kind') + '</th><th>' +
+      t.html('consoleXacml.authzen.applications') + '</th></tr></thead>' +
+      '<tbody>' + callers + '</tbody></table>' + scope;
+  }
+
+  /**
    * Draws XACML policies from its view.
    *
    * @param ctx - the render context (`WebKit.context()`)

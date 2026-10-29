@@ -1887,6 +1887,14 @@
     "en": "15a8c6d83ed6bc92",
     "text": "非規格端點（#221）。add-destination、update-destination、remove-destination 與 test-push（將一個金絲雀版本寫入測試機密）：主控台的四個動作，每個都會被稽核。寫入認證資訊只收取，絕不傳回。"
   },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "13078c3a299db762",
+    "text": "非規範（#563）。/admin/xacml 的 AuthZEN 分頁所顯示的內容：/access/v1 是否在該領域回應、其呼叫方如何驗證、AuthZEN 設定、sts-authzen-api 上的屬性目錄，以及 roles.authzenPepGroup 的成員與各自可詢問的應用程式。"
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "7efc1c9a3697b22a",
+    "text": "非規範（#563）。set-attribute、remove-attribute 與 set-scope：該分頁的三項操作，皆記入稽核。對應到保留識別碼的目錄列在此處與每次寫入時一樣遭到拒絕。"
+  },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
     "text": "非規格端點（#942）。監控 → 密碼金鑰所繪製的內容：領域的密碼金鑰依演算法和通道統計，人員依類型統計（僅後量子、僅傳統、兩者皆有、無），哪些驗證器型號持有哪些演算法，以及每個密碼金鑰設定檔的 postQuantumRequired；可依群組、密碼金鑰設定檔或應用程式篩選，並附有依游標分頁的、任一數字背後的人員清單。這些數字是持續維護的彙總——每天對持有者重新計數一次，再加上寫入金鑰時記錄的變更——絕不是每次請求都掃描目錄。"

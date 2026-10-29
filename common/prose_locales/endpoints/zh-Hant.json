@@ -999,6 +999,14 @@
     "en": "f8f3c83e76dc9f4c",
     "text": "變更秘密推送目的地"
   },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "AuthZEN API 的目錄與呼叫方"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "變更 AuthZEN 目錄或呼叫方的範圍"
+  },
   "endpoints.route./admin-api/passkey-report.name": {
     "en": "9c856324242bc19b",
     "text": "誰持有哪種密碼金鑰演算法"

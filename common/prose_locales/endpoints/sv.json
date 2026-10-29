@@ -999,6 +999,14 @@
     "en": "f8f3c83e76dc9f4c",
     "text": "Ändra destinationerna för push av hemligheter"
   },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "AuthZEN-API:ts katalog och anropare"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "Ändra AuthZEN-katalogen eller en anropares omfång"
+  },
   "endpoints.route./admin-api/passkey-report.name": {
     "en": "9c856324242bc19b",
     "text": "Vem som har vilken nyckelalgoritm"

@@ -1887,6 +1887,14 @@
     "en": "15a8c6d83ed6bc92",
     "text": "NO ESTÁNDAR (#221). add-destination, update-destination, remove-destination y test-push (una versión canario escrita en un secreto de prueba): los cuatro actos de la consola, cada uno auditado. La credencial de escritura se recibe y nunca se devuelve."
   },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "13078c3a299db762",
+    "text": "NO ESPECIFICADO (#563). Lo que muestra la pestaña AuthZEN de /admin/xacml: si /access/v1 responde en el dominio, cómo se autentican sus llamantes, la configuración de AuthZEN, el catálogo de atributos en sts-authzen-api y los miembros de roles.authzenPepGroup con las aplicaciones sobre las que puede preguntar cada uno."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "7efc1c9a3697b22a",
+    "text": "NO ESPECIFICADO (#563). set-attribute, remove-attribute y set-scope: las tres acciones de la pestaña, cada una auditada. Una fila del catálogo sobre un identificador reservado se rechaza aquí como en cualquier escritura."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
     "text": "NO ESTÁNDAR (#942). Lo que dibuja Supervisión → Llaves de acceso: las llaves de acceso del dominio por algoritmo y carril, sus personas por tipo (solo poscuántica, solo clásica, ambas, ninguna), qué modelos de autenticador tienen qué algoritmos y el postQuantumRequired de cada perfil de llaves de acceso; filtrado por un grupo, un perfil de llaves de acceso o una aplicación, con una lista paginada por cursor de las personas detrás de cualquier cifra. Las cifras son un agregado mantenido —un recuento diario de los titulares más los cambios anotados a medida que se escriben las llaves—, nunca un recorrido del directorio por solicitud."

@@ -883,6 +883,18 @@
     "en": "9a9264e25acb9778",
     "text": "Se decidió una evaluación de acceso de AuthZEN"
   },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "Se añadió o reemplazó una fila del catálogo de atributos de AuthZEN"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "Se eliminó una fila del catálogo de atributos de AuthZEN"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "Se estableció el ámbito de aplicaciones de un llamante de AuthZEN"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "El PEP de emisión no permitió que este servicio acuñara algo"

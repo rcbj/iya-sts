@@ -21194,6 +21194,27 @@ const CODES = [
       'carried an obligation this PDP cannot discharge, until the ' +
       'Obligations Profile is implemented end to end.',
     spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0030',
+    summary: 'An AuthZEN console or /admin-api act named an action the ' +
+      'AuthZEN tab does not have.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-AUTHZEN-0031',
+    summary: 'An AuthZEN remove-attribute named an object and property the ' +
+      'catalogue has no row for.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-AUTHZEN-0032',
+    summary: 'An AuthZEN set-scope named more than 64 applications, or one ' +
+      'longer than 256 characters or holding a control character.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-AUTHZEN-0033',
+    summary: 'An AuthZEN set-scope named no person, service account or ' +
+      'application in this realm, or the scope could not be written onto the ' +
+      'entry.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-AUTHZEN-0034',
+    summary: 'An /admin-api/xacml/authzen action threw rather than ' +
+      'answering.',
+    spec: 'HTTP 500, ok false' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

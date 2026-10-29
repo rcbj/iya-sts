@@ -1058,14 +1058,17 @@ const PAGES: WebPage[] = [
       xacmlPolicies: '/admin-api/xacml/policies',
       xacmlEditor: '/admin-api/xacml/editor',
       xacmlPeps: '/admin-api/xacml/peps',
-      xacmlDecide: '/admin-api/xacml/decide'
+      xacmlDecide: '/admin-api/xacml/decide',
+      xacmlAuthzen: '/admin-api/xacml/authzen'
     },
     composeWhen: {
       xacmlEditor: ['policy'],
-      xacmlDecide: ['subject', 'action', 'resource']
+      xacmlDecide: ['subject', 'action', 'resource'],
+      xacmlAuthzen: ['caller']
     },
     composeAlways: [
-      'xacmlPolicies', 'xacmlEditor', 'xacmlPeps', 'xacmlDecide'
+      'xacmlPolicies', 'xacmlEditor', 'xacmlPeps', 'xacmlDecide',
+      'xacmlAuthzen'
     ],
     render: XacmlPage.render },
   { path: '/admin/xacml/monitor', title: 'XACML decisions',
@@ -1913,7 +1916,12 @@ class WebPages {
           html: XacmlPage.pepsBody(context, view.xacmlPeps) },
         { id: 'xacml-tab-decide',
           label: context.t.text('console.nav.xacml-decide'),
-          html: XacmlPage.decideBody(context, view.xacmlDecide) }
+          html: XacmlPage.decideBody(context, view.xacmlDecide) },
+        // AUTHZEN (#563): the API decided by this page's engine, on a tab of
+        // its own beside the PEPs that pull the repository.
+        { id: 'xacml-tab-authzen',
+          label: context.t.text('consoleXacml.authzen.tab'),
+          html: XacmlPage.authzenBody(context, view.xacmlAuthzen) }
       ];
       const rendered = panels.map(function (one) {
         return { id: one.id, label: one.label,
@@ -1979,10 +1987,13 @@ class WebPages {
       '/admin/xacml/editor': 'xacml-tab-editor',
       '/admin/xacml/peps': 'xacml-tab-peps',
       '/admin/xacml/decide': 'xacml-tab-decide',
+      // The AuthZEN tab's forms (#563) name it so, and are moved onto it.
+      '/admin/xacml/authzen': 'xacml-tab-authzen',
       '/admin/xacml': 'xacml-tab-settings'
     };
     const route = '/admin/xacml/policies|/admin/xacml/editor|' +
-      '/admin/xacml/peps|/admin/xacml/decide|/admin/xacml';
+      '/admin/xacml/peps|/admin/xacml/decide|/admin/xacml/authzen|' +
+      '/admin/xacml';
     html = html.replace(new RegExp('href="(' + route +
       ')(\\?[^"#]*)?(#[^"]*)?"', 'g'),
     function (_match: string, path: string, query: string,

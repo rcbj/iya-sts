@@ -883,6 +883,18 @@
     "en": "9a9264e25acb9778",
     "text": "Une évaluation d’accès AuthZEN a été décidée"
   },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "Une ligne du catalogue d'attributs AuthZEN a été ajoutée ou remplacée"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "Une ligne du catalogue d'attributs AuthZEN a été supprimée"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "La portée applicative d'un appelant AuthZEN a été définie"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Le PEP d’émission a refusé de laisser ce service émettre quelque chose"

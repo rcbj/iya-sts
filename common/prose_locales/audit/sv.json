@@ -883,6 +883,18 @@
     "en": "9a9264e25acb9778",
     "text": "En AuthZEN-åtkomstutvärdering avgjordes"
   },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "En rad i AuthZEN-attributkatalogen lades till eller ersattes"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "En rad i AuthZEN-attributkatalogen togs bort"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "En AuthZEN-anropares applikationsomfång angavs"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Utfärdande-PEP:en vägrade låta den här tjänsten prägla något"

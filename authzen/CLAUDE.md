@@ -31,10 +31,12 @@ of its own when its semantics are settled, and none is advertised until then.
 | `authzen_map.ts` | One access evaluation read against the catalogue and refused where it cannot be represented, the XACML request built, and the decision mapped back fail-closed. **Pure.** |
 | `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application. |
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`. Thin, as `xacml/xacml.ts` is. |
+| `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
 `tests/authzen_map.js` holds the two pure modules in process;
 `tests/authzen_evaluation.js` drives the route over real handshakes in a child
-process, in a throwaway realm whose root policy it wrote.
+process, in a throwaway realm whose root policy it wrote;
+`tests/authzen_admin.js` holds the tab's view and acts.
 
 ## The mapping, in one table
 
@@ -170,6 +172,34 @@ must be in the set (403 `0025`), none named and one in the set picks it,
 none in the set is `0026`, several and none named `0027`. **`ou=peps` is not
 consulted**: registration is not a permission.
 
+## The console and the API (#1162)
+
+**One tab, AuthZEN, on `/admin/xacml`**, after the XACML tabs it is decided
+by — the sibling structure: its settings block (the `AuthZEN` group, homed on
+`/admin/xacml` and drawn on this tab alone; the Settings tab now asks
+`configSettingsJson()` for `XACML` only), the catalogue with its add form and
+a Remove per row, and the members of `roles.authzenPepGroup` with their
+scopes and the form that sets one. Its forms post to
+`/admin/xacml#xacml-tab-authzen`, which `/admin-api/xacml/authzen/:action`
+mirrors, and the settings block's to the configuration resource, whose
+mirrors name the tab too.
+
+* **`set-attribute` replaces the row for the same object and property** rather
+  than adding a second: the registry stores values, and two rows for one
+  property is what `rowsOf()` reads as a problem. It goes through
+  `applications.updateApplication()`, so the reserved-identifier refusal is
+  the write door's and cannot be skipped here.
+* **`set-scope` replaces the scope whole.** A person's is written through
+  the slot `ldap/ldap_server.js` fills (`setDirectory()`: `locate`,
+  `members`, `write`, validated whole) — `ldap/person_editor.ts`'s
+  arrangement, because nothing else writes an `sts*` attribute of a person,
+  and that is the point: the scope is an administrator's. An application's
+  goes through the registry.
+* **The tab lists the GROUP, not every holder of a scope.** Listing holders
+  would be a new `eachHolderOfAny()` name, which is a new index expression
+  and a schema version (`persistence/directory_queries.js`); the group is
+  who may ask, and `?caller=` looks anybody else up.
+
 ## What is decided, and what is recorded
 
 * **The realm's ROOT policy** (decision 7), through the XACML surface's own
@@ -193,4 +223,4 @@ consulted**: registration is not a permission.
 `STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
 the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
-admission and scope, 0028–0029 the result.
+admission and scope, 0028–0029 the result, 0030–0034 the tab's acts.

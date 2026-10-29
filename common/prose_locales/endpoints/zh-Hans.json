@@ -999,6 +999,14 @@
     "en": "f8f3c83e76dc9f4c",
     "text": "更改秘密推送目标"
   },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "AuthZEN API 的目录与调用方"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "更改 AuthZEN 目录或调用方的范围"
+  },
   "endpoints.route./admin-api/passkey-report.name": {
     "en": "9c856324242bc19b",
     "text": "谁持有哪种通行密钥算法"

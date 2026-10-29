@@ -1887,6 +1887,14 @@
     "en": "15a8c6d83ed6bc92",
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination at test-push (isang canary version na isinulat sa isang test secret): ang apat na act ng console, bawat isa ay ina-audit. Tinatanggap ang write credential at hindi kailanman ibinabalik."
   },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "13078c3a299db762",
+    "text": "HINDI-SPEC (#563). Ang ipinapakita ng tab na AuthZEN ng /admin/xacml: kung sumasagot ang /access/v1 sa realm, kung paano nag-a-authenticate ang mga tumatawag dito, ang mga setting ng AuthZEN, ang katalogo ng attribute sa sts-authzen-api, at ang mga miyembro ng roles.authzenPepGroup kasama ang mga application na maaaring itanong ng bawat isa."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "7efc1c9a3697b22a",
+    "text": "HINDI-SPEC (#563). set-attribute, remove-attribute at set-scope: ang tatlong aksyon ng tab, bawat isa ay naa-audit. Ang isang row ng katalogo papunta sa isang reserbadong identifier ay tinatanggihan dito gaya ng sa bawat pagsulat."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
     "text": "NON-SPEC (#942). Ang iginuguhit ng Monitoring → Mga passkey: ang mga passkey ng realm ayon sa algorithm at lane, ang mga tao nito ayon sa uri (post-quantum lang, classical lang, pareho, wala), kung aling mga modelo ng authenticator ang may hawak ng aling mga algorithm, at ang postQuantumRequired ng bawat passkey profile; sinasala ayon sa grupo, passkey profile o application, kasama ang listahang naka-page ayon sa cursor ng mga tao sa likod ng anumang bilang. Ang mga bilang ay isang pinapanatiling aggregate — araw-araw na muling pagbilang ng mga may hawak dagdag ang mga pagbabagong naitala habang isinusulat ang mga key — at hindi kailanman pag-scan ng directory sa bawat request."

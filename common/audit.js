@@ -1024,6 +1024,12 @@ const ACTIONS = [
   // AUTHZEN (#563): one row per evaluation, a batch's each with the batch id.
   { action: 'authzen.decision', category: 'authorization',
     label: 'An AuthZEN access evaluation was decided' },
+  { action: 'admin.authzen.attribute.set', category: 'admin',
+    label: 'An AuthZEN attribute catalogue row was added or replaced' },
+  { action: 'admin.authzen.attribute.removed', category: 'admin',
+    label: 'An AuthZEN attribute catalogue row was removed' },
+  { action: 'admin.authzen.scope.set', category: 'admin',
+    label: 'An AuthZEN caller\'s application scope was set' },
   // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
   //
   // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since

@@ -1887,6 +1887,14 @@
     "en": "15a8c6d83ed6bc92",
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination et test-push (une version témoin écrite dans un secret de test) : les quatre actions de la console, chacune auditée. Le justificatif d’écriture est reçu et jamais renvoyé."
   },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "13078c3a299db762",
+    "text": "HORS SPÉCIFICATION (#563). Ce qu'affiche l'onglet AuthZEN de /admin/xacml : si /access/v1 répond dans le domaine, comment ses appelants s'authentifient, les paramètres AuthZEN, le catalogue d'attributs sur sts-authzen-api et les membres de roles.authzenPepGroup avec les applications sur lesquelles chacun peut interroger."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "7efc1c9a3697b22a",
+    "text": "HORS SPÉCIFICATION (#563). set-attribute, remove-attribute et set-scope : les trois actions de l'onglet, chacune auditée. Une ligne du catalogue visant un identifiant réservé est refusée ici comme à toute écriture."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
     "text": "NON-SPEC (#942). Ce qu’affiche Supervision → Clés d’accès : les clés d’accès du domaine par algorithme et par voie, ses personnes par type (post-quantique uniquement, classique uniquement, les deux, aucune), quels modèles d’authentificateur détiennent quels algorithmes, et le postQuantumRequired de chaque profil de clé d’accès ; filtré par un groupe, un profil de clé d’accès ou une application, avec une liste paginée par curseur des personnes derrière chaque chiffre. Les chiffres sont un agrégat tenu à jour — un recomptage quotidien des détenteurs plus les changements notés à mesure que les clés sont écrites —, jamais un parcours de l’annuaire à chaque requête."

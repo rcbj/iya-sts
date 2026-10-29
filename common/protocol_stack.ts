@@ -1536,6 +1536,13 @@ class ProtocolStack {
     this.build('mgmt-api/secret_destinations_api',
                require('../mgmt-api/secret_destinations_api'),
                'SecretDestinationsApi');
+    // THE AUTHZEN TAB'S LIBRARY AND OPERATIONS (#563), spread by
+    // `mgmt-api/admin_api` into its table. Libraries: they register no
+    // route, and `ldap/ldap_server` (21) fills the library's directory slot.
+    this.build('authzen/authzen_admin', require('../authzen/authzen_admin'),
+               'AuthzenAdmin');
+    this.build('mgmt-api/authzen_api', require('../mgmt-api/authzen_api'),
+               'AuthzenApi');
     // MONITORING -> PASSKEYS' OPERATIONS (#942), spread by
     // `mgmt-api/admin_api` into its table as the destinations' are.
     this.build('mgmt-api/passkey_report_api',

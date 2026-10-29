@@ -6262,6 +6262,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'remove-destination and test-push (a canary version written to a ' +
           'test secret): the console\'s four acts, each audited. The write ' +
           'credential is taken and never returned.' },
+  { path: '/admin-api/xacml/authzen', group: 'Management API',
+    name: 'The AuthZEN API\'s catalogue and callers', specs: ['openapi'],
+    what: 'NON-SPEC (#563). What the AuthZEN tab of /admin/xacml draws: ' +
+          'whether /access/v1 answers in the realm, how its callers ' +
+          'authenticate, the AuthZEN settings, the attribute catalogue on ' +
+          'sts-authzen-api, and the members of roles.authzenPepGroup with ' +
+          'the applications each may ask about.' },
+  { path: '/admin-api/xacml/authzen/:action', group: 'Management API',
+    name: 'Change the AuthZEN catalogue or a caller\'s scope',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#563). set-attribute, remove-attribute and ' +
+          'set-scope: the tab\'s three acts, each audited. A catalogue row ' +
+          'onto a reserved identifier is refused here as at every write.' },
   { path: '/admin-api/passkey-report', group: 'Management API',
     name: 'Who holds which passkey algorithm', specs: ['openapi', 'webauthn'],
     what: 'NON-SPEC (#942). What Monitoring → Passkeys draws: the realm\'s ' +
