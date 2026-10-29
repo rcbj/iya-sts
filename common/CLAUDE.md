@@ -11066,8 +11066,21 @@ rows and the selection alike.
   `STS-REG-0214` and the realm's selection is used.
 * **Not done**, as for the rows: no CAEP `token-claims-change` on an
   application's change.
+* **The OAuth sub-tab draws the three OAuth sets as ONE table** (#1144, rcbj
+  2026-10-29): a checkbox column each for the access token, the ID Token and
+  UserInfo (`web_applications.ts`'s `applicationClaimSelectionTable()`), under
+  ONE Save, `set-claim-selections`. **It writes only the columns that
+  changed**: a column posted with exactly the selection in force is left as
+  it is, so a Save that did not touch an INHERITING column does not freeze
+  the realm's ticks into an own copy that a later realm change would no
+  longer reach. Every column is checked before any is written. Each column
+  posts an empty value first, so a column with nothing ticked is an empty
+  list and not an absent one. `set-claim-attributes` and
+  `inherit-claim-attributes` still write one set each (the column's "Use the
+  realm's selection" is the latter, by a `formaction` query); the SAML and
+  credential sub-tabs keep one table each.
 
-`tests/application_claim_selections.js` holds it.
+`tests/application_claim_selections.js` holds it (F, for #1144).
 
 ## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
 

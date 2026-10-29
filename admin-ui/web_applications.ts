@@ -1918,8 +1918,9 @@ class ApplicationsPage {
             ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
               ['access_token', 'id_token', 'userinfo'], 'cfg-oauth-claims',
               t.text('consoleApplications.a2.customClaims')) +
-            // And the ticked catalogue beside the rows (#495).
-            ApplicationsPage.applicationClaimSelectionSection(ctx, row,
+            // And the ticked catalogue beside the rows (#495), as ONE table
+            // with a column per set since #1144.
+            ApplicationsPage.applicationClaimSelectionTable(ctx, row,
               carryBack, ['access_token', 'id_token', 'userinfo'],
               'cfg-oauth')
           : '') +
@@ -5301,7 +5302,178 @@ class ApplicationsPage {
     return '<h3 id="' + kit.esc(anchor) + '-attributes">' +
       t.html('consoleApplications.a3.directoryAttributes') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.selectionNote')) +
-      previewForm + html;
+      previewForm +
+      ApplicationsPage.previewNotFoundNote(state.preview, t) + html;
+  }
+
+  // THE PREVIEW PERSON IS NOBODY (#1144): a name the realm's directory does
+  // not hold. Product invents nothing, so every value is empty; development
+  // invents a persona's, so the values are nobody's. Either way the page
+  // says so, rather than a silent column. The name is drawn by `kit.esc()`
+  // between two messages, for the reason the preview heading is (#539).
+  /**
+   * The note a selection section carries when its preview person is not in
+   * the realm's directory, or '' when they are.
+   *
+   * @param preview - the selections' `preview` (`user`, `entryFound`)
+   * @param t - the page's translator (#539)
+   * @returns the note, or ''
+   */
+  static previewNotFoundNote(preview, t) {
+    if (!preview || preview.entryFound !== false) {
+      return '';
+    }
+    return kit.note(t.html('consoleApplications.a3.previewNotFoundA') +
+      '<code>' + kit.esc(String(preview.user || '')) + '</code>' +
+      t.html('consoleApplications.a3.previewNotFoundB'));
+  }
+
+  // THE OAUTH SUB-TAB'S SELECTIONS AS ONE TABLE (#1144, rcbj 2026-10-29):
+  // "combine those three tables into one section that has a column for each
+  // token type + userinfo endpoint", a checkbox in each. A row per catalogue
+  // attribute; a column per set, its header saying whether the realm's
+  // selection or the application's own is in force and, for an own one, a
+  // button that goes back to the realm's (`inherit-claim-attributes`, by a
+  // `formaction` whose query names the action and the set); a mark beside
+  // a box the realm ticks, its details in the tooltip; the person's value;
+  // ONE Save (`set-claim-selections`), which writes only the columns whose
+  // ticks changed, so an untouched column keeps inheriting the realm's.
+  // Below, what each set would carry for the person, a heading each. Each
+  // column posts an empty value first, so a column with nothing ticked
+  // posts an empty list rather than nothing.
+  /**
+   * Draws an application's access token, ID Token and UserInfo selections
+   * as one table, a column per set, under one Save (#1144).
+   *
+   * @param ctx - the render context (`kit.context()`)
+   * @param row - the application's view, with its `page`
+   * @param carryBack - the hidden `back` field every form carries
+   * @param setIds - the claim sets, one column each
+   * @param anchor - the sub-tab's fragment the forms return to
+   * @returns the markup, or '' when there is nothing to draw
+   */
+  static applicationClaimSelectionTable(ctx, row, carryBack, setIds,
+                                        anchor) {
+    const t = ctx.t;
+    const state = row.page.claimSelections;
+    if (!state) {
+      return '';
+    }
+    const id = String(row.identifier || '');
+    const sets = state.sets.filter(function (one) {
+      return setIds.indexOf(one.id) >= 0;
+    });
+    if (!sets.length) {
+      return '';
+    }
+    const values = state.preview.byLdap || {};
+    const lower = function (list) {
+      return (list || []).map(function (one) {
+        return String(one).toLowerCase();
+      });
+    };
+    const inForce = {};
+    const realm = {};
+    sets.forEach(function (set) {
+      inForce[set.id] = lower(set.effective);
+      realm[set.id] = lower(set.realm);
+    });
+    const previewForm = '<form method="get" action="/admin/applications#' +
+      kit.esc(anchor) + '"><div class="formrow">' +
+      '<input type="hidden" name="application" value="' + kit.esc(id) + '">' +
+      '<label' + kit.tip(t.html('consoleApplications.a3.previewTip')) + '>' +
+      t.html('consoleApplications.a3.previewFor') + ' <input type="text" ' +
+      'name="claimsUser" size="16" value="' + kit.esc(state.preview.user) +
+      '"></label> <button type="submit" class="secondary">' +
+      t.html('consoleApplications.a3.show') + '</button>' +
+      '</div></form>';
+    // A COLUMN'S HEADER: the set, whose selection is in force, and — for an
+    // own selection, to a writer — the way back to the realm's.
+    const header = function (set) {
+      return '<th class="claim-col">' + kit.esc(set.label) + '<br>' +
+        (set.inherited
+          ? '<span class="state-none"' +
+            kit.tip(t.text('consoleApplications.a3.columnRealmTip')) + '>' +
+            t.html('consoleApplications.a3.columnRealm') + '</span>'
+          : '<span class="state-valid"' +
+            kit.tip(t.text('consoleApplications.a3.columnOwnTip')) + '>' +
+            t.html('consoleApplications.a3.columnOwn') + '</span>' +
+            (ctx.write
+              ? '<br><button type="submit" class="secondary claim-inherit" ' +
+                'formaction="/admin/applications?action=' +
+                'inherit-claim-attributes&amp;set=' + kit.esc(set.id) + '#' +
+                kit.esc(anchor) + '" formnovalidate' +
+                kit.tip(t.html('consoleApplications.a3.useRealmTip')) + '>' +
+                t.html('consoleApplications.a3.useRealm') + '</button>'
+              : '')) + '</th>';
+    };
+    const rows = state.catalogue.map(function (one) {
+      const key = one.ldap.toLowerCase();
+      const found = values[key];
+      const cells = sets.map(function (set) {
+        const on = inForce[set.id].indexOf(key) >= 0;
+        const mark = realm[set.id].indexOf(key) >= 0
+          ? ' <span class="claim-realm"' +
+            kit.tip(t.text('consoleApplications.a3.realmTicksTip',
+                           { set: String(set.label) })) + '>' +
+            t.html('consoleApplications.a3.realmTicks') + '</span>'
+          : '';
+        return '<td class="claim-col">' + (ctx.write
+          ? '<input type="checkbox" name="' + kit.esc(set.id) +
+            '" value="' + kit.esc(one.ldap) + '"' + (on ? ' checked' : '') +
+            ' aria-label="' + kit.esc(set.label + ': ' + one.ldap) + '">'
+          : (on ? t.html('consoleApplications.a3.yes') : '')) + mark +
+          '</td>';
+      }).join('');
+      return '<tr><td><code>' + kit.esc(one.ldap) + '</code></td><td><code>' +
+        kit.esc(one.claim) + '</code></td>' + cells + '<td>' +
+        (found ? '<code>' + kit.esc(found.value) + '</code> <span ' +
+          'class="sub">' + kit.esc(found.source) + '</span>'
+          : '<span class="state-none">—</span>') + '</td></tr>';
+    }).join('');
+    const table = '<table class="claim-columns"><tr><th>' +
+      t.html('consoleApplications.a3.colLdap') + '</th><th>' +
+      t.html('consoleApplications.a3.colClaim') + '</th>' +
+      sets.map(header).join('') + '<th>' +
+      t.html('consoleApplications.a3.forPrefix') +
+      kit.esc(state.preview.user) + '</th></tr>' + rows + '</table>';
+    const form = ctx.write
+      ? '<form method="post" action="/admin/applications#' + kit.esc(anchor) +
+        '">' + carryBack +
+        '<input type="hidden" name="action" value="set-claim-selections">' +
+        '<input type="hidden" name="application" value="' + kit.esc(id) +
+        '">' + sets.map(function (set) {
+          return '<input type="hidden" name="' + kit.esc(set.id) +
+            '" value="">';
+        }).join('') + table + '<div class="formrow"><button type="submit"' +
+        kit.tip(t.html('consoleApplications.a3.saveSelectionsTip')) + '>' +
+        t.html('consoleApplications.a3.saveSelections') +
+        '</button></div></form>'
+      : table;
+    // WHAT EACH SET WOULD CARRY for the person, under a heading each.
+    const previews = sets.map(function (set) {
+      const report = set.report.length
+        ? '<table><tr><th>' + t.html('consoleApplications.a3.colClaim') +
+          '</th><th>' + t.html('consoleApplications.a3.colValue') +
+          '</th><th>' + t.html('consoleApplications.a3.colFrom') +
+          '</th></tr>' + set.report.map(function (item) {
+            return '<tr><td><code>' + kit.esc(item.claim) + '</code></td>' +
+              '<td><code>' + kit.esc(typeof item.value === 'string'
+                ? item.value : JSON.stringify(item.value)) + '</code></td>' +
+              '<td>' + kit.esc(item.source) + '</td></tr>';
+          }).join('') + '</table>'
+        : kit.note(t.html('consoleApplications.a3.noneInForce') +
+            t.html('consoleApplications.a3.noneInForceRows'));
+      return '<h5>' + kit.esc(set.label) + ' &mdash; ' +
+        t.html('consoleApplications.a3.wouldCarryPrefix') +
+        kit.esc(state.preview.user) + '</h5>' + report;
+    }).join('');
+    return '<h3 id="' + kit.esc(anchor) + '-attributes">' +
+      t.html('consoleApplications.a3.directoryAttributes') + '</h3>' +
+      kit.note(t.html('consoleApplications.a3.selectionTableNote')) +
+      previewForm +
+      ApplicationsPage.previewNotFoundNote(state.preview, t) + form +
+      previews;
   }
 
   // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token

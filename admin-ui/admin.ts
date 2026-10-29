@@ -4443,6 +4443,15 @@ class AdminConsole {
       '.fg-seen svg{color:#1a7f37}' +
       // A value seen but not declared (#708): the warning mark, amber.
       '.fg-undeclared svg{color:#b35c00}' +
+      // THE OAUTH CLAIMS TABLE (#1144): a centred checkbox column per set,
+      // the realm's tick as a small marker beside a box, and the way back to
+      // the realm's selection as a compact button in a column's header.
+      '.claim-columns th.claim-col,.claim-columns td.claim-col{' +
+      'text-align:center;white-space:nowrap}' +
+      '.claim-realm{display:inline-block;margin-left:.3em;padding:0 .3em;' +
+      'border:1px solid #8c959f;border-radius:3px;font-size:.75em;' +
+      'line-height:1.4;color:#57606a;cursor:help;vertical-align:middle}' +
+      '.claim-inherit{font-size:.8em;padding:.1em .5em;margin-top:.3em}' +
       // A LIST VALUE A DELEGATED PERMISSION GRANT DECLARES (#1141): read-only,
       // a key in the link blue and a dashed outline, so it reads as derived
       // rather than typed; the details are its tooltip.

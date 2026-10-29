@@ -803,6 +803,20 @@ attribute row above still wins over a selected attribute of the same name. Both
 rules can be changed per token type: see *How the realm's set and the
 application's own combine*, below.
 
+**On the OAuth 2.0 / OpenID Connect sub-tab the three sets are one table**
+(#1144): a row per directory attribute, and a column of checkboxes each for
+the **Access token**, the **ID Token** and **UserInfo**. Each column's
+header says whether the realm's selection or the application's own is in
+force; a small **realm** mark beside a box says the realm's selection ticks
+that attribute for that column (its tooltip says so). Tick what each should
+carry and press **Save** once: **a column whose ticks you did not change
+keeps the realm's selection**, and a changed column becomes the
+application's own, replacing the realm's for that column. A column holding
+its own selection has a **Use the realm's selection** button in its header.
+Below the table, what each of the three would carry for the previewed person,
+under a heading each. The SAML 2.0, SAML 1.1 and Verifiable Credentials
+sub-tabs keep one table for their one set.
+
 | Set | Applies to |
 |---|---|
 | Access token, ID Token, UserInfo | tokens and UserInfo answered to this client (`client_id`) |
@@ -815,14 +829,22 @@ to what the metadata advertises, and then given those this client's selection
 holds.
 
 Each section previews what its selection would carry for one person
-(**Preview for**, `alice` by default). An unknown attribute, or a set whose
+(**Preview for**): you, the signed-in administrator, unless you type another
+username. If the realm's directory holds no person of that name, a note above
+the table says so — nothing shown for them is theirs. An unknown attribute, or a set whose
 protocol the application is not declared for, is refused (`STS-REG-0215`).
 
 The management API: `POST /admin-api/applications/set-claim-attributes`
 (with `set` = `access_token`, `id_token`, `userinfo`, `saml2`, `saml11` or
 `credential`, and `attributes`, a list of catalogue names from `GET
 /admin-api/claims`) and `POST
-/admin-api/applications/inherit-claim-attributes`. `GET
+/admin-api/applications/inherit-claim-attributes`. The OAuth table's one Save
+is `POST /admin-api/applications/set-claim-selections`, with any of
+`access_token`, `id_token` and `userinfo`, each the whole list for that set:
+a set sent with exactly the selection in force is left as it is (still the
+realm's, if it was inheriting), a changed one becomes the application's own,
+and a set not sent is not touched. Its answer lists each set sent, with
+`changed`, `inherited` and the `attributes` in force. `GET
 /admin-api/applications?application=<id>&claimsUser=<person>` returns
 `claimSelections`.
 
