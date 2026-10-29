@@ -111,9 +111,11 @@ async function run(t) {
 
   t.equal(a.issuing.map(function (one) { return one.id; }).join(','),
           'jose,xml,assertions,spiffe,pep-tls,realm-tls,kdc,acme,est,scep,' +
-          'tls-client',
-          'a REALM carries the eleven use cases whose keys belong to a ' +
+          'tls-client,message-signing',
+          'a REALM carries the twelve use cases whose keys belong to a ' +
           'realm. ' +
+          'The twelfth arrived 2026-10-28 (#521): the certificates a person ' +
+          'or an application signs a WS-Trust request with. ' +
           'The eleventh arrived 2026-10-05 (#179): the certificate the ' +
           'realm\'s KDC signs its PKINIT replies with. ' +
           'The tenth arrived 2026-10-02 (#99): the certificate a realm\'s ' +

@@ -44,6 +44,17 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const kit = require("./wstrust_chain_kit.js");
 const registry = require("./sts_applications.js");
+// xmldsig.js is the browser's signer and reaches for the bare DOM globals,
+// which a node process lacks: without these two its first signature failed
+// "DOMParser is not defined" (memory run of 2026-10-29). Set only when
+// absent, as common/crypto.js sets them in the service.
+const xmldom = require("@xmldom/xmldom");
+if (!global.DOMParser) {
+  global.DOMParser = xmldom.DOMParser;
+}
+if (!global.XMLSerializer) {
+  global.XMLSerializer = xmldom.XMLSerializer;
+}
 const xmldsig = require("../../common/crypto_impl/xmldsig.js");
 
 var appconfig;
