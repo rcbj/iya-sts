@@ -167,7 +167,7 @@ function setUp(t) {
       protocols: ['oauth2'],
       fields: { oauthClientId: CLIENT,
                 oauthAllowedScope: ['openid', PERMISSION],
-                // The admin scopes are grants since #1141.
+                // The admin scopes are delegated permission grants since #1141.
                 oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
                                            'urn:sts:admin-api:admin:write']
               } }),

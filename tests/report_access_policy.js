@@ -17,7 +17,8 @@
 //
 //   A. THE ROLES. REPORT_USE and REPORT_ADMIN are native roles seeded with
 //      the groups report-users and report-admins; sts-report-api defines
-//      the scopes as permissions and a client holds a grant of them (#1141).
+//      the scopes as permissions and a client holds a delegated
+//      permission grant of them (#1141).
 //   B. ISSUANCE. A member of report-users is issued report:use and not
 //      report:admin; a member of report-admins the reverse; an outsider
 //      neither, and report:use alone is invalid_scope; an application that
@@ -184,7 +185,8 @@ function childMain() {
         fields: { oauthClientId: CLIENT,
                   oauthTokenEndpointAuthMethod: ['client_secret_basic'],
                   oauthAllowedScope: ['openid'],
-                  // The report scopes are grants since #1141.
+                  // The report scopes are delegated permission grants since
+                  // #1141.
                   oauthDelegatedPermission: [
                     'urn:sts:report-api:report:use',
                     'urn:sts:report-api:report:admin'] } }),
@@ -240,7 +242,8 @@ function childMain() {
          String((reportApi.fields || {}).oauthPermissionBaseUri) ===
            'urn:sts:report-api:',
          'A4. sts-report-api, the reports API\'s resource object (#1139), ' +
-         'defines the report permissions its clients are granted (#1141)',
+         'defines the report permissions its clients hold delegated ' +
+         'permission grants of (#1141)',
          JSON.stringify(reportApi && reportApi.fields));
     note(gate.RESOURCE.REPORT_API === 'report-api',
          'A5. the gate names the resource the policy\'s third rule targets');
@@ -633,7 +636,8 @@ function childMain() {
         fields: { oauthClientId: RCLIENT,
                   oauthTokenEndpointAuthMethod: ['client_secret_basic'],
                   oauthAllowedScope: ['openid'],
-                  // The report scopes are grants since #1141.
+                  // The report scopes are delegated permission grants since
+                  // #1141.
                   oauthDelegatedPermission: [
                     'urn:sts:report-api:report:use',
                     'urn:sts:report-api:report:admin'] } });

@@ -286,7 +286,8 @@ verifier's web site would:
 It calls `/admin-api` as an application of its own, `iya-sts-companion`,
 holding Admin Read and Admin Write. Give it either
 `COMPANION_CLIENT_ID`/`COMPANION_CLIENT_SECRET` for an application you
-registered (it must hold grants of `urn:sts:admin-api:admin:read` and
+registered (it must hold delegated permission grants of
+`urn:sts:admin-api:admin:read` and
 `urn:sts:admin-api:admin:write`, be a member of
 `ADMIN_READ` and `ADMIN_WRITE`, and list the companion's `/verifier/done` as a
 redirect URI), or let it register itself: it reads the secret of the seeded

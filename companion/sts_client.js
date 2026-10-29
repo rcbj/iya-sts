@@ -28,12 +28,12 @@
 //                                                 its keytab (#595)
 //
 // **ITS OWN CLIENT.** `COMPANION_CLIENT_ID` and `COMPANION_CLIENT_SECRET`
-// name an application an operator registered: it holds grants of the two
-// scopes on sts-management-api (`urn:sts:admin-api:admin:read` and
-// `…:admin:write`, #1141), is a member of ADMIN_READ and ADMIN_WRITE
-// (`mgmt-api/CLAUDE.md`: an application holds them by being a member), and
-// lists the companion's completion page as a redirect URI, which is what
-// lets a product realm
+// name an application an operator registered: it holds delegated permission
+// grants of the two scopes on sts-management-api
+// (`urn:sts:admin-api:admin:read` and `…:admin:write`, #1141), is a member
+// of ADMIN_READ and ADMIN_WRITE (`mgmt-api/CLAUDE.md`: an application holds
+// them by being a member), and lists the companion's completion page as a
+// redirect URI, which is what lets a product realm
 // accept it as the address a wallet is sent to. **Or the companion registers
 // itself**: given the seeded `sts-api-client` client's secret
 // (`COMPANION_BOOTSTRAP_SECRET`, the `adminApi.clientSecret` a stack pins),
@@ -274,10 +274,11 @@ class StsClient {
                                          value: uri });
       }
     }
-    // THE GRANT IS THE CLIENT'S HALF (#1141): admin:read and admin:write are
-    // delegated permissions on sts-management-api, not words in
-    // oauthAllowedScope; the roles below are the subject's half. Already
-    // granted is the state wanted, whatever is answered.
+    // THE DELEGATED PERMISSION GRANT IS THE CLIENT'S HALF (#1141):
+    // admin:read and admin:write are delegated permissions on
+    // sts-management-api, not words in oauthAllowedScope; the roles below
+    // are the subject's half. A delegated permission grant it already holds
+    // is the state wanted, whatever is answered.
     for (const scope of SCOPE.split(" ")) {
       await api("/permissions/grant-permission",
                 { client: this.clientId,

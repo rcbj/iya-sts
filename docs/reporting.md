@@ -12,11 +12,13 @@ PostgreSQL or to an operator's attribute-source database.
 
 Open `/report` — the front page links to it — and sign in. The browser uses the public client
 `sts-report` (PKCE S256, a DPoP-bound token, `resource` this realm's
-`/report-api`). `sts-report` holds grants of `report:use` and
+`/report-api`). `sts-report` holds delegated permission grants of
+`report:use` and
 `report:admin`, the two permissions the `sts-report-api` application defines
 (`urn:sts:report-api:report:use` and `…:report:admin`), the same way the
-admin console holds grants of `admin:read` and `admin:write` on
-`sts-management-api`. The grant is the client's half; who is issued the
+admin console holds them of `admin:read` and `admin:write` on
+`sts-management-api`. The delegated permission grant is the client's half;
+who is issued the
 scopes is decided by two roles, below. The words on the page come from the signed-in user's
 language. The API stays language-free, and every error sentence is
 English. When several accounts in one browser are enabled, the page uses
@@ -94,7 +96,8 @@ generator, a scheduler or a script calls the API as a client application
 configured to call it.
 
 The seeded client **`sts-api-client`** is one. It is a member of
-`REPORT_USE` and holds a grant of `report:use`, so it can mint a token with the
+`REPORT_USE` and holds a delegated permission grant of `report:use`, so it
+can mint a token with the
 client credentials grant and use it at once. Its secret is the one the
 [management API](management-api.md#the-client-secret) describes:
 
@@ -115,7 +118,8 @@ with DPoP or a client certificate is presented the way it was bound. Like
 every application, **`sts-api-client` reaches only the definitions and jobs
 it defined itself**, whichever role it holds; it does not see a person's
 reports. For anything that lasts, create an application of your own in the
-realm, give it a client secret, grant it `urn:sts:report-api:report:use`
+realm, give it a client secret, give it a delegated permission grant of
+`urn:sts:report-api:report:use`
 (`POST /admin-api/permissions/grant-permission`, or its Permissions tab) and
 add it to `REPORT_USE`, as
 [An application of your own](management-api.md#an-application-of-your-own-for-every-token-after-that)

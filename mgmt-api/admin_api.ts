@@ -27068,10 +27068,12 @@ class AdminApi {
               ? 'Declare device:compliance on the MDM feed\'s ' +
                 'application\'s oauthAllowedScope.'
               : 'An admin or owner scope is held by a delegated permission ' +
-                'grant on sts-management-api (#1141): grant the client ' +
+                'grant on sts-management-api (#1141): give the client a ' +
+                'delegated permission grant of ' +
                 'urn:sts:admin-api:' + neededScope + ' (POST ' +
                 '/admin-api/permissions/grant-permission), or use ' +
-                'sts-api-client, which is granted admin:read and ' +
+                'sts-api-client, which holds delegated permission grants of ' +
+                'admin:read and ' +
                 'admin:write.')] });
         }
         if (effective.withdrawn.indexOf(neededScope) >= 0) {

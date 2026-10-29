@@ -4532,12 +4532,14 @@ with `Cannot find module` naming a file the operator never mentioned.
    #1140 refuses any token whose audience no application object holds, in
    both modes — which these four rows exist to make possible. **#1141 made a
    delegated permission grant on one of these objects the CLIENT's half of
-   the scope check** (`scope_policy.ts`, 3au, *The scopes a grant
-   declares*): the three API rows define their scopes as permissions from
-   `API_PERMISSIONS` under fixed `urn:sts:<api>:` bases, the client rows hold
-   grants of what they use (`apiGrants()`), and their registration `scope`
-   lists none of those words. The API rows are seeded FIRST, so a permission
-   is defined before it is granted (the debugger's rule).
+   the scope check** (`scope_policy.ts`, 3au, *The scopes a delegated
+   permission grant declares*): the three API rows define their scopes as
+   permissions from `API_PERMISSIONS` under fixed `urn:sts:<api>:` bases,
+   the client rows hold delegated permission grants of what they use
+   (`delegatedPermissionGrants()`), and their registration `scope` lists
+   none of those words. The API rows are seeded FIRST, so a permission is
+   defined before anything holds a delegated permission grant of it (the
+   debugger's rule).
 
    **NO APPLICATION CREDENTIAL IS STORED IN THE CLEAR UNDER A DURABLE KEY SINCE
    2026-10-01.** `appRegistrationAccessToken` is sealed in `setField()` and
@@ -5157,35 +5159,44 @@ resource servers can require it without a cycle. The debugger permission's
 spelling is written out rather than required from `debugger/`, for
 `applications.js`'s reason, and `tests/scope_policy.js` compares the two.
 
-**THE SCOPES A GRANT DECLARES (#1141, rcbj's decision, 2026-10-29).** For this
-service's own three APIs the client's half of "may it ask for this scope" is
-a DELEGATED PERMISSION GRANT on the API's resource object (#1139), Microsoft
-Entra ID's `requiredResourceAccess`, and NOT `oauthAllowedScope`. The
+**THE SCOPES A DELEGATED PERMISSION GRANT DECLARES (#1141, rcbj's decision,
+2026-10-29).** "Grant" in this section, its code and its docs is ALWAYS a
+delegated permission grant — a permission identifier on a client's
+`oauthDelegatedPermission` — and never RFC 6749's authorization grant
+(`grant_type`), Grant Management's or GNAP's; rcbj asked for the whole phrase
+every time, because the bare word is ambiguous across the specifications.
+For this service's own three APIs the client's half of "may it ask for this
+scope" is a DELEGATED PERMISSION GRANT on the API's resource object
+(#1139), Microsoft Entra ID's `requiredResourceAccess`, and NOT
+`oauthAllowedScope`. The
 vocabulary is `applications.js`'s `API_PERMISSIONS` — `admin:read`,
 `admin:write`, `admin:console`, `owner:read`, `owner:write` on
 `sts-management-api` (`urn:sts:admin-api:`), `account:manage` on
 `sts-account-api`, `report:use` and `report:admin` on `sts-report-api` —
-and `grantedBy()` names a word's API. Three consequences, each deliberate:
+and `delegatedPermissionApiOf()` names a word's API. Three consequences, each
+deliberate:
 
 * **`declaredScopes()` takes these words OFF the list**, so listing one in
   `oauthAllowedScope` declares nothing; `declares()` answers them from
-  `grantedScopes()` alone, and the issuance fact `SCOPE_DECLARED` asks
-  `declares()` for them. Every resource server's per-call re-check
-  (`admin_api.ts`, `report_api.ts`, `account_api.ts`) is `declares()`, so a
-  revoked grant stops the tokens a client holds.
+  `delegatedPermissionScopes()` alone, and the issuance fact
+  `SCOPE_DECLARED` asks `declares()` for them. Every resource server's
+  per-call re-check (`admin_api.ts`, `report_api.ts`, `account_api.ts`) is
+  `declares()`, so a revoked delegated permission grant stops the tokens a
+  client holds.
 * **The permission must be defined by THAT API's own object**
   (`forPermission(id).identifier === api`): an operator entry defining the
   same identifier does not stand in for it.
 * **A FIXED `urn:sts:` BASE, NOT THE API'S URL**, because an own API's
   audience is a URL under any name this service is reached by (#1140) and a
-  grant must not depend on a host. A client still asks for the BARE word with
-  `resource`, which is the path #1030 found never consulted a grant; it does
-  now. A client asking for the full identifier gets the base as `aud`
-  (`audienceScopes()`'s rule), which the API's own audience check refuses —
-  the bare word is the way.
+  delegated permission grant must not depend on a host. A client still asks
+  for the BARE word with `resource`, which is the path #1030 found never
+  consulted a delegated permission grant; it does now. A client asking for
+  the full identifier gets the base as `aud` (`audienceScopes()`'s rule),
+  which the API's own audience check refuses — the bare word is the way.
 
 Roles are unchanged as the subject's half (3u, `role_permissions.ts`): a
-grant says what a client may ASK for, never whether its subject holds it.
+delegated permission grant says what a client may ASK for, never whether its
+subject holds it.
 
 **NO MIGRATION.** A persisted `sts-management-api` or `sts-admin-console` seeded
 before #110 is left alone by `seedInternalApplication()` and carries no

@@ -235,7 +235,7 @@ function childMain() {
                 // G. asks for an /admin-api token, and admin:read is issued
                 // only to a client that declares it (#110).
                 oauthAllowedScope: ['openid'],
-                // admin:read is a grant since #1141.
+                // admin:read is a delegated permission grant since #1141.
                 oauthDelegatedPermission: ['urn:sts:admin-api:admin:read'],
                 oauthTokenEndpointAuthMethod: 'client_secret_basic',
                 // Development only: product sends a Logout Token over https

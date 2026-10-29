@@ -774,7 +774,8 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
   if ((wantsUse && !deps.scopes.declares(issuedTo, 'report:use')) ||
       (wantsAdmin && !deps.scopes.declares(issuedTo, 'report:admin'))) {
     reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
-      'The client this token was issued to no longer holds a grant of ' +
+      'The client this token was issued to no longer holds a delegated ' +
+      'permission grant of ' +
       'that report scope (urn:sts:report-api:report:use or ' +
       'urn:sts:report-api:report:admin on sts-report-api, #1141).');
     log.debug("Leaving reportAuthenticateToken(). Undeclared.");

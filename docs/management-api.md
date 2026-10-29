@@ -201,7 +201,8 @@ api applications/create '{
     "oauthTokenEndpointAuthMethod": "client_secret_basic"
   }}'
 
-# 3. Grants of the two admin permissions the management API defines.
+# 3. Delegated permission grants of the two admin permissions the
+#    management API defines.
 api permissions/grant-permission '{"client":"'"$APP"'","permission":"urn:sts:admin-api:admin:read"}'
 api permissions/grant-permission '{"client":"'"$APP"'","permission":"urn:sts:admin-api:admin:write"}'
 
@@ -238,23 +239,26 @@ place the act hands it out.
 2. On the application's page, in **Change what it is allowed to do**: tick
    `client_secret_basic` under `oauthTokenEndpointAuthMethod` and nothing
    else, and add `client_credentials` to `oauthGrantType`.
-3. On the application's **Permissions** tab, grant it
-   `urn:sts:admin-api:admin:read` and `urn:sts:admin-api:admin:write`, the
-   two permissions the `sts-management-api` application defines
+3. On the application's **Permissions** tab, give it delegated permission
+   grants of `urn:sts:admin-api:admin:read` and
+   `urn:sts:admin-api:admin:write`, the two permissions the
+   `sts-management-api` application defines
    ([Admin console → Delegated permissions](admin-console.md#delegated-permissions)).
 4. On `/admin/roles`, under **Give a person, a group or an application a
    role**, choose the role `ADMIN_READ`, the kind *application* and your
    application's identifier, and click **Add**. Do the same for
    `ADMIN_WRITE`.
 
-**Why it needs both the grants and the roles.** The grant is the client's
-half: the token endpoint issues `admin:read` and `admin:write` only to a
-client holding a grant of that permission on `sts-management-api`. The role
+**Why it needs both the delegated permission grants and the roles.** The
+delegated permission grant is the client's half: the token endpoint issues
+`admin:read` and `admin:write` only to a client holding a delegated
+permission grant of that permission on `sts-management-api`. The role
 is the subject's half: each scope is issued only while the client is a member
 of the role that authorizes it, `ADMIN_READ` for `admin:read` and
 `ADMIN_WRITE` for `admin:write`. Listing the words in `oauthAllowedScope` no
 longer counts for these scopes. The API checks both again on every call. So
-if you take the application out of a role, or revoke a grant
+if you take the application out of a role, or revoke a delegated permission
+grant
 (`permissions/revoke-permission`), the tokens it already holds stop working
 at their next call. That is also how
 to retire the application.
@@ -531,7 +535,7 @@ still told so; every other console operation needs `ADMIN_READ` too, or
 `ADMIN_WRITE` for a form helper. A token without `admin:console`, such as
 `sts-api-client`'s, is refused 403 (`STS-API-0127`).
 
-The console client, `sts-admin-console`, holds grants of
+The console client, `sts-admin-console`, holds delegated permission grants of
 `urn:sts:admin-api:admin:read`, `…:admin:write` and `…:admin:console`; a
 client is never declared these scopes through `oauthAllowedScope`.
 

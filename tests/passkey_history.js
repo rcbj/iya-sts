@@ -521,7 +521,8 @@ function childMain() {
       fields: { oauthClientId: CLIENT,
                 oauthTokenEndpointAuthMethod: ['client_secret_basic'],
                 oauthAllowedScope: ['openid'],
-                // The report scopes are grants since #1141.
+                // The report scopes are delegated permission grants since
+                // #1141.
                 oauthDelegatedPermission: [
                   'urn:sts:report-api:report:use',
                   'urn:sts:report-api:report:admin'] } });

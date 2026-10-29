@@ -602,10 +602,11 @@ class Ownership {
                        ', which no owner may administer');
         }
         const permissions = this.protectedPermissions();
-        // Declared, or since #1141 granted on one of this service's APIs.
+        // Declared, or since #1141 held by a delegated permission grant on
+        // one of this service's APIs.
         const declared = (this.deps.scopePolicy().declaredScopes(wanted) ||
                           []).concat(this.deps.scopePolicy()
-                            .grantedScopes(wanted))
+                            .delegatedPermissionScopes(wanted))
           .filter(function (one: string) {
           return permissions.indexOf(one) >= 0;
         });
