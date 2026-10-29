@@ -6915,6 +6915,30 @@
     "en": "e5b02e80d4c28af6",
     "text": "Ang mga value ng subject.type na ang subject.id ay isang tao sa directory ng realm na ito, pinaghihiwalay ng kuwit. Para sa mga iyon, sinasagot ng Policy Information Point ang mga role at directory attribute ng subject, at AUTHORITATIVE ang mga ito: hindi maipapadala ng caller ang mga ito. Para sa anumang ibang type, hindi kinokonsulta ang directory, kaya ang id na nagkataong tumugma sa pangalan ng isang tao ay hindi ang taong iyon. Ang walang laman ay nangangahulugang hindi kailanman kinokonsulta ang directory."
   },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "Naka-on ang mga batch na pagsusuri"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "Kapag naka-on, sumasagot ang POST /access/v1/evaluations ng maraming pagsusuri ng access sa isang request (seksyon 7), at pinapangalanan ito ng dokumento ng metadata. Kapag naka-off, sumasagot ng 501 ang route at hindi ito isinasama ng metadata; hindi apektado ang /access/v1/evaluation."
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "Mga pagsusuring maaaring dalhin ng isang batch"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "Ang pinakamaraming item na maaaring dalhin ng isang POST /access/v1/evaluations. Kapag lumampas, tinatanggihan ng 400 ang buong batch bago mapagpasyahan ang anumang item: bawat item ay isang buong desisyon sa thread ng serbisyong ito, at ang listahang walang hangganan ay paraan para ubusin ito."
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "Pinakamalaking batch request (bytes)"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "Ang pinakamalaking body na tinatanggap ng POST /access/v1/evaluations. Kapag lumampas, tinatanggihan ng 400 ang buong batch bago ito basahin. Ang sariling limitasyon ng body ng serbisyo (5 MB) ang kisame."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Ibalik ang mga dahilan ng isang decision"

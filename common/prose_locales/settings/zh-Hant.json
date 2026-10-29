@@ -6915,6 +6915,30 @@
     "en": "e5b02e80d4c28af6",
     "text": "其 subject.id 為此領域目錄中人員的 subject.type 值，以逗號分隔。對於這些類型，原則資訊點會提供主體的角色與目錄屬性，而這些值具「權威性」：呼叫端無法傳送它們。對於其他任何類型，不會查詢目錄，因此恰好與某人名稱相符的 id 並不是那個人。空白表示從不查詢目錄。"
   },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "啟用批次評估"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "開啟時，POST /access/v1/evaluations 在一個請求中回應多個存取評估（第 7 節），中繼資料文件也會列出它。關閉時該路由回應 501，中繼資料不列出它；/access/v1/evaluation 不受影響。"
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "一批可攜帶的評估數"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "一個 POST /access/v1/evaluations 可攜帶的最多項目數。超過時，在決定任何項目之前整批以 400 拒絕：每個項目都是在本服務執行緒上的一次完整決策，而無上限的清單是耗盡它的一種方式。"
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "最大批次請求（位元組）"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "POST /access/v1/evaluations 接受的最大請求本文。超過時，整批在讀取之前以 400 拒絕。服務本身的請求本文上限（5 MB）即為上限。"
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "傳回決策的原因"

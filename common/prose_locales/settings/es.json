@@ -6915,6 +6915,30 @@
     "en": "e5b02e80d4c28af6",
     "text": "Los valores de subject.type cuyo subject.id es una persona del directorio de este dominio, separados por comas. Para esos, el Policy Information Point responde los roles y atributos de directorio del sujeto, y son AUTORITATIVOS: un llamante no puede enviarlos. Para cualquier otro tipo no se consulta el directorio, así que un id que casualmente coincide con el nombre de una persona no es esa persona. Vacío significa que nunca se consulta el directorio."
   },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "Evaluaciones por lotes activadas"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "Activada, POST /access/v1/evaluations responde varias evaluaciones de acceso en una sola solicitud (sección 7) y el documento de metadatos lo nombra. Desactivada, la ruta responde 501 y los metadatos lo omiten; /access/v1/evaluation no se ve afectado."
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "Evaluaciones que puede llevar un lote"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "El máximo de elementos que puede llevar un POST /access/v1/evaluations. Por encima, todo el lote se rechaza con 400 antes de decidir ningún elemento: cada elemento es una decisión completa en el hilo de este servicio, y una lista sin límite es una forma de agotarlo."
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "Solicitud por lotes más grande (bytes)"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "El cuerpo más grande que acepta POST /access/v1/evaluations. Por encima, todo el lote se rechaza con 400 antes de leerlo. El límite de cuerpo propio del servicio (5 MB) es el techo."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Devolver los motivos de una decisión"

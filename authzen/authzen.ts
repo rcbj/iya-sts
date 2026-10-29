@@ -11,6 +11,7 @@
 //   POST /access/v1/evaluation    one access evaluation (section 6) — #1161
 //   GET  /.well-known/authzen-configuration[/realm/<id>]
 //                                 the PDP's metadata (section 9) — #1163
+//   POST /access/v1/evaluations   a batch of evaluations (section 7) — #1164
 //
 // per realm, under the realm's prefix. Deliberately thin, as `xacml/xacml.ts`
 // is: it reads a request, asks `authzen_caller.ts` who is asking and whether
@@ -63,7 +64,16 @@ const API_OBJECT = 'sts-authzen-api';
 
 // The paths.
 const EVALUATION_PATH = '/access/v1/evaluation';
+const EVALUATIONS_PATH = '/access/v1/evaluations';
 const METADATA_PATH = '/.well-known/authzen-configuration';
+
+// The three batch semantics (section 7.1.2), the first the default.
+const SEMANTICS = Object.freeze(['execute_all', 'deny_on_first_deny',
+                                 'permit_on_first_permit']);
+
+// The members a batch request may carry.
+const BATCH_MEMBERS = Object.freeze(['subject', 'action', 'resource',
+                                     'context', 'evaluations', 'options']);
 
 // A request id this service will echo.
 const REQUEST_ID = /^[\x21-\x7e]{1,128}$/;
@@ -396,9 +406,22 @@ class AuthzenSurface {
   }
 
   /**
+   * Whether the batch endpoint answers in this realm
+   * (`authzen.batchEnabled`).
+   *
+   * @returns true unless switched off
+   */
+  batchEnabled(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AuthzenSurface.batchEnabled().");
+    log.debug("Leaving AuthzenSurface.batchEnabled().");
+    return config.value('authzen.batchEnabled') !== false;
+  }
+
+  /**
    * The PDP's metadata document (section 9), for the realm the request is
    * answered in. It names ONLY what answers here: the single endpoint, and
-   * the batch one once it is implemented (#1164) — no search endpoint
+   * the batch one while `authzen.batchEnabled` is on — no search endpoint
    * and no `capabilities` until one is implemented end to end, and no
    * `signed_metadata` (section 9.1 lets a PDP omit it).
    *
@@ -417,6 +440,9 @@ class AuthzenSurface {
       policy_decision_point: base,
       access_evaluation_endpoint: base + EVALUATION_PATH
     };
+    if (self.batchEnabled()) {
+      out.access_evaluations_endpoint = base + EVALUATIONS_PATH;
+    }
     log.debug("Leaving AuthzenSurface.metadata().");
     return out;
   }
@@ -435,6 +461,177 @@ class AuthzenSurface {
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(self.metadata(req), null, 2));
     log.debug("Leaving AuthzenSurface.sendMetadata().");
+  }
+
+  /**
+   * One batch item's request: the top-level defaults, each overridden whole
+   * by the item's own member (section 7.1.1).
+   *
+   * @param defaults - the batch request
+   * @param item - one member of `evaluations`
+   * @returns the evaluation request, or null when the item is not an object
+   */
+  static merged(defaults: any, item: unknown): any {
+    log.debug("Entering AuthzenSurface.merged().");
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      log.debug("Leaving AuthzenSurface.merged(). Not an object.");
+      return null;
+    }
+    const given: any = item;
+    const out: any = {};
+    ['subject', 'action', 'resource', 'context'].forEach(function (key) {
+      const value = given[key] !== undefined ? given[key] : defaults[key];
+      if (value !== undefined) {
+        out[key] = value;
+      }
+    });
+    // A member the item carries beyond the four is the item's own mistake,
+    // and the mapping refuses it for that item alone.
+    Object.keys(given).forEach(function (key: string) {
+      if (out[key] === undefined && ['subject', 'action', 'resource',
+                                     'context'].indexOf(key) < 0) {
+        out[key] = given[key];
+      }
+    });
+    log.debug("Leaving AuthzenSurface.merged().");
+    return out;
+  }
+
+  /**
+   * Answers one batch (section 7): its bounds, its semantic, each item
+   * evaluated in order and answered in order.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param id - the request id, or ''
+   */
+  batch(req: Req, res: Res, caller: any, id: string): void {
+    const self = this;
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.batch().");
+    const refuse = function (code: string, message: string): void {
+      log.debug("Entering refuse(). " + code);
+      errorCodes.mark(res, code);
+      // error-code: none — marked on the line above.
+      callers.send(res, 400, message);
+      log.debug("Leaving refuse().");
+    };
+    // THE BODY'S SIZE FIRST: a bound has to hold before the body is read.
+    // The bytes on the wire where body-parser kept them (`app.js`), else
+    // the body as it was read.
+    const raw: any = (req as any).rawBody || req.body || '';
+    const size = Buffer.isBuffer(raw) ? raw.length
+      : Buffer.byteLength(String(raw));
+    const cap = Number(config.value('authzen.maxBodyBytes'));
+    if (size > cap) {
+      refuse('STS-AUTHZEN-0037', 'The request is larger than this realm\'s ' +
+             'authzen.maxBodyBytes (' + cap + ' bytes).');
+      log.debug("Leaving AuthzenSurface.batch(). Too large.");
+      return;
+    }
+    const body: any = AuthzenSurface.bodyOf(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      refuse('STS-AUTHZEN-0001', 'An access evaluations request is a JSON ' +
+             'object.');
+      log.debug("Leaving AuthzenSurface.batch(). Not an object.");
+      return;
+    }
+    const stray = Object.keys(body).filter(function (key: string) {
+      return BATCH_MEMBERS.indexOf(key) < 0;
+    })[0];
+    if (stray) {
+      refuse('STS-AUTHZEN-0009', 'An access evaluations request has no ' +
+             'member "' + stray.slice(0, 64) + '"; it takes ' +
+             BATCH_MEMBERS.join(', ') + '.');
+      log.debug("Leaving AuthzenSurface.batch(). An unknown member.");
+      return;
+    }
+    if (body.evaluations !== undefined && !Array.isArray(body.evaluations)) {
+      refuse('STS-AUTHZEN-0003', 'evaluations must be an array.');
+      log.debug("Leaving AuthzenSurface.batch(). Not an array.");
+      return;
+    }
+    if (body.options !== undefined && (!body.options ||
+        typeof body.options !== 'object' || Array.isArray(body.options))) {
+      refuse('STS-AUTHZEN-0003', 'options must be a JSON object.');
+      log.debug("Leaving AuthzenSurface.batch(). Bad options.");
+      return;
+    }
+    const options = body.options || {};
+    const semantic = options.evaluations_semantic === undefined
+      ? SEMANTICS[0] : String(options.evaluations_semantic);
+    if (SEMANTICS.indexOf(semantic) < 0) {
+      refuse('STS-AUTHZEN-0036', 'options.evaluations_semantic must be one ' +
+             'of ' + SEMANTICS.join(', ') + '.');
+      log.debug("Leaving AuthzenSurface.batch(). Unknown semantic.");
+      return;
+    }
+    const items = body.evaluations || [];
+    const most = Number(config.value('authzen.maxEvaluations'));
+    if (items.length > most) {
+      refuse('STS-AUTHZEN-0038', 'The request carries ' + items.length +
+             ' evaluations, and this realm answers at most ' + most +
+             ' in one (authzen.maxEvaluations).');
+      log.debug("Leaving AuthzenSurface.batch(). Too many.");
+      return;
+    }
+    const rows = self.rows();
+    const where = 'POST ' + EVALUATIONS_PATH;
+    // NO ITEMS IS ONE EVALUATION, answered as `/access/v1/evaluation` would
+    // answer it (section 7.1: "backwards-compatible").
+    if (!items.length) {
+      const single = AuthzenSurface.merged(body, {});
+      const one = self.evaluateOne(single, caller, rows, id, where);
+      if (one.error) {
+        errorCodes.mark(res, one.code);
+        // error-code: none — marked on the line above with the item's code.
+        callers.send(res, one.status, one.error.message);
+        log.debug("Leaving AuthzenSurface.batch(). One, refused.");
+        return;
+      }
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(one.context
+           ? { decision: one.decision, context: one.context }
+           : { decision: one.decision }));
+      log.debug("Leaving AuthzenSurface.batch(). One.");
+      return;
+    }
+    // THE BATCH ID ON EVERY ROW: the caller's, or one made here, so the rows
+    // of one batch are found together (decision 9).
+    const batchId = id || ('authzen-' +
+                           self.deps.helpers.randomId(12));
+    const out: any[] = [];
+    for (let i = 0; i < items.length; i += 1) {
+      const request = AuthzenSurface.merged(body, items[i]);
+      const one = request === null
+        ? { status: 400, decision: false, code: 'STS-AUTHZEN-0001',
+            error: { status: 400, message: 'An evaluation is a JSON ' +
+                                           'object.' } }
+        : self.evaluateOne(request, caller, rows,
+                           batchId + '#' + i, where);
+      // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
+      // never hidden by the batch's 200 (section 7.2). It is still false,
+      // which is the fail-closed reading of an item nobody could decide.
+      if (one.error) {
+        out.push({ decision: false, context: { error: one.error } });
+      } else {
+        out.push(one.context ? { decision: one.decision,
+                                 context: one.context }
+                             : { decision: one.decision });
+      }
+      const denied = !!one.error || one.decision === false;
+      if ((semantic === 'deny_on_first_deny' && denied) ||
+          (semantic === 'permit_on_first_permit' && !one.error &&
+           one.decision === true)) {
+        break;
+      }
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify({ evaluations: out }));
+    log.debug("Leaving AuthzenSurface.batch(). " + out.length + " of " +
+              items.length + " answered.");
   }
 
   /**
@@ -479,6 +676,33 @@ class AuthzenSurface {
       res.status(200).type('application/json').set('Cache-Control', 'no-store')
          .send(JSON.stringify(answer));
       log.debug('Leaving POST ' + EVALUATION_PATH + '. ' + result.decision);
+    });
+
+    // -----------------------------------------------------------------------
+    // POST /access/v1/evaluations — a batch (section 7).
+    // -----------------------------------------------------------------------
+    app.post(EVALUATIONS_PATH, function (req, res) {
+      log.debug('Entering POST ' + EVALUATIONS_PATH + '.');
+      const id = self.requestId(req, res);
+      if (self.offCheck(res)) {
+        log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Off.');
+        return;
+      }
+      if (!self.batchEnabled()) {
+        errorCodes.mark(res, 'STS-AUTHZEN-0039');
+        callers.send(res, 501, 'The batch endpoint is turned off in this ' +
+                     'realm (authzen.batchEnabled); ' + EVALUATION_PATH +
+                     ' still answers.');
+        log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Batch off.');
+        return;
+      }
+      const caller = self.admit(req, res);
+      if (!caller) {
+        log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Not admitted.');
+        return;
+      }
+      self.batch(req, res, caller, id);
+      log.debug('Leaving POST ' + EVALUATIONS_PATH + '.');
     });
 
     // -----------------------------------------------------------------------
@@ -546,5 +770,7 @@ export = {
   metadata: slot.forward('metadata'),
   API_OBJECT: API_OBJECT,
   EVALUATION_PATH: EVALUATION_PATH,
-  METADATA_PATH: METADATA_PATH
+  EVALUATIONS_PATH: EVALUATIONS_PATH,
+  METADATA_PATH: METADATA_PATH,
+  SEMANTICS: SEMANTICS
 };

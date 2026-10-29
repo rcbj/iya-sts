@@ -50,6 +50,43 @@ evaluated gets an error status and a body of the form
 | 500 | the policy could not be evaluated (for example the root policy does not load) — never reported as `false` |
 | 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
 
+### Several evaluations at once
+
+`POST /access/v1/evaluations` (section 7) takes top-level `subject`, `action`,
+`resource` and `context` as defaults and an `evaluations` array whose items
+override them, member by member:
+
+```json
+{
+  "subject":  { "type": "user", "id": "alice" },
+  "resource": { "type": "document", "id": "doc-1" },
+  "context":  { "application": "engineering-portal" },
+  "evaluations": [
+    { "action": { "name": "read" } },
+    { "action": { "name": "delete" } }
+  ],
+  "options": { "evaluations_semantic": "execute_all" }
+}
+```
+
+```json
+{ "evaluations": [ { "decision": true }, { "decision": false } ] }
+```
+
+* `evaluations_semantic` is `execute_all` (the default), `deny_on_first_deny`
+  (stop after the first `false`) or `permit_on_first_permit` (stop after the
+  first `true`).
+* A failed item is `"decision": false` with
+  `"context": { "error": { "status": 400, "message": "…" } }`. The batch is
+  still `200`, so read each item's `context.error`.
+* Without `evaluations`, or with an empty one, the request is one evaluation
+  and is answered as `/access/v1/evaluation` answers it.
+* More items than `authzen.maxEvaluations`, or a body larger than
+  `authzen.maxBodyBytes`, refuses the whole batch with 400 before anything is
+  decided.
+* Each item is its own audit row, carrying the batch's `X-Request-ID` (or an
+  id this service makes up) and the item's position.
+
 ### Metadata
 
 `GET /.well-known/authzen-configuration` is the PDP's metadata (AuthZEN 1.0
@@ -60,11 +97,13 @@ so a realm's document is at `/.well-known/authzen-configuration/realm/<id>`:
 ```json
 {
   "policy_decision_point": "https://sts.example.com/realm/acme",
-  "access_evaluation_endpoint": "https://sts.example.com/realm/acme/access/v1/evaluation"
+  "access_evaluation_endpoint": "https://sts.example.com/realm/acme/access/v1/evaluation",
+  "access_evaluations_endpoint": "https://sts.example.com/realm/acme/access/v1/evaluations"
 }
 ```
 
-It lists only what answers in that realm. There are no search endpoints, no
+It lists only what answers in that realm: the batch endpoint only while
+`authzen.batchEnabled` is on. There are no search endpoints, no
 `capabilities` and no `signed_metadata`. While the API is off in the realm the
 document answers 501.
 
@@ -241,6 +280,9 @@ live source; this table is a copy.
 | `authzen.enabled` | `STS_AUTHZEN_ENABLED` | `true` | The API answers; off, its routes answer 501 |
 | `authzen.callerAuthentication` | `STS_AUTHZEN_CALLER_AUTHENTICATION` | `mtls` | `mtls`, `bearer` or `mtls+bearer` |
 | `authzen.resolveSubjectTypes` | `STS_AUTHZEN_RESOLVE_SUBJECT_TYPES` | `user` | Subject types whose id is a directory person |
+| `authzen.batchEnabled` | `STS_AUTHZEN_BATCH_ENABLED` | `true` | `POST /access/v1/evaluations` answers, and the metadata names it |
+| `authzen.maxEvaluations` | `STS_AUTHZEN_MAX_EVALUATIONS` | `64` | The most items one batch may carry (1–1000) |
+| `authzen.maxBodyBytes` | `STS_AUTHZEN_MAX_BODY_BYTES` | `262144` | The largest batch request body |
 | `authzen.returnReasons` | `STS_AUTHZEN_RETURN_REASONS` | `false` | Add the XACML decision, the reason and any advice to the response's `context` |
 | `roles.authzenPepGroup` | `STS_ROLES_AUTHZEN_PEP_GROUP` | `authzen-peps` | The group whose members hold `AUTHZEN_PEPS` |
 

@@ -96,8 +96,8 @@
     "text": "full——就必要功能集而言：原則語言、七種決策值（包括三種延伸的 Indeterminate）、目標比對、條件、變數、十二種組合演算法、義務與建議、原則參照，以及涵蓋全部十七種資料類型的標準函式庫。依 OASIS 一致性測試套件檢驗——455 個必要案例中通過 454 個，唯一的例外連同其論證記錄於 xacml/conformance/MANIFEST.js。「未」涵蓋：AttributeSelector 與 XPath 函式（使用它們的原則會是 Indeterminate，而不是默默為空）、Multiple Decision 與 Hierarchical Resource 設定檔，以及管理委派。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "0431c0069ab3fb3f",
-    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰，以及兩種形式的 PDP 中繼資料（第 9 節）。缺少：三個 Search API、signed_metadata 以及所有設定檔（Obligations、Access Request and Approval、OAuth 相關），皆仍為草案。"
+    "en": "96dbb5058267c713",
+    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；Access Evaluations API（第 7 節）及其三種語意；以及兩種形式的 PDP 中繼資料（第 9 節）。缺少：三個 Search API、signed_metadata 以及所有設定檔（Obligations、Access Request and Approval、OAuth 相關），皆仍為草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -762,6 +762,10 @@
   "stsmetadata.endpoints./access/v1/evaluation.what": {
     "en": "83b5c5b154533638",
     "text": "POST 一個 AuthZEN subject、action、resource 與 context；取得 decision 為 true 或 false。由 XACML 引擎依領域的「根」原則做決定，請求中帶有 protocol = authzen。屬性只能透過領域的屬性目錄到達原則，未宣告的屬性在每種模式下皆為 400。「呼叫端」依 authzen.callerAuthentication 進行驗證——預設為用戶端憑證，或攜帶 authzen:evaluate 的存取權杖，或兩者皆是——且必須持有 AUTHZEN_PEPS，並具備其所詢問之應用程式的範圍。拒絕為 200 false；PDP 遇到的錯誤為 500，絕不是 false。"
+  },
+  "stsmetadata.endpoints./access/v1/evaluations.what": {
+    "en": "8bc09fb8f18ab7e3",
+    "text": "POST 頂層的 subject、action、resource 與 context 預設值，以及其項目覆寫這些預設值的 evaluations 陣列；回傳 evaluations，依請求順序每個項目一個決定。options.evaluations_semantic 為 execute_all（預設）、deny_on_first_deny 或 permit_on_first_permit。項目的失敗為帶 context.error 的 false，絕不會被 200 掩蓋；超過 authzen.maxEvaluations 或 authzen.maxBodyBytes 的批次在作出任何決定之前即為 400。每個項目都是單獨的稽核列，帶有批次 id。"
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
     "en": "411b951f2d32a644",

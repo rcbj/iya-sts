@@ -647,8 +647,9 @@ const SPECS: Spec[] = [
     coverage: 'partial: the Access Evaluation API (section 6), decided by ' +
               'the XACML engine against the realm\'s root policy through a ' +
               'per-realm attribute catalogue, with X-Request-ID and the ' +
-              'section 11.3 challenge, and the PDP metadata (section 9) at ' +
-              'both its forms. Missing: the three Search APIs, ' +
+              'section 11.3 challenge, the Access Evaluations API (section ' +
+              '7) with its three semantics, and the PDP metadata (section ' +
+              '9) at both its forms. Missing: the three Search APIs, ' +
               'signed_metadata, and every profile (Obligations, Access ' +
               'Request and Approval, the OAuth ones), all still drafts.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
@@ -3654,6 +3655,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'authzen:evaluate, or both — and must hold AUTHZEN_PEPS and be ' +
           'scoped to the application it asks about. A denial is 200 false; ' +
           'a fault the PDP reached is a 500, never false.' },
+  { path: '/access/v1/evaluations', group: 'AuthZEN',
+    name: 'A batch of access evaluations',
+    specs: ['authzen10'],
+    what: 'POST top-level subject, action, resource and context defaults ' +
+          'and an evaluations array whose items override them; get ' +
+          'evaluations, one decision per item in request order. ' +
+          'options.evaluations_semantic is execute_all (the default), ' +
+          'deny_on_first_deny or permit_on_first_permit. An item\'s ' +
+          'failure is false with context.error and never hidden by the ' +
+          '200; a batch over authzen.maxEvaluations or ' +
+          'authzen.maxBodyBytes is a 400 before anything is decided. ' +
+          'Every item is its own audit row, carrying the batch id.' },
   { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
     name: 'PDP metadata', specs: ['authzen10'],
     what: 'The section 9 document: policy_decision_point (this realm\'s ' +

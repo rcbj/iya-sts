@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4842** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4846** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 35
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 39
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4735,6 +4735,10 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0033` | An AuthZEN set-scope named no person, service account or application in this realm, or the scope could not be written onto the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-AUTHZEN-0034` | An /admin-api/xacml/authzen action threw rather than answering. | HTTP 500, ok false |
 | `STS-AUTHZEN-0035` | A request for /.well-known/authzen-configuration/<path> named no PDP: the path after the segment is not realm/<id> of a realm that exists, asked at the host root. | HTTP 404 (Express's own) |
+| `STS-AUTHZEN-0036` | An AuthZEN access evaluations request named an options.evaluations_semantic other than execute_all, deny_on_first_deny or permit_on_first_permit. | HTTP 400, an error message |
+| `STS-AUTHZEN-0037` | An AuthZEN access evaluations request was larger than the realm's authzen.maxBodyBytes; the whole batch was refused unread. | HTTP 400, an error message |
+| `STS-AUTHZEN-0038` | An AuthZEN access evaluations request carried more items than the realm's authzen.maxEvaluations; the whole batch was refused before any item was decided. | HTTP 400, an error message |
+| `STS-AUTHZEN-0039` | An AuthZEN access evaluations request reached a realm where authzen.batchEnabled is off. | HTTP 501, an error message |
 
 ## STS-ADMIN
 

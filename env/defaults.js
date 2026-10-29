@@ -1025,6 +1025,9 @@ var config = {
     enabled: true,                // AuthZEN enabled
     callerAuthentication: "mtls", // How an AuthZEN caller authenticates
     resolveSubjectTypes: "user",  // Subject types that name a directory person
+    batchEnabled: true,           // Batch evaluations enabled
+    maxEvaluations: 64,           // Evaluations one batch may carry
+    maxBodyBytes: 262144,         // Largest batch request (bytes)
     returnReasons: false          // Return the reasons for a decision
   },
 

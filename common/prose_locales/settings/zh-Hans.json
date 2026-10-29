@@ -6915,6 +6915,30 @@
     "en": "e5b02e80d4c28af6",
     "text": "其 subject.id 为本领域目录中人员的 subject.type 值，以逗号分隔。对于这些类型，策略信息点会提供主体的角色和目录属性，且这些值具有权威性：调用方无法发送它们。对于任何其他类型，不会查询目录，因此恰好与某人姓名匹配的 id 并不是那个人。为空表示从不查询目录。"
   },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "启用批量评估"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "开启时，POST /access/v1/evaluations 在一个请求中应答多个访问评估（第 7 节），元数据文档也会列出它。关闭时该路由应答 501，元数据不列出它；/access/v1/evaluation 不受影响。"
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "一批可携带的评估数"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "一个 POST /access/v1/evaluations 可携带的最多条目数。超过时，在决定任何条目之前整批以 400 拒绝：每个条目都是在本服务线程上的一次完整决策，而无上限的列表是耗尽它的一种方式。"
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "最大批量请求（字节）"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "POST /access/v1/evaluations 接受的最大请求体。超过时，整批在读取之前以 400 拒绝。服务自身的请求体上限（5 MB）是上限。"
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "返回决策的原因"

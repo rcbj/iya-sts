@@ -13306,6 +13306,32 @@ const SETTINGS = [
                  'is not consulted, so an id that happens to match a ' +
                  'person\'s name is not that person. Empty means the ' +
                  'directory is never consulted.' },
+  { key: 'authzen.batchEnabled', group: 'AuthZEN',
+    label: 'Batch evaluations enabled',
+    env: 'STS_AUTHZEN_BATCH_ENABLED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When on, POST /access/v1/evaluations answers several ' +
+                 'access evaluations in one request (section 7), and the ' +
+                 'metadata document names it. Off, the route answers 501 ' +
+                 'and the metadata leaves it out; /access/v1/evaluation ' +
+                 'is unaffected.' },
+  { key: 'authzen.maxEvaluations', group: 'AuthZEN',
+    label: 'Evaluations one batch may carry',
+    env: 'STS_AUTHZEN_MAX_EVALUATIONS', type: 'int', dflt: 64, min: 1,
+    max: 1000, runtime: true,
+    description: 'The most items one POST /access/v1/evaluations may ' +
+                 'carry. Over it the whole batch is refused 400 before any ' +
+                 'item is decided: every item is a full decision on this ' +
+                 'service\'s thread, and an unbounded list is a way to ' +
+                 'spend it.' },
+  { key: 'authzen.maxBodyBytes', group: 'AuthZEN',
+    label: 'Largest batch request (bytes)',
+    env: 'STS_AUTHZEN_MAX_BODY_BYTES', type: 'int', dflt: 262144,
+    min: 1024, max: 5242880, runtime: true,
+    description: 'The largest body POST /access/v1/evaluations accepts. ' +
+                 'Over it the whole batch is refused 400 before it is ' +
+                 'read. The service\'s own body limit (5 MB) is the ' +
+                 'ceiling.' },
   { key: 'authzen.returnReasons', group: 'AuthZEN',
     label: 'Return the reasons for a decision',
     env: 'STS_AUTHZEN_RETURN_REASONS', type: 'bool', dflt: false,

@@ -96,8 +96,8 @@
     "text": "full para el conjunto de funcionalidades obligatorias: el lenguaje de políticas, los siete valores de decisión incluidos los tres Indeterminate extendidos, la coincidencia de objetivos, las condiciones, las variables, los doce algoritmos de combinación, las obligaciones y los consejos, las referencias a políticas y la biblioteca estándar de funciones sobre los diecisiete tipos de datos. Verificado con la suite de conformidad de OASIS — se superan 454 de los 455 casos obligatorios, y la única excepción se registra con su argumento en xacml/conformance/MANIFEST.js. NO cubierto: AttributeSelector y las funciones XPath (una política que use una es Indeterminate en lugar de quedar vacía en silencio), los perfiles Multiple Decision y Hierarchical Resource, y la delegación administrativa."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "0431c0069ab3fb3f",
-    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, y los metadatos del PDP (sección 9) en sus dos formas. Falta: las tres Search APIs, signed_metadata y todos los perfiles (Obligations, Access Request and Approval, los de OAuth), todos aún borradores."
+    "en": "96dbb5058267c713",
+    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en sus dos formas. Falta: las tres Search APIs, signed_metadata y todos los perfiles (Obligations, Access Request and Approval, los de OAuth), todos aún borradores."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -762,6 +762,10 @@
   "stsmetadata.endpoints./access/v1/evaluation.what": {
     "en": "83b5c5b154533638",
     "text": "Haga POST de un subject, action, resource y context de AuthZEN; obtenga decision true o false. Lo decide el motor XACML frente a la política RAÍZ del dominio, con protocol = authzen en la solicitud. Una propiedad llega a la política solo a través del catálogo de atributos del dominio, y una no declarada es un 400 en todos los modos. El LLAMANTE se autentica según authzen.callerAuthentication — un certificado de cliente de forma predeterminada, un token de acceso que lleva authzen:evaluate, o ambos — y debe tener AUTHZEN_PEPS y tener alcance sobre la aplicación por la que pregunta. Una denegación es 200 false; un fallo al que llegó el PDP es un 500, nunca false."
+  },
+  "stsmetadata.endpoints./access/v1/evaluations.what": {
+    "en": "8bc09fb8f18ab7e3",
+    "text": "POST con valores predeterminados de nivel superior subject, action, resource y context y un arreglo evaluations cuyos elementos los sustituyen; se obtiene evaluations, una decisión por elemento en el orden de la solicitud. options.evaluations_semantic es execute_all (el predeterminado), deny_on_first_deny o permit_on_first_permit. El fallo de un elemento es false con context.error y nunca queda oculto por el 200; un lote por encima de authzen.maxEvaluations o authzen.maxBodyBytes es un 400 antes de decidir nada. Cada elemento es su propia fila de auditoría, con el id del lote."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
     "en": "411b951f2d32a644",

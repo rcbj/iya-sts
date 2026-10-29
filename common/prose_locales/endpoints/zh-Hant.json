@@ -35,6 +35,10 @@
     "en": "5cd6a5386c4d1353",
     "text": "一次存取評估"
   },
+  "endpoints.route./access/v1/evaluations.name": {
+    "en": "71ce33d985a6eced",
+    "text": "一批存取評估"
+  },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",
     "text": "PDP 中繼資料"
