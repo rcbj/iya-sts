@@ -56,7 +56,7 @@ const compiledTree = require('../common/compiled_tree');
 // root CLAUDE.md names `common/crypto_impl/` (a directory, never listed here
 // because it is not read) and the eight Kerberos codec copies.
 const CHECKED_DIRS = ['account-api', 'acme', 'admin-core', 'admin-ui',
-                      'attribute-sources', 'authn', 'cluster',
+                      'attribute-sources', 'authn', 'authzen', 'cluster',
                       'common', 'debugger', 'est', 'federation', 'gnap',
                       'home', 'kerberos', 'ldap', 'logout', 'mgmt-api',
                       'oauth-oidc', 'oid4vc', 'oidfed', 'persistence', 'pki',

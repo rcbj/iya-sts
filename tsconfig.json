@@ -19,6 +19,7 @@
     "admin-ui/*.js", "admin-ui/*.ts",
     "attribute-sources/*.js", "attribute-sources/*.ts",
     "authn/*.js", "authn/*.ts",
+    "authzen/*.js", "authzen/*.ts",
     "cluster/*.js", "cluster/*.ts",
     "common/*.js", "common/*.ts",
     "debugger/*.js", "debugger/*.ts",

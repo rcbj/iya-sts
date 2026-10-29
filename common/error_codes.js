@@ -404,6 +404,18 @@ const SUBSYSTEMS = [
           'heartbeats, asks the PIP over HTTP and decides in its own ' +
           'process. It has no audit log, so these codes appear at the front ' +
           'of its log lines rather than on an audit row.' },
+  // AUTHZEN (#563): its own subsystem rather than XACML's, because a code
+  // here is about the AuthZEN request a remote PEP sent — the shape of its
+  // JSON, the catalogue that maps it, the caller's authentication and
+  // application scope — and the engine's own faults keep their XACML codes.
+  { id: 'AUTHZEN', label: 'AuthZEN Authorization API',
+    where: 'authzen/',
+    what: 'AuthZEN Authorization API 1.0 over the XACML engine: a remote ' +
+          'PEP\'s access evaluation requests and their JSON, the per-realm ' +
+          'attribute catalogue that maps them onto XACML attributes, the ' +
+          'caller\'s authentication (mutual TLS, an OAuth access token, or ' +
+          'both) and its application scope, and the batch endpoint\'s ' +
+          'bounds.' },
   { id: 'ADMIN', label: 'Admin console',
     where: 'admin-ui/ (except pki_admin.js), admin-core/',
     what: 'The console at /admin, its gate, and the actions behind its ' +
@@ -21042,6 +21054,69 @@ const CODES = [
       'after it had started, and contained it rather than exiting (#355), ' +
       'throttled as STS-XPEP-0033 is.',
     spec: 'none — logged; the PEP carries on', retired: true },
+  // ===== AUTHZEN ===========================================================
+  { code: 'STS-AUTHZEN-0001',
+    summary: 'An AuthZEN access evaluation request was not a JSON object.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0002',
+    summary: 'An AuthZEN access evaluation request had no subject, action or ' +
+      'resource, or one of subject.type, subject.id, action.name, ' +
+      'resource.type or resource.id was missing or empty (AuthZEN 1.0 ' +
+      'section 5 requires all five).',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0003',
+    summary: 'A member of an AuthZEN request had the wrong JSON type, or was ' +
+      'too long: subject, action, resource, context or properties not an ' +
+      'object, an id, type or name not a string, or context.application not ' +
+      'a non-empty string.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0004',
+    summary: 'An AuthZEN request carried a property or context member this ' +
+      'realm\'s attribute catalogue does not declare; an undeclared property ' +
+      'is refused in every mode.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0005',
+    summary: 'An AuthZEN request carried null for a property, or inside a ' +
+      'bag; null is neither an empty value nor an absent one.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0006',
+    summary: 'An AuthZEN property\'s value did not fit its catalogue row\'s ' +
+      'datatype: a JSON type that may not reach it (a number for a string, a ' +
+      'fraction for an integer), or a string that does not parse at it.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0007',
+    summary: 'An AuthZEN property sent an array for a catalogue row whose ' +
+      'multiplicity is single, or a bag with too many values.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0008',
+    summary: 'An AuthZEN property sent an object where its catalogue row ' +
+      'takes a value, an object or array inside a bag, or objects nested too ' +
+      'deeply.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0009',
+    summary: 'An AuthZEN request, or its subject, action or resource, ' +
+      'carried a member AuthZEN 1.0 does not define.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0010',
+    summary: 'An AuthZEN attribute catalogue row was refused: not a JSON ' +
+      'object, an unknown member, or an object, property path, attributeId, ' +
+      'category, dataType or multiplicity that is not one the catalogue ' +
+      'takes.',
+    spec: 'the write is refused' },
+  { code: 'STS-AUTHZEN-0011',
+    summary: 'An AuthZEN attribute catalogue row was refused because it maps ' +
+      'onto a reserved identifier — this service\'s own urn:sts:xacml: ' +
+      'namespace, XACML\'s subject-id, resource-id or action-id, a ' +
+      'current-time attribute, or context.application. A request-supplied ' +
+      'attribute suppresses the PIP, so such a row would let a caller forge ' +
+      'a trusted fact.',
+    spec: 'the write is refused' },
+  { code: 'STS-AUTHZEN-0012',
+    summary: 'An AuthZEN attribute catalogue row was refused because it ' +
+      'sends a subject property under a bare directory attribute name, which ' +
+      'the PIP reads off the subject\'s directory entry; for a subject this ' +
+      'realm resolves the directory is authoritative.',
+    spec: 'the write is refused' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

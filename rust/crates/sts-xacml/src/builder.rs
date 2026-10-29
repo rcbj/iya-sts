@@ -33,6 +33,16 @@ pub mod vocabulary {
     pub const MODE: &str = "urn:sts:xacml:mode";
     pub const SETTING_PREFIX: &str = "urn:sts:xacml:setting:";
     pub const SCOPE_STAGE: &str = "urn:sts:xacml:scope-stage";
+    // AuthZEN's facts (#563): written by the service's AuthZEN adapter
+    // alone; spelt here so a policy reading them matches either builder.
+    pub const AUTHZEN_SUBJECT_TYPE: &str =
+        "urn:sts:xacml:authzen:subject-type";
+    pub const AUTHZEN_RESOURCE_TYPE: &str =
+        "urn:sts:xacml:authzen:resource-type";
+    pub const AUTHZEN_CALLER: &str = "urn:sts:xacml:authzen:caller";
+    pub const AUTHZEN_APPLICATION: &str =
+        "urn:sts:xacml:authzen:application";
+    pub const AUTHZEN_SUPPLIED: &str = "urn:sts:xacml:authzen:supplied";
 }
 
 /// The principal types a request may name; anything else is a person.
