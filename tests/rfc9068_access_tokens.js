@@ -343,6 +343,16 @@ function childMain() {
       applications.createApplication({ identifier: id, protocols: ['oauth2'],
         fields: { oauthClientId: id } });
     });
+    // THE AUDIENCES 3l-3r NAME, REGISTERED (#1140): a token is minted only
+    // for an audience an application object holds, in every mode, so each
+    // resource those requests name is an object of its own here.
+    [['r9-partner', 'https://api.partner.example/resource'],
+     ['r9-x', 'https://x.example/'], ['r9-a', 'https://a.example/'],
+     ['r9-b', 'https://b.example/']].forEach(function (pair) {
+      applications.createApplication({ identifier: pair[0],
+        kind: 'oauth2-resource-server', protocols: ['oauth2'],
+        fields: { oauthAudience: [pair[1]] } });
+    });
     const token = function (form) {
       return request(port, 'POST', '/oauth2/token',
                      { form: Object.assign({}, form, client) });

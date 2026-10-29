@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4798** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4799** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 409
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 733
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
@@ -2324,8 +2324,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0947` | Product mode: an authorization request (or a pushed one) named a client_id that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was decided or recorded (#496). | invalid_client (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
 | `STS-OAUTH-0948` | Product mode: an authorization request named no client_id, so there is no registered client to serve (#496). | invalid_request (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
 | `STS-OAUTH-0949` | Product mode: a token request named a client that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the client was counted or recorded (#496). | invalid_client (HTTP 401, RFC 6749 section 5.2) |
-| `STS-OAUTH-0950` | Product mode: an authorization request or a pushed authorization request named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application (no appRegisteredBy) by its oauthAudience, permission base URI, client_id or identifier (#505). | invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR |
-| `STS-OAUTH-0951` | Product mode: a token request (any grant but the token exchange) named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application — and was refused before anything was spent (#505). | invalid_target (HTTP 400, RFC 8707 section 2) |
+| `STS-OAUTH-0950` | In every mode since #1140: an authorization request or a pushed authorization request named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application (no appRegisteredBy) by its oauthAudience, permission base URI, client_id or identifier (#505). | invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR |
+| `STS-OAUTH-0951` | In every mode since #1140: a token request (any grant but the token exchange) named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application — and was refused before anything was spent (#505). | invalid_target (HTTP 400, RFC 8707 section 2) |
 | `STS-OAUTH-0952` | An authorization request reached a session whose second factor the client does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does. | HTTP 302 to the sign-in screen |
 | `STS-OAUTH-0953` | An authorization request with prompt=none reached a session whose second factor the client does not allow (appMfaMechanism, #475), and prompt=none forbids asking. | login_required (OIDC Core 3.1.2.6) |
 | `STS-OAUTH-0954` | A token exchange asked for a delegated permission (oauthPermissionBaseUri plus a name) that was not delegated to the calling client (oauthDelegatedPermission), and the issuance policy left it out of the issued token, in every mode (#549). | none: the token is issued with a narrower scope (RFC 6749 section 3.3, RFC 8693 section 2.2.1) |
@@ -2351,6 +2351,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0983` | Too many presented strings that are not stored opaque access tokens arrived from one address. Further misses wait (#501). A known token, a JWT and a success are not counted. | HTTP 429 invalid_token, Retry-After |
 | `STS-OAUTH-0984` | An opaque access token was not minted: three fresh 256-bit handles each collided with a digest already stored (#501). | none — the mint throws; no token is issued |
 | `STS-OAUTH-0985` | A request at an endpoint a client presents itself at (authorization, token, PAR, introspection, revocation, device authorization, CIBA) named the client_id of an API resource object (kind oauth2-resource-server). A resource is never a client; refused in every mode (#1139). | invalid_client (RFC 6749 section 5.2), HTTP 401; HTTP 400 at the authorization endpoint, never redirected |
+| `STS-OAUTH-0986` | An access token was not minted: an audience it would carry — the default resource, a resource the request named, the client's own, or one a scope or authorization_details derived — is held by no application object (an own API whose object was deleted, or an audience nobody registered). Refused in every mode (#1140). | invalid_target (RFC 8707 section 2), HTTP 400; redirected from the authorization endpoint |
 
 ## STS-SAML
 

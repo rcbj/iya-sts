@@ -3165,34 +3165,6 @@ const REQUIREMENTS = [
              'invalid_resource_server (STS-GNAP-0902), before the entry is ' +
              'sighted again or anything is issued.',
     where: 'gnap/gnap_grants.ts' },
-  { id: 'unregistered-resource-targets',
-    what: 'An RFC 8707 resource and a GNAP right\'s locations name a ' +
-          'registered target (#505)',
-    development: 'Any absolute URI is accepted as a resource at the ' +
-                 'authorization, PAR and token endpoints and becomes the ' +
-                 'token\'s aud; a GNAP location that names no resource ' +
-                 'server is left out of the token\'s audience and the ' +
-                 'right is granted, while something else in the token ' +
-                 'names one — a token whose access names none is refused ' +
-                 'invalid_request in every mode (STS-GNAP-0904).',
-    product: 'A resource (outside a token exchange, whose targets are the ' +
-             'policy\'s unregistered-target) and every location of a GNAP ' +
-             'access right must name a registered target: one of this ' +
-             'service\'s own resource servers (the default resource ' +
-             'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; /account-api; /report-api) ' +
-             'or an application registered ahead of time (appRegisteredBy ' +
-             'set — a sighting is not a registration), by its ' +
-             'oauthAudience, permission base URI, client_id or identifier ' +
-             '— the embedded debugger\'s api is one, seeded registered. A ' +
-             'GNAP location at or under a registered resource server\'s ' +
-             'gnapResourceServerUri names it too. Otherwise invalid_target: ' +
-             'redirected from the authorization endpoint and 400 at PAR ' +
-             '(STS-OAUTH-0950), 400 at the token endpoint before anything ' +
-             'is spent (STS-OAUTH-0951); for GNAP the request is refused ' +
-             'invalid_request (STS-GNAP-0903), not the right dropped.',
-    where: 'common/registered_targets.ts, oauth-oidc/oauth2.ts, ' +
-           'gnap/gnap_grants.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +

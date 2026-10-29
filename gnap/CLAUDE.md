@@ -1294,10 +1294,11 @@ asked to approve. A reference string names no location and is not asked.
 What a location that IS registered contributes to a token's audience is
 unchanged: `resourceServersFor()` still adds only a matched GNAP resource
 server (so a location naming a registered application by its audience passes
-the check and adds nothing, as before). Behind
-`mode.issuesToUnregisteredApplications()`, the
-`unregistered-resource-targets` row on `/admin/mode`; development is
-unchanged. `tests/registered_targets.js` (T5) holds it in both modes,
+the check and adds nothing, as before). **In every mode since #1140**
+(rcbj: no access token for an audience no application object holds); until
+then it was behind `mode.issuesToUnregisteredApplications()` and the
+`unregistered-resource-targets` row on `/admin/mode`, which is gone.
+`tests/registered_targets.js` (T5) holds it in both modes,
 through `judgeRequested()` on a `GnapGrants` built in the test.
 
 ## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)

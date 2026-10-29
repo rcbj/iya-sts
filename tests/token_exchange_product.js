@@ -215,7 +215,10 @@ function childMain() {
       return helpers.signJwt(Object.assign({
         iss: 'https://127.0.0.1:' + port, sub: sub,
         username: username, client_id: forApp, typ: 'Bearer',
-        aud: 'https://127.0.0.1:' + port, scope: 'api',
+        // The default resource, an audience this service mints for (#1140):
+        // a self exchange with no audience keeps the subject token's, and
+        // no access token is minted for an audience no object holds.
+        aud: 'http://127.0.0.1:' + port + '/resource', scope: 'api',
         iat: now, nbf: now, exp: now + 600,
         jti: 'txp-' + crypto.randomBytes(6).toString('hex') },
       extra || {}));
@@ -415,12 +418,18 @@ function childMain() {
            P + 'h. a subject carrying stsNotDelegated: ' + says +
            ' (invalid_request, 0618)', r.status + ' ' + r.text.slice(0, 300));
       // i. An unregistered audience.
+      // REFUSED IN BOTH MODES SINCE #1140: no access token for an audience
+      // no application object holds. Product's delegation policy refuses it
+      // first (0793); development's only records that and the audience plan
+      // refuses the mint (0986).
       r = await by('txp-front', aliceToken(),
                    { audience: 'https://nowhere.example' });
-      note(refusedAs(m, r, 'invalid_target', 'STS-OAUTH-0793',
-                     'oauth-delegation'),
-           P + 'i. an audience no application registers: ' + says +
-           ' (invalid_target, 0793)', r.status + ' ' + r.text.slice(0, 300));
+      note(r.status === 400 && r.json && r.json.error === 'invalid_target' &&
+           !r.json.access_token &&
+           (codeRecorded('STS-OAUTH-0793') || codeRecorded('STS-OAUTH-0986')),
+           P + 'i. an audience no application registers: refused in ' + m +
+           ' (invalid_target, 0793 or 0986)',
+           r.status + ' ' + r.text.slice(0, 300));
       // j. Two audiences.
       r = await by('txp-front', aliceToken(),
                    { audience: [BACK, 'txp-imp'] });
@@ -443,7 +452,8 @@ function childMain() {
       claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
       note(r.status === 200 && !claims.act,
            P + 'l. S itself with no audience: a self exchange, no `act`',
-           r.status + ' ' + JSON.stringify(claims.act || null));
+           r.status + ' ' + JSON.stringify(claims.act || null) + ' ' +
+           String(r.text || '').slice(0, 300));
       // m. may_act naming somebody else — every mode.
       r = await by('txp-front', aliceToken('txp-front',
         { may_act: { sub: 'somebody-else' } }), { audience: BACK });

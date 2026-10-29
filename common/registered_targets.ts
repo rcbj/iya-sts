@@ -6,7 +6,7 @@
 // File: registered_targets.ts
 //
 // ---------------------------------------------------------------------------
-// WHAT A TOKEN MAY BE ADDRESSED TO, IN PRODUCT: A REGISTERED TARGET (#505).
+// WHAT A TOKEN MAY BE ADDRESSED TO: A REGISTERED TARGET (#505, #1140).
 //
 // #496 made product refuse an application nobody registered at every door
 // that names one. Two doors name the party a token is FOR without naming an
@@ -20,8 +20,10 @@
 //
 // **A REGISTERED TARGET IS ONE OF TWO THINGS.**
 //
-//   1. ONE OF THIS SERVICE'S OWN RESOURCE SERVERS, read from the code that
-//      checks a token's audience rather than listed here:
+//   1. ONE OF THIS SERVICE'S OWN RESOURCE SERVERS, WHILE THE APPLICATION
+//      OBJECT REPRESENTING IT EXISTS (#1139, #1140), matched by its path
+//      under any name this process is reached by, as the code that checks a
+//      token's audience reads it:
 //        * the default resource indicator of an authorization server this
 //          process publishes at the request's base — `<base>/resource`, or
 //          a named authorization server's under it. It is what UserInfo,
@@ -61,11 +63,15 @@
 // UNDER a registered resource server's `gnapResourceServerUri` — is GNAP's
 // rule and stays in `gnap_grants.ts`, which asks this file first.
 //
-// **DEVELOPMENT IS UNCHANGED**: `mode.issuesToUnregisteredApplications()`,
-// #496's predicate, answers yes there and `unregistered()` returns nothing.
-// The question is the same one — may a token be issued FOR something nobody
-// registered — so it is the same predicate, with a row of its own in
-// `mode.js`'s REQUIREMENTS (`unregistered-resource-targets`).
+// **EVERY MODE SINCE #1140** (2026-10-29). Development was unchanged by #505
+// — `mode.issuesToUnregisteredApplications()` answered yes there and
+// `unregistered()` returned nothing — until rcbj's rule that no access token
+// is minted for an audience no application object holds, in both modes.
+// And the rule is asked of EVERY audience a token is minted with, not only
+// of the targets a request names: `oauth2.ts`'s `accessTokenPlan()` asks
+// `unregistered()` of the plan's audiences (STS-OAUTH-0986), so the default
+// audience, a client's own and one a scope or `authorization_details`
+// derived are held to it as well.
 //
 // A STATIC UTILITY CLASS (rule 3: a library, no route, no state), as
 // `issuer_names.ts` is. `applications`, `oauth-oidc/jwt_access_token` and
@@ -77,7 +83,6 @@
 
 import config = require('./config');
 import helpers = require('./helpers');
-import mode = require('./mode');
 
 const log = helpers.log;
 
@@ -147,62 +152,108 @@ export = class RegisteredTargets {
     return found;
   }
 
+  // ---------------------------------------------------------------------------
+  // THIS SERVICE'S OWN RESOURCE SERVERS, EACH ONLY WHILE ITS OBJECT EXISTS
+  // (#1140, 2026-10-29). Since #1139 each is an application object of kind
+  // `oauth2-resource-server` seeded in every realm (`applications.js`'s
+  // `apiResourceApplications()`), and rcbj's rule is that no access token is
+  // minted for an audience no application object holds. An own API's
+  // audience is matched by its PATH under any name this process is reached
+  // by — the request's base, and the authorization server's — rather than
+  // by the one URL the object stores (rcbj's decision on #1140: the test
+  // launchers reach the service as `sts:8081`, the in-process suite as
+  // `127.0.0.1` on a random port, and the default audience has always been
+  // built from the request's own base). The OBJECT decides whether the API
+  // is a target at all: an operator who deletes `sts-report-api` has turned
+  // off every token for `/report-api`.
+  // ---------------------------------------------------------------------------
+  private static seeded(identifier: string): boolean {
+    log.debug("Entering RegisteredTargets.seeded(). " + identifier);
+    let found = false;
+    try {
+      const applications = require('./applications');
+      found = !!applications.get(identifier);
+    } catch (e) {
+      // No registry (a library tested on its own): nothing is seeded.
+      log.debug("Caught in RegisteredTargets.seeded(): " +
+                ((e && e.message) || e));
+      found = false;
+    }
+    log.debug("Leaving RegisteredTargets.seeded(). " + found);
+    return found;
+  }
+
   /**
-   * Names the resource server of this service's own a target is, or ''.
+   * Names the resource server of this service's own a target is, or '' —
+   * only while the application object that represents it exists (#1140).
    *
-   * @param target - a resource indicator or a location
-   * @param req - the request, for the base it arrived on and its realm
+   * @param target - a resource indicator, a location or an audience
+   * @param req - the request, for the base it arrived on and its realm, or
+   *   nothing where there was none (a CIBA push)
+   * @param base - the authorization server's base, asked as well
    * @returns a label for the resource server, or ''
    */
-  static ownResourceServer(target: string, req: Json): string {
+  static ownResourceServer(target: string, req: Json, base?: string): string {
     log.debug("Entering RegisteredTargets.ownResourceServer().");
     const wanted = String(target == null ? '' : target).trim();
-    if (!wanted || !req) {
+    const bases: string[] = [];
+    [req ? helpers.baseUrlOf(req) : '', String(base || '')]
+      .forEach(function (one: string): void {
+        if (one && bases.indexOf(one) < 0) {
+          bases.push(one);
+        }
+      });
+    if (!wanted || !bases.length) {
       log.debug("Leaving RegisteredTargets.ownResourceServer(). Nothing " +
                 "asked.");
       return '';
     }
-    const base = helpers.baseUrlOf(req);
     const jwtAccessToken = RegisteredTargets.installed('jwt_access_token',
       function loadJwtAccessToken(): Json {
         log.debug("Entering loadJwtAccessToken().");
         log.debug("Leaving loadJwtAccessToken().");
         return require('../oauth-oidc/jwt_access_token');
       });
-    if (jwtAccessToken && jwtAccessToken.isOwnResourceAudience(wanted, base)) {
-      log.debug("Leaving RegisteredTargets.ownResourceServer(). The default " +
-                "resource indicator.");
-      return 'this service\'s resource server (UserInfo, SCIM, Shared ' +
-             'Signals, OpenID4VCI)';
-    }
-    const adminApi = RegisteredTargets.installed('admin_api',
-      function loadAdminApi(): Json {
-        log.debug("Entering loadAdminApi().");
-        log.debug("Leaving loadAdminApi().");
-        return require('../mgmt-api/admin_api');
+    const underAny = function (path: string): boolean {
+      return bases.some(function (one: string): boolean {
+        return wanted === one + path;
       });
-    if (adminApi && typeof adminApi.namesThisApi === 'function' &&
-        adminApi.namesThisApi(wanted, req)) {
+    };
+    if (jwtAccessToken && bases.some(function (one: string): boolean {
+      return jwtAccessToken.isOwnResourceAudience(wanted, one);
+    })) {
+      const on = RegisteredTargets.seeded('sts-resource');
+      log.debug("Leaving RegisteredTargets.ownResourceServer(). The default " +
+                "resource indicator; its object " +
+                (on ? 'exists.' : 'is gone.'));
+      return on ? 'this service\'s resource server (UserInfo, SCIM, ' +
+                  'Shared Signals, OpenID4VCI)' : '';
+    }
+    if (RegisteredTargets.namesManagementApi(wanted, req, bases[0]) ||
+        underAny('/admin-api')) {
+      const on = RegisteredTargets.seeded('sts-management-api');
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
-                "management API.");
-      return 'the management API (/admin-api)';
+                "management API; its object " + (on ? 'exists.' : 'is gone.'));
+      return on ? 'the management API (/admin-api)' : '';
     }
     // THE ACCOUNT API (#568), the user portal's only door: this realm's
     // `/account-api`, which is what the portal asks for as its `resource` and
     // what `account-api/account_api.ts` accepts as a token's audience.
-    if (wanted === base + '/account-api') {
+    if (underAny('/account-api')) {
+      const on = RegisteredTargets.seeded('sts-account-api');
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
-                "account API.");
-      return 'the account API (/account-api)';
+                "account API; its object " + (on ? 'exists.' : 'is gone.'));
+      return on ? 'the account API (/account-api)' : '';
     }
     // THE REPORTS API (#956), the reports application's only door: this
     // realm's `/report-api`, which is what `/report` asks for as its
     // `resource` and what `report/report_api.ts` accepts as a token's
     // audience. Compared whole, as the account API is.
-    if (wanted === base + '/report-api') {
+    if (underAny('/report-api')) {
+      const on = RegisteredTargets.seeded('sts-report-api');
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
-                "reports API.");
-      return 'the reports API (/report-api)';
+                "reports API; its object " + (on ? 'exists.' : 'is gone.'));
+      return on ? 'the reports API (/report-api)' : '';
     }
     log.debug("Leaving RegisteredTargets.ownResourceServer(). None.");
     return '';
@@ -256,40 +307,46 @@ export = class RegisteredTargets {
 
   /**
    * Says whether a target names a registered target: one of this service's
-   * own resource servers, or a registered application.
+   * own resource servers whose object exists, or a registered application.
    *
-   * @param target - a resource indicator or a location
-   * @param req - the request
+   * @param target - a resource indicator, a location or an audience
+   * @param req - the request, or nothing where there was none
+   * @param base - the authorization server's base, asked as well
    * @returns true when it does
    */
-  static isRegistered(target: string, req: Json): boolean {
+  static isRegistered(target: string, req: Json, base?: string): boolean {
     log.debug("Entering RegisteredTargets.isRegistered().");
-    const registered = !!RegisteredTargets.ownResourceServer(target, req) ||
+    const registered =
+      !!RegisteredTargets.ownResourceServer(target, req, base) ||
       !!RegisteredTargets.application(target);
     log.debug("Leaving RegisteredTargets.isRegistered(). " + registered);
     return registered;
   }
 
+  // IN EVERY MODE SINCE #1140 (rcbj, 2026-10-29: "It shouldn't be possible
+  // to mint an access token that doesn't have an application object with
+  // that audience configured" — in both modes). Until then development
+  // answered nothing here (`mode.issuesToUnregisteredApplications()`, #496's
+  // predicate, and the `unregistered-resource-targets` row of `mode.js`), so
+  // any absolute URI became a token's `aud`. The row is gone: there is no
+  // difference between the modes left to describe.
   /**
-   * Returns the targets a token may not be addressed to here: in product,
-   * those naming no registered target; in development, none.
+   * Returns the targets a token may not be addressed to here, in every mode:
+   * those naming no registered target.
    *
-   * @param targets - resource indicators or locations
-   * @param req - the request
+   * @param targets - resource indicators, locations or audiences
+   * @param req - the request, or nothing where there was none
+   * @param base - the authorization server's base, asked as well
    * @returns the unregistered ones, in order
    */
-  static unregistered(targets: unknown, req: Json): string[] {
+  static unregistered(targets: unknown, req: Json, base?: string): string[] {
     log.debug("Entering RegisteredTargets.unregistered().");
-    if (mode.issuesToUnregisteredApplications()) {
-      log.debug("Leaving RegisteredTargets.unregistered(). Development.");
-      return [];
-    }
     const asked = (Array.isArray(targets) ? targets : [targets])
       .filter(function (one: unknown): boolean {
         return one !== undefined && one !== null && String(one) !== '';
       }).map(String);
     const out = asked.filter(function (one: string): boolean {
-      return !RegisteredTargets.isRegistered(one, req);
+      return !RegisteredTargets.isRegistered(one, req, base);
     });
     log.debug("Leaving RegisteredTargets.unregistered(). " + out.length +
               " of " + asked.length + ".");
@@ -309,7 +366,7 @@ export = class RegisteredTargets {
     }).join(', ');
     log.debug("Leaving RegisteredTargets.describe().");
     return named + ((targets || []).length === 1 ? ' names' : ' name') +
-      ' no registered target. In product mode a token is addressed only to ' +
+      ' no registered target. A token is addressed only to ' +
       'one of this service\'s own resource servers or to an application ' +
       'registered ahead of time (the console, /admin-api, RFC 7591, an ' +
       'LDAP add under ou=applications or an OpenID Federation), found by ' +

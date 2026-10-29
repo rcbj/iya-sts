@@ -5853,10 +5853,28 @@ resource server here compares an `aud` whole (RFC 9068 section 4).
   resource server has none, so folding the two would change the exchange's
   decisions, which #505 does not ask for.
 
-Behind #496's `mode.issuesToUnregisteredApplications()` — the question is the
-same, whether a token is issued FOR something nobody registered — with a row
-of its own, `unregistered-resource-targets`, on `/admin/mode`. Development is
-unchanged. `tests/registered_targets.js` (T1–T4) holds it in both modes.
+**IN EVERY MODE, AND FOR EVERY AUDIENCE, SINCE #1140 (2026-10-29).** rcbj:
+"It shouldn't be possible to mint an access token that doesn't have an
+application object with that audience configured", in both modes. Until then
+it sat behind #496's `mode.issuesToUnregisteredApplications()` with a row of
+its own, `unregistered-resource-targets`, on `/admin/mode` (gone), and it
+asked only a `resource` the request NAMED. Now `accessTokenPlan()` also asks
+`RegisteredTargets.unregistered()` of the PLAN's audiences
+(`STS-OAUTH-0986`, `invalid_target`), so the default audience, one a scope
+or `authorization_details` derived and a client_credentials token's own are
+held to it too. Two audiences pass without a registry lookup, each because
+an object already holds it: **the client being served** — its client_id,
+identifier or `oauthAudience` (`clientAudienceNames()`; rcbj's decision that
+a client's own client_id counts, which keeps #550's self-addressed token and
+a self exchange working for a client development only SAW) — and **an
+identifier the `authorization_details` type's declaring object answers to**
+(`audienceFor().identifiers`: its permission base, `oauthAudience`,
+client_id and the type's declared locations). This service's own APIs count
+only while their #1139 objects exist, matched by PATH under any name this
+process is reached by (`registered_targets.ts`, rcbj's decision: the
+launchers reach the service as `sts:8081`, the in-process suite as
+`127.0.0.1` on a random port). `tests/registered_targets.js` (T1–T7) holds
+it.
 
 ## THE ACTOR IS THE CALLER'S OWN, AND A CLIENT'S OWN TOKEN IS ADDRESSED TO IT (#550, 2026-10-10)
 

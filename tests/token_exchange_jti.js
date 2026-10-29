@@ -96,6 +96,12 @@ function child() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const client = { client_id: 'txj-client' };
+    // The exchange's audience, registered (#1140): a token is minted only
+    // for an audience an application object holds, in every mode.
+    require(ROOT + '/common/applications').createApplication({
+      identifier: 'txj-api', kind: 'oauth2-resource-server',
+      protocols: ['oauth2'],
+      fields: { oauthAudience: ['https://txj-api.example'] } });
 
     const subject = await post(port, Object.assign({
       grant_type: 'password', username: 'txj-alice', password: 'anything',

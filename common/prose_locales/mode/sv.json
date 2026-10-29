@@ -743,18 +743,6 @@
     "en": "43ea90ee5ea17888",
     "text": "En okänd nyckel vägras (STS-GNAP-0082), och likaså en nyckel eller instansidentifierare som tillhör en post som ingen registrerat (appRegisteredBy osatt — en som skapats vid första observation är ingen registrering): 401 invalid_client eller invalid_resource_server (STS-GNAP-0902), innan posten observeras igen eller något utfärdas."
   },
-  "mode.requirements.unregistered-resource-targets.what": {
-    "en": "c9e70b1944bd9dca",
-    "text": "En RFC 8707-resurs och en GNAP-rättighets platser namnger ett registrerat mål (#505)"
-  },
-  "mode.requirements.unregistered-resource-targets.development": {
-    "en": "fd6dc100e791e280",
-    "text": "Vilken absolut URI som helst accepteras som resurs vid auktoriserings-, PAR- och tokenslutpunkterna och blir tokens aud; en GNAP-plats som inte namnger någon resursserver utelämnas ur tokens målgrupp och rättigheten beviljas, så länge något annat i token namnger en — en token vars åtkomst inte namnger någon nekas med invalid_request i varje läge (STS-GNAP-0904)."
-  },
-  "mode.requirements.unregistered-resource-targets.product": {
-    "en": "5f6d00d42845d0e5",
-    "text": "En resurs (utanför ett tokenutbyte, vars mål är policyns unregistered-target) och varje plats för en GNAP-åtkomsträtt måste namnge ett registrerat mål: en av den här tjänstens egna resursservrar (standardresursindikatorn som UserInfo, SCIM, Shared Signals och OpenID4VCI godtar; /admin-api; /account-api; /report-api) eller en applikation som registrerats i förväg (appRegisteredBy satt — en observation är inte en registrering), via dess oauthAudience, behörighetsbas-URI, client_id eller identifierare — den inbäddade felsökarens api är ett sådant, seedat som registrerat. En GNAP-plats vid eller under en registrerad resursservers gnapResourceServerUri namnger den också. Annars invalid_target: omdirigering från auktoriseringsslutpunkten och 400 vid PAR (STS-OAUTH-0950), 400 vid tokenslutpunkten innan något förbrukats (STS-OAUTH-0951); för GNAP vägras begäran med invalid_request (STS-GNAP-0903), rätten stryks inte i tysthet."
-  },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
     "text": "Ett svar går dit begäran säger"
