@@ -224,6 +224,15 @@ imported into memory costs memory; postgres is where that belongs.
   dataset out and names it in `stale`. The page draws the state.
 * **An operator list is per realm**, and refused for a realm that does not
   exist; every other dataset is the whole service's (`realm = ''`).
+* **Remove unloads the active version (#1152, rcbj).** `deleteVersion()`
+  refuses only a version still `loading`. For the active one,
+  `store.deactivate()` (`riskDeactivate`, one transaction and a
+  `risk-dataset` change row, like `riskActivate`) first leaves the dataset
+  `empty`, with no active version and its `previousVersion` kept, and only
+  then are the rows deleted, so no lookup reads a half-deleted version.
+  Nothing is activated in its place; the registry still offers Roll back,
+  reading `previousVersion` off the dataset row because `activeVersions()`
+  has no entry for an empty dataset.
 
 **Retention is a scheduler job**, `risk.retention` (hourly, cluster):
 superseded versions past `risk.supersededRetentionDays` and refused versions

@@ -834,6 +834,14 @@ REVOKED, USER_VERIFICATION_BYPASS or a KEY_COMPROMISE is refused outright
 **Rollback** makes the previous version active again. A superseded version's
 rows are deleted after `risk.supersededRetentionDays`; its record stays.
 
+**Remove** is on every version whose rows are loaded, in the Datasets tab
+(`POST /admin-api/risk/delete`). It deletes that version's rows, and the
+version's record stays, marked `deleted`, so it cannot be loaded or
+activated again. Removing the **active** version unloads the dataset. It
+then has no active version and risk scores stop reading it. Nothing else is
+activated in its place, and **Roll back** is still offered when there is an
+earlier version. A version that is still loading cannot be removed.
+
 **A stale dataset counts for nothing.** Geolocation and ASN data older than
 `risk.geoStaleAfterDays`, and Tor or reputation lists older than
 `risk.ipListStaleAfterHours`, are left out of every lookup and marked stale

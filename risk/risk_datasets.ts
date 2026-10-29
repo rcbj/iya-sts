@@ -2006,7 +2006,10 @@ class RiskDatasets {
   }
 
   /**
-   * Deletes a version's rows; never the active or a loading one.
+   * Deletes a version's rows; never a loading one. THE ACTIVE ONE IS
+   * UNLOADED FIRST (#1152, rcbj): the dataset is left with no active version
+   * before a row goes, so no lookup reads a half-deleted version, and nothing
+   * else is activated in its place — Roll back is offered for that.
    *
    * @param realm - the realm
    * @param dataset - the dataset
@@ -2025,12 +2028,27 @@ class RiskDatasets {
     const row = versions.filter(function (v: Json): boolean {
       return v.version === version;
     })[0];
-    if (!row || row.state === 'active' || row.state === 'loading') {
+    if (!row || row.state === 'loading') {
       log.debug("Leaving RiskDatasets.deleteVersion(). Refused.");
       return errorCodes.mark({ ok: false, errors: [
         'Version "' + version + '" of ' + dataset + ' cannot be deleted: ' +
         (row ? 'it is ' + row.state + '.' : 'it is not recorded.')] },
         'STS-RISK-0007');
+    }
+    const wasActive = row.state === 'active';
+    if (wasActive) {
+      const off = await store.deactivate(String(realm || ''), dataset, version,
+                                         now());
+      if (!off || !off.deactivated) {
+        // Another request activated something else between the read and
+        // here; the version asked about is no longer the active one, and
+        // what it now is was not what the caller saw.
+        log.debug("Leaving RiskDatasets.deleteVersion(). Moved under us.");
+        return errorCodes.mark({ ok: false, errors: [
+          'Version "' + version + '" of ' + dataset + ' stopped being the ' +
+          'active version while it was being removed; look again.'] },
+          'STS-RISK-0007');
+      }
     }
     const gone = await this.dropRows(RiskDatasets.rowKindOf(entry),
                                      String(realm || ''), dataset, version);
@@ -2038,11 +2056,17 @@ class RiskDatasets {
     this.auditRow('risk.dataset.delete', { dataset: dataset, realm: realm,
                                            actor: actor, source: 'admin' },
                   version, 'success', '', gone + ' row(s) of ' + dataset +
-                  ' ' + version + ' deleted');
+                  ' ' + version + ' deleted' +
+                  (wasActive ? '; it was the active version, and ' +
+                               dataset + ' has none now' : ''));
     log.debug("Leaving RiskDatasets.deleteVersion().");
     return { ok: true, dataset: dataset, version: version, rows: gone,
+             unloaded: wasActive,
              message: gone + ' row(s) of ' + dataset + ' version ' + version +
-                      ' deleted; its record stays.' };
+                      ' deleted; its record stays.' +
+                      (wasActive ? ' It was the active version, so ' +
+                                   dataset + ' has no active version now ' +
+                                   'and risk scores stop reading it.' : '') };
   }
 
   // ===== WHAT IS ACTIVE, AND WHETHER IT IS FRESH ============================
@@ -2253,6 +2277,14 @@ class RiskDatasets {
     log.debug("Entering RiskDatasets.registry().");
     const realm = String(realmId || '');
     const actives = await this.activeVersions();
+    // A dataset whose active version was removed (#1152) has no entry in
+    // `actives` and still remembers the version it replaced, which is what
+    // Roll back offers; so `previousVersion` is read off the dataset rows.
+    const previousOf = new Map<string, string>();
+    (await store.listDatasets()).forEach(function (d: Json): void {
+      previousOf.set(d.realm + '\u0000' + d.dataset,
+                     String(d.previousVersion || ''));
+    });
     const at = now();
     const rows = [];
     const terms = await riskTerms.status();
@@ -2277,7 +2309,8 @@ class RiskDatasets {
         state: !active ? 'empty'
           : (this.isStale(entry, active, at) ? 'stale' : 'active'),
         activeVersion: active ? active.version : '',
-        previousVersion: active ? active.previousVersion : '',
+        previousVersion: active ? active.previousVersion
+          : previousOf.get(inRealm + '\u0000' + id) || '',
         publishedAt: active ? active.publishedAt : 0,
         rows: active ? active.rowCount : 0,
         provider: active ? active.provider : entry.provider || '',

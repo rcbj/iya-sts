@@ -110,7 +110,7 @@
   "about.upload": "數百萬列的檔案可以透過下面的第一個表單<strong>上傳</strong>——依提供者發布的原樣，<code>.gz</code>、<code>.zip</code> 或未壓縮；它在讀取時解壓縮，不會把任何解壓縮後的內容寫入磁碟——或者連同資訊清單放入 <code>risk.datasetsDirectory</code>{set, select, yes {（目前為 <code>{directory}</code>）} other {（未設定）}}。檔案一儲存完成，上傳就會回應：該版本顯示為 <em>loading</em>，然後變為 <em>active</em> 或 <em>refused</em> 並附原因——重新載入此頁面即可追蹤。第二個表單用於可貼上的清單。",
   "about.realmOnly": "這是 <code>{realm}</code> 領域的風險：它的評估、其人員的狀況、它的營運者允許和拒絕清單，以及它被拒絕的密碼。所有領域共用的資料集——地理位置、網路、Tor 出口、信譽、安全金鑰中繼資料——及其提供者的條款和 <code>risk.</code> 設定屬於整個服務，由服務管理員管理。",
   "dataset.activate": "啟用",
-  "dataset.deleteRows": "刪除列",
+  "dataset.remove": "移除",
   "dataset.published": "發布於 {at}",
   "dataset.loaded": "載入於 {at}",
   "dataset.inRealm": "（領域 {realm}）",
