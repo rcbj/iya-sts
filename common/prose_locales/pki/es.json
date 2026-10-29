@@ -63,6 +63,10 @@
     "en": "903e048677f8ab58",
     "text": "Los certificados de cliente TLS que las personas se emiten a sí mismas en el portal de usuario: clientAuth, el nombre urn:sts:person: de la persona y una clave privada entregada una vez como PKCS#12. Un certificado de esta autoridad inicia la sesión de su titular en GET /tls/sign-in en el puerto principal, en este dominio; un certificado de cualquier otra autoridad de este servicio no lo hace, aunque todas encadenan a la misma raíz."
   },
+  "pki.useCases.message-signing.what": {
+    "en": "4aacf430b5a390f0",
+    "text": "Los certificados con los que una persona o una aplicación firma una solicitud WS-Trust (una firma WS-Security 1.1 sobre el Body SOAP y el Timestamp): solo digitalSignature, el nombre urn:sts:person: o urn:sts:application: del titular, y una clave privada entregada una sola vez como PKCS#12. Los emite un administrador desde la consola o /admin-api. Un certificado de esta autoridad autentica a su titular como solicitante de una RST firmada, en este dominio; un certificado de cliente TLS de este servicio no lo hace, y este no inicia la sesión de nadie por TLS."
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "Un cliente OAuth o parte que confía registrado. Su par de claves se escribe en su propia entrada en ou=applications."

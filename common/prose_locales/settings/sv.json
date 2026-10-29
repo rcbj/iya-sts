@@ -3243,6 +3243,14 @@
     "en": "286a6641dd93e940",
     "text": "Hur många fortfarande giltiga TLS-klientcertifikat en administratör får utfärda till en applikation från dess avsnitt Autentiseringsuppgifter på /admin/applications eller via POST /admin-api/applications/issue-tls-client-certificate — ett per instans, eller två medan ett certifikat roteras. Ett återkallat eller utgånget certifikat räknas inte. Därutöver avvisas utfärdandet (STS-PKI-0180) i stället för att återkalla ett certifikat som en körande instans kanske fortfarande presenterar."
   },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "Certifikat för meddelandesignering som en innehavare får ha"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "Hur många fortfarande giltiga certifikat för meddelandesignering (de som en WS-Trust-begärare signerar sin begäran med) en administratör får utfärda till en person eller en applikation, från /admin/users, /admin/applications eller /admin-api. Ett återkallat eller utgånget certifikat räknas inte. Därutöver vägras utfärdandet (STS-PKI-0220) i stället för att återkalla ett certifikat som någon kanske fortfarande signerar med."
+  },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",
     "text": "Signera med ett fäst nyckelpar"

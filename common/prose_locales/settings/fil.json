@@ -3243,6 +3243,14 @@
     "en": "286a6641dd93e940",
     "text": "Ilang valid pang TLS client certificate ang puwedeng iisyu ng administrator sa isang application mula sa seksyong Credentials nito sa /admin/applications o POST /admin-api/applications/issue-tls-client-certificate — isa bawat instance, o dalawa habang nire-rotate ang isang certificate. Hindi binibilang ang revoked o expired na certificate. Lampas dito, tinatanggihan ang pag-isyu (STS-PKI-0180) sa halip na i-revoke ang certificate na baka ipinapakita pa ng isang tumatakbong instance."
   },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "Mga message-signing certificate na maaaring hawakan ng isang may-hawak"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "Ilang valid pa na message-signing certificate (ang ipinapanlagda ng isang WS-Trust requester sa request nito) ang maaaring ilabas ng isang administrator para sa isang tao o isang application, mula sa /admin/users, /admin/applications o /admin-api. Hindi binibilang ang binawi o nag-expire na certificate. Lampas dito, tinatanggihan ang paglabas (STS-PKI-0220) sa halip na bawiin ang certificate na maaaring ginagamit pa ng isang tao sa paglagda."
+  },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",
     "text": "Pumirma gamit ang naka-pin na key pair"

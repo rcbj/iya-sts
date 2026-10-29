@@ -3243,6 +3243,14 @@
     "en": "286a6641dd93e940",
     "text": "管理员可以从 /admin/applications 上应用的“凭据”部分或通过 POST /admin-api/applications/issue-tls-client-certificate 为一个应用签发多少个仍然有效的 TLS 客户端证书——每个实例一个，或在证书轮换期间两个。已吊销或已过期的证书不计入。超出后签发会被拒绝（STS-PKI-0180），而不是吊销正在运行的实例可能仍在出示的证书。"
   },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "一个持有者可持有的消息签名证书数"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "管理员可从 /admin/users、/admin/applications 或 /admin-api 为一个人或一个应用签发的仍然有效的消息签名证书（WS-Trust 请求者用来签名其请求的证书）数量。已吊销或已过期的证书不计入。超过此数时签发会被拒绝（STS-PKI-0220），而不是吊销某人可能仍在用来签名的证书。"
+  },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",
     "text": "使用固定的密钥对签名"

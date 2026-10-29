@@ -3243,6 +3243,14 @@
     "en": "286a6641dd93e940",
     "text": "Nombre de certificats client TLS encore valides qu’un administrateur peut émettre pour une application depuis sa section Identifiants dans /admin/applications ou via POST /admin-api/applications/issue-tls-client-certificate — un par instance, ou deux pendant la rotation d’un certificat. Un certificat révoqué ou expiré n’est pas compté. Au-delà, l’émission est refusée (STS-PKI-0180) plutôt que de révoquer un certificat qu’une instance en cours d’exécution présente peut-être encore."
   },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "Certificats de signature de messages qu’un détenteur peut détenir"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "Nombre de certificats de signature de messages encore valides (ceux avec lesquels un demandeur WS-Trust signe sa requête) qu’un administrateur peut émettre pour une personne ou une application, depuis /admin/users, /admin/applications ou /admin-api. Un certificat révoqué ou expiré n’est pas compté. Au-delà, l’émission est refusée (STS-PKI-0220) plutôt que de révoquer un certificat avec lequel quelqu’un signe peut-être encore."
+  },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",
     "text": "Signer avec une paire de clés épinglée"

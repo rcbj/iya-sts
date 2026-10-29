@@ -3243,6 +3243,14 @@
     "en": "286a6641dd93e940",
     "text": "管理員可從 /admin/applications 上應用程式的 Credentials 區段或 POST /admin-api/applications/issue-tls-client-certificate，為一個應用程式簽發多少張仍有效的 TLS 用戶端憑證——每個執行個體一張，或在輪替憑證期間兩張。已撤銷或已過期的憑證不計入。超過此數時簽發會被拒絕（STS-PKI-0180），而不是撤銷執行中的執行個體可能仍在出示的憑證。"
   },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "一個持有者可持有的訊息簽章憑證數"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "管理員可從 /admin/users、/admin/applications 或 /admin-api 為一個人或一個應用程式簽發的仍然有效的訊息簽章憑證（WS-Trust 請求者用來簽署其請求的憑證）數量。已撤銷或已過期的憑證不計入。超過此數時簽發會被拒絕（STS-PKI-0220），而不是撤銷某人可能仍在用來簽署的憑證。"
+  },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",
     "text": "以固定的金鑰組簽署"
