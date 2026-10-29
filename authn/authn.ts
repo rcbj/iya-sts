@@ -17629,9 +17629,9 @@ class Authn {
     if (passwordless && !mode.enrolsKeysOnFirstUse() &&
         credentials.mechanismsFor(username).primaryKeys < 1) {
       log.info('authn: product mode, so a passwordless sign-in for "' +
-               username + '", who holds no primary security key, was ' +
+               username + '", who holds no passkey, was ' +
                'refused rather than enrolling one at the sign-in screen.');
-      log.debug("Leaving Authn.screenAct(). No primary key to " +
+      log.debug("Leaving Authn.screenAct(). No passkey to " +
                 "sign in with, and product mode enrols none here.");
       errorCodes.mark(res, 'STS-AUTHN-0206');
       return this.screenRefused(res, record,

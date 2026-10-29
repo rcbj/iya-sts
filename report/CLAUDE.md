@@ -404,13 +404,21 @@ time budget and a cancellation stop the paging and not just the taking.
   population; so nothing is refused at acceptance, an unordered read stops
   at its limit, and a sorted or counted read walks under the caps.
 * **The row says what applied when it was written.** `post_login.ts`
-  stamps `profile`, `role` and `graceDays` on every write (`stamp()`), so
+  stamps `profile` and `graceDays` on every write (`stamp()`; `role` too
+  until #1135, when an activity stopped asking for a key in a role), so
   a report does not ask the directory for each person's profile. A row
   written before #1110 has none; for it alone the reader asks
   `post_login_policy.forPerson()`, once per person. **`askedBy` (#1126)**
   is the row's own the same way — `policy`, or the started activity that
   asked at a sign-in — and is never inferred for an older row: empty there
   is the truth, nobody recorded who asked.
+* **`role` is RETIRED, not removed (#1135).** A row written since carries
+  none, and its catalog field lost its `primary`/`mfa` enumeration and
+  left the *past grace period* preset's columns; a row written before
+  keeps the role it was asked for and shows it. The field stays because
+  removing it would turn every stored definition that selects, filters or
+  groups by it into a query that no longer validates (`STS-REPORT-0004`
+  at a run, a schedule's slot spent under `STS-REPORT-0028`).
 * **`progress` is one word** (`done`, `past-grace`, `snoozed`, `asked`,
   `mailed`, the first that holds) because the New Query form groups by ONE
   field: "progress by activity" is that word counted, filtered to the
@@ -642,9 +650,9 @@ answers, one commit:
   knew only the braced form.)
 * **`users` gains `hasPassword`, `factors`, `methodsUsed`,
   `mfaLastAuthTime`** (`reportUserRow()`; `reportSecondFactors()` counts
-  mfa-role passkeys, authenticator apps and mail factors — recovery codes
-  and app passwords are not factors, a primary passkey is not a second
-  one). None is indexed, so a filter on them is a job on a windowed
+  every passkey since #1135 — until then only an mfa-role one — and
+  authenticator apps and mail factors; recovery codes and app passwords
+  are not factors). None is indexed, so a filter on them is a job on a windowed
   directory; "password only" is `hasPassword` true and `factors` 0.
 * **`methodsUsed` on `users`** answers who has signed in with a password
   (`pwd`), compared value by value (`LIST_FIELDS` already names it). On
@@ -743,11 +751,24 @@ and communities, "without changing what fields are encrypted or adding
 significant overhead". One row per person, per mechanism, per role,
 read from what the directory keeps already:
 
-* **A passkey's role is data, not a derivation** — the key's own `role`
-  (`primary` | `mfa`, `Credentials.ROLES`), chosen at enrolment and
-  enforced at sign-in; its algorithm and lane are `keyAlgorithm()`'s.
-  The other mechanisms (`MECHANISM_TABLE`: totp, emailFactor,
-  certificate, kerberos) have one role each.
+* **A passkey has no role since #1135** (rcbjBlueMars, 2026-10-29: a key
+  is not enrolled `primary` or `mfa` any more; the authentication policy —
+  the realm's, and an application's where it overrides — decides which use
+  a key may answer at each sign-in). Until then this bullet read *a
+  passkey's role is data, not a derivation* — the key's own `role`, chosen
+  at enrolment and enforced at sign-in — and `reportHolderRows()` grouped a
+  person's keys by it. Now a passkey row's `role` is `MECHANISM_TABLE`'s
+  `''` and `credentials` is the person's count of passkeys;
+  `keysOfValues()` drops any `role` a stored value still carries, so an
+  old key reads like a new one. Its algorithm and lane are
+  `keyAlgorithm()`'s. The other mechanisms (`MECHANISM_TABLE`: totp,
+  emailFactor, certificate, kerberos, …) have one role each, and
+  `HOLDER_ROLES` keeps `primary` and `mfa` for them.
+  **A stored definition is not broken by it**: the field and its values
+  stay, so `mechanism equals passkey and role equals primary` (#1002's
+  example) still validates — and now answers nobody, which is the truth
+  rather than a refusal. A definition that grouped passkeys by `role` now
+  draws one group, empty.
 * **The indexed reads**: `username`, `mail`, `entryUuid` → the users
   source's `reportCandidates()` (rcbj, 2026-10-27: `username equals rcbj`
   was refused as too large until this, the reader knowing only the two
@@ -1125,7 +1146,10 @@ and `webauthn.algorithm-mismatch` rows and projects them, and
 `reportOffer()` takes them into the bounded collector. No index: the ring
 is a list in memory and the audit store indexes no detail field, so
 nothing is declared and nothing scans a store. The row shape is
-`authn/webauthn_ceremonies.ts`'s header; the folded `authenticator`
+`authn/webauthn_ceremonies.ts`'s header; its `role` is the USE an
+assertion answered (`primary` | `mfa`) and empty on a registration since
+#1135, a key having no role (an older registration row keeps the role it
+was enrolled in); the folded `authenticator`
 (#1108) is read back with its `unfold()`, which reads a pre-#1108 row
 too, and `postQuantum` / `postQuantumOffered` are
 `passkey_policy.isPostQuantum()` of the names. A mismatch row's

@@ -94,6 +94,13 @@ interface FieldSpec {
 const HOLDER_MECHANISMS = ['passkey', 'totp', 'emailFactor', 'certificate',
   'kerberos', 'password', 'recoveryCodes', 'jwtSigningKey', 'samlSigningKey',
   'acmeAccountKey', 'scepChallenge', 'selfIssued', 'verifiableCredential'];
+// The roles a MECHANISM has. A passkey is not among them since #1135: a
+// key carries no role, its use at a sign-in being the authentication
+// policy's to allow (the realm's, and an application's override), so
+// a passkey row's `role` is empty. `primary` and `mfa` stay for the
+// mechanisms that are one or the other by nature (a certificate, an
+// authenticator app); a stored definition filtering `mechanism equals
+// passkey and role equals primary` still validates and finds nobody.
 const HOLDER_ROLES = ['primary', 'mfa', 'recovery', 'signer', 'enrollment'];
 // Where a wallet credential came from (#1021): a web wallet, a native wallet
 // app, the browser's Digital Credentials API, or an administrator's hand.
@@ -225,7 +232,13 @@ function source(id: string, retention: string,
 // at its limit, and an ordered read or a count walks the rows a page at a
 // time under the usual time caps.
 const POST_LOGIN_ACTIVITIES = ['pqc-passkey-migration'];
-const POST_LOGIN_ROLES = ['primary', 'mfa'];
+// NO ROLE ENUMERATION SINCE #1135: an activity asks for a passkey, not a
+// passkey in a role, and a row written since carries none. `role` stays
+// in the source, unenumerated, because a row written before keeps the
+// role it was asked for and a stored definition naming the field must
+// still validate — removing a field turns every such definition into a
+// query that no longer validates (STS-REPORT-0004 at a run, a schedule's
+// slot spent under STS-REPORT-0028).
 // Where a person stands, ONE word (the page groups by one field): done; past
 // the allotted time and not done; put off by Skip; asked and not done;
 // mailed by a started activity and never asked at a sign-in.
@@ -238,7 +251,7 @@ function postLoginProgressSource(): SourceSpec {
     'One row per person and post-login activity this realm has asked at a ' +
     'sign-in or mailed about, as the post-login progress store ' +
     'holds it now (#1110). Somebody never asked and never mailed has no ' +
-    'row. The profile, role and allotted time are the ones that applied ' +
+    'row. The profile and allotted time are the ones that applied ' +
     'when the row was last written.',
     [field('username', 'string', 'The directory uid of the person.'),
      field('activity', 'string',
@@ -249,8 +262,9 @@ function postLoginProgressSource(): SourceSpec {
        'The post-login profile that reached the person when the row was ' +
        'last written (default, or a named profile chosen by group).'),
      field('role', 'string',
-       'The role the passkey is asked for: primary (passwordless sign-in) ' +
-       'or mfa (a second factor).', undefined, POST_LOGIN_ROLES),
+       'Retired (#1135): a passkey has no role, so a row written since is ' +
+       'empty. A row written before keeps the role it was asked for then, ' +
+       'primary or mfa.'),
      field('progress', 'string',
        'Where the person stands, in one word, the first that holds: done; ' +
        'past-grace (the allotted time ended and it is not done); snoozed ' +
@@ -299,7 +313,7 @@ function postLoginProgressSource(): SourceSpec {
                    limit: 100, format: 'json', mode: 'auto' } },
      { id: 'past-grace-period', name: 'People past their grace period',
        document: { source: 'postLoginProgress',
-                   select: ['username', 'activity', 'profile', 'role',
+                   select: ['username', 'activity', 'profile',
                             'invitedAt', 'deadline', 'asks', 'skips',
                             'mails', 'lastMailedAt'],
                    where: { op: 'eq', field: 'graceEnded', value: true },
@@ -480,8 +494,9 @@ function standardSources(): SourceSpec[] {
          'Whether a password is set on the entry (#1019).'),
        field('factors', 'number',
          'How many second-factor credentials the person holds: passkeys ' +
-         'enrolled as a second factor, authenticator apps and mail ' +
-         'factors. hasPassword true and factors 0 is a password alone.'),
+         '(every one, since a passkey has no role, #1135), authenticator ' +
+         'apps and mail factors. hasPassword true and factors 0 is a ' +
+         'password alone.'),
        field('methodsUsed', 'string',
          'The RFC 8176 methods the person has ever signed in with here ' +
          '(pwd, hwk, otp, ...), joined; compared value by value.'),
@@ -585,8 +600,8 @@ function standardSources(): SourceSpec[] {
     source('credentialHolders',
       'Who holds which authentication credential, as the directory is ' +
       'now: one row per person, per mechanism, per role (#1002). A ' +
-      'passkey\'s role is the one chosen at its enrolment, primary or ' +
-      'mfa; an authenticator app and an emailed code are mfa; a ' +
+      'passkey has no role (#1135) and its role is empty; an ' +
+      'authenticator app and an emailed code are mfa; a ' +
       'certificate and a Kerberos key are primary. Filter on mechanism or ' +
       'memberOf to read only those holders; a query naming neither reads ' +
       'every holder of every mechanism and runs as a job. Count with ' +
@@ -610,10 +625,14 @@ function standardSources(): SourceSpec[] {
          'enrolled with a wallet).',
          HOLDER_INDEXED.mechanism, HOLDER_MECHANISMS),
        field('role', 'string',
-         'primary (signs the person in on its own), mfa (a second ' +
-         'factor after a password) or recovery (a recovery code set). A ' +
-         'passkey\'s is the one chosen at enrolment and enforced at ' +
-         'sign-in.', undefined, HOLDER_ROLES),
+         'The mechanism\'s role: primary (signs the person in on its ' +
+         'own), mfa (a second factor after a password), recovery (a ' +
+         'recovery code set), signer or enrollment. Empty for a passkey, ' +
+         'which has no role since #1135: the authentication policy (the ' +
+         'realm\'s, and an application\'s where it overrides) decides ' +
+         'whether a passkey signs a person in alone or after a password.',
+         undefined,
+         HOLDER_ROLES),
        field('credentials', 'number',
          'How many credentials of this mechanism and role the person ' +
          'holds; the same on each of their rows (#1011).'),
@@ -736,7 +755,10 @@ function passkeyCeremonySource(): SourceSpec {
       'The application the sign-in was for, its client or relying-party ' +
       'id; empty at /portal/keys, an activation link, a device link and ' +
       'an administrator\'s enrolment, and on rows written before #1108.'),
-    field('role', 'string', 'primary or mfa; empty where none applied.',
+    field('role', 'string',
+      'The use an assertion answered: primary (in place of a password) or ' +
+      'mfa (after one). Empty for a registration since #1135, a key ' +
+      'having no role, and where no step applied.',
       undefined, ['primary', 'mfa']),
     field('lane', 'string', 'classical or pqc (#643).', undefined,
       ['classical', 'pqc']),

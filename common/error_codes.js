@@ -5826,9 +5826,9 @@ const CODES = [
     spec: 'none — logged, and the service starts with nobody able to sign in' },
   { code: 'STS-AUTHN-0206',
     summary: 'Product mode: a passwordless sign-in named a person who holds ' +
-      'no security key that signs in on its own, and the sign-in screen ' +
-      'does not enrol one — enrolling there would give the account to ' +
-      'whoever claimed the name first. A primary key is added on ' +
+      'no passkey (until #1135, none in the primary role), and the ' +
+      'sign-in screen does not enrol one — enrolling there would give the ' +
+      'account to whoever claimed the name first. A passkey is added on ' +
       '/portal/keys, by an activation link or by an operator. Development ' +
       'enrols on first use (mode.enrolsKeysOnFirstUse()).',
     spec: 'none — the sign-in screen is drawn again with the reason' },
@@ -7058,7 +7058,8 @@ const CODES = [
   { code: 'STS-AUTHN-0475',
     summary: 'A post-login passkey registration was refused: the realm can ' +
       'no longer make the ML-DSA passkey asked for (`canRegister()`: ' +
-      'passkeys off, the role not allowed, no ML-DSA algorithm offered at ' +
+      'passkeys off, no new key accepted for any use, no ML-DSA algorithm ' +
+      'offered at ' +
       'registration — webauthn.algorithms, whose default list holds them ' +
       '— the post-quantum lane refused where both lanes are on, or an ' +
       'upgrade refused for the upgrade method), so the activity cannot be ' +

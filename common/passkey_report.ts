@@ -514,10 +514,11 @@ class PasskeyReport {
       if (aaguid && model) {
         names[aaguid] = model.slice(0, 120);
       }
+      // No `role` since #1135: a key carries none, and the list row that
+      // echoed the stored one (it was never a facet) would now be empty.
       return { algorithm: alg.name, coseAlg: alg.coseAlg,
                postQuantum: alg.postQuantum, lane: alg.lane,
-               aaguid: aaguid, model: model,
-               role: String(key.role || '') };
+               aaguid: aaguid, model: model };
     });
     const kind = pq && classical ? 'both'
       : (pq ? 'post-quantum-only' : (classical ? 'classical-only' : 'none'));

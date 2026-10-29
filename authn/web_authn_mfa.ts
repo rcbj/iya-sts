@@ -226,8 +226,11 @@ class WebAuthnMfa {
   }
 
   /**
-   * `/authn/webauthn`: the passkey step, in either of its roles. The
-   * ceremony is the runtime's (`#wa-go`).
+   * `/authn/webauthn`: the passkey step, either way it is used — in place
+   * of a password or after one. Any key the person holds may answer either
+   * (#1135); the authentication policy (the realm's, and the
+   * application's where it overrides) decides which use is open. The ceremony
+   * is the runtime's (`#wa-go`).
    *
    * @param v - the view
    * @param ctx - the context
@@ -455,8 +458,8 @@ class WebAuthnMfa {
 
   /**
    * `/authn/post-login` (#1096): what the realm asks after signing in —
-   * today, a post-quantum passkey in a role — with Register, and Skip where
-   * the allotted time has not passed.
+   * today, a post-quantum passkey (no role since #1135) — with Register,
+   * and Skip where the allotted time has not passed.
    *
    * @param v - the view
    * @param ctx - the context
@@ -475,18 +478,15 @@ class WebAuthnMfa {
     };
     // An upgrade REPLACES the classical passkey (#1100), so its sentence is
     // not the one that says the old passkey keeps working.
-    const why = p.reason === 'none'
-      ? (p.role === 'mfa' ? 'authn.postLogin.subNoneMfa'
-                          : 'authn.postLogin.subNonePrimary')
+    // ONE SENTENCE PER REASON (#1135): until then each had a primary and an
+    // mfa form, the passkey asked for in the role the person's keys held.
+    // A key has no role now, so the page says what it asks for and not how
+    // the key will be used, which is the realm's to decide at each sign-in.
+    const why = p.reason === 'none' ? 'authn.postLogin.subNone'
       // An ML-DSA passkey whose attestation falls short (#1102).
-      : p.reason === 'attestation'
-      ? (p.role === 'mfa' ? 'authn.postLogin.subAttestationMfa'
-                          : 'authn.postLogin.subAttestationPrimary')
-      : (p.method === 'upgrade'
-        ? (p.role === 'mfa' ? 'authn.postLogin.subUpgradeMfa'
-                            : 'authn.postLogin.subUpgradePrimary')
-        : (p.role === 'mfa' ? 'authn.postLogin.subClassicalMfa'
-                            : 'authn.postLogin.subClassicalPrimary'));
+      : p.reason === 'attestation' ? 'authn.postLogin.subAttestation'
+      : (p.method === 'upgrade' ? 'authn.postLogin.subUpgrade'
+                                : 'authn.postLogin.subClassical');
     const how = p.method === 'upgrade' ? 'authn.postLogin.methodUpgrade'
       : (p.separate ? 'authn.postLogin.methodSeparate' : '');
     const until = String(p.deadline || '').slice(0, 10);
