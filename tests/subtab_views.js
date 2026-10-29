@@ -13,7 +13,8 @@
 // in) and an advanced one (every field), except a sub-tab of fewer than six
 // fields, which has none. The Every protocol and OAuth 2.0 / OpenID Connect
 // sub-tabs' simple fields are what rcbj's two working applications hold,
-// with `appMfaMechanism` added on Every protocol (rcbj). What is held:
+// with `appMfaMechanism` added on Every protocol (rcbj) — since #1148 the
+// one reference `appAuthnPolicy` in its place. What is held:
 //
 //   1. those two sub-tabs' simple fields are that set — no more, no fewer —
 //      and every name in `SIMPLE_FIELD_ATTRIBUTES` is a field the grid has.
@@ -48,10 +49,10 @@ const log = require('bunyan').createLogger({
 // 2026-10-07. `appCorsOrigin` and `appRequiredRole` were held as well and are
 // drawn on tabs of their own.
 // `appMfaMechanism` is not held by either and was asked for beside them.
+// Since #1148 the two are one reference, `appAuthnPolicy`.
 // `oauthConfidential` was held as well. #466 took it off the grid, because
 // the registry writes it from the token endpoint authentication method.
-const EVERY = ['description', 'appHomePageUrl', 'appAuthnMechanism',
-               'appMfaMechanism',
+const EVERY = ['description', 'appHomePageUrl', 'appAuthnPolicy',
                'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
                'appDelegationSubjectGroup', 'appDelegationSemantics'];
 const OAUTH = ['oauthClientId',

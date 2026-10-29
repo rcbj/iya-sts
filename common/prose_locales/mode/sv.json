@@ -236,8 +236,8 @@
     "text": "En LDAP simple bind, en WS-Security UsernameToken, SCIM och SSF HTTP Basic samt EST Basic godtar lösenordet som de godtar varje lösenord; inloggningsskärmen ber ändå om den andra faktorn."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "c06e9e3a02393490",
-    "text": "Vid de fem dörrarna avvisas personens eget lösenord — besvarat exakt som ett felaktigt lösenord, och räknat mot hastighetsbegränsningen som ett sådant (STS-AUTHN-0213 endast på granskningsraden och i loggen) — när de har en autentiseringsapp eller någon nyckel där sfären (eller applikationens egen lista) godtar en nyckel som andra faktor, eller en andra faktor krävs av dem (stsMfaRequired, autentiseringspolicyn). Ett APPLÖSENORD som de skapat på /portal/app-passwords, avgränsat till dörren, godtas i stället. authn.passwordAloneDoors anger dörrar som ändå godtar lösenordet, vilket sänker varje sådan person till en faktor där."
+    "en": "a4d4c20c45b2d573",
+    "text": "Vid de fem dörrarna avvisas personens eget lösenord — besvarat exakt som ett felaktigt lösenord, och räknat mot hastighetsbegränsningen som ett sådant (STS-AUTHN-0213 endast på granskningsraden och i loggen) — när de har en autentiseringsapp eller någon nyckel där sfären (eller den autentiseringspolicy applikationen namnger) godtar en nyckel som andra faktor, eller en andra faktor krävs av dem (stsMfaRequired, autentiseringspolicyn). Ett APPLÖSENORD som de skapat på /portal/app-passwords, avgränsat till dörren, godtas i stället. authn.passwordAloneDoors anger dörrar som ändå godtar lösenordet, vilket sänker varje sådan person till en faktor där."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "KDC:n utfärdar en TGT till en AS-REQ som förautentiserats med enbart lösenordet (PA-ENC-TIMESTAMP, eller FAST:s PA-ENCRYPTED-CHALLENGE), eftersom den godtar varje lösenord."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "a1e60b4ee5cac599",
-    "text": "Den AS-REQ:en avvisas med KDC_ERR_POLICY (12), STS-KRB-0135, efter att lösenordet verifierats (ett felaktigt ger fortfarande KDC_ERR_PREAUTH_FAILED), när personen har en autentiseringsapp eller någon nyckel där sfären (eller applikationens egen lista) godtar en nyckel som andra faktor, eller en andra faktor krävs av dem. En person med en autentiseringsapp får en biljett via RFC 6113 FAST-armering med RFC 6560 OTP-förautentisering — lösenord och kod i ett utbyte — och den bär RFC 8129-indikatorn `otp`. Ett applösenord är aldrig en Kerberos-nyckel."
+    "en": "ab8a6af4d276b0bc",
+    "text": "Den AS-REQ:en avvisas med KDC_ERR_POLICY (12), STS-KRB-0135, efter att lösenordet verifierats (ett felaktigt ger fortfarande KDC_ERR_PREAUTH_FAILED), när personen har en autentiseringsapp eller någon nyckel där sfären (eller den autentiseringspolicy applikationen namnger) godtar en nyckel som andra faktor, eller en andra faktor krävs av dem. En person med en autentiseringsapp får en biljett via RFC 6113 FAST-armering med RFC 6560 OTP-förautentisering — lösenord och kod i ett utbyte — och den bär RFC 8129-indikatorn `otp`. Ett applösenord är aldrig en Kerberos-nyckel."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",

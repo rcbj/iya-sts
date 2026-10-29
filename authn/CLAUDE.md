@@ -1315,11 +1315,13 @@ passkey is used is the AUTHENTICATION POLICY's decision, in layers; the key
 has no role and no say.** The realm's policy says what the realm supports: its
 `passkey` (first-factor) and `securityKey` (second-factor) rows, with
 `webauthn.primaryAllowed` / `webauthn.mfaAllowed`, asked by
-`webauthnPolicy.useAllowed()`. An application overrides it through
-`appAuthnMechanism` (first factors, `webauthn` among them, enforced by the
-issuance policy's authn-mechanism rule) and `appMfaMechanism` (second
-factors, `securityKey` among them, applied where the second step is chosen:
-`mfaAllowedFor()` / `narrowSecondFactor()`). So a held passkey makes a second
+`webauthnPolicy.useAllowed()`. An application overrides it through the
+named authentication policy it names (`appAuthnPolicy`, #1148; its own
+`appAuthnMechanism` / `appMfaMechanism` until then): the policy's first
+factors (`webauthn` among them, enforced by the issuance policy's
+authn-mechanism rule) and second factors (`securityKey` among them, applied
+where the second step is chosen: `mfaAllowedFor()` /
+`narrowSecondFactor()`). So a held passkey makes a second
 step only where the realm, and the application if it overrides, accepts a
 passkey as a second factor. Every key a person holds is offered at either
 step, and `keyForAssertion()` asks `webauthnPolicy.useAllowed(use)` — read at
@@ -1626,6 +1628,14 @@ under `forceMfa` for the same reason.
 
 ### `appAuthnMechanism` — the generalisation of `appFederationRelationship`
 
+**SINCE #1148 (2026-10-29) THE LIST IS A NAMED AUTHENTICATION POLICY'S.** The
+entry no longer holds it: `appAuthnPolicy` names a policy of the realm
+(`common/CLAUDE.md`, `authn_policy.ts`), and `declaredMechanismsFor()` reads
+that policy's first-factor list through `mechanismsFor()`. Everything below
+about the list — routing, the screen, the enforcement, the read-time checks —
+holds for the named policy's list unchanged; `default` or empty is the old
+empty list, and a name no policy holds allows nothing (`STS-AUTHN-0536`).
+
 **A LIST OF WHAT IS ALLOWED, AND ENFORCED, SINCE #457 (2026-10-06).** What
 follows was written when it was one value that only routed. Now
 `declaredMechanismsFor()` returns the list as written and the part of it this
@@ -1674,7 +1684,9 @@ deployment there is.
 ### `appMfaMechanism` — which second factors, narrowed per application (#475)
 
 `appAuthnMechanism`'s companion (rcbj, 2026-10-07): the second factors an
-application allows, read by `mfaAllowedFor()` and carried on every minted
+application allows — since #1148 the second-factor list of the named
+authentication policy it names (`appAuthnPolicy`), as above — read by
+`mfaAllowedFor()` and carried on every minted
 step as `mfaAllowed`. rcbj's four rules: **narrow only** (the realm's policy
 is asked first and a held factor is still asked for, as always), **options
 only** (it never makes a second factor needed), **a re-prompt as #457**, and
@@ -1810,14 +1822,17 @@ The two answer different questions, which is why both exist:
 * a **relationship** answers "a partner has sent somebody here; what do I do?"
 * an **application entry** answers "where do this application's people sign
   in?" — in TWO attributes since 2026-08-26, `appAuthnMechanism` (the explicit
-  statement) read before `appFederationRelationship` (the implicit one)
+  statement; since #1148 the first-factor list of the policy `appAuthnPolicy`
+  names) read before `appFederationRelationship` (the implicit one)
 
 `mechanismFor()` is the ONLY function that reads both, and it reads them in one
 order: **the relationship first** (it is the more specific statement — an entry
 under `ou=applications` may be a federation partner AND an ordinary OAuth
 client, registered by two different people), then the application entry's
-`appAuthnMechanism`, then its `appFederationRelationship`, and the screen last. Nothing else in this service may consult either directly, because
-two orders is no order.
+named policy's mechanisms (`appAuthnPolicy`; `appAuthnMechanism` until
+#1148), then its `appFederationRelationship`, and the screen last. Nothing
+else in this service may consult either directly, because two orders is no
+order.
 
 **An empty mechanism is not `password`.** `authenticationFor()` returns `null`
 for a relationship that declares none — which is every relationship created
@@ -1925,7 +1940,7 @@ PERSON HOLDS, then the checkbox.**
 key"**: a key has no role, so every key a person holds answers the step after
 a password and the passwordless ceremony alike, each as far as the
 authentication policy lets it — the realm's (`useAllowed()`) and the
-application's where it overrides (`appAuthnMechanism`, `appMfaMechanism`;
+application's where it overrides (the named policy `appAuthnPolicy` names;
 `keyForAssertion()`, above). A held key makes a second step only where both
 accept a passkey as a second factor.
 

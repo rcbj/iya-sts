@@ -2686,7 +2686,19 @@ class AdminViews {
                  active: (primary || second) ? (!m.email || mailUsable)
                    : false,
                  what: m.what };
-      })
+      }),
+      // THE NAMED POLICIES (#1148), each with the applications naming it,
+      // and the two vocabularies the form offers.
+      named: authn.named().map((one) => {
+        return Object.assign({}, one, {
+          namedBy: this.deps.applications
+            .applicationsNamingAuthnPolicy(one.name)
+        });
+      }),
+      vocabulary: {
+        mechanisms: require('../federation/federation').MECHANISM_IDS.slice(0),
+        secondFactors: require('../common/mfa_mechanisms').IDS.slice(0)
+      }
     };
     log.debug("Leaving AdminViews.authnPolicyExtras().");
     return out;

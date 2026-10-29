@@ -1211,16 +1211,17 @@ The fourteen sources are `users`, `groups`, `applications`, `federation`,
 `reportJobs`, `attributeSources`, `credentialHolders`,
 `postLoginProgress`, `passkeyHistory` and `passkeyCeremonies` (above,
 #1107). `authMechanisms` is the realm policy
-(application `realm`) plus one row per value an application lists in
-`appAuthnMechanism` or `appMfaMechanism`. An empty list inherits the
-realm policy and adds no row. `authActivity` is the four attempt actions
-still in the audit ring (`authentication`, `authentication.refused`,
-`session.refuse`, `session.refused`). `mechanism` is `detail.method`, or
-`detail.amr` when the row has no method. A session id, an address, a note
-and a presented credential are not fields. `attributeSources` is the
-register. It does not run SQL and it does not read the remote table.
-Connection details and secrets are not fields. `serviceMetrics` is one
-level of numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`.
-It is not a time series, and it is not the per-route or per-kind tables.
-`/admin/metrics` and `/admin-api/metrics` stay. `docs/reporting.md` is
-the migration note.
+(application `realm`) plus one row per value listed by the named
+authentication policy an application names (`appAuthnPolicy`, #1148; its
+own `appAuthnMechanism` and `appMfaMechanism` until then). An application
+on `default`, or whose policy lists none, inherits the realm policy and
+adds no row; a policy that does not exist adds none. `authActivity` is the four
+attempt actions still in the audit ring (`authentication`,
+`authentication.refused`, `session.refuse`, `session.refused`). `mechanism` is
+`detail.method`, or `detail.amr` when the row has no method. A session id, an
+address, a note and a presented credential are not fields. `attributeSources` is
+the register. It does not run SQL and it does not read the remote table.
+Connection details and secrets are not fields. `serviceMetrics` is one level of
+numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`. It is not a
+time series, and it is not the per-route or per-kind tables. `/admin/metrics`
+and `/admin-api/metrics` stay. `docs/reporting.md` is the migration note.

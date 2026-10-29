@@ -304,16 +304,16 @@
     "text": "Passkey (passwordless) — bilang unang factor"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appAuthnMechanism)."
+    "en": "1cab77157f5d6263",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng mga unang factor ng authentication policy na pinangangalanan ng isang application (appAuthnPolicy)."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
     "en": "4e99afea50969c29",
     "text": "Passkey (pangalawang factor) — bilang pangalawang factor"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appMfaMechanism)."
+    "en": "5577b57e8d01187e",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng mga pangalawang factor ng authentication policy na pinangangalanan ng isang application (appAuthnPolicy)."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appAuthnMechanism)."
+    "en": "1cab77157f5d6263",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng mga unang factor ng authentication policy na pinangangalanan ng isang application (appAuthnPolicy)."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appMfaMechanism)."
+    "en": "5577b57e8d01187e",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng mga pangalawang factor ng authentication policy na pinangangalanan ng isang application (appAuthnPolicy)."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -571,6 +571,14 @@
     "en": "93538e6b201100c5",
     "text": "Para saan ang profile, para sa susunod na tao."
   },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "9c184b4ac272a663",
+    "text": "Sa isang NAMED na authentication policy (#1148): isang first-factor mechanism na pinapayagan ng mga application na nagpapangalan sa policy na ito (appAuthnPolicy) — password, password-mfa, webauthn, spnego, wallet o federation, tig-isang value. Kapag wala, pinapayagan ang bawat isang pinapayagan ng realm."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "b59799bd06b5022d",
+    "text": "Sa isang NAMED na authentication policy (#1148): isang second factor na pinapayagan ng mga application na nagpapangalan sa policy na ito — password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, tig-isang value. Kapag wala, nananatili ang authentication policy ng realm."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Kung aling pangalawang factor sa email ang pinili ng taong ito: `code` o `link`. Kapag wala: wala. Itinatakda sa /portal/mfa, binubura sa /admin/mfa at pagkatapos ng sobrang daming sunud-sunod na pagkabigo."
@@ -592,16 +600,16 @@
     "text": "Passkey (passwordless)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appAuthnMechanism)."
+    "en": "1cab77157f5d6263",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng mga unang factor ng authentication policy na pinangangalanan ng isang application (appAuthnPolicy)."
   },
   "authn.MECHANISMS.securityKey.label": {
     "en": "7474add07b92939d",
     "text": "Passkey (pangalawang factor)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "ea543723944fb410",
-    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appMfaMechanism)."
+    "en": "5577b57e8d01187e",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng mga pangalawang factor ng authentication policy na pinangangalanan ng isang application (appAuthnPolicy)."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1064,8 +1072,8 @@
     "text": "Hingin ang pag-sign in gamit ang passkey nang walang username"
   },
   "passkey.FIELDS.requireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (appAuthnMechanism `webauthn` lamang) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
+    "en": "3f8988c76401d34a",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (`webauthn` lamang ang nakalista sa authentication policy na pinangangalanan nito, appAuthnPolicy) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
   },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
@@ -1272,8 +1280,8 @@
     "text": "NAKA-ON BILANG DEFAULT. Kapag naka-on, iniaalok ng sign-in screen ang *Sign in with a passkey* at ang autofill ng username field, na humihingi sa browser ng anumang discoverable credential ng realm na ito (WebAuthn Level 3 section 5.4, walang laman ang `allowCredentials`) at nagsa-sign in sa account na pinangangalanan ng user handle nito, na kailangan at sinusuri ang user verification. Kapag naka-off, wala sa dalawa ang iniaalok at palaging pinangangalanan muna ng pag-sign in ang tao. Pinapalitan ang setting na webauthn.usernameless."
   },
   "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (appAuthnMechanism `webauthn` lamang) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
+    "en": "3f8988c76401d34a",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (`webauthn` lamang ang nakalista sa authentication policy na pinangangalanan nito, appAuthnPolicy) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
   },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",

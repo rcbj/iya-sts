@@ -7565,13 +7565,13 @@ the existing `:has()` rules hide by.
   (`applicationFields()`'s `simple`); that file's comment says how the set
   was chosen — Every protocol and OAuth are what rcbj's two working
   applications hold (and `appMfaMechanism` on Every protocol, rcbj's
-  addition), the rest inferred on that model. **A sub-tab of fewer
-  than six fields, or none of one kind, has no switch** (`WebKit.hasViews()`).
-  The switch is two `view` radios INSIDE the sub-tab's form and the
-  stylesheet hides its `fg-adv` cells while Simplified is ticked: no round
-  trip, and a hidden field stays in the form, so a Save posts the value the
-  entry holds and writes nothing for it. `view` is a member no operation
-  declares, so `shapeFields()` drops it before the request; it rides a
+  addition — `appAuthnPolicy` in its place since #1148), the rest inferred on
+  that model. **A sub-tab of fewer than six fields, or none of one kind, has no
+  switch** (`WebKit.hasViews()`). The switch is two `view` radios INSIDE the
+  sub-tab's form and the stylesheet hides its `fg-adv` cells while Simplified is
+  ticked: no round trip, and a hidden field stays in the form, so a Save posts
+  the value the entry holds and writes nothing for it. `view` is a member no
+  operation declares, so `shapeFields()` drops it before the request; it rides a
   redraw in the draft, which is how "+", the bin, a search or a refused Save
   keep the view the reader was in. A person's Attributes sub-tabs do the same
   from `ldap/person_editor.ts`'s `SIMPLE_FIELDS` (one list with the create

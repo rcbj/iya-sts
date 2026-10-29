@@ -2430,9 +2430,13 @@ function reportMechanismRows(policy: any, applications: any[]): any[] {
     if (!id) {
       continue;
     }
+    // THE LISTS OF THE AUTHENTICATION POLICY IT NAMES (#1148), which
+    // replaced its own appAuthnMechanism and appMfaMechanism. A policy that
+    // does not exist allows nothing and adds no row.
     const fields = view.fields || {};
-    const primary = reportListed(fields.appAuthnMechanism);
-    const second = reportListed(fields.appMfaMechanism);
+    const named = require('../common/authn_policy').mechanismsFor(fields);
+    const primary = named.missing ? [] : reportListed(named.mechanisms);
+    const second = named.missing ? [] : reportListed(named.secondFactors);
     for (let p = 0; p < primary.length; p++) {
       rows.push({
         id: primary[p],

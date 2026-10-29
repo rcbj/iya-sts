@@ -304,16 +304,16 @@
     "text": "Llave de acceso (sin contraseña) — como primer factor"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que la lista propia de una aplicación (appAuthnMechanism) diga otra cosa."
+    "en": "1cab77157f5d6263",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que los primeros factores de la política de autenticación que nombra una aplicación (appAuthnPolicy) digan otra cosa."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
     "en": "4e99afea50969c29",
     "text": "Llave de acceso (segundo factor) — como segundo factor"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que la lista propia de una aplicación (appMfaMechanism) diga otra cosa."
+    "en": "5577b57e8d01187e",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que los segundos factores de la política de autenticación que nombra una aplicación (appAuthnPolicy) digan otra cosa."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Una contraseña en la pantalla de inicio de sesión. Como SEGUNDO factor es la contraseña que se pide después de una wallet u otro primer factor sin contraseña."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que la lista propia de una aplicación (appAuthnMechanism) diga otra cosa."
+    "en": "1cab77157f5d6263",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que los primeros factores de la política de autenticación que nombra una aplicación (appAuthnPolicy) digan otra cosa."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que la lista propia de una aplicación (appMfaMechanism) diga otra cosa."
+    "en": "5577b57e8d01187e",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que los segundos factores de la política de autenticación que nombra una aplicación (appAuthnPolicy) digan otra cosa."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -571,6 +571,14 @@
     "en": "93538e6b201100c5",
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
   },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "9c184b4ac272a663",
+    "text": "En una política de autenticación CON NOMBRE (#1148): un mecanismo de primer factor que permiten las aplicaciones que nombran esta política (appAuthnPolicy) — password, password-mfa, webauthn, spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "b59799bd06b5022d",
+    "text": "En una política de autenticación CON NOMBRE (#1148): un segundo factor que permiten las aplicaciones que nombran esta política — password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Si no hay ninguno, la política de autenticación del dominio queda como está."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Qué segundo factor por correo eligió esta persona: `code` o `link`. Ausente: ninguno. Se establece en /portal/mfa y se borra en /admin/mfa y tras demasiados fallos consecutivos."
@@ -592,16 +600,16 @@
     "text": "Llave de acceso (sin contraseña)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que la lista propia de una aplicación (appAuthnMechanism) diga otra cosa."
+    "en": "1cab77157f5d6263",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que le permite iniciar sesión sin contraseña. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un primer factor en este dominio, salvo que los primeros factores de la política de autenticación que nombra una aplicación (appAuthnPolicy) digan otra cosa."
   },
   "authn.MECHANISMS.securityKey.label": {
     "en": "7474add07b92939d",
     "text": "Llave de acceso (segundo factor)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "ea543723944fb410",
-    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que la lista propia de una aplicación (appMfaMechanism) diga otra cosa."
+    "en": "5577b57e8d01187e",
+    "text": "Cualquier llave de acceso (credencial WebAuthn) que tenga la persona, que se pide después de un primer factor. Una llave de acceso no tiene papel: esta fila dice, en cada inicio de sesión, si alguna de ellas puede ser un segundo factor en este dominio, salvo que los segundos factores de la política de autenticación que nombra una aplicación (appAuthnPolicy) digan otra cosa."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1064,8 +1072,8 @@
     "text": "Exigir iniciar sesión con llave de acceso sin nombre de usuario"
   },
   "passkey.FIELDS.requireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una aplicación cuyo mecanismo de autenticación es una llave de acceso y nada más (appAuthnMechanism `webauthn` solo) recibe una pantalla de inicio de sesión sin campo de nombre de usuario: *Iniciar sesión con una llave de acceso* es la forma de entrar, y se rechaza un inicio de sesión que indica a una persona. Necesita la fila anterior. El perfil `default` del dominio no lo aplica a la consola de administración, al depurador ni al portal de usuario; un perfil con nombre que seleccione esa aplicación sí lo hace."
+    "en": "3f8988c76401d34a",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una aplicación cuyo mecanismo de autenticación es una llave de acceso y nada más (la política de autenticación que nombra, appAuthnPolicy, indica solo `webauthn`) recibe una pantalla de inicio de sesión sin campo de nombre de usuario: *Iniciar sesión con una llave de acceso* es la forma de entrar, y se rechaza un inicio de sesión que indica a una persona. Necesita la fila anterior. El perfil `default` del dominio no lo aplica a la consola de administración, al depurador ni al portal de usuario; un perfil con nombre que seleccione esa aplicación sí lo hace."
   },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
@@ -1272,8 +1280,8 @@
     "text": "ACTIVADO DE FORMA PREDETERMINADA. Activado, la pantalla de inicio de sesión ofrece *Iniciar sesión con una llave de acceso* y el autocompletado del campo de nombre de usuario, que piden al navegador cualquier credencial detectable de este dominio (WebAuthn Level 3 sección 5.4, `allowCredentials` vacío) e inician sesión en la cuenta que indica su identificador de usuario (user handle), con la verificación de usuario exigida y comprobada. Desactivado, no se ofrece ninguno de los dos y un inicio de sesión siempre indica primero a la persona. Reemplaza la configuración webauthn.usernameless."
   },
   "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una aplicación cuyo mecanismo de autenticación es una llave de acceso y nada más (appAuthnMechanism `webauthn` solo) recibe una pantalla de inicio de sesión sin campo de nombre de usuario: *Iniciar sesión con una llave de acceso* es la forma de entrar, y se rechaza un inicio de sesión que indica a una persona. Necesita la fila anterior. El perfil `default` del dominio no lo aplica a la consola de administración, al depurador ni al portal de usuario; un perfil con nombre que seleccione esa aplicación sí lo hace."
+    "en": "3f8988c76401d34a",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una aplicación cuyo mecanismo de autenticación es una llave de acceso y nada más (la política de autenticación que nombra, appAuthnPolicy, indica solo `webauthn`) recibe una pantalla de inicio de sesión sin campo de nombre de usuario: *Iniciar sesión con una llave de acceso* es la forma de entrar, y se rechaza un inicio de sesión que indica a una persona. Necesita la fila anterior. El perfil `default` del dominio no lo aplica a la consola de administración, al depurador ni al portal de usuario; un perfil con nombre que seleccione esa aplicación sí lo hace."
   },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",

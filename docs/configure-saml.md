@@ -347,7 +347,8 @@ SP and the ACS must both be registered.
 While the switch is off for the SP, the link answers a 403 page
 (`STS-SAML-0091`), with no sign-in screen first. A sign-in started here is
 held to the issuance policy like any other. A step-up on risk, or a sign-in
-mechanism the SP does not allow (`appAuthnMechanism`), sends the person to
+mechanism the SP does not allow (the named authentication policy it names
+in `appAuthnPolicy`), sends the person to
 sign in again once and back to the link. If it is still refused after that
 trip, the SP gets a `RequestDenied` Response.
 

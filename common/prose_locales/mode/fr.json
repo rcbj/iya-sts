@@ -236,8 +236,8 @@
     "text": "Une liaison simple LDAP, un UsernameToken WS-Security, SCIM et SSF en HTTP Basic et EST Basic acceptent le mot de passe comme ils acceptent tout mot de passe ; l’écran de connexion demande toujours le second facteur."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "c06e9e3a02393490",
-    "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la liste propre de l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
+    "en": "a4d4c20c45b2d573",
+    "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la politique d’authentification que nomme l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "Le KDC émet un TGT pour un AS-REQ pré-authentifié avec le seul mot de passe (PA-ENC-TIMESTAMP, ou le PA-ENCRYPTED-CHALLENGE de FAST), comme il accepte tout mot de passe."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "a1e60b4ee5cac599",
-    "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la liste propre de l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
+    "en": "ab8a6af4d276b0bc",
+    "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la politique d’authentification que nomme l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",

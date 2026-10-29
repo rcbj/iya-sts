@@ -992,9 +992,13 @@ the origin).
 
 ### Sign-in mechanisms: how its people may sign in
 
-**`appAuthnMechanism`** is the list of mechanisms an application's people may
-sign in to it with. It is a checkbox per mechanism on the application's
-Configuration tab (*Every protocol*):
+**`appAuthnPolicy`** names the [named authentication
+policy](authentication.md#named-authentication-policies) an application's
+people sign in under. It is a choice on the application's Configuration tab
+(*Every protocol*): `default` (or empty), the realm's authentication policy
+as it is, or one of the realm's named policies. The policy's **first-factor
+list** is the list of mechanisms the application's people may sign in to it
+with (until #1148 the application held it itself, as `appAuthnMechanism`):
 
 | Mechanism | A session satisfies it when |
 |---|---|
@@ -1005,11 +1009,11 @@ Configuration tab (*Every protocol*):
 | `wallet` | a wallet presentation signed the person in at `/authn/wallet` |
 | `federation` | a federation partner signed the person in |
 
-**None ticked allows every mechanism.** With some ticked it is **enforced, in
-both modes, at every browser sign-in to the application**: OAuth 2.0 /
-OpenID Connect's authorization endpoint, SAML 2.0 (solicited and
-identity-provider-initiated), SAML 1.1 and WS-Federation. The issuance
-policy's `authn-mechanism` rule decides it (`decideAuthnMechanisms` on the
+**None listed, or `default`, allows every mechanism.** With some listed it is
+**enforced, in both modes, at every browser sign-in to the application**: OAuth
+2.0 / OpenID Connect's authorization endpoint, SAML 2.0 (solicited and
+identity-provider-initiated), SAML 1.1 and WS-Federation. The issuance policy's
+`authn-mechanism` rule decides it (`decideAuthnMechanisms` on the
 `role-issuance` template). It compares the mechanisms the person's session
 satisfies with the ones the application allows:
 
@@ -1025,24 +1029,27 @@ satisfies with the ones the application allows:
 * **A sign-in made with a mechanism the application does not allow is
   refused at the sign-in door** (`STS-AUTHN-0298`), and the screen is drawn
   again naming the ones it does.
-* **One ticked is also where the sign-in goes**: straight to
+* **One listed is also where the sign-in goes**: straight to
   `/authn/spnego`, `/authn/wallet` or the partner, or the screen in the shape
-  named. Several ticked draw the screen with only those offered. A mechanism
+  named. Several listed draw the screen with only those offered. A mechanism
   this service has switched off (`spnego` while `krb5.spnegoAuthentication`
   is off, `wallet` while `oid4vp.signIn` is off) is named on the screen and
   not offered.
 
 Browser authentication only. The password grant, WS-Trust, an LDAP bind,
-the token endpoint and SAML 2.0's attribute query are not covered. Set it
-from the application's page, `POST /admin-api/applications/update-fields`, or
-`add` / `remove` with `attribute: appAuthnMechanism`. A value that is not a
-mechanism is refused (`STS-REG-0203`).
+the token endpoint and SAML 2.0's attribute query are not covered. Edit the
+lists on Directory → Policies → *Authentication policy*. Point the
+application at a policy from its page, `POST
+/admin-api/applications/update-fields`, or `set` with
+`attribute: appAuthnPolicy`. A value that is neither `default` nor a policy
+the realm holds is refused (`STS-REG-0203`). A name written past the console
+that no policy holds allows no mechanism at all (`STS-AUTHN-0536`).
 
 ### Second factors: which ones its people may use
 
-**`appMfaMechanism`** is the list of second factors an application's people
-may use. It is a checkbox per factor on the application's Configuration tab
-(*Every protocol*), beside the sign-in mechanisms:
+The **second-factor list** of the policy `appAuthnPolicy` names is the list
+of second factors an application's people may use (until #1148 the
+application held it itself, as `appMfaMechanism`):
 
 | Second factor | A session gave it when |
 |---|---|
@@ -1054,8 +1061,8 @@ may use. It is a checkbox per factor on the application's Configuration tab
 | `password` | the person's password was checked after a wallet sign-in |
 | `wallet` | a wallet presentation was checked after a password |
 
-**None ticked leaves the realm's authentication policy as it is.** With some
-ticked:
+**None listed, or `default`, leaves the realm's authentication policy as it
+is.** With some listed:
 
 * **It only narrows.** The realm's policy (Directory > Policies) is asked
   first. A second factor the realm has switched off stays off for every
@@ -1068,11 +1075,11 @@ ticked:
   holds several is asked for one the application allows, and the links to
   the others are not drawn.
 * **A person who holds none of the allowed ones is offered one to set up** (a
-  security key or an authenticator app, where ticked). If they hold some
+  security key or an authenticator app, where listed). If they hold some
   other second factor, they give it first, and only then are offered the
   set-up. Offering it before would let anybody who knows the password skip
   the factor the account already has. If neither a security key nor an
-  authenticator app is ticked, or the realm allows neither to be set up, the
+  authenticator app is listed, or the realm allows neither to be set up, the
   sign-in is refused (`STS-AUTHN-0306`).
 * **A second factor demanded and not allowed is refused.** A security key
   the relying party demanded (`acr_values`, `wauth`), or a step-up on risk,
@@ -1087,10 +1094,8 @@ ticked:
   `STS-WSFED-0023`). The issuance policy's `mfa-mechanism` rule decides it
   (`decideMfaMechanisms` on the `role-issuance` template).
 
-Browser authentication only, as for sign-in mechanisms. Set it from the
-application's page, `POST /admin-api/applications/update-fields`, or `add` /
-`remove` with `attribute: appMfaMechanism`. A value that is not a second
-factor is refused (`STS-REG-0203`).
+Browser authentication only, as for sign-in mechanisms, and set the same
+way: the list on the named policy, the policy named by `appAuthnPolicy`.
 
 ### What it has been seen doing
 

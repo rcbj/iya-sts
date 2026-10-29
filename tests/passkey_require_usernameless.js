@@ -14,9 +14,10 @@
 // harness):
 //
 //   * a save requiring it without `allowUsernameless` is refused;
-//   * where it is on, an application whose appAuthnMechanism is `webauthn`
-//     alone gets a view with `usernameless` set, and a sign-in naming a
-//     person is refused with STS-AUTHN-0333;
+//   * where it is on, an application whose named authentication policy
+//     (appAuthnPolicy, #1148) lists `webauthn` alone gets a view with
+//     `usernameless` set, and a sign-in naming a person is refused with
+//     STS-AUTHN-0333;
 //   * an application with another mechanism beside it keeps its screen;
 //   * the `default` profile never holds a hosted surface (the console, the
 //     portal, the debugger) to it, and a named profile selecting one does;
@@ -65,14 +66,18 @@ function childMain() {
     const REDIRECT = 'https://rp.pru.example/cb';
     config.setOverride('oauth2.consentRequired', false);
 
+    // The mechanisms are a named authentication policy's (#1148), one per
+    // client here.
     const client = function (id, mechanisms) {
+      require(ROOT + '/common/authn_policy').saveNamed('p-' + id,
+        { mechanisms: mechanisms });
       applications.createApplication({ identifier: id,
         protocols: ['oauth2'],
         fields: { oauthClientId: id, oauthClientSecret: '',
                   oauthRedirectUri: [REDIRECT],
                   oauthTokenEndpointAuthMethod: 'none',
                   oauthGrantType: ['authorization_code'],
-                  appAuthnMechanism: mechanisms } });
+                  appAuthnPolicy: 'p-' + id } });
     };
     client('pru-passkey', ['webauthn']);
     client('pru-mixed', ['webauthn', 'password']);

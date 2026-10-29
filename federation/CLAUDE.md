@@ -462,9 +462,11 @@ this order:
    statement: an application entry can be a federation partner AND an ordinary
    OAuth client, registered by two different people, and only one of those
    facts is about the exchange in progress.
-2. **`appAuthnMechanism` on the application entry** — the SAME closed
-   vocabulary, said by whoever registered the relying party rather than by
-   whoever configured the partnership. It is the generalisation of the
+2. **the first factors of the named authentication policy the application
+   entry names** (`appAuthnPolicy`, #1148; the entry's own
+   `appAuthnMechanism` until then) — the SAME closed vocabulary, said by
+   whoever registered the relying party rather than by whoever configured
+   the partnership. It is the generalisation of the
    attribute below it and it exists because `spnego` had no way of being asked
    for otherwise: the pair below can say "send my people to a federated
    identity provider" and cannot say "my people hold Kerberos tickets". A value

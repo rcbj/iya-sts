@@ -462,8 +462,10 @@ const PROTOCOLS = [
           'acceptor may be asked to be. This covers SPNEGO (HTTP Negotiate, ' +
           'RFC 4559) to a Kerberos-protected service, which carries the same ' +
           'ticket. Signing people in to this application with SPNEGO is not ' +
-          'a family: list spnego in appAuthnMechanism, and declare the ' +
-          'protocol the application gets its tokens or assertions through.' },
+          'a family: list spnego among the first-factor mechanisms of the ' +
+          'authentication policy the application names (appAuthnPolicy), ' +
+          'and declare the protocol the application gets its tokens or ' +
+          'assertions through.' },
   { id: 'oid4vci', label: 'OpenID4VCI', kind: '',
     kinds: [],
     identifierAttribute: 'oauthClientId', redirectAttribute: 'oauthRedirectUri',
@@ -4448,129 +4450,61 @@ const SCHEMA = {
             'cleared should not refuse the next write.' },
 
     // ---------------------------------------------------------------------
-    // AND THE THIRD, WHICH GENERALISES THE PAIR ABOVE IT.
+    // AND THE THIRD, WHICH GENERALISES THE PAIR ABOVE IT — AND SINCE #1148
+    // NAMES A POLICY RATHER THAN HOLDING THE LISTS.
     //
-    // The two attributes above can say "send my people to a federated
-    // identity provider" and cannot say anything else, because until
-    // 2026-08-26 there was nothing else to say: every way of authenticating
-    // somebody here was either this service's own screen or somebody else's
-    // service. The SPNEGO sign-in is neither — it is a credential the
-    // browser already holds — so an application had no way to ask for the
-    // commonest integrated-authentication deployment there is.
+    // `appAuthnMechanism` (#457, 2026-08-26) was the list of the mechanisms an
+    // application's people may sign in with, in `federation.MECHANISM_IDS`'s
+    // vocabulary (`password`, `password-mfa`, `webauthn`, `spnego`, `wallet`,
+    // `federation`), and `appMfaMechanism` (#475) its second factors'
+    // companion. rcbj, 2026-10-29: "replace the appAuthnMechanism and
+    // appMfaMechanism fields with scoped authentication policy reference ...
+    // one field that points at a named, scoped authentication policy." Both
+    // are GONE (no migration is owed); `appAuthnPolicy` names a NAMED
+    // AUTHENTICATION POLICY (`common/authn_policy.ts`, Directory > Policies),
+    // which holds the two lists. Everything the two attributes did, the
+    // policy's lists do, read through `authn_mechanisms.ts`'s and
+    // `mfa_mechanisms.ts`'s `allowedOf()`:
     //
-    // ITS VOCABULARY IS THE FEDERATION REGISTER'S, and deliberately the same
-    // one: `password`, `password-mfa`, `webauthn`, `spnego`, `wallet`,
-    // `federation` — `federation.MECHANISM_IDS`. Two tables would have
-    // drifted the first time either grew a value, and the two attributes
-    // answer the same question from two sides — this one says how THIS
-    // APPLICATION's people may sign in, and `fedAuthnMechanism` says what to
-    // do when THAT PARTNER asks. The list is read LAZILY where it is checked
-    // (ATTRIBUTE_CHOICES), because `federation.js` requires this file.
+    //   * **None listed allows every mechanism** (and leaves the realm's
+    //     second factors as they are); one listed routes the sign-in
+    //     (/authn/spnego, /authn/wallet, the partner, or the screen in the
+    //     shape named); several draw the screen with only those on it.
+    //   * **Every BROWSER issuance is put to the issuance policy** — its
+    //     `authn-mechanism` and `mfa-mechanism` rules re-prompt a session
+    //     standing on a mechanism the policy does not allow — in both modes.
+    //     Non-browser doors (the password grant, WS-Trust, an LDAP bind) are
+    //     not covered.
     //
-    // **A LIST OF WHAT IS ALLOWED, AND ENFORCED (#457, rcbj 2026-10-06).** It
-    // was one value that only ROUTED a sign-in — "it is not a permission",
-    // this comment said — and nothing refused a person whose session stood
-    // on another mechanism. Now:
-    //
-    //   * **None listed allows every mechanism**, and routes as an empty
-    //     value always did: appFederationRelationship, then the screen.
-    //   * **One listed routes as the one value did** — straight to
-    //     /authn/spnego, /authn/wallet, the partner, or the screen in the
-    //     shape named.
-    //   * **Several listed draw the screen with only those on it.**
-    //   * **Every BROWSER issuance to the application is put to the issuance
-    //     policy** with the mechanisms the person's session satisfies
-    //     (`common/authn_mechanisms.ts`). Its `authn-mechanism` rule denies
-    //     one that satisfies none of these, with an obligation the door
-    //     reads as "sign in again with one of these": OAuth's authorization
-    //     endpoint, SAML 2.0, SAML 1.1 and WS-Federation re-prompt, once, and
-    //     a sign-in made with a mechanism the application does not allow is
-    //     refused at the screen. In both modes. Non-browser doors (the
-    //     password grant, WS-Trust, an LDAP bind) are not covered: their
-    //     caveats do not fit one field (rcbj).
-    //
-    // A VALUE IS CHECKED AT THE WRITE (CHOICES_CHECKED_HERE) now that it is
-    // enforced — a misspelling would otherwise allow nothing — and is kept as
-    // written where an `ldapmodify` put it, so an unknown value allows
-    // nothing rather than everything. A mechanism this service has switched
-    // off (`spnego` while krb5.spnegoAuthentication is off, `wallet` while
-    // oid4vp.signIn is off) is reported on the screen and cannot be offered.
+    // CHECKED AT THE WRITE (CHOICES_CHECKED_HERE): the value must be
+    // `default` or a named policy this realm holds (ATTRIBUTE_CHOICES reads
+    // them lazily). A name an `ldapmodify` wrote that no policy holds allows
+    // NOTHING (`authn_policy.ts`'s `mechanismsFor()`, STS-AUTHN-0536): a
+    // reference fails closed, as a misspelt list did.
     // ---------------------------------------------------------------------
-    { name: 'appAuthnMechanism', kind: 'multi',
+    { name: 'appAuthnPolicy', kind: 'single',
       from: 'the console, the management API, or by hand',
-      what: 'THE MECHANISMS THIS APPLICATION\'S PEOPLE MAY SIGN IN WITH, ' +
-            'from the closed list fedAuthnMechanism uses: password, ' +
-            'password-mfa, webauthn, spnego, wallet, federation. NONE ' +
-            'TICKED ALLOWS EVERY ONE.\n\n`webauthn` decides for EVERY ' +
-            'passkey the person holds alike: a passkey has no role ' +
-            '(#1135), so listing it lets any of them sign in to this ' +
-            'application on its own, and leaving it out of a list that ' +
-            'names others lets none.\n\n' +
-            'ENFORCED at every browser sign-in ' +
-            'to the application, in both modes: a person whose session ' +
-            'stands on no mechanism listed is sent to sign in again with ' +
-            'one that is, and a sign-in made with one that is not is ' +
-            'refused. Non-browser doors (the password grant, WS-Trust, an ' +
-            'LDAP bind) are not covered.\n\nOne listed is also where the ' +
-            'sign-in goes: `spnego` sends the person to /authn/spnego, ' +
-            'signed in on the Kerberos ticket their machine holds; `wallet` ' +
-            'to /authn/wallet; `federation` to the relationships named in ' +
-            'appFederationRelationship; `password`, `password-mfa` and ' +
-            '`webauthn` are the sign-in screen in its three shapes. Several ' +
-            'listed draw the screen with only those offered.\n\nA ' +
-            'mechanism this service has switched off — `spnego` while ' +
-            'krb5.spnegoAuthentication is off, `wallet` while oid4vp.signIn ' +
-            'is off — is reported on the screen and cannot be offered.\n\n' +
-            'It is WRITTEN BY NOBODY: no protocol presents it, so it is ' +
-            'editable and starts empty.' },
-
-    // ---------------------------------------------------------------------
-    // `appMfaMechanism` (#475, rcbj 2026-10-07) — THE SECOND FACTORS THIS
-    // APPLICATION ALLOWS, `appAuthnMechanism`'s companion and drawn beside it
-    // on the Every protocol sub-tab. Its vocabulary is the authentication
-    // policy's second-factor mechanisms (`common/mfa_mechanisms.ts`, held to
-    // `common/authn_policy.ts` by its test). rcbj's four rules, argued in
-    // that module's header:
-    //
-    //   * **Narrow only**: the realm's policy is asked first, and a factor it
-    //     has switched off stays off; none ticked leaves the realm's list.
-    //   * **Options only**: WHICH second factors, never WHETHER one is
-    //     needed.
-    //   * **A re-prompt, as #457**: every BROWSER issuance to the
-    //     application is put to the issuance policy with the second factors
-    //     the session gave, and its `mfa-mechanism` rule sends the person to
-    //     sign in again when it gave some and none is allowed.
-    //   * **None held, enrol one** — after proving a factor they hold, if
-    //     they hold any.
-    //
-    // Checked at the write (CHOICES_CHECKED_HERE) for `appAuthnMechanism`'s
-    // reason: enforced, a misspelt factor would allow nothing.
-    // ---------------------------------------------------------------------
-    { name: 'appMfaMechanism', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'THE SECOND FACTORS THIS APPLICATION\'S PEOPLE MAY USE: ' +
-            'password, securityKey, totp, recoveryCode, emailCode, ' +
-            'emailLink, wallet. NONE TICKED LEAVES THE REALM\'S ' +
-            'AUTHENTICATION POLICY AS IT IS.\n\n`securityKey` decides for ' +
-            'EVERY passkey the person holds alike: a passkey has no role ' +
-            '(#1135), so listing it lets any of them be the second factor ' +
-            'here, and leaving it out of a list that names others lets ' +
-            'none.\n\nIt only NARROWS that ' +
-            'policy (Directory > Policies): a second factor the realm has ' +
-            'switched off stays off here, and an emailed one is still never ' +
-            'offered while the realm cannot send mail. It says WHICH second ' +
-            'factors, never WHETHER one is needed — that is still the ' +
-            'realm\'s, the account\'s and risk\'s.\n\nThe sign-in screen ' +
-            'asks only for a second factor listed here. A person who holds ' +
-            'none of them is offered one to set up (a passkey or an ' +
-            'authenticator app, where listed) — after giving the second ' +
-            'factor they do hold, if they hold one.\n\nENFORCED at every ' +
-            'browser sign-in to the application, in both modes: a person ' +
-            'whose session gave a second factor not listed here is sent to ' +
-            'sign in again. Non-browser doors (the password grant, ' +
-            'WS-Trust, an LDAP bind) are not covered.\n\nIt is WRITTEN BY ' +
-            'NOBODY: no protocol presents it, so it is editable and starts ' +
-            'empty.' }
+      what: 'THE AUTHENTICATION POLICY THIS APPLICATION\'S PEOPLE SIGN IN ' +
+            'UNDER: `default` (or empty), or the name of a named ' +
+            'authentication policy of this realm (Directory > Policies). A ' +
+            'named policy holds the first-factor mechanisms allowed ' +
+            '(password, password-mfa, webauthn, spnego, wallet, federation; ' +
+            'none allows every one) and the second factors allowed ' +
+            '(password, securityKey, totp, recoveryCode, emailCode, ' +
+            'emailLink, wallet; none leaves the realm\'s as it is). ' +
+            '`default` allows every mechanism the realm\'s authentication ' +
+            'policy allows.\n\nENFORCED at every browser sign-in to the ' +
+            'application, in both modes: a person whose session stands on a ' +
+            'mechanism the policy does not allow is sent to sign in again ' +
+            'with one it does. One first-factor mechanism listed is also ' +
+            'where the sign-in goes (`spnego` to /authn/spnego, `wallet` to ' +
+            '/authn/wallet, `federation` to appFederationRelationship). The ' +
+            'second factors only NARROW the realm\'s policy: one it has ' +
+            'switched off stays off here.\n\nA name no policy of this ' +
+            'realm holds — written past the console — allows NO mechanism ' +
+            'until the policy exists (STS-AUTHN-0536).\n\nIt is WRITTEN ' +
+            'BY NOBODY: no protocol presents it, so it is editable and ' +
+            'starts empty.' }
   ]
 };
 
@@ -4845,11 +4779,10 @@ const EDITABLE = {
   // reason the other two are: nothing in this service can OBSERVE how an
   // application's people are supposed to authenticate, so if it cannot be
   // written here it cannot be written at all. `multi` since #457: it is the
-  // list of mechanisms the application ALLOWS, one checkbox each.
-  appAuthnMechanism: 'multi',
-  // The second factors it allows (#475), one checkbox each, for the same
-  // reason: nothing can observe it.
-  appMfaMechanism: 'multi',
+  // list of mechanisms the application ALLOWS, one checkbox each. Since #1148
+  // the lists are a named authentication policy's and this names it: `set`,
+  // one value, for the same reason — nothing can observe it.
+  appAuthnPolicy: 'set',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -6056,11 +5989,11 @@ const ATTRIBUTE_CHOICES = {
   gnapAccessTokenFormat: function () {
     return settingValues('gnap.accessTokenFormat');
   },
-  appAuthnMechanism: function () {
-    return require('../federation/federation').MECHANISM_IDS.slice(0);
-  },
-  appMfaMechanism: function () {
-    return require('./mfa_mechanisms').IDS.slice(0);
+  // `default` and this realm's named authentication policies (#1148), read
+  // when asked: a policy saved a moment ago is a choice at once.
+  appAuthnPolicy: function () {
+    return ['default'].concat(require('./authn_policy').named()
+      .map(function (one) { return one.name; }));
   },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
@@ -6125,7 +6058,8 @@ const ATTRIBUTE_CHOICES = {
 // (the others have a validator of their own, which says more). A value
 // outside one is refused (STS-REG-0203). `appAuthnMechanism` joined them
 // with #457, and `appMfaMechanism` with #475: enforced, a misspelt mechanism
-// would allow nothing.
+// would allow nothing. Both gave way to `appAuthnPolicy` (#1148), held to
+// `default` and this realm's named authentication policies.
 // The realm-vs-application combine modes (#395), lazily for the reason the
 // rest of this table reads its modules lazily.
 function realmCombineModes() {
@@ -6150,10 +6084,9 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
-  'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism',
+  'secretDestProvider', 'secretDestPayload', 'appAuthnPolicy',
   'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
   'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
-  'appMfaMechanism',
   // #395: a misspelt mode would silently be the default, and a misspelt
   // claim would be one no token ever carries.
   'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
@@ -7016,7 +6949,8 @@ const FIELD_SECTIONS = [
 // HOW THE TWO SETS WERE CHOSEN, because a reader adding an attribute has to
 // choose again. Every protocol and OAuth 2.0 / OpenID Connect are the
 // fields two working applications on rcbj's own instance hold (and, on Every
-// protocol, `appMfaMechanism`, which rcbj asked for beside them) — a web
+// protocol, the second factors, which rcbj asked for beside them — a
+// policy reference, `appAuthnPolicy`, since #1148) — a web
 // application that delegates to an API (rcbj0002) and that API (rcbj0003) —
 // so the simple view is what configuring a real client and resource server
 // took, and everything else on those sub-tabs is advanced. The other
@@ -7027,9 +6961,9 @@ const FIELD_SECTIONS = [
 // of their own.
 // ---------------------------------------------------------------------------
 const SIMPLE_FIELD_ATTRIBUTES = [
-  // Every protocol (rcbj0002, rcbj0003), and the second factors an
-  // application allows (#475), which rcbj added on 2026-10-07.
-  'description', 'appHomePageUrl', 'appAuthnMechanism', 'appMfaMechanism',
+  // Every protocol (rcbj0002, rcbj0003), and the authentication policy an
+  // application names (#1148; its two lists were here since #457 and #475).
+  'description', 'appHomePageUrl', 'appAuthnPolicy',
   'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
   'appDelegationSubjectGroup', 'appDelegationSemantics',
   // OAuth 2.0 / OpenID Connect (rcbj0002, rcbj0003).
@@ -18440,6 +18374,29 @@ function list() {
   return rows;
 }
 
+// THE APPLICATIONS NAMING AN AUTHENTICATION POLICY (#1148): what refuses its
+// delete and what Directory > Policies draws beside it. Compared lower-case,
+// as `authn_policy.ts` names a policy.
+/**
+ * Lists the applications whose `appAuthnPolicy` names an authentication
+ * policy, in the ambient realm.
+ *
+ * @param name - the policy's name
+ * @returns the applications' identifiers
+ */
+function applicationsNamingAuthnPolicy(name) {
+  log.debug("Entering applicationsNamingAuthnPolicy().");
+  const wanted = String(name == null ? '' : name).trim().toLowerCase();
+  const out = !wanted ? [] : list().filter(function (row) {
+    const held = [].concat(((row && row.fields) || {}).appAuthnPolicy || [])[0];
+    return String(held || '').trim().toLowerCase() === wanted;
+  }).map(function (row) {
+    return row.identifier;
+  });
+  log.debug("Leaving applicationsNamingAuthnPolicy(). " + out.length + ".");
+  return out;
+}
+
 // Every application's `appOwner` values, read off the kept listing with no
 // view built (#759): `ownership.ownsAnything()` asks it on every scope
 // decision, and read the owners out of `list()`, a view of every
@@ -21080,6 +21037,7 @@ module.exports = {
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
+  applicationsNamingAuthnPolicy: applicationsNamingAuthnPolicy,
   // The clock `list()` is kept by (#625).
   listingVersion: listingVersion,
   ownerValues: ownerValues,

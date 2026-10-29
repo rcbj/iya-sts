@@ -14,10 +14,11 @@
 // registered and nothing else is asked, and how it is used is the REALM'S
 // to say at each sign-in — `webauthn.primaryAllowed`, `webauthn.mfaAllowed`
 // and the authentication policy's `passkey` and `securityKey` rows, asked
-// by `webauthnPolicy.useAllowed()` for every key alike (an application's
-// `appAuthnMechanism` / `appMfaMechanism` may narrow it further at a
-// browser sign-in; that layer is the issuance policy's and is not asked
-// here).
+// by `webauthnPolicy.useAllowed()` for every key alike (the named
+// authentication policy an application names, `appAuthnPolicy` — its own
+// `appAuthnMechanism` / `appMfaMechanism` until #1148 — may narrow it
+// further at a browser sign-in; that layer is the issuance policy's and is
+// not asked here).
 //
 //   A. Enrolment asks no role and stores none: `beginKeyEnrolment()` given
 //      the old `role` option answers none, `addKey()` writes none, and a

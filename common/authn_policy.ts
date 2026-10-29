@@ -172,6 +172,10 @@ interface AuthnPolicyDeps {
  * The name of the one authentication policy profile, `default`.
  */
 const DEFAULT_PROFILE = 'default';
+// What a reference to a policy nobody holds allows (#1148): a value no
+// mechanism has, so the list matches nothing and the application allows
+// nothing, as a misspelt list did.
+const MISSING_MECHANISM = '(no such authentication policy)';
 
 /**
  * The warning drawn beside the two emailed mechanisms: NIST SP 800-63B-4
@@ -227,15 +231,15 @@ const MECHANISMS: Mechanism[] = [
     what: 'Any passkey (WebAuthn credential) the person holds, signing them ' +
           'in with no password. A passkey has no role: this row says, at ' +
           'each sign-in, whether any of them may be a first factor in this ' +
-          'realm, unless an application\'s own list (appAuthnMechanism) ' +
-          'says otherwise.' },
+          'realm, unless the first factors of the authentication policy ' +
+          'an application names (appAuthnPolicy) say otherwise.' },
   { id: 'securityKey', label: 'Passkey (second factor)', primary: null,
     secondFactor: true,
     what: 'Any passkey (WebAuthn credential) the person holds, asked for ' +
           'after a first factor. A passkey has no role: this row says, at ' +
           'each sign-in, whether any of them may be a second factor in ' +
-          'this realm, unless an application\'s own list (appMfaMechanism) ' +
-          'says otherwise.' },
+          'this realm, unless the second factors of the authentication ' +
+          'policy an application names (appAuthnPolicy) say otherwise.' },
   { id: 'totp', label: 'Authenticator app (TOTP)', primary: null,
     secondFactor: true,
     what: 'An RFC 6238 one-time code. Never a first factor: this service ' +
@@ -429,7 +433,19 @@ const SCHEMA = {
     return { name: field.attribute, what: field.what };
   }).concat([
     { name: 'description',
-      what: 'What the profile is for, for the next person.' }
+      what: 'What the profile is for, for the next person.' },
+    // A NAMED AUTHENTICATION POLICY'S TWO LISTS (#1148).
+    { name: 'stsAuthnPolicyMechanism',
+      what: 'On a NAMED authentication policy (#1148): a first-factor ' +
+            'mechanism the applications naming this policy (appAuthnPolicy) ' +
+            'allow — password, password-mfa, webauthn, spnego, wallet or ' +
+            'federation, one value each. None allows every one the realm ' +
+            'allows.' },
+    { name: 'stsAuthnPolicySecondFactor',
+      what: 'On a NAMED authentication policy (#1148): a second factor the ' +
+            'applications naming this policy allow — password, securityKey, ' +
+            'totp, recoveryCode, emailCode, emailLink or wallet, one value ' +
+            'each. None leaves the realm\'s authentication policy as it is.' }
   ]),
   personAttributes: [
     { name: 'stsMailFactor',
@@ -1010,6 +1026,319 @@ class AuthnPolicy {
   }
 
   // -------------------------------------------------------------------------
+  // NAMED AUTHENTICATION POLICIES (#1148, rcbj 2026-10-29): "replace the
+  // appAuthnMechanism and appMfaMechanism fields with scoped authentication
+  // policy reference ... one field that points at a named, scoped
+  // authentication policy." rcbj's decisions: the APPLICATION names its policy
+  // (`appAuthnPolicy`, one value) — unlike a named passkey policy, which names
+  // its applications — and a named authentication policy holds TWO LISTS
+  // ONLY: the first-factor mechanisms allowed (`stsAuthnPolicyMechanism`) and
+  // the second factors allowed (`stsAuthnPolicySecondFactor`), each "none is
+  // every one" exactly as the two application attributes were. Everything
+  // else about authentication stays the realm's, on `cn=default`.
+  //
+  // Stored beside `cn=default` in `ou=authnPolicies`, one `cn=<name>` entry
+  // each, in THIS realm only — a realm's applications name its own policies,
+  // so nothing is inherited from the default realm. `default` is not a named
+  // policy: an application naming it, or nothing, is restricted by nothing
+  // beyond the realm's policy. A name that resolves to no policy allows NO
+  // mechanism (`mechanismsFor().missing`), the rule a misspelt list had: a
+  // reference must fail closed. Deleting a policy an application names is
+  // refused, so that is reached only by an `ldapmodify`.
+  // -------------------------------------------------------------------------
+  /**
+   * Reads the named authentication policies held in this realm (#1148).
+   *
+   * @returns each `{ name, dn, description, mechanisms, secondFactors }`, by
+   *   name
+   */
+  named(): { name: string; dn: string; description: string;
+             mechanisms: string[]; secondFactors: string[] }[] {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.named().");
+    if (!this.haveDirectory()) {
+      log.debug("Leaving AuthnPolicy.named(). No directory.");
+      return [];
+    }
+    const listOf = function (attributes: any, name: string): string[] {
+      const value = (attributes || {})[name];
+      const out: string[] = [];
+      [].concat(value === undefined || value === null ? [] : value)
+        .forEach(function (one: any) {
+          const text = String(one).trim();
+          if (text && out.indexOf(text) < 0) {
+            out.push(text);
+          }
+        });
+      return out;
+    };
+    const out = this.directory.allAuthnPolicies().filter(function (entry) {
+      return String(entry.name || '').toLowerCase() !== DEFAULT_PROFILE;
+    }).map(function (entry) {
+      const at = entry.attributes || {};
+      return {
+        name: String(entry.name || '').toLowerCase(),
+        dn: String(entry.dn || ''),
+        description: listOf(at, 'description')[0] || '',
+        mechanisms: listOf(at, 'stsAuthnPolicyMechanism'),
+        secondFactors: listOf(at, 'stsAuthnPolicySecondFactor')
+      };
+    }).sort(function (a, b) {
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    log.debug("Leaving AuthnPolicy.named(). " + out.length + " policy(s).");
+    return out;
+  }
+
+  /**
+   * Reads one named authentication policy of this realm, or null.
+   *
+   * @param name - the policy's name
+   * @returns the policy as `named()` lists it, or null
+   */
+  namedPolicy(name: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.namedPolicy().");
+    const wanted = String(name == null ? '' : name).trim().toLowerCase();
+    const found = wanted && wanted !== DEFAULT_PROFILE
+      ? this.named().filter(function (one) {
+        return one.name === wanted;
+      })[0] || null
+      : null;
+    log.debug("Leaving AuthnPolicy.namedPolicy(). " +
+              (found ? found.name : 'None.'));
+    return found;
+  }
+
+  // WHAT AN APPLICATION'S NAMED POLICY ALLOWS (#1148), the one question every
+  // reader of the two old attributes asks now. `appAuthnPolicy` empty or
+  // `default`: both lists empty, which is "every one" for the first factors
+  // and "the realm's as it is" for the second, as unticked lists were. A name
+  // no policy here holds: `missing`, and a list no mechanism matches, so the
+  // application allows nothing (fail closed).
+  /**
+   * Resolves an application's named authentication policy to its two lists.
+   *
+   * @param fields - the application entry's fields, or null
+   * @returns `{ policy, mechanisms, secondFactors, missing }`
+   */
+  mechanismsFor(fields: any): { policy: string; mechanisms: string[];
+                                secondFactors: string[]; missing: boolean } {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.mechanismsFor().");
+    const held = fields ? [].concat(fields.appAuthnPolicy || [])[0] : '';
+    const name = String(held == null ? '' : held).trim().toLowerCase();
+    if (!name || name === DEFAULT_PROFILE) {
+      log.debug("Leaving AuthnPolicy.mechanismsFor(). The realm's default.");
+      return { policy: DEFAULT_PROFILE, mechanisms: [], secondFactors: [],
+               missing: false };
+    }
+    const found = this.namedPolicy(name);
+    if (!found) {
+      log.warn(this.deps.errorCodes.tag('STS-AUTHN-0536') + 'authn policy: ' +
+               'an application names the authentication policy "' + name +
+               '", which this realm does not hold; it allows no mechanism ' +
+               'until the policy exists or appAuthnPolicy changes.');
+      log.debug("Leaving AuthnPolicy.mechanismsFor(). Missing.");
+      return { policy: name, mechanisms: [MISSING_MECHANISM],
+               secondFactors: [MISSING_MECHANISM], missing: true };
+    }
+    log.debug("Leaving AuthnPolicy.mechanismsFor(). " + found.name);
+    return { policy: found.name, mechanisms: found.mechanisms.slice(0),
+             secondFactors: found.secondFactors.slice(0), missing: false };
+  }
+
+  // The two vocabularies, from the modules that own them, LAZILY: this file
+  // is a leaf, and `federation.js` is not one.
+  private vocabularies(): { mechanisms: string[]; secondFactors: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.vocabularies().");
+    let mechanisms: string[] = [];
+    let secondFactors: string[] = [];
+    try {
+      mechanisms = require('../federation/federation').MECHANISM_IDS.slice(0);
+      secondFactors = require('./mfa_mechanisms').IDS.slice(0);
+    } catch (e) {
+      log.debug("Caught in AuthnPolicy.vocabularies(): " +
+                ((e && e.message) || e));
+      // Not loadable here (a library tested on its own): nothing is known,
+      // so every value is refused rather than every value accepted.
+      mechanisms = [];
+      secondFactors = [];
+    }
+    log.debug("Leaving AuthnPolicy.vocabularies().");
+    return { mechanisms: mechanisms, secondFactors: secondFactors };
+  }
+
+  /**
+   * Creates or replaces a named authentication policy in this realm (#1148).
+   *
+   * @param name - lower-case letters, digits and hyphens, not `default`
+   * @param given - `description`, `mechanisms` and `secondFactors` (lists)
+   * @returns `ok` and the policy, or the errors
+   */
+  saveNamed(name: unknown, given?: Record<string, any> | null) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnPolicy.saveNamed().");
+    const text = String(name == null ? '' : name).trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(text) || text === DEFAULT_PROFILE) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). A bad name.");
+      return errorCodes.mark({ ok: false, errors: ['A named authentication ' +
+        'policy is named with lower-case letters, digits and hyphens, at ' +
+        'most 63, starting with a letter or digit, and is not "' +
+        DEFAULT_PROFILE + '" (the realm\'s own policy); "' +
+        String(name == null ? '' : name).slice(0, 64) + '" is not one.'] },
+        'STS-AUTHN-0532');
+    }
+    const known = this.vocabularies();
+    const listOf = function (value: any): string[] {
+      const out: string[] = [];
+      [].concat(value === undefined || value === null ? [] : value)
+        .forEach(function (one: any) {
+          String(one).split(/[\s,]+/).forEach(function (part) {
+            if (part && out.indexOf(part) < 0) {
+              out.push(part);
+            }
+          });
+        });
+      return out;
+    };
+    const mechanisms = listOf(given && given.mechanisms);
+    const secondFactors = listOf(given && given.secondFactors);
+    const problems: string[] = [];
+    mechanisms.forEach(function (one) {
+      if (known.mechanisms.indexOf(one) < 0) {
+        problems.push('"' + one.slice(0, 40) + '" is not a first-factor ' +
+          'mechanism; one of ' + known.mechanisms.join(', ') + '.');
+      }
+    });
+    secondFactors.forEach(function (one) {
+      if (known.secondFactors.indexOf(one) < 0) {
+        problems.push('"' + one.slice(0, 40) + '" is not a second factor; ' +
+          'one of ' + known.secondFactors.join(', ') + '.');
+      }
+    });
+    if (problems.length) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). Unknown mechanisms.");
+      return errorCodes.mark({ ok: false, errors: problems },
+                             'STS-AUTHN-0533');
+    }
+    if (!this.haveDirectory()) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). No directory.");
+      return errorCodes.mark({ ok: false,
+               errors: ['There is no embedded directory in this process, so ' +
+                        'there is nowhere to keep an authentication policy. ' +
+                        'ou=authnPolicies IS the register.'] },
+                             'STS-AUTHN-0245');
+    }
+    const attributes: Record<string, unknown> = {
+      objectClass: ['top', 'stsAuthnPolicy'],
+      stsAuthnPolicyMechanism: mechanisms,
+      stsAuthnPolicySecondFactor: secondFactors
+    };
+    const description = String((given && given.description) || '')
+      .slice(0, 1024);
+    if (description) {
+      attributes.description = description;
+    }
+    if (!this.directory.writeAuthnPolicy(text, attributes)) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). Not stored.");
+      return errorCodes.mark({ ok: false,
+               errors: ['The directory would not store the policy — it is ' +
+                        'at its maximum number of entries.'] },
+                             'STS-AUTHN-0246');
+    }
+    log.debug("Leaving AuthnPolicy.saveNamed(). " + text);
+    const policy = this.namedPolicy(text);
+    return { ok: true, policy: policy, dn: policy ? policy.dn : '',
+             message: 'The authentication policy "' + text + '" is saved' +
+               (policy ? ' at ' + policy.dn : '') + '. An application ' +
+               'naming it in appAuthnPolicy allows ' +
+               (mechanisms.length ? mechanisms.join(', ') : 'every mechanism ' +
+                 'the realm allows') + ' as a first factor and ' +
+               (secondFactors.length ? secondFactors.join(', ')
+                 : 'the realm\'s second factors') + ' as a second.' };
+  }
+
+  /**
+   * Deletes a named authentication policy, refused while an application of
+   * this realm names it (#1148).
+   *
+   * @param name - the policy's name
+   * @param namedBy - the applications naming it, which refuse the delete
+   * @returns `ok` and whether one was removed, or the errors
+   */
+  deleteNamed(name: unknown, namedBy?: string[]) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnPolicy.deleteNamed().");
+    const found = this.namedPolicy(name);
+    if (!found) {
+      log.debug("Leaving AuthnPolicy.deleteNamed(). No such policy.");
+      return errorCodes.mark({ ok: false, errors: ['This realm holds no ' +
+        'named authentication policy "' +
+        String(name == null ? '' : name).slice(0, 64) + '".'] },
+        'STS-AUTHN-0535');
+    }
+    const users = (namedBy || []).filter(Boolean);
+    if (users.length) {
+      log.debug("Leaving AuthnPolicy.deleteNamed(). In use.");
+      return errorCodes.mark({ ok: false, errors: ['The authentication ' +
+        'policy "' + found.name + '" is named by ' + users.length +
+        ' application' + (users.length === 1 ? '' : 's') + ' (' +
+        users.slice(0, 10).join(', ') + (users.length > 10 ? ', …' : '') +
+        '). Point each at another policy first (appAuthnPolicy); deleting ' +
+        'it would leave them allowing no mechanism.'] }, 'STS-AUTHN-0534');
+    }
+    const removed = !!this.directory.deleteAuthnPolicy(found.name);
+    log.debug("Leaving AuthnPolicy.deleteNamed(). " + removed);
+    return { ok: true, removed: removed, name: found.name, dn: found.dn,
+             message: 'The authentication policy "' + found.name + '" is ' +
+               'deleted.' };
+  }
+
+  // THE TWO ACTS BESIDE SAVE AND RESET (#1148, `admin-core/policy_kinds.ts`'s
+  // `extraActions`): a named policy saved, and one deleted — refused while an
+  // application names it. The registry is reached LAZILY: this file is a
+  // leaf, and `applications.js` reads it back for its choices.
+  /**
+   * Answers the authentication policy's acts beside save and reset (#1148).
+   *
+   * @param action - `save-named-authn-policy` or `delete-named-authn-policy`
+   * @param body - the act's body
+   * @returns the act's answer, or a refusal naming the two acts
+   */
+  act(action: string, body: Record<string, any>) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnPolicy.act(). " + action);
+    const given = body || {};
+    if (action === 'save-named-authn-policy') {
+      const out = this.saveNamed(given.name, given);
+      log.debug("Leaving AuthnPolicy.act(). save " + out.ok);
+      return out;
+    }
+    if (action === 'delete-named-authn-policy') {
+      let namedBy: string[] = [];
+      try {
+        namedBy = require('./applications')
+          .applicationsNamingAuthnPolicy(given.name);
+      } catch (e) {
+        log.debug("Caught in AuthnPolicy.act(): " + ((e && e.message) || e));
+        // No registry (a library tested on its own): nothing names it.
+        namedBy = [];
+      }
+      const out = this.deleteNamed(given.name, namedBy);
+      log.debug("Leaving AuthnPolicy.act(). delete " + out.ok);
+      return out;
+    }
+    log.debug("Leaving AuthnPolicy.act(). Not an act.");
+    return errorCodes.mark({ ok: false,
+             errors: ['"' + String(action).slice(0, 64) + '" is not an act ' +
+                      'of the authentication policy; its two are ' +
+                      'save-named-authn-policy and ' +
+                      'delete-named-authn-policy.'] }, 'STS-ADMIN-0500');
+  }
+
+  // -------------------------------------------------------------------------
   // WRITING.
   // -------------------------------------------------------------------------
   private checkProfileName(name: unknown): string | null {
@@ -1018,11 +1347,11 @@ class AuthnPolicy {
     const text = String(name || DEFAULT_PROFILE).trim();
     if (text.toLowerCase() !== DEFAULT_PROFILE) {
       log.debug("Leaving AuthnPolicy.checkProfileName().");
-      return 'There is one authentication policy profile, "' +
-             DEFAULT_PROFILE + '", and it applies to everybody in this ' +
-             'realm. "' + text.slice(0, 64) + '" cannot be created: nothing ' +
-             'assigns a profile to a person, so a second one would decide ' +
-             'nothing while looking exactly like one that does.';
+      return 'The realm\'s authentication policy is "' + DEFAULT_PROFILE +
+             '", and it applies to everybody in this realm. "' +
+             text.slice(0, 64) + '" is not it: a NAMED authentication ' +
+             'policy (#1148) holds only the mechanisms an application ' +
+             'naming it allows, and is saved as one (save-named).';
     }
     log.debug("Leaving AuthnPolicy.checkProfileName().");
     return null;
@@ -1252,5 +1581,11 @@ export = {
   emailSettings: slot.forward('emailSettings'),
   rememberedBrowser: slot.forward('rememberedBrowser'),
   describe: slot.forward('describe'),
-  enforced: slot.forward('enforced')
+  enforced: slot.forward('enforced'),
+  named: slot.forward('named'),
+  namedPolicy: slot.forward('namedPolicy'),
+  mechanismsFor: slot.forward('mechanismsFor'),
+  saveNamed: slot.forward('saveNamed'),
+  deleteNamed: slot.forward('deleteNamed'),
+  act: slot.forward('act')
 };

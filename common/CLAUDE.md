@@ -5343,9 +5343,10 @@ SAYING.** Every attribute here used to be either RECORDED (what happened) or
 DECLARED (what somebody said, which nothing reads). These are declared AND read:
 `saml/saml2_sso.ts` and `saml/saml11_sso.ts` resolve every one of their five
 settings through `settingFor()` on every assertion. They join
-`appFederationRelationship` and `appAuthnMechanism` on the short list of
-declarations that actually do something — and unlike those two, what they change
-is not WHERE somebody signs in but what the document they get looks like.
+`appFederationRelationship` and `appAuthnMechanism` (`appAuthnPolicy` since
+#1148) on the short list of declarations that actually do something — and unlike
+those two, what they change is not WHERE somebody signs in but what the document
+they get looks like.
 
 **THE MAPPING IS BUILT FROM THE SCHEMA, ONCE, AND THERE IS NO SECOND TABLE.**
 `OVERRIDE_ATTRIBUTES` is derived from the rows' own `overrides` members at
@@ -5528,6 +5529,15 @@ rather than being an error.
 
 ### `appAuthnMechanism` — the THIRD of that group, and the generalisation of the other two
 
+**#1148 (2026-10-29): GONE, WITH `appMfaMechanism` BELOW, AND REPLACED BY ONE
+REFERENCE.** `appAuthnPolicy` (`single`, checked at the write against
+`default` and the realm's named policies) names a NAMED AUTHENTICATION POLICY
+(3bd, below), whose first-factor list is what this attribute's list was and
+whose second-factor list is what `appMfaMechanism`'s was. What follows is the
+history and the behaviour of the LIST, which is unchanged: it is read through
+`authn_mechanisms.ts`'s and `mfa_mechanisms.ts`'s `allowedOf()` from
+`authn_policy.ts`'s `mechanismsFor()` instead of off the entry.
+
 **#457 (2026-10-06): A LIST OF THE MECHANISMS THE APPLICATION ALLOWS, AND
 ENFORCED.** What follows describes the single routing value it was. Now it is
 `multi`, one checkbox per mechanism, a value checked at the write
@@ -5585,19 +5595,20 @@ accepted — exactly what `appFederationRelationship` changes.
 
 ### `appMfaMechanism` — the FOURTH of that group: which second factors (#475)
 
-The second factors an application allows (rcbj, 2026-10-07), `multi`, one
-checkbox per second-factor mechanism of the authentication policy, checked at
-the write (`CHOICES_CHECKED_HERE`). **It only narrows the realm's policy and
-never says a second factor is needed**; none listed leaves the realm's.
-`common/mfa_mechanisms.ts` is its leaf, `authn_mechanisms.ts`'s arrangement:
-the ids (held to `authn_policy.ts`'s MECHANISMS by
-`tests/mfa_mechanism_enforcement.js`), what an EVENT gave — only a local event
-with `acr` `mfa`, named by the credential that answered last, `webauthn` only
-after a first factor because a passkey alone is a first factor — the union
-over a session, and the entry's list. `issuance_gate.js`'s `mfaFactsOf()`
-sends the two bags on #457's four browser kinds, and only when a second factor
-was given: a one-factor session is not the rule's to deny. The sign-in side is
-`authn/CLAUDE.md`; the rule, `xacml/CLAUDE.md`.
+**Since #1148 the second-factor list of the named authentication policy
+`appAuthnPolicy` names, as above.** The second factors an application allows
+(rcbj, 2026-10-07), `multi`, one checkbox per second-factor mechanism of the
+authentication policy, checked at the write (`CHOICES_CHECKED_HERE`). **It only
+narrows the realm's policy and never says a second factor is needed**; none
+listed leaves the realm's. `common/mfa_mechanisms.ts` is its leaf,
+`authn_mechanisms.ts`'s arrangement: the ids (held to `authn_policy.ts`'s
+MECHANISMS by `tests/mfa_mechanism_enforcement.js`), what an EVENT gave — only a
+local event with `acr` `mfa`, named by the credential that answered last,
+`webauthn` only after a first factor because a passkey alone is a first factor —
+the union over a session, and the entry's list. `issuance_gate.js`'s
+`mfaFactsOf()` sends the two bags on #457's four browser kinds, and only when a
+second factor was given: a one-factor session is not the rule's to deny. The
+sign-in side is `authn/CLAUDE.md`; the rule, `xacml/CLAUDE.md`.
 
 ## WHERE THE ONE CRYPTO MODULE IS DESCRIBED TO A READER
 
@@ -10896,11 +10907,12 @@ policy's decision, in layers, for every key alike; the key has no role and no
 say.** The realm's policy says what the realm supports (its `passkey`
 first-factor and `securityKey` second-factor rows, with
 `webauthn.primaryAllowed` / `webauthn.mfaAllowed`, asked by
-`webauthnPolicy.useAllowed()`). An application overrides it through
-`appAuthnMechanism` (first factors, `webauthn` among them, enforced by the
-issuance policy's authn-mechanism rule) and `appMfaMechanism` (second factors,
-`securityKey` among them, applied where the second step is chosen:
-`authn.ts`'s `mfaAllowedFor()` / `narrowSecondFactor()`). So a held passkey
+`webauthnPolicy.useAllowed()`). An application overrides it through the
+named authentication policy it names (`appAuthnPolicy`, #1148): its first
+factors (`webauthn` among them, enforced by the issuance policy's
+authn-mechanism rule) and its second factors (`securityKey` among them,
+applied where the second step is chosen: `authn.ts`'s `mfaAllowedFor()` /
+`narrowSecondFactor()`). So a held passkey
 makes a second step only where the realm, and the application if it
 overrides, accepts a passkey as a second factor.
 
@@ -12064,8 +12076,49 @@ administrator cannot decide who is one. The default realm's
 is the account a service is recovered through. `tests/admin_second_factor.js`
 holds it.
 
-`tests/authn_policy.js` holds the module, the inheritance, the mail guard,
-the retired settings and a kind registered later.
+**NAMED AUTHENTICATION POLICIES (#1148, rcbj 2026-10-29)** replaced an
+application's own `appAuthnMechanism` and `appMfaMechanism`: the application
+holds ONE reference, `appAuthnPolicy` (`common/applications.js`), and the
+lists live on a policy. rcbj's decisions:
+
+- **THE APPLICATION NAMES ITS POLICY**, one value — the opposite direction
+  from a named passkey policy (3ch), which names its applications.
+- **A NAMED POLICY HOLDS TWO LISTS AND NOTHING ELSE**: the first-factor
+  mechanisms allowed (`stsAuthnPolicyMechanism`, `federation.MECHANISM_IDS`)
+  and the second factors allowed (`stsAuthnPolicySecondFactor`), each "none
+  is every one" exactly as the two attributes were. Everything else about
+  authentication — the rows above, `requireSecondFactor` — stays the
+  realm's, on `cn=default`.
+- **STORED BESIDE `cn=default`** as `cn=<name>,ou=authnPolicies`, in THIS
+  realm only: nothing is inherited from the default realm, because a realm's
+  applications name its own policies. `default` is not a name a policy can
+  take (`STS-AUTHN-0532`); an application naming it, or nothing, is narrowed
+  by nothing beyond the realm's policy.
+- **`mechanismsFor(fields)` IS THE ONE QUESTION** every reader of the two old
+  attributes asks now — the routing in `authn.ts`, `authn_mechanisms.ts`'s
+  and `mfa_mechanisms.ts`'s `allowedOf()` (and so the issuance gate), the
+  `authMechanisms` report source. **A name no policy holds allows NO
+  mechanism** (`missing`, `STS-AUTHN-0536`): a reference fails closed, as a
+  misspelt list did. The console's and the API's writes are checked against
+  `default` and the realm's policies (`CHOICES_CHECKED_HERE`,
+  `STS-REG-0203`), so that state is reached only past them — an
+  `ldapmodify`; a delete of a name the realm does not hold is
+  `STS-AUTHN-0535`.
+- **TWO ACTS BESIDE SAVE AND RESET**, `policy_kinds.ts`'s `extraActions`:
+  `save-named-authn-policy` {name, description, mechanisms, secondFactors}
+  (an unknown value is `STS-AUTHN-0533`) and `delete-named-authn-policy`
+  {name}, REFUSED while an application of the realm names it
+  (`STS-AUTHN-0534`; `applications.js`'s `applicationsNamingAuthnPolicy()`,
+  reached lazily because this file is a leaf). The console draws the
+  Authentication policy tab as the passkey policy's three sub-tabs (rcbj):
+  Default, Named policies and New policy, the last two from
+  `admin-ui/web_policies.ts`'s `namedAuthnPoliciesSection()`.
+- **NO MIGRATION IS OWED** (`applications.js`): the two old attributes are
+  no longer read.
+
+`tests/named_authn_policies.js` holds the named policies, and
+`tests/authn_policy.js` the module, the inheritance, the mail guard, the
+retired settings and a kind registered later.
 
 ## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
 

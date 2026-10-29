@@ -268,8 +268,8 @@
     "text": "Kerberos v5"
   },
   "applications.protocols.krb5.what": {
-    "en": "e0907807887b2538",
-    "text": "票證可簽發給的服務主體名稱，或接受者可能被要求扮演的服務主體名稱。這涵蓋了對受 Kerberos 保護之服務的 SPNEGO（HTTP Negotiate，RFC 4559），它攜帶相同的票證。以 SPNEGO 讓人員登入此應用程式並不是一個家族：請在 appAuthnMechanism 中列出 spnego，並宣告應用程式取得其權杖或斷言所透過的協定。"
+    "en": "33fabbb450755342",
+    "text": "票證可簽發給的服務主體名稱，或接受者可能被要求扮演的服務主體名稱。這涵蓋了對受 Kerberos 保護之服務的 SPNEGO（HTTP Negotiate，RFC 4559），它攜帶相同的票證。以 SPNEGO 讓人員登入此應用程式並不是一個家族：請在應用程式所指名之驗證原則（appAuthnPolicy）的第一因素機制中列出 spnego，並宣告應用程式取得其權杖或斷言所透過的協定。"
   },
   "applications.protocols.oid4vci.label": {
     "en": "6a5c76ded81999e5",
@@ -1707,13 +1707,9 @@
     "en": "f049a40c629458fa",
     "text": "若登入此應用程式的人應被「直接」送往上方指名的夥伴，中間不經過登入畫面，則為 TRUE。這是以設定而非詢問的方式進行的主領域探索，也正是只有一個聯合身分識別提供者的部署實際上所做的。\n\n一旦指名了關係，它「預設為 TRUE」，因為指名一個關係後還必須點一下按鈕，是沒有人想要的狀態；設為 FALSE 可保留畫面，此時夥伴是唯一提供的按鈕。因此在這裡，值不存在表示「是」而不是「未知」，這與 RFC 7591 第 2 節賦予省略之布林值的意義相反——之所以明說，是因為這兩條規則會在同一個項目上相遇。\n\n「指名多個關係時，它的意義與以往完全相同」——「不經過登入畫面」——改變的是這留下了什麼。只有一個時，它是直接重新導向至夥伴。有多個時，它是 /authn/select-idp 上的選擇器：每個夥伴一個按鈕，沒有密碼欄位，也就是在沒有登入畫面的情況下完成登入畫面的工作。它絕不表示「替他們挑一個」；沒有任何布林值能說出某人的雇主是哪個身分識別提供者。\n\n因此，指名多個時的 FALSE 就是「畫面」，在密碼方塊下方每個夥伴一個按鈕——與 FALSE 一向的行為相同，只是夥伴變成複數。\n\n未指名任何關係時，它完全不起作用，而不是錯誤：兩者分別編輯，而已清除之關係所遺留的值不應拒絕下一次寫入。"
   },
-  "applications.schema.attributes.appAuthnMechanism.what": {
-    "en": "e1226893ecd03397",
-    "text": "此應用程式的人員可用以登入的機制，取自 fedAuthnMechanism 所用的封閉清單：password、password-mfa、webauthn、spnego、wallet、federation。「全未勾選則允許每一種」。\n\n`webauthn` 對此人持有的每把密碼金鑰同樣作出決定：密碼金鑰沒有角色（#1135），因此列出它即允許其中任何一把單獨讓此人登入此應用程式；在列出其他機制的清單中省略它，則一把都不允許。\n\n在每次以瀏覽器登入此應用程式時，於兩種模式下都會「強制執行」：工作階段並非基於任何所列機制的人，會被送去以所列機制重新登入，而以未列出之機制完成的登入會被拒絕。非瀏覽器入口（密碼授權、WS-Trust、LDAP 繫結）不在涵蓋範圍內。\n\n只列一個時，它也決定登入的去處：`spnego` 將該人送往 /authn/spnego，以其電腦持有的 Kerberos 票證登入；`wallet` 送往 /authn/wallet；`federation` 送往 appFederationRelationship 中指名的關係；`password`、`password-mfa` 與 `webauthn` 是登入畫面的三種樣式。列出多個時，會繪製只提供這些機制的畫面。\n\n本服務已關閉的機制——krb5.spnegoAuthentication 關閉時的 `spnego`、oid4vp.signIn 關閉時的 `wallet`——會在畫面上回報，且無法提供。\n\n它「不由任何人寫入」：沒有協定出示它，因此它可編輯，初始為空白。"
-  },
-  "applications.schema.attributes.appMfaMechanism.what": {
-    "en": "dc88d087050acb81",
-    "text": "此應用程式的人員可使用的第二因素：password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet。「全未勾選則維持領域的驗證原則不變」。\n\n`securityKey` 對此人持有的每把密碼金鑰同樣作出決定：密碼金鑰沒有角色（#1135），因此列出它即允許其中任何一把在此作為第二因素；在列出其他因素的清單中省略它，則一把都不允許。\n\n它只會「縮小」該原則（目錄 > 原則）：領域已關閉的第二因素在此仍維持關閉，而在領域無法寄送郵件時，以電子郵件傳送的因素仍絕不會提供。它說明的是「哪些」第二因素，而不是「是否」需要第二因素——那仍由領域、帳戶與風險決定。\n\n登入畫面只要求此處所列的第二因素。沒有持有其中任何一種的人，會被提供一種來設定（若有列出，則為密碼金鑰或驗證器應用程式）——如果他們持有某種第二因素，則在提供該第二因素之後。\n\n在每次以瀏覽器登入此應用程式時，於兩種模式下都會「強制執行」：工作階段提供了未列於此處之第二因素的人，會被送去重新登入。非瀏覽器入口（密碼授權、WS-Trust、LDAP 繫結）不在涵蓋範圍內。\n\n它「不由任何人寫入」：沒有協定出示它，因此它可編輯，初始為空白。"
+  "applications.schema.attributes.appAuthnPolicy.what": {
+    "en": "2c8a385006302f63",
+    "text": "「此應用程式的人員登入時所依據的驗證原則」：`default`（或空白），或本領域某個具名驗證原則的名稱（目錄 > 原則）。具名原則包含允許的第一因素機制（password、password-mfa、webauthn、spnego、wallet、federation；一個都不列則全部允許）與允許的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一個都不列則維持領域的設定不變）。`default` 允許領域驗證原則所允許的每一種機制。\n\n在兩種模式下，於每次以瀏覽器登入該應用程式時「強制執行」：工作階段所依據的機制不為該原則所允許的人，會被送回以原則允許的機制重新登入。只列出一種第一因素機制時，它也是登入的去處（`spnego` 至 /authn/spnego，`wallet` 至 /authn/wallet，`federation` 至 appFederationRelationship）。第二因素只會「縮小」領域的原則：領域已關閉的第二因素在此仍然關閉。\n\n本領域沒有任何原則使用的名稱——繞過主控台寫入——在該原則存在之前「不允許任何」機制（STS-AUTHN-0536）。\n\n它「無人寫入」：沒有任何協定提供它，因此可以編輯，且初始為空白。"
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

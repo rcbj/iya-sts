@@ -268,8 +268,8 @@
     "text": "Kerberos v5"
   },
   "applications.protocols.krb5.what": {
-    "en": "e0907807887b2538",
-    "text": "可以为其签发票据的服务主体名称，或接受方可能被要求充当的服务主体名称。这涵盖了对受 Kerberos 保护的服务的 SPNEGO（HTTP Negotiate，RFC 4559），它携带的是同一张票据。使用 SPNEGO 让人员登录到此应用并不是一个协议族：请在 appAuthnMechanism 中列出 spnego，并声明应用获取令牌或断言所通过的协议。"
+    "en": "33fabbb450755342",
+    "text": "可以为其签发票据的服务主体名称，或接受方可能被要求充当的服务主体名称。这涵盖了对受 Kerberos 保护的服务的 SPNEGO（HTTP Negotiate，RFC 4559），它携带的是同一张票据。使用 SPNEGO 让人员登录到此应用并不是一个协议族：请在应用所指定的身份验证策略（appAuthnPolicy）的第一因素机制中列出 spnego，并声明应用获取令牌或断言所通过的协议。"
   },
   "applications.protocols.oid4vci.label": {
     "en": "6a5c76ded81999e5",
@@ -1707,13 +1707,9 @@
     "en": "f049a40c629458fa",
     "text": "如果登录此应用的人应被直接送往上面指定的伙伴、中间不经过登录屏幕，则为 TRUE。这是通过配置而不是询问来完成的主领域发现，而只有一个联合身份提供方的部署实际上就是这样做的。\n\n一旦指定了关系，它默认为 TRUE，因为指定了一个关系却还得点击按钮，是谁都不想要的状态；设为 FALSE 可保留屏幕，此时伙伴是唯一提供的按钮。因此在这里，值缺失表示“是”而不是“未知”，这与 RFC 7591 第 2 节对省略的布尔值所规定的含义相反——之所以明确说出来，是因为这两条规则在同一个条目上相遇。\n\n指定了多个关系时，它的含义与一贯的含义完全相同——“不经过登录屏幕”——变化的是这样做之后剩下什么。只有一个关系时，它是直接重定向到伙伴。有多个关系时，它是 /authn/select-idp 上的选择器：每个伙伴一个按钮，没有密码字段，这就是在没有登录屏幕的情况下完成登录屏幕的工作。它永远不意味着“替他们选一个”；没有任何布尔值能说明某人的雇主是哪个身份提供方。\n\n因此，在指定了多个关系时 FALSE 就是屏幕，密码框下方每个伙伴一个按钮——与 FALSE 一贯的作用相同，只是伙伴变成了复数。\n\n没有指定任何关系时，它什么也不做，而不是报错：两者是分开编辑的，一个已被清除的关系所遗留的值不应拒绝下一次写入。"
   },
-  "applications.schema.attributes.appAuthnMechanism.what": {
-    "en": "e1226893ecd03397",
-    "text": "此应用的用户可以用来登录的机制，取自 fedAuthnMechanism 所用的封闭列表：password、password-mfa、webauthn、spnego、wallet、federation。一个都不勾选表示全部允许。\n\n`webauthn` 对此人持有的每个通行密钥同样作出决定：通行密钥没有角色（#1135），因此列出它即允许其中任何一个独立让此人登录此应用；在列出其他机制的列表中省略它，则一个都不允许。\n\n在两种模式下，对每次通过浏览器登录此应用都会强制执行：会话所依据的机制不在列表中的人，会被送去用列表中的机制重新登录，而用不在列表中的机制完成的登录会被拒绝。非浏览器入口（密码授权、WS-Trust、LDAP 绑定）不在此范围内。\n\n只列出一个时，它也决定登录的去向：`spnego` 将此人送往 /authn/spnego，凭其机器持有的 Kerberos 票据登录；`wallet` 送往 /authn/wallet；`federation` 送往 appFederationRelationship 中指定的关系；`password`、`password-mfa` 和 `webauthn` 是登录屏幕的三种形态。列出多个时，绘制的屏幕只提供这些机制。\n\n本服务已关闭的机制——krb5.spnegoAuthentication 关闭时的 `spnego`、oid4vp.signIn 关闭时的 `wallet`——会在屏幕上报告，并且无法提供。\n\n它不由任何人写入：没有协议出示它，因此它是可编辑的，初始为空。"
-  },
-  "applications.schema.attributes.appMfaMechanism.what": {
-    "en": "dc88d087050acb81",
-    "text": "此应用的用户可以使用的第二因素：password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet。一个都不勾选表示保持领域的身份验证策略不变。\n\n`securityKey` 对此人持有的每个通行密钥同样作出决定：通行密钥没有角色（#1135），因此列出它即允许其中任何一个在这里作为第二因素；在列出其他因素的列表中省略它，则一个都不允许。\n\n它只会缩小该策略的范围（目录 > 策略）：领域已关闭的第二因素在这里保持关闭，而在领域无法发送邮件时，邮件方式的第二因素仍然永远不会提供。它说明的是哪些第二因素，而不是是否需要第二因素——后者仍由领域、账户和风险决定。\n\n登录屏幕只会要求这里列出的第二因素。一个都不持有的人会被提供一种用于设置（在列出的情况下为通行密钥或身份验证器应用）——如果他持有某个第二因素，则在给出该因素之后。\n\n在两种模式下，对每次通过浏览器登录此应用都会强制执行：会话中给出的第二因素不在此列表中的人，会被送去重新登录。非浏览器入口（密码授权、WS-Trust、LDAP 绑定）不在此范围内。\n\n它不由任何人写入：没有协议出示它，因此它是可编辑的，初始为空。"
+  "applications.schema.attributes.appAuthnPolicy.what": {
+    "en": "2c8a385006302f63",
+    "text": "此应用的人员登录时所依据的身份验证策略：`default`（或为空），或本领域某个命名身份验证策略的名称（目录 > 策略）。命名策略包含允许的第一因素机制（password、password-mfa、webauthn、spnego、wallet、federation；一个都不列则全部允许）和允许的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一个都不列则保持领域的设置不变）。`default` 允许领域身份验证策略所允许的每一种机制。\n\n在两种模式下，每次通过浏览器登录该应用时都会强制执行：会话所依据的机制不被该策略允许的人，会被送回去用策略允许的机制重新登录。只列出一种第一因素机制时，它也是登录的去处（`spnego` 去 /authn/spnego，`wallet` 去 /authn/wallet，`federation` 去 appFederationRelationship）。第二因素只会收窄领域的策略：领域已关闭的第二因素在这里仍然关闭。\n\n本领域没有任何策略使用的名称——绕过控制台写入——在该策略存在之前不允许任何机制（STS-AUTHN-0536）。\n\n它无人写入：没有任何协议提供它，因此它可编辑，且初始为空。"
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

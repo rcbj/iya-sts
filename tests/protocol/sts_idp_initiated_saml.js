@@ -39,10 +39,12 @@
 //      request carrying `shire` is answered by default and refused with
 //      saml11SpInitiatedSso FALSE.
 //   E. The mechanism re-prompt on /saml2/unsolicited (#457), set up through
-//      `appAuthnMechanism` on the entry: a session signed in on a password,
-//      for a service provider that allows only `webauthn`, is sent to sign
-//      in again; back from that one trip (`reprompted=1`) still on a
-//      password, it is answered RequestDenied rather than sent round again.
+//      a named authentication policy the entry names (`appAuthnPolicy`,
+//      #1148; `appAuthnMechanism` until then): a session signed in on a
+//      password, for a service provider that allows only `webauthn`, is
+//      sent to sign in again; back from that one trip (`reprompted=1`)
+//      still on a password, it is answered RequestDenied rather than sent
+//      round again.
 //
 // NOT HERE, AND WHY: section D of the in-process file, the step-up on risk.
 // A session's risk comes from the sign-in's assessment over datasets the
@@ -479,6 +481,14 @@ async function setUp() {
   // Said, not asserted: the job is the same in either mode.
   const mode = await facts.setting(realmBase() + "/admin-api", "global.mode");
   log.info("The realm " + REALM + " runs in " + String(mode) + " mode.");
+  // THE PASSKEY-ONLY SERVICE PROVIDER'S MECHANISMS are a named
+  // authentication policy's since #1148, made in the realm first.
+  const passkeyOnly = await api(REALM, "POST",
+    "/policies/save-named-authn-policy",
+    { name: "passkey-only", mechanisms: ["webauthn"] });
+  must(passkeyOnly.status === 200 && passkeyOnly.body && passkeyOnly.body.ok,
+       "saving the named authentication policy answered " +
+       passkeyOnly.status + " " + passkeyOnly.text.slice(0, 300));
   const w = {
     spOff: await createApplication(nameFor("sp-default"), "saml2"),
     spOn: await createApplication(nameFor("sp-idp-on"), "saml2",
@@ -487,7 +497,7 @@ async function setUp() {
                                       { saml2SpInitiatedSso: "FALSE" }),
     spMech: await createApplication(nameFor("sp-mech"), "saml2",
                                     { saml2IdpInitiatedSso: "TRUE",
-                                      appAuthnMechanism: ["webauthn"] }),
+                                      appAuthnPolicy: "passkey-only" }),
     rpOff: await createApplication(nameFor("rp-default"), "saml11"),
     rpOn: await createApplication(nameFor("rp-idp-on"), "saml11",
                                   { saml11IdpInitiatedSso: "TRUE" }),
