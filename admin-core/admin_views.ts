@@ -9737,7 +9737,13 @@ class AdminViews {
   // at the head of its OAuth and SAML sub-tabs. Each list value carries
   // `declared`: FALSE where the application declares a list and the value is
   // not on it — rcbj's warning mark — so the page never compares lists
-  // itself. The four comparisons are the ones the endpoints make: a grant or
+  // itself. A SCOPE A DELEGATED PERMISSION GRANT DECLARES IS ON THE LIST
+  // (rcbj, 2026-10-29: "consistent and intuitive"): every permission
+  // identifier the client's `oauthDelegatedPermission` holds, and, for this
+  // service's three APIs, the bare word it asks for with `resource` (#1141,
+  // `scope_policy.ts`'s `delegatedPermissionScopes()`), which is what the
+  // issuance policy accepts — so the console's own client no longer reads
+  // as having been seen asking for what it was never declared. The four comparisons are the ones the endpoints make: a grant or
   // response type outside a NON-EMPTY declared list (#289: an empty one
   // restricts nothing), a redirect URI that is not registered (an empty list
   // registers none), and a scope outside a non-empty `oauthAllowedScope`
@@ -9750,9 +9756,11 @@ class AdminViews {
    * value marked whether its declared twin allows it.
    *
    * @param fields - the application's fields
+   * @param identifier - the application's identifier, for the scopes its
+   *   delegated permission grants declare (#1141)
    * @returns the lists, the last SAML request and the observed certificate
    */
-  applicationObservedState(fields) {
+  applicationObservedState(fields, identifier?) {
     const { log, applications, stsCrypto } = this.deps;
     log.debug("Entering AdminViews.applicationObservedState().");
     const listOf = function (name) {
@@ -9794,6 +9802,25 @@ class AdminViews {
         certificate = { subject: '', sha256: '', unreadable: true };
       }
     }
+    // The declared scopes: `oauthAllowedScope`, and what the client's
+    // delegated permission grants declare — still null where nothing is
+    // listed in `oauthAllowedScope`, since an empty list restricts nothing.
+    let declaredScopes = nonEmpty('oauthAllowedScope');
+    if (declaredScopes) {
+      let delegated: string[] = [];
+      try {
+        delegated = require('../common/scope_policy')
+          .delegatedPermissionScopes(identifier || '') || [];
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationObservedState(): " +
+                  ((e && e.message) || e));
+        // No scope policy built (a view tested on its own): the grants'
+        // identifiers below still count.
+        delegated = [];
+      }
+      declaredScopes = declaredScopes
+        .concat(listOf('oauthDelegatedPermission'), delegated);
+    }
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
@@ -9802,7 +9829,7 @@ class AdminViews {
         nonEmpty('oauthResponseType'), applications.canonicalResponseType),
       appRedirectUriObserved: marked('appRedirectUriObserved',
                                      listOf('oauthRedirectUri')),
-      oauthScope: marked('oauthScope', nonEmpty('oauthAllowedScope')),
+      oauthScope: marked('oauthScope', declaredScopes),
       appAuthorizationServer: marked('appAuthorizationServer', null),
       samlNameIdFormat: marked('samlNameIdFormat', null),
       samlResponseBinding: marked('samlResponseBinding', null),
@@ -11105,7 +11132,7 @@ class AdminViews {
         // WHAT THE APPLICATION WAS SEEN DOING (#706, #708), drawn read-only
         // at the head of the sub-tab whose settings each one shadows. None is
         // a field of the grid, so none is in `fields`.
-        observed: self.applicationObservedState(fields)
+        observed: self.applicationObservedState(fields, row.identifier)
       },
       // #609: the named passkey policies naming this application, read-only
       // on the Every protocol sub-tab.

@@ -30,7 +30,8 @@
 //
 //   E. the OAuth block's five lines in order, a value outside a declared
 //      list marked with a warning instead of a check, and a line cut at ten
-//      values with "+N more" to the Directory entry tab;
+//      values with "+N more" to the Directory entry tab; a scope a delegated
+//      permission grant declares counts as on the list (#1141);
 //   F. a URN choice is labelled by its last two sections, its full value and
 //      meaning in the tooltip, and still posts the full value;
 //   G. the SAML panels: SAML 2.0's lists, its last AuthnRequest and the
@@ -312,6 +313,31 @@ function childMain() {
              .test(scopeLine),
            'E3. ten values, then "+3 more" to the Directory entry tab; a ' +
            'scope outside oauthAllowedScope is marked', scopeLine);
+      // E4 (#1141): a scope a delegated permission grant declares is on the
+      // list — the bare word of one of this service's APIs, and the
+      // permission identifier — and one with no grant is still marked.
+      const granted = applications.updateApplication('ft-web', {
+        attribute: 'oauthDelegatedPermission', mode: 'add',
+        value: 'urn:sts:admin-api:admin:read' });
+      applications.seen({ identifier: 'ft-web', kind: 'oauth2-client',
+        protocol: 'OAuth 2.0 / OIDC', counts: false, note: 'a test sighting',
+        fields: { oauthClientId: 'ft-web',
+                  oauthScope: ['admin:read', 'admin:write',
+                               'urn:sts:admin-api:admin:read'] } });
+      const seenScopes = views.applicationDetailJson(request, 'ft-web').json
+        .page.config.observed.oauthScope;
+      const declaredOf = function (value) {
+        const hit = seenScopes.filter(function (one) {
+          return one.value === value;
+        })[0];
+        return hit ? hit.declared : null;
+      };
+      note(granted && granted.ok && declaredOf('admin:read') === true &&
+           declaredOf('urn:sts:admin-api:admin:read') === true &&
+           declaredOf('admin:write') === false,
+           'E4. a scope a delegated permission grant declares is not marked, ' +
+           'as its bare word or its identifier; one without is (#1141)',
+           JSON.stringify([granted && granted.errors, seenScopes]));
 
       // --- F. URN choices by their last two sections ---------------------
       const section2 = page.applicationFieldsSection(ctx, json2, '');
