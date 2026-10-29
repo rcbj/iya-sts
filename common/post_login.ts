@@ -10,7 +10,7 @@
 //
 // `common/post_login_policy.ts` says what a realm asks and of whom; this
 // module answers the per-person question at a sign-in — is THIS person due
-// it now, in which role, and may they still skip it — and keeps the one
+// it now, and may they still skip it — and keeps the one
 // thing the question needs that the directory does not hold: when the person
 // was first asked, until when they put it off, and when they did it.
 // `authn/authn.ts` asks `dueFor()` as a session is about to start, holds the
@@ -19,19 +19,17 @@
 //
 // THE ONE ACTIVITY TODAY, `pqc-passkey-migration`:
 //
-//   * A person holding a CLASSICAL passkey in a role (`primary`, the
-//     passwordless sign-in; `mfa`, the second factor) and NO post-quantum
-//     one in that role is due a post-quantum passkey in that role —
-//     `primary` first. Post-quantum is the key's algorithm
+//   * A person holding a CLASSICAL passkey and NO post-quantum one is due a
+//     post-quantum passkey. (Until #1135 this was asked per role, `primary`
+//     first; a key has no role now.) Post-quantum is the key's algorithm
 //     (`credentials.keyAlgorithm().postQuantum`, ML-DSA), not its lane: a
 //     realm with one lane makes ML-DSA keys in the classical lane.
 //   * A person holding NO passkey is due one only as the profile's
-//     `noPasskey` says (`invite` or `require`), in `noPasskeyRole`.
-//   * A person holding only post-quantum keys, or a post-quantum key in
-//     every role they hold a classical one in, is due nothing.
+//     `noPasskey` says (`invite` or `require`).
+//   * A person holding a post-quantum key is due nothing.
 //
 // IT IS DUE ONLY WHERE IT CAN BE DONE: passkeys on (`webauthn.enabled`), the
-// role allowed (`roleAllowed()`), an ML-DSA algorithm offered at
+// a new key enrollable (`enrolmentAllowed()`), an ML-DSA algorithm offered at
 // registration in this realm (`offersPostQuantum()`), and — with both lanes
 // on — the post-quantum lane not refused. A realm that cannot make an ML-DSA
 // passkey asks nobody to make one, and holds nobody's sign-in for it.
@@ -52,7 +50,7 @@
 // WHAT A ROW SAYS (#1110, #1111): the first invitation, the snooze, how many
 // times the person was asked and skipped, and when they did it — and, since
 // the reports application reads it back (`report/sources.ts`, the
-// `postLoginProgress` source), the profile, the role and the allotted time
+// `postLoginProgress` source), the profile and the allotted time
 // that applied when it was last written, so a report says which profile
 // asked a person without asking the directory again for every row. A
 // started activity's mail (`common/post_login_activities.ts`) adds which
@@ -106,14 +104,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 const PQC_MIGRATION = 'pqc-passkey-migration';
 
-/**
- * The roles a passkey is held in, in the order they are asked about.
- */
-const ROLES = ['primary', 'mfa'];
-
 // ---------------------------------------------------------------------------
 // THE STORE: `<username>|<activity>` → `{ invitedAt, snoozedUntil, asks,
-// skips, doneAt, profile, role, graceDays, askedBy, mailedBy, mails,
+// skips, doneAt, profile, graceDays, askedBy, mailedBy, mails,
 // firstMailedAt, lastMailedAt }`, times in milliseconds. Declared here, per
 // realm, and nowhere else (rule: a store becomes per realm at its
 // declaration).
@@ -126,10 +119,8 @@ const progress = realms.map({ persist: 'post_login.progress',
  */
 interface Due {
   activity: string;
-  // The role the passkey is registered in.
-  role: string;
-  // `classical`: they hold a classical passkey in the role and no
-  // post-quantum one; `attestation`: their ML-DSA passkeys in the role all
+  // `classical`: they hold a classical passkey and no
+  // post-quantum one; `attestation`: their ML-DSA passkeys all
   // fall short of a required post-quantum attestation (#1102); `none`:
   // they hold no passkey at all.
   reason: 'classical' | 'none' | 'attestation';
@@ -189,11 +180,6 @@ class PostLogin {
    */
   static readonly PQC_MIGRATION = PQC_MIGRATION;
   /**
-   * The roles, in the order they are asked about.
-   */
-  static readonly ROLES = ROLES;
-
-  /**
    * Builds the module over its dependencies.
    *
    * @param deps - the logger, the stores and policies, and the clock
@@ -248,14 +234,14 @@ class PostLogin {
                            lastMailedAt: 0, askedBy: '' }, row || {});
   }
 
-  // WHAT APPLIED WHEN THE ROW WAS WRITTEN (#1110): the profile, the role and
+  // WHAT APPLIED WHEN THE ROW WAS WRITTEN (#1110): the profile and
   // the allotted time of the due that wrote it, kept beside the counts so
   // the report reads them off the row.
   private stamp(row: Record<string, any>, due: Due, asked: boolean): void {
     const { log } = this.deps;
     log.debug("Entering PostLogin.stamp().");
     row.profile = String(due.profile || '');
-    row.role = String(due.role || '');
+    // No role since #1135; a row written before keeps the one it has.
     row.graceDays = due.enforceable ? Number(due.graceDays) || 0 : 0;
     // Who asked at a sign-in (#1126). A mail is not an ask, so
     // `noteMailed()` leaves it as it was.
@@ -275,20 +261,21 @@ class PostLogin {
 
   /**
    * Says whether this realm can make the passkey the activity asks for, in a
-   * role: passkeys on, the role allowed, an ML-DSA algorithm offered at
-   * registration, and the post-quantum lane not refused where both are on.
+   * new key enrollable (no role since #1135), an ML-DSA algorithm offered
+   * at registration, and the post-quantum lane not refused where both are
+   * on.
    *
-   * @param role - `primary` or `mfa`
+   * @param method - the due's `method`
    * @returns true where it can
    */
-  canRegister(role: string, method?: string): boolean {
+  canRegister(method?: string): boolean {
     const { log, webauthnPolicy } = this.deps;
-    log.debug("Entering PostLogin.canRegister(). " + role);
+    log.debug("Entering PostLogin.canRegister(). " + (method || ''));
     let out = false;
     try {
       out = webauthnPolicy.offered() === true &&
         (method !== 'upgrade' || webauthnPolicy.upgradeRefusal().ok === true) &&
-        webauthnPolicy.roleAllowed(role).ok === true &&
+        webauthnPolicy.enrolmentAllowed().ok === true &&
         webauthnPolicy.offersPostQuantum() === true &&
         webauthnPolicy.upgradeAlgorithms().length > 0 &&
         (!webauthnPolicy.alongsideClassical() ||
@@ -338,21 +325,19 @@ class PostLogin {
 
   /**
    * The classical passkey an upgrade replaces (#1100): of the person's
-   * classical passkeys in the role, the one named (the passkey this
+   * classical passkeys, the one named (the passkey this
    * sign-in used, where it is one), else the one used last.
    *
    * @param username - the person
-   * @param role - `primary` or `mfa`
    * @param prefer - a credential id to prefer, or ''
    * @returns the stored key, or null
    */
-  keyToUpgrade(username: string, role: string, prefer?: string): any {
+  keyToUpgrade(username: string, prefer?: string): any {
     const { log, credentials } = this.deps;
     log.debug("Entering PostLogin.keyToUpgrade().");
     const classical = ((credentials.keysOf(username) || []) as any[])
       .filter(function (one) {
-        return one.role === role &&
-               credentials.keyAlgorithm(one).postQuantum !== true;
+        return credentials.keyAlgorithm(one).postQuantum !== true;
       });
     const named = classical.filter(function (one) {
       return prefer && String(one.credentialId) === String(prefer);
@@ -366,22 +351,21 @@ class PostLogin {
     return out;
   }
 
-  // The role a person's keys make them due, and why; null where none.
-  private roleFor(username: string,
-                  rules: Record<string, any>):
-      { role: string; reason: 'classical' | 'none' | 'attestation' } | null {
+  // Why a person's keys make them due, or null where they do not (#1135:
+  // every key at once, a key having no role).
+  private reasonFor(username: string,
+                    rules: Record<string, any>):
+      { reason: 'classical' | 'none' | 'attestation' } | null {
     const { log, credentials } = this.deps;
-    log.debug("Entering PostLogin.roleFor().");
+    log.debug("Entering PostLogin.reasonFor().");
     const keys = (credentials.keysOf(username) || []) as any[];
     if (!keys.length) {
-      const role = String(rules.noPasskeyRole || 'primary');
       const out = rules.noPasskey === 'invite' ||
                   rules.noPasskey === 'require'
-        ? (this.canRegister(role) ? { role: role, reason: 'none' as const }
-                                  : null)
+        ? (this.canRegister() ? { reason: 'none' as const } : null)
         : null;
-      log.debug("Leaving PostLogin.roleFor(). No passkey: " +
-                (out ? out.role : 'nothing'));
+      log.debug("Leaving PostLogin.reasonFor(). No passkey: " +
+                (out ? 'due' : 'nothing'));
       return out;
     }
     // WHAT COUNTS (#1102): the key's algorithm, and — where the profile
@@ -396,24 +380,18 @@ class PostLogin {
       const att = credentials.attestationAlgorithms(one) || {};
       return att.recorded === true && att.postQuantum === true;
     };
-    for (const role of ROLES) {
-      const inRole = keys.filter(function (one) {
-        return one.role === role;
-      });
-      const pq = inRole.filter(counts);
-      // `attestation` where every key of the role is ML-DSA and only its
-      // attestation falls short: nothing classical to upgrade, so the new
-      // passkey goes beside it.
-      const reason = inRole.some(function (one) {
-        return credentials.keyAlgorithm(one).postQuantum !== true;
-      }) ? 'classical' as const : 'attestation' as const;
-      if (inRole.length && !pq.length &&
-          this.canRegister(role, this.methodFor(rules, reason))) {
-        log.debug("Leaving PostLogin.roleFor(). " + role + ", " + reason);
-        return { role: role, reason: reason };
-      }
+    const pq = keys.filter(counts);
+    // `attestation` where every key is ML-DSA and only its attestation
+    // falls short: nothing classical to upgrade, so the new passkey goes
+    // beside it.
+    const reason = keys.some(function (one) {
+      return credentials.keyAlgorithm(one).postQuantum !== true;
+    }) ? 'classical' as const : 'attestation' as const;
+    if (!pq.length && this.canRegister(this.methodFor(rules, reason))) {
+      log.debug("Leaving PostLogin.reasonFor(). " + reason);
+      return { reason: reason };
     }
-    log.debug("Leaving PostLogin.roleFor(). Nothing due.");
+    log.debug("Leaving PostLogin.reasonFor(). Nothing due.");
     return null;
   }
 
@@ -476,7 +454,7 @@ class PostLogin {
    * Answers whether a person is due a post-login activity at this sign-in:
    * the profile that reaches them, on — or a running started activity
    * whose population holds them and no named profile off excluding them
-   * (#1126); a role their passkeys make them due;
+   * (#1126); their passkeys making them due;
    * and not put off — unless the allotted time has passed, when it is due
    * and REQUIRED whatever was put off.
    *
@@ -544,7 +522,7 @@ class PostLogin {
       // The WebAuthn policy reads the passkey profile selected for this
       // person and application (#535, #940).
       passkeyPolicy.select(username, application || '');
-      const found = this.roleFor(username, rules);
+      const found = this.reasonFor(username, rules);
       if (!found) {
         log.debug("Leaving PostLogin.dueFor(). Nothing due.");
         return null;
@@ -563,7 +541,7 @@ class PostLogin {
         return null;
       }
       const out: Due = {
-        activity: PQC_MIGRATION, role: found.role, reason: found.reason,
+        activity: PQC_MIGRATION, reason: found.reason,
         required: required, enforceable: enforceable,
         method: this.methodFor(rules, found.reason),
         fallback: found.reason === 'none' &&
@@ -574,7 +552,7 @@ class PostLogin {
         deadline: enforceable ? deadline : 0, profile: String(rules.name),
         askedBy: askedBy
       };
-      log.debug("Leaving PostLogin.dueFor(). " + out.role +
+      log.debug("Leaving PostLogin.dueFor(). " + out.reason +
                 (out.required ? ', required' : ', skippable') +
                 ', asked by ' + askedBy + '.');
       return out;
@@ -803,7 +781,6 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   PQC_MIGRATION: PostLogin.PQC_MIGRATION,
-  ROLES: PostLogin.ROLES,
   stateOf: slot.forward('stateOf'),
   canRegister: slot.forward('canRegister'),
   lane: slot.forward('lane'),

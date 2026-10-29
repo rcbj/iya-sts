@@ -7010,7 +7010,8 @@ class Authn {
   // that threw, and `finishWebauthn()` — verified or refused. What was
   // offered: for a registration the lane's algorithms as the verifier held
   // the credential to them (`expectedAlgorithms`), for an assertion the
-  // algorithms of the person's keys of the step's role.
+  // algorithms of the person's keys — every key, since a key has no role
+  // (#1135). The row's `role` is the USE the step asked of the key.
   private noteStepCeremony(req: any, body: any, step: any,
                            refusedWith: string, verdict?: any): void {
     const { log, credentials, webauthnPolicy } = this.deps;
@@ -7031,7 +7032,8 @@ class Authn {
       })[0] || null;
       this.deps.webauthnCeremonies.record({
         ceremony: registration ? 'registration' : 'assertion',
-        door: 'sign-in-step', username: step.username, role: role,
+        door: 'sign-in-step', username: step.username,
+        role: registration ? '' : role,
         lane: registration ? lane
                            : (own ? credentials.keyLane(own) : ''),
         outcome: refusedWith ? 'refused' : 'success',
@@ -7042,9 +7044,7 @@ class Authn {
         offered: registration ? (Array.isArray(step.offered) &&
                                  step.offered.length
           ? step.offered : webauthnPolicy.algorithmIds(lane))
-          : keys.filter(function (one) {
-            return one.role === role;
-          }).map(function (one) {
+          : keys.map(function (one) {
             return credentials.keyAlgorithm(one).name;
           }),
         algorithm: String(v.algorithm ||
@@ -7087,9 +7087,7 @@ class Authn {
         outcome: refusedWith ? 'refused' : 'success',
         errorCode: refusedWith,
         offered: held.owner ? credentials.keysOf(held.owner)
-          .filter(function (one) {
-            return one.role === 'primary';
-          }).map(function (one) {
+          .map(function (one) {
             return credentials.keyAlgorithm(one).name;
           }) : [],
         algorithm: String(held.algorithm ||
@@ -8139,7 +8137,7 @@ class Authn {
         'Start the request again from the application that sent you here.';
       log.info('authn: the session for "' + username + '" is HELD at the ' +
                (via || 'sign-in') + ' door for a post-login activity (' +
-               postLoginDue.activity + ', ' + postLoginDue.role + ', ' +
+               postLoginDue.activity + ', ' +
                (postLoginDue.required ? 'required' : 'skippable') + ').');
       log.debug("Leaving Authn.startSessionHere(). Held for a post-login " +
                 "activity.");
@@ -8163,7 +8161,6 @@ class Authn {
                  'activity is overdue and cannot be done there',
         detail: Object.assign(this.attemptFacts(extra.application,
           attemptMethod), { activity: postLoginDue.activity,
-                            role: postLoginDue.role,
                             profile: postLoginDue.profile,
                             askedBy: postLoginDue.askedBy })
       });
@@ -11274,9 +11271,12 @@ class Authn {
       authn: record, username: username,
       challenge: stsCrypto.randomBytes(32).toString('base64url'),
       factor: 'post-login', alternate: '', backup: false,
-      passwordless: due.role === 'primary', proved: true,
+      // A REGISTRATION AFTER A PROVEN SIGN-IN, neither step's key: the
+      // passkey made here has no role (#1135), and answers either step
+      // as the realm allows.
+      passwordless: false, proved: true,
       postLogin: {
-        activity: String(due.activity), role: String(due.role),
+        activity: String(due.activity),
         reason: String(due.reason), required: due.required === true,
         method: String(due.method || ''),
         fallback: String(due.fallback || 'none'),
@@ -11301,17 +11301,16 @@ class Authn {
       actor: username, target: username, channel: 'http',
       protocol: record && record.protocol,
       summary: username + ' was asked, after signing in, to register a ' +
-               'post-quantum passkey' + (due.role === 'mfa'
-                 ? ' as a second factor' : ' to sign in with') +
+               'post-quantum passkey' +
                (due.required ? '; it is required' : ''),
-      detail: { activity: String(due.activity), role: String(due.role),
+      detail: { activity: String(due.activity),
                 reason: String(due.reason), required: due.required === true,
                 profile: String(due.profile || ''),
                 askedBy: String(due.askedBy || ''),
                 application: String((record && record.application) || '') }
     });
     log.info('authn: "' + username + '" signed in and is asked for a ' +
-             'post-login activity (' + due.activity + ', ' + due.role +
+             'post-login activity (' + due.activity +
              (due.required ? ', required' : '') + ', asked by ' +
              String(due.askedBy || 'policy') + ') before the session ' +
              'starts.');
@@ -11407,7 +11406,7 @@ class Authn {
         protocol: step.authn && step.authn.protocol,
         summary: step.username + ' put off registering a post-quantum ' +
                  'passkey for ' + due.snoozeDays + ' day(s)',
-        detail: { activity: String(due.activity), role: String(due.role),
+        detail: { activity: String(due.activity),
                   snoozedUntil: new Date(Number(skipped.snoozedUntil))
                     .toISOString(),
                   profile: String(due.profile || ''),
@@ -11417,26 +11416,26 @@ class Authn {
       log.debug("Leaving Authn.postLoginAct(). Skipped.");
       return;
     }
-    if (!postLogin.canRegister(String(due.role), String(due.method || ''))) {
+    if (!postLogin.canRegister(String(due.method || ''))) {
       pendingMfa.delete(String(stepId));
       log.info(errorCodes.tag('STS-AUTHN-0475') + 'authn: the post-login ' +
                'passkey of "' + step.username + '" cannot be registered ' +
-               'here any more (the realm makes no ML-DSA passkey in that ' +
-               'role); the held session is started without it.');
+               'here any more (the realm makes no ML-DSA passkey); the ' +
+               'held session is started without it.');
       errorCodes.mark(res, 'STS-AUTHN-0475');
       this.finishPostLogin(req, res, base, step);
       log.debug("Leaving Authn.postLoginAct(). Cannot be done here.");
       return;
     }
     // AN UPGRADE (#1100, #939's ceremony): the classical passkey this
-    // sign-in used, where it is one of the role, else the one used last, is
+    // sign-in used, where it is classical, else the one used last, is
     // proved and then replaced in place — so the authenticator that holds it
     // may answer the registration (it is left out of the exclude list), the
     // new credential takes its handle, and one row is left, not two.
     if (due.method === 'upgrade') {
       const key = postLogin.keyToUpgrade(String(step.username),
-        String(due.role), String((step.held && step.held.credential &&
-                                  step.held.credential.id) || ''));
+        String((step.held && step.held.credential &&
+                step.held.credential.id) || ''));
       const begun = key
         ? credentials.beginKeyUpgrade(String(step.username),
                                       String(key.credentialId),
@@ -11454,13 +11453,13 @@ class Authn {
       step.upgradeKey = String(key.credentialId);
     }
     // THE PASSKEY PAGE FROM HERE, as the set-up step's `webauthn` does: the
-    // role off the activity, the lane the post-quantum passkey is made in,
+    // lane the post-quantum passkey is made in,
     // a handle minted for it when the ceremony is armed — or, for an
     // upgrade, the proof and then the registration the pending upgrade
     // arms (`upgradeStepFacts()`).
     step.factor = 'webauthn';
     step.atSignIn = true;
-    step.passwordless = due.role === 'primary';
+    step.passwordless = false;
     step.lane = postLogin.lane(String(due.method || ''));
     step.userHandle = '';
     step.classicalOnly = false;
@@ -12610,11 +12609,11 @@ class Authn {
     } else if (page === 'setup') {
       view.setup = this.mfaSetupFacts(base, step);
     } else if (page === 'post-login') {
-      // WHAT IS ASKED (#1096), as facts: the activity, the role, why, and
+      // WHAT IS ASKED (#1096), as facts: the activity, why, and
       // whether Skip is offered and for how long.
       const due = step.postLogin || {};
       view.postLogin = {
-        activity: String(due.activity || ''), role: String(due.role || ''),
+        activity: String(due.activity || ''),
         reason: String(due.reason || ''), required: due.required === true,
         canSkip: due.required !== true,
         // HOW (#1100): `upgrade`, `alongside` or `register`; `separate`
@@ -15231,7 +15230,8 @@ class Authn {
     log.debug('Entering Authn.enrolmentOffered().');
     const out = {
       totp: totp.offered(),
-      webauthn: webauthnPolicy.offered() && webauthnPolicy.roleAllowed('mfa').ok
+      webauthn: webauthnPolicy.enrolmentAllowed().ok &&
+                webauthnPolicy.useAllowed('mfa').ok
     };
     log.debug('Leaving Authn.enrolmentOffered(). totp=' + out.totp +
               ', webauthn=' +
@@ -15561,26 +15561,37 @@ class Authn {
   //     assertion from the others, which reads as a broken authenticator.
   //
   // The refusal is NAMED because the two reasons are different things to fix:
-  // no key of this role at all is an account that should not have reached that
-  // screen, and a key that is not one of theirs is an assertion from an
+  // no key at all is an account that should not have reached that screen,
+  // and a key that is not one of theirs is an assertion from an
   // authenticator this person never enrolled.
+  //
+  // **AND THE USE IS ASKED HERE, ONCE (#1135)**: every key may answer a
+  // first-factor or a second-factor step, so the one thing left to refuse
+  // by the step is the realm's answer — the realm's settings and its
+  // authentication policy, which an operator may have changed since the
+  // ceremony was armed.
   // ---------------------------------------------------------------------------
   /**
-   * Picks the enrolled security key a WebAuthn assertion is checked against:
-   * the one it names.
+   * Picks the enrolled passkey a WebAuthn assertion is checked against: the
+   * one it names, where the realm lets a key answer this step.
    *
    * @param username - the person
-   * @param role - the key's role, primary or second factor
+   * @param use - the step the key answers: `primary` (passwordless) or `mfa`
    * @param presentedId - the credential id the assertion names
    * @returns `{ key, usable }`, or `{ key: null, usable, why }` marked with the
    *   error code of the refusal
    */
-  keyForAssertion(username, role, presentedId) {
-    const { log, credentials, errorCodes } = this.deps;
-    log.debug("Entering Authn.keyForAssertion(). role=" + role);
-    const usable = credentials.keysOf(username).filter(function (one) {
-      return one.role === role;
-    });
+  keyForAssertion(username, use, presentedId) {
+    const { log, credentials, errorCodes, webauthnPolicy } = this.deps;
+    log.debug("Entering Authn.keyForAssertion(). use=" + use);
+    const allowed = webauthnPolicy.useAllowed(use);
+    if (!allowed.ok) {
+      log.debug("Leaving Authn.keyForAssertion(). The realm does not let a " +
+                "key answer this step.");
+      return errorCodes.mark({ key: null, usable: 0, why: allowed.why },
+                             errorCodes.codeOf(allowed) || 'STS-AUTHN-0044');
+    }
+    const usable = credentials.keysOf(username);
     const key = usable.filter(function (one) {
       return one.credentialId === String(presentedId || '');
     })[0];
@@ -15595,10 +15606,8 @@ class Authn {
       key: null, usable: usable.length,
       why: usable.length
         ? 'the assertion names a credential that is not one of the ' +
-          usable.length + ' security key(s) enrolled for ' + username +
-          ' as a ' + role + ' credential'
-        : 'no security key is enrolled for ' + username + ' as a ' + role +
-          ' credential'
+          usable.length + ' passkey(s) enrolled for ' + username
+        : 'no passkey is enrolled for ' + username
     }, usable.length ? 'STS-AUTHN-0026' : 'STS-AUTHN-0025');
   }
 
@@ -15681,21 +15690,18 @@ class Authn {
       return upgrading;
     }
     // -------------------------------------------------------------------
-    // WHICH KEYS THIS PERSON HOLDS, FROM THE ONE STORE (2026-09-10), AND
-    // ONLY THE KEYS THAT ANSWER THIS ROLE. A `primary` key signs somebody
-    // in on its own and an `mfa` key is a second factor beside a password;
-    // offering both in one ceremony would let a person satisfy a
-    // second-factor step with a credential this service considers a way IN.
+    // WHICH KEYS THIS PERSON HOLDS, FROM THE ONE STORE (2026-09-10): EVERY
+    // ONE (#1135). Until then only the keys of the step's role were
+    // offered; a key has no role now, and whether a key may answer this
+    // step is the realm's answer, asked where the assertion is checked
+    // (`keyForAssertion()`).
     // -------------------------------------------------------------------
     const passwordless = !!step.passwordless;
-    const wantedRole = passwordless ? 'primary' : 'mfa';
     // THE PASSKEY POLICY FOR THIS PERSON AND APPLICATION (#535): the
     // ceremony's options read it.
     this.deps.passkeyPolicy.select(username,
                                    step.authn && step.authn.application);
-    const held = credentials.keysOf(username).filter(function (one) {
-      return one.role === wantedRole;
-    });
+    const held = credentials.keysOf(username);
     // ONLY THE POST-QUANTUM KEYS WHILE THE PROFILE REQUIRES ONE AT SIGN-IN
     // (#718, rcbj's decision 3), by the question's own reading of each
     // key's algorithm (`postQuantumRefusal()`), so `allowCredentials` never
@@ -15891,8 +15897,7 @@ class Authn {
         ? webauthnPolicy.algorithmsOffered(stepLane, !!step.classicalOnly)
         : (options.algorithms || []))).map(String),
       // WHAT A POST-LOGIN STEP ASKS (#1096), for the page's words.
-      postLogin: step.postLogin ? { role: String(step.postLogin.role),
-                                    required: step.postLogin.required ===
+      postLogin: step.postLogin ? { required: step.postLogin.required ===
                                               true } : null,
       // THE LANES A REGISTRATION MAY BE MADE IN (#643): both while the
       // switch is on, which is when the page asks which; the one chosen.
@@ -15986,8 +15991,7 @@ class Authn {
         webauthnPolicy.attestationConveyance(rpId).requested || ''),
       algorithms: (proof ? (options.algorithms || [])
                          : webauthnPolicy.upgradeAlgorithms()).map(String),
-      postLogin: { role: String((step.postLogin || {}).role || ''),
-                   required: !!(step.postLogin || {}).required,
+      postLogin: { required: !!(step.postLogin || {}).required,
                    upgrade: { phase: proof ? 'proof' : 'registration',
                               name: key ? String(credentials.keyName(key))
                                         : String(held.label || ''),
@@ -16025,7 +16029,6 @@ class Authn {
       summary: 'the device of ' + String(step.username) + ' did not ' +
                'complete the passkey a post-login activity asked for',
       detail: { activity: String(step.postLogin.activity || ''),
-                role: String(step.postLogin.role || ''),
                 method: String(step.postLogin.method || ''),
                 phase: step.upgradeId ? 'upgrade' : 'registration',
                 error: webauthnCeremonies.clientErrorName(error),
@@ -16118,7 +16121,7 @@ class Authn {
       summary: name + ' upgraded a classical passkey to a post-quantum one ' +
                'after signing in',
       detail: { activity: String(step.postLogin.activity),
-                role: String(step.postLogin.role), method: 'upgrade',
+                method: 'upgrade',
                 algorithm: String(answer.algorithm || ''),
                 previousAlgorithm: String(answer.previousAlgorithm || ''),
                 mode: String(answer.mode || ''),
@@ -16715,7 +16718,7 @@ class Authn {
     }
     const picked = this.keyForAssertion(owner, 'primary', credentialId);
     if (!picked.key) {
-      log.debug("Leaving Authn.passkeySignIn(). Not a primary key of theirs.");
+      log.debug("Leaving Authn.passkeySignIn(). Not a key of theirs.");
       return this.passkeyRefused(res, base, record,
         errorCodes.codeOf(picked) || 'STS-AUTHN-0026', picked.why, SAID);
     }
@@ -16897,11 +16900,8 @@ class Authn {
         actor: step.username, target: step.username, channel: 'http',
         protocol: step.authn && step.authn.protocol,
         summary: step.username + ' registered a post-quantum passkey ' +
-                 (step.postLogin.role === 'mfa' ? 'as a second factor'
-                                                : 'to sign in with') +
-                 ' after signing in',
+                 'after signing in',
         detail: { activity: String(step.postLogin.activity),
-                  role: String(step.postLogin.role),
                   algorithm: String(verdict.algorithm || ''),
                   lane: String(step.lane || 'classical'),
                   profile: String(step.postLogin.profile || '') }
@@ -17577,8 +17577,8 @@ class Authn {
     // key and is being sent back to a password field needs to know that the
     // answer is a knob rather than their hardware.
     if (passwordless || secondFactor) {
-      const allowed = webauthnPolicy.roleAllowed(passwordless ? 'primary' :
-                                                 'mfa');
+      const allowed = webauthnPolicy.useAllowed(passwordless ? 'primary' :
+                                                'mfa');
       if (!allowed.ok) {
         log.info('authn: a security-key sign-in was asked for as a ' +
                  (passwordless ? 'primary' : 'second-factor') +
@@ -18839,28 +18839,21 @@ class Authn {
             stats.noteWebauthnEnrolled(step.username);
 
             // ---------------------------------------------------------------
-            // THE ROLE COMES OFF THE PENDING RECORD AND NOWHERE ELSE.
-            //
-            // `step.passwordless` is what the person chose a screen ago, and
-            // it is on the record for the reason the comment beside it gives:
-            // the POST at this end is the browser's ceremony RESULT and
-            // nothing in it says what was asked for. A role read from the
-            // body would be a caller choosing whether their own credential is
-            // a way IN or a second factor — which is the whole of what the
-            // two roles mean.
+            // NO ROLE IS WRITTEN (#1135). Until then the role came off the
+            // pending record (`step.passwordless`), never the body; a key has
+            // none now, and the key enrolled here answers either step as the
+            // realm allows.
             //
             // **AND THIS IS WHERE THE `webauthn.*` POLICY BITES**, because
-            // `addKey()` is where it is enforced: a realm with
-            // `primaryAllowed` off refuses the passwordless enrolment here,
-            // by name, and one at its `maxKeysPerPerson` refuses the next
-            // key. Until 2026-09-10 this branch wrote a map and no policy
-            // could reach it.
+            // `addKey()` is where it is enforced: a realm that accepts a key
+            // in no use refuses the enrolment here, by name, and one at its
+            // `maxKeysPerPerson` refuses the next key. Until 2026-09-10 this
+            // branch wrote a map and no policy could reach it.
             // ---------------------------------------------------------------
-            const role = step.passwordless ? 'primary' : 'mfa';
             // WRITTEN BELOW, THROUGH `credentials.addKeyClaimed()`, since
             // 2026-09-14: the credential id is claimed across nodes before
             // the row is written, and this block cannot await. Recorded here.
-            toRegister = { username: step.username, role: role, record: {
+            toRegister = { username: step.username, record: {
               credentialId: verdict.credentialId,
               publicKeyJwk: verdict.publicKeyJwk,
               signCount: verdict.signCount,
@@ -18908,14 +18901,13 @@ class Authn {
         // assertion NAMES itself with, and it is the reason WebAuthn
         // tolerates several credentials where a shared secret cannot.
         //
-        // **THE ROLE IS PART OF THE MATCH AND NOT A DETAIL.** A key enrolled
-        // as `primary` must not answer a SECOND-FACTOR step: it is a way IN
-        // on its own, so accepting one here would let somebody satisfy
-        // "password AND a second factor" with a credential this service
-        // already considers sufficient by itself. The filter is the same one
-        // `webauthnPage()` drew `allowCredentials` from, so the ceremony and
-        // the check agree by construction — `allowCredentials` is a HINT to
-        // the browser and this is the enforcement.
+        // **THE USE IS ASKED OF THE REALM, NOT OF THE KEY (#1135).** Until
+        // then a key enrolled as `primary` could not answer a second-factor
+        // step, and the match filtered by the key's role. A key has no role
+        // now: any key the person holds may answer either step, and what
+        // `keyForAssertion()` asks is whether the REALM lets a key answer
+        // this one (`webauthnPolicy.useAllowed()`). `allowCredentials` is a
+        // HINT to the browser and this is the enforcement.
         // ---------------------------------------------------------------
         const picked = this.keyForAssertion(step.username,
           step.passwordless ? 'primary' : 'mfa',
@@ -19042,8 +19034,7 @@ class Authn {
             toRegister.record.provider = named.provider;
             toRegister.record.providerSource = named.providerSource;
             return credentials.addKeyClaimed(toRegister.username,
-                                             toRegister.record,
-                                             toRegister.role);
+                                             toRegister.record);
           });
         }).then(function (stored) {
         if (stored === null) {

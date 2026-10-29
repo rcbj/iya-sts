@@ -1014,7 +1014,8 @@ class Credentials {
   //
   // **THE VALUE IS JSON AND THE ATTRIBUTE IS MULTI-VALUED**, because a person
   // may hold several keys (a laptop and a phone, which is the ordinary case and
-  // the reason WebAuthn has a credential id at all). Each carries its own ROLE.
+  // the reason WebAuthn has a credential id at all). None carries a role
+  // (#1135, below).
   //
   // **THE PUBLIC KEY IS NOT A SECRET AND IS NOT HASHED**, which is the one
   // place this file departs from what it does with a password. A WebAuthn
@@ -1036,21 +1037,23 @@ class Credentials {
   /** The derived attribute naming a person's Android-attested keys. */
   static readonly ANDROID_MARKER_ATTRIBUTE = 'stsAndroidAttestedCredential';
 
-  // WHAT A KEY IS FOR. Two roles and no third, because a key can do exactly two
-  // things here (this was written when a key was the only second factor; an
-  // authenticator app and recovery codes joined it on 2026-09-10, and neither
-  // has a role — see the TOTP section below):
+  // WHAT A KEY IS FOR: NOTHING THE KEY SAYS (#1135, rcbj's decision). Until
+  // then every key carried a ROLE, `primary` (it signed somebody in on its
+  // own) or `mfa` (a second factor beside a password), the person chose it at
+  // every enrolment, and the sign-in offered a step only the keys of its role.
+  // That was one question too many for a person registering a passkey, and it
+  // kept one key from serving both purposes. Now a key has no role: every key
+  // a person holds may sign them in passwordless and may be their second
+  // factor, as the REALM allows — `webauthnPolicy.useAllowed()`, which reads
+  // `webauthn.primaryAllowed`, `webauthn.mfaAllowed` and the authentication
+  // policy at the sign-in. A row stored with a `role` keeps it on disk until
+  // it is next rewritten, and nothing reads it (`keysFromValues()` drops it).
   //
-  //   'primary'  the key signs somebody in ON ITS OWN — passwordless. The
-  //              credential IS the account.
-  //   'mfa'      the key is a SECOND factor and a password is the first. A
-  //              person whose only key is `mfa` and who has no password cannot
-  //              sign in at all, which is why the setup flow refuses that
-  //              combination rather than letting somebody lock themselves out.
-  /**
-   * What a key is for: `primary` (passwordless) or `mfa` (a second factor).
-   */
-  static readonly ROLES = ['primary', 'mfa'];
+  // What a role still names is a USE — the step a key answers in one
+  // ceremony, `primary` or `mfa` — and that is a fact of the ceremony,
+  // recorded on its row (`webauthnCeremonies`), never of the key.
+  /** The two uses a key may answer: `primary` (passwordless) and `mfa`. */
+  static readonly USES = ['primary', 'mfa'];
 
   // THE RESERVED REFUSAL, honoured in BOTH modes. See the header.
   /** The password refused in both modes: `invalid`. */
@@ -2050,7 +2053,8 @@ class Credentials {
   // and EST Basic authenticate with a password and nothing else, and no
   // specification behind any of them defines a second factor. So the rule is
   // the ACCOUNT's: in product mode a person who HOLDS a second factor (an
-  // authenticator app, or a security key in the `mfa` role — what
+  // authenticator app, or any passkey where the realm lets one be a second
+  // factor (#1135; until then a key in the `mfa` role) — what
   // `mechanismsFor().mfaRequired` means) or of whom one is REQUIRED
   // (`mfaRequirementFor()`: stsMfaRequired, or the authentication policy for
   // the
@@ -2168,9 +2172,10 @@ class Credentials {
       log.debug('Leaving Credentials.secondFactorDemand(). Not a person.');
       return none;
     }
-    const key = this.keysOf(name).some((one) => {
-      return one.role === 'mfa';
-    });
+    // ANY KEY IS A HELD SECOND FACTOR (#1135, rcbj's decision 3) where the
+    // realm lets a key be one: a key has no role, and every key may answer
+    // the second step.
+    const key = this.keyUses(this.keysOf(name).length).mfa > 0;
     const totp = !!this.totpOf(name);
     const requirement = this.mfaRequirementFor(name);
     const holds = key || totp;
@@ -3088,6 +3093,10 @@ class Credentials {
       try {
         const parsed = JSON.parse(value);
         if (parsed && parsed.credentialId && parsed.publicKeyJwk) {
+          // A ROLE STORED BEFORE #1135 is dropped here, the one place a
+          // value becomes a key, so no reader can decide on it and the next
+          // rewrite of the attribute leaves it off.
+          delete parsed.role;
           out.push(parsed);
         }
       } catch (e) {
@@ -3346,9 +3355,9 @@ class Credentials {
   static withoutUsername(key: any): { ready: boolean; text: string } {
     helpers.log.debug("Entering Credentials.withoutUsername().");
     const one = key || {};
-    const out = one.role !== 'primary'
-      ? { ready: false, text: 'no — it is a second step after your password' }
-      : (!Credentials.isUserHandle(one.userHandle)
+    // Every key may sign its owner in on its own since #1135, so what is
+    // left to say is whether the browser can find it.
+    const out = !Credentials.isUserHandle(one.userHandle)
         ? { ready: false, text: 'no — it was created before passkeys could ' +
             'sign in without a username; create it again to use it that way' }
         : (one.discoverable === false
@@ -3356,7 +3365,7 @@ class Credentials {
               'authenticator, so the browser cannot find it by itself' }
           : { ready: true, text: one.discoverable === true ? 'yes'
               : 'probably — the browser did not say whether it is stored on ' +
-                'the authenticator' }));
+                'the authenticator' });
     helpers.log.debug("Leaving Credentials.withoutUsername(). " + out.ready);
     return out;
   }
@@ -3568,35 +3577,23 @@ class Credentials {
    *
    * @param username - the person
    * @param credential - what the ceremony produced
-   * @param role - `primary` or `mfa`
    * @param opts - `upgrade` (#939): `{ credentialId, mode }`, the classical
    *   passkey this key upgrades and what the write does to it — `replace`
    *   puts this key in its place, `alongside` keeps it beside this one
-   * @returns `{ ok: true, username, role, … }`, or a refusal
+   * @returns `{ ok: true, username, credentialId, … }`, or a refusal
    */
-  addKey(username, credential, role, opts?) {
+  addKey(username, credential, opts?) {
     const { log, backupCodes, webauthnPolicy, errorCodes } = this.deps;
-    const { ROLES } = Credentials;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.addKey().");
     const name = String(username || '').trim();
-    log.debug('Entering Credentials.addKey(). username=' + name + ', role=' +
-              role);
+    log.debug('Entering Credentials.addKey(). username=' + name);
     if (!directory || typeof directory.writeWebauthn !== 'function') {
       log.debug("Leaving Credentials.addKey().");
       return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
                                    'store is installed, so a security key ' +
                                    'cannot be recorded.'] });
-    }
-    if (ROLES.indexOf(String(role)) < 0) {
-      log.debug("Leaving Credentials.addKey().");
-      return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key ' +
-                                   'is either "primary" (it signs somebody ' +
-                                   'in on its own) or "mfa" (it is a second ' +
-                                   'factor ' +
-                                   'beside a password). ' +
-                                   '"' + role + '" is neither.'] });
     }
     // ---------------------------------------------------------------------
     // THE `webauthn.*` POLICY, CHECKED AT THE ONE PLACE A KEY IS WRITTEN
@@ -3610,21 +3607,19 @@ class Credentials {
     // only function that puts a key on an entry, so a policy enforced here is a
     // policy enforced everywhere.
     //
-    // **IT REFUSES AN ENROLMENT AND NEVER AN AUTHENTICATION.** A key already on
-    // the entry goes on working when the role that produced it is switched off,
-    // for `webauthn.enabled`'s reason — an operator moving a knob must not lock
-    // somebody out of their own account, which for a `primary` key would be the
-    // whole account.
-    const allowed = webauthnPolicy.roleAllowed(role);
+    // **WHAT IT ASKS IS WHETHER A KEY MAY BE ENROLLED AT ALL** (#1135): a
+    // key has no role, so how it is used is asked at the sign-in
+    // (`webauthnPolicy.useAllowed()`), and here only whether WebAuthn is on
+    // and the realm accepts a key in at least one use.
+    const allowed = webauthnPolicy.enrolmentAllowed();
     if (!allowed.ok) {
-      log.info('credentials: a "' + role +
-               '" security key was NOT enrolled for ' +
+      log.info('credentials: a passkey was NOT enrolled for ' +
                name + '. ' + allowed.why);
       log.debug("Leaving Credentials.addKey().");
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
     }
-    // THE LANE (#643), asked here for the role's reason: the enforcement is
+    // THE LANE (#643), asked here for the same reason: the enforcement is
     // at the one writer, so a switch turned off while somebody was touching
     // their key refuses the post-quantum one here whatever door began it. A
     // key written with no lane is classical, as every key before #643 is.
@@ -3640,8 +3635,8 @@ class Credentials {
     // A SYNCED PASSKEY WHERE THE REALM TAKES ONLY DEVICE-BOUND ONES (#528):
     // the passkey policy's `backupEligibility`, asked of the authenticator
     // data's BE flag, which both ceremony doors put on the record. Here for
-    // the role check's reason — the one writer — and ahead of the cap, so the
-    // answer names the rule rather than a count.
+    // the enrolment check's reason — the one writer — and ahead of the cap,
+    // so the answer names the rule rather than a count.
     // THE PERSON'S PASSKEY POLICY (#535) where the door selected none.
     if (!this.deps.passkeyPolicy.hasSelection()) {
       this.deps.passkeyPolicy.select(name, '');
@@ -3795,7 +3790,6 @@ class Credentials {
       credentialId: String(credential.credentialId),
       publicKeyJwk: credential.publicKeyJwk,
       signCount: Number(credential.signCount || 0),
-      role: String(role),
       enrolledAt: Date.now(),
       // A label so a person with three keys can tell them apart on the portal.
       // Theirs to set (`renameKey()`); the default is the provider's name or
@@ -3946,8 +3940,7 @@ class Credentials {
           'called "' + name + '" ' +
                                    'in this realm\'s directory.'] });
     }
-    log.info('credentials: a security key was enrolled for ' + name +
-             ' as a ' + role + ' credential.');
+    log.info('credentials: a passkey was enrolled for ' + name + '.');
     // A ROW THIS ONE MAY HAVE REPLACED ON ITS AUTHENTICATOR (#1101). Not
     // for an upgrade, whose write already replaced or marked the old row.
     if (!upgrading) {
@@ -3978,38 +3971,36 @@ class Credentials {
       }
     }
     // ---------------------------------------------------------------------
-    // THE RECOVERY CODES, AND **ONLY FOR AN `mfa` KEY** (2026-09-10).
+    // THE RECOVERY CODES ARE ADVISED, NEVER ISSUED (2026-09-10, 2026-09-11).
     //
-    // The other call site is `confirmTotpEnrolment()`, and the condition here
-    // is the whole difference between them: a `primary` key is a way IN rather
-    // than a second factor, and issuing recovery codes for one would hand
-    // somebody a list of strings that no screen in this service ever asks for.
-    // The recovery screen stands in for a SECOND factor; an account whose only
-    // credential is a passwordless key has no second-factor step to stand in
-    // for, and its lost-key story is an operator and an activation link.
+    // The other call site is `confirmTotpEnrolment()`. The recovery screen
+    // stands in for a SECOND factor, so the advice is for a key that can be
+    // one: since #1135 every key may answer the second step where the realm
+    // allows a key there (`useAllowed('mfa')`), and it is that step only for
+    // a person with a password to be the first. (Until #1135 the condition was
+    // the key's `mfa` role; a `primary` key was a way IN, and its lost-key
+    // story an operator and an activation link, which it still is for a
+    // person with no password.)
     //
-    // (Until 2026-09-11 the issue here could not fail the enrolment, and did
-    // nothing when a set already existed, so enrolling a fourth key left the
-    // list issued with the first one working. The `mfa`-only condition above
-    // now decides the ADVICE below instead.)
-    // **NO SET IS ISSUED HERE ANY MORE (2026-09-11)**, and what replaces it is
-    // an ADVICE flag rather than silence. The header on the recovery-codes
+    // **NO SET IS ISSUED HERE (2026-09-11)**, and what replaces it is an
+    // ADVICE flag rather than silence. The header on the recovery-codes
     // section carries the argument and what it costs; the short version is that
     // a set is hashed now, and a hash can only be made while the code is in the
     // clear — so issuing one here would store a credential the person never
     // saw. `recoveryAdvised` is what `/portal/mfa` draws its standing prompt
     // from.
-    const advised = role === 'mfa' && backupCodes.offered() &&
+    const advised = webauthnPolicy.useAllowed('mfa').ok &&
+                    this.hasPassword(name) && backupCodes.offered() &&
                     !this.backupCodesOf(name);
     log.debug("Leaving Credentials.addKey().");
-    return { ok: true, username: name, role: role,
+    return { ok: true, username: name,
              credentialId: record.credentialId,
              recoveryAdvised: advised,
              recoveryNote: advised
-               ? 'This key is a SECOND factor, and you hold no recovery ' +
-                 'codes. Generate a set from your account page before you ' +
-                 'need it — this service will not issue one for you, and a ' +
-                 'set is shown once.'
+               ? 'This passkey can be your SECOND factor, and you hold no ' +
+                 'recovery codes. Generate a set from your account page ' +
+                 'before you need it — this service will not issue one for ' +
+                 'you, and a set is shown once.'
                : '' };
   }
 
@@ -4083,12 +4074,11 @@ class Credentials {
    *
    * @param username - the person
    * @param credential - what the ceremony produced
-   * @param role - `primary` or `mfa`
    * @param opts - as `addKey()`'s: `upgrade` (#939)
    * @returns a promise of `addKey()`'s answer, or a refusal (`duplicate`,
    *   `store`)
    */
-  addKeyClaimed(username, credential, role, opts?) {
+  addKeyClaimed(username, credential, opts?) {
     const { log, realms, errorCodes, claims } = this.deps;
     const {
       WEBAUTHN_REGISTRATION_SCOPE,
@@ -4100,7 +4090,7 @@ class Credentials {
     if (!credentialId) {
       log.debug("Leaving Credentials.addKeyClaimed(). No id to claim; " +
                 "addKey() decides.");
-      return Promise.resolve(this.addKey(username, credential, role, opts));
+      return Promise.resolve(this.addKey(username, credential, opts));
     }
     const name = String(username || '').trim();
     log.debug("Leaving Credentials.addKeyClaimed(). Claiming the " +
@@ -4128,7 +4118,7 @@ class Credentials {
           errors: ['The security key could not be registered just now. Try ' +
                    'again.'] });
       }
-      const stored = this.addKey(username, credential, role, opts);
+      const stored = this.addKey(username, credential, opts);
       if (!stored.ok) {
         claims.release(claimed.handle);
       }
@@ -4957,52 +4947,43 @@ class Credentials {
                                    name + '.'] });
     }
     // ---------------------------------------------------------------------
-    // **REFUSE TO REMOVE THE LAST WAY IN — AND AN `mfa` KEY IS NOT ONE.**
+    // **REFUSE TO REMOVE THE LAST WAY IN.**
     //
-    // A person whose only credential is a PRIMARY key would be locked out by
-    // their own click, and an identity provider that lets somebody do that has
-    // a support queue rather than a security control. That much is unchanged.
+    // A person whose only credential is a key would be locked out by their own
+    // click, and an identity provider that lets somebody do that has a support
+    // queue rather than a security control.
     //
-    // **THE ROLE OF THE KEY BEING REMOVED WAS NOT LOOKED AT, AND THAT WAS A
-    // REAL REFUSAL IN THE ONE CASE THE BUTTON EXISTS FOR (2026-09-10).** The
-    // guard asked only *will they have a way in afterwards*, which is the right
-    // question — and then answered it about a key that was never a way in.
-    // Removing a SECOND FACTOR cannot reduce the number of ways in, because it
-    // was not one: `mechanismsFor().usable` counts a password and `primary`
-    // keys and nothing else, which is the same table this function is reasoning
-    // about. So somebody with an `mfa` key and no password — the ordinary state
-    // in development mode, where no password is ever CHECKED and most people
-    // therefore have none SET — could not have that key cleared, and the
-    // refusal said *that is the only way they can sign in* about a credential
-    // that could not sign them in at all.
-    //
-    // It surfaced through the door it costs most at: `POST
-    // /admin-api/users/clear-key`, which `admin-ui/CLAUDE.md` calls the way
-    // back for somebody who lost their key.
-    // `tests/protocol/sts_webauthn_second_factor.js` found it in its first run,
-    // in the section after the one that made keys reachable at all.
+    // **SINCE #1135 EVERY KEY IS A WAY IN WHERE THE REALM LETS A KEY SIGN
+    // SOMEBODY IN ON ITS OWN** (`useAllowed('primary')`), because a key has no
+    // role. Until then only a `primary` key was, and removing an `mfa` key
+    // could not reduce the ways in (2026-09-10, when the guard asked about a
+    // second factor as though it were one, and `POST
+    // /admin-api/users/clear-key` could not clear it). Where the realm does
+    // NOT let a key sign anybody in on its own, no key is a way in, and the
+    // removal is never refused here — the same reasoning, asked of the realm
+    // rather than of the key.
     //
     // **THE PERSON MAY STILL BE UNABLE TO SIGN IN AFTERWARDS**, and that is not
-    // this function's to fix: an account holding only a second factor is one
-    // nobody can sign in to before the removal and after it. `usable: false` is
-    // what reports that, and an activation link is what ends it.
+    // this function's to fix: `usable: false` is what reports that, and an
+    // activation link is what ends it.
     // ---------------------------------------------------------------------
     const removed = keys.filter((one) => {
       return one.credentialId === String(credentialId);
     })[0];
     // A ROW MARKED AS POSSIBLY REPLACED ON ITS AUTHENTICATOR (#1101) is not
     // counted as a way in: the credential it describes may be gone.
-    const stillHasPrimary =
+    const keyIsWayIn = this.deps.webauthnPolicy.useAllowed('primary').ok;
+    const stillHasKey =
         kept.some((one) => {
-          return one.role === 'primary' && !one.possiblyReplacedBy;
+          return !one.possiblyReplacedBy;
         });
-    if (removed && removed.role === 'primary' &&
-        !this.hasPassword(name) && !stillHasPrimary) {
+    if (removed && keyIsWayIn &&
+        !this.hasPassword(name) && !stillHasKey) {
       log.debug("Leaving Credentials.removeKey().");
       return coded('STS-AUTHN-0070',
                    { ok: false, errors: ['That is the only way ' + name + ' ' +
                                    'can sign in — there is no password and ' +
-                                   'no other primary security key. Set a ' +
+                                   'no other passkey. Set a ' +
                                    'password first, or enrol another key.'] });
     }
     try {
@@ -6891,12 +6872,9 @@ class Credentials {
     log.debug('Entering Credentials.interpretValues().');
     const values = raw || {};
     const keys = this.keysFromValues(values.webauthn || [], name);
-    const primaryKeys = keys.filter((one) => {
-      return one.role === 'primary';
-    }).length;
-    const mfaKeys = keys.filter((one) => {
-      return one.role === 'mfa';
-    }).length;
+    const uses = this.keyUses(keys.length);
+    const primaryKeys = uses.primary;
+    const mfaKeys = uses.mfa;
     const authenticator = this.totpStatusFromValue(values.totp || '', name);
     const totpEnrolled = !!authenticator;
     let mailHeld = '';
@@ -8923,9 +8901,9 @@ class Credentials {
     log.debug('Entering Credentials.passwordOnlyDoors().');
     const name = String(username || '').trim();
     const person = !!name && this.isPersonEntry(name);
-    const holds = person && (this.keysOf(name).some((one) => {
-      return one.role === 'mfa';
-    }) || !!this.totpOf(name));
+    // Any key, where the realm lets a key be a second factor (#1135).
+    const holds = person &&
+      (this.keyUses(this.keysOf(name).length).mfa > 0 || !!this.totpOf(name));
     const requirement = person ? this.mfaRequirementFor(name)
       : { required: false, byUser: false, byRealm: false };
     const secondFactor = holds || requirement.required;
@@ -9077,8 +9055,35 @@ class Credentials {
     return out;
   }
 
+  // WHAT A PERSON'S KEYS COUNT AS (#1135): a key has no role, so each one
+  // the person holds counts as a way IN where the realm lets a key sign
+  // somebody in on its own, and as a SECOND FACTOR where it lets a key be
+  // one — `webauthnPolicy.useAllowed()`, the same question the sign-in asks.
+  // `primaryKeys` and `mfaKeys` keep their names on the facts they always
+  // fed (`usable`, `mfaRequired`, `secondFactor`), and are now the same keys
+  // counted twice, or once, or not at all, as the realm decides.
   /**
-   * Returns what a person holds to sign in with: password, keys by role, the
+   * Counts a person's keys by the uses this realm accepts for a key.
+   *
+   * @param held - how many keys the person holds
+   * @returns `{ primary, mfa }`: the keys usable passwordless, and as a
+   *   second factor
+   */
+  private keyUses(held: number): { primary: number; mfa: number } {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug('Entering Credentials.keyUses().');
+    const n = held > 0 ? held : 0;
+    const out = {
+      primary: n && webauthnPolicy.useAllowed('primary').ok ? n : 0,
+      mfa: n && webauthnPolicy.useAllowed('mfa').ok ? n : 0
+    };
+    log.debug('Leaving Credentials.keyUses(). primary=' + out.primary +
+              ', mfa=' + out.mfa);
+    return out;
+  }
+
+  /**
+   * Returns what a person holds to sign in with: password, keys by use, the
    * authenticator app and recovery codes.
    *
    * @param username - the person
@@ -9090,9 +9095,7 @@ class Credentials {
     const name = String(username || '').trim();
     const keys = this.keysOf(name);
     const password = this.hasPassword(name);
-    const primaryKeys =
-        keys.filter((one) => { return one.role === 'primary'; });
-    const mfaKeys = keys.filter((one) => { return one.role === 'mfa'; });
+    const uses = this.keyUses(keys.length);
     // THE ENROLMENT WITHOUT ITS SECRET (#352): nothing below reads the
     // secret, only whether it opens, and `totpStatusOf()` remembers that per
     // sealed text rather than unsealing on every call — this is asked for
@@ -9111,8 +9114,8 @@ class Credentials {
     return {
       username: name,
       password: password,
-      primaryKeys: primaryKeys.length,
-      mfaKeys: mfaKeys.length,
+      primaryKeys: uses.primary,
+      mfaKeys: uses.mfa,
       keys: keys,
       // The authenticator app, reported as three separate facts because they
       // lead to three different sentences on a page: enrolled, when, and
@@ -9132,7 +9135,7 @@ class Credentials {
       // Can they get in at all? UNCHANGED, and see the header: a second factor
       // has never been a way in on its own and an authenticator app is not one
       // either.
-      usable: password || primaryKeys.length > 0,
+      usable: password || uses.primary > 0,
       // THE RECOVERY CODES (2026-09-10), reported as a STATUS OBJECT and never
       // as the codes themselves. `backupCodeStatus()` is what fills it and its
       // header argues the split: one function answers *how many are left* and a
@@ -9160,7 +9163,7 @@ class Credentials {
       // so the sign-in screen demands it as well — which is what makes the flag
       // mean anything. **The recovery codes are deliberately not on this line**
       // — see the field above.
-      mfaRequired: mfaKeys.length > 0 || totpEnrolled || !!mailFactor.held,
+      mfaRequired: uses.mfa > 0 || totpEnrolled || !!mailFactor.held,
       // The emailed factor (#64): `held` is `code`, `link` or '', and the
       // rest says why it is not held where it is opted into.
       mailFactor: mailFactor,
@@ -9172,7 +9175,7 @@ class Credentials {
       // The emailed factor comes LAST (#64): it is the weakest of the three
       // (NIST SP 800-63B-4 section 3.1.3.1), so a person holding another is
       // asked for that, and offered the email as a way round it.
-      secondFactor: mfaKeys.length > 0 ? 'webauthn' :
+      secondFactor: uses.mfa > 0 ? 'webauthn' :
                     (totpEnrolled ? 'totp' :
                      (mailFactor.held ? 'email-' + mailFactor.held : '')),
       // Has this person finished setting themselves up? What product mode asks
@@ -9201,7 +9204,7 @@ class Credentials {
       // holding it on paper, and telling them to replace it would be this
       // service inventing urgency about a credential that is fine.
       recoveryAdvised: backupCodes.offered() &&
-                       (mfaKeys.length > 0 || totpEnrolled) &&
+                       (uses.mfa > 0 || totpEnrolled) &&
                        !this.backupCodesOf(name),
       // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
       // hold one — by an administrator on their entry, or by the realm. It is
@@ -9303,8 +9306,8 @@ class Credentials {
   // STEP ONE: MINT A CHALLENGE AND SAY WHAT THE CEREMONY WILL BE.
   //
   // It REFUSES here rather than at the end wherever it can — the mechanism
-  // being off, the role not allowed, the cap reached, the person not existing
-  // in product mode — because a person who has touched their key and then been
+  // being off, no use of a key allowed, the cap reached, the person not
+  // existing in product mode — because a person who has touched their key and then been
   // told the realm does not allow it has spent a ceremony on a refusal that was
   // knowable before it started. `addKey()` makes the same checks at the end and
   // that is not duplication: this one is a COURTESY and that one is the
@@ -9315,7 +9318,7 @@ class Credentials {
    * be, refusing anything knowable before the person touches their key.
    *
    * @param username - the person
-   * @param opts - `role` (`mfa` by default), `kind`, `lane` (#643:
+   * @param opts - `kind`, `lane` (#643:
    *   `classical` by default, or `pqc`), and `classicalOnly` (#944: the
    *   classical retry of a registration that failed on the device)
    * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
@@ -9323,28 +9326,21 @@ class Credentials {
   beginKeyEnrolment(username, opts?) {
     const { log, mode, webauthnPolicy, errorCodes,
       crypto } = this.deps;
-    const { ROLES } = Credentials;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.beginKeyEnrolment().");
     const name = String(username || '').trim();
     log.debug('Entering Credentials.beginKeyEnrolment(). username=' + name);
     const options = opts || {};
-    const role = String(options.role || 'mfa');
-    if (ROLES.indexOf(role) < 0) {
-      log.debug('Leaving Credentials.beginKeyEnrolment(). Not a role.');
-      return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key ' +
-                                   'is either "primary" or "mfa". ' +
-                                   '"' + role + '" is neither.'] });
-    }
-    const allowed = webauthnPolicy.roleAllowed(role);
+    // NO ROLE IS ASKED (#1135): whether a key may be enrolled at all.
+    const allowed = webauthnPolicy.enrolmentAllowed();
     if (!allowed.ok) {
-      log.debug('Leaving Credentials.beginKeyEnrolment(). The role is not ' +
-                'allowed here.');
+      log.debug('Leaving Credentials.beginKeyEnrolment(). No key may be ' +
+                'enrolled here.');
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
     }
-    // THE LANE (#643), chosen now and carried like the role: `classical`
+    // THE LANE (#643), chosen now and carried to the finish: `classical`
     // where none is named, which is every enrolment while the switch is off.
     // Refused here as a courtesy and again at the write (`addKey()`). While
     // the passkey policy requires a post-quantum passkey at registration
@@ -9426,7 +9422,7 @@ class Credentials {
     this.sweepPendingKeys();
     // WHICH KIND OF AUTHENTICATOR WAS ASKED FOR (2026-09-26): `passkey` or
     // `security-key` since #470 — which of `/portal/keys`' two calls to
-    // action was pressed — carried like the role so the
+    // action was pressed — carried to the finish so the
     // armed ceremony asks for what was chosen. A kind the policy does not
     // offer is dropped rather than refused — `webauthn.authenticatorAttachment`
     // decides the ceremony either way (`creationOptions()`), so it is a
@@ -9439,7 +9435,6 @@ class Credentials {
       id: crypto.randomBytes(24).toString('base64url'),
       username: name,
       challenge: crypto.randomBytes(32).toString('base64url'),
-      role: role,
       kind: kind,
       lane: lane,
       // The classical retry (#944): the algorithms less ML-DSA — asked for,
@@ -9462,7 +9457,7 @@ class Credentials {
       // its credential does not replace the classical one on the device.
       userHandle: this.userHandleOf(name, { mint: true, lane: lane }) ||
                   this.newUserHandle(),
-      // EVERY key they hold IN THIS LANE (#643), of either role: the point is
+      // EVERY key they hold IN THIS LANE (#643): the point is
       // *this authenticator is already registered here*, which is a fact about
       // the device rather than about what the credential is for — and, since
       // the lanes, about the handle it was registered under: a device holding
@@ -9478,15 +9473,15 @@ class Credentials {
       expires: Date.now() + this.keyEnrolmentTtlMs()
     };
     pendingKeys.set(name.toLowerCase(), record);
-    log.info('credentials: ' + name + ' started enrolling a "' + role +
-             '" security key' + (kind ? ' (' + kind + ')' : '') +
+    log.info('credentials: ' + name + ' started enrolling a ' +
+             'passkey' + (kind ? ' (' + kind + ')' : '') +
              (lane !== 'classical' ? ' in the ' + lane + ' lane' : '') + '. ' +
              record.exclude.length +
              ' authenticator(s) already enrolled are excluded.');
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, kind: kind, lane: lane, classicalOnly: classicalOnly,
+             kind: kind, lane: lane, classicalOnly: classicalOnly,
              // What a client rule did to the offer (#1112), or null.
              clientRule: clientRule,
              exclude: record.exclude.slice(),
@@ -9562,7 +9557,6 @@ class Credentials {
         })[0] || null : null;
       webauthnCeremonies.record({
         ceremony: 'registration', door: door, username: name,
-        role: String((answer && answer.role) || (held && held.role) || ''),
         lane: String((held && held.lane) || 'classical'),
         outcome: answer && answer.ok ? 'success' : 'refused',
         errorCode: answer && answer.ok ? ''
@@ -9748,8 +9742,8 @@ class Credentials {
       return Credentials.keyProviderFor(verdict.aaguid,
         attested.attestation).then((named) => {
       return this.addKeyClaimed(name,
-        Credentials.registeredKey(verdict, credential, attested, named, held),
-        held.role).then((stored) => {
+        Credentials.registeredKey(verdict, credential, attested, named,
+                                  held)).then((stored) => {
         // THE DOOR'S EPILOGUE (#964), not keyEnrolmentWritten here: an
         // administrator's enrolment must keep the person's pending record
         // and answer lane and enrolledBy. Self-enrolment passes that
@@ -9806,7 +9800,7 @@ class Credentials {
     log.debug("Entering Credentials.keyEnrolmentWritten().");
     if (!stored.ok) {
       // NOT ABANDONED. The ceremony was good and the write was refused — the
-      // cap reached in another tab, the role turned off while they were
+      // cap reached in another tab, passkeys turned off while they were
       // touching the key — so the pending record stays and the page can say
       // what happened without making them start over for a reason that may have
       // gone away.
@@ -9816,10 +9810,10 @@ class Credentials {
                    { ok: false, reason: 'refused', errors: stored.errors });
     }
     this.abandonKeyEnrolment(name);
-    log.info('credentials: ' + name + ' enrolled a "' + held.role +
+    log.info('credentials: ' + name + ' enrolled a "' + held.lane +
              '" security key. They now hold ' + this.keysOf(name).length + '.');
     log.debug('Leaving Credentials.keyEnrolmentWritten(). Enrolled.');
-    return { ok: true, username: name, role: held.role,
+    return { ok: true, username: name,
              credentialId: stored.credentialId,
              held: this.keysOf(name).length };
   }
@@ -9913,7 +9907,7 @@ class Credentials {
    * Decides whether one of a person's keys may be upgraded to an ML-DSA
    * one (#939), by everything knowable without the issuance policy: the
    * realm offers it, the key is theirs and classical, it has no
-   * post-quantum successor still held, its role may still be enrolled,
+   * post-quantum successor still held, a key may still be enrolled,
    * and — beside it — the cap leaves room.
    *
    * @param username - the person
@@ -9958,12 +9952,12 @@ class Credentials {
                         'post-quantum passkey is beside it. Remove that one ' +
                         'first to upgrade again.'] });
     }
-    const role = webauthnPolicy.roleAllowed(key.role);
-    if (!role.ok) {
-      log.debug("Leaving Credentials.keyUpgradeRefusal(). The role is not " +
+    const enrolment = webauthnPolicy.enrolmentAllowed();
+    if (!enrolment.ok) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). No key may be " +
                 "allowed.");
-      return coded(errorCodes.codeOf(role) || 'STS-AUTHN-0044',
-                   { ok: false, reason: 'upgrade', errors: [role.why] });
+      return coded(errorCodes.codeOf(enrolment) || 'STS-AUTHN-0044',
+                   { ok: false, reason: 'upgrade', errors: [enrolment.why] });
     }
     if ((mode || webauthnPolicy.upgradeMode()) === 'alongside' &&
         held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
@@ -10072,7 +10066,6 @@ class Credentials {
       // THE PROOF'S CHALLENGE, an assertion's, replaced by the
       // registration's once the proof is in.
       challenge: crypto.randomBytes(32).toString('base64url'),
-      role: String(key.role || 'mfa'),
       // The kind of authenticator the classical key is on, so the
       // registration asks for the same kind (`creationOptions()`).
       kind: Credentials.keyGroup(key) === 'security-key' ? 'security-key'
@@ -10099,7 +10092,7 @@ class Credentials {
               "challenge is minted and held.");
     return { ok: true, upgradeId: record.id, challenge: record.challenge,
              credentialId: record.upgrade.credentialId, mode: mode,
-             lane: record.lane, role: record.role,
+             lane: record.lane,
              previousAlgorithm: previousAlgorithm,
              expiresAt: new Date(record.expires).toISOString() };
   }
@@ -10167,7 +10160,6 @@ class Credentials {
       log.debug("Entering proveKeyUpgrade() note().");
       webauthnCeremonies.record({
         ceremony: 'assertion', door: 'upgrade', username: name,
-        role: String(held.role || ''),
         lane: key ? Credentials.keyLane(key) : 'classical',
         outcome: answer && answer.ok ? 'success' : 'refused',
         errorCode: answer && answer.ok ? ''
@@ -10319,7 +10311,7 @@ class Credentials {
         })[0] || null : null;
       webauthnCeremonies.record({
         ceremony: 'registration', door: 'upgrade', username: name,
-        role: String(held.role || ''), lane: String(held.lane || ''),
+        lane: String(held.lane || ''),
         outcome: answer && answer.ok ? 'success' : 'refused',
         errorCode: answer && answer.ok ? ''
           : String(errorCodes.codeOf(answer) ||
@@ -10419,8 +10411,8 @@ class Credentials {
         return this.addKeyClaimed(name,
           Credentials.registeredKey(verdict, credential, attested, named,
                                     held),
-          held.role, { upgrade: { credentialId: held.upgrade.credentialId,
-                                  mode: held.upgrade.mode } });
+          { upgrade: { credentialId: held.upgrade.credentialId,
+                       mode: held.upgrade.mode } });
       }).then((stored) => {
         return this.keyUpgradeWritten(name, held, stored);
       });
@@ -10456,7 +10448,7 @@ class Credentials {
              Credentials.keyAlgorithm(now).name + ' (' + held.upgrade.mode +
              ').');
     log.debug("Leaving Credentials.keyUpgradeWritten(). Upgraded.");
-    return { ok: true, username: name, role: held.role,
+    return { ok: true, username: name,
              credentialId: stored.credentialId,
              previousCredentialId: held.upgrade.credentialId,
              previousAlgorithm: held.upgrade.previousAlgorithm,
@@ -10580,13 +10572,12 @@ class Credentials {
    *
    * @param username - the person the passkey is for
    * @param admin - `{ username, sub }`: the administrator
-   * @param opts - `role` (`mfa` by default), `kind` and `lane`
-   * @returns `{ ok: true, enrolmentId, challenge, role, kind, lane,
+   * @param opts - `kind` and `lane`
+   * @returns `{ ok: true, enrolmentId, challenge, kind, lane,
    *   userHandle, exclude, algorithms, expiresAt }`, or a refusal
    */
   beginAdminKeyEnrolment(username, admin, opts?) {
     const { log, webauthnPolicy, errorCodes, crypto } = this.deps;
-    const { ROLES } = Credentials;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.beginAdminKeyEnrolment().");
@@ -10626,17 +10617,11 @@ class Credentials {
       return coded('STS-AUTHN-0440', { ok: false, reason: 'admin-enrolment',
                errors: [Credentials.ADMIN_ENROLMENT_OFF] });
     }
-    const role = String(options.role || 'mfa');
-    if (ROLES.indexOf(role) < 0) {
-      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Not a role.");
-      return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key ' +
-                                   'is either "primary" or "mfa". ' +
-                                   '"' + role + '" is neither.'] });
-    }
-    const allowed = webauthnPolicy.roleAllowed(role);
+    // NO ROLE IS ASKED (#1135): whether a key may be enrolled at all.
+    const allowed = webauthnPolicy.enrolmentAllowed();
     if (!allowed.ok) {
-      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The role is " +
-                "not allowed here.");
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No key may " +
+                "be enrolled here.");
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
     }
@@ -10668,7 +10653,6 @@ class Credentials {
       username: name,
       admin: by.username,
       challenge: crypto.randomBytes(32).toString('base64url'),
-      role: role,
       kind: kind,
       lane: lane,
       label: '',
@@ -10692,15 +10676,15 @@ class Credentials {
                                      Credentials.ADMIN_ENROLMENT_TTL_MS)
     };
     pendingAdminKeys.set(adminEnrolmentKey(by.username, name), record);
-    log.info('credentials: ' + by.username + ' started enrolling a "' +
-             role + '" passkey for ' + name +
+    log.info('credentials: ' + by.username + ' started enrolling a ' +
+             'passkey for ' + name +
              (lane !== 'classical' ? ' in the ' + lane + ' lane' : '') +
              ', in their own browser. ' + record.exclude.length +
              ' authenticator(s) already enrolled are excluded.');
     log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Challenge " +
               "minted and held.");
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, kind: kind, lane: lane,
+             kind: kind, lane: lane,
              userHandle: record.userHandle, exclude: record.exclude.slice(),
              algorithms: record.offered.slice(),
              expiresAt: new Date(record.expires).toISOString() };
@@ -10761,7 +10745,7 @@ class Credentials {
    * @param enrolmentId - the pending enrolment's id
    * @param credential - what the browser posted
    * @param opts - `origin` and `rpId`, what the browser was talking to
-   * @returns a promise of `{ ok: true, username, role, credentialId, held,
+   * @returns a promise of `{ ok: true, username, credentialId, held,
    *   lane, enrolledBy }`, or a refusal
    */
   confirmAdminKeyEnrolment(username, admin, enrolmentId, credential, opts?) {
@@ -10771,8 +10755,8 @@ class Credentials {
     const by = Credentials.enrolledByOf(admin);
     const held = by ? this.pendingAdminKeyEnrolment(by.username, name) : null;
     // THE CEREMONY'S ROW (#943), however it ends, at the administrator's
-    // door: the person is the actor, as for every ceremony row, and the
-    // role is the key's — who ran it is the door's to say, and
+    // door: the person is the actor, as for every ceremony row — who ran
+    // it is the door's to say, and
     // `admin.passkey.enrolled` names the administrator.
     const note = (answer, threw?) => {
       log.debug("Entering confirmAdminKeyEnrolment() note().");
@@ -10783,7 +10767,6 @@ class Credentials {
         })[0] || null : null;
       webauthnCeremonies.record({
         ceremony: 'registration', door: 'admin-enrolment', username: name,
-        role: String((held && held.role) || ''),
         lane: String((held && held.lane) || 'classical'),
         outcome: answer && answer.ok ? 'success' : 'refused',
         errorCode: answer && answer.ok ? ''
@@ -10890,11 +10873,11 @@ class Credentials {
                    { ok: false, reason: stored.reason || 'refused',
                      errors: stored.errors });
     }
-    log.info('credentials: ' + held.enrolledBy.username + ' enrolled a "' +
-             held.role + '" passkey for ' + name + '. They now hold ' +
+    log.info('credentials: ' + held.enrolledBy.username + ' enrolled a ' +
+             'passkey for ' + name + '. They now hold ' +
              this.keysOf(name).length + '.');
     log.debug("Leaving Credentials.adminKeyEnrolmentWritten(). Enrolled.");
-    return { ok: true, username: name, role: held.role,
+    return { ok: true, username: name,
              credentialId: stored.credentialId, lane: held.lane,
              enrolledBy: held.enrolledBy,
              held: this.keysOf(name).length };
@@ -11512,7 +11495,7 @@ class Credentials {
   // a restart agree on it.
   // -------------------------------------------------------------------------
   /**
-   * Tells whether the person holds a passkey of either role (#724): what a
+   * Tells whether the person holds a passkey (#724): what a
    * recovery would be weaker than.
    *
    * @param username - the person
@@ -11523,11 +11506,8 @@ class Credentials {
     log.debug("Entering Credentials.holdsPasskey().");
     // The keys themselves (#911), not mechanismsFor(): that is nine store
     // reads and a TOTP unseal for a yes/no asked on every second-factor
-    // step and recovery door. Same answer — a key's role is primary or mfa.
-    const out = this.keysOf(String(username || '').trim())
-      .some(function (one) {
-        return one.role === 'primary' || one.role === 'mfa';
-      });
+    // step and recovery door. Any key, since a key has no role (#1135).
+    const out = this.keysOf(String(username || '').trim()).length > 0;
     log.debug("Leaving Credentials.holdsPasskey(). " + out);
     return out;
   }
@@ -12281,13 +12261,17 @@ class Credentials {
     const { log } = this.deps;
     log.debug("Entering Credentials.keySummary().");
     log.debug("Leaving Credentials.keySummary().");
-    return { credentialId: one.credentialId, role: one.role,
+    return { credentialId: one.credentialId,
              label: one.label || '', enrolledAt: one.enrolledAt || 0 };
   }
 
+  // AN ADMINISTRATOR'S "DISABLE PASSWORDLESS SIGN-IN" (2026-09-13), which
+  // since #1135 removes every key the person holds: a key has no role, so
+  // the keys that signed them in on their own are all of them. The name
+  // stays the operation's, which the console and `/admin-api` call it by.
   /**
-   * Removes every passwordless security key a person holds, refusing where
-   * that would leave them unable to sign in.
+   * Removes every passkey a person holds, refusing where that would leave
+   * them unable to sign in.
    *
    * @param username - the person
    * @returns `{ ok: true, username, … }`, or a refusal
@@ -12304,41 +12288,35 @@ class Credentials {
           'store is installed.'] });
     }
     const keys = this.keysOf(name);
-    const primary = keys.filter((one) => {
-      return one.role === 'primary';
-    });
+    const primary = keys;
     if (!primary.length) {
       log.debug("Leaving Credentials.removePrimaryKeys(). None held.");
       return coded('STS-AUTHN-0160', { ok: false, errors: [name + ' holds no ' +
-          'security key in the primary role, so there is no passwordless ' +
-          'sign-in to disable.'] });
+          'passkey, so there is no passwordless sign-in to disable.'] });
     }
-    // THE LAST WAY IN, for every primary key at once. A person with no password
-    // whose primary keys all go cannot sign in, and an operator must not do
-    // what `removeKey()` refuses the owner.
-    if (!this.hasPassword(name)) {
+    // THE LAST WAY IN, for every key at once. A person with no password
+    // whose keys all go cannot sign in, and an operator must not do what
+    // `removeKey()` refuses the owner — where a key is a way in at all.
+    if (!this.hasPassword(name) &&
+        this.deps.webauthnPolicy.useAllowed('primary').ok) {
       log.debug("Leaving Credentials.removePrimaryKeys(). They would have " +
                 "no way in.");
       return coded('STS-AUTHN-0161', { ok: false, errors: [name + ' has no ' +
-          'password, so their primary security keys are the only way they ' +
+          'password, so their passkeys are the only way they ' +
           'can sign in. Reset their password (or issue a reset link) ' +
           'first, then disable the keys.'] });
     }
     try {
-      directory.replaceWebauthn(name, keys.filter((one) => {
-        return one.role !== 'primary';
-      }).map((one) => {
-        return JSON.stringify(one);
-      }));
+      directory.replaceWebauthn(name, []);
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0163') + 'credentials: removing ' +
-                'the primary security keys of ' + name + ' threw: ' +
+                'the passkeys of ' + name + ' threw: ' +
                 e.message);
       log.debug("Leaving Credentials.removePrimaryKeys(). The store threw.");
       return coded('STS-AUTHN-0163', { ok: false, errors: ['The credential ' +
           'store refused the write: ' + e.message] });
     }
-    log.info('credentials: ' + primary.length + ' primary security key(s) of ' +
+    log.info('credentials: ' + primary.length + ' passkey(s) of ' +
              name + ' were removed; they sign in with their password now.');
     log.debug("Leaving Credentials.removePrimaryKeys(). Removed " +
               primary.length + ".");
@@ -12346,8 +12324,13 @@ class Credentials {
              removed: primary.map((one) => this.keySummary(one)) };
   }
 
+  // AN ADMINISTRATOR'S "DISABLE SECOND FACTORS": the authenticator app, the
+  // recovery codes and — since #1135, when every key may be a second factor
+  // — every passkey. Refused whole, as `removePrimaryKeys()` is, where the
+  // keys are a person's only way in.
   /**
-   * Removes every second-factor security key a person holds.
+   * Removes a person's second factors: the authenticator app, the recovery
+   * codes and every passkey.
    *
    * @param username - the person
    * @returns `{ ok: true, username, removed }`, or a refusal
@@ -12364,25 +12347,28 @@ class Credentials {
           'store is installed.'] });
     }
     const keys = this.keysOf(name);
-    const mfa = keys.filter((one) => {
-      return one.role === 'mfa';
-    });
+    const mfa = keys;
     const hadTotp = !!this.totpOf(name);
     const hadCodes = !!this.backupCodesOf(name);
     if (!mfa.length && !hadTotp && !hadCodes) {
       log.debug("Leaving Credentials.removeSecondFactors(). None held.");
       return coded('STS-AUTHN-0162', { ok: false, errors: [name + ' holds no ' +
-          'second factor — no authenticator app, no security key in the mfa ' +
-          'role and no recovery codes — so there is nothing to disable.'] });
+          'second factor — no authenticator app, no passkey ' +
+          'and no recovery codes — so there is nothing to disable.'] });
+    }
+    if (mfa.length && !this.hasPassword(name) &&
+        this.deps.webauthnPolicy.useAllowed('primary').ok) {
+      log.debug("Leaving Credentials.removeSecondFactors(). The keys are " +
+                "their only way in.");
+      return coded('STS-AUTHN-0161', { ok: false, errors: [name + ' has no ' +
+          'password, so their passkeys are the only way they can sign in. ' +
+          'Reset their password (or issue a reset link) first, then ' +
+          'disable their second factors.'] });
     }
     const done = { totp: false, keys: [], backupCodes: false };
     try {
       if (mfa.length) {
-        directory.replaceWebauthn(name, keys.filter((one) => {
-          return one.role !== 'mfa';
-        }).map((one) => {
-          return JSON.stringify(one);
-        }));
+        directory.replaceWebauthn(name, []);
         done.keys = mfa.map((one) => this.keySummary(one));
       }
       if (hadTotp) {
@@ -12541,7 +12527,7 @@ export = {
   consumeActivation: slot.forward('consumeActivation'),
   activationPending: slot.forward('activationPending'),
   WEBAUTHN_ATTRIBUTE: Credentials.WEBAUTHN_ATTRIBUTE,
-  ROLES: Credentials.ROLES,
+  USES: Credentials.USES,
   keyKind: Credentials.keyKind,
   keyAlgorithm: Credentials.keyAlgorithm,
   // #942: the report names an authenticator model by this string.
