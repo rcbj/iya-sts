@@ -418,7 +418,11 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // A certificate from an outside authority, stored
                        // on the entry it is to sign in as, and taken off
                        // (#1061).
-                       'add-certificate', 'remove-certificate'];
+                       'add-certificate', 'remove-certificate',
+                       // A message-signing certificate issued to the
+                       // person by an administrator, and revoked (#521).
+                       'issue-signing-certificate',
+                       'revoke-signing-certificate'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -588,6 +592,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'issue-software-statement',
                              'issue-tls-client-certificate',
                              'revoke-tls-client-certificate',
+                             'issue-signing-certificate',
+                             'revoke-signing-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
@@ -2708,6 +2714,163 @@ class AdminActions {
           : 'That certificate was not stored on this entry.') });
   }
 
+  // ---------------------------------------------------------------------------
+  // A MESSAGE-SIGNING CERTIFICATE (#521, rcbj 2026-10-28): what a WS-Trust
+  // requester signs its RST with, a WS-Security 1.1 signature over the SOAP
+  // Body and Timestamp. rcbj's decision: an ADMINISTRATOR issues one, to a
+  // person from their /admin/users page or to an application from the
+  // Credentials section of its /admin/applications page, and through
+  // `POST /admin-api/users/issue-signing-certificate` and
+  // `POST /admin-api/applications/issue-signing-certificate` (rule 7) — never
+  // the person on the user portal. `revoke-signing-certificate` beside each.
+  //
+  // `tls_client_certificates.js` decides everything about the certificate,
+  // with `purpose: 'message-signing'` — the realm's `message-signing` Issuing
+  // CA, digitalSignature and no extended key usage, the holder's urn:sts:
+  // name, the cap `pki.messageSigningCertificateMax` (STS-PKI-0220), and the
+  // PKCS#12 it is packaged as. The callers above have decided that the holder
+  // exists; this decides that the file password is one.
+  //
+  // **THE REPLY IS THE ONLY COPY OF THE PRIVATE KEY**, as the application
+  // TLS client certificate's is: nothing keeps it, and the password
+  // protecting the files is neither stored nor audited.
+  // ---------------------------------------------------------------------------
+  /**
+   * The message-signing certificates one holder has been issued in the
+   * ambient realm, with the cap and what an issue form needs.
+   *
+   * @param kind - 'person' or 'application'
+   * @param holder - the username or the application's identifier
+   * @returns `{ ok: true, kind, holder, implicitName, certificates, active,
+   *   max, keyAlgorithms, defaultKeyAlg, revocationReasons, passwordMin }`
+   */
+  signingCertificatesOf(kind, holder) {
+    const { log, tlsClientCertificates } = this.deps;
+    log.debug("Entering AdminActions.signingCertificatesOf(). " + kind);
+    const purpose = tlsClientCertificates.MESSAGE_SIGNING_USE_CASE;
+    const name = String(holder || '');
+    let held = [];
+    try {
+      held = tlsClientCertificates.listFor(undefined, name, kind, purpose)
+        .map(function (cert) {
+          return { serialHex: cert.serialHex, label: cert.label,
+                   subject: cert.subject, keyAlg: cert.keyAlg,
+                   notBefore: cert.notBefore, notAfter: cert.notAfter,
+                   thumbprint: cert.thumbprint, state: cert.state,
+                   reason: cert.reason, revokedAt: cert.revokedAt,
+                   certificatePem: cert.certificatePem };
+        });
+    } catch (e) {
+      // No certificate authority in this process: nothing issued, nothing
+      // held, which is what the section then says.
+      log.debug("Caught in AdminActions.signingCertificatesOf(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    log.debug("Leaving AdminActions.signingCertificatesOf(). " +
+              held.length + " held.");
+    return {
+      ok: true, kind: kind, holder: name,
+      implicitName: (kind === 'application'
+        ? tlsClientCertificates.APPLICATION_URN : 'urn:sts:person:') + name,
+      certificates: held,
+      active: held.filter(function (cert) {
+        return cert.state === 'valid';
+      }).length,
+      max: tlsClientCertificates.maxPerHolder(kind, purpose),
+      keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),
+      defaultKeyAlg: tlsClientCertificates.DEFAULT_KEY_ALG,
+      revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
+      passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN
+    };
+  }
+
+  private signingCertificateAction(action, kind, holder, body) {
+    const { log, applications, tlsClientCertificates } = this.deps;
+    const self = this;
+    log.debug("Entering AdminActions.signingCertificateAction(). " + action +
+              " " + kind);
+    const purpose = tlsClientCertificates.MESSAGE_SIGNING_USE_CASE;
+    const whose = kind === 'application'
+      ? 'the application "' + holder + '"' : '"' + holder + '"';
+    // What the answer carries about the holder as it now stands: the
+    // application's entry, as the TLS client actions answer it, or the
+    // person's certificates.
+    const standing = function () {
+      log.debug("Entering standing().");
+      log.debug("Leaving standing().");
+      return kind === 'application'
+        ? { application: applications.get(holder) }
+        : { user: holder,
+            signing: self.signingCertificatesOf('person', holder) };
+    };
+    if (action === 'revoke-signing-certificate') {
+      // Among THIS holder's message-signing certificates only: a serial
+      // belonging to anybody else, or a TLS client certificate's, matches
+      // nothing (STS-PKI-0221).
+      const done = tlsClientCertificates.revoke(undefined, holder,
+        String(body.serialHex || ''), String(body.reason || ''), kind,
+        purpose);
+      if (done.ok) {
+        done.message = 'The message-signing certificate ' +
+          done.certificate.serialHex + ' of ' + whose + ' was revoked (' +
+          done.reason + '). A WS-Trust request signed with it is refused ' +
+          'from now on.';
+        Object.assign(done, standing());
+      }
+      log.debug("Leaving AdminActions.signingCertificateAction(). " +
+                "revoke " + (done.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0903', done);
+    }
+    const passwordSaid = tlsClientCertificates.pkcs12PasswordProblem(
+      body.password, body.confirm === undefined ? undefined : body.confirm);
+    if (passwordSaid) {
+      log.debug("Leaving AdminActions.signingCertificateAction(). The file " +
+                "password.");
+      return this.refused('STS-ADMIN-0902', { ok: false,
+                                              errors: [passwordSaid] });
+    }
+    const spec: any = {
+      kind: kind, keyAlg: body.keyAlg || undefined, label: body.label || '',
+      days: body.days ? Number(body.days) : undefined, purpose: purpose
+    };
+    spec[kind === 'application' ? 'application' : 'username'] = holder;
+    return tlsClientCertificates.issue(undefined, spec)
+      .then(function (made) {
+        if (!made.ok) {
+          log.debug("Leaving AdminActions.signingCertificateAction(). The " +
+                    "issue was refused.");
+          return self.refusedBy('STS-ADMIN-0901', made);
+        }
+        const issued = made.issued;
+        return tlsClientCertificates.bundle(issued, String(body.password))
+          .then(function (files) {
+            log.debug("Leaving AdminActions.signingCertificateAction(). A " +
+                      "message-signing certificate was issued to " + holder +
+                      ".");
+            return Object.assign({
+              ok: true,
+              message: 'A message-signing certificate was issued to ' +
+                       whose + ' (serial ' + issued.serialHex + '). This ' +
+                       'is the only time its private key can be downloaded.',
+              purpose: purpose,
+              certificate: {
+                serialHex: issued.serialHex, subject: issued.subject,
+                keyAlg: issued.keyAlg, label: issued.label,
+                notBefore: issued.notBefore, notAfter: issued.notAfter,
+                thumbprint: issued.thumbprint,
+                certificatePem: issued.certificatePem,
+                chainPem: issued.chainPem,
+                implicitName: (kind === 'application'
+                  ? tlsClientCertificates.APPLICATION_URN
+                  : 'urn:sts:person:') + holder
+              },
+              files: files
+            }, standing());
+          });
+      });
+  }
+
   private credentialAdminAction(action, body, ctx) {
     const { log, credentials, auditLog, accountSignals, errorCodes } =
       this.deps;
@@ -3947,6 +4110,27 @@ class AdminActions {
     if (action === 'add-certificate' || action === 'remove-certificate') {
       log.debug("Leaving AdminActions.usersAction(). A stored certificate.");
       return this.storedCertificateAction(action, body, ctx);
+    }
+
+    // A MESSAGE-SIGNING CERTIFICATE (#521), issued to the person or revoked.
+    if (action === 'issue-signing-certificate' ||
+        action === 'revoke-signing-certificate') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person in `user`.'] });
+      }
+      if (!require('../ldap/ldap_server').storedCertificatesOf('person',
+                                                               who)) {
+        log.debug("Leaving AdminActions.usersAction(). No entry.");
+        return this.refused('STS-ADMIN-0905', { ok: false,
+          errors: ['There is no person called "' + who + '" here, and ' +
+                   'issuing a certificate creates nobody.'] });
+      }
+      log.debug("Leaving AdminActions.usersAction(). A message-signing " +
+                "certificate.");
+      return this.signingCertificateAction(action, 'person', who, body);
     }
 
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
@@ -5902,6 +6086,8 @@ class AdminActions {
                       'reveal-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
+                      'issue-signing-certificate',
+                      'revoke-signing-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
@@ -6898,6 +7084,31 @@ class AdminActions {
                 "revoke-tls-client-certificate " +
                 (done.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0723', done);
+    }
+
+    // ---------------------------------------------------------------------
+    // A MESSAGE-SIGNING CERTIFICATE FOR THE APPLICATION (#521, rcbj's
+    // decision: an administrator issues one, from the console or
+    // /admin-api), from the Credentials section of its own page. The same
+    // shape as the TLS client certificate above, and the same module decides
+    // everything about it — here with `purpose: 'message-signing'`: the
+    // realm's `message-signing` Issuing CA, digitalSignature only, the
+    // urn:sts:application: name a WS-Trust request's signature maps back to
+    // the entry, and `pki.messageSigningCertificateMax`. The reply is again
+    // the only copy of the private key.
+    if (action === 'issue-signing-certificate' ||
+        action === 'revoke-signing-certificate') {
+      const target = applications.get(identifier);
+      if (!target) {
+        log.debug("Leaving AdminActions.applicationsAction(). No such " +
+                  "application.");
+        return this.refused('STS-ADMIN-0904', { ok: false, errors: ['There ' +
+            'is no application called "' + identifier + '" here.'] });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). A " +
+                "message-signing certificate.");
+      return this.signingCertificateAction(action, 'application',
+        String(target.identifier), body);
     }
 
     if (action === 'revoke-registration') {
@@ -10968,6 +11179,7 @@ export = {
   USERS_ACTIONS: USERS_ACTIONS,
   usersAction: slot.forward('usersAction'),
   storedCertificatesOf: slot.forward('storedCertificatesOf'),
+  signingCertificatesOf: slot.forward('signingCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
   applicationFieldsFrom: slot.forward('applicationFieldsFrom'),

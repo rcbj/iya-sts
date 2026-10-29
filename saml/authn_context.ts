@@ -435,11 +435,14 @@ export = {
   AC_PASSWORD_PROTECTED: AuthnContext.AC_PASSWORD_PROTECTED,
   AC_KERBEROS: AuthnContext.AC_KERBEROS,
   AC_TLS_CLIENT: AuthnContext.AC_TLS_CLIENT,
+  // #521: a WS-Trust requester's WS-Security message signature.
+  AC_X509: AuthnContext.AC_X509,
   AC_UNSPECIFIED: AuthnContext.AC_UNSPECIFIED,
   AC_MULTIFACTOR: AuthnContext.AC_MULTIFACTOR,
   AM_PASSWORD: AuthnContext.AM_PASSWORD,
   AM_KERBEROS: AuthnContext.AM_KERBEROS,
   AM_TLS_CLIENT: AuthnContext.AM_TLS_CLIENT,
+  AM_X509: AuthnContext.AM_X509,
   AM_HARDWARE_TOKEN: AuthnContext.AM_HARDWARE_TOKEN,
   AM_UNSPECIFIED: AuthnContext.AM_UNSPECIFIED
 };

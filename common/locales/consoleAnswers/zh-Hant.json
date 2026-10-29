@@ -108,5 +108,8 @@
   "person.warn": "這是此服務唯一一次向您顯示此金鑰。它以 <code>{attribute}</code> 密封在 <code>{person}</code> 的項目上，此主控台或 <code>/admin-api</code> 中沒有任何地方會再次開啟它。請立即複製；再次簽發會取代它。",
   "person.saml": "它簽署的判斷提示帶有 <code>{issuer}</code> 作為 <code>&lt;Issuer&gt;</code> 與 <code>&lt;Subject&gt;</code>、一個指定此服務權杖端點的 <code>&lt;AudienceRestriction&gt;</code>、一個 bearer <code>&lt;SubjectConfirmation&gt;</code>、一個 <code>NotOnOrAfter</code> 與一個 <code>ID</code>，以對 <code>&lt;Assertion&gt;</code> 的 XML Signature 簽署，並以 <code>grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer</code> 搭配 <code>assertion=&lt;base64url&gt;</code> 出示。憑證的指紋為 <code>{thumbprint}</code>。",
   "person.jwt": "它簽署的判斷提示帶有值為 <code>{issuer}</code> 的 <code>iss</code> 與 <code>sub</code>、值為此服務權杖端點或簽發者的 <code>aud</code>、一個 <code>exp</code> 與一個 <code>jti</code>，並以 <code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer</code> 搭配 <code>assertion=&lt;the JWT&gt;</code> 出示。<code>kid</code> 為 <code>{kid}</code>，演算法為 <code>{alg}</code>。",
-  "person.certificate": "憑證是公開的，也在項目上："
+  "person.certificate": "憑證是公開的，也在項目上：",
+  "once.signingCertificate": "訊息簽章憑證",
+  "signing.warn": "<strong>這是唯一一次可以下載這些檔案。</strong>本服務不保留私密金鑰——既不在持有者的條目中，也不在憑證登記冊中——此主控台和 <code>/admin-api</code> 上也沒有任何地方會再次提供它。如果遺失，請撤銷該憑證並簽發新的。",
+  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的金鑰簽署每個 WS-Trust 請求：對 SOAP Body 和 Timestamp 的 WS-Security 1.1 簽章，此憑證放在 BinarySecurityToken 中，<code>{chain}</code> 為其憑證鏈。請求隨後以 <code>{name}</code> 的身分驗證，因為此領域將憑證簽發給了該名稱，無需註冊其他任何內容。"
 }

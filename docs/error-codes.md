@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4770** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4797** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -57,8 +57,8 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 147
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 206
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 153
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 208
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 408
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 249
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -728,6 +728,12 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0156` | A stored argon2id password hash could not be computed here — no argon2 in this runtime, or parameters outside the bounds this service computes — and was treated as no match. | — |
 | `STS-KEYS-0157` | A JWS signed with a post-quantum or composite algorithm (ML-DSA, SLH-DSA, composite ML-DSA) was presented to a realm whose keys.postQuantumSigning is off, and was refused before its signature was checked. | the caller's refusal: each protocol answers it as it answers a JWS whose algorithm it does not accept (invalid_request_object, invalid_client, invalid_grant, invalid_dpop_proof, invalid_proof and the like) |
 | `STS-KEYS-0158` | A signature with a post-quantum or composite JWS algorithm was asked of a realm whose keys.postQuantumSigning is off — a client registered for one while it was on, a configured credential, metadata or HTTP message signature algorithm — and was refused rather than made with a key the realm no longer publishes. | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0159` | A WS-Security security header carries more than one ds:Signature, so it does not say which one the requester made (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0160` | An id in a WS-Security signed message is carried by more than one element, so a Reference to it does not say which element was signed: the signature-wrapping shape (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0161` | A WS-Security ds:Signature has no SignedInfo, SignatureMethod or SignatureValue, or a Reference that is not a same-document reference by id (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0162` | A WS-Security signature is canonicalized, or a Reference transformed, with something other than exclusive XML canonicalization alone (Basic Security Profile R5404, R5412) (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0163` | A WS-Security signature does not cover the SOAP Body or the wsu:Timestamp of its security header by their wsu:Id (#521). | the caller's: wst:AuthenticationBadElements (STS-WSTRUST-0040) |
+| `STS-KEYS-0164` | A WS-Security signature's KeyInfo names its certificate in no form of the X.509 Token Profile 1.1 this service reads (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
 
 ## STS-PKI
 
@@ -943,6 +949,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0217` | A key pair was not pinned into the xml slot: the certificate supplied with it has a keyUsage without keyEncipherment, and an xml pin is also the key partners encrypt to (#263). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0218` | A certificate authority branch finished building for a realm that had been removed while it was built, and was discarded rather than saved. | none (logged; the realm is gone) |
 | `STS-PKI-0219` | A KDC certificate for PKINIT was asked for with no slot, no principal name, or a key algorithm it is not issued with (#179). | none (the KDC refuses PKINIT, STS-KRB-0197) |
+| `STS-PKI-0220` | A person or an application already holds pki.messageSigningCertificateMax valid message-signing certificates, so another was not issued (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0221` | A message-signing certificate revocation named a serial the holder holds no certificate under (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-ENROLL
 
@@ -2515,6 +2523,20 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0037` | The TLS client certificate on the connection, the requester's only credential, names a person whose account is disabled. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0038` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is not stored in userCertificate on any entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0039` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is stored in userCertificate on more than one entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0040` | A signed RST's WS-Security signature could not be read as one: its structure, its canonicalization, an algorithm or its key reference (the STS-KEYS code in the log line says which). Every mode (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 (wst:AuthenticationBadElements for an uncovered part) |
+| `STS-WSTRUST-0041` | A signed RST names its certificate by a reference that matches no certificate this realm's message-signing Issuing CA issued, and carries none. Every mode (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0042` | The certificate a signed RST names is not a message-signing identity in this realm: another authority, no digitalSignature, another realm, a holder gone, expired or not yet valid. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0043` | The certificate a signed RST names is from an outside authority and is stored in userCertificate on no entry of the realm. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0044` | The certificate a signed RST names is from an outside authority and is stored in userCertificate on more than one entry of the realm. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0045` | A signed RST's WS-Security signature does not verify with the certificate it names, or a signed part was altered. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0046` | A signed RST carries a part of the request (RequestSecurityToken, RequestType, AppliesTo, OnBehalfOf and the rest) outside the signed SOAP Body. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0047` | A signed RST's wsu:Timestamp lacks a readable Created and Expires, or was Created ahead of this service's clock by more than oauth2.clockSkewS. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0048` | A signed RST's wsu:Timestamp has expired, beyond oauth2.clockSkewS. Product (#521). | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0049` | The certificate a signed RST names was refused on revocation. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0050` | A signed RST whose SignatureValue was already accepted was presented again: a replay. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0051` | A signed RST could not be checked against the used-assertion history (not asked, full, or the store could not be asked), so it is refused rather than accepted unchecked. Product (#521). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0052` | A signed RST names a person whose account is disabled. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0053` | A signed RST also carries a UsernameToken, assertion or JWT naming a different requester from its signer. Every mode (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -4915,6 +4937,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0898` | Storing or removing a certificate was refused: the person named has no entry in this realm, and none is created (#1061). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0899` | Storing a certificate on a person's entry was refused: the same certificate is already stored on another entry of the realm, and a certificate stored on two entries names nobody (#1061). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0900` | Removing a stored certificate was refused: the person's entry stores no certificate with that SHA-256 (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0901` | Issuing a person or an application a message-signing certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority) (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0902` | A message-signing certificate's file password was too short, too long, or not the same twice (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0903` | Revoking a person's or an application's message-signing certificate was refused with no more specific code (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0904` | A message-signing certificate action named an application the registry does not hold (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0905` | A message-signing certificate action named a person with no entry in this realm, and none is created (#521). | HTTP 400 (API) or a refusal on the person's page |
 
 ## STS-API
 

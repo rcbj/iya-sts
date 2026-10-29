@@ -167,7 +167,13 @@ const FORMATS = {
   // request, so spent here like a document. Its own format because it is
   // not a document anybody signed, and its value is this service's random
   // string rather than somebody's `jti`.
-  'attestation-challenge': 'OAuth client attestation challenge'
+  'attestation-challenge': 'OAuth client attestation challenge',
+  // A SIGNED WS-SECURITY MESSAGE (#521): a WS-Trust RST its requester signed
+  // over the Body and the Timestamp, keyed by its SignatureValue under the
+  // signing certificate's SHA-256. A message has no identifier of its own a
+  // signer is obliged to make unique, and the signature value is one: two
+  // messages differing in a Timestamp's Created already sign differently.
+  'wss-message': 'WS-Security signed message'
 };
 /**
  * The closed list of uses a document may be accepted for, each with the
@@ -209,7 +215,11 @@ const USES = {
   // #114: an RFC 7523 / RFC 7522 / SAML 1.1 assertion presented as an RFC
   // 8693 subject_token or actor_token. The SAME history as the grant (rcbj,
   // #114): an assertion is spent once, whichever door spends it.
-  'token-exchange': 'token exchange subject or actor (RFC 8693)'
+  'token-exchange': 'token exchange subject or actor (RFC 8693)',
+  // #521: a WS-Trust RST authenticated by its requester's WS-Security
+  // signature. A captured one sent again inside its Timestamp would be the
+  // requester asking again, so it is spent once, like an assertion.
+  'wstrust-requester': 'WS-Trust requester signature (WS-Security 1.1)'
 };
 
 // What a row is, spelt once. Every store hands rows back in this shape.

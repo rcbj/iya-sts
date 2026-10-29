@@ -1100,6 +1100,20 @@ class WebAnswers {
                                        : '/admin/kerberos/principals',
                html: WebAnswers.keytab(answer, t) };
     }
+    // A MESSAGE-SIGNING CERTIFICATE'S FILES (#521), issued to a person from
+    // their page or to an application from its Credentials section: the
+    // only copy of the key, drawn once as the TLS client certificate's is.
+    if ((page === '/admin/users' || page === '/admin/applications') &&
+        action === 'issue-signing-certificate' && answer.files) {
+      const title = t.text('consoleAnswers.once.signingCertificate');
+      return { title: title, active: page,
+               up: page === '/admin/users'
+                 ? WebAnswers.personTrail(answer.user ||
+                                          WebAnswers.one(fields, 'user'),
+                                          title)
+                 : undefined,
+               html: WebAnswers.signingCertificate(answer, fields, back, t) };
+    }
     if (page === '/admin/users' &&
         (answer.password || answer.resetUrl || answer.appPassword)) {
       return { title: t.text('consoleAnswers.once.credentialReset'),
@@ -1598,6 +1612,60 @@ class WebAnswers {
         key: files.key.name })) +
       WebAnswers.backButton(back, t.text('consoleAnswers.backTo',
                                          { label: identifier }));
+  }
+
+  /**
+   * An issued message-signing certificate's three files, once (#521).
+   *
+   * @param answer - `issue-signing-certificate`'s answer, a person's or an
+   *   application's
+   * @param fields - the form's fields
+   * @param back - the page the form was on
+   * @param t - optional; the translator, the default when left out
+   * @returns the HTML
+   */
+  static signingCertificate(answer: Json, fields: Json,
+                            back: string, t?: Json): string {
+    t = t || kit.context().t;
+    const files = answer.files;
+    const cert = answer.certificate || {};
+    const holder = String((answer.application &&
+                           answer.application.identifier) ||
+                          answer.user ||
+                          WebAnswers.one(fields, 'application') ||
+                          WebAnswers.one(fields, 'user'));
+    const link = function (file, href) {
+      return '<a class="btn" download="' + kit.esc(file.name) + '" href="' +
+        kit.esc(href) + '">' +
+        t.html('consoleAnswers.tls.download', { file: file.name }) + '</a>';
+    };
+    return kit.warn('<p>' + t.html('consoleAnswers.signing.warn') +
+      '</p><p>' +
+      link(files.pkcs12, 'data:' + files.pkcs12.mime + ';base64,' +
+                         files.pkcs12.base64) + ' ' +
+      link(files.key, WebAnswers.dataUriOf(files.key.mime, files.key.text)) +
+      ' ' +
+      link(files.chain, WebAnswers.dataUriOf(files.chain.mime,
+                                             files.chain.text)) +
+      '</p>', t.text('consoleAnswers.privateKeyOnce')) +
+      '<table><tr><th>' + t.html('consoleAnswers.tls.issuedTo') +
+      '</th><td><code>' + kit.esc(cert.subject) +
+      '</code><div class="sub">subjectAltName <code>' +
+      kit.esc(cert.implicitName) + '</code></div></td></tr>' +
+      '<tr><th>' + t.html('consoleAnswers.serial') + '</th><td><code>' +
+      kit.esc(cert.serialHex) +
+      '</code></td></tr><tr><th>' + t.html('consoleAnswers.tls.thumbprint') +
+      '</th><td><code>' +
+      kit.esc(cert.thumbprint) + '</code></td></tr><tr><th>' +
+      t.html('consoleAnswers.tls.key') + '</th><td>' +
+      kit.esc(cert.keyAlg) + '</td></tr><tr><th>' +
+      t.html('consoleAnswers.tls.goodUntil') + '</th><td><code>' +
+      kit.esc(cert.notAfter) + '</code></td></tr></table>' +
+      kit.note(t.html('consoleAnswers.signing.how', {
+        name: String(cert.implicitName || ''), chain: files.chain.name,
+        key: files.key.name })) +
+      WebAnswers.backButton(back, t.text('consoleAnswers.backTo',
+                                         { label: holder }));
   }
 
   /**

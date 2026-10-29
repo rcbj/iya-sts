@@ -63,6 +63,10 @@
     "en": "903e048677f8ab58",
     "text": "Les certificats client TLS que les personnes s’émettent elles-mêmes sur le portail utilisateur : clientAuth, le nom urn:sts:person: de la personne, et une clé privée remise une seule fois sous forme de PKCS#12. Un certificat de cette autorité connecte son titulaire sur GET /tls/sign-in sur le port principal, dans ce domaine ; un certificat de toute autre autorité de ce service ne le fait pas, bien que tous remontent jusqu’à la même racine."
   },
+  "pki.useCases.message-signing.what": {
+    "en": "4aacf430b5a390f0",
+    "text": "Les certificats avec lesquels une personne ou une application signe une requête WS-Trust (une signature WS-Security 1.1 sur le Body SOAP et le Timestamp) : digitalSignature seulement, le nom urn:sts:person: ou urn:sts:application: du détenteur, et une clé privée remise une seule fois sous forme de PKCS#12. Émis par un administrateur depuis la console ou /admin-api. Un certificat de cette autorité authentifie son détenteur comme demandeur d’une RST signée, dans ce domaine ; un certificat client TLS de ce service ne le fait pas, et celui-ci ne connecte personne en TLS."
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "Un client OAuth ou une partie de confiance enregistré. Sa paire de clés est écrite sur sa propre entrée dans ou=applications."

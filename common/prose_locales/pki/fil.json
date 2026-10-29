@@ -63,6 +63,10 @@
     "en": "903e048677f8ab58",
     "text": "Ang mga TLS client certificate na ini-issue ng mga tao para sa sarili nila sa user portal: clientAuth, ang urn:sts:person: name ng tao, at private key na ibinibigay nang isang beses bilang PKCS#12. Ang certificate mula sa authority na ito ay nagsa-sign in sa may hawak nito sa GET /tls/sign-in sa main port, sa realm na ito; hindi ito ginagawa ng certificate mula sa anumang ibang authority ng serbisyong ito, kahit lahat sila ay nagche-chain sa iisang Root."
   },
+  "pki.useCases.message-signing.what": {
+    "en": "4aacf430b5a390f0",
+    "text": "Ang mga certificate na ipinapanlagda ng isang tao o isang application sa isang WS-Trust request (isang WS-Security 1.1 signature sa SOAP Body at Timestamp): digitalSignature lamang, ang urn:sts:person: o urn:sts:application: na pangalan ng may-hawak, at isang private key na iniabot nang isang beses bilang PKCS#12. Inilalabas ng isang administrator mula sa console o /admin-api. Pinapatunayan ng certificate mula sa authority na ito ang may-hawak nito bilang requester ng isang nilagdaang RST, sa realm na ito; hindi ito nagagawa ng TLS client certificate mula sa serbisyong ito, at wala namang pinapapasok ang isang ito sa TLS."
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "Isang naka-register na OAuth client o relying party. Isinusulat ang key pair nito sa sarili nitong entry sa ou=applications."

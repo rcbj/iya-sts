@@ -573,6 +573,7 @@ var config = {
     personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
     personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
     applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
+    messageSigningCertificateMax: 5,            // Message-signing certificates one holder may hold
     pinnedSigners: false,                       // Sign with a pinned key pair
     pinnedSignerLeadMinutes: 1440,              // Publish a pinned key this long before it signs (minutes)
     pinnedSignerExpiryWarningDays: 30,          // Warn this long before a pinned key's certificate expires (days)

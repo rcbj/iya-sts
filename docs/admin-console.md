@@ -586,6 +586,19 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   (`STS-ADMIN-0897`). `POST /admin-api/users/add-certificate` and
   `remove-certificate`, and `GET /admin-api/users/certificates`, are the same
   acts; each sends a CAEP `credential-change` of type `x509`.
+* **Message-signing certificates** lists the certificates the realm's
+  Message Signing Issuing CA issued the person — what they sign a WS-Trust
+  request with — with **Revoke** per valid row, and a form (a label, the key
+  algorithm, a file password twice) that issues one and answers with its
+  `.p12`, key and chain as downloads, once. Only an administrator issues one;
+  the person has no door to it on the portal (#521). `POST
+  /admin-api/users/issue-signing-certificate` and
+  `revoke-signing-certificate` are the same acts, and `mfa.signing` of the
+  person's `GET /admin-api/users` answer is the list. An application's are on
+  the **Credentials** section of its page, through
+  `/admin-api/applications/issue-signing-certificate` and
+  `revoke-signing-certificate`. See
+  [PKI](pki.md#a-message-signing-certificate-for-a-ws-trust-requester).
 
 Every one of them sends Shared Signals to the streams that asked: a CAEP
 `credential-change` for each credential created, updated or removed, a RISC

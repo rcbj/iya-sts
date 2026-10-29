@@ -3250,6 +3250,35 @@ const CODES = [
       'rather than made with a key the realm no longer publishes.',
     spec: 'the caller\'s: the response that needed the signature fails as ' +
       'it does for an algorithm this realm holds no key for' },
+  { code: 'STS-KEYS-0159',
+    summary: 'A WS-Security security header carries more than one ' +
+      'ds:Signature, so it does not say which one the requester made ' +
+      '(#521).',
+    spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
+  { code: 'STS-KEYS-0160',
+    summary: 'An id in a WS-Security signed message is carried by more than ' +
+      'one element, so a Reference to it does not say which element ' +
+      'was signed: the signature-wrapping shape (#521).',
+    spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
+  { code: 'STS-KEYS-0161',
+    summary: 'A WS-Security ds:Signature has no SignedInfo, SignatureMethod ' +
+      'or SignatureValue, or a Reference that is not a same-document ' +
+      'reference by id (#521).',
+    spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
+  { code: 'STS-KEYS-0162',
+    summary: 'A WS-Security signature is canonicalized, or a Reference ' +
+      'transformed, with something other than exclusive XML ' +
+      'canonicalization alone (Basic Security Profile R5404, R5412) ' +
+      '(#521).',
+    spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
+  { code: 'STS-KEYS-0163',
+    summary: 'A WS-Security signature does not cover the SOAP Body or the ' +
+      'wsu:Timestamp of its security header by their wsu:Id (#521).',
+    spec: 'the caller\'s: wst:AuthenticationBadElements (STS-WSTRUST-0040)' },
+  { code: 'STS-KEYS-0164',
+    summary: 'A WS-Security signature\'s KeyInfo names its certificate in no ' +
+      'form of the X.509 Token Profile 1.1 this service reads (#521).',
+    spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -4305,6 +4334,15 @@ const CODES = [
     summary: 'A KDC certificate for PKINIT was asked for with no slot, no ' +
       'principal name, or a key algorithm it is not issued with (#179).',
     spec: 'none (the KDC refuses PKINIT, STS-KRB-0197)' },
+  { code: 'STS-PKI-0220',
+    summary: 'A person or an application already holds ' +
+      'pki.messageSigningCertificateMax valid message-signing ' +
+      'certificates, so another was not issued (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0221',
+    summary: 'A message-signing certificate revocation named a serial the ' +
+      'holder holds no certificate under (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -11367,6 +11405,87 @@ const CODES = [
       'only credential, is from an outside certificate authority and is ' +
       'stored in userCertificate on more than one entry of the realm. ' +
       'Every mode (#1061).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0040',
+    summary: 'A signed RST\'s WS-Security signature could not be read as one: ' +
+      'its structure, its canonicalization, an algorithm or its key ' +
+      'reference (the STS-KEYS code in the log line says which). ' +
+      'Every mode (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' +
+      ' (wst:AuthenticationBadElements for an uncovered part)' },
+  { code: 'STS-WSTRUST-0041',
+    summary: 'A signed RST names its certificate by a reference that matches ' +
+      'no certificate this realm\'s message-signing Issuing CA issued, ' +
+      'and carries none. Every mode (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0042',
+    summary: 'The certificate a signed RST names is not a message-signing ' +
+      'identity in this realm: another authority, no ' +
+      'digitalSignature, another realm, a holder gone, expired or not ' +
+      'yet valid. Product (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0043',
+    summary: 'The certificate a signed RST names is from an outside ' +
+      'authority and is stored in userCertificate on no entry of the ' +
+      'realm. Product (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0044',
+    summary: 'The certificate a signed RST names is from an outside ' +
+      'authority and is stored in userCertificate on more than one ' +
+      'entry of the realm. Product (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0045',
+    summary: 'A signed RST\'s WS-Security signature does not verify with the ' +
+      'certificate it names, or a signed part was altered. Product ' +
+      '(#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0046',
+    summary: 'A signed RST carries a part of the request ' +
+      '(RequestSecurityToken, RequestType, AppliesTo, OnBehalfOf and ' +
+      'the rest) outside the signed SOAP Body. Product (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0047',
+    summary: 'A signed RST\'s wsu:Timestamp lacks a readable Created and ' +
+      'Expires, or was Created ahead of this service\'s clock by more ' +
+      'than oauth2.clockSkewS. Product (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0048',
+    summary: 'A signed RST\'s wsu:Timestamp has expired, beyond ' +
+      'oauth2.clockSkewS. Product (#521).',
+    spec: 'SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0049',
+    summary: 'The certificate a signed RST names was refused on revocation. ' +
+      'Product (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0050',
+    summary: 'A signed RST whose SignatureValue was already accepted was ' +
+      'presented again: a replay. Product (#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0051',
+    summary: 'A signed RST could not be checked against the used-assertion ' +
+      'history (not asked, full, or the store could not be asked), so ' +
+      'it is refused rather than accepted unchecked. Product (#521).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0052',
+    summary: 'A signed RST names a person whose account is disabled. Product ' +
+      '(#521).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0053',
+    summary: 'A signed RST also carries a UsernameToken, assertion or JWT ' +
+      'naming a different requester from its signer. Every mode ' +
+      '(#521).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSFED-0001',
@@ -21917,6 +22036,27 @@ const CODES = [
   { code: 'STS-ADMIN-0900',
     summary: 'Removing a stored certificate was refused: the person\'s entry ' +
       'stores no certificate with that SHA-256 (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0901',
+    summary: 'Issuing a person or an application a message-signing ' +
+      'certificate was refused with no more specific code (the key ' +
+      'algorithm, the label or the realm\'s certificate authority) (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0902',
+    summary: 'A message-signing certificate\'s file password was too ' +
+      'short, too long, or not the same twice (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0903',
+    summary: 'Revoking a person\'s or an application\'s message-signing ' +
+      'certificate was refused with no more specific code (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0904',
+    summary: 'A message-signing certificate action named an application ' +
+      'the registry does not hold (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0905',
+    summary: 'A message-signing certificate action named a person with no ' +
+      'entry in this realm, and none is created (#521).',
     spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +

@@ -3243,6 +3243,14 @@
     "en": "286a6641dd93e940",
     "text": "Cuántos certificados de cliente TLS aún válidos puede emitir un administrador a una aplicación desde su sección Credenciales en /admin/applications o con POST /admin-api/applications/issue-tls-client-certificate — uno por instancia, o dos mientras se rota un certificado. Un certificado revocado o caducado no cuenta. Por encima, la emisión se rechaza (STS-PKI-0180) en lugar de revocar un certificado que una instancia en ejecución puede seguir presentando."
   },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "Certificados de firma de mensajes que puede tener un titular"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "Cuántos certificados de firma de mensajes aún válidos (con los que un solicitante WS-Trust firma su solicitud) puede emitir un administrador para una persona o una aplicación, desde /admin/users, /admin/applications o /admin-api. Un certificado revocado o caducado no cuenta. Por encima, la emisión se rechaza (STS-PKI-0220) en lugar de revocar un certificado con el que alguien quizá siga firmando."
+  },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",
     "text": "Firmar con un par de claves fijado"

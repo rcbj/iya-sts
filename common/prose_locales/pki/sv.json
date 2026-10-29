@@ -63,6 +63,10 @@
     "en": "903e048677f8ab58",
     "text": "TLS-klientcertifikaten som personer utfärdar till sig själva i användarportalen: clientAuth, personens urn:sts:person:-namn och en privat nyckel som lämnas över en gång som PKCS#12. Ett certifikat från den här utfärdaren loggar in sin innehavare på GET /tls/sign-in på huvudporten, i den här sfären; ett certifikat från någon annan av den här tjänstens utfärdare gör det inte, även om alla kedjar till samma rot."
   },
+  "pki.useCases.message-signing.what": {
+    "en": "4aacf430b5a390f0",
+    "text": "Certifikaten som en person eller en applikation signerar en WS-Trust-begäran med (en WS-Security 1.1-signatur över SOAP-Body och Timestamp): bara digitalSignature, innehavarens urn:sts:person:- eller urn:sts:application:-namn, och en privat nyckel som lämnas ut en gång som PKCS#12. Utfärdas av en administratör från konsolen eller /admin-api. Ett certifikat från den här utfärdaren autentiserar sin innehavare som begärare av en signerad RST, i den här sfären; ett TLS-klientcertifikat från tjänsten gör det inte, och det här loggar inte in någon över TLS."
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "En registrerad OAuth-klient eller förlitande part. Dess nyckelpar skrivs på dess egen post i ou=applications."
