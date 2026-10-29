@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 408
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 409
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
@@ -1243,9 +1243,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0041` | The recovery code form POST failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
 | `STS-AUTHN-0042` | Too many recovery code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0043` | Checking a recovery code threw (the worker pool or the store failed part way). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
-| `STS-AUTHN-0044` | Security keys are switched off in this realm (webauthn.enabled), so no new key may be enrolled. | HTTP 200 page / action result with the reason |
-| `STS-AUTHN-0045` | A passwordless (primary) security key may not be enrolled in this realm (webauthn.primaryAllowed). | HTTP 200 page / action result with the reason |
-| `STS-AUTHN-0046` | A second-factor security key may not be enrolled in this realm (webauthn.mfaAllowed). | HTTP 200 page / action result with the reason |
+| `STS-AUTHN-0044` | Passkeys are switched off in this realm (webauthn.enabled), so no new key may be enrolled and none may answer a sign-in step (#1135). | HTTP 200 page / action result with the reason |
+| `STS-AUTHN-0045` | A passkey was refused as a first factor (passwordless): this realm does not allow it (webauthn.primaryAllowed). Until #1135 it refused enrolling a key in the primary role. | HTTP 200 page / action result with the reason |
+| `STS-AUTHN-0046` | A passkey was refused as a second factor: this realm does not allow it (webauthn.mfaAllowed). Until #1135 it refused enrolling a key in the mfa role. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0047` | The credential store's setDirectory() hooks were refused whole because readPassword or writePassword was missing. | — |
 | `STS-AUTHN-0048` | A password was refused because it is the reserved refusal password 'invalid', refused in every mode. | the calling protocol's own authentication failure (sign-in page, LDAP invalidCredentials (49), SOAP fault, HTTP 401) |
 | `STS-AUTHN-0049` | A password verification was asked for with no username, in product mode. | the calling protocol's own authentication failure |
@@ -1265,11 +1265,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0063` | The product-mode bootstrap account could not be created in the directory. | — |
 | `STS-AUTHN-0064` | The product-mode bootstrap could not set a password: this service is in product mode and nobody can sign in. | — |
 | `STS-AUTHN-0065` | Reading a person's security keys from the credential store threw; they were reported as holding none. | — |
-| `STS-AUTHN-0066` | A security key was to be recorded or enrolled in a role that is neither 'primary' nor 'mfa'. | action result with the reason |
+| `STS-AUTHN-0066` *(retired)* | A security key was to be recorded or enrolled in a role that is neither 'primary' nor 'mfa'. Retired by #1135: a key carries no role. | action result with the reason |
 | `STS-AUTHN-0067` | A security key was not enrolled because the person already holds webauthn.maxKeysPerPerson keys. | action result with the reason |
 | `STS-AUTHN-0068` | Writing a security key to the credential store threw, or the store refused to record a verified key. | action result with the reason |
 | `STS-AUTHN-0069` | Removing a security key named a credential id that is not enrolled for that person. | action result with the reason |
-| `STS-AUTHN-0070` | Removing a security key was refused because it is the person's last way in (no password and no other primary key). | action result with the reason |
+| `STS-AUTHN-0070` | Removing a security key was refused because it is the person's last way in (no password and no other passkey). | action result with the reason |
 | `STS-AUTHN-0071` | Reading a person's authenticator-app enrolment from the credential store threw; it was reported as none. | — |
 | `STS-AUTHN-0072` | An authenticator-app shared secret could not be sealed under the key-encryption key, so it was not stored. | action result with the reason |
 | `STS-AUTHN-0073` | Writing or clearing an authenticator-app enrolment in the credential store threw. | action result with the reason |
@@ -1346,9 +1346,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0144` | A forced password change named a step that does not exist or has expired. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0145` | A forced password change request was refused by the input validator. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0146` | A forced password change was refused: no new password, two that differ, the reserved refusal password, or one the password policy refused; the page is drawn again with the reason. | the change page again with the reason |
-| `STS-AUTHN-0160` | Disabling somebody's passwordless sign-in was refused: they hold no security key in the primary role. | HTTP 400 (API) or a 303 with error= |
-| `STS-AUTHN-0161` | Disabling somebody's passwordless sign-in was refused: they have no password, so their primary security keys are their only way in. | HTTP 400 (API) or a 303 with error= |
-| `STS-AUTHN-0162` | Disabling somebody's second factors was refused: they hold no authenticator app, no mfa-role security key and no recovery codes. | HTTP 400 (API) or a 303 with error= |
+| `STS-AUTHN-0160` | Removing somebody's passkeys was refused: they hold none (until #1135, none in the primary role). | HTTP 400 (API) or a 303 with error= |
+| `STS-AUTHN-0161` | Removing somebody's passkeys (or their second factors) was refused: they have no password, so their passkeys are their only way in. | HTTP 400 (API) or a 303 with error= |
+| `STS-AUTHN-0162` | Disabling somebody's second factors was refused: they hold no authenticator app, no passkey and no recovery codes (until #1135, no mfa-role security key). | HTTP 400 (API) or a 303 with error= |
 | `STS-AUTHN-0163` | The credential store refused a write while security keys or second factors were being removed; what went before it is reported. | HTTP 400 (API) or a 303 with error= |
 | `STS-AUTHN-0164` | A password reset link could not be written onto, or cleared from, the person's entry. | HTTP 400 (API) or a 303 with error= |
 | `STS-AUTHN-0165` | A password reset link was presented for somebody with none outstanding (never issued, or already spent). | the reset page's one refusal sentence, HTTP 400 |
@@ -1431,8 +1431,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0250` | A person opted in to an emailed second factor while their address is not verified (#64). | portal page with the reason |
 | `STS-AUTHN-0251` | A person's emailed second factor could not be written to their entry (#64). | portal page with the reason |
 | `STS-AUTHN-0252` | A person reached the authentication policy's limit of consecutive failed emailed codes or links, and their emailed factor was turned off (NIST SP 800-63B-4 section 3.2.2, #64). | — |
-| `STS-AUTHN-0253` | A security key or passkey was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
-| `STS-AUTHN-0254` | A new security key was refused as a second factor: this realm's authentication policy does not accept one (#64). | sign-in screen or portal page with the reason |
+| `STS-AUTHN-0253` | A passkey was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
+| `STS-AUTHN-0254` | A passkey was refused as a second factor: this realm's authentication policy does not accept one (#64; until #1135 it refused a NEW key enrolled in the mfa role). | sign-in screen or portal page with the reason |
 | `STS-AUTHN-0255` | A password was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
 | `STS-AUTHN-0256` | A second factor was needed after a first and none this realm accepts was available: the person holds none, and the policy does not accept a password as one (#64). | sign-in refused with the reason |
 | `STS-AUTHN-0257` | No more emailed codes or links may be sent for one sign-in step (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
@@ -1608,6 +1608,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0521` | The passkey history rows older than webauthn.passkeyHistoryDays could not be pruned after a recount (#1109). They are kept, and the next recount tries again. | none — logged |
 | `STS-AUTHN-0522` | A named passkey profile's population could not be read for the day's passkey history row (#1109). The row is written without that profile's counts and says so. | none — logged; the history row records the profile as unread |
 | `STS-AUTHN-0530` | A post-login activity was not started: a group it names is not one this realm has. Each missing name is listed; nothing was started (#1123). | none (HTTP 400 from /admin-api/post-login-activities/start) |
+| `STS-AUTHN-0531` | A new passkey was not enrolled: this realm accepts a passkey neither as a first factor nor as a second factor (webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication policy), so it could never be used (#1135). | action result or page with the reason |
 
 ## STS-OAUTH
 
