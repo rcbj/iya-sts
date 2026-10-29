@@ -368,6 +368,76 @@ with the application's client secret and its own identifier
 request with the returned token in `wsse:Security`. Its matrix sends every
 credential type with every `OnBehalfOf` token type and every issued type.
 
+## A signed request as the requester's credential
+
+A requester can sign the RST with a certificate instead of sending a
+password (WS-Security 1.1, X.509 Token Profile 1.1). The signature covers the
+SOAP `Body` and the `wsu:Timestamp`, and the certificate maps to one person
+or application. [WS-Trust → A signed request](ws-trust.md#a-signed-request)
+lists every check.
+
+**1. Give the requester a message-signing certificate.** Either:
+
+* issue one from the realm's message-signing Issuing CA. **Console:** open
+  the person on **Users** or the application on **Applications**, then
+  **Message-signing certificates**, choose a key algorithm and a file
+  password, and download the PKCS#12. **API:**
+  ```bash
+  api applications/issue-signing-certificate \
+    '{"application":"esb1","keyAlg":"rsa-2048","password":"<file password>"}'
+  api users/issue-signing-certificate \
+    '{"username":"alice","keyAlg":"ec-p256","password":"<file password>"}'
+  ```
+  The reply is the only copy of the private key. A holder may have
+  `pki.messageSigningCertificateMax` (5) valid ones; revoke one with
+  `revoke-signing-certificate`;
+* or store a certificate from your own authority on the entry, as for a
+  [TLS client certificate](tls.md#a-certificate-from-an-outside-certificate-authority)
+  (`users/add-certificate`, or the person's **Certificates** section). Its key
+  usage must include `digitalSignature`.
+
+**2. Sign the request.** Configure the client's WS-Security stack to add a
+`wsu:Timestamp` with `Created` and `Expires`, to sign the Body and the
+Timestamp with exclusive canonicalization and RSA-SHA256 or ECDSA-SHA256, and
+to put the certificate in a `wsse:BinarySecurityToken` referenced from the
+signature's `KeyInfo`. The header looks like this:
+
+```xml
+<wsse:Security>
+  <wsu:Timestamp wsu:Id="ts">
+    <wsu:Created>2026-10-28T17:00:00Z</wsu:Created>
+    <wsu:Expires>2026-10-28T17:05:00Z</wsu:Expires>
+  </wsu:Timestamp>
+  <wsse:BinarySecurityToken wsu:Id="x509" ValueType="…#X509v3"
+      EncodingType="…#Base64Binary">MIIC…</wsse:BinarySecurityToken>
+  <ds:Signature>
+    <ds:SignedInfo>
+      <ds:CanonicalizationMethod
+          Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+      <ds:SignatureMethod
+          Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+      <ds:Reference URI="#body">…</ds:Reference>
+      <ds:Reference URI="#ts">…</ds:Reference>
+    </ds:SignedInfo>
+    <ds:SignatureValue>…</ds:SignatureValue>
+    <ds:KeyInfo><wsse:SecurityTokenReference>
+      <wsse:Reference URI="#x509" ValueType="…#X509v3"/>
+    </wsse:SecurityTokenReference></ds:KeyInfo>
+  </ds:Signature>
+</wsse:Security>
+```
+
+with `<s:Body wsu:Id="body">` around the RST. A certificate this realm issued
+may instead be named by a `#ThumbprintSHA1` or `#X509SubjectKeyIdentifier`
+`KeyIdentifier`, or an `X509IssuerSerial`, with no BinarySecurityToken.
+
+**3. Send it once.** In product a signed request is accepted once: send each
+request with a new Timestamp. A UsernameToken may travel beside the signature
+if your stack adds one, but it must name the same person or application.
+
+`tests/wstrust_message_signature.js` signs requests this way, with keys made
+at run time, and asserts each refusal.
+
 ## OnBehalfOf: impersonation
 
 `wst:OnBehalfOf` asks for a token **about** somebody else. The relying party
