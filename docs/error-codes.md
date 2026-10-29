@@ -1243,7 +1243,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0041` | The recovery code form POST failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
 | `STS-AUTHN-0042` | Too many recovery code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0043` | Checking a recovery code threw (the worker pool or the store failed part way). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
-| `STS-AUTHN-0044` | Passkeys are switched off in this realm (webauthn.enabled), so no new key may be enrolled and none may answer a sign-in step (#1135). | HTTP 200 page / action result with the reason |
+| `STS-AUTHN-0044` | Passkeys are switched off in this realm (webauthn.enabled), so no new key may be enrolled. A key already held goes on answering sign-in steps. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0045` | A passkey was refused as a first factor (passwordless): this realm does not allow it (webauthn.primaryAllowed). Until #1135 it refused enrolling a key in the primary role. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0046` | A passkey was refused as a second factor: this realm does not allow it (webauthn.mfaAllowed). Until #1135 it refused enrolling a key in the mfa role. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0047` | The credential store's setDirectory() hooks were refused whole because readPassword or writePassword was missing. | — |

@@ -81,7 +81,7 @@ function childMain() {
     const alicesKey = credentials.addKey(ALICE, {
       credentialId: 'aa-alice-key-' + stamp,
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'a', y: 'b' },
-      signCount: 0 }, 'mfa');
+      signCount: 0 });
     note(alicesKey && alicesKey.ok, 'precondition: alice holds a passkey',
          JSON.stringify(alicesKey));
 

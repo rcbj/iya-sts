@@ -486,50 +486,80 @@ function run(t) {
   });
 
   // -------------------------------------------------------------------------
-  t.log.info('=== the POLICY rows refuse an ENROLMENT and never an ' +
-             'authentication ===');
+  t.log.info('=== the POLICY rows decide how a key is USED, and refuse an ' +
+             'enrolment only when no use is left (#1135) ===');
   // -------------------------------------------------------------------------
+  // Until #1135 a key was enrolled in a ROLE and these rows refused an
+  // enrolment in the role they named, never a sign-in. A key has no role
+  // now: every key may answer either step as the realm allows, so the rows
+  // are asked at the SIGN-IN (`useAllowed()`, through `keyForAssertion()`),
+  // and an enrolment is refused only where no use at all is accepted.
   const who = 'webauthn-policy-probe';
   ldap.createUser(who, {});
   credentials.setPassword(who, 'anything');
+  const codeOf = require('../common/error_codes').codeOf;
 
   withSetting('webauthn.primaryAllowed', false, function () {
-    const refused = credentials.addKey(who, aKey('p1'), 'primary');
-    t.check(!refused.ok, 'a PRIMARY key is refused where the realm does not ' +
-      'allow one', (refused.errors || []).join(' '));
-    t.check(/webauthn.primaryAllowed/.test((refused.errors || []).join(' ')),
+    const added = credentials.addKey(who, aKey('p1'));
+    t.check(added.ok, 'a key is still ENROLLED where the realm does not let ' +
+      'one sign anybody in on its own, because it may still be the second ' +
+      'factor', (added.errors || []).join(' '));
+    const asked = policy.useAllowed('primary');
+    t.check(!asked.ok && codeOf(asked) === 'STS-AUTHN-0045',
+      'and the passwordless USE is refused, STS-AUTHN-0045', asked.why);
+    t.check(/webauthn.primaryAllowed/.test(String(asked.why || '')),
       'AND THE REFUSAL NAMES THE SETTING — somebody being sent back to a ' +
       'password field needs to know the answer is a knob rather than their ' +
       'hardware');
-    t.check(credentials.addKey(who, aKey('m1'), 'mfa').ok,
-      'and a SECOND-FACTOR key is unaffected, because the two rows are two ' +
-      'policies');
+    t.check(!authn.keyForAssertion(who, 'primary', 'p1').key &&
+            !!authn.keyForAssertion(who, 'mfa', 'p1').key,
+      'the same key is refused as a first factor and accepted as a second ' +
+      'factor, because the two rows are two policies over one key');
+    t.check(credentials.mechanismsFor(who).primaryKeys === 0 &&
+            credentials.mechanismsFor(who).mfaKeys === 1,
+      'and mechanismsFor() counts the key by the uses the realm allows');
   });
 
   withSetting('webauthn.mfaAllowed', false, function () {
-    t.check(!credentials.addKey(who, aKey('m2'), 'mfa').ok,
-      'the mirror image: a second-factor key is refused where that row is off');
-    t.check(credentials.mechanismsFor(who).mfaRequired === true,
-      'BUT THE KEY ALREADY ENROLLED GOES ON BEING DEMANDED. This is the ' +
-      'contract the setting itself states: an account configured for two ' +
-      'factors is still configured for two, and a switch that silently ' +
-      'downgraded it would be a security control whose off position does ' +
-      'something other than what it says');
+    t.check(credentials.addKey(who, aKey('m2')).ok,
+      'the mirror image: a key is enrolled where it may not be a second ' +
+      'factor, because it may still sign somebody in on its own');
+    const asked = policy.useAllowed('mfa');
+    t.check(!asked.ok && codeOf(asked) === 'STS-AUTHN-0046',
+      'and the second-factor USE is refused, STS-AUTHN-0046', asked.why);
+    t.check(!authn.keyForAssertion(who, 'mfa', 'p1').key &&
+            !!authn.keyForAssertion(who, 'primary', 'p1').key,
+      'the key enrolled earlier is refused as a second factor and accepted ' +
+      'as a first one: the switch stops the use it names, for every key ' +
+      'alike (until #1135 a key already enrolled went on being demanded)');
+    t.check(credentials.mechanismsFor(who).mfaKeys === 0 &&
+            credentials.mechanismsFor(who).primaryKeys === 2,
+      'and no key is counted as a second factor here');
+  });
+
+  withSetting('webauthn.primaryAllowed', false, function () {
+    withSetting('webauthn.mfaAllowed', false, function () {
+      const refused = credentials.addKey(who, aKey('n1'));
+      t.check(!refused.ok && codeOf(refused) === 'STS-AUTHN-0531',
+        'WITH BOTH USES REFUSED A NEW KEY IS REFUSED, STS-AUTHN-0531: it ' +
+        'could never answer anything', (refused.errors || []).join(' '));
+    });
   });
 
   withSetting('webauthn.enabled', false, function () {
-    t.check(!credentials.addKey(who, aKey('m3'), 'mfa').ok &&
-            !credentials.addKey(who, aKey('p3'), 'primary').ok,
-      'with the mechanism off, neither role may be enrolled');
-    t.check(credentials.mechanismsFor(who).mfaKeys === 1,
-      'and the key on the entry is untouched');
+    const refused = credentials.addKey(who, aKey('m3'));
+    t.check(!refused.ok && codeOf(refused) === 'STS-AUTHN-0044',
+      'with the mechanism off no key may be enrolled, STS-AUTHN-0044',
+      (refused.errors || []).join(' '));
+    t.check(credentials.mechanismsFor(who).keys.length === 2,
+      'and the keys on the entry are untouched');
     t.check(policy.offered() === false && policy.report().offered === false,
       'and both the door predicate and the report agree, so a page and an ' +
       'endpoint cannot disagree about whether the mechanism is offered');
   });
 
-  withSetting('webauthn.maxKeysPerPerson', 1, function () {
-    const refused = credentials.addKey(who, aKey('m4'), 'mfa');
+  withSetting('webauthn.maxKeysPerPerson', 2, function () {
+    const refused = credentials.addKey(who, aKey('m4'));
     t.check(!refused.ok, 'the cap refuses the next enrolment',
       (refused.errors || []).join(' '));
     t.check(/webauthn.maxKeysPerPerson/.test((refused.errors || []).join(' ')),
@@ -540,7 +570,7 @@ function run(t) {
       'lowering it safe');
   });
 
-  t.check(credentials.addKey(who, aKey('m5'), 'mfa').ok,
+  t.check(credentials.addKey(who, aKey('m5')).ok,
     'with every policy row back at its default the enrolment succeeds again, ' +
     'so none of the refusals above left an override behind');
 
@@ -566,9 +596,9 @@ function run(t) {
   const twoKeys = 'webauthn-two-keys-probe';
   ldap.createUser(twoKeys, {});
   credentials.setPassword(twoKeys, 'anything');
-  credentials.addKey(twoKeys, aKey('first-mfa'), 'mfa');
-  credentials.addKey(twoKeys, aKey('second-mfa'), 'mfa');
-  credentials.addKey(twoKeys, aKey('the-primary'), 'primary');
+  credentials.addKey(twoKeys, aKey('first-mfa'));
+  credentials.addKey(twoKeys, aKey('second-mfa'));
+  credentials.addKey(twoKeys, aKey('the-primary'));
 
   t.check(authn.keyForAssertion(twoKeys, 'mfa', 'second-mfa').key
             .credentialId === 'second-mfa',
@@ -581,25 +611,27 @@ function run(t) {
             .credentialId === 'first-mfa',
     'and one naming the first is checked against the first');
 
-  const wrongRole = authn.keyForAssertion(twoKeys, 'mfa', 'the-primary');
-  t.check(!wrongRole.key,
-    'A `primary` KEY DOES NOT ANSWER A SECOND-FACTOR STEP. It signs somebody ' +
-    'in on its own, so accepting one here would let a person satisfy "a ' +
-    'password AND a second factor" with a credential this service already ' +
-    'considers sufficient by itself', wrongRole.why);
-  t.check(authn.keyForAssertion(twoKeys, 'primary', 'the-primary').key
-            .credentialId === 'the-primary',
-    'and it answers a PASSWORDLESS step, which is the role it was enrolled in');
+  // UNTIL #1135 a `primary` key did not answer a second-factor step. A key
+  // has no role now, so every key the person holds answers either step the
+  // realm allows — the one named, whichever step it is.
+  const eitherStep = authn.keyForAssertion(twoKeys, 'mfa', 'the-primary');
+  t.check(!!eitherStep.key &&
+          eitherStep.key.credentialId === 'the-primary',
+    'EVERY KEY ANSWERS A SECOND-FACTOR STEP (#1135): a key carries no role, ' +
+    'and the one the assertion names is the one checked', eitherStep.why);
+  t.check(authn.keyForAssertion(twoKeys, 'primary', 'second-mfa').key
+            .credentialId === 'second-mfa',
+    'and every key answers a PASSWORDLESS step as well');
 
   const stranger = authn.keyForAssertion(twoKeys, 'mfa', 'never-enrolled');
-  t.check(!stranger.key && /not one of the 2/.test(stranger.why),
+  t.check(!stranger.key && /not one of the 3/.test(stranger.why),
     'a credential this person never enrolled is refused, and the refusal ' +
     'says how many they DO hold — which is a different thing to fix from ' +
     'holding none', stranger.why);
 
   const nobody = authn.keyForAssertion('webauthn-holds-nothing-at-all', 'mfa',
                                        'x');
-  t.check(!nobody.key && /no security key is enrolled/.test(nobody.why),
+  t.check(!nobody.key && /no passkey is enrolled/.test(nobody.why),
     'and somebody who holds none is refused differently, because an account ' +
     'that reached that screen holding nothing is a different fault',
     nobody.why);
@@ -628,6 +660,7 @@ module.exports = {
             'an algorithm the verifier cannot check, that an unusable ' +
             'setting falls back rather than producing an empty offer, that ' +
             'the RP ID may only be widened to a real domain suffix, and that ' +
-            'the policy rows refuse an enrolment and never an authentication',
+            'the policy rows decide how a key is used at the sign-in and ' +
+            'refuse an enrolment only where no use is left (#1135)',
   run: run
 };

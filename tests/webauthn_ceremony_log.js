@@ -154,7 +154,7 @@ async function declined(t) {
   log.debug('Entering declined().');
   const who = 'wcl-' + require('crypto').randomBytes(3).toString('hex');
   ldap.createUser(who, { invent: false });
-  const begun = credentials.beginKeyEnrolment(who, { role: 'mfa' });
+  const begun = credentials.beginKeyEnrolment(who, {});
   const answer = await credentials.confirmKeyEnrolment(who,
     begun.enrolmentId,
     { error: 'NotAllowedError', message: 'The operation either timed ' +
@@ -316,7 +316,7 @@ async function deviceLink(t) {
   const credentialId = nodeCrypto.randomBytes(16).toString('base64url');
   const stored = credentials.addKey(who, { credentialId: credentialId,
     publicKeyJwk: pair.publicKey.export({ format: 'jwk' }), signCount: 0,
-    label: 'built in', attachment: 'platform', aaguid: '' }, 'mfa');
+    label: 'built in', attachment: 'platform', aaguid: '' });
   const declined = enrolment.beginLink({ username: who, sessionId: session,
     credentialId: credentialId, label: 'laptop', platform: 'macos' });
   const refused = await enrolment.finishLink({ username: who,
@@ -349,7 +349,9 @@ async function deviceLink(t) {
           'device-link row: the code, the error name, a duration',
           JSON.stringify([declined.ok, refused, no]));
   t.check(linked.ok && yes.detail.door === 'device-link' &&
-          yes.detail.role === 'mfa' && !!yes.detail.algorithm &&
+          // No role since #1135: the key carries none, and a device link
+          // answers no sign-in step.
+          !yes.detail.role && !!yes.detail.algorithm &&
           yes.detail.offered === yes.detail.algorithm &&
           typeof yes.detail.durationMs === 'number' &&
           ceremonies.unfold(yes.detail).attachment === 'platform' &&

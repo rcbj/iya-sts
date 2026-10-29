@@ -119,7 +119,7 @@ function progressDouble() {
 function due(extra) {
   log.debug("Entering due().");
   const out = Object.assign({ activity: 'pqc-passkey-migration',
-    role: 'primary', reason: 'classical', required: false,
+    reason: 'classical', required: false,
     enforceable: true, method: 'upgrade', fallback: 'none', snoozeDays: 7,
     graceDays: 30, invitedAt: 0, deadline: 0, profile: 'staff',
     askedBy: 'policy' },
@@ -149,9 +149,9 @@ async function rowChecks(t) {
   // ada: asked once, today.
   pl.noteAsked('ada', due());
   // bob: asked and skipped twice.
-  pl.noteAsked('bob', due({ role: 'mfa', askedBy: 'pla-9' }));
-  pl.noteSkipped('bob', due({ role: 'mfa', askedBy: 'pla-9' }));
-  pl.noteSkipped('bob', due({ role: 'mfa', askedBy: 'pla-9' }));
+  pl.noteAsked('bob', due({ askedBy: 'pla-9' }));
+  pl.noteSkipped('bob', due({ askedBy: 'pla-9' }));
+  pl.noteSkipped('bob', due({ askedBy: 'pla-9' }));
   // cy: asked forty days ago, never did it: past a thirty-day grace.
   built.clock.now = T0 - 40 * DAY;
   pl.noteAsked('cy', due());
@@ -198,7 +198,10 @@ async function rowChecks(t) {
       'and a started activity asked bob');
     t.equal(by.eve && by.eve.askedBy, '',
       'a person only mailed was asked by nobody');
-    t.equal(by.bob && by.bob.role, 'mfa', 'in the role he was asked in');
+    // RETIRED SINCE #1135 and kept, so a query selecting it still
+    // validates: a row written since carries no role (an older one keeps
+    // the one it had).
+    t.equal(by.bob && by.bob.role, '', 'and no role: a passkey has none');
     t.equal(by.bob && by.bob.progress, 'snoozed', 'and is put off');
     t.equal(by.cy && by.cy.graceEnded, true, 'cy is past the allotted time');
     t.equal(by.cy && by.cy.progress, 'past-grace', 'and says so in a word');

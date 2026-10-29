@@ -253,7 +253,8 @@ Shared Signals event says so. The inter-realm trust key (`krbtgt/<partner>`)
 is a secret shared with the partner and is not rotated.
 
 **A person who holds or must hold a second factor gets no ticket on a password
-alone** (#173). An authenticator app, a security key in the `mfa` role,
+alone** (#173). An authenticator app, any passkey (where the realm lets a passkey be a
+second factor; until #1135 only a security key in the `mfa` role),
 `stsMfaRequired` on their entry or the realm's authentication policy (`requireSecondFactor`) — the
 same rule as the [password-only doors](#app-passwords-at-the-password-only-doors) —
 and an AS-REQ proving only the password (`PA-ENC-TIMESTAMP`, or FAST's
@@ -331,9 +332,10 @@ Basic and EST Basic take a password and have nowhere to ask for anything more
 (RFC 4513 section 5.1.3, the UsernameToken Profile, RFC 7617, RFC 7030 section
 3.2.3). NIST SP 800-63B section 4.2 puts an account bound to two factors at
 AAL2, and a door that accepts one of them alone brings it down to AAL1. So, **in
-product mode**, a person who holds an authenticator app or a security key in
-the `mfa` role, or an emailed second factor they opted into, or of whom a
-second factor is required (`stsMfaRequired`, or the authentication policy's
+product mode**, a person who holds an authenticator app or any passkey (where
+the realm lets a passkey be a second factor, `webauthn.mfaAllowed`; until
+#1135 only a security key in the `mfa` role), or an emailed second factor
+they opted into, or of whom a second factor is required (`stsMfaRequired`, or the authentication policy's
 `requireSecondFactor`), is refused their own password at those five doors:
 
 * **The answer is a wrong password's**, byte for byte — LDAP

@@ -148,8 +148,7 @@ function labels(t) {
     credentials.addKey(name, { credentialId: id,
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
       transports: group === 'security-key' ? ['usb'] : ['internal'],
-      attachment: group === 'security-key' ? 'cross-platform' : 'platform' },
-      'mfa');
+      attachment: group === 'security-key' ? 'cross-platform' : 'platform' });
     log.debug('Leaving labels() add().');
     return credentials.keysOf(name).filter(function (one) {
       return one.credentialId === id;

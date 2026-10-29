@@ -136,7 +136,7 @@ function bound(t) {
       credentialId: 'pes-cred-' + n,
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
       attestation: serial === undefined ? { trusted: true }
-        : { trusted: true, deviceSerial: serial } }, 'mfa');
+        : { trusted: true, deviceSerial: serial } });
     log.debug('Leaving bound() add().');
     return out;
   };

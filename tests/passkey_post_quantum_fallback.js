@@ -380,7 +380,7 @@ function childMain() {
          JSON.stringify([retried.begun.ok, retried.done.ok,
                          viewDuring && viewDuring.fallback]));
     const annPq = await makeAuthenticator(-49, RPID, ORIGIN);
-    const wrong = await enrol('pqf-ann', { role: 'primary', kind: 'passkey',
+    const wrong = await enrol('pqf-ann', { kind: 'passkey',
                                            classicalOnly: true },
       function (b) {
         return annPq.register(b.challenge, b.userHandle);
@@ -391,8 +391,8 @@ function childMain() {
          JSON.stringify(wrong.done));
     config.setOverride('webauthn.pqcOnly', true);
     const refusedBegin = credentials.beginKeyEnrolment('pqf-ann',
-      { role: 'primary', classicalOnly: true });
-    credentials.beginKeyEnrolment('pqf-ann', { role: 'primary' });
+      { classicalOnly: true });
+    credentials.beginKeyEnrolment('pqf-ann', {});
     const onlyDrawn = keysPages.enrolBlock(keysView('pqf-ann'), T);
     credentials.abandonKeyEnrolment('pqf-ann');
     config.clearOverride('webauthn.pqcOnly');
@@ -470,13 +470,13 @@ function childMain() {
     const catClassical = await makeAuthenticator(-7, RPID, ORIGIN);
     const catPq = await makeAuthenticator(-48, RPID, ORIGIN);
     const eveKey = await makeAuthenticator(-7, RPID, ORIGIN);
-    await enrol('pqf-cat', { role: 'primary' }, function (b) {
+    await enrol('pqf-cat', {}, function (b) {
       return catClassical.register(b.challenge, b.userHandle);
     });
-    await enrol('pqf-cat', { role: 'primary' }, function (b) {
+    await enrol('pqf-cat', {}, function (b) {
       return catPq.register(b.challenge, b.userHandle);
     });
-    await enrol('pqf-eve', { role: 'primary' }, function (b) {
+    await enrol('pqf-eve', {}, function (b) {
       return eveKey.register(b.challenge, b.userHandle);
     });
     const allowOf = async function (name) {
@@ -913,7 +913,7 @@ function childMain() {
     };
     const fayBefore = rows('portal.key.refused', 'pqf-fay');
     const fayBegun = credentials.beginKeyEnrolment('pqf-fay',
-      { role: 'primary', kind: 'passkey' });
+      { kind: 'passkey' });
     const fayKept = await finishKey({ error: 'NotSupportedError',
                                       capabilities: null });
     const keptAnswer = fayKept.sent.body || {};
@@ -931,7 +931,7 @@ function childMain() {
            hasView: Object.prototype.hasOwnProperty.call(keptAnswer, 'view'),
            refused: rows('portal.key.refused', 'pqf-fay') }));
     const fayAgain = credentials.beginKeyEnrolment('pqf-fay',
-      { role: 'primary', kind: 'passkey' });
+      { kind: 'passkey' });
     const fayDropped = await finishKey({ error: 'SecurityError' });
     const droppedAnswer = fayDropped.sent.body || {};
     note(fayAgain.ok && !fayDropped.pending &&
@@ -947,7 +947,7 @@ function childMain() {
                     begun: { ok: false } };
     try {
       const onlyBegun = credentials.beginKeyEnrolment('pqf-fay',
-        { role: 'primary', kind: 'passkey' });
+        { kind: 'passkey' });
       fayOnly = await finishKey({ error: 'NotSupportedError',
                                  capabilities: null });
       fayOnly.begun = onlyBegun;

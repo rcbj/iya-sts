@@ -207,7 +207,7 @@ function childMain() {
       });
     credentials.addKey('pfu-holder', { credentialId: 'pfu-holder-key',
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
-      label: 'holder key' }, 'primary');
+      label: 'holder key' });
 
     const codeRecorded = function (code) {
       return audit.list().some(function (row) {
@@ -249,10 +249,10 @@ function childMain() {
                text: (a.errors || []).length ? a.errors.join(' ')
                                              : String(a.text || '') };
     };
+    // Every key the person holds (#1135: a key has no role, so this counted
+    // `primary` keys only until then).
     const primaryKeys = function (name) {
-      return credentials.keysOf(name).filter(function (k) {
-        return k.role === 'primary';
-      }).length;
+      return credentials.keysOf(name).length;
     };
 
     // 1. Development, the control.
@@ -297,7 +297,7 @@ function childMain() {
       s = await passwordless('pfu-holder');
       note(s.posted.status === 200 && modeOf(s.posted) === 'get' &&
            s.posted.text.indexOf(REFUSAL) < 0,
-           '4. PRODUCT: a person who HOLDS a primary key still gets the ' +
+           '4. PRODUCT: a person who HOLDS a passkey still gets the ' +
            'ceremony, as an assertion — the refusal is about enrolling',
            s.posted.status + ' ' + s.posted.text.slice(0, 200));
 

@@ -38,12 +38,9 @@
 //   f. an unknown `wauth` is refused as before (0006);
 //   h. a one-time code posted at the second-factor door under the demand is
 //      refused; i. `step_up.screenDemandFor()` is what both protocols read.
-//   j. a PRIMARY passkey does not answer a key demand after a password:
-//      somebody holding a second factor and no mfa-role key is refused
-//      (#898), not handed the ceremony that would enrol one.
-//   j. a PRIMARY passkey does not answer a key demand after a password:
-//      somebody holding a second factor and no mfa-role key is refused
-//      (#898), not handed the ceremony that would enrol one.
+//   j. a passkey enrolled passwordless answers a key demand after a
+//      password (#1135: a key has no role), as an assertion — never the
+//      ceremony that would enrol one (#898).
 //   k. a phr wauth on a one-factor session is one step-up (forceKey,
 //      phishingClass empty) and a return that did not earn the class is
 //      refused (STS-WSFED-0030), the code recorded and not sent. Two
@@ -514,10 +511,13 @@ function childMain() {
          'is not drawn is still a URL',
          codeAttempt.status + ' ' + codeAttempt.text.slice(0, 200));
 
-    // --- j. a PRIMARY passkey does not answer the demand (#898) --------------
-    // The key step offers mfa-role keys only, so a person holding a second
-    // factor and a primary passkey but no mfa key was handed the enrolling
-    // ceremony after a password alone: the bypass c3 refuses.
+    // --- j. ANY passkey answers the demand (#898, #1135) --------------------
+    // Until #1135 the key step offered mfa-role keys only, so a person
+    // holding a second factor and a primary passkey but no mfa key was
+    // handed the ENROLLING ceremony after a password alone — the bypass c3
+    // refuses — and #898 refused them instead. A key has no role now: the
+    // passkey they hold answers the demand, so the password sign-in goes on
+    // to an ASSERTION of it, and still never to an enrolment.
     const primaryOnly = await withKey('wa-primary', true);
     const beganPrimary = credentials.beginTotpEnrolment('wa-primary');
     const confirmedPrimary = beganPrimary.ok
@@ -525,23 +525,31 @@ function childMain() {
         totp.codeAt(beganPrimary.secret, Date.now()))
       : beganPrimary;
     note(primaryOnly.mode === 'create' && confirmedPrimary.ok,
-         'j0. (wa-primary holds a primary passkey and an authenticator app)',
+         'j0. (wa-primary holds a passkey made passwordless and an ' +
+         'authenticator app)',
          primaryOnly.mode + ' ' + JSON.stringify(confirmedPrimary)
            .slice(0, 160));
     const dave = browser(port);
     first = await dave.go('GET', signInUrl({ wauth: KEY }));
     const daveScreen = await authnScreen.open({ port: port, jar: dave.jar,
       at: String(first.headers.location) });
-    const refusedPrimary = await authnScreen.submit({ port: port,
+    const toKey = await authnScreen.submit({ port: port,
       jar: dave.jar, opened: daveScreen,
       fields: { action: 'login', username: 'wa-primary',
                 password: 'anything' } });
-    note(refusedPrimary.apiStatus === 400 &&
-         /This request needs a passkey/.test(refusedPrimary.text),
+    const keyPage = toKey.next === 'mfa'
+      ? await authnScreen.openStep({ port: port, jar: dave.jar,
+                                    at: toKey.location })
+      : {};
+    const keyView = (keyPage.view || {}).webauthn || {};
+    note(toKey.next === 'mfa' && toKey.step === 'webauthn' &&
+         keyView.mode === 'get',
          'j1. a password sign-in by somebody holding a second factor and a ' +
-         'PRIMARY passkey but no mfa key is refused under a key demand, not ' +
-         'walked through a ceremony that would enrol one (#898)',
-         refusedPrimary.apiStatus + ' ' + refusedPrimary.text.slice(0, 200));
+         'passkey enrolled passwordless goes on, under a key demand, to an ' +
+         'ASSERTION of that passkey — any key answers either step since ' +
+         '#1135 — and never to a ceremony that would enrol one (#898)',
+         (toKey.next || toKey.apiStatus) + ' ' + toKey.step + ' ' +
+         keyView.mode + ' ' + String(toKey.text || '').slice(0, 200));
 
     // --- i. one mechanism, named in step_up.ts --------------------------------
     const stepUp = require(ROOT + '/oauth-oidc/step_up');

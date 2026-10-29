@@ -26,10 +26,11 @@
 //      lane — signs in under the requirement: the algorithm decides.
 //   4. THE FILTERED allowCredentials: the passkey step names only the
 //      person's post-quantum keys, and the ML-DSA one signs in.
-//   5. BOTH ROLES: a person holding only classical keys is told before the
+//   5. BOTH STEPS: a person holding only classical keys is told before the
 //      ceremony, at the passwordless step (primary) and at the step after a
 //      password (second factor), with the refusal recorded; an assertion
-//      sent anyway is refused at the session's start.
+//      sent anyway is refused at the session's start. (Both roles until
+//      #1135; a key has none now, and any key answers either step.)
 //   6. THE SIGNAL: one CAEP credential-change per key and reason, however
 //      many times the key is refused, and the mark on its row.
 //   7. THE WARNINGS: `/portal/keys` and the console mark the classical key
@@ -315,22 +316,22 @@ function childMain() {
     const carolPq = await makeAuthenticator(-48, RPID, ORIGIN);
     const daveKey = await makeAuthenticator(-7, RPID, ORIGIN);
     const enrolled = [];
-    enrolled.push(await enrol('pqr-alice', { role: 'primary' }, function (b) {
+    enrolled.push(await enrol('pqr-alice', {}, function (b) {
       return aliceKey.register(b.challenge, b.userHandle);
     }));
-    enrolled.push(await enrol('pqr-alice', { role: 'mfa' }, function (b) {
+    enrolled.push(await enrol('pqr-alice', {}, function (b) {
       return aliceMfa.register(b.challenge, b.userHandle);
     }));
-    enrolled.push(await enrol('pqr-bob', { role: 'primary' }, function (b) {
+    enrolled.push(await enrol('pqr-bob', {}, function (b) {
       return bobKey.register(b.challenge, b.userHandle);
     }));
-    enrolled.push(await enrol('pqr-carol', { role: 'primary' }, function (b) {
+    enrolled.push(await enrol('pqr-carol', {}, function (b) {
       return carolClassical.register(b.challenge, b.userHandle);
     }));
-    enrolled.push(await enrol('pqr-carol', { role: 'primary' }, function (b) {
+    enrolled.push(await enrol('pqr-carol', {}, function (b) {
       return carolPq.register(b.challenge, b.userHandle);
     }));
-    enrolled.push(await enrol('pqr-dave', { role: 'primary' }, function (b) {
+    enrolled.push(await enrol('pqr-dave', {}, function (b) {
       return daveKey.register(b.challenge, b.userHandle);
     }));
     const bobRow = rowOf('pqr-bob', bobKey.credentialId);
@@ -338,7 +339,7 @@ function childMain() {
       return one.done.ok;
     }) &&
          !('lane' in bobRow) && bobRow.algorithm === 'ML-DSA-65',
-         '(the keys: ES256 for alice, both roles, and dave; ML-DSA-65 for ' +
+         '(the keys: ES256 for alice, two of them, and dave; ML-DSA-65 for ' +
          'bob, whose row records no lane; ES256 and ML-DSA-44 for carol)',
          JSON.stringify(enrolled.map(function (one) {
            return one.done.ok || one.done.errors;
@@ -398,7 +399,7 @@ function childMain() {
          'classical one signs her in', JSON.stringify(allowLoose) + ' ' +
          done.answer.next);
 
-    // 5. Both roles, told before the ceremony.
+    // 5. Both steps, told before the ceremony.
     const daveBefore = refusals('pqr-dave', 'STS-AUTHN-0356');
     f = await firstStep(STRICT, 'pqr-dave', true);
     const daveView = (f.step.view || {}).webauthn || {};
@@ -465,8 +466,8 @@ function childMain() {
            return one.initiatingEntity === 'policy' &&
                   one.changeType === 'update';
          }),
-         '6. one CAEP credential-change by policy per key — alice\'s primary ' +
-         'and second-factor keys, two — however often each is refused, and ' +
+         '6. one CAEP credential-change by policy per key — alice\'s two ' +
+         'keys, two — however often each is refused, and ' +
          'the mark on the row', aliceSignals + ' ' +
          signalsFor('pqr-alice') + ' ' +
          JSON.stringify(aliceRow.policyRefused || null));
@@ -524,16 +525,16 @@ function childMain() {
       postQuantumRequired: 'registration-and-sign-in' }));
     const offered = webauthnPolicy.creationOptions(RPID, 'passkey');
     const erinClassical = await makeAuthenticator(-7, RPID, ORIGIN);
-    const classicalTry = await enrol('pqr-erin', { role: 'primary' },
+    const classicalTry = await enrol('pqr-erin', {},
       function (b) {
         return erinClassical.register(b.challenge, b.userHandle);
       });
     const written = credentials.addKey('pqr-erin', {
       credentialId: erinClassical.credentialId,
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
-      algorithm: 'ES256', coseAlg: -7 }, 'primary');
+      algorithm: 'ES256', coseAlg: -7 });
     const erinPq = await makeAuthenticator(-50, RPID, ORIGIN);
-    const pqTry = await enrol('pqr-erin', { role: 'primary' }, function (b) {
+    const pqTry = await enrol('pqr-erin', {}, function (b) {
       return erinPq.register(b.challenge, b.userHandle);
     });
     note(JSON.stringify(offered.algorithms) === '[-50,-49,-48]' &&
@@ -551,7 +552,7 @@ function childMain() {
     config.setOverride('webauthn.pqcAlongsideClassical', true);
     const lanes = webauthnPolicy.lanes();
     const begunClassical = credentials.beginKeyEnrolment('pqr-erin',
-      { role: 'primary', lane: 'classical' });
+      { lane: 'classical' });
     credentials.abandonKeyEnrolment('pqr-erin');
     config.clearOverride('webauthn.pqcAlongsideClassical');
     note(JSON.stringify(lanes) === '["pqc"]' && begunClassical.ok &&

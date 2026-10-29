@@ -144,15 +144,15 @@ async function run(t) {
     transports: ['hybrid', 'internal', 'not a transport!'],
     discoverable: true, userVerified: true,
     provider: 'Google Password Manager', providerSource: 'table'
-  }, 'mfa').ok, true, 'E. a synced passkey is added');
+  }).ok, true, 'E. a synced passkey is added');
   t.equal(credentials.addKey(alice, {
     credentialId: 'alice-yubikey', publicKeyJwk: jwk, signCount: 0,
     attachment: 'cross-platform', backupEligible: false, backupState: false,
     transports: ['usb'], discoverable: false
-  }, 'mfa').ok, true, 'E. and a security key');
+  }).ok, true, 'E. and a security key');
   t.equal(credentials.addKey(mallory, {
     credentialId: 'mallory-key', publicKeyJwk: jwk, signCount: 0
-  }, 'mfa').ok, true, 'E. mallory holds one of her own');
+  }).ok, true, 'E. mallory holds one of her own');
   const held = credentials.keysOf(alice);
   const synced = held.filter(function (k) {
     return k.credentialId === 'alice-synced';

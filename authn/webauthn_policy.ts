@@ -1717,6 +1717,8 @@ class WebauthnPolicy {
    * first factor (`primary`, passwordless) or as a second factor (`mfa`).
    *
    * Asks this module's own settings, then the realm's authentication policy.
+   * `webauthn.enabled` is not one of them: it stops enrolment, never a key
+   * already held (`enrolmentAllowed()`).
    * @param use - `primary` or `mfa`
    * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
    */
@@ -1724,13 +1726,11 @@ class WebauthnPolicy {
     const { log, errorCodes } = this.deps;
     log.debug('Entering WebauthnPolicy.useAllowed(). use=' + use);
     const live = this.settings();
-    if (!live.enabled) {
-      log.debug('Leaving WebauthnPolicy.useAllowed(). WebAuthn is not ' +
-                'offered here.');
-      return errorCodes.mark({ ok: false,
-               why: 'Passkeys are switched off in this realm ' +
-                    '(webauthn.enabled).' }, 'STS-AUTHN-0044');
-    }
+    // `webauthn.enabled` OFF STOPS NEW KEYS AND NEVER A HELD ONE, as it
+    // always has: an account configured for two factors stays configured
+    // for two, and a switch about offering passkeys must not quietly take a
+    // person's second factor — or, for a passwordless person, their account
+    // — away. The two USE switches below are the ones that decide a use.
     if (String(use) === 'primary' && !live.primaryAllowed) {
       log.debug('Leaving WebauthnPolicy.useAllowed(). A passkey may not be ' +
                 'a first factor here.');

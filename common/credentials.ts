@@ -9203,8 +9203,11 @@ class Credentials {
       // **A LEGACY SET COUNTS AS HAVING ONE.** It still works, its owner may be
       // holding it on paper, and telling them to replace it would be this
       // service inventing urgency about a credential that is fine.
+      // A KEY IS A SECOND FACTOR ONLY BESIDE A PASSWORD (#1135), as
+      // `addKey()`'s advice reads it: a passwordless person's keys are their
+      // way in, with no second step for a code to stand in for.
       recoveryAdvised: backupCodes.offered() &&
-                       (uses.mfa > 0 || totpEnrolled) &&
+                       ((uses.mfa > 0 && password) || totpEnrolled) &&
                        !this.backupCodesOf(name),
       // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
       // hold one — by an administrator on their entry, or by the realm. It is

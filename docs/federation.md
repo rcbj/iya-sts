@@ -389,7 +389,7 @@ entityID, endpoints and certificate stay there) and adds two things:
 |---|---|
 | `password` | the sign-in screen |
 | `password-mfa` | the sign-in screen with the second factor required (`amr ["pwd","hwk"]`, `acr "mfa"`) |
-| `webauthn` | a passwordless security key alone — one factor |
+| `webauthn` | a passkey alone, with no password — one factor |
 | `spnego` | a Kerberos ticket the browser already holds, no screen (see [Kerberos](kerberos.md)) |
 | `wallet` | a credential this realm issued, presented from the person's wallet (see [OpenID4VP](oid4vp.md)) |
 | `federation` | on to another service-provider-side relationship in this realm, named by `fedAuthnRelationship` |

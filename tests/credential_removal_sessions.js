@@ -348,7 +348,7 @@ function childMain() {
       const keyB = makeAuthenticator(RPID, ORIGIN);
       const one = await signInWithKey(name, keyA);
       credentials.addKey(name, { credentialId: keyB.credentialId,
-        publicKeyJwk: keyB.jwk, label: 'key B' }, 'primary');
+        publicKeyJwk: keyB.jwk, label: 'key B' });
       const two = await signInWithKey(name, keyB);
       return { keyA: keyA, keyB: keyB, one: one, two: two };
     };
@@ -589,7 +589,7 @@ function childMain() {
     person(FRANK);
     credentials.addKey(FRANK, { credentialId: 'crs-frank-spare',
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
-      label: 'spare' }, 'mfa');
+      label: 'spare' });
     const frankSession = sessionFor(FRANK, ['pwd'], '1',
                                     { kind: 'password' });
     const spare = await realms.run(realms.DEFAULT_REALM, function () {

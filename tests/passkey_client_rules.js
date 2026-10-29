@@ -109,7 +109,7 @@ function begin(userAgent, who) {
   log.debug('Entering begin().');
   const req = reqFor(userAgent);
   const out = audit.withSource({ req: req }, function () {
-    const begun = credentials.beginKeyEnrolment(who, { role: 'mfa' });
+    const begun = credentials.beginKeyEnrolment(who, {});
     return { begun: begun,
              held: credentials.pendingKeyEnrolmentFor(who) || {} };
   });

@@ -191,8 +191,8 @@ path segment carries badly.
 * A **hardware token** demand is met by a security key, used alone or after a
   password.
 * A **multi-factor** demand is met only by two real factors — a password and a
-  one-time code, or a password and a key. A passwordless key alone does not
-  answer it.
+  one-time code, or a password and a key. A passkey used with no password
+  does not answer it.
 * A demand the session does not meet is a **step-up**, in every mode — the
   same mechanism as `acr_values=mfa` in OAuth: the
   person is sent back through the sign-in screen with exactly what the demand
@@ -317,7 +317,7 @@ changed on those pages or with `POST /admin-api/config/set`.
 * **`wauth` is a step-up, never a fake.** A relying party that demanded a
   factor is either given it, after the person provides it, or refused — never
   handed an assertion claiming a method that did not happen.
-* **A passwordless key is not two factors.** Hardware-token and multi-factor
+* **A passkey used with no password is not two factors.** Hardware-token and multi-factor
   demands are separate questions, and one session can answer the first and not
   the second.
 * **`wreqptr` is refused.** Following a URL from a query parameter is

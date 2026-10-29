@@ -5205,8 +5205,8 @@ const CODES = [
       '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0044',
     summary: 'Passkeys are switched off in this realm ' +
-      '(webauthn.enabled), so no new key may be enrolled and none may ' +
-      'answer a sign-in step (#1135).',
+      '(webauthn.enabled), so no new key may be enrolled. A key already ' +
+      'held goes on answering sign-in steps.',
     spec: 'HTTP 200 page / action result with the reason' },
   { code: 'STS-AUTHN-0045',
     summary: 'A passkey was refused as a first factor (passwordless): this ' +

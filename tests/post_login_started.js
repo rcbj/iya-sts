@@ -143,11 +143,11 @@ function build() {
       return clock.now;
     }
   });
-  // Everybody holds one classical PRIMARY passkey; the realm can always
-  // make an ML-DSA one, in one lane.
+  // Everybody holds one classical passkey (no role since #1135); the realm
+  // can always make an ML-DSA one, in one lane.
   const credentials = {
     keysOf: function (u) {
-      return [{ credentialId: u + '-ec', role: 'primary' }];
+      return [{ credentialId: u + '-ec' }];
     },
     keyAlgorithm: function () {
       return { postQuantum: false, name: 'ES256' };
@@ -163,7 +163,8 @@ function build() {
     offered: function () {
       return true;
     },
-    upgradeRefusal: ok, roleAllowed: ok, laneRefusal: ok,
+    upgradeRefusal: ok, useAllowed: ok, enrolmentAllowed: ok,
+    laneRefusal: ok,
     offersPostQuantum: function () {
       return true;
     },
@@ -213,7 +214,8 @@ async function run(t) {
   t.equal(ann && ann.askedBy, staffId, 'askedBy names the started activity');
   t.equal(ann && ann.profile, 'default',
     'under the profile the policy selects for her');
-  t.equal(ann && ann.role, 'primary', 'in the role her passkey makes due');
+  t.equal(ann && ann.reason, 'classical',
+    'because her passkey is classical (in no role since #1135)');
   t.equal(pl.dueFor('bob'), null, 'a non-member is not');
   t.equal(pl.dueFor('cat'), null, 'nor a person in no group');
 

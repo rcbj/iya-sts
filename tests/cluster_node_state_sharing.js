@@ -316,7 +316,7 @@ async function node(role, storeFile, kekFile) {
     const codes = credentials.beginBackupCodes('alice');
     out.codesHandle = codes.handle;
     out.firstCode = (codes.codes || [])[0] || '';
-    const key = credentials.beginKeyEnrolment('alice', { role: 'mfa' });
+    const key = credentials.beginKeyEnrolment('alice', {});
     out.challenge = key.challenge;
     out.began = [began.ok, codes.ok, key.ok];
 
