@@ -155,19 +155,26 @@ function run(t) {
     return verifiable.indexOf(name) >= 0;
   }), 'every algorithm offered by default is one the verifier can check',
   policy.algorithmsOffered().join(', '));
-  // AND EVERY ONE IS OFFERED, ML-DSA FIRST (2026-10-01, rcbj: "support and
-  // request every possible algorithm", the PQC three in particular).
+  // SEVEN BY DEFAULT, IN rcbj'S ORDER (#1150, 2026-10-29): ML-DSA-87, -65,
+  // -44, ES384, EdDSA, ES256, RS256. It was every algorithm the verifier
+  // checks (2026-10-01) until then; the others may still be ticked.
   const ids = policy.algorithmIds();
-  t.check(verifiable.filter(function (name) {
-    // The insecure ones (RS1) only behind webauthn.insecureAlgorithms.
-    return policy.INSECURE_ALGS.indexOf(name) < 0;
-  }).every(function (name) {
-    return policy.algorithmsOffered().indexOf(name) >= 0;
-  }) && ids.slice(0, 3).join(',') === '-50,-49,-48' &&
+  t.check(policy.algorithmsOffered().join(',') ===
+            'ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256' &&
+          ids.join(',') === '-50,-49,-48,-35,-8,-7,-257' &&
           ids.indexOf(-65535) < 0,
-  'the default requests EVERY algorithm the verifier checks, ML-DSA-87, ' +
-  '-65 and -44 (-50, -49, -48) first (#1078), and never RS1',
-  ids.join(', '));
+  'the default requests ML-DSA-87, ML-DSA-65, ML-DSA-44, ES384, EdDSA, ' +
+  'ES256 and RS256, in that order, and never RS1 (#1150)', ids.join(', '));
+  const row = require('../common/config').SETTINGS.filter(function (one) {
+    return one.key === 'webauthn.algorithms';
+  })[0];
+  t.check(row && row.csvValues.slice(0, 7).join(',') ===
+            'ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256' &&
+          verifiable.every(function (name) {
+            return row.csvValues.indexOf(name) >= 0;
+          }),
+  'the page offers every algorithm, the default\'s seven first (#1150)',
+  JSON.stringify(row && row.csvValues));
 
   // -------------------------------------------------------------------------
   t.log.info('=== the two algorithm flags (2026-10-01) ===');

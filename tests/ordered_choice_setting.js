@@ -176,7 +176,7 @@ async function runBody(t) {
   t.check(pick({ 'webauthn.insecureAlgorithms': true }).indexOf('RS1') >= 0,
           '8. with insecure algorithms on, it ticks RS1 too');
   t.equal(pick({ 'webauthn.pqcOnly': true }).join(','),
-          'ML-DSA-44,ML-DSA-65,ML-DSA-87',
+          'ML-DSA-87,ML-DSA-65,ML-DSA-44',
           '8. with post-quantum only on, it ticks ML-DSA alone');
   const locked = JSON.parse(JSON.stringify(described));
   locked.selectAll.onlyWhileOn[0].canBeOn = false;
