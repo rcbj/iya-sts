@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4807** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4819** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -88,6 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 12
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4690,6 +4691,27 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0032` | The certificate the HTTPS listener is serving is expired or not yet valid, so clients that check will refuse the handshake. | — |
 | `STS-XPEP-0033` | The remote XACML PEP met an uncaught exception after it had started, and contained it rather than exiting (#355): it carries on enforcing the policy it last pulled. The line carries the stack; a distinct fault is logged at occurrences 1, 2, 3 and each power of ten. | none — logged; the PEP carries on |
 | `STS-XPEP-0034` *(retired)* | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
+
+## STS-AUTHZEN
+
+**AuthZEN Authorization API.** AuthZEN Authorization API 1.0 over the XACML engine: a remote PEP's access evaluation requests and their JSON, the per-realm attribute catalogue that maps them onto XACML attributes, the caller's authentication (mutual TLS, an OAuth access token, or both) and its application scope, and the batch endpoint's bounds.
+
+Raised from: authzen/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-AUTHZEN-0001` | An AuthZEN access evaluation request was not a JSON object. | HTTP 400, an error message |
+| `STS-AUTHZEN-0002` | An AuthZEN access evaluation request had no subject, action or resource, or one of subject.type, subject.id, action.name, resource.type or resource.id was missing or empty (AuthZEN 1.0 section 5 requires all five). | HTTP 400, an error message |
+| `STS-AUTHZEN-0003` | A member of an AuthZEN request had the wrong JSON type, or was too long: subject, action, resource, context or properties not an object, an id, type or name not a string, or context.application not a non-empty string. | HTTP 400, an error message |
+| `STS-AUTHZEN-0004` | An AuthZEN request carried a property or context member this realm's attribute catalogue does not declare; an undeclared property is refused in every mode. | HTTP 400, an error message |
+| `STS-AUTHZEN-0005` | An AuthZEN request carried null for a property, or inside a bag; null is neither an empty value nor an absent one. | HTTP 400, an error message |
+| `STS-AUTHZEN-0006` | An AuthZEN property's value did not fit its catalogue row's datatype: a JSON type that may not reach it (a number for a string, a fraction for an integer), or a string that does not parse at it. | HTTP 400, an error message |
+| `STS-AUTHZEN-0007` | An AuthZEN property sent an array for a catalogue row whose multiplicity is single, or a bag with too many values. | HTTP 400, an error message |
+| `STS-AUTHZEN-0008` | An AuthZEN property sent an object where its catalogue row takes a value, an object or array inside a bag, or objects nested too deeply. | HTTP 400, an error message |
+| `STS-AUTHZEN-0009` | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. | HTTP 400, an error message |
+| `STS-AUTHZEN-0010` | An AuthZEN attribute catalogue row was refused: not a JSON object, an unknown member, or an object, property path, attributeId, category, dataType or multiplicity that is not one the catalogue takes. | the write is refused |
+| `STS-AUTHZEN-0011` | An AuthZEN attribute catalogue row was refused because it maps onto a reserved identifier — this service's own urn:sts:xacml: namespace, XACML's subject-id, resource-id or action-id, a current-time attribute, or context.application. A request-supplied attribute suppresses the PIP, so such a row would let a caller forge a trusted fact. | the write is refused |
+| `STS-AUTHZEN-0012` | An AuthZEN attribute catalogue row was refused because it sends a subject property under a bare directory attribute name, which the PIP reads off the subject's directory entry; for a subject this realm resolves the directory is authoritative. | the write is refused |
 
 ## STS-ADMIN
 

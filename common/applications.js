@@ -1934,6 +1934,45 @@ const SCHEMA = {
             'value. EMPTY MEANS any type this authorization server ' +
             'supports.' },
     // -------------------------------------------------------------------
+    // AUTHZEN (#563): TWO ATTRIBUTES, on DIFFERENT KINDS OF ENTRY, as RFC
+    // 9396's two are. The CATALOGUE is the API's — one row per value on the
+    // realm's `sts-authzen-api` resource object, read by `authzen/` on every
+    // request — and the APPLICATION SCOPE is a caller's: the applications an
+    // OAuth client calling `/access/v1` may ask about. A person or a service
+    // account carries the second as `stsAuthzenApplication` on its directory
+    // entry instead. Both are written by an administrator only: what a
+    // caller may ask about is never something the caller says.
+    { name: 'authzenAttribute', kind: 'multi',
+      from: 'the console (the AuthZEN page), the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is the vocabulary /access/v1 accepts, and that API is ' +
+        'an OAuth 2.0 resource; on an entry declared for no OAuth family it ' +
+        'would read like an API in service.',
+      what: 'ONE ROW OF THE AUTHZEN ATTRIBUTE CATALOGUE (#563), on the ' +
+            'sts-authzen-api resource object: a JSON object {"object", ' +
+            '"property", "attributeId", "category", "dataType", ' +
+            '"multiplicity", "description"}. `object` is subject, ' +
+            'resource, action or context; `property` the member\'s name, ' +
+            'or a dotted path into a nested object; `attributeId` the ' +
+            'XACML attribute it is sent as; `category` (default the ' +
+            'object\'s own), `dataType` (default string) and ' +
+            '`multiplicity` (single or bag). A property no row names is ' +
+            'refused in every mode, and a row may not name this service\'s ' +
+            'own urn:sts:xacml: identifiers, subject-id, resource-id or ' +
+            'action-id, nor a bare directory attribute name in a subject ' +
+            'category.' },
+    { name: 'appAuthzenApplication', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It scopes what this client may ask /access/v1 about with ' +
+        'an OAuth 2.0 access token, so on an entry declared for no OAuth ' +
+        'family it would read like a permission in force.',
+      what: 'AUTHZEN APPLICATION SCOPE (#563): the applications this ' +
+            'client, calling /access/v1 with its own client_credentials ' +
+            'token, may name in context.application — one identifier per ' +
+            'value. The client\'s own identifier is always in scope. Set ' +
+            'by an administrator, never by the caller.' },
+    // -------------------------------------------------------------------
     // RFC 9470, STEP-UP AUTHENTICATION (2026-09-13). TWO ATTRIBUTES ON A
     // RESOURCE: what it requires of the authentication behind an access token
     // addressed to it. RFC 9470 defines no registration or metadata member for
@@ -4620,6 +4659,10 @@ const EDITABLE = {
   // a client uses several.
   oauthAuthorizationDetailsType: 'multi',
   oauthAuthorizationDetailsTypes: 'multi',
+  // AuthZEN's two (#563). Both accumulate: a catalogue has many rows, and a
+  // caller may be scoped to several applications.
+  authzenAttribute: 'multi',
+  appAuthzenApplication: 'multi',
   // RFC 9470's two. Each holds one answer: the acr values are one ordered
   // list in one value, because a directory's multi-valued attribute has no
   // order and the order is the preference.
@@ -6684,6 +6727,9 @@ const FIELD_EXAMPLES = {
   oauthRequestUri: 'https://app.example.com/requests/signin.jwt',
   oauthAuthorizationDetailsType: 'payment_initiation',
   oauthAuthorizationDetailsTypes: 'payment_initiation',
+  authzenAttribute: '{"object":"resource","property":"classification",' +
+    '"attributeId":"urn:example:classification"}',
+  appAuthzenApplication: 'engineering-portal',
   oauthStepUpAcrValues: 'mfa',
   oauthStepUpMaxAge: '600',
   oauthDefaultAcrValues: 'mfa 1',
@@ -11214,6 +11260,34 @@ function authorizationDetailsAttributeProblem(attribute, value) {
   return null;
 }
 
+// AN AUTHZEN CATALOGUE ROW (#563), checked by the catalogue's own grammar —
+// the one place a row is read, so the write and every request read it alike.
+// A clear is never refused; the identifier list of `appAuthzenApplication`
+// is any non-empty value, as `appAllowedToDelegateTo`'s is.
+/**
+ * Checks an AuthZEN catalogue row written through the console or the API.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the error code and message, or null
+ */
+function authzenAttributeProblem(attribute, value) {
+  log.debug("Entering authzenAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'authzenAttribute' || !text) {
+    log.debug("Leaving authzenAttributeProblem(). Not asked.");
+    return null;
+  }
+  // Lazily: the catalogue is a library over the engine's model and this
+  // module is required long before the XACML family.
+  const parsed = require('../authzen/authzen_catalogue').parse(text);
+  log.debug("Leaving authzenAttributeProblem(). " +
+            (parsed.row ? 'A row.' : parsed.code));
+  return parsed.row ? null
+    : { code: parsed.code, message: attribute + ': ' + parsed.problem + '.' };
+}
+
 // ---------------------------------------------------------------------------
 // RFC 9470: WHAT A RESOURCE MAY REQUIRE (2026-09-13).
 //
@@ -11710,6 +11784,17 @@ function normaliseFields(value) {
     if (stepUpProblem) {
       errors.push(stepUpProblem.message);
       code = code || stepUpProblem.code;
+      return;
+    }
+    // AuthZEN's catalogue (#563), every value.
+    const authzenProblems = values.map(function (one) {
+      return authzenAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (authzenProblems.length) {
+      authzenProblems.forEach(function (one) { errors.push(one.message); });
+      code = code || authzenProblems[0].code;
       return;
     }
     // RFC 9396's two, every value.
@@ -15265,6 +15350,16 @@ function updateApplication(identifier, change) {
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable GNAP mutual TLS " +
                 "trust model.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
+  // AuthZEN's catalogue (#563), on an ADD or a SET that carries a value.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = authzenAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not an AuthZEN catalogue " +
+                "row.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
     }

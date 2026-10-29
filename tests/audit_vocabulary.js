@@ -39,7 +39,8 @@ const ROOT = path.join(__dirname, '..');
 const DIRS = ['common', 'admin-core', 'admin-ui', 'attribute-sources',
   'authn', 'portal',
   'oauth-oidc', 'saml', 'ws-trust', 'ws-federation', 'federation',
-  'kerberos', 'ldap', 'scim', 'ssf', 'spiffe', 'xacml', 'gnap', 'acme',
+  'kerberos', 'ldap', 'scim', 'ssf', 'spiffe', 'xacml', 'authzen', 'gnap',
+  'acme',
   'est', 'scep', 'risk', 'oid4vc', 'oidfed', 'pki', 'mgmt-api', 'logout',
   'cluster', 'persistence', 'tls', 'debugger', 'home'];
 

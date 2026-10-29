@@ -306,6 +306,21 @@ const VOCABULARY = Object.freeze({
   GNAP_DEVICE_COMPLIANCE: 'urn:sts:xacml:gnap:device-compliance',
   GNAP_DEVICE_ATTESTATION: 'urn:sts:xacml:gnap:device-attestation',
   GNAP_DEVICE_OWNER_MATCHES: 'urn:sts:xacml:gnap:device-owner-matches',
+  // THE FACTS OF AN AUTHZEN QUESTION (#563), written by `authzen/` and
+  // nothing else. AuthZEN's subject and resource each carry a TYPE beside
+  // the id, and XACML has no identifier for either. access-subject:
+  AUTHZEN_SUBJECT_TYPE: 'urn:sts:xacml:authzen:subject-type',
+  // resource:
+  AUTHZEN_RESOURCE_TYPE: 'urn:sts:xacml:authzen:resource-type',
+  // environment, TRUSTED — from the caller's authentication and its entry,
+  // never from the request body: who asked (a directory entry's DN or a
+  // client_id), and the application the question is scoped to.
+  AUTHZEN_CALLER: 'urn:sts:xacml:authzen:caller',
+  AUTHZEN_APPLICATION: 'urn:sts:xacml:authzen:application',
+  // environment, TRUSTED: every member the caller SENT, by its path
+  // (`subject.properties.department`, `context.source_ip`), so a policy can
+  // tell a property that was absent from one sent with an empty value.
+  AUTHZEN_SUPPLIED: 'urn:sts:xacml:authzen:supplied',
   // THE FACTS OF A PASSKEY QUESTION (#536): a passkey being registered
   // (`register-passkey`) or signing somebody in (`use-passkey`), gathered by
   // `common/passkey_policy.ts`. Nothing here decides; the built-in issuance
@@ -1083,6 +1098,53 @@ class AuthorizationRequest {
     this.environment(V.GNAP_DEVICE_OWNER_MATCHES, bool(device.ownerMatches),
                      B);
     log.debug("Leaving AuthorizationRequest.gnapRight().");
+    return this;
+  }
+
+  // THE FACTS OF AN AUTHZEN QUESTION (#563). `facts`:
+  //   subject { type, id }, action { name }, resource { type, id }
+  //                       the four AuthZEN requires, already validated
+  //   realm, caller, application
+  //                       trusted, from the authenticated caller
+  //   supplied            the paths of every member the caller sent
+  //   attributes          [{ category, attributeId, dataType, values }],
+  //                       each a catalogue row's, the values lexical
+  // The subject's id is XACML's own subject-id, the action's name its
+  // action-id and the resource's id its resource-id; everything else in the
+  // body reaches the request only through the catalogue
+  // (`authzen/authzen_map.ts`). An unknown application is left out rather
+  // than sent as '', so no rule reads an absent one as a value.
+  authzen(facts) {
+    log.debug("Entering AuthorizationRequest.authzen().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    const subject = given.subject || {};
+    const action = given.action || {};
+    const resource = given.resource || {};
+    this.principal(subject.id);
+    this.subject(V.AUTHZEN_SUBJECT_TYPE, one(subject.type));
+    this.requestedAction(action.name);
+    this.target(resource.id);
+    this.resource(V.AUTHZEN_RESOURCE_TYPE, one(resource.type));
+    this.protocol('authzen');
+    this.environment(V.REALM, one(given.realm));
+    this.environment(V.AUTHZEN_CALLER, one(given.caller));
+    this.environment(V.AUTHZEN_APPLICATION, one(given.application));
+    this.environment(V.AUTHZEN_SUPPLIED,
+                     (Array.isArray(given.supplied) ? given.supplied : [])
+                       .map(String));
+    const self = this;
+    (Array.isArray(given.attributes) ? given.attributes : [])
+      .forEach(function (row) {
+        self.attribute(row.category, row.attributeId, row.values,
+                       row.dataType);
+      });
+    log.debug("Leaving AuthorizationRequest.authzen().");
     return this;
   }
 
