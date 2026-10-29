@@ -6604,8 +6604,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-AUTHN-0383',
     summary: 'A sign-in after an account recovery could not be offered the ' +
-      'registration of a passkey (#724): security keys are switched off, or ' +
-      'not allowed as a second factor, in this realm. The session is ' +
+      'registration of a passkey (#724): passkeys are switched off, or ' +
+      'accepted for no use, in this realm (until #1135, also where a key ' +
+      'was not allowed as a second factor). The session is ' +
       'refused instead (STS-AUTHN-0381), and an administrator has to help.',
     spec: 'none — the sign-in screen says why' },
   { code: 'STS-AUTHN-0390',

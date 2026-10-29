@@ -7274,12 +7274,12 @@ class Authn {
                             said: any): boolean {
     const { log, randomId, stsCrypto, audit, errorCodes } = this.deps;
     log.debug("Entering Authn.recoveryEnrolment().");
-    const offered = this.enrolmentOfferedFor(['securityKey']);
+    const offered = this.enrolmentOfferedFor(['securityKey'], true);
     if (!offered.webauthn) {
       log.info(errorCodes.tag('STS-AUTHN-0383') + 'authn: a sign-in of "' +
                username + '" after an account recovery cannot register a ' +
-               'passkey here (security keys are off, or not allowed as a ' +
-               'second factor); refused.');
+               'passkey here (passkeys are off, or accepted for no use); ' +
+               'refused.');
       log.debug("Leaving Authn.recoveryEnrolment(). Nothing to register.");
       return false;
     }
@@ -15225,13 +15225,16 @@ class Authn {
   // digits. A security key is the ordinary `/authn/webauthn` ceremony, which
   // carries its own script.
   // ---------------------------------------------------------------------------
-  private enrolmentOffered() {
+  // `anyUse` (#1135): a passkey enrolled to clear an account recovery is
+  // a way back IN, not a second factor, so it is offered wherever a key may
+  // be enrolled at all; every other enrolment here is a second factor's.
+  private enrolmentOffered(anyUse?: boolean) {
     const { log, webauthnPolicy, totp } = this.deps;
     log.debug('Entering Authn.enrolmentOffered().');
     const out = {
       totp: totp.offered(),
       webauthn: webauthnPolicy.enrolmentAllowed().ok &&
-                webauthnPolicy.useAllowed('mfa').ok
+                (anyUse === true || webauthnPolicy.useAllowed('mfa').ok)
     };
     log.debug('Leaving Authn.enrolmentOffered(). totp=' + out.totp +
               ', webauthn=' +
@@ -15268,10 +15271,10 @@ class Authn {
   //     enrols (#62 P3), and a demand the application's own list forbids
   //     cannot be met at all.
   // ---------------------------------------------------------------------------
-  private enrolmentOfferedFor(allowed: string[]) {
+  private enrolmentOfferedFor(allowed: string[], anyUse?: boolean) {
     const { log } = this.deps;
     log.debug('Entering Authn.enrolmentOfferedFor().');
-    const out = this.enrolmentOffered();
+    const out = this.enrolmentOffered(anyUse);
     if (!Array.isArray(allowed) || !allowed.length) {
       log.debug('Leaving Authn.enrolmentOfferedFor(). The realm\'s.');
       return out;
@@ -15514,7 +15517,8 @@ class Authn {
     log.debug('Entering Authn.mfaSetupFacts().');
     const out: any = {
       state: 'choose',
-      offered: this.enrolmentOfferedFor(step.mfaAllowed || []),
+      offered: this.enrolmentOfferedFor(step.mfaAllowed || [],
+                                        step.recovery === true),
       optional: !!step.optional, proved: !!step.proved,
       // AFTER AN ACCOUNT RECOVERY (#724): the page says why only a passkey
       // is offered, and that nothing is signed in afterwards.
@@ -18407,7 +18411,8 @@ class Authn {
     }
     const step = found.step;
     // Only what the application allows (#475).
-    const offered = this.enrolmentOfferedFor(step.mfaAllowed || []);
+    const offered = this.enrolmentOfferedFor(step.mfaAllowed || [],
+                                             step.recovery === true);
     if (!step.proved &&
         credentials.mechanismsFor(step.username).mfaRequired) {
       pendingMfa.delete(setupId);

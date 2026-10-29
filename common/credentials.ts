@@ -6331,8 +6331,10 @@ class Credentials {
         : null,
       // A count and never the codes — `factorHolderRow()`'s reason.
       backupCodes: this.backupCodeStatusOfHeld(held),
+      // A key beside a password only (#1135), as `mechanismsFor()` reads it.
       recoveryAdvised: backupCodes.offered() &&
-                       (mfaKeys > 0 || totpEnrolled) && !held,
+                       ((mfaKeys > 0 && facts.password) || totpEnrolled) &&
+                       !held,
       mfaRequired: facts.mfaRequired,
       secondFactor: facts.secondFactor,
       usable: facts.usable

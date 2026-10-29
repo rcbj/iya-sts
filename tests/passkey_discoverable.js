@@ -492,7 +492,9 @@ function childMain() {
     // as a second factor did not sign anybody in without a password; a key
     // has no role now, and what refuses the passwordless use is
     // `webauthn.primaryAllowed`, asked at the sign-in — here switched off
-    // after the ceremony was armed, which is the case the check is for.
+    // after the ceremony was armed, which is the case the check is for. The
+    // usernameless door asks its own gate first (`usernamelessOffered()`,
+    // which reads the same setting), so the code is STS-AUTHN-0301.
     const carol = makeAuthenticator(RPID, ORIGIN);
     const carolHandle = credentials.userHandleOf('pkd-carol', { mint: true });
     carol.setHandle(carolHandle);
@@ -506,9 +508,9 @@ function childMain() {
     } finally {
       config.clearOverride('webauthn.primaryAllowed');
     }
-    note(refusedAct(posted) && codeRecorded('STS-AUTHN-0045'),
+    note(refusedAct(posted) && codeRecorded('STS-AUTHN-0301'),
          '9a. with webauthn.primaryAllowed off a key does not sign anybody ' +
-         'in without a password (STS-AUTHN-0045)', posted.status);
+         'in without a password (STS-AUTHN-0301)', posted.status);
     s = await screenFor();
     posted = await usernameless(s, carol.assert(await challengeOf(s)));
     note(posted.status === 302 || posted.status === 303,
@@ -540,11 +542,11 @@ function childMain() {
       return credentials.withoutUsername(credentials.keysOf(name)[0]);
     };
     note(ready('pkd-alice').ready && !ready('pkd-legacy').ready &&
-         !ready('pkd-carol').ready &&
+         ready('pkd-carol').ready &&
          /create it again/.test(ready('pkd-legacy').text),
          '11b. the key lists say which passkey signs in with no username: ' +
-         'alice\'s does, the key from before #474 and the second-step key ' +
-         'do not', JSON.stringify([ready('pkd-alice'), ready('pkd-legacy'),
+         'alice\'s and carol\'s do (no key is a second-step key since ' +
+         '#1135), the key from before #474 does not', JSON.stringify([ready('pkd-alice'), ready('pkd-legacy'),
                                    ready('pkd-carol')]));
 
     // 12. primaryAllowed off.
