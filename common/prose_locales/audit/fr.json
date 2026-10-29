@@ -879,6 +879,10 @@
     "en": "d9fe267d0aae76d6",
     "text": "Le PEP intégré a appliqué une décision"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "Une évaluation d’accès AuthZEN a été décidée"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Le PEP d’émission a refusé de laisser ce service émettre quelque chose"

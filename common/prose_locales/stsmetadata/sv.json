@@ -95,6 +95,10 @@
     "en": "6803d7137bac3178",
     "text": "full för den obligatoriska funktionsuppsättningen: policyspråket, de sju beslutsvärdena inklusive de tre utökade Indeterminate, målmatchning, villkor, variabler, de tolv kombinationsalgoritmerna, obligations och advice, policyreferenser, och standardfunktionsbiblioteket över alla sjutton datatyper. Hållen mot OASIS konformitetssvit — 454 av de 455 obligatoriska fallen godkänns, och det enda undantaget är dokumenterat med sitt argument i xacml/conformance/MANIFEST.js. INTE täckt: AttributeSelector och XPath-funktionerna (en policy som använder en av dem är Indeterminate snarare än tyst tom), profilerna Multiple Decision och Hierarchical Resource, och administrativ delegering."
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "837796da675e27fc",
+    "text": "partial: Access Evaluation API (avsnitt 6), avgjord av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3. Saknas: de tre Search APIs, signed_metadata och varje profil (Obligations, Access Request and Approval, OAuth-profilerna), alla fortfarande utkast."
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full för förfrågan och svaret: förkortade kategorinamn, korta datatypnamn, härledning av datatyp från JSON-typen (inklusive skillnaden mellan heltal och flyttal, som läses från källtexten eftersom JSON.parse redan har kastat bort den), arrayer som bags, obligations, advice och PolicyIdentifierList. Profilen definierar ingen policysyntax, så policyer förblir XML."
@@ -754,6 +758,10 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML in, XML ut. POSTa en <PIPRequest> som bär den XACML-<Request> du fattar beslut om och en <AttributeDesignator> per önskat attribut; få tillbaka <Attributes> I DEN FORM SOM EN <Request> BÄR DEM. DEN FINNS EFTERSOM EN FJÄRR-PEP HAR MOTORN MEN INTE KATALOGEN: den här tjänstens PIP ÄR ou=users, så en policy som pekar ut ett attribut som begäran inte bar löses upp till en tom påse i en annan container och till ett verkligt värde här — samma policy som beslutar på två sätt i två upprätthållandepunkter, vilket är den avvikelse som ett delat förråd finns för att förhindra, återuppdykande ett lager längre ner. XACML DEFINIERAR INGET PIP-PROTOKOLL, så detta hittar på så lite som möjligt: båda riktningarna är XACML:s egen XML, läst och skriven av xacml_xml.js snarare än av något nytt, och svaret är ett BEGÄRANSFRAGMENT som en PEP fogar in i sin egen begäran — varefter dess motor hittar värdena där en designator letar efter dem, utan översättning och utan förgrening. Den svarar via SAMMA resolverFor() som den inbäddade PDP:n får, så de två kan inte vara oense, och den löser upp posten EN GÅNG per anrop så att en grupp designatorer inte kan se två olika personer. TRE REGLER: en oupplöst designator är ett FRÅNVARANDE <Attribute> och aldrig ett tomt eller ett fel, eftersom det är så en begäran som aldrig bar det ser ut; MustBePresent läses men tillämpas INTE, eftersom vad en tom påse betyder avgörs av designatorn och den funktion den lämnas till, båda i ANROPARENS motor; och endast kategorin access-subject löses upp. De fem skälen till att en påse kan vara tom kommer tillbaka i <Unresolved>, i den här tjänstens EGEN namnrymd så att en PEP som bara läser XACML:s kärnnamnrymd aldrig ser det. Den kräver REMOTE_PEPS snarare än den XACML_USER som resten av /xacml vill ha — den enda slutpunkten här vars roll inte följer dess sökväg, eftersom det som kommer tillbaka är en persons egna data snarare än en regel som vem som helst får kontrollera."
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "POST:a ett AuthZEN-subject, action, resource och context; få decision true eller false. Avgörs av XACML-motorn mot sfärens ROT-policy, med protocol = authzen i begäran. En egenskap når policyn bara genom sfärens attributkatalog, och en odeklarerad ger 400 i alla lägen. ANROPAREN autentiserar sig enligt authzen.callerAuthentication — ett klientcertifikat som standard, en åtkomsttoken med authzen:evaluate, eller båda — och måste ha AUTHZEN_PEPS och ha omfång för applikationen den frågar om. Ett nekande är 200 false; ett fel som PDP:n nådde är 500, aldrig false."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -3578,6 +3586,10 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "En Policy Decision Point, ett policyförråd som ÄR ou=policies i den inbäddade katalogen, en Policy Information Point som läser attribut från subjektets egen post, och en inbäddad Policy Enforcement Point. DEN ENDA FAMILJEN HÄR SOM BESVARAR EN FRÅGA OM NÅGON ANNANS GRÄNS: varje annat protokoll i den här tjänsten autentiserar eller provisionerar någon, och det här får ett subjekt som redan har autentiserats någon annanstans och tillfrågas om de får. Hålls till OASIS konformitetssvit snarare än till ett test skrivet här."
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "AuthZEN Authorization API över XACML-motorn: en Policy Enforcement Point ställer en fråga per åtkomst och får veta true eller false, avgjort mot sfärens rotpolicy. En ADAPTER: begäran mappas till en XACML-begäran genom en attributkatalog per sfär och den enda begäransbyggaren, och svaret mappas tillbaka fail-closed. XACML-slutpunkterna och containern för den fjärranslutna PEP:en lämnas orörda av den."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

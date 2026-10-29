@@ -707,6 +707,14 @@
     "en": "5a0acf9625882942",
     "text": "RFC 9396 avsnitt 10 `authorization_details_types`: de ENDA authorization_details-typer som den här klienten får använda, en per värde. TOMT BETYDER varje typ som den här auktoriseringsservern stöder."
   },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "EN RAD I AUTHZENS ATTRIBUTKATALOG (#563), på resursobjektet sts-authzen-api: ett JSON-objekt {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}. `object` är subject, resource, action eller context; `property` medlemmens namn, eller en punktad sökväg in i ett nästlat objekt; `attributeId` det XACML-attribut den skickas som; `category` (standard objektets egen), `dataType` (standard string) och `multiplicity` (single eller bag). En egenskap som ingen rad namnger nekas i alla lägen, och en rad får inte namnge den här tjänstens egna urn:sts:xacml:-identifierare, subject-id, resource-id eller action-id, och inte heller ett bart katalogattributnamn i en subjektkategori."
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "AUTHZEN-APPLIKATIONSOMFÅNG (#563): de applikationer som den här klienten, när den anropar /access/v1 med sin egen client_credentials-token, får namnge i context.application — en identifierare per värde. Klientens egen identifierare ingår alltid i omfånget. Sätts av en administratör, aldrig av anroparen."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 avsnitt 3: de acr-värden som den här applikationen, i egenskap av resursserver, kräver av autentiseringen bakom en åtkomsttoken — blankstegsseparerade, det mest föredragna först. En token vars acr inte uppfyller något av dem utmanas med 401 insufficient_user_authentication med dessa som acr_values. Nivåerna 0 < 1 < mfa är ordnade; hwk, phr och phrh uppfylls av ett lösenord med en säkerhetsnyckel; alla andra värden bara av exakt den acr:en. TOMT kräver ingenting."

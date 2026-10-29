@@ -83,6 +83,10 @@
     "en": "1b417a98ec7e824b",
     "text": "Un appelant de la surface XACML proprement dite : quiconque est membre du groupe nommé par `roles.xacmlUserGroup` (par défaut « xacml-users »). C’est ce qu’exigent `GET /xacml`, `POST /xacml/pdp` et `GET /xacml/policies`, et la partie qui le détient est normalement un DN de certificat client — le certificat dit QUI, et ce groupe dit s’il en a le droit. Ce n’est délibérément PAS REMOTE_PEPS : ce rôle donne accès aux trois points de terminaison /xacml/pep, qui délivrent les documents au moyen desquels ce service contrôle ses propres accès, et un groupe accordant les deux ferait qu’admettre un appelant sur la surface XACML proprement dite l’admettrait silencieusement sur ceux-ci."
   },
+  "roles.builtIn.AUTHZEN_PEPS.what": {
+    "en": "45abfea4c617fd17",
+    "text": "Un Policy Enforcement Point AuthZEN : quiconque est membre du groupe nommé par `roles.authzenPepGroup` (par défaut « authzen-peps ») — une personne, un compte de service ou une application appelant avec son propre jeton d’accès. C’est ce qu’exige l’AuthZEN Authorization API sous `/access/v1`, et rien d’autre : il ne lit aucune politique ni les attributs d’aucune personne, c’est pourquoi il n’est ni XACML_USER ni REMOTE_PEPS."
+  },
   "roles.builtIn.OWNER_READ.what": {
     "en": "ff8296bdbd88d5ad",
     "text": "Un PROPRIÉTAIRE (#607) : quiconque un rôle, un groupe, un compte de service ou une application de ce domaine nomme comme propriétaire, directement ou par un groupe dont il est membre. Autorise la permission owner:read : lire, via /admin-api, les objets dont il est propriétaire et rien d’autre. Calculé au moment de la décision."

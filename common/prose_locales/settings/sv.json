@@ -6891,6 +6891,38 @@
     "en": "b02ca7d48b1cb3f5",
     "text": "Hur länge man väntar på att en PEP ska svara på en knuff. KORTARE ÄN SSF:S TIO SEKUNDER MED AVSIKT, och skälet är det som gör en knuff till en knuff: en förlorad push är en förlorad händelse, så SSF väntar; en förlorad knuff kostar ett avfrågningsintervall av latens och inget annat alls, så att vänta är det dyra misstaget. Det som FAKTISKT väntar på den är konsolformuläret hos den som just sparade en policy."
   },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "AuthZEN aktiverat"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "När den är på svarar AuthZEN Authorization API under /access/v1. När den är av förblir dess rutter REGISTRERADE och svarar 501, precis som XACML:s: funktionen är av, URL:en är inte fel. Den fattar beslut med XACML-motorn, så den svarar 501 även medan xacml.enabled är av. En anropare behöver fortfarande rollen AUTHZEN_PEPS (roles.authzenPepGroup) och ett applikationsomfång innan den får veta något."
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "Hur en AuthZEN-anropare autentiserar sig"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls, standardvärdet: ett klientcertifikat som den här tjänsten VERIFIERAR mot sitt klientförtroendelager, upplöst till den katalogpost som lagrar det (eller den person det namnger, för ett som den här tjänsten utfärdat). bearer: en OAuth 2.0-åtkomsttoken från client_credentials, med den här sfärens /access/v1 som målgrupp och med authzen:evaluate; anroparen är klienten. mtls+bearer: båda, och tokenen måste vara bunden till det uppvisade certifikatet (RFC 8705), så att de två namnger en och samma part. Kontrolleras i alla lägen: AuthZEN överlåter autentiseringen av PEP:en till driftsättningen (avsnitt 11.2), och en beslutsslutpunkt som vem som helst kan driva är ett orakel för policyn."
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "Subjekttyper som namnger en person i katalogen"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "De subject.type-värden vars subject.id är en person i den här sfärens katalog, kommaseparerade. För dem svarar Policy Information Point med subjektets roller och katalogattribut, och de är AUKTORITATIVA: en anropare kan inte skicka dem. För alla andra typer tillfrågas inte katalogen, så ett id som råkar matcha en persons namn är inte den personen. Tomt betyder att katalogen aldrig tillfrågas."
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "Returnera skälen för ett beslut"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "När den är på bär ett beslut en context med XACML-beslutet, varför, eventuella advice och de obligations som gjorde en Permit till false. Av som standard: ett skäl berättar något om policyn för en anropare, och decision ensamt är svaret i båda fallen."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "SSF aktiverat"
@@ -8022,6 +8054,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Kataloggruppen vars medlemmar har den inbyggda rollen XACML_USER, som är vad de tre egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp och GET /xacml/policies. En anropare som visar ett klientcertifikat som tjänsten VERIFIERAT är någon den kan namnge; medlemskap i den här gruppen är det som gör dem till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger de tre slutpunkterna för alla anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbyggda utfärdande- och åtkomst-PEP:arna med den."
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "Grupp som ger rollen AUTHZEN_PEPS"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "Den katalogrupp vars medlemmar har den inbyggda rollen AUTHZEN_PEPS, vilket är vad AuthZEN Authorization API under /access/v1 kräver. En medlem är en person, ett tjänstekonto eller en applikation (för en anropare som autentiserar sig med sin egen åtkomsttoken). DET ÄR EN TREDJE GRUPP OCH INTE NÅGON AV DE ANDRA TVÅ: AUTHZEN_PEPS ber om beslut och inget annat, medan XACML_USER också läser repositoryt och REMOTE_PEPS hämtar de dokument som den här tjänsten upprätthåller sin egen åtkomst med samt en namngiven persons attribut. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger /access/v1 för varje anropare."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

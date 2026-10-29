@@ -879,6 +879,10 @@
     "en": "d9fe267d0aae76d6",
     "text": "Ipinatupad ng embedded PEP ang isang desisyon"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "Napagpasyahan ang isang AuthZEN access evaluation"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Tumanggi ang issuance PEP na hayaan ang serbisyong ito na mag-mint ng isang bagay"

@@ -95,6 +95,10 @@
     "en": "6803d7137bac3178",
     "text": "full para el conjunto de funcionalidades obligatorias: el lenguaje de políticas, los siete valores de decisión incluidos los tres Indeterminate extendidos, la coincidencia de objetivos, las condiciones, las variables, los doce algoritmos de combinación, las obligaciones y los consejos, las referencias a políticas y la biblioteca estándar de funciones sobre los diecisiete tipos de datos. Verificado con la suite de conformidad de OASIS — se superan 454 de los 455 casos obligatorios, y la única excepción se registra con su argumento en xacml/conformance/MANIFEST.js. NO cubierto: AttributeSelector y las funciones XPath (una política que use una es Indeterminate en lugar de quedar vacía en silencio), los perfiles Multiple Decision y Hierarchical Resource, y la delegación administrativa."
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "837796da675e27fc",
+    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML frente a la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3. Falta: las tres Search APIs, signed_metadata y cada perfil (Obligations, Access Request and Approval, los de OAuth), todos todavía borradores."
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full para la solicitud y la respuesta: los nombres abreviados de categoría, los nombres cortos de tipo de datos, la inferencia del tipo de datos a partir del tipo JSON (incluida la distinción entero/doble, que se lee del texto fuente porque JSON.parse ya la ha descartado), los arrays como bolsas, las obligaciones, los consejos y la PolicyIdentifierList. El perfil no define ninguna sintaxis de políticas, así que las políticas siguen siendo XML."
@@ -754,6 +758,10 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML de entrada, XML de salida. Envíe por POST un <PIPRequest> que lleve la <Request> XACML que está decidiendo y un <AttributeDesignator> por cada atributo deseado; recibirá <Attributes> EN LA FORMA EN QUE LOS LLEVA UNA <Request>. EXISTE PORQUE UN PEP REMOTO TIENE EL MOTOR Y NO EL DIRECTORIO: el PIP de este servicio ES ou=users, así que una política que designa un atributo que la solicitud no llevaba se resuelve en una bolsa vacía en otro contenedor y en un valor real aquí; la misma política decidiendo de dos formas en dos puntos de aplicación, que es la divergencia que un repositorio compartido existe para evitar, reapareciendo una capa más abajo. XACML NO DEFINE NINGÚN PROTOCOLO PIP, así que esto inventa lo menos posible: ambas direcciones son el propio XML de XACML, leído y escrito por xacml_xml.js y no por nada nuevo, y la respuesta es un FRAGMENTO DE SOLICITUD que un PEP inserta en su propia solicitud, tras lo cual su motor encuentra los valores donde los busca un designador, sin traducción y sin ramificación. Responde a través del MISMO resolverFor() que se entrega al PDP integrado, así que los dos no pueden discrepar, y resuelve la entrada UNA VEZ por llamada para que un lote de designadores no pueda ver a dos personas distintas. TRES REGLAS: un designador no resuelto es un <Attribute> AUSENTE y nunca uno vacío ni un error, porque así es una solicitud que nunca lo llevó; MustBePresent se lee y NO se aplica, porque lo que significa una bolsa vacía lo determinan el designador y la función a la que se entrega, ambos en el motor del LLAMADOR; y solo se resuelve la categoría access-subject. Los cinco motivos por los que una bolsa puede estar vacía se devuelven en <Unresolved>, en el espacio de nombres PROPIO de este servicio, para que un PEP que solo lea el espacio de nombres del núcleo de XACML nunca lo vea. Requiere REMOTE_PEPS en lugar del XACML_USER que pide el resto de /xacml: el único endpoint de aquí cuyo rol no sigue a su ruta, porque lo que se devuelve son los datos propios de una persona y no una regla que cualquiera pueda comprobar."
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "Haga POST de un subject, action, resource y context de AuthZEN; obtenga decision true o false. Lo decide el motor XACML frente a la política RAÍZ del dominio, con protocol = authzen en la solicitud. Una propiedad llega a la política solo a través del catálogo de atributos del dominio, y una no declarada es un 400 en todos los modos. El LLAMANTE se autentica según authzen.callerAuthentication — un certificado de cliente de forma predeterminada, un token de acceso que lleva authzen:evaluate, o ambos — y debe tener AUTHZEN_PEPS y tener alcance sobre la aplicación por la que pregunta. Una denegación es 200 false; un fallo al que llegó el PDP es un 500, nunca false."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -3578,6 +3586,10 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "Un Policy Decision Point, un repositorio de políticas que ES ou=policies en el directorio integrado, un Policy Information Point que lee atributos de la propia entrada del sujeto, y un Policy Enforcement Point integrado. LA ÚNICA FAMILIA DE AQUÍ QUE RESPONDE A UNA PREGUNTA SOBRE LA FRONTERA DE OTRO: todos los demás protocolos de este servicio autentican o aprovisionan a alguien, y a este se le entrega un sujeto que ya se autenticó en otro lugar y se le pregunta si puede. Se somete a la suite de conformidad de OASIS y no a una prueba escrita aquí."
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "La AuthZEN Authorization API sobre el motor XACML: un Policy Enforcement Point hace una pregunta por acceso y se le dice true o false, decidido frente a la política raíz del dominio. Un ADAPTADOR: la solicitud se traduce a una solicitud XACML mediante un catálogo de atributos por dominio y el único constructor de solicitudes, y la respuesta se traduce de vuelta en modo fail-closed. Los endpoints de XACML y el contenedor del PEP remoto no se ven afectados."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

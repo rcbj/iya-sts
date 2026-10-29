@@ -95,6 +95,10 @@
     "en": "6803d7137bac3178",
     "text": "full：覆盖强制功能集：策略语言、七种决策值（包括三种扩展的 Indeterminate）、目标匹配、条件、变量、十二种组合算法、义务和建议、策略引用，以及覆盖全部十七种数据类型的标准函数库。按 OASIS 一致性测试套件验证——455 个强制用例中通过 454 个，唯一的例外连同其论证记录在 xacml/conformance/MANIFEST.js 中。未覆盖：AttributeSelector 和 XPath 函数（使用它们的策略结果为 Indeterminate，而不是悄无声息地为空）、Multiple Decision 和 Hierarchical Resource 配置文件，以及管理委托。"
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "837796da675e27fc",
+    "text": "partial：Access Evaluation API（第 6 节），由 XACML 引擎通过按领域划分的属性目录，依据领域的根策略作出决策，支持 X-Request-ID 和第 11.3 节的质询。缺少：三个 Search API、signed_metadata，以及每个配置文件（Obligations、Access Request and Approval、OAuth 相关配置文件），这些都仍是草案。"
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full：覆盖请求和响应：简写类别名称、短数据类型名称、根据 JSON 类型推断数据类型（包括整数/双精度的区分，这是从源文本读取的，因为 JSON.parse 已经丢弃了它）、数组作为包、义务、建议以及 PolicyIdentifierList。该配置文件不定义策略语法，因此策略仍为 XML。"
@@ -754,6 +758,10 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML 输入，XML 输出。POST 一个 <PIPRequest>，携带你正在决策的 XACML <Request>，并为每个所需属性提供一个 <AttributeDesignator>；返回的 <Attributes> 采用 <Request> 携带它们时的形式。它之所以存在，是因为远程 PEP 持有引擎却不持有目录：本服务的 PIP 就是 ou=users，因此一条指定了请求未携带属性的策略，在另一个容器中会解析为空包，而在这里会解析为真实值——同一条策略在两个执行点上作出两种决策，这正是共享存储库所要防止的偏差在下一层重新出现。XACML 没有定义 PIP 协议，因此这里尽量少发明：两个方向都使用 XACML 自己的 XML，由 xacml_xml.js 读写，而不是用任何新东西，响应是一个请求片段，由 PEP 拼接到它自己的请求中——之后它的引擎就会在指示符查找的位置找到这些值，无需转换，也无需分支。它通过与嵌入式 PDP 所获得的同一个 resolverFor() 应答，因此两者不会不一致，并且每次调用只解析一次条目，这样一批指示符就不会看到两个不同的人。三条规则：未解析的指示符是一个缺失的 <Attribute>，绝不是空的 <Attribute> 或错误，因为从未携带它的请求就是这个样子；MustBePresent 会被读取但不会被应用，因为空包意味着什么，由指示符及其所交给的函数决定，而二者都在调用方的引擎中；并且只有 access-subject 类别会被解析。包可能为空的五个原因会在 <Unresolved> 中返回，位于本服务自己的命名空间中，这样只读取 XACML 核心命名空间的 PEP 永远不会看到它。它需要 REMOTE_PEPS，而不是 /xacml 其余部分所需的 XACML_USER——这是此处唯一一个角色不随路径而定的端点，因为返回的是一个人自己的数据，而不是任何人都可以检查的规则。"
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "POST 一个 AuthZEN subject、action、resource 和 context；得到 decision 为 true 或 false。由 XACML 引擎依据领域的根策略作出决策，请求中带有 protocol = authzen。属性只能通过领域的属性目录到达策略，未声明的属性在所有模式下均为 400。调用方按 authzen.callerAuthentication 进行身份验证——默认为客户端证书，或携带 authzen:evaluate 的访问令牌，或两者兼具——并且必须持有 AUTHZEN_PEPS，且其范围须涵盖所询问的应用。拒绝为 200 false；PDP 遇到的故障为 500，绝不是 false。"
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -3578,6 +3586,10 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "一个策略决策点；一个策略存储库，它就是嵌入式目录中的 ou=policies；一个从主体自身条目读取属性的策略信息点；以及一个嵌入式策略执行点。这是此处唯一一个回答关于别人边界问题的协议族：本服务上的其他每个协议都是对某人进行认证或预配，而这个协议接收的是一个已在别处认证过的主体，被问的是此人是否可以这样做。它以 OASIS 一致性测试套件为准，而不是以此处编写的测试为准。"
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "基于 XACML 引擎的 AuthZEN Authorization API：策略执行点每次访问提出一个问题，得到 true 或 false 的答复，依据领域的根策略作出决策。这是一个适配器：请求通过按领域划分的属性目录和唯一的请求构建器映射为 XACML 请求，答复则以 fail-closed 方式映射回来。XACML 端点和远程 PEP 容器不受其影响。"
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

@@ -707,6 +707,14 @@
     "en": "5a0acf9625882942",
     "text": "RFC 9396 第 10 節 `authorization_details_types`：此用戶端「唯一」可使用的 authorization_details 類型，每個值一種。空白「表示」此授權伺服器支援的任何類型。"
   },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "「AuthZEN 屬性目錄的一列」（#563），位於 sts-authzen-api 資源物件上：一個 JSON 物件 {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}。`object` 為 subject、resource、action 或 context；`property` 為成員名稱，或指向巢狀物件內部的點分路徑；`attributeId` 為傳送時所用的 XACML 屬性；`category`（預設為該物件自己的類別）、`dataType`（預設為 string）與 `multiplicity`（single 或 bag）。沒有任何一列指名的屬性在每種模式下皆被拒絕；一列不得指名此服務自己的 urn:sts:xacml: 識別碼、subject-id、resource-id 或 action-id，也不得在主體類別中指名單純的目錄屬性名稱。"
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "「AuthZEN 應用程式範圍」（#563）：此用戶端以自己的 client_credentials 權杖呼叫 /access/v1 時，可在 context.application 中指名的應用程式——每個值一個識別碼。用戶端自己的識別碼一律在範圍內。由管理員設定，絕不由呼叫端設定。"
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 第 3 節：此應用程式作為資源伺服器，對存取權杖背後之驗證所要求的 acr 值——以空格分隔，最偏好者在前。acr 不符合任何一個的權杖，會收到 401 insufficient_user_authentication 挑戰，並以這些值作為 acr_values。等級 0 < 1 < mfa 有先後順序；hwk、phr 與 phrh 由密碼加上安全金鑰滿足；其他任何值只由完全相同的 acr 滿足。空白則不要求任何東西。"

@@ -267,6 +267,14 @@
     "en": "fbd4d4a27b747323",
     "text": "原則決策點、其原則，以及遠端 PEP 的入口。"
   },
+  "listeners.applications.authzen.label": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "listeners.applications.authzen.what": {
+    "en": "26f176a9b231df2f",
+    "text": "AuthZEN Authorization API：以 XACML 引擎進行的存取評估，及其中繼資料文件。"
+  },
   "listeners.applications.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"

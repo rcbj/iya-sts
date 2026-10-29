@@ -267,6 +267,14 @@
     "en": "fbd4d4a27b747323",
     "text": "Le point de décision de politique, ses politiques et les portes des PEP distants."
   },
+  "listeners.applications.authzen.label": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "listeners.applications.authzen.what": {
+    "en": "26f176a9b231df2f",
+    "text": "L’AuthZEN Authorization API : des évaluations d’accès sur le moteur XACML, et son document de métadonnées."
+  },
   "listeners.applications.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"

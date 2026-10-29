@@ -807,6 +807,42 @@
     "en": "00642c75836a2377",
     "text": "遠端 PEP 同步權杖，它是變更偵測器，而非安全機制"
   },
+  "crypto.families.authzen.signs": {
+    "en": "ab66b57e4b31b350",
+    "text": "無。決策是一個 JSON 布林值，不帶簽章；中繼資料文件不簽署（不產生 signed_metadata）。"
+  },
+  "crypto.families.authzen.verifies": {
+    "en": "6d407b4bb19e8a28",
+    "text": "呼叫端的認證資料，由其所屬的層驗證：用戶端憑證由 TLS 層與用戶端信任庫驗證（參見 TLS / mutual TLS），存取權杖由此領域自己的 JWS 驗證（參見 OAuth2 / OIDC），在 mtls+bearer 下則將權杖的 RFC 8705 x5t#S256 與出示的憑證比對。"
+  },
+  "crypto.families.authzen.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "無。"
+  },
+  "crypto.families.authzen.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "無。"
+  },
+  "crypto.families.authzen.hashes": {
+    "en": "c88ad2cce036fcf4",
+    "text": "出示憑證的 SHA-256 指紋，在 mtls+bearer 下與權杖的 cnf 比對。"
+  },
+  "crypto.families.authzen.keys": {
+    "en": "1eb2c695a5178870",
+    "text": "沒有自己的金鑰。與其他地方一樣，由領域的簽署金鑰驗證它所接受的權杖。"
+  },
+  "crypto.families.authzen.whatItDoesNot": {
+    "en": "11e5f968c5b7cf60",
+    "text": "它不簽署決策：決策仰賴傳輸層，XACML 的決策亦然。"
+  },
+  "crypto.families.authzen.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "此處不簽署、不加密也不解密任何內容"
+  },
+  "crypto.families.authzen.algorithms.1.what": {
+    "en": "349171490df64541",
+    "text": "與繫結權杖比對的憑證指紋（RFC 8705）"
+  },
   "crypto.families.oauth2-oidc.signs": {
     "en": "ba9dd042c619d87e",
     "text": "每個存取權杖與重新整理權杖，以及 ID Token，以領域的 RSA 金鑰用 RS256 簽署。註冊了 `id_token_signed_response_alg` 的用戶端則改用該演算法，其 ID Token 與其後端通道 Logout Token 皆然（section 2.4：與 ID Token 相同的金鑰），取自共用的 JWS 表——每條曲線、兩條 Edwards 曲線，以及後量子與複合演算法。已簽署的 UserInfo 回應也是如此，另加 HMAC 系列（以該用戶端自己的 `client_secret` 簽署，因此不需要發布的金鑰）與 `none`。**還有 RFC 9701 JWT 內省回應**（2026-09-13），型別為 `token-introspection+jwt`，使用 RS256 或資源伺服器註冊的 `introspection_signed_response_alg`——同一張表與 HMAC 系列，絕不使用 `none`。**還有資源回應**（#178）：標記為 `fapi-2-response` 的 RFC 9421 HTTP 訊息簽章，使用 `oauth2.httpSignatureResponseAlg` 所指名的領域金鑰（預設為 ES256；提供 ML-DSA），涵蓋回應，並透過 `;req` 涵蓋它所回答的請求。"

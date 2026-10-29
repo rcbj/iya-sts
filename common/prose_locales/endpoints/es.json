@@ -31,6 +31,10 @@
     "en": "b0b1791a44311248",
     "text": "El Policy Information Point, por HTTP"
   },
+  "endpoints.route./access/v1/evaluation.name": {
+    "en": "5cd6a5386c4d1353",
+    "text": "Una evaluación de acceso"
+  },
   "endpoints.route./gnap.name": {
     "en": "33b8b1fd38b28a51",
     "text": "El endpoint de concesión"

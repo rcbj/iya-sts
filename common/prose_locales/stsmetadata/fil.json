@@ -95,6 +95,10 @@
     "en": "6803d7137bac3178",
     "text": "full para sa mandatoryong feature set: ang policy language, ang pitong decision value kasama ang tatlong extended Indeterminate, target matching, mga condition, mga variable, ang labindalawang combining algorithm, mga obligation at advice, mga policy reference, at ang standard function library sa lahat ng labimpitong datatype. Sinusuri laban sa OASIS conformance suite — 454 sa 455 na mandatoryong case ang pumapasa, at ang nag-iisang exception ay nakatala kasama ang argumento nito sa xacml/conformance/MANIFEST.js. HINDI saklaw: AttributeSelector at ang mga XPath function (Indeterminate ang policy na gumagamit ng isa sa halip na tahimik na walang laman), ang Multiple Decision at Hierarchical Resource profile, at administrative delegation."
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "837796da675e27fc",
+    "text": "partial: ang Access Evaluation API (section 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng attribute catalogue bawat realm, kasama ang X-Request-ID at ang challenge ng section 11.3. Kulang: ang tatlong Search API, ang signed_metadata, at bawat profile (Obligations, Access Request and Approval, ang mga OAuth), na lahat ay draft pa."
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full para sa request at response: ang mga shorthand na pangalan ng category, ang maiikling pangalan ng datatype, datatype inference mula sa JSON type (kasama ang pagkakaiba ng integer/double, na binabasa mula sa source text dahil itinapon na ito ng JSON.parse), mga array bilang bag, mga obligation, advice at ang PolicyIdentifierList. Walang policy syntax na itinatakda ang profile, kaya nananatiling XML ang mga policy."
@@ -754,6 +758,10 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML ang pasok, XML ang labas. Mag-POST ng <PIPRequest> na may dalang XACML <Request> na pinagpapasyahan mo at isang <AttributeDesignator> bawat attribute na kailangan; makakatanggap ng <Attributes> pabalik SA HUGIS NA DINADALA ITO NG ISANG <Request>. UMIIRAL ITO DAHIL ANG REMOTE PEP AY MAY HAWAK NG ENGINE AT HINDI NG DIRECTORY: ang PIP ng serbisyong ito AY ou=users, kaya ang policy na nagtatalaga ng attribute na hindi dinala ng request ay nare-resolve sa walang lamang bag sa ibang container at sa tunay na value dito — iisang policy na nagpapasya nang dalawang paraan sa dalawang enforcement point, na siyang drift na pinipigilan ng shared repository, na muling lumilitaw isang layer pababa. WALANG PIP PROTOCOL NA TINUTUKOY ANG XACML, kaya kakaunti hangga't maaari ang iniimbento nito: ang parehong direksyon ay sariling XML ng XACML, binabasa at isinusulat ng xacml_xml.js at hindi ng anumang bago, at ang response ay isang REQUEST FRAGMENT na isinisingit ng PEP sa sarili nitong request — pagkatapos nito ay nahahanap ng engine nito ang mga value kung saan tumitingin ang designator, nang walang pagsasalin at walang branch. Sumasagot ito sa pamamagitan ng PAREHONG resolverFor() na ibinibigay sa embedded PDP, kaya hindi sila magkakasalungat, at nire-resolve nito ang entry nang ISANG BESES bawat tawag para hindi makakita ng dalawang magkaibang tao ang isang batch ng designator. TATLONG PATAKARAN: ang hindi na-resolve na designator ay WALANG <Attribute> at hindi kailanman walang lamang attribute o error, dahil ganoon ang hitsura ng request na hindi kailanman nagdala nito; binabasa ang MustBePresent at HINDI inilalapat, dahil kung ano ang ibig sabihin ng walang lamang bag ay itinatakda ng designator at ng function na pinagbibigyan nito, na parehong nasa engine ng CALLER; at ang access-subject category lang ang nare-resolve. Ang limang dahilan kung bakit puwedeng walang laman ang bag ay ibinabalik sa <Unresolved>, sa SARILING namespace ng serbisyong ito para hindi ito makita ng PEP na XACML core namespace lang ang binabasa. Nangangailangan ito ng REMOTE_PEPS sa halip na XACML_USER na hinihingi ng natitirang bahagi ng /xacml — ang nag-iisang endpoint dito na ang role ay hindi sumusunod sa path nito, dahil ang ibinabalik ay sariling data ng isang tao at hindi patakarang puwedeng suriin ng sinuman."
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "Mag-POST ng AuthZEN subject, action, resource at context; makakuha ng decision na true o false. Pinagpapasyahan ng XACML engine laban sa ROOT policy ng realm, na may protocol = authzen sa request. Umaabot lamang ang isang property sa policy sa pamamagitan ng attribute catalogue ng realm, at ang hindi naideklara ay 400 sa bawat mode. Nag-a-authenticate ang CALLER ayon sa authzen.callerAuthentication — client certificate bilang default, access token na may dalang authzen:evaluate, o pareho — at dapat may hawak na AUTHZEN_PEPS at naka-scope sa application na tinatanong nito. Ang pagtanggi ay 200 false; ang fault na naabot ng PDP ay 500, hindi kailanman false."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -3578,6 +3586,10 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "Isang Policy Decision Point, isang policy repository na AY ang ou=policies sa embedded directory, isang Policy Information Point na nagbabasa ng mga attribute mula sa sariling entry ng subject, at isang embedded na Policy Enforcement Point. ANG NAG-IISANG FAMILY DITO NA SUMASAGOT SA TANONG TUNGKOL SA HANGGANAN NG IBA: bawat ibang protocol sa serbisyong ito ay nag-a-authenticate o nagpo-provision ng isang tao, at ang isang ito ay inaabutan ng subject na na-authenticate na sa ibang lugar at tinatanong kung maaari sila. Pinanghahawakan sa OASIS conformance suite sa halip na sa test na isinulat dito."
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "Ang AuthZEN Authorization API sa ibabaw ng XACML engine: nagtatanong ang isang Policy Enforcement Point ng isang tanong bawat access at sinasabihan ng true o false, na pinagpasyahan laban sa root policy ng realm. Isang ADAPTER: imina-map ang request sa isang XACML request sa pamamagitan ng attribute catalogue bawat realm at ng nag-iisang request builder, at imina-map pabalik ang sagot nang fail-closed. Hindi nito ginagalaw ang mga XACML endpoint at ang remote PEP container."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",
