@@ -17,6 +17,14 @@
 // nobody is signed in, so there is nothing else to carry it on, and a POST
 // keeps it out of a referer and an access log.
 //
+// THE PASSKEY IS A CHECKBOX SINCE #1135 (rcbj, 2026-10-29): register one or
+// not. Until then three radios asked whether it was to be used instead of a
+// password or as a second step after it, which a person setting up an
+// account for the first time could not be expected to answer. What the
+// passkey will be is a fact the view states (`secondStep`), from whether a
+// password was set and what the realm allows, and the key step and *account
+// ready* say it from that.
+//
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
 
@@ -54,6 +62,10 @@ class ActivationPages {
    * @returns the HTML
    */
   static setup(view: Json, t: Json): string {
+    // A view from before #1135 has no `passkeyOffered`; WebAuthn being on
+    // was the whole question then.
+    const offered = view.passkeyOffered === undefined
+      ? !!view.webauthnEnabled : !!view.passkeyOffered;
     return '<h1>' + t.html('portal.activate.title') + '</h1>' +
       '<p class="sub">' + t.html('portal.activate.sub',
         { name: view.user, base: view.base }) + '</p>' +
@@ -66,24 +78,33 @@ class ActivationPages {
       t.html('portal.activate.confirm') + '</label><input type="password" ' +
       'id="confirm" name="confirm" autocomplete="new-password">' +
       PasswordPages.rulesNote(view.rules, t) +
-      '<p class="note">' + t.html('portal.activate.eitherNote') + '</p>' +
-      '<h2>' + t.html('portal.activate.passkeyHeading') + '</h2>' +
-      '<p class="note">' + t.html('portal.activate.passkeyNote') + '</p>' +
-      '<label class="chk"><input type="radio" name="key_role" value="none" ' +
-      'checked> ' + t.html('portal.activate.roleNone') + '</label>' +
-      '<label class="chk"><input type="radio" name="key_role" ' +
-      'value="primary"> ' + t.html('portal.activate.rolePrimary') +
-      '</label><label class="chk"><input type="radio" name="key_role" ' +
-      'value="mfa"> ' + t.html('portal.activate.roleMfa') + '</label>' +
-      // WHICH KIND, `/portal/keys`' two calls to action as radios, because
-      // this one form carries a password too.
-      (view.webauthnEnabled ? KeysPages.kindChoice(view.kinds, t) +
-        // The lane (#643), where the realm offers both.
-        KeysPages.laneChoice(view.lanes, t) : '') +
-      '<p class="note">' + t.html('portal.activate.passkeyStepNote') +
-      '</p>' +
-      // THE AUTHENTICATOR APP: a checkbox and not a fourth radio — a SECOND
-      // factor beside whichever way in was chosen. Drawn only when offered;
+      // A PASSWORD MAY BE LEFT EMPTY only where a passkey may be the only
+      // way in (#1135); elsewhere the page says a password is needed, and
+      // `spend()` refuses a key-only setup there (STS-PORTAL-0007).
+      (offered && view.passkeyAlone !== false
+        ? '<p class="note">' + t.html('portal.activate.eitherNote') + '</p>'
+        : '') +
+      (offered && view.passkeyAlone === false
+        ? '<p class="note">' + t.html('portal.activate.passwordNeeded') +
+          '</p>'
+        : '') +
+      (offered
+        ? '<h2>' + t.html('portal.activate.passkeyHeading') + '</h2>' +
+          '<p class="note">' + t.html('portal.activate.passkeyNote') +
+          '</p>' +
+          '<label class="chk"><input type="checkbox" name="passkey" ' +
+          'value="1"> ' + t.html('portal.activate.passkeyBox') +
+          '</label>' +
+          // WHICH KIND, `/portal/keys`' two calls to action as radios,
+          // because this one form carries a password too.
+          KeysPages.kindChoice(view.kinds, t) +
+          // The lane (#643), where the realm offers both.
+          KeysPages.laneChoice(view.lanes, t) +
+          '<p class="note">' + t.html('portal.activate.passkeyStepNote') +
+          '</p>'
+        : '') +
+      // THE AUTHENTICATOR APP: a checkbox of its own — a SECOND factor
+      // beside whichever way in was chosen. Drawn only when offered;
       // the operation checks the setting again.
       (view.totpOffered
         ? '<h2>' + t.html('portal.activate.totpHeading') + '</h2>' +
@@ -109,9 +130,9 @@ class ActivationPages {
     const securityKey = pending.kind === 'security-key';
     return '<h1>' + (securityKey ? t.html('portal.key.useHeading')
                                  : t.html('portal.key.createHeading')) +
-      '</h1><p class="sub">' + (pending.role === 'primary'
-        ? t.html('portal.activateKey.subPrimary', { name: view.user })
-        : t.html('portal.activateKey.subMfa', { name: view.user })) +
+      '</h1><p class="sub">' + (view.secondStep
+        ? t.html('portal.activateKey.subMfa', { name: view.user })
+        : t.html('portal.activateKey.subPrimary', { name: view.user })) +
       '</p><p class="note">' + (securityKey
         ? t.html('portal.key.promptSecurityKey')
         : t.html('portal.key.promptPasskey')) + ' ' +
@@ -122,8 +143,7 @@ class ActivationPages {
       '</button>' +
       '<form method="post" action="' + PATH + '" id="wa-form">' +
       ActivationPages.linkFields(view) +
-      '<input type="hidden" name="key_role" value="' +
-      kit.esc(pending.role) + '">' +
+      '<input type="hidden" name="passkey" value="1">' +
       (view.wantsTotp ? '<input type="hidden" name="totp" value="1">' : '') +
       '<input type="hidden" name="step" value="key">' +
       '<input type="hidden" name="enrolment_id" value="' +
@@ -168,10 +188,10 @@ class ActivationPages {
       '<form method="post" action="' + PATH + '">' +
       ActivationPages.linkFields(view) +
       '<input type="hidden" name="step" value="totp">' +
-      // What the first page chose for a passkey, so the page that finishes
-      // says what was set up.
-      '<input type="hidden" name="key_role" value="' +
-      kit.esc(String(view.keyRole || 'none')) + '">' +
+      // Whether a passkey was registered, so the page that finishes says
+      // what was set up.
+      (view.passkey ? '<input type="hidden" name="passkey" value="1">'
+                    : '') +
       '<label for="code">' + t.html('portal.totp.codeLabel',
         { digits: String(e.digits) }) + '</label>' +
       '<input type="text" id="code" name="code" ' +
@@ -200,10 +220,10 @@ class ActivationPages {
       (view.warning ? '<div class="err">' + kit.esc(view.warning) +
                       '</div>' : '') +
       (view.withTotp ? '<p>' + t.html('portal.ready.totp') + '</p>' : '') +
-      (view.keyRole === 'primary'
-        ? '<p>' + t.html('portal.ready.keyPrimary') + '</p>' : '') +
-      (view.keyRole === 'mfa'
-        ? '<p>' + t.html('portal.ready.keyMfa') + '</p>' : '') +
+      (view.passkey
+        ? '<p>' + (view.secondStep ? t.html('portal.ready.keyMfa')
+                                   : t.html('portal.ready.keyPrimary')) +
+          '</p>' : '') +
       '<p><a href="' + kit.esc(view.signIn || kit.BASE) + '">' +
       t.html('portal.signIn') + '</a></p>';
   }

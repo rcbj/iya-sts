@@ -236,7 +236,7 @@ async function test() {
   await ok(realmApi + "/policies/save-postLogin-policy", {
     profile: "default", enabled: true, activity: "pqc-passkey-migration",
     snoozeDays: 2, graceDays: 0, noPasskey: "invite",
-    noPasskeyRole: "primary", method: "automatic", attestation: "any",
+    method: "automatic", attestation: "any",
     noPasskeyFallback: "none" },
     "switched the policy on");
   b = browser();
@@ -249,11 +249,12 @@ async function test() {
     });
   const opened = await authnSignin.step(absolute(answer.location),
     { cookie: b.cookie(), headers: { "User-Agent": AGENT } });
-  check("its view offers Register and Skip, for a primary passkey",
+  check("its view offers Register and Skip, for a passkey that carries no " +
+        "role (#1135)",
     function () {
       const v = (opened.view || {}).postLogin || {};
       assert.strictEqual(opened.status, 200, opened.text.slice(0, 300));
-      assert.ok(v.role === "primary" && v.reason === "none" &&
+      assert.ok(v.role === undefined && v.reason === "none" &&
                 v.canSkip === true && v.snoozeDays === 2,
                 JSON.stringify(opened.view));
     });
@@ -296,7 +297,7 @@ async function test() {
   await ok(realmApi + "/policies/save-postLogin-policy", {
     profile: "pilot", selectGroups: [GROUP], precedence: 10,
     enabled: false, activity: "pqc-passkey-migration", snoozeDays: 7,
-    graceDays: 30, noPasskey: "require", noPasskeyRole: "mfa",
+    graceDays: 30, noPasskey: "require",
     method: "upgrade", attestation: "post-quantum",
     noPasskeyFallback: "classical" },
     "saved a named profile");

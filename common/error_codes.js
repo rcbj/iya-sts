@@ -22517,8 +22517,9 @@ const CODES = [
     summary: 'An activation set a password whose confirmation did not match.',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0007',
-    summary: 'An activation chose no way to sign in: no password, and no ' +
-      'security key used instead of one.',
+    summary: 'An activation chose no way to sign in: no password, and ' +
+      'either no passkey or a realm where a passkey cannot sign anybody in ' +
+      'on its own (#1135).',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0008',
     summary: 'A new password set from the portal (at activation or on the ' +
@@ -22826,9 +22827,9 @@ const CODES = [
       'went on without it.',
     spec: '' },
   { code: 'STS-PORTAL-0101',
-    summary: 'A security key was chosen during an activation instead of a ' +
-      'password and its enrolment could not be started (the mechanism or ' +
-      'role is off, or the authentication policy refuses it), so the ' +
+    summary: 'A passkey was chosen during an activation instead of a ' +
+      'password and its enrolment could not be started (the mechanism is ' +
+      'off, or the realm accepts a passkey for no use), so the ' +
       'activation was refused rather than finished with no way in.',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0102',
