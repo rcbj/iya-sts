@@ -360,15 +360,18 @@ function attr(html, name) {
   return m ? m[1] : "";
 }
 
-// The passkeys a drawn /portal/keys lists, by the id each row's Rename form
-// carries.
+// The passkeys a drawn /portal/keys lists, by the id each row's forms carry,
+// each id ONCE: a row has two forms carrying it (Rename and Remove), so a
+// plain count saw every new key twice (run of 2026-10-28, after 63ea34b5).
 function credentialIdsOn(text) {
   log.debug("Entering credentialIdsOn().");
   const ids = [];
   const re = /name="credentialId" value="([^"]+)"/g;
   let m;
   while ((m = re.exec(String(text))) !== null) {
-    ids.push(m[1]);
+    if (ids.indexOf(m[1]) < 0) {
+      ids.push(m[1]);
+    }
   }
   log.debug("Leaving credentialIdsOn().");
   return ids;
