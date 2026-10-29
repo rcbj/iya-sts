@@ -539,6 +539,12 @@ async function test() {
   browserFlags.addBrowserAccessFlags(options, base);
   const driver = await new Builder().forBrowser("chrome")
       .setChromeOptions(options).build();
+  // A PAGE LOAD IS BOUNDED BELOW THE RUNNER'S WATCHDOG. Selenium's default
+  // page-load timeout is 300 s, the same as the runner's per-job watchdog,
+  // so a load that never finished (cluster run of 2026-10-29: nothing after
+  // setUp for 300 s) ended in a SIGKILL with no message and no picture.
+  // At 60 s it throws, and the catch below keeps a picture of the page.
+  await driver.manage().setTimeouts({ pageLoad: 60000 });
   try {
     const tabs = await aDifferentAccountInEachTab(driver);
     await aReloadKeepsEachTabsAccount(driver, tabs);
