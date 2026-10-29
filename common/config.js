@@ -2761,15 +2761,21 @@ const SETTINGS = [
     // (-50), ML-DSA-65 (-49), ML-DSA-44 (-48) — an authenticator takes the
     // first it supports, so one that can make every parameter set makes
     // category 5. They were 44, 65, 87; nothing after them moved.
-    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,ESP256,ES256,Ed25519,EdDSA,' +
-          'ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,' +
-          'RS256,RS384,RS512',
+    // SEVEN, IN THIS ORDER, SINCE 2026-10-29 (#1150, rcbj): ML-DSA-87,
+    // ML-DSA-65, ML-DSA-44, ES384, EdDSA, ES256, RS256 — every one enabled
+    // by default, and nothing else; the others stay offered on the page,
+    // unticked, in the order they had. `webauthn.pqcOnly` still narrows the
+    // request to the first three. Until then the default requested all
+    // nineteen.
+    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256',
     runtime: true,
     // Mirrors authn/webauthn_policy.ts's ALG_IDS, the verifier's COSE_ALGS
     // inverted.
-    csvValues: ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'ESP256', 'ES256',
-                'Ed25519', 'EdDSA', 'ESP384', 'ES384', 'ESP512', 'ES512',
-                'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512', 'RS256',
+    // The default's seven first, in its order (#1150), then the rest in the
+    // order they had.
+    csvValues: ['ML-DSA-87', 'ML-DSA-65', 'ML-DSA-44', 'ES384', 'EdDSA',
+                'ES256', 'RS256', 'ESP256', 'Ed25519', 'ESP384', 'ESP512',
+                'ES512', 'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512',
                 'RS384', 'RS512', 'RS1'],
     // AN ORDERED CHOICE (2026-10-01, rcbj: "explicitly choose, by
     // checkboxes, which algorithms are requested and an order of
@@ -2830,9 +2836,12 @@ const SETTINGS = [
                  '7.1). A name outside that table is dropped with a warning ' +
                  'rather than sent, because offering an algorithm this ' +
                  'service cannot verify produces a credential that enrols ' +
-                 'and then never works. **The default requests every one, ' +
-                 'ML-DSA first**; an authenticator takes the first it ' +
-                 'supports, so the order is a preference. SHA-1\'s `RS1` ' +
+                 'and then never works. **The default requests seven, in ' +
+                 'this order: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, ' +
+                 '`ES384`, `EdDSA`, `ES256`, `RS256`**; an authenticator ' +
+                 'takes the first it supports, so the order is a ' +
+                 'preference, and every other algorithm may be ticked. ' +
+                 'SHA-1\'s `RS1` ' +
                  '(-65535) may be named but is offered and accepted only ' +
                  'while `webauthn.insecureAlgorithms` is on (development ' +
                  'only); `webauthn.pqcOnly` narrows the list to ML-DSA.' },

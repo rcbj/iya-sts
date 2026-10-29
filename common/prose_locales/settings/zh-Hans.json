@@ -1012,8 +1012,8 @@
     "text": "提供的算法"
   },
   "webauthn.algorithms|description": {
-    "en": "bb2b9f7f29fc5f1d",
-    "text": "`pubKeyCredParams`，按优先顺序排列——本服务接受凭据所用的 COSE 算法。名称采用 JOSE 拼写，由验证签名的模块 `authn/webauthn.js` 自己的表映射为 COSE 标识符：RFC 9964 的后量子 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）和 `ML-DSA-87`（-50）；RFC 9864 的完全指定算法 `ESP256`（-9）、`ESP384`（-51）、`ESP512`（-52）、`Ed25519`（-19）和 `Ed448`（-53），其曲线会根据密钥检查；`ES256`（-7）、`ES384`（-35）、`ES512`（-36）、`EdDSA`（-8）；RFC 8812 的 `ES256K`（-47，secp256k1）；以及 `PS256`（-37）、`PS384`（-38）、`PS512`（-39）、`RS256`（-257）、`RS384`（-258）和 `RS512`（-259）。算法不在此列表中的凭据会被拒绝（WebAuthn Level 3 第 7.1 节）。表外的名称会被丢弃并发出警告，而不是被发送，因为提供本服务无法验证的算法会产生一个能注册却永远无法使用的凭据。**默认请求全部算法，ML-DSA 优先**；身份验证器采用它支持的第一个，因此顺序就是偏好。SHA-1 的 `RS1`（-65535）可以列出，但只有在 `webauthn.insecureAlgorithms` 开启时（仅限开发）才会被提供和接受；`webauthn.pqcOnly` 将列表收窄为 ML-DSA。"
+    "en": "baa2f6e1bfd03f47",
+    "text": "`pubKeyCredParams`，按优先顺序排列——本服务接受凭据所用的 COSE 算法。名称采用 JOSE 拼写，由验证签名的模块 `authn/webauthn.js` 自己的表映射为 COSE 标识符：RFC 9964 的后量子 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）和 `ML-DSA-87`（-50）；RFC 9864 的完全指定算法 `ESP256`（-9）、`ESP384`（-51）、`ESP512`（-52）、`Ed25519`（-19）和 `Ed448`（-53），其曲线会根据密钥检查；`ES256`（-7）、`ES384`（-35）、`ES512`（-36）、`EdDSA`（-8）；RFC 8812 的 `ES256K`（-47，secp256k1）；以及 `PS256`（-37）、`PS384`（-38）、`PS512`（-39）、`RS256`（-257）、`RS384`（-258）和 `RS512`（-259）。算法不在此列表中的凭据会被拒绝（WebAuthn Level 3 第 7.1 节）。表外的名称会被丢弃并发出警告，而不是被发送，因为提供本服务无法验证的算法会产生一个能注册却永远无法使用的凭据。**默认按此顺序请求七种算法：`ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`**；身份验证器采用它支持的第一个，因此顺序就是偏好，其他任何算法都可以勾选。SHA-1 的 `RS1`（-65535）可以列出，但只有在 `webauthn.insecureAlgorithms` 开启时（仅限开发）才会被提供和接受；`webauthn.pqcOnly` 将列表收窄为 ML-DSA。"
   },
   "webauthn.algorithms|csvValueNotes|ML-DSA-44": {
     "en": "0fed17862f33fa73",
