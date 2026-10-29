@@ -31,6 +31,14 @@
 //   A. THE ADMIN ACTIONS: add, list, add again (unchanged), garbage
 //      (STS-ADMIN-0897), nobody (0898), already on another entry (0899),
 //      remove one not held (0900), remove.
+//   M. MESSAGE-SIGNING CERTIFICATES (#521), the administrator's doors beside
+//      these: issue-signing-certificate to a person and to an application
+//      answers the files once and a digitalSignature-only certificate naming
+//      the holder; the list shows it valid; the refusals (file password
+//      STS-ADMIN-0902, nobody 0905 and no entry made, an unknown application
+//      0904, the cap STS-PKI-0220, another holder's serial STS-PKI-0221);
+//      revoked, it is listed revoked; and it signs nobody in at
+//      GET /tls/sign-in.
 //   T. GET /tls/sign-in over a handshake: stored signs its person in;
 //      not stored (STS-TLS-0054), stored twice (0055) and renewed start
 //      nothing; no entry is seeded from the CN; refused on revocation
@@ -395,6 +403,118 @@ async function childBody() {
     listener.listen(0, '127.0.0.1', ok);
   });
   const port = listener.address().port;
+
+  // -------------------------------------------------------------------------
+  // M. MESSAGE-SIGNING CERTIFICATES (#521)
+  // -------------------------------------------------------------------------
+  const SIGN_PASSWORD = 'correct horse battery';
+  const signed = await adminActions.usersAction({
+    action: 'issue-signing-certificate', user: 'scbob',
+    password: SIGN_PASSWORD, confirm: SIGN_PASSWORD, keyAlg: 'ec-p256',
+    label: 'signer 1' }, { actor: 'test', via: 'test' });
+  const signedLeaf = signed && signed.certificate
+    ? new nodeCrypto.X509Certificate(signed.certificate.certificatePem)
+    : null;
+  t.check(signed.ok && signed.files && signed.files.pkcs12 &&
+          signed.files.pkcs12.base64.length > 100 &&
+          /ENCRYPTED PRIVATE KEY/.test(signed.files.key.text) &&
+          signed.certificate.implicitName === 'urn:sts:person:scbob' &&
+          signedLeaf &&
+          String(signedLeaf.subjectAltName)
+            .indexOf('URI:urn:sts:person:scbob') >= 0 &&
+          !signedLeaf.keyUsage && /CN=scbob/.test(signedLeaf.subject),
+          'M1. issue-signing-certificate gives scbob a certificate naming ' +
+          'them, with no extended key usage, and its three files once',
+          JSON.stringify(signed).slice(0, 400));
+  t.check(signed.signing && signed.signing.certificates.length === 1 &&
+          signed.signing.certificates[0].state === 'valid' &&
+          signed.signing.active === 1 &&
+          JSON.stringify(adminActions.signingCertificatesOf('person', 'scbob'))
+            .indexOf('PRIVATE KEY') < 0,
+          'M2. the person\'s list shows it valid, and no private key',
+          JSON.stringify(signed.signing).slice(0, 400));
+  const appSigned = await adminActions.applicationsAction({
+    action: 'issue-signing-certificate', application: 'scapp',
+    password: SIGN_PASSWORD }, [], {});
+  const appListed = adminActions.signingCertificatesOf('application',
+                                                        'scapp');
+  t.check(appSigned.ok && appSigned.files &&
+          appSigned.certificate.implicitName ===
+            'urn:sts:application:scapp' &&
+          String(new nodeCrypto.X509Certificate(
+            appSigned.certificate.certificatePem).subjectAltName)
+            .indexOf('URI:urn:sts:application:scapp') >= 0 &&
+          appListed.certificates.length === 1 &&
+          appListed.certificates[0].serialHex ===
+            appSigned.certificate.serialHex &&
+          tlsClient.listFor(undefined, 'scapp', 'application').length === 0,
+          'M3. and an application\'s, listed as its message-signing ' +
+          'certificate and not among its TLS client certificates',
+          JSON.stringify(appSigned).slice(0, 400));
+  const typo = await adminActions.usersAction({
+    action: 'issue-signing-certificate', user: 'scbob',
+    password: SIGN_PASSWORD, confirm: 'another password entirely' },
+  { actor: 'test', via: 'test' });
+  t.check(!typo.ok && errorCodes.codeOf(typo) === 'STS-ADMIN-0902',
+          'M4. a file password typed differently twice is STS-ADMIN-0902',
+          JSON.stringify(typo));
+  const signNobody = await adminActions.usersAction({
+    action: 'issue-signing-certificate', user: 'scsignnobody',
+    password: SIGN_PASSWORD }, { actor: 'test', via: 'test' });
+  t.check(!signNobody.ok && errorCodes.codeOf(signNobody) ===
+            'STS-ADMIN-0905' && !ldap.existingUserEntry('scsignnobody'),
+          'M5. a person with no entry is STS-ADMIN-0905, and none is made',
+          JSON.stringify(signNobody));
+  const signNoApp = await adminActions.applicationsAction({
+    action: 'issue-signing-certificate', application: 'scnoapp',
+    password: SIGN_PASSWORD }, [], {});
+  t.check(!signNoApp.ok && errorCodes.codeOf(signNoApp) === 'STS-ADMIN-0904',
+          'M6. an application the registry does not hold is STS-ADMIN-0904',
+          JSON.stringify(signNoApp));
+  config.setOverride('pki.messageSigningCertificateMax', '1');
+  const capped = await adminActions.usersAction({
+    action: 'issue-signing-certificate', user: 'scbob',
+    password: SIGN_PASSWORD }, { actor: 'test', via: 'test' });
+  config.clearOverride('pki.messageSigningCertificateMax');
+  t.check(!capped.ok && errorCodes.codeOf(capped) === 'STS-PKI-0220',
+          'M7. past pki.messageSigningCertificateMax it is STS-PKI-0220',
+          JSON.stringify(capped));
+  const notTheirs = await adminActions.usersAction({
+    action: 'revoke-signing-certificate', user: 'scfrank',
+    serialHex: signed.certificate.serialHex }, { actor: 'test', via: 'test' });
+  t.check(!notTheirs.ok && errorCodes.codeOf(notTheirs) === 'STS-PKI-0221',
+          'M8. another person\'s serial matches nothing: STS-PKI-0221',
+          JSON.stringify(notTheirs));
+  const appRevoked = await adminActions.applicationsAction({
+    action: 'revoke-signing-certificate', application: 'scapp',
+    serialHex: appSigned.certificate.serialHex, reason: 'keyCompromise' },
+  [], {});
+  t.check(appRevoked.ok && adminActions.signingCertificatesOf('application',
+            'scapp').certificates[0].state === 'revoked',
+          'M9. the application\'s is revoked, and listed revoked',
+          JSON.stringify(appRevoked).slice(0, 300));
+  const signCred = {
+    certPem: signed.files.chain.text,
+    keyPem: nodeCrypto.createPrivateKey({ key: signed.files.key.text,
+                                          format: 'pem',
+                                          passphrase: SIGN_PASSWORD })
+      .export({ type: 'pkcs8', format: 'pem' })
+  };
+  const signedIn = await request(port, 'GET', '/tls/sign-in', signCred, {});
+  t.check(signedIn.status === 200 && signedIn.json &&
+          signedIn.json.signedIn === false &&
+          authn.sessionsOf('scbob').length === 0,
+          'M10. a message-signing certificate signs nobody in at ' +
+          '/tls/sign-in', signedIn.text.slice(0, 400));
+  const revoked = await adminActions.usersAction({
+    action: 'revoke-signing-certificate', user: 'scbob',
+    serialHex: signed.certificate.serialHex },
+  { actor: 'test', via: 'test' });
+  t.check(revoked.ok && revoked.signing &&
+          revoked.signing.certificates[0].state === 'revoked' &&
+          revoked.signing.active === 0,
+          'M11. revoke-signing-certificate revokes scbob\'s, and the list ' +
+          'says so', JSON.stringify(revoked).slice(0, 400));
 
   // -------------------------------------------------------------------------
   // T. GET /tls/sign-in
