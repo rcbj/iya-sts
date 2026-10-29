@@ -30,7 +30,7 @@ of its own when its semantics are settled, and none is advertised until then.
 | `authzen_catalogue.ts` | The per-realm ATTRIBUTE CATALOGUE's grammar: a row (object, property or dotted path → attribute id, category, datatype, `single` or `bag`), its defaults, its reserved identifiers, and the reading of an entry's rows. **Pure.** |
 | `authzen_map.ts` | One access evaluation read against the catalogue and refused where it cannot be represented, the XACML request built, and the decision mapped back fail-closed. **Pure.** |
 | `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application. |
-| `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`. Thin, as `xacml/xacml.ts` is. |
+| `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
 `tests/authzen_map.js` holds the two pure modules in process;
@@ -192,6 +192,31 @@ end, and no `signed_metadata` (a follow-up may sign it with the realm's key).
 While the API is off the document answers 501 rather than advertising an
 endpoint that does not.
 
+## The batch (#1164)
+
+`POST /access/v1/evaluations` is the single evaluation run per item, through
+the same `evaluateOne()` — the same caller, admitted ONCE for the batch, the
+same audit row and monitor count per item — with section 7's additions:
+
+* **Defaults, overridden per item WHOLE**, member by member (`subject`,
+  `action`, `resource`, `context`): an item naming `resource` replaces the
+  top-level resource rather than merging into it, which is section 7.1.1's
+  reading and the only one in which an item says exactly what it is about.
+* **No items is one evaluation, answered in the single shape**, section 7.1's
+  "backwards-compatible".
+* **Bounds before anything is decided**: the body against
+  `authzen.maxBodyBytes`, then the count against `authzen.maxEvaluations`,
+  each refusing the whole batch 400 (`0037`, `0038`). Every item is a full
+  decision on this service's thread.
+* **An item's failure is its own**: `decision: false` with `context.error
+  { status, message }` (section 7.2's example; the shape this API's top-level
+  errors take too), and never hidden by the batch's 200. For
+  `deny_on_first_deny` an error counts as a deny.
+* **The batch id** is `X-Request-ID` or one made here, and each item's audit
+  row carries it with the item's position (`<id>#<n>`), decision 9.
+* `authzen.batchEnabled` off answers 501 (`0039`) and takes the endpoint out
+  of the metadata; the single endpoint is unaffected.
+
 ## The console and the API (#1162)
 
 **One tab, AuthZEN, on `/admin/xacml`**, after the XACML tabs it is decided
@@ -243,4 +268,5 @@ mirrors name the tab too.
 `STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
 the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
-admission and scope, 0028–0029 the result, 0030–0034 the tab's acts.
+admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
+the metadata path, 0036–0039 the batch.

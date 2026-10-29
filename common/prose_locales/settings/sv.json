@@ -6915,6 +6915,30 @@
     "en": "e5b02e80d4c28af6",
     "text": "De subject.type-värden vars subject.id är en person i den här sfärens katalog, kommaseparerade. För dem svarar Policy Information Point med subjektets roller och katalogattribut, och de är AUKTORITATIVA: en anropare kan inte skicka dem. För alla andra typer tillfrågas inte katalogen, så ett id som råkar matcha en persons namn är inte den personen. Tomt betyder att katalogen aldrig tillfrågas."
   },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "Batchutvärderingar påslagna"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "När det är på besvarar POST /access/v1/evaluations flera åtkomstutvärderingar i en begäran (avsnitt 7), och metadatadokumentet namnger den. Av svarar vägen 501 och metadatan utelämnar den; /access/v1/evaluation påverkas inte."
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "Utvärderingar en batch får bära"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "Det största antalet poster en POST /access/v1/evaluations får bära. Över det avvisas hela batchen med 400 innan någon post avgörs: varje post är ett fullt beslut på tjänstens tråd, och en obegränsad lista är ett sätt att förbruka den."
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "Största batchbegäran (byte)"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "Den största kropp POST /access/v1/evaluations tar emot. Över den avvisas hela batchen med 400 innan den läses. Tjänstens egen kroppsgräns (5 MB) är taket."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Returnera skälen för ett beslut"

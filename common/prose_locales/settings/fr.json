@@ -6915,6 +6915,30 @@
     "en": "e5b02e80d4c28af6",
     "text": "Les valeurs de subject.type dont le subject.id est une personne de l’annuaire de ce domaine, séparées par des virgules. Pour celles-ci, le Policy Information Point fournit les rôles et les attributs d’annuaire du sujet, et ils font AUTORITÉ : un appelant ne peut pas les envoyer. Pour tout autre type, l’annuaire n’est pas consulté, de sorte qu’un id qui correspond par hasard au nom d’une personne n’est pas cette personne. Vide signifie que l’annuaire n’est jamais consulté."
   },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "Évaluations par lot activées"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "Activé, POST /access/v1/evaluations répond à plusieurs évaluations d'accès dans une seule requête (section 7) et le document de métadonnées le nomme. Désactivé, la route répond 501 et les métadonnées l'omettent ; /access/v1/evaluation n'est pas concerné."
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "Évaluations qu'un lot peut porter"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "Le nombre maximal d'éléments qu'un POST /access/v1/evaluations peut porter. Au-delà, tout le lot est refusé avec 400 avant qu'aucun élément ne soit décidé : chaque élément est une décision complète sur le fil de ce service, et une liste sans limite est un moyen de l'épuiser."
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "Plus grande requête par lot (octets)"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "Le plus grand corps qu'accepte POST /access/v1/evaluations. Au-delà, tout le lot est refusé avec 400 avant d'être lu. La limite de corps propre au service (5 Mo) est le plafond."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Renvoyer les raisons d’une décision"

@@ -32,6 +32,9 @@
 //   W. THE METADATA (#1163): both forms, the identifier the URL was built
 //      from, every advertised URL a registered route, nothing unimplemented
 //      advertised, 404 for a path naming no realm, 501 while off.
+//   E. THE BATCH (#1164): every semantic, an item's failure in its own
+//      context.error, the defaults overridden per item, no items as one
+//      evaluation, both bounds, the switch, and the batch id on each row.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -529,6 +532,118 @@ async function childBody() {
   });
   t.check(r.status === 501, 'W6. with the API off the document answers ' +
           '501 rather than advertising an endpoint that does not', brief(r));
+
+  // -------------------------------------------------------------------------
+  // E. THE BATCH (#1164)
+  // -------------------------------------------------------------------------
+  const BATCH = PREFIX + '/access/v1/evaluations';
+  const audit = require(ROOT + '/common/audit');
+  const top = { subject: { type: 'user', id: 'azalice' },
+                resource: { type: 'document', id: 'doc-1',
+                            properties: { classification: 'internal' } },
+                context: { application: 'todo-app' } };
+  const items = function (names) {
+    log.debug("Entering items().");
+    log.debug("Leaving items().");
+    return names.map(function (name) {
+      return name === 'bad'
+        ? { action: { name: 'read' },
+            resource: { type: 'document', id: 'doc-2',
+                        properties: { colour: 'red' } } }
+        : { action: { name: name } };
+    });
+  };
+  r = await request(port, 'POST', BATCH, pepCred,
+    Object.assign({ evaluations: items(['read', 'delete', 'bad']) }, top),
+    { 'x-request-id': 'az-batch-1' });
+  const all = (r.json && r.json.evaluations) || [];
+  t.check(r.status === 200 && all.length === 3 && all[0].decision === true &&
+          all[1].decision === false && all[2].decision === false &&
+          all[2].context && all[2].context.error &&
+          all[2].context.error.status === 400 &&
+          r.headers['x-request-id'] === 'az-batch-1',
+          'E1. execute_all answers every item in order, an item\'s own ' +
+          'failure in its context.error and never hidden by the 200',
+          brief(r));
+  const rows = inRealm(function () {
+    return audit.list();
+  }).filter(function (row) {
+    return row && row.action === 'authzen.decision' &&
+           /request az-batch-1#\d/.test(String(row.summary || ''));
+  });
+  t.check(rows.length === 2,
+          'E2. each item decided is its own audit row carrying the batch id',
+          rows.length + ' row(s)');
+  r = await request(port, 'POST', BATCH, pepCred, Object.assign({
+    evaluations: items(['read', 'delete', 'read']),
+    options: { evaluations_semantic: 'deny_on_first_deny' } }, top));
+  t.check(r.status === 200 && r.json && r.json.evaluations.length === 2 &&
+          r.json.evaluations[1].decision === false,
+          'E3. deny_on_first_deny stops at the first false', brief(r));
+  r = await request(port, 'POST', BATCH, pepCred, Object.assign({
+    evaluations: items(['delete', 'read', 'delete']),
+    options: { evaluations_semantic: 'permit_on_first_permit' } }, top));
+  t.check(r.status === 200 && r.json && r.json.evaluations.length === 2 &&
+          r.json.evaluations[1].decision === true,
+          'E4. permit_on_first_permit stops at the first true', brief(r));
+  r = await request(port, 'POST', BATCH, pepCred,
+                    Object.assign({ action: { name: 'read' } }, top));
+  t.check(r.status === 200 && r.json && r.json.decision === true &&
+          !r.json.evaluations,
+          'E5. no evaluations is one evaluation, answered as the single ' +
+          'endpoint answers it', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', BATCH, pepCred, Object.assign({
+    evaluations: items(['read']),
+    options: { evaluations_semantic: 'sometimes' } }, top));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0036'),
+          'E6. an unknown semantic is 400 (STS-AUTHZEN-0036)', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.maxEvaluations', 2);
+  });
+  since = marks.length;
+  r = await request(port, 'POST', BATCH, pepCred, Object.assign({
+    evaluations: items(['read', 'read', 'read']) }, top));
+  inRealm(function () {
+    config.setOverride('authzen.maxEvaluations', 64);
+    config.setOverride('authzen.maxBodyBytes', 1024);
+  });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0038'),
+          'E7. a batch over authzen.maxEvaluations is 400 for the whole ' +
+          'batch (STS-AUTHZEN-0038)', brief(r));
+  since = marks.length;
+  const padded = items(['read']);
+  r = await request(port, 'POST', BATCH, pepCred, Object.assign({}, top, {
+    evaluations: padded, context: { application: 'todo-app',
+                                    padding: 'x'.repeat(2048) } }));
+  inRealm(function () {
+    config.setOverride('authzen.maxBodyBytes', 262144);
+  });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0037'),
+          'E8. a body over authzen.maxBodyBytes is 400 unread ' +
+          '(STS-AUTHZEN-0037)', brief(r));
+  r = await request(port, 'GET', '/.well-known/authzen-configuration' +
+                    PREFIX, null);
+  const withBatch = r.json || {};
+  inRealm(function () {
+    config.setOverride('authzen.batchEnabled', false);
+  });
+  since = marks.length;
+  const off = await request(port, 'POST', BATCH, pepCred, Object.assign({
+    evaluations: items(['read']) }, top));
+  const without = await request(port, 'GET',
+    '/.well-known/authzen-configuration' + PREFIX, null);
+  inRealm(function () {
+    config.setOverride('authzen.batchEnabled', true);
+  });
+  t.check(withBatch.access_evaluations_endpoint === own +
+            '/access/v1/evaluations' &&
+          off.status === 501 && markedSince(since, 'STS-AUTHZEN-0039') &&
+          without.json && !without.json.access_evaluations_endpoint,
+          'E9. the metadata names the batch endpoint while it is on, and ' +
+          'with authzen.batchEnabled off the route answers 501 and the ' +
+          'metadata leaves it out', JSON.stringify([withBatch, off.status,
+                                                    without.json]));
 
   // -------------------------------------------------------------------------
   // O. OFF

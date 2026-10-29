@@ -21220,6 +21220,24 @@ const CODES = [
       'no PDP: the path after the segment is not realm/<id> of a realm ' +
       'that exists, asked at the host root.',
     spec: 'HTTP 404 (Express\'s own)' },
+  { code: 'STS-AUTHZEN-0036',
+    summary: 'An AuthZEN access evaluations request named an ' +
+      'options.evaluations_semantic other than execute_all, ' +
+      'deny_on_first_deny or permit_on_first_permit.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0037',
+    summary: 'An AuthZEN access evaluations request was larger than the ' +
+      'realm\'s authzen.maxBodyBytes; the whole batch was refused unread.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0038',
+    summary: 'An AuthZEN access evaluations request carried more items ' +
+      'than the realm\'s authzen.maxEvaluations; the whole batch was ' +
+      'refused before any item was decided.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0039',
+    summary: 'An AuthZEN access evaluations request reached a realm where ' +
+      'authzen.batchEnabled is off.',
+    spec: 'HTTP 501, an error message' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
