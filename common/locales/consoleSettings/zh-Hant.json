@@ -20,6 +20,8 @@
   "ordered.order": "順序",
   "ordered.value": "值",
   "ordered.note": "勾選要要求的項目並為其編號：<strong>1 為最優先</strong>，驗證器會使用其支援的第一項。未勾選列上的編號會被忽略；編號相同的兩列保持其顯示順序。",
+  "ordered.selectAll": "全選",
+  "ordered.chooseOne": "儲存前請至少選擇一項：空清單不會被儲存。",
   "row.emptyDefault": "（空白——預設值）",
   "row.reset": "重設",
   "row.restart": "需重新啟動才能套用：",

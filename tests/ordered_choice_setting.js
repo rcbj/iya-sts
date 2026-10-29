@@ -29,7 +29,14 @@
 //   5. a save ticking nothing is refused (STS-ADMIN-0840) and changes
 //      nothing;
 //   6. a value outside the list is refused by the setting's own check;
-//   7. a form-encoded post, the shape a browser sends, folds the same way.
+//   7. a form-encoded post, the shape a browser sends, folds the same way;
+//   8. (#1130) the setting describes what Select all ticks, the page draws
+//      the switch and the hidden "choose at least one" line, and
+//      `selectAllValues()` obeys webauthn.insecureAlgorithms and
+//      webauthn.pqcOnly — and never ticks RS1 where the mode forbids it;
+//   9. (#1130) the Metadata tab's report lists the offered algorithms first,
+//      numbered in the order the setting requests them, each other row with
+//      its reason, and follows a save.
 //
 // The setting is reset in a `finally`: it is process-wide.
 // ===========================================================================
@@ -44,6 +51,8 @@ const consolePage = require('./tools/console_page')
   .consolePage(require('path').join(__dirname, '..'));
 const WebForms = require('../admin-ui/web_forms');
 const adminApi = require('../mgmt-api/admin_api');
+const SettingsForms = require('../admin-ui/web_settings');
+const webauthnPolicy = require('../authn/webauthn_policy');
 
 const log = require('bunyan').createLogger({
   name: 'ordered_choice_setting',
@@ -137,6 +146,46 @@ async function runBody(t) {
   t.check(page.indexOf('post-quantum, RFC 9964') >= 0,
           '2. each value is drawn with its note');
 
+  t.log.info('=== 8. what Select all ticks (#1130) ===');
+  const rules = described.selectAll || {};
+  t.check(JSON.stringify((rules.onlyWhileOn || []).map(function (rule) {
+    return rule.setting + ':' + rule.values.join('|');
+  })) === '["webauthn.insecureAlgorithms:RS1"]' &&
+          JSON.stringify((rules.aloneWhileOn || []).map(function (rule) {
+            return rule.setting + ':' + rule.values.slice().sort().join('|');
+          })) === '["webauthn.pqcOnly:ML-DSA-44|ML-DSA-65|ML-DSA-87"]',
+          '8. the setting describes Select all\'s two rules',
+          JSON.stringify(rules));
+  t.check(other.selectAll === undefined,
+          '8. a setting with no rules describes none');
+  t.check(page.indexOf('data-ordered-all="' + KEY + '"') >= 0 &&
+          page.indexOf('role="switch"') >= 0 &&
+          /data-ordered-none="webauthn\.algorithms" hidden/.test(page),
+          '8. the page draws the switch, and the "choose at least one" ' +
+          'line hidden while something is ticked');
+  const pick = function (on) {
+    return SettingsForms.selectAllValues(described, function (rule) {
+      return !!on[rule.setting];
+    });
+  };
+  const plain = pick({});
+  t.check(plain.length === described.csvValues.length - 1 &&
+          plain.indexOf('RS1') < 0 && plain.indexOf('ML-DSA-87') >= 0,
+          '8. with both switches off, Select all ticks everything but RS1',
+          plain.join(','));
+  t.check(pick({ 'webauthn.insecureAlgorithms': true }).indexOf('RS1') >= 0,
+          '8. with insecure algorithms on, it ticks RS1 too');
+  t.equal(pick({ 'webauthn.pqcOnly': true }).join(','),
+          'ML-DSA-44,ML-DSA-65,ML-DSA-87',
+          '8. with post-quantum only on, it ticks ML-DSA alone');
+  const locked = JSON.parse(JSON.stringify(described));
+  locked.selectAll.onlyWhileOn[0].canBeOn = false;
+  t.check(SettingsForms.selectAllValues(locked, function () {
+    return true;
+  }).indexOf('RS1') < 0,
+          '8. where the mode cannot turn insecure algorithms on, RS1 is ' +
+          'never ticked, whatever the form reads');
+
   try {
     t.log.info('=== 3. a save stores the ticked values in number order ===');
     const saved = await post(fieldsFor({ 'ES256': 3, 'ML-DSA-65': 1,
@@ -177,6 +226,30 @@ async function runBody(t) {
             '6. a value outside the closed list is refused by the ' +
             'setting\'s own check, and nothing changes',
             outside.status + ' ' + outside.body.slice(0, 200));
+
+    t.log.info('=== 9. the report follows the save, in its order ===');
+    await post(fieldsFor({ 'ES256': 2, 'ML-DSA-87': 1, 'RS256': 3 }));
+    const report = webauthnPolicy.report();
+    t.check(report.algorithms.slice(0, 3).map(function (one) {
+      return one.name + '#' + one.rank;
+    }).join(',') === 'ML-DSA-87#1,ES256#2,RS256#3' &&
+            report.algorithms.slice(3).every(function (one) {
+              return !one.offered && one.rank === undefined &&
+                     !!one.notOfferedBecause;
+            }),
+            '9. the report lists the offered ones first, numbered in the ' +
+            'order the setting requests them, and every other row says why',
+            report.algorithms.slice(0, 5).map(function (one) {
+              return one.name + '#' + one.rank + '/' + one.notOfferedBecause;
+            }).join(','));
+    const rs1 = report.algorithms.filter(function (one) {
+      return one.name === 'RS1';
+    })[0];
+    t.check(rs1 && rs1.notOfferedBecause === 'insecure-off' &&
+            report.algorithmsSource === 'realm',
+            '9. RS1 is not offered because insecure algorithms are off, and ' +
+            'the list is the realm\'s',
+            JSON.stringify(rs1) + ' ' + report.algorithmsSource);
 
     // 7 WAS THE FORM-ENCODED BODY A BROWSER POSTED TO /admin/config AND
     // THE REDIRECT BACK: the static console sends every form as JSON to its

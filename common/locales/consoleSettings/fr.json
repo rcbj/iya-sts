@@ -20,6 +20,8 @@
   "ordered.order": "Ordre",
   "ordered.value": "Valeur",
   "ordered.note": "Cochez ce qui est demandé et numérotez-le : <strong>1 est le plus souhaité</strong>, et un authentificateur utilise le premier qu’il prend en charge. Un numéro sur une ligne non cochée est ignoré ; deux lignes portant le même numéro gardent l’ordre dans lequel elles sont affichées.",
+  "ordered.selectAll": "Tout sélectionner",
+  "ordered.chooseOne": "Choisissez-en au moins un avant d’enregistrer : une liste vide n’est pas enregistrée.",
   "row.emptyDefault": "(vide — la valeur par défaut)",
   "row.reset": "Réinitialiser",
   "row.restart": "Redémarrer pour appliquer :",

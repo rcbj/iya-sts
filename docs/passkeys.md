@@ -582,9 +582,25 @@ the post-quantum ones first, strongest first:
   `ESP512`, `ES512`, `Ed448`, `ES256K`, `PS256`, `PS384`, `PS512`, `RS256`,
   `RS384`, `RS512`.
 
-On **Protocols → WebAuthn**, each algorithm has a checkbox (offered or not)
-and a number (its place in the order). A passkey whose algorithm was not
-offered is refused at registration (`STS-AUTHN-0228`).
+On **Protocols → WebAuthn**, the Settings tab gives each algorithm a checkbox
+(offered or not) and a number (its place in the order). A passkey whose
+algorithm was not offered is refused at registration (`STS-AUTHN-0228`).
+
+* **Select all** is a switch above the list. Switching it on ticks every
+  algorithm the two settings below allow: not `RS1` unless
+  `webauthn.insecureAlgorithms` is on, and only ML-DSA while
+  `webauthn.pqcOnly` is on. It reads those two as the form shows them, so a
+  change you have not saved yet counts. Switching it off unticks every
+  algorithm.
+* **At least one must be ticked.** With none ticked, Save is disabled and the
+  list says so. A save that sends an empty list anyway is refused
+  (`STS-ADMIN-0840`).
+* **The Metadata tab** lists what a registration actually requests: the
+  offered algorithms first, numbered in the order they are sent, then the
+  others, each with the reason it is not offered. When the selected passkey
+  policy profile sets *Algorithms a passkey registration offers*, the profile's
+  list replaces `webauthn.algorithms` for that profile's people, and the tab
+  says so ([#1130](https://github.com/rcbj/iya-sts/issues/1130)).
 
 Two more settings change the list:
 * **`webauthn.pqcOnly`** (default `false`) offers only ML-DSA. A passkey made

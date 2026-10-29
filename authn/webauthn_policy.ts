@@ -2059,6 +2059,54 @@ class WebauthnPolicy {
   // service does not do.
   // ---------------------------------------------------------------------------
   /**
+   * The algorithm rows of `report()` (#1130): every algorithm the verifier
+   * knows, the offered ones first in the order they are requested and
+   * numbered from 1, then the rest in the verifier's table order, each of
+   * those with the reason it is not offered.
+   *
+   * @param live - `settings()`, already read
+   * @returns the rows
+   */
+  private reportAlgorithms(live: { algorithms: string[];
+                                   insecureAlgorithms: boolean }) {
+    const { log, webauthn } = this.deps;
+    log.debug('Entering WebauthnPolicy.reportAlgorithms().');
+    const narrowed = this.requestsPostQuantumOnly() ||
+                     this.requiresPostQuantumAt('registration');
+    const classicalOnly = this.registrationMode() === 'classical-only';
+    const offered = live.algorithms.map(function (name) {
+      return String(ALG_IDS[name]);
+    }).filter(function (id) {
+      return webauthn.COSE_ALGS[id] !== undefined;
+    });
+    const rest = Object.keys(webauthn.COSE_ALGS).filter(function (id) {
+      return offered.indexOf(id) < 0;
+    });
+    const out = offered.concat(rest).map(function (id: string) {
+      const name = webauthn.COSE_ALGS[id];
+      const rank = live.algorithms.indexOf(name);
+      const postQuantum = PQC_ALGS.indexOf(name) >= 0;
+      const insecure = INSECURE_ALGS.indexOf(name) >= 0;
+      // THE FIRST REASON THAT APPLIES: an insecure one is dropped whatever
+      // the list says, a classical one under a post-quantum narrowing and
+      // an ML-DSA one under `classical-only` likewise; otherwise the list
+      // does not name it.
+      const because = rank >= 0 ? undefined
+        : (insecure && !live.insecureAlgorithms ? 'insecure-off'
+          : (!postQuantum && narrowed ? 'post-quantum-only'
+            : (postQuantum && classicalOnly ? 'classical-only'
+              : 'not-chosen')));
+      return { name: name, coseAlg: Number(id), offered: rank >= 0,
+               rank: rank >= 0 ? rank + 1 : undefined,
+               notOfferedBecause: because,
+               postQuantum: postQuantum, insecure: insecure };
+    });
+    log.debug('Leaving WebauthnPolicy.reportAlgorithms(). ' + offered.length +
+              ' offered of ' + out.length + '.');
+    return out;
+  }
+
+  /**
    * Describes the relying party for `/admin/webauthn` and
    * `/admin/crypto-metadata`: every algorithm and curve the verifier knows,
    * which are offered, and the ceremony and attestation settings.
@@ -2080,13 +2128,20 @@ class WebauthnPolicy {
       // — rather than only the offered ones. A page that listed two rows could
       // not answer the question somebody comes to it with, which is *what else
       // could I ask for*.
-      algorithms: Object.keys(webauthn.COSE_ALGS).map(function (id) {
-        const name = webauthn.COSE_ALGS[id];
-        return { name: name, coseAlg: Number(id),
-                 offered: live.algorithms.indexOf(name) >= 0,
-                 postQuantum: PQC_ALGS.indexOf(name) >= 0,
-                 insecure: INSECURE_ALGS.indexOf(name) >= 0 };
-      }),
+      //
+      // IN THE ORDER THEY ARE REQUESTED (#1130): the offered rows first,
+      // numbered as `pubKeyCredParams` sends them, then the rest in the
+      // verifier's table order. It was the table order throughout, so the
+      // Metadata tab and the Settings tab's ordered choice disagreed on
+      // every realm whose list was not the table's own order — the default
+      // among them. A row not offered says why (`notOfferedBecause`).
+      algorithms: this.reportAlgorithms(live),
+      // WHERE THE LIST CAME FROM (#1130): the realm's webauthn.algorithms,
+      // or the selected passkey profile's `registrationAlgorithms`, which
+      // replaces it for that profile's people.
+      algorithmsSource: this.registrationRows().registrationAlgorithms.length
+        ? 'passkey-profile' : 'realm',
+      registrationMode: this.registrationMode(),
       insecureAlgorithms: live.insecureAlgorithms,
       pqcOnly: live.pqcOnly,
       // THE LANES (#643): the switch, and each lane's algorithms while on.

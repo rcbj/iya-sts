@@ -20,6 +20,8 @@
   "ordered.order": "Pagkakasunod",
   "ordered.value": "Value",
   "ordered.note": "Lagyan ng tsek ang hinihiling at bigyan ito ng numero: <strong>1 ang pinakagusto</strong>, at ginagamit ng authenticator ang una nitong sinusuportahan. Hindi pinapansin ang numero sa row na walang tsek; ang dalawang row na may parehong numero ay nananatili sa pagkakasunod na ipinapakita.",
+  "ordered.selectAll": "Piliin lahat",
+  "ordered.chooseOne": "Pumili ng kahit isa bago mag-save: hindi sine-save ang listahang walang laman.",
   "row.emptyDefault": "(walang laman — ang default)",
   "row.reset": "I-reset",
   "row.restart": "Mag-restart para ilapat:",

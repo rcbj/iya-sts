@@ -20,6 +20,8 @@
   "ordered.order": "Orden",
   "ordered.value": "Valor",
   "ordered.note": "Marque lo que se solicita y numérelo: <strong>1 es el preferido</strong>, y un autenticador usa el primero que admita. El número de una fila sin marcar se ignora; dos filas con el mismo número conservan el orden en que se muestran.",
+  "ordered.selectAll": "Seleccionar todo",
+  "ordered.chooseOne": "Elija al menos uno antes de guardar: una lista vacía no se guarda.",
   "row.emptyDefault": "(vacío — el predeterminado)",
   "row.reset": "Restablecer",
   "row.restart": "Reinicie para aplicar:",
