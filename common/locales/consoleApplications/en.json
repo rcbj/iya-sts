@@ -779,6 +779,8 @@
   "a3.realmTicksTip": "The realm's selection ticks this attribute for {set}.",
   "a3.saveSelections": "Save",
   "a3.saveSelectionsTip": "Write the ticked boxes. A column whose ticks did not change keeps the realm's selection; a changed column becomes this application's own and replaces the realm's for it.",
+  "a3.previewNotFoundA": "There is no person ",
+  "a3.previewNotFoundB": " in this realm's directory, so nothing shown for them below is theirs. Type another username in Preview for.",
   "a3.lifetimesHeading": "Token lifetimes",
   "a3.colToken": "Token",
   "a3.colOverride": "Override",

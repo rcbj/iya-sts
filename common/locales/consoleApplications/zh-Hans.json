@@ -779,6 +779,8 @@
   "a3.realmTicksTip": "领域的选择为 {set} 勾选了此属性。",
   "a3.saveSelections": "保存",
   "a3.saveSelectionsTip": "写入已勾选的复选框。勾选未更改的列保留领域的选择；更改过的列成为此应用自己的选择，并替代该列的领域选择。",
+  "a3.previewNotFoundA": "此领域的目录中没有用户 ",
+  "a3.previewNotFoundB": "，因此下方显示的内容都不是此人的。请在“预览对象”中输入其他用户名。",
   "a3.lifetimesHeading": "令牌有效期",
   "a3.colToken": "令牌",
   "a3.colOverride": "覆盖",

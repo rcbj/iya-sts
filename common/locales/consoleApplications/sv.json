@@ -779,6 +779,8 @@
   "a3.realmTicksTip": "Sfärens urval kryssar i det här attributet för {set}.",
   "a3.saveSelections": "Spara",
   "a3.saveSelectionsTip": "Skriver de ikryssade rutorna. En kolumn vars kryss inte ändrades behåller sfärens urval; en ändrad kolumn blir applikationens eget och ersätter sfärens för den.",
+  "a3.previewNotFoundA": "Det finns ingen person ",
+  "a3.previewNotFoundB": " i den här sfärens katalog, så inget som visas nedan är deras. Skriv ett annat användarnamn i Förhandsvisning för.",
   "a3.lifetimesHeading": "Tokenlivslängder",
   "a3.colToken": "Token",
   "a3.colOverride": "Åsidosättning",

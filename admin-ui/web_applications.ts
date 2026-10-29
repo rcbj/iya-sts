@@ -5302,7 +5302,30 @@ class ApplicationsPage {
     return '<h3 id="' + kit.esc(anchor) + '-attributes">' +
       t.html('consoleApplications.a3.directoryAttributes') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.selectionNote')) +
-      previewForm + html;
+      previewForm +
+      ApplicationsPage.previewNotFoundNote(state.preview, t) + html;
+  }
+
+  // THE PREVIEW PERSON IS NOBODY (#1144): a name the realm's directory does
+  // not hold. Product invents nothing, so every value is empty; development
+  // invents a persona's, so the values are nobody's. Either way the page
+  // says so, rather than a silent column. The name is drawn by `kit.esc()`
+  // between two messages, for the reason the preview heading is (#539).
+  /**
+   * The note a selection section carries when its preview person is not in
+   * the realm's directory, or '' when they are.
+   *
+   * @param preview - the selections' `preview` (`user`, `entryFound`)
+   * @param t - the page's translator (#539)
+   * @returns the note, or ''
+   */
+  static previewNotFoundNote(preview, t) {
+    if (!preview || preview.entryFound !== false) {
+      return '';
+    }
+    return kit.note(t.html('consoleApplications.a3.previewNotFoundA') +
+      '<code>' + kit.esc(String(preview.user || '')) + '</code>' +
+      t.html('consoleApplications.a3.previewNotFoundB'));
   }
 
   // THE OAUTH SUB-TAB'S SELECTIONS AS ONE TABLE (#1144, rcbj 2026-10-29):
@@ -5448,7 +5471,9 @@ class ApplicationsPage {
     return '<h3 id="' + kit.esc(anchor) + '-attributes">' +
       t.html('consoleApplications.a3.directoryAttributes') + '</h3>' +
       kit.note(t.html('consoleApplications.a3.selectionTableNote')) +
-      previewForm + form + previews;
+      previewForm +
+      ApplicationsPage.previewNotFoundNote(state.preview, t) + form +
+      previews;
   }
 
   // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token

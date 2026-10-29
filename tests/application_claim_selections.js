@@ -31,7 +31,9 @@
 //   F. the OAuth sub-tab's one table (#1144): `set-claim-selections` writes
 //      only the columns that changed, an untouched inherited column keeps
 //      inheriting, a bad attribute refuses the whole Save, and the table's
-//      markup — a checkbox column per set, the realm's marks, one Save.
+//      markup — a checkbox column per set, the realm's marks, one Save; the
+//      preview person defaults to the signed-in administrator, and one the
+//      directory does not hold is named in a note.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -308,6 +310,42 @@ function childMain() {
            tableRead.indexOf('claim-realm') >= 0,
            'F6. a reader without write sees the table and the realm\'s ' +
            'marks, and no form');
+      // F7: the preview person is the signed-in administrator unless one is
+      // asked for — and `alice` only for a caller that is no person.
+      const ldap = require(ROOT + '/ldap/ldap_server');
+      ldap.createUser('acs-admin', { invent: false });
+      const asking = function (query, caller) {
+        return views.applicationDetailJson({ query: query,
+          headers: { host: 'localhost:8081' }, protocol: 'https',
+          get: function () { return ''; }, adminApiCaller: caller },
+          'acs-web').json.page.claimSelections.preview;
+      };
+      const mine = asking({}, { kind: 'person', name: 'acs-admin' });
+      const named = asking({ claimsUser: 'bob' },
+                           { kind: 'person', name: 'acs-admin' });
+      const machine = asking({}, { kind: 'application',
+                                   name: 'sts-api-client' });
+      note(mine.user === 'acs-admin' && mine.entryFound === true &&
+           named.user === 'bob' && machine.user === 'alice',
+           'F7. the preview is the signed-in administrator by default, the ' +
+           'person asked for when one is, and alice for a caller that is no ' +
+           'person', JSON.stringify([mine.user, mine.entryFound, named.user,
+                                     machine.user]));
+      // F8: a preview person the directory does not hold is said so.
+      const tableFor = function (who) {
+        return page.applicationClaimSelectionTable(WebKit.context({}, true),
+          { identifier: 'acs-web', page: { claimSelections:
+            views.applicationClaimsState(web(), who).selections } },
+          '', ['access_token', 'id_token', 'userinfo'], 'cfg-oauth');
+      };
+      const nobody = tableFor('acs-nobody-' + stamp);
+      const somebody = tableFor('acs-admin');
+      note(nobody.indexOf('There is no person <code>acs-nobody-' + stamp +
+                          '</code>') >= 0 &&
+           somebody.indexOf('There is no person') < 0,
+           'F8. a preview person the realm\'s directory does not hold is ' +
+           'named in a note; one it holds is not',
+           nobody.slice(0, 300));
       claimAttributes.setSelection('id_token', []);
       claimAttributes.setSelection('saml2', []);
     });

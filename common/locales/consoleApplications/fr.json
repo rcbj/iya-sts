@@ -779,6 +779,8 @@
   "a3.realmTicksTip": "La sélection du domaine coche cet attribut pour {set}.",
   "a3.saveSelections": "Enregistrer",
   "a3.saveSelectionsTip": "Écrit les cases cochées. Une colonne dont les coches n'ont pas changé garde la sélection du domaine ; une colonne modifiée devient la sélection propre de cette application et remplace celle du domaine pour elle.",
+  "a3.previewNotFoundA": "Il n'y a aucune personne ",
+  "a3.previewNotFoundB": " dans l'annuaire de ce domaine : rien de ce qui est affiché ci-dessous n'est à elle. Saisissez un autre nom d'utilisateur dans Aperçu pour.",
   "a3.lifetimesHeading": "Durées de vie des jetons",
   "a3.colToken": "Jeton",
   "a3.colOverride": "Dérogation",

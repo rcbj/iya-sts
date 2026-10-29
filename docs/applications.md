@@ -829,7 +829,9 @@ to what the metadata advertises, and then given those this client's selection
 holds.
 
 Each section previews what its selection would carry for one person
-(**Preview for**, `alice` by default). An unknown attribute, or a set whose
+(**Preview for**): you, the signed-in administrator, unless you type another
+username. If the realm's directory holds no person of that name, a note above
+the table says so — nothing shown for them is theirs. An unknown attribute, or a set whose
 protocol the application is not declared for, is refused (`STS-REG-0215`).
 
 The management API: `POST /admin-api/applications/set-claim-attributes`

@@ -779,6 +779,8 @@
   "a3.realmTicksTip": "La selección del dominio marca este atributo para {set}.",
   "a3.saveSelections": "Guardar",
   "a3.saveSelectionsTip": "Escribe las casillas marcadas. Una columna cuyas marcas no cambiaron conserva la selección del dominio; una columna cambiada pasa a ser la propia de esta aplicación y sustituye a la del dominio para ella.",
+  "a3.previewNotFoundA": "No hay ninguna persona ",
+  "a3.previewNotFoundB": " en el directorio de este dominio, así que nada de lo que se muestra abajo es suyo. Escriba otro nombre de usuario en Vista previa para.",
   "a3.lifetimesHeading": "Duraciones de token",
   "a3.colToken": "Token",
   "a3.colOverride": "Sustitución",

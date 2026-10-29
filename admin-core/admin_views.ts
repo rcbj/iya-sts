@@ -11492,8 +11492,13 @@ class AdminViews {
     const rolesState = this.applicationRolesState(row.identifier, row);
     const signalsState = this.applicationSignalsState(req, row);
     const enrollmentState = this.applicationEnrollmentState(req, row);
+    // THE PREVIEW PERSON (#1144, rcbj 2026-10-29): the one asked for, else
+    // the signed-in administrator — a person the realm's directory holds,
+    // where the old default, `alice`, is nobody in a product install.
+    const caller = (req && req.adminApiCaller) || null;
     const claimsState = this.applicationClaimsState(row,
-      req && req.query ? req.query.claimsUser : '');
+      (req && req.query && String(req.query.claimsUser || '').trim()) ||
+      (caller && caller.kind === 'person' ? String(caller.name || '') : ''));
     const lifetimesState = this.applicationTokenLifetimesState(row);
     const attempts = this.applicationAuthenticationEvents(req, row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
@@ -12039,7 +12044,9 @@ class AdminViews {
    *
    * @param row - the application's view
    * @param previewUser - optional; the person the selections are previewed
-   *   for (`?claimsUser=`), `alice` by default as on the realm's pages
+   *   for (`?claimsUser=`); the application page passes the signed-in
+   *   administrator when none is asked for (#1144), and `alice` is the
+   *   default for a caller passing nobody
    * @returns `{ sets, json, selections }`, one member of `sets` per set it
    *   is declared for
    */

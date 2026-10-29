@@ -779,6 +779,8 @@
   "a3.realmTicksTip": "Tsinetsekan ng pinili ng realm ang attribute na ito para sa {set}.",
   "a3.saveSelections": "Save",
   "a3.saveSelectionsTip": "Isulat ang mga may tsek. Ang column na hindi nagbago ang mga tsek ay mananatili sa pinili ng realm; ang binagong column ay magiging sariling pinili ng application na ito at papalit sa pinili ng realm para rito.",
+  "a3.previewNotFoundA": "Walang taong ",
+  "a3.previewNotFoundB": " sa directory ng realm na ito, kaya walang ipinapakita sa ibaba na kanila. Mag-type ng ibang username sa Preview para kay.",
   "a3.lifetimesHeading": "Mga lifetime ng token",
   "a3.colToken": "Token",
   "a3.colOverride": "Override",
