@@ -3778,7 +3778,7 @@ class Credentials {
     const replacing = !!(upgrading && upgrade.mode === 'replace');
     if (held.length - (replacing ? 1 : 0) >= cap) {
       log.info('credentials: ' + name + ' already holds ' + held.length +
-               ' security key(s) and webauthn.maxKeysPerPerson is ' + cap +
+               ' passkey(s) and webauthn.maxKeysPerPerson is ' + cap +
                ', so another was not enrolled.');
       log.debug("Leaving Credentials.addKey().");
       return coded('STS-AUTHN-0067', { ok: false,
@@ -4996,7 +4996,7 @@ class Credentials {
           'store refused the write: ' +
                                    e.message] });
     }
-    log.info('credentials: a security key was removed for ' + name + '.');
+    log.info('credentials: a passkey was removed for ' + name + '.');
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
   }
@@ -9815,8 +9815,9 @@ class Credentials {
                    { ok: false, reason: 'refused', errors: stored.errors });
     }
     this.abandonKeyEnrolment(name);
-    log.info('credentials: ' + name + ' enrolled a "' + held.lane +
-             '" security key. They now hold ' + this.keysOf(name).length + '.');
+    log.info('credentials: ' + name + ' enrolled a passkey' +
+             (held.lane === 'pqc' ? ' in the pqc lane' : '') +
+             '. They now hold ' + this.keysOf(name).length + '.');
     log.debug('Leaving Credentials.keyEnrolmentWritten(). Enrolled.');
     return { ok: true, username: name,
              credentialId: stored.credentialId,
