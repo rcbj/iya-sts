@@ -8626,6 +8626,95 @@ class AdminApi {
             },
             responseDescription: 'The certificates the entry stores now.' },
 
+          { action: 'issue-signing-certificate',
+            operationId: 'issueUserSigningCertificate',
+            summary: 'Issue somebody a message-signing certificate from ' +
+                     'this realm\'s CA',
+            description: 'Generates a key pair and certifies it from the ' +
+                         'realm\'s `message-signing` Issuing CA with ' +
+                         '`digitalSignature` only and ' +
+                         '`urn:sts:person:<username>` as its ' +
+                         'subjectAltName. A WS-Trust request whose ' +
+                         'WS-Security signature over the SOAP Body and ' +
+                         'Timestamp verifies under it authenticates the ' +
+                         'person as its requester; it signs nobody in over ' +
+                         'TLS. An administrator\'s act: the person has no ' +
+                         'door to it on the user portal (#521).\n\n' +
+                         '**THIS REPLY IS THE ONLY COPY OF THE PRIVATE ' +
+                         'KEY.** `files` holds a PKCS#12 (base64), an ' +
+                         'encrypted PKCS#8 PEM key and the PEM chain, all ' +
+                         'protected by `password`, which is neither stored ' +
+                         'nor audited. Refused past ' +
+                         '`pki.messageSigningCertificateMax` valid ' +
+                         'certificates (`STS-PKI-0220`), for a person with ' +
+                         'no entry (`STS-ADMIN-0905`), for a key algorithm ' +
+                         'outside `rsa-2048`, `rsa-3072`, `ec-p256`, ' +
+                         '`ec-p384`, and in a realm with no certificate ' +
+                         'authority.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                password: { type: 'string', minLength: 8, maxLength: 256 },
+                confirm: { type: 'string' },
+                keyAlg: { type: 'string',
+                          enum: ['rsa-2048', 'rsa-3072', 'ec-p256',
+                                 'ec-p384'] },
+                label: { type: 'string', maxLength: 40 },
+                days: { type: 'integer', minimum: 1 }
+              },
+              required: ['user', 'password'],
+              examples: [{ user: 'alice',
+                           password: 'correct horse battery',
+                           keyAlg: 'ec-p256', label: 'signer 1' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificate (serial, subject, ' +
+                                 'thumbprint, PEM and chain, its ' +
+                                 'urn:sts: name), the three files, and the ' +
+                                 'person\'s message-signing certificates ' +
+                                 'as they now stand, in `signing`.' },
+
+          { action: 'revoke-signing-certificate',
+            operationId: 'revokeUserSigningCertificate',
+            summary: 'Revoke one of somebody\'s message-signing ' +
+                     'certificates',
+            description: 'Revokes a certificate ' +
+                         '`issue-signing-certificate` issued to THIS ' +
+                         'person — a serial belonging to anybody else, or ' +
+                         'one of their TLS client certificates, matches ' +
+                         'nothing (`STS-PKI-0221`) — onto the Issuing CA\'s ' +
+                         'CRL and OCSP responder. A WS-Trust request signed ' +
+                         'with it is refused from then on. The person\'s ' +
+                         'certificates are listed in `mfa.signing` of GET ' +
+                         '/admin-api/users?user= (#521).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                serialHex: { type: 'string' },
+                reason: { type: 'string',
+                          enum: ['cessationOfOperation', 'keyCompromise'] }
+              },
+              required: ['user', 'serialHex'],
+              examples: [{ user: 'alice', serialHex: '1a2b3c',
+                           reason: 'keyCompromise' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The revoked certificate, the reason, and ' +
+                                 'the person\'s message-signing ' +
+                                 'certificates as they now stand.' },
+
           { action: 'enrol-self-issued-subject',
             operationId: 'enrolUserSelfIssuedSubject',
             summary: 'Enrol a self-issued (SIOPv2) subject for somebody',
@@ -15961,6 +16050,82 @@ class AdminApi {
               required: ['application', 'serialHex'],
               examples: [{ application: 'my-api-client', serialHex: '1a2b3c',
                            reason: 'keyCompromise' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The revoked certificate, the reason, and ' +
+                                 'the application as it now stands.' },
+
+          // THE CREDENTIALS SECTION'S MESSAGE-SIGNING CONTROLS (#521).
+          { action: 'issue-signing-certificate',
+            operationId: 'issueApplicationSigningCertificate',
+            summary: 'Issue an application a message-signing certificate ' +
+                     'from this realm\'s CA',
+            description: 'Generates a key pair and certifies it from the ' +
+                         'realm\'s `message-signing` Issuing CA with ' +
+                         '`digitalSignature` only and ' +
+                         '`urn:sts:application:<identifier>` as its ' +
+                         'subjectAltName. A WS-Trust request whose ' +
+                         'WS-Security signature over the SOAP Body and ' +
+                         'Timestamp verifies under it authenticates the ' +
+                         'application as its requester; it signs nobody in ' +
+                         'over TLS (#521).\n\n' +
+                         '**THIS REPLY IS THE ONLY COPY OF THE PRIVATE ' +
+                         'KEY.** `files` holds a PKCS#12 (base64), an ' +
+                         'encrypted PKCS#8 PEM key and the PEM chain, all ' +
+                         'protected by `password`, which is neither stored ' +
+                         'nor audited. Refused past ' +
+                         '`pki.messageSigningCertificateMax` valid ' +
+                         'certificates (`STS-PKI-0220`), for a key ' +
+                         'algorithm outside `rsa-2048`, `rsa-3072`, ' +
+                         '`ec-p256`, `ec-p384`, for an application the ' +
+                         'registry does not hold (`STS-ADMIN-0904`), and in ' +
+                         'a realm with no certificate authority.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                password: { type: 'string', minLength: 8, maxLength: 256 },
+                confirm: { type: 'string' },
+                keyAlg: { type: 'string',
+                          enum: ['rsa-2048', 'rsa-3072', 'ec-p256',
+                                 'ec-p384'] },
+                label: { type: 'string', maxLength: 40 },
+                days: { type: 'integer', minimum: 1 }
+              },
+              required: ['application', 'password'],
+              examples: [{ application: 'my-wstrust-client',
+                           password: 'correct horse battery',
+                           keyAlg: 'ec-p256', label: 'signer 1' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificate (serial, subject, ' +
+                                 'thumbprint, PEM and chain, its ' +
+                                 'urn:sts: name), the three files, and the ' +
+                                 'application as it now stands.' },
+          { action: 'revoke-signing-certificate',
+            operationId: 'revokeApplicationSigningCertificate',
+            summary: 'Revoke one of an application\'s message-signing ' +
+                     'certificates',
+            description: 'Revokes a certificate ' +
+                         '`issue-signing-certificate` issued to THIS ' +
+                         'application — a serial belonging to anybody else, ' +
+                         'or one of its TLS client certificates, matches ' +
+                         'nothing (`STS-PKI-0221`) — onto the Issuing CA\'s ' +
+                         'CRL and OCSP responder. A WS-Trust request signed ' +
+                         'with it is refused from then on.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                serialHex: { type: 'string' },
+                reason: { type: 'string',
+                          enum: ['cessationOfOperation', 'keyCompromise'] }
+              },
+              required: ['application', 'serialHex'],
+              examples: [{ application: 'my-wstrust-client',
+                           serialHex: '1a2b3c', reason: 'keyCompromise' }],
               additionalProperties: false
             },
             responseDescription: 'The revoked certificate, the reason, and ' +
