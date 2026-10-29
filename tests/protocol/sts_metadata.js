@@ -255,7 +255,7 @@ function theProtocolListIsHonest(doc, page) {
                     // kind, carded beside XACML because both are families a
                     // client reaches with a credential it already holds.
                     "GNAP",
-                    "XACML", "Federation",
+                    "XACML", "AuthZEN", "Federation",
                     // OPENID FEDERATION 1.1 (#132, 2026-09-23), beside the
                     // bilateral family whose name it shares and whose job
                     // it does not.

@@ -603,7 +603,10 @@ async function anUnconfiguredRealmRefusesNobody() {
     // TEN SINCE #607 (2026-10-13): OWNER_READ and OWNER_WRITE, computed from
     // the owner attributes, and the first built-ins that authorize a
     // permission (owner:read, owner:write).
-    assert.strictEqual(register.body.builtIn.length, 10,
+    //
+    // ELEVEN SINCE #563 (2026-10-29): AUTHZEN_PEPS, held through
+    // `roles.authzenPepGroup` as XACML_USER is through its group.
+    assert.strictEqual(register.body.builtIn.length, 11,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +

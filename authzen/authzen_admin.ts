@@ -316,8 +316,11 @@ class AuthzenAdmin {
     } else if (action === 'set-scope') {
       out = self.setScope(given, who || {});
     } else {
-      out = self.refused('STS-AUTHZEN-0030', 'There is no AuthZEN action "' +
-                         action.slice(0, 60) + '"; there are ' +
+      // THE SENTENCE EVERY ACTION HANDLER HERE WRITES, which
+      // `tests/protocol/sts_admin_api_operations.js` reads to hold the
+      // document's actions to the handler's.
+      out = self.refused('STS-AUTHZEN-0030', 'Unknown action "' +
+                         action.slice(0, 60) + '". The three are: ' +
                          ACTIONS.join(', ') + '.');
     }
     log.debug("Leaving AuthzenAdmin.act(). " + (out.ok ? 'ok' : 'refused'));
