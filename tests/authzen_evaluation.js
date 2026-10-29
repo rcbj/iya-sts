@@ -29,6 +29,9 @@
 //      authzen:evaluate, from a client in the AUTHZEN_PEPS group (true); no
 //      token (401 with WWW-Authenticate: Bearer realm=...); the same client
 //      out of the group (403).
+//   W. THE METADATA (#1163): both forms, the identifier the URL was built
+//      from, every advertised URL a registered route, nothing unimplemented
+//      advertised, 404 for a path naming no realm, 501 while off.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -476,6 +479,56 @@ async function childBody() {
   inRealm(function () {
     config.setOverride('authzen.callerAuthentication', 'mtls');
   });
+
+  // -------------------------------------------------------------------------
+  // W. THE METADATA (#1163)
+  // -------------------------------------------------------------------------
+  const fromRoot = await request(port, 'GET',
+    '/.well-known/authzen-configuration' + PREFIX, null);
+  const appended = await request(port, 'GET',
+    PREFIX + '/.well-known/authzen-configuration', null);
+  const own = 'https://127.0.0.1:' + port + PREFIX;
+  const doc = fromRoot.json || {};
+  t.check(fromRoot.status === 200 && doc.policy_decision_point === own &&
+          doc.access_evaluation_endpoint === own + '/access/v1/evaluation' &&
+          /no-store/.test(String(fromRoot.headers['cache-control'])),
+          'W1. the inserted form names the realm\'s PDP by the base it is ' +
+          'fetched under (section 9.2.3)', brief(fromRoot));
+  t.check(appended.status === 200 && appended.json &&
+          appended.json.policy_decision_point === own,
+          'W2. the appended form answers the same document', brief(appended));
+  const advertised = Object.keys(doc).filter(function (key) {
+    return /_endpoint$/.test(key);
+  });
+  t.check(advertised.every(function (key) {
+    return ['access_evaluation_endpoint',
+            'access_evaluations_endpoint'].indexOf(key) >= 0;
+  }) && !doc.capabilities && !doc.signed_metadata &&
+          Object.keys(doc).every(function (key) {
+            return key.indexOf('search') < 0;
+          }),
+          'W3. nothing unimplemented is advertised: no search endpoint, no ' +
+          'capabilities, no signed_metadata', JSON.stringify(doc));
+  for (let i = 0; i < advertised.length; i += 1) {
+    const at = String(doc[advertised[i]]).replace(/^https?:\/\/[^/]+/, '');
+    const answered = await request(port, 'POST', at, null, {});
+    t.check(answered.status !== 404 && answered.status !== 0,
+            'W4. ' + advertised[i] + ' is a registered route (' + at + ')',
+            brief(answered));
+  }
+  r = await request(port, 'GET',
+                    '/.well-known/authzen-configuration/realm/nowhere', null);
+  t.check(r.status === 404, 'W5. a path naming no realm is a 404', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.enabled', false);
+  });
+  r = await request(port, 'GET', '/.well-known/authzen-configuration' +
+                    PREFIX, null);
+  inRealm(function () {
+    config.setOverride('authzen.enabled', true);
+  });
+  t.check(r.status === 501, 'W6. with the API off the document answers ' +
+          '501 rather than advertising an endpoint that does not', brief(r));
 
   // -------------------------------------------------------------------------
   // O. OFF

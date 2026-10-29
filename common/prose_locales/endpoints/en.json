@@ -8,6 +8,8 @@
   "endpoints.route./xacml/pep/heartbeat.name": "What a remote PEP has enforced",
   "endpoints.route./xacml/pip.name": "The Policy Information Point, over HTTP",
   "endpoints.route./access/v1/evaluation.name": "An access evaluation",
+  "endpoints.route./.well-known/authzen-configuration.name": "PDP metadata",
+  "endpoints.route./.well-known/authzen-configuration/*.name": "PDP metadata (identifier with a path)",
   "endpoints.route./gnap.name": "The grant endpoint",
   "endpoints.route./:as/gnap.name": "The grant endpoint of a named authorization server",
   "endpoints.route./gnap/continue/:grant.name": "Grant continuation",

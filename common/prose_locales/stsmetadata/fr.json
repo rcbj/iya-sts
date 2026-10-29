@@ -96,8 +96,8 @@
     "text": "full pour l’ensemble des fonctionnalités obligatoires : le langage de politiques, les sept valeurs de décision dont les trois Indeterminate étendus, la correspondance des cibles, les conditions, les variables, les douze algorithmes de combinaison, les obligations et les conseils (advice), les références de politiques, et la bibliothèque de fonctions standard sur les dix-sept types de données. Conforme à la suite de conformité OASIS — 454 des 455 cas obligatoires réussissent, et l’unique exception est consignée avec son argumentation dans xacml/conformance/MANIFEST.js. NON couverts : AttributeSelector et les fonctions XPath (une politique qui en utilise un est Indeterminate plutôt que silencieusement vide), les profils Multiple Decision et Hierarchical Resource, et la délégation administrative."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "837796da675e27fc",
-    "text": "partial : l’Access Evaluation API (section 6), décidée par le moteur XACML d’après la politique racine du domaine au moyen d’un catalogue d’attributs par domaine, avec X-Request-ID et le défi de la section 11.3. Manquent : les trois Search APIs, signed_metadata et chaque profil (Obligations, Access Request and Approval, ceux d’OAuth), tous encore à l’état de brouillon."
+    "en": "0431c0069ab3fb3f",
+    "text": "partial: l'Access Evaluation API (section 6), décidée par le moteur XACML selon la politique racine du domaine au moyen d'un catalogue d'attributs par domaine, avec X-Request-ID et le défi de la section 11.3, et les métadonnées du PDP (section 9) sous leurs deux formes. Manquent : les trois Search APIs, signed_metadata et tous les profils (Obligations, Access Request and Approval, ceux d'OAuth), tous encore à l'état de brouillon."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -762,6 +762,14 @@
   "stsmetadata.endpoints./access/v1/evaluation.what": {
     "en": "83b5c5b154533638",
     "text": "Envoyez par POST un subject, une action, une resource et un context AuthZEN ; recevez decision true ou false. Décidé par le moteur XACML d’après la politique RACINE du domaine, avec protocol = authzen dans la requête. Une propriété n’atteint la politique qu’à travers le catalogue d’attributs du domaine, et une propriété non déclarée donne un 400 dans tous les modes. L’APPELANT s’authentifie selon authzen.callerAuthentication — un certificat client par défaut, un jeton d’accès portant authzen:evaluate, ou les deux — et doit détenir AUTHZEN_PEPS et avoir une portée sur l’application dont il s’enquiert. Un refus est un 200 false ; une erreur atteinte par le PDP est un 500, jamais false."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "411b951f2d32a644",
+    "text": "Le document de la section 9 : policy_decision_point (la base de ce domaine, identique à l'URL sous laquelle il est obtenu) et seulement les points de terminaison qui répondent ici — aucun point de recherche ni capabilities tant qu'aucun n'est implémenté de bout en bout, et pas de signed_metadata. Public ; répond 501 tant que l'API est désactivée."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "Le même document sous la forme insérée de la section 9.2, où l'identifiant du PDP est celui d'un domaine : /realm/<id> après le segment, répondu dans ce domaine. Tout autre chemin ne nomme aucun PDP et donne un 404."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",

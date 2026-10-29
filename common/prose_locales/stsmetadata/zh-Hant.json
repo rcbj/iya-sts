@@ -96,8 +96,8 @@
     "text": "full——就必要功能集而言：原則語言、七種決策值（包括三種延伸的 Indeterminate）、目標比對、條件、變數、十二種組合演算法、義務與建議、原則參照，以及涵蓋全部十七種資料類型的標準函式庫。依 OASIS 一致性測試套件檢驗——455 個必要案例中通過 454 個，唯一的例外連同其論證記錄於 xacml/conformance/MANIFEST.js。「未」涵蓋：AttributeSelector 與 XPath 函式（使用它們的原則會是 Indeterminate，而不是默默為空）、Multiple Decision 與 Hierarchical Resource 設定檔，以及管理委派。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "837796da675e27fc",
-    "text": "partial——Access Evaluation API（第 6 節），由 XACML 引擎透過各領域的屬性目錄，依領域的根原則做決定，並支援 X-Request-ID 與第 11.3 節的挑戰。缺少：三個 Search API、signed_metadata，以及每個設定檔（Obligations、Access Request and Approval、OAuth 相關設定檔），這些都仍是草案。"
+    "en": "0431c0069ab3fb3f",
+    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰，以及兩種形式的 PDP 中繼資料（第 9 節）。缺少：三個 Search API、signed_metadata 以及所有設定檔（Obligations、Access Request and Approval、OAuth 相關），皆仍為草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -762,6 +762,14 @@
   "stsmetadata.endpoints./access/v1/evaluation.what": {
     "en": "83b5c5b154533638",
     "text": "POST 一個 AuthZEN subject、action、resource 與 context；取得 decision 為 true 或 false。由 XACML 引擎依領域的「根」原則做決定，請求中帶有 protocol = authzen。屬性只能透過領域的屬性目錄到達原則，未宣告的屬性在每種模式下皆為 400。「呼叫端」依 authzen.callerAuthentication 進行驗證——預設為用戶端憑證，或攜帶 authzen:evaluate 的存取權杖，或兩者皆是——且必須持有 AUTHZEN_PEPS，並具備其所詢問之應用程式的範圍。拒絕為 200 false；PDP 遇到的錯誤為 500，絕不是 false。"
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "411b951f2d32a644",
+    "text": "第 9 節的文件：policy_decision_point（本領域的基底，與取得它的 URL 一致），以及僅在此處回應的端點——在某項功能端到端實作之前沒有搜尋端點、沒有 capabilities，也沒有 signed_metadata。公開；API 關閉時回應 501。"
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "同一文件的第 9.2 節插入形式，其中 PDP 識別碼屬於某個領域：區段之後為 /realm/<id>，在該領域內回應。其他任何路徑都不指向 PDP，回傳 404。"
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",

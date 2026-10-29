@@ -9,6 +9,8 @@
 // THE AUTHZEN AUTHORIZATION API (#563): THE ROUTES.
 //
 //   POST /access/v1/evaluation    one access evaluation (section 6) — #1161
+//   GET  /.well-known/authzen-configuration[/realm/<id>]
+//                                 the PDP's metadata (section 9) — #1163
 //
 // per realm, under the realm's prefix. Deliberately thin, as `xacml/xacml.ts`
 // is: it reads a request, asks `authzen_caller.ts` who is asking and whether
@@ -61,6 +63,7 @@ const API_OBJECT = 'sts-authzen-api';
 
 // The paths.
 const EVALUATION_PATH = '/access/v1/evaluation';
+const METADATA_PATH = '/.well-known/authzen-configuration';
 
 // A request id this service will echo.
 const REQUEST_ID = /^[\x21-\x7e]{1,128}$/;
@@ -76,6 +79,7 @@ interface ItemResult {
 
 interface SurfaceDeps {
   log: typeof log;
+  helpers: any;
   config: any;
   audit: any;
   errorCodes: any;
@@ -113,6 +117,7 @@ class AuthzenSurface {
     log.debug("Leaving AuthzenSurface.defaultDeps().");
     return {
       log: log,
+      helpers: helpers,
       config: require('../common/config'),
       audit: require('../common/audit'),
       errorCodes: require('../common/error_codes'),
@@ -391,6 +396,48 @@ class AuthzenSurface {
   }
 
   /**
+   * The PDP's metadata document (section 9), for the realm the request is
+   * answered in. It names ONLY what answers here: the single endpoint, and
+   * the batch one once it is implemented (#1164) — no search endpoint
+   * and no `capabilities` until one is implemented end to end, and no
+   * `signed_metadata` (section 9.1 lets a PDP omit it).
+   *
+   * @param req - the request
+   * @returns the document
+   */
+  metadata(req: Req): any {
+    const self = this;
+    const { log, helpers } = this.deps;
+    log.debug("Entering AuthzenSurface.metadata().");
+    // THE IDENTIFIER IS THE BASE THE API IS ADVERTISED UNDER, realm prefix
+    // included: section 9.2.3 has a PEP refuse a document whose
+    // `policy_decision_point` is not the one it built the URL from.
+    const base = String(helpers.baseUrlOf(req, 'authzen') || '');
+    const out: any = {
+      policy_decision_point: base,
+      access_evaluation_endpoint: base + EVALUATION_PATH
+    };
+    log.debug("Leaving AuthzenSurface.metadata().");
+    return out;
+  }
+
+  // Answers the metadata in the realm the request is in, or 501 while the
+  // API is off there (the document would advertise an endpoint that does
+  // not answer).
+  private sendMetadata(req: Req, res: Res): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.sendMetadata().");
+    if (self.offCheck(res)) {
+      log.debug("Leaving AuthzenSurface.sendMetadata(). Off.");
+      return;
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(self.metadata(req), null, 2));
+    log.debug("Leaving AuthzenSurface.sendMetadata().");
+  }
+
+  /**
    * Registers the routes on the shared app.
    *
    * @param app - the express app
@@ -434,6 +481,43 @@ class AuthzenSurface {
       log.debug('Leaving POST ' + EVALUATION_PATH + '. ' + result.decision);
     });
 
+    // -----------------------------------------------------------------------
+    // GET /.well-known/authzen-configuration — the metadata (section 9).
+    //
+    // SECTION 9.2 INSERTS the well-known segment between the host and the
+    // PDP identifier's path, so a realm's document is
+    // `/.well-known/authzen-configuration/realm/<id>`, which arrives at the
+    // host root with the realm after it — RFC 8414's shape, read the way
+    // `oauth2.ts`'s `issuerPathTarget()` reads it. The appended form
+    // (`/realm/<id>/.well-known/...`) is answered too, already in its realm,
+    // with the same identifier, since it names the same PDP. Anything else
+    // after the segment names no PDP and is Express's 404.
+    // -----------------------------------------------------------------------
+    app.get(METADATA_PATH, function (req, res) {
+      log.debug('Entering GET ' + METADATA_PATH + '.');
+      self.sendMetadata(req, res);
+      log.debug('Leaving GET ' + METADATA_PATH + '.');
+    });
+    app.get(METADATA_PATH + '/*', function (req, res, next) {
+      log.debug('Entering GET ' + METADATA_PATH + '/*.');
+      const { realms } = self.deps;
+      const segments = String((req.params as any)[0] || '').split('/')
+        .filter(Boolean);
+      const named = segments.length === 2 && segments[0] === 'realm' &&
+                    realms.isDefault() && segments[1] !== realms.DEFAULT_ID
+        ? realms.get(segments[1]) : null;
+      if (!named) {
+        errorCodes.mark(res, 'STS-AUTHZEN-0035');
+        log.debug('Leaving GET ' + METADATA_PATH + '/*. Names no PDP.');
+        next();
+        return;
+      }
+      realms.run(named, function () {
+        self.sendMetadata(req, res);
+      });
+      log.debug('Leaving GET ' + METADATA_PATH + '/*.');
+    });
+
     log.debug("Leaving AuthzenSurface.registerRoutes().");
   }
 }
@@ -459,6 +543,8 @@ export = {
   installInstance: (instance: AuthzenSurface): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   enabled: slot.forward('enabled'),
+  metadata: slot.forward('metadata'),
   API_OBJECT: API_OBJECT,
-  EVALUATION_PATH: EVALUATION_PATH
+  EVALUATION_PATH: EVALUATION_PATH,
+  METADATA_PATH: METADATA_PATH
 };

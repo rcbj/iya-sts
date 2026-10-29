@@ -35,6 +35,14 @@
     "en": "5cd6a5386c4d1353",
     "text": "Isang access evaluation"
   },
+  "endpoints.route./.well-known/authzen-configuration.name": {
+    "en": "2b5f43e5618bacac",
+    "text": "Metadata ng PDP"
+  },
+  "endpoints.route./.well-known/authzen-configuration/*.name": {
+    "en": "c2eadd486305d29d",
+    "text": "Metadata ng PDP (identifier na may path)"
+  },
   "endpoints.route./gnap.name": {
     "en": "33b8b1fd38b28a51",
     "text": "Ang grant endpoint"

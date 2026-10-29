@@ -50,6 +50,24 @@ evaluated gets an error status and a body of the form
 | 500 | the policy could not be evaluated (for example the root policy does not load) — never reported as `false` |
 | 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
 
+### Metadata
+
+`GET /.well-known/authzen-configuration` is the PDP's metadata (AuthZEN 1.0
+section 9). It needs no credential. A trust realm's PDP identifier carries
+the realm's path, and section 9.2 inserts the well-known segment before it,
+so a realm's document is at `/.well-known/authzen-configuration/realm/<id>`:
+
+```json
+{
+  "policy_decision_point": "https://sts.example.com/realm/acme",
+  "access_evaluation_endpoint": "https://sts.example.com/realm/acme/access/v1/evaluation"
+}
+```
+
+It lists only what answers in that realm. There are no search endpoints, no
+`capabilities` and no `signed_metadata`. While the API is off in the realm the
+document answers 501.
+
 ### Who may call it
 
 **The realm is the tenant.** A caller is looked up in the directory of the

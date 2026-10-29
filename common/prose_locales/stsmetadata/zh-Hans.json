@@ -96,8 +96,8 @@
     "text": "full：覆盖强制功能集：策略语言、七种决策值（包括三种扩展的 Indeterminate）、目标匹配、条件、变量、十二种组合算法、义务和建议、策略引用，以及覆盖全部十七种数据类型的标准函数库。按 OASIS 一致性测试套件验证——455 个强制用例中通过 454 个，唯一的例外连同其论证记录在 xacml/conformance/MANIFEST.js 中。未覆盖：AttributeSelector 和 XPath 函数（使用它们的策略结果为 Indeterminate，而不是悄无声息地为空）、Multiple Decision 和 Hierarchical Resource 配置文件，以及管理委托。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "837796da675e27fc",
-    "text": "partial：Access Evaluation API（第 6 节），由 XACML 引擎通过按领域划分的属性目录，依据领域的根策略作出决策，支持 X-Request-ID 和第 11.3 节的质询。缺少：三个 Search API、signed_metadata，以及每个配置文件（Obligations、Access Request and Approval、OAuth 相关配置文件），这些都仍是草案。"
+    "en": "0431c0069ab3fb3f",
+    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询，以及两种形式的 PDP 元数据（第 9 节）。缺少：三个 Search API、signed_metadata 以及所有配置文件（Obligations、Access Request and Approval、OAuth 相关），它们都仍是草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -762,6 +762,14 @@
   "stsmetadata.endpoints./access/v1/evaluation.what": {
     "en": "83b5c5b154533638",
     "text": "POST 一个 AuthZEN subject、action、resource 和 context；得到 decision 为 true 或 false。由 XACML 引擎依据领域的根策略作出决策，请求中带有 protocol = authzen。属性只能通过领域的属性目录到达策略，未声明的属性在所有模式下均为 400。调用方按 authzen.callerAuthentication 进行身份验证——默认为客户端证书，或携带 authzen:evaluate 的访问令牌，或两者兼具——并且必须持有 AUTHZEN_PEPS，且其范围须涵盖所询问的应用。拒绝为 200 false；PDP 遇到的故障为 500，绝不是 false。"
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "411b951f2d32a644",
+    "text": "第 9 节的文档：policy_decision_point（本领域的基址，与获取它的 URL 一致），以及仅在此处应答的端点——在某项功能端到端实现之前没有搜索端点、没有 capabilities，也没有 signed_metadata。公开；API 关闭时应答 501。"
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "同一文档的第 9.2 节插入形式，其中 PDP 标识符属于某个领域：段之后为 /realm/<id>，在该领域内应答。其他任何路径都不指向 PDP，返回 404。"
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",

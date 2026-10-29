@@ -35,6 +35,14 @@
     "en": "5cd6a5386c4d1353",
     "text": "Una evaluación de acceso"
   },
+  "endpoints.route./.well-known/authzen-configuration.name": {
+    "en": "2b5f43e5618bacac",
+    "text": "Metadatos del PDP"
+  },
+  "endpoints.route./.well-known/authzen-configuration/*.name": {
+    "en": "c2eadd486305d29d",
+    "text": "Metadatos del PDP (identificador con ruta)"
+  },
   "endpoints.route./gnap.name": {
     "en": "33b8b1fd38b28a51",
     "text": "El endpoint de concesión"
