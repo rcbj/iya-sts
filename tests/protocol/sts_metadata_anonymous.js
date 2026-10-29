@@ -599,6 +599,35 @@ const DOCUMENTS = [
       return bad;
     } },
 
+  // -- AuthZEN (#563) -----------------------------------------------------
+  // The PDP's metadata (AuthZEN 1.0 section 9), public by the specification.
+  // The default realm's identifier is the host's base, and the document names
+  // only what answers there: no search endpoint, no capabilities.
+  { family: "AuthZEN", spec: "AuthZEN Authorization API 1.0 section 9",
+    path: "/.well-known/authzen-configuration",
+    type: JSON_TYPE, json: true, badCredential: "ignored",
+    must: function (d) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (d.policy_decision_point !== base) {
+        bad.push("policy_decision_point is " + d.policy_decision_point +
+                 " and the document was fetched from " + base + "; section " +
+                 "9.2.3 makes a PEP reject that");
+      }
+      if (d.access_evaluation_endpoint !== base + "/access/v1/evaluation") {
+        bad.push("access_evaluation_endpoint is " +
+                 d.access_evaluation_endpoint);
+      }
+      Object.keys(d).forEach(function (key) {
+        if (key.indexOf("search") >= 0 || key === "capabilities") {
+          bad.push(key + " is advertised, and nothing behind it is " +
+                   "implemented");
+        }
+      });
+      log.debug("Leaving must().");
+      return bad;
+    } },
+
   // -- The two SAML profiles, which are two implementations ----------------
   { family: "SAML 2.0", spec: "SAML 2.0 metadata", path: "/saml2/metadata",
     type: SAML_TYPE, json: false, badCredential: "ignored",

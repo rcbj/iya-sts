@@ -366,6 +366,11 @@ const ROWS: Row[] = [
     why: 'policy and the decision point are the global tier\'s' },
   { prefix: '/xacml/pip', strategy: 'handler', handler: 'xacml/xacml.ts',
     why: 'a subject\'s attributes are answered at home' },
+  // AUTHZEN (#563): /xacml/pdp's case in AuthZEN's shape. The metadata is
+  // under the `/.well-known` row above.
+  { prefix: '/access/v1', strategy: 'local',
+    why: 'policy and the decision point are the global tier\'s, as for ' +
+         '/xacml/pdp' },
   // --- TLS ---
   { prefix: '/tls', strategy: 'local',
     why: 'the server certificate is global configuration' },
