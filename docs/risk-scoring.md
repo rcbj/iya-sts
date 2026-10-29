@@ -840,7 +840,21 @@ version's record stays, marked `deleted`. It cannot be activated, and the
 scheduled downloads, the dataset directory and the install-time loader treat
 it as already recorded. **An administrator can upload or import the same
 version again** (console upload or paste, `POST /admin-api/risk/import` or
-`/upload`). Its record is reused and loaded like a new one. Removing the **active** version unloads the dataset. It
+`/upload`). Its record is reused and loaded like a new one.
+
+A removed version's row has one of two controls:
+
+- **Reload**, for a version this service downloaded itself, from the address
+  it is configured with now: the Android attestation status list
+  (`devices.androidStatusUrl`), and the FIDO MDS3 BLOB when `risk.mdsUrl` is
+  set. It downloads the file again and loads it as that version
+  (`POST /admin-api/risk/reload`). If the address now serves a different
+  file, the reload is refused: that file is a newer version, and the
+  scheduled download loads it.
+- **Upload again**, for every other version: an upload form with the
+  dataset, format, realm and version already set, so you only choose the
+  file. A FIDO MDS3 BLOB that was uploaded, which is the usual way, is
+  reloaded this way. Removing the **active** version unloads the dataset. It
 then has no active version and risk scores stop reading it. Nothing else is
 activated in its place, and **Roll back** is still offered when there is an
 earlier version. A version that is still loading cannot be removed.

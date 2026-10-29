@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4804** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4807** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 48
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 51
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 356
@@ -3999,6 +3999,9 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0046` | The devices.android-status-refresh job could not download Google's Android attestation status list from devices.androidStatusUrl (#256); the active list, if any, is unchanged. | none — a warning in the log and a failed run |
 | `STS-RISK-0047` | A sign-in's risk assessment, amended with the registered device its WebAuthn ceremony proved (#259), could not be recorded: the history's device feature, the assessment row, the standing or the reactions to a change of level may be missing. The session was decided on the amended assessment. | none — a warning in the log |
 | `STS-RISK-0050` | Not a refusal: the row a federated sign-in that CREATED a person's entry leaves in the risk failures register, under its own door, for the network-signups signal to count. No password signal counts it (#565). | none (a risk register row; the sign-in proceeds) |
+| `STS-RISK-0051` | A Reload of a risk dataset version was refused: the version is not removed, or this service does not download its dataset from the address it came from (an uploaded version is uploaded again, #1157). | none (an administrator's act on Monitoring → Risk) |
+| `STS-RISK-0052` | A Reload could not download the removed version again from the dataset's configured address; nothing was loaded (#1157). | none (an administrator's act on Monitoring → Risk) |
+| `STS-RISK-0053` | A Reload downloaded a file whose SHA-256 is not the removed version's: the address serves a newer version, which the scheduled download loads, and nothing was loaded (#1157). | none (an administrator's act on Monitoring → Risk) |
 
 ## STS-MAIL
 

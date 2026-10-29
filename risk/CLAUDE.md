@@ -241,6 +241,15 @@ imported into memory costs memory; postgres is where that belongs.
   scheduled downloads, the directory job and the loader do not pass it, so
   a job never undoes a Remove. FIDO's rollback check is unchanged: it reads
   the `active` and `superseded` serials.
+* **A removed version's row brings it back (#1157, rcbj).** `reloadable()`
+  is true only for a dataset in `DOWNLOADS` (Android status, FIDO MDS3)
+  whose record's `sourceUri` is the address configured now. `reloadVersion()`
+  then downloads it through `fetchPublished()` with the job's cap, builds the
+  content as the job does (the BLOB trimmed), and refuses a different
+  SHA-256 (`STS-RISK-0053`): that is a newer version, the job's to load.
+  Every other removed version gets an Upload again form in its row
+  (`web_risk.ts`'s `uploadAgain()`). No new address is dialled: these are
+  the tenth and eighteenth rows of `federation/CLAUDE.md`'s list.
 
 **Retention is a scheduler job**, `risk.retention` (hourly, cluster):
 superseded versions past `risk.supersededRetentionDays` and refused versions

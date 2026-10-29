@@ -17924,6 +17924,21 @@ const CODES = [
       'door, for the network-signups signal to count. No password signal ' +
       'counts it (#565).',
     spec: 'none (a risk register row; the sign-in proceeds)' },
+  { code: 'STS-RISK-0051',
+    summary: 'A Reload of a risk dataset version was refused: the version ' +
+      'is not removed, or this service does not download its dataset from ' +
+      'the address it came from (an uploaded version is uploaded again, ' +
+      '#1157).',
+    spec: 'none (an administrator\'s act on Monitoring → Risk)' },
+  { code: 'STS-RISK-0052',
+    summary: 'A Reload could not download the removed version again from ' +
+      'the dataset\'s configured address; nothing was loaded (#1157).',
+    spec: 'none (an administrator\'s act on Monitoring → Risk)' },
+  { code: 'STS-RISK-0053',
+    summary: 'A Reload downloaded a file whose SHA-256 is not the removed ' +
+      'version\'s: the address serves a newer version, which the scheduled ' +
+      'download loads, and nothing was loaded (#1157).',
+    spec: 'none (an administrator\'s act on Monitoring → Risk)' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
