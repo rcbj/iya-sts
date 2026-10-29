@@ -546,6 +546,17 @@ async function test() {
   // answers the portal's code flow with no screen — and the Approve button
   // is `POST /account-api/ciba`, deciding on the sign-on session the
   // portal's token was issued on, which is `b`'s.
+  //
+  // THE SIGN-IN WAITS FOR THE NEXT WHOLE SECOND. The revoke-user in `c` is
+  // also a CAEP session-revoked event this realm's own SSF receiver acts
+  // on, and it revokes every portal token the person was issued no later
+  // than the event's second (`iat` and `event_timestamp` are whole
+  // seconds). A token issued in that same second was revoked as soon as
+  // the receiver ran: e's offer answered 401 invalid_token (single-node
+  // run of 2026-10-29). sts_passkey_post_quantum_required waits the same way.
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 1050 - (Date.now() % 1000));
+  });
   const portalClient = await portal.signInToThePortal(root + R, ALICE, null,
     { cookie: b.cookieHeader() });
   mark = SEEN.length;
