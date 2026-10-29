@@ -555,13 +555,18 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   the link** ticked (`deliver: "mail"` on the API) it is mailed to the address
   on the person's entry and not shown to the administrator at all. A person may
   also ask for one at `/portal/forgot-password` ([Mail](mail.md)).
-* **Disable passkeys** removes every security key that could sign the person
-  in on its own, leaving their password and second factors, and ends the
-  sessions each removed key signed in. Every other session stays. It is
-  offered only while they have a password, so it cannot lock anybody out.
-* **Disable all MFA** removes the authenticator app, every second-factor key and
-  the recovery codes, and ends the sessions each of those signed in. A session
-  a password alone signed in stays.
+* **Remove every passkey** (until
+  [#1135](https://github.com/rcbj/iya-sts/issues/1135) "disable passwordless
+  sign-in", which removed only the keys enrolled to sign in on their own; a
+  passkey has no role now) removes every passkey the person holds, leaving
+  their password, authenticator app and recovery codes, and ends the sessions
+  each removed passkey signed in. Every other session stays.
+* **Disable all MFA** removes the authenticator app, every passkey and the
+  recovery codes, and ends the sessions each of those signed in. A session a
+  password alone signed in stays.
+* Both are withheld from the page where the person has no password and
+  passkeys may be a first factor in the realm, and `/admin-api` refuses them
+  there (`STS-AUTHN-0161`), so neither can lock anybody out.
 * **Require MFA** / **Stop requiring MFA** marks the person (`stsMfaRequired`),
   so the sign-in screen makes them enrol an authenticator app or a security key
   at `/authn/mfa-setup` before it starts a session. The authentication policy's

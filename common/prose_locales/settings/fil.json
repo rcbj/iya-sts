@@ -1288,20 +1288,20 @@
     "text": "Nagpapadala ng `extensions: { credProps: true }` sa registration, na humihiling sa browser na iulat kung talagang discoverable ang credential na ginawa nito. Ito lang ang paraan para malaman: maaaring gumawa o hindi gumawa ng isa ang `residentKey: \"preferred\"` at walang anuman sa attestation ang nagsasabi kung alin. ITINATALA ng serbisyong ito ang sagot sa tabi ng key at walang pinagpapasyahan batay rito. Ang off ay ang paraan para makita kung ano ang ginagawa ng isang client kapag walang anumang extension result."
   },
   "webauthn.primaryAllowed|label": {
-    "en": "babf8baa8c13cb1d",
-    "text": "Payagan ang key bilang PRIMARY na credential"
+    "en": "0692ab5332b96080",
+    "text": "Payagan ang passkey bilang UNANG factor (passwordless)"
   },
   "webauthn.primaryAllowed|description": {
-    "en": "2922360bf8d031ec",
-    "text": "Kung puwedeng ang security key ang TANGING credential sa isang account — isang passwordless na sign-in, `amr [\"hwk\"]`. Ang pag-off dito ay nag-iiwan sa mga key na gumagana bilang SECOND factor at tumatanggi sa passwordless na daan sa sign-in screen at sa `primary` na pagpili sa portal. **Hindi nito dini-disable ang primary key na hawak na ng isang tao**, sa dahilan ng `webauthn.enabled` ’s — at may mas matalim na gilid dito: ang taong ang tanging credential ay isang primary key ay mala-lock out sa sarili nilang account ng operator na nagpitik ng switch, na hindi dapat kayang gawin ng isang setting."
+    "en": "b7a0b2eefdb42a05",
+    "text": "Kung puwedeng maging unang factor ang passkey sa realm na ito — isang passwordless na sign-in, `amr [\"hwk\"]` — maliban kung iba ang sinasabi ng sariling listahan ng isang application (`appAuthnMechanism`). Ito ang sinusuportahan ng realm, katabi ng passkey row ng authentication policy, at tinatanong ito sa bawat sign-in, nang pare-pareho para sa bawat passkey na hawak ng isang tao: walang role ang passkey (#1135), kaya ito ang nagpapasya kung ano ang puwedeng gawin ng bawat isa, hindi kung ano ito noong in-enroll. Kapag naka-off, wala sa sign-in screen ang passwordless na daan at sumasagot lang ang passkey sa ikalawang hakbang pagkatapos ng password, kung saan pinapayagan ito ng `webauthn.mfaAllowed`. **Kapag naka-off, hindi makakapag-sign in ang taong passkey lang ang credential** hanggang bigyan sila ng password (isang reset link, halimbawa): hanggang #1135, enrolment lang ang tinatanggihan ng switch na ito, at patuloy na nagsa-sign in sa kanila ang key na hawak na nila. Puwedeng mag-enroll ng passkey habang naka-on ito o ang `webauthn.mfaAllowed`; kapag parehong naka-off, tinatanggihan ang enrolment."
   },
   "webauthn.mfaAllowed|label": {
-    "en": "662710b8b41f9e04",
-    "text": "Payagan ang key bilang SECOND factor"
+    "en": "ca70f14ff60f2006",
+    "text": "Payagan ang passkey bilang SECOND factor"
   },
   "webauthn.mfaAllowed|description": {
-    "en": "9c50c02bf162b58c",
-    "text": "Kung puwedeng i-enrol ang security key bilang second factor katabi ng password. Kapag naka-off, ang natitirang second factor ay ang authenticator app (ang TOTP row ng authentication policy), at ang deployment na naka-off ang pareho ay walang iniaalok na second factor — na isang suportadong configuration at siyang ginawa ng serbisyong ito bago umiral ang alinman. **Patuloy na hinihingi sa sign-in screen ang na-enrol na `mfa` key**, dahil naka-configure pa rin ang account na iyon para sa dalawang factor; tingnan ang `webauthn.enabled`."
+    "en": "37b9c4c2beaade6e",
+    "text": "Kung puwedeng maging pangalawang factor ang passkey sa realm na ito, pagkatapos ng password o ibang unang factor, maliban kung iba ang sinasabi ng sariling listahan ng isang application (`appMfaMechanism`). Ito ang sinusuportahan ng realm, katabi ng second-factor passkey row ng authentication policy, at tinatanong ito sa bawat sign-in, nang pare-pareho para sa bawat passkey na hawak ng isang tao: walang role ang passkey (#1135). Kapag naka-off, ang natitirang second factor ay ang authenticator app (ang TOTP row ng authentication policy), at ang deployment na parehong naka-off ay walang iniaalok na second factor — na isang suportadong configuration at siyang ginawa ng serbisyong ito bago umiral ang alinman. **Kapag naka-off, walang passkey na sumasagot sa ikalawang hakbang**, at ang taong passkey lang ang second factor ay walang hawak para sa sign-in screen. Puwedeng mag-enroll ng passkey habang naka-on ito o ang `webauthn.primaryAllowed`; kapag parehong naka-off, tinatanggihan ang enrolment."
   },
   "webauthn.maxKeysPerPerson|label": {
     "en": "420a47f86dc03485",

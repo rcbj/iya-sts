@@ -1041,12 +1041,26 @@ refuses anything else BY NAME in the log, because a browser refuses it with a
 `SecurityError` that a ceremony reports as one of its several indistinguishable
 failures — so a wrong value here would look like a broken authenticator.
 
-**The four policy rows refuse an ENROLMENT and never an authentication.** A key
-already on somebody's entry goes on working when the role that produced it is
-switched off — the same contract the authentication policy's TOTP row keeps, and with a sharper edge
-for `primaryAllowed`, where the person's ONLY credential would be the one being
-switched off. Removing a key is on that person's own row under `/admin/users`,
-or `POST /admin-api/users/clear-key`.
+**`enabled` and `maxKeysPerPerson` refuse an ENROLMENT; `primaryAllowed` and
+`mfaAllowed` decide a USE, at the sign-in, for every key alike** (since
+[#1135](https://github.com/rcbj/iya-sts/issues/1135)). A key carries no role:
+nobody is asked at registration whether it replaces a password or follows
+one, and every key a person holds may sign them in on its own while
+`primaryAllowed` is on (and the authentication policy's passkey row as a first
+factor), and be the step after a password while `mfaAllowed` is on (and its
+security-key row as a second factor), and at a browser sign-in an
+application may narrow either further (`appAuthnMechanism`,
+`appMfaMechanism`). A step the realm does not accept is
+refused (`STS-AUTHN-0045`, `0046`, `0253`, `0254`), and with neither use
+accepted no new key can be registered (`STS-AUTHN-0531`), since it could never
+answer anything. Until #1135 these two rows refused only a new key enrolled in
+a role, and a key already enrolled in it went on working; with no role there
+is nothing to enrol into, and a switch that did not stop the use it names
+would do something other than what it says. **So turning `primaryAllowed` off
+stops everybody's passkey signing them in without a password**: make sure the
+people with no password have another way in first. Turning a row off removes
+no key. Removing a key is on that person's own row under `/admin/users`, or
+`POST /admin-api/users/clear-key`.
 
 ### A second factor required of everybody, and `security.passwordResetTtlMinutes`
 
@@ -2340,8 +2354,8 @@ client author asks this service for a ceremony of a particular shape — with
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` in the options handed to the browser. It is a HINT and clients may clamp it. The pending step this service holds expires on its own five-minute clock regardless, so a longer timeout buys a ceremony that succeeds in the browser and is then refused here. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | Which kind of authenticator may answer — `platform` (Touch ID, Windows Hello, a screen lock) or `cross-platform` (a roaming CTAP2 key over USB, NFC or BLE). `any` sends no preference at all, because the options dictionary has no value meaning one. It is a FILTER IN THE BROWSER and not a check here. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Asks the browser to report whether the credential it made is actually discoverable. It is the only way to find out — `residentKey: "preferred"` may or may not produce one and nothing in the attestation says which. The answer is recorded beside the key and decides nothing. |
-| `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Whether a key may be the ONLY credential on an account — a passwordless sign-in. Off, keys still work as a second factor. **It does not disable a primary key somebody already holds**: an operator flipping a switch must not lock somebody out of their own account. |
-| `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Whether a key may be enrolled as a second factor beside a password. With this and the authentication policy's TOTP row both off, this service offers no second factor at all, which is a supported configuration and is what it did before either existed. An enrolled `mfa` key goes on being demanded. |
+| `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Whether a passkey may sign somebody in ON ITS OWN — a passwordless sign-in — asked at the sign-in for every passkey alike (a passkey has no role since #1135), beside the authentication policy's `passkey` row; an application's `appAuthnMechanism` can narrow it further at a browser sign-in. Off, passkeys still work as a second factor, and **no passkey signs anybody in without a password, including one registered while it was on**: a person with no password needs another way in before it is turned off. While it is on, a person with no password cannot remove their last passkey (`STS-AUTHN-0070`). |
+| `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Whether a passkey may be the second factor after a password, asked at the sign-in for every passkey alike, beside the authentication policy's `securityKey` row; an application's `appMfaMechanism` can narrow it further at a browser sign-in. While it and that row are on, holding any passkey is holding a second factor, so product mode's password-only doors refuse that person a bare password. With this and the authentication policy's TOTP row both off, this service offers no second factor at all, which is a supported configuration and is what it did before either existed. With this and `webauthn.primaryAllowed` both off, no new passkey can be registered (`STS-AUTHN-0531`). |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many security keys one person may hold. Several is the ordinary case and the specification expects it — an assertion NAMES the credential that produced it, so there is none of the ambiguity two shared secrets would have. It refuses the ENROLMENT and never an authentication. |
 
 Which of these is enforced and which are only requests to the browser, why the

@@ -1288,20 +1288,20 @@
     "text": "Envía `extensions: { credProps: true }` en el registro, lo que pide al navegador que indique si la credencial que creó es realmente detectable. Es la única forma de saberlo: `residentKey: \"preferred\"` puede producir una o no, y nada en la atestación dice cuál. Este servicio REGISTRA la respuesta junto a la llave y no decide nada en función de ella. Desactivado es la forma de ver qué hace un cliente sin ningún resultado de extensión."
   },
   "webauthn.primaryAllowed|label": {
-    "en": "babf8baa8c13cb1d",
-    "text": "Permitir una llave como credencial PRINCIPAL"
+    "en": "0692ab5332b96080",
+    "text": "Permitir una llave de acceso como PRIMER factor (sin contraseña)"
   },
   "webauthn.primaryAllowed|description": {
-    "en": "2922360bf8d031ec",
-    "text": "Si una llave de seguridad puede ser la ÚNICA credencial de una cuenta — un inicio de sesión sin contraseña, `amr [\"hwk\"]`. Desactivarlo deja las llaves funcionando como SEGUNDO factor y rechaza la vía sin contraseña en la pantalla de inicio de sesión y la opción `primary` en el portal. **No desactiva una llave principal que alguien ya tenga**, por la razón de `webauthn.enabled` — y aquí hay un riesgo mayor: alguien cuya única credencial es una llave principal quedaría bloqueado fuera de su propia cuenta porque un operador accionó un interruptor, y eso no es algo que un ajuste deba poder hacer."
+    "en": "b7a0b2eefdb42a05",
+    "text": "Si una llave de acceso puede ser un primer factor en este dominio — un inicio de sesión sin contraseña, `amr [\"hwk\"]` — salvo que la lista propia de una aplicación (`appAuthnMechanism`) diga otra cosa. Es lo que admite el dominio, junto a la fila de llave de acceso de la política de autenticación, y se consulta en cada inicio de sesión, por igual para cada llave de acceso que tenga una persona: una llave de acceso no tiene papel (#1135), así que esto decide lo que cada una puede hacer, no aquello como lo que se inscribe. Desactivado, la vía sin contraseña desaparece de la pantalla de inicio de sesión y una llave de acceso solo responde al segundo paso después de una contraseña, donde `webauthn.mfaAllowed` lo permite. **Desactivado, quien tenga como única credencial una llave de acceso no puede iniciar sesión** hasta que se le dé una contraseña (un enlace de restablecimiento, por ejemplo): hasta #1135 este interruptor solo rechazaba una inscripción, y una llave ya en su poder seguía iniciando su sesión. Se puede inscribir una llave de acceso mientras este o `webauthn.mfaAllowed` esté activado; con los dos desactivados, se rechaza la inscripción."
   },
   "webauthn.mfaAllowed|label": {
-    "en": "662710b8b41f9e04",
-    "text": "Permitir una llave como SEGUNDO factor"
+    "en": "ca70f14ff60f2006",
+    "text": "Permitir una llave de acceso como SEGUNDO factor"
   },
   "webauthn.mfaAllowed|description": {
-    "en": "9c50c02bf162b58c",
-    "text": "Si una llave de seguridad puede registrarse como segundo factor junto a una contraseña. Desactivado, el segundo factor restante es la aplicación de autenticación (la fila TOTP de la política de autenticación), y un despliegue con ambos desactivados no ofrece ningún segundo factor — que es una configuración admitida y lo que hacía este servicio antes de que existiera cualquiera de los dos. **Una llave `mfa` registrada se sigue exigiendo en la pantalla de inicio de sesión**, porque esa cuenta sigue configurada para dos factores; consulte `webauthn.enabled`."
+    "en": "37b9c4c2beaade6e",
+    "text": "Si una llave de acceso puede ser un segundo factor en este dominio, después de una contraseña u otro primer factor, salvo que la lista propia de una aplicación (`appMfaMechanism`) diga otra cosa. Es lo que admite el dominio, junto a la fila de llave de acceso como segundo factor de la política de autenticación, y se consulta en cada inicio de sesión, por igual para cada llave de acceso que tenga una persona: una llave de acceso no tiene papel (#1135). Desactivado, el segundo factor que queda es la app de autenticación (la fila TOTP de la política de autenticación), y una implantación con los dos desactivados no ofrece ningún segundo factor — lo cual es una configuración admitida y es lo que este servicio hacía antes de que existiera ninguno. **Desactivado, ninguna llave de acceso responde al segundo paso**, y una persona cuyo único segundo factor es una llave de acceso no tiene ninguno a efectos de la pantalla de inicio de sesión. Se puede inscribir una llave de acceso mientras este o `webauthn.primaryAllowed` esté activado; con los dos desactivados, se rechaza la inscripción."
   },
   "webauthn.maxKeysPerPerson|label": {
     "en": "420a47f86dc03485",

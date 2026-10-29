@@ -165,7 +165,7 @@ async function directoryWritesNameTheirDn(t) {
     return credentials.addKey(uid, {
       credentialId: keyId,
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'a', y: 'b' },
-      signCount: 0 }, 'mfa');
+      signCount: 0 });
   });
   t.check(keyAdded.answer && keyAdded.answer.ok === true,
           'A6a. a passkey is recorded for the probe person',

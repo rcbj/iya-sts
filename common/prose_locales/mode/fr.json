@@ -192,16 +192,16 @@
     "text": "Une assertion ou un ID Token front-channel en clair est refusé (STS-FED-0140) sauf si la relation définit fedAllowUnencrypted, documenté avec un avertissement. AES-CBC, rsa-1_5 et RSA1_5 sont refusés dans les deux modes (STS-FED-0139)."
   },
   "mode.requirements.passkey-first-use.what": {
-    "en": "48692c051ad2acee",
-    "text": "L’écran de connexion n’inscrit pas de clé de sécurité pour quelqu’un qui n’a pas prouvé son identité"
+    "en": "c8556d37e16453f0",
+    "text": "L’écran de connexion n’inscrit pas de clé d’accès pour quelqu’un qui n’a pas prouvé son identité"
   },
   "mode.requirements.passkey-first-use.development": {
-    "en": "2f86635eaf4572fb",
-    "text": "Une connexion sans mot de passe nommant quelqu’un qui ne détient aucune clé principale en inscrit une sur-le-champ, sans lire de mot de passe — la première personne à revendiquer un nom l’obtient."
+    "en": "8bea6b2667160433",
+    "text": "Une connexion sans mot de passe nommant quelqu’un qui ne détient aucune clé d’accès en inscrit une sur-le-champ, sans lire de mot de passe — la première personne à revendiquer un nom l’obtient."
   },
   "mode.requirements.passkey-first-use.product": {
-    "en": "e773ade2b33e515a",
-    "text": "Elle est refusée. Une clé principale est ajoutée sur /portal/keys derrière une session, par un lien d’activation ou par un opérateur."
+    "en": "b2a73f5e48d6f2c4",
+    "text": "Elle est refusée. Une clé d’accès est ajoutée sur /portal/keys derrière une session, par un lien d’activation ou par un opérateur."
   },
   "mode.requirements.siop-did-web-pin.what": {
     "en": "a8f5db1a7e30f55d",
@@ -236,8 +236,8 @@
     "text": "Une liaison simple LDAP, un UsernameToken WS-Security, SCIM et SSF en HTTP Basic et EST Basic acceptent le mot de passe comme ils acceptent tout mot de passe ; l’écran de connexion demande toujours le second facteur."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "2a529b7dda255daa",
-    "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé de sécurité dans le rôle mfa, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
+    "en": "c06e9e3a02393490",
+    "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la liste propre de l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "Le KDC émet un TGT pour un AS-REQ pré-authentifié avec le seul mot de passe (PA-ENC-TIMESTAMP, ou le PA-ENCRYPTED-CHALLENGE de FAST), comme il accepte tout mot de passe."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "cddc7c3db475d360",
-    "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé de sécurité dans le rôle mfa, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
+    "en": "a1e60b4ee5cac599",
+    "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la liste propre de l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",

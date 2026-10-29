@@ -29,7 +29,7 @@ rather than repeating them. Every setting in full is in
 | **security key** | A passkey on a separate hardware device, reached over USB, NFC or Bluetooth (a *cross-platform* authenticator). |
 | **platform authenticator** | The authenticator built into the device: Touch ID, Windows Hello, an Android screen lock. |
 | **synced** / **device-bound** | A synced passkey is copied by its provider to the person's other devices. A device-bound one never leaves the authenticator that made it. The authenticator reports which with the *backup eligible* (BE) flag. |
-| **role** | What a passkey is for: **`mfa`**, a second step after a password, or **`primary`**, the only credential (no password). The person chooses when they create it. |
+| **use** | How a passkey answers a sign-in: **first factor** (passwordless, no password read) or **second factor** (a step after a password). A passkey has no fixed purpose: the person is asked nothing about it when they create it, and every passkey they hold may be used either way, as the realm allows. Until [#1135](https://github.com/rcbj/iya-sts/issues/1135) each passkey had a *role* chosen at its creation. |
 | **usernameless** | Signing in with a passkey and no username typed. The passkey tells the service who the person is. This needs a *discoverable* (resident) credential. |
 | **RP ID** | The domain a passkey is bound to. By default it is the host the service was reached on. |
 | **user handle** | The random identifier a passkey is created under (64 bytes on the person's entry). It is never the username. |
@@ -79,12 +79,45 @@ console form does this for you.
 
 ## How a passkey is used
 
-A passkey has one of two roles, and the session records which:
+**A passkey is registered, and nothing else is asked.** The person does not
+choose whether it replaces their password or follows it. Whether a passkey
+is used on its own (passwordless), as the second factor after a password,
+both or neither is decided **at the sign-in**, in layers, for every passkey
+alike:
+
+1. **The realm.** Its [authentication policy](authentication.md#the-authentication-policy)
+   chooses which first-factor and second-factor mechanisms the realm
+   supports: its `passkey` row as a first factor (`passkeyPrimary`) and its
+   `securityKey` row as a second factor (`securityKeySecondFactor`), together
+   with `webauthn.primaryAllowed` and `webauthn.mfaAllowed`. A use the realm
+   does not accept is refused (`STS-AUTHN-0045`, `0253` as a first factor;
+   `0046`, `0254` as a second). Where it accepts neither, no new passkey can
+   be registered (`STS-AUTHN-0531`), because it could never be used.
+2. **The application**, where it overrides the realm, and only at a browser
+   sign-in to it. Its `appAuthnMechanism` lists the first-factor mechanisms
+   its people may sign in with (`webauthn` among them); the issuance
+   policy's `authn-mechanism` rule enforces it and re-prompts a session that
+   used another. Its `appMfaMechanism` lists the second factors it allows
+   (`securityKey` among them); it narrows the second step to another factor
+   the person holds, or has them prove one and set up an allowed one, or
+   refuses. It only narrows: what the realm switched off stays off. See
+   [Sign-in mechanisms](applications.md#sign-in-mechanisms-how-its-people-may-sign-in)
+   and [Second factors](applications.md#second-factors-which-ones-its-people-may-use).
+3. **The passkey itself has no say.** A registered passkey is used wherever
+   those layers accept a passkey: passwordless, as the second factor, or
+   both. (Until [#1135](https://github.com/rcbj/iya-sts/issues/1135) each
+   passkey had a role chosen at its registration, and answered only that
+   step.)
+
+With the defaults (every row on, no application list) a passkey answers both
+steps.
+
+How the person signed in is what the session records:
 
 | How the person signed in | `amr` | `acr` |
 |---|---|---|
-| a password, then a passkey in the `mfa` role | `["pwd","hwk"]` | `mfa` |
-| a passkey in the `primary` role, with the username typed | `["hwk"]` | `1` (one factor) |
+| a password, then a passkey | `["pwd","hwk"]` | `mfa` |
+| a passkey, with the username typed and no password | `["hwk"]` | `1` (one factor) |
 | a passkey with no username (usernameless) | `["hwk","user"]` | `mfa` |
 | a password alone | `["pwd"]` | `1` |
 
@@ -111,16 +144,15 @@ default) the check of the attestation statement. See
 
 **Settings.** Nothing to change: this is on by default. It needs
 `webauthn.enabled` and `webauthn.mfaAllowed` on (both default `true`), and the
-authentication policy's **Security key (second factor) — as a second factor**
+authentication policy's **Passkey (second factor) — as a second factor**
 row on (`securityKeySecondFactor`, default on).
 
 **What the person does.** Either of these:
 
 1. **On the portal.** Sign in, open `/portal/keys`, and under **Add a
-   passkey**, **How will you use it?**, choose **As a second step after my
-   password**. Then press **Create a passkey** (a passkey on this device or a
-   phone) or **Use a security key**. The browser asks them to create the
-   passkey. The new passkey then appears on its row under a default name,
+   passkey** press **Create a passkey** (a passkey on this device or a
+   phone) or **Use a security key**. Nothing else is asked. The browser asks
+   them to create the passkey. The new passkey then appears on its row under a default name,
    and its row's **Rename** gives it a nickname.
 2. **At the sign-in screen.** Type the username and password and tick **Use a
    passkey as a second step (WebAuthn)**. If the person holds no second factor
@@ -128,14 +160,21 @@ row on (`securityKeySecondFactor`, default on).
    the screen does not register a new one here. (Otherwise anybody who knew
    the password could add their own authenticator.)
 
-**From then on**, the person is asked for the passkey at every sign-in after
-the password. They do not have to tick anything. What a person holds decides
+**From then on**, where the realm (and the application, if it overrides the
+realm) accepts a passkey as a second factor, the person is asked for the
+passkey at every sign-in after the password. Where the realm accepts a passkey
+as a second factor, **holding any passkey is holding a second factor**, so in
+product mode the doors that can only take a password (an LDAP simple bind, a WS-Security UsernameToken, HTTP Basic at
+SCIM, Shared Signals and EST, and the Kerberos KDC) refuse a bare password to
+that person. Those doors are not browser sign-ins to an application, so only
+the realm's layer applies there. See
+[the password-only doors](what-is-not-checked.md#app-passwords-at-the-password-only-doors). They do not have to tick anything. What a person holds decides
 the second factor, not a checkbox. See
 [Which second factor is asked for](authentication.md#which-second-factor-is-asked-for).
 
 **Check it.**
 * On the person's page under **Directory → Users**, the **Passkeys (WebAuthn)**
-  table lists the passkey with its role, algorithm and backup state.
+  table lists the passkey with its algorithm and backup state.
 * After a sign-in, **Monitoring → Sessions** shows the session, and the audit
   log's `session.start` row records `amr` `pwd, hwk`, `acr` `mfa`, and the
   passkey's algorithm (`credentialAlgorithm`).
@@ -143,27 +182,32 @@ the second factor, not a checkbox. See
 ### Signing in with a passkey instead of a password
 
 **Settings.** On by default. It needs `webauthn.primaryAllowed` on (default
-`true`) and the authentication policy's **Security key or passkey
-(passwordless) — as a first factor** row on (`passkeyPrimary`, default on).
+`true`) and the authentication policy's **Passkey (passwordless) — as a first
+factor** row on (`passkeyPrimary`, default on).
 
 **What the person does.**
-1. On `/portal/keys`, choose **Instead of my password** under **How will you
-   use it?**, then **Create a passkey** or **Use a security key**.
+1. On `/portal/keys`, press **Create a passkey** or **Use a security key**.
+   It is the same passkey as in the recipe above: any passkey the person
+   holds signs them in here, and the same passkey still answers the step
+   after a password.
 2. At the sign-in screen, they can either:
    * press **Sign in with a passkey** with no username typed (see the next
      recipe), or
    * type the username and tick **Sign in with a passkey instead of a
      password**. The password field is then not read.
 
-**Product mode never registers a passwordless passkey at the sign-in screen.**
-A person who ticks the passwordless box and holds no `primary` passkey is
+**Product mode never registers a passkey at the sign-in screen's passwordless box.**
+A person who ticks the passwordless box and holds no passkey is
 refused (`STS-AUTHN-0206`). In development mode the screen registers one on
 the spot, so the first person to claim a username gets it. In product mode a
-passwordless passkey is created on `/portal/keys` or through an
+person with no password registers their passkey on `/portal/keys` or through an
 [activation link](#a-passwordless-account-from-the-start).
 
-A person with no password can still hold a passkey in the `mfa` role, but it
-signs nobody in on its own: the portal warns them.
+With `webauthn.primaryAllowed` (or the `passkeyPrimary` row) off, no passkey
+signs anybody in on its own, including a passkey registered while it was on:
+the person signs in with a password and the passkey is asked for next. A
+person with no password then cannot sign in with their passkey, so turn it
+off only where everybody has another way in.
 
 ### Signing in with no username
 
@@ -180,8 +224,9 @@ the person, and the passkey's user handle names the account.
 * **User verification is always required here** (a PIN or a biometric),
   whatever `webauthn.userVerification` says. The session records
   `amr ["hwk","user"]` and `acr "mfa"`.
-* **Only a passkey in the `primary` role answers.** A passkey registered as a
-  second step after a password does not.
+* **Any passkey the person holds answers**, while the realm lets a passkey
+  be a first factor. (Until #1135 only a passkey registered "instead of my
+  password" did.)
 * **Passkeys must be discoverable.** *Create a passkey* always asks the
   authenticator to store a discoverable credential. *Use a security key* does
   too, unless the passkey policy's `securityKeyResidentKey` lowers it while
@@ -242,13 +287,16 @@ it.
 
 **What the person does.** At `/portal/activate`:
 1. Leave the two password boxes empty.
-2. Under **2. A passkey**, choose **Use a passkey instead of a password**.
+2. Under **2. A passkey**, choose to register a passkey.
 3. Press **Continue**, then create the passkey on the next screen.
 
 The account is not set up, and the link is not used up, until the passkey is
-created. To have both a password and a passkey as a second step, they fill in
-the password and choose **Use a passkey as a second step, after the password
-above**.
+created. To have both a password and a passkey, they fill in the password
+too and still choose to register a passkey; the page asks nothing about how
+the passkey will be used. That passkey signs them in on its own and is the
+step after their password, as the realm allows. (An older client that still
+posts `key_role` `primary` or `mfa` is understood as "register a passkey",
+and `none` as "do not".)
 
 ### An administrator enrols a passkey
 
@@ -263,8 +311,7 @@ whoever holds it signs in as that person.
 
 The ceremony runs in the administrator's browser, against an authenticator
 they hold (a security key to hand over, for example), under the person's
-user handle. The console button enrols a passkey in the `mfa` role. The
-registration is verified exactly as the person's own is: attestation,
+user handle. The registration is verified exactly as the person's own is: attestation,
 algorithms and that profile's registration rules. Nothing made elsewhere
 can be imported. The key records which administrator enrolled it and when
 (`enrolledBy`), the person is sent the security notice `passkey-enrolled`,
@@ -277,9 +324,10 @@ person's, so the key can record who enrolled it (`STS-AUTHN-0445`). The
 enrolment lasts five minutes and is single use (`STS-AUTHN-0442`).
 
 **API.** `begin-passkey-enrolment`, then `finish-passkey-enrolment`, on
-`POST /admin-api/users`. Begin takes `user` and, optionally, `role`
-(`mfa`, the default, or `primary`), `lane` (`classical` or `pqc`, where
-both lanes are on) and `kind` (`passkey` or `security-key`). It answers
+`POST /admin-api/users`. Begin takes `user` and, optionally, `lane`
+(`classical` or `pqc`, where both lanes are on) and `kind` (`passkey` or
+`security-key`). A `role` member, which the request carried until #1135, is
+accepted and ignored. It answers
 `enrolmentId` and `ceremony`. Finish takes `user`, `enrolmentId` and
 `credential` (the browser's registration as JSON). The request bodies are
 in `GET /admin-api/openapi.json`.
@@ -633,7 +681,7 @@ the browser's `NotSupportedError`, the page shows, in the person's language:
   post-quantum (ML-DSA) passkey", and a **Try again with a classical
   passkey** button. The retry asks for the classical algorithms only (the
   configured list less ML-DSA). On `/portal/keys` it starts the same kind of
-  passkey again, in the same role.
+  passkey again.
 * **where it is not**: "This service requires a post-quantum (ML-DSA)
   passkey, and this device could not make one. Use another device, or a
   security key that can." No retry is offered.
@@ -874,12 +922,11 @@ yet.").
 
 **On the portal**, to hold both:
 1. Sign in and open `/portal/keys`.
-2. Under **Add a passkey**, choose the role (**Instead of my password** or
-   **As a second step after my password**).
-3. Under **Classical or post-quantum?**, choose **A classical passkey**.
-   Press **Create a passkey** or **Use a security key**, and create it.
-4. Back on **Add a passkey**, choose the role again, then **A post-quantum
-   passkey**, and create it with the same authenticator or another one.
+2. Under **Add a passkey**, **Classical or post-quantum?**, choose **A
+   classical passkey**. Press **Create a passkey** or **Use a security
+   key**, and create it.
+3. Back on **Add a passkey**, choose **A post-quantum passkey**, and create
+   it with the same authenticator or another one.
 
 The list now shows two passkeys. Under each one's **Details**, the
 **Cryptography** row says `classical` or "post-quantum (ML-DSA), listed as a
@@ -908,7 +955,7 @@ of the `begin` action:
 # with a token for the person (see account-api.md)
 curl -sk -X POST "$BASE/account-api/keys" -H "Authorization: DPoP $AT" \
   -H "DPoP: $PROOF" -H 'content-type: application/json' \
-  -d '{"action":"begin","role":"primary","kind":"passkey","lane":"pqc"}'
+  -d '{"action":"begin","kind":"passkey","lane":"pqc"}'
 ```
 `GET /account-api/keys` lists the lanes the realm offers in `enrol.lanes`.
 
@@ -934,9 +981,8 @@ curl -sk -X POST "$BASE/account-api/keys" -H "Authorization: DPoP $AT" \
 
 Nothing special is needed. **Either passkey signs the person in**, with or
 without the username:
-* **With the username typed**, the request lists all of the person's passkeys
-  in the role being asked for, so the browser offers whichever one is
-  present.
+* **With the username typed**, the request lists all of the person's
+  passkeys, so the browser offers whichever one is present.
 * **With no username**, the browser's account chooser shows both accounts
   (`alice` and `alice+ml-dsa…`). Either one names the same person.
 * With the passkey policy's `aggregateDevices` off, a person with more than one
@@ -1115,8 +1161,8 @@ The algorithm decides, not the lane: an ML-DSA passkey created while
 | `sign-in` | any passkey is still registered | a classical passkey does not sign anybody in (`STS-AUTHN-0356`) |
 | `registration-and-sign-in` | only ML-DSA is offered, and a classical passkey is refused (`STS-AUTHN-0355`) | as `sign-in` |
 
-It applies to **both roles**: the passkey instead of a password, the passkey
-after a password, and the usernameless sign-in.
+It applies to **every use of a passkey**: in place of a password, after a
+password, and the usernameless sign-in.
 
 ### Turning it on
 
@@ -1323,14 +1369,15 @@ This section walks through it. Every field, audit row and error code is on
 
 ### Who is asked
 
-* **A person holding a classical passkey**, in either role, is asked for
-  an ML-DSA passkey in the same role: one to sign in with, or one as a
-  second factor.
+* **A person holding a classical passkey and no ML-DSA one** is asked for
+  an ML-DSA passkey. All their passkeys are asked about at once: a passkey
+  has no role, so one ML-DSA passkey is enough. (Until #1135 each role was
+  asked about separately, `primary` first.)
 * **A person with no passkey** is not asked unless the profile says so:
   `noPasskey` `invite` (they can always skip) or `require` (they can skip
-  until the allotted time has passed), registering the passkey in the role
-  `noPasskeyRole` names (`primary`, the default, or `mfa`).
-* **A person whose passkeys in a role are all ML-DSA** is not asked, unless
+  until the allotted time has passed). The profile's `noPasskeyRole`, which
+  chose the role of that passkey, is gone since #1135.
+* **A person whose passkeys are all ML-DSA** is not asked, unless
   the profile's `attestation` is `post-quantum`. Then an ML-DSA passkey
   counts only when its recorded attestation is post-quantum too, and a
   person whose ML-DSA passkey has a classical attestation (or none recorded)
@@ -1341,9 +1388,10 @@ This section walks through it. Every field, audit row and error code is on
 What counts as post-quantum is the passkey's **algorithm**, never its lane:
 an ML-DSA passkey made in a realm with one lane counts.
 
-**Nobody is asked where the realm cannot make an ML-DSA passkey in that
-role**: WebAuthn off, the role not allowed (`webauthn.primaryAllowed`,
-`webauthn.mfaAllowed`), no ML-DSA algorithm offered, or a passkey profile
+**Nobody is asked where the realm cannot make an ML-DSA passkey**:
+WebAuthn off, no use of a passkey accepted (`webauthn.primaryAllowed` and
+`webauthn.mfaAllowed` both off, or both of the authentication policy's
+passkey rows), no ML-DSA algorithm offered, or a passkey profile
 that refuses the post-quantum lane (`registrationMode: classical-only`). The
 default `webauthn.algorithms` offers ML-DSA, so a realm with the default
 settings can be asked. A sign-in is never held for something the person
@@ -1386,7 +1434,7 @@ A rollout usually goes like this:
      "selectGroups":["pqc-pilot"],"precedence":10,
      "enabled":true,"activity":"pqc-passkey-migration",
      "snoozeDays":7,"graceDays":0,"noPasskey":"leave",
-     "noPasskeyRole":"primary","method":"automatic","attestation":"any",
+     "method":"automatic","attestation":"any",
      "noPasskeyFallback":"none"}'
    ```
 
@@ -1665,7 +1713,7 @@ person, `outcome=refused` for the ones that failed). The row's detail:
 |---|---|
 | `ceremony` | `registration` or `assertion` |
 | `door` | `sign-in-step`, `usernameless`, `portal`, `activation`, `upgrade`, `admin-enrolment` or `device-link` |
-| `role`, `lane` | `primary` or `mfa`; `classical` or `pqc` |
+| `role`, `lane` | for a sign-in, the step the passkey answered: `primary` (passwordless) or `mfa` (after a password); empty for a registration, since a passkey is registered with no role (#1135). `classical` or `pqc` |
 | `application` | the application the sign-in was for (its client or relying-party id); absent at `/portal/keys`, an activation link, a device link and an administrator's enrolment |
 | `durationMs` | milliseconds from the ceremony's options being issued to its response arriving, measured by the service (never reported by the browser). It includes the time the person spent at the prompt, so compare many rows, not one |
 | `offered` | the algorithms offered, in order: for a registration, the list the browser was given (`pubKeyCredParams`); for a sign-in, the algorithms of the person's passkeys the ceremony could use |
@@ -1720,7 +1768,10 @@ whose passkey is their only credential. See
 
 **Removing a lost passkey.**
 * **The person**, on `/portal/keys`, with **Remove**. They cannot remove their
-  last way in (`STS-AUTHN-0070`): no password and no other `primary` passkey.
+  last way in (`STS-AUTHN-0070`): no password and no other passkey, while
+  the realm lets a passkey sign somebody in on its own. Where it does not
+  (`webauthn.primaryAllowed` off), no passkey is a way in and the removal is
+  not refused.
 * **An administrator**, on the person's page under **Directory → Users**, with
   **Remove** beside the passkey, or `POST /admin-api/users/clear-key` with
   `user` and `credentialId`.
@@ -1730,13 +1781,20 @@ whose passkey is their only credential. See
 
 **An administrator's reset.** There is no self-service reset of a second
 factor. On the person's page:
-* **Disable passkeys as primary sign-in** (`disable-primary-keys`) removes
-  every passkey that signs them in on its own, and ends the sessions each of
-  those passkeys signed in. Other sessions stay. It is offered only while
-  they have a password.
+* **Remove every passkey** (`disable-primary-keys`) removes every passkey
+  the person holds, and ends the sessions each of those passkeys signed in.
+  Other sessions stay.
 * **Disable all MFA** (`disable-mfa`) removes the authenticator app, every
-  second-step passkey and the recovery codes, and ends the sessions each
-  removed factor signed in. A session a password alone signed in stays.
+  passkey and the recovery codes, and ends the sessions each removed factor
+  signed in. A session a password alone signed in stays.
+
+Both are withheld where the person has no password and passkeys may be a
+first factor in the realm, and the API refuses them there
+(`STS-AUTHN-0161`), so neither can lock anybody out.
+
+Until #1135 the first removed only the passkeys enrolled to sign in on their
+own and the second only those enrolled as a second step; a passkey has no
+role now, so both take every passkey.
 * **Generate a password reset link** (`issue-password-reset`), or an
   activation link through the API (`issue-activation`), lets a person who
   lost their only passkey set up a new credential.
@@ -1777,7 +1835,7 @@ registering a passkey). See *Account recovery* under
 |---|---|---|
 | The ceremony (challenge, origin, RP ID, flags, signature, counter) | verified | verified |
 | The password in front of a passkey | not checked | checked |
-| The passwordless box, for a name with no `primary` passkey | registers a passkey on the spot | refused (`STS-AUTHN-0206`) |
+| The passwordless box, for a name with no passkey | registers a passkey on the spot | refused (`STS-AUTHN-0206`) |
 | `webauthn.rpId` that does not fit the host | the host is used, and logged | the ceremony is refused (`STS-AUTHN-0023`) |
 | `webauthn.attestationPolicy` `by-mode` | `off`: nothing verified, the format recorded | `verify-if-present`; `off` cannot be set |
 | `webauthn.insecureAlgorithms` | may be turned on | cannot be set |
@@ -1836,10 +1894,16 @@ offered is refused), and `webauthn.rpId` (checked through the RP ID hash).
 The others are requests to the browser
 ([why](configuration.md#the-webauthn-settings-and-the-ceremony-settings-this-service-checks)).
 
-**Turning a setting off never removes passkeys people already hold.**
-`webauthn.enabled`, `webauthn.primaryAllowed` and `webauthn.mfaAllowed` stop
-*new* registrations. A passkey already registered goes on working, so that a
-switch cannot silently drop an account to one factor or lock somebody out.
+**Turning a setting off never removes passkeys people already hold**, but
+since #1135 the two use settings stop the use they name for every passkey.
+`webauthn.enabled` off stops new registrations; the passkeys already held stay
+listed. `webauthn.primaryAllowed` off means no passkey signs anybody in on its
+own, and `webauthn.mfaAllowed` off means no passkey answers the step after a
+password; with both off (or both of the authentication policy's passkey rows)
+no new passkey can be registered (`STS-AUTHN-0531`). Until #1135 these
+settings stopped only new passkeys in a role, and a passkey already enrolled
+in it went on working. Before turning `webauthn.primaryAllowed` off, make sure
+the people who have no password have another way in.
 
 Two related settings are not `webauthn.*`: `authn.mfaStepTtlS` (300 seconds)
 is how long a person has to finish the passkey step, so a
@@ -1866,13 +1930,13 @@ Every console control has an API operation. The request bodies are in
 | `GET /admin-api/passkey-report` | who holds which passkey algorithm across the realm, by kind, algorithm, lane and model, filtered by `group`, `profile` or `application`, with the people behind a count (`list`, `page`, `per`, `from`) |
 | `GET /admin-api/passkey-report/export` | the people behind a count, as CSV or JSON (`format`) |
 | `POST /admin-api/passkey-report/recount` | count the realm's passkeys again now, on the scheduler |
-| `GET /admin-api/users?user=<name>` | one person, with each passkey's role, algorithm, lane, backup state, attestation and any policy refusal |
+| `GET /admin-api/users?user=<name>` | one person, with each passkey's algorithm, lane, backup state, attestation and any policy refusal |
 | `POST /admin-api/users/begin-passkey-enrolment`, `finish-passkey-enrolment` | enrol a passkey for a person, in the caller's browser, when their profile's `adminEnrolment` is `on` |
 | `POST /admin-api/users/begin-passkey-upgrade`, `prove-passkey-upgrade`, `finish-passkey-upgrade`, `cancel-passkey-upgrade` | upgrade one of a person's classical passkeys to ML-DSA |
 | `GET /admin-api/passkey-report/evidence` | one passkey's RFC 4998 evidence (`username`, `credentialId`) |
 | `POST /admin-api/users/clear-key` | remove one passkey (`user`, `credentialId`) |
 | `POST /admin-api/users/rename-key` | rename one passkey (`user`, `credentialId`, `label`; empty restores the default) |
-| `POST /admin-api/users/disable-primary-keys` | remove every passkey that signs the person in on its own, and end the sessions each signed in |
+| `POST /admin-api/users/disable-primary-keys` | remove every passkey the person holds, and end the sessions each signed in |
 | `POST /admin-api/users/disable-mfa` | remove every second factor, and end the sessions each removed factor signed in |
 | `POST /admin-api/users/require-mfa`, `stop-requiring-mfa` | require a second factor of one person |
 | `POST /admin-api/users/issue-activation` | a single-use activation link (`user`, optional `deliver: "mail"`) |
@@ -1899,12 +1963,14 @@ browser or a client. Look a code up in the audit log with
 |---|---|
 | `STS-AUTHN-0023` | product mode: `webauthn.rpId` does not fit the host |
 | `STS-AUTHN-0035` | the signature counter did not go up (a possibly cloned authenticator) |
-| `STS-AUTHN-0044`, `0045`, `0046` | a passkey was not registered: passkeys are off, or not allowed in that role |
+| `STS-AUTHN-0044` | passkeys are off in this realm (`webauthn.enabled`): no new passkey is registered, and one already held goes on working |
+| `STS-AUTHN-0045`, `0046` | a passkey was refused as a first factor (`webauthn.primaryAllowed`) or as a second factor (`webauthn.mfaAllowed`) |
+| `STS-AUTHN-0531` | a passkey was not registered: the realm accepts a passkey neither as a first nor as a second factor |
 | `STS-AUTHN-0067` | the person already holds `webauthn.maxKeysPerPerson` passkeys |
 | `STS-AUTHN-0070` | removing the passkey would remove the person's last way in |
 | `STS-AUTHN-0171` | a passwordless sign-in, where a second factor is required |
 | `STS-AUTHN-0204` | a request demanded a passkey and got something else |
-| `STS-AUTHN-0206` | product mode: passwordless sign-in for a person with no `primary` passkey |
+| `STS-AUTHN-0206` | product mode: passwordless sign-in for a person with no passkey |
 | `STS-AUTHN-0228` | the passkey's algorithm was not one of those offered |
 | `STS-AUTHN-0294` | a passkey with an insecure algorithm (`RS1`) |
 | `STS-AUTHN-0303` | the passkey's user handle is not the one it was registered under |

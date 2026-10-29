@@ -304,13 +304,13 @@ function childMain() {
          'classical lane — are the configured list, ML-DSA first, byte for ' +
          'byte', JSON.stringify(plain));
     const pqcOff = credentials.beginKeyEnrolment('pkl-bob',
-      { role: 'primary', kind: 'passkey', lane: 'pqc' });
+      { kind: 'passkey', lane: 'pqc' });
     note(!pqcOff.ok && errorCodes.codeOf(pqcOff) === 'STS-AUTHN-0351',
          '1b. off: a post-quantum enrolment is refused (STS-AUTHN-0351)',
          JSON.stringify(pqcOff));
     const bobOff = await makeAuthenticator(-7, RPID, ORIGIN);
     const bobEnrolled = await enrol('pkl-bob',
-      { role: 'primary', kind: 'passkey' }, function (b) {
+      { kind: 'passkey' }, function (b) {
         return bobOff.register(b.challenge, b.userHandle);
       });
     const bobRow = credentials.keysOf('pkl-bob')[0] || {};
@@ -351,13 +351,13 @@ function childMain() {
          ids(classicalOn) + ' / ' + ids(pqcOn));
     const aliceClassical = await makeAuthenticator(-7, RPID, ORIGIN);
     const alicePqc = await makeAuthenticator(-49, RPID, ORIGIN);
-    const c1 = await enrol('pkl-alice', { role: 'primary', kind: 'passkey',
+    const c1 = await enrol('pkl-alice', { kind: 'passkey',
                                           lane: 'classical' },
       function (b) {
         return aliceClassical.register(b.challenge, b.userHandle);
       });
     const pqcBegun = credentials.beginKeyEnrolment('pkl-alice',
-      { role: 'primary', kind: 'passkey', lane: 'pqc' });
+      { kind: 'passkey', lane: 'pqc' });
     const pending = view('pkl-alice').enrol.pending || {};
     note(pqcBegun.ok && pqcBegun.lane === 'pqc' &&
          credentials.isUserHandle(pqcBegun.userHandle) &&
@@ -395,7 +395,7 @@ function childMain() {
          'the post-quantum lane: both rows, each with its lane and its own ' +
          'handle, which the entry holds', JSON.stringify([c1.done, p1]));
     const again = credentials.beginKeyEnrolment('pkl-alice',
-      { role: 'primary', kind: 'passkey', lane: 'classical' });
+      { kind: 'passkey', lane: 'classical' });
     note(again.ok &&
          JSON.stringify(again.exclude) ===
            JSON.stringify([aliceClassical.credentialId]),
@@ -405,13 +405,13 @@ function childMain() {
 
     // 5. The wrong lane.
     const wrongPqc = await makeAuthenticator(-48, RPID, ORIGIN);
-    const w1 = await enrol('pkl-alice', { role: 'primary', kind: 'passkey',
+    const w1 = await enrol('pkl-alice', { kind: 'passkey',
                                           lane: 'classical' },
       function (b) {
         return wrongPqc.register(b.challenge, b.userHandle);
       });
     const wrongClassical = await makeAuthenticator(-7, RPID, ORIGIN);
-    const w2 = await enrol('pkl-alice', { role: 'primary', kind: 'passkey',
+    const w2 = await enrol('pkl-alice', { kind: 'passkey',
                                           lane: 'pqc' },
       function (b) {
         return wrongClassical.register(b.challenge, b.userHandle);
@@ -486,14 +486,13 @@ function childMain() {
     // 9. Keys from before the lanes are classical.
     const legacy = await makeAuthenticator(-7, RPID, ORIGIN);
     credentials.addKey('pkl-legacy', { credentialId: legacy.credentialId,
-      publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' } },
-      'primary');
+      publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' } });
     const legacyRow = credentials.keysOf('pkl-legacy')[0] || {};
     const legacyClassical = credentials.beginKeyEnrolment('pkl-legacy',
-      { role: 'primary', lane: 'classical' });
+      { lane: 'classical' });
     credentials.abandonKeyEnrolment('pkl-legacy');
     const legacyPqc = credentials.beginKeyEnrolment('pkl-legacy',
-      { role: 'primary', lane: 'pqc' });
+      { lane: 'pqc' });
     credentials.abandonKeyEnrolment('pkl-legacy');
     note(!('lane' in legacyRow) && !legacyRow.userHandle &&
          credentials.keyLane(legacyRow) === 'classical' &&
@@ -534,7 +533,7 @@ function childMain() {
          '10c. a person holding no post-quantum handle is signalled one ' +
          'lane only');
     const alicePqc44 = await makeAuthenticator(-48, RPID, ORIGIN);
-    const p2 = await enrol('pkl-alice', { role: 'primary', kind: 'passkey',
+    const p2 = await enrol('pkl-alice', { kind: 'passkey',
                                           lane: 'pqc' },
       function (b) {
         return alicePqc44.register(b.challenge, b.userHandle);
@@ -551,7 +550,7 @@ function childMain() {
     // 11. The cap counts both lanes.
     config.setOverride('webauthn.maxKeysPerPerson', 3);
     const capped = credentials.beginKeyEnrolment('pkl-alice',
-      { role: 'primary', lane: 'classical' });
+      { lane: 'classical' });
     config.clearOverride('webauthn.maxKeysPerPerson');
     note(!capped.ok && errorCodes.codeOf(capped) === 'STS-AUTHN-0067',
          '11. webauthn.maxKeysPerPerson counts both lanes: one classical ' +
@@ -560,7 +559,7 @@ function childMain() {
     // 12. Off again.
     config.clearOverride(ON);
     const offAgain = credentials.beginKeyEnrolment('pkl-alice',
-      { role: 'primary', lane: 'pqc' });
+      { lane: 'pqc' });
     posted = await usernameless(function (challenge) {
       return alicePqc.assert(challenge);
     });
@@ -575,7 +574,7 @@ function childMain() {
     config.setOverride(ON, true);
     const upOld = await makeAuthenticator(-7, RPID, ORIGIN);
     const upSeed = await enrol('pkl-upgrade',
-      { role: 'primary', kind: 'passkey', lane: 'classical' },
+      { kind: 'passkey', lane: 'classical' },
       function (b) { return upOld.register(b.challenge, b.userHandle); });
     const beginUpgrade = credentials.beginKeyUpgrade('pkl-upgrade',
       upOld.credentialId);
@@ -619,7 +618,7 @@ function childMain() {
          JSON.stringify([beginUpgrade, proveUpgrade, sideDone, sideHistory]));
     const failOld = await makeAuthenticator(-7, RPID, ORIGIN);
     const failSeed = await enrol('pkl-failure',
-      { role: 'primary', kind: 'passkey', lane: 'classical' },
+      { kind: 'passkey', lane: 'classical' },
       function (b) { return failOld.register(b.challenge, b.userHandle); });
     const failBegin = credentials.beginKeyUpgrade('pkl-failure',
       failOld.credentialId);
@@ -651,11 +650,11 @@ function childMain() {
     ldap.createUser(kept, { invent: false });
     credentials.setPassword(kept, PASSWORD);
     const selfBegun = credentials.beginKeyEnrolment(kept, {
-      role: 'mfa', kind: 'passkey', lane: 'pqc' });
+      kind: 'passkey', lane: 'pqc' });
     const admin = { username: 'pkl-operator',
                     sub: 'urn:uuid:pkl-operator' };
     const adminBegun = credentials.beginAdminKeyEnrolment(kept, admin, {
-      role: 'mfa', kind: 'passkey', lane: 'pqc' });
+      kind: 'passkey', lane: 'pqc' });
     const adminAuth = await makeAuthenticator(-49, RPID, ORIGIN);
     const adminDone = adminBegun.ok
       ? await credentials.confirmAdminKeyEnrolment(kept, admin,

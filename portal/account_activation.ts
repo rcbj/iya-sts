@@ -42,9 +42,18 @@
 // somebody whose key will not register, or who cannot find their phone,
 // still holds a usable link.
 //
-// A SECURITY KEY MARKED `mfa` WITH NO PASSWORD IS REFUSED HERE, and again in
+// A PASSKEY CARRIES NO ROLE SINCE #1135 (rcbj, 2026-10-29), so the setup
+// asks only whether to set a password, register a passkey, or both. Until
+// then it asked whether the passkey was to be used INSTEAD of a password or
+// as a SECOND step after it (`key_role`), and refused a second-step passkey
+// with no password. A passkey with no password is now an account that signs
+// in passwordless — where the realm lets a passkey be a first factor
+// (`webauthnPolicy.useAllowed('primary')`). WHERE IT DOES NOT, A KEY-ONLY
+// ACTIVATION IS STILL REFUSED (STS-PORTAL-0007), and again in
 // `credentials.removeKey()` at the other end of the same rule: it would
-// finish with an account nobody can use, its owner included.
+// finish with an account nobody can use, its owner included. `key_role` is
+// still accepted, `primary` and `mfa` meaning "register a passkey", because
+// a form or a test written before #1135 sends it.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -82,11 +91,17 @@ const ACTIVATE_FORM = vz.object({
     .describe('`setup`: the password to set.'),
   confirm: vz.string().max(1024).optional()
     .describe('`setup`: the password again.'),
-  // A closed set, because this one decides what the enrolled key is FOR.
+  // WHETHER TO REGISTER A PASSKEY (#1135): a checkbox, because a passkey
+  // carries no role and there is nothing else to choose about it.
+  passkey: vt.opt(vt.flag).describe('`setup`: `1` registers a passkey.'),
+  // THE FIELD IT REPLACED, STILL ACCEPTED (#1135): `primary` and `mfa`
+  // both mean "register a passkey" and `none` means not. A closed set as
+  // before, so a value nobody ever sent is still refused.
   key_role: vt.opt(vt.oneOf(['none', 'primary', 'mfa']))
-    .describe('A passkey: none, instead of a password, or a second step.'),
-  // THE AUTHENTICATOR APP (2026-09-10). A checkbox rather than a fourth value
-  // of `key_role`: it is a SECOND factor beside whichever was chosen.
+    .describe('Before #1135: `primary` or `mfa` registers a passkey, ' +
+              '`none` does not; `passkey` says the same.'),
+  // THE AUTHENTICATOR APP (2026-09-10). A checkbox of its own: it is a
+  // SECOND factor beside whichever way in was chosen.
   totp: vt.opt(vt.flag).describe('`1`: set up an authenticator app too.'),
   // WHICH POST THIS IS, named explicitly rather than inferred from whether
   // `code` is present: an empty code box and Finish must not read as a fresh
@@ -165,6 +180,27 @@ class AccountActivation {
     };
   }
 
+  // WHETHER A PASSKEY WAS ASKED FOR (#1135): the `passkey` checkbox, or
+  // `key_role` as a form written before #1135 posts it, whose `primary` and
+  // `mfa` both asked for one. The step views carry the answer as `passkey`
+  // so that the next POST says it again.
+  /**
+   * Whether a step's body asks for a passkey.
+   *
+   * @param body - the checked body
+   * @returns true where a passkey is to be registered
+   */
+  wantsPasskey(body: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccountActivation.wantsPasskey().");
+    const flag = String(body.passkey || '');
+    const role = String(body.key_role || 'none');
+    const wants = flag === '1' || flag === 'true' || flag === 'on' ||
+                  flag === 'yes' || role === 'primary' || role === 'mfa';
+    log.debug("Leaving AccountActivation.wantsPasskey(). " + wants);
+    return wants;
+  }
+
   // WHERE THE *SIGN IN* LINK GOES (#32): the portal of the realm the link is
   // in; in the default realm, once realms are defined, `?realm=default` is
   // the choice already made.
@@ -200,6 +236,13 @@ class AccountActivation {
              rules: { enforced: !!rules.enforced,
                       rules: (rules.rules || []).slice(0) },
              webauthnEnabled: !!webauthnPolicy.settings().enabled,
+             // WHAT THE PAGE MAY OFFER (#1135): whether a passkey may be
+             // registered at all, and whether one may be the only way in.
+             // The form asks nothing about a passkey's use; these decide
+             // what it offers and what it says, and `spend()` asks both
+             // again.
+             passkeyOffered: !!webauthnPolicy.enrolmentAllowed().ok,
+             passkeyAlone: !!webauthnPolicy.useAllowed('primary').ok,
              kinds: webauthnPolicy.authenticatorKinds(),
              // The lanes a passkey may be created in (#643).
              lanes: webauthnPolicy.lanes(),
@@ -246,11 +289,16 @@ class AccountActivation {
     // ML-DSA (#643).
     const user = credentials.laneUser(username,
       passkeyPolicy.displayNameFor(username, username), lane);
+    // WHAT THE PASSKEY WILL BE (#1135), from the facts rather than from a
+    // choice: a second step where a password was set on the first POST and
+    // the realm lets a key answer that step, else the way in on its own.
+    const secondStep = !!credentials.mechanismsFor(username).password &&
+                       !!webauthnPolicy.useAllowed('mfa').ok;
     log.debug("Leaving AccountActivation.keyView().");
     return { step: 'key', user: username, token: token,
-             keyRole: pending.role, wantsTotp: !!wantsTotp,
+             passkey: true, secondStep: secondStep, wantsTotp: !!wantsTotp,
              pending: { id: pending.id, kind: pending.kind || '',
-                        role: pending.role, lane: lane,
+                        lane: lane,
                         challenge: pending.challenge,
                         rpId: rpId, user: user.name,
                         userHandle: pending.userHandle || '',
@@ -341,17 +389,24 @@ class AccountActivation {
    * @param req - the request
    * @param res - the response
    * @param username - the link's person
-   * @param keyRole - what the passkey is for, or `none`
+   * @param withKey - whether a passkey was registered
    * @param withTotp - whether an authenticator app was set up
    * @param warning - what could not be set up, or ''
    * @returns nothing
    */
   finish(ctx: AccountContext, req: Json, res: Json, username: string,
-         keyRole: string, withTotp: boolean, warning: string): unknown {
+         withKey: boolean, withTotp: boolean, warning: string): unknown {
     const { log, credentials } = this.deps;
     const { audit, websecurity } = ctx;
     log.debug("Entering AccountActivation.finish(). " + username);
-    const password = !!credentials.mechanismsFor(username).password;
+    const mechanisms: Json = credentials.mechanismsFor(username);
+    const password = !!mechanisms.password;
+    // THE PASSKEY'S SENTENCE ON *ACCOUNT READY* (#1135) is a fact about
+    // the account, not a choice: it is asked for after the password where
+    // the person has one and the realm lets a key answer that step
+    // (`mfaKeys` counts the keys that may), else it is the way in.
+    const secondStep = !!withKey && password &&
+                       Number(mechanisms.mfaKeys || 0) > 0;
     res[LINK_SPENT] = true;
     // AN OPERATOR'S RECOVERY (#724), for a person who held a passkey before
     // this link was issued: read before the link is consumed.
@@ -361,12 +416,13 @@ class AccountActivation {
       category: 'authentication', action: 'portal.activate',
       actor: username, outcome: 'success',
       summary: username + ' completed account setup',
-      detail: { password: password, keyRole: keyRole, totp: !!withTotp,
+      detail: { password: password, passkey: !!withKey, totp: !!withTotp,
                 backupCodes: 0, address: websecurity.addressOf(req) }
     });
     log.info('portal: ' + username + ' completed account setup (' +
-             (password ? 'password' : 'no password') + ', security key: ' +
-             keyRole + ', authenticator app: ' + (withTotp ? 'yes' : 'no') +
+             (password ? 'password' : 'no password') + ', passkey: ' +
+             (withKey ? 'yes' : 'no') + ', authenticator app: ' +
+             (withTotp ? 'yes' : 'no') +
              '). The activation link is now spent.');
     // CAEP credential-change for what setup created (#145). A passkey's is
     // sent by the `key` step that registered it.
@@ -393,8 +449,8 @@ class AccountActivation {
     // credential just configured. The *Sign in* link is the portal's own,
     // whose sign-in mints its pending record when it is PRESSED.
     return ctx.json(res, 200, { ok: true, view: {
-      step: 'ready', password: password, keyRole: keyRole,
-      withTotp: !!withTotp, warning: warning || '',
+      step: 'ready', password: password, passkey: !!withKey,
+      secondStep: secondStep, withTotp: !!withTotp, warning: warning || '',
       signIn: this.signInHref(ctx) } });
   }
 
@@ -412,13 +468,13 @@ class AccountActivation {
    * @param res - the response
    * @param username - the link's person
    * @param token - the link's token
-   * @param keyRole - what the passkey is for, or `none`
+   * @param withKey - whether a passkey was registered
    * @param wantsTotp - whether the app was asked for
    * @param warning - what could not be set up, or ''
    * @returns nothing
    */
   async afterKey(ctx: AccountContext, req: Json, res: Json, username: string,
-                 token: string, keyRole: string, wantsTotp: boolean,
+                 token: string, withKey: boolean, wantsTotp: boolean,
                  warning: string): Promise<unknown> {
     const { log, credentials, totp } = this.deps;
     const { audit, websecurity } = ctx;
@@ -439,7 +495,7 @@ class AccountActivation {
           });
           log.debug("Leaving AccountActivation.afterKey(). The app's step.");
           return ctx.json(res, 200, { ok: true, view: {
-            step: 'totp', user: username, token: token, keyRole: keyRole,
+            step: 'totp', user: username, token: token, passkey: withKey,
             enrolment: enrolment, warning: warning || '' } });
         }
       }
@@ -449,14 +505,14 @@ class AccountActivation {
                (begun.errors || []).join(' ') + '). The activation ' +
                'finishes without it rather than being refused.');
       log.debug("Leaving AccountActivation.afterKey(). No authenticator.");
-      return this.finish(ctx, req, res, username, keyRole, false,
+      return this.finish(ctx, req, res, username, withKey, false,
         (warning ? warning + ' ' : '') + 'The authenticator app could NOT ' +
         'be set up: ' + (begun.errors || ['it was refused.'])[0] +
         ' Everything else is set up, and you can add one from your ' +
         'account pages after you sign in.');
     }
     log.debug("Leaving AccountActivation.afterKey(). Finishing.");
-    return this.finish(ctx, req, res, username, keyRole, false, warning);
+    return this.finish(ctx, req, res, username, withKey, false, warning);
   }
 
   /**
@@ -529,7 +585,6 @@ class AccountActivation {
     log.debug("Entering AccountActivation.keyStep().");
     const base = ctx.baseUrlOf(req);
     const wantsTotp = String(body.totp || '') === '1';
-    const keyRole = String(body.key_role || 'none');
     const waitingKey: Json = credentials.pendingKeyEnrolmentFor(username);
     if (!waitingKey) {
       log.debug("Leaving AccountActivation.keyStep(). Expired.");
@@ -602,7 +657,7 @@ class AccountActivation {
       // person is one step from done and the link is still unspent.
       credentials.abandonKeyEnrolment(username);
       const again: Json = credentials.beginKeyEnrolment(username, {
-        role: waitingKey.role, kind: keyKind, label: waitingKey.label,
+        kind: keyKind, label: waitingKey.label,
         lane: waitingKey.lane || 'classical' });
       const fresh = again.ok ? credentials.pendingKeyEnrolmentFor(username)
                              : null;
@@ -628,17 +683,15 @@ class AccountActivation {
     audit.record({
       category: 'authentication', action: 'portal.activate.key.enrolled',
       actor: username, outcome: 'success',
-      summary: username + ' registered a security key as a ' +
-               enrolled.role + ' credential while activating',
-      detail: { role: enrolled.role,
-                algorithm: credentials.keyAlgorithm(heldKey).text,
+      summary: username + ' registered a passkey while activating',
+      detail: { algorithm: credentials.keyAlgorithm(heldKey).text,
                 address: websecurity.addressOf(req) }
     });
-    log.info('portal: ' + username + ' registered a "' + enrolled.role +
-             '" security key while spending an activation link.');
+    log.info('portal: ' + username + ' registered a passkey while ' +
+             'spending an activation link.');
     log.debug("Leaving AccountActivation.keyStep(). Registered.");
-    return this.afterKey(ctx, req, res, username, token,
-                         String(enrolled.role || keyRole), wantsTotp, '');
+    return this.afterKey(ctx, req, res, username, token, true, wantsTotp,
+                         '');
   }
 
   /**
@@ -652,7 +705,7 @@ class AccountActivation {
    */
   async spend(ctx: AccountContext, req: Json, res: Json,
               body: Json): Promise<unknown> {
-    const { log, credentials, passkeyPolicy } = this.deps;
+    const { log, credentials, passkeyPolicy, webauthnPolicy } = this.deps;
     const { audit, websecurity } = ctx;
     const self = this;
     log.debug("Entering AccountActivation.spend().");
@@ -703,7 +756,7 @@ class AccountActivation {
 
     const password = String(body.password || '');
     const confirm = String(body.confirm || '');
-    const keyRole = String(body.key_role || 'none');
+    const wantsKey = this.wantsPasskey(body);
     const wantsTotp = String(body.totp || '') === '1';
     const step = String(body.step || 'setup');
     const setupRefused = function setupRefused(code: string,
@@ -746,13 +799,13 @@ class AccountActivation {
                           (confirmed.errors || ['That code is not ' +
                                                 'right.'])[0],
                           { view: { step: 'totp', user: username,
-                                    token: token, keyRole: keyRole,
+                                    token: token, passkey: wantsKey,
                                     enrolment: waiting, warning: '' } });
       }
       log.info('portal: ' + username + ' set up an authenticator app while ' +
                'spending an activation link.');
       log.debug("Leaving AccountActivation.spend(). Finishing with the app.");
-      return this.finish(ctx, req, res, username, keyRole, true, '');
+      return this.finish(ctx, req, res, username, wantsKey, true, '');
     }
 
     // THE PASSKEY'S CEREMONY, ANSWERED, before the password guards for the
@@ -767,16 +820,30 @@ class AccountActivation {
       return setupRefused('STS-PORTAL-0006',
                           'The two passwords do not match.');
     }
-    // **AT LEAST ONE WAY IN**, and a second-step passkey with no first step
-    // is not one.
-    if (!password && keyRole !== 'primary') {
+    // **AT LEAST ONE WAY IN.** Until #1135 a passkey chosen as a second
+    // step with no password was refused here, because the person had said
+    // the key was not a way in. A key carries no role now: with no password
+    // it is the way in — where the realm lets a passkey be a first factor.
+    // Where it does not, the key could only ever be a second step after a
+    // password nobody set, so the activation is refused for the same reason
+    // as before, and the realm's own sentence says why. A realm that takes
+    // no new passkey at all is refused by the enrolment below (0101).
+    if (!password && !wantsKey) {
       log.debug("Leaving AccountActivation.spend(). No way in.");
-      return setupRefused('STS-PORTAL-0007', keyRole === 'mfa'
-        ? 'A passkey used as a SECOND step needs a password to be the ' +
-          'first one. Set a password as well, or choose to use the passkey ' +
-          'instead of a password.'
-        : 'Set a password, or choose to use a passkey instead of one. You ' +
-          'need at least one way to sign in.');
+      return setupRefused('STS-PORTAL-0007',
+        'Set a password, or register a passkey. You need at least one way ' +
+        'to sign in.');
+    }
+    if (!password && webauthnPolicy.enrolmentAllowed().ok) {
+      const alone: Json = webauthnPolicy.useAllowed('primary');
+      if (!alone.ok) {
+        log.debug("Leaving AccountActivation.spend(). A passkey cannot be " +
+                  "the only way in here.");
+        return setupRefused('STS-PORTAL-0007',
+          'A passkey cannot sign anybody in on its own here, so it cannot ' +
+          'be your only way in (' + String(alone.why || '') + '). Set a ' +
+          'password as well; your passkey is asked for after it.');
+      }
     }
     if (password) {
       // Screened against Pwned Passwords first (#62 P6).
@@ -798,10 +865,10 @@ class AccountActivation {
     // THE PASSKEY, IF ONE WAS CHOSEN (2026-10-01): the ceremony is drawn and
     // the link is NOT spent. One that cannot be started is refused where it
     // was the ONLY way in; beside a password the setup finishes and says what
-    // did not happen.
-    if (keyRole !== 'none') {
+    // did not happen. No role is passed (#1135).
+    if (wantsKey) {
       const begunKey: Json = credentials.beginKeyEnrolment(username, {
-        role: keyRole, kind: String(body.kind || ''),
+        kind: String(body.kind || ''),
         // The lane (#643), refused there where the realm does not offer it.
         lane: String(body.lane || 'classical') });
       const pendingKey = begunKey.ok
@@ -810,9 +877,9 @@ class AccountActivation {
         audit.record({
           category: 'authentication', action: 'portal.activate.key.started',
           actor: username, outcome: 'success',
-          summary: username + ' started registering a security key while ' +
+          summary: username + ' started registering a passkey while ' +
                    'activating',
-          detail: { role: pendingKey.role, kind: pendingKey.kind || 'any',
+          detail: { kind: pendingKey.kind || 'any',
                     lane: pendingKey.lane || 'classical',
                     address: websecurity.addressOf(req) }
         });
@@ -832,13 +899,13 @@ class AccountActivation {
                username + '" and could not be started (' + why + '). The ' +
                'activation goes on without it rather than being refused.');
       log.debug("Leaving AccountActivation.spend(). Without the key.");
-      return this.afterKey(ctx, req, res, username, token, 'none', wantsTotp,
+      return this.afterKey(ctx, req, res, username, token, false, wantsTotp,
         'The passkey could NOT be set up: ' + why + ' Everything else is ' +
         'set up, and you can create one on your Passkeys page after you ' +
         'sign in.');
     }
     log.debug("Leaving AccountActivation.spend(). After the setup.");
-    return this.afterKey(ctx, req, res, username, token, keyRole, wantsTotp,
+    return this.afterKey(ctx, req, res, username, token, false, wantsTotp,
                          '');
   }
 
@@ -861,7 +928,9 @@ class AccountActivation {
           'the credential. Spends nothing — a link opened by a prefetch or ' +
           'a mail scanner still works. Rate limited. Every failure answers ' +
           'the same sentence. The answer is the first step: the password ' +
-          'rules, whether a passkey and an authenticator app are offered.',
+          'rules, whether a passkey and an authenticator app are offered, ' +
+          'and whether a passkey may be the only way in (`passkeyAlone`, ' +
+          '#1135).',
         query: ACTIVATE_QUERY,
         statuses: { 429: 'Too many attempts.' },
         handler: function (req: Json, res: Json, caller: Json,
@@ -877,7 +946,9 @@ class AccountActivation {
           'were chosen; `key` answers the passkey\'s ceremony; `totp` the ' +
           'app\'s code. The link is checked again, claimed before anything ' +
           'is set, and spent only by the step that finishes, which answers ' +
-          'the `ready` view. Nobody is signed in by it.',
+          'the `ready` view. Nobody is signed in by it. A passkey carries ' +
+          'no role (#1135): `passkey` asks for one, and `key_role` is ' +
+          'still accepted, `primary` and `mfa` both asking for one.',
         body: ACTIVATE_FORM,
         statuses: { 429: 'Too many attempts.' },
         handler: function (req: Json, res: Json, caller: Json,

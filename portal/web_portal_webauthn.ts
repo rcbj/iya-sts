@@ -10,9 +10,9 @@
 //
 // The server-rendered portal loaded `/authn/webauthn.js` on the three pages
 // that run a ceremony — `/portal/keys` (a passkey or a security key made),
-// `/portal/activate` (a key instead of a password), `/portal/devices` (a
-// platform credential linked to a device) — and that script finished by
-// calling `form.submit()`. A static application cannot use it as it is: a
+// `/portal/activate` (a passkey registered while setting up),
+// `/portal/devices` (a platform credential linked to a device) — and that
+// script finished by calling `form.submit()`. A static application cannot use it as it is: a
 // native submit goes around the runtime to a path that is now the shell, and
 // the ceremony's answer would never reach `/account-api`. So the part of
 // that script the portal uses is here, reading the SAME markup — `#wa-data`

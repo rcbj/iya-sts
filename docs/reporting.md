@@ -348,7 +348,7 @@ or any other lock. `active` is the other value.
 | `displayName` | string | `displayName`, or `cn` when `displayName` is empty. | yes | yes | no |
 | `memberOf` | string | The names of the groups that list this person, joined. Indexed: `eq`, `in` (the group's member list). | yes | no | no |
 | `hasPassword` | boolean | Whether a password is set on the entry. | yes | yes | yes |
-| `factors` | number | How many second-factor credentials the person holds: passkeys enrolled as a second factor, authenticator apps, mail factors. `hasPassword` true and `factors` 0 is a password alone. | yes | yes | yes |
+| `factors` | number | How many second-factor credentials the person holds: passkeys (every one, since a passkey has no role, #1135), authenticator apps, mail factors. `hasPassword` true and `factors` 0 is a password alone. | yes | yes | yes |
 | `methodsUsed` | string | The RFC 8176 methods the person has signed in with here (`pwd`, `hwk`, `otp`, …), joined; compared value by value. | yes | yes | no |
 | `mfaLastAuthTime` | timestamp | When the person last completed a multi-factor sign-in. | yes | yes | no |
 
@@ -490,11 +490,12 @@ entries, which is what `users` reads.
 Who holds which authentication credential, as the directory is now: one
 row per credential — a passkey, an authenticator app, an enrolled
 certificate, a mail factor, a Kerberos key set — with the person who
-holds it, its mechanism and role, and its own algorithm. A passkey's role is the one
-chosen at its enrolment, `primary` (it signs the person in on its own)
-or `mfa` (a second factor after a password), which the service enforces
-at sign-in; an authenticator app and an emailed code are `mfa`; a
-certificate and a Kerberos key are `primary`.
+holds it, its mechanism and role, and its own algorithm. A passkey has
+no role since [#1135](https://github.com/rcbj/iya-sts/issues/1135), so its
+rows' `role` is empty: the realm decides at the sign-in whether a passkey
+signs a person in on its own or after a password. An authenticator app
+and an emailed code are `mfa`; a certificate and a Kerberos key are
+`primary`.
 
 **How it reads, and why it costs little.** A filter on `mechanism` reads
 the holders of that mechanism's attribute through the store's index of
@@ -573,8 +574,8 @@ cancellation, not with its last holder.
 
 **The census is a count of credentials.** `aggregate: "count"` with
 `groupBy` `mechanism`, `role`, `algorithm` or `lane` answers how many
-passkeys are enrolled as a primary mechanism, how many as a second
-factor, how many of each algorithm, and so on; group by `username` for
+credentials of each mechanism there are, how many passkeys of each
+algorithm, and so on (a passkey has no role since #1135); group by `username` for
 how many each person holds, and add a `memberOf` filter for one
 community. The maintained per-realm passkey aggregate stays on
 Monitoring → Passkeys.
@@ -584,8 +585,8 @@ Monitoring → Passkeys.
 | `username` | string | The directory uid. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
 | `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos`, `password`, `recoveryCodes`, `jwtSigningKey`, `samlSigningKey`, `acmeAccountKey`, `scepChallenge`, `selfIssued` or `verifiableCredential`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
-| `role` | string | `primary`, `mfa`, `recovery`, `signer` (a signing key pair) or `enrollment` (an ACME or SCEP enrollment credential); enumerated. | yes | yes | yes |
-| `credentials` | number | How many credentials of this mechanism and role the person holds; the same on each of their rows. | yes | yes | no |
+| `role` | string | `primary`, `mfa`, `recovery`, `signer` (a signing key pair) or `enrollment` (an ACME or SCEP enrollment credential); enumerated. Empty for a passkey, which has no role since #1135. | yes | yes | yes |
+| `credentials` | number | How many credentials of this mechanism the person holds; the same on each of their rows. | yes | yes | no |
 | `credentialId` | string | This credential's own id (a passkey's credential id). | yes | yes | no |
 | `algorithm` | string | This credential's signature algorithm (a passkey's JOSE name, such as `ES256` or `ML-DSA-65`). | yes | yes | yes |
 | `lane` | string | A passkey's or a wallet key's lane, `classical` or `pqc`; enumerated. Empty for the other mechanisms. | yes | yes | yes |
@@ -597,30 +598,31 @@ Monitoring → Passkeys.
 | `mfaLastAuthTime` | timestamp | When the person last completed a multi-factor sign-in. | yes | yes | no |
 | `memberOf` | string | The groups that list this person, by name (`cn`), joined. Indexed: `eq`, `in`, each value a group's name. | yes | no | no |
 
-Every passkey enrolled as a primary mechanism, with its holder, its
-algorithm and how many that person holds:
+Every passkey, with its holder, its algorithm and how many that person
+holds:
 
 ```json
 {
   "source": "credentialHolders",
   "select": ["username", "displayName", "algorithm", "lane", "credentials"],
-  "where": { "op": "and", "args": [
-    { "op": "eq", "field": "mechanism", "value": "passkey" },
-    { "op": "eq", "field": "role", "value": "primary" } ] },
+  "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
   "limit": 500
 }
 ```
 
-How many passkeys there are, by role and algorithm:
+How many passkeys there are, by algorithm and lane:
 
 ```json
 {
   "source": "credentialHolders",
   "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
   "aggregate": "count",
-  "groupBy": ["role", "algorithm"]
+  "groupBy": ["algorithm", "lane"]
 }
 ```
+
+A stored definition that still filters a passkey on `role` `primary` or
+`mfa` validates and finds nobody, since #1135.
 
 ### `postLoginProgress`
 
@@ -632,7 +634,7 @@ post-login progress store, not from the directory, so a filter on any field
 is allowed; an unordered query stops at its limit, and a sorted or counted
 one reads the rows a page at a time under the usual time limits.
 
-The profile, role and allotted time on a row are the ones that applied when
+The profile and allotted time on a row are the ones that applied when
 the row was last written, so a report shows which profile asked a person
 without the directory being asked again for every row.
 
@@ -641,7 +643,7 @@ without the directory being asked again for every row.
 | `username` | string | The person's uid. | yes | yes | no |
 | `activity` | string | The post-login activity: `pqc-passkey-migration`. | yes | yes | yes |
 | `profile` | string | The post-login profile that reached the person (`default`, or a named profile). | yes | yes | yes |
-| `role` | string | The role the passkey is asked for: `primary` or `mfa`. | yes | yes | yes |
+| `role` | string | Retired (#1135): a passkey has no role, so a row written since is empty. A row written before keeps the role it was asked for then, `primary` or `mfa`. | yes | yes | yes |
 | `progress` | string | Where the person stands, the first that holds: `done`, `past-grace`, `snoozed`, `asked`, `mailed`. | yes | yes | yes |
 | `invitedAt` | timestamp | When the person was first asked at a sign-in; the allotted time counts from here. Null when they were only mailed. | yes | yes | no |
 | `snoozedUntil` | timestamp | Until when Skip put the activity off. | yes | yes | no |
@@ -771,7 +773,7 @@ longer than the ring, schedule a definition and keep its reports.
 | `errorCode` | string | The code a refused ceremony was recorded under. | yes | yes | yes |
 | `actor` | string | The person, where known. | yes | yes | no |
 | `application` | string | The application the sign-in was for; empty where none was in play. | yes | yes | yes |
-| `role`, `lane` | string | `primary` or `mfa`; `classical` or `pqc`. | yes | yes | yes |
+| `role`, `lane` | string | The use an assertion answered: `primary` (in place of a password) or `mfa` (after one); empty for a registration since #1135, a passkey having no role, and where no step applied. `classical` or `pqc`. | yes | yes | yes |
 | `offered` | string | The algorithms offered, in order. | yes | yes | no |
 | `offerRule` | string | The client rule that narrowed the offer, or would have, where one applied ([#1112](https://github.com/rcbj/iya-sts/issues/1112)); empty otherwise. | yes | yes | yes |
 | `offeredFirst` | string | The first algorithm offered. | yes | yes | yes |

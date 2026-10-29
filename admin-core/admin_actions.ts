@@ -435,12 +435,16 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 //   issue-password-reset   a single-use link, returned ONCE; the password they
 //                          had is REMOVED and they are signed out of
 //                          everything, so the link is their way back.
-//   disable-primary-keys   every PRIMARY security key off, so passkeys no
+//   disable-primary-keys   every passkey off (until #1135, every PRIMARY
+//                          one; a key has no role since), so passkeys no
 //                          longer sign them in; refused where that leaves no
-//                          way in. The sessions each removed key signed in
-//                          end (#963); every other session stays.
-//   disable-mfa            every second factor off: authenticator app, `mfa`
-//                          keys, recovery codes. The sessions each removed
+//                          way in (STS-AUTHN-0161). The sessions each removed
+//                          key signed in end (#963); every other session
+//                          stays.
+//   disable-mfa            every second factor off: authenticator app, every
+//                          passkey (until #1135, the `mfa` ones), recovery
+//                          codes; refused as the one above is where the keys
+//                          are the person's way in. The sessions each removed
 //                          factor signed in end (#963); a session only a
 //                          password signed in stays.
 //   require-mfa            a second factor required of them at the sign-in
@@ -2349,14 +2353,16 @@ class AdminActions {
       friendlyName: String((enrolled && enrolled.label) || ''),
       changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
       reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
-                   ') enrolled a ' + done.role + ' passkey for ' + who + '.',
+                   ') enrolled a passkey for ' + who + '.',
       reasonUser: 'An administrator enrolled a passkey on your account.' });
     const algorithm = credentials.keyAlgorithm(enrolled || {});
     auditLog.record({
       category: 'authentication', action: 'admin.passkey.enrolled',
       actor: ctx.actor, target: who, outcome: 'success',
-      summary: 'enrolled a "' + done.role + '" passkey for ' + who,
-      detail: { username: who, via: ctx.via, role: done.role,
+      summary: 'enrolled a passkey for ' + who,
+      // NO ROLE ON THE ROW SINCE #1135: a key has none, and the realm's
+      // settings decide at each sign-in how it may be used.
+      detail: { username: who, via: ctx.via,
                 lane: credentials.keyLane(enrolled || {}),
                 algorithm: algorithm.text || algorithm.name || '',
                 credentialId: String(done.credentialId || ''),
@@ -2364,15 +2370,15 @@ class AdminActions {
                 enrolledBy: (done.enrolledBy || {}).username || '',
                 held: done.held } });
     log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
-             ctx.via + ') enrolled a "' + done.role + '" passkey for "' +
+             ctx.via + ') enrolled a passkey for "' +
              who + '", who now holds ' + done.held + '.');
     log.debug("Leaving AdminActions.adminKeyEnrolled(). Enrolled.");
-    return { ok: true, username: who, role: done.role, lane: done.lane,
+    // `role` LEFT THE ANSWER IN #1135: a key carries none, so there is no
+    // "passwordless" or "second-factor" passkey to name.
+    return { ok: true, username: who, lane: done.lane,
              credentialId: String(done.credentialId || ''),
              held: done.held, enrolledBy: done.enrolledBy || null,
-             message: 'A ' + (done.role === 'primary' ? 'passwordless'
-                                                      : 'second-factor') +
-                      ' passkey is enrolled for ' + who + ', marked as ' +
+             message: 'A passkey is enrolled for ' + who + ', marked as ' +
                       'enrolled by an administrator. They have been told; ' +
                       'hand the authenticator over.' };
   }
@@ -2423,8 +2429,8 @@ class AdminActions {
   // logout model's `endFactorSessions()`, by each of the four per-credential
   // removals — a security key, the authenticator app, the recovery codes and
   // the emailed second factor — and by the two bulk disables (#963).
-  // `disable-primary-keys` asks once per primary key it removed;
-  // `disable-mfa` asks once per mfa key it removed, and once for the
+  // `disable-primary-keys` asks once per key it removed; `disable-mfa`
+  // asks once per key it removed, and once for the
   // authenticator app and once for the recovery codes when those went.
   // Only the sessions that credential authenticated: unlike a password
   // reset (`signOutEverywhere()`), a removal leaves every session the
@@ -3088,7 +3094,7 @@ class AdminActions {
       // `removed` is absent on that answer (`removePrimaryKeys()`).
       if (!result.ok) {
         audited('admin.mfa.primary-keys.removed',
-                'could not remove the primary security keys of ' + who,
+                'could not remove the passkeys of ' + who,
                 { removed: (result.removed || []).length,
                   errors: result.errors || [] },
                 'failure');
@@ -3102,23 +3108,23 @@ class AdminActions {
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
-          reasonAdmin: 'An administrator disabled passwordless sign-in for ' +
+          reasonAdmin: 'An administrator removed every passkey of ' +
                        who + '.',
-          reasonUser: 'A security key that signed you in without a password ' +
-                      'was removed from your account.' });
+          reasonUser: 'A passkey was removed from your account.' });
       });
-      // THE SESSIONS EACH REMOVED PRIMARY KEY SIGNED IN END (#963), and no
-      // other: a password session, and a session an mfa key signed in,
-      // stay. An empty list is still asked — `sumFactorSessions()` calls
-      // once with no factor, which matches nothing — and a missing
-      // sign-out module answers 0 (STS-ADMIN-0870) without putting the
-      // keys back. The CAEP deletes above are unchanged.
+      // THE SESSIONS EACH REMOVED KEY SIGNED IN END (#963), and no other:
+      // a password session stays. Since #1135 every key goes (a key has no
+      // role), so "a session an mfa key signed in" is no longer a case that
+      // survives this act. An empty list is still asked —
+      // `sumFactorSessions()` calls once with no factor, which matches
+      // nothing — and a missing sign-out module answers 0 (STS-ADMIN-0870)
+      // without putting the keys back. The CAEP deletes above are unchanged.
       const ended = this.sumFactorSessions(who, removed.map(function (one) {
         return { kind: 'webauthn',
                  credentialId: String((one && one.credentialId) || '') };
       }), ctx, 'a security key');
       audited('admin.mfa.primary-keys.removed',
-              'removed the primary security keys of ' + who,
+              'removed the passkeys of ' + who,
               { removed: removed.length,
                 sessionsEnded: ended.sessionsEnded,
                 failed: ended.failed },
@@ -3128,10 +3134,9 @@ class AdminActions {
       return { ok: true, username: who, removed: removed,
                sessionsEnded: ended.sessionsEnded,
                failed: ended.failed,
-               message: removed.length + ' primary security key(s) of ' +
-                        who + ' removed. They sign in with their password ' +
-                        'now; a key they hold as a second factor is ' +
-                        'untouched.' + this.sessionsEndedSentence(ended) };
+               message: removed.length + ' passkey(s) of ' + who +
+                        ' removed. They sign in with their password ' +
+                        'now.' + this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'disable-mfa') {
@@ -3159,7 +3164,7 @@ class AdminActions {
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
           reasonAdmin: 'An administrator disabled every second factor of ' +
                        who + '.',
-          reasonUser: 'A security key was removed from your account.' });
+          reasonUser: 'A passkey was removed from your account.' });
       });
       if (removed.backupCodes) {
         accountSignals.recoveryInformationChanged({ username: who,
@@ -3179,7 +3184,7 @@ class AdminActions {
       }
       // THE SESSIONS EACH REMOVED FACTOR SIGNED IN END (#963). A factor
       // that was not held is not asked, so its sessions — there are none
-      // of its own — stay. The mfa-key list is asked even when empty: that
+      // of its own — stay. The key list is asked even when empty: that
       // call names no credential and adds nothing. The counts are one
       // number, as one `clear-totp` reports one.
       const keysEnded = this.sumFactorSessions(who,
@@ -3215,7 +3220,7 @@ class AdminActions {
                failed: ended.failed,
                message: 'Every second factor of ' + who + ' was removed (' +
                         'authenticator app: ' + (removed.totp ? 'yes' : 'no') +
-                        ', security keys: ' + (removed.keys || []).length +
+                        ', passkeys: ' + (removed.keys || []).length +
                         ', recovery codes: ' +
                         (removed.backupCodes ? 'yes' : 'no') + '). ' +
                         (requirement.required
@@ -4520,8 +4525,7 @@ class AdminActions {
           fido2Aaguid: String((going && going.aaguid) || ''),
           changeType: 'delete', via: ctx.via,
           friendlyName: going ? String(going.label || '') : '',
-          reasonAdmin: 'An administrator removed a ' +
-                       (going ? going.role : '') + ' security key of ' + who +
+          reasonAdmin: 'An administrator removed a passkey of ' + who +
                        '.',
           reasonUser: 'A security key was removed from your account.' });
       }
@@ -4650,9 +4654,11 @@ class AdminActions {
             'Passkeys, or have them create one themselves on their ' +
             'account page.'] });
       } else {
+        // `body.role` IS ACCEPTED AND IGNORED SINCE #1135: a key carries
+        // no role, so the old field a caller may still send asks nothing.
         begun = credentials.beginAdminKeyEnrolment(who, context &&
           (context as any).admin, {
-          role: String(body.role || 'mfa'), kind: String(body.kind || ''),
+          kind: String(body.kind || ''),
           lane: String(body.lane || '') });
       }
       if (!begun.ok) {
@@ -4688,17 +4694,17 @@ class AdminActions {
       auditLog.record({
         category: 'authentication', action: 'admin.passkey.enrolment-started',
         actor: ctx.actor, target: who, outcome: 'success',
-        summary: 'started enrolling a "' + begun.role + '" passkey for ' + who,
-        detail: { username: who, via: ctx.via, role: begun.role,
+        summary: 'started enrolling a passkey for ' + who,
+        detail: { username: who, via: ctx.via,
                   lane: begun.lane, kind: begun.kind || 'any',
                   excluded: begun.exclude.length } });
       log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
-               ctx.via + ') started enrolling a "' + begun.role +
-               '" passkey for "' + who + '".');
+               ctx.via + ') started enrolling a passkey for "' + who +
+               '".');
       log.debug("Leaving AdminActions.usersAction(). begin-passkey-" +
                 "enrolment minted a challenge.");
       return { ok: true, username: who, enrolmentId: begun.enrolmentId,
-               role: begun.role, lane: begun.lane, kind: begun.kind,
+               lane: begun.lane, kind: begun.kind,
                expiresAt: begun.expiresAt,
                // WHAT THE CONSOLE'S SCRIPT HANDS
                // `navigator.credentials.create()`, every byte string as

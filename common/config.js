@@ -2669,7 +2669,9 @@ const SETTINGS = [
   //   * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`,
   //     `maxKeysPerPerson`. These are not WebAuthn at all: they are what THIS
   //     service will do with a key once the ceremony is over, and they are
-  //     decided here rather than by any specification.
+  //     decided here rather than by any specification. Since #1135 the
+  //     middle two are asked at each sign-in, of every key alike, because a
+  //     key carries no role.
   //
   // **TWO OF THEM ARE ENFORCED IN THIS SERVICE AND NOT ONLY REQUESTED**, and
   // that distinction is the one to keep: `userVerification` is sent to the
@@ -3263,37 +3265,57 @@ const SETTINGS = [
   // -------------------------------------------------------------------
   // THE POLICY ROWS. Not WebAuthn — what THIS service does with a key.
   // -------------------------------------------------------------------
+  // ASKED AT THE SIGN-IN, OF EVERY KEY (#1135). Until then each key was
+  // enrolled in a role, and these two refused an ENROLMENT in a role and
+  // never an authentication. A key has no role now, so they say what any
+  // key a person holds may do, asked by `webauthnPolicy.useAllowed()` at
+  // each step; a key may be enrolled while either is on (STS-AUTHN-0531
+  // with both off). The keys and the attribute names are unchanged.
   { key: 'webauthn.primaryAllowed', group: 'WebAuthn',
-    label: 'Allow a key as a PRIMARY credential',
+    label: 'Allow a passkey as a FIRST factor (passwordless)',
     path: 'webauthn.primaryAllowed', env: 'STS_WEBAUTHN_PRIMARY_ALLOWED',
     type: 'bool', dflt: true, runtime: true,
-    description: 'Whether a security key may be the ONLY credential on an ' +
-                 'account — a passwordless sign-in, `amr ["hwk"]`. Turning ' +
-                 'it off leaves keys working as a SECOND factor and refuses ' +
-                 'the passwordless path at the sign-in screen and the ' +
-                 '`primary` choice in the portal. **It does not disable a ' +
-                 'primary key somebody already holds**, for ' +
-                 '`webauthn.enabled` ’s reason — and there is a sharper edge ' +
-                 'here: somebody whose only credential is a primary key ' +
-                 'would be locked out of their own account by an operator ' +
-                 'flipping a switch, which is not a thing a setting should ' +
-                 'be able to do.' },
+    description: 'Whether a passkey may be a first factor in this realm — ' +
+                 'a passwordless sign-in, `amr ["hwk"]` — unless an ' +
+                 'application\'s own list (`appAuthnMechanism`) says ' +
+                 'otherwise. It is what the realm supports, beside the ' +
+                 'authentication policy\'s passkey row, and is asked at ' +
+                 'every sign-in, of every passkey a person holds alike: a ' +
+                 'passkey has no role (#1135), so this decides what each ' +
+                 'one may do, not what one is enrolled as. Off, the ' +
+                 'passwordless path is off the sign-in screen and a passkey ' +
+                 'answers only the second step after a password, where ' +
+                 '`webauthn.mfaAllowed` allows it. **Off, somebody whose ' +
+                 'only credential is a passkey cannot sign in** until they ' +
+                 'are given a password (a reset link, say): until #1135 ' +
+                 'this switch refused only an enrolment, and a key already ' +
+                 'held went on signing them in. A passkey may be enrolled ' +
+                 'while this or `webauthn.mfaAllowed` is on; with both off ' +
+                 'an enrolment is refused.' },
 
 
   { key: 'webauthn.mfaAllowed', group: 'WebAuthn',
-    label: 'Allow a key as a SECOND factor',
+    label: 'Allow a passkey as a SECOND factor',
     path: 'webauthn.mfaAllowed', env: 'STS_WEBAUTHN_MFA_ALLOWED',
     type: 'bool', dflt: true, runtime: true,
-    description: 'Whether a security key may be enrolled as a second factor ' +
-                 'beside a password. Off, the remaining second factor is the ' +
-                 'authenticator app (the TOTP row of the authentication ' +
-                 'policy), and a deployment with ' +
+    description: 'Whether a passkey may be a second factor in this realm, ' +
+                 'after a password or another first factor, unless an ' +
+                 'application\'s own list (`appMfaMechanism`) says ' +
+                 'otherwise. It is what the realm supports, beside the ' +
+                 'authentication policy\'s second-factor passkey row, and ' +
+                 'is asked at every sign-in, of every passkey a person ' +
+                 'holds alike: a passkey has no role (#1135). Off, the ' +
+                 'remaining second ' +
+                 'factor is the authenticator app (the TOTP row of the ' +
+                 'authentication policy), and a deployment with ' +
                  'both off offers no second factor at all — which is a ' +
                  'supported configuration and is what this service did ' +
-                 'before either existed. **An enrolled `mfa` key goes on ' +
-                 'being demanded at the sign-in screen**, because that ' +
-                 'account is still configured for two factors; see ' +
-                 '`webauthn.enabled`.' },
+                 'before either existed. **Off, no passkey answers the ' +
+                 'second step**, and a person whose only second factor is ' +
+                 'a passkey holds none as far as the sign-in screen is ' +
+                 'concerned. A passkey may be enrolled while this or ' +
+                 '`webauthn.primaryAllowed` is on; with both off an ' +
+                 'enrolment is refused.' },
 
   { key: 'webauthn.maxKeysPerPerson', group: 'WebAuthn',
     label: 'Keys per person', path: 'webauthn.maxKeysPerPerson',

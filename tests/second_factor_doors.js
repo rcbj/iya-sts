@@ -17,7 +17,8 @@
 // process, where the code a refusal carries can be read back:
 //
 //   A. `credentials.verify()` and `verifyAsync()` at each of the five doors:
-//      a person holding a security key in the `mfa` role, one required by
+//      a person holding any passkey (a key has no role since #1135, and the
+//      realm accepts a passkey as a second factor by default), one required by
 //      their entry (stsMfaRequired), everybody required by the realm
 //      (the authentication policy) — refused STS-AUTHN-0213 with `ok: false`, the
 //      shape a wrong password has; a person with neither is verified; the two
@@ -209,9 +210,9 @@ async function run(t) {
   const key = credentials.addKey(KEYED, {
     credentialId: 'sfd-key-' + STAMP, label: 'sfd key',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
-    signCount: 0 }, 'mfa');
+    signCount: 0 });
   t.check(key && key.ok !== false, 'precondition: ' + KEYED + ' holds a ' +
-                                   'security key in the mfa role',
+                                   'passkey',
           JSON.stringify(key));
   const flagged = credentials.setMfaRequired(FLAGGED, true);
   t.check(flagged.ok, 'precondition: a second factor is required of ' +
@@ -234,7 +235,7 @@ async function run(t) {
   t.log.info('=== A. product: the five doors ===');
   withSettings({ 'global.mode': 'product' }, function () {
     DOORS.forEach(function (door) {
-      sameAsWrong(t, KEYED, door, 'A1. a person holding an mfa key');
+      sameAsWrong(t, KEYED, door, 'A1. a person holding a passkey');
       sameAsWrong(t, FLAGGED, door, 'A2. a person required by their entry');
       const plain = credentials.verify(PLAIN, PASSWORD, { door: door });
       t.check(plain.ok === true && plain.reason === 'verified',
@@ -365,7 +366,7 @@ async function run(t) {
   credentials.addKey(APPUSER, {
     credentialId: 'sfd-appkey-' + STAMP, label: 'k',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
-    signCount: 0 }, 'mfa');
+    signCount: 0 });
 
   await withSettingsAsync({ 'global.mode': 'product' }, async function () {
     websecurity.reset();

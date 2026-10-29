@@ -161,7 +161,7 @@ function seed(t) {
     t.check(made && made.ok, 'seeded ' + name,
             JSON.stringify(made && made.errors));
     PEOPLE[who].forEach(function (k) {
-      const added = credentials.addKey(name, k, 'primary');
+      const added = credentials.addKey(name, k);
       t.check(added && added.ok, 'enrolled ' + k.credentialId + ' for ' +
               name, JSON.stringify(added && added.errors));
     });
@@ -212,8 +212,8 @@ async function changes(t) {
   log.debug("Entering changes().");
   t.log.info('=== C. the changes, noted as they are written ===');
   const noneName = nameOf('none');
-  t.check(credentials.addKey(noneName, key('none-1', 'ML-DSA-87', -50),
-                             'primary').ok, 'C0. none enrols an ML-DSA-87');
+  t.check(credentials.addKey(noneName, key('none-1', 'ML-DSA-87', -50)).ok,
+          'C0. none enrols an ML-DSA-87');
   let v = await report.reportAsync({});
   t.equal(v.people.postQuantumOnly, 2, 'C1. an enrolment moves the report ' +
           'at once, with no recount');

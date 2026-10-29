@@ -630,7 +630,7 @@ async function checkAndroid(t) {
       backupEligible: !!(verdict.flags && verdict.flags.be),
       backupState: !!(verdict.flags && verdict.flags.bs),
       userVerified: !!(verdict.flags && verdict.flags.uv)
-    }, 'mfa');
+    });
     log.debug("Leaving registerAndroidPasskey().");
     return { ceremony: ceremony, verdict: verdict, assessed: assessed,
              stored: stored };
@@ -811,13 +811,12 @@ async function checkWebauthn(t) {
     attachment: 'platform', aaguid: '',
     attestation: { verified: true, trusted: true, format: 'packed',
                    type: 'basic', anchor: 'configured', checkedAt: Date.now() }
-  }, 'mfa');
+  });
   const roaming = await kit.credential(-7);
   credentials.addKey(ALICE, { credentialId:
     roaming.id.toString('base64url'),
     publicKeyJwk: roaming.pair.publicKey.export({ format: 'jwk' }),
-    signCount: 0, label: 'on my keyring', attachment: 'cross-platform' },
-    'mfa');
+    signCount: 0, label: 'on my keyring', attachment: 'cross-platform' });
   t.check(stored && stored.ok !== false, 'precondition: the credential is ' +
           'enrolled', JSON.stringify(stored));
   const refusedRoaming = enrolment.beginLink({ username: ALICE,

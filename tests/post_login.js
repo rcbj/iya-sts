@@ -19,9 +19,11 @@
 //
 //   A. The policy: off by default; a bad profile name, a missing field and
 //      a named profile with no group are refused under their codes.
-//   B. On: a classical PRIMARY passkey is due in `primary`, a classical
-//      second-factor one in `mfa`; a person with no passkey only as
-//      `noPasskey` says; one lane makes `automatic` an UPGRADE (#1100).
+//   B. On: a person holding a classical passkey is due a post-quantum one,
+//      asked of every key at once and in no role (#1135; until then a
+//      passkey was due per role, `primary` first); a person with no passkey
+//      only as `noPasskey` says; one lane makes `automatic` an UPGRADE
+//      (#1100).
 //   C. Exclusion by group.
 //   D. Over HTTP: a password sign-in starts NO session and lands on
 //      `/authn/post-login`; another step's act on its id is refused; Skip
@@ -201,11 +203,11 @@ function childMain() {
         credentials.setPassword(name, PASSWORD);
       }
     });
-    // REAL classical passkeys where a ceremony will prove them; dan's,
-    // eve's and cat's are rows only.
-    const enrol = async function (name, role, authenticator) {
+    // REAL classical passkeys where a ceremony will prove them; eve's and
+    // cat's are rows only.
+    const enrol = async function (name, authenticator) {
       const begun = credentials.beginKeyEnrolment(name,
-        { role: role, kind: 'passkey', lane: 'classical' });
+        { kind: 'passkey', lane: 'classical' });
       const done = await credentials.confirmKeyEnrolment(name,
         begun.enrolmentId,
         authenticator.register(begun.challenge, begun.userHandle),
@@ -215,15 +217,18 @@ function childMain() {
     const annOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
     const fayOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
     const gusOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
-    const annSeed = await enrol('pla-ann', 'primary', annOld);
-    const faySeed = await enrol('pla-fay', 'primary', fayOld);
-    const gusSeed = await enrol('pla-gus', 'primary', gusOld);
-    credentials.addKey('pla-dan', { credentialId: 'pla-dan-ec',
-                                    publicKeyJwk: EC }, 'primary');
+    const annSeed = await enrol('pla-ann', annOld);
+    const faySeed = await enrol('pla-fay', fayOld);
+    const gusSeed = await enrol('pla-gus', gusOld);
+    // dan's is a REAL passkey since #1135: it answers the second step of
+    // his password sign-in (G), where until then a `primary` row did not
+    // have to.
+    const danOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
+    const danSeed = await enrol('pla-dan', danOld);
     credentials.addKey('pla-eve', { credentialId: 'pla-eve-ec',
-                                    publicKeyJwk: EC }, 'primary');
+                                    publicKeyJwk: EC });
     credentials.addKey('pla-cat', { credentialId: 'pla-cat-ec',
-                                    publicKeyJwk: EC }, 'mfa');
+                                    publicKeyJwk: EC });
     ldap.createGroup('pla-excluded', { members: [] });
     ldap.addGroupMember('pla-excluded', 'pla-eve');
 
@@ -254,11 +259,26 @@ function childMain() {
         at: String(start.headers.location || '') });
       return { b: b, opened: opened };
     };
-    const signIn = async function (name) {
+    // THE PASSWORD, AND THE PASSKEY AS THE SECOND STEP (#1135). Until then
+    // these people's keys were `primary` and a password sign-in asked for
+    // nothing more; a key has no role now, so where the realm accepts a
+    // passkey as a second factor (its default, and this realm's), a person
+    // holding a password and any passkey is asked for it next, and the
+    // post-login step comes after both. `key` is the authenticator that
+    // answers it.
+    const signIn = async function (name, key) {
       const s = await screenFor();
-      const answer = await authnScreen.submit({ port: port, jar: s.b.jar,
+      let answer = await authnScreen.submit({ port: port, jar: s.b.jar,
         opened: s.opened, fields: { action: 'login', username: name,
                                     password: PASSWORD } });
+      if (key && answer.next === 'mfa' && answer.step === 'webauthn') {
+        const page = await openStep(s.b, answer);
+        const second = await authnScreen.passkeyStep({ port: port,
+          jar: s.b.jar, opened: page }, function (armed) {
+          return key.assert(armed.challenge);
+        });
+        answer = second.answer;
+      }
       return { b: s.b, answer: answer };
     };
     const openStep = function (b, answer) {
@@ -300,19 +320,20 @@ function childMain() {
     const cat = postLogin.dueFor('pla-cat');
     const bobLeft = postLogin.dueFor('pla-bob');
     policy.save('default', fields({ enabled: true, snoozeDays: 3,
-                                    noPasskey: 'invite',
-                                    noPasskeyRole: 'mfa' }));
+                                    noPasskey: 'invite' }));
     const bobInvited = postLogin.dueFor('pla-bob');
-    note(annSeed.ok && faySeed.ok && gusSeed.ok && on.ok && ann &&
-         ann.role === 'primary' && ann.reason === 'classical' &&
+    note(annSeed.ok && faySeed.ok && gusSeed.ok && danSeed.ok && on.ok &&
+         ann &&
+         ann.role === undefined && ann.reason === 'classical' &&
          ann.required === false && ann.method === 'upgrade' &&
-         cat && cat.role === 'mfa' && bobLeft === null && bobInvited &&
-         bobInvited.reason === 'none' && bobInvited.role === 'mfa' &&
+         cat && cat.reason === 'classical' && cat.role === undefined &&
+         bobLeft === null && bobInvited &&
+         bobInvited.reason === 'none' && bobInvited.role === undefined &&
          bobInvited.method === 'register' &&
          bobInvited.enforceable === false,
-         'B. on: classical primary and second-factor holders are due a ' +
-         'post-quantum passkey in that role, by an upgrade in one lane; one ' +
-         'with none only as noPasskey says',
+         'B. on: every holder of a classical passkey is due a post-quantum ' +
+         'one, in no role (#1135), by an upgrade in one lane; one with none ' +
+         'only as noPasskey says',
          JSON.stringify([annSeed.errors, on.errors, ann, cat, bobLeft,
                          bobInvited]));
     policy.save('default', fields({ enabled: true, snoozeDays: 3 }));
@@ -327,20 +348,21 @@ function childMain() {
          'are due nothing', JSON.stringify(excluded.errors || []));
 
     // D. Over HTTP: held, a way round refused, Skip.
-    let s = await signIn('pla-ann');
+    let s = await signIn('pla-ann', annOld);
     const startsBefore = rows('session.start', 'pla-ann').length;
     note(s.answer.next === 'mfa' && s.answer.step === 'post-login' &&
          /\/authn\/post-login\?mfa=/.test(s.answer.location) &&
          rows('session.start', 'pla-ann').length === startsBefore &&
          rows('authn.post-login.asked', 'pla-ann').length === 1,
-         'D1. the password sign-in starts no session and lands on the ' +
-         'post-login step', JSON.stringify(s.answer.json));
+         'D1. the password and passkey sign-in starts no session and ' +
+         'lands on the post-login step', JSON.stringify(s.answer.json));
     let opened = await openStep(s.b, s.answer);
     const v = (opened.view || {}).postLogin || {};
-    note(opened.status === 200 && v.role === 'primary' &&
+    note(opened.status === 200 && v.role === undefined &&
          v.reason === 'classical' && v.canSkip === true &&
          v.snoozeDays === 3 && v.method === 'upgrade',
-         'D2. its view names the role, the reason, the method and Skip',
+         'D2. its view names the reason, the method and Skip, and no role ' +
+         '(#1135)',
          JSON.stringify(opened.view));
     const roundAbout = await stepAct(s.b, opened, 'totp',
                                      { code: '000000' });
@@ -356,14 +378,14 @@ function childMain() {
          rows('authn.post-login.skipped', 'pla-ann').length === 1,
          'D4. Skip starts the held session and puts it off for snoozeDays',
          JSON.stringify([skipped.json, snoozed]));
-    s = await signIn('pla-ann');
+    s = await signIn('pla-ann', annOld);
     note(startsSession(s.answer),
          'D5. while it is put off, the next sign-in is not asked',
          JSON.stringify(s.answer.json));
 
     // E. The upgrade (#1100).
     postLogin.forget('pla-ann');
-    s = await signIn('pla-ann');
+    s = await signIn('pla-ann', annOld);
     opened = await openStep(s.b, s.answer);
     const toProof = await stepAct(s.b, opened, 'post-login/register');
     const proofPage = toProof.next === 'mfa'
@@ -402,7 +424,7 @@ function childMain() {
          (made.armed.json.exclude || []).indexOf(annOld.credentialId) < 0 &&
          startsSession(made.answer) && annKeys.length === 1 &&
          credentials.keyAlgorithm(annKeys[0]).postQuantum &&
-         annKeys[0].role === 'primary' &&
+         annKeys[0].role === undefined &&
          annKeys[0].previousCredentialId === annOld.credentialId &&
          postLogin.dueFor('pla-ann') === null &&
          rows('authn.post-login.done', 'pla-ann').length === 1,
@@ -412,15 +434,14 @@ function childMain() {
          JSON.stringify([cw.algorithms, made.armed.json &&
                          made.armed.json.exclude, made.answer.json,
                          annKeys.map(function (one) {
-                           return [one.role,
-                                   credentials.keyAlgorithm(one).name,
+                           return [credentials.keyAlgorithm(one).name,
                                    one.previousCredentialId];
                          })]));
 
     // F. Alongside, in one lane: another authenticator.
     policy.save('default', fields({ enabled: true, snoozeDays: 3,
                                     method: 'alongside' }));
-    s = await signIn('pla-fay');
+    s = await signIn('pla-fay', fayOld);
     opened = await openStep(s.b, s.answer);
     const fv = (opened.view || {}).postLogin || {};
     const toCreate = await stepAct(s.b, opened, 'post-login/register');
@@ -453,7 +474,7 @@ function childMain() {
     note(dan && dan.required === true,
          'G1. past the allotted time the activity is required, whatever ' +
          'was put off', JSON.stringify(dan));
-    s = await signIn('pla-dan');
+    s = await signIn('pla-dan', danOld);
     opened = await openStep(s.b, s.answer);
     const noSkip = await stepAct(s.b, opened, 'post-login/skip');
     note(opened.view && opened.view.postLogin &&
@@ -528,7 +549,7 @@ function childMain() {
 
     // K. A row a later registration may have replaced (#1101).
     const gusNew = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
-    const gusSecond = await enrol('pla-gus', 'primary', gusNew);
+    const gusSecond = await enrol('pla-gus', gusNew);
     const marked = credentials.keysOf('pla-gus').filter(function (one) {
       return one.credentialId === gusOld.credentialId;
     })[0] || {};

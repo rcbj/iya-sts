@@ -178,7 +178,7 @@ function childMain() {
       const thumb = stsCrypto.jwkThumbprint(aliceJwk);
       credentials.addKey(ALICE, { credentialId: 'drisk-cred-' + RUN,
         publicKeyJwk: pub(), signCount: 0, label: 'platform key',
-        attachment: 'platform' }, 'mfa');
+        attachment: 'platform' });
       const linked = devices.addKey(id, { kind: 'webauthn',
                                           value: 'drisk-cred-' + RUN });
       const asked = [];

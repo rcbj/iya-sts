@@ -16,7 +16,7 @@ One activity exists today:
 
 | Activity | What the person is asked |
 |---|---|
-| `pqc-passkey-migration` | To register a **post-quantum (ML-DSA) passkey**. A person who holds a classical passkey to sign in with is asked for an ML-DSA one to sign in with. A person whose second factor is a classical passkey is asked for one as a second factor. A person with no passkey can be invited or required to register one. |
+| `pqc-passkey-migration` | To register a **post-quantum (ML-DSA) passkey**. A person who holds a classical passkey and no ML-DSA one is asked for an ML-DSA one. All their passkeys are asked about at once, because a passkey has no role: one ML-DSA passkey is enough, and it signs them in and answers the second step as the realm allows. A person with no passkey can be invited or required to register one. |
 
 More activities will use the same policy and the same step.
 
@@ -25,8 +25,9 @@ More activities will use the same policy and the same step.
 - Post-login activities are **off by default** in every realm: the policy is
   off, and no activity is started.
 - The realm has to be able to make an ML-DSA passkey. Passkeys must be on
-  (`webauthn.enabled`), the role must be allowed (`webauthn.primaryAllowed` or
-  `webauthn.mfaAllowed`), and an ML-DSA algorithm must be offered at
+  (`webauthn.enabled`), the realm must accept a passkey in at least one use
+  (`webauthn.primaryAllowed` or `webauthn.mfaAllowed`, and the matching row
+  of the authentication policy), and an ML-DSA algorithm must be offered at
   registration. The default `webauthn.algorithms` offers one, as do
   `webauthn.pqcAlongsideClassical` and `webauthn.pqcOnly`. See
   [Passkeys and WebAuthn](passkeys.md#algorithms-classical-and-post-quantum).
@@ -52,10 +53,15 @@ Open **Directory → Policies → Post-login activity policy** in the
 | Skip puts it off for (`snoozeDays`) | 7 days | How long **Skip** puts the activity off (1–90). |
 | Allotted time (`graceDays`) | 0 | Counted from the person's **first** invitation. Once it has passed, Skip is gone and the sign-in is held until the activity is done. 0 means no deadline. |
 | A person with no passkey (`noPasskey`) | `leave` | `leave`: not asked. `invite`: asked, and can always skip. `require`: asked, and can skip only until the allotted time has passed. |
-| Registered by a person with no passkey as (`noPasskeyRole`) | `primary` | `primary`: a passwordless sign-in. `mfa`: a second factor. |
 | How a classical passkey is migrated (`method`) | `automatic` | `upgrade`: the person uses the classical passkey once, then an ML-DSA passkey **replaces it in place** on the same authenticator. `alongside`: an ML-DSA passkey is added beside it. `automatic`: `alongside` where the person's passkey policy offers two lanes, `upgrade` where it offers one. |
 | A passkey counts as post-quantum when (`attestation`) | `any` | `any`: its key algorithm is ML-DSA. `post-quantum`: its recorded attestation is post-quantum too; a person whose ML-DSA passkey has a classical attestation, or none recorded, is asked for one beside it, whatever `method` says. |
 | A person with no passkey whose device cannot make ML-DSA (`noPasskeyFallback`) | `none` | `none`: ML-DSA only. `classical`: a retry with the classical algorithms is offered after the ML-DSA registration fails — a classical passkey is better than a password, and the person is asked to migrate it later. |
+
+Until [#1135](https://github.com/rcbj/iya-sts/issues/1135) a profile also
+had **Registered by a person with no passkey as** (`noPasskeyRole`,
+`primary` or `mfa`), and a person was asked about their passkeys one role at
+a time. A passkey has no role now, so the field is gone; a profile stored
+with it still loads.
 
 ### Targeting by group
 
@@ -79,7 +85,7 @@ POST /admin-api/policies/save-postLogin-policy
   "selectGroups": ["pqc-pilot"], "precedence": 10,
   "enabled": true, "activity": "pqc-passkey-migration",
   "snoozeDays": 3, "graceDays": 30,
-  "noPasskey": "invite", "noPasskeyRole": "primary" }
+  "noPasskey": "invite" }
 ```
 
 ## What the person sees
@@ -159,7 +165,7 @@ runs:
 **The rules come from the policy.** For each person, the profile the policy
 selects for them on **Directory → Policies** — a named profile that reaches
 one of their groups, else `default` — supplies the snooze, the allotted
-time, the role, the method, what a person with no passkey is asked, the
+time, the method, what a person with no passkey is asked, the
 attestation and the fallback. The started activity only switches it on.
 
 **Excluding still works.** A named profile with `enabled` off that reaches a

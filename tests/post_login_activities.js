@@ -164,7 +164,7 @@ function doubles(people, groupMembers, otherMembers, groupNames) {
   const postLogin = {
     dueFor: function (u) {
       return due[u] ? Object.assign({ activity: 'pqc-passkey-migration',
-        role: 'primary', reason: 'classical', required: false,
+        reason: 'classical', required: false,
         enforceable: true, method: 'upgrade', fallback: 'none',
         snoozeDays: 7, graceDays: 30, invitedAt: 0, deadline: 0,
         profile: 'default' }, due[u]) : null;
@@ -626,7 +626,7 @@ function childMain() {
     dueNow[B] = true;
     const realDue = postLogin.dueFor;
     postLogin.dueFor = function (u) {
-      return dueNow[u] ? { activity: 'pqc-passkey-migration', role: 'primary',
+      return dueNow[u] ? { activity: 'pqc-passkey-migration',
         reason: 'classical', required: false, enforceable: true,
         method: 'upgrade', fallback: 'none', snoozeDays: 7, graceDays: 30,
         invitedAt: 0, deadline: 0, profile: 'default' } : null;

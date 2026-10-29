@@ -40,7 +40,12 @@
 //                  and `admin.passkey.enrolled` names the administrator),
 //                  or `device-link` (#1108: `/portal/devices` proving a
 //                  platform credential again to link it to a device)
-//   role           `primary`, `mfa` or ''
+//   role           the USE of an assertion: `primary` (in place of a
+//                  password) or `mfa` (after one); '' for a registration
+//                  and where no step applied. Until #1135 it was the
+//                  key's enrolled role, recorded on registrations too; a
+//                  key has none now, so a registration row written since
+//                  carries '' and an older one keeps what it had
 //   lane           `classical` or `pqc` (#643)
 //   application    (#1108) the application the ceremony was for — the
 //                  pending sign-in's client or relying party — or '' where
@@ -190,6 +195,7 @@ interface CeremonyEvent {
   ceremony: 'registration' | 'assertion';
   door: string;
   username?: string;
+  // The use an assertion answered (`primary` | `mfa`), '' otherwise.
   role?: string;
   lane?: string;
   outcome: 'success' | 'refused';

@@ -43,6 +43,14 @@
 // upgrades a classical passkey at a sign-in, not on this page. A key's
 // upgrade HISTORY is still drawn (`keyUpgradeHistory()`).
 //
+// A PASSKEY CARRIES NO ROLE SINCE #1135 (rcbj, 2026-10-29). Until then a
+// key was enrolled `primary` (instead of a password) or `mfa` (a second
+// step), the page asked which at every enrolment, and every row said which
+// it was. A person registering a passkey is asked nothing else now: the
+// realm decides how every key may be used, at the sign-in
+// (`webauthnPolicy.useAllowed()`). The view carries no `role` on a row or
+// on a waiting enrolment, and `begin`'s `role` is accepted and ignored.
+//
 // **THE CREDENTIAL ID IS THE ONE IDENTIFIER THESE OPERATIONS TAKE FROM A
 // BODY, AND THE USERNAME NEVER IS**: `removeKey()` and `renameKey()` look the
 // id up among THIS PERSON's keys — the token's subject — so one belonging to
@@ -79,8 +87,14 @@ const ENROL_KEY_FORM = vz.object({
   action: vt.opt(vt.oneOf(['begin', 'finish', 'cancel']))
     .describe('`begin` mints a challenge, `finish` answers it, `cancel` ' +
               'drops it.'),
+  // IGNORED SINCE #1135: a passkey carries no role, so the person is never
+  // asked whether it replaces their password or follows it — the realm
+  // decides how every key may be used, at the sign-in. The field is still
+  // ACCEPTED, because a caller written before #1135 (the parent project's
+  // vendored protocol jobs among them) sends it, and refusing it would break
+  // an enrolment over a question nobody asks any more.
   role: vt.opt(vt.oneOf(['primary', 'mfa']))
-    .describe('`begin`: instead of a password, or a second step.'),
+    .describe('Ignored since #1135: a passkey carries no role.'),
   // WHICH CALL TO ACTION WAS PRESSED (#470): *Create a passkey* or *Use a
   // security key*. A passkey takes its provider's name and is renamed
   // afterwards.
@@ -188,7 +202,9 @@ class AccountKeys {
       provider: credentials.keyProvider(one) || '',
       enrolledAt: one.enrolledAt || 0,
       lastUsedAt: one.lastUsedAt || 0,
-      role: one.role,
+      // NO `role` SINCE #1135: every key answers either step as the realm
+      // allows, so a row saying "instead of a password" or "second step"
+      // would describe a choice that no longer exists.
       // A SYNCED KEY THE REALM NO LONGER TAKES (#528): refused at sign-in, so
       // the person is told here before they meet the refusal.
       syncedRefused: !!passkeyPolicy.backupEligibleRefusal(
@@ -241,10 +257,15 @@ class AccountKeys {
     return row;
   }
 
-  // ADDING ONE: the policy, the cap and the roles, or — while a challenge is
-  // held — the ceremony to arm. The ceremony is armed while one is held and
-  // never otherwise, so a reload with nothing pending is the form again
-  // rather than a ceremony against a challenge that has gone. THE BASE IS THE
+  // ADDING ONE: the policy and the cap, or — while a challenge is held — the
+  // ceremony to arm. `allowed` is `webauthnPolicy.enrolmentAllowed()`, the
+  // question `beginKeyEnrolment()` asks again at the door: until #1135 the
+  // view carried `roles`, the roles the realm let a key be enrolled in, and
+  // the page asked the person to choose one; a key carries no role now, and
+  // what is left is whether the realm accepts a key for any use at all. The
+  // ceremony is armed while one is held and never otherwise, so a reload
+  // with nothing pending is the form again rather than a ceremony against a
+  // challenge that has gone. THE BASE IS THE
   // ONE THE REQUEST ARRIVED ON: a realm's base carries a path and the RP ID
   // is its host, which `authn.rpIdOf()` gets right.
   /**
@@ -270,7 +291,8 @@ class AccountKeys {
                         count: mechanisms.keys.length,
                         atCap: mechanisms.keys.length >=
                                policy.maxKeysPerPerson,
-                        roles: [], kinds: [], pending: null,
+                        allowed: !!webauthnPolicy.enrolmentAllowed().ok,
+                        kinds: [], pending: null,
                         // The lanes a new passkey may be created in (#643):
                         // the page asks which only where there are two.
                         lanes: webauthnPolicy.lanes() };
@@ -283,8 +305,7 @@ class AccountKeys {
         passkeyPolicy.displayNameFor(username,
           String((caller.session.user || {}).name || username)), lane);
       out.pending = {
-        id: pending.id, kind: pending.kind || '', role: pending.role,
-        lane: lane,
+        id: pending.id, kind: pending.kind || '', lane: lane,
         challenge: pending.challenge, rpId: rpId, user: user.name,
         userHandle: pending.userHandle || '',
         display: user.displayName,
@@ -306,12 +327,6 @@ class AccountKeys {
           retrying: pending.classicalOnly === true &&
             !(pending.clientRule && pending.clientRule.narrowed) }
       };
-    }
-    if (policy.mfaAllowed) {
-      out.roles.push('mfa');
-    }
-    if (policy.primaryAllowed) {
-      out.roles.push('primary');
     }
     out.kinds = webauthnPolicy.authenticatorKinds();
     log.debug("Leaving AccountKeys.enrolView().");
@@ -475,12 +490,12 @@ class AccountKeys {
 
     if (action === 'begin') {
       // THE POLICY IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE: a form
-      // posted by hand while `webauthn.primaryAllowed` is off must not arm a
-      // ceremony that `addKey()` would then refuse after somebody had
+      // posted by hand while the realm accepts a key for no use must not
+      // arm a ceremony that `addKey()` would then refuse after somebody had
       // touched their key. `beginKeyEnrolment()` makes every one of those
-      // checks.
+      // checks. `body.role` is not passed (#1135): it is ignored.
       const begun: Json = credentials.beginKeyEnrolment(username, {
-        role: String(body.role || 'mfa'), kind: String(body.kind || ''),
+        kind: String(body.kind || ''),
         // The lane (#643), refused there where the realm does not offer it.
         lane: String(body.lane || 'classical'),
         // The classical retry (#944), refused there where it is forbidden.
@@ -494,7 +509,7 @@ class AccountKeys {
         category: 'authentication', action: 'portal.key.started',
         actor: username, outcome: 'success',
         summary: username + ' started creating a passkey',
-        detail: { role: begun.role, kind: begun.kind || 'any',
+        detail: { kind: begun.kind || 'any',
                   lane: begun.lane || 'classical',
                   classicalOnly: !!begun.classicalOnly,
                   excluded: begun.exclude.length,
@@ -606,15 +621,14 @@ class AccountKeys {
       audit.record({
         category: 'authentication', action: 'portal.key.enrolled',
         actor: username, outcome: 'success',
-        summary: username + ' created a passkey as a ' + done.role +
-                 ' credential',
-        detail: { role: done.role, held: done.held,
+        summary: username + ' created a passkey',
+        detail: { held: done.held,
                   algorithm: credentials.keyAlgorithm(enrolled).text,
                   lane: credentials.keyLane(enrolled),
                   address: websecurity.addressOf(req) }
       });
-      log.info('portal: ' + username + ' created a "' + done.role +
-               '" passkey and now holds ' + done.held + '.');
+      log.info('portal: ' + username + ' created a passkey and now holds ' +
+               done.held + '.');
       const t = ctx.translatorFor(username);
       // THE PLAIN PAGE, with the new key on its row under its default name
       // (rcbj, 2026-10-28; #470 steered to `?named=` and a nickname prompt
@@ -752,7 +766,7 @@ class AccountKeys {
         mirrors: 'GET ' + ctx.PORTAL + '/keys',
         summary: 'Your passkeys, and adding one',
         description: 'Each passkey you hold (`keys`), grouped `device` or ' +
-          '`security-key`, with its name, provider, dates, role, algorithm, ' +
+          '`security-key`, with its name, provider, dates, algorithm, ' +
           'what its attestation proved and whether the realm\'s passkey ' +
           'policy refuses it at sign-in. `enrol` says whether you may add ' +
           'one and, while a registration is waiting, the ceremony to run ' +
@@ -777,7 +791,10 @@ class AccountKeys {
           'one. A refusal carries the page\'s `view`, except a browser ' +
           'error reported with its own `capabilities` property while the ' +
           'classical retry is offered (#961): that enrolment stays and the ' +
-          'answer carries no view.',
+          'answer carries no view. `role` is accepted and ignored since ' +
+          '#1135: a passkey carries no role, and the realm decides how ' +
+          'every key may be used. `enrol.allowed` says whether the realm ' +
+          'accepts a new passkey for any use.',
         body: ENROL_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

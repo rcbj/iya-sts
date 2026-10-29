@@ -210,7 +210,7 @@ function body(t) {
   const enrolled = credentials.addKey(ALICE, {
     credentialId: 'dev-cred-' + STAMP,
     publicKeyJwk: publicJwk().pub, signCount: 0, label: 'platform key',
-    attachment: 'platform' }, 'mfa');
+    attachment: 'platform' });
   const webauthn = devices.addKey(laptop.device.id, { kind: 'webauthn',
     value: 'dev-cred-' + STAMP });
   t.check(enrolled.ok && webauthn.ok &&

@@ -5204,16 +5204,19 @@ const CODES = [
     spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
       '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0044',
-    summary: 'Security keys are switched off in this realm ' +
-      '(webauthn.enabled), so no new key may be enrolled.',
+    summary: 'Passkeys are switched off in this realm ' +
+      '(webauthn.enabled), so no new key may be enrolled. A key already ' +
+      'held goes on answering sign-in steps.',
     spec: 'HTTP 200 page / action result with the reason' },
   { code: 'STS-AUTHN-0045',
-    summary: 'A passwordless (primary) security key may not be enrolled in ' +
-      'this realm (webauthn.primaryAllowed).',
+    summary: 'A passkey was refused as a first factor (passwordless): this ' +
+      'realm does not allow it (webauthn.primaryAllowed). Until #1135 it ' +
+      'refused enrolling a key in the primary role.',
     spec: 'HTTP 200 page / action result with the reason' },
   { code: 'STS-AUTHN-0046',
-    summary: 'A second-factor security key may not be enrolled in this realm ' +
-      '(webauthn.mfaAllowed).',
+    summary: 'A passkey was refused as a second factor: this realm does not ' +
+      'allow it (webauthn.mfaAllowed). Until #1135 it refused enrolling a ' +
+      'key in the mfa role.',
     spec: 'HTTP 200 page / action result with the reason' },
   { code: 'STS-AUTHN-0047',
     summary: 'The credential store\'s setDirectory() hooks were refused ' +
@@ -5297,8 +5300,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-AUTHN-0066',
     summary: 'A security key was to be recorded or enrolled in a role that ' +
-      'is neither \'primary\' nor \'mfa\'.',
-    spec: 'action result with the reason' },
+      'is neither \'primary\' nor \'mfa\'. Retired by #1135: a key ' +
+      'carries no role.',
+    spec: 'action result with the reason', retired: true },
   { code: 'STS-AUTHN-0067',
     summary: 'A security key was not enrolled because the person already ' +
       'holds webauthn.maxKeysPerPerson keys.',
@@ -5313,7 +5317,7 @@ const CODES = [
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0070',
     summary: 'Removing a security key was refused because it is the ' +
-      'person\'s last way in (no password and no other primary key).',
+      'person\'s last way in (no password and no other passkey).',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0071',
     summary: 'Reading a person\'s authenticator-app enrolment from the ' +
@@ -5635,17 +5639,18 @@ const CODES = [
   // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS, AND THE SIGN-IN
   // ENROLMENT A REQUIRED SECOND FACTOR ASKS FOR (2026-09-13).
   { code: 'STS-AUTHN-0160',
-    summary: 'Disabling somebody\'s passwordless sign-in was refused: they ' +
-      'hold no security key in the primary role.',
+    summary: 'Removing somebody\'s passkeys was refused: they hold none ' +
+      '(until #1135, none in the primary role).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-AUTHN-0161',
-    summary: 'Disabling somebody\'s passwordless sign-in was refused: they ' +
-      'have no password, so their primary security keys are their only way ' +
-      'in.',
+    summary: 'Removing somebody\'s passkeys (or their second factors) was ' +
+      'refused: they have no password, so their passkeys are their only ' +
+      'way in.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-AUTHN-0162',
     summary: 'Disabling somebody\'s second factors was refused: they hold no ' +
-      'authenticator app, no mfa-role security key and no recovery codes.',
+      'authenticator app, no passkey and no recovery codes (until #1135, ' +
+      'no mfa-role security key).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-AUTHN-0163',
     summary: 'The credential store refused a write while security keys or ' +
@@ -5821,9 +5826,9 @@ const CODES = [
     spec: 'none — logged, and the service starts with nobody able to sign in' },
   { code: 'STS-AUTHN-0206',
     summary: 'Product mode: a passwordless sign-in named a person who holds ' +
-      'no security key that signs in on its own, and the sign-in screen ' +
-      'does not enrol one — enrolling there would give the account to ' +
-      'whoever claimed the name first. A primary key is added on ' +
+      'no passkey (until #1135, none in the primary role), and the ' +
+      'sign-in screen does not enrol one — enrolling there would give the ' +
+      'account to whoever claimed the name first. A passkey is added on ' +
       '/portal/keys, by an activation link or by an operator. Development ' +
       'enrols on first use (mode.enrolsKeysOnFirstUse()).',
     spec: 'none — the sign-in screen is drawn again with the reason' },
@@ -6063,12 +6068,13 @@ const CODES = [
       'factor was turned off (NIST SP 800-63B-4 section 3.2.2, #64).',
     spec: '' },
   { code: 'STS-AUTHN-0253',
-    summary: 'A security key or passkey was refused as a first factor: this ' +
-      'realm\'s authentication policy does not accept one (#64).',
+    summary: 'A passkey was refused as a first factor: this realm\'s ' +
+      'authentication policy does not accept one (#64).',
     spec: 'sign-in screen with the reason' },
   { code: 'STS-AUTHN-0254',
-    summary: 'A new security key was refused as a second factor: this ' +
-      'realm\'s authentication policy does not accept one (#64).',
+    summary: 'A passkey was refused as a second factor: this realm\'s ' +
+      'authentication policy does not accept one (#64; until #1135 it ' +
+      'refused a NEW key enrolled in the mfa role).',
     spec: 'sign-in screen or portal page with the reason' },
   { code: 'STS-AUTHN-0255',
     summary: 'A password was refused as a first factor: this realm\'s ' +
@@ -6598,8 +6604,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-AUTHN-0383',
     summary: 'A sign-in after an account recovery could not be offered the ' +
-      'registration of a passkey (#724): security keys are switched off, or ' +
-      'not allowed as a second factor, in this realm. The session is ' +
+      'registration of a passkey (#724): passkeys are switched off, or ' +
+      'accepted for no use, in this realm (until #1135, also where a key ' +
+      'was not allowed as a second factor). The session is ' +
       'refused instead (STS-AUTHN-0381), and an administrator has to help.',
     spec: 'none — the sign-in screen says why' },
   { code: 'STS-AUTHN-0390',
@@ -7052,7 +7059,8 @@ const CODES = [
   { code: 'STS-AUTHN-0475',
     summary: 'A post-login passkey registration was refused: the realm can ' +
       'no longer make the ML-DSA passkey asked for (`canRegister()`: ' +
-      'passkeys off, the role not allowed, no ML-DSA algorithm offered at ' +
+      'passkeys off, no new key accepted for any use, no ML-DSA algorithm ' +
+      'offered at ' +
       'registration — webauthn.algorithms, whose default list holds them ' +
       '— the post-quantum lane refused where both lanes are on, or an ' +
       'upgrade refused for the upgrade method), so the activity cannot be ' +
@@ -7143,6 +7151,12 @@ const CODES = [
       'not one this realm has. Each missing name is listed; nothing was ' +
       'started (#1123).',
     spec: 'none (HTTP 400 from /admin-api/post-login-activities/start)' },
+  { code: 'STS-AUTHN-0531',
+    summary: 'A new passkey was not enrolled: this realm accepts a passkey ' +
+      'neither as a first factor nor as a second factor ' +
+      '(webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication ' +
+      'policy), so it could never be used (#1135).',
+    spec: 'action result or page with the reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -22505,8 +22519,9 @@ const CODES = [
     summary: 'An activation set a password whose confirmation did not match.',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0007',
-    summary: 'An activation chose no way to sign in: no password, and no ' +
-      'security key used instead of one.',
+    summary: 'An activation chose no way to sign in: no password, and ' +
+      'either no passkey or a realm where a passkey cannot sign anybody in ' +
+      'on its own (#1135).',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0008',
     summary: 'A new password set from the portal (at activation or on the ' +
@@ -22814,9 +22829,9 @@ const CODES = [
       'went on without it.',
     spec: '' },
   { code: 'STS-PORTAL-0101',
-    summary: 'A security key was chosen during an activation instead of a ' +
-      'password and its enrolment could not be started (the mechanism or ' +
-      'role is off, or the authentication policy refuses it), so the ' +
+    summary: 'A passkey was chosen during an activation instead of a ' +
+      'password and its enrolment could not be started (the mechanism is ' +
+      'off, or the realm accepts a passkey for no use), so the ' +
       'activation was refused rather than finished with no way in.',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0102',

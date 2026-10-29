@@ -129,8 +129,8 @@ class KeysPages {
       (one.lastUsedAt
         ? t.html('portal.keys.lastUsed', { day: day(one.lastUsedAt) })
         : t.html('portal.keys.notUsed')) +
-      ' · ' + (one.role === 'primary' ? t.html('portal.keys.rolePrimary')
-                                      : t.html('portal.keys.roleMfa')) +
+      // NO ROLE (#1135): the row said "instead of a password" or "second
+      // step after your password" until a key stopped carrying one.
       '</div>' +
       // A ROW A LATER REGISTRATION MAY HAVE REPLACED ON ITS AUTHENTICATOR
       // (#1101): the Remove button below is the way to clear it.
@@ -163,10 +163,6 @@ class KeysPages {
       KeysPages.renameForm(one, t) +
       '<details><summary>' + t.html('portal.keys.details') +
       '</summary><table>' +
-      '<tr><th>' + t.html('portal.keys.used') + '</th><td>' +
-      (one.role === 'primary' ? t.html('portal.keys.usedPrimary')
-                              : t.html('portal.keys.usedMfa')) +
-      '</td></tr>' +
       // The device serial an enterprise attestation named (#532).
       (att.deviceSerial
         ? '<tr><th>' + t.html('portal.keys.serial') + '</th><td>' +
@@ -216,8 +212,12 @@ class KeysPages {
       t.html('portal.keys.remove') + '</button></form></div></li>';
   }
 
-  // *LEARN MORE* (#470): the benefit first, then a fold for this service's
-  // own two roles and the backup rule.
+  // *LEARN MORE* (#470): the benefit first, then a fold for how this
+  // service uses a passkey and the backup rule. Until #1135 the fold
+  // explained the two roles a key was enrolled in and that the person chose
+  // one; now it says the service decides, so there is nothing to choose,
+  // and the line for a person with no password ("a passkey used as a second
+  // step needs one") went with the role it was about.
   /**
    * The *Learn more* fold.
    *
@@ -229,7 +229,7 @@ class KeysPages {
     const held = (view.keys || []).length;
     return '<details><summary>' + t.html('portal.keys.learnMore') +
       '</summary>' +
-      '<p class="note">' + t.html('portal.keys.learnRoles') + '</p>' +
+      '<p class="note">' + t.html('portal.keys.learnUse') + '</p>' +
       '<p class="note">' + t.html('portal.keys.learnWhere') + '</p>' +
       // The link to Devices is markup, so the sentence is two messages
       // around it (#539).
@@ -242,14 +242,12 @@ class KeysPages {
           '</p>'
         : (held === 1
             ? '<p class="note">' + t.html('portal.keys.learnOne') + '</p>'
-            : '')) +
-      (view.password ? '' : '<p class="note">' +
-        t.html('portal.keys.learnNoPassword') + '</p>') + '</details>';
+            : '')) + '</details>';
   }
 
   // WHERE THE PASSKEY LIVES, as radios (#470): `/portal/activate` asks with
-  // these, because its one form carries a password and a role as well; the
-  // passkey page asks with two buttons. Nothing to choose with one kind.
+  // these, because its one form carries a password as well; the passkey
+  // page asks with two buttons. Nothing to choose with one kind.
   /**
    * The kind, as radios.
    *
@@ -339,8 +337,8 @@ class KeysPages {
   // `web_portal_webauthn.ts` (through `common/web_webauthn.ts`'s
   // `offerFallback()`) only after the registration fails with an error it
   // is for. Where the account API says the realm allows the classical
-  // retry, a form that begins the enrolment again — the same role, kind
-  // and lane, `algorithms` `classical`, which the API refuses again where
+  // retry, a form that begins the enrolment again — the same kind and
+  // lane, `algorithms` `classical`, which the API refuses again where
   // the realm forbids it; where it does not, the sentence that this device
   // cannot make the passkey this service requires. Nothing for a ceremony
   // that asks for no ML-DSA, or that is the retry already.
@@ -370,8 +368,6 @@ class KeysPages {
         ? '<form method="post" action="' + PATH + '" ' +
           'id="wa-retry-classical-form">' +
           '<input type="hidden" name="action" value="begin">' +
-          '<input type="hidden" name="role" value="' +
-          kit.esc(pending.role || 'mfa') + '">' +
           (pending.kind
             ? '<input type="hidden" name="kind" value="' +
               kit.esc(pending.kind) + '">' : '') +
@@ -386,8 +382,12 @@ class KeysPages {
   }
 
   // ADDING A KEY: the ceremony while one is waiting, else the form with the
-  // role and the two calls to action — two submit buttons of one form, so
-  // the button pressed is the kind.
+  // two calls to action — two submit buttons of one form, so the button
+  // pressed is the kind. NOTHING ELSE IS ASKED (#1135, rcbj): until then
+  // the form asked "How will you use it?" — instead of the password, or as
+  // a second step after it — which a person who had never heard of a second
+  // factor could not answer. The realm decides how a key is used, and the
+  // page only says, with `enrol.allowed` false, that it accepts none.
   /**
    * The enrolment block.
    *
@@ -436,25 +436,12 @@ class KeysPages {
         '<button class="secondary">' + t.html('portal.enrol.cancel') +
         '</button></form>' + KeysPages.fallback(pending, t) +
         '<p class="sub">' +
-        (securityKey
-          ? (pending.role === 'primary'
-              ? t.html('portal.enrol.creatingKeyPrimary')
-              : t.html('portal.enrol.creatingKeyMfa'))
-          : (pending.role === 'primary'
-              ? t.html('portal.enrol.creatingDevicePrimary')
-              : t.html('portal.enrol.creatingDeviceMfa'))) + '</p>';
+        (securityKey ? t.html('portal.enrol.creatingKey')
+                     : t.html('portal.enrol.creatingDevice')) + '</p>';
     }
-    const roles: string[][] = (enrol.roles || []).map(function (role: string) {
-      return role === 'mfa'
-        ? ['mfa', t.html('portal.enrol.asSecond'),
-           view.password ? t.html('portal.enrol.asSecondWhat')
-                         : t.html('portal.enrol.asSecondNoPassword')]
-        : ['primary', t.html('portal.enrol.instead'),
-           t.html('portal.enrol.insteadWhat')];
-    });
-    if (!roles.length) {
+    if (enrol.allowed === false) {
       return '<h2>' + t.html('portal.enrol.heading') + '</h2>' +
-        '<p class="note">' + t.html('portal.enrol.noRole') + '</p>';
+        '<p class="note">' + t.html('portal.enrol.notAccepted') + '</p>';
     }
     const labels: Json = { 'passkey': t.html('portal.enrol.createPasskey'),
                            'security-key':
@@ -464,16 +451,6 @@ class KeysPages {
         ? '<p class="note">' + t.html('portal.enrol.addsNew') + '</p>' : '') +
       '<form method="post" action="' + PATH + '">' +
       '<input type="hidden" name="action" value="begin">' +
-      (roles.length > 1
-        ? '<p class="sub"><strong>' + t.html('portal.enrol.howUse') +
-          '</strong></p>' + roles.map(function (row: string[]): string {
-            return '<label class="chk"><input type="radio" name="role" ' +
-              'value="' + kit.esc(row[0]) + '"' +
-              (row[0] === roles[0][0] ? ' checked' : '') + '> ' + row[1] +
-              ' <span class="sub">' + row[2] + '</span></label>';
-          }).join('')
-        : '<input type="hidden" name="role" value="' + kit.esc(roles[0][0]) +
-          '"><p class="note">' + roles[0][1] + '. ' + roles[0][2] + '</p>') +
       KeysPages.laneChoice(enrol.lanes, t) +
       '<div class="ctas">' + (enrol.kinds || []).map(function (kind: string,
                                                                i: number) {
@@ -547,9 +524,14 @@ class KeysPages {
                 devices) +
           group(t.text('portal.keys.onSecurityKeys'), kit.ICONS.securityKey,
                 securityKeys) +
+          // WHETHER A PASSWORD ALONE SIGNS THEM IN, as a fact about the
+          // account: until #1135 it was said of the keys ("at least one of
+          // these is a second step"), each of which carried a role. A
+          // person with no password is told neither.
           '<p class="note">' + (view.mfaRequired
-            ? t.html('portal.keys.someSecond')
-            : t.html('portal.keys.noneSecond')) + ' ' +
+            ? t.html('portal.keys.someSecond') + ' '
+            : (view.password ? t.html('portal.keys.noneSecond') + ' '
+                             : '')) +
           t.html('portal.keys.lastWayIn') + '</p>'
         : '<p class="note">' + t.html('portal.keys.noneYet') + '</p>') +
       KeysPages.enrolBlock(view, t) + KeysPages.signalBlock(view.signals) +

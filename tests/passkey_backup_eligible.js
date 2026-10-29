@@ -356,14 +356,15 @@ function childMain() {
     r = await signIn('pkb-alice', alice, true);
     note(redirected(r), '1b. and signs in', r.status + ' ' +
          r.text.slice(0, 200));
-    // A second-factor key for dave, synced, while it is still allowed.
+    // A key for dave, synced, while it is still allowed (asked for as his
+    // second factor: he signs in with a password).
     const dave = makeAuthenticator(RPID, ORIGIN, 'eligible');
     const daveHandle = credentials.userHandleOf('pkb-dave', { mint: true });
     dave.setHandle(daveHandle);
     const daveAdded = credentials.addKey('pkb-dave', {
       credentialId: dave.credentialId, publicKeyJwk: dave.jwk,
-      userHandle: daveHandle, backupEligible: true }, 'mfa');
-    note(daveAdded.ok, '1c. (a backup-eligible second-factor key for dave, ' +
+      userHandle: daveHandle, backupEligible: true });
+    note(daveAdded.ok, '1c. (a backup-eligible key for dave, ' +
          'added while allowed)', JSON.stringify(daveAdded.errors || []));
 
     // 2. disallow: registration.
@@ -415,13 +416,13 @@ function childMain() {
     const erin = makeAuthenticator(RPID, ORIGIN, 'eligible');
     const refused = credentials.addKey('pkb-erin', {
       credentialId: erin.credentialId, publicKeyJwk: erin.jwk,
-      backupEligible: true }, 'primary');
+      backupEligible: true });
     note(!refused.ok && refused.reason === 'backup-eligible' &&
          errorCodes.codeOf(refused) === 'STS-AUTHN-0312',
          '5a. addKey(), the one writer, refuses BE=1 whatever door calls it',
          JSON.stringify(refused));
     const unread = credentials.addKey('pkb-erin', {
-      credentialId: erin.credentialId, publicKeyJwk: erin.jwk }, 'primary');
+      credentialId: erin.credentialId, publicKeyJwk: erin.jwk });
     note(unread.ok, '5b. and takes a key whose BE was never read (a key ' +
          'typed by value has no authenticator data)',
          JSON.stringify(unread.errors || []));

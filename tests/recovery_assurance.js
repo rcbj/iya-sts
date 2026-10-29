@@ -77,8 +77,9 @@
 //      not-weaker (product's default), a person who already holds a
 //      passkey, enrolled before the link is issued, is given an
 //      activation link. POST step=setup with a password and key_role=mfa
-//      stops at the key ceremony; a second person, totp=1 and no key
-//      role, stops at the authenticator step. Neither reaches finish().
+//      (ignored since #1135 beyond "register a passkey") stops at the key
+//      ceremony; a second person, totp=1 and no passkey, stops at the
+//      authenticator step. Neither reaches finish().
 //      Each has a pending recovery whose door is activation, the password
 //      verifies in product mode, the link is still outstanding, and a
 //      password sign-in starts no session (the recovery set-up step, and
@@ -320,7 +321,7 @@ function childMain() {
       const ANN = 'ra-ann-' + STAMP;
       ldapServer.createUser(ANN, {});
       credentials.addKey(ANN, { credentialId: 'ann-primary-' + STAMP,
-        publicKeyJwk: KEY, label: 'ann key' }, 'primary');
+        publicKeyJwk: KEY, label: 'ann key' });
       // Usernameless sign-in OFF, so the screen's own passkey button is not
       // what answers below.
       const rows = function (value) {
@@ -328,6 +329,17 @@ function childMain() {
           passkeyPolicy.DEFAULTS, { allowUsernameless: false,
                                     recoveryAssurance: value }));
       };
+
+      // A PASSKEY THAT IS NOT A SECOND FACTOR HERE (#1135). Until then
+      // these people's keys were `primary`, and a password sign-in asked
+      // for nothing more, so the recovery hold was what showed. A key has
+      // no role now: where the realm lets a passkey be a second factor, a
+      // person holding a password and a passkey is asked for the passkey
+      // after the password, which is not what C, D, H, I and J are about.
+      // `webauthn.mfaAllowed` off is the realm in which a passkey signs in
+      // on its own and is never the second step — the old `primary` key —
+      // and E, which IS about the second step, turns it back on.
+      config.setOverride('webauthn.mfaAllowed', false);
 
       // ==================================================================
       // C. UNDER any: TODAY'S BEHAVIOUR
@@ -407,11 +419,13 @@ function childMain() {
       // ==================================================================
       // E. A RECOVERY CODE AT THE SECOND-FACTOR STEP
       // ==================================================================
+      // A passkey may be the second factor again for E (see above C).
+      config.clearOverride('webauthn.mfaAllowed');
       const BOB = 'ra-bob-' + STAMP;
       ldapServer.createUser(BOB, {});
       credentials.setPassword(BOB, 'Bob-Pass-333!');
       credentials.addKey(BOB, { credentialId: 'bob-mfa-' + STAMP,
-        publicKeyJwk: KEY, label: 'bob key' }, 'mfa');
+        publicKeyJwk: KEY, label: 'bob key' });
       const set = credentials.beginBackupCodes(BOB);
       credentials.confirmBackupCodes(BOB, set.handle);
       r = await signInAt({ username: BOB, password: 'Bob-Pass-333!' });
@@ -464,6 +478,8 @@ function childMain() {
       // ==================================================================
       // F. UNDER operator-only: THE SELF-SERVICE DOORS
       // ==================================================================
+      // And off again for F onwards (see above C).
+      config.setOverride('webauthn.mfaAllowed', false);
       const self = credentials.issuePasswordReset(ANN, { source: 'self' });
       r = await spend(ANN, self.token, 'Ann-Pass-444!');
       note(r.status === 403 && /operator-only/.test(r.text) &&
@@ -562,21 +578,21 @@ function childMain() {
       // Section E left the row at operator-only. noteRecovery() writes
       // for that and for not-weaker, and writes nothing for `any` or for
       // a person who holds no passkey — so a false return must not fail
-      // the action. A primary key is not a second factor: without the
-      // hold, the password is an ordinary session. D2's set-up step is
-      // what shows the hold. setPassword() itself notes nothing; these
-      // doors do. The portal change and a self LDAP bind prove the
-      // current password and must not.
+      // the action. A passkey is not a second factor here (mfaAllowed off,
+      // above C): without the hold, the password is an ordinary session.
+      // D2's set-up step is what shows the hold. setPassword() itself
+      // notes nothing; these doors do. The portal change and a self LDAP
+      // bind prove the current password and must not.
       // ==================================================================
       const stsCrypto = require(ROOT + '/common/crypto');
       const errorCodes = require(ROOT + '/common/error_codes');
       const accountApi = require(ROOT + '/account-api/account_api');
-      // A person who holds only a primary passkey.
+      // A person who holds only a passkey (a way in on its own here).
       const primaryOnly = function (name) {
         ldapServer.createUser(name, {});
         const id = name + '-key-' + STAMP;
         credentials.addKey(name, { credentialId: id, publicKeyJwk: KEY,
-                                   label: name }, 'primary');
+                                   label: name });
         return id;
       };
       const doorOf = function (name) {
@@ -888,7 +904,7 @@ function childMain() {
             credentials.setPassword(nokdcPerson, nokdcOld);
             credentials.addKey(nokdcPerson, {
               credentialId: nokdcPerson + '-key-' + STAMP,
-              publicKeyJwk: KEY, label: nokdcPerson }, 'primary');
+              publicKeyJwk: KEY, label: nokdcPerson });
             const saved = rows('not-weaker');
             savedOk = !!(saved && saved.ok);
             assurance = String((passkeyPolicy.read() || {})
@@ -970,7 +986,7 @@ function childMain() {
           const CARA = 'ra-cara-' + STAMP;
           ldapServer.createUser(CARA, {});
           credentials.addKey(CARA, { credentialId: 'cara-primary-' + STAMP,
-            publicKeyJwk: KEY, label: 'cara key' }, 'primary');
+            publicKeyJwk: KEY, label: 'cara key' });
           token = issueLink(CARA);
           const writesAtSpend = failedWrites;
           r = await spend(CARA, token, 'Cara-Pass-111!');
@@ -1236,6 +1252,7 @@ function childMain() {
       }
 
       passkeyPolicy.reset('default');
+      config.clearOverride('webauthn.mfaAllowed');
       server.close();
     });
 

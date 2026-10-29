@@ -465,8 +465,11 @@ class PortalDevices {
       const held = (credentials.keysOf(who) || []).filter(function (key: Json) {
         return String(key.credentialId) === assertedId;
       })[0] || null;
+      // THE ROW'S `role` IS THE USE OF THE ASSERTION SINCE #1135, and a
+      // device link answers no sign-in step, so it is empty. Until #1135 it
+      // was the key's stored role, which a key no longer carries.
       webauthnCeremonies.record({ ceremony: 'assertion', door: 'portal',
-        username: who, role: String((held && held.role) || ''),
+        username: who, role: '',
         lane: held ? credentials.keyLane(held) : '',
         outcome: linked && linked.ok ? 'success' : 'refused',
         errorCode: linked && linked.ok ? '' : 'STS-DEVICE-0022',

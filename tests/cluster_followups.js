@@ -574,9 +574,8 @@ function childMain() {
                     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
                     signCount: 0, label: 'one' };
       const pair = await Promise.all([
-        credentials.addKeyClaimed(who, key, 'mfa'),
-        credentials.addKeyClaimed(who, Object.assign({}, key, { label: 'two' }),
-                                  'mfa')
+        credentials.addKeyClaimed(who, key),
+        credentials.addKeyClaimed(who, Object.assign({}, key, { label: 'two' }))
       ]);
       const rows = credentials.keysOf(who).filter(function (one) {
         return one.credentialId === 'cfu-credential-1';
@@ -590,7 +589,7 @@ function childMain() {
            JSON.stringify(pair.map(function (one) {
              return one.ok || errorCodes.codeOf(one);
            })) + ' rows=' + rows.length);
-      const onEntry = credentials.addKey(who, key, 'mfa');
+      const onEntry = credentials.addKey(who, key);
       note(!onEntry.ok && errorCodes.codeOf(onEntry) === 'STS-AUTHN-0095',
            'F2. and a registration of an id already on the entry is refused ' +
            'there, whatever door asks', JSON.stringify(onEntry));

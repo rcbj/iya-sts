@@ -1093,8 +1093,8 @@ class AuthnSurface extends WebSurface {
   }
 
   /**
-   * An assertion's options from the armed step: every key of the step's
-   * role, the authenticator picking.
+   * An assertion's options from the armed step: every key the person
+   * holds (no key has a role since #1135), the authenticator picking.
    *
    * @param c - `POST …/webauthn/options`'s answer
    * @returns the publicKey options

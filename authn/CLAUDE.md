@@ -307,7 +307,8 @@ Every page in that table also carries **Start over** (`start-over`, below).
 * **WHAT A PAGE MAY BE DRAWN FOR IS `stepProblem()`**, which both the
   shell's GET (the 400 the page always answered) and the view ask: an
   expired step, a code page for somebody with no app, a passkey page for
-  somebody holding no key of the step's role unless the step was minted for
+  somebody holding no key (of the step's role until #1135) unless the step
+  was minted for
   its enrolment ceremony (`atSignIn` — the screen's, and since #572 the
   set-up step's "Set up a passkey"), a recovery-code page with no unspent
   code, a password page after a password. **The emailed factor's pages
@@ -1057,7 +1058,7 @@ picker's two drawings in `tests/tools/web_surfaces.js`.
 ## THE WALLET DOOR (2026-09-17, #38)
 
 The sixth way to establish a session, after the password screen, the two
-WebAuthn roles, a federated assertion, a Kerberos ticket and a client
+WebAuthn uses, a federated assertion, a Kerberos ticket and a client
 certificate: a verified OpenID4VP presentation of a holder-bound SD-JWT VC this
 realm issued. What this module owns of it is small and is the part that has to
 agree with the rest of the screen:
@@ -1280,34 +1281,59 @@ exactly like an account with a second factor on it.
 
 Three changes and one deleted map:
 
-* **`webauthnPage()` draws from `credentials.keysOf()`**, filtered to the role
-  the pending step is about, so `mode` is an ASSERTION for anybody who holds a
-  key of that role and `allowCredentials` is a LIST — a person may hold several
-  and the specification has expected that since Level 1.
-* **The registration branch calls `credentials.addKey()`** with the role off
-  `step.passwordless`, after seeding the entry — the order is load-bearing now,
+* **`webauthnPage()` draws from `credentials.keysOf()`** — every key the
+  person holds since #1135 (until then filtered to the role the pending step
+  was about) — so `mode` is an ASSERTION for anybody who holds a key and
+  `allowCredentials` is a LIST — a person may hold several and the
+  specification has expected that since Level 1.
+* **The registration branch calls `credentials.addKey()`** (with no role since
+  #1135; until then the role came off `step.passwordless`), after seeding the
+  entry — the order is load-bearing now,
   because that function writes an ATTRIBUTE and answers "there is nobody called
   that in this realm's directory" when there is no entry. **A refused write is
   a refused ceremony**: the old code could not fail (a map takes anything), and
   reporting success on a credential that was not recorded would sign somebody
   in with a key that will not work next time. It is also where the
   `webauthn.*` policy finally bites.
-* **The assertion branch picks the key by `keyForAssertion()`**, on the role AND
-  the credential id the browser named. `allowCredentials` is a hint to the
+* **The assertion branch picks the key by `keyForAssertion(username, use,
+  id)`**, on the USE the step asks (`webauthnPolicy.useAllowed()`) AND the
+  credential id the browser named. `allowCredentials` is a hint to the
   browser; that function is the enforcement. The counter goes back through
   `credentials.noteKeyUsed()`, which is the one place it is recorded.
 
 ### `keyForAssertion()` is a function because it is a rule, and because of a mutant
 
-A `primary` key must not answer a SECOND-FACTOR step: it signs somebody in on
-its own, so accepting one there would let a person satisfy *a password AND a
-second factor* with a credential this service already considers sufficient by
-itself.
+**A PASSKEY HAS NO ROLE SINCE #1135 (rcbjBlueMars, 2026-10-29), and the rule
+this function enforces changed with it.** Until then a key was enrolled
+`primary` or `mfa`, and a `primary` key could not answer a SECOND-FACTOR step:
+it signed somebody in on its own, so accepting one there would have let a
+person satisfy *a password AND a second factor* with a credential this service
+already considered sufficient by itself. The decision reversed that reasoning
+on purpose — the person registering a passkey was asked which role at every
+enrolment, a question a non-technical person cannot answer — and **when a
+passkey is used is the AUTHENTICATION POLICY's decision, in layers; the key
+has no role and no say.** The realm's policy says what the realm supports: its
+`passkey` (first-factor) and `securityKey` (second-factor) rows, with
+`webauthn.primaryAllowed` / `webauthn.mfaAllowed`, asked by
+`webauthnPolicy.useAllowed()`. An application overrides it through
+`appAuthnMechanism` (first factors, `webauthn` among them, enforced by the
+issuance policy's authn-mechanism rule) and `appMfaMechanism` (second
+factors, `securityKey` among them, applied where the second step is chosen:
+`mfaAllowedFor()` / `narrowSecondFactor()`). So a held passkey makes a second
+step only where the realm, and the application if it overrides, accepts a
+passkey as a second factor. Every key a person holds is offered at either
+step, and `keyForAssertion()` asks `webauthnPolicy.useAllowed(use)` — read at
+the assertion because an operator may have changed it since the ceremony was
+armed — before it matches the credential id. A key used in place of a password and
+then after one in the same sign-in is still a single factor once: the step
+after a passwordless sign-in is not a second-factor step. What the ceremony
+log records as `role` is now the USE of an assertion, and `''` for a
+registration (`webauthn_ceremonies.ts`).
 
 It is EXPORTED, for one test and no caller. The state that makes it worth
 asserting is one person holding TWO keys — the only shape that tells *check the
 one the browser named* from *check the first one you find* — and **no door in
-this service can build it**, because the sign-in screen's checkbox is the only
+this service could build it** when this was written, because the sign-in screen's checkbox is the only
 enrolment there is and it is reserved for people who hold no second factor yet.
 `tests/webauthn_policy.js` builds it through the credential layer. That mutant
 survived the over-HTTP job, which is the third time this repository has recorded
@@ -1872,7 +1898,7 @@ and which one**.
 `credentials.mechanismsFor()` has reported `mfaRequired` since the portal was
 written. `/portal/keys` drew it as *a password alone will not sign you in*.
 **Nothing at this door read it.** A person who had enrolled a security key in
-the `mfa` role signed in with a password and an unticked checkbox, exactly like
+the `mfa` role (keys had roles until #1135) signed in with a password and an unticked checkbox, exactly like
 somebody who had enrolled nothing — so the sentence on that page was a
 description of an intention rather than of the service.
 
@@ -1890,10 +1916,18 @@ PERSON HOLDS, then the checkbox.**
 |---|---|---|
 | holds nothing | nothing | nothing — one factor, as before |
 | holds nothing | `use_webauthn` | the ceremony, which ENROLS on first use |
-| holds an `mfa` key | anything | the key |
+| holds a key | anything but `webauthn_only` | the key |
 | holds an authenticator app | anything | **the code** |
 | holds both | anything | the key, with a link to the code |
-| holds a `primary` key | `webauthn_only` | the passwordless ceremony, unchanged |
+| holds a key | `webauthn_only` | the passwordless ceremony, unchanged |
+
+**Since #1135 the rows say "a key", not "an `mfa` key" and "a `primary`
+key"**: a key has no role, so every key a person holds answers the step after
+a password and the passwordless ceremony alike, each as far as the
+authentication policy lets it — the realm's (`useAllowed()`) and the
+application's where it overrides (`appAuthnMechanism`, `appMfaMechanism`;
+`keyForAssertion()`, above). A held key makes a second step only where both
+accept a passkey as a second factor.
 
 ### The checkbox cannot override an enrolment, and here that is a bypass
 
@@ -2801,15 +2835,16 @@ module does with it:
   algorithm), the ceremony's where no row was found; `question()` alone
   decides whether it is post-quantum. With #643's switch off an ML-DSA key
   is made in the one lane and its row records no lane — it signs in.
-* **Both roles**, at the one line every passkey door reaches
+* **Both uses** (a key had a role until #1135; it is the step's use now),
+  at the one line every passkey door reaches
   (`startSessionHere()`): the passwordless step, the step after a password
   and the usernameless sign-in. `refusedSession()` draws 0356's sentence
   on the screen, as it does 0313's and 0315's.
 * **The passkey step's `allowCredentials` names only the person's
   post-quantum keys** while the selected profile requires one at sign-in
   (rcbj's decision 3), each key judged by `postQuantumRefusal()`, the
-  policy's own reading. **A person holding keys of the step's role and none
-  of them post-quantum is told before any ceremony**: `webauthnFacts()`
+  policy's own reading. **A person holding keys and none of them
+  post-quantum is told before any ceremony**: `webauthnFacts()`
   carries the refusal as `problem` (the page's error box) and
   `postQuantumRefused`, and `mfaWebauthnOptions()` refuses to arm it
   (STS-AUTHN-0356, a `session.refuse` row). The step's MODE is decided on
@@ -2850,10 +2885,10 @@ is either, and a synced key still answers `phr`, so nothing is narrowed.
 `beginAuthentication({ phishingClass: 'phrh' })` stores it on the pending
 record. `webauthnFacts()` then builds `allow` from keys
 `phishing_resistance.storedKeyEarnsHardware()` accepts (trusted attestation,
-BE recorded clear). A person who holds keys of the step's role and none of
+BE recorded clear). A person who holds keys and none of
 them qualify is told on the page (`hardwareRefused`, no ceremony button) and
 `mfaWebauthnOptions()` refuses to arm the ceremony (STS-AUTHN-0459, a
-`session.refuse` row). An assertion that names some other key of the role is
+`session.refuse` row). An assertion that names some other key of theirs is
 the same code in `finishWebauthn()`: `allowCredentials` is a hint. The
 usernameless sign-in is not this step — its list is empty — and stays
 refused after the ceremony (STS-OAUTH-0971).
@@ -2937,7 +2972,7 @@ per client).
 realm's `webauthn.postQuantumAllowCredentials` where the row is `realm` —
 chooses how `webauthnFacts()` builds `allowCredentials` while #718's
 requirement applies at sign-in. `narrow` (default) is #718's filter;
-`list-and-refuse` names every key of the role, and a classical assertion
+`list-and-refuse` names every key the person holds, and a classical assertion
 reaches `startSessionHere()` and is refused there by the existing
 `post-quantum` rule (`STS-AUTHN-0356`) — before any session, event or
 `session.start` row; the counter is spent, as for every verified assertion.
@@ -3264,7 +3299,8 @@ after computing `factor`:
 * **A requirement with no factor held mints a `pendingMfa` step with factor
   `enrol`** and answers its page (`mfaSetupFacts()` since #572) — buttons for an authenticator app and a
   security key, whichever `enrolmentOffered()` finds (`totp.offered()`;
-  `webauthnPolicy.offered()` with the `mfa` role allowed). Offered neither, the
+  `webauthnPolicy.offered()` with the `mfa` use allowed, `useAllowed('mfa')`
+  since #1135). Offered neither, the
   sign-in is refused naming the settings (`STS-AUTHN-0172`) rather than a
   required factor silently not being asked for.
 * **`/authn/mfa-setup`** takes the step id (its acts are `/authn-api`'s since
@@ -3518,6 +3554,10 @@ about the checkbox, met again one demand along. Somebody who holds NO second
 factor still enrols one here, as they always did.
 
 ## IN PRODUCT THE SIGN-IN SCREEN ENROLS NO PRIMARY KEY (2026-09-21)
+
+(Since #1135 a key has no role, so read "primary key" below as "a key, at
+the passwordless path": what is refused is the enrolment there, for a person
+who holds no key at all.)
 
 **The passwordless path was an account takeover in product mode.** The box
 reads no password, and `webauthnPage()` answers somebody holding no `primary`
@@ -3922,6 +3962,13 @@ one click from skipped.
   `create`, from the pending upgrade) and `mfaWebauthnAct()` to
   `postLoginUpgradeAct()`, which re-begins a dropped upgrade so the page can
   try again. `stepProblem('webauthn')` refuses a step whose upgrade is gone.
+* **The step and its view carry no role since #1135** (`step.postLogin.role`
+  and `view.postLogin.role` are gone): the activity asks for a post-quantum
+  passkey, not one in a role, and the key it makes answers either step as
+  the realm allows. The page (`web_authn_mfa.ts`'s `postLogin()`) says why in
+  one of four sentences, by reason alone — `authn.postLogin.subNone`,
+  `subClassical`, `subUpgrade`, `subAttestation` — where until then each had
+  a `…Primary` and a `…Mfa` form.
 * **A ceremony the device did not complete (#1105)** sends the person back
   to `/authn/post-login` with `postLogin.failed` (the error NAME) and writes
   `authn.post-login.unsupported` — except where #1103's classical retry is

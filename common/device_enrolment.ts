@@ -681,7 +681,9 @@ class DeviceEnrolment {
       const ok = !!(answer && answer.ok);
       webauthnCeremonies.record({
         ceremony: 'assertion', door: 'device-link', username: username,
-        role: key ? String(key.role || '') : '',
+        // The use an assertion answered (#1135); a device link answers no
+        // sign-in step.
+        role: '',
         lane: key ? credentials.keyLane(key) : '',
         outcome: ok ? 'success' : 'refused',
         errorCode: ok ? '' : String(errorCodes.codeOf(answer) ||

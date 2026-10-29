@@ -22,10 +22,11 @@
 //                  this is a NAMED profile — `default` off excludes nobody
 //                  from a started activity, a named one off does.
 //   activity       What is asked. One today, `pqc-passkey-migration`: a person
-//                  holding a CLASSICAL passkey in a role (primary, or second
-//                  factor) and no post-quantum one in it is asked to register
-//                  an ML-DSA passkey in that role. `common/post_login.ts`
-//                  decides who is due; `authn/authn.ts` asks.
+//                  holding a CLASSICAL passkey and no post-quantum one is
+//                  asked to register an ML-DSA passkey (a key has no role
+//                  since #1135, so neither has the activity).
+//                  `common/post_login.ts` decides who is due;
+//                  `authn/authn.ts` asks.
 //   snoozeDays     How long Skip puts the activity off for that person.
 //   graceDays      The allotted time (rcbj's answer 2): counted from the
 //                  person's FIRST invitation; past it Skip is gone and the
@@ -34,8 +35,9 @@
 //   noPasskey      What a person holding NO passkey is asked (answer 1):
 //                  `leave` alone, `invite` (always skippable), or `require`
 //                  (skippable until the grace period ends).
-//   noPasskeyRole  The role such a person registers it in: `primary` (a
-//                  passwordless sign-in) or `mfa` (a second factor).
+//   (noPasskeyRole The role such a person registered it in, until #1135
+//                  took the role off every key. Its attribute stays in the
+//                  schema, retired, so an entry that holds it still loads.)
 //   method         HOW a classical passkey is migrated (#1100): `upgrade`
 //                  (prove the classical passkey, then an ML-DSA one
 //                  REPLACES it in place on the same authenticator — one
@@ -122,7 +124,6 @@ interface PostLoginProfile {
   snoozeDays: number;
   graceDays: number;
   noPasskey: string;
-  noPasskeyRole: string;
   method: string;
   attestation: string;
   noPasskeyFallback: string;
@@ -178,8 +179,7 @@ const ACTIVITIES = ['pqc-passkey-migration'];
 const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   off: 'nobody this profile reaches is asked anything after signing in',
   pqcMigration: 'a person holding a classical passkey is asked, after ' +
-    'signing in, to register a post-quantum (ML-DSA) passkey in the same ' +
-    'role',
+    'signing in, to register a post-quantum (ML-DSA) passkey',
   methodUpgrade: 'the ML-DSA passkey replaces the classical one in place, ' +
     'after the person uses the classical one once',
   methodAlongside: 'the ML-DSA passkey is added beside the classical one',
@@ -197,14 +197,11 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   noGrace: 'it can always be skipped',
   noPasskeyLeave: 'a person holding no passkey is not asked',
   noPasskeyInvite: 'a person holding no passkey is invited to register a ' +
-    'post-quantum passkey as {{role}}, and may always skip it',
+    'post-quantum passkey, and may always skip it',
   noPasskeyRequire: 'a person holding no passkey is asked to register a ' +
-    'post-quantum passkey as {{role}}, and may skip it until the grace ' +
-    'period ends',
+    'post-quantum passkey, and may skip it until the grace period ends',
   appliesTo: 'applies to the members of {{list}}, at precedence ' +
     '{{precedence}}',
-  'param.primary': 'their primary sign-in',
-  'param.mfa': 'a second factor',
   'param.noGroup': 'no group'
 });
 
@@ -233,9 +230,8 @@ const FIELDS: PolicyField[] = [
     dflt: 'pqc-passkey-migration', values: ACTIVITIES,
     label: 'Activity',
     what: 'What is asked. pqc-passkey-migration: a person holding a passkey ' +
-          'made with a classical algorithm as their primary sign-in, or as ' +
-          'a second factor, is asked to register a post-quantum (ML-DSA) ' +
-          'passkey in the same role. Whether the classical passkey is ' +
+          'made with a classical algorithm is asked to register a ' +
+          'post-quantum (ML-DSA) passkey. Whether the classical passkey is ' +
           'replaced in place or kept beside it is the method\'s to say ' +
           '(below). Nobody is asked where the realm offers no ML-DSA ' +
           'algorithm at registration (the default webauthn.algorithms ' +
@@ -257,10 +253,6 @@ const FIELDS: PolicyField[] = [
     what: 'leave: not asked. invite: asked to register a post-quantum ' +
           'passkey, and may always skip it. require: asked, and may skip it ' +
           'only until the allotted time has passed.' },
-  { key: 'noPasskeyRole', attribute: 'stsPostLoginNoPasskeyRole',
-    type: 'enum', dflt: 'primary', values: ['primary', 'mfa'],
-    label: 'Registered by a person with no passkey as',
-    what: 'primary: a passwordless sign-in. mfa: a second factor.' },
   { key: 'method', attribute: 'stsPostLoginMethod', type: 'enum',
     dflt: 'automatic', values: ['automatic', 'upgrade', 'alongside'],
     label: 'How a classical passkey is migrated',
@@ -324,7 +316,12 @@ const SCHEMA = {
     return { name: field.attribute, what: field.what };
   })).concat([
     { name: 'description',
-      what: 'What the profile is for, for the next person.' }
+      what: 'What the profile is for, for the next person.' },
+    // RETIRED BY #1135, KEPT IN THE SCHEMA: no field reads it, and an entry
+    // written before still holds it, which a schema without it would refuse.
+    { name: 'stsPostLoginNoPasskeyRole',
+      what: 'Retired (#1135): the role a person with no passkey registered ' +
+            'one in. A passkey has no role; nothing reads it.' }
   ])
 };
 
@@ -805,8 +802,6 @@ class PostLoginPolicy {
     log.debug("Entering PostLoginPolicy.describe().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     const fill = serverProse.fill;
-    const role = rules.noPasskeyRole === 'mfa' ? SENTENCES['param.mfa']
-                                               : SENTENCES['param.primary'];
     const out = rules.enabled !== true ? [SENTENCES.off] : [
       SENTENCES.pqcMigration,
       rules.method === 'upgrade' ? SENTENCES.methodUpgrade
@@ -819,9 +814,9 @@ class PostLoginPolicy {
         ? fill(SENTENCES.grace, { days: String(rules.graceDays) })
         : SENTENCES.noGrace,
       rules.noPasskey === 'invite'
-        ? fill(SENTENCES.noPasskeyInvite, { role: role })
+        ? SENTENCES.noPasskeyInvite
         : (rules.noPasskey === 'require'
-          ? fill(SENTENCES.noPasskeyRequire, { role: role })
+          ? SENTENCES.noPasskeyRequire
           : SENTENCES.noPasskeyLeave)
     ].concat(rules.noPasskey !== 'leave' &&
              rules.noPasskeyFallback === 'classical'
