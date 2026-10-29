@@ -479,6 +479,14 @@ async function setUp() {
   // Said, not asserted: the job is the same in either mode.
   const mode = await facts.setting(realmBase() + "/admin-api", "global.mode");
   log.info("The realm " + REALM + " runs in " + String(mode) + " mode.");
+  // THE PASSKEY-ONLY SERVICE PROVIDER'S MECHANISMS are a named
+  // authentication policy's since #1148, made in the realm first.
+  const passkeyOnly = await api(REALM, "POST",
+    "/policies/save-named-authn-policy",
+    { name: "passkey-only", mechanisms: ["webauthn"] });
+  must(passkeyOnly.status === 200 && passkeyOnly.body && passkeyOnly.body.ok,
+       "saving the named authentication policy answered " +
+       passkeyOnly.status + " " + passkeyOnly.text.slice(0, 300));
   const w = {
     spOff: await createApplication(nameFor("sp-default"), "saml2"),
     spOn: await createApplication(nameFor("sp-idp-on"), "saml2",
@@ -487,7 +495,7 @@ async function setUp() {
                                       { saml2SpInitiatedSso: "FALSE" }),
     spMech: await createApplication(nameFor("sp-mech"), "saml2",
                                     { saml2IdpInitiatedSso: "TRUE",
-                                      appAuthnMechanism: ["webauthn"] }),
+                                      appAuthnPolicy: "passkey-only" }),
     rpOff: await createApplication(nameFor("rp-default"), "saml11"),
     rpOn: await createApplication(nameFor("rp-idp-on"), "saml11",
                                   { saml11IdpInitiatedSso: "TRUE" }),

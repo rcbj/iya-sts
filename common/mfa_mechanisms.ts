@@ -180,16 +180,20 @@ class MfaMechanisms {
   }
 
   /**
-   * The second factors an application entry allows, as written: none is
+   * The second factors an application allows: the second-factor list of the
+   * named authentication policy its `appAuthnPolicy` names (#1148). None is
    * whatever the realm allows. A value no mechanism has is kept, so a
-   * misspelt list allows nothing rather than everything.
+   * misspelt list — or a policy that does not exist — allows nothing rather
+   * than everything.
    *
    * @param fields - the entry's fields, or null
    * @returns the mechanism ids, each once
    */
   static allowedOf(fields: any): string[] {
     log.debug('Entering MfaMechanisms.allowedOf().');
-    const held = fields ? fields.appMfaMechanism : null;
+    // Required lazily, as `authn_mechanisms.ts` does it.
+    const held = fields
+      ? require('./authn_policy').mechanismsFor(fields).secondFactors : null;
     const out: string[] = [];
     [].concat(held === undefined || held === null ? [] : held)
       .forEach(function (one: any) {

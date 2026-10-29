@@ -48,10 +48,10 @@ const log = require('bunyan').createLogger({
 // 2026-10-07. `appCorsOrigin` and `appRequiredRole` were held as well and are
 // drawn on tabs of their own.
 // `appMfaMechanism` is not held by either and was asked for beside them.
+// Since #1148 the two are one reference, `appAuthnPolicy`.
 // `oauthConfidential` was held as well. #466 took it off the grid, because
 // the registry writes it from the token endpoint authentication method.
-const EVERY = ['description', 'appHomePageUrl', 'appAuthnMechanism',
-               'appMfaMechanism',
+const EVERY = ['description', 'appHomePageUrl', 'appAuthnPolicy',
                'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
                'appDelegationSubjectGroup', 'appDelegationSemantics'];
 const OAUTH = ['oauthClientId',

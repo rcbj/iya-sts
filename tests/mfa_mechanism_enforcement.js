@@ -6,8 +6,9 @@
 // File: tests/mfa_mechanism_enforcement.js
 //
 // ---------------------------------------------------------------------------
-// `appMfaMechanism` IS THE LIST OF SECOND FACTORS AN APPLICATION ALLOWS
-// (#475), `appAuthnMechanism`'s companion (#457).
+// THE SECOND FACTORS AN APPLICATION ALLOWS ARE A LIST (#475) — since #1148
+// the second-factor list of the named authentication policy the application
+// names (`appAuthnPolicy`), which replaced its own `appMfaMechanism`.
 //
 // rcbj's decisions (2026-10-07): it only NARROWS the realm's authentication
 // policy; it says WHICH second factors, never WHETHER one is needed; a
@@ -19,8 +20,8 @@
 //   A. `common/mfa_mechanisms.ts`: which second factor each kind of
 //      authentication event gave, the union over a session, and its ids
 //      held to the authentication policy's second-factor mechanisms.
-//   B. The field: a list with a checkbox per second factor, a value that is
-//      not one refused at the write.
+//   B. A named policy listing a value that is not a second factor is
+//      refused (STS-AUTHN-0533).
 //   C. The policy, through `issuance_gate.check()`: a browser issuance on a
 //      session whose second factor is not allowed is denied with the ones to
 //      re-prompt for; one that gave an allowed one is permitted; a session
@@ -127,28 +128,32 @@ function childMain() {
          'A. the ids are exactly the authentication policy\'s second-factor ' +
          'mechanisms', JSON.stringify({ policy: capable, ids: factors.IDS }));
 
-    // --- B. The field -----------------------------------------------------
-    const fields = await w.inRealm(function () {
-      return m.applications.applicationFields();
-    });
-    const row = fields.filter(function (one) {
-      return one.attribute === 'appMfaMechanism';
-    })[0];
-    note(row && row.type === 'array' && row.editable === 'multi' &&
-         JSON.stringify(row.choices) === JSON.stringify(factors.IDS),
-         'B. appMfaMechanism is a list with a checkbox per second factor',
-         JSON.stringify(row && { type: row.type, editable: row.editable,
-                                 choices: row.choices }));
+    // --- B. The policy's list ------------------------------------------
+    // Since #1148 the list is a NAMED AUTHENTICATION POLICY's, one per
+    // application here (`p-<id>`), and the application names it.
     const make = function (id, extra) {
       return w.inRealm(function () {
         return adminActions.applicationsAction(Object.assign({
           action: 'create', identifier: id }, extra || {}), [], {});
       });
     };
+    const policyOf = function (id) {
+      return 'p-' + id.replace(/[^a-z0-9-]/g, '-').slice(0, 60);
+    };
+    // A SECOND FACTOR ADDED to the application's own named policy, which
+    // the application is pointed at — what adding to appMfaMechanism was.
     const add = function (id, value) {
       return w.inRealm(function () {
-        return adminActions.applicationsAction({ action: 'add',
-          application: id, attribute: 'appMfaMechanism', value: value },
+        const name = policyOf(id);
+        const held = authnPolicy.namedPolicy(name);
+        const saved = authnPolicy.saveNamed(name, {
+          mechanisms: held ? held.mechanisms : [],
+          secondFactors: (held ? held.secondFactors : []).concat([value]) });
+        if (!saved.ok) {
+          return saved;
+        }
+        return adminActions.applicationsAction({ action: 'set',
+          application: id, attribute: 'appAuthnPolicy', value: name },
           [], {});
       });
     };
@@ -156,7 +161,7 @@ function childMain() {
     const bad = await add('mfa-gate', 'carrier-pigeon');
     note(bad && bad.ok === false &&
          /carrier-pigeon/.test((bad.errors || []).join(' ')),
-         'B. a value that is not a second factor is refused at the write',
+         'B. a policy listing a value that is not a second factor is refused',
          JSON.stringify(bad && bad.errors));
 
     // --- C. The policy ----------------------------------------------------
@@ -385,7 +390,9 @@ async function run(t) {
 
 module.exports = {
   name: 'mfa mechanism enforcement',
-  describe: 'appMfaMechanism as a list of the second factors an ' +
+  describe: 'the second factors an application allows (a named ' +
+            'authentication policy\'s, #1148) as a list of the second ' +
+            'factors an ' +
             'application allows: narrowing the realm\'s, proved then ' +
             'enrolled, and re-prompted for by the issuance policy (#475)',
   run: run

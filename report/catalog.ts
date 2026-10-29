@@ -526,20 +526,22 @@ function standardSources(): SourceSpec[] {
        field('enabled', 'boolean', 'Whether the relationship is enabled.')]),
     source('authMechanisms',
       'The realm authentication policy, one row per mechanism with ' +
-      'application realm, plus one row per mechanism an application ' +
-      'lists. An application that lists none inherits the realm policy ' +
-      'and adds no row. Not a count of sign-ins. Non-browser doors are ' +
-      'outside appAuthnMechanism.',
+      'application realm, plus one row per mechanism the named ' +
+      'authentication policy an application names (appAuthnPolicy) ' +
+      'lists. An application on the default policy, or whose policy ' +
+      'lists none, inherits the realm policy and adds no row. Not a ' +
+      'count of sign-ins. Non-browser doors are outside the policy.',
       [field('id', 'string',
          'The mechanism id. Realm rows use the policy names. An ' +
          'application row uses the value it lists.'),
        field('type', 'string',
          'both, primary, second or other for a realm row. primary for ' +
-         'appAuthnMechanism and second for appMfaMechanism.', undefined,
+         'a first-factor mechanism of the application\'s authentication ' +
+         'policy and second for a second factor.', undefined,
          ['both', 'primary', 'second', 'other']),
        field('enabled', 'boolean',
          'For a realm row, whether that policy flag is on. For an ' +
-         'application row, true because the application lists it; a ' +
+         'application row, true because its policy lists it; a ' +
          'listed second factor the realm has switched off stays off ' +
          'at sign-in.'),
        field('application', 'string',

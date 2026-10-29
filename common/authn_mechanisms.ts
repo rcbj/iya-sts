@@ -29,7 +29,10 @@
 //     answered (`context.credential.kind`). Every event of the session counts:
 //     a re-prompt APPENDS one, and the session then satisfies what it asked
 //     for.
-//   * **WHAT THE APPLICATION ALLOWS**, its entry's values, as written.
+//   * **WHAT THE APPLICATION ALLOWS**: since #1148 the first-factor list of
+//     the NAMED AUTHENTICATION POLICY its `appAuthnPolicy` names
+//     (`authn_policy.ts`'s `mechanismsFor()`), which replaced its own
+//     `appAuthnMechanism`; none named, or `default`, allows every one.
 //
 // **THE DECISION IS NOT HERE** (rcbj, 2026-09-22: every authorization
 // decision is XACML policy). The built-in issuance policy's
@@ -165,16 +168,20 @@ class AuthnMechanisms {
   }
 
   /**
-   * The mechanisms an application entry allows, as written: none is every
-   * one. A value no mechanism has is kept, so a misspelt list allows
-   * nothing rather than everything.
+   * The mechanisms an application allows: the first-factor list of the
+   * named authentication policy its `appAuthnPolicy` names (#1148). None is
+   * every one. A value no mechanism has is kept, so a misspelt list — or a
+   * policy that does not exist — allows nothing rather than everything.
    *
    * @param fields - the entry's fields, or null
    * @returns the mechanism ids, each once
    */
   static allowedOf(fields: any): string[] {
     log.debug('Entering AuthnMechanisms.allowedOf().');
-    const held = fields ? fields.appAuthnMechanism : null;
+    // Required lazily: the policy is a leaf over the directory slot, and
+    // this module is required by its callers before the slot is filled.
+    const held = fields
+      ? require('./authn_policy').mechanismsFor(fields).mechanisms : null;
     const out: string[] = [];
     [].concat(held === undefined || held === null ? [] : held)
       .forEach(function (one: any) {

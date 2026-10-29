@@ -65,14 +65,18 @@ function childMain() {
     const REDIRECT = 'https://rp.pru.example/cb';
     config.setOverride('oauth2.consentRequired', false);
 
+    // The mechanisms are a named authentication policy's (#1148), one per
+    // client here.
     const client = function (id, mechanisms) {
+      require(ROOT + '/common/authn_policy').saveNamed('p-' + id,
+        { mechanisms: mechanisms });
       applications.createApplication({ identifier: id,
         protocols: ['oauth2'],
         fields: { oauthClientId: id, oauthClientSecret: '',
                   oauthRedirectUri: [REDIRECT],
                   oauthTokenEndpointAuthMethod: 'none',
                   oauthGrantType: ['authorization_code'],
-                  appAuthnMechanism: mechanisms } });
+                  appAuthnPolicy: 'p-' + id } });
     };
     client('pru-passkey', ['webauthn']);
     client('pru-mixed', ['webauthn', 'password']);

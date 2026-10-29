@@ -190,6 +190,9 @@ async function childBody() {
                 oauthGrantType: ['authorization_code'],
                 oauthAllowedScope: ['openid'],
                 oauthTokenEndpointAuthMethod: 'client_secret_basic' } });
+    // Its allowed mechanisms are a named authentication policy's (#1148).
+    require(ROOT + '/common/authn_policy').saveNamed('acs-password-only',
+      { mechanisms: ['password'] });
     applications.createApplication({ identifier: NARROW,
       protocols: ['oauth2'],
       fields: { oauthClientId: NARROW, oauthClientSecret: SECRET,
@@ -197,7 +200,7 @@ async function childBody() {
                 oauthGrantType: ['authorization_code'],
                 oauthAllowedScope: ['openid'],
                 oauthTokenEndpointAuthMethod: 'client_secret_basic',
-                appAuthnMechanism: ['password'] } });
+                appAuthnPolicy: 'acs-password-only' } });
   });
   ldap.createUser(OTHER, { invent: false });
   const mine = await inRealm(function () {

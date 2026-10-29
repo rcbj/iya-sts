@@ -453,16 +453,33 @@ function projections(t) {
   t.equal(attempts[1].application, '',
     'a row with neither application nor client id is blank');
 
-  const mechs = sources.mechanismRows({ passwordPrimary: true }, [{
-    identifier: 'empty-app',
-    fields: {}
-  }, {
-    identifier: 'portal',
-    fields: {
-      appAuthnMechanism: ['webauthn'],
-      appMfaMechanism: ['totp']
+  // THE APPLICATION'S LISTS ARE ITS NAMED AUTHENTICATION POLICY'S (#1148):
+  // a directory holding one is installed for the call, and the one before it
+  // put back. A policy nobody holds adds no row.
+  const authnPolicy = require('../common/authn_policy');
+  const before = authnPolicy.directoryInstalled();
+  authnPolicy.setDirectory({
+    allAuthnPolicies: function () {
+      return [{ name: 'portal-two', dn: 'cn=portal-two,ou=authnPolicies',
+                attributes: { stsAuthnPolicyMechanism: ['webauthn'],
+                              stsAuthnPolicySecondFactor: ['totp'] } }];
     }
-  }]);
+  });
+  let mechs = [];
+  try {
+    mechs = sources.mechanismRows({ passwordPrimary: true }, [{
+      identifier: 'empty-app',
+      fields: {}
+    }, {
+      identifier: 'portal',
+      fields: { appAuthnPolicy: 'portal-two' }
+    }, {
+      identifier: 'dangling',
+      fields: { appAuthnPolicy: 'nobody-holds-this' }
+    }]);
+  } finally {
+    authnPolicy.setDirectory(before);
+  }
   let realm = 0;
   let password = null;
   let primary = null;
@@ -484,7 +501,8 @@ function projections(t) {
   }
   t.equal(realm, 11, 'every realm mechanism is one row');
   t.equal(mechs.length, 13,
-    'an empty application list adds nothing, and two listed values do');
+    'an application on the default policy adds nothing, one whose policy ' +
+    'lists two values adds two, and one naming no policy adds none');
   t.equal(password && password.enabled, true,
     'a realm flag that is on is enabled');
   t.equal(primary && primary.id, 'webauthn',
@@ -494,7 +512,7 @@ function projections(t) {
   t.equal(second && second.id, 'totp',
     'a listed second factor is a row');
   t.equal(second && second.type, 'second',
-    'appMfaMechanism is type second');
+    'a policy\'s second factor is type second');
 
   const attrs = sources.attributeSourceRows([{
     id: 'hr',

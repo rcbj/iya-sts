@@ -6,8 +6,10 @@
 // File: tests/authn_mechanism_enforcement.js
 //
 // ---------------------------------------------------------------------------
-// `appAuthnMechanism` IS A LIST OF THE SIGN-IN MECHANISMS AN APPLICATION
-// ALLOWS, AND IT IS ENFORCED AT EVERY BROWSER SIGN-IN (#457).
+// THE SIGN-IN MECHANISMS AN APPLICATION ALLOWS ARE A LIST, AND IT IS
+// ENFORCED AT EVERY BROWSER SIGN-IN (#457) — since #1148 the first-factor
+// list of the named authentication policy the application names
+// (`appAuthnPolicy`), which replaced its own `appAuthnMechanism`.
 //
 // rcbj's decisions: several mechanisms; enforced at run time in both modes;
 // browser-based authentication only; a session on the wrong mechanism is
@@ -17,8 +19,9 @@
 //
 //   A. `common/authn_mechanisms.ts`: which mechanism each kind of
 //      authentication event satisfies, and the union over a session.
-//   B. The field: a list with a checkbox per mechanism, a value that is not
-//      one refused at the write.
+//   B. The field: `appAuthnPolicy`, `default` or a named policy of the
+//      realm; a policy listing a value that is not a mechanism is refused
+//      (STS-AUTHN-0533), and so is a field naming no policy.
 //   C. The policy, through `issuance_gate.check()`: a browser issuance on a
 //      session that satisfies none of the allowed mechanisms is denied with
 //      the mechanisms to re-prompt for; one that satisfies one is permitted;
@@ -109,16 +112,22 @@ function childMain() {
          're-prompt appends an event', JSON.stringify(both));
 
     // --- B. The field -----------------------------------------------------
+    // Since #1148 the list is a NAMED AUTHENTICATION POLICY's, one per
+    // application here (`p-<id>`), and the application names it.
+    const authnPolicy = require(ROOT + '/common/authn_policy');
     const fields = await w.inRealm(function () {
       return m.applications.applicationFields();
     });
     const row = fields.filter(function (one) {
-      return one.attribute === 'appAuthnMechanism';
+      return one.attribute === 'appAuthnPolicy';
     })[0];
-    note(row && row.type === 'array' && row.editable === 'multi' &&
-         JSON.stringify(row.choices) === JSON.stringify(
-           require(ROOT + '/federation/federation').MECHANISM_IDS),
-         'B. appAuthnMechanism is a list with a checkbox per mechanism',
+    note(row && row.editable === 'set' &&
+         (row.choices || []).indexOf('default') === 0 &&
+         !fields.some(function (one) {
+           return one.attribute === 'appAuthnMechanism';
+         }),
+         'B. appAuthnPolicy names a policy — default or one of the ' +
+         'realm\'s — and appAuthnMechanism is gone (#1148)',
          JSON.stringify(row && { type: row.type, editable: row.editable,
                                  choices: row.choices }));
     const make = function (id, extra) {
@@ -127,10 +136,23 @@ function childMain() {
           action: 'create', identifier: id }, extra || {}), [], {});
       });
     };
+    const policyOf = function (id) {
+      return 'p-' + id.replace(/[^a-z0-9-]/g, '-').slice(0, 60);
+    };
+    // A MECHANISM ADDED to the application's own named policy, which the
+    // application is pointed at — what adding to appAuthnMechanism was.
     const add = function (id, value) {
       return w.inRealm(function () {
-        return adminActions.applicationsAction({ action: 'add',
-          application: id, attribute: 'appAuthnMechanism', value: value },
+        const name = policyOf(id);
+        const held = authnPolicy.namedPolicy(name);
+        const saved = authnPolicy.saveNamed(name, {
+          mechanisms: (held ? held.mechanisms : []).concat([value]),
+          secondFactors: held ? held.secondFactors : [] });
+        if (!saved.ok) {
+          return saved;
+        }
+        return adminActions.applicationsAction({ action: 'set',
+          application: id, attribute: 'appAuthnPolicy', value: name },
           [], {});
       });
     };
@@ -138,8 +160,16 @@ function childMain() {
     const bad = await add('mech-gate', 'smoke-signals');
     note(bad && bad.ok === false &&
          /smoke-signals/.test((bad.errors || []).join(' ')),
-         'B. a value that is not a mechanism is refused at the write',
+         'B. a policy listing a value that is not a mechanism is refused',
          JSON.stringify(bad && bad.errors));
+    const dangling = await w.inRealm(function () {
+      return adminActions.applicationsAction({ action: 'set',
+        application: 'mech-gate', attribute: 'appAuthnPolicy',
+        value: 'no-such-policy' }, [], {});
+    });
+    note(dangling && dangling.ok === false,
+         'B. appAuthnPolicy naming no policy of the realm is refused at the ' +
+         'write', JSON.stringify(dangling && dangling.errors));
 
     // --- C. The policy ----------------------------------------------------
     const ask = function (session, extra) {
@@ -337,7 +367,8 @@ async function run(t) {
 
 module.exports = {
   name: 'authn mechanism enforcement',
-  describe: 'appAuthnMechanism as a list of allowed sign-in mechanisms, ' +
+  describe: 'the allowed sign-in mechanisms (a named authentication ' +
+            'policy\'s first factors, #1148) as a list, ' +
             'enforced at every browser sign-in by the issuance policy and ' +
             're-prompted for (#457)',
   run: run

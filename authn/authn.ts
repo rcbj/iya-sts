@@ -10292,8 +10292,10 @@ class Authn {
   // ---------------------------------------------------------------------------
   // WHAT AN APPLICATION ENTRY DECLARES ABOUT HOW ITS PEOPLE AUTHENTICATE.
   //
-  // `appAuthnMechanism`, since #457 the LIST of mechanisms the application
-  // ALLOWS, from the SAME closed table `fedAuthnMechanism` uses —
+  // The first-factor list of the named authentication policy the
+  // application names (`appAuthnPolicy`, #1148; until then its own
+  // `appAuthnMechanism`), since #457 the LIST of mechanisms it ALLOWS, from
+  // the SAME closed table `fedAuthnMechanism` uses —
   // `federation.MECHANISM_IDS`. What it allows is ENFORCED by the issuance
   // policy (`common/authn_mechanisms.ts` has the facts); what is read here
   // is where the sign-in GOES: one usable mechanism routes as the one value
@@ -10336,8 +10338,9 @@ class Authn {
   // check made when it was written would be a check about the past.
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
-  // THE SECOND FACTORS AN APPLICATION ALLOWS (#475), its `appMfaMechanism` as
-  // written — empty for none, which leaves the realm's authentication policy
+  // THE SECOND FACTORS AN APPLICATION ALLOWS (#475): the second-factor list
+  // of the named authentication policy it names (#1148; until then its own
+  // `appMfaMechanism`) — empty for none, which leaves the realm's policy
   // as it is. Read where the second-factor step is chosen, on the way to the
   // screen and back from it, so the same reason as declaredMechanismsFor()'s
   // holds: a registry that throws costs the narrowing, never the sign-in,
@@ -10358,8 +10361,9 @@ class Authn {
       allowed = mfaLib.allowedOf(entry ? entry.fields : null);
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0016') +
-                'authn: the application registry threw while reading ' +
-                'appMfaMechanism for "' + name + '" and was ignored; the ' +
+                'authn: the application registry threw while reading the ' +
+                'authentication policy for "' + name + '" and was ignored; ' +
+                'the ' +
                 'realm\'s second factors apply: ' + ((e && e.message) || e));
       allowed = [];
     }
@@ -10381,8 +10385,8 @@ class Authn {
       // shortcut and never the screen. The issuance policy reads the same
       // registry and decides what it decides.
       log.error(errorCodes.tag('STS-AUTHN-0016') +
-                'authn: the application registry threw while reading ' +
-                'appAuthnMechanism for "' + applicationId + '" and was ' +
+                'authn: the application registry threw while reading the ' +
+                'authentication policy for "' + applicationId + '" and was ' +
                 'ignored; the sign-in screen itself is unaffected: ' +
                 e.message);
       log.debug("Leaving Authn.declaredMechanismsFor(). The registry threw.");
@@ -10390,7 +10394,21 @@ class Authn {
     }
     // THE LIST AS WRITTEN (#457) — what the issuance policy holds every
     // browser sign-in to — and the part of it this service can offer now.
+    // Since #1148 it is the first-factor list of the named authentication
+    // policy the application names; a name no policy holds allows nothing,
+    // and the screen says which policy is missing.
     const allowed = mechanismLib.allowedOf(entry ? entry.fields : null);
+    const named = entry
+      ? require('../common/authn_policy').mechanismsFor(entry.fields) : null;
+    if (named && named.missing) {
+      log.debug("Leaving Authn.declaredMechanismsFor(). Its policy is " +
+                "missing.");
+      return { allowed: allowed, usable: [], problem: 'The application "' +
+        applicationId + '" names the authentication policy "' +
+        named.policy + '", which this realm does not hold, so nobody can ' +
+        'sign in to it until the policy exists or its appAuthnPolicy ' +
+        'changes.' };
+    }
     if (!allowed.length) {
       log.debug("Leaving Authn.declaredMechanismsFor(). That entry allows " +
                 "every mechanism.");
@@ -10426,7 +10444,8 @@ class Authn {
     if (!usable.length) {
       problems.push('None of the mechanisms "' + applicationId + '" allows ' +
         'can be offered here, so nobody can sign in to it until its ' +
-        'appAuthnMechanism or this service\'s settings change.');
+        'authentication policy (appAuthnPolicy) or this service\'s ' +
+        'settings change.');
     }
     log.debug("Leaving Authn.declaredMechanismsFor(). Allowed " +
               allowed.join(', ') + '; usable ' +
@@ -10500,7 +10519,8 @@ class Authn {
     // THE APPLICATION'S OWN DECLARATION, WHICH IS READ BEFORE ITS RELATIONSHIPS
     // AND FALLS THROUGH TO THEM.
     //
-    // `appAuthnMechanism` is the explicit statement and
+    // The first-factor list of the application's authentication policy
+    // (`appAuthnPolicy`, #1148) is the explicit statement and
     // `appFederationRelationship` is an implicit one — naming a partner has
     // always MEANT "authenticate my people there" — so the explicit one is read
     // first. It falls through in exactly two cases and both are deliberate:
@@ -16484,7 +16504,8 @@ class Authn {
   // all of these hold, and this is the one place they are asked:
   //
   //   * THE APPLICATION SIGNS IN WITH A PASSKEY ALONE: its own
-  //     `appAuthnMechanism` is `webauthn` and nothing else, so the record is
+  //     authentication policy's first-factor list (`appAuthnPolicy`, #1148)
+  //     is `webauthn` and nothing else, so the record is
   //     passwordless by the application's declaration (`mechanismSource`
   //     `application`). A relationship's `webauthn`, a demand for two factors
   //     that overrode it (`forcePasswordless` false) or a list with anything

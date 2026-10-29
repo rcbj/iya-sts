@@ -7157,6 +7157,34 @@ const CODES = [
       '(webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication ' +
       'policy), so it could never be used (#1135).',
     spec: 'action result or page with the reason' },
+  { code: 'STS-AUTHN-0532',
+    summary: 'A named authentication policy was not saved: its name is not ' +
+      'lower-case letters, digits and hyphens (at most 63, starting with a ' +
+      'letter or digit), or it is "default", the realm\'s own policy ' +
+      '(#1148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0533',
+    summary: 'A named authentication policy was not saved: a first-factor ' +
+      'mechanism or a second factor it lists is not one this service knows ' +
+      '(#1148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0534',
+    summary: 'A named authentication policy was not deleted: an application ' +
+      'of this realm still names it (appAuthnPolicy), and would then allow ' +
+      'no mechanism (#1148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0535',
+    summary: 'This realm holds no named authentication policy of that name ' +
+      '(#1148): a delete, or an application\'s appAuthnPolicy, named one ' +
+      'that does not exist.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0536',
+    summary: 'An application names an authentication policy (appAuthnPolicy) ' +
+      'that this realm does not hold — written past the console, or the ' +
+      'policy was deleted by hand — so it allows no mechanism until the ' +
+      'policy exists or the reference changes (#1148).',
+    spec: 'none (logged; the sign-in is refused as for a mechanism the ' +
+      'application does not allow)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

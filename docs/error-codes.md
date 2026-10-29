@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4799** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4804** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 409
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 414
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
@@ -1609,6 +1609,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0522` | A named passkey profile's population could not be read for the day's passkey history row (#1109). The row is written without that profile's counts and says so. | none — logged; the history row records the profile as unread |
 | `STS-AUTHN-0530` | A post-login activity was not started: a group it names is not one this realm has. Each missing name is listed; nothing was started (#1123). | none (HTTP 400 from /admin-api/post-login-activities/start) |
 | `STS-AUTHN-0531` | A new passkey was not enrolled: this realm accepts a passkey neither as a first factor nor as a second factor (webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication policy), so it could never be used (#1135). | action result or page with the reason |
+| `STS-AUTHN-0532` | A named authentication policy was not saved: its name is not lower-case letters, digits and hyphens (at most 63, starting with a letter or digit), or it is "default", the realm's own policy (#1148). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0533` | A named authentication policy was not saved: a first-factor mechanism or a second factor it lists is not one this service knows (#1148). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0534` | A named authentication policy was not deleted: an application of this realm still names it (appAuthnPolicy), and would then allow no mechanism (#1148). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0535` | This realm holds no named authentication policy of that name (#1148): a delete, or an application's appAuthnPolicy, named one that does not exist. | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0536` | An application names an authentication policy (appAuthnPolicy) that this realm does not hold — written past the console, or the policy was deleted by hand — so it allows no mechanism until the policy exists or the reference changes (#1148). | none (logged; the sign-in is refused as for a mechanism the application does not allow) |
 
 ## STS-OAUTH
 

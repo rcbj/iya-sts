@@ -400,20 +400,23 @@ function childMain() {
     });
 
     // ==================================================================
-    // 5. appAuthnMechanism: wallet
+    // 5. a policy allowing the wallet alone
     // ==================================================================
     const set = await w.inRealm(function () {
-      // A LIST since #457: `wallet` is added to what the application allows.
+      // A LIST since #457, a named authentication policy's since #1148:
+      // the application names one allowing `wallet`.
+      require(ROOT + '/common/authn_policy').saveNamed('wsi-wallet-only',
+        { mechanisms: ['wallet'] });
       return adminActions.applicationsAction({
-        action: 'add', application: 'wsi-wallet',
-        attribute: 'appAuthnMechanism', value: 'wallet' }, [], {});
+        action: 'set', application: 'wsi-wallet',
+        attribute: 'appAuthnPolicy', value: 'wsi-wallet-only' }, [], {});
     });
     const where = await w.inRealm(function () {
       return m.authn.beginAuthentication({ returnTo: '/wsi/after',
         protocol: 'wsi-probe', application: 'wsi-wallet' });
     });
     note(set.ok && /^\/authn\/wallet\?authn=/.test(where),
-         '5a. appAuthnMechanism: wallet — set through the function the ' +
+         '5a. a policy allowing wallet — named through the function the ' +
          'console and /admin-api both go through — sends that ' +
          'application\'s people straight to the wallet door',
          JSON.stringify(set.errors || set.message || '') + ' ' + where);
@@ -434,9 +437,9 @@ function childMain() {
          shut + ' ' + screen.status);
     await w.inRealm(function () {
       m.config.clearOverride('oid4vp.signIn');
-      adminActions.applicationsAction({ action: 'remove',
-        application: 'wsi-wallet', attribute: 'appAuthnMechanism',
-        value: 'wallet' }, [], {});
+      adminActions.applicationsAction({ action: 'set',
+        application: 'wsi-wallet', attribute: 'appAuthnPolicy',
+        value: 'default' }, [], {});
     });
   }
 }
@@ -451,6 +454,6 @@ module.exports = {
   name: 'oid4vp wallet as a factor',
   describe: 'a wallet as a first factor a second follows, as the second ' +
             'factor after a password, and as two where a verified key ' +
-            'attestation says so; and appAuthnMechanism: wallet',
+            'attestation says so; and a policy allowing the wallet',
   run: run
 };
