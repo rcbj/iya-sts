@@ -1915,6 +1915,15 @@ class ProtocolStack {
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');
 
+    // 23c-ii. AUTHZEN AUTHORIZATION API 1.0 (#563). After the XACML family,
+    // whose surface's `decide()`, `enforce()` and `callerIdentity()` it calls
+    // (lazily, inside a request, so the order is also a reader's); it
+    // requires no route module. `/access/v1/*` collides with nothing.
+    require('../authzen/authzen');
+    this.build('authzen/authzen', require('../authzen/authzen'),
+               'AuthzenSurface');
+    this.register(app, require('../authzen/authzen'), 'authzen/authzen');
+
     // GNAP (RFC 9635 + RFC 9767), 2026-09-12 — 23d. After `authn` (the resource
     // owner signs in through `beginAuthentication()`), after `oauth2` (the ID
     // Token builder and the authorization server profiles), after `saml/saml2`,

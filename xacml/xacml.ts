@@ -629,9 +629,12 @@ class XacmlSurface {
    * With no root policy the answer is NotApplicable with a note; a root
    * policy that does not load is an Indeterminate marked STS-XACML-0012.
    * @param request - the request, in the shapes of `xacml_model.js`
+   * @param options - optional; `resolve: false` decides on the request's own
+   *   attributes alone, with no PIP (#563: an AuthZEN subject of a type this
+   *   realm does not resolve is not a directory person)
    * @returns the PDP's response
    */
-  decide(request: any): any {
+  decide(request: any, options?: { resolve?: boolean }): any {
     const { log, config, errorCodes, model, pdp, store, pip } = this.deps;
     log.debug('Entering XacmlSurface.decide().');
     const root = store.root();
@@ -670,7 +673,8 @@ class XacmlSurface {
     }
     const answer = pdp.evaluate(policy, request, {
       repository: store.repository(),
-      resolver: pip.resolverFor(request)
+      resolver: options && options.resolve === false ? null
+        : pip.resolverFor(request)
     });
     // AN INDETERMINATE THE ENGINE REACHED THROUGH A PROCESSING OR SYNTAX ERROR
     // is a fault somebody has to fix, where a missing attribute is an answer
@@ -886,7 +890,18 @@ class XacmlSurface {
   // false`, because that is `xacml.pepRequireCertificate`'s decision and not
   // this function's.
   // ---------------------------------------------------------------------------
-  private callerIdentity(req: Req): CallerIdentity {
+  // PUBLIC SINCE #563: the AuthZEN door (`authzen/authzen_caller.ts`) asks
+  // the same question of the same connection, and a second reading of a
+  // certificate there would be how one certificate came to name two
+  // entries on two surfaces.
+  /**
+   * Reads what a connection's client certificate says about its caller:
+   * whether one arrived, whether it verified, and the entry it names.
+   *
+   * @param req - the request
+   * @returns the caller's identity, never a verdict
+   */
+  callerIdentity(req: Req): CallerIdentity {
     const { log, mtls, peps } = this.deps;
     log.debug('Entering XacmlSurface.callerIdentity().');
     const certificate = mtls.peerCertificate(req);
@@ -2686,6 +2701,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   decide: slot.forward('decide'),
   enforce: slot.forward('enforce'),
+  // The connection's client certificate, read once for every surface that
+  // admits a caller by one (#563, `authzen/authzen_caller.ts`).
+  callerIdentity: slot.forward('callerIdentity'),
   description: slot.forward('description'),
   enabled: slot.forward('enabled'),
   // The designator cap a PIP query is held to, for

@@ -5631,6 +5631,32 @@ function seed() {
              'ldap: roles.xacmlUserGroup is "' + xacmlUserGroup + '", which ' +
              'carries DN syntax, so no group was seeded for it.');
   }
+  // AND THE THIRD (#563): the group granting AUTHZEN_PEPS, which the AuthZEN
+  // Authorization API under /access/v1 requires. Seeded EMPTY in every mode:
+  // no demonstration identity rides along (#591), and a caller is admitted by
+  // being made a member — a person, a service account, or an application
+  // calling with its own token.
+  const authzenPepGroup = String(config.value('roles.authzenPepGroup') ||
+                                 '').trim();
+  if (authzenPepGroup && nameUsableInDn(authzenPepGroup)) {
+    putEntry(groupDnFor(authzenPepGroup), {
+      objectClass: ['top', 'groupOfNames'],
+      cn: authzenPepGroup,
+      description: 'Members hold the built-in AUTHZEN_PEPS role, which is ' +
+                   'what the AuthZEN Authorization API under /access/v1 ' +
+                   'requires. The group is named by roles.authzenPepGroup; ' +
+                   'emptying it closes /access/v1 to everybody, and adding ' +
+                   'a member — a person, a service account, or an ' +
+                   'application\'s entry — is how a caller is admitted. It ' +
+                   'is deliberately neither cn=xacml-users nor ' +
+                   'cn=remote-peps: an AuthZEN caller asks for decisions ' +
+                   'and reads no policy and no person\'s attributes.'
+    }, { origin: 'seed' });
+  } else if (authzenPepGroup) {
+    log.warn(errorCodes.tag('STS-LDAP-0041') +
+             'ldap: roles.authzenPepGroup is "' + authzenPepGroup + '", ' +
+             'which carries DN syntax, so no group was seeded for it.');
+  }
   // This realm's own count. It reads `entries.size` through
   // realmEntryCount()'s walk either way now that the store is per realm, and
   // the walk is kept because the sentence it produces — "seeded N entries under

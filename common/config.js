@@ -13257,6 +13257,59 @@ const SETTINGS = [
                  'expensive mistake. What IS waiting on it is the console ' +
                  'form of whoever just saved a policy.' },
 
+  // --- AuthZEN (#563) -------------------------------------------------------
+  //
+  // AuthZEN Authorization API 1.0 over the XACML engine (`authzen/`). Per
+  // realm, every one of them: a realm is AuthZEN's tenant, and what one
+  // realm's PEPs may ask and how they authenticate is that realm's.
+  { key: 'authzen.enabled', group: 'AuthZEN', label: 'AuthZEN enabled',
+    env: 'STS_AUTHZEN_ENABLED', type: 'bool', dflt: true, runtime: true,
+    description: 'When on, the AuthZEN Authorization API answers under ' +
+                 '/access/v1. Off, its routes stay REGISTERED and answer ' +
+                 '501, as XACML\'s do: the feature is off, the URL is not ' +
+                 'wrong. It decides with the XACML engine, so it answers ' +
+                 '501 while xacml.enabled is off too. A caller still needs ' +
+                 'the AUTHZEN_PEPS role (roles.authzenPepGroup) and an ' +
+                 'application scope before it is told anything.' },
+  { key: 'authzen.callerAuthentication', group: 'AuthZEN',
+    label: 'How an AuthZEN caller authenticates',
+    env: 'STS_AUTHZEN_CALLER_AUTHENTICATION', type: 'enum',
+    enumValues: ['mtls', 'bearer', 'mtls+bearer'], dflt: 'mtls',
+    runtime: true,
+    description: 'mtls, the default: a client certificate this service ' +
+                 'VERIFIES against its client truststore, resolved to the ' +
+                 'directory entry that stores it (or the person it names, ' +
+                 'for one this service issued). bearer: an OAuth 2.0 access ' +
+                 'token from client_credentials, audienced to this realm\'s ' +
+                 '/access/v1 and carrying authzen:evaluate; the caller is ' +
+                 'the client. mtls+bearer: both, and the token must be ' +
+                 'bound to the certificate presented (RFC 8705), so the two ' +
+                 'name one party. Checked in every mode: AuthZEN leaves ' +
+                 'authenticating the PEP to the deployment (section 11.2), ' +
+                 'and a decision endpoint anybody can drive is an oracle ' +
+                 'for the policy.' },
+  { key: 'authzen.resolveSubjectTypes', group: 'AuthZEN',
+    label: 'Subject types that name a directory person',
+    env: 'STS_AUTHZEN_RESOLVE_SUBJECT_TYPES', type: 'csv', dflt: 'user',
+    runtime: true,
+    description: 'The subject.type values whose subject.id is a person in ' +
+                 'this realm\'s directory, comma-separated. For those the ' +
+                 'Policy Information Point answers the subject\'s roles and ' +
+                 'directory attributes, and they are AUTHORITATIVE: a ' +
+                 'caller cannot send them. For any other type the directory ' +
+                 'is not consulted, so an id that happens to match a ' +
+                 'person\'s name is not that person. Empty means the ' +
+                 'directory is never consulted.' },
+  { key: 'authzen.returnReasons', group: 'AuthZEN',
+    label: 'Return the reasons for a decision',
+    env: 'STS_AUTHZEN_RETURN_REASONS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'When on, a decision carries a context with the XACML ' +
+                 'decision, why, any advice, and the obligations that made ' +
+                 'a Permit false. Off by default: a reason tells a caller ' +
+                 'something about the policy, and decision alone is the ' +
+                 'answer either way.' },
+
   // --- Shared Signals Framework (SSF) --------------------------------------
   //
   // The seventeenth protocol family, and the first one here that TALKS BACK:
@@ -15193,6 +15246,22 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+  { key: 'roles.authzenPepGroup', group: 'Roles',
+    label: 'Group granting the AUTHZEN_PEPS role',
+    env: 'STS_ROLES_AUTHZEN_PEP_GROUP', type: 'string',
+    dflt: 'authzen-peps', runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'AUTHZEN_PEPS role, which is what the AuthZEN ' +
+                 'Authorization API under /access/v1 requires. A member is ' +
+                 'a person, a service account, or an application (for a ' +
+                 'caller authenticating with its own access token). IT IS A ' +
+                 'THIRD GROUP AND NOT EITHER OF THE OTHER TWO: AUTHZEN_PEPS ' +
+                 'asks for decisions and nothing else, where XACML_USER ' +
+                 'also reads the repository and REMOTE_PEPS pulls the ' +
+                 'documents this service enforces its own access with and ' +
+                 'a named person\'s attributes. Setting it to the empty ' +
+                 'string means NOBODY holds the role, which closes ' +
+                 '/access/v1 to every caller.' },
 
   { key: 'xacml.signalResponsePolicy', group: 'XACML',
     label: 'The policy a received signal is answered with',

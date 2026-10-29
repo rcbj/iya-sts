@@ -20298,7 +20298,16 @@ const API_PERMISSIONS = Object.freeze({
   'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
     permissions: Object.freeze([
       ['report:use', 'Reports as a user (REPORT_USE)'],
-      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) })
+      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) }),
+  // THE AUTHZEN AUTHORIZATION API (#563). AuthZEN defines no scope (section
+  // 11.2 leaves the PEP's authentication to the deployment), so the word is
+  // this service's. A client asks for it on client_credentials with
+  // `resource` naming the realm's /access/v1; AUTHZEN_PEPS is asked at the
+  // API, not at issuance.
+  'sts-authzen-api': Object.freeze({ base: 'urn:sts:authzen-api:',
+    permissions: Object.freeze([
+      ['authzen:evaluate', 'AuthZEN access evaluations at /access/v1 ' +
+                           '(AUTHZEN_PEPS)']]) })
 });
 
 // The delegated permission grants a seeded client holds, as
@@ -20386,6 +20395,13 @@ function apiResourceApplications(base) {
     row('sts-report-api', 'Reporting API',
         [helpers.rebaseTo(realmBase, 'report') + '/report-api'],
         'this service\'s own reports API at /report-api'),
+    // The AuthZEN Authorization API (#563): its audience, its one permission,
+    // and the realm's attribute catalogue as `authzenAttribute` values,
+    // which an administrator adds (none is seeded: no property means
+    // anything until somebody says what).
+    row('sts-authzen-api', 'AuthZEN API',
+        [helpers.rebaseTo(realmBase, 'authzen') + '/access/v1'],
+        'this service\'s own AuthZEN Authorization API at /access/v1'),
     row('sts-resource', 'Default resource',
         [helpers.rebaseTo(realmBase, 'oauth-oidc') + '/resource'],
         'this service\'s default resource indicator (UserInfo, SCIM, ' +

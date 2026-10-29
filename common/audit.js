@@ -1021,6 +1021,9 @@ const ACTIONS = [
     label: 'The PDP reached a decision' },
   { action: 'xacml.enforcement', category: 'authorization',
     label: 'The embedded PEP enforced a decision' },
+  // AUTHZEN (#563): one row per evaluation, a batch's each with the batch id.
+  { action: 'authzen.decision', category: 'authorization',
+    label: 'An AuthZEN access evaluation was decided' },
   // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
   //
   // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since

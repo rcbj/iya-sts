@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4819** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4836** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 12
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 29
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4712,6 +4712,23 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0010` | An AuthZEN attribute catalogue row was refused: not a JSON object, an unknown member, or an object, property path, attributeId, category, dataType or multiplicity that is not one the catalogue takes. | the write is refused |
 | `STS-AUTHZEN-0011` | An AuthZEN attribute catalogue row was refused because it maps onto a reserved identifier — this service's own urn:sts:xacml: namespace, XACML's subject-id, resource-id or action-id, a current-time attribute, or context.application. A request-supplied attribute suppresses the PIP, so such a row would let a caller forge a trusted fact. | the write is refused |
 | `STS-AUTHZEN-0012` | An AuthZEN attribute catalogue row was refused because it sends a subject property under a bare directory attribute name, which the PIP reads off the subject's directory entry; for a subject this realm resolves the directory is authoritative. | the write is refused |
+| `STS-AUTHZEN-0013` | An AuthZEN request reached a realm where authzen.enabled, or xacml.enabled whose engine it decides with, is off. | HTTP 501, an error message |
+| `STS-AUTHZEN-0014` | An AuthZEN request reached a realm that has no sts-authzen-api application, the API's resource object; an operator who removes it turns the API off. | HTTP 501, an error message |
+| `STS-AUTHZEN-0015` | An AuthZEN caller presented no client certificate, where authzen.callerAuthentication is mtls or mtls+bearer. | HTTP 401, an error message |
+| `STS-AUTHZEN-0016` | An AuthZEN caller's client certificate did not verify against this service's client truststore. | HTTP 401, an error message |
+| `STS-AUTHZEN-0017` | An AuthZEN caller's client certificate verified and names no entry in this realm: an outside authority's certificate stored on no entry or on several, or one whose name resolves to nobody. | HTTP 401, an error message |
+| `STS-AUTHZEN-0018` | An AuthZEN caller presented no access token, where authzen.callerAuthentication is bearer or mtls+bearer. | HTTP 401 with WWW-Authenticate: Bearer, an error message |
+| `STS-AUTHZEN-0019` | An AuthZEN caller's access token was refused: it does not verify, has expired, is not an access token, was issued by another authorization server, was revoked, or failed its certificate, DPoP or sender constraint. | HTTP 401 invalid_token, an error message |
+| `STS-AUTHZEN-0020` | An AuthZEN caller's access token is not audienced to this realm's /access/v1. | HTTP 401 invalid_token, an error message |
+| `STS-AUTHZEN-0021` | An AuthZEN caller's access token does not carry authzen:evaluate, or its client no longer holds a delegated permission grant of it on sts-authzen-api. | HTTP 403 insufficient_scope, an error message |
+| `STS-AUTHZEN-0022` | An AuthZEN caller's access token was issued to a person; an AuthZEN caller is the client itself, on client_credentials. | HTTP 403, an error message |
+| `STS-AUTHZEN-0023` | Under authzen.callerAuthentication mtls+bearer, the AuthZEN caller's access token is not bound (RFC 8705) to the client certificate presented, so the two credentials do not name one party. | HTTP 401 invalid_token, an error message |
+| `STS-AUTHZEN-0024` | The access-control policy refused an AuthZEN caller: on resource authzen-api it does not hold AUTHZEN_PEPS (roles.authzenPepGroup), or the policy narrows it. | HTTP 403, an error message |
+| `STS-AUTHZEN-0025` | An AuthZEN request named a context.application its caller is not scoped to (stsAuthzenApplication or appAuthzenApplication). | HTTP 403, an error message |
+| `STS-AUTHZEN-0026` | An AuthZEN caller is scoped to no application, so it may ask about none. | HTTP 403, an error message |
+| `STS-AUTHZEN-0027` | An AuthZEN caller is scoped to several applications and the request named none in context.application. | HTTP 400, an error message |
+| `STS-AUTHZEN-0028` | The PDP could not evaluate an AuthZEN request: the root policy does not load, or evaluation met a processing or syntax error. Answered as an error, never as an ordinary denial. | HTTP 500, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0029` | An AuthZEN Permit was answered false because the decision carried an obligation this PDP cannot discharge, until the Obligations Profile is implemented end to end. | decision: false |
 
 ## STS-ADMIN
 

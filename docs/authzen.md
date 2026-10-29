@@ -16,6 +16,86 @@ AuthZEN is an addition. The XACML endpoints (`/xacml`, `/xacml/pdp`,
 `/xacml/policies`, `/xacml/pep/*`, `/xacml/pip`) and the
 [remote PEP](remote-pep.md) container are unchanged.
 
+## Calling it
+
+```
+POST /access/v1/evaluation                      the default realm
+POST /realm/<id>/access/v1/evaluation           a trust realm
+Content-Type: application/json
+X-Request-ID: 7c1f…                             optional; echoed back
+
+{
+  "subject":  { "type": "user", "id": "alice" },
+  "action":   { "name": "read" },
+  "resource": { "type": "document", "id": "doc-1",
+                "properties": { "classification": "internal" } },
+  "context":  { "application": "engineering-portal" }
+}
+```
+
+```
+200 OK
+{ "decision": true }
+```
+
+A denial is `200` with `"decision": false`. A request that could not be
+evaluated gets an error status and a body of the form
+`{ "error": { "status": 400, "message": "…" } }`:
+
+| Status | When |
+|---|---|
+| 400 | the request is not valid: a missing member, a value that breaks the rules below, an undeclared property, or several applications in scope and none named |
+| 401 | the caller did not authenticate; `WWW-Authenticate: Bearer realm="<issuer>"` when tokens are accepted |
+| 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named |
+| 500 | the policy could not be evaluated (for example the root policy does not load) — never reported as `false` |
+| 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
+
+### Who may call it
+
+**The realm is the tenant.** A caller is looked up in the directory of the
+realm whose path it called, so a caller from another realm is unknown there.
+
+**Authentication** is chosen per realm by `authzen.callerAuthentication`:
+
+| Value | The caller presents |
+|---|---|
+| `mtls` (default) | a client certificate this service verifies against its client truststore. It names the directory entry that stores it in `userCertificate`, or the person it was issued to by this service. |
+| `bearer` | an OAuth 2.0 access token from `client_credentials`, requested with `resource=<realm base>/access/v1` and `scope=authzen:evaluate`. The caller is the client. |
+| `mtls+bearer` | both, and the token must be bound to the certificate presented (RFC 8705), so the two name one party |
+
+AuthZEN itself defines no scope; `authzen:evaluate` is this service's. A
+client may ask for it only if it holds a delegated permission grant of
+`urn:sts:authzen-api:authzen:evaluate` on the realm's `sts-authzen-api`
+application.
+
+**Authorization.** The caller must hold the built-in `AUTHZEN_PEPS` role: be a
+member of the group named by `roles.authzenPepGroup` (default
+`authzen-peps`). A person, a service account, or an application's entry can be
+a member. The access-control policy decides it on resource `authzen-api`, so
+`/admin/xacml/decide` reproduces the answer. `AUTHZEN_PEPS` is a separate role
+from `XACML_USER` and `REMOTE_PEPS`: it lets a caller ask for decisions and
+nothing else.
+
+**Application scope.** An administrator names the applications a caller may ask
+about:
+
+* on a person's or service account's entry, `stsAuthzenApplication`;
+* on an application, `appAuthzenApplication`. A client's own application is
+  always in its scope.
+
+`context.application` must be one of them. When the request names none and the
+caller has exactly one, that one is used. The application a policy sees is
+`urn:sts:xacml:authzen:application`, never the value as the caller sent it.
+The remote PEP register (`ou=peps`) is not consulted.
+
+### Subjects that are directory people
+
+For a `subject.type` listed in `authzen.resolveSubjectTypes` (default `user`),
+`subject.id` names a person in the realm's directory. The policy then reads
+that person's roles and directory attributes through the Policy Information
+Point, and the caller cannot supply them. For any other type the directory is
+not consulted.
+
 ## How a request becomes an XACML request
 
 | AuthZEN member | XACML category | XACML attribute |
@@ -102,6 +182,30 @@ A member that AuthZEN 1.0 does not define, at the top level or inside
 
 `urn:sts:xacml:obligation:log` is the one obligation this service carries out;
 it is recorded in the audit log.
+
+## Configuration
+
+Each setting is per realm and can be changed at run time on `/admin/xacml`
+or with `/admin-api/config`. That page and `GET /admin-api/config` are the
+live source; this table is a copy.
+
+| Setting | Environment variable | Default | What it does |
+|---|---|---|---|
+| `authzen.enabled` | `STS_AUTHZEN_ENABLED` | `true` | The API answers; off, its routes answer 501 |
+| `authzen.callerAuthentication` | `STS_AUTHZEN_CALLER_AUTHENTICATION` | `mtls` | `mtls`, `bearer` or `mtls+bearer` |
+| `authzen.resolveSubjectTypes` | `STS_AUTHZEN_RESOLVE_SUBJECT_TYPES` | `user` | Subject types whose id is a directory person |
+| `authzen.returnReasons` | `STS_AUTHZEN_RETURN_REASONS` | `false` | Add the XACML decision, the reason and any advice to the response's `context` |
+| `roles.authzenPepGroup` | `STS_ROLES_AUTHZEN_PEP_GROUP` | `authzen-peps` | The group whose members hold `AUTHZEN_PEPS` |
+
+## In the running service
+
+* Every evaluation is an `authzen.decision` row in the audit log, with the
+  caller, the application, the subject and resource types, the action, the
+  request id and the decision. Property values and credentials are not
+  recorded.
+* `/admin/xacml/monitor` counts AuthZEN decisions on its own row. It counts
+  decisions, not enforcements: the PEP enforces the answer in its own process.
+* `/admin/sts-metadata` lists the endpoint.
 
 ## Related
 

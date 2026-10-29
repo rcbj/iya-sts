@@ -66,6 +66,8 @@
   "listeners.applications.gnap.what": "The GNAP authorization server and its interaction pages.",
   "listeners.applications.xacml.label": "XACML",
   "listeners.applications.xacml.what": "The policy decision point, its policies and the remote PEPs' doors.",
+  "listeners.applications.authzen.label": "AuthZEN",
+  "listeners.applications.authzen.what": "The AuthZEN Authorization API: access evaluations over the XACML engine, and its metadata document.",
   "listeners.applications.acme.label": "ACME",
   "listeners.applications.acme.what": "Certificate enrollment by ACME.",
   "listeners.applications.est.label": "EST",

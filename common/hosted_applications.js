@@ -170,6 +170,14 @@ const APPLICATIONS = [
     what: 'The policy decision point, its policies and the remote PEPs\' ' +
           'doors.',
     prefixes: ['/xacml'], exact: [] },
+  // AUTHZEN (#563): the AuthZEN Authorization API and, per realm, its
+  // metadata. A family of its own rather than XACML's, so a listener can
+  // carry one without the other.
+  { id: 'authzen', label: 'AuthZEN',
+    what: 'The AuthZEN Authorization API: access evaluations over the ' +
+          'XACML engine, and its metadata document.',
+    prefixes: ['/access/v1', '/.well-known/authzen-configuration'],
+    exact: [] },
   { id: 'acme', label: 'ACME', what: 'Certificate enrollment by ACME.',
     prefixes: ['/enroll/acme'], exact: [] },
   { id: 'est', label: 'EST', what: 'Certificate enrollment by EST.',

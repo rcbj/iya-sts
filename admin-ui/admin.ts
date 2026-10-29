@@ -8934,6 +8934,8 @@ const SETTING_HOMES = [
   { group: 'Federation', pages: ['/admin/federation'] },
   { group: 'OpenID Federation', pages: ['/admin/oidfed'] },
   { group: 'XACML', pages: ['/admin/xacml'] },
+  // AuthZEN (#563): decided by the XACML engine, so homed beside it.
+  { group: 'AuthZEN', pages: ['/admin/xacml'] },
   // THE CERTIFICATE AUTHORITY'S FOUR SETTINGS, on the page that builds one.
   // They are DEFAULTS FOR A FORM rather than a policy — what a hierarchy was
   // built with is stored on the hierarchy — so the page that takes each of

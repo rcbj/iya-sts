@@ -21117,6 +21117,83 @@ const CODES = [
       'the PIP reads off the subject\'s directory entry; for a subject this ' +
       'realm resolves the directory is authoritative.',
     spec: 'the write is refused' },
+  { code: 'STS-AUTHZEN-0013',
+    summary: 'An AuthZEN request reached a realm where authzen.enabled, or ' +
+      'xacml.enabled whose engine it decides with, is off.',
+    spec: 'HTTP 501, an error message' },
+  { code: 'STS-AUTHZEN-0014',
+    summary: 'An AuthZEN request reached a realm that has no sts-authzen-api ' +
+      'application, the API\'s resource object; an operator who removes it ' +
+      'turns the API off.',
+    spec: 'HTTP 501, an error message' },
+  { code: 'STS-AUTHZEN-0015',
+    summary: 'An AuthZEN caller presented no client certificate, where ' +
+      'authzen.callerAuthentication is mtls or mtls+bearer.',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-AUTHZEN-0016',
+    summary: 'An AuthZEN caller\'s client certificate did not verify against ' +
+      'this service\'s client truststore.',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-AUTHZEN-0017',
+    summary: 'An AuthZEN caller\'s client certificate verified and names no ' +
+      'entry in this realm: an outside authority\'s certificate stored on no ' +
+      'entry or on several, or one whose name resolves to nobody.',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-AUTHZEN-0018',
+    summary: 'An AuthZEN caller presented no access token, where ' +
+      'authzen.callerAuthentication is bearer or mtls+bearer.',
+    spec: 'HTTP 401 with WWW-Authenticate: Bearer, an error message' },
+  { code: 'STS-AUTHZEN-0019',
+    summary: 'An AuthZEN caller\'s access token was refused: it does not ' +
+      'verify, has expired, is not an access token, was issued by another ' +
+      'authorization server, was revoked, or failed its certificate, DPoP or ' +
+      'sender constraint.',
+    spec: 'HTTP 401 invalid_token, an error message' },
+  { code: 'STS-AUTHZEN-0020',
+    summary: 'An AuthZEN caller\'s access token is not audienced to this ' +
+      'realm\'s /access/v1.',
+    spec: 'HTTP 401 invalid_token, an error message' },
+  { code: 'STS-AUTHZEN-0021',
+    summary: 'An AuthZEN caller\'s access token does not carry ' +
+      'authzen:evaluate, or its client no longer holds a delegated ' +
+      'permission grant of it on sts-authzen-api.',
+    spec: 'HTTP 403 insufficient_scope, an error message' },
+  { code: 'STS-AUTHZEN-0022',
+    summary: 'An AuthZEN caller\'s access token was issued to a person; an ' +
+      'AuthZEN caller is the client itself, on client_credentials.',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-AUTHZEN-0023',
+    summary: 'Under authzen.callerAuthentication mtls+bearer, the AuthZEN ' +
+      'caller\'s access token is not bound (RFC 8705) to the client ' +
+      'certificate presented, so the two credentials do not name one party.',
+    spec: 'HTTP 401 invalid_token, an error message' },
+  { code: 'STS-AUTHZEN-0024',
+    summary: 'The access-control policy refused an AuthZEN caller: on ' +
+      'resource authzen-api it does not hold AUTHZEN_PEPS ' +
+      '(roles.authzenPepGroup), or the policy narrows it.',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-AUTHZEN-0025',
+    summary: 'An AuthZEN request named a context.application its caller is ' +
+      'not scoped to (stsAuthzenApplication or appAuthzenApplication).',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-AUTHZEN-0026',
+    summary: 'An AuthZEN caller is scoped to no application, so it may ask ' +
+      'about none.',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-AUTHZEN-0027',
+    summary: 'An AuthZEN caller is scoped to several applications and the ' +
+      'request named none in context.application.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0028',
+    summary: 'The PDP could not evaluate an AuthZEN request: the root policy ' +
+      'does not load, or evaluation met a processing or syntax error. ' +
+      'Answered as an error, never as an ordinary denial.',
+    spec: 'HTTP 500, an error message (a batch item\'s context.error)' },
+  { code: 'STS-AUTHZEN-0029',
+    summary: 'An AuthZEN Permit was answered false because the decision ' +
+      'carried an obligation this PDP cannot discharge, until the ' +
+      'Obligations Profile is implemented end to end.',
+    spec: 'decision: false' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

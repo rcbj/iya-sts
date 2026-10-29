@@ -1,0 +1,565 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: tests/authzen_evaluation.js
+//
+// ---------------------------------------------------------------------------
+// POST /access/v1/evaluation, IN PROCESS, OVER REAL HANDSHAKES (#563 phase 2,
+// #1161).
+//
+// The whole stack in a child process (`stored_certificates.js`'s reason: it
+// builds a certificate authority and registers every route), a listener with
+// the main port's posture over the client truststore, and a throwaway realm
+// whose root policy this file wrote. What it holds:
+//
+//   M. THE CERTIFICATE DOOR, the default: none (401, and no Bearer
+//      challenge on a door of certificates alone), one stored nowhere (401),
+//      a stored one whose entry lacks AUTHZEN_PEPS (403 on the policy), one
+//      admitted and scoped to no application (403), and one admitted and
+//      scoped.
+//   D. THE RESULT MAPPING through the realm's root policy: Permit true,
+//      Deny false, NotApplicable false, X-Request-ID echoed, an undeclared
+//      property 400, an application out of scope 403, a PIP-resolved
+//      subject type deciding on the person's directory entry and another
+//      type with the same id not, the reasons only when asked for, and a
+//      root policy that will not load answered 500 rather than false.
+//   B. THE TOKEN DOOR: a client_credentials token for /access/v1 carrying
+//      authzen:evaluate, from a client in the AUTHZEN_PEPS group (true); no
+//      token (401 with WWW-Authenticate: Bearer realm=...); the same client
+//      out of the group (403).
+//   O. OFF: authzen.enabled off answers 501.
+// ---------------------------------------------------------------------------
+
+delete process.env.CONFIG_FILE;
+
+const childProcess = require('child_process');
+const https = require('https');
+const nodeCrypto = require('crypto');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const CHILD_FLAG = 'STS_AUTHZEN_EVALUATION_CHILD';
+const MARK = 'AUTHZEN-EVALUATION-CHILD ';
+const REALM = 'azeval';
+const PREFIX = '/realm/' + REALM;
+const CLIENT = 'azeval-pep-client';
+const SECRET = 'azeval-secret-0123456789abcdef';
+
+const CA_PEM = { value: '' };
+
+const log = require('bunyan').createLogger({ name: 'authzen_evaluation',
+  level: process.env.LOG_LEVEL || 'info' });
+
+// THE ROOT POLICY: readers of an internal document, staff writers (read off
+// the subject's own directory entry), no deletes — and an `explode` whose
+// condition is a PROCESSING ERROR when `tags` carries two values, which is
+// how a fault the PDP reaches is made without breaking the repository.
+const POLICY = [
+  'namespace azeval {',
+  '    attribute act { category = actionCat',
+  '        id = "urn:oasis:names:tc:xacml:1.0:action:action-id"',
+  '        type = string }',
+  '    attribute protocol { category = environmentCat',
+  '        id = "urn:sts:xacml:protocol" type = string }',
+  '    attribute classification { category = resourceCat',
+  '        id = "urn:example:classification" type = string }',
+  '    attribute staff { category = subjectCat id = "employeeType"',
+  '        type = string }',
+  '    attribute tags { category = resourceCat id = "urn:example:tags"',
+  '        type = string }',
+  '    policy azevalRoot {',
+  '        id = "urn:test:azeval-root"',
+  '        apply firstApplicable',
+  '        target clause protocol == "authzen"',
+  '        rule readInternal {',
+  '            permit',
+  '            target clause act == "read"',
+  '            target clause classification == "internal"',
+  '        }',
+  '        rule staffWrite {',
+  '            permit',
+  '            target clause act == "write"',
+  '            target clause staff == "staff"',
+  '        }',
+  '        rule noDelete {',
+  '            deny',
+  '            target clause act == "delete"',
+  '        }',
+  '        rule explode {',
+  '            permit',
+  '            target clause act == "explode"',
+  '            condition stringEqual(stringOneAndOnly(tags), "x")',
+  '        }',
+  '    }',
+  '}'
+].join('\n');
+
+
+function recorder() {
+  log.debug("Entering recorder().");
+  const rows = [];
+  log.debug("Leaving recorder().");
+  return {
+    rows: rows,
+    check: function (ok, what, detail) {
+      log.debug("Entering check().");
+      rows.push({ ok: !!ok, what: what,
+                  detail: detail === undefined ? '' : String(detail) });
+      log.debug("Leaving check().");
+    }
+  };
+}
+
+function request(port, method, urlPath, cred, body, headers) {
+  log.debug("Entering request().");
+  log.debug("Leaving request().");
+  return new Promise(function (resolve) {
+    const text = body === undefined ? ''
+      : (typeof body === 'string' ? body : JSON.stringify(body));
+    const sent = Object.assign({ 'content-type': 'application/json',
+                                 'content-length': Buffer.byteLength(text) },
+                               headers || {});
+    const req = https.request({ host: '127.0.0.1', port: port,
+      path: urlPath, method: method, headers: sent, ca: CA_PEM.value,
+      cert: cred ? cred.certPem : undefined,
+      key: cred ? cred.keyPem : undefined, agent: false }, function (res) {
+      let raw = '';
+      res.on('data', function (chunk) {
+        raw += chunk;
+      });
+      res.on('end', function () {
+        let json = null;
+        try {
+          json = JSON.parse(raw);
+        } catch (e) {
+          log.debug("Caught in request(): " + e.message);
+          json = null;
+        }
+        resolve({ status: res.statusCode, headers: res.headers, text: raw,
+                  json: json });
+      });
+    });
+    req.on('error', function (e) {
+      log.debug("Caught in request(): " + e.message);
+      resolve({ status: 0, headers: {}, text: '', json: null,
+                error: e.message });
+    });
+    req.end(text);
+  });
+}
+
+// One evaluation request, and whatever `extra` adds to its members.
+function evaluation(extra) {
+  log.debug("Entering evaluation().");
+  const out = {
+    subject: { type: 'user', id: 'azalice' },
+    action: { name: 'read' },
+    resource: { type: 'document', id: 'doc-1',
+                properties: { classification: 'internal' } }
+  };
+  Object.keys(extra || {}).forEach(function (key) {
+    out[key] = Object.assign({}, out[key] || {}, extra[key]);
+  });
+  log.debug("Leaving evaluation().");
+  return out;
+}
+
+async function childBody() {
+  log.debug("Entering childBody().");
+  const t = recorder();
+  require(ROOT + '/common/protocol_stack');
+  const app = require(ROOT + '/common/app');
+  const keystore = require(ROOT + '/common/keystore');
+  const pki = require(ROOT + '/common/pki');
+  const helpers = require(ROOT + '/common/helpers');
+  const realms = require(ROOT + '/common/realms');
+  const config = require(ROOT + '/common/config');
+  const applications = require(ROOT + '/common/applications');
+  const errorCodes = require(ROOT + '/common/error_codes');
+  const tls = require(ROOT + '/tls/tls_server');
+  const ldap = require(ROOT + '/ldap/ldap_server');
+  const adminActions = require(ROOT + '/admin-core/admin_actions');
+  const store = require(ROOT + '/xacml/xacml_store');
+  const xml = require(ROOT + '/xacml/xacml_xml');
+  const alfa = require(ROOT + '/xacml/xacml_alfa');
+  const testCa = require('./protocol/outbound_test_ca');
+  const outsideCa = require('./tools/pep-credential.js');
+
+  const marks = [];
+  const mark = errorCodes.mark;
+  errorCodes.mark = function (res, code) {
+    marks.push(code);
+    return mark.apply(this, arguments);
+  };
+  const markedSince = function (since, code) {
+    log.debug("Entering markedSince().");
+    log.debug("Leaving markedSince().");
+    return marks.slice(since).indexOf(code) >= 0;
+  };
+
+  await keystore.start();
+  if (!realms.get(REALM)) {
+    realms.create({ id: REALM, name: REALM });
+  }
+  await pki.start({ realmIds: ['', REALM],
+    keySetFor: function (id) {
+      log.debug("Entering keySetFor().");
+      log.debug("Leaving keySetFor().");
+      return helpers.stsKeysFor.of(id);
+    },
+    keySetHeldFor: function () {
+      log.debug("Entering keySetHeldFor().");
+      log.debug("Leaving keySetHeldFor().");
+      return false;
+    } });
+  const inRealm = function (fn) {
+    log.debug("Entering inRealm().");
+    log.debug("Leaving inRealm().");
+    return realms.run(realms.get(REALM), fn);
+  };
+
+  // THE PEOPLE AND THE CALLERS, in the realm. `azalice` is the subject a
+  // question is about (staff, on her own entry); `azpep` and `azother` are
+  // callers, each storing an outside authority's certificate; only `azpep`
+  // is in authzen-peps.
+  const mint = function (subject) {
+    log.debug("Entering mint().");
+    log.debug("Leaving mint().");
+    return outsideCa.mint({ subject: subject, crlBase: '' });
+  };
+  const pepCred = await mint('CN=azpep,O=Outside');
+  const otherCred = await mint('CN=azother,O=Outside');
+  const strayCred = await mint('CN=azstray,O=Outside');
+  const added = tls.addAnchors([pepCred, otherCred, strayCred]
+    .map(function (one) {
+      return one.anchorPem;
+    }).join(''));
+  t.check(added && added.added === 3,
+          'setup: the outside Root CAs are in the client truststore',
+          JSON.stringify(added));
+  const derOf = function (minted) {
+    log.debug("Entering derOf().");
+    log.debug("Leaving derOf().");
+    return new nodeCrypto.X509Certificate(minted.leaf.pem).raw;
+  };
+  const group = String(config.value('roles.authzenPepGroup'));
+  let catalogued = null;
+  let client = null;
+  inRealm(function () {
+    ['azalice', 'azpep', 'azother'].forEach(function (name) {
+      ldap.createUser(name, { invent: false });
+    });
+    ldap.locateEntry('azalice').stored.attributes.employeetype = ['staff'];
+    ldap.changeStoredCertificate('person', 'azpep', { add: derOf(pepCred) });
+    ldap.changeStoredCertificate('person', 'azother',
+                                 { add: derOf(otherCred) });
+    adminActions.groupsAction({ action: 'add-member', group: group,
+                                member: 'azpep' });
+    catalogued = applications.updateApplication('sts-authzen-api', {
+      mode: 'add', attribute: 'authzenAttribute',
+      value: JSON.stringify({ object: 'resource',
+        property: 'classification',
+        attributeId: 'urn:example:classification' }) });
+    applications.updateApplication('sts-authzen-api', {
+      mode: 'add', attribute: 'authzenAttribute',
+      value: JSON.stringify({ object: 'resource', property: 'tags',
+        multiplicity: 'bag', attributeId: 'urn:example:tags' }) });
+    const policy = alfa.parse(POLICY);
+    store.write('azeval-root', xml.writePolicy(policy),
+                { enabled: true, isRoot: true });
+    client = applications.createApplication({ identifier: CLIENT,
+      protocols: ['oauth2'],
+      fields: { oauthClientId: CLIENT, oauthClientSecret: SECRET,
+                oauthGrantType: ['client_credentials'],
+                oauthTokenEndpointAuthMethod: 'client_secret_basic',
+                oauthDelegatedPermission:
+                  ['urn:sts:authzen-api:authzen:evaluate'],
+                appAuthzenApplication: ['todo-app'] } });
+  });
+  t.check(catalogued && catalogued.ok,
+          'setup: a catalogue row is written onto sts-authzen-api',
+          JSON.stringify(catalogued));
+  t.check(client && client.ok !== false,
+          'setup: the OAuth caller is created', JSON.stringify(client));
+  const reserved = inRealm(function () {
+    return applications.updateApplication('sts-authzen-api', {
+      mode: 'add', attribute: 'authzenAttribute',
+      value: JSON.stringify({ object: 'subject', property: 'roles',
+                              attributeId: 'urn:sts:xacml:role' }) });
+  });
+  t.check(reserved && !reserved.ok &&
+          errorCodes.codeOf(reserved) === 'STS-AUTHZEN-0011',
+          'C1. a catalogue row onto urn:sts:xacml:role is refused at the ' +
+          'write (STS-AUTHZEN-0011)', JSON.stringify(reserved));
+
+  // THE LISTENER, with the main port's posture over the client truststore.
+  const serverCa = await testCa.makeCa();
+  const serverLeaf = await testCa.listenerCertificate(serverCa, '127.0.0.1');
+  CA_PEM.value = serverCa.certPem;
+  const listener = https.createServer(Object.assign({
+    cert: serverLeaf.cert, key: serverLeaf.key,
+    ca: tls.clientTruststoreOptions().ca,
+    requestCert: true, rejectUnauthorized: false
+  }, tls.protocolOptions()), app);
+  tls.trustClientCertificatesOn(listener,
+    'the authzen_evaluation listener', function () {
+      log.debug("Entering the listener's certificateOf().");
+      log.debug("Leaving the listener's certificateOf().");
+      return { key: serverLeaf.key, cert: serverLeaf.cert };
+    });
+  await new Promise(function (ok) {
+    listener.listen(0, '127.0.0.1', ok);
+  });
+  const port = listener.address().port;
+  const URL = PREFIX + '/access/v1/evaluation';
+  const brief = function (r) {
+    log.debug("Entering brief().");
+    log.debug("Leaving brief().");
+    return r.status + ' ' + String(r.text || '').slice(0, 300);
+  };
+
+  // -------------------------------------------------------------------------
+  // M. THE CERTIFICATE DOOR
+  // -------------------------------------------------------------------------
+  let since = marks.length;
+  let r = await request(port, 'POST', URL, null, evaluation());
+  t.check(r.status === 401 && markedSince(since, 'STS-AUTHZEN-0015') &&
+          !r.headers['www-authenticate'] && r.json && r.json.error &&
+          r.json.error.status === 401,
+          'M1. no certificate is 401 (STS-AUTHZEN-0015), with no Bearer ' +
+          'challenge on a door of certificates alone', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, strayCred, evaluation());
+  t.check(r.status === 401 && markedSince(since, 'STS-AUTHZEN-0017'),
+          'M2. a verified certificate stored on no entry is 401 ' +
+          '(STS-AUTHZEN-0017)', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, otherCred, evaluation());
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0024') &&
+          /AUTHZEN_PEPS/.test(r.text),
+          'M3. a stored certificate whose entry lacks AUTHZEN_PEPS is 403 ' +
+          'on the policy (STS-AUTHZEN-0024)', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred, evaluation());
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0026'),
+          'M4. admitted and scoped to no application is 403 ' +
+          '(STS-AUTHZEN-0026)', brief(r));
+  // The scope an administrator sets (#1162 gives it a door; the attribute
+  // is what is read).
+  inRealm(function () {
+    ldap.locateEntry('azpep').stored.attributes.stsauthzenapplication =
+      ['todo-app', 'wiki'];
+  });
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred, evaluation());
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0027'),
+          'M5. scoped to two and naming neither is 400 (STS-AUTHZEN-0027)',
+          brief(r));
+
+  // -------------------------------------------------------------------------
+  // D. THE RESULT MAPPING
+  // -------------------------------------------------------------------------
+  const asked = function (extra) {
+    log.debug("Entering asked().");
+    log.debug("Leaving asked().");
+    return evaluation(Object.assign({ context: { application: 'todo-app' } },
+                                    extra || {}));
+  };
+  r = await request(port, 'POST', URL, pepCred, asked(),
+                    { 'x-request-id': 'az-req-1' });
+  t.check(r.status === 200 && r.json && r.json.decision === true &&
+          r.headers['x-request-id'] === 'az-req-1' && !r.json.context,
+          'D1. a Permit is 200 decision true, X-Request-ID is echoed, and ' +
+          'no context is sent while authzen.returnReasons is off', brief(r));
+  r = await request(port, 'POST', URL, pepCred,
+                    asked({ action: { name: 'delete' } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false,
+          'D2. a Deny is 200 decision false', brief(r));
+  r = await request(port, 'POST', URL, pepCred,
+                    asked({ action: { name: 'archive' } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false,
+          'D3. NotApplicable is 200 decision false', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred,
+    asked({ resource: { properties: { classification: 'internal',
+                                      colour: 'red' } } }));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0004'),
+          'D4. an undeclared property is 400 (STS-AUTHZEN-0004)', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred,
+                    evaluation({ context: { application: 'payroll' } }));
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0025'),
+          'D5. an application out of the caller\'s scope is 403 ' +
+          '(STS-AUTHZEN-0025)', brief(r));
+  r = await request(port, 'POST', URL, pepCred,
+                    asked({ action: { name: 'write' } }));
+  const resolved = r;
+  r = await request(port, 'POST', URL, pepCred,
+                    asked({ action: { name: 'write' },
+                            subject: { type: 'service' } }));
+  t.check(resolved.json && resolved.json.decision === true &&
+          r.json && r.json.decision === false,
+          'D6. a user subject is decided on the person\'s directory entry ' +
+          '(staff), and a service subject with the same id is not that ' +
+          'person', brief(resolved) + ' / ' + brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.returnReasons', true);
+  });
+  r = await request(port, 'POST', URL, pepCred,
+                    asked({ action: { name: 'delete' } }));
+  inRealm(function () {
+    config.setOverride('authzen.returnReasons', false);
+  });
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          r.json.context && r.json.context.xacml_decision === 'Deny',
+          'D7. with authzen.returnReasons on, the context names the XACML ' +
+          'decision', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred,
+    asked({ action: { name: 'explode' },
+            resource: { properties: { classification: 'internal',
+                                      tags: ['a', 'b'] } } }));
+  t.check(r.status === 500 && markedSince(since, 'STS-AUTHZEN-0028') &&
+          !(r.json && r.json.decision === false),
+          'D8. a processing error the PDP reaches is 500 ' +
+          '(STS-AUTHZEN-0028), never decision false', brief(r));
+
+  // -------------------------------------------------------------------------
+  // B. THE TOKEN DOOR
+  // -------------------------------------------------------------------------
+  inRealm(function () {
+    config.setOverride('authzen.callerAuthentication', 'bearer');
+  });
+  since = marks.length;
+  r = await request(port, 'POST', URL, null, asked());
+  t.check(r.status === 401 && markedSince(since, 'STS-AUTHZEN-0018') &&
+          /^Bearer realm="[^"]+"/.test(String(r.headers['www-authenticate'])),
+          'B1. no token is 401 (STS-AUTHZEN-0018) with WWW-Authenticate: ' +
+          'Bearer realm="<issuer>" (section 11.3)', brief(r) + ' ' +
+          r.headers['www-authenticate']);
+  const base = 'https://127.0.0.1:' + port + PREFIX;
+  const tokenResponse = await request(port, 'POST', PREFIX + '/oauth2/token',
+    null, 'grant_type=client_credentials&scope=authzen%3Aevaluate' +
+          '&resource=' + encodeURIComponent(base + '/access/v1'),
+    { 'content-type': 'application/x-www-form-urlencoded',
+      authorization: 'Basic ' + Buffer.from(CLIENT + ':' + SECRET)
+        .toString('base64') });
+  const token = tokenResponse.json && tokenResponse.json.access_token;
+  t.check(!!token, 'setup: a client_credentials token for /access/v1 ' +
+          'carrying authzen:evaluate is issued', brief(tokenResponse));
+  since = marks.length;
+  r = await request(port, 'POST', URL, null, asked(),
+                    { authorization: 'Bearer ' + token });
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0024'),
+          'B2. the client out of authzen-peps is refused on the policy',
+          brief(r));
+  const entry = inRealm(function () {
+    return applications.get(CLIENT);
+  });
+  inRealm(function () {
+    adminActions.groupsAction({ action: 'add-member', group: group,
+                                member: entry.dn });
+  });
+  r = await request(port, 'POST', URL, null, asked(),
+                    { authorization: 'Bearer ' + token });
+  t.check(r.status === 200 && r.json && r.json.decision === true,
+          'B3. its own token, with its entry in authzen-peps and scoped to ' +
+          'todo-app, is decided: true', brief(r));
+  r = await request(port, 'POST', URL, null,
+                    evaluation({ context: { application: CLIENT } }),
+                    { authorization: 'Bearer ' + token });
+  t.check(r.status === 200,
+          'B4. a client\'s own application is always in its scope',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.callerAuthentication', 'mtls');
+  });
+
+  // -------------------------------------------------------------------------
+  // O. OFF
+  // -------------------------------------------------------------------------
+  inRealm(function () {
+    config.setOverride('authzen.enabled', false);
+  });
+  since = marks.length;
+  r = await request(port, 'POST', URL, pepCred, asked());
+  inRealm(function () {
+    config.setOverride('authzen.enabled', true);
+  });
+  t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0013'),
+          'O1. authzen.enabled off is 501 (STS-AUTHZEN-0013), the route ' +
+          'still registered', brief(r));
+  r = await request(port, 'POST', '/access/v1/evaluation', pepCred, asked());
+  t.check(r.status === 401 || r.status === 403,
+          'O2. the default realm\'s door is another realm\'s: azpep is ' +
+          'nobody there', brief(r));
+
+  await new Promise(function (ok) {
+    listener.close(ok);
+  });
+  log.debug("Leaving childBody().");
+  return t.rows;
+}
+
+function spawnChild() {
+  log.debug("Entering spawnChild().");
+  const clean = {};
+  Object.keys(process.env).forEach(function (key) {
+    if (!/^(KRB5_|STS_|LDAP_|LDAPS_|CONFIG_FILE$)/.test(key)) {
+      clean[key] = process.env[key];
+    }
+  });
+  clean[CHILD_FLAG] = '1';
+  clean.LOG_LEVEL = 'fatal';
+  const result = childProcess.spawnSync(process.execPath, [__filename], {
+    cwd: ROOT, env: clean, encoding: 'utf8', timeout: 300000,
+    maxBuffer: 64 * 1024 * 1024
+  });
+  const line = String(result.stdout || '').split('\n').filter(function (one) {
+    return one.indexOf(MARK) === 0;
+  })[0];
+  if (!line) {
+    log.debug("Leaving spawnChild(). No result.");
+    return { error: 'the child produced no result (exit ' + result.status +
+                    '): ' + String(result.stderr || '').slice(-1500) };
+  }
+  log.debug("Leaving spawnChild().");
+  return { rows: JSON.parse(line.slice(MARK.length)) };
+}
+
+function run(t) {
+  log.debug("Entering run().");
+  t.log.info('=== POST /access/v1/evaluation (#563, #1161) ===');
+  const got = spawnChild();
+  if (got.error) {
+    t.bad('the child did not run', got.error);
+    log.debug("Leaving run(). No child.");
+    return;
+  }
+  got.rows.forEach(function (row) {
+    t.check(row.ok, row.what, row.detail);
+  });
+  log.debug("Leaving run().");
+}
+
+if (require.main === module && process.env[CHILD_FLAG]) {
+  childBody().then(function (rows) {
+    process.stdout.write('\n' + MARK + JSON.stringify(rows) + '\n');
+    process.exit(0);
+  }, function (e) {
+    process.stderr.write('child failed: ' + String((e && e.stack) || e) +
+                         '\n');
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  name: 'authzen_evaluation',
+  describe: 'POST /access/v1/evaluation (#563): the certificate door, the ' +
+            'AUTHZEN_PEPS policy, the application scope, the result ' +
+            'mapping through a realm\'s root policy, the token door and the ' +
+            'off switch, over real handshakes',
+  run: run
+};

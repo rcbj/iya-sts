@@ -219,6 +219,7 @@
   "audit.actions.spiffe.call.refuse.label": "A SPIRE Server API call was refused for who was calling",
   "audit.actions.xacml.decision.label": "The PDP reached a decision",
   "audit.actions.xacml.enforcement.label": "The embedded PEP enforced a decision",
+  "audit.actions.authzen.decision.label": "An AuthZEN access evaluation was decided",
   "audit.actions.xacml.issuance.refused.label": "The issuance PEP refused to let this service mint something",
   "audit.actions.xacml.access.refused.label": "The access PEP refused a request to a gated surface",
   "audit.actions.xacml.issuance.alarm.label": "The issuance PEP let an elevated risk through, with no factor to step up to, for an application risk may never lock out",

@@ -4931,6 +4931,14 @@ function realmSupport() {
             'belongs ' +
             'to the realm it is registered in, and its HTTPS listener ' +
             'certificate is issued by that realm\'s pep-tls Issuing CA.' },
+    { family: 'AuthZEN', state: 'full', by: 'path',
+      cards: ['AuthZEN'],
+      note: 'The realm is AuthZEN\'s tenant: a caller is looked up in the ' +
+            'realm\'s own directory, so another realm\'s caller is ' +
+            'nobody here, and a question is decided against the realm\'s ' +
+            'own root policy. The attribute catalogue is the realm\'s ' +
+            'sts-authzen-api object, and every authzen.* setting is the ' +
+            'realm\'s.' },
     { family: 'Federation', state: 'full', by: 'path',
       cards: ['Federation'],
       note: 'Its own relationships — ou=federations is in the realm\'s ' +
