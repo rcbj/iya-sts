@@ -477,11 +477,17 @@ async function test() {
   // 2026-10-28, so D's enrolment was refused `invalid_token`. The receiver
   // spares a token issued in a LATER whole second than the event, so the
   // portal signs in again past the second B1 was answered in.
+  //
+  // IT SIGNS IN ON B2's SESSION, NOT WITH THE PASSWORD: since #1135 a key
+  // has no role, so a person holding one is asked for it after a password,
+  // and the password walk stopped at that step with a 200 (every mode of
+  // the run of 2026-10-29). B2's ML-DSA sign-in is the session the person
+  // has.
   await new Promise(function (resolve) {
     setTimeout(resolve, 1050 - (Date.now() % 1000));
   });
   const fresh = await portalSignin.signInToThePortal(base, PERSON, null,
-                                                     { password: PASSWORD });
+                                                     { cookie: r.cookie });
 
   // C. The warnings.
   page = await fresh.api("GET", "/account-api/keys");

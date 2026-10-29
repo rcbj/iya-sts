@@ -402,6 +402,28 @@ async function signIn(driver, withKey) {
       setTimeout(resolve, 100);
     });
   }
+  // THE AUTOFILL MAY SIGN THE PERSON IN WITH THE KEY ALONE: since #1135 a
+  // key has no role, so the conditional request a person holding one meets
+  // as the screen loads is answered by the virtual authenticator and signs
+  // them in without a password. The memory run of 2026-10-29 found the
+  // browser on /portal, signed in, where this waited for the form. The key
+  // was used either way, which is what a `withKey` sign-in is about.
+  const byAutofill = async function () {
+    return (await path(driver)).indexOf("/portal") === 0 &&
+      (await bodyText(driver)).indexOf("Signed in as " + PERSON) >= 0;
+  };
+  await waitFor(driver, async function () {
+    return await present(driver, "#username") || await byAutofill();
+  }, "the sign-in screen never drew its form.");
+  if (withKey && !(await present(driver, "#username")) &&
+      await byAutofill()) {
+    check("the security key signed " + PERSON + " in, through the " +
+          "screen's passkey autofill", function () {
+      assert.ok(true);
+    });
+    log.debug("Leaving signIn(). By the autofill.");
+    return;
+  }
   await waitFor(driver, async function () {
     return present(driver, "#username");
   }, "the sign-in screen never drew its form.");
