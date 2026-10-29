@@ -172,6 +172,26 @@ must be in the set (403 `0025`), none named and one in the set picks it,
 none in the set is `0026`, several and none named `0027`. **`ou=peps` is not
 consulted**: registration is not a permission.
 
+## The metadata (#1163)
+
+**Section 9.2 INSERTS the well-known segment**, RFC 8414's shape: a realm's
+PDP identifier is `https://host/realm/<id>`, so its document is
+`/.well-known/authzen-configuration/realm/<id>`, arriving at the host root
+with the realm after it. `authzen.ts` reads that path the way `oauth2.ts`'s
+`issuerPathTarget()` reads an issuer's — `realm/<id>` of a realm that exists,
+asked from the default realm — and answers inside that realm; anything else
+is Express's 404 (`0035`). The appended form (`/realm/<id>/.well-known/…`)
+reaches the bare route already in its realm and answers the same document.
+
+**`policy_decision_point` is `baseUrlOf(req, 'authzen')`**, the base the API
+is advertised under (#472), so it matches the URL a PEP built — section
+9.2.3 has the PEP refuse a document whose identifier does not. **It names
+only what answers**: the single endpoint, and the batch one while it is on;
+no search endpoint and no `capabilities` until one is implemented end to
+end, and no `signed_metadata` (a follow-up may sign it with the realm's key).
+While the API is off the document answers 501 rather than advertising an
+endpoint that does not.
+
 ## The console and the API (#1162)
 
 **One tab, AuthZEN, on `/admin/xacml`**, after the XACML tabs it is decided

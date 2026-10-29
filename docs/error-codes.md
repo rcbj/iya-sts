@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4841** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4842** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 34
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 35
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4734,6 +4734,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0032` | An AuthZEN set-scope named more than 64 applications, or one longer than 256 characters or holding a control character. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-AUTHZEN-0033` | An AuthZEN set-scope named no person, service account or application in this realm, or the scope could not be written onto the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-AUTHZEN-0034` | An /admin-api/xacml/authzen action threw rather than answering. | HTTP 500, ok false |
+| `STS-AUTHZEN-0035` | A request for /.well-known/authzen-configuration/<path> named no PDP: the path after the segment is not realm/<id> of a realm that exists, asked at the host root. | HTTP 404 (Express's own) |
 
 ## STS-ADMIN
 

@@ -21215,6 +21215,11 @@ const CODES = [
     summary: 'An /admin-api/xacml/authzen action threw rather than ' +
       'answering.',
     spec: 'HTTP 500, ok false' },
+  { code: 'STS-AUTHZEN-0035',
+    summary: 'A request for /.well-known/authzen-configuration/<path> named ' +
+      'no PDP: the path after the segment is not realm/<id> of a realm ' +
+      'that exists, asked at the host root.',
+    spec: 'HTTP 404 (Express\'s own)' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

@@ -96,8 +96,8 @@
     "text": "full para sa mandatoryong feature set: ang policy language, ang pitong decision value kasama ang tatlong extended Indeterminate, target matching, mga condition, mga variable, ang labindalawang combining algorithm, mga obligation at advice, mga policy reference, at ang standard function library sa lahat ng labimpitong datatype. Sinusuri laban sa OASIS conformance suite — 454 sa 455 na mandatoryong case ang pumapasa, at ang nag-iisang exception ay nakatala kasama ang argumento nito sa xacml/conformance/MANIFEST.js. HINDI saklaw: AttributeSelector at ang mga XPath function (Indeterminate ang policy na gumagamit ng isa sa halip na tahimik na walang laman), ang Multiple Decision at Hierarchical Resource profile, at administrative delegation."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "837796da675e27fc",
-    "text": "partial: ang Access Evaluation API (section 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng attribute catalogue bawat realm, kasama ang X-Request-ID at ang challenge ng section 11.3. Kulang: ang tatlong Search API, ang signed_metadata, at bawat profile (Obligations, Access Request and Approval, ang mga OAuth), na lahat ay draft pa."
+    "en": "0431c0069ab3fb3f",
+    "text": "partial: ang Access Evaluation API (seksyon 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng katalogo ng attribute bawat realm, kasama ang X-Request-ID at ang hamon ng seksyon 11.3, at ang metadata ng PDP (seksyon 9) sa dalawang anyo nito. Kulang: ang tatlong Search API, signed_metadata, at bawat profile (Obligations, Access Request and Approval, ang mga OAuth), na pawang mga draft pa."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -762,6 +762,14 @@
   "stsmetadata.endpoints./access/v1/evaluation.what": {
     "en": "83b5c5b154533638",
     "text": "Mag-POST ng AuthZEN subject, action, resource at context; makakuha ng decision na true o false. Pinagpapasyahan ng XACML engine laban sa ROOT policy ng realm, na may protocol = authzen sa request. Umaabot lamang ang isang property sa policy sa pamamagitan ng attribute catalogue ng realm, at ang hindi naideklara ay 400 sa bawat mode. Nag-a-authenticate ang CALLER ayon sa authzen.callerAuthentication — client certificate bilang default, access token na may dalang authzen:evaluate, o pareho — at dapat may hawak na AUTHZEN_PEPS at naka-scope sa application na tinatanong nito. Ang pagtanggi ay 200 false; ang fault na naabot ng PDP ay 500, hindi kailanman false."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "411b951f2d32a644",
+    "text": "Ang dokumento ng seksyon 9: policy_decision_point (ang base ng realm na ito, na tugma sa URL kung saan ito kinukuha) at ang mga endpoint lamang na sumasagot dito — walang search endpoint at walang capabilities hangga't wala pang naipapatupad nang buo, at walang signed_metadata. Pampubliko; sumasagot ng 501 habang naka-off ang API."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "Ang parehong dokumento sa ipinasok na anyo ng seksyon 9.2, kung saan ang identifier ng PDP ay sa isang realm: /realm/<id> pagkatapos ng segment, sinasagot sa loob ng realm na iyon. Ang anumang ibang path ay walang pinapangalanang PDP at isang 404."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",

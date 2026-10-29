@@ -96,8 +96,8 @@
     "text": "full för den obligatoriska funktionsuppsättningen: policyspråket, de sju beslutsvärdena inklusive de tre utökade Indeterminate, målmatchning, villkor, variabler, de tolv kombinationsalgoritmerna, obligations och advice, policyreferenser, och standardfunktionsbiblioteket över alla sjutton datatyper. Hållen mot OASIS konformitetssvit — 454 av de 455 obligatoriska fallen godkänns, och det enda undantaget är dokumenterat med sitt argument i xacml/conformance/MANIFEST.js. INTE täckt: AttributeSelector och XPath-funktionerna (en policy som använder en av dem är Indeterminate snarare än tyst tom), profilerna Multiple Decision och Hierarchical Resource, och administrativ delegering."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "837796da675e27fc",
-    "text": "partial: Access Evaluation API (avsnitt 6), avgjord av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3. Saknas: de tre Search APIs, signed_metadata och varje profil (Obligations, Access Request and Approval, OAuth-profilerna), alla fortfarande utkast."
+    "en": "0431c0069ab3fb3f",
+    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, och PDP-metadata (avsnitt 9) i båda dess former. Saknas: de tre Search APIs, signed_metadata och alla profiler (Obligations, Access Request and Approval, OAuth-profilerna), alla fortfarande utkast."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -762,6 +762,14 @@
   "stsmetadata.endpoints./access/v1/evaluation.what": {
     "en": "83b5c5b154533638",
     "text": "POST:a ett AuthZEN-subject, action, resource och context; få decision true eller false. Avgörs av XACML-motorn mot sfärens ROT-policy, med protocol = authzen i begäran. En egenskap når policyn bara genom sfärens attributkatalog, och en odeklarerad ger 400 i alla lägen. ANROPAREN autentiserar sig enligt authzen.callerAuthentication — ett klientcertifikat som standard, en åtkomsttoken med authzen:evaluate, eller båda — och måste ha AUTHZEN_PEPS och ha omfång för applikationen den frågar om. Ett nekande är 200 false; ett fel som PDP:n nådde är 500, aldrig false."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "411b951f2d32a644",
+    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som stämmer med den URL det hämtas under) och bara de slutpunkter som svarar här — ingen sökslutpunkt och inga capabilities förrän någon är implementerad hela vägen, och ingen signed_metadata. Offentligt; svarar 501 medan API:t är avstängt."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "Samma dokument i avsnitt 9.2:s infogade form, där PDP-identifieraren är en sfärs: /realm/<id> efter segmentet, besvarat inne i den sfären. Varje annan sökväg namnger ingen PDP och ger 404."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",

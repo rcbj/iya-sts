@@ -647,7 +647,8 @@ const SPECS: Spec[] = [
     coverage: 'partial: the Access Evaluation API (section 6), decided by ' +
               'the XACML engine against the realm\'s root policy through a ' +
               'per-realm attribute catalogue, with X-Request-ID and the ' +
-              'section 11.3 challenge. Missing: the three Search APIs, ' +
+              'section 11.3 challenge, and the PDP metadata (section 9) at ' +
+              'both its forms. Missing: the three Search APIs, ' +
               'signed_metadata, and every profile (Obligations, Access ' +
               'Request and Approval, the OAuth ones), all still drafts.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
@@ -3653,6 +3654,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'authzen:evaluate, or both — and must hold AUTHZEN_PEPS and be ' +
           'scoped to the application it asks about. A denial is 200 false; ' +
           'a fault the PDP reached is a 500, never false.' },
+  { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
+    name: 'PDP metadata', specs: ['authzen10'],
+    what: 'The section 9 document: policy_decision_point (this realm\'s ' +
+          'base, matching the URL it is fetched under) and only the ' +
+          'endpoints that answer here — no search endpoint and no ' +
+          'capabilities until one is implemented end to end, and no ' +
+          'signed_metadata. Public; answers 501 while the API is off.' },
+  { path: '/.well-known/authzen-configuration/*', group: 'AuthZEN',
+    name: 'PDP metadata (identifier with a path)', specs: ['authzen10'],
+    what: 'The same document at section 9.2\'s inserted form, where the ' +
+          'PDP identifier is a realm\'s: /realm/<id> after the segment, ' +
+          'answered inside that realm. Any other path names no PDP and is ' +
+          'a 404.' },
   // --- GNAP (2026-09-12). gnap/CLAUDE.md argues the module split.
   { path: '/gnap', group: 'GNAP', name: 'The grant endpoint',
     specs: ['rfc9635', 'rfc9421', 'rfc9530', 'rfc9493'],
