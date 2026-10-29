@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4792** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4797** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 249
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -4937,6 +4937,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0898` | Storing or removing a certificate was refused: the person named has no entry in this realm, and none is created (#1061). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0899` | Storing a certificate on a person's entry was refused: the same certificate is already stored on another entry of the realm, and a certificate stored on two entries names nobody (#1061). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0900` | Removing a stored certificate was refused: the person's entry stores no certificate with that SHA-256 (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0901` | Issuing a person or an application a message-signing certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority) (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0902` | A message-signing certificate's file password was too short, too long, or not the same twice (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0903` | Revoking a person's or an application's message-signing certificate was refused with no more specific code (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0904` | A message-signing certificate action named an application the registry does not hold (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0905` | A message-signing certificate action named a person with no entry in this realm, and none is created (#521). | HTTP 400 (API) or a refusal on the person's page |
 
 ## STS-API
 

@@ -12279,7 +12279,8 @@ class AdminViews {
         leafLifetimeDays: pki.leafLifetimeDays()
       },
       sources: applications.KEY_SOURCES.slice(),
-      mtls: this.applicationMtlsState(row, one, chainAvailable)
+      mtls: this.applicationMtlsState(row, one, chainAvailable),
+      signing: this.applicationSigningState(row, chainAvailable)
     };
     state.json = {
       clientSecret: { held: state.clientSecret.held,
@@ -12301,7 +12302,8 @@ class AdminViews {
       caAvailable: chainAvailable,
       oauthDeclared: oauthDeclared,
       sources: state.sources,
-      mtls: state.mtls
+      mtls: state.mtls,
+      signing: state.signing
     };
     log.debug("Leaving AdminViews.applicationCredentialsState().");
     return state;
@@ -12388,6 +12390,34 @@ class AdminViews {
       revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
       passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // MESSAGE-SIGNING CERTIFICATES ON AN APPLICATION'S PAGE (#521).
+  //
+  // The certificates the realm's `message-signing` Issuing CA issued this
+  // application — what it signs a WS-Trust request with — read through
+  // `admin_actions.ts`'s `signingCertificatesOf()`, the one reading the
+  // person's page uses too. `wstrustDeclared` is whether the application is
+  // declared a WS-Trust relying party; the page draws the section for one,
+  // and for any application already holding such a certificate, since
+  // hiding a credential that still verifies would hide what to revoke.
+  // ---------------------------------------------------------------------------
+  private applicationSigningState(row, caAvailable) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationSigningState().");
+    const identifier = String((row && row.identifier) || '');
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    // Required when drawn, for `userPageData()`'s reason: `admin_actions.ts`
+    // is this module's other half and requires what this one does.
+    const held = require('./admin_actions').signingCertificatesOf(
+      'application', identifier);
+    log.debug("Leaving AdminViews.applicationSigningState(). " +
+              held.certificates.length + " held.");
+    return Object.assign({}, held, {
+      wstrustDeclared: declared.indexOf('wstrust') >= 0,
+      caAvailable: !!caAvailable
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -14714,6 +14744,12 @@ class AdminViews {
         // drawn: `admin_actions.ts` is this module's other half and requires
         // what this one does, so the require moves nothing.
         certificates: require('./admin_actions').storedCertificatesOf(key),
+        // The message-signing certificates issued to them (#521), with the
+        // cap and what the issue form needs; `caAvailable` is whether this
+        // service has a certificate authority to issue one from.
+        signing: Object.assign(
+          require('./admin_actions').signingCertificatesOf('person', key),
+          { caAvailable: !!this.deps.pki.hasChain() }),
         // The address and the emailed second factor (#64), and the account
         // ids clients know them by (#148).
         mail: {

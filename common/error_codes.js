@@ -22037,6 +22037,27 @@ const CODES = [
     summary: 'Removing a stored certificate was refused: the person\'s entry ' +
       'stores no certificate with that SHA-256 (#1061).',
     spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0901',
+    summary: 'Issuing a person or an application a message-signing ' +
+      'certificate was refused with no more specific code (the key ' +
+      'algorithm, the label or the realm\'s certificate authority) (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0902',
+    summary: 'A message-signing certificate\'s file password was too ' +
+      'short, too long, or not the same twice (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0903',
+    summary: 'Revoking a person\'s or an application\'s message-signing ' +
+      'certificate was refused with no more specific code (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0904',
+    summary: 'A message-signing certificate action named an application ' +
+      'the registry does not hold (#521).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-ADMIN-0905',
+    summary: 'A message-signing certificate action named a person with no ' +
+      'entry in this realm, and none is created (#521).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
