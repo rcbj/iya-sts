@@ -15831,6 +15831,48 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The selection now held, in `attributes`.' },
+          // THE OAUTH SUB-TAB'S ONE TABLE (#1144): the three OAuth
+          // selections, a column each, under one Save.
+          { action: 'set-claim-selections',
+            operationId: 'setApplicationClaimSelections',
+            summary: 'Set an application\'s access token, ID Token and ' +
+                     'UserInfo directory-attribute selections together, ' +
+                     'writing only the ones that changed',
+            description: 'The console\'s OAuth 2.0 / OpenID Connect claims ' +
+                         'table, a column per set. Each of `access_token`, ' +
+                         '`id_token` and `userinfo` that is sent is the ' +
+                         'whole list of catalogue attributes that set ' +
+                         'should carry. A set sent with exactly the ' +
+                         'selection in force is LEFT AS IT IS — the ' +
+                         'realm\'s, if the application was inheriting it — ' +
+                         'and a set that differs becomes the application\'s ' +
+                         'own selection, replacing the realm\'s for it, as ' +
+                         '`set-claim-attributes` writes one. A set not sent ' +
+                         'is not touched. Every set is checked before any ' +
+                         'is written. Refused (`STS-REG-0215`) for an ' +
+                         'attribute the catalogue does not hold, or an ' +
+                         'application not declared for OAuth 2.0 or OpenID ' +
+                         'Connect.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                access_token: { type: 'array', items: { type: 'string' } },
+                id_token: { type: 'array', items: { type: 'string' } },
+                userinfo: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app',
+                           access_token: ['mail'],
+                           id_token: ['mail', 'givenName', 'sn'],
+                           userinfo: ['mail', 'givenName', 'sn',
+                                      'telephoneNumber'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'Each set sent, in `sets`: `changed`, ' +
+                                 '`inherited` and the `attributes` now in ' +
+                                 'force.' },
           { action: 'inherit-claim-attributes',
             operationId: 'inheritApplicationClaimAttributes',
             summary: 'Return an application to the realm\'s ' +
