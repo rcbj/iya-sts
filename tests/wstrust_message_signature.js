@@ -369,7 +369,8 @@ async function childBody() {
   // C. THE SIGNATURE, AND WRAPPING
   // -------------------------------------------------------------------------
   r = await ask('product', sign('alice', { after: function (xml) {
-    return xml.replace(BACK, 'https://elsewhere.example');
+    // A signed part the routing does not read first: the RST's Context.
+    return xml.replace('Context="urn:uuid:', 'Context="urn:uuid:0');
   } }));
   t.check(failed(r, 'STS-WSTRUST-0045'),
           'C1. a Body altered after signing is STS-WSTRUST-0045', brief(r));

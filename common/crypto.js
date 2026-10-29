@@ -1591,14 +1591,21 @@ function readWsSecuritySignature(xml) {
                   'it does not say which element was signed');
   }
   const signedInfo = directChildByLocal(sigEl, 'SignedInfo', DS_NS);
-  const c14nEl = signedInfo
-    ? directChildByLocal(signedInfo, 'CanonicalizationMethod', DS_NS) : null;
-  const methodEl = signedInfo
-    ? directChildByLocal(signedInfo, 'SignatureMethod', DS_NS) : null;
+  if (!signedInfo) {
+    // A ds:Signature with no SignedInfo signs nothing: it is not a
+    // signature over the request, and is read as none. One shape carries it
+    // on purpose — WS-Trust's `?encrypt=1` test control, which reads the
+    // recipient certificate out of a bare KeyInfo there.
+    log.debug("Leaving readWsSecuritySignature(). A KeyInfo, no SignedInfo.");
+    return { present: false };
+  }
+  const c14nEl = directChildByLocal(signedInfo, 'CanonicalizationMethod',
+                                    DS_NS);
+  const methodEl = directChildByLocal(signedInfo, 'SignatureMethod', DS_NS);
   const valueEl = directChildByLocal(sigEl, 'SignatureValue', DS_NS);
-  if (!signedInfo || !methodEl || !valueEl) {
+  if (!methodEl || !valueEl) {
     log.debug("Leaving readWsSecuritySignature(). Incomplete.");
-    return refuse('STS-KEYS-0161', 'the ds:Signature has no SignedInfo, ' +
+    return refuse('STS-KEYS-0161', 'the ds:Signature has no ' +
                   'SignatureMethod or SignatureValue');
   }
   const c14n = c14nEl ? String(c14nEl.getAttribute('Algorithm') || '') : '';
