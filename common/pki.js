@@ -434,7 +434,31 @@ const USE_CASES = [
           'this authority signs its holder in at GET /tls/sign-in on the ' +
           'main port, in this ' +
           'realm; a certificate from any other authority of this service ' +
-          'does not, although every one of them chains to the same Root.' }
+          'does not, although every one of them chains to the same Root.' },
+  // **A REQUESTER'S MESSAGE-SIGNING CERTIFICATE (#521, rcbj 2026-10-28).**
+  // The certificate a WS-Trust requester signs its RST with — a
+  // WS-Security 1.1 signature over the SOAP Body and the Timestamp — and
+  // the one thing it is: `digitalSignature` and nothing else, no extended
+  // key usage, and the holder in a `urn:sts:person:` or
+  // `urn:sts:application:` subjectAltName. An authority of its own for
+  // `tls-client`'s reason: every authority here chains to the one Root, so
+  // "this certificate's key may sign a request as its holder" is sayable
+  // only as WHICH authority issued it — and a TLS client certificate is not
+  // a message-signing credential, nor this one a TLS client
+  // (`common/tls_client_certificates.js`, PURPOSES). REALM-scoped because
+  // the realm a signed request authenticates in is read off the authority,
+  // as a TLS client certificate's is.
+  { id: 'message-signing', scope: 'realm', label: 'Message signing',
+    cn: 'Message Signing Issuing CA',
+    what: 'The certificates a person or an application signs a WS-Trust ' +
+          'request with (a WS-Security 1.1 signature over the SOAP Body ' +
+          'and Timestamp): digitalSignature only, the holder\'s ' +
+          'urn:sts:person: or urn:sts:application: name, and a private key ' +
+          'handed over once as a PKCS#12. Issued by an administrator from ' +
+          'the console or /admin-api. A certificate from this authority ' +
+          'authenticates its holder as the requester of a signed RST, in ' +
+          'this realm; a TLS client certificate from this service does not, ' +
+          'and this one signs nobody in over TLS.' }
 ];
 
 /**

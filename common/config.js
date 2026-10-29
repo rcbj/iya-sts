@@ -6960,6 +6960,22 @@ const SETTINGS = [
                  'Past it the issue is refused (STS-PKI-0180) rather than ' +
                  'revoking a certificate a running instance may still be ' +
                  'presenting.' },
+  // A REQUESTER'S MESSAGE-SIGNING CERTIFICATES (#521, 2026-10-28), from the
+  // realm's `message-signing` Issuing CA — `common/tls_client_certificates.js`,
+  // PURPOSES. One setting for both kinds of holder: either is issued them by
+  // an administrator, and the reason for several is the same — a rotation in
+  // progress, or one per signing host.
+  { key: 'pki.messageSigningCertificateMax', group: 'PKI',
+    label: 'Message-signing certificates one holder may hold',
+    env: 'STS_PKI_MESSAGE_SIGNING_CERTIFICATE_MAX', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'How many still-valid message-signing certificates (the ' +
+                 'ones a WS-Trust requester signs its request with) an ' +
+                 'administrator may issue one person or one application, ' +
+                 'from /admin/users, /admin/applications or /admin-api. A ' +
+                 'revoked or expired certificate does not count. Past it the ' +
+                 'issue is refused (STS-PKI-0220) rather than revoking a ' +
+                 'certificate somebody may still be signing with.' },
 
   // ---------------------------------------------------------------------
   // A PINNED KEY PAIR AS A REAL SIGNER (2026-09-27, #263). rcbj's decision:
