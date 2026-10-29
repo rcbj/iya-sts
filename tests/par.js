@@ -428,6 +428,14 @@ function childMain() {
       make(id);
     });
     make('par-jwt', { oauthTokenEndpointAuthMethod: 'private_key_jwt' });
+    // 3c8's two resources, registered (#1140): a resource names an
+    // audience an application object holds, in every mode.
+    ['https://api1.par.example/', 'https://api2.par.example/']
+      .forEach(function (aud, i) {
+        applications.createApplication({ identifier: 'par-api' + (i + 1),
+          kind: 'oauth2-resource-server', protocols: ['oauth2'],
+          fields: { oauthAudience: [aud] } });
+      });
     make('par-public', { oauthTokenEndpointAuthMethod: 'none',
                          oauthClientSecret: '' });
     applications.updateApplication('par-public', {

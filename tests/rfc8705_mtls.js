@@ -911,6 +911,11 @@ function childMain() {
     const IMPLICIT_CB = 'https://mtls-implicit.example/cb';
     create('mtls-implicit', { oauthTokenEndpointAuthMethod: 'tls_client_auth',
                               oauthRedirectUri: [IMPLICIT_CB] });
+    // 3m11's other resource, registered (#1140): a token is minted only for
+    // an audience an application object holds, in every mode.
+    applications.createApplication({ identifier: 'mtls-implicit-api',
+      kind: 'oauth2-resource-server', protocols: ['oauth2'],
+      fields: { oauthAudience: ['https://mtls-implicit.example/api'] } });
     const jar = {};
     const browse = function (urlPath) {
       return new Promise(function (resolve) {

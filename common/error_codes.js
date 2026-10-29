@@ -10421,16 +10421,16 @@ const CODES = [
       'was counted or recorded (#496).',
     spec: 'invalid_client (HTTP 401, RFC 6749 section 5.2)' },
   { code: 'STS-OAUTH-0950',
-    summary: 'Product mode: an authorization request or a pushed ' +
-      'authorization request named an RFC 8707 resource that is no ' +
+    summary: 'In every mode since #1140: an authorization request or a ' +
+      'pushed authorization request named an RFC 8707 resource that is no ' +
       'registered target — none of this service\'s own resource servers, ' +
       'and no registered application (no appRegisteredBy) by its ' +
       'oauthAudience, permission base URI, client_id or identifier ' +
       '(#505).',
     spec: 'invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR' },
   { code: 'STS-OAUTH-0951',
-    summary: 'Product mode: a token request (any grant but the token ' +
-      'exchange) named an RFC 8707 resource that is no registered target ' +
+    summary: 'In every mode since #1140: a token request (any grant but ' +
+      'the token exchange) named an RFC 8707 resource that is no registered target ' +
       '— none of this service\'s own resource servers, and no registered ' +
       'application — and was refused before anything was spent (#505).',
     spec: 'invalid_target (HTTP 400, RFC 8707 section 2)' },
@@ -10585,6 +10585,14 @@ const CODES = [
       'in every mode (#1139).',
     spec: 'invalid_client (RFC 6749 section 5.2), HTTP 401; HTTP 400 at the ' +
       'authorization endpoint, never redirected' },
+  { code: 'STS-OAUTH-0986',
+    summary: 'An access token was not minted: an audience it would carry — ' +
+      'the default resource, a resource the request named, the client\'s ' +
+      'own, or one a scope or authorization_details derived — is held by ' +
+      'no application object (an own API whose object was deleted, or an ' +
+      'audience nobody registered). Refused in every mode (#1140).',
+    spec: 'invalid_target (RFC 8707 section 2), HTTP 400; redirected from ' +
+      'the authorization endpoint' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

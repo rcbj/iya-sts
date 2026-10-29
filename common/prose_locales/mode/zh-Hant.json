@@ -743,18 +743,6 @@
     "en": "43ea90ee5ea17888",
     "text": "未知的金鑰會被拒絕（STS-GNAP-0082），屬於無人註冊之項目的金鑰或執行個體識別碼也會被拒絕（appRegisteredBy 未設定——首次出現時建立的項目不等於註冊）：在再次觀察該項目或簽發任何東西之前，回應 401 invalid_client 或 invalid_resource_server（STS-GNAP-0902）。"
   },
-  "mode.requirements.unregistered-resource-targets.what": {
-    "en": "c9e70b1944bd9dca",
-    "text": "RFC 8707 資源與 GNAP 權限的位置須指名已註冊的目標（#505）"
-  },
-  "mode.requirements.unregistered-resource-targets.development": {
-    "en": "fd6dc100e791e280",
-    "text": "任何絕對 URI 都會在授權、PAR 與權杖端點被接受為資源，並成為權杖的 aud；未指名任何資源伺服器的 GNAP 位置會被排除在權杖的對象之外，而只要權杖中另有內容指名了資源伺服器，該權限仍會授予——存取未指名任何資源伺服器的權杖在每種模式下都以 invalid_request 拒絕（STS-GNAP-0904）。"
-  },
-  "mode.requirements.unregistered-resource-targets.product": {
-    "en": "5f6d00d42845d0e5",
-    "text": "資源（權杖交換之外；權杖交換的目標由政策的 unregistered-target 決定）以及 GNAP 存取權限的每個位置，都必須指名已註冊的目標：本服務自己的資源伺服器之一（UserInfo、SCIM、Shared Signals 與 OpenID4VCI 接受的預設資源指示器；/admin-api；/account-api；/report-api），或事先註冊的應用程式（已設定 appRegisteredBy——目擊不等於註冊），以其 oauthAudience、權限基底 URI、client_id 或識別碼指名——內嵌偵錯工具的 api 即是其一，已預先註冊。位於已註冊資源伺服器之 gnapResourceServerUri 或其下的 GNAP 位置也指名了它。否則為 invalid_target：從授權端點重新導向，在 PAR 回應 400（STS-OAUTH-0950），在花費任何東西之前於權杖端點回應 400（STS-OAUTH-0951）；對 GNAP 而言，請求會以 invalid_request 遭拒（STS-GNAP-0903），而不是丟棄該權限。"
-  },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
     "text": "回應送往請求所指定之處"

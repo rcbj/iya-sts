@@ -743,18 +743,6 @@
     "en": "43ea90ee5ea17888",
     "text": "Une clé inconnue est refusée (STS-GNAP-0082), de même qu’une clé ou un identifiant d’instance appartenant à une entrée que personne n’a enregistrée (appRegisteredBy non défini — une entrée créée à la première observation n’est pas un enregistrement) : 401 invalid_client ou invalid_resource_server (STS-GNAP-0902), avant que l’entrée ne soit de nouveau observée ou que quoi que ce soit ne soit émis."
   },
-  "mode.requirements.unregistered-resource-targets.what": {
-    "en": "c9e70b1944bd9dca",
-    "text": "Une ressource RFC 8707 et les emplacements d’un droit GNAP nomment une cible enregistrée (#505)"
-  },
-  "mode.requirements.unregistered-resource-targets.development": {
-    "en": "fd6dc100e791e280",
-    "text": "N’importe quelle URI absolue est acceptée comme ressource aux points de terminaison d’autorisation, PAR et de jeton, et devient l’aud du jeton ; un emplacement GNAP qui ne nomme aucun serveur de ressources est exclu de l’audience du jeton et le droit est accordé, tant qu’autre chose dans le jeton en nomme un — un jeton dont l’accès n’en nomme aucun est refusé avec invalid_request dans tous les modes (STS-GNAP-0904)."
-  },
-  "mode.requirements.unregistered-resource-targets.product": {
-    "en": "5f6d00d42845d0e5",
-    "text": "Une ressource (hors échange de jetons, dont les cibles relèvent de la cible non enregistrée de la politique) et chaque emplacement d’un droit d’accès GNAP doivent désigner une cible enregistrée : l’un des serveurs de ressources propres à ce service (l’indicateur de ressource par défaut qu’acceptent UserInfo, SCIM, Shared Signals et OpenID4VCI ; /admin-api ; /account-api ; /report-api) ou une application enregistrée à l’avance (appRegisteredBy renseigné — une observation n’est pas un enregistrement), par son oauthAudience, son URI de base de permission, son client_id ou son identifiant — l’api du débogueur embarqué en est une, semée comme enregistrée. Un emplacement GNAP sur ou sous l’URI de serveur de ressources gnapResourceServerUri d’un serveur enregistré le désigne aussi. Sinon invalid_target : redirection depuis le point de terminaison d’autorisation et 400 au PAR (STS-OAUTH-0950), 400 au point de terminaison de jeton avant que rien ne soit consommé (STS-OAUTH-0951) ; pour GNAP, la requête est refusée avec invalid_request (STS-GNAP-0903), et le droit n’est pas simplement écarté."
-  },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
     "text": "Une réponse va là où l’indique la requête"

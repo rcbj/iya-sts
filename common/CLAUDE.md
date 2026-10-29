@@ -12505,9 +12505,14 @@ product, to one definition, this file's:
   client_id, identifier or permission base URI — the embedded debugger's api
   is one, seeded registered.
 
-`unregistered()` answers the targets that are neither — none in development,
-behind #496's `mode.issuesToUnregisteredApplications()` and the
-`unregistered-resource-targets` REQUIREMENTS row. A STATIC UTILITY CLASS like
+`unregistered()` answers the targets that are neither — IN EVERY MODE since
+#1140 (it answered none in development until then, behind #496's
+`mode.issuesToUnregisteredApplications()` and an
+`unregistered-resource-targets` REQUIREMENTS row, both now gone from it), and
+`oauth2.ts`'s `accessTokenPlan()` asks it of every audience a token would
+carry (`oauth-oidc/CLAUDE.md`). An own resource server counts only while its
+#1139 application object exists (`seeded()`), and is matched by path under the
+request's base or the authorization server's. A STATIC UTILITY CLASS like
 `issuer_names.ts`: the registry, the access-token profile and the management
 API are reached lazily, at request time only, and a converted module is
 ASKED, NEVER BUILT (an uninstalled instance answers nothing), so neither a

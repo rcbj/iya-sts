@@ -1236,7 +1236,9 @@ class GnapGrants {
   // server, GNAP's own addressing and the match `resourceServersFor()`
   // makes. Asked at the request stage, so at creation, modification and
   // derivation alike, before anybody is asked to approve. A reference
-  // string names no location. Development is unchanged.
+  // string names no location. IN EVERY MODE SINCE #1140 (rcbj: no access
+  // token for an audience no application object holds, in both modes);
+  // development was unchanged by #505.
   // ---------------------------------------------------------------------------
   private unregisteredLocationRefusal(req, tokens) {
     const { log } = this.deps;
