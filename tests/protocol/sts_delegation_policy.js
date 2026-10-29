@@ -503,10 +503,16 @@ async function tokenExchange() {
   await oauthRefused(r, "invalid_request");
   check("O8. a subject carrying stsNotDelegated is " + SAYS() +
         " (invalid_request)", function () {});
+  // REFUSED IN EVERY MODE SINCE #1140: no access token is issued for an
+  // audience no application object holds, development included, so this is
+  // the token endpoint's refusal before the delegation policy is asked.
   r = await exchange(MID, forMid, { audience: NOWHERE });
-  await oauthRefused(r, "invalid_target");
-  check("O9. an audience no application registers is " + SAYS() +
-        " (invalid_target)", function () {});
+  check("O9. an audience no application registers: invalid_target in " +
+        "every mode (#1140)", function () {
+    assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    assert.strictEqual(r.json.error, "invalid_target", r.text);
+    assert.ok(!r.json.access_token, "nothing was issued");
+  });
   r = await exchange(MID, forMid, { audience: [TARGET, url(FINAL)] });
   check("O10. two audiences: invalid_target in every mode (product's " +
         "policy, and RFC 9068 section 3 in development)", function () {

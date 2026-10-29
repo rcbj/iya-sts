@@ -203,9 +203,9 @@ function childMain() {
     const PASSWORD = 'correct-horse-battery-staple-pkl-7!';
     const ON = 'webauthn.pqcAlongsideClassical';
     // The default `webauthn.algorithms`, as COSE identifiers: what a realm
-    // that never turned the switch on has always been sent (the snapshot).
-    const CONFIGURED = [-50, -49, -48, -9, -7, -19, -8, -51, -35, -52, -36,
-                        -53, -47, -37, -38, -39, -257, -258, -259];
+    // that never turned the switch on has always been sent (the snapshot):
+    // ML-DSA-87, -65, -44, ES384, EdDSA, ES256, RS256 since #1150.
+    const CONFIGURED = [-50, -49, -48, -35, -8, -7, -257];
     config.setOverride('oauth2.consentRequired', false);
     passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
                                                 { allowUsernameless: true }));
