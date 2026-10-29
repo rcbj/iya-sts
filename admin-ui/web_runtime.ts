@@ -2433,8 +2433,8 @@ class ConsoleRuntime extends SpaClient {
     };
     const begun = await this.apiJson('POST',
       '/admin-api/users/begin-passkey-enrolment',
-      { user: who, role: String(fields.role || 'mfa'),
-        lane: String(fields.lane || ''), kind: String(fields.kind || '') });
+      { user: who, lane: String(fields.lane || ''),
+        kind: String(fields.kind || '') });
     if (!begun) {
       return;
     }

@@ -11268,12 +11268,14 @@ class Credentials {
   //     use, `security.passwordResetTtlMinutes`, shown once. Its own attributes
   //     and not the activation token's, so issuing one does not throw away an
   //     activation somebody else is in the middle of.
-  //   * **`removePrimaryKeys()`** takes every PRIMARY security key off, and
-  //     refuses where that would leave no way in — `removeKey()`'s rule about
-  //     the last way in, applied to all of them at once.
+  //   * **`removePrimaryKeys()`** takes every passkey off (since #1135, when
+  //     a key lost its role; until then only the PRIMARY ones), and refuses
+  //     where that would leave no way in — `removeKey()`'s rule about the
+  //     last way in, applied to all of them at once.
   //   * **`removeSecondFactors()`** takes every second factor off: the
-  //     authenticator app, every `mfa` key and the recovery codes. It cannot
-  //     lock anybody out, because none of those is a way in.
+  //     authenticator app, every passkey and the recovery codes. Until #1135
+  //     it took only the `mfa` keys and could lock nobody out; every key may
+  //     be a way in now, so it refuses as `removePrimaryKeys()` does.
   //   * **`mfaRequirementFor()`** is whether a second factor is REQUIRED of
   //     somebody who may hold none: `stsMfaRequired` on their entry, or
   //     the authentication policy (#64). `mfaRequired` beside it in
