@@ -42,7 +42,8 @@ rather than repeating them. Every setting in full is in
 
 | What | Console | API |
 |---|---|---|
-| Every `webauthn.*` setting | **Protocols → WebAuthn** (`/admin/webauthn`) | `GET /admin-api/webauthn`; change one with `POST /admin-api/config/set` |
+| Every `webauthn.*` setting | **Protocols → WebAuthn** (`/admin/webauthn`), **Settings** tab | `GET /admin-api/webauthn`; change one with `POST /admin-api/config/set` |
+| What a registration requests right now: the algorithms in order, and why each other one is not offered | **Protocols → WebAuthn**, **Metadata** tab | `GET /admin-api/webauthn` (`status.algorithms`, `status.algorithmsSource`) |
 | The passkey policy | **Directory → Policies** (`/admin/policies`), **Passkey policy** tab, with the sub-tabs **Default**, **Named policies** and **New policy** | `GET /admin-api/policies` (the `passkey` member); `POST /admin-api/policies/save-passkey-policy` and `reset-passkey-policy` |
 | The authentication policy (which sign-in methods are accepted, and whether a second factor is required) | **Directory → Policies**, **Authentication policy** tab | `GET /admin-api/policies` (the `authn` member); `POST /admin-api/policies/save-authn-policy` and `reset-authn-policy` |
 | A person's passkeys | **Directory → Users** (`/admin/users`), the person's page, **Passkeys (WebAuthn)** | `GET /admin-api/users?user=<username>`; `POST /admin-api/users/{action}` |
@@ -503,7 +504,7 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 | `postQuantumRequired` | See [Requiring a post-quantum passkey](#requiring-a-post-quantum-passkey). |
 | `attestationAlgorithms` | See [Requiring a post-quantum attestation](#requiring-a-post-quantum-attestation). |
 | `postQuantumAllowCredentials` | While a post-quantum passkey is required: name only the post-quantum passkeys at sign-in, or name them all and refuse a classical one with a page saying why. See [Narrow, or list and refuse](#narrow-or-list-and-refuse). |
-| `registrationAlgorithms`, `registrationMode` | Which algorithms a registration for this profile's people offers, and whether ML-DSA comes first, alone, or not at all. `realm` follows the realm's WebAuthn settings. |
+| `registrationAlgorithms`, `registrationMode` | Which algorithms a registration for this profile's people offers, and whether ML-DSA comes first, alone, or not at all. The console calls the first **Algorithms a passkey registration offers**. `realm`, the default, uses the list on **Protocols → WebAuthn**; a list here replaces that list for this profile's people only. The **Metadata** tab of **Protocols → WebAuthn** says when a profile's list is the one in force. |
 | `lanes` | `realm` by default, following `webauthn.pqcAlongsideClassical`. `both` gives this profile's people [a classical and a post-quantum passkey side by side](#a-classical-and-a-post-quantum-passkey-side-by-side), `one` gives them one lane. |
 | `clientRules` | Empty by default. The browsers and systems whose registrations offer no ML-DSA. See [Clients that cannot make an ML-DSA passkey](#clients-that-cannot-make-an-ml-dsa-passkey). |
 | `adminEnrolment` | Off by default. On, an administrator may enrol a passkey for a person this profile applies to. See [An administrator enrols a passkey](#an-administrator-enrols-a-passkey). |
@@ -1042,7 +1043,9 @@ tested by this project.
   [the passkey policy](authentication.md#the-passkey-policy).
 * **The order of the offer.** The algorithms are offered in the order set
   on **Protocols → WebAuthn** (`webauthn.algorithms`) or in a profile's
-  `registrationAlgorithms`. The default puts `ML-DSA-87` first. Putting
+  `registrationAlgorithms`, and the **Metadata** tab of **Protocols →
+  WebAuthn** lists them in that order, numbered. The default puts
+  `ML-DSA-87` first. Putting
   `ML-DSA-44` first instead asks for the smallest keys and signatures,
   which helps on tight transports and slow authenticators; a profile can
   do that for one group only.

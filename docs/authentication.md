@@ -598,7 +598,10 @@ to be held to the row.
 `registrationMode`). `realm`, the default of both, follows the realm:
 `webauthn.algorithms`, and `webauthn.pqcOnly` with
 `webauthn.pqcAlongsideClassical`. A profile can name its own ordered list,
-from the algorithms `webauthn.algorithms` may name, and a mode:
+from the algorithms `webauthn.algorithms` may name, which then replaces
+`webauthn.algorithms` for that profile's people only; the **Metadata** tab
+of **Protocols → WebAuthn** says when a profile's list is the one in force.
+It can also name a mode:
 
 * `pq-only` offers only ML-DSA, and refuses a retry with the classical
   algorithms (`STS-AUTHN-0420`).
@@ -1170,7 +1173,7 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.rpName` | `STS_WEBAUTHN_RP_NAME` | `IYA STS` | yes | The `rp.name` a browser shows; no security meaning. |
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | *(empty: the host)* | yes | Widen the RP ID to a registrable domain suffix of the host. |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | *(empty: derived)* | yes | The origins a ceremony is accepted from; empty derives one from the address. |
-| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-87/65/44 (-50/-49/-48) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). See [Configuration](configuration.md) for the list. |
+| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-87/65/44 (-50/-49/-48) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). A **Select all** switch ticks every algorithm `webauthn.insecureAlgorithms` and `webauthn.pqcOnly` allow, or unticks them all; Save needs at least one ticked. The **Metadata** tab lists the algorithms in the order they are requested. See [Configuration](configuration.md) for the list and [Passkeys](passkeys.md#algorithms-classical-and-post-quantum) for the controls. |
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` | yes | Development mode only: also request and accept SHA-1's `RS1` (-65535), offered last. Off, `RS1` is neither requested nor accepted even where `webauthn.algorithms` names it, and a key enrolled with it is refused at sign-in (`STS-AUTHN-0294`). Cannot be set in product mode. |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | Request only ML-DSA-44/65/87 (whichever `webauthn.algorithms` names, all three where it names none); a new passkey made with another algorithm is refused at registration. A classical key already enrolled goes on signing in. |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |
@@ -1300,8 +1303,12 @@ be changed with `POST /admin-api/config/set`.
 
 ## In the running service
 
-* **Protocols → WebAuthn** (`/admin/webauthn`): every `webauthn.*` setting —
-  the ceremony, CTAP2, algorithm and attestation settings — and the authentication policy (Directory → Policies). API: `GET /admin-api/webauthn`.
+* **Protocols → WebAuthn** (`/admin/webauthn`): the **Settings** tab has
+  every `webauthn.*` setting — the ceremony, CTAP2, algorithm and
+  attestation settings; the **Metadata** tab says what a ceremony is asked
+  for now, with the algorithms in the order they are requested. The
+  authentication policy is on Directory → Policies. API:
+  `GET /admin-api/webauthn`.
 * **Protocols → TOTP MFA** (`/admin/totp`): the eight RFC 6238 parameters, and
   the authentication policy (Directory → Policies). API: `GET /admin-api/totp`.
 * **Protocols → Recovery codes** (`/admin/backup-codes`): the four settings and
