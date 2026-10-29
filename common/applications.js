@@ -4495,7 +4495,12 @@ const SCHEMA = {
       what: 'THE MECHANISMS THIS APPLICATION\'S PEOPLE MAY SIGN IN WITH, ' +
             'from the closed list fedAuthnMechanism uses: password, ' +
             'password-mfa, webauthn, spnego, wallet, federation. NONE ' +
-            'TICKED ALLOWS EVERY ONE.\n\nENFORCED at every browser sign-in ' +
+            'TICKED ALLOWS EVERY ONE.\n\n`webauthn` decides for EVERY ' +
+            'passkey the person holds alike: a passkey has no role ' +
+            '(#1135), so listing it lets any of them sign in to this ' +
+            'application on its own, and leaving it out of a list that ' +
+            'names others lets none.\n\n' +
+            'ENFORCED at every browser sign-in ' +
             'to the application, in both modes: a person whose session ' +
             'stands on no mechanism listed is sent to sign in again with ' +
             'one that is, and a sign-in made with one that is not is ' +
@@ -4540,14 +4545,18 @@ const SCHEMA = {
       what: 'THE SECOND FACTORS THIS APPLICATION\'S PEOPLE MAY USE: ' +
             'password, securityKey, totp, recoveryCode, emailCode, ' +
             'emailLink, wallet. NONE TICKED LEAVES THE REALM\'S ' +
-            'AUTHENTICATION POLICY AS IT IS.\n\nIt only NARROWS that ' +
+            'AUTHENTICATION POLICY AS IT IS.\n\n`securityKey` decides for ' +
+            'EVERY passkey the person holds alike: a passkey has no role ' +
+            '(#1135), so listing it lets any of them be the second factor ' +
+            'here, and leaving it out of a list that names others lets ' +
+            'none.\n\nIt only NARROWS that ' +
             'policy (Directory > Policies): a second factor the realm has ' +
             'switched off stays off here, and an emailed one is still never ' +
             'offered while the realm cannot send mail. It says WHICH second ' +
             'factors, never WHETHER one is needed — that is still the ' +
             'realm\'s, the account\'s and risk\'s.\n\nThe sign-in screen ' +
             'asks only for a second factor listed here. A person who holds ' +
-            'none of them is offered one to set up (a security key or an ' +
+            'none of them is offered one to set up (a passkey or an ' +
             'authenticator app, where listed) — after giving the second ' +
             'factor they do hold, if they hold one.\n\nENFORCED at every ' +
             'browser sign-in to the application, in both modes: a person ' +

@@ -192,16 +192,16 @@
     "text": "明文断言或前端通道 ID Token 会被拒绝（STS-FED-0140），除非关系设置了 fedAllowUnencrypted，该设置在文档中附有警告。AES-CBC、rsa-1_5 和 RSA1_5 在两种模式下都会被拒绝（STS-FED-0139）。"
   },
   "mode.requirements.passkey-first-use.what": {
-    "en": "48692c051ad2acee",
-    "text": "登录屏幕不会为尚未证明自己身份的人注册安全密钥"
+    "en": "c8556d37e16453f0",
+    "text": "登录屏幕不会为尚未证明自己身份的人注册通行密钥"
   },
   "mode.requirements.passkey-first-use.development": {
-    "en": "2f86635eaf4572fb",
-    "text": "指明某个未持有主密钥之人的无密码登录，会当场为其注册一个，且不读取任何密码——第一个声称某个名称的人就会得到它。"
+    "en": "8bea6b2667160433",
+    "text": "指明某个未持有通行密钥之人的无密码登录，会当场为其注册一个，且不读取任何密码——第一个声称某个名称的人就会得到它。"
   },
   "mode.requirements.passkey-first-use.product": {
-    "en": "e773ade2b33e515a",
-    "text": "会被拒绝。主密钥须在会话保护下于 /portal/keys 上添加，或通过激活链接添加，或由操作员添加。"
+    "en": "b2a73f5e48d6f2c4",
+    "text": "会被拒绝。通行密钥须在会话保护下于 /portal/keys 上添加，或通过激活链接添加，或由操作员添加。"
   },
   "mode.requirements.siop-did-web-pin.what": {
     "en": "a8f5db1a7e30f55d",
@@ -236,8 +236,8 @@
     "text": "LDAP 简单绑定、WS-Security UsernameToken、SCIM 和 SSF HTTP Basic 以及 EST Basic 会接受密码，就像它们接受每个密码一样；登录屏幕仍会要求第二因素。"
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "2a529b7dda255daa",
-    "text": "只要此人持有身份验证器应用或 mfa 角色的安全密钥，或者被要求提供第二因素（stsMfaRequired、身份验证策略），在这五个入口，此人自己的密码就会被拒绝——应答方式与密码错误完全相同，并且同样计入速率限制（STS-AUTHN-0213 仅出现在审计行和日志中）。改为接受他在 /portal/app-passwords 上创建的、限定于该入口的应用密码。authn.passwordAloneDoors 指定无论如何都接受密码的入口，这会让每个此类人员在那里降为单一因素。"
+    "en": "c06e9e3a02393490",
+    "text": "只要此人持有身份验证器应用或 任何通行密钥（在本领域或应用自己的列表接受通行密钥作为第二因素的情况下），或者被要求提供第二因素（stsMfaRequired、身份验证策略），在这五个入口，此人自己的密码就会被拒绝——应答方式与密码错误完全相同，并且同样计入速率限制（STS-AUTHN-0213 仅出现在审计行和日志中）。改为接受他在 /portal/app-passwords 上创建的、限定于该入口的应用密码。authn.passwordAloneDoors 指定无论如何都接受密码的入口，这会让每个此类人员在那里降为单一因素。"
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "KDC 会向仅凭密码预身份验证（PA-ENC-TIMESTAMP，或 FAST 的 PA-ENCRYPTED-CHALLENGE）的 AS-REQ 签发 TGT，就像它接受每个密码一样。"
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "cddc7c3db475d360",
-    "text": "只要此人持有身份验证器应用或 mfa 角色的安全密钥，或者被要求提供第二因素，该 AS-REQ 就会在密码验证通过后以 KDC_ERR_POLICY（12）、STS-KRB-0135 被拒绝（错误的密码仍然是 KDC_ERR_PREAUTH_FAILED）。持有身份验证器应用的人可通过 RFC 6113 FAST armor 配合 RFC 6560 OTP 预身份验证获得票据——密码和验证码在一次交换中完成——该票据带有 RFC 8129 指示符 `otp`。应用密码永远不是 Kerberos 密钥。"
+    "en": "a1e60b4ee5cac599",
+    "text": "只要此人持有身份验证器应用或 任何通行密钥（在本领域或应用自己的列表接受通行密钥作为第二因素的情况下），或者被要求提供第二因素，该 AS-REQ 就会在密码验证通过后以 KDC_ERR_POLICY（12）、STS-KRB-0135 被拒绝（错误的密码仍然是 KDC_ERR_PREAUTH_FAILED）。持有身份验证器应用的人可通过 RFC 6113 FAST armor 配合 RFC 6560 OTP 预身份验证获得票据——密码和验证码在一次交换中完成——该票据带有 RFC 8129 指示符 `otp`。应用密码永远不是 Kerberos 密钥。"
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",

@@ -2449,12 +2449,12 @@ const REQUIREMENTS = [
              '(STS-FED-0139).',
     where: 'federation/federation_encryption.ts, federation/federation_sp.ts' },
   { id: 'passkey-first-use',
-    what: 'The sign-in screen does not enrol a security key for somebody ' +
+    what: 'The sign-in screen does not enrol a passkey for somebody ' +
           'who has not proved who they are',
     development: 'A passwordless sign-in naming somebody who holds no ' +
-                 'primary key enrols one on the spot, with no password read ' +
+                 'passkey enrols one on the spot, with no password read ' +
                  '— the first person to claim a name gets it.',
-    product: 'It is refused. A primary key is added on /portal/keys behind ' +
+    product: 'It is refused. A passkey is added on /portal/keys behind ' +
              'a session, by an activation link, or by an operator.',
     where: 'authn/authn.ts' },
   // #693 (2026-10-20).
@@ -2487,7 +2487,10 @@ const REQUIREMENTS = [
              'refused on write and read as by-mode.',
     where: 'authn/webauthn_attestation.ts, common/credentials.ts, ' +
            'authn/authn.ts' },
-  // #101 (2026-09-22).
+  // #101 (2026-09-22). Until #1135 only a key enrolled in the `mfa` role
+  // counted here and in `kerberos-second-factor`; a passkey has no role
+  // since, so any passkey counts where a passkey is accepted as a second
+  // factor (`credentials.passwordOnlyDoors()`).
   { id: 'second-factor-doors',
     what: 'A person who holds or must hold a second factor is refused their ' +
           'password alone at the password-only doors',
@@ -2498,9 +2501,11 @@ const REQUIREMENTS = [
     product: 'At those five doors the person\'s own password is refused — ' +
              'answered exactly as a wrong password, and counted against the ' +
              'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
-             'log only) — whenever they hold an authenticator app or a ' +
-             'security key in the mfa role, or a second factor is required ' +
-             'of them (stsMfaRequired, the authentication policy). An APP ' +
+             'log only) — whenever they hold an authenticator app or any ' +
+             'passkey where the realm (or the application\'s own list) ' +
+             'accepts a passkey as a second factor, or a second factor is ' +
+             'required of them (stsMfaRequired, the authentication ' +
+             'policy). An APP ' +
              'PASSWORD ' +
              'they made on /portal/app-passwords, scoped to the door, is ' +
              'accepted instead. authn.passwordAloneDoors names doors that ' +
@@ -2529,8 +2534,10 @@ const REQUIREMENTS = [
     product: 'That AS-REQ is refused KDC_ERR_POLICY (12), STS-KRB-0135, ' +
              'after the password verified (a wrong one is still ' +
              'KDC_ERR_PREAUTH_FAILED), whenever the person holds an ' +
-             'authenticator app or a security key in the mfa role, or a ' +
-             'second factor is required of them. A person with an ' +
+             'authenticator app or any passkey where the realm (or the ' +
+             'application\'s own list) accepts a passkey as a second ' +
+             'factor, or a second factor is required of them. A person ' +
+             'with an ' +
              'authenticator app gets a ticket through RFC 6113 FAST armor ' +
              'with RFC 6560 OTP pre-authentication — password and code in ' +
              'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
