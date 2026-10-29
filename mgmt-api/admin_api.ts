@@ -4502,6 +4502,31 @@ class AdminApi {
               additionalProperties: false },
             responseDescription: 'The active version and the one it ' +
                                  'replaced.' },
+          { action: 'reload', operationId: 'reloadRiskDatasetVersion',
+            summary: 'Download a removed version again, and load it',
+            description: 'For a removed (`deleted`) version of a dataset ' +
+              'this service downloads itself (the Android attestation ' +
+              'status list, `devices.androidStatusUrl`; the FIDO MDS3 ' +
+              'BLOB, `risk.mdsUrl`) whose record names the address ' +
+              'configured now, as the view\'s `reloadable` says: ' +
+              'downloaded again and loaded as that version. Refused when ' +
+              'the version is not reloadable (STS-RISK-0051), the ' +
+              'download fails (STS-RISK-0052), or the file is not the ' +
+              'version\'s (STS-RISK-0053: a newer one, which the ' +
+              'scheduled download loads). Any other removed version is ' +
+              'uploaded again (#1155, #1157).',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'android.attestation-status',
+                           version: 'sha-e1d9d5eafeea416f' }],
+              additionalProperties: false },
+            responseDescription: 'What the import answers: the version ' +
+              'loaded and active.' },
           { action: 'rollback', operationId: 'rollbackRiskDataset',
             summary: 'Make the previous version of a dataset active again',
             description: 'Refused when there is no previous version.',

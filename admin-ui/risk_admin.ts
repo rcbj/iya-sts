@@ -106,10 +106,11 @@ const WINDOWS: Record<string, number> = {
 
 // What `riskAction()` does, and what each needs.
 /**
- * The actions `riskAction()` takes: `import`, `activate`, `rollback`, `delete`
- * and `accept-terms`.
+ * The actions `riskAction()` takes: `import`, `activate`, `rollback`,
+ * `delete`, `reload` (#1157) and `accept-terms`.
  */
-const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'accept-terms'];
+const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'reload',
+                 'accept-terms'];
 
 // EVERY ACTION `/risk` HAS, which is what the unknown-action refusal names
 // (2026-09-26). `upload` (#215) is answered by a route of its own, registered
@@ -450,14 +451,18 @@ class RiskAdmin {
         // An administrator may load a version they removed again (#1155).
         reloadDeleted: true,
         actor: who });
-    } else if (action === 'activate' || action === 'delete') {
+    } else if (action === 'activate' || action === 'delete' ||
+               action === 'reload') {
       const version = String(b.version || '').trim();
       if (!version) {
         return refuse('Name the version.');
       }
       result = action === 'activate'
         ? await datasets.activateVersion(realm, dataset, version, who)
-        : await datasets.deleteVersion(realm, dataset, version, who);
+        : action === 'delete'
+          ? await datasets.deleteVersion(realm, dataset, version, who)
+          // Downloads a removed version again (#1157).
+          : await datasets.reloadVersion(realm, dataset, version, who);
     } else {
       result = await datasets.rollback(realm, dataset, who);
     }

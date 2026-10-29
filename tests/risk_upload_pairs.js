@@ -119,6 +119,25 @@ module.exports = {
     t.check(half.dataset === 'geo.city' && half.format === '',
             'C2. a value with too few parts leaves the rest empty, for the ' +
             'operation to refuse', JSON.stringify(half));
+
+    // D. UPLOAD AGAIN (#1157): a removed version's row carries the upload
+    // door's form with its pair, realm and version set before the file.
+    const again = RiskPage.uploadAgain(
+      { dataset: 'asn', realm: '' },
+      { version: 'asn-2026-10', format: 'dbip-asn-csv' },
+      require('../admin-ui/web_kit').context({}, true).t);
+    const at = function (needle) {
+      return again.indexOf(needle);
+    };
+    t.check(/action="\/admin\/risk\/upload"/.test(again) &&
+            /enctype="multipart\/form-data"/.test(again) &&
+            at('name="dataset|format" value="asn|dbip-asn-csv"') > 0 &&
+            at('name="version" value="asn-2026-10"') > 0 &&
+            at('name="realm" value=""') > 0 &&
+            at('name="file"') > at('name="version"') &&
+            at('name="file"') > at('name="dataset|format"'),
+            'D1. Upload again is the upload door\'s form with the pair, ' +
+            'realm and version set, and the file after them', again);
     log.debug('Leaving run().');
   }
 };
