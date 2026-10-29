@@ -2669,7 +2669,9 @@ const SETTINGS = [
   //   * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`,
   //     `maxKeysPerPerson`. These are not WebAuthn at all: they are what THIS
   //     service will do with a key once the ceremony is over, and they are
-  //     decided here rather than by any specification.
+  //     decided here rather than by any specification. Since #1135 the
+  //     middle two are asked at each sign-in, of every key alike, because a
+  //     key carries no role.
   //
   // **TWO OF THEM ARE ENFORCED IN THIS SERVICE AND NOT ONLY REQUESTED**, and
   // that distinction is the one to keep: `userVerification` is sent to the
@@ -2775,6 +2777,17 @@ const SETTINGS = [
     // value rather than a text box, and folds them back into this list.
     // `csvValueNotes` is the sentence drawn beside each value.
     ordered: true,
+    // WHAT SELECT ALL TICKS (#1130, rcbj: it "must obey the PQC enabled,
+    // insecure enabled/disabled settings"). `onlyWhileOn`: these values are
+    // ticked only while that switch is on — RS1 is neither requested nor
+    // accepted otherwise. `aloneWhileOn`: while that switch is on, only
+    // these are ticked — the request is narrowed to ML-DSA anyway. Every
+    // other ordered row's Select all ticks everything.
+    selectAll: {
+      onlyWhileOn: { 'webauthn.insecureAlgorithms': ['RS1'] },
+      aloneWhileOn: { 'webauthn.pqcOnly': ['ML-DSA-87', 'ML-DSA-65',
+                                           'ML-DSA-44'] }
+    },
     csvValueNotes: {
       'ML-DSA-44': 'COSE -48 · post-quantum, RFC 9964 (NIST category 2)',
       'ML-DSA-65': 'COSE -49 · post-quantum, RFC 9964 (NIST category 3)',
@@ -3252,37 +3265,57 @@ const SETTINGS = [
   // -------------------------------------------------------------------
   // THE POLICY ROWS. Not WebAuthn — what THIS service does with a key.
   // -------------------------------------------------------------------
+  // ASKED AT THE SIGN-IN, OF EVERY KEY (#1135). Until then each key was
+  // enrolled in a role, and these two refused an ENROLMENT in a role and
+  // never an authentication. A key has no role now, so they say what any
+  // key a person holds may do, asked by `webauthnPolicy.useAllowed()` at
+  // each step; a key may be enrolled while either is on (STS-AUTHN-0531
+  // with both off). The keys and the attribute names are unchanged.
   { key: 'webauthn.primaryAllowed', group: 'WebAuthn',
-    label: 'Allow a key as a PRIMARY credential',
+    label: 'Allow a passkey as a FIRST factor (passwordless)',
     path: 'webauthn.primaryAllowed', env: 'STS_WEBAUTHN_PRIMARY_ALLOWED',
     type: 'bool', dflt: true, runtime: true,
-    description: 'Whether a security key may be the ONLY credential on an ' +
-                 'account — a passwordless sign-in, `amr ["hwk"]`. Turning ' +
-                 'it off leaves keys working as a SECOND factor and refuses ' +
-                 'the passwordless path at the sign-in screen and the ' +
-                 '`primary` choice in the portal. **It does not disable a ' +
-                 'primary key somebody already holds**, for ' +
-                 '`webauthn.enabled` ’s reason — and there is a sharper edge ' +
-                 'here: somebody whose only credential is a primary key ' +
-                 'would be locked out of their own account by an operator ' +
-                 'flipping a switch, which is not a thing a setting should ' +
-                 'be able to do.' },
+    description: 'Whether a passkey may be a first factor in this realm — ' +
+                 'a passwordless sign-in, `amr ["hwk"]` — unless an ' +
+                 'application\'s own list (`appAuthnMechanism`) says ' +
+                 'otherwise. It is what the realm supports, beside the ' +
+                 'authentication policy\'s passkey row, and is asked at ' +
+                 'every sign-in, of every passkey a person holds alike: a ' +
+                 'passkey has no role (#1135), so this decides what each ' +
+                 'one may do, not what one is enrolled as. Off, the ' +
+                 'passwordless path is off the sign-in screen and a passkey ' +
+                 'answers only the second step after a password, where ' +
+                 '`webauthn.mfaAllowed` allows it. **Off, somebody whose ' +
+                 'only credential is a passkey cannot sign in** until they ' +
+                 'are given a password (a reset link, say): until #1135 ' +
+                 'this switch refused only an enrolment, and a key already ' +
+                 'held went on signing them in. A passkey may be enrolled ' +
+                 'while this or `webauthn.mfaAllowed` is on; with both off ' +
+                 'an enrolment is refused.' },
 
 
   { key: 'webauthn.mfaAllowed', group: 'WebAuthn',
-    label: 'Allow a key as a SECOND factor',
+    label: 'Allow a passkey as a SECOND factor',
     path: 'webauthn.mfaAllowed', env: 'STS_WEBAUTHN_MFA_ALLOWED',
     type: 'bool', dflt: true, runtime: true,
-    description: 'Whether a security key may be enrolled as a second factor ' +
-                 'beside a password. Off, the remaining second factor is the ' +
-                 'authenticator app (the TOTP row of the authentication ' +
-                 'policy), and a deployment with ' +
+    description: 'Whether a passkey may be a second factor in this realm, ' +
+                 'after a password or another first factor, unless an ' +
+                 'application\'s own list (`appMfaMechanism`) says ' +
+                 'otherwise. It is what the realm supports, beside the ' +
+                 'authentication policy\'s second-factor passkey row, and ' +
+                 'is asked at every sign-in, of every passkey a person ' +
+                 'holds alike: a passkey has no role (#1135). Off, the ' +
+                 'remaining second ' +
+                 'factor is the authenticator app (the TOTP row of the ' +
+                 'authentication policy), and a deployment with ' +
                  'both off offers no second factor at all — which is a ' +
                  'supported configuration and is what this service did ' +
-                 'before either existed. **An enrolled `mfa` key goes on ' +
-                 'being demanded at the sign-in screen**, because that ' +
-                 'account is still configured for two factors; see ' +
-                 '`webauthn.enabled`.' },
+                 'before either existed. **Off, no passkey answers the ' +
+                 'second step**, and a person whose only second factor is ' +
+                 'a passkey holds none as far as the sign-in screen is ' +
+                 'concerned. A passkey may be enrolled while this or ' +
+                 '`webauthn.primaryAllowed` is on; with both off an ' +
+                 'enrolment is refused.' },
 
   { key: 'webauthn.maxKeysPerPerson', group: 'WebAuthn',
     label: 'Keys per person', path: 'webauthn.maxKeysPerPerson',
@@ -6960,6 +6993,22 @@ const SETTINGS = [
                  'Past it the issue is refused (STS-PKI-0180) rather than ' +
                  'revoking a certificate a running instance may still be ' +
                  'presenting.' },
+  // A REQUESTER'S MESSAGE-SIGNING CERTIFICATES (#521, 2026-10-28), from the
+  // realm's `message-signing` Issuing CA — `common/tls_client_certificates.js`,
+  // PURPOSES. One setting for both kinds of holder: either is issued them by
+  // an administrator, and the reason for several is the same — a rotation in
+  // progress, or one per signing host.
+  { key: 'pki.messageSigningCertificateMax', group: 'PKI',
+    label: 'Message-signing certificates one holder may hold',
+    env: 'STS_PKI_MESSAGE_SIGNING_CERTIFICATE_MAX', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'How many still-valid message-signing certificates (the ' +
+                 'ones a WS-Trust requester signs its request with) an ' +
+                 'administrator may issue one person or one application, ' +
+                 'from /admin/users, /admin/applications or /admin-api. A ' +
+                 'revoked or expired certificate does not count. Past it the ' +
+                 'issue is refused (STS-PKI-0220) rather than revoking a ' +
+                 'certificate somebody may still be signing with.' },
 
   // ---------------------------------------------------------------------
   // A PINNED KEY PAIR AS A REAL SIGNER (2026-09-27, #263). rcbj's decision:
@@ -20166,6 +20215,35 @@ function applyPersistedOverrides(saved) {
 // OpenAPI document's example. A second shape for any of them is how a console
 // and an API start disagreeing about what the service is configured with.
 // ---------------------------------------------------------------------------
+// WHAT AN ORDERED ROW'S SELECT ALL TICKS (#1130), described for the console:
+// each rule names the switch it follows, the values it governs, whether that
+// switch is on now, and whether it CAN be on here — `webauthn.
+// insecureAlgorithms` cannot in product mode (its `onlyWhile`), where a
+// stored true is ignored, so a Select all there never ticks RS1 whatever
+// the form's own control reads.
+/**
+ * Describes the rules an ordered row's Select all follows.
+ *
+ * @param setting - the setting's row, carrying `selectAll`
+ * @returns `{ onlyWhileOn, aloneWhileOn }`, each a list of
+ *   `{ setting, values, on, canBeOn }`
+ */
+function selectAllRules(setting) {
+  log.debug("Entering selectAllRules(). key=" + setting.key);
+  const mode = require('./mode');
+  const out = {};
+  ['onlyWhileOn', 'aloneWhileOn'].forEach(function (kind) {
+    const rules = setting.selectAll[kind] || {};
+    out[kind] = Object.keys(rules).map(function (key) {
+      const canBeOn = mode.allowsValue(key, true);
+      return { setting: key, values: rules[key].slice(),
+               on: canBeOn && value(key) === true, canBeOn: canBeOn };
+    });
+  });
+  log.debug("Leaving selectAllRules().");
+  return out;
+}
+
 /**
  * Describes one setting in the one shape the console, the management API
  * and the OpenAPI example all use.
@@ -20199,6 +20277,9 @@ function describe(setting) {
     // drawn beside each of its values — absent on every other row.
     ordered: setting.ordered ? true : undefined,
     csvValueNotes: setting.csvValueNotes || undefined,
+    // WHAT AN ORDERED ROW'S SELECT ALL TICKS (#1130), absent on every row
+    // that does not narrow it.
+    selectAll: setting.selectAll ? selectAllRules(setting) : undefined,
     // The int bounds, where a row narrows them. `undefined` is dropped by
     // JSON.stringify, so a row that carries none of them describes exactly as
     // it did before they existed — which is what keeps the management API's

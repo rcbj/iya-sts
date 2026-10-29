@@ -319,21 +319,20 @@ function childMain() {
       return r.status === 302 || r.status === 303;
     };
 
-    const keysFor = function (name, count, role) {
+    const keysFor = function (name, count) {
       const ids = [];
       for (let i = 0; i < count; i += 1) {
         const id = name + '-key-' + i;
         credentials.addKey(name, { credentialId: id, label: 'Key ' + i,
-          publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' } },
-          role);
+          publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' } });
         ids.push(id);
       }
       return ids;
     };
-    const ones = keysFor('pkg-one', 1, 'primary');
-    const twos = keysFor('pkg-two', 2, 'primary');
-    const fives = keysFor('pkg-five', 5, 'primary');
-    const daves = keysFor('pkg-dave', 2, 'mfa');
+    const ones = keysFor('pkg-one', 1);
+    const twos = keysFor('pkg-two', 2);
+    const fives = keysFor('pkg-five', 5);
+    const daves = keysFor('pkg-dave', 2);
     // THE CEREMONY A STEP ARMS (#572: `POST …/webauthn/options`, refused
     // while a passkey is still to be chosen): the keys it allows, or null
     // where it arms none.

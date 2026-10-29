@@ -271,8 +271,8 @@ var config = {
     timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
     authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
     credProps: true,                                                                                                                                   // Ask for the credProps extension
-    primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
-    mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
+    primaryAllowed: true,                                                                                                                              // A passkey may sign in on its own
+    mfaAllowed: true,                                                                                                                                  // A passkey may be a SECOND factor
     maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },
 
@@ -573,6 +573,7 @@ var config = {
     personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
     personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
     applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
+    messageSigningCertificateMax: 5,            // Message-signing certificates one holder may hold
     pinnedSigners: false,                       // Sign with a pinned key pair
     pinnedSignerLeadMinutes: 1440,              // Publish a pinned key this long before it signs (minutes)
     pinnedSignerExpiryWarningDays: 30,          // Warn this long before a pinned key's certificate expires (days)

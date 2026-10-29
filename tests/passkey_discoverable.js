@@ -41,7 +41,8 @@
 //   8. A key registered before #474 (no handle on its row): STS-AUTHN-0304
 //      without a username, accepted where the username is typed — and a
 //      wrong handle there is STS-AUTHN-0303.
-//   9. A SECOND-FACTOR key does not answer a usernameless sign-in.
+//   9. The realm decides whether a key signs in on its own (#1135):
+//      `webauthn.primaryAllowed` off refuses it, on lets the same key in.
 //  10. The real button with the script blocked: told it needs JavaScript.
 //  11. The portal's enrolment carries the person's handle, and a passkey is
 //      asked for with `residentKey: required`; the key lists say which
@@ -367,7 +368,7 @@ function childMain() {
                                                   givenHandle)) } });
     const aliceKey = credentials.keysOf('pkd-alice')[0] || {};
     note(registered.next === 'redirect' &&
-         aliceKey.userHandle === givenHandle && aliceKey.role === 'primary' &&
+         aliceKey.userHandle === givenHandle && aliceKey.role === undefined &&
          aliceKey.discoverable === true,
          '2b. and the key row records the handle it was created under',
          registered.status + ' ' + JSON.stringify(aliceKey).slice(0, 200));
@@ -455,7 +456,7 @@ function childMain() {
     const legacy = makeAuthenticator(RPID, ORIGIN);
     legacy.setHandle(Buffer.from('pkd-legacy').toString('base64url'));
     credentials.addKey('pkd-legacy', { credentialId: legacy.credentialId,
-      publicKeyJwk: legacy.jwk }, 'primary');
+      publicKeyJwk: legacy.jwk });
     s = await screenFor();
     posted = await usernameless(s, legacy.assert(await challengeOf(s)));
     note(refusedAct(posted) && codeRecorded('STS-AUTHN-0304') &&
@@ -487,17 +488,35 @@ function childMain() {
          '8c. and a handle that is not the key\'s is refused there, ' +
          'STS-AUTHN-0303 (section 7.2 step 6)', posted.status);
 
-    // 9. A second-factor key.
+    // 9. THE REALM DECIDES, NOT THE KEY (#1135). Until then a key enrolled
+    // as a second factor did not sign anybody in without a password; a key
+    // has no role now, and what refuses the passwordless use is
+    // `webauthn.primaryAllowed`, asked at the sign-in — here switched off
+    // after the ceremony was armed, which is the case the check is for. The
+    // usernameless door asks its own gate first (`usernamelessOffered()`,
+    // which reads the same setting), so the code is STS-AUTHN-0301.
     const carol = makeAuthenticator(RPID, ORIGIN);
     const carolHandle = credentials.userHandleOf('pkd-carol', { mint: true });
     carol.setHandle(carolHandle);
     credentials.addKey('pkd-carol', { credentialId: carol.credentialId,
-      publicKeyJwk: carol.jwk, userHandle: carolHandle }, 'mfa');
+      publicKeyJwk: carol.jwk, userHandle: carolHandle });
+    s = await screenFor();
+    const carolChallenge = await challengeOf(s);
+    config.setOverride('webauthn.primaryAllowed', false);
+    try {
+      posted = await usernameless(s, carol.assert(carolChallenge));
+    } finally {
+      config.clearOverride('webauthn.primaryAllowed');
+    }
+    note(refusedAct(posted) && codeRecorded('STS-AUTHN-0301'),
+         '9a. with webauthn.primaryAllowed off a key does not sign anybody ' +
+         'in without a password (STS-AUTHN-0301)', posted.status);
     s = await screenFor();
     posted = await usernameless(s, carol.assert(await challengeOf(s)));
-    note(refusedAct(posted),
-         '9. a SECOND-FACTOR key does not sign anybody in without a password',
-         posted.status);
+    note(posted.status === 302 || posted.status === 303,
+         '9b. and with it on the same key signs its owner in: there is no ' +
+         'second-factor key any more', posted.status + ' ' +
+         String(posted.text || '').slice(0, 200));
 
     // 10. The real button, script blocked.
     s = await screenFor();
@@ -510,7 +529,7 @@ function childMain() {
 
     // 11. The portal's enrolment, and a passkey's resident key.
     const begun = credentials.beginKeyEnrolment('pkd-bob',
-      { role: 'primary', kind: 'passkey' });
+      { kind: 'passkey' });
     const selection = webauthnPolicy.creationOptions(RPID, 'passkey')
       .authenticatorSelection;
     note(begun.ok && begun.userHandle === bobHandle &&
@@ -523,11 +542,11 @@ function childMain() {
       return credentials.withoutUsername(credentials.keysOf(name)[0]);
     };
     note(ready('pkd-alice').ready && !ready('pkd-legacy').ready &&
-         !ready('pkd-carol').ready &&
+         ready('pkd-carol').ready &&
          /create it again/.test(ready('pkd-legacy').text),
          '11b. the key lists say which passkey signs in with no username: ' +
-         'alice\'s does, the key from before #474 and the second-step key ' +
-         'do not', JSON.stringify([ready('pkd-alice'), ready('pkd-legacy'),
+         'alice\'s and carol\'s do (no key is a second-step key since ' +
+         '#1135), the key from before #474 does not', JSON.stringify([ready('pkd-alice'), ready('pkd-legacy'),
                                    ready('pkd-carol')]));
 
     // 12. primaryAllowed off.

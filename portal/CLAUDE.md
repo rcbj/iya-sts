@@ -361,6 +361,51 @@ enrolment door on the read side of that line.
 
 ## `/portal/keys`: ENROLLING A PASSKEY, AND A BACKUP FOR IT (2026-09-10; *Passkeys* since #470)
 
+### A passkey carries no role (#1135, 2026-10-29)
+
+**Until #1135 every key was enrolled in a ROLE** — `primary` (instead of a
+password, passwordless) or `mfa` (a second step after it) — and both of this
+directory's enrolment doors asked which: `/portal/keys` drew *How will you use
+it?* with two radios, `/portal/activate` drew three (*no passkey*, *instead of
+a password*, *as a second step*), and every key row said which it was, on the
+row and again in *Details*. rcbj's decision on #1135: the question goes,
+because a person who has never heard of a second factor cannot answer it, and
+what they want is to register a passkey. **The REALM decides how a key is
+used**, at the sign-in and for every key alike
+(`webauthnPolicy.useAllowed()`, `authn/CLAUDE.md`); the person is asked
+nothing about it. What this directory does about it:
+
+* **`/portal/keys` asks nothing but the two calls to action** (and the lane,
+  #643, where the realm offers two). The rows carry no role, *Details* has no
+  *Used* row, and *Learn more* says the service decides. The view's
+  `enrol.roles` became `enrol.allowed` — `webauthnPolicy.enrolmentAllowed()`,
+  which `beginKeyEnrolment()` asks again at the door — and with it false the
+  page says the realm accepts a passkey for no use. The note under the keys
+  says whether a password alone signs the person in (`mfaRequired`), a fact
+  about the account rather than about any key, and nothing for a person with
+  no password.
+* **`/portal/activate` asks "set a password", "register a passkey", or
+  both**: one checkbox (`passkey`) where three radios were. With no password
+  the passkey is the way in, passwordless — **where the realm lets a key be a
+  first factor** (`useAllowed('primary')`); where it does not, the setup view
+  says so (`passkeyAlone: false`, *a password is needed*) and a key-only POST
+  is refused under `STS-PORTAL-0007`, the "no way in" code, with the realm's
+  own reason. (Until #1135 that code's second branch refused a key enrolled
+  as `mfa` with no password, because the person had SAID it was not a way
+  in.) What the passkey will be on the key step and on *account ready* is
+  stated from the facts (`secondStep`: a password set and a key allowed as a
+  second step), never from a choice.
+* **The old fields are still ACCEPTED and IGNORED**: `role` on
+  `POST /account-api/keys`, and `key_role` on `POST /account-api/activation`,
+  whose `primary` and `mfa` both mean "register a passkey" and `none` means
+  not. The parent project's vendored protocol jobs send them, and those copies
+  are never edited here. No answer carries `role` or `keyRole` any more; the
+  activation views carry `passkey` and `secondStep`.
+* **The audit rows are role-free**: *created a passkey*, *registered a passkey
+  while activating*, and no `role` in any `detail`. The device link's
+  ceremony row records `role: ''`, the row's `role` meaning the USE an
+  assertion answered since #1135, and a link answers no sign-in step.
+
 **THIS PAGE COULD NOT ENROL A KEY UNTIL THIS DAY**, and it said so in a
 paragraph of its own:
 
@@ -390,9 +435,10 @@ sentence is that the person holding one key had no way to prepare for it.
 
 `credentials.beginKeyEnrolment()` mints a challenge and holds it;
 `confirmKeyEnrolment()` verifies what the browser produced and only then writes.
-The ROLE is chosen at the start and carried, never read off the answer — the
-POST at the far end is the browser's RESULT and says nothing about what was
-asked for, which is the rule the sign-in ceremony already follows.
+The KIND and the LANE are chosen at the start and carried, never read off the
+answer — the POST at the far end is the browser's RESULT and says nothing about
+what was asked for, which is the rule the sign-in ceremony already follows.
+(A ROLE was carried the same way until #1135, when a key stopped having one.)
 
 **The keys the person already holds go out with the options.** A conforming
 authenticator that recognises one refuses rather than creating a second
@@ -497,8 +543,8 @@ What that changed, and why each piece is the way it is:
   - the provider;
   - Created and Last used. `lastUsedAt` was recorded and never drawn;
   - Rename and Remove;
-  - a *Details* `<details>` with the role, algorithm, attestation, AAGUID,
-    backup state and transports. This is a debugging service, so nothing
+  - a *Details* `<details>` with the algorithm, attestation, AAGUID,
+    backup state and transports (and, until #1135, the key's role). This is a debugging service, so nothing
     technical was dropped, only folded.
 
   Rename is a `<details>` holding a form, so it needs no script.
@@ -521,8 +567,14 @@ What that changed, and why each piece is the way it is:
 * **The name comes after the ceremony, not before.**
   - The box before it is gone.
   - A key defaults to its provider's name, else "Passkey" or "Security key".
-  - The success redirect carries `named=<credentialId>`, and the page opens
-    that key's rename form at the top.
+  - ~~The success redirect carries `named=<credentialId>`, and the page opens
+    that key's rename form at the top.~~ **Gone on 2026-10-28 (rcbj)**: the
+    box at the top ("give your passkey a nickname", the rename form drawn
+    open) said what the row's own Rename says and read as a second step.
+    The finish lands on the plain page, the new key sits on its row under
+    its default name, and it is renamed there like any other. `named` left
+    the query, the view and `REFRESH_KEPT` with it; the two protocol jobs
+    rename through the row's fold.
 * **`POST /portal/rename-key`** follows `remove-key`'s A01 rule: the id comes
   from the body and is looked up among the session's own keys.
   `credentials.renameKey()` is the one writer, also used by
@@ -568,6 +620,23 @@ What that changed, and why each piece is the way it is:
   `begin`'s `classical` default becomes the post-quantum lane
   (`webauthnPolicy.enrolmentLane()`). `authn/CLAUDE.md` (*A post-quantum
   passkey required*) argues the rest.
+* **The ceremony starts when the call to action is pressed (rcbj,
+  2026-10-28).** Pressing *Create a passkey* or *Use a security key* used
+  to draw a second form holding the same choice again — a *Create passkey*
+  / *Register security key* button that ran the ceremony, and *My browser
+  did not ask — tell me why* beside it. The press IS the request, so the
+  armed page now carries `data-autostart` on `#wa-data` and
+  `web_portal_webauthn.ts` runs `navigator.credentials.create()` as soon
+  as it is drawn; the second button and the "did not ask" button are gone
+  from this page, Cancel and the hidden ML-DSA guidance stay. A prompt the
+  browser refuses or the person dismisses is posted as the finish's error,
+  which abandons the enrolment and draws the two calls to action again
+  with the browser's own words, as a refused ceremony always did. The
+  activation's key step and the device link keep `#wa-go` and run on its
+  click: each is one step of a longer form, where the press that armed the
+  ceremony was not the person asking for the prompt. The device job
+  (`sts_portal_device_webauthn.js`) waits for the nickname form a finished
+  ceremony draws rather than clicking a button.
 * **The classical retry (#944)**: the armed ceremony carries `fallback`
   (`asksPostQuantum`, `classical`, `retrying`), `#wa-data` carries it as
   `data-fallback`, and `KeysPages.fallback()` draws the guidance HIDDEN
@@ -580,7 +649,7 @@ What that changed, and why each piece is the way it is:
   own `capabilities` property and the fallback offers the classical begin;
   without the property, or when the fallback does not offer the retry, the
   enrolment is abandoned and the page redrawn (2026-09-26). The retry's
-  form (`action` `begin`, the same role, kind and lane, `algorithms`
+  form (`action` `begin`, the same kind and lane, `algorithms`
   `classical`) replaces the enrolment when it is pressed. `begin` asks
   `classicalRetryRefusal()` again (`STS-AUTHN-0420`, reason `algorithms`),
   and the pending record's `classicalOnly` holds the finish to the retry's
@@ -612,8 +681,8 @@ use — which product mode refuses (`STS-AUTHN-0206`), so the only way through
 was to go back and set a password. Reported by rcbj as exactly that.
 
 The key is registered on the activation page now, between the password and the
-authenticator app, as a `key` step: `beginKeyEnrolment()` with the role and the
-`kind` the first page chose (`kindChoice()` is drawn there too), the ceremony
+authenticator app, as a `key` step: `beginKeyEnrolment()` with the `kind` the
+first page chose (and, until #1135, the role) (`kindChoice()` is drawn there too), the ceremony
 drawn by `activationKeyForm()`, `confirmKeyEnrolment()` on the POST. **What
 authorises it is the activation link**, re-checked and claimed on that POST like
 every other; the link is spent only when the activation FINISHES, so a key that
@@ -627,11 +696,13 @@ the same resource and a real button under it — its own row in the root table.
 ## THE ACTIVATION FLOW LEARNED IT TOO, AND THE LINK IS STILL SPENT LAST
 
 An authenticator is a CHECKBOX on `/portal/activate` and not a fourth radio
-button, and that is the whole of what it says about itself: the radio group is
-*what signs you in* and exactly one of its values can be true. A one-time code
+button, and that is the whole of what it says about itself: the radio group was
+*what signs you in* and exactly one of its values could be true. A one-time code
 is not one of those answers — it is a second factor beside whichever of them was
 chosen — so it is an independent box, and the *at least one way in* rule
-underneath is untouched.
+underneath is untouched. (Since #1135 the passkey is a checkbox too, because
+registering one no longer says what it is for; see *A passkey carries no
+role*.)
 
 Ticking it costs a second POST, because a secret has to be shown and a code
 typed back. **The link is not spent in between**, which is this directory's
@@ -948,7 +1019,7 @@ browser arrives at the same screen with something behind it. Two properties:
   flow in progress to resume.
 
 **BOTH BRANCHES NOW GO TO THE SAME ADDRESS**, and what differs is prose. The
-`key_role !== 'none'` branch already went to `/portal` — for the enrolment
+`key_role !== 'none'` branch (a passkey asked for, since #1135) already went to `/portal` — for the enrolment
 reason — so the bug was only ever in the *no key* branch, which is the ordinary
 one. That asymmetry is worth noticing: the rarer path was right and the common
 path was wrong, so the flow most people take was the one that failed.

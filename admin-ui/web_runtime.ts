@@ -66,6 +66,7 @@ import WebAnnouncements = require('../common/web_announcements');
 import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
+import SettingsForms = require('./web_settings');
 import WebAnswers = require('./web_answers');
 import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
@@ -1311,6 +1312,7 @@ class ConsoleRuntime extends SpaClient {
     this.targetFragment();
     this.markOpenTabs();
     this.wireCopyButtons();
+    this.wireOrderedChoices();
     this.loadPageScripts();
     this.revealActiveNav();
   }
@@ -2095,9 +2097,20 @@ class ConsoleRuntime extends SpaClient {
     // A BUTTON MAY POST ELSEWHERE (`formaction`), and a section's Reset
     // does: its own address names the setting in its query, which is
     // carried into the fields the operation is sent.
-    const posted = (submitter && submitter.getAttribute &&
-                    submitter.getAttribute('formaction')) ||
-                   form.getAttribute('action') || this.here();
+    const formaction = submitter && submitter.getAttribute &&
+                       submitter.getAttribute('formaction');
+    // AN ORDERED CHOICE WITH NOTHING TICKED (#1130) is not sent: its row
+    // already says so (`wireOrderedChoices()`), and the server would refuse
+    // it (STS-ADMIN-0840). A Reset, which posts elsewhere, still goes.
+    const empty = form && form.querySelector
+      ? form.querySelector('[data-ordered-none]:not([hidden])') : null;
+    if (empty && !formaction) {
+      if (empty.scrollIntoView) {
+        empty.scrollIntoView({ block: 'center' });
+      }
+      return;
+    }
+    const posted = formaction || form.getAttribute('action') || this.here();
     const target = new URL(posted, this.env.location.href);
     const page = this.consolePath(target.pathname);
     const data = this.formDataOf(form);
@@ -2420,8 +2433,8 @@ class ConsoleRuntime extends SpaClient {
     };
     const begun = await this.apiJson('POST',
       '/admin-api/users/begin-passkey-enrolment',
-      { user: who, role: String(fields.role || 'mfa'),
-        lane: String(fields.lane || ''), kind: String(fields.kind || '') });
+      { user: who, lane: String(fields.lane || ''),
+        kind: String(fields.kind || '') });
     if (!begun) {
       return;
     }
@@ -3165,6 +3178,123 @@ class ConsoleRuntime extends SpaClient {
       el.innerHTML = ConsoleRuntime.realmLinks(
         WebShell.accountItems(this.accounts, this.subject, this.t),
         this.prefix);
+    }
+  }
+
+  // AN ORDERED CHOICE'S SELECT ALL / NONE SWITCH (#1130), drawn by
+  // `SettingsForms.orderedChoiceControl()`. On ticks what
+  // `SettingsForms.selectAllValues()` allows, reading the switches the
+  // row's rules follow from the page as it stands — an unsaved change to
+  // webauthn.pqcOnly or webauthn.insecureAlgorithms is obeyed — and off
+  // unticks every value. With nothing ticked the form's Save buttons are
+  // disabled and the row says why; a Reset (a `formaction`) still posts.
+  /**
+   * Wires every ordered choice's Select all switch on the page drawn.
+   *
+   * @returns nothing
+   */
+  wireOrderedChoices(): void {
+    const self = this;
+    const doc = this.env.document;
+    const switches = doc.querySelectorAll('input[data-ordered-all]');
+    for (let i = 0; i < switches.length; i++) {
+      const sw = switches[i];
+      const form = sw.form;
+      if (!form) {
+        continue;
+      }
+      const key = String(sw.getAttribute('data-ordered-all') || '');
+      const prefix = key + '.pick.';
+      let rules: Json = {};
+      try {
+        rules = JSON.parse(String(sw.getAttribute('data-select-all') ||
+                                  '{}'));
+      } catch (e) {
+        // A rule set that does not parse narrows nothing: Select all then
+        // ticks every value, and the server still refuses what it refuses.
+        rules = {};
+      }
+      const boxes: Json[] = [];
+      const inputs = form.querySelectorAll('input[type="checkbox"]');
+      for (let j = 0; j < inputs.length; j++) {
+        if (String(inputs[j].name || '').indexOf(prefix) === 0) {
+          boxes.push(inputs[j]);
+        }
+      }
+      const valueOf = function (box: Json): string {
+        return String(box.name).slice(prefix.length);
+      };
+      // The switch a rule follows, as the page holds it now; the value the
+      // page was drawn with where its control is absent or locked.
+      const controlOf = function (setting: string): Json {
+        const named = doc.getElementsByName
+          ? doc.getElementsByName(setting) : [];
+        return named && named.length ? named[0] : null;
+      };
+      const isOn = function (rule: Json): boolean {
+        const control = controlOf(String(rule.setting));
+        return control && !control.disabled
+          ? String(control.value) === 'true' : !!rule.on;
+      };
+      const eligible = function (): string[] {
+        return SettingsForms.selectAllValues(
+          { csvValues: boxes.map(valueOf), selectAll: rules }, isOn);
+      };
+      const none = form.querySelector('[data-ordered-none]');
+      const refresh = function (): void {
+        const picked = boxes.filter(function (box) {
+          return !!box.checked;
+        });
+        // ON EXACTLY WHEN THE TICKED SET IS WHAT SELECT ALL WOULD TICK: a
+        // classical algorithm still ticked after post-quantum only was
+        // switched on is not "all", and the switch says so.
+        const all = eligible();
+        sw.checked = all.length > 0 && picked.length === all.length &&
+          picked.every(function (box) {
+            return all.indexOf(valueOf(box)) >= 0;
+          });
+        if (none) {
+          none.hidden = picked.length > 0;
+        }
+        // THE SAVE BUTTONS, not a Reset: a Reset posts elsewhere and an
+        // empty list is no reason to refuse it. Only a button this switch
+        // disabled is enabled again.
+        const buttons = form.querySelectorAll('button');
+        for (let k = 0; k < buttons.length; k++) {
+          const button = buttons[k];
+          if (button.getAttribute('formaction')) {
+            continue;
+          }
+          if (!picked.length && !button.disabled) {
+            button.disabled = true;
+            button.setAttribute('data-ordered-held', key);
+          } else if (picked.length &&
+                     button.getAttribute('data-ordered-held') === key) {
+            button.disabled = false;
+            button.removeAttribute('data-ordered-held');
+          }
+        }
+      };
+      sw.addEventListener('change', function () {
+        const wanted = sw.checked ? eligible() : [];
+        boxes.forEach(function (box) {
+          box.checked = wanted.indexOf(valueOf(box)) >= 0;
+        });
+        self.dirty = true;
+        refresh();
+      });
+      boxes.forEach(function (box) {
+        box.addEventListener('change', refresh);
+      });
+      ['onlyWhileOn', 'aloneWhileOn'].forEach(function (kind) {
+        (rules[kind] || []).forEach(function (rule: Json) {
+          const control = controlOf(String(rule.setting));
+          if (control) {
+            control.addEventListener('change', refresh);
+          }
+        });
+      });
+      refresh();
     }
   }
 

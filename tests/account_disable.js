@@ -211,6 +211,14 @@ function childMain() {
     config.setOverride('oauth2.consentRequired', false);
     config.setOverride('federation.outboundAllowHttp', true);
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
+    // A PASSKEY THAT IS NOT A SECOND FACTOR HERE (#1135). ALICE holds a
+    // password and a key; until then the key was `primary` and her password
+    // sign-in asked for nothing more. A key has no role now, and where the
+    // realm lets a passkey be a second factor her password sign-in would go
+    // on to it — which this file, about the disable, does not drive. With
+    // `webauthn.mfaAllowed` off the key signs her in on its own only, as the
+    // `primary` key did.
+    config.setOverride('webauthn.mfaAllowed', false);
 
     const SECRET = 'account-disable-secret-0123456789abcdef';
     const REDIRECT = 'https://rp.disable.example/cb';
@@ -249,7 +257,7 @@ function childMain() {
     const PASSWORD = 'Ad-' + crypto.randomBytes(6).toString('hex') +
                      '-Correct.Horse.Battery.Staple.42';
     const passwordSet = credentials.setPassword(ALICE, PASSWORD);
-    // A PRIMARY SECURITY KEY, so the passwordless path reaches the account:
+    // A PASSKEY, so the passwordless path reaches the account:
     // product refuses a passwordless sign-in for somebody who holds none
     // before it asks anything else (STS-AUTHN-0206), which would read as
     // the disable at C5.
@@ -257,9 +265,9 @@ function childMain() {
       credentialId: 'ad-key-' + crypto.randomBytes(6).toString('hex'),
       label: 'ad key', publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA',
                                        y: 'AA' },
-      signCount: 0 }, 'primary');
+      signCount: 0 });
     note(keyAdded && keyAdded.ok !== false,
-         'precondition: ' + ALICE + ' holds a primary security key',
+         'precondition: ' + ALICE + ' holds a passkey',
          JSON.stringify(keyAdded));
     note(passwordSet && passwordSet.ok !== false,
          'precondition: ' + ALICE + ' has a password',

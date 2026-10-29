@@ -300,20 +300,20 @@
     "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
   },
   "authn.FIELDS.passkeyPrimary.label": {
-    "en": "2f59d674bec89e1d",
-    "text": "安全金鑰或密碼金鑰（無密碼）——作為第一因素"
+    "en": "c825f70e98df3fa4",
+    "text": "密碼金鑰（無密碼）——作為第一因素"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "以 primary 角色註冊的 WebAuthn 認證，不需密碼即可登入。"
+    "en": "a85fd3ef50432e75",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式自己的清單（appAuthnMechanism）另有規定。"
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
-    "en": "62611e734d22b2fe",
-    "text": "安全金鑰（第二因素）——作為第二因素"
+    "en": "4e99afea50969c29",
+    "text": "密碼金鑰（第二因素）——作為第二因素"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "以 mfa 角色註冊的 WebAuthn 認證，在第一因素之後要求。"
+    "en": "ea543723944fb410",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式自己的清單（appMfaMechanism）另有規定。"
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "以 primary 角色註冊的 WebAuthn 認證，不需密碼即可登入。"
+    "en": "a85fd3ef50432e75",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式自己的清單（appAuthnMechanism）另有規定。"
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "以 mfa 角色註冊的 WebAuthn 認證，在第一因素之後要求。"
+    "en": "ea543723944fb410",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式自己的清單（appMfaMechanism）另有規定。"
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -588,20 +588,20 @@
     "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
   },
   "authn.MECHANISMS.passkey.label": {
-    "en": "84a03e8c438f4cfa",
-    "text": "安全金鑰或密碼金鑰（無密碼）"
+    "en": "b6471f84ac5db5d7",
+    "text": "密碼金鑰（無密碼）"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "fa5464ced243d64c",
-    "text": "以 primary 角色註冊的 WebAuthn 認證，不需密碼即可登入。"
+    "en": "a85fd3ef50432e75",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式自己的清單（appAuthnMechanism）另有規定。"
   },
   "authn.MECHANISMS.securityKey.label": {
-    "en": "f7b41914800bf87a",
-    "text": "安全金鑰（第二因素）"
+    "en": "7474add07b92939d",
+    "text": "密碼金鑰（第二因素）"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "以 mfa 角色註冊的 WebAuthn 認證，在第一因素之後要求。"
+    "en": "ea543723944fb410",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式自己的清單（appMfaMechanism）另有規定。"
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1800,8 +1800,8 @@
     "text": "活動"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰是被原地替換還是保留在旁邊，由方法決定（見下文）。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
+    "en": "93b1483272fe7b46",
+    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰的人，會被要求註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰是被原地替換還是保留在旁邊，由方法決定（見下文）。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1834,14 +1834,6 @@
   "postLogin.FIELDS.noPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave：不詢問。invite：被要求註冊一個後量子密碼金鑰，且一律可以略過。require：被要求註冊，且只能在給定期限過去之前略過。"
-  },
-  "postLogin.FIELDS.noPasskeyRole.label": {
-    "en": "c8ec4e469545eb61",
-    "text": "沒有密碼金鑰的人將其註冊為"
-  },
-  "postLogin.FIELDS.noPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary：無密碼登入。mfa：第二因素。"
   },
   "postLogin.FIELDS.method.label": {
     "en": "e5beebb729b34546",
@@ -1876,8 +1868,8 @@
     "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」其群組的成員。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰作為主要登入方式或第二因素的人，會被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰是被原地替換還是保留在旁邊，由方法決定（見下文）。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
+    "en": "93b1483272fe7b46",
+    "text": "所要求的內容。pqc-passkey-migration：持有以傳統演算法建立的密碼金鑰的人，會被要求註冊一個後量子（ML-DSA）密碼金鑰。傳統密碼金鑰是被原地替換還是保留在旁邊，由方法決定（見下文）。在註冊時不提供任何 ML-DSA 演算法的領域中，不會要求任何人（預設的 webauthn.algorithms 有提供）。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",
@@ -1890,10 +1882,6 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave：不詢問。invite：被要求註冊一個後量子密碼金鑰，且一律可以略過。require：被要求註冊，且只能在給定期限過去之前略過。"
-  },
-  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary：無密碼登入。mfa：第二因素。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
     "en": "b028cf1ddda71c5d",
@@ -1919,6 +1907,10 @@
     "en": "93538e6b201100c5",
     "text": "此設定檔的用途，供下一位接手的人參考。"
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b56a731743cd58be",
+    "text": "已停用（#1135）：沒有密碼金鑰的人註冊密碼金鑰時所用的角色。密碼金鑰沒有角色；沒有任何地方讀取它。"
+  },
   "postLogin.SELECTORS.selectGroups.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "具名登入後設定檔適用於其成員的群組（cn 或 DN）。"
@@ -1932,8 +1924,8 @@
     "text": "此設定檔所涵蓋的任何人在登入後都不會被要求做任何事"
   },
   "postLogin.sentences.pqcMigration": {
-    "en": "b8a2588126ddb520",
-    "text": "持有傳統密碼金鑰的人會在登入後被要求以相同角色註冊一個後量子（ML-DSA）密碼金鑰"
+    "en": "f5a41f8e1962f73d",
+    "text": "持有傳統密碼金鑰的人在登入後會被要求註冊一個後量子（ML-DSA）密碼金鑰"
   },
   "postLogin.sentences.methodUpgrade": {
     "en": "70079684df361766",
@@ -1976,24 +1968,16 @@
     "text": "沒有密碼金鑰的人不會被詢問"
   },
   "postLogin.sentences.noPasskeyInvite": {
-    "en": "d5a5abd3c3057413",
-    "text": "沒有密碼金鑰的人會被邀請註冊一個後量子密碼金鑰作為{{role}}，且一律可以略過"
+    "en": "f1e2e6217d3d9180",
+    "text": "沒有密碼金鑰的人會被邀請註冊一個後量子密碼金鑰，且一律可以略過"
   },
   "postLogin.sentences.noPasskeyRequire": {
-    "en": "7779655caba632c8",
-    "text": "沒有密碼金鑰的人會被要求註冊一個後量子密碼金鑰作為{{role}}，且可在寬限期結束前略過"
+    "en": "988144ad40324fa8",
+    "text": "沒有密碼金鑰的人會被要求註冊一個後量子密碼金鑰，且在寬限期結束前可以略過"
   },
   "postLogin.sentences.appliesTo": {
     "en": "ce39627aa02b361d",
     "text": "適用於 {{list}} 的成員，優先順序為 {{precedence}}"
-  },
-  "postLogin.sentences.param.primary": {
-    "en": "ce71e9dc4bf4e5fa",
-    "text": "其主要登入方式"
-  },
-  "postLogin.sentences.param.mfa": {
-    "en": "8e2d5e1b1feaf31c",
-    "text": "第二因素"
   },
   "postLogin.sentences.param.noGroup": {
     "en": "4a00d86d0ff8747a",

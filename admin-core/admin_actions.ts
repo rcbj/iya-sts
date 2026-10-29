@@ -418,7 +418,11 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // A certificate from an outside authority, stored
                        // on the entry it is to sign in as, and taken off
                        // (#1061).
-                       'add-certificate', 'remove-certificate'];
+                       'add-certificate', 'remove-certificate',
+                       // A message-signing certificate issued to the
+                       // person by an administrator, and revoked (#521).
+                       'issue-signing-certificate',
+                       'revoke-signing-certificate'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -431,12 +435,16 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 //   issue-password-reset   a single-use link, returned ONCE; the password they
 //                          had is REMOVED and they are signed out of
 //                          everything, so the link is their way back.
-//   disable-primary-keys   every PRIMARY security key off, so passkeys no
+//   disable-primary-keys   every passkey off (until #1135, every PRIMARY
+//                          one; a key has no role since), so passkeys no
 //                          longer sign them in; refused where that leaves no
-//                          way in. The sessions each removed key signed in
-//                          end (#963); every other session stays.
-//   disable-mfa            every second factor off: authenticator app, `mfa`
-//                          keys, recovery codes. The sessions each removed
+//                          way in (STS-AUTHN-0161). The sessions each removed
+//                          key signed in end (#963); every other session
+//                          stays.
+//   disable-mfa            every second factor off: authenticator app, every
+//                          passkey (until #1135, the `mfa` ones), recovery
+//                          codes; refused as the one above is where the keys
+//                          are the person's way in. The sessions each removed
 //                          factor signed in end (#963); a session only a
 //                          password signed in stays.
 //   require-mfa            a second factor required of them at the sign-in
@@ -588,6 +596,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'issue-software-statement',
                              'issue-tls-client-certificate',
                              'revoke-tls-client-certificate',
+                             'issue-signing-certificate',
+                             'revoke-signing-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
@@ -2343,14 +2353,16 @@ class AdminActions {
       friendlyName: String((enrolled && enrolled.label) || ''),
       changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
       reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
-                   ') enrolled a ' + done.role + ' passkey for ' + who + '.',
+                   ') enrolled a passkey for ' + who + '.',
       reasonUser: 'An administrator enrolled a passkey on your account.' });
     const algorithm = credentials.keyAlgorithm(enrolled || {});
     auditLog.record({
       category: 'authentication', action: 'admin.passkey.enrolled',
       actor: ctx.actor, target: who, outcome: 'success',
-      summary: 'enrolled a "' + done.role + '" passkey for ' + who,
-      detail: { username: who, via: ctx.via, role: done.role,
+      summary: 'enrolled a passkey for ' + who,
+      // NO ROLE ON THE ROW SINCE #1135: a key has none, and the realm's
+      // settings decide at each sign-in how it may be used.
+      detail: { username: who, via: ctx.via,
                 lane: credentials.keyLane(enrolled || {}),
                 algorithm: algorithm.text || algorithm.name || '',
                 credentialId: String(done.credentialId || ''),
@@ -2358,15 +2370,15 @@ class AdminActions {
                 enrolledBy: (done.enrolledBy || {}).username || '',
                 held: done.held } });
     log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
-             ctx.via + ') enrolled a "' + done.role + '" passkey for "' +
+             ctx.via + ') enrolled a passkey for "' +
              who + '", who now holds ' + done.held + '.');
     log.debug("Leaving AdminActions.adminKeyEnrolled(). Enrolled.");
-    return { ok: true, username: who, role: done.role, lane: done.lane,
+    // `role` LEFT THE ANSWER IN #1135: a key carries none, so there is no
+    // "passwordless" or "second-factor" passkey to name.
+    return { ok: true, username: who, lane: done.lane,
              credentialId: String(done.credentialId || ''),
              held: done.held, enrolledBy: done.enrolledBy || null,
-             message: 'A ' + (done.role === 'primary' ? 'passwordless'
-                                                      : 'second-factor') +
-                      ' passkey is enrolled for ' + who + ', marked as ' +
+             message: 'A passkey is enrolled for ' + who + ', marked as ' +
                       'enrolled by an administrator. They have been told; ' +
                       'hand the authenticator over.' };
   }
@@ -2417,8 +2429,8 @@ class AdminActions {
   // logout model's `endFactorSessions()`, by each of the four per-credential
   // removals — a security key, the authenticator app, the recovery codes and
   // the emailed second factor — and by the two bulk disables (#963).
-  // `disable-primary-keys` asks once per primary key it removed;
-  // `disable-mfa` asks once per mfa key it removed, and once for the
+  // `disable-primary-keys` asks once per key it removed; `disable-mfa`
+  // asks once per key it removed, and once for the
   // authenticator app and once for the recovery codes when those went.
   // Only the sessions that credential authenticated: unlike a password
   // reset (`signOutEverywhere()`), a removal leaves every session the
@@ -2708,6 +2720,163 @@ class AdminActions {
           : 'That certificate was not stored on this entry.') });
   }
 
+  // ---------------------------------------------------------------------------
+  // A MESSAGE-SIGNING CERTIFICATE (#521, rcbj 2026-10-28): what a WS-Trust
+  // requester signs its RST with, a WS-Security 1.1 signature over the SOAP
+  // Body and Timestamp. rcbj's decision: an ADMINISTRATOR issues one, to a
+  // person from their /admin/users page or to an application from the
+  // Credentials section of its /admin/applications page, and through
+  // `POST /admin-api/users/issue-signing-certificate` and
+  // `POST /admin-api/applications/issue-signing-certificate` (rule 7) — never
+  // the person on the user portal. `revoke-signing-certificate` beside each.
+  //
+  // `tls_client_certificates.js` decides everything about the certificate,
+  // with `purpose: 'message-signing'` — the realm's `message-signing` Issuing
+  // CA, digitalSignature and no extended key usage, the holder's urn:sts:
+  // name, the cap `pki.messageSigningCertificateMax` (STS-PKI-0220), and the
+  // PKCS#12 it is packaged as. The callers above have decided that the holder
+  // exists; this decides that the file password is one.
+  //
+  // **THE REPLY IS THE ONLY COPY OF THE PRIVATE KEY**, as the application
+  // TLS client certificate's is: nothing keeps it, and the password
+  // protecting the files is neither stored nor audited.
+  // ---------------------------------------------------------------------------
+  /**
+   * The message-signing certificates one holder has been issued in the
+   * ambient realm, with the cap and what an issue form needs.
+   *
+   * @param kind - 'person' or 'application'
+   * @param holder - the username or the application's identifier
+   * @returns `{ ok: true, kind, holder, implicitName, certificates, active,
+   *   max, keyAlgorithms, defaultKeyAlg, revocationReasons, passwordMin }`
+   */
+  signingCertificatesOf(kind, holder) {
+    const { log, tlsClientCertificates } = this.deps;
+    log.debug("Entering AdminActions.signingCertificatesOf(). " + kind);
+    const purpose = tlsClientCertificates.MESSAGE_SIGNING_USE_CASE;
+    const name = String(holder || '');
+    let held = [];
+    try {
+      held = tlsClientCertificates.listFor(undefined, name, kind, purpose)
+        .map(function (cert) {
+          return { serialHex: cert.serialHex, label: cert.label,
+                   subject: cert.subject, keyAlg: cert.keyAlg,
+                   notBefore: cert.notBefore, notAfter: cert.notAfter,
+                   thumbprint: cert.thumbprint, state: cert.state,
+                   reason: cert.reason, revokedAt: cert.revokedAt,
+                   certificatePem: cert.certificatePem };
+        });
+    } catch (e) {
+      // No certificate authority in this process: nothing issued, nothing
+      // held, which is what the section then says.
+      log.debug("Caught in AdminActions.signingCertificatesOf(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    log.debug("Leaving AdminActions.signingCertificatesOf(). " +
+              held.length + " held.");
+    return {
+      ok: true, kind: kind, holder: name,
+      implicitName: (kind === 'application'
+        ? tlsClientCertificates.APPLICATION_URN : 'urn:sts:person:') + name,
+      certificates: held,
+      active: held.filter(function (cert) {
+        return cert.state === 'valid';
+      }).length,
+      max: tlsClientCertificates.maxPerHolder(kind, purpose),
+      keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),
+      defaultKeyAlg: tlsClientCertificates.DEFAULT_KEY_ALG,
+      revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
+      passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN
+    };
+  }
+
+  private signingCertificateAction(action, kind, holder, body) {
+    const { log, applications, tlsClientCertificates } = this.deps;
+    const self = this;
+    log.debug("Entering AdminActions.signingCertificateAction(). " + action +
+              " " + kind);
+    const purpose = tlsClientCertificates.MESSAGE_SIGNING_USE_CASE;
+    const whose = kind === 'application'
+      ? 'the application "' + holder + '"' : '"' + holder + '"';
+    // What the answer carries about the holder as it now stands: the
+    // application's entry, as the TLS client actions answer it, or the
+    // person's certificates.
+    const standing = function () {
+      log.debug("Entering standing().");
+      log.debug("Leaving standing().");
+      return kind === 'application'
+        ? { application: applications.get(holder) }
+        : { user: holder,
+            signing: self.signingCertificatesOf('person', holder) };
+    };
+    if (action === 'revoke-signing-certificate') {
+      // Among THIS holder's message-signing certificates only: a serial
+      // belonging to anybody else, or a TLS client certificate's, matches
+      // nothing (STS-PKI-0221).
+      const done = tlsClientCertificates.revoke(undefined, holder,
+        String(body.serialHex || ''), String(body.reason || ''), kind,
+        purpose);
+      if (done.ok) {
+        done.message = 'The message-signing certificate ' +
+          done.certificate.serialHex + ' of ' + whose + ' was revoked (' +
+          done.reason + '). A WS-Trust request signed with it is refused ' +
+          'from now on.';
+        Object.assign(done, standing());
+      }
+      log.debug("Leaving AdminActions.signingCertificateAction(). " +
+                "revoke " + (done.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0903', done);
+    }
+    const passwordSaid = tlsClientCertificates.pkcs12PasswordProblem(
+      body.password, body.confirm === undefined ? undefined : body.confirm);
+    if (passwordSaid) {
+      log.debug("Leaving AdminActions.signingCertificateAction(). The file " +
+                "password.");
+      return this.refused('STS-ADMIN-0902', { ok: false,
+                                              errors: [passwordSaid] });
+    }
+    const spec: any = {
+      kind: kind, keyAlg: body.keyAlg || undefined, label: body.label || '',
+      days: body.days ? Number(body.days) : undefined, purpose: purpose
+    };
+    spec[kind === 'application' ? 'application' : 'username'] = holder;
+    return tlsClientCertificates.issue(undefined, spec)
+      .then(function (made) {
+        if (!made.ok) {
+          log.debug("Leaving AdminActions.signingCertificateAction(). The " +
+                    "issue was refused.");
+          return self.refusedBy('STS-ADMIN-0901', made);
+        }
+        const issued = made.issued;
+        return tlsClientCertificates.bundle(issued, String(body.password))
+          .then(function (files) {
+            log.debug("Leaving AdminActions.signingCertificateAction(). A " +
+                      "message-signing certificate was issued to " + holder +
+                      ".");
+            return Object.assign({
+              ok: true,
+              message: 'A message-signing certificate was issued to ' +
+                       whose + ' (serial ' + issued.serialHex + '). This ' +
+                       'is the only time its private key can be downloaded.',
+              purpose: purpose,
+              certificate: {
+                serialHex: issued.serialHex, subject: issued.subject,
+                keyAlg: issued.keyAlg, label: issued.label,
+                notBefore: issued.notBefore, notAfter: issued.notAfter,
+                thumbprint: issued.thumbprint,
+                certificatePem: issued.certificatePem,
+                chainPem: issued.chainPem,
+                implicitName: (kind === 'application'
+                  ? tlsClientCertificates.APPLICATION_URN
+                  : 'urn:sts:person:') + holder
+              },
+              files: files
+            }, standing());
+          });
+      });
+  }
+
   private credentialAdminAction(action, body, ctx) {
     const { log, credentials, auditLog, accountSignals, errorCodes } =
       this.deps;
@@ -2925,7 +3094,7 @@ class AdminActions {
       // `removed` is absent on that answer (`removePrimaryKeys()`).
       if (!result.ok) {
         audited('admin.mfa.primary-keys.removed',
-                'could not remove the primary security keys of ' + who,
+                'could not remove the passkeys of ' + who,
                 { removed: (result.removed || []).length,
                   errors: result.errors || [] },
                 'failure');
@@ -2939,23 +3108,23 @@ class AdminActions {
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
-          reasonAdmin: 'An administrator disabled passwordless sign-in for ' +
+          reasonAdmin: 'An administrator removed every passkey of ' +
                        who + '.',
-          reasonUser: 'A security key that signed you in without a password ' +
-                      'was removed from your account.' });
+          reasonUser: 'A passkey was removed from your account.' });
       });
-      // THE SESSIONS EACH REMOVED PRIMARY KEY SIGNED IN END (#963), and no
-      // other: a password session, and a session an mfa key signed in,
-      // stay. An empty list is still asked — `sumFactorSessions()` calls
-      // once with no factor, which matches nothing — and a missing
-      // sign-out module answers 0 (STS-ADMIN-0870) without putting the
-      // keys back. The CAEP deletes above are unchanged.
+      // THE SESSIONS EACH REMOVED KEY SIGNED IN END (#963), and no other:
+      // a password session stays. Since #1135 every key goes (a key has no
+      // role), so "a session an mfa key signed in" is no longer a case that
+      // survives this act. An empty list is still asked —
+      // `sumFactorSessions()` calls once with no factor, which matches
+      // nothing — and a missing sign-out module answers 0 (STS-ADMIN-0870)
+      // without putting the keys back. The CAEP deletes above are unchanged.
       const ended = this.sumFactorSessions(who, removed.map(function (one) {
         return { kind: 'webauthn',
                  credentialId: String((one && one.credentialId) || '') };
       }), ctx, 'a security key');
       audited('admin.mfa.primary-keys.removed',
-              'removed the primary security keys of ' + who,
+              'removed the passkeys of ' + who,
               { removed: removed.length,
                 sessionsEnded: ended.sessionsEnded,
                 failed: ended.failed },
@@ -2965,10 +3134,9 @@ class AdminActions {
       return { ok: true, username: who, removed: removed,
                sessionsEnded: ended.sessionsEnded,
                failed: ended.failed,
-               message: removed.length + ' primary security key(s) of ' +
-                        who + ' removed. They sign in with their password ' +
-                        'now; a key they hold as a second factor is ' +
-                        'untouched.' + this.sessionsEndedSentence(ended) };
+               message: removed.length + ' passkey(s) of ' + who +
+                        ' removed. They sign in with their password ' +
+                        'now.' + this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'disable-mfa') {
@@ -2996,7 +3164,7 @@ class AdminActions {
           changeType: 'delete', friendlyName: one.label, via: ctx.via,
           reasonAdmin: 'An administrator disabled every second factor of ' +
                        who + '.',
-          reasonUser: 'A security key was removed from your account.' });
+          reasonUser: 'A passkey was removed from your account.' });
       });
       if (removed.backupCodes) {
         accountSignals.recoveryInformationChanged({ username: who,
@@ -3016,7 +3184,7 @@ class AdminActions {
       }
       // THE SESSIONS EACH REMOVED FACTOR SIGNED IN END (#963). A factor
       // that was not held is not asked, so its sessions — there are none
-      // of its own — stay. The mfa-key list is asked even when empty: that
+      // of its own — stay. The key list is asked even when empty: that
       // call names no credential and adds nothing. The counts are one
       // number, as one `clear-totp` reports one.
       const keysEnded = this.sumFactorSessions(who,
@@ -3052,7 +3220,7 @@ class AdminActions {
                failed: ended.failed,
                message: 'Every second factor of ' + who + ' was removed (' +
                         'authenticator app: ' + (removed.totp ? 'yes' : 'no') +
-                        ', security keys: ' + (removed.keys || []).length +
+                        ', passkeys: ' + (removed.keys || []).length +
                         ', recovery codes: ' +
                         (removed.backupCodes ? 'yes' : 'no') + '). ' +
                         (requirement.required
@@ -3949,6 +4117,27 @@ class AdminActions {
       return this.storedCertificateAction(action, body, ctx);
     }
 
+    // A MESSAGE-SIGNING CERTIFICATE (#521), issued to the person or revoked.
+    if (action === 'issue-signing-certificate' ||
+        action === 'revoke-signing-certificate') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person in `user`.'] });
+      }
+      if (!require('../ldap/ldap_server').storedCertificatesOf('person',
+                                                               who)) {
+        log.debug("Leaving AdminActions.usersAction(). No entry.");
+        return this.refused('STS-ADMIN-0905', { ok: false,
+          errors: ['There is no person called "' + who + '" here, and ' +
+                   'issuing a certificate creates nobody.'] });
+      }
+      log.debug("Leaving AdminActions.usersAction(). A message-signing " +
+                "certificate.");
+      return this.signingCertificateAction(action, 'person', who, body);
+    }
+
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
     if (action === 'federation-link' || action === 'federation-unlink') {
       log.debug("Leaving AdminActions.usersAction(). A federation link.");
@@ -4336,8 +4525,7 @@ class AdminActions {
           fido2Aaguid: String((going && going.aaguid) || ''),
           changeType: 'delete', via: ctx.via,
           friendlyName: going ? String(going.label || '') : '',
-          reasonAdmin: 'An administrator removed a ' +
-                       (going ? going.role : '') + ' security key of ' + who +
+          reasonAdmin: 'An administrator removed a passkey of ' + who +
                        '.',
           reasonUser: 'A security key was removed from your account.' });
       }
@@ -4466,9 +4654,11 @@ class AdminActions {
             'Passkeys, or have them create one themselves on their ' +
             'account page.'] });
       } else {
+        // `body.role` IS ACCEPTED AND IGNORED SINCE #1135: a key carries
+        // no role, so the old field a caller may still send asks nothing.
         begun = credentials.beginAdminKeyEnrolment(who, context &&
           (context as any).admin, {
-          role: String(body.role || 'mfa'), kind: String(body.kind || ''),
+          kind: String(body.kind || ''),
           lane: String(body.lane || '') });
       }
       if (!begun.ok) {
@@ -4504,17 +4694,17 @@ class AdminActions {
       auditLog.record({
         category: 'authentication', action: 'admin.passkey.enrolment-started',
         actor: ctx.actor, target: who, outcome: 'success',
-        summary: 'started enrolling a "' + begun.role + '" passkey for ' + who,
-        detail: { username: who, via: ctx.via, role: begun.role,
+        summary: 'started enrolling a passkey for ' + who,
+        detail: { username: who, via: ctx.via,
                   lane: begun.lane, kind: begun.kind || 'any',
                   excluded: begun.exclude.length } });
       log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
-               ctx.via + ') started enrolling a "' + begun.role +
-               '" passkey for "' + who + '".');
+               ctx.via + ') started enrolling a passkey for "' + who +
+               '".');
       log.debug("Leaving AdminActions.usersAction(). begin-passkey-" +
                 "enrolment minted a challenge.");
       return { ok: true, username: who, enrolmentId: begun.enrolmentId,
-               role: begun.role, lane: begun.lane, kind: begun.kind,
+               lane: begun.lane, kind: begun.kind,
                expiresAt: begun.expiresAt,
                // WHAT THE CONSOLE'S SCRIPT HANDS
                // `navigator.credentials.create()`, every byte string as
@@ -5902,6 +6092,8 @@ class AdminActions {
                       'reveal-secret', 'issue-software-statement',
                       'issue-tls-client-certificate',
                       'revoke-tls-client-certificate',
+                      'issue-signing-certificate',
+                      'revoke-signing-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
@@ -6898,6 +7090,31 @@ class AdminActions {
                 "revoke-tls-client-certificate " +
                 (done.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0723', done);
+    }
+
+    // ---------------------------------------------------------------------
+    // A MESSAGE-SIGNING CERTIFICATE FOR THE APPLICATION (#521, rcbj's
+    // decision: an administrator issues one, from the console or
+    // /admin-api), from the Credentials section of its own page. The same
+    // shape as the TLS client certificate above, and the same module decides
+    // everything about it — here with `purpose: 'message-signing'`: the
+    // realm's `message-signing` Issuing CA, digitalSignature only, the
+    // urn:sts:application: name a WS-Trust request's signature maps back to
+    // the entry, and `pki.messageSigningCertificateMax`. The reply is again
+    // the only copy of the private key.
+    if (action === 'issue-signing-certificate' ||
+        action === 'revoke-signing-certificate') {
+      const target = applications.get(identifier);
+      if (!target) {
+        log.debug("Leaving AdminActions.applicationsAction(). No such " +
+                  "application.");
+        return this.refused('STS-ADMIN-0904', { ok: false, errors: ['There ' +
+            'is no application called "' + identifier + '" here.'] });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). A " +
+                "message-signing certificate.");
+      return this.signingCertificateAction(action, 'application',
+        String(target.identifier), body);
     }
 
     if (action === 'revoke-registration') {
@@ -10968,6 +11185,7 @@ export = {
   USERS_ACTIONS: USERS_ACTIONS,
   usersAction: slot.forward('usersAction'),
   storedCertificatesOf: slot.forward('storedCertificatesOf'),
+  signingCertificatesOf: slot.forward('signingCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
   applicationFieldsFrom: slot.forward('applicationFieldsFrom'),

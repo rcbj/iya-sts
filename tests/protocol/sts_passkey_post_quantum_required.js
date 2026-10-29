@@ -469,8 +469,22 @@ async function test() {
       .slice(0, 300));
   });
 
+  // B1'S REFUSAL CHANGED THE ES256 KEY'S STANDING, and that is a CAEP
+  // credential-change by `policy` (#718), which the portal's own receiver
+  // answers by revoking every portal token the person was issued before it
+  // (#1042). It is delivered asynchronously: ~11 s later in single-node, so
+  // `client` outlived the job, and 15 ms after C in a cluster run of
+  // 2026-10-28, so D's enrolment was refused `invalid_token`. The receiver
+  // spares a token issued in a LATER whole second than the event, so the
+  // portal signs in again past the second B1 was answered in.
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 1050 - (Date.now() % 1000));
+  });
+  const fresh = await portalSignin.signInToThePortal(base, PERSON, null,
+                                                     { password: PASSWORD });
+
   // C. The warnings.
-  page = await client.api("GET", "/account-api/keys");
+  page = await fresh.api("GET", "/account-api/keys");
   const person = await call("GET", "/users?user=" +
                             encodeURIComponent(PERSON));
   const consoleKeys = (person.body && person.body.factors &&
@@ -495,9 +509,9 @@ async function test() {
   log.info("=== registration ===");
   const both = await requirement(defaults, "registration-and-sign-in");
   const late = makeAuthenticator(-7);
-  const d = await enrol(client, late, "");
+  const d = await enrol(fresh, late, "");
   if (d.pending && d.pending.id && !(d.done && d.done.status === 200)) {
-    await client.api("POST", "/account-api/keys", { action: "cancel" });
+    await fresh.api("POST", "/account-api/keys", { action: "cancel" });
   }
   check("D. registration-and-sign-in: AN ENROLMENT OFFERS ONLY ML-DSA, AND " +
         "AN ES256 REGISTRATION IS REFUSED", function () {

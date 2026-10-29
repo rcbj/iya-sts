@@ -4013,6 +4013,21 @@ class AdminConsole {
       'color:#fff;font-size:.8em;cursor:pointer}' +
       'button.secondary{background:#fff;color:#12107c}' +
       'button.danger{background:#b00020;border-color:#b00020}' +
+      // AN ORDERED CHOICE'S SELECT ALL / NONE SWITCH (#1130): a checkbox
+      // drawn as a switch, so it still is one to a keyboard and a screen
+      // reader (`role="switch"`), and its message for a list with nothing
+      // ticked.
+      '.cfg-switch{display:inline-flex;align-items:center;gap:.5em;' +
+      'margin:0 0 6px;cursor:pointer;font-size:.9em}' +
+      '.cfg-switch input{appearance:none;-webkit-appearance:none;' +
+      'width:2.4em;height:1.3em;border-radius:1em;background:#bbb;' +
+      'position:relative;margin:0;cursor:pointer;transition:background .15s}' +
+      '.cfg-switch input::after{content:"";position:absolute;top:.15em;' +
+      'left:.15em;width:1em;height:1em;border-radius:50%;background:#fff;' +
+      'transition:left .15s}.cfg-switch input:checked{background:#12107c}' +
+      '.cfg-switch input:checked::after{left:1.25em}' +
+      '.cfg-switch input:focus-visible{outline:2px solid #12107c;' +
+      'outline-offset:2px}.cfg-ordered-none{color:#b00020;font-weight:600}' +
       // `number` joined this list with /admin/token-lifetimes, whose four
       // inputs are the console's first. Without it they are the one control in
       // the card drawn in the browser's default chrome, beside a form that

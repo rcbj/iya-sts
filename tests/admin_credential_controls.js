@@ -351,13 +351,13 @@ function childMain() {
       ldapServer.createUser('ctl-bob', {});
       const jwk = { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' };
       credentials.addKey('ctl-bob', { credentialId: 'bob-primary',
-        publicKeyJwk: jwk, label: 'desk key' }, 'primary');
+        publicKeyJwk: jwk, label: 'desk key' });
       credentials.addKey('ctl-bob', { credentialId: 'bob-mfa',
-        publicKeyJwk: jwk, label: 'drawer key' }, 'mfa');
+        publicKeyJwk: jwk, label: 'drawer key' });
       let refused = actions.usersAction({ action: 'disable-primary-keys',
                                           user: 'ctl-bob' }, context);
       note(!refused.ok && errorCodes.codeOf(refused) === 'STS-AUTHN-0161',
-           '4a. refused for somebody whose primary key is their only way in',
+           '4a. refused for somebody whose passkeys are their only way in',
            errorCodes.codeOf(refused));
       credentials.setPassword('ctl-bob', 'Bob-Pass-123!');
       const byPrimary = sessionFor('ctl-bob', ['hwk'], '1',
@@ -372,10 +372,13 @@ function childMain() {
       const disabledKeys = actions.usersAction({ action: 'disable-primary-keys',
                                                  user: 'ctl-bob' }, context);
       const bobKeys = credentials.keysOf('ctl-bob');
-      note(disabledKeys.ok && bobKeys.length === 1 &&
-           bobKeys[0].role === 'mfa',
-           '4b. every primary key goes and the mfa key stays',
-           JSON.stringify(bobKeys.map(function (k) { return k.role; })));
+      // EVERY PASSKEY GOES (#1135): a key has no role, so until then the
+      // `mfa` key stayed and only the `primary` one went.
+      note(disabledKeys.ok && bobKeys.length === 0,
+           '4b. every passkey goes, a key carrying no role',
+           JSON.stringify(bobKeys.map(function (k) {
+             return k.credentialId;
+           })));
       note(disabledKeys.ok && disabledKeys.sessionsEnded === 1 &&
            /1 session it signed in was ended/
              .test(String(disabledKeys.message)) &&
@@ -400,13 +403,16 @@ function childMain() {
       // ====================================================================
       // 5. DISABLE ALL MFA
       // ====================================================================
+      // The drawer key again: 4 took every passkey (#1135).
+      credentials.addKey('ctl-bob', { credentialId: 'bob-mfa',
+        publicKeyJwk: jwk, label: 'drawer key' });
       const begun = credentials.beginTotpEnrolment('ctl-bob', {});
       credentials.confirmTotpEnrolment('ctl-bob', totp.codeAt(begun.secret));
       const codes = credentials.beginBackupCodes('ctl-bob', {});
       credentials.confirmBackupCodes('ctl-bob', codes.handle);
       note(credentials.mechanismsFor('ctl-bob').totp &&
            credentials.mechanismsFor('ctl-bob').backupCodes.present,
-           '5a. the fixture holds an app, an mfa key and recovery codes');
+           '5a. the fixture holds an app, a passkey and recovery codes');
       const byMfa = sessionFor('ctl-bob', ['pwd', 'hwk'], 'mfa',
         { kind: 'webauthn', id: 'bob-mfa' });
       const byTotp = sessionFor('ctl-bob', ['pwd', 'otp'], 'mfa',
@@ -573,11 +579,11 @@ function childMain() {
            '7f. once enrolled, the sign-in asks for the code, not a set-up',
            r.status);
 
-      // A PRIMARY KEY FIRST, so that without the refusal this sign-in would
+      // A PASSKEY FIRST, so that without the refusal this sign-in would
       // go on to a ceremony rather than be refused for having no key.
       credentials.addKey('ctl-carol', { credentialId: 'carol-primary',
         publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
-        label: 'carol key' }, 'primary');
+        label: 'carol key' });
       // Usernameless sign-in OFF for this one check: it is on by default
       // since 2026-10-10, and then the screen offers its own passkey
       // button, which says nothing about this refusal.
@@ -645,10 +651,10 @@ function childMain() {
              '8b. and refuses one for a name nobody created',
              JSON.stringify(ghostTotp));
         const erinKey = credentials.beginKeyEnrolment('ctl-erin',
-                                                      { role: 'mfa' });
+                                                      {});
         note(erinKey.ok, '8c. it begins a security key enrolment for ' +
              'somebody who exists', JSON.stringify(erinKey.errors));
-        const ghostKey = credentials.beginKeyEnrolment(ghost, { role: 'mfa' });
+        const ghostKey = credentials.beginKeyEnrolment(ghost, {});
         note(!ghostKey.ok &&
              errorCodes.codeOf(ghostKey) === 'STS-AUTHN-0024',
              '8d. and refuses one for a name nobody created',

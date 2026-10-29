@@ -434,33 +434,42 @@ function run(t) {
           'and she can still sign in — a recovery code has never been a way ' +
           'in on its own and this does not change that');
 
-  t.log.info('=== a security key ADVISES a set only in the `mfa` role ===');
+  t.log.info('=== a passkey ADVISES a set only where it can be a SECOND ' +
+             'factor ===');
   // **THIS SECTION USED TO ASSERT AN ISSUE AND NOW ASSERTS AN ADVICE**, which
   // is the same distinction one tier down: the condition that mattered was
-  // never "does a key issue codes" but "is this key a SECOND FACTOR". A
-  // `primary` key is a way IN, so there is no second-factor step for a
-  // recovery code to stand in for and a set would be strings no screen ever
-  // asks for.
+  // never "does a key issue codes" but "is this key a SECOND FACTOR". Until
+  // #1135 that was the key's role. A key has no role now, so it is the
+  // person's and the realm's: a key is a second factor for somebody who has
+  // a password to put it beside, where the realm lets a key be one. For
+  // somebody with no password the key is the way IN, and there is no
+  // second-factor step for a recovery code to stand in for.
   const dave = somebody();
   const primary = credentials.addKey(dave, {
     credentialId: 'probe-primary-1', publicKeyJwk: { kty: 'OKP' },
     signCount: 0, label: 'probe'
-  }, 'primary');
-  t.check(primary.ok, 'a primary key enrols', (primary.errors || []).join(' '));
+  });
+  t.check(primary.ok, 'a key enrols for somebody with no password',
+          (primary.errors || []).join(' '));
   t.check(!primary.recoveryAdvised,
-          'AND ADVISES NO RECOVERY CODES — it is a credential rather than a ' +
-          'second factor, and its lost-key story is an operator and an ' +
-          'activation link');
+          'AND ADVISES NO RECOVERY CODES — with no password it is the way ' +
+          'in rather than a second factor, and its lost-key story is an ' +
+          'operator and an activation link');
   t.check(!credentials.mechanismsFor(dave).recoveryAdvised,
           'and `mechanismsFor()` agrees, so the portal draws no prompt for ' +
-          'somebody who has only a passwordless key');
+          'somebody who signs in with a passkey alone');
+  credentials.setPassword(dave, 'Probe-Pass-123!');
   const mfaKey = credentials.addKey(dave, {
     credentialId: 'probe-mfa-1', publicKeyJwk: { kty: 'OKP' },
     signCount: 0, label: 'probe'
-  }, 'mfa');
-  t.check(mfaKey.ok, 'an mfa key enrols', (mfaKey.errors || []).join(' '));
+  });
+  t.check(mfaKey.ok, 'a key enrols beside a password',
+          (mfaKey.errors || []).join(' '));
   t.check(mfaKey.recoveryAdvised,
-          'and THAT one advises a set, because it is a second factor');
+          'and THAT one advises a set, because beside a password it is a ' +
+          'second factor');
+  t.check(credentials.mechanismsFor(dave).recoveryAdvised,
+          'and `mechanismsFor()` agrees');
   t.check(String(mfaKey.recoveryNote).length > 40,
           'and carries the sentence the portal shows, rather than leaving ' +
           'each surface to invent its own wording for the same fact');

@@ -90,7 +90,7 @@ function run(t) {
     credentialId: 'alice-key-1',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'a', y: 'b' },
     signCount: 0
-  }, 'mfa');
+  });
   t.equal(aliceKey.ok, true, 'and alice has a security key of her own');
 
   // -----------------------------------------------------------------------
@@ -114,7 +114,7 @@ function run(t) {
     credentialId: 'mallory-key-1',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'c', y: 'd' },
     signCount: 0
-  }, 'mfa');
+  });
   t.equal(own.ok, true, 'mallory can enrol a key of his own');
   t.equal(credentials.removeKey(mallory, 'mallory-key-1').ok, true,
           'and remove it — so the refusal above is about WHOSE key it is and ' +
@@ -127,13 +127,13 @@ function run(t) {
   t.log.info('=== nobody can remove their own last way in ===');
   const keyOnly = 'portal-keyonly-' + nodeCrypto.randomBytes(3).toString('hex');
   makePerson(keyOnly);
-  // Give them a PRIMARY key and no password — the passwordless account.
+  // Give them a passkey and no password — the passwordless account.
   const only = credentials.addKey(keyOnly, {
     credentialId: 'only-key',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'e', y: 'f' },
     signCount: 0
-  }, 'primary');
-  t.equal(only.ok, true, 'a passwordless account holds one primary key');
+  });
+  t.equal(only.ok, true, 'a passwordless account holds one passkey');
   const mechanisms = credentials.mechanismsFor(keyOnly);
   t.equal(mechanisms.usable, true, 'and can sign in');
   t.equal(mechanisms.password, false, 'with no password at all');
@@ -145,23 +145,34 @@ function run(t) {
           'queue rather than a security control');
 
   // -----------------------------------------------------------------------
-  // AN `mfa` KEY IS NOT A WAY IN. This is the combination the activation flow
-  // refuses to create, asserted at the layer that decides it.
+  // A KEY IS A WAY IN ONLY WHERE THE REALM SAYS SO (#1135). Until then a key
+  // enrolled as `mfa` was never a way in; a key has no role now, and what
+  // decides is `webauthn.primaryAllowed`. With it off, a person holding only
+  // a key is holding the second of two factors with no first — the
+  // combination /portal/activate refuses to create, asserted at the layer
+  // that decides it.
   // -----------------------------------------------------------------------
-  t.log.info('=== a second factor is not a first one ===');
+  t.log.info('=== a key is a way in only where the realm lets it be ===');
   const mfaOnly = 'portal-mfaonly-' + nodeCrypto.randomBytes(3).toString('hex');
   makePerson(mfaOnly);
   credentials.addKey(mfaOnly, {
     credentialId: 'second-factor',
     publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'g', y: 'h' },
     signCount: 0
-  }, 'mfa');
-  const second = credentials.mechanismsFor(mfaOnly);
+  });
+  const settings = require('../common/config');
+  settings.setOverride('webauthn.primaryAllowed', false);
+  let second;
+  let lastKey;
+  try {
+    second = credentials.mechanismsFor(mfaOnly);
+    lastKey = credentials.removeKey(mfaOnly, 'second-factor');
+  } finally {
+    settings.clearOverride('webauthn.primaryAllowed');
+  }
   t.equal(second.usable, false,
-          'somebody holding ONLY a second factor cannot sign in — a key ' +
-          'marked `mfa` is the second of two and there is no first. That is ' +
-          'the combination /portal/activate refuses to create, and this is ' +
-          'the layer that decides it');
+          'WITH webauthn.primaryAllowed OFF, somebody holding ONLY a key ' +
+          'cannot sign in — it is the second of two and there is no first');
   t.equal(second.mfaRequired, true,
           'and the key does make a second factor REQUIRED, which is what ' +
           'makes the flag mean anything');
@@ -170,6 +181,17 @@ function run(t) {
           'different question from whether they can get in, and conflating ' +
           'the two is how somebody ends up stuck at a sign-in screen with an ' +
           'account the service considers finished');
+  t.equal(lastKey.ok, true,
+          'and removing that key is not refused as a last way in, because ' +
+          'there it is none');
+  const keyed = credentials.addKey(mfaOnly, {
+    credentialId: 'second-factor-2',
+    publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'g', y: 'h' },
+    signCount: 0
+  });
+  t.check(keyed.ok && credentials.mechanismsFor(mfaOnly).usable === true,
+          'and with the setting at its default the SAME kind of key is a ' +
+          'way in: the realm decides, not the key');
 
   // -----------------------------------------------------------------------
   // CSRF: a token is bound to ONE session.

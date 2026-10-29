@@ -9016,8 +9016,9 @@ front of it is unchecked, the name is unchecked, and any name may enrol.
 
 ### It can never be a first factor, and that is arithmetic rather than policy
 
-A WebAuthn credential can be `primary` or `mfa` because the authenticator keeps
-a private key this service never sees. **A TOTP secret proves possession of
+A WebAuthn credential may sign somebody in on its own (the realm's
+`webauthn.primaryAllowed`; until #1135 it was a key ENROLLED `primary`)
+because the authenticator keeps a private key this service never sees. **A TOTP secret proves possession of
 something THIS SERVICE ALSO HOLDS** — anybody who can read the store can
 generate the same codes. That is fine for proving somebody still has the app and
 is not a thing to hang an account on, so there is no `role` on a TOTP record and
@@ -10757,11 +10758,14 @@ For the *Password and second factors* section of a person's console page.
   `stsMfaRequired` on the entry OR the authentication policy's `requireSecondFactor` (it was `authn.mfaRequired` until #64) — and `setMfaRequired()`
   writes the first (`0170`). `mechanismsFor()` carries it as `mfaRequirement`,
   beside `passwordResetLink`.
-* **`removePrimaryKeys()`** removes every key in the `primary` role and refuses
-  somebody holding no password (`0161`), which is what stops it being a lockout;
-  **`removeSecondFactors()`** removes the authenticator app, every `mfa` key and
-  the recovery codes, and on a partial failure (`0163`) reports what it removed
-  so the caller's signals describe what really happened.
+* **`removePrimaryKeys()`** removes every key (every key in the `primary`
+  role until #1135) and **`removeSecondFactors()`** the authenticator app,
+  every key (every `mfa` key until #1135) and the recovery codes; both refuse
+  (`0161`) somebody holding no password while a key is a way in, which is
+  what stops either being a lockout — now that a key has no role, either
+  reset takes the passwordless person's keys. On a partial failure (`0163`)
+  each reports what it removed so the caller's signals describe what really
+  happened.
 * **`entryExists()`** asks the directory's `personExists`, because `hasEntry()`
   answers false by design (the bootstrap's). **It is the ONLY "does this
   person exist" check here since 2026-09-18**: `beginTotpEnrolment()` asked
@@ -10776,6 +10780,52 @@ on `/admin/totp` and `/admin/webauthn`) and `security.passwordResetTtlMinutes`.
 `risc.autoEmitTypes` names `account-credential-change-required` and
 `recovery-information-changed` — `ssf/CLAUDE.md` has the table of which door
 sends what.
+
+## `credentials.ts` and `webauthn_policy.ts`: A PASSKEY HAS NO ROLE (#1135, 2026-10-29)
+
+rcbjBlueMars, 2026-10-29: a WebAuthn key carries no role. Until then each key
+was enrolled `primary` (passwordless) or `mfa` (a second factor beside a
+password), and the person was asked which at every enrolment — a question a
+non-technical person cannot answer, and the reason for the change: register a
+passkey, nothing else asked. **When a passkey is used is the authentication
+policy's decision, in layers, for every key alike; the key has no role and no
+say.** The realm's policy says what the realm supports (its `passkey`
+first-factor and `securityKey` second-factor rows, with
+`webauthn.primaryAllowed` / `webauthn.mfaAllowed`, asked by
+`webauthnPolicy.useAllowed()`). An application overrides it through
+`appAuthnMechanism` (first factors, `webauthn` among them, enforced by the
+issuance policy's authn-mechanism rule) and `appMfaMechanism` (second factors,
+`securityKey` among them, applied where the second step is chosen:
+`authn.ts`'s `mfaAllowedFor()` / `narrowSecondFactor()`). So a held passkey
+makes a second step only where the realm, and the application if it
+overrides, accepts a passkey as a second factor.
+
+* **`Credentials.ROLES` is `Credentials.USES`** (`primary` | `mfa`, exported
+  as `USES`): the two ways a key may be USED, never a property of a key.
+  `addKey(username, credential, opts?)` and `addKeyClaimed()` lost their role
+  parameter; `beginKeyEnrolment()` / `beginAdminKeyEnrolment()` ignore an
+  `opts.role` and answer none; confirm and upgrade answers carry none.
+* **A stored role is dropped where a value becomes a key**
+  (`keysOfValues()` deletes it), so no reader — the sign-in, the portal, the
+  console, the reports — sees one, and no migration rewrites the entries.
+* **`webauthn_policy.ts`'s `roleAllowed(role)` is gone.** `useAllowed(use)`
+  answers whether a key may answer that sign-in step (`webauthn.primaryAllowed`
+  / `webauthn.mfaAllowed` and the authentication policy's `passkey` /
+  `securityKey` rows, which kept their names and now gate USE);
+  `enrolmentAllowed()` answers whether a key may be enrolled at all — WebAuthn
+  on and at least one use accepted (`STS-AUTHN-0531`). `STS-AUTHN-0066` is
+  retired. `authn/CLAUDE.md` has the sign-in half (`keyForAssertion()`).
+* **`mechanismsFor()`'s `primaryKeys` / `mfaKeys` are counts of ALL keys by
+  the use the realm allows** (both `keys.length` by default). A screen shows
+  `keys.length` once and never two role counts.
+* **Holding any key is holding a second factor** where the realm lets a key be
+  one (and, at a sign-in, the application where it overrides — above): `secondFactorRefusal()` (3ax) refuses a bare password to such a person
+  in product, and `withoutUsername()` no longer says "it is a second step".
+* **`keySummary()` has no role**, and the ceremony rows keep a `role` field
+  meaning the USE of an assertion, `''` for a registration
+  (`authn/webauthn_ceremonies.ts`).
+* **The two console resets** — `removePrimaryKeys()` and
+  `removeSecondFactors()` — each take every key now (see the section above).
 
 ## 3ax. `app_passwords.ts` and `credentials.ts`'s `secondFactorRefusal()`: the password-only doors and what they take instead (#101, 2026-09-22)
 
@@ -10793,8 +10843,8 @@ What is this directory's is where it is decided and what an app password is.
   answer, only in product (`mode.acceptsPasswordAloneFromSecondFactorAccounts()`
   — the named predicate, and a `REQUIREMENTS` row `second-factor-doors`), only
   for a PERSON (the slot's `isPerson`; where the hook is missing the answer is
-  yes — refuse by default), only when they hold an `mfa` key or an
-  authenticator app or `mfaRequirementFor()` says required, and never for a
+  yes — refuse by default), only when they hold a key (any key since #1135;
+  an `mfa` key until then) or an authenticator app or `mfaRequirementFor()` says required, and never for a
   caller declaring `secondFactor: 'asked-next'` or `'session-held'`. A `door`
   listed in `authn.passwordAloneDoors` passes, with a WARN per use. The
   refusal is `STS-AUTHN-0213`, shaped exactly as a wrong password's verdict,
@@ -11863,8 +11913,9 @@ decisions are rcbj's, on the ticket:
   reaches, refuses a session whose mechanism the policy does not accept in
   the role it answered in (STS-AUTHN-0268 first, -0269 second); held second
   factors are not refused there, by the contract above. The sign-in screen
-  draws only what it accepts, `webauthnPolicy.roleAllowed()` asks the two
-  security-key rows, `totp.settings().enabled` and
+  draws only what it accepts, `webauthnPolicy.useAllowed()` asks the two
+  security-key rows (`roleAllowed()` until #1135, when they stopped gating
+  enrolment and started gating USE), `totp.settings().enabled` and
   `backupCodes.settings().enabled` read theirs, and
   `credentials.mfaRequirementFor()` reads `requireSecondFactor`.
 - **EMAIL IS OFF BY DEFAULT, AND GUARDED (D1)**: NIST SP 800-63B-4 section
@@ -12628,8 +12679,8 @@ since #572, when `webauthnPage()` became facts). Each link is
 chosen key (`POST /authn-api/mfa/{id}/webauthn/options`, `key`) names only
 that key in `allow`. A chosen id that is not one
 of the step's keys draws the list again. The GET now draws a passwordless
-step for a person holding a PRIMARY key, and still never the enrolment
-ceremony. `keyForAssertion()` still decides which key an assertion is
+step for a person holding a key (a PRIMARY key until #1135), and still
+never the enrolment ceremony. `keyForAssertion()` still decides which key an assertion is
 checked against, so nothing about acceptance changed.
 
 **#535 MADE THE POLICY NAMED (2026-10-08)**: `cn=<name>` beside
@@ -13562,8 +13613,9 @@ not refused, and the default stays.
   (`STS-AUTHN-0381`) a session a passkey did not answer; at the sign-in
   screen `refusedSession()` turns that into the set-up step instead
   (`recoveryEnrolment()`): only a passkey offered, `proved` and `recovery`,
-  the ceremony a REGISTRATION whatever keys the person holds, the key in the
-  `mfa` role through `credentials.addKey()` (so the profile's registration
+  the ceremony a REGISTRATION whatever keys the person holds, the key added
+  through `credentials.addKey()` (in the `mfa` role until #1135, with no
+  role since; so the profile's registration
   rules hold it), and NO session at the end — the browser goes back to the
   caller and signs in with the new passkey. Where no passkey can be
   registered here (`STS-AUTHN-0383`) the refusal is drawn. Every other door
@@ -13682,7 +13734,8 @@ PKIjs; it sends no data to a TSA unless the feature is enabled.
 
 rcbj: a "post login activity", targeted by group and enabled per realm;
 the first is the post-quantum passkey migration. rcbj's answers on #1096: the administrator chooses what a
-person holding no passkey is asked (`noPasskey`, `noPasskeyRole`); Skip
+person holding no passkey is asked (`noPasskey`, and `noPasskeyRole` until
+#1135 retired it — its attribute stays in the schema, unread); Skip
 snoozes for `snoozeDays`, and an optional `graceDays` from the FIRST
 invitation ends Skip; a required activity BLOCKS the sign-in; off by
 default, and done inside the sign-in flow.
@@ -13695,8 +13748,12 @@ default, and done inside the sign-in flow.
   `post_login.progress` (cell-tier, on demand): first invitation, snooze,
   done. "Post-quantum" is the key's ALGORITHM, never its lane — a realm with
   one lane makes ML-DSA keys in the classical lane. Nothing is due where the
-  realm cannot make an ML-DSA passkey in that role (`canRegister()`), so a
-  sign-in is never held for something that cannot be done.
+  realm cannot enrol an ML-DSA passkey (`canRegister(method?)`; "in that
+  role" until #1135), so a sign-in is never held for something that cannot
+  be done. **No role since #1135**: `Due.role`, `ROLES` and `roleFor()` went
+  (`reasonFor()` stays), the PQC migration asks of every key at once
+  (`keyToUpgrade(username, prefer?)`), and a progress row written since
+  carries no `role` — one written before keeps it.
 * **The hold is in `authn.startSessionHere()`, last of the refusals** —
   `authn/CLAUDE.md` argues it.
 ### 3ct, continued: started post-login activities (#1111, 2026-10-28; #1123)
@@ -13765,8 +13822,8 @@ it:
 
 * **Progress is REPORTED in `/report`, never on a console page** (#1110,
   rcbj): the `postLoginProgress` source reads the store through
-  `eachProgressAsync()`. Each write stamps the profile, role and
-  `graceDays` that applied (`stamp()`), and `graceOf()` is the one
+  `eachProgressAsync()`. Each write stamps the profile and
+  `graceDays` that applied (`stamp()`; the role too, until #1135), and `graceOf()` is the one
   computation of the deadline the report shows. `report/CLAUDE.md` argues
   the source.
 
@@ -13781,8 +13838,8 @@ none) for its activity. What reaches outside `post_login.ts`'s header:
 
 * **The rules are still the policy's.** `dueFor()` reads the profile
   `forPerson()` selects; a started activity overrides only `enabled`. So
-  method, snoozeDays, graceDays, noPasskey, noPasskeyRole, attestation and
-  noPasskeyFallback come from the same profile whoever asks, and there is
+  method, snoozeDays, graceDays, noPasskey, attestation and
+  noPasskeyFallback (and noPasskeyRole until #1135) come from the same profile whoever asks, and there is
   still one place to set them.
 * **Exclusion is unchanged, and `default` off is not one.** The selected
   profile is the matching named profile of lowest precedence; a NAMED one

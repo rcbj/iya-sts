@@ -535,13 +535,12 @@ async function theKeyIsInTheStoreEverythingElseReads(authenticator) {
       "and " + (factors.keys || []).length + " key(s) are listed.");
   });
 
-  check("IT CARRIES THE ROLE IT WAS ENROLLED IN. The ceremony cannot say " +
-        "which — the POST is the browser's result and nothing in it says " +
-        "what was chosen a screen ago — so the role comes off the pending " +
-        "record, and a key with no role is a key no policy can decide " +
-        "anything about",
+  check("IT CARRIES NO ROLE (#1135). Until then the key took the role it " +
+        "was enrolled in off the pending record; a key has none now, and " +
+        "the realm decides at each sign-in whether a key may answer that " +
+        "step",
     function () {
-      assert.strictEqual(factors.keys[0].role, "mfa",
+      assert.strictEqual(factors.keys[0].role, undefined,
         "the key is stored as " + factors.keys[0].role);
     });
 

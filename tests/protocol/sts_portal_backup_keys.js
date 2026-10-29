@@ -37,12 +37,14 @@
 //      key it found first would refuse every assertion from the others while
 //      looking perfectly correct with one key enrolled.
 //   4. **REMOVING THE LOST ONE IS SELF-SERVICE, AND SO IS REMOVING THE LAST
-//      `mfa` KEY.** The first is what makes a backup useful; the second is
-//      allowed because a second-factor key was never a way IN, so taking the
-//      last one drops the account to one factor rather than to none. The
-//      refusal that stops somebody locking themselves out with one click is
-//      for a `primary` key, and `tests/portal_access.js` asserts it at the
-//      layer that decides it (section 4 below).
+//      KEY OF A PERSON WITH A PASSWORD.** The first is what makes a backup
+//      useful; the second is allowed because the password is still a way IN,
+//      so taking the last key drops the account to one factor rather than to
+//      none. The refusal that stops somebody locking themselves out with one
+//      click is for a person with NO password (since #1135 every key is a way
+//      in where the realm lets a key sign anybody in on its own; until then
+//      only a `primary` key was), and `tests/portal_access.js` asserts it at
+//      the layer that decides it (section 4 below).
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS HERE AND NOT IN THE PARENT SUITE — `sts_consent.js`'s third
@@ -928,31 +930,36 @@ async function thePortalCanEnrolAKey(first) {
       String(enrolled.done.text).slice(0, 500));
   });
 
-  check("THE NICKNAME IS ASKED FOR AFTER THE CEREMONY (#470): the answer " +
-        "names the new passkey and the page opens its rename form, filled " +
-        "with the default name — a security key's, since this one cannot be " +
-        "backed up and is cross-platform", function () {
-    assert.ok(/[?&]named=/.test(String(enrolled.done.location)),
-      "the answer names no passkey: " + enrolled.done.location);
-    assert.ok(/Give your security key a nickname/.test(enrolled.prompt.text),
-      "no nickname prompt: " + String(enrolled.prompt.text).slice(0, 600));
-    assert.ok(/name="label"[^>]*value="Security key"/.test(
-      enrolled.prompt.text), "the prompt does not hold the default name");
+  check("NO NICKNAME BOX AFTER THE CEREMONY (rcbj, 2026-10-28; #470 drew " +
+        "one): the answer lands on the plain page, which names no passkey " +
+        "and asks for nothing, and the new key's row carries the default " +
+        "name — a security key's, since this one cannot be backed up and " +
+        "is cross-platform — in its own folded Rename, through which it " +
+        "is renamed like any other", function () {
+    assert.ok(!/[?&]named=/.test(String(enrolled.done.location)),
+      "the answer still steers to a nickname prompt: " +
+      enrolled.done.location);
+    assert.ok(!/nickname/i.test(enrolled.prompt.text),
+      "a nickname box is still drawn: " +
+      String(enrolled.prompt.text).slice(0, 600));
+    assert.ok(/<details><summary>[^<]*<\/summary><form[^>]*\/rename-key"[^]*?name="label"[^>]*value="Security key"/.test(
+      enrolled.prompt.text), "the new key's row does not hold the default " +
+      "name in its folded Rename");
     assert.strictEqual(enrolled.renamed && enrolled.renamed.status, 200,
       "the rename answered " + (enrolled.renamed && enrolled.renamed.status));
   });
 
   const factors = await factorsFor(PERSON);
   check("which reaches the person's own entry, with the nickname they gave " +
-        "it, the role they chose, and what the passkey pages group it by " +
+        "it, no role (#1135), and what the passkey pages group it by " +
         "(#470): BE clear, the transports, not discoverable", function () {
     assert.strictEqual(factors.mfaKeys, 1,
       "the store holds " + factors.mfaKeys + " key(s).");
     assert.strictEqual(factors.keys[0].label, "the one at my desk",
       "the label did not survive: " + JSON.stringify(factors.keys[0]));
     assert.strictEqual(factors.keys[0].name, "the one at my desk");
-    assert.strictEqual(factors.keys[0].role, "mfa",
-      "the role did not survive.");
+    assert.strictEqual(factors.keys[0].role, undefined,
+      "a role was stored: " + JSON.stringify(factors.keys[0]));
     assert.strictEqual(factors.keys[0].group, "security-key",
       JSON.stringify(factors.keys[0]));
     assert.strictEqual(factors.keys[0].backupEligible, false);
@@ -1167,10 +1174,10 @@ async function theLostKeyIsRemovedWithoutAnOperator(first, second) {
   page = await b.go("GET", "/portal/keys");
   const lastOne = await b.go("POST", "/portal/remove-key",
     form({ credentialId: second.idB64, csrf_token: csrfOf(page.text) }));
-  check("AND REMOVING THE LAST ONE IS ALLOWED HERE ONLY BECAUSE IT IS A " +
-        "SECOND FACTOR — an `mfa` key was never a way IN, so taking it away " +
-        "drops the account to one factor rather than to none. A `primary` " +
-        "key in the same position is refused, which tests/portal_access.js " +
+  check("AND REMOVING THE LAST ONE IS ALLOWED HERE BECAUSE THE PERSON HAS " +
+        "A PASSWORD — taking the key away drops the account to one factor " +
+        "rather than to none. The last key of a person with no password is " +
+        "refused (#1135: any key is a way in), which tests/portal_access.js " +
         "asserts at the layer that decides it", function () {
     assert.ok(lastOne.status === 303 || lastOne.status === 200,
       "removing the last second factor answered " + lastOne.status + " " +
@@ -1283,11 +1290,11 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
   });
 
   const factors = await factorsFor(NEWCOMER);
-  check("THE ENTRY HOLDS ONE `primary` KEY AND NO PASSWORD — the reported " +
-        "defect was a password still being required", function () {
+  check("THE ENTRY HOLDS ONE KEY, USABLE ON ITS OWN, AND NO PASSWORD — the " +
+        "reported defect was a password still being required", function () {
     assert.strictEqual(factors.primaryKeys, 1,
-      "the entry holds " + factors.primaryKeys + " primary key(s): " +
-      JSON.stringify(factors.keys));
+      "the entry holds " + factors.primaryKeys + " key(s) usable on their " +
+      "own: " + JSON.stringify(factors.keys));
     assert.strictEqual(factors.password, false,
       "a password was set, and none was asked for.");
   });

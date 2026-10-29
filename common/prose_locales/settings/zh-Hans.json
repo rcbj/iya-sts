@@ -1288,20 +1288,20 @@
     "text": "在注册时发送 `extensions: { credProps: true }`，要求浏览器报告它创建的凭据是否真的可发现。这是唯一的确认方式：`residentKey: \"preferred\"` 可能会也可能不会产生可发现凭据，证明中也没有任何内容说明是哪一种。本服务将答案记录在密钥旁边，并不据此做任何决定。关闭此项可以观察客户端在完全没有扩展结果时的行为。"
   },
   "webauthn.primaryAllowed|label": {
-    "en": "babf8baa8c13cb1d",
-    "text": "允许密钥作为主凭据"
+    "en": "0692ab5332b96080",
+    "text": "允许通行密钥作为第一因素（无密码）"
   },
   "webauthn.primaryAllowed|description": {
-    "en": "2922360bf8d031ec",
-    "text": "安全密钥能否作为账户上唯一的凭据——无密码登录，`amr [\"hwk\"]`。关闭后，密钥仍可作为第二因素使用，但会在登录界面拒绝无密码路径，并在门户中拒绝 `primary` 选项。**它不会停用某人已持有的主密钥**，原因与 `webauthn.enabled` 相同——而且这里的问题更尖锐：唯一凭据是主密钥的人，会因为运维人员拨动一个开关而被锁在自己的账户之外，这不是一个设置应该能做到的事。"
+    "en": "b7a0b2eefdb42a05",
+    "text": "通行密钥是否可以在本领域作为第一因素——即无密码登录，`amr [\"hwk\"]`——除非某个应用自己的列表（`appAuthnMechanism`）另有规定。这是本领域所支持的内容，与身份验证策略中的通行密钥行并列，并在每次登录时对某人持有的每个通行密钥同样询问：通行密钥没有角色（#1135），因此它决定的是每个密钥可以做什么，而不是它以什么身份登记。关闭时，登录界面上不再有无密码方式，通行密钥只在密码之后回答第二步，前提是 `webauthn.mfaAllowed` 允许。**关闭时，唯一凭据是通行密钥的人无法登录**，直到为其提供密码（例如重置链接）：在 #1135 之前，此开关只拒绝登记，已持有的密钥仍可让其登录。只要此项或 `webauthn.mfaAllowed` 开启，就可以登记通行密钥；两者都关闭时，登记会被拒绝。"
   },
   "webauthn.mfaAllowed|label": {
-    "en": "662710b8b41f9e04",
-    "text": "允许密钥作为第二因素"
+    "en": "ca70f14ff60f2006",
+    "text": "允许通行密钥作为第二因素"
   },
   "webauthn.mfaAllowed|description": {
-    "en": "9c50c02bf162b58c",
-    "text": "安全密钥能否作为密码之外的第二因素注册。关闭后，剩下的第二因素是身份验证器应用（身份验证策略的 TOTP 一行），两者都关闭的部署则完全不提供第二因素——这是受支持的配置，也是两者出现之前本服务的行为。**已注册的 `mfa` 密钥仍会在登录界面被要求**，因为该账户仍配置为双因素；请参阅 `webauthn.enabled`。"
+    "en": "37b9c4c2beaade6e",
+    "text": "通行密钥是否可以在本领域作为第二因素，在密码或其他第一因素之后使用，除非某个应用自己的列表（`appMfaMechanism`）另有规定。这是本领域所支持的内容，与身份验证策略中作为第二因素的通行密钥行并列，并在每次登录时对某人持有的每个通行密钥同样询问：通行密钥没有角色（#1135）。关闭时，剩下的第二因素是身份验证器应用（身份验证策略中的 TOTP 行），两者都关闭的部署完全不提供第二因素——这是受支持的配置，也是本服务在两者出现之前的做法。**关闭时，没有通行密钥回答第二步**，对登录界面而言，唯一第二因素是通行密钥的人等于没有第二因素。只要此项或 `webauthn.primaryAllowed` 开启，就可以登记通行密钥；两者都关闭时，登记会被拒绝。"
   },
   "webauthn.maxKeysPerPerson|label": {
     "en": "420a47f86dc03485",
@@ -3242,6 +3242,14 @@
   "pki.applicationTlsClientCertificateMax|description": {
     "en": "286a6641dd93e940",
     "text": "管理员可以从 /admin/applications 上应用的“凭据”部分或通过 POST /admin-api/applications/issue-tls-client-certificate 为一个应用签发多少个仍然有效的 TLS 客户端证书——每个实例一个，或在证书轮换期间两个。已吊销或已过期的证书不计入。超出后签发会被拒绝（STS-PKI-0180），而不是吊销正在运行的实例可能仍在出示的证书。"
+  },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "一个持有者可持有的消息签名证书数"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "管理员可从 /admin/users、/admin/applications 或 /admin-api 为一个人或一个应用签发的仍然有效的消息签名证书（WS-Trust 请求者用来签名其请求的证书）数量。已吊销或已过期的证书不计入。超过此数时签发会被拒绝（STS-PKI-0220），而不是吊销某人可能仍在用来签名的证书。"
   },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",

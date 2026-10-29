@@ -701,22 +701,23 @@ async function reportEachUser(onUser: (entry: any, dn: string) =>
   log.debug("Leaving reportEachUser(). Guard.");
 }
 
-// How many second-factor credentials an entry holds (#1019): passkeys
-// enrolled in the mfa role, authenticator apps and mail factors, each
-// credential counted once. Recovery codes and app passwords are not
-// factors; a primary passkey is not a second one.
+// How many second-factor credentials an entry holds (#1019): passkeys,
+// authenticator apps and mail factors, each credential counted once.
+// Recovery codes and app passwords are not factors. EVERY PASSKEY COUNTS
+// SINCE #1135: until then only a key enrolled in the mfa role did, and a
+// primary key was not a second factor; a key has no role now, and holding
+// any key is holding a second factor (`common/credentials.ts`). The count
+// is of what the person holds, not of what the realm's settings let a key
+// answer today, so it does not move when an operator turns a use off.
+// `keysOfValues()` parses the values, so a value that is not a key is not
+// counted.
 function reportSecondFactors(entry: any): number {
   log.debug("Entering reportSecondFactors().");
   const keys = reportAttrList(entry, 'stsWebauthnCredential');
   let n = 0;
   if (keys.length) {
     const credentials = require('../common/credentials');
-    credentials.keysOfValues(keys, reportAttr(entry, 'uid')).forEach(
-      function (key: any): void {
-        if (String(key.role || 'mfa') === 'mfa') {
-          n += 1;
-        }
-      });
+    n += credentials.keysOfValues(keys, reportAttr(entry, 'uid')).length;
   }
   n += reportAttrList(entry, 'stsTotpCredential').length;
   n += reportAttrList(entry, 'stsMailFactor').length;
@@ -1358,11 +1359,15 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
 //     holders and never by the population); the entries opened are theirs.
 //   * THE MEMBERS OF A GROUP are read from the group entry and fetched by
 //     name (`existingUserEntriesAsync()`), bounded by the group.
-//   * A PASSKEY'S ROLE is the key's own `role`, `primary` or `mfa`, chosen
-//     at enrolment and enforced at sign-in (`common/credentials.ts`,
-//     `Credentials.ROLES`); its algorithm and lane are what every page
-//     shows (`keyAlgorithm()`, `keyLane()`). The other mechanisms have one
-//     role each, stated in `MECHANISM_TABLE`.
+//   * A PASSKEY HAS NO ROLE since #1135, so its rows' `role` is empty
+//     (`MECHANISM_TABLE`'s ''). Until then it was the key's own `primary`
+//     or `mfa`, chosen at enrolment and enforced at sign-in; the
+//     authentication policy (the realm's, an application's override) now
+//     decides which use a key may answer (`Credentials.USES`), and
+//     `keysOfValues()` drops any role a stored value still carries. Its
+//     algorithm and lane are what every page shows (`keyAlgorithm()`,
+//     `keyLane()`). The other mechanisms have one role each, stated in
+//     `MECHANISM_TABLE`.
 //   * THE PERSON'S HISTORY is `authnMethod` (every RFC 8176 method used
 //     here) and `mfaLastAuthTime`, written at the authentication funnel.
 //
@@ -1609,8 +1614,8 @@ function reportMinIso(stamps: any[]): string | null {
   return best ? reportIso(best) : null;
 }
 
-// The rows one person contributes for one mechanism: a passkey holder has
-// one per role held; every other mechanism one row.
+// The rows one person contributes for one mechanism: one per credential
+// (#1011), a passkey's no longer grouped by a role (#1135).
 // What every row of a person says, whatever the mechanism (#1002, #1021).
 function reportHolderCommon(entry: any, mechanism: any, ldap: any): any {
   log.debug("Entering reportHolderCommon().");
@@ -1741,31 +1746,26 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any,
   // with its own algorithm, lane, id and dates; `credentials` is still the
   // person's count of that mechanism and role, the same on each of their
   // rows, so a count grouped by username is still how many each holds.
+  // A PASSKEY'S ROWS ARE ONE GROUP (#1135): until then they were grouped
+  // by the key's role, `credentials` the count of that role; a key has no
+  // role now, so `credentials` is the person's count of passkeys and
+  // `role` is the mechanism's, empty.
   if (mechanism.id === 'passkey') {
     const credentials = require('../common/credentials');
     const keys = credentials.keysOfValues(values, username);
-    const byRole: Record<string, any[]> = {};
     keys.forEach(function (key: any): void {
-      const role = String(key.role || 'mfa');
-      byRole[role] = (byRole[role] || []).concat([key]);
+      const alg = credentials.Credentials.keyAlgorithm(key);
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: keys.length,
+        credentialId: String(key.credentialId || ''),
+        algorithm: String(alg.name || ''),
+        lane: String(alg.lane || ''),
+        enrolledAt: reportMinIso([key.enrolledAt]),
+        lastUsedAt: reportMaxIso([key.lastUsedAt])
+      }));
     });
-    Object.keys(byRole).sort().forEach(function (role: string): void {
-      const held = byRole[role];
-      held.forEach(function (key: any): void {
-        const alg = credentials.Credentials.keyAlgorithm(key);
-        out.push(Object.assign({}, common, {
-          role: role,
-          credentials: held.length,
-          credentialId: String(key.credentialId || ''),
-          algorithm: String(alg.name || ''),
-          lane: String(alg.lane || ''),
-          enrolledAt: reportMinIso([key.enrolledAt]),
-          lastUsedAt: reportMaxIso([key.lastUsedAt])
-        }));
-      });
-    });
-    log.debug("Leaving reportHolderRows(). Passkeys, " + out.length +
-      ' role(s).');
+    log.debug("Leaving reportHolderRows(). Passkeys, " + out.length + '.');
     return out;
   }
   if (mechanism.id === 'jwtSigningKey' || mechanism.id === 'samlSigningKey') {
@@ -2721,7 +2721,7 @@ async function reportReadJobRows(rows: any, control: any): Promise<void> {
 // in `post_login.progress`, through `common/post_login.ts`'s walk — the
 // rows this process holds, then the store a page at a time, stopping when
 // a row is refused (the limit, the time budget, a cancellation). The
-// profile, role and allotted time are the row's own (written with it since
+// profile and allotted time are the row's own (written with it since
 // #1110); a row written before carries none, and only then is the profile
 // that reaches the person now asked of the post-login policy, once per
 // person. `askedBy` (#1126) is the row's own too — `policy`, or the started
@@ -2768,6 +2768,8 @@ function reportPostLoginRow(entry: any, postLogin: any,
     username: String(entry.username || ''),
     activity: String(entry.activity || ''),
     profile: recorded ? row.profile : String((profile && profile.name) || ''),
+    // RETIRED (#1135): no role is written since, a key having none; a row
+    // written before keeps the one it was asked for, and is shown as is.
     role: String(row.role || ''),
     progress: progress,
     invitedAt: reportIso(row.invitedAt || null),

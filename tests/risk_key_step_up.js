@@ -171,7 +171,7 @@ function childMain() {
           signCount: 0,
           label: 'platform key',
           attachment: 'platform'
-        }, 'mfa');
+        });
         const begun = credentials.beginTotpEnrolment(name,
                                                      { base: w.base });
         let spent = '';

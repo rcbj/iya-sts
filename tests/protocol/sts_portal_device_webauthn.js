@@ -450,36 +450,51 @@ async function signIn(driver, withKey) {
 
 // ENROLMENT ON /portal/keys (#470): press the call to action for the kind —
 // *Create a passkey* (`passkey`) or *Use a security key* (`security-key`),
-// keeping the default role (a second step after the password) — then the
-// page's own button, which runs `navigator.credentials.create()`; then give
-// it a nickname in the form the page opens once it is registered.
+// keeping the default role (a second step after the password). Since
+// 2026-10-28 (rcbj) that press is the whole request: the armed page runs
+// `navigator.credentials.create()` as soon as it is drawn, with no second
+// button, and the virtual authenticator answers it. Then give the key a
+// nickname through its own row's Rename fold — the nickname box the page
+// drew at the top after a registration went on 2026-10-28 (rcbj).
 async function enrol(driver, kind, label) {
   log.debug("Entering enrol(). kind=" + kind);
   await openPage(driver, "/portal/keys");
+  const before = await credentialIdsOn(driver);
   const buttons = await driver.findElements(
     By.css("button[name='kind'][value='" + kind + "']"));
   assert.ok(buttons.length === 1,
     "/portal/keys offers no \"" + kind + "\" call to action, so a person " +
     "cannot ask for one");
   await buttons[0].click();
-  await waitFor(driver, function () {
-    return present(driver, "#wa-go");
-  }, "/portal/keys did not arm a ceremony for a " + kind);
-  await driver.findElement(By.id("wa-go")).click();
+  // ONE MORE ROW IS WHAT A FINISHED CEREMONY DRAWS, so a new Rename form
+  // beside the ones already there is the one condition that says the
+  // ceremony ran and the page came back; `#wa-data` alone could be read
+  // before the armed page is drawn at all.
   await waitFor(driver, async function () {
-    return !(await present(driver, "#wa-data"));
-  }, "the " + kind + " ceremony never finished: the page still holds the " +
-     "armed ceremony");
-  // THE NICKNAME PROMPT, open at the top of the page with the default name.
-  const nickname = await driver.findElements(
-    By.css("form[action$='/rename-key'] input[name='label']"));
-  assert.ok(nickname.length >= 1,
-    "no nickname was asked for after the " + kind + " was registered: " +
+    return !(await present(driver, "#wa-data")) &&
+      (await credentialIdsOn(driver)).length > before.length;
+  }, "the " + kind + " ceremony never finished: the page never came back " +
+     "with one more passkey row");
+  // THE ROW'S RENAME, folded: the new key's row is the one whose id was not
+  // on the page before the ceremony — NOT the last row, because the page
+  // groups the keys (security keys after the device's own), so a roaming
+  // key registered earlier can sit below a platform key registered now.
+  const fresh = (await credentialIdsOn(driver)).filter(function (id) {
+    return before.indexOf(id) < 0;
+  });
+  assert.strictEqual(fresh.length, 1,
+    "after the " + kind + " ceremony the page should list exactly one " +
+    "passkey it did not list before; it lists " + fresh.length + ": " +
     (await bodyText(driver)).slice(0, 400));
-  await nickname[0].clear();
-  await nickname[0].sendKeys(label);
-  await driver.findElement(By.xpath(
-    "(//form[contains(@action,'/rename-key')])[1]//button")).click();
+  const row = "//form[contains(@action,'/rename-key')]" +
+    "[.//input[@name='credentialId' and @value='" + fresh[0] + "']]";
+  await driver.findElement(By.xpath(row + "/ancestor::details[1]/summary"))
+    .click();
+  const nickname = await driver.findElement(By.xpath(
+    row + "//input[@name='label']"));
+  await nickname.clear();
+  await nickname.sendKeys(label);
+  await driver.findElement(By.xpath(row + "//button")).click();
   await waitFor(driver, async function () {
     return /Renamed to/.test(await bodyText(driver));
   }, "the nickname was not saved");
@@ -492,6 +507,20 @@ async function enrol(driver, kind, label) {
     (await bodyText(driver)).slice(0, 400));
   log.debug("Leaving enrol().");
   return key;
+}
+
+// The passkeys the drawn /portal/keys lists, by the id each row's Rename
+// form carries.
+async function credentialIdsOn(driver) {
+  log.debug("Entering credentialIdsOn().");
+  const inputs = await driver.findElements(
+    By.css("form[action$='/rename-key'] input[name='credentialId']"));
+  const ids = [];
+  for (const one of inputs) {
+    ids.push(String(await one.getAttribute("value")));
+  }
+  log.debug("Leaving credentialIdsOn().");
+  return ids;
 }
 
 // THE POLICY THE PORTAL IS SERVED UNDER, read from the server: WebDriver

@@ -863,8 +863,10 @@ function directoryDouble(windowed) {
   };
   const ada = person('ada', {
     entryUUID: ['11111111-1111-4111-8111-111111111111'],
-    // Two passkeys as a primary mechanism (one post-quantum) and one as a
-    // second factor; an authenticator app; a sign-in history (#1002).
+    // Three passkeys (one post-quantum), two stored as a primary mechanism
+    // and one as a second factor before #1135 — the `role` a stored value
+    // still carries is dropped where it is read, so the report shows none;
+    // an authenticator app; a sign-in history (#1002).
     stsWebauthnCredential: [
       key('primary', 'ES256', -7, 'classical', 1000, 5000),
       key('primary', 'ML-DSA-65', -49, 'pqc', 2000, 9000),
@@ -1248,11 +1250,12 @@ async function narrowing(t) {
       where: { op: 'eq', field: 'username', value: 'ada' }, limit: 5 });
     t.equal(one.ok, true, 'username equals is answered');
     t.equal(names(one).join(','), 'ada', 'username equals names the person');
-    // The person's own credential facts (#1019): a password, two second
-    // factors (the mfa passkey and the authenticator app; the primary
-    // passkeys are not second factors), the methods used.
+    // The person's own credential facts (#1019): a password, four second
+    // factors (the three passkeys and the authenticator app: every passkey
+    // counts since #1135, a key having no role; until then the two primary
+    // passkeys did not), the methods used.
     t.equal(one.rows[0].hasPassword, true, 'ada has a password');
-    t.equal(one.rows[0].factors, 2, 'and two second factors');
+    t.equal(one.rows[0].factors, 4, 'and four second factors');
     t.equal(one.rows[0].methodsUsed, 'pwd, hwk, otp', 'and her methods');
     t.equal(one.rows[0].memberOf, 'staff, ops',
       'the row carries the groups that list the person, from the index');
@@ -2705,42 +2708,49 @@ async function holders(t) {
     const label = function (row) {
       return row.username + '/' + row.role;
     };
-    // ONE ROW PER CREDENTIAL (#1011): ada's two primary passkeys are two
-    // rows, each with its own algorithm, lane, id and dates, and each
-    // saying she holds two.
+    // ONE ROW PER CREDENTIAL (#1011): ada's three passkeys are three rows,
+    // each with its own algorithm, lane, id and dates, and each saying she
+    // holds three. NO ROLE SINCE #1135: until then her passkeys were
+    // grouped by the role each was enrolled in (two primary rows saying
+    // two, one mfa row saying one); a key has none now, so a passkey row's
+    // role is empty and `credentials` counts every passkey she holds.
     t.equal(rows.map(label).sort().join(','),
-      'ada/mfa,ada/primary,ada/primary,bea/mfa',
-      'one row per credential, named by its holder and role');
-    const adaPrimaries = rows.filter(function (row) {
-      return row.username === 'ada' && row.role === 'primary';
+      'ada/,ada/,ada/,bea/',
+      'one row per credential, named by its holder, and no role');
+    const adaKeys = rows.filter(function (row) {
+      return row.username === 'ada';
     }).sort(function (a, b) {
-      return a.algorithm < b.algorithm ? -1 : 1;
+      return a.enrolledAt < b.enrolledAt ? -1 : 1;
     });
-    const adaPrimary = adaPrimaries[0];
-    t.equal(adaPrimaries.length, 2, 'two primary passkeys are two rows');
-    t.equal(adaPrimary && adaPrimary.credentials, 2,
-      'each saying the person holds two');
-    t.equal(adaPrimaries.map(function (row) {
+    const adaFirst = adaKeys[0];
+    t.equal(adaKeys.length, 3, 'three passkeys are three rows');
+    t.check(adaKeys.every(function (row) {
+      return row.credentials === 3 && row.role === '';
+    }), 'each saying the person holds three, and none naming a role',
+      JSON.stringify(adaKeys.map(function (row) {
+        return [row.credentials, row.role];
+      })));
+    t.equal(adaKeys.map(function (row) {
       return row.algorithm;
-    }).join(','), 'ES256,ML-DSA-65', 'each with its own algorithm');
-    t.equal(adaPrimaries.map(function (row) {
+    }).join(','), 'ES256,ML-DSA-65,ES256', 'each with its own algorithm');
+    t.equal(adaKeys.map(function (row) {
       return row.lane;
-    }).join(','), 'classical,pqc', 'and its own lane');
-    t.equal(adaPrimaries.map(function (row) {
+    }).join(','), 'classical,pqc,classical', 'and its own lane');
+    t.equal(adaKeys.map(function (row) {
       return row.credentialId;
-    }).join(','), 'c-primary--7,c-primary--49', 'and its own id');
-    t.equal(adaPrimary && adaPrimary.enrolledAt,
+    }).join(','), 'c-primary--7,c-primary--49,c-mfa--7', 'and its own id');
+    t.equal(adaFirst && adaFirst.enrolledAt,
       '1970-01-01T00:00:01.000Z', 'its own enrolment');
-    t.equal(adaPrimaries[1] && adaPrimaries[1].lastUsedAt,
+    t.equal(adaKeys[1] && adaKeys[1].lastUsedAt,
       '1970-01-01T00:00:09.000Z', 'and its own last use');
-    t.equal(adaPrimary && adaPrimary.methodsUsed, 'pwd, hwk, otp',
+    t.equal(adaFirst && adaFirst.methodsUsed, 'pwd, hwk, otp',
       'the methods the person has used');
-    t.equal(adaPrimary && adaPrimary.memberOf, 'staff, ops',
+    t.equal(adaFirst && adaFirst.memberOf, 'staff, ops',
       'the groups that list the person');
-    const adaMfa = rows.filter(function (row) {
-      return row.username === 'ada' && row.role === 'mfa';
+    const beaKey = rows.filter(function (row) {
+      return row.username === 'bea';
     })[0];
-    t.equal(adaMfa && adaMfa.credentials, 1, 'one second-factor passkey');
+    t.equal(beaKey && beaKey.credentials, 1, 'and bea holds one passkey');
 
     reset();
     const totp = await read({ source: 'credentialHolders',
@@ -2758,9 +2768,12 @@ async function holders(t) {
       where: { op: 'and', args: [
         { op: 'eq', field: 'mechanism', value: 'passkey' },
         { op: 'eq', field: 'role', value: 'primary' }] } });
-    t.equal((primaryOnly.rows || []).map(label).join(','),
-      'ada/primary,ada/primary',
-      'the role filter applies to the holders read');
+    // A ROLE FILTER STILL VALIDATES (#1135) and finds no passkey row, a
+    // passkey's role being empty; the TOTP row above keeps its `mfa`.
+    t.equal(primaryOnly.ok, true, 'a passkey role filter is still a query',
+      primaryOnly.description);
+    t.equal((primaryOnly.rows || []).map(label).join(','), '',
+      'and finds no passkey row, a passkey having no role');
 
     reset();
     const staffOnly = await read({ source: 'credentialHolders',
@@ -2773,7 +2786,7 @@ async function holders(t) {
     }).sort().join(','),
       'ada/acmeAccountKey/enrollment,ada/certificate/primary,' +
       'ada/jwtSigningKey/signer,' +
-      'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,' +
+      'ada/passkey/,ada/passkey/,ada/passkey/,' +
       'ada/password/primary,ada/recoveryCodes/recovery,' +
       'ada/scepChallenge/enrollment,' +
       'ada/selfIssued/primary,ada/totp/mfa,ada/verifiableCredential/primary,' +
@@ -2787,8 +2800,9 @@ async function holders(t) {
       where: { op: 'eq', field: 'mechanism', value: 'passkey' } });
     t.equal(JSON.stringify((counted.rows || []).map(function (row) {
       return row.role + '=' + row.count;
-    }).sort()), JSON.stringify(['mfa=2', 'primary=2']),
-      'the census counts credentials by role');
+    }).sort()), JSON.stringify(['=4']),
+      'the census by role counts every passkey under no role (#1135; ' +
+      'mfa=2 and primary=2 until then)');
     reset();
     const byAlgorithm = await read({ source: 'credentialHolders',
       select: ['algorithm'], aggregate: 'count', groupBy: ['algorithm'],

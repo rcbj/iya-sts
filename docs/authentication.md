@@ -196,13 +196,26 @@ cluster (`security.rateLimit*`).
 > [Passkeys and WebAuthn](passkeys.md). This section is the reference.
 
 Passkeys — on a device, in a password manager, on a phone or on a security
-key — as a WebAuthn Level 3 relying party over FIDO CTAP2. A key is enrolled
-in one of two **roles**:
+key — as a WebAuthn Level 3 relying party over FIDO CTAP2. **A key carries
+no role** (since [#1135](https://github.com/rcbj/iya-sts/issues/1135)): it is
+registered with nothing asked about its purpose. Whether it is used, and how,
+is decided at the sign-in in layers: the realm's authentication policy (its
+`passkey` first-factor and `securityKey` second-factor rows) with
+`webauthn.primaryAllowed` and `webauthn.mfaAllowed`; then, at a browser
+sign-in, the application where it overrides the realm (`appAuthnMechanism`
+with `webauthn` for the first factor, `appMfaMechanism` with `securityKey`
+for the second; see [Applications](applications.md#sign-in-mechanisms-how-its-people-may-sign-in));
+and never the key itself. A key a person holds may answer either of the two
+**uses** wherever those layers accept it:
 
-* **`mfa`** — a second factor after a password: `amr ["pwd","hwk"]`,
-  `acr "mfa"`;
-* **`primary`** — the only credential, with no password read (the
-  passwordless box): `amr ["hwk"]`, `acr "1"`. That is **one factor**, even
+* **as a second factor** after a password: `amr ["pwd","hwk"]`,
+  `acr "mfa"`. Allowed while `webauthn.mfaAllowed` and the authentication
+  policy's security-key row as a second factor are on; otherwise refused
+  (`STS-AUTHN-0046`, `0254`);
+* **as a first factor**, with no password read (the passwordless box):
+  `amr ["hwk"]`, `acr "1"`. Allowed while `webauthn.primaryAllowed` and the
+  policy's passkey row as a first factor are on; otherwise refused
+  (`STS-AUTHN-0045`, `0253`). That is **one factor**, even
   with `webauthn.userVerification` set to `required`, because RFC 8176 has no
   value this service could honestly assert for "the authenticator verified the
   user".
@@ -211,16 +224,18 @@ A password alone records `amr ["pwd"]`, `acr "1"`. These RFC 8176 values go
 into the ID Token whenever the session recorded them, so their *absence* means
 something too, which is why they are not emitted unconditionally.
 
-The ceremony is `POST /authn/webauthn` in both roles: the first use for a
+The ceremony is `POST /authn/webauthn` for both uses: the first use for a
 username **enrols** a credential (section 7.1) where enrolment is allowed (see
 *Where a key is enrolled* below, and product mode's rule), and every later sign-in
 **asserts** with it (section 7.2), against a challenge minted on the server and
 held for five minutes with the interrupted request. The person is then returned
-to that request exactly as the password-only path returns them. The two roles
-perform the same ceremony; what differs is what the session then says, and
-that is decided from the role chosen on the screen and carried on the pending
-record — never re-read from the ceremony's own POST, which is the browser's
-result and says nothing about what somebody chose a screen earlier.
+to that request exactly as the password-only path returns them. The two uses
+perform the same ceremony, with the same keys offered; what differs is what the
+session then says, and that is decided from the step the screen armed and
+carried on the pending record — never re-read from the ceremony's own POST,
+which is the browser's result and says nothing about what somebody chose a
+screen earlier. Where the realm accepts neither use, no new key can be
+registered (`STS-AUTHN-0531`).
 
 Like every sign-in page since #572, it is drawn by the sign-in page's
 script, which runs the ceremony (a WebAuthn ceremony is a browser API call). **Registration and every assertion are verified in both modes**: the
@@ -318,7 +333,7 @@ WebAuthn binds a ceremony to the calling origin and that is the whole of its
 phishing resistance. The accepted origins are derived from the
 same address unless `webauthn.allowedOrigins` lists them.
 
-**Both roles reach the directory, differently.** A passwordless sign-in is an
+**The two uses reach the directory differently.** A passwordless sign-in is an
 authentication in its own right, so it is recorded against the person's
 directory entry as a password sign-in is. A second factor authenticates nobody
 new — the person is the one the password step named — so it creates nothing,
@@ -326,21 +341,21 @@ and writes a flag on the entry that already exists (see [LDAP](ldap.md)).
 
 **Where a key is enrolled:**
 
-* `/portal/keys`, signed in, up to `webauthn.maxKeysPerPerson` keys, in either
-  role;
+* `/portal/keys`, signed in, up to `webauthn.maxKeysPerPerson` keys, with
+  nothing asked but the kind of authenticator (and, with two lanes, classical
+  or post-quantum);
 * an activation link;
 * the sign-in screen's second-factor box, which enrols on first use, but only
   for somebody who holds **no** second factor yet. Otherwise anybody who knew
   the password could register their own authenticator;
 * an administrator's browser, when the person's passkey policy has
-  `adminEnrolment` on (off by default). The console's **Enrol** button
-  registers an `mfa` passkey. See
+  `adminEnrolment` on (off by default). See
   [Passkeys](passkeys.md#an-administrator-enrols-a-passkey);
 * the post-login activity's step, after a complete sign-in, when the
   realm's [post-login activity policy](post-login-activities.md) asks the
   person for an ML-DSA passkey. It is ML-DSA only, and is not held to
-  product mode's rule against registering a passwordless passkey at the
-  sign-in screen, because the person has already signed in.
+  product mode's rule against registering a passkey at the sign-in
+  screen's passwordless box, because the person has already signed in.
 
 A person removes a key on `/portal/keys`, and an operator on the person's
 `/admin/users` page (`POST /admin-api/users/clear-key`).
@@ -362,7 +377,7 @@ Each row shows:
 * the provider;
 * when it was created and when it was last used;
 * **Rename** and **Remove**;
-* a *Details* section with the role, the algorithm, the attestation, the
+* a *Details* section with the algorithm, the attestation, the
   AAGUID, the backup state and the transports.
 
 **Where the provider's name comes from:**
@@ -384,7 +399,8 @@ The name is a label for the owner, and nothing this service decides reads it.
   Level 3 section 5.4.3). A passkey's authenticator hands it back, and an
   assertion whose handle is not the one its key was created under is
   refused (section 7.2, step 6).
-* The new passkey is offered a nickname straight after it is created.
+* The new passkey appears on its row under a default name, its provider's or
+  *Passkey* or *Security key*; rename it there with the row's **Rename**.
 * A person renames one on `/portal/keys` (`POST /account-api/keys/rename`),
   an operator with `POST /admin-api/users/rename-key`. An empty name restores the default.
 
@@ -597,7 +613,10 @@ to be held to the row.
 `registrationMode`). `realm`, the default of both, follows the realm:
 `webauthn.algorithms`, and `webauthn.pqcOnly` with
 `webauthn.pqcAlongsideClassical`. A profile can name its own ordered list,
-from the algorithms `webauthn.algorithms` may name, and a mode:
+from the algorithms `webauthn.algorithms` may name, which then replaces
+`webauthn.algorithms` for that profile's people only; the **Metadata** tab
+of **Protocols → WebAuthn** says when a profile's list is the one in force.
+It can also name a mode:
 
 * `pq-only` offers only ML-DSA, and refuses a retry with the classical
   algorithms (`STS-AUTHN-0420`).
@@ -889,7 +908,7 @@ so it works from a phone, a script or a test job (`POST
   not checked, and any name may enrol.
 * The session says `amr ["pwd","otp"]`, `acr "mfa"`. `otp` is RFC 8176's
   registered value, whose registry entry names RFC 4226 and RFC 6238, and
-  `acr "mfa"` is honest here in a way it is not for a passwordless key: two
+  `acr "mfa"` is honest here in a way it is not for a passkey used alone: two
   factors really were presented.
 * **It can never be a first factor.** This service holds the same secret the
   app does, which proves somebody still has the app but is not something to
@@ -950,10 +969,14 @@ for.
 |---|---|
 | holds nothing, box unticked | nothing (one factor) |
 | holds nothing, second-factor box ticked | the security-key ceremony, which enrols on first use |
-| holds an `mfa` key | the key |
+| holds a passkey (and the realm, and the application where it lists second factors, accept a passkey as one) | the passkey |
 | holds an authenticator app | the code |
-| holds both | the key, with a link to the code |
-| holds a `primary` key, passwordless box ticked | the passwordless ceremony |
+| holds both | the passkey, with a link to the code |
+| holds a passkey, passwordless box ticked (and the realm, and the application where it lists mechanisms, accept a passkey as a first factor) | the passwordless ceremony |
+
+Every passkey counts: until #1135 only a key enrolled in the `mfa` role was
+asked for after a password, and only a `primary` key answered the
+passwordless box.
 
 A relying party can **demand** more. `acr_values` that only two factors can
 meet (`mfa`, `hwk`) ticks the second-factor box and refuses the passwordless
@@ -966,7 +989,7 @@ security key the same way. A passkey alone meets it. A synced or unattested
 passkey meets `phr` and never `phrh`. A key enrolled during that sign-in meets
 neither: it was added on the strength of a password. See [OAuth security
 profiles](oauth-security.md#phishing-resistant-sign-in-phr-phrh). A WS-Federation `wauth` for **multi-factor** is met only by
-a session that really had two factors, so a passwordless key does not meet it.
+a session that really had two factors, so a passkey used alone does not meet it.
 A session that does not meet a demand is sent through the sign-in screen again
 with what was asked for required, rather than answered. See
 [OAuth security profiles](oauth-security.md) for RFC 9470 step-up and
@@ -1128,7 +1151,7 @@ lock and ends nothing.
 | Passwords | Not checked, except the reserved `invalid` | Verified against the stored hash; a person with none cannot sign in |
 | The password policy | Not enforced (history is still recorded) | Enforced wherever a password is set |
 | `pwdReset` | Handled at the sign-in screen only | Also refused at every other password door (`STS-AUTHN-0142`) |
-| Passwordless box for somebody with no primary key | Enrols a key on the spot: the first person to claim a name gets it | Refused before a step is minted (`STS-AUTHN-0206`), with the same words whether or not the name exists |
+| Passwordless box for somebody with no passkey | Enrols a key on the spot: the first person to claim a name gets it | Refused before a step is minted (`STS-AUTHN-0206`), with the same words whether or not the name exists |
 | A `webauthn.rpId` that does not fit the host | The host is used, and the log says why | The ceremony is refused, naming the problem |
 | The TOTP secret on the entry | Stored as base32 | Sealed under the key-encryption key |
 | TOTP codes, recovery codes, WebAuthn ceremonies, disabled accounts | Verified | Verified |
@@ -1169,7 +1192,7 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.rpName` | `STS_WEBAUTHN_RP_NAME` | `IYA STS` | yes | The `rp.name` a browser shows; no security meaning. |
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | *(empty: the host)* | yes | Widen the RP ID to a registrable domain suffix of the host. |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | *(empty: derived)* | yes | The origins a ceremony is accepted from; empty derives one from the address. |
-| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-87/65/44 (-50/-49/-48) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). See [Configuration](configuration.md) for the list. |
+| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-87/65/44 (-50/-49/-48) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). A **Select all** switch ticks every algorithm `webauthn.insecureAlgorithms` and `webauthn.pqcOnly` allow, or unticks them all; Save needs at least one ticked. The **Metadata** tab lists the algorithms in the order they are requested. See [Configuration](configuration.md) for the list and [Passkeys](passkeys.md#algorithms-classical-and-post-quantum) for the controls. |
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` | yes | Development mode only: also request and accept SHA-1's `RS1` (-65535), offered last. Off, `RS1` is neither requested nor accepted even where `webauthn.algorithms` names it, and a key enrolled with it is refused at sign-in (`STS-AUTHN-0294`). Cannot be set in product mode. |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | Request only ML-DSA-44/65/87 (whichever `webauthn.algorithms` names, all three where it names none); a new passkey made with another algorithm is refused at registration. A classical key already enrolled goes on signing in. |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |
@@ -1194,8 +1217,8 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` hint handed to the browser. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | `platform`, `cross-platform` or `any`; a filter in the browser. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Ask the browser to report whether the credential is discoverable. |
-| `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Allow a key to be the only credential (passwordless). |
-| `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Allow a key to be enrolled as a second factor. |
+| `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Whether any passkey may sign somebody in on its own (passwordless), asked at the sign-in. Off, no passkey is a first factor, including one registered while it was on. |
+| `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Whether any passkey may be the second factor after a password, asked at the sign-in. With both this and `webauthn.primaryAllowed` off, no new passkey can be registered (`STS-AUTHN-0531`). |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many keys one person may hold; refuses the enrolment, never a sign-in. |
 
 ### TOTP settings
@@ -1247,7 +1270,7 @@ be changed with `POST /admin-api/config/set`.
   factor that can be opted out of is not a factor. For the same reason, the
   sign-in screen enrols a security key only for somebody holding no second
   factor at all.
-* **A passwordless key is one factor.** `acr "mfa"` would claim more than
+* **A passkey used alone (passwordless) is one factor.** `acr "mfa"` would claim more than
   anybody checked. Calling it `mfa` because it is phishing-resistant would be
   exactly the fake that WS-Federation's `wauth` handling refuses to write.
 * **A demand for two factors is enforced on the server.** A relying party's
@@ -1273,8 +1296,12 @@ be changed with `POST /admin-api/config/set`.
   registers a passkey or asks for one is the step's, never the browser's to
   choose.
 * **Settings that turn a mechanism off do not remove what people already
-  hold.** Otherwise a switch would silently downgrade accounts to one factor,
-  or lock out someone whose only credential is a primary key.
+  hold.** Otherwise a switch would silently downgrade accounts to one factor.
+  The two passkey use settings are the exception in effect, not in data: since
+  #1135 they say how ANY passkey may be used, so turning
+  `webauthn.primaryAllowed` off stops every passkey signing anybody in on its
+  own — a person with no password then needs another way in — and the
+  passkeys stay held.
 * **An authenticator app can never be a first factor.** The service holds the
   same secret.
 * **Recovery codes are generated on request, shown once and hashed.** Hashing
@@ -1284,7 +1311,7 @@ be changed with `POST /admin-api/config/set`.
 * **The code screens refuse wrong codes by name.** The person has already
   given a first factor, so there is nothing to enumerate, and "already used"
   and "wrong" call for different actions.
-* **In product the sign-in screen enrols no primary key.** If it
+* **In product the passwordless box enrols no passkey.** If it
   did, anybody who knew a username could take an account that had no key.
 * **A disabled account is refused everywhere, not only at the password.** The
   lock is `pwdAccountLockedTime`, which LDAP tooling already understands, and
@@ -1299,8 +1326,12 @@ be changed with `POST /admin-api/config/set`.
 
 ## In the running service
 
-* **Protocols → WebAuthn** (`/admin/webauthn`): every `webauthn.*` setting —
-  the ceremony, CTAP2, algorithm and attestation settings — and the authentication policy (Directory → Policies). API: `GET /admin-api/webauthn`.
+* **Protocols → WebAuthn** (`/admin/webauthn`): the **Settings** tab has
+  every `webauthn.*` setting — the ceremony, CTAP2, algorithm and
+  attestation settings; the **Metadata** tab says what a ceremony is asked
+  for now, with the algorithms in the order they are requested. The
+  authentication policy is on Directory → Policies. API:
+  `GET /admin-api/webauthn`.
 * **Protocols → TOTP MFA** (`/admin/totp`): the eight RFC 6238 parameters, and
   the authentication policy (Directory → Policies). API: `GET /admin-api/totp`.
 * **Protocols → Recovery codes** (`/admin/backup-codes`): the four settings and

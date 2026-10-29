@@ -241,7 +241,7 @@ function enforced(t, recorded) {
     const out = credentials.addKey(name, {
       credentialId: 'paa-cred-' + n,
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
-      attestation: att }, 'mfa');
+      attestation: att });
     log.debug('Leaving enforced() add().');
     return out;
   };
@@ -399,9 +399,9 @@ async function independent(t, chain, aaguid) {
     };
     withRow('post-quantum');
     const pqKey = credentials.addKey(name,
-      key(pqVerdict, pqUnderEc.attestation, 1), 'mfa');
+      key(pqVerdict, pqUnderEc.attestation, 1));
     const ecKey = credentials.addKey(name,
-      key(ecVerdict, ecUnderPq.attestation, 2), 'mfa');
+      key(ecVerdict, ecUnderPq.attestation, 2));
     const held = credentials.keysOf(name).filter(function (one) {
       return one.credentialId === 'pai-cred-2';
     })[0] || null;

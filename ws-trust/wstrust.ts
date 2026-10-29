@@ -208,6 +208,11 @@ interface WsTrustDeps {
   loadTlsClientCertificates: () => {
     checkSocket(socket: any, options?: any): any;
     stillHeld(identity: any): boolean;
+    // #521: who a certificate a request was signed with is, and an issued
+    // one found by a reference that does not carry it. Optional, so a
+    // test's stub of the two above still builds.
+    signingIdentityOf?(certificate: any, options?: any): any;
+    signingCertificateFor?(realmId: any, reference: any): string;
   };
 }
 
@@ -269,6 +274,15 @@ const STATUS_INVALID = WST_NS + '/status/invalid';
 // credential and must never be read as one.
 const NOT_A_CREDENTIAL = ['OnBehalfOf', 'ActAs', 'RenewTarget',
                           'ValidateTarget', 'CancelTarget'];
+
+// #521: the elements handleRst() reads off the WHOLE document. A signed
+// request is answered only when every one of them is inside the Body the
+// signature covers — an unsigned RequestSecurityToken in a header would
+// otherwise be read first, in document order, beside a genuinely signed
+// Body: signature wrapping by another route (messageSignature()).
+const RST_PARTS = ['RequestSecurityToken', 'RequestType', 'KeyType',
+                   'TokenType', 'AppliesTo', 'Lifetime', 'OnBehalfOf',
+                   'ActAs', 'RenewTarget', 'ValidateTarget', 'CancelTarget'];
 
 /**
  * WS-Trust 1.0 to 1.4: the SOAP RequestSecurityToken endpoint at `/sts`,
@@ -1013,10 +1027,14 @@ class WsTrust {
     // #1046: a TLS client certificate is SAML 1.1 section 7.1's
     // `urn:ietf:rfc:2246`, "SSL/TLS Certificate Based Client
     // Authentication".
+    // #521: a message signature is SAML 1.1's X509-PKI, the method the
+    // SAML 2.0 X509 class maps to here (`saml/authn_context.ts`).
     const method = authnContextClassRef === authnContext.AC_PASSWORD_PROTECTED
       ? authnContext.AM_PASSWORD
       : (authnContextClassRef === authnContext.AC_TLS_CLIENT
-        ? authnContext.AM_TLS_CLIENT : authnContext.AM_UNSPECIFIED);
+        ? authnContext.AM_TLS_CLIENT
+        : (authnContextClassRef === authnContext.AC_X509
+          ? authnContext.AM_X509 : authnContext.AM_UNSPECIFIED));
     const assertion = buildSaml11Assertion({
       subject: subject, audience: audience, lifetimeMin: lifetimeMin,
       authnMethod: method, application: samlApp,
@@ -1348,15 +1366,47 @@ class WsTrust {
   // happens to hold one is still the party its message says it is. See
   // connectionCertificate().
   private requesterCredential(doc, jwtIssuer?, base?, connection?): any {
-    const { credentials, mode, log, firstByLocal, textByLocal } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering WsTrust.requesterCredential().");
+    // #521: a WS-Security signature over the request is asked FIRST — it is
+    // the one credential that covers the request itself — and a message
+    // credential beside it must name the same entry (requesterSigned()).
+    const signed = this.messageSignature(doc, connection);
+    const message = this.messageCredential(doc, jwtIssuer, base);
+    if (signed) {
+      log.debug("Leaving WsTrust.requesterCredential(). A signed request.");
+      return this.requesterSigned(signed, message);
+    }
+    if (message) {
+      log.debug("Leaving WsTrust.requesterCredential(). A message " +
+                "credential" + (message.ok ? ", for " + message.subject : '') +
+                ".");
+      return message;
+    }
+    const certificate = this.connectionCertificate(connection);
+    if (certificate) {
+      log.debug("Leaving WsTrust.requesterCredential(). The connection's " +
+                "client certificate" +
+                (certificate.ok ? ", for " + certificate.subject : '') + ".");
+      return certificate;
+    }
+    log.debug("Leaving WsTrust.requesterCredential(). Nothing was presented.");
+    return null;
+  }
+
+  // The requester's credential IN THE MESSAGE — a UsernameToken, an
+  // assertion or a JWT in `wsse:Security` — or null; requesterCredential()
+  // above decides what it means beside a signature or a certificate.
+  private messageCredential(doc, jwtIssuer?, base?): any {
+    const { credentials, mode, log, firstByLocal, textByLocal } = this.deps;
+    log.debug("Entering WsTrust.messageCredential().");
     const scope = this.credentialScope(doc);
     const ut = this.firstOwnedByRequester(scope, 'UsernameToken');
     if (ut) {
       const user = textByLocal(ut, 'Username');
       const pass = textByLocal(ut, 'Password');
       if (!user || !pass) {
-        log.debug("Leaving WsTrust.requesterCredential(). Incomplete " +
+        log.debug("Leaving WsTrust.messageCredential(). Incomplete " +
                   "UsernameToken.");
         return { ok: false, errorCode: 'STS-WSTRUST-0002',
                  trustFault: 'FailedAuthentication',
@@ -1393,13 +1443,13 @@ class WsTrust {
       if (!checked.ok) {
         log.info('wstrust: the UsernameToken for "' + user + '" was refused (' +
                  checked.reason + '): ' + checked.detail);
-        log.debug("Leaving WsTrust.requesterCredential(). The credential was " +
+        log.debug("Leaving WsTrust.messageCredential(). The credential was " +
                   "refused.");
         return { ok: false, errorCode: 'STS-WSTRUST-0003',
                  trustFault: 'FailedAuthentication',
                  reason: 'Authentication failed for user ' + user + '.' };
       }
-      log.debug("Leaving WsTrust.requesterCredential(). A UsernameToken " +
+      log.debug("Leaving WsTrust.messageCredential(). A UsernameToken " +
                 "for " + user + ".");
       // AN APP PASSWORD IS SAID SO (#101): one factor, and the row names it.
       const viaApp = checked.reason === 'app-password' && checked.appPassword;
@@ -1426,7 +1476,7 @@ class WsTrust {
           log.info('wstrust: a SAML assertion presented as a credential was ' +
                    'refused: ' +
                    checked.reason);
-          log.debug("Leaving WsTrust.requesterCredential(). The assertion " +
+          log.debug("Leaving WsTrust.messageCredential(). The assertion " +
                     "was refused.");
           return { ok: false, reason: checked.reason,
                    errorCode: checked.errorCode,
@@ -1437,13 +1487,13 @@ class WsTrust {
         if (misaddressed) {
           log.info('wstrust: a SAML assertion presented as a credential was ' +
                    'refused: ' + misaddressed);
-          log.debug("Leaving WsTrust.requesterCredential(). The assertion " +
+          log.debug("Leaving WsTrust.messageCredential(). The assertion " +
                     "is not addressed to its holder.");
           return { ok: false, reason: misaddressed,
                    errorCode: 'STS-WSTRUST-0032',
                    trustFault: 'FailedAuthentication' };
         }
-        log.debug("Leaving WsTrust.requesterCredential(). A verified SAML " +
+        log.debug("Leaving WsTrust.messageCredential(). A verified SAML " +
                   "assertion for " +
                   checked.subject + ".");
         return { ok: true, subject: checked.subject, kind: 'assertion',
@@ -1458,7 +1508,7 @@ class WsTrust {
         firstByLocal(assertion, 'NameIdentifier');
       const named = (nameId && (nameId.textContent || '').trim()) ||
         'saml-subject';
-      log.debug("Leaving WsTrust.requesterCredential(). A SAML assertion " +
+      log.debug("Leaving WsTrust.messageCredential(). A SAML assertion " +
                 "for " + named +
                 ".");
       return { ok: true, subject: named, kind: 'assertion',
@@ -1486,7 +1536,7 @@ class WsTrust {
       if (!read.ok) {
         log.info('wstrust: a JWT presented as a credential was refused: ' +
                  read.reason);
-        log.debug("Leaving WsTrust.requesterCredential(). The JWT was " +
+        log.debug("Leaving WsTrust.messageCredential(). The JWT was " +
                   "refused.");
         return { ok: false, reason: read.reason, errorCode: read.errorCode,
                  trustFault: read.expired ? 'ExpiredData'
@@ -1500,14 +1550,14 @@ class WsTrust {
         if (misaddressed) {
           log.info('wstrust: a JWT presented as a credential was refused: ' +
                    misaddressed);
-          log.debug("Leaving WsTrust.requesterCredential(). The JWT is not " +
+          log.debug("Leaving WsTrust.messageCredential(). The JWT is not " +
                     "addressed to its holder.");
           return { ok: false, reason: misaddressed,
                    errorCode: 'STS-WSTRUST-0032',
                    trustFault: 'FailedAuthentication' };
         }
       }
-      log.debug("Leaving WsTrust.requesterCredential(). A JWT for " +
+      log.debug("Leaving WsTrust.messageCredential(). A JWT for " +
                 read.subject + ".");
       return { ok: true, subject: read.subject || 'jwt-subject',
                isClient: !!read.isClient,
@@ -1521,15 +1571,421 @@ class WsTrust {
                  : 'The JWT is not verified in development mode; its sub is ' +
                    'read and believed.' };
     }
-    const certificate = this.connectionCertificate(connection);
-    if (certificate) {
-      log.debug("Leaving WsTrust.requesterCredential(). The connection's " +
-                "client certificate" +
-                (certificate.ok ? ", for " + certificate.subject : '') + ".");
-      return certificate;
-    }
-    log.debug("Leaving WsTrust.requesterCredential(). Nothing was presented.");
+    log.debug("Leaving WsTrust.messageCredential(). None in the message.");
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REQUESTER AUTHENTICATED BY A WS-SECURITY SIGNATURE ON THE MESSAGE
+  // (#521, rcbj 2026-10-08 and 2026-10-28): "allow a WS-Trust call to
+  // authenticate a caller with a digital signature on the message body. The
+  // digital signature certificate would be mapped to a user or application
+  // object as digital signature."
+  //
+  // An XML Signature in `wsse:Security` (WS-Security 1.1, X.509 Token
+  // Profile 1.1) whose references cover THE SOAP Body and THE `wsu:Timestamp`,
+  // made with the key of a certificate the header names. What is checked, in
+  // product (`mode.verifiesCredentials()`), each refusal with its own code:
+  //
+  //   1. THE READING (`crypto.readWsSecuritySignature()`): one signature,
+  //      unique ids, exclusive c14n, the Body and the Timestamp covered by
+  //      position, section 1a's algorithms (SHA-1 only under
+  //      `saml.allowSha1Signatures`), a key named in one of the four forms —
+  //      `0040` (`wst:AuthenticationBadElements` when a part is not covered);
+  //   2. THE CERTIFICATE: carried in a BinarySecurityToken, or found among
+  //      this realm's issued message-signing certificates by thumbprint,
+  //      issuer and serial, or Subject Key Identifier — `0041`;
+  //   3. WHO IT IS — `tls_client_certificates.signingIdentityOf()`, #520's one
+  //      mapping with the `message-signing` purpose: a leaf of this realm's
+  //      message-signing Issuing CA naming the entry, or a leaf stored in
+  //      `userCertificate` on exactly one entry with digitalSignature in its
+  //      keyUsage (rcbj's decisions 1 and 2) — `0042`, `0043` nobody stores
+  //      it, `0044` two do;
+  //   4. THE SIGNATURE, with that certificate and no other — `0045`;
+  //   5. WHAT handleRst() READS IS WHAT WAS SIGNED: every RST_PARTS element
+  //      inside the signed Body — `0046`;
+  //   6. FRESHNESS: the Timestamp's Created not ahead of now and its Expires
+  //      not behind it, each by `oauth2.clockSkewS` — `0047`, `0048`
+  //      (`wst:ExpiredData`);
+  //   7. REVOCATION, as every presented certificate: the register for an
+  //      issued leaf, the leaf's own OCSP and CRL for a stored one
+  //      (`registeredVerdictFor()`, whose dialling argument is the
+  //      registered certificate's) — `0049`;
+  //   8. REPLAY: the SignatureValue spent once in the used-assertion history
+  //      (`wss-message`, `wstrust-requester`) until the Timestamp expires —
+  //      `0050`; a history that could not be asked fails closed, `0051`;
+  //   9. a disabled person — `0052`.
+  //
+  // Steps 7 and 8 are asynchronous, so the endpoint takes them first
+  // (prepareMessageSignature()) and hands their answers in on the
+  // connection; a caller that reaches handleRst() without them is refused
+  // `0051` in product rather than accepted unchecked.
+  //
+  // DEVELOPMENT reads the certificate and believes it, as it believes a
+  // UsernameToken: the reading (1) and the certificate (2) are still asked —
+  // without them there is nothing to believe — and the holder is whoever the
+  // mapping says, else the certificate's urn:sts: name, else its CN. Nothing
+  // else is checked, and the act's note says so.
+  // ---------------------------------------------------------------------------
+  private messageSignature(doc, connection?, prepare?: boolean): any {
+    const { stsCrypto, config, credentials, mode, errorCodes, log,
+            loadTlsClientCertificates } = this.deps;
+    log.debug("Entering WsTrust.messageSignature().");
+    if (!doc) {
+      log.debug("Leaving WsTrust.messageSignature(). No document.");
+      return null;
+    }
+    const xml = new XMLSerializer().serializeToString(doc);
+    const reading = stsCrypto.readWsSecuritySignature(xml);
+    if (!reading.present) {
+      log.debug("Leaving WsTrust.messageSignature(). Not signed.");
+      return null;
+    }
+    const refused = function (code: string, reason: string,
+                              fault?: string): any {
+      log.debug("Entering refused(). " + code);
+      log.info(errorCodes.tag(code) + 'wstrust: the WS-Security signature ' +
+               'on this request was refused as the requester\'s credential: ' +
+               reason);
+      log.debug("Leaving refused().");
+      return { ok: false, errorCode: code,
+               trustFault: fault || 'FailedAuthentication',
+               reason: 'The WS-Security signature on this request was ' +
+                       'refused: ' + reason + '.' };
+    };
+    if (!reading.ok) {
+      log.debug("Leaving WsTrust.messageSignature(). The reading.");
+      return refused('STS-WSTRUST-0040', String(reading.why),
+                     errorCodes.codeOf(reading) === 'STS-KEYS-0163'
+                       ? 'AuthenticationBadElements' : undefined);
+    }
+    let gates: any = null;
+    try {
+      gates = loadTlsClientCertificates();
+    } catch (e) {
+      log.debug("Caught in WsTrust.messageSignature(): " +
+                ((e && e.message) || e));
+      // No certificate authority in this process: nothing could say who a
+      // certificate is, and step 2 refuses below.
+      gates = null;
+    }
+    const reference = reading.keyReference || {};
+    let certificate = '';
+    if (reference.kind === 'token') {
+      certificate = String(reference.certB64 || '');
+    } else if (gates && typeof gates.signingCertificateFor === 'function') {
+      certificate = gates.signingCertificateFor(undefined, reference);
+    }
+    if (!certificate || !gates ||
+        typeof gates.signingIdentityOf !== 'function') {
+      log.debug("Leaving WsTrust.messageSignature(). No certificate.");
+      return refused('STS-WSTRUST-0041', 'its SecurityTokenReference (' +
+                     String(reference.kind || 'none') + ') names no ' +
+                     'certificate this realm\'s message-signing Issuing CA ' +
+                     'issued; a certificate stored on an entry is carried ' +
+                     'in a wsse:BinarySecurityToken');
+    }
+    const identity = gates.signingIdentityOf(certificate);
+    const verifies = mode.verifiesCredentials();
+    if (!verifies) {
+      let name = identity.ok ? String(identity.username) : '';
+      let isClient = identity.ok && identity.kind === 'application';
+      if (!name) {
+        try {
+          const x509 = stsCrypto.parseCertificate(identity.leaf ||
+            Buffer.from(certificate, 'base64'));
+          const sans = String(x509.subjectAltName || '').split(/,\s*/);
+          const urn = sans.filter(function (one: string): boolean {
+            return /^URI:urn:sts:(person|application):./.test(one);
+          })[0] || '';
+          isClient = urn.indexOf('URI:urn:sts:application:') === 0;
+          name = urn ? urn.replace(/^URI:urn:sts:(person|application):/, '')
+            : ((/(?:^|\n)CN=([^\n]*)/.exec(String(x509.subject || '')) ||
+                [])[1] || '');
+        } catch (e) {
+          log.debug("Caught in WsTrust.messageSignature(): " +
+                    ((e && e.message) || e));
+          name = '';
+        }
+      }
+      log.debug("Leaving WsTrust.messageSignature(). Development: " +
+                (name || 'nobody') + ".");
+      return name
+        ? { ok: true, subject: name, kind: 'signature', isClient: isClient,
+            method: 'a WS-Security message signature',
+            note: 'The WS-Security signature is not verified in ' +
+                  'development mode, nor its Timestamp, replay or ' +
+                  'revocation; the certificate it names is read and its ' +
+                  'holder (' + (identity.ok ? 'mapped' : 'its name') +
+                  ') believed.' }
+        : refused('STS-WSTRUST-0042', 'the certificate names nobody');
+    }
+    if (!identity.ok) {
+      const code = identity.error === 'NOT_STORED' ? 'STS-WSTRUST-0043'
+        : (identity.error === 'STORED_TWICE' ? 'STS-WSTRUST-0044'
+                                             : 'STS-WSTRUST-0042');
+      log.debug("Leaving WsTrust.messageSignature(). " + identity.error);
+      return refused(code, String(identity.why || identity.error));
+    }
+    const leafPem = '-----BEGIN CERTIFICATE-----\n' +
+      Buffer.from(identity.leaf).toString('base64') +
+      '\n-----END CERTIFICATE-----\n';
+    const verified = stsCrypto.verifyWsSecuritySignature(xml,
+                                                         { certPem: leafPem });
+    if (!verified.ok) {
+      log.debug("Leaving WsTrust.messageSignature(). It does not verify.");
+      return refused('STS-WSTRUST-0045', String(verified.why));
+    }
+    const body = this.signedBodyOf(doc);
+    const outside = RST_PARTS.filter((name: string): boolean => {
+      const all = doc.getElementsByTagNameNS('*', name);
+      for (let i = 0; i < all.length; i++) {
+        if (!body || !this.isWithin(all[i], body)) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (outside.length) {
+      log.debug("Leaving WsTrust.messageSignature(). Parts outside the Body.");
+      return refused('STS-WSTRUST-0046', 'the request carries ' +
+                     outside.join(', ') + ' outside the signed SOAP Body, ' +
+                     'and this service reads the request from the whole ' +
+                     'document');
+    }
+    const skewMs =
+      Math.max(0, Number(config.value('oauth2.clockSkewS')) || 0) * 1000;
+    const now = Date.now();
+    const created = Date.parse(String(reading.timestamp.created || ''));
+    const expires = Date.parse(String(reading.timestamp.expires || ''));
+    if (isNaN(created) || isNaN(expires) || created - skewMs > now) {
+      log.debug("Leaving WsTrust.messageSignature(). The Timestamp.");
+      return refused('STS-WSTRUST-0047', isNaN(created) || isNaN(expires)
+        ? 'its wsu:Timestamp does not carry a readable Created and Expires'
+        : 'its wsu:Timestamp was Created at ' + reading.timestamp.created +
+          ', ahead of this service\'s clock by more than oauth2.clockSkewS');
+    }
+    if (expires + skewMs <= now) {
+      log.debug("Leaving WsTrust.messageSignature(). Expired.");
+      return refused('STS-WSTRUST-0048', 'its wsu:Timestamp expired at ' +
+                     reading.timestamp.expires, 'ExpiredData');
+    }
+    const name = String(identity.username);
+    const isClient = identity.kind === 'application';
+    const fingerprint = stsCrypto.digest('sha256', identity.leaf, 'hex');
+    if (prepare) {
+      log.debug("Leaving WsTrust.messageSignature(). Prepared.");
+      return { ok: true, prepared: true, subject: name, identity: identity,
+               fingerprint: fingerprint, expiresAt: expires + skewMs,
+               signatureValue: String(reading.signatureValue) };
+    }
+    const checks = connection && connection.signature &&
+      connection.signature.fingerprint === fingerprint
+      ? connection.signature : null;
+    const revocation = checks && checks.revocation ? checks.revocation
+      : this.localSigningRevocation(identity.leaf);
+    if (revocation && revocation.refused) {
+      log.debug("Leaving WsTrust.messageSignature(). Revoked.");
+      return refused('STS-WSTRUST-0049', 'its certificate was refused on ' +
+                     'revocation (' + String(revocation.why || 'revoked') +
+                     ')');
+    }
+    const replay = checks ? checks.replay : null;
+    if (!replay || (!replay.ok && replay.reason !== 'replay')) {
+      log.debug("Leaving WsTrust.messageSignature(). Replay not checked.");
+      return refused('STS-WSTRUST-0051', replay
+        ? 'the used-assertion history could not record it (' +
+          String(replay.reason) + '), so it cannot be shown to be new'
+        : 'it was not checked against the used-assertion history, so it ' +
+          'cannot be shown to be new', 'RequestFailed');
+    }
+    if (!replay.ok) {
+      log.debug("Leaving WsTrust.messageSignature(). A replay.");
+      return refused('STS-WSTRUST-0050', 'a request with this signature ' +
+                     'was already accepted; a signed request is accepted ' +
+                     'once');
+    }
+    if (!isClient && credentials.accountDisabled(name)) {
+      log.debug("Leaving WsTrust.messageSignature(). Disabled.");
+      return refused('STS-WSTRUST-0052', 'it names "' + name + '", whose ' +
+                     'account is disabled');
+    }
+    log.debug("Leaving WsTrust.messageSignature(). The " + identity.kind +
+              " " + name + ".");
+    return { ok: true, subject: name, kind: 'signature', isClient: isClient,
+             method: 'a WS-Security message signature',
+             certificateSerial: String(identity.serialHex || ''),
+             note: 'The WS-Security signature over the SOAP Body and ' +
+                   'Timestamp verified with ' + (identity.stored === true
+                     ? 'an outside certificate stored in userCertificate on ' +
+                       'the ' + identity.kind + ' "' + name + '" (' +
+                       String(identity.dn || '') + ')'
+                     : 'a certificate this realm\'s message-signing Issuing ' +
+                       'CA issued to the ' + identity.kind + ' "' + name +
+                       '"') +
+                   '; its Timestamp was fresh, it was not refused on ' +
+                   'revocation, and it had not been used before.' };
+  }
+
+  // THE Body: the direct child of the Envelope, which is the element the
+  // signature reading checked by position.
+  private signedBodyOf(doc): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.signedBodyOf().");
+    const envelope = doc ? doc.documentElement : null;
+    for (let child = envelope ? envelope.firstChild : null; child;
+         child = child.nextSibling) {
+      if (child.nodeType === 1 && child.localName === 'Body') {
+        log.debug("Leaving WsTrust.signedBodyOf().");
+        return child;
+      }
+    }
+    log.debug("Leaving WsTrust.signedBodyOf(). None.");
+    return null;
+  }
+
+  // Whether `node` is `root` or inside it.
+  private isWithin(node, root): boolean {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.isWithin().");
+    for (let at = node; at; at = at.parentNode) {
+      if (at === root) {
+        log.debug("Leaving WsTrust.isWithin(). Yes.");
+        return true;
+      }
+    }
+    log.debug("Leaving WsTrust.isWithin(). No.");
+    return false;
+  }
+
+  // The register-only revocation answer for a signing leaf, when the
+  // endpoint's asynchronous one is not to hand: what an issued leaf needs
+  // (its authority is held here), and a stored leaf's foreign status
+  // reported as not consulted, which the policy does not refuse.
+  private localSigningRevocation(leaf): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.localSigningRevocation().");
+    try {
+      const verdict = require('../common/revocation_status').localVerdictFor(
+        { leaf: leaf, chain: [], verified: true });
+      log.debug("Leaving WsTrust.localSigningRevocation().");
+      return verdict;
+    } catch (e) {
+      log.debug("Caught in WsTrust.localSigningRevocation(): " +
+                ((e && e.message) || e));
+      // No revocation walk in this process: nothing holds a list to read.
+      log.debug("Leaving WsTrust.localSigningRevocation(). None.");
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SIGNATURE BESIDE ANOTHER CREDENTIAL (#521, rcbj's decision 3): "the
+  // signature authenticates; a UsernameToken, assertion or JWT in the same
+  // wsse:Security must name the same entry". The common client shape is a
+  // UsernameToken and a signature over the Body together; the other
+  // credential is still checked as it is alone (a password verified in
+  // product), its refusal is the request's, and a different name is
+  // `STS-WSTRUST-0053`, `wst:FailedAuthentication`.
+  // ---------------------------------------------------------------------------
+  private requesterSigned(signed, message): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.requesterSigned().");
+    if (!signed.ok || !message) {
+      log.debug("Leaving WsTrust.requesterSigned(). The signature alone.");
+      return signed;
+    }
+    if (!message.ok) {
+      log.debug("Leaving WsTrust.requesterSigned(). The other credential " +
+                "was refused.");
+      return message;
+    }
+    const same = String(message.subject).toLowerCase() ===
+                 String(signed.subject).toLowerCase() &&
+                 !!message.isClient === !!signed.isClient;
+    if (!same) {
+      log.info(this.deps.errorCodes.tag('STS-WSTRUST-0053') + 'wstrust: a ' +
+               'signed request also carried ' + message.method + ' naming "' +
+               message.subject + '", not the signer "' + signed.subject +
+               '".');
+      log.debug("Leaving WsTrust.requesterSigned(). Two names.");
+      return { ok: false, errorCode: 'STS-WSTRUST-0053',
+               trustFault: 'FailedAuthentication',
+               reason: 'The request is signed by "' + signed.subject + '" ' +
+                       'and also carries ' + message.method + ' naming "' +
+                       message.subject + '"; both must name the same ' +
+                       'requester.' };
+    }
+    log.debug("Leaving WsTrust.requesterSigned(). Both name " +
+              signed.subject + ".");
+    return Object.assign({}, signed, {
+      method: 'a WS-Security message signature, with ' + message.method,
+      tokenId: String(message.tokenId || ''),
+      issuer: String(message.issuer || ''),
+      note: signed.note + ' The request also carried ' + message.method +
+            ', naming the same ' + (signed.isClient ? 'application' : 'person') +
+            ': ' + message.note });
+  }
+
+  // ---------------------------------------------------------------------------
+  // STEPS 7 AND 8 OF messageSignature(), WHICH WAIT (#521): the revocation
+  // answer for a stored leaf may need its issuer's OCSP responder or CRL,
+  // and spending the signature in the used-assertion history is a claim on
+  // the store. Taken here, before the door's assessment authenticates, and
+  // handed in on the connection (connectionOf()). Product only: development
+  // checks neither. Never rejects; a failure leaves the answer out and
+  // messageSignature() refuses for want of it.
+  //
+  // The claim is BOUND TO THE RESPONSE (`used_assertions.claim()`'s
+  // `request`): a 2xx spends it, a Fault releases it, so a request refused
+  // for something else may be sent again — the rule every assertion here
+  // has.
+  // ---------------------------------------------------------------------------
+  private async prepareMessageSignature(req, doc): Promise<void> {
+    const { mode, log } = this.deps;
+    log.debug("Entering WsTrust.prepareMessageSignature().");
+    if (!doc || !mode.verifiesCredentials() || !req) {
+      log.debug("Leaving WsTrust.prepareMessageSignature(). Nothing to do.");
+      return;
+    }
+    const first = this.messageSignature(doc, null, true);
+    if (!first || !first.ok || !first.prepared) {
+      log.debug("Leaving WsTrust.prepareMessageSignature(). Not to be " +
+                "prepared.");
+      return;
+    }
+    const prepared: any = { fingerprint: first.fingerprint };
+    try {
+      const status = require('../common/revocation_status');
+      prepared.revocation = first.identity.stored === true
+        ? await status.registeredVerdictFor({
+          certificate: first.identity.leaf,
+          source: 'the message-signing certificate stored on "' +
+                  first.subject + '"' })
+        : status.localVerdictFor({ leaf: first.identity.leaf, chain: [],
+                                   verified: true });
+    } catch (e) {
+      log.debug("Caught in WsTrust.prepareMessageSignature(): " +
+                ((e && e.message) || e));
+      // No revocation walk in this process: the register-only answer is
+      // asked again where it is read.
+      prepared.revocation = null;
+    }
+    try {
+      prepared.replay = await require('../common/used_assertions').claim({
+        format: 'wss-message', use: 'wstrust-requester',
+        issuer: 'sha256:' + first.fingerprint,
+        identifier: first.signatureValue, expiresAt: first.expiresAt,
+        subject: first.subject, request: req });
+    } catch (e) {
+      log.debug("Caught in WsTrust.prepareMessageSignature(): " +
+                ((e && e.message) || e));
+      // claim() resolves rather than rejects; this is the history missing
+      // from the process, and the credential is refused for want of it.
+      prepared.replay = { ok: false, reason: 'store' };
+    }
+    req.stsMessageSignature = prepared;
+    log.debug("Leaving WsTrust.prepareMessageSignature().");
   }
 
   // ---------------------------------------------------------------------------
@@ -2374,7 +2830,8 @@ class WsTrust {
                        '>) and presents no credential of its own. In product ' +
                        'mode the requester must authenticate — a WS-Security ' +
                        'UsernameToken, a SAML assertion or JWT this ' +
-                       'security token service issued, or a TLS client ' +
+                       'security token service issued, a WS-Security ' +
+                       'signature over the request, or a TLS client ' +
                        'certificate this realm issued — before a token ' +
                        'about somebody else is issued to it.' };
     }
@@ -2452,8 +2909,9 @@ class WsTrust {
                reason: 'No credential was presented. In product mode every ' +
                        'WS-Trust operation requires one in the wsse:Security ' +
                        'header — a WS-Security UsernameToken verified ' +
-                       'against the directory, or a SAML assertion or JWT ' +
-                       'this security token service issued — or a TLS ' +
+                       'against the directory, a SAML assertion or JWT ' +
+                       'this security token service issued, or a ' +
+                       'WS-Security signature over the request — or a TLS ' +
                        'client certificate this realm issued on the ' +
                        'connection.' };
     }
@@ -2485,6 +2943,10 @@ class WsTrust {
   //   TLS client cert  TLSClient (#1046) — the HANDSHAKE's certificate, which
   //                    is what that class names; X509 is a signature at the
   //                    message level, which is not what was verified
+  //   signed message   X509 (#521) — "the principal authenticated by means
+  //                    of a digital signature where the key was validated as
+  //                    part of an X.509 Public Key Infrastructure", which is
+  //                    the message-level signature exactly
   //   OnBehalfOf/ActAs unspecified: the subject presented nothing here
   //   nothing          unspecified
   // ---------------------------------------------------------------------------
@@ -2494,6 +2956,10 @@ class WsTrust {
     if (auth && auth.kind === 'certificate') {
       log.debug("Leaving WsTrust.authnContextOf(). TLSClient.");
       return authnContext.AC_TLS_CLIENT;
+    }
+    if (auth && auth.kind === 'signature') {
+      log.debug("Leaving WsTrust.authnContextOf(). X509.");
+      return authnContext.AC_X509;
     }
     if (auth && auth.kind === 'password') {
       log.debug("Leaving WsTrust.authnContextOf().");
@@ -2518,7 +2984,9 @@ class WsTrust {
     const { log } = this.deps;
     log.debug("Entering WsTrust.amrOf().");
     const kind = auth ? String(auth.kind || '') : '';
-    const out = kind === 'certificate' ? ['swk']
+    // #521: a signed message is a proof of possession of a key, as the
+    // handshake's is — `swk` too.
+    const out = kind === 'certificate' || kind === 'signature' ? ['swk']
       : (kind === 'assertion' || kind === 'none' || kind === 'delegated'
         ? [] : ['pwd']);
     log.debug("Leaving WsTrust.amrOf(). " + out.join(','));
@@ -3293,7 +3761,8 @@ class WsTrust {
     // sign-in, `/tls/sign-in`'s rule for the same certificate.
     const signIn = auth.subject && auth.subject !== 'anonymous' &&
                    auth.kind !== 'delegated' &&
-                   !(auth.kind === 'certificate' && auth.isClient)
+                   !((auth.kind === 'certificate' ||
+                      auth.kind === 'signature') && auth.isClient)
       ? { username: auth.subject, method: auth.method || 'WS-Trust',
           via: 'WS-Trust ' + op,
           amr: this.amrOf(auth) }
@@ -3544,6 +4013,33 @@ class WsTrust {
       return named ? String(named.textContent || '').trim() : '';
     };
     const scope = this.credentialScope(doc);
+    // #521: a signed request is placed by its signer — the urn:sts: name a
+    // BinarySecurityToken's certificate carries, read and not verified (the
+    // home cell verifies it). A signer named any other way, or by an
+    // outside certificate, is served where it arrived.
+    const reading = this.deps.stsCrypto.readWsSecuritySignature(
+      new XMLSerializer().serializeToString(doc));
+    if (reading.present) {
+      let signer = '';
+      try {
+        const ref = reading.keyReference || {};
+        const x509 = ref.kind === 'token'
+          ? this.deps.stsCrypto.parseCertificate(
+            Buffer.from(String(ref.certB64), 'base64')) : null;
+        const urn = x509 ? String(x509.subjectAltName || '').split(/,\s*/)
+          .filter(function (one: string): boolean {
+            return one.indexOf('URI:urn:sts:person:') === 0;
+          })[0] || '' : '';
+        signer = urn.replace('URI:urn:sts:person:', '');
+      } catch (e) {
+        log.debug("Caught in WsTrust.homeNameOf(): " +
+                  ((e && e.message) || e));
+        // Unreadable: no name, served where it arrived.
+        signer = '';
+      }
+      log.debug("Leaving WsTrust.homeNameOf(). The signer.");
+      return signer;
+    }
     const ut = this.firstOwnedByRequester(scope, 'UsernameToken');
     if (ut) {
       log.debug("Leaving WsTrust.homeNameOf(). A UsernameToken.");
@@ -3645,6 +4141,10 @@ class WsTrust {
     };
     log.debug("Leaving WsTrust.stsEndpointHere().");
     return Promise.all(preloads).then(function (): Promise<unknown> {
+      // #521: a signed request's revocation and replay answers first, so
+      // every authentication below reads them.
+      return self.prepareMessageSignature(req, doc);
+    }).then(function (): Promise<unknown> {
       return delegated ? Promise.resolve(null)
                        : self.doorAssessment(req, doc);
     }).then(serve, function (e: any): unknown {
@@ -3736,7 +4236,9 @@ class WsTrust {
     const socket = req ? (req.socket || req.connection || null) : null;
     log.debug("Leaving WsTrust.connectionOf().");
     return { socket: socket,
-             revocation: req ? (req.certificateRevocation || null) : null };
+             revocation: req ? (req.certificateRevocation || null) : null,
+             // #521: the asynchronous half of a signed request's checks.
+             signature: req ? (req.stsMessageSignature || null) : null };
   }
 
   private stsEndpointNow(req, res, door?: any) {

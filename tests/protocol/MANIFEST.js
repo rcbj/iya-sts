@@ -269,6 +269,12 @@ const JOBS = [
   // OnBehalfOf input × every issued type (36 RSTs). `local: true`: the
   // scenario is ours. Its entries are left standing.
   { file: 'sts_wstrust_own_token_chain.js', browser: false },
+  // A REQUESTER AUTHENTICATED BY A WS-SECURITY SIGNATURE (#521): a person
+  // and an application issued message-signing certificates through
+  // /admin-api, their signed RSTs answered, and in product a replay, an
+  // altered part and a revoked certificate refused. `local: true`: the
+  // feature is ours. Its entries are left standing.
+  { file: 'sts_wstrust_signed_requests.js', browser: false },
   // AND IN KERBEROS (#486): the same four tiers as service principals,
   // reached over MS-KKDCP. Impersonation is protocol transition — apigw1's
   // S4U2Self for a user who signed in to webapp1 without Kerberos, then

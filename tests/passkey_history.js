@@ -397,7 +397,7 @@ async function theSource(t) {
       const who = 'pkh-' + stamp;
       ldap.createUser(who, { invent: false, origin: 'test' });
       const added = credentials.addKey(who, JSON.parse(keyValue('d1',
-        'ML-DSA-65', -49)), 'primary');
+        'ML-DSA-65', -49)));
       t.check(added && added.ok, 'D1. a person with an ML-DSA passkey',
               JSON.stringify(added && added.errors));
       report.resetForTests();

@@ -20,6 +20,8 @@
   "ordered.order": "Ordning",
   "ordered.value": "Värde",
   "ordered.note": "Kryssa i det som begärs och numrera det: <strong>1 är mest önskat</strong>, och en autentiserare använder det första den stöder. En siffra på en rad utan kryss ignoreras; två rader med samma siffra behåller den ordning de visas i.",
+  "ordered.selectAll": "Markera alla",
+  "ordered.chooseOne": "Välj minst en innan du sparar: en tom lista sparas inte.",
   "row.emptyDefault": "(tomt — standardvärdet)",
   "row.reset": "Återställ",
   "row.restart": "Starta om för att tillämpa:",

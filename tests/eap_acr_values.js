@@ -509,7 +509,7 @@ function childMain() {
     // The stored shape of a trusted statement — a FIXTURE (the header).
     const TRUSTED = { format: 'packed', type: 'basic', verified: true,
                       trusted: true, anchor: 'eap-test-anchor', why: '' };
-    const keyFor = function (name, role, backup, attestation) {
+    const keyFor = function (name, backup, attestation) {
       const key = makeAuthenticator(RPID, ORIGIN, backup);
       const handle = credentials.userHandleOf(name, { mint: true });
       key.setHandle(handle);
@@ -517,16 +517,16 @@ function childMain() {
         credentialId: key.credentialId, publicKeyJwk: key.jwk,
         userHandle: handle, backupEligible: backup === 'synced',
         backupState: backup === 'synced',
-        attestation: attestation || null }, role);
-      note(added.ok, '(a ' + role + ' key for ' + name + ': ' +
+        attestation: attestation || null });
+      note(added.ok, '(a key for ' + name + ': ' +
            (backup || 'device-bound') + ', ' +
            (attestation ? 'trusted' : 'unattested') + ')',
            JSON.stringify(added.errors || []));
       return key;
     };
-    const erinKey = keyFor('eap-erin', 'primary', 'device-bound', TRUSTED);
-    const daveKey = keyFor('eap-dave', 'mfa', 'device-bound', null);
-    const carolKey = keyFor('eap-carol', 'primary', 'synced', null);
+    const erinKey = keyFor('eap-erin', 'device-bound', TRUSTED);
+    const daveKey = keyFor('eap-dave', 'device-bound', null);
+    const carolKey = keyFor('eap-carol', 'synced', null);
 
     const claimsOf = function (jwt) {
       return JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url')
@@ -737,7 +737,7 @@ function hardwareAllow(t) {
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: id, y: 'b' },
       signCount: 0, backupEligible: eligible,
       attestation: { trusted: true, format: 'packed' }
-    }, 'mfa');
+    });
   };
   const wrote = key(hw, false);
   const wroteSync = key(synced, true);

@@ -20,6 +20,8 @@
   "ordered.order": "顺序",
   "ordered.value": "值",
   "ordered.note": "勾选要请求的项并为其编号：<strong>1 为最优先</strong>，验证器会使用其支持的第一项。未勾选行上的编号会被忽略；编号相同的两行保持其显示顺序。",
+  "ordered.selectAll": "全选",
+  "ordered.chooseOne": "保存前请至少选择一项：空列表不会被保存。",
   "row.emptyDefault": "（空——默认值）",
   "row.reset": "重置",
   "row.restart": "需重启才能生效：",

@@ -192,16 +192,16 @@
     "text": "Una aserción o un ID Token de canal frontal en texto plano se rechaza (STS-FED-0140) salvo que la relación defina fedAllowUnencrypted, que está documentado con una advertencia. AES-CBC, rsa-1_5 y RSA1_5 se rechazan en ambos modos (STS-FED-0139)."
   },
   "mode.requirements.passkey-first-use.what": {
-    "en": "48692c051ad2acee",
-    "text": "La pantalla de inicio de sesión no inscribe una llave de seguridad para alguien que no ha demostrado quién es"
+    "en": "c8556d37e16453f0",
+    "text": "La pantalla de inicio de sesión no inscribe una llave de acceso para alguien que no ha demostrado quién es"
   },
   "mode.requirements.passkey-first-use.development": {
-    "en": "2f86635eaf4572fb",
-    "text": "Un inicio de sesión sin contraseña que nombra a alguien que no tiene clave principal inscribe una en el acto, sin leer ninguna contraseña — la primera persona que reclama un nombre se lo queda."
+    "en": "8bea6b2667160433",
+    "text": "Un inicio de sesión sin contraseña que nombra a alguien que no tiene llave de acceso inscribe una en el acto, sin leer ninguna contraseña — la primera persona que reclama un nombre se lo queda."
   },
   "mode.requirements.passkey-first-use.product": {
-    "en": "e773ade2b33e515a",
-    "text": "Se rechaza. Una clave principal se añade en /portal/keys detrás de una sesión, mediante un enlace de activación o por un operador."
+    "en": "b2a73f5e48d6f2c4",
+    "text": "Se rechaza. Una llave de acceso se añade en /portal/keys detrás de una sesión, mediante un enlace de activación o por un operador."
   },
   "mode.requirements.siop-did-web-pin.what": {
     "en": "a8f5db1a7e30f55d",
@@ -236,8 +236,8 @@
     "text": "Un bind simple LDAP, un UsernameToken de WS-Security, HTTP Basic de SCIM y SSF y Basic de EST aceptan la contraseña como aceptan cualquier contraseña; la pantalla de inicio de sesión sigue pidiendo el segundo factor."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "2a529b7dda255daa",
-    "text": "En esas cinco puertas se rechaza la propia contraseña de la persona — respondiendo exactamente como a una contraseña incorrecta, y contando como tal contra el límite de frecuencia (STS-AUTHN-0213 solo en la fila de auditoría y en el registro) — siempre que tenga una aplicación de autenticación o una llave de seguridad con el rol mfa, o se le exija un segundo factor (stsMfaRequired, la política de autenticación). En su lugar se acepta una CONTRASEÑA DE APLICACIÓN que haya creado en /portal/app-passwords, limitada a esa puerta. authn.passwordAloneDoors nombra puertas que aceptan la contraseña de todos modos, lo que reduce allí a toda persona así a un solo factor."
+    "en": "c06e9e3a02393490",
+    "text": "En esas cinco puertas se rechaza la propia contraseña de la persona — respondiendo exactamente como a una contraseña incorrecta, y contando como tal contra el límite de frecuencia (STS-AUTHN-0213 solo en la fila de auditoría y en el registro) — siempre que tenga una aplicación de autenticación o cualquier llave de acceso donde el dominio (o la lista propia de la aplicación) acepte una llave de acceso como segundo factor, o se le exija un segundo factor (stsMfaRequired, la política de autenticación). En su lugar se acepta una CONTRASEÑA DE APLICACIÓN que haya creado en /portal/app-passwords, limitada a esa puerta. authn.passwordAloneDoors nombra puertas que aceptan la contraseña de todos modos, lo que reduce allí a toda persona así a un solo factor."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "El KDC emite un TGT a un AS-REQ preautenticado solo con la contraseña (PA-ENC-TIMESTAMP, o el PA-ENCRYPTED-CHALLENGE de FAST), como acepta cualquier contraseña."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "cddc7c3db475d360",
-    "text": "Ese AS-REQ se rechaza con KDC_ERR_POLICY (12), STS-KRB-0135, después de verificarse la contraseña (una incorrecta sigue siendo KDC_ERR_PREAUTH_FAILED), siempre que la persona tenga una aplicación de autenticación o una llave de seguridad con el rol mfa, o se le exija un segundo factor. Una persona con aplicación de autenticación obtiene un ticket mediante el blindaje FAST de RFC 6113 con preautenticación OTP de RFC 6560 — contraseña y código en un solo intercambio — y lleva el indicador `otp` de RFC 8129. Una contraseña de aplicación nunca es una clave Kerberos."
+    "en": "a1e60b4ee5cac599",
+    "text": "Ese AS-REQ se rechaza con KDC_ERR_POLICY (12), STS-KRB-0135, después de verificarse la contraseña (una incorrecta sigue siendo KDC_ERR_PREAUTH_FAILED), siempre que la persona tenga una aplicación de autenticación o cualquier llave de acceso donde el dominio (o la lista propia de la aplicación) acepte una llave de acceso como segundo factor, o se le exija un segundo factor. Una persona con aplicación de autenticación obtiene un ticket mediante el blindaje FAST de RFC 6113 con preautenticación OTP de RFC 6560 — contraseña y código en un solo intercambio — y lleva el indicador `otp` de RFC 8129. Una contraseña de aplicación nunca es una clave Kerberos."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",

@@ -13,9 +13,13 @@
 // fold with everything technical; two calls to action; and the ceremony
 // while a registration is waiting.
 //
-// THE CEREMONY IS THE SAME MARKUP THE SERVER DREW — `#wa-data`, `#wa-go`,
-// `#wa-form` with its hidden `#wa-credential` — and the runtime runs it
-// (`web_portal_webauthn.ts`) and sends `#wa-form` to `/account-api`. A
+// THE CEREMONY IS THE SAME MARKUP THE SERVER DREW — `#wa-data`, `#wa-form`
+// with its hidden `#wa-credential` — and the runtime runs it
+// (`web_portal_webauthn.ts`) AS SOON AS THE ARMED PAGE IS DRAWN (`#wa-data`
+// carries `data-autostart`; rcbj, 2026-10-28: the call to action pressed is
+// the request, and a second button asked it twice) and sends `#wa-form` to
+// `/account-api`. The activation's key step and the device link still draw
+// `#wa-go` and run on its click. A
 // registration the guidance shows is reported through that finish without
 // the form being submitted and without the answer being drawn (#961). The
 // Signal API's `#wa-signal` likewise. RENAME is a `<details>` with a form in
@@ -66,30 +70,29 @@ class KeysPages {
     return kit.esc(text);
   }
 
-  // RENAME, as a fold with a form in it (#470). `open` draws it unfolded,
-  // for the nickname prompt after an enrolment. An empty name puts the
-  // default back (`credentials.renameKey()`).
+  // RENAME, as a fold with a form in it (#470), on every row alike: the
+  // unfolded variant for a nickname prompt after an enrolment went on
+  // 2026-10-28 (rcbj) with that prompt. An empty name puts the default back
+  // (`credentials.renameKey()`).
   /**
-   * The rename form.
+   * The rename form, folded.
    *
    * @param one - the key's row
-   * @param open - whether it is drawn unfolded
    * @param t - the translator
    * @returns the HTML
    */
-  static renameForm(one: Json, open: boolean, t: Json): string {
+  static renameForm(one: Json, t: Json): string {
     const id = 'rn-' + String(one.credentialId).slice(0, 16)
       .replace(/[^A-Za-z0-9_-]/g, '');
     const form = '<form method="post" action="' + kit.BASE + '/rename-key">' +
       '<input type="hidden" name="credentialId" value="' +
       kit.esc(one.credentialId) + '"><label for="' + id + '">' +
-      (open ? t.html('portal.keys.nickname') : t.html('portal.keys.newName')) +
+      t.html('portal.keys.newName') +
       '</label><input type="text" id="' + id + '" name="label" ' +
       'maxlength="60" value="' + kit.esc(one.name) + '">' +
       '<button>' + t.html('portal.keys.save') + '</button></form>';
-    return open ? form
-                : '<details><summary>' + t.html('portal.keys.rename') +
-                  '</summary>' + form + '</details>';
+    return '<details><summary>' + t.html('portal.keys.rename') +
+           '</summary>' + form + '</details>';
   }
 
   // ONE ROW OF THE PASSKEY LIST (#470). The dates stay ISO days: they are
@@ -126,8 +129,8 @@ class KeysPages {
       (one.lastUsedAt
         ? t.html('portal.keys.lastUsed', { day: day(one.lastUsedAt) })
         : t.html('portal.keys.notUsed')) +
-      ' · ' + (one.role === 'primary' ? t.html('portal.keys.rolePrimary')
-                                      : t.html('portal.keys.roleMfa')) +
+      // NO ROLE (#1135): the row said "instead of a password" or "second
+      // step after your password" until a key stopped carrying one.
       '</div>' +
       // A ROW A LATER REGISTRATION MAY HAVE REPLACED ON ITS AUTHENTICATOR
       // (#1101): the Remove button below is the way to clear it.
@@ -157,13 +160,9 @@ class KeysPages {
         ? '<div class="meta" id="passkey-pin-refused">' +
           kit.esc(one.pinRefused) + '</div>'
         : '') +
-      KeysPages.renameForm(one, false, t) +
+      KeysPages.renameForm(one, t) +
       '<details><summary>' + t.html('portal.keys.details') +
       '</summary><table>' +
-      '<tr><th>' + t.html('portal.keys.used') + '</th><td>' +
-      (one.role === 'primary' ? t.html('portal.keys.usedPrimary')
-                              : t.html('portal.keys.usedMfa')) +
-      '</td></tr>' +
       // The device serial an enterprise attestation named (#532).
       (att.deviceSerial
         ? '<tr><th>' + t.html('portal.keys.serial') + '</th><td>' +
@@ -213,8 +212,12 @@ class KeysPages {
       t.html('portal.keys.remove') + '</button></form></div></li>';
   }
 
-  // *LEARN MORE* (#470): the benefit first, then a fold for this service's
-  // own two roles and the backup rule.
+  // *LEARN MORE* (#470): the benefit first, then a fold for how this
+  // service uses a passkey and the backup rule. Until #1135 the fold
+  // explained the two roles a key was enrolled in and that the person chose
+  // one; now it says the service decides, so there is nothing to choose,
+  // and the line for a person with no password ("a passkey used as a second
+  // step needs one") went with the role it was about.
   /**
    * The *Learn more* fold.
    *
@@ -226,7 +229,7 @@ class KeysPages {
     const held = (view.keys || []).length;
     return '<details><summary>' + t.html('portal.keys.learnMore') +
       '</summary>' +
-      '<p class="note">' + t.html('portal.keys.learnRoles') + '</p>' +
+      '<p class="note">' + t.html('portal.keys.learnUse') + '</p>' +
       '<p class="note">' + t.html('portal.keys.learnWhere') + '</p>' +
       // The link to Devices is markup, so the sentence is two messages
       // around it (#539).
@@ -239,14 +242,12 @@ class KeysPages {
           '</p>'
         : (held === 1
             ? '<p class="note">' + t.html('portal.keys.learnOne') + '</p>'
-            : '')) +
-      (view.password ? '' : '<p class="note">' +
-        t.html('portal.keys.learnNoPassword') + '</p>') + '</details>';
+            : '')) + '</details>';
   }
 
   // WHERE THE PASSKEY LIVES, as radios (#470): `/portal/activate` asks with
-  // these, because its one form carries a password and a role as well; the
-  // passkey page asks with two buttons. Nothing to choose with one kind.
+  // these, because its one form carries a password as well; the passkey
+  // page asks with two buttons. Nothing to choose with one kind.
   /**
    * The kind, as radios.
    *
@@ -311,10 +312,13 @@ class KeysPages {
    *
    * @param pending - `{ challenge, rpId, user, userHandle, display, exclude,
    *   options }`
+   * @param autostart - true where the runtime is to run the ceremony as
+   *   soon as the page is drawn, with no button (the Passkeys page)
    * @returns the HTML
    */
-  static ceremonyData(pending: Json): string {
+  static ceremonyData(pending: Json, autostart?: boolean): string {
     return '<div id="wa-data"' +
+      (autostart ? ' data-autostart="1"' : '') +
       ' data-challenge="' + kit.esc(pending.challenge) + '"' +
       ' data-rpid="' + kit.esc(pending.rpId) + '"' +
       ' data-user="' + kit.esc(pending.user) + '"' +
@@ -333,8 +337,8 @@ class KeysPages {
   // `web_portal_webauthn.ts` (through `common/web_webauthn.ts`'s
   // `offerFallback()`) only after the registration fails with an error it
   // is for. Where the account API says the realm allows the classical
-  // retry, a form that begins the enrolment again — the same role, kind
-  // and lane, `algorithms` `classical`, which the API refuses again where
+  // retry, a form that begins the enrolment again — the same kind and
+  // lane, `algorithms` `classical`, which the API refuses again where
   // the realm forbids it; where it does not, the sentence that this device
   // cannot make the passkey this service requires. Nothing for a ceremony
   // that asks for no ML-DSA, or that is the retry already.
@@ -364,8 +368,6 @@ class KeysPages {
         ? '<form method="post" action="' + PATH + '" ' +
           'id="wa-retry-classical-form">' +
           '<input type="hidden" name="action" value="begin">' +
-          '<input type="hidden" name="role" value="' +
-          kit.esc(pending.role || 'mfa') + '">' +
           (pending.kind
             ? '<input type="hidden" name="kind" value="' +
               kit.esc(pending.kind) + '">' : '') +
@@ -380,8 +382,12 @@ class KeysPages {
   }
 
   // ADDING A KEY: the ceremony while one is waiting, else the form with the
-  // role and the two calls to action — two submit buttons of one form, so
-  // the button pressed is the kind.
+  // two calls to action — two submit buttons of one form, so the button
+  // pressed is the kind. NOTHING ELSE IS ASKED (#1135, rcbj): until then
+  // the form asked "How will you use it?" — instead of the password, or as
+  // a second step after it — which a person who had never heard of a second
+  // factor could not answer. The realm decides how a key is used, and the
+  // page only says, with `enrol.allowed` false, that it accepts none.
   /**
    * The enrolment block.
    *
@@ -409,42 +415,33 @@ class KeysPages {
           ? t.html('portal.key.promptSecurityKey')
           : t.html('portal.key.promptPasskey')) + ' ' +
         t.html('portal.enrol.different') + '</p>' +
-        KeysPages.ceremonyData(pending) +
-        '<button id="wa-go" type="button">' + (securityKey
-          ? t.html('portal.key.register') : t.html('portal.key.create')) +
-        '</button>' +
+        // THE CEREMONY STARTS ON ITS OWN (rcbj, 2026-10-28): the call to
+        // action a person pressed IS the request, so the armed page carries
+        // `data-autostart` and the runtime runs the browser's prompt as
+        // soon as it is drawn, with no second button to press and no "my
+        // browser did not ask" button beside it. A prompt the browser
+        // refuses or the person dismisses is posted as the finish's error,
+        // which abandons the enrolment and draws the two calls to action
+        // again with the browser's own words, as a refused ceremony always
+        // did. The activation's key step and the device link keep their
+        // button (`#wa-go`), because each is one step of a longer form.
+        KeysPages.ceremonyData(pending, true) +
         '<form method="post" action="' + PATH + '" id="wa-form">' +
         '<input type="hidden" name="action" value="finish">' +
         '<input type="hidden" name="enrolment_id" value="' +
         kit.esc(pending.id) + '">' +
         '<input type="hidden" name="credential" id="wa-credential">' +
-        // THE SECOND BUTTON: it sends a `finish` with no credential, which
-        // the operation answers by saying the browser ran no ceremony.
-        '<button class="secondary">' + t.html('portal.key.didNotAsk') +
-        '</button></form><form method="post" action="' + PATH + '">' +
+        '</form><form method="post" action="' + PATH + '">' +
         '<input type="hidden" name="action" value="cancel">' +
         '<button class="secondary">' + t.html('portal.enrol.cancel') +
         '</button></form>' + KeysPages.fallback(pending, t) +
         '<p class="sub">' +
-        (securityKey
-          ? (pending.role === 'primary'
-              ? t.html('portal.enrol.creatingKeyPrimary')
-              : t.html('portal.enrol.creatingKeyMfa'))
-          : (pending.role === 'primary'
-              ? t.html('portal.enrol.creatingDevicePrimary')
-              : t.html('portal.enrol.creatingDeviceMfa'))) + '</p>';
+        (securityKey ? t.html('portal.enrol.creatingKey')
+                     : t.html('portal.enrol.creatingDevice')) + '</p>';
     }
-    const roles: string[][] = (enrol.roles || []).map(function (role: string) {
-      return role === 'mfa'
-        ? ['mfa', t.html('portal.enrol.asSecond'),
-           view.password ? t.html('portal.enrol.asSecondWhat')
-                         : t.html('portal.enrol.asSecondNoPassword')]
-        : ['primary', t.html('portal.enrol.instead'),
-           t.html('portal.enrol.insteadWhat')];
-    });
-    if (!roles.length) {
+    if (enrol.allowed === false) {
       return '<h2>' + t.html('portal.enrol.heading') + '</h2>' +
-        '<p class="note">' + t.html('portal.enrol.noRole') + '</p>';
+        '<p class="note">' + t.html('portal.enrol.notAccepted') + '</p>';
     }
     const labels: Json = { 'passkey': t.html('portal.enrol.createPasskey'),
                            'security-key':
@@ -454,16 +451,6 @@ class KeysPages {
         ? '<p class="note">' + t.html('portal.enrol.addsNew') + '</p>' : '') +
       '<form method="post" action="' + PATH + '">' +
       '<input type="hidden" name="action" value="begin">' +
-      (roles.length > 1
-        ? '<p class="sub"><strong>' + t.html('portal.enrol.howUse') +
-          '</strong></p>' + roles.map(function (row: string[]): string {
-            return '<label class="chk"><input type="radio" name="role" ' +
-              'value="' + kit.esc(row[0]) + '"' +
-              (row[0] === roles[0][0] ? ' checked' : '') + '> ' + row[1] +
-              ' <span class="sub">' + row[2] + '</span></label>';
-          }).join('')
-        : '<input type="hidden" name="role" value="' + kit.esc(roles[0][0]) +
-          '"><p class="note">' + roles[0][1] + '. ' + roles[0][2] + '</p>') +
       KeysPages.laneChoice(enrol.lanes, t) +
       '<div class="ctas">' + (enrol.kinds || []).map(function (kind: string,
                                                                i: number) {
@@ -515,18 +502,12 @@ class KeysPages {
     const securityKeys = keys.filter(function (one: Json): boolean {
       return one.group === 'security-key';
     });
-    // THE NICKNAME, ASKED FOR AFTER THE CEREMONY (#470): the answer to a
-    // registration names the key, and its rename form is drawn open at the
-    // top of the page with the default name in it.
-    const fresh = view.named ? keys.filter(function (one: Json): boolean {
-      return one.credentialId === view.named;
-    })[0] : null;
-    const nickname = fresh
-      ? '<div class="ok">' + (fresh.group === 'security-key'
-          ? t.html('portal.keys.nicknameSecurityKey')
-          : t.html('portal.keys.nicknamePasskey')) +
-        KeysPages.renameForm(fresh, true, t) + '</div>'
-      : '';
+    // NO NICKNAME BOX AFTER THE CEREMONY (rcbj, 2026-10-28). #470 drew the
+    // new key's rename form open at the top of the page, under "give your
+    // passkey a nickname"; it said the same thing as the Rename on the
+    // key's own row and read as a second step. A registered key takes its
+    // default name (its provider's, else "Passkey" or "Security key") and
+    // is renamed on its row like any other.
     const group = function (title: string, icon: string, list: Json[]) {
       return list.length
         ? '<h2 class="pkgroup">' + icon + kit.esc(title) + '</h2>' +
@@ -535,7 +516,7 @@ class KeysPages {
           }).join('') + '</ul>'
         : '';
     };
-    return '<div class="card">' + nickname +
+    return '<div class="card">' +
       '<p class="sub">' + kit.ICONS.passkey + t.html('portal.keys.intro') +
       '</p>' + KeysPages.learnMore(view, t) +
       (keys.length
@@ -543,9 +524,14 @@ class KeysPages {
                 devices) +
           group(t.text('portal.keys.onSecurityKeys'), kit.ICONS.securityKey,
                 securityKeys) +
+          // WHETHER A PASSWORD ALONE SIGNS THEM IN, as a fact about the
+          // account: until #1135 it was said of the keys ("at least one of
+          // these is a second step"), each of which carried a role. A
+          // person with no password is told neither.
           '<p class="note">' + (view.mfaRequired
-            ? t.html('portal.keys.someSecond')
-            : t.html('portal.keys.noneSecond')) + ' ' +
+            ? t.html('portal.keys.someSecond') + ' '
+            : (view.password ? t.html('portal.keys.noneSecond') + ' '
+                             : '')) +
           t.html('portal.keys.lastWayIn') + '</p>'
         : '<p class="note">' + t.html('portal.keys.noneYet') + '</p>') +
       KeysPages.enrolBlock(view, t) + KeysPages.signalBlock(view.signals) +

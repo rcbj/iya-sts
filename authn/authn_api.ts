@@ -482,8 +482,10 @@ const OPERATIONS: Operation[] = [
       'factor\'s state — and `csrf`. Refused (400) where the page could ' +
       'never be drawn for the step: an expired step, a code page for ' +
       'somebody with no authenticator app, a passkey page for somebody ' +
-      'holding no key of the step\'s role. `key` names the passkey a ' +
-      'person chose where the passkey policy offers them one by one.' },
+      'holding no passkey (any key may answer the step since #1135; the ' +
+      'authentication policy decides whether this use is open). `key` ' +
+      'names the passkey a person chose where the passkey policy offers ' +
+      'them one by one.' },
   { method: 'POST', path: API + '/mfa/:id/totp', operationId: 'checkCode',
     access: 'mfa', mirrors: 'POST /authn/totp', action: 'totp',
     handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
@@ -560,10 +562,10 @@ const OPERATIONS: Operation[] = [
     mirrors: 'POST /authn/post-login', action: 'register',
     handler: 'mfaAct', body: EMPTY_BODY, answer: NEXT_ANSWER,
     summary: 'Chooses to register the passkey a post-login activity asks for',
-    description: 'The next step is the passkey page\'s registration, in the ' +
-      'activity\'s role and offering ML-DSA only. Its finish starts the ' +
-      'session the sign-in was held for. Where the realm can no longer make ' +
-      'an ML-DSA passkey in that role the session starts without it ' +
+    description: 'The next step is the passkey page\'s registration, ' +
+      'offering ML-DSA only; the key has no role (#1135). Its finish ' +
+      'starts the session the sign-in was held for. Where the realm can ' +
+      'no longer enrol an ML-DSA passkey the session starts without it ' +
       '(STS-AUTHN-0475).' },
   { method: 'POST', path: API + '/mfa/:id/post-login/skip',
     operationId: 'skipPostLoginActivity', access: 'mfa',

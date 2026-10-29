@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4770** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4797** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -57,16 +57,16 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 147
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 206
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 153
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 208
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 408
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 409
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 249
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -728,6 +728,12 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0156` | A stored argon2id password hash could not be computed here — no argon2 in this runtime, or parameters outside the bounds this service computes — and was treated as no match. | — |
 | `STS-KEYS-0157` | A JWS signed with a post-quantum or composite algorithm (ML-DSA, SLH-DSA, composite ML-DSA) was presented to a realm whose keys.postQuantumSigning is off, and was refused before its signature was checked. | the caller's refusal: each protocol answers it as it answers a JWS whose algorithm it does not accept (invalid_request_object, invalid_client, invalid_grant, invalid_dpop_proof, invalid_proof and the like) |
 | `STS-KEYS-0158` | A signature with a post-quantum or composite JWS algorithm was asked of a realm whose keys.postQuantumSigning is off — a client registered for one while it was on, a configured credential, metadata or HTTP message signature algorithm — and was refused rather than made with a key the realm no longer publishes. | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0159` | A WS-Security security header carries more than one ds:Signature, so it does not say which one the requester made (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0160` | An id in a WS-Security signed message is carried by more than one element, so a Reference to it does not say which element was signed: the signature-wrapping shape (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0161` | A WS-Security ds:Signature has no SignedInfo, SignatureMethod or SignatureValue, or a Reference that is not a same-document reference by id (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0162` | A WS-Security signature is canonicalized, or a Reference transformed, with something other than exclusive XML canonicalization alone (Basic Security Profile R5404, R5412) (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
+| `STS-KEYS-0163` | A WS-Security signature does not cover the SOAP Body or the wsu:Timestamp of its security header by their wsu:Id (#521). | the caller's: wst:AuthenticationBadElements (STS-WSTRUST-0040) |
+| `STS-KEYS-0164` | A WS-Security signature's KeyInfo names its certificate in no form of the X.509 Token Profile 1.1 this service reads (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
 
 ## STS-PKI
 
@@ -943,6 +949,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0217` | A key pair was not pinned into the xml slot: the certificate supplied with it has a keyUsage without keyEncipherment, and an xml pin is also the key partners encrypt to (#263). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0218` | A certificate authority branch finished building for a realm that had been removed while it was built, and was discarded rather than saved. | none (logged; the realm is gone) |
 | `STS-PKI-0219` | A KDC certificate for PKINIT was asked for with no slot, no principal name, or a key algorithm it is not issued with (#179). | none (the KDC refuses PKINIT, STS-KRB-0197) |
+| `STS-PKI-0220` | A person or an application already holds pki.messageSigningCertificateMax valid message-signing certificates, so another was not issued (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0221` | A message-signing certificate revocation named a serial the holder holds no certificate under (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## STS-ENROLL
 
@@ -1235,9 +1243,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0041` | The recovery code form POST failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
 | `STS-AUTHN-0042` | Too many recovery code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0043` | Checking a recovery code threw (the worker pool or the store failed part way). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
-| `STS-AUTHN-0044` | Security keys are switched off in this realm (webauthn.enabled), so no new key may be enrolled. | HTTP 200 page / action result with the reason |
-| `STS-AUTHN-0045` | A passwordless (primary) security key may not be enrolled in this realm (webauthn.primaryAllowed). | HTTP 200 page / action result with the reason |
-| `STS-AUTHN-0046` | A second-factor security key may not be enrolled in this realm (webauthn.mfaAllowed). | HTTP 200 page / action result with the reason |
+| `STS-AUTHN-0044` | Passkeys are switched off in this realm (webauthn.enabled), so no new key may be enrolled. A key already held goes on answering sign-in steps. | HTTP 200 page / action result with the reason |
+| `STS-AUTHN-0045` | A passkey was refused as a first factor (passwordless): this realm does not allow it (webauthn.primaryAllowed). Until #1135 it refused enrolling a key in the primary role. | HTTP 200 page / action result with the reason |
+| `STS-AUTHN-0046` | A passkey was refused as a second factor: this realm does not allow it (webauthn.mfaAllowed). Until #1135 it refused enrolling a key in the mfa role. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0047` | The credential store's setDirectory() hooks were refused whole because readPassword or writePassword was missing. | — |
 | `STS-AUTHN-0048` | A password was refused because it is the reserved refusal password 'invalid', refused in every mode. | the calling protocol's own authentication failure (sign-in page, LDAP invalidCredentials (49), SOAP fault, HTTP 401) |
 | `STS-AUTHN-0049` | A password verification was asked for with no username, in product mode. | the calling protocol's own authentication failure |
@@ -1257,11 +1265,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0063` | The product-mode bootstrap account could not be created in the directory. | — |
 | `STS-AUTHN-0064` | The product-mode bootstrap could not set a password: this service is in product mode and nobody can sign in. | — |
 | `STS-AUTHN-0065` | Reading a person's security keys from the credential store threw; they were reported as holding none. | — |
-| `STS-AUTHN-0066` | A security key was to be recorded or enrolled in a role that is neither 'primary' nor 'mfa'. | action result with the reason |
+| `STS-AUTHN-0066` *(retired)* | A security key was to be recorded or enrolled in a role that is neither 'primary' nor 'mfa'. Retired by #1135: a key carries no role. | action result with the reason |
 | `STS-AUTHN-0067` | A security key was not enrolled because the person already holds webauthn.maxKeysPerPerson keys. | action result with the reason |
 | `STS-AUTHN-0068` | Writing a security key to the credential store threw, or the store refused to record a verified key. | action result with the reason |
 | `STS-AUTHN-0069` | Removing a security key named a credential id that is not enrolled for that person. | action result with the reason |
-| `STS-AUTHN-0070` | Removing a security key was refused because it is the person's last way in (no password and no other primary key). | action result with the reason |
+| `STS-AUTHN-0070` | Removing a security key was refused because it is the person's last way in (no password and no other passkey). | action result with the reason |
 | `STS-AUTHN-0071` | Reading a person's authenticator-app enrolment from the credential store threw; it was reported as none. | — |
 | `STS-AUTHN-0072` | An authenticator-app shared secret could not be sealed under the key-encryption key, so it was not stored. | action result with the reason |
 | `STS-AUTHN-0073` | Writing or clearing an authenticator-app enrolment in the credential store threw. | action result with the reason |
@@ -1338,9 +1346,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0144` | A forced password change named a step that does not exist or has expired. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0145` | A forced password change request was refused by the input validator. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0146` | A forced password change was refused: no new password, two that differ, the reserved refusal password, or one the password policy refused; the page is drawn again with the reason. | the change page again with the reason |
-| `STS-AUTHN-0160` | Disabling somebody's passwordless sign-in was refused: they hold no security key in the primary role. | HTTP 400 (API) or a 303 with error= |
-| `STS-AUTHN-0161` | Disabling somebody's passwordless sign-in was refused: they have no password, so their primary security keys are their only way in. | HTTP 400 (API) or a 303 with error= |
-| `STS-AUTHN-0162` | Disabling somebody's second factors was refused: they hold no authenticator app, no mfa-role security key and no recovery codes. | HTTP 400 (API) or a 303 with error= |
+| `STS-AUTHN-0160` | Removing somebody's passkeys was refused: they hold none (until #1135, none in the primary role). | HTTP 400 (API) or a 303 with error= |
+| `STS-AUTHN-0161` | Removing somebody's passkeys (or their second factors) was refused: they have no password, so their passkeys are their only way in. | HTTP 400 (API) or a 303 with error= |
+| `STS-AUTHN-0162` | Disabling somebody's second factors was refused: they hold no authenticator app, no passkey and no recovery codes (until #1135, no mfa-role security key). | HTTP 400 (API) or a 303 with error= |
 | `STS-AUTHN-0163` | The credential store refused a write while security keys or second factors were being removed; what went before it is reported. | HTTP 400 (API) or a 303 with error= |
 | `STS-AUTHN-0164` | A password reset link could not be written onto, or cleared from, the person's entry. | HTTP 400 (API) or a 303 with error= |
 | `STS-AUTHN-0165` | A password reset link was presented for somebody with none outstanding (never issued, or already spent). | the reset page's one refusal sentence, HTTP 400 |
@@ -1376,7 +1384,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0203` | An account was disabled and ending what the person held (the global logout) failed; the lock stands and every door refuses them. | none — logged; the disable's reply says what failed |
 | `STS-AUTHN-0204` | A sign-in that demands a security key (a WS-Federation HardwareToken wauth, or OAuth acr_values naming only key aliases) was answered with something else — a one-time code, a recovery code — or the account holds a second factor and no key to present. | HTTP 400 invalid_request, or the sign-in screen again |
 | `STS-AUTHN-0205` | The product-mode bootstrap was given a password through admin.bootstrapPassword that the password policy refuses, so no bootstrap account was created and nobody can sign in. It is NOT replaced with a generated one: the operator set it so that the only way in would not be in a log, and generating one would put a working credential there and leave theirs not working. | none — logged, and the service starts with nobody able to sign in |
-| `STS-AUTHN-0206` | Product mode: a passwordless sign-in named a person who holds no security key that signs in on its own, and the sign-in screen does not enrol one — enrolling there would give the account to whoever claimed the name first. A primary key is added on /portal/keys, by an activation link or by an operator. Development enrols on first use (mode.enrolsKeysOnFirstUse()). | none — the sign-in screen is drawn again with the reason |
+| `STS-AUTHN-0206` | Product mode: a passwordless sign-in named a person who holds no passkey (until #1135, none in the primary role), and the sign-in screen does not enrol one — enrolling there would give the account to whoever claimed the name first. A passkey is added on /portal/keys, by an activation link or by an operator. Development enrols on first use (mode.enrolsKeysOnFirstUse()). | none — the sign-in screen is drawn again with the reason |
 | `STS-AUTHN-0207` | A hosted surface (the console, the portal or the embedded debugger) could not get the key it signs its private_key_jwt client assertion with: this realm has no certificate authority to issue one, the issue failed, or the key could not be written onto the surface's application entry. The surface cannot authenticate at the token endpoint, so the sign-in or renewal stops (#138). | RFC 7523 section 2.2; OIDC Core section 9 |
 | `STS-AUTHN-0208` | A hosted surface's key was being issued by another process, and neither the key nor an answer from the claim store arrived in time; the sign-in or renewal stops rather than issuing a second key (#138). Since #296 the claim is released when an issuance ends, so this means the issuer is still at work or the store cannot be asked. | none — a refusal of this service's own |
 | `STS-AUTHN-0209` | A hosted surface's application entry declares a token endpoint authentication method the surface does not implement. It implements private_key_jwt, and client_secret_basic or client_secret_post for an entry an operator set so (#138). | RFC 7591 section 2 |
@@ -1423,8 +1431,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0250` | A person opted in to an emailed second factor while their address is not verified (#64). | portal page with the reason |
 | `STS-AUTHN-0251` | A person's emailed second factor could not be written to their entry (#64). | portal page with the reason |
 | `STS-AUTHN-0252` | A person reached the authentication policy's limit of consecutive failed emailed codes or links, and their emailed factor was turned off (NIST SP 800-63B-4 section 3.2.2, #64). | — |
-| `STS-AUTHN-0253` | A security key or passkey was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
-| `STS-AUTHN-0254` | A new security key was refused as a second factor: this realm's authentication policy does not accept one (#64). | sign-in screen or portal page with the reason |
+| `STS-AUTHN-0253` | A passkey was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
+| `STS-AUTHN-0254` | A passkey was refused as a second factor: this realm's authentication policy does not accept one (#64; until #1135 it refused a NEW key enrolled in the mfa role). | sign-in screen or portal page with the reason |
 | `STS-AUTHN-0255` | A password was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
 | `STS-AUTHN-0256` | A second factor was needed after a first and none this realm accepts was available: the person holds none, and the policy does not accept a password as one (#64). | sign-in refused with the reason |
 | `STS-AUTHN-0257` | No more emailed codes or links may be sent for one sign-in step (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
@@ -1513,7 +1521,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0380` | A self-service account recovery — the forgot-password form, a reset link the person asked for, a recovery code or an emailed code or link at sign-in — was refused for a person who holds a passkey: the passkey policy's recoveryAssurance is operator-only (#724), decided by the issuance policy (recover-account). | none — the forgot-password form answers its one sentence; the reset link and the sign-in screen say why |
 | `STS-AUTHN-0381` | A session for a person who holds a passkey, after an account recovery (one pending on their entry, or a recovery code or an emailed code or link at this sign-in), was not started because no passkey answered: the passkey policy's recoveryAssurance is not-weaker or operator-only (#724). At the sign-in screen the person is asked to register a passkey instead. | none — no session; the set-up step, or the refusal |
 | `STS-AUTHN-0382` | A pending account recovery (stsRecoveryPending) could not be written onto, or cleared from, a person's entry (#724). Written, the next sign-in is not held to the passkey; cleared, the next sign-in is held again. | — |
-| `STS-AUTHN-0383` | A sign-in after an account recovery could not be offered the registration of a passkey (#724): security keys are switched off, or not allowed as a second factor, in this realm. The session is refused instead (STS-AUTHN-0381), and an administrator has to help. | none — the sign-in screen says why |
+| `STS-AUTHN-0383` | A sign-in after an account recovery could not be offered the registration of a passkey (#724): passkeys are switched off, or accepted for no use, in this realm (until #1135, also where a key was not allowed as a second factor). The session is refused instead (STS-AUTHN-0381), and an administrator has to help. | none — the sign-in screen says why |
 | `STS-AUTHN-0390` | A Device Bound Session Credentials registration or refresh (POST /authn/dbsc/register, /authn/dbsc/refresh, #725) reached a realm whose authn.deviceBoundSessions is off. | HTTP 404, { error: invalid_request } |
 | `STS-AUTHN-0391` | A Device Bound Session Credentials registration or refresh came with no signed-in sign-on session behind its sts_session cookie (none, expired, or an arrival session). | HTTP 401, { error: invalid_request } — the browser ends its DBSC session |
 | `STS-AUTHN-0392` | A Device Bound Session Credentials registration named a sign-on session already bound to a key. A session is bound once, and a second key is never accepted for it. | HTTP 409, { error: invalid_request } |
@@ -1585,7 +1593,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0472` | A post-login activity profile was not saved: there is no embedded directory in this process, or it is at its maximum number of entries (#1096). | none (HTTP 400 from /admin-api/policies) |
 | `STS-AUTHN-0473` | A sign-in was held: the person's post-login activity is past its allotted time and cannot be done at this door (a federated, wallet, Kerberos or certificate sign-in, or a non-interactive one); they are told to sign in at the sign-in screen, where they will be asked to do it (#1096). | the door's own refusal; no session is started |
 | `STS-AUTHN-0474` | Skip was refused on a post-login activity: the allotted time since the person's first invitation has passed, so the activity is required before the sign-in finishes (#1096). | none (HTTP 400 from /authn-api) |
-| `STS-AUTHN-0475` | A post-login passkey registration was refused: the realm can no longer make the ML-DSA passkey asked for (`canRegister()`: passkeys off, the role not allowed, no ML-DSA algorithm offered at registration — webauthn.algorithms, whose default list holds them — the post-quantum lane refused where both lanes are on, or an upgrade refused for the upgrade method), so the activity cannot be done here and the held sign-in is finished without it (#1096). | none (the sign-in continues) |
+| `STS-AUTHN-0475` | A post-login passkey registration was refused: the realm can no longer make the ML-DSA passkey asked for (`canRegister()`: passkeys off, no new key accepted for any use, no ML-DSA algorithm offered at registration — webauthn.algorithms, whose default list holds them — the post-quantum lane refused where both lanes are on, or an upgrade refused for the upgrade method), so the activity cannot be done here and the held sign-in is finished without it (#1096). | none (the sign-in continues) |
 | `STS-AUTHN-0476` | A passkey policy profile was not saved: `lanes` is both (a classical and a post-quantum passkey side by side) and `registrationMode` is classical-only, which makes no post-quantum passkey to hold in a second lane (#1104). | none (HTTP 400 from /admin-api/policies) |
 | `STS-AUTHN-0477` | A learned passkey client was not cleared (#1112): the request named no client, or one this realm's learned clients do not list (`clear-passkey-client` takes the name exactly as the list shows it). Nothing is changed. | none (HTTP 400 from POST /admin-api/policies/clear-passkey-client) |
 | `STS-AUTHN-0478` | A realm's learned passkey clients (#1112) are at their bound, every entry already learned, so the failures of a client not yet counted were not counted: it cannot be learned until an entry is cleared on Directory → Policies → Passkey policy or through `clear-passkey-client`. Logged once per realm per process; the registrations themselves are unchanged. | none (service log) |
@@ -1600,6 +1608,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0521` | The passkey history rows older than webauthn.passkeyHistoryDays could not be pruned after a recount (#1109). They are kept, and the next recount tries again. | none — logged |
 | `STS-AUTHN-0522` | A named passkey profile's population could not be read for the day's passkey history row (#1109). The row is written without that profile's counts and says so. | none — logged; the history row records the profile as unread |
 | `STS-AUTHN-0530` | A post-login activity was not started: a group it names is not one this realm has. Each missing name is listed; nothing was started (#1123). | none (HTTP 400 from /admin-api/post-login-activities/start) |
+| `STS-AUTHN-0531` | A new passkey was not enrolled: this realm accepts a passkey neither as a first factor nor as a second factor (webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication policy), so it could never be used (#1135). | action result or page with the reason |
 
 ## STS-OAUTH
 
@@ -2515,6 +2524,20 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0037` | The TLS client certificate on the connection, the requester's only credential, names a person whose account is disabled. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0038` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is not stored in userCertificate on any entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0039` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is stored in userCertificate on more than one entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0040` | A signed RST's WS-Security signature could not be read as one: its structure, its canonicalization, an algorithm or its key reference (the STS-KEYS code in the log line says which). Every mode (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 (wst:AuthenticationBadElements for an uncovered part) |
+| `STS-WSTRUST-0041` | A signed RST names its certificate by a reference that matches no certificate this realm's message-signing Issuing CA issued, and carries none. Every mode (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0042` | The certificate a signed RST names is not a message-signing identity in this realm: another authority, no digitalSignature, another realm, a holder gone, expired or not yet valid. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0043` | The certificate a signed RST names is from an outside authority and is stored in userCertificate on no entry of the realm. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0044` | The certificate a signed RST names is from an outside authority and is stored in userCertificate on more than one entry of the realm. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0045` | A signed RST's WS-Security signature does not verify with the certificate it names, or a signed part was altered. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0046` | A signed RST carries a part of the request (RequestSecurityToken, RequestType, AppliesTo, OnBehalfOf and the rest) outside the signed SOAP Body. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0047` | A signed RST's wsu:Timestamp lacks a readable Created and Expires, or was Created ahead of this service's clock by more than oauth2.clockSkewS. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0048` | A signed RST's wsu:Timestamp has expired, beyond oauth2.clockSkewS. Product (#521). | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0049` | The certificate a signed RST names was refused on revocation. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0050` | A signed RST whose SignatureValue was already accepted was presented again: a replay. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0051` | A signed RST could not be checked against the used-assertion history (not asked, full, or the store could not be asked), so it is refused rather than accepted unchecked. Product (#521). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0052` | A signed RST names a person whose account is disabled. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0053` | A signed RST also carries a UsernameToken, assertion or JWT naming a different requester from its signer. Every mode (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -4915,6 +4938,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0898` | Storing or removing a certificate was refused: the person named has no entry in this realm, and none is created (#1061). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0899` | Storing a certificate on a person's entry was refused: the same certificate is already stored on another entry of the realm, and a certificate stored on two entries names nobody (#1061). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0900` | Removing a stored certificate was refused: the person's entry stores no certificate with that SHA-256 (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0901` | Issuing a person or an application a message-signing certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority) (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0902` | A message-signing certificate's file password was too short, too long, or not the same twice (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0903` | Revoking a person's or an application's message-signing certificate was refused with no more specific code (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0904` | A message-signing certificate action named an application the registry does not hold (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-ADMIN-0905` | A message-signing certificate action named a person with no entry in this realm, and none is created (#521). | HTTP 400 (API) or a refusal on the person's page |
 
 ## STS-API
 
@@ -5026,7 +5054,7 @@ Raised from: portal/.
 | `STS-PORTAL-0004` | The authenticator app setup started during an activation expired before its code was confirmed. | HTTP 400 page |
 | `STS-PORTAL-0005` | The one-time code typed to confirm an authenticator app during an activation did not verify. | HTTP 400 page |
 | `STS-PORTAL-0006` | An activation set a password whose confirmation did not match. | HTTP 400 page |
-| `STS-PORTAL-0007` | An activation chose no way to sign in: no password, and no security key used instead of one. | HTTP 400 page |
+| `STS-PORTAL-0007` | An activation chose no way to sign in: no password, and either no passkey or a realm where a passkey cannot sign anybody in on its own (#1135). | HTTP 400 page |
 | `STS-PORTAL-0008` | A new password set from the portal (at activation or on the password page) was refused by the password policy or could not be written. | HTTP 400 page |
 | `STS-PORTAL-0009` | An authenticator app was asked for during an activation and its enrolment could not be started; the activation finished without it. | — |
 | `STS-PORTAL-0010` *(retired)* | The access policy refused a signed-in person a portal page or action. | HTTP 403 page |
@@ -5098,7 +5126,7 @@ Raised from: portal/.
 | `STS-PORTAL-0098` *(retired)* | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
 | `STS-PORTAL-0099` *(retired)* | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
 | `STS-PORTAL-0100` | A security key was chosen during an activation beside a password and its enrolment could not be started; the activation went on without it. | — |
-| `STS-PORTAL-0101` | A security key was chosen during an activation instead of a password and its enrolment could not be started (the mechanism or role is off, or the authentication policy refuses it), so the activation was refused rather than finished with no way in. | HTTP 400 page |
+| `STS-PORTAL-0101` | A passkey was chosen during an activation instead of a password and its enrolment could not be started (the mechanism is off, or the realm accepts a passkey for no use), so the activation was refused rather than finished with no way in. | HTTP 400 page |
 | `STS-PORTAL-0102` | An activation's security key step did not register a key — the enrolment had expired, the browser ran no ceremony, the RP ID did not fit, or the registration did not verify — and the step was drawn again. | HTTP 400 page |
 | `STS-PORTAL-0163` | A POST to /portal/gnap named a GNAP grant that is not one the signed-in person approved, or one with nothing live left to revoke (#432). | HTTP 400 page |
 | `STS-PORTAL-0243` | A POST to /portal/ciba answered a GNAP access request that is not waiting for the signed-in person: answered already, run out, or somebody else's (#432 phase 6). | HTTP 400 page |

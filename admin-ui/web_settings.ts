@@ -209,7 +209,51 @@ class SettingsForms {
   // beside them so a save that ticks nothing is told apart from a form that
   // does not hold this row; `foldOrderedChoices()` turns them back into the
   // setting's one comma-separated value before the save is checked.
+  //
+  // SELECT ALL / NONE (#1130, rcbj). A switch above the table: on ticks
+  // every value `selectAllValues()` allows, off unticks every one. The
+  // runtime wires it (`ConsoleRuntime.wireOrderedChoices()`), reads the
+  // switches the row's `selectAll` rules follow from the form AS IT STANDS
+  // — so an unsaved change to webauthn.pqcOnly or
+  // webauthn.insecureAlgorithms is obeyed — and keeps the switch showing
+  // whether everything it would tick is ticked. With nothing ticked the
+  // section's Save is disabled and `cfg-ordered-none` says why; the
+  // server's refusal of an empty list (STS-ADMIN-0840) is still the check.
   // ---------------------------------------------------------------------------
+  /**
+   * The values an ordered choice's Select all ticks (#1130): every value,
+   * less those an `onlyWhileOn` rule governs while its switch is off, and
+   * only those an `aloneWhileOn` rule names while its switch is on.
+   *
+   * @param setting - the described setting (`csvValues`, `selectAll`)
+   * @param isOn - optional; answers whether a switch is on, given the rule
+   *   (`{ setting, on, canBeOn }`); the rule's own `on` when omitted
+   * @returns the values, in the list's own order
+   */
+  static selectAllValues(setting: any,
+                         isOn?: (rule: any) => boolean): string[] {
+    const rules = setting.selectAll || {};
+    const on = function (rule: any): boolean {
+      return !!rule.canBeOn && (isOn ? isOn(rule) : !!rule.on);
+    };
+    let out = (setting.csvValues || []).slice();
+    (rules.onlyWhileOn || []).forEach(function (rule: any) {
+      if (!on(rule)) {
+        out = out.filter(function (value: string) {
+          return rule.values.indexOf(value) < 0;
+        });
+      }
+    });
+    (rules.aloneWhileOn || []).forEach(function (rule: any) {
+      if (on(rule)) {
+        out = out.filter(function (value: string) {
+          return rule.values.indexOf(value) >= 0;
+        });
+      }
+    });
+    return out;
+  }
+
   /**
    * Draws an ordered choice from a closed list as a table of checkboxes and
    * order numbers.
@@ -249,8 +293,24 @@ class SettingsForms {
         '<td><code>' + kit.esc(value) + '</code></td>' +
         '<td class="sub">' + kit.esc(notes[value] || '') + '</td></tr>';
     }).join('');
+    // THE SWITCH (#1130) starts on where what is ticked is exactly what
+    // Select all would tick, and carries the row's rules for the runtime.
+    const all = SettingsForms.selectAllValues(setting);
+    const allOn = all.length > 0 && all.length === chosen.length &&
+      chosen.every(function (value) {
+        return all.indexOf(value) >= 0;
+      });
+    const toggle = '<label class="cfg-switch"><input type="checkbox" ' +
+      'role="switch" data-ordered-all="' + kit.esc(key) + '" ' +
+      'data-select-all="' +
+      kit.esc(JSON.stringify(setting.selectAll || {})) + '"' +
+      (allOn ? ' checked' : '') + off + '> <span>' +
+      t.html('consoleSettings.ordered.selectAll') + '</span></label>';
     return '<input type="hidden" name="' + kit.esc(key + '.ordered') +
-      '" value="1">' +
+      '" value="1">' + toggle +
+      '<p class="cfg-ordered-none" data-ordered-none="' + kit.esc(key) +
+      '"' + (chosen.length ? ' hidden' : '') + '>' +
+      t.html('consoleSettings.ordered.chooseOne') + '</p>' +
       '<table class="cfg-ordered"><tr><th>' +
       t.html('consoleSettings.ordered.request') + '</th><th>' +
       t.html('consoleSettings.ordered.order') + '</th>' +

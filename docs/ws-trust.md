@@ -71,7 +71,8 @@ its audience is the `AppliesTo`, its validity window is widened by
 [custom SAML attributes](saml2-sso.md#custom-saml-attributes). Its
 `AuthnContextClassRef` names the credential that was presented:
 `PasswordProtectedTransport` for a UsernameToken, `PreviousSession` for an
-assertion, `TLSClient` for a TLS client certificate, `unspecified` for a
+assertion, `TLSClient` for a TLS client certificate, `X509` for a
+WS-Security signature over the request, `unspecified` for a
 delegation or nothing. The `wsu:Lifetime` around
 it states the lifetime without the skew.
 
@@ -110,7 +111,8 @@ Some claims are left out on purpose:
   is audited.
 * **No `auth_time` or `acr`.** RFC 9068 makes them optional. **`amr`** is
   carried on a token about the requester itself (#1046): `["pwd"]` for a
-  UsernameToken, `["swk"]` for a TLS client certificate. A delegated token,
+  UsernameToken, `["swk"]` for a TLS client certificate or a signed request
+  (#521). A delegated token,
   and one issued on an assertion or a JWT, carries none.
 
 `iss` is the realm's OAuth issuer, so RFC 9068 section 4's check against the
@@ -136,8 +138,10 @@ element that holds somebody else's token:
 * a **SAML assertion** (SAML 2.0 or SAML 1.1) in the security header;
 * a **JWT** this service issued, in the `wsse:BinarySecurityToken` an RSTR
   hands one back in (ValueType `urn:ietf:params:oauth:token-type:jwt`);
+* a **WS-Security signature over the request** (#521), made with a
+  message-signing certificate — see below. It is asked first;
 * the **TLS client certificate** on the connection, when `wsse:Security`
-  carries none of the three above (#1046) — see below;
+  carries none of the above (#1046) — see below;
 * a request with **no credential** (development only — see below).
 
 #### The TLS client certificate
@@ -180,9 +184,84 @@ curl --cert alice.pem --key alice-key.pem --cacert root.pem \
 
 where `rst.xml` is an `Issue` with an empty `wsse:Security` header (or none).
 
-A WS-Security **X.509 `BinarySecurityToken` with a signature over the
-request** is not a credential here: request signatures are not verified (see
-*Not implemented*).
+#### A signed request
+
+A requester may sign its RST instead of presenting a password or a token
+(WS-Security 1.1 with the X.509 Token Profile 1.1, #521). The `ds:Signature`
+is a child of the one `wsse:Security` header and must cover, by `wsu:Id`,
+**the** SOAP `Body` (the Envelope's own child) and **the** `wsu:Timestamp` of
+that header. The certificate is named by the signature's
+`wsse:SecurityTokenReference`, in any of four forms:
+
+* a `wsse:Reference` to an X.509 v3 `wsse:BinarySecurityToken` in the same
+  header, which carries the certificate;
+* a `wsse:KeyIdentifier` with the certificate's SHA-1 thumbprint
+  (`#ThumbprintSHA1`);
+* a `wsse:KeyIdentifier` with its Subject Key Identifier
+  (`#X509SubjectKeyIdentifier`);
+* an `ds:X509IssuerSerial`.
+
+The last three find a certificate this realm's **message-signing** Issuing CA
+issued; a certificate stored on an entry is sent in a BinarySecurityToken.
+
+**Which certificates count.** Each authenticates exactly one person or
+application, and nothing else does:
+
+* a **message-signing certificate** this realm issued — from the realm's
+  `message-signing` Issuing CA ([PKI](pki.md)), `digitalSignature` only, the
+  holder's `urn:sts:person:` or `urn:sts:application:` name. An administrator
+  issues one to a person on `/admin/users` or to an application on
+  `/admin/applications` (and through `/admin-api`); the private key is handed
+  over once;
+* a certificate from **any other authority stored byte for byte in
+  `userCertificate`** on exactly one person's or application's entry
+  ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority) says how
+  to store one), whose key usage includes `digitalSignature`.
+
+A TLS client certificate is **not** a message-signing credential, and a
+message-signing certificate signs nobody in over TLS. A certificate nobody
+holds authenticates nobody: its common name and subject are never read.
+
+**What product mode checks**, each refusal with its own
+[error code](error-codes.md):
+
+| Check | Refused as |
+|---|---|
+| One signature; unique ids; exclusive XML canonicalization; the Body and the Timestamp covered; an algorithm this service verifies (SHA-1 only with `saml.allowSha1Signatures`, never in product); a key reference it reads | `STS-WSTRUST-0040`, `wst:FailedAuthentication` (`wst:AuthenticationBadElements` when the Body or the Timestamp is not covered) |
+| The reference finds a certificate | `0041` |
+| The certificate is a message-signing identity of this realm, valid now; stored on exactly one entry | `0042`; `0043` stored on none; `0044` on two |
+| The signature verifies with that certificate, and no signed part was altered | `0045` |
+| Every part of the request (the `RequestSecurityToken`, its `RequestType`, `AppliesTo`, `OnBehalfOf` and the rest) is inside the signed Body | `0046` |
+| The Timestamp has a `Created` and an `Expires`; `Created` is not ahead of the clock and `Expires` not behind it, each by `oauth2.clockSkewS` | `0047`; `0048`, `wst:ExpiredData`, when expired |
+| The certificate is not revoked: the register for one this realm issued, the certificate's own OCSP responder and CRL for a stored one, under `pki.revocationCheck` | `0049` |
+| The request was not accepted before: its signature is spent once in the [used-assertion history](oauth-oidc.md) until the Timestamp expires | `0050`; `0051`, `wst:RequestFailed`, when the history cannot be asked |
+| A person's account is not disabled | `0052` |
+
+A replay is refused only after a request is answered: a request refused for
+some other reason may be signed again and sent.
+
+**Beside another credential.** The signature authenticates. A UsernameToken,
+an assertion or a JWT in the same header is still checked (a password is
+verified in product) and must name the same person or application, or the
+request is refused (`STS-WSTRUST-0053`) in every mode.
+
+**What the token says.** `X509` as a SAML 2.0 `AuthnContextClassRef`,
+`urn:oasis:names:tc:SAML:1.0:am:X509-PKI` as a SAML 1.1
+`AuthenticationMethod`, and `amr` `["swk"]` in a JWT. A person's signature
+starts a session; an application's starts none. With `OnBehalfOf` or `ActAs`
+the signer is the requester the [delegation policy](delegation.md) asks about.
+
+**In development** the certificate is read and believed, as a UsernameToken
+is: the signature's structure and its certificate reference are still read,
+and the holder is whoever the certificate maps to, else the name in its
+`urn:sts:` subjectAltName, else its common name. The signature value, the
+Timestamp, revocation and replay are not checked, and the authentication
+row says so.
+
+A client builds the request with any WS-Security 1.1 stack (Apache WSS4J,
+Metro, .NET's `SecurityBindingElement`), configured to sign the Body and the
+Timestamp with exclusive canonicalization and an X.509 token. The key and
+certificate come from the PKCS#12 the console hands over.
 
 Any of the three token types can be the credential, the token inside
 `OnBehalfOf` / `ActAs`, and the token issued, in any combination. So a
@@ -271,9 +350,12 @@ development and refused in product.
 
 ### Not implemented
 
-Request signatures are not verified, so a WS-Security X.509
-`BinarySecurityToken` signed over the request authenticates nobody (the TLS
-client certificate on the connection does, above); `Validate` reports whether a token is
+A signed request's certificate is found by thumbprint, issuer and serial or
+Subject Key Identifier only among the certificates this realm issued; a
+stored one is sent in a `BinarySecurityToken`. Only a signature over the
+request is read: a signed or encrypted response is not offered, and
+`?encrypt=1` reads its recipient from an `X509Certificate`, not a
+`BinarySecurityToken`. `Validate` reports whether a token is
 **present**, not whether it verifies; `Cancel` recalls nothing already issued;
 and a SAML assertion presented as a credential is trusted only when **this**
 STS signed it — there is no register of foreign issuers.
@@ -289,8 +371,9 @@ codes, in the request's own trust namespace: on SOAP 1.1 it is the
 | The body is not well-formed XML | `wst:InvalidRequest` |
 | An `AppliesTo` that resolves to no registered application (product) | `wst:InvalidScope` |
 | No `AppliesTo`, or an empty one, on a request that issues (product) | `wst:InvalidRequest` |
-| The requester's credential is incomplete, wrong, or an assertion or JWT that does not verify, is not yet valid, names nobody or is addressed neither to its holder nor to this IdP (product); no credential at all (product); a delegation with no requester credential (product) | `wst:FailedAuthentication` |
-| An assertion or a JWT, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired | `wst:ExpiredData` |
+| The requester's credential is incomplete, wrong, or an assertion or JWT that does not verify, is not yet valid, names nobody or is addressed neither to its holder nor to this IdP (product); no credential at all (product); a delegation with no requester credential (product); a signed request refused for its signature, certificate or a replay (see [A signed request](#a-signed-request)) | `wst:FailedAuthentication` |
+| A signed request whose signature does not cover the Body or the Timestamp | `wst:AuthenticationBadElements` |
+| An assertion or a JWT, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired; a signed request whose Timestamp has expired (product) | `wst:ExpiredData` |
 | The token inside `OnBehalfOf` / `ActAs` is not an assertion or a JWT this STS issued, or does not verify, is not yet valid or names nobody (product) | `wst:InvalidRequest` |
 | Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; `?encrypt=1` with no recipient certificate (product) | `wst:InvalidRequest` |
 | The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; `?encrypt=1` to a certificate that cannot be used (product); a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
@@ -311,6 +394,7 @@ in [Error codes](error-codes.md).
 | A UsernameToken naming an application | any password but `invalid` | one of the application's unexpired client secrets |
 | A SAML assertion as the credential | believed | must verify against this realm's own signing certificate (`/sts/cert`) and be inside its `Conditions` |
 | A TLS client certificate as the credential | the same as product: it must verify and be this realm's, for a person or an application; a refused one is a fault | as development |
+| A signed request | its structure and certificate reference are read and the certificate's holder believed; the signature, Timestamp, revocation and replay are not checked | every check in [A signed request](#a-signed-request) |
 | A JWT as the credential | believed | must verify with this realm's own key (`/oauth2/jwks`), be within its `exp`, carry the realm's OAuth issuer, and name a person or an application this realm holds |
 | `OnBehalfOf` / `ActAs` | needs no requester credential | needs the requester's own credential, and the inner token must be an assertion or a JWT this STS signed |
 | Who may act for whom | the issuance policy is asked and the act says what would have been refused; the token is issued | the policy must allow the act ([Delegation and impersonation](delegation.md)), or a `wst:RequestFailed` fault |

@@ -63,6 +63,10 @@
     "en": "903e048677f8ab58",
     "text": "使用者在使用者入口網站上自行簽發的 TLS 用戶端憑證：clientAuth、該人的 urn:sts:person: 名稱，以及以 PKCS#12 只交付一次的私密金鑰。此授權單位簽發的憑證可在此領域中於主連接埠的 GET /tls/sign-in 讓持有者登入；本服務其他任何授權單位簽發的憑證則不行，儘管它們全都鏈結到同一個根憑證。"
   },
+  "pki.useCases.message-signing.what": {
+    "en": "4aacf430b5a390f0",
+    "text": "個人或應用程式用來簽署 WS-Trust 請求的憑證（對 SOAP Body 和 Timestamp 的 WS-Security 1.1 簽章）：只有 digitalSignature、持有者的 urn:sts:person: 或 urn:sts:application: 名稱，以及以 PKCS#12 形式只交付一次的私密金鑰。由管理員從主控台或 /admin-api 簽發。此授權單位的憑證在此領域中將其持有者驗證為已簽署 RST 的請求者；本服務的 TLS 用戶端憑證不能這樣做，而此憑證也不透過 TLS 讓任何人登入。"
+  },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
     "text": "已註冊的 OAuth 用戶端或信賴方。其金鑰組會寫入其在 ou=applications 中的自身項目。"

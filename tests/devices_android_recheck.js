@@ -398,7 +398,7 @@ async function skips(t, realm) {
     return credentials.addKey(name, { credentialId: 'and-added',
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
       signCount: 0, attestation: JSON.parse(keyValue('x', true, true,
-        serialOf(1))).attestation }, 'mfa');
+        serialOf(1))).attestation });
   });
   const stateAfter = realms.run(realm, function () {
     return JSON.stringify(revocationState());

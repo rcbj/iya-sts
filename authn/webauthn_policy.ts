@@ -94,7 +94,7 @@ import errorCodes = require('../common/error_codes');
 // `error_codes`, both already here.
 import mode = require('../common/mode');
 // THE AUTHENTICATION POLICY (#64): its passkey and security-key rows are
-// asked in `roleAllowed()`. A LEAF, so no cycle.
+// asked in `useAllowed()`. A LEAF, so no cycle.
 import authnPolicy = require('../common/authn_policy');
 // #527: the passkey policy, a leaf, which since 2026-10-08 decides the
 // usernameless sign-in and a security key's resident key.
@@ -1518,10 +1518,10 @@ class WebauthnPolicy {
   }
 
   // ASKED AT THE START OF AN ENROLMENT AND AGAIN AT THE WRITE, like
-  // `roleAllowed()`: a page is markup, and a lane posted by hand, or a switch
-  // turned off while somebody was touching their key, must not put a key in
-  // a lane the realm does not offer. **IT REFUSES AN ENROLMENT AND NEVER A
-  // SIGN-IN**: a post-quantum key enrolled while the switch was on goes on
+  // `enrolmentAllowed()`: a page is markup, and a lane posted by hand, or a
+  // switch turned off while somebody was touching their key, must not put a
+  // key in a lane the realm does not offer. **IT REFUSES AN ENROLMENT AND
+  // NEVER A SIGN-IN**: a post-quantum key enrolled while the switch was on goes on
   // signing in after it is turned off, for `webauthn.enabled`'s reason.
   /**
    * Decides whether a new passkey may be created in a lane.
@@ -1697,82 +1697,117 @@ class WebauthnPolicy {
     return this.settings().enabled;
   }
 
-  // May a key be enrolled in this role? ONE function for both roles rather than
-  // two predicates, so that a caller cannot check the wrong one — `roleAllowed`
-  // takes the role it is about to write, which is the same string
-  // `credentials.addKey()` will be handed.
+  // HOW A KEY MAY BE USED IN THIS REALM (#1135). A key carries no role: the
+  // person is never asked at enrolment whether it will be a way IN on its own
+  // (passwordless) or a second factor beside a password, and every key they
+  // hold answers both, as this realm allows. What decides is the realm —
+  // `webauthn.primaryAllowed`, `webauthn.mfaAllowed` and the authentication
+  // policy's passkey and security-key rows (#64) — asked HERE, at the sign-in,
+  // for every key alike. ONE function for both uses rather than two
+  // predicates, so that a caller cannot check the wrong one: `use` is the
+  // step the key is about to answer.
   //
-  // **IT ANSWERS ABOUT ENROLMENT AND NEVER ABOUT AUTHENTICATION.** A key
-  // already enrolled in a role that has since been turned off goes on working,
-  // for `webauthn.enabled`'s reason: an account configured for two factors is
-  // still configured for two, and a setting that silently downgraded it would
-  // be a security control whose off switch does something other than what it
-  // says. Worse for `primary`, where the person's ONLY credential would be the
-  // one being switched off — an operator moving a knob must not be able to lock
-  // somebody out of their own account.
+  // (Until #1135 this was `roleAllowed()`, which answered about ENROLMENT in a
+  // role and never about authentication, so a key enrolled in a role later
+  // switched off went on working. With no role there is nothing to enrol
+  // into, and a switch that did not stop the use it names would be a control
+  // whose off switch does something other than what it says.)
   /**
-   * Decides whether a new key may be enrolled in a role, or used as a first
-   * factor.
+   * Decides whether a passkey may answer a sign-in step in this realm: as a
+   * first factor (`primary`, passwordless) or as a second factor (`mfa`).
    *
-   * Answers about enrolment only: a key already enrolled in a role since
-   * switched off goes on working. Asks the realm's authentication policy
-   * after this module's own settings.
-   * @param role - `primary` or `mfa`
+   * Asks this module's own settings, then the realm's authentication policy.
+   * `webauthn.enabled` is not one of them: it stops enrolment, never a key
+   * already held (`enrolmentAllowed()`).
+   * @param use - `primary` or `mfa`
    * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
    */
-  roleAllowed(role) {
+  useAllowed(use) {
     const { log, errorCodes } = this.deps;
-    log.debug('Entering WebauthnPolicy.roleAllowed(). role=' + role);
+    log.debug('Entering WebauthnPolicy.useAllowed(). use=' + use);
     const live = this.settings();
-    if (!live.enabled) {
-      log.debug('Leaving WebauthnPolicy.roleAllowed(). WebAuthn is not ' +
-                'offered here.');
+    // `webauthn.enabled` OFF STOPS NEW KEYS AND NEVER A HELD ONE, as it
+    // always has: an account configured for two factors stays configured
+    // for two, and a switch about offering passkeys must not quietly take a
+    // person's second factor — or, for a passwordless person, their account
+    // — away. The two USE switches below are the ones that decide a use.
+    if (String(use) === 'primary' && !live.primaryAllowed) {
+      log.debug('Leaving WebauthnPolicy.useAllowed(). A passkey may not be ' +
+                'a first factor here.');
       return errorCodes.mark({ ok: false,
-               why: 'Security keys are switched off in this realm ' +
-                    '(webauthn.enabled). A key already enrolled goes on ' +
-                    'working; no new one can be enrolled.' }, 'STS-AUTHN-0044');
+               why: 'A passkey cannot sign anybody in on its own in this ' +
+                    'realm (webauthn.primaryAllowed). Sign in with a ' +
+                    'password, and your passkey is asked for next where the ' +
+                    'realm allows it.' }, 'STS-AUTHN-0045');
     }
-    if (String(role) === 'primary' && !live.primaryAllowed) {
-      log.debug('Leaving WebauthnPolicy.roleAllowed(). Primary keys are not ' +
-                'allowed here.');
+    if (String(use) === 'mfa' && !live.mfaAllowed) {
+      log.debug('Leaving WebauthnPolicy.useAllowed(). A passkey may not be ' +
+                'a second factor here.');
       return errorCodes.mark({ ok: false,
-               why: 'A security key cannot be the only credential on an ' +
-                    'account in this realm (webauthn.primaryAllowed). Enrol ' +
-                    'it as a second factor beside a password ' +
-                    'instead.' }, 'STS-AUTHN-0045');
-    }
-    if (String(role) === 'mfa' && !live.mfaAllowed) {
-      log.debug('Leaving WebauthnPolicy.roleAllowed(). Second-factor keys ' +
-                'are not allowed here.');
-      return errorCodes.mark({ ok: false,
-               why: 'A security key cannot be a second factor in this realm ' +
+               why: 'A passkey cannot be a second factor in this realm ' +
                     '(webauthn.mfaAllowed). An authenticator app is the ' +
                     'other one, where the authentication policy allows ' +
                     'it.' }, 'STS-AUTHN-0046');
     }
     // THE AUTHENTICATION POLICY'S TWO ROWS (#64), asked after this module's
-    // own settings and with the same contract: a key already enrolled goes
-    // on being asked for as a second factor, and what the row stops is a
-    // NEW one, or — as a first factor — signing in with one at all.
+    // own settings and with the same contract. The mechanism names stay the
+    // stored policy's (`passkey` as a first factor, `securityKey` as a second
+    // factor) although since #1135 they name one key used two ways.
     const policyRow: { mechanism: string;
                        as: 'primary' | 'second-factor';
-                       code: string } = String(role) === 'primary'
+                       code: string } = String(use) === 'primary'
       ? { mechanism: 'passkey', as: 'primary', code: 'STS-AUTHN-0253' }
       : { mechanism: 'securityKey', as: 'second-factor',
           code: 'STS-AUTHN-0254' };
     if (!authnPolicy.allows(policyRow.mechanism, policyRow.as)) {
-      log.debug('Leaving WebauthnPolicy.roleAllowed(). The authentication ' +
+      log.debug('Leaving WebauthnPolicy.useAllowed(). The authentication ' +
                 'policy does not accept it.');
       return errorCodes.mark({ ok: false,
-               why: String(role) === 'primary'
+               why: String(use) === 'primary'
                  ? 'This realm\'s authentication policy does not accept a ' +
-                   'security key or passkey as a first factor. Sign in with ' +
-                   'what it does accept.'
+                   'passkey as a first factor. Sign in with what it does ' +
+                   'accept.'
                  : 'This realm\'s authentication policy does not accept a ' +
-                   'NEW security key as a second factor. A key already ' +
-                   'enrolled goes on working.' }, policyRow.code);
+                   'passkey as a second factor.' }, policyRow.code);
     }
-    log.debug('Leaving WebauthnPolicy.roleAllowed(). Allowed.');
+    log.debug('Leaving WebauthnPolicy.useAllowed(). Allowed.');
+    return { ok: true };
+  }
+
+  // MAY A NEW KEY BE ENROLLED AT ALL (#1135): WebAuthn on, and at least one
+  // use of a key accepted in this realm. A realm that accepts a passkey
+  // neither on its own nor as a second factor would otherwise collect keys
+  // that can never answer anything, which reads to the person as a broken
+  // passkey rather than as the realm's choice. Asked at the start of every
+  // enrolment and again at the write, like `laneRefusal()`.
+  /**
+   * Decides whether a new passkey may be enrolled in this realm.
+   *
+   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
+   */
+  enrolmentAllowed() {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering WebauthnPolicy.enrolmentAllowed().');
+    if (!this.settings().enabled) {
+      log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). WebAuthn is not ' +
+                'offered here.');
+      return errorCodes.mark({ ok: false,
+               why: 'Passkeys are switched off in this realm ' +
+                    '(webauthn.enabled). A passkey already registered goes ' +
+                    'on being listed; no new one can be registered.' },
+               'STS-AUTHN-0044');
+    }
+    if (!this.useAllowed('primary').ok && !this.useAllowed('mfa').ok) {
+      log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). No use of a key ' +
+                'is accepted here.');
+      return errorCodes.mark({ ok: false,
+               why: 'This realm accepts a passkey neither as a way to sign ' +
+                    'in on its own nor as a second factor ' +
+                    '(webauthn.primaryAllowed, webauthn.mfaAllowed and the ' +
+                    'authentication policy), so a new one could never be ' +
+                    'used.' }, 'STS-AUTHN-0531');
+    }
+    log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). Allowed.');
     return { ok: true };
   }
 
@@ -2059,6 +2094,54 @@ class WebauthnPolicy {
   // service does not do.
   // ---------------------------------------------------------------------------
   /**
+   * The algorithm rows of `report()` (#1130): every algorithm the verifier
+   * knows, the offered ones first in the order they are requested and
+   * numbered from 1, then the rest in the verifier's table order, each of
+   * those with the reason it is not offered.
+   *
+   * @param live - `settings()`, already read
+   * @returns the rows
+   */
+  private reportAlgorithms(live: { algorithms: string[];
+                                   insecureAlgorithms: boolean }) {
+    const { log, webauthn } = this.deps;
+    log.debug('Entering WebauthnPolicy.reportAlgorithms().');
+    const narrowed = this.requestsPostQuantumOnly() ||
+                     this.requiresPostQuantumAt('registration');
+    const classicalOnly = this.registrationMode() === 'classical-only';
+    const offered = live.algorithms.map(function (name) {
+      return String(ALG_IDS[name]);
+    }).filter(function (id) {
+      return webauthn.COSE_ALGS[id] !== undefined;
+    });
+    const rest = Object.keys(webauthn.COSE_ALGS).filter(function (id) {
+      return offered.indexOf(id) < 0;
+    });
+    const out = offered.concat(rest).map(function (id: string) {
+      const name = webauthn.COSE_ALGS[id];
+      const rank = live.algorithms.indexOf(name);
+      const postQuantum = PQC_ALGS.indexOf(name) >= 0;
+      const insecure = INSECURE_ALGS.indexOf(name) >= 0;
+      // THE FIRST REASON THAT APPLIES: an insecure one is dropped whatever
+      // the list says, a classical one under a post-quantum narrowing and
+      // an ML-DSA one under `classical-only` likewise; otherwise the list
+      // does not name it.
+      const because = rank >= 0 ? undefined
+        : (insecure && !live.insecureAlgorithms ? 'insecure-off'
+          : (!postQuantum && narrowed ? 'post-quantum-only'
+            : (postQuantum && classicalOnly ? 'classical-only'
+              : 'not-chosen')));
+      return { name: name, coseAlg: Number(id), offered: rank >= 0,
+               rank: rank >= 0 ? rank + 1 : undefined,
+               notOfferedBecause: because,
+               postQuantum: postQuantum, insecure: insecure };
+    });
+    log.debug('Leaving WebauthnPolicy.reportAlgorithms(). ' + offered.length +
+              ' offered of ' + out.length + '.');
+    return out;
+  }
+
+  /**
    * Describes the relying party for `/admin/webauthn` and
    * `/admin/crypto-metadata`: every algorithm and curve the verifier knows,
    * which are offered, and the ceremony and attestation settings.
@@ -2080,13 +2163,20 @@ class WebauthnPolicy {
       // — rather than only the offered ones. A page that listed two rows could
       // not answer the question somebody comes to it with, which is *what else
       // could I ask for*.
-      algorithms: Object.keys(webauthn.COSE_ALGS).map(function (id) {
-        const name = webauthn.COSE_ALGS[id];
-        return { name: name, coseAlg: Number(id),
-                 offered: live.algorithms.indexOf(name) >= 0,
-                 postQuantum: PQC_ALGS.indexOf(name) >= 0,
-                 insecure: INSECURE_ALGS.indexOf(name) >= 0 };
-      }),
+      //
+      // IN THE ORDER THEY ARE REQUESTED (#1130): the offered rows first,
+      // numbered as `pubKeyCredParams` sends them, then the rest in the
+      // verifier's table order. It was the table order throughout, so the
+      // Metadata tab and the Settings tab's ordered choice disagreed on
+      // every realm whose list was not the table's own order — the default
+      // among them. A row not offered says why (`notOfferedBecause`).
+      algorithms: this.reportAlgorithms(live),
+      // WHERE THE LIST CAME FROM (#1130): the realm's webauthn.algorithms,
+      // or the selected passkey profile's `registrationAlgorithms`, which
+      // replaces it for that profile's people.
+      algorithmsSource: this.registrationRows().registrationAlgorithms.length
+        ? 'passkey-profile' : 'realm',
+      registrationMode: this.registrationMode(),
       insecureAlgorithms: live.insecureAlgorithms,
       pqcOnly: live.pqcOnly,
       // THE LANES (#643): the switch, and each lane's algorithms while on.
@@ -2183,7 +2273,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   settings: slot.forward('settings'),
   offered: slot.forward('offered'),
-  roleAllowed: slot.forward('roleAllowed'),
+  useAllowed: slot.forward('useAllowed'),
+  enrolmentAllowed: slot.forward('enrolmentAllowed'),
   algorithmsOffered: slot.forward('algorithmsOffered'),
   algorithmIds: slot.forward('algorithmIds'),
   insecureAlgorithmsAllowed: slot.forward('insecureAlgorithmsAllowed'),

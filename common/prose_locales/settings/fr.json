@@ -1288,20 +1288,20 @@
     "text": "Envoie `extensions: { credProps: true }` à l’enregistrement, ce qui demande au navigateur de signaler si l’identifiant qu’il a créé est effectivement découvrable. C’est le seul moyen de le savoir : `residentKey: \"preferred\"` peut en produire un ou non, et rien dans l’attestation ne dit lequel. Ce service ENREGISTRE la réponse à côté de la clé et ne décide rien sur cette base. Désactivé, c’est le moyen de voir ce que fait un client sans aucun résultat d’extension."
   },
   "webauthn.primaryAllowed|label": {
-    "en": "babf8baa8c13cb1d",
-    "text": "Autoriser une clé comme identifiant PRINCIPAL"
+    "en": "0692ab5332b96080",
+    "text": "Autoriser une clé d’accès comme PREMIER facteur (sans mot de passe)"
   },
   "webauthn.primaryAllowed|description": {
-    "en": "2922360bf8d031ec",
-    "text": "Indique si une clé de sécurité peut être le SEUL identifiant d’un compte — une connexion sans mot de passe, `amr [\"hwk\"]`. Le désactiver laisse les clés fonctionner comme SECOND facteur et refuse le chemin sans mot de passe à l’écran de connexion ainsi que le choix `primary` dans le portail. **Cela ne désactive pas une clé principale que quelqu’un détient déjà**, pour la raison de `webauthn.enabled` — et il y a ici un risque plus aigu : quelqu’un dont le seul identifiant est une clé principale serait exclu de son propre compte par un opérateur actionnant un interrupteur, ce qu’un paramètre ne devrait pas pouvoir faire."
+    "en": "b7a0b2eefdb42a05",
+    "text": "Si une clé d’accès peut être un premier facteur dans ce domaine — une connexion sans mot de passe, `amr [\"hwk\"]` — sauf si la liste propre d’une application (`appAuthnMechanism`) en dispose autrement. C’est ce que le domaine prend en charge, à côté de la ligne clé d’accès de la politique d’authentification, et la question est posée à chaque connexion, de la même façon pour chaque clé d’accès que détient une personne : une clé d’accès n’a pas de rôle (#1135), donc ce réglage décide de ce que chacune peut faire, non de ce comme quoi elle est enrôlée. Désactivé, la voie sans mot de passe disparaît de l’écran de connexion et une clé d’accès ne répond qu’à la seconde étape après un mot de passe, là où `webauthn.mfaAllowed` le permet. **Désactivé, une personne dont le seul identifiant est une clé d’accès ne peut pas se connecter** tant qu’on ne lui a pas donné de mot de passe (un lien de réinitialisation, par exemple) : jusqu’à #1135, ce commutateur ne refusait qu’un enrôlement, et une clé déjà détenue continuait de la connecter. Une clé d’accès peut être enrôlée tant que ce réglage ou `webauthn.mfaAllowed` est activé ; avec les deux désactivés, l’enrôlement est refusé."
   },
   "webauthn.mfaAllowed|label": {
-    "en": "662710b8b41f9e04",
-    "text": "Autoriser une clé comme SECOND facteur"
+    "en": "ca70f14ff60f2006",
+    "text": "Autoriser une clé d’accès comme SECOND facteur"
   },
   "webauthn.mfaAllowed|description": {
-    "en": "9c50c02bf162b58c",
-    "text": "Indique si une clé de sécurité peut être enrôlée comme second facteur à côté d’un mot de passe. Désactivé, le second facteur restant est l’application d’authentification (la ligne TOTP de la politique d’authentification), et un déploiement où les deux sont désactivés ne propose aucun second facteur — c’est une configuration prise en charge, et ce que faisait ce service avant que l’un ou l’autre existe. **Une clé `mfa` enrôlée continue d’être exigée à l’écran de connexion**, car ce compte est toujours configuré pour deux facteurs ; voir `webauthn.enabled`."
+    "en": "37b9c4c2beaade6e",
+    "text": "Si une clé d’accès peut être un second facteur dans ce domaine, après un mot de passe ou un autre premier facteur, sauf si la liste propre d’une application (`appMfaMechanism`) en dispose autrement. C’est ce que le domaine prend en charge, à côté de la ligne clé d’accès en second facteur de la politique d’authentification, et la question est posée à chaque connexion, de la même façon pour chaque clé d’accès que détient une personne : une clé d’accès n’a pas de rôle (#1135). Désactivé, le second facteur restant est l’application d’authentification (la ligne TOTP de la politique d’authentification), et un déploiement où les deux sont désactivés n’offre aucun second facteur — ce qui est une configuration prise en charge et ce que faisait ce service avant que l’un ou l’autre n’existe. **Désactivé, aucune clé d’accès ne répond à la seconde étape**, et une personne dont le seul second facteur est une clé d’accès n’en détient aucun aux yeux de l’écran de connexion. Une clé d’accès peut être enrôlée tant que ce réglage ou `webauthn.primaryAllowed` est activé ; avec les deux désactivés, l’enrôlement est refusé."
   },
   "webauthn.maxKeysPerPerson|label": {
     "en": "420a47f86dc03485",
@@ -3242,6 +3242,14 @@
   "pki.applicationTlsClientCertificateMax|description": {
     "en": "286a6641dd93e940",
     "text": "Nombre de certificats client TLS encore valides qu’un administrateur peut émettre pour une application depuis sa section Identifiants dans /admin/applications ou via POST /admin-api/applications/issue-tls-client-certificate — un par instance, ou deux pendant la rotation d’un certificat. Un certificat révoqué ou expiré n’est pas compté. Au-delà, l’émission est refusée (STS-PKI-0180) plutôt que de révoquer un certificat qu’une instance en cours d’exécution présente peut-être encore."
+  },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "Certificats de signature de messages qu’un détenteur peut détenir"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "Nombre de certificats de signature de messages encore valides (ceux avec lesquels un demandeur WS-Trust signe sa requête) qu’un administrateur peut émettre pour une personne ou une application, depuis /admin/users, /admin/applications ou /admin-api. Un certificat révoqué ou expiré n’est pas compté. Au-delà, l’émission est refusée (STS-PKI-0220) plutôt que de révoquer un certificat avec lequel quelqu’un signe peut-être encore."
   },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",

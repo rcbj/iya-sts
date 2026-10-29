@@ -1345,6 +1345,455 @@ function verifyXmlSignature(xml, opts) {
   return verdict;
 }
 
+// ===========================================================================
+// A WS-SECURITY MESSAGE SIGNATURE (#521, rcbj 2026-10-28): the signature a
+// WS-Security 1.1 requester puts in its `wsse:Security` header over the SOAP
+// Body and the `wsu:Timestamp`, with the key of an X.509 certificate the
+// header names (the X.509 Token Profile 1.1).
+//
+// It is NOT the shape `verifyXmlSignature()` above checks, and that is why it
+// is a function of its own: that one is an ENVELOPED signature, a child of the
+// one element it covers. This one is a sibling of what it covers — a child of
+// the security header, with one Reference per signed part, each by its
+// `wsu:Id` — so "which element is signed" is answered by the references, and
+// the references are exactly what a signature-wrapping attack rewrites. The
+// guards, each a refusal of its own (STS-KEYS-0159 to 0164):
+//
+//   * THE PARTS ARE FOUND BY POSITION, NEVER BY ID. THE Body is the direct
+//     child of the Envelope; THE Timestamp is the direct child of THE
+//     security header, which is the one direct child of the Header. An id
+//     says which element a Reference means; the position says which element
+//     the RECEIVER will act on. The signature counts only when the two agree:
+//     a Reference to `#body` that resolves to a copy hidden in the header
+//     while the real Body carries a different request is the attack, and it
+//     is refused because the real Body's id is not referenced.
+//   * EVERY ID IN THE DOCUMENT IS UNIQUE, or nothing is verified. The engine
+//     resolves a Reference to the first element carrying its id, so two
+//     elements sharing the Body's id is the other half of the same attack.
+//   * EXCLUSIVE CANONICALIZATION ONLY, for the SignedInfo and for every
+//     Reference (WS-I Basic Security Profile 1.1, R5404 and R5412). The parts
+//     are nested elements, and inclusive c14n of one depends on namespace
+//     declarations its ancestors make, which `verifyXmlSignature()` explains
+//     at length; here there is no reason to accept it.
+//   * EVERY REFERENCE IS A SAME-DOCUMENT `#id`. URI="" (the whole envelope)
+//     covers parts the security header itself rewrites in transit, and
+//     anything else is a fetch.
+//
+// SECTION 1a's ALGORITHM TABLE AND SHA-1 POLICY apply exactly as they do to
+// every XML signature this service checks (`xmlAlgorithmVerdict()`). The key
+// is the CALLER's: `readWsSecuritySignature()` says which certificate the
+// header names — a `wsse:BinarySecurityToken` by reference, or a
+// `wsse:SecurityTokenReference` by thumbprint, by issuer and serial, or by
+// Subject Key Identifier — and `verifyWsSecuritySignature()` verifies with
+// the certificate the caller resolved, and never with one it found itself.
+// Who the certificate IS, whether it is revoked and whether the message is
+// fresh and new are the caller's questions too (`ws-trust/wstrust.ts`).
+// ===========================================================================
+const WSSE_NS = 'http://docs.oasis-open.org/wss/2004/01/' +
+  'oasis-200401-wss-wssecurity-secext-1.0.xsd';
+const WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/' +
+  'oasis-200401-wss-wssecurity-utility-1.0.xsd';
+const EXC_C14N = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+
+// The id of an element, in every spelling this document could give one —
+// `wsu:Id` first, which is the WS-Security spelling.
+function wsuIdOf(element) {
+  log.debug("Entering wsuIdOf().");
+  const wsu = element.getAttributeNS
+    ? element.getAttributeNS(WSU_NS, 'Id') : '';
+  log.debug("Leaving wsuIdOf().");
+  return wsu || idOf(element);
+}
+
+// Every id-like attribute value in the document, and which ones appear more
+// than once. `wsu:Id` is in ID_ATTRIBUTES by its local name.
+function duplicateIdsOf(doc) {
+  log.debug("Entering duplicateIdsOf().");
+  const seen = {};
+  const twice = [];
+  const all = doc.getElementsByTagName('*');
+  for (let i = 0; i < all.length; i++) {
+    const attrs = all[i].attributes;
+    for (let j = 0; attrs && j < attrs.length; j++) {
+      const name = attrs[j].localName || attrs[j].name;
+      if (ID_ATTRIBUTES.indexOf(name) < 0) {
+        continue;
+      }
+      const value = String(attrs[j].value || '');
+      if (Object.prototype.hasOwnProperty.call(seen, value)) {
+        if (twice.indexOf(value) < 0) {
+          twice.push(value);
+        }
+      } else {
+        seen[value] = true;
+      }
+    }
+  }
+  log.debug("Leaving duplicateIdsOf(). " + twice.length + " repeated.");
+  return twice;
+}
+
+// The direct children of an element with one local name.
+function directChildrenByLocal(parent, localName) {
+  log.debug("Entering directChildrenByLocal().");
+  const out = [];
+  for (let child = parent ? parent.firstChild : null; child;
+       child = child.nextSibling) {
+    if (child.nodeType === 1 && child.localName === localName) {
+      out.push(child);
+    }
+  }
+  log.debug("Leaving directChildrenByLocal().");
+  return out;
+}
+
+// What the signature's KeyInfo says the key is, in the four forms the X.509
+// Token Profile 1.1 gives a requester (sections 3.2 and 3.3): the token
+// itself by reference, its SHA-1 thumbprint (SOAP Message Security 1.1
+// section 7.2, which names a certificate and signs nothing with SHA-1), its
+// issuer and serial, or its Subject Key Identifier. `{ kind, … }` or
+// `{ problem }`.
+function keyReferenceOf(sigEl, security) {
+  log.debug("Entering keyReferenceOf().");
+  const keyInfo = directChildByLocal(sigEl, 'KeyInfo');
+  const str = keyInfo ? directChildByLocal(keyInfo, 'SecurityTokenReference')
+                      : null;
+  if (!str) {
+    log.debug("Leaving keyReferenceOf(). No SecurityTokenReference.");
+    return { problem: 'the signature\'s KeyInfo holds no ' +
+                      'wsse:SecurityTokenReference, so it names no X.509 ' +
+                      'certificate in a form the X.509 Token Profile 1.1 ' +
+                      'gives a requester' };
+  }
+  const reference = directChildByLocal(str, 'Reference');
+  if (reference) {
+    const uri = String(reference.getAttribute('URI') || '');
+    const id = uri.indexOf('#') === 0 ? uri.slice(1) : '';
+    const tokens = directChildrenByLocal(security, 'BinarySecurityToken')
+      .filter(function (one) { return id && wsuIdOf(one) === id; });
+    if (tokens.length !== 1) {
+      log.debug("Leaving keyReferenceOf(). The referenced token is missing.");
+      return { problem: 'the SecurityTokenReference points at "' + uri +
+                        '", which is not a wsse:BinarySecurityToken in this ' +
+                        'security header' };
+    }
+    const valueType = String(tokens[0].getAttribute('ValueType') || '');
+    if (!/#X509v3$/.test(valueType)) {
+      log.debug("Leaving keyReferenceOf(). Not an X.509 token.");
+      return { problem: 'the referenced wsse:BinarySecurityToken is a "' +
+                        valueType + '", not an X.509 v3 certificate ' +
+                        '(#X509v3)' };
+    }
+    log.debug("Leaving keyReferenceOf(). A BinarySecurityToken.");
+    return { kind: 'token', id: id,
+             certB64: String(tokens[0].textContent || '').replace(/\s+/g,
+                                                                  '') };
+  }
+  const keyIdentifier = directChildByLocal(str, 'KeyIdentifier');
+  if (keyIdentifier) {
+    const valueType = String(keyIdentifier.getAttribute('ValueType') || '');
+    const encoding = String(keyIdentifier.getAttribute('EncodingType') || '');
+    const text = String(keyIdentifier.textContent || '').replace(/\s+/g, '');
+    const hex = /#HexBinary$/.test(encoding)
+      ? text.toLowerCase()
+      : Buffer.from(text, 'base64').toString('hex');
+    if (/#ThumbprintSHA1$/.test(valueType) && hex.length === 40) {
+      log.debug("Leaving keyReferenceOf(). A thumbprint.");
+      return { kind: 'thumbprint', sha1: hex };
+    }
+    if (/#X509SubjectKeyIdentifier$/.test(valueType) && hex) {
+      log.debug("Leaving keyReferenceOf(). A Subject Key Identifier.");
+      return { kind: 'ski', ski: hex };
+    }
+    log.debug("Leaving keyReferenceOf(). An unknown KeyIdentifier.");
+    return { problem: 'the KeyIdentifier is a "' + valueType + '", which ' +
+                      'is not a SHA-1 thumbprint (#ThumbprintSHA1) or a ' +
+                      'Subject Key Identifier (#X509SubjectKeyIdentifier) ' +
+                      'this service reads' };
+  }
+  const data = directChildByLocal(str, 'X509Data');
+  const issuerSerial = data ? directChildByLocal(data, 'X509IssuerSerial')
+                            : null;
+  if (issuerSerial) {
+    const issuerEl = directChildByLocal(issuerSerial, 'X509IssuerName');
+    const serialEl = directChildByLocal(issuerSerial, 'X509SerialNumber');
+    const serial = serialEl ? String(serialEl.textContent || '').trim() : '';
+    if (issuerEl && /^[0-9]+$/.test(serial)) {
+      log.debug("Leaving keyReferenceOf(). An issuer and serial.");
+      return { kind: 'issuer-serial',
+               issuer: String(issuerEl.textContent || '').trim(),
+               serialHex: BigInt(serial).toString(16) };
+    }
+  }
+  log.debug("Leaving keyReferenceOf(). Nothing it reads.");
+  return { problem: 'the SecurityTokenReference names its certificate in no ' +
+                    'form this service reads: a Reference to a ' +
+                    'BinarySecurityToken, a KeyIdentifier (#ThumbprintSHA1 ' +
+                    'or #X509SubjectKeyIdentifier) or an X509IssuerSerial' };
+}
+
+/**
+ * Reads the WS-Security message signature in a SOAP envelope without
+ * verifying it: which parts it covers, which certificate its KeyInfo names,
+ * its algorithms and its Timestamp. Every structural guard against
+ * signature wrapping is applied here, so a reading that is `ok` is one
+ * `verifyWsSecuritySignature()` can be asked about. It answers rather than
+ * throws.
+ *
+ * @param xml - the SOAP envelope
+ * @returns `{ present: false }` when the security header carries no
+ *   signature; otherwise `{ present: true, ok, why, keyReference,
+ *   timestamp: { created, expires }, signatureValue, references,
+ *   signatureMethod, digestMethods }`, a refusal marked with its code
+ */
+function readWsSecuritySignature(xml) {
+  log.debug("Entering readWsSecuritySignature().");
+  let doc;
+  try {
+    doc = new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  } catch (e) {
+    log.debug("Caught in readWsSecuritySignature(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving readWsSecuritySignature(). Not XML.");
+    return { present: false };
+  }
+  const envelope = doc && doc.documentElement;
+  const header = envelope ? directChildByLocal(envelope, 'Header') : null;
+  const securities = directChildrenByLocal(header, 'Security');
+  const security = securities.length === 1 ? securities[0] : null;
+  const signatures = directChildrenByLocal(security, 'Signature')
+    .filter(function (one) { return one.namespaceURI === DS_NS; });
+  if (!security || !signatures.length) {
+    log.debug("Leaving readWsSecuritySignature(). No signature.");
+    return { present: false };
+  }
+  const refuse = function (code, why, extra) {
+    log.debug("Entering refuse(). " + code);
+    log.debug("Leaving refuse().");
+    return errorCodes.mark(Object.assign({ ok: false, present: true,
+                                           why: why }, extra || {}), code);
+  };
+  if (signatures.length > 1) {
+    log.debug("Leaving readWsSecuritySignature(). Two signatures.");
+    return refuse('STS-KEYS-0159', 'the security header carries more than ' +
+                  'one ds:Signature, so it does not say which one the ' +
+                  'requester made');
+  }
+  const sigEl = signatures[0];
+  const repeated = duplicateIdsOf(doc);
+  if (repeated.length) {
+    log.debug("Leaving readWsSecuritySignature(). Repeated ids.");
+    return refuse('STS-KEYS-0160', 'the id' +
+                  (repeated.length === 1 ? ' "' + repeated[0] + '" is'
+                                         : 's "' + repeated.join('", "') +
+                                           '" are') +
+                  ' carried by more than one element, so a Reference to ' +
+                  'it does not say which element was signed');
+  }
+  const signedInfo = directChildByLocal(sigEl, 'SignedInfo', DS_NS);
+  if (!signedInfo) {
+    // A ds:Signature with no SignedInfo signs nothing: it is not a
+    // signature over the request, and is read as none. One shape carries it
+    // on purpose — WS-Trust's `?encrypt=1` test control, which reads the
+    // recipient certificate out of a bare KeyInfo there.
+    log.debug("Leaving readWsSecuritySignature(). A KeyInfo, no SignedInfo.");
+    return { present: false };
+  }
+  const c14nEl = directChildByLocal(signedInfo, 'CanonicalizationMethod',
+                                    DS_NS);
+  const methodEl = directChildByLocal(signedInfo, 'SignatureMethod', DS_NS);
+  const valueEl = directChildByLocal(sigEl, 'SignatureValue', DS_NS);
+  if (!methodEl || !valueEl) {
+    log.debug("Leaving readWsSecuritySignature(). Incomplete.");
+    return refuse('STS-KEYS-0161', 'the ds:Signature has no ' +
+                  'SignatureMethod or SignatureValue');
+  }
+  const c14n = c14nEl ? String(c14nEl.getAttribute('Algorithm') || '') : '';
+  const signatureMethod = String(methodEl.getAttribute('Algorithm') || '');
+  const refs = directChildrenByLocal(signedInfo, 'Reference');
+  const uris = [];
+  const digestMethods = [];
+  for (let i = 0; i < refs.length; i++) {
+    const uri = String(refs[i].getAttribute('URI') || '');
+    const transforms = directChildByLocal(refs[i], 'Transforms', DS_NS);
+    const each = directChildrenByLocal(transforms, 'Transform')
+      .map(function (one) { return String(one.getAttribute('Algorithm')); });
+    const digestEl = directChildByLocal(refs[i], 'DigestMethod', DS_NS);
+    digestMethods.push(digestEl
+      ? String(digestEl.getAttribute('Algorithm') || '') : '');
+    if (uri.indexOf('#') !== 0 || uri.length < 2) {
+      log.debug("Leaving readWsSecuritySignature(). A reference that is " +
+                "not a same-document id.");
+      return refuse('STS-KEYS-0161', 'the Reference "' + uri + '" is not ' +
+                    'a same-document reference by id; a WS-Security ' +
+                    'signature names each part it covers by its wsu:Id');
+    }
+    if (each.length !== 1 || each[0] !== EXC_C14N) {
+      log.debug("Leaving readWsSecuritySignature(). A reference's " +
+                "transforms.");
+      return refuse('STS-KEYS-0162', 'the Reference "' + uri + '" is ' +
+                    'transformed by ' + (each.join(', ') || 'nothing') +
+                    '; a part is signed here only under exclusive XML ' +
+                    'canonicalization (' + EXC_C14N + '), as the Basic ' +
+                    'Security Profile requires');
+    }
+    uris.push(uri.slice(1));
+  }
+  if (c14n !== EXC_C14N) {
+    log.debug("Leaving readWsSecuritySignature(). The SignedInfo's c14n.");
+    return refuse('STS-KEYS-0162', 'the SignedInfo is canonicalized with "' +
+                  c14n + '"; only exclusive XML canonicalization (' +
+                  EXC_C14N + ') is accepted for a WS-Security signature');
+  }
+  const bodies = directChildrenByLocal(envelope, 'Body');
+  const timestamps = directChildrenByLocal(security, 'Timestamp');
+  const body = bodies.length === 1 ? bodies[0] : null;
+  const timestamp = timestamps.length === 1 ? timestamps[0] : null;
+  const bodyId = body ? wsuIdOf(body) : '';
+  const timestampId = timestamp ? wsuIdOf(timestamp) : '';
+  const missing = [];
+  if (!bodyId || uris.indexOf(bodyId) < 0) {
+    missing.push('the SOAP Body');
+  }
+  if (!timestampId || uris.indexOf(timestampId) < 0) {
+    missing.push('the wsu:Timestamp in this security header');
+  }
+  if (missing.length) {
+    log.debug("Leaving readWsSecuritySignature(). A part is not covered.");
+    return refuse('STS-KEYS-0163', 'the signature does not cover ' +
+                  missing.join(' or ') + ' by its wsu:Id — what it ' +
+                  'references (' + (uris.map(function (one) {
+                    return '#' + one;
+                  }).join(', ') || 'nothing') + ') is not the element this ' +
+                  'service acts on, which is the signature-wrapping shape');
+  }
+  const algorithms = xmlAlgorithmVerdict(signatureMethod, digestMethods);
+  if (algorithms.problem) {
+    log.debug("Leaving readWsSecuritySignature(). An algorithm.");
+    return refuse(algorithms.code || 'STS-KEYS-0061', algorithms.problem,
+                  { signatureMethod: signatureMethod,
+                    digestMethods: digestMethods,
+                    weak: algorithms.weak, sha1: algorithms.sha1 });
+  }
+  const keyReference = keyReferenceOf(sigEl, security);
+  if (keyReference.problem) {
+    log.debug("Leaving readWsSecuritySignature(). No key named.");
+    return refuse('STS-KEYS-0164', keyReference.problem);
+  }
+  const createdEl = directChildByLocal(timestamp, 'Created');
+  const expiresEl = directChildByLocal(timestamp, 'Expires');
+  log.debug("Leaving readWsSecuritySignature(). Readable.");
+  return {
+    ok: true, present: true, why: '',
+    keyReference: keyReference,
+    timestamp: {
+      created: createdEl ? String(createdEl.textContent || '').trim() : '',
+      expires: expiresEl ? String(expiresEl.textContent || '').trim() : ''
+    },
+    signatureValue: String(valueEl.textContent || '').replace(/\s+/g, ''),
+    references: uris.map(function (one) { return '#' + one; }),
+    signatureMethod: signatureMethod,
+    digestMethods: digestMethods,
+    weak: algorithms.weak,
+    sha1: algorithms.sha1
+  };
+}
+
+/**
+ * Verifies the WS-Security message signature in a SOAP envelope with the
+ * certificate the caller resolved from its KeyInfo — after every guard
+ * `readWsSecuritySignature()` applies. It answers rather than throws.
+ *
+ * @param xml - the SOAP envelope
+ * @param opts - `certPem`: the certificate (PEM or base64 DER) to verify
+ *   with; required, because a key the document chose is no key at all
+ * @returns the reading, with `ok` now meaning the signature value and
+ *   every reference's digest verified; a refusal marked with its code
+ */
+function verifyWsSecuritySignature(xml, opts) {
+  log.debug("Entering verifyWsSecuritySignature().");
+  const options = opts || {};
+  const reading = readWsSecuritySignature(xml);
+  if (!reading.present || !reading.ok) {
+    log.debug("Leaving verifyWsSecuritySignature(). The reading refused it.");
+    return reading;
+  }
+  const found = verificationKeyFrom(options.certPem, '');
+  if (found.problem) {
+    log.debug("Leaving verifyWsSecuritySignature(). No key.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'the signature cannot be checked: ' + found.problem }),
+                           'STS-KEYS-0014');
+  }
+  const doc = new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  const header = directChildByLocal(doc.documentElement, 'Header');
+  const security = directChildByLocal(header, 'Security');
+  const sigEl = directChildByLocal(security, 'Signature', DS_NS);
+  const methodEl = directChildByLocal(
+    directChildByLocal(sigEl, 'SignedInfo', DS_NS), 'SignatureMethod', DS_NS);
+  const pss = (XML_SIGNATURE_METHODS[reading.signatureMethod] || {})
+    .family === 'rsa-pss' &&
+    reading.signatureMethod === XMLDSIG_MORE_2007 + 'rsa-pss'
+    ? pssParameters(methodEl) : null;
+  if (pss && pss.problem) {
+    log.debug("Leaving verifyWsSecuritySignature(). PSS parameters.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'the RSASSA-PSS signature cannot be checked: ' +
+                  pss.problem }), 'STS-KEYS-0061');
+  }
+  const serializer = new xmldom.XMLSerializer();
+  // The engine is handed the one signature, serialized alone, and the whole
+  // envelope to resolve its references in. The ids are unique (the reading
+  // refused otherwise), so each Reference resolves to the element the
+  // reading checked by position.
+  const signatureXml = withoutCertificateText(
+    serializer.serializeToString(sigEl));
+  let result;
+  try {
+    result = xmldsig.verifyXml(signatureXml, {
+      referencedXml: String(xml),
+      verifier: function (octets, signatureBytes) {
+        return verifyXmlSignatureValue(reading.signatureMethod, found.key,
+          Buffer.from(String(octets), 'binary'),
+          Buffer.from(String(signatureBytes), 'binary'), pss);
+      }
+    });
+  } catch (e) {
+    log.debug("Caught in verifyWsSecuritySignature(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving verifyWsSecuritySignature(). The engine threw.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: (e && e.message) || String(e) }), 'STS-KEYS-0011');
+  }
+  const badReference = (result.references || []).filter(function (one) {
+    return !one.ok;
+  })[0];
+  if (!result.signatureValid) {
+    log.debug("Leaving verifyWsSecuritySignature(). The value.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: false,
+             why: 'the signature value does not verify with the ' +
+                  'certificate the security header names' +
+                  (result.signatureError ? ': ' + result.signatureError
+                                         : '') }), 'STS-KEYS-0012');
+  }
+  if (!result.referencesValid) {
+    log.debug("Leaving verifyWsSecuritySignature(). A digest.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: true, referencesValid: false,
+             why: 'the signature value is genuine but the part ' +
+                  (badReference ? badReference.uri + ' ' : '') + 'was ' +
+                  'altered after it was signed' +
+                  (badReference && badReference.reason
+                    ? ' (' + badReference.reason + ')' : '') }),
+                           'STS-KEYS-0013');
+  }
+  log.debug("Leaving verifyWsSecuritySignature(). Verified.");
+  return Object.assign({}, reading, { ok: true, signatureValid: true,
+                                      referencesValid: true,
+                                      signerSubject: found.subject });
+}
+
 // ---------------------------------------------------------------------------
 // THE SAML HTTP REDIRECT BINDING'S DETACHED SIGNATURE (saml-bindings-2.0-os
 // section 3.4.4.1). It is a signature over the QUERY STRING and not over any
@@ -16827,6 +17276,8 @@ module.exports = {
   PLACEMENT: PLACEMENT,
   signXml: signXml,
   verifyXmlSignature: verifyXmlSignature,
+  readWsSecuritySignature: readWsSecuritySignature,
+  verifyWsSecuritySignature: verifyWsSecuritySignature,
   signQueryString: signQueryString,
   verifyQueryString: verifyQueryString,
   idOf: idOf,

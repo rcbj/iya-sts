@@ -1288,20 +1288,20 @@
     "text": "在註冊時送出 `extensions: { credProps: true }`，要求瀏覽器回報其建立的認證是否確實可探索。這是唯一的查明方式：`residentKey: \"preferred\"` 可能會也可能不會產生可探索認證，而證明中沒有任何內容說明是哪一種。本服務會將答案「記錄」在金鑰旁，但不據以做任何決定。關閉此項可觀察用戶端在完全沒有延伸結果時會怎麼做。"
   },
   "webauthn.primaryAllowed|label": {
-    "en": "babf8baa8c13cb1d",
-    "text": "允許金鑰作為「主要」認證"
+    "en": "0692ab5332b96080",
+    "text": "允許密碼金鑰作為「第一」因素（無密碼）"
   },
   "webauthn.primaryAllowed|description": {
-    "en": "2922360bf8d031ec",
-    "text": "安全金鑰是否可作為帳戶上「唯一」的認證——無密碼登入，`amr [\"hwk\"]`。關閉它會讓金鑰仍可作為「第二」因素運作，並在登入畫面拒絕無密碼途徑、在入口網站拒絕 `primary` 選項。**它不會停用某人已持有的主要金鑰**，理由同 `webauthn.enabled`——而這裡還有更尖銳的問題：唯一認證是主要金鑰的人，會因為營運者撥動一個開關而被鎖在自己的帳戶之外，這不是設定應該能做到的事。"
+    "en": "b7a0b2eefdb42a05",
+    "text": "密碼金鑰是否可以在本領域作為第一因素——即無密碼登入，`amr [\"hwk\"]`——除非某個應用程式自己的清單（`appAuthnMechanism`）另有規定。這是本領域所支援的內容，與驗證政策中的密碼金鑰列並列，並在每次登入時對某人持有的每把密碼金鑰同樣詢問：密碼金鑰沒有角色（#1135），因此它決定的是每把金鑰可以做什麼，而不是它以什麼身分登記。關閉時，登入畫面上不再有無密碼方式，密碼金鑰只在密碼之後回答第二步，前提是 `webauthn.mfaAllowed` 允許。**關閉時，唯一認證是密碼金鑰的人無法登入**，直到為其提供密碼（例如重設連結）：在 #1135 之前，此開關只拒絕登記，已持有的金鑰仍可讓其登入。只要此項或 `webauthn.mfaAllowed` 開啟，就可以登記密碼金鑰；兩者都關閉時，登記會被拒絕。"
   },
   "webauthn.mfaAllowed|label": {
-    "en": "662710b8b41f9e04",
-    "text": "允許金鑰作為「第二」因素"
+    "en": "ca70f14ff60f2006",
+    "text": "允許密碼金鑰作為「第二」因素"
   },
   "webauthn.mfaAllowed|description": {
-    "en": "9c50c02bf162b58c",
-    "text": "安全金鑰是否可在密碼之外註冊為第二因素。關閉時，剩下的第二因素是驗證器應用程式（驗證原則的 TOTP 一列），而兩者皆關閉的部署完全不提供第二因素——這是受支援的組態，也是兩者都存在之前本服務的行為。**已註冊的 `mfa` 金鑰仍會在登入畫面被要求**，因為該帳戶仍設定為雙因素；請參閱 `webauthn.enabled`。"
+    "en": "37b9c4c2beaade6e",
+    "text": "密碼金鑰是否可以在本領域作為第二因素，在密碼或其他第一因素之後使用，除非某個應用程式自己的清單（`appMfaMechanism`）另有規定。這是本領域所支援的內容，與驗證政策中作為第二因素的密碼金鑰列並列，並在每次登入時對某人持有的每把密碼金鑰同樣詢問：密碼金鑰沒有角色（#1135）。關閉時，剩下的第二因素是驗證器應用程式（驗證政策中的 TOTP 列），兩者都關閉的部署完全不提供第二因素——這是受支援的設定，也是本服務在兩者出現之前的做法。**關閉時，沒有密碼金鑰回答第二步**，對登入畫面而言，唯一第二因素是密碼金鑰的人等於沒有第二因素。只要此項或 `webauthn.primaryAllowed` 開啟，就可以登記密碼金鑰；兩者都關閉時，登記會被拒絕。"
   },
   "webauthn.maxKeysPerPerson|label": {
     "en": "420a47f86dc03485",
@@ -3242,6 +3242,14 @@
   "pki.applicationTlsClientCertificateMax|description": {
     "en": "286a6641dd93e940",
     "text": "管理員可從 /admin/applications 上應用程式的 Credentials 區段或 POST /admin-api/applications/issue-tls-client-certificate，為一個應用程式簽發多少張仍有效的 TLS 用戶端憑證——每個執行個體一張，或在輪替憑證期間兩張。已撤銷或已過期的憑證不計入。超過此數時簽發會被拒絕（STS-PKI-0180），而不是撤銷執行中的執行個體可能仍在出示的憑證。"
+  },
+  "pki.messageSigningCertificateMax|label": {
+    "en": "2078d7e204e3c515",
+    "text": "一個持有者可持有的訊息簽章憑證數"
+  },
+  "pki.messageSigningCertificateMax|description": {
+    "en": "678ad23609f721b2",
+    "text": "管理員可從 /admin/users、/admin/applications 或 /admin-api 為一個人或一個應用程式簽發的仍然有效的訊息簽章憑證（WS-Trust 請求者用來簽署其請求的憑證）數量。已撤銷或已過期的憑證不計入。超過此數時簽發會被拒絕（STS-PKI-0220），而不是撤銷某人可能仍在用來簽署的憑證。"
   },
   "pki.pinnedSigners|label": {
     "en": "61f6416af5f10e1b",

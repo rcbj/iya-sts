@@ -192,16 +192,16 @@
     "text": "Tinatanggihan ang plaintext na assertion o front-channel ID Token (STS-FED-0140) maliban kung itinatakda ng relationship ang fedAllowUnencrypted, na dokumentado nang may babala. Tinatanggihan ang AES-CBC, rsa-1_5 at RSA1_5 sa parehong mode (STS-FED-0139)."
   },
   "mode.requirements.passkey-first-use.what": {
-    "en": "48692c051ad2acee",
-    "text": "Hindi nag-e-enrol ang sign-in screen ng security key para sa taong hindi pa napapatunayan kung sino siya"
+    "en": "c8556d37e16453f0",
+    "text": "Hindi nag-e-enrol ang sign-in screen ng passkey para sa taong hindi pa napapatunayan kung sino siya"
   },
   "mode.requirements.passkey-first-use.development": {
-    "en": "2f86635eaf4572fb",
-    "text": "Ang passwordless na sign-in na nagpapangalan ng taong walang hawak na primary key ay nag-e-enrol ng isa agad, nang walang binabasang password — ang unang taong umangkin sa pangalan ang nakakakuha nito."
+    "en": "8bea6b2667160433",
+    "text": "Ang passwordless na sign-in na nagpapangalan ng taong walang hawak na passkey ay nag-e-enrol ng isa agad, nang walang binabasang password — ang unang taong umangkin sa pangalan ang nakakakuha nito."
   },
   "mode.requirements.passkey-first-use.product": {
-    "en": "e773ade2b33e515a",
-    "text": "Tinatanggihan ito. Ang primary key ay idinadagdag sa /portal/keys sa likod ng session, sa pamamagitan ng activation link, o ng isang operator."
+    "en": "b2a73f5e48d6f2c4",
+    "text": "Tinatanggihan ito. Ang passkey ay idinadagdag sa /portal/keys sa likod ng session, sa pamamagitan ng activation link, o ng isang operator."
   },
   "mode.requirements.siop-did-web-pin.what": {
     "en": "a8f5db1a7e30f55d",
@@ -236,8 +236,8 @@
     "text": "Tinatanggap ng LDAP simple bind, WS-Security UsernameToken, SCIM at SSF HTTP Basic at EST Basic ang password tulad ng pagtanggap nila sa bawat password; humihingi pa rin ng second factor ang sign-in screen."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "2a529b7dda255daa",
-    "text": "Sa limang pintong iyon, tinatanggihan ang sariling password ng tao — sinasagot eksakto tulad ng maling password, at binibilang laban sa rate limit bilang isa (STS-AUTHN-0213 sa audit row at sa log lang) — tuwing may hawak siyang authenticator app o security key sa mfa role, o hinihingan siya ng second factor (stsMfaRequired, ang authentication policy). Ang APP PASSWORD na ginawa niya sa /portal/app-passwords, naka-scope sa pinto, ang tinatanggap sa halip. Pinapangalanan ng authn.passwordAloneDoors ang mga pintong tumatanggap pa rin ng password, na nagbababa sa bawat ganoong tao sa iisang factor doon."
+    "en": "c06e9e3a02393490",
+    "text": "Sa limang pintong iyon, tinatanggihan ang sariling password ng tao — sinasagot eksakto tulad ng maling password, at binibilang laban sa rate limit bilang isa (STS-AUTHN-0213 sa audit row at sa log lang) — tuwing may hawak siyang authenticator app o alinmang passkey kung saan tinatanggap ng realm (o ng sariling listahan ng application) ang passkey bilang second factor, o hinihingan siya ng second factor (stsMfaRequired, ang authentication policy). Ang APP PASSWORD na ginawa niya sa /portal/app-passwords, naka-scope sa pinto, ang tinatanggap sa halip. Pinapangalanan ng authn.passwordAloneDoors ang mga pintong tumatanggap pa rin ng password, na nagbababa sa bawat ganoong tao sa iisang factor doon."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "Nag-iissue ang KDC ng TGT sa AS-REQ na pre-authenticated gamit ang password lang (PA-ENC-TIMESTAMP, o ang PA-ENCRYPTED-CHALLENGE ng FAST), tulad ng pagtanggap nito sa bawat password."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "cddc7c3db475d360",
-    "text": "Ang AS-REQ na iyon ay tinatanggihan nang KDC_ERR_POLICY (12), STS-KRB-0135, pagkatapos ma-verify ang password (ang mali ay KDC_ERR_PREAUTH_FAILED pa rin), tuwing may hawak ang tao na authenticator app o security key sa mfa role, o hinihingan siya ng second factor. Ang taong may authenticator app ay nakakakuha ng ticket sa pamamagitan ng RFC 6113 FAST armor na may RFC 6560 OTP pre-authentication — password at code sa iisang exchange — at may dala itong RFC 8129 indicator na `otp`. Hindi kailanman Kerberos key ang app password."
+    "en": "a1e60b4ee5cac599",
+    "text": "Ang AS-REQ na iyon ay tinatanggihan nang KDC_ERR_POLICY (12), STS-KRB-0135, pagkatapos ma-verify ang password (ang mali ay KDC_ERR_PREAUTH_FAILED pa rin), tuwing may hawak ang tao na authenticator app o alinmang passkey kung saan tinatanggap ng realm (o ng sariling listahan ng application) ang passkey bilang second factor, o hinihingan siya ng second factor. Ang taong may authenticator app ay nakakakuha ng ticket sa pamamagitan ng RFC 6113 FAST armor na may RFC 6560 OTP pre-authentication — password at code sa iisang exchange — at may dala itong RFC 8129 indicator na `otp`. Hindi kailanman Kerberos key ang app password."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",

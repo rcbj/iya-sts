@@ -763,6 +763,18 @@ const openObject = AdminApiSpec.openObject;
 const pagingObject = AdminApiSpec.pagingObject;
 
 
+// One rule of an ordered setting's Select all (#1130), as
+// `config.describe()` reports it.
+const SELECT_ALL_RULE = {
+  type: 'object',
+  properties: {
+    setting: { type: 'string', description: 'The switch the rule follows.' },
+    values: { type: 'array', items: { type: 'string' },
+              description: 'The values it governs.' },
+    on: { type: 'boolean', description: 'Whether that switch is on now.' },
+    canBeOn: { type: 'boolean',
+               description: 'Whether this mode lets it be on at all.' } } };
+
 // One row of config.js's table, as this API reports it. Written out rather than
 // left open because every property here is one a generator would want a name
 // for, and because `source` is the answer to the question the whole resource
@@ -805,6 +817,22 @@ const CONFIG_SETTING = openObject(
                      description: 'Present beside `csvValues` where the ' +
                                   'setting describes each value: the value ' +
                                   'mapped to one sentence.' },
+    // #1130: what an ordered setting's Select all ticks, where another
+    // setting narrows it (`webauthn.algorithms`: RS1 only while
+    // webauthn.insecureAlgorithms is on, ML-DSA alone while
+    // webauthn.pqcOnly is).
+    selectAll: { type: 'object',
+                 properties: {
+                   onlyWhileOn: { type: 'array', items: SELECT_ALL_RULE },
+                   aloneWhileOn: { type: 'array', items: SELECT_ALL_RULE } },
+                 description: 'Present on an `ordered` setting whose ' +
+                              'select-all is narrowed by other settings. ' +
+                              '`onlyWhileOn`: the values are selected only ' +
+                              'while that setting is on. `aloneWhileOn`: ' +
+                              'while that setting is on, only the values ' +
+                              'are selected. `canBeOn` is false where this ' +
+                              'mode never lets that setting be on. Absent ' +
+                              'on every other setting.' },
     // Present on an `int` setting whose row narrows it, and absent everywhere
     // else — the same way `enumValues` is present on an enum and nowhere else.
     // They are DOCUMENTED rather than left implicit because a client rendering

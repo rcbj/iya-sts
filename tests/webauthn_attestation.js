@@ -757,7 +757,7 @@ async function run(t) {
   const added = credentials.addKey(who, {
     credentialId: r.verdict.credentialId,
     publicKeyJwk: r.verdict.publicKeyJwk, signCount: 0,
-    aaguid: r.verdict.aaguid, attestation: r.result.attestation }, 'mfa');
+    aaguid: r.verdict.aaguid, attestation: r.result.attestation });
   const kept = credentials.keysOf(who)[0] || {};
   t.check(added.ok && kept.attestation &&
           kept.attestation.format === 'packed' &&

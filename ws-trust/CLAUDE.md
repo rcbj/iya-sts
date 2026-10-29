@@ -200,15 +200,14 @@ fault. Each refusal names its code at the place it refuses:
 |---|---|---|
 | `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
 | `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
-| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0037` (#1046) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
-| `ExpiredData` | `0006`, in either seat, and a JWT's `0027` in either seat (#477, #519) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
-| `RequestFailed` | `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
+| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0039` (#1046, #1061), a signed request's `0040`–`0047`, `0049`, `0050`, `0052`, `0053` (#521) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
+| `AuthenticationBadElements` | `0040` when the reading's code is `STS-KEYS-0163` (#521): a signature that does not cover the Body or the Timestamp | section 11's "Insufficient Digest Elements", exactly |
+| `ExpiredData` | `0006`, in either seat, a JWT's `0027` in either seat (#477, #519), and a signed request's Timestamp, `0048` (#521) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
+| `RequestFailed` | `0051` (#521: the used-assertion history not asked or not answering — this service's failure to prove the request new, not the requester's), `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
 
 **Not used, and why**: `InvalidSecurityToken` is "Security token has been
 revoked" in 1.4's table, and nothing here checks revocation of a presented
-token; `AuthenticationBadElements` is about digest elements, and request
-signatures are not verified (`docs/ws-trust.md`, *Not implemented*);
-`InvalidTimeRange` would refuse a `wst:Lifetime`, which is CLAMPED instead
+token; `InvalidTimeRange` would refuse a `wst:Lifetime`, which is CLAMPED instead
 (section 4.1 makes it a request the STS decides); `BadRequest`,
 `RenewNeeded` and `UnableToRenew` have no refusal here that they describe
 better than the codes above — an unknown RequestType is issued, and a Renew
@@ -620,7 +619,7 @@ SAML 2.0, SAML 1.1 and JWT:
 
 | Seat | What it takes |
 |---|---|
-| the requester's credential, `wsse:Security` | a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in; and, when none of those is there, **the connection's TLS client certificate (#1046)** |
+| the requester's credential, `wsse:Security` | **a WS-Security signature over the request (#521)**, asked first; a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in; and, when none of those is there, **the connection's TLS client certificate (#1046)** |
 | `<wst:OnBehalfOf>` / `<wst14:ActAs>` | an assertion (either version); a JWT (#477) |
 | `wst:TokenType` | SAML 2.0, SAML 1.1 (#487), JWT (#476) |
 
@@ -759,18 +758,88 @@ session, the token) reads the answer without knowing which it was.
   delegation from such a requester is therefore not relayed to the
   delegated subject's home either.
 
-**NOT BUILT, AND RECORDED ON #1046 AS A FOLLOW-UP: a WS-Security X.509
-`BinarySecurityToken` with a signature over the request.** Nothing here
-verifies a message signature — `?encrypt=1` reads an `X509Certificate` out of
-the request only as an encryption recipient — and verifying one is its own
-piece: the `wsse:SecurityTokenReference` to the token, the signed parts
-(`soap:Body`, `wsu:Timestamp`, the `wsu:Id` references xml-crypto
-mishandles), the timestamp's freshness and replay, and then the same
-`identityOf()` over the token's certificate. Half of it would be a
-certificate that authenticates because it was present, so none of it is
-here.
+**A WS-Security signature over the request was #1046's follow-up (#1056)
+and is built by #521**, below; it is asked before this credential.
 
 `tests/wstrust_client_certificate.js` holds it in process, both modes.
+
+## A SIGNATURE OVER THE REQUEST, A FIFTH CREDENTIAL (#521, 2026-10-28)
+
+rcbj (2026-10-08): "allow a WS-Trust call to authenticate a caller with a
+digital signature on the message body. The digital signature certificate
+would be mapped to a user or application object as digital signature." It
+also closes #1056, the half of #1046 that was not built. rcbj's four
+decisions on #521 (2026-10-28), all the options recommended:
+
+1. **Registration reuses #1061's `userCertificate`**: an outside certificate
+   stored byte for byte on exactly one entry, its keyUsage carrying
+   `digitalSignature`. No second store; the console's and `/admin-api`'s
+   `add-certificate` / `remove-certificate` are the doors.
+2. **An Issuing CA of its own, `message-signing`** (`common/pki.js`):
+   digitalSignature only, no EKU, the `urn:sts:` name in the SAN. Issued to a
+   person or an application by an administrator, from the console and
+   `/admin-api` (`issue-signing-certificate` / `revoke-signing-certificate`
+   on Users and Applications). A TLS client certificate does NOT sign a
+   request, and a message-signing one signs nobody in over TLS:
+   `tls_client_certificates.js`'s PURPOSES, one gate read two ways.
+3. **The signature authenticates; a UsernameToken, assertion or JWT beside it
+   must name the same entry** (`requesterSigned()`), still checked as it is
+   alone — `0053` otherwise, in every mode.
+4. One PR closes #521 and #1056.
+
+**WHERE IT SITS.** `requesterCredential()` asks `messageSignature()` FIRST
+— it is the one credential that covers the request — then the message
+credential (`messageCredential()`, the old body), then the connection's
+certificate. Everything after reads the answer as it reads the others:
+`kind: 'signature'`, `authnContextOf()` `X509` (SAML 2.0's message-level
+class; `TLSClient` is the handshake's), SAML 1.1's `X509-PKI` (the method
+`saml/authn_context.ts` maps X509 to), `amrOf()` `swk`, and no session for
+an application's.
+
+**THE CHECKS, in `messageSignature()`'s order** — the header comment there
+is the list with each code (`0040`–`0052`). Three are worth knowing before
+changing anything:
+
+* **THE WRAPPING GUARDS ARE BY POSITION.** `crypto.readWsSecuritySignature()`
+  finds THE Body (the Envelope's child) and THE Timestamp (the one security
+  header's child) by where they are and requires the references to name
+  THEIR ids, every id in the document unique, exclusive c14n only. And
+  `handleRst()` reads the RST off the WHOLE document with `firstByLocal()`,
+  which finds a header before the Body — so a signed request is refused
+  (`0046`) when any `RST_PARTS` element is outside the signed Body. A new
+  document-wide read in `handleRst()` owes `RST_PARTS` its name.
+* **TWO CHECKS WAIT, so the endpoint takes them first.**
+  `prepareMessageSignature()` runs in `stsEndpointHere()` before the door's
+  assessment: the revocation verdict (the register for an issued leaf;
+  `registeredVerdictFor()` for a stored one — the operator registered THAT
+  certificate, the dialling argument `revocation_status.js` makes for a
+  registered certificate) and the replay claim (`used_assertions.js`,
+  format `wss-message`, use `wstrust-requester`, issuer the leaf's SHA-256,
+  identifier the SignatureValue, until the Timestamp's Expires plus skew).
+  The answers ride in on `connectionOf()`'s `signature`. The claim is bound
+  to the response: a Fault releases it, so only an ANSWERED request is spent.
+  **A caller of `handleRst()` that skipped the endpoint is refused `0051` in
+  product**, rather than accepted unchecked for replay.
+* **THE KEY IS NEVER THE DOCUMENT'S CHOICE.** The certificate the header
+  names is mapped first, and `verifyWsSecuritySignature()` is handed that
+  leaf; the KeyInfo's own certificate is not read by the engine. A
+  thumbprint, issuer-serial or SKI reference resolves only among this realm's
+  issued message-signing certificates (`signingCertificateFor()`): the stored
+  index is by SHA-256 of the DER, so a stored certificate is carried in a
+  BinarySecurityToken.
+
+**DEVELOPMENT** (`mode.verifiesCredentials()` false) reads the signature's
+structure and its certificate reference and believes the holder: the mapped
+entry, else the urn:sts: SAN, else the CN. Nothing else is checked, and the
+authentication row's note says so — the posture a UsernameToken has there.
+
+**IN CELLS** a signed request is placed by the `urn:sts:person:` name of a
+BinarySecurityToken's certificate (`homeNameOf()`), read unverified as a
+UsernameToken's name is; any other signer is served where it arrived.
+
+`tests/wstrust_message_signature.js` holds it in process, both modes, every
+refusal by code, wrapping and replay, signing with keys made at run time;
+`tests/protocol/sts_wstrust_signed_requests.js` drives it over HTTP.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

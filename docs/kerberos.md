@@ -536,8 +536,9 @@ and is refused `KRB_AP_ERR_BADKEYVER` after that.
 ### A second factor over Kerberos: FAST and OTP
 
 **In product, a person who holds or must hold a second factor gets no ticket
-on a password alone** — an authenticator app, a security key in the `mfa`
-role, `stsMfaRequired` on their entry, or the realm's authentication policy (`requireSecondFactor`),
+on a password alone** — an authenticator app, any passkey (where the realm
+lets a passkey be a second factor; until #1135 only one in the `mfa` role),
+`stsMfaRequired` on their entry, or the realm's authentication policy (`requireSecondFactor`),
 the same rule the [password-only doors](what-is-not-checked.md#app-passwords-at-the-password-only-doors)
 follow. An AS-REQ that proves only the password is refused `KDC_ERR_POLICY`
 (12), **after** the password verified: a wrong password is still

@@ -300,20 +300,20 @@
     "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
   },
   "authn.FIELDS.passkeyPrimary.label": {
-    "en": "2f59d674bec89e1d",
-    "text": "Security key o passkey (passwordless) — bilang unang factor"
+    "en": "c825f70e98df3fa4",
+    "text": "Passkey (passwordless) — bilang unang factor"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Isang WebAuthn credential na naka-enroll sa primary role, na nagsa-sign in nang walang password."
+    "en": "a85fd3ef50432e75",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appAuthnMechanism)."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
-    "en": "62611e734d22b2fe",
-    "text": "Security key (pangalawang factor) — bilang pangalawang factor"
+    "en": "4e99afea50969c29",
+    "text": "Passkey (pangalawang factor) — bilang pangalawang factor"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Isang WebAuthn credential na naka-enroll sa mfa role, na hinihingi pagkatapos ng unang factor."
+    "en": "ea543723944fb410",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appMfaMechanism)."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Isang WebAuthn credential na naka-enroll sa primary role, na nagsa-sign in nang walang password."
+    "en": "a85fd3ef50432e75",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appAuthnMechanism)."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Isang WebAuthn credential na naka-enroll sa mfa role, na hinihingi pagkatapos ng unang factor."
+    "en": "ea543723944fb410",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appMfaMechanism)."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -588,20 +588,20 @@
     "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
   },
   "authn.MECHANISMS.passkey.label": {
-    "en": "84a03e8c438f4cfa",
-    "text": "Security key o passkey (passwordless)"
+    "en": "b6471f84ac5db5d7",
+    "text": "Passkey (passwordless)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "fa5464ced243d64c",
-    "text": "Isang WebAuthn credential na naka-enroll sa primary role, na nagsa-sign in nang walang password."
+    "en": "a85fd3ef50432e75",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na nagsa-sign in sa kanila nang walang password. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging unang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appAuthnMechanism)."
   },
   "authn.MECHANISMS.securityKey.label": {
-    "en": "f7b41914800bf87a",
-    "text": "Security key (pangalawang factor)"
+    "en": "7474add07b92939d",
+    "text": "Passkey (pangalawang factor)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "5ec5a41005f56eb6",
-    "text": "Isang WebAuthn credential na naka-enroll sa mfa role, na hinihingi pagkatapos ng unang factor."
+    "en": "ea543723944fb410",
+    "text": "Alinmang passkey (WebAuthn credential) na hawak ng tao, na hinihingi pagkatapos ng unang factor. Walang role ang passkey: sinasabi ng row na ito, sa bawat sign-in, kung puwedeng maging pangalawang factor ang alinman sa mga ito sa realm na ito, maliban kung iba ang sinasabi ng sariling listahan ng isang application (appMfaMechanism)."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1800,8 +1800,8 @@
     "text": "Activity"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Ang method (sa ibaba) ang nagsasabi kung papalitan sa lugar ang classical na passkey o pananatilihin sa tabi nito. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
+    "en": "93b1483272fe7b46",
+    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey. Ang method (sa ibaba) ang nagsasabi kung papalitan sa lugar ang classical na passkey o pananatilihin sa tabi nito. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1834,14 +1834,6 @@
   "postLogin.FIELDS.noPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave: hindi tinatanong. invite: hinihiling na mag-register ng post-quantum na passkey, at puwede itong i-skip palagi. require: hinihiling, at puwede lang itong i-skip hanggang lumipas ang itinakdang panahon."
-  },
-  "postLogin.FIELDS.noPasskeyRole.label": {
-    "en": "c8ec4e469545eb61",
-    "text": "Ini-register ng taong walang passkey bilang"
-  },
-  "postLogin.FIELDS.noPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary: isang passwordless na sign-in. mfa: isang second factor."
   },
   "postLogin.FIELDS.method.label": {
     "en": "e5beebb729b34546",
@@ -1876,8 +1868,8 @@
     "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may nakatakdang activity sa ibaba ay hinihiling na gawin ito pagkatapos mag-sign in, bago siya ibalik sa application. Ang named profile na naka-off ito ay HINDI SINASAKLAW ang mga miyembro ng mga group nito."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "9514d5e70b9d4eaa",
-    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Ang method (sa ibaba) ang nagsasabi kung papalitan sa lugar ang classical na passkey o pananatilihin sa tabi nito. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
+    "en": "93b1483272fe7b46",
+    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey. Ang method (sa ibaba) ang nagsasabi kung papalitan sa lugar ang classical na passkey o pananatilihin sa tabi nito. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",
@@ -1890,10 +1882,6 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskey.what": {
     "en": "b3a902aa631de14e",
     "text": "leave: hindi tinatanong. invite: hinihiling na mag-register ng post-quantum na passkey, at puwede itong i-skip palagi. require: hinihiling, at puwede lang itong i-skip hanggang lumipas ang itinakdang panahon."
-  },
-  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
-    "en": "b009a5eae7bbd7a7",
-    "text": "primary: isang passwordless na sign-in. mfa: isang second factor."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
     "en": "b028cf1ddda71c5d",
@@ -1919,6 +1907,10 @@
     "en": "93538e6b201100c5",
     "text": "Para saan ang profile, para sa susunod na tao."
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyRole.what": {
+    "en": "b56a731743cd58be",
+    "text": "Retirado (#1135): ang role kung saan nagre-register ng passkey ang taong walang passkey. Walang role ang passkey; walang bumabasa nito."
+  },
   "postLogin.SELECTORS.selectGroups.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "Ang mga group (cn o DN) na ang mga miyembro ay sakop ng isang named post-login profile."
@@ -1932,8 +1924,8 @@
     "text": "walang hinihingi pagkatapos mag-sign in sa sinumang naaabot ng profile na ito"
   },
   "postLogin.sentences.pqcMigration": {
-    "en": "b8a2588126ddb520",
-    "text": "ang taong may hawak na classical na passkey ay hinihiling, pagkatapos mag-sign in, na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role"
+    "en": "f5a41f8e1962f73d",
+    "text": "ang taong may hawak na classical na passkey ay hinihiling, pagkatapos mag-sign in, na mag-register ng post-quantum (ML-DSA) na passkey"
   },
   "postLogin.sentences.methodUpgrade": {
     "en": "70079684df361766",
@@ -1976,24 +1968,16 @@
     "text": "hindi tinatanong ang taong walang hawak na passkey"
   },
   "postLogin.sentences.noPasskeyInvite": {
-    "en": "d5a5abd3c3057413",
-    "text": "ang taong walang hawak na passkey ay iniimbitahang mag-register ng post-quantum na passkey bilang {{role}}, at puwede itong i-skip palagi"
+    "en": "f1e2e6217d3d9180",
+    "text": "ang taong walang hawak na passkey ay iniimbitahang mag-register ng post-quantum na passkey, at puwede itong i-skip palagi"
   },
   "postLogin.sentences.noPasskeyRequire": {
-    "en": "7779655caba632c8",
-    "text": "ang taong walang hawak na passkey ay hinihiling na mag-register ng post-quantum na passkey bilang {{role}}, at puwede itong i-skip hanggang matapos ang grace period"
+    "en": "988144ad40324fa8",
+    "text": "ang taong walang hawak na passkey ay hinihiling na mag-register ng post-quantum na passkey, at puwede itong i-skip hanggang matapos ang grace period"
   },
   "postLogin.sentences.appliesTo": {
     "en": "ce39627aa02b361d",
     "text": "nalalapat sa mga miyembro ng {{list}}, sa precedence na {{precedence}}"
-  },
-  "postLogin.sentences.param.primary": {
-    "en": "ce71e9dc4bf4e5fa",
-    "text": "kanyang pangunahing sign-in"
-  },
-  "postLogin.sentences.param.mfa": {
-    "en": "8e2d5e1b1feaf31c",
-    "text": "second factor"
   },
   "postLogin.sentences.param.noGroup": {
     "en": "4a00d86d0ff8747a",

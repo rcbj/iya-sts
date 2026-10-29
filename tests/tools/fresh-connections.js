@@ -38,6 +38,27 @@
 //   * `http.globalAgent` / `https.globalAgent`: replaced by agents with
 //     `keepAlive: false`. A request that names its own agent keeps it — three
 //     jobs do, and all three already ask for no keep-alive or `agent: false`.
+//   * **AND THE RESPONSE BODY IS NEVER LEFT PAUSED** (2026-10-28), because
+//     `reset: true` makes a race in undici's HTTP/1 client reachable that a
+//     pooled connection never meets. The parser PAUSES when the handler's
+//     `onData()` answers false — `fetch()`'s does whenever its body stream is
+//     over its high-water mark, which a body past 64 KiB (the default realm's
+//     JWKS has been 67 KB since #1064) reaches whenever the socket is read
+//     faster than the job's `text()` drains it. Paused is fine on a kept-alive
+//     connection: the parser resumes when the job reads. On a connection the
+//     SERVER closes after the response (`Connection: close`, which `reset`
+//     sends), the socket's `end` arrives with the last chunk, undici's end
+//     handler calls `Parser.finish()`, and `finish()` opens with
+//     `assert(!this.paused)` — a process-killing AssertionError in
+//     `TLSSocket.onHttpSocketEnd`, in whichever job happened to read a large
+//     body at that moment (`sts_metadata` in run #10 of 2026-10-28, cluster;
+//     `oauth2_sts_endpoints` before it, ca826bac). So the dispatcher wrap also
+//     wraps the HANDLER: its `onData()` is called through and answered true,
+//     so the parser never pauses and the body stream buffers the surplus in
+//     memory, which for a test job's bodies is a few hundred KB at most. A
+//     handler of undici's newer shape (`onRequestStart`) is passed through
+//     untouched: `fetch()` in node 24.22's undici 7.30 does not use it, and a
+//     shape this never saw is better left alone than half-wrapped.
 //
 // WHAT IT CANNOT CHANGE, and says so in tests/CLAUDE.md: Chrome's connections
 // (the browser jobs are balanced per connection Chrome opens), and a long-lived
@@ -84,7 +105,7 @@ function wrapTheDispatcher() {
       if (prop === 'dispatch') {
         return function (options, handler) {
           return target.dispatch(Object.assign({}, options, { reset: true }),
-                                 handler);
+                                 neverPausing(handler));
         };
       }
       const value = target[prop];
@@ -94,6 +115,33 @@ function wrapTheDispatcher() {
   globalThis[DISPATCHER] = wrapped;
   log.debug("Leaving wrapTheDispatcher(). Wrapped.");
   return true;
+}
+
+// The handler, with its `onData()` answering true whatever the body stream
+// said — the race is in the header. A PROXY with every other member bound to
+// the real handler, because `fetch()`'s handler keeps its state (`body`,
+// `abort`) on itself and reads it back through `this`.
+function neverPausing(handler) {
+  log.debug("Entering neverPausing().");
+  if (!handler || typeof handler.onData !== 'function' ||
+      typeof handler.onRequestStart === 'function') {
+    log.debug("Leaving neverPausing(). Handler left as it was.");
+    return handler;
+  }
+  const wrapped = new Proxy(handler, {
+    get: function (target, prop) {
+      if (prop === 'onData') {
+        return function (chunk) {
+          target.onData(chunk);
+          return true;
+        };
+      }
+      const value = target[prop];
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+  log.debug("Leaving neverPausing().");
+  return wrapped;
 }
 
 // The fallback, for a plain-object `init` only: a `Headers` or a `Request`
@@ -164,5 +212,6 @@ if (process.env.STS_TEST_FRESH_CONNECTIONS === '1') {
 
 module.exports = {
   wrapTheDispatcher: wrapTheDispatcher,
-  withConnectionClose: withConnectionClose
+  withConnectionClose: withConnectionClose,
+  neverPausing: neverPausing
 };
