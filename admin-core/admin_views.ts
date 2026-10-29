@@ -9844,6 +9844,49 @@ class AdminViews {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SCOPES AN APPLICATION'S DELEGATED PERMISSION GRANTS DECLARE (#1141),
+  // for the `oauthAllowedScope` cell (rcbj, 2026-10-29): "show the scopes the
+  // delegated permission grants declare inside the oauthAllowedScope list, as
+  // read-only derived entries ... Nothing extra would be stored." One entry
+  // per permission the client's `oauthDelegatedPermission` names that some
+  // application defines: the BARE word for one of this service's three APIs
+  // (what its clients send with `resource`, `scope_policy.ts`), the full
+  // identifier for any other API (what a client sends to name it). A value
+  // naming a permission nobody defines declares nothing and is left out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the scopes an application's delegated permission grants declare,
+   * by the attribute they are drawn in.
+   *
+   * @param fields - the application's fields
+   * @returns `{ oauthAllowedScope: [{ value, permission, api, apiName }] }`
+   */
+  applicationDerivedValues(fields) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationDerivedValues().");
+    const own = applications.API_PERMISSIONS || {};
+    const out: any[] = [];
+    [].concat(fields.oauthDelegatedPermission || []).map(String)
+      .forEach(function (id) {
+        const permission = applications.forPermission(id);
+        if (!permission) {
+          return;
+        }
+        const value = own[permission.identifier] ? permission.name : id;
+        if (out.some(function (one) { return one.value === value; })) {
+          return;
+        }
+        out.push({ value: value, permission: id,
+                   api: permission.identifier,
+                   apiName: String((permission.application || {}).name ||
+                                   permission.identifier) });
+      });
+    log.debug("Leaving AdminViews.applicationDerivedValues(). " +
+              out.length + " scope(s).");
+    return { oauthAllowedScope: out };
+  }
+
   // `<outcome> <binding> <sigAlg> [weak]`, as the SSO service records it, as
   // an object.
   /**
@@ -11132,7 +11175,11 @@ class AdminViews {
         // WHAT THE APPLICATION WAS SEEN DOING (#706, #708), drawn read-only
         // at the head of the sub-tab whose settings each one shadows. None is
         // a field of the grid, so none is in `fields`.
-        observed: self.applicationObservedState(fields, row.identifier)
+        observed: self.applicationObservedState(fields, row.identifier),
+        // WHAT A LIST DECLARES WITHOUT HOLDING IT (#1141): the scopes the
+        // client's delegated permission grants declare, drawn read-only in
+        // the `oauthAllowedScope` cell; none is a value of the attribute.
+        derived: self.applicationDerivedValues(fields)
       },
       // #609: the named passkey policies naming this application, read-only
       // on the Every protocol sub-tab.

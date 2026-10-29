@@ -4443,6 +4443,15 @@ class AdminConsole {
       '.fg-seen svg{color:#1a7f37}' +
       // A value seen but not declared (#708): the warning mark, amber.
       '.fg-undeclared svg{color:#b35c00}' +
+      // A LIST VALUE A DELEGATED PERMISSION GRANT DECLARES (#1141): read-only,
+      // a key in the link blue and a dashed outline, so it reads as derived
+      // rather than typed; the details are its tooltip.
+      '.fg-derived{display:flex;align-items:center;gap:.5em;margin:.15em 0}' +
+      '.fg-derived-value{display:inline-flex;align-items:center;gap:.3em;' +
+      'padding:.1em .45em;border:1px dashed #0969da;border-radius:4px;' +
+      'font-family:monospace;cursor:help}' +
+      '.fg-derived-value svg{color:#0969da}' +
+      '.fg-derived-link{font-size:.88em}' +
       '.fg-more{white-space:nowrap}' +
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +

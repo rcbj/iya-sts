@@ -250,6 +250,13 @@ they use:
 | `sts-report` | `report:use`, `report:admin` |
 | `sts-api-client` | `admin:read`, `admin:write`, `report:use` |
 
+On the client's **Configuration → OAuth 2.0 / OpenID Connect** sub-tab, the
+`oauthAllowedScope` list also shows each scope a delegated permission grant
+declares, marked with a key icon. These entries are read-only: their tooltip
+names the permission and the application that defines it, and their link
+opens the Permissions tab, where the delegated permission grant itself is
+changed. They are not stored in `oauthAllowedScope`.
+
 Give a client a delegated permission grant on its **Permissions** tab
 ([Admin console → Delegated permissions](admin-console.md#delegated-permissions))
 or with `POST /admin-api/permissions/grant-permission`

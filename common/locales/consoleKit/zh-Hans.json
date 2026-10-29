@@ -48,6 +48,8 @@
   "grid.delete": "删除此值",
   "grid.deleteN": "删除 {attribute} 的第 {n} 个值",
   "grid.noValues": "无值",
+  "grid.delegatedTip": "由 {api} 上 {permission} 的委托权限授予声明。它不存储在 oauthAllowedScope 中，无法在此删除：请在“权限”选项卡上更改委托权限授予。",
+  "grid.delegatedLink": "“权限”选项卡",
   "grid.add": "添加值",
   "grid.addTo": "向 {attribute} 添加值",
   "grid.generate.tip": "按照 POST /oauth2/register 的方式生成一个客户端密钥并放入此框。在创建应用之前不会写入任何内容。您在此页面上输入的其他内容都会保留。",

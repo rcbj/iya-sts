@@ -1954,6 +1954,9 @@ class ApplicationsPage {
                            { redraw: '/admin/applications/edit',
                              showSet: true, protocols: config.protocols,
                              views: views,
+                             // The scopes the delegated permission grants
+                             // declare, read-only in their list (#1141).
+                             derived: config.derived || {},
                              // The lists with a search, and the last
                              // search's results for each (#459).
                              searches: config.fieldSearches || {},
