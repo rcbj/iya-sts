@@ -2451,6 +2451,108 @@ class UsersPage {
           t.html('consoleUsers.mfaSection.certAdd') + '</button></div></form>'
         : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite')));
 
+    // --- message-signing certificates (#521, 2026-10-28) ---------------------
+    // WHAT THE PERSON SIGNS A WS-TRUST REQUEST WITH, issued by an
+    // administrator — rcbj's decision on #521; the person has no door to one
+    // on the user portal. The list with a Revoke each, and a form that issues
+    // one; the issue answers with a page of downloads, the only copy of the
+    // key (`WebAnswers.signingCertificate()`). `POST /admin-api/users/
+    // issue-signing-certificate` and `revoke-signing-certificate` are the
+    // same two (rule 7), and `mfa.signing` of the person's
+    // `GET /admin-api/users` answer is this list. No script: plain forms.
+    const signView = data.signing && data.signing.ok
+      ? data.signing
+      : { certificates: [], active: 0, max: 0, keyAlgorithms: [],
+          revocationReasons: [], passwordMin: 8, caAvailable: false,
+          implicitName: '' };
+    const signRow = function (one) {
+      return '<tr><td><code>' + kit.esc(one.subject || '—') + '</code>' +
+        '<div class="sub">' +
+        (one.label ? kit.esc(one.label) + ' &middot; ' : '') +
+        t.html('consoleUsers.mfaSection.signingSerial') + ' <code>' +
+        kit.esc(one.serialHex) + '</code> &middot; ' + kit.esc(one.keyAlg) +
+        ' &middot; ' + t.html('consoleUsers.mfaSection.signingUntil') +
+        ' <code>' + kit.esc(one.notAfter) + '</code></div></td><td>' +
+        '<span class="state-' + (one.state === 'valid' ? 'valid' : 'revoked') +
+        '">' + kit.esc(one.state) + '</span>' + (one.reason
+          ? '<div class="sub">' + kit.esc(one.reason) + '</div>' : '') +
+        '</td><td>' +
+        (state.write && one.state === 'valid'
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="revoke-signing-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="serialHex" value="' +
+            kit.esc(one.serialHex) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '"><select name="reason" aria-label="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingReason')) + '">' +
+            signView.revocationReasons.map(function (reason) {
+              return '<option value="' + kit.esc(reason) + '">' +
+                     kit.esc(reason) + '</option>';
+            }).join('') + '</select> <button class="danger" type="submit">' +
+            t.html('consoleUsers.mfaSection.signingRevoke') +
+            '</button></form>'
+          : '') + '</td></tr>';
+    };
+    const signIssue = !state.write
+      ? kit.note(t.html('consoleUsers.mfaSection.signingNeedsWrite'))
+      : (!signView.caAvailable
+        ? kit.note(t.html('consoleUsers.mfaSection.signingNoCa') +
+                   ' <a href="/admin/pki">/admin/pki</a>.')
+        : (signView.active >= signView.max
+          ? kit.note(t.html('consoleUsers.mfaSection.signingAtMax',
+                            { n: signView.active }))
+          : '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="issue-signing-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '">' +
+            '<div class="formrow"><label for="signing-label">' +
+            t.html('consoleUsers.mfaSection.signingLabel') + '</label>' +
+            '<input id="signing-label" name="label" maxlength="40" ' +
+            'placeholder="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingPlaceholder')) +
+            '"><label for="signing-alg">' +
+            t.html('consoleUsers.mfaSection.signingKey') + '</label>' +
+            '<select id="signing-alg" name="keyAlg">' +
+            signView.keyAlgorithms.map(function (alg) {
+              return '<option value="' + kit.esc(alg) + '"' +
+                     (alg === signView.defaultKeyAlg ? ' selected' : '') +
+                     '>' + kit.esc(alg) + '</option>';
+            }).join('') + '</select></div>' +
+            '<div class="formrow"><label for="signing-password">' +
+            t.html('consoleUsers.mfaSection.signingPassword') +
+            '</label><input type="password" id="signing-password" ' +
+            'name="password" minlength="' + signView.passwordMin +
+            '" required autocomplete="new-password"><label ' +
+            'for="signing-confirm">' +
+            t.html('consoleUsers.mfaSection.signingAgain') + '</label>' +
+            '<input type="password" id="signing-confirm" name="confirm" ' +
+            'minlength="' + signView.passwordMin + '" required ' +
+            'autocomplete="new-password"></div>' +
+            '<div class="formrow"><button type="submit">' +
+            t.html('consoleUsers.mfaSection.signingIssue') +
+            '</button><span class="sub">' +
+            t.html('consoleUsers.mfaSection.signingOnce') +
+            '</span></div></form>'));
+    const signingBlock = '<h3>' +
+      t.html('consoleUsers.mfaSection.signingHeading') + '</h3>' +
+      kit.note(t.html('consoleUsers.mfaSection.signingLead',
+                      { name: signView.implicitName })) +
+      (signView.certificates.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.signingThCertificate') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.signingThState') +
+          '</th><th></th></tr>' +
+          signView.certificates.map(signRow).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')) +
+      signIssue;
+
     // --- self-issued IDs (#129, 2026-09-23) --------------------------------
     // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
     // with a Remove each, and a form that enrols one BY VALUE — the
@@ -2557,7 +2659,8 @@ class UsersPage {
       wayIn + totpBlock + UsersPage.emailFactorBlock(t, key, mech, state,
                                                 carryBack, data.mail) +
       keysBlock + recoveryBlock + appPasswordsBlock +
-      devicesBlock + certificatesBlock + selfIssuedBlock +
+      devicesBlock + certificatesBlock + signingBlock +
+      selfIssuedBlock +
       verificationsBlock;
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,

@@ -836,5 +836,13 @@
   "launch.endpoint": "该协议自身的端点，供需要它的合作方使用：",
   "relations.label": "它与其他角色设置有何不同",
   "relations.appPerms": "<strong>此应用作为成员持有的角色。</strong>这些与每个角色页面“谁持有它”下的应用行是同一批条目：在此处授予与在“角色”页面添加该应用写入的是同一内容。应用自己的令牌（<code>client_credentials</code>）携带这些角色，并可获得它们所授权的内容。对于 <code>SSF_READ</code> 和 <code>SSF_MANAGE</code>，成员关系还允许登录此应用的人员在属于该角色的组时获得该 scope。这不同于下方的“使用它所需持有的角色”（它只是要求一个角色），也不同于角色的“授予它的客户端”（它把角色借给通过某客户端登录的人员）。",
-  "relations.required": "<strong>登录要求，而非授予。</strong>此列表即 <code>appRequiredRole</code>，每个角色的页面都会在“要求它的应用程序”下显示此应用。人员必须以成员身份或通过组持有其中一个角色，才会为此应用签发任何内容。它不添加 scope 或权限，也不会让此应用成为该角色的成员。若要让此应用的令牌携带 <code>ssf.read</code>，请在上方“应用权限”下授予 <code>SSF_READ</code>，并把相关人员加入 <code>ssf-read</code>。"
+  "relations.required": "<strong>登录要求，而非授予。</strong>此列表即 <code>appRequiredRole</code>，每个角色的页面都会在“要求它的应用程序”下显示此应用。人员必须以成员身份或通过组持有其中一个角色，才会为此应用签发任何内容。它不添加 scope 或权限，也不会让此应用成为该角色的成员。若要让此应用的令牌携带 <code>ssf.read</code>，请在上方“应用权限”下授予 <code>SSF_READ</code>，并把相关人员加入 <code>ssf-read</code>。",
+  "a2.signingHeading": "消息签名证书（WS-Trust）",
+  "a2.signingNote": "<strong>此应用用来签名 WS-Trust 请求的证书。</strong>此处签发的证书只带有 <code>digitalSignature</code>，并在 subjectAltName 中以 <code>{name}</code> 命名此应用：对 SOAP Body 和 Timestamp 的 WS-Security 签名能用它验证的请求，就是此应用的请求。它不通过 TLS 认证任何东西，TLS 客户端证书也不签名任何请求。",
+  "a2.signingNotDeclared": "此应用未声明为 WS-Trust 依赖方，但仍持有消息签名证书。在该证书被吊销之前，用它签名的请求仍能认证此应用。",
+  "a2.noSigningCerts": "此领域未向此应用签发任何消息签名证书。",
+  "a2.signingAtMax": "此应用持有 {n} 个有效的消息签名证书，已达 <code>pki.messageSigningCertificateMax</code>。吊销一个后才能签发新的。",
+  "a2.issueSigningCert": "从此领域的 CA 签发消息签名证书",
+  "a2.signingNoCa": "此领域还没有证书颁发机构，因此无法签发消息签名证书。",
+  "a2.signerOne": "签名者 1"
 }

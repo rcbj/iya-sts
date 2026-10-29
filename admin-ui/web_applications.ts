@@ -2784,7 +2784,125 @@ class ApplicationsPage {
       secretHtml + assertionHtml +
       (state.oauthDeclared
         ? ApplicationsPage.applicationMtlsSection(state.mtls, id, carryBack, t)
+        : '') +
+      // MESSAGE SIGNING (#521): for a WS-Trust relying party, and for any
+      // application already holding such a certificate, which still
+      // verifies whatever the application is declared as.
+      (state.signing && (state.signing.wstrustDeclared ||
+                         (state.signing.certificates || []).length)
+        ? ApplicationsPage.applicationSigningSection(state.signing, id,
+                                                     carryBack, t)
         : '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // MESSAGE-SIGNING CERTIFICATES ON THE APPLICATION'S OWN PAGE (#521).
+  //
+  // What the application signs a WS-Trust request with, issued by an
+  // administrator here or through `POST /admin-api/applications/
+  // issue-signing-certificate` (rule 7), and revoked one by one. The model is
+  // `applicationSigningState()` in admin-core/admin_views.ts; the issue
+  // answers with a page of downloads, as the TLS client certificate's does
+  // (`WebAnswers.signingCertificate()`).
+  //
+  // **NO SCRIPT**: a form per certificate to revoke it, and two password
+  // fields.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's message-signing subsection: the certificates
+   * issued to it with a revoke form each, and the issue form.
+   *
+   * @param state - the model from `applicationSigningState()`
+   * @param id - the application's identifier
+   * @param carryBack - the hidden `back` field every form carries
+   * @param t - the page's translator (#539)
+   * @returns the subsection as HTML
+   */
+  static applicationSigningSection(state, id, carryBack, t) {
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + name + '" value="' +
+             kit.esc(value) + '">';
+    };
+    const rows = state.certificates.length
+      ? '<table><tr><th>' + t.html('consoleApplications.a2.certificate') +
+        '</th><th>' + t.html('consoleApplications.a2.colState') +
+        '</th><th></th></tr>' +
+        state.certificates.map(function (cert) {
+          const revokeForm = cert.state === 'valid'
+            ? '<form method="post" action="/admin/applications">' + carryBack +
+              hidden('action', 'revoke-signing-certificate') +
+              hidden('application', id) + hidden('serialHex', cert.serialHex) +
+              '<div class="formrow"><select name="reason" ' +
+              'aria-label="' + t.html('consoleApplications.a2.reason') + '">' +
+              state.revocationReasons.map(function (reason) {
+                return '<option value="' + kit.esc(reason) + '">' +
+                       kit.esc(reason) + '</option>';
+              }).join('') + '</select><button type="submit" class="danger">' +
+              t.html('consoleApplications.a2.revoke') +
+              '</button></div></form>'
+            : '';
+          return '<tr><td><code>' + kit.esc(cert.subject) + '</code><div ' +
+            'class="sub">' +
+            (cert.label ? kit.esc(cert.label) + ' &middot; ' : '') +
+            t.html('consoleApplications.a2.serial') + '<code>' +
+            kit.esc(cert.serialHex) + '</code> &middot; ' +
+            kit.esc(cert.keyAlg) +
+            t.html('consoleApplications.a2.validUntil') + '<code>' +
+            kit.esc(cert.notAfter) + '</code><br>' +
+            t.html('consoleApplications.a2.thumbprint') + '<code>' +
+            kit.esc(cert.thumbprint) + '</code></div></td><td><span ' +
+            'class="state-' +
+            (cert.state === 'valid' ? 'valid' : 'revoked') + '">' +
+            kit.esc(cert.state) + '</span>' + (cert.reason
+              ? '<div class="sub">' + kit.esc(cert.reason) + '</div>' : '') +
+            '</td><td>' + revokeForm + '</td></tr>';
+        }).join('') + '</table>'
+      : '<p class="sub">' + t.html('consoleApplications.a2.noSigningCerts') +
+        '</p>';
+    const issueForm = state.caAvailable
+      ? (state.active >= state.max
+        ? kit.note(t.html('consoleApplications.a2.signingAtMax',
+                          { n: state.active }))
+        : '<form method="post" action="/admin/applications">' + carryBack +
+          hidden('action', 'issue-signing-certificate') +
+          hidden('application', id) +
+          '<div class="formrow"><label for="signing-label">' +
+          t.html('consoleApplications.a2.nameIt') + '</label>' +
+          '<input id="signing-label" name="label" maxlength="40" ' +
+          'placeholder="' +
+          kit.esc(t.text('consoleApplications.a2.signerOne')) +
+          '"><label for="signing-alg">' +
+          t.html('consoleApplications.a2.colKey') + '</label>' +
+          '<select id="signing-alg" name="keyAlg">' +
+          state.keyAlgorithms.map(function (alg) {
+            return '<option value="' + kit.esc(alg) + '"' +
+                   (alg === state.defaultKeyAlg ? ' selected' : '') + '>' +
+                   kit.esc(alg) + '</option>';
+          }).join('') + '</select></div>' +
+          '<div class="formrow"><label for="signing-password">' +
+          t.html('consoleApplications.a2.filePassword') +
+          '</label><input type="password" id="signing-password" ' +
+          'name="password" minlength="' + state.passwordMin + '" required ' +
+          'autocomplete="new-password"><label for="signing-confirm">' +
+          t.html('consoleApplications.a2.again') + '</label><input ' +
+          'type="password" id="signing-confirm" name="confirm" minlength="' +
+          state.passwordMin + '" required autocomplete="new-password"></div>' +
+          '<div class="formrow"><button type="submit">' +
+          t.html('consoleApplications.a2.issueSigningCert') +
+          '</button><span class="sub">' +
+          t.html('consoleApplications.a2.shownOnceDownloads') +
+          '</span></div></form>')
+      : kit.note(t.html('consoleApplications.a2.signingNoCa') + '<a ' +
+                  'href="/admin/pki">' +
+                  t.html('consoleApplications.a2.buildOnPki') + '</a>.');
+    return '<h3 id="credentials-message-signing">' +
+      t.html('consoleApplications.a2.signingHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.a2.signingNote',
+                      { name: state.implicitName })) +
+      (state.wstrustDeclared ? ''
+        : kit.warn(t.html('consoleApplications.a2.signingNotDeclared'),
+                   t.text('consoleApplications.a2.stillInEffect'))) +
+      rows + issueForm;
   }
 
   // ---------------------------------------------------------------------------
