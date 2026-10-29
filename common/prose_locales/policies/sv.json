@@ -304,16 +304,16 @@
     "text": "Nyckel (lösenordsfri) — som första faktor"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte en applikations egen lista (appAuthnMechanism) säger något annat."
+    "en": "1cab77157f5d6263",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte de första faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
     "en": "4e99afea50969c29",
     "text": "Nyckel (andra faktor) — som andra faktor"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte en applikations egen lista (appMfaMechanism) säger något annat."
+    "en": "5577b57e8d01187e",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte de andra faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte en applikations egen lista (appAuthnMechanism) säger något annat."
+    "en": "1cab77157f5d6263",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte de första faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte en applikations egen lista (appMfaMechanism) säger något annat."
+    "en": "5577b57e8d01187e",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte de andra faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -571,6 +571,14 @@
     "en": "93538e6b201100c5",
     "text": "Vad profilen är till för, för nästa person."
   },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "9c184b4ac272a663",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148): en mekanism för första faktor som applikationerna som namnger den här policyn (appAuthnPolicy) tillåter — password, password-mfa, webauthn, spnego, wallet eller federation, ett värde var. Anges ingen tillåts varje mekanism som sfären tillåter."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "b59799bd06b5022d",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148): en andra faktor som applikationerna som namnger den här policyn tillåter — password, securityKey, totp, recoveryCode, emailCode, emailLink eller wallet, ett värde var. Anges ingen lämnas sfärens autentiseringspolicy som den är."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Vilken andra faktor via e-post den här personen har valt: `code` eller `link`. Saknas: ingen. Sätts på /portal/mfa, rensas på /admin/mfa och efter för många misslyckanden i följd."
@@ -592,16 +600,16 @@
     "text": "Nyckel (lösenordsfri)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte en applikations egen lista (appAuthnMechanism) säger något annat."
+    "en": "1cab77157f5d6263",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som loggar in dem utan lösenord. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en första faktor i den här sfären, om inte de första faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
   },
   "authn.MECHANISMS.securityKey.label": {
     "en": "7474add07b92939d",
     "text": "Nyckel (andra faktor)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "ea543723944fb410",
-    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte en applikations egen lista (appMfaMechanism) säger något annat."
+    "en": "5577b57e8d01187e",
+    "text": "Varje nyckel (WebAuthn-autentiseringsuppgift) personen har, som efterfrågas efter en första faktor. En nyckel har ingen roll: den här raden säger, vid varje inloggning, om någon av dem får vara en andra faktor i den här sfären, om inte de andra faktorerna i den autentiseringspolicy en applikation namnger (appAuthnPolicy) säger något annat."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1064,8 +1072,8 @@
     "text": "Kräv inloggning med nyckel utan användarnamn"
   },
   "passkey.FIELDS.requireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (appAuthnMechanism `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
+    "en": "3f8988c76401d34a",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (autentiseringspolicyn det namnger, appAuthnPolicy, anger `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
   },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
@@ -1272,8 +1280,8 @@
     "text": "PÅSLAGEN SOM STANDARD. Påslagen erbjuder inloggningsskärmen *Logga in med en nyckel* och autofyllning i användarnamnsfältet, som ber webbläsaren om valfri upptäckbar inloggningsuppgift för den här sfären (WebAuthn Level 3 avsnitt 5.4, `allowCredentials` tom) och loggar in det konto som dess användarhandtag anger, med användarverifiering krävd och kontrollerad. Avstängd erbjuds ingetdera och en inloggning anger alltid personen först. Ersätter inställningen webauthn.usernameless."
   },
   "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (appAuthnMechanism `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
+    "en": "3f8988c76401d34a",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (autentiseringspolicyn det namnger, appAuthnPolicy, anger `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
   },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",

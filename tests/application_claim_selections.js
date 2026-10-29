@@ -27,7 +27,13 @@
 //   C. SAML 2.0 by audience;
 //   D. the credential claims: `applicationRows()` and `rowsForPaths()`
 //      against the client's own selection;
-//   E. the view model and the markup the sub-tabs draw.
+//   E. the view model and the markup the sub-tabs draw;
+//   F. the OAuth sub-tab's one table (#1144): `set-claim-selections` writes
+//      only the columns that changed, an untouched inherited column keeps
+//      inheriting, a bad attribute refuses the whole Save, and the table's
+//      markup — a checkbox column per set, the realm's marks, one Save; the
+//      preview person defaults to the signed-in administrator, and one the
+//      directory does not hold is named in a note.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -220,6 +226,126 @@ function childMain() {
       note(readOnly.indexOf('<input type="checkbox"') < 0 &&
            readOnly.indexOf('set-claim-attributes') < 0,
            'E4. a reader without write sees no form');
+
+      // --- F. The OAuth sub-tab's one table (#1144) -----------------------
+      // acs-web holds its own access_token selection (sn, from E) and
+      // inherits the realm's id_token one (mail).
+      const together = act({ action: 'set-claim-selections',
+        application: 'acs-web', access_token: ['sn'], id_token: ['mail'],
+        userinfo: ['givenName'] });
+      const bySet = {};
+      ((together && together.sets) || []).forEach(function (one) {
+        bySet[one.set] = one;
+      });
+      const web = function () {
+        return applications.get('acs-web');
+      };
+      note(together.ok && bySet.access_token.changed === false &&
+           bySet.access_token.inherited === false &&
+           bySet.id_token.changed === false &&
+           bySet.id_token.inherited === true &&
+           claimAttributes.applicationSelection('id_token', web()) === null &&
+           bySet.userinfo.changed === true &&
+           JSON.stringify(claimAttributes.applicationSelection('userinfo',
+             web())) === '["givenName"]',
+           'F1. one Save writes only the changed column: an untouched ' +
+           'inherited column keeps inheriting, an untouched own one is left, ' +
+           'a changed one becomes the application\'s own',
+           JSON.stringify(together));
+      const emptied = act({ action: 'set-claim-selections',
+        application: 'acs-web', userinfo: [''] });
+      note(emptied.ok && emptied.sets.length === 1 &&
+           emptied.sets[0].changed === true &&
+           JSON.stringify(claimAttributes.applicationSelection('userinfo',
+             web())) === '[]',
+           'F2. a column with nothing ticked posts an empty list and holds ' +
+           'an empty selection; a column not sent is not touched',
+           JSON.stringify(emptied));
+      const badColumn = act({ action: 'set-claim-selections',
+        application: 'acs-web', id_token: ['givenName'],
+        access_token: ['no-such-attribute'] });
+      note(!badColumn.ok && code(badColumn) === 'STS-REG-0215' &&
+           claimAttributes.applicationSelection('id_token', web()) === null,
+           'F3. an attribute the catalogue does not hold refuses the whole ' +
+           'Save (STS-REG-0215), and no column is written',
+           JSON.stringify(badColumn));
+      const notOauth = act({ action: 'set-claim-selections',
+        application: 'acs-sp', id_token: ['mail'] });
+      note(!notOauth.ok && code(notOauth) === 'STS-REG-0215',
+           'F4. an application not declared for OAuth 2.0 or OpenID Connect ' +
+           'is refused', JSON.stringify(notOauth));
+      const tableView = views.applicationClaimsState(web(), 'bob')
+        .selections;
+      const tableRow = { identifier: 'acs-web',
+                         page: { claimSelections: tableView } };
+      const table = page.applicationClaimSelectionTable(
+        WebKit.context({}, true), tableRow, '',
+        ['access_token', 'id_token', 'userinfo'], 'cfg-oauth');
+      const forms = (table.match(/<form method="post"/g) || []).length;
+      const saves = (table.match(/value="set-claim-selections"/g) || [])
+        .length;
+      note(forms === 1 && saves === 1 &&
+           /name="access_token" value="sn" checked/.test(table) &&
+           /name="id_token" value="mail" checked[^>]*> <span class="claim-realm"/
+             .test(table) &&
+           !/name="userinfo" value="[^"]*" checked/.test(table) &&
+           ['access_token', 'id_token', 'userinfo'].every(function (id) {
+             return table.indexOf('<input type="hidden" name="' + id +
+                                  '" value="">') >= 0;
+           }) &&
+           /action=inherit-claim-attributes&amp;set=access_token#cfg-oauth/
+             .test(table) &&
+           !/set=id_token#cfg-oauth/.test(table) &&
+           (table.match(/<h5>/g) || []).length === 3 &&
+           table.indexOf('name="claimsUser"') >= 0,
+           'F5. the table: one form and one Save, a checkbox column per set ' +
+           'with the boxes in force ticked, the realm\'s tick marked, an ' +
+           'empty value per column, Use the realm\'s for an own column only, ' +
+           'a preview per set', table.slice(0, 600));
+      const tableRead = page.applicationClaimSelectionTable(
+        WebKit.context({}, false), tableRow, '',
+        ['access_token', 'id_token', 'userinfo'], 'cfg-oauth');
+      note(tableRead.indexOf('<input type="checkbox"') < 0 &&
+           tableRead.indexOf('<form method="post"') < 0 &&
+           tableRead.indexOf('claim-realm') >= 0,
+           'F6. a reader without write sees the table and the realm\'s ' +
+           'marks, and no form');
+      // F7: the preview person is the signed-in administrator unless one is
+      // asked for — and `alice` only for a caller that is no person.
+      const ldap = require(ROOT + '/ldap/ldap_server');
+      ldap.createUser('acs-admin', { invent: false });
+      const asking = function (query, caller) {
+        return views.applicationDetailJson({ query: query,
+          headers: { host: 'localhost:8081' }, protocol: 'https',
+          get: function () { return ''; }, adminApiCaller: caller },
+          'acs-web').json.page.claimSelections.preview;
+      };
+      const mine = asking({}, { kind: 'person', name: 'acs-admin' });
+      const named = asking({ claimsUser: 'bob' },
+                           { kind: 'person', name: 'acs-admin' });
+      const machine = asking({}, { kind: 'application',
+                                   name: 'sts-api-client' });
+      note(mine.user === 'acs-admin' && mine.entryFound === true &&
+           named.user === 'bob' && machine.user === 'alice',
+           'F7. the preview is the signed-in administrator by default, the ' +
+           'person asked for when one is, and alice for a caller that is no ' +
+           'person', JSON.stringify([mine.user, mine.entryFound, named.user,
+                                     machine.user]));
+      // F8: a preview person the directory does not hold is said so.
+      const tableFor = function (who) {
+        return page.applicationClaimSelectionTable(WebKit.context({}, true),
+          { identifier: 'acs-web', page: { claimSelections:
+            views.applicationClaimsState(web(), who).selections } },
+          '', ['access_token', 'id_token', 'userinfo'], 'cfg-oauth');
+      };
+      const nobody = tableFor('acs-nobody-' + stamp);
+      const somebody = tableFor('acs-admin');
+      note(nobody.indexOf('There is no person <code>acs-nobody-' + stamp +
+                          '</code>') >= 0 &&
+           somebody.indexOf('There is no person') < 0,
+           'F8. a preview person the realm\'s directory does not hold is ' +
+           'named in a note; one it holds is not',
+           nobody.slice(0, 300));
       claimAttributes.setSelection('id_token', []);
       claimAttributes.setSelection('saml2', []);
     });

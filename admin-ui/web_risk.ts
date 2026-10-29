@@ -543,10 +543,20 @@ class RiskPage {
           ((v.state === 'ready' || v.state === 'superseded')
             ? self.form('activate', d, v.version,
                         t.text('consoleRisk.dataset.activate')) : '') +
-          (v.state !== 'active' && v.state !== 'loading' &&
-           v.state !== 'deleted'
+          // REMOVE ON EVERY LOADED VERSION (#1152), the active one included:
+          // removing it leaves the dataset with no active version. A version
+          // still loading, or already deleted, has no rows to remove.
+          (v.state !== 'loading' && v.state !== 'deleted'
             ? self.form('delete', d, v.version,
-                        t.text('consoleRisk.dataset.deleteRows')) : '');
+                        t.text('consoleRisk.dataset.remove')) : '') +
+          // A REMOVED VERSION COMES BACK FROM ITS ROW (#1157, rcbj): Reload
+          // where this service downloads it from the address it came from,
+          // and otherwise an upload form with everything but the file set.
+          (v.state === 'deleted'
+            ? (v.reloadable
+              ? self.form('reload', d, v.version,
+                          t.text('consoleRisk.dataset.reload'))
+              : self.uploadAgain(d, v, t)) : '');
         return '<tr><td><code>' + esc(v.version) + '</code></td><td>' +
           esc(v.state) + (v.refusal ? '<br><small>' + esc(v.refusal) +
                           '</small>' : '') + '</td><td class="num">' +
@@ -1062,6 +1072,26 @@ class RiskPage {
   }
 
   // One small POST form: an action on one dataset (and version).
+  // UPLOAD AGAIN (#1157): the upload door's form for one removed version —
+  // the dataset and its format, the realm and the version as hidden fields
+  // BEFORE the file (the order `risk_upload.ts` holds the fields to), so only
+  // the file is chosen. Its record is reused (#1155).
+  static uploadAgain(d: Json, v: Json, t: Json): string {
+    const slug = (kit.esc(d.dataset) + '-' + kit.esc(v.version))
+      .replace(/[^a-z0-9]/gi, '-');
+    return '<form method="post" action="' + UPLOAD + '" ' +
+      'enctype="multipart/form-data" class="inline" ' +
+      'id="risk-upload-again-' + slug + '">' +
+      '<input type="hidden" name="dataset|format" value="' +
+      kit.esc(d.dataset + '|' + v.format) + '">' +
+      '<input type="hidden" name="realm" value="' + kit.esc(d.realm) + '">' +
+      '<input type="hidden" name="version" value="' + kit.esc(v.version) +
+      '"><label>' + t.html('consoleRisk.dataset.uploadAgainFile') +
+      ' <input type="file" name="file" required></label> ' +
+      '<button type="submit" id="risk-upload-again-button-' + slug + '">' +
+      t.html('consoleRisk.dataset.uploadAgain') + '</button></form>';
+  }
+
   static form(action: string, d: Json, version: string,
                label: string): string {
     return '<form method="post" action="' + PAGE + '" class="inline">' +

@@ -131,7 +131,7 @@ function childMain() {
     const WRITER = 'am-writer-' + stamp;
     const READER = 'am-reader-' + stamp;
     const BOSS = 'am-boss-' + stamp;
-    const CLIENT = 'sts-management-api';
+    const CLIENT = 'sts-api-client';
     const R = 'am' + stamp;
     const SERVICE_PAGE = '/admin/persistence';
     const REALM_PAGE = '/admin/users';

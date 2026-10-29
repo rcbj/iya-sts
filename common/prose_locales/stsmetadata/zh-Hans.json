@@ -2604,16 +2604,16 @@
     "text": "询问登录以浏览器中哪个已登录账号继续；需要 ?authn= id，因此直接访问会返回 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "23818b4a272ea292",
-    "text": "集成认证，也是此处唯一一个依赖本服务真正验证过的凭据的登录。在其他地方，所输入的用户名就是身份；Kerberos 无法这样工作，因为那里的密码就是密钥——所以这个入口会针对真实的长期密钥检查真实的服务票据，经由本服务自己的接受方，且没有任何自己的协议代码。其背后的 KDC 仍然在协议允许的范围内尽可能宽松（任意用户名、一个共享密码、首次见到时创建账户），这正是使开发模式保持宽松的原因——验证是真的，账户策略不是。它对每个应用都可用，且不为任何应用注册：/authn/login 上的按钮为任何正在进行的流程提供它，应用条目上的 appAuthnMechanism: spnego 会将该应用的人员直接送到这里，而身份提供方一侧联合关系上的 fedAuthnMechanism: spnego 则使 Kerberos 票据能满足一个从未听说过 Kerberos 的外部合作方。会话随后声明的内容读取自票据自身的标志——pre-authent 对应 amr [\"pwd\"]，hw-authent 对应 [\"hwk\"]，两者都有则两者都声明，两者都不声明的票据则什么都不声明，因为本服务不会说出任何凭据都未证明的因素。它接受 ?authn=，绝不接受 returnTo：返回地址在待处理记录上，因此这里完全没有开放重定向的攻击面。无法获取票据的客户端会看到一个链接到登录界面的页面，因为对于未针对此主机配置的每个浏览器来说，单纯的 401 Negotiate 都是死路。krb5.spnegoAuthentication 可将其关闭，届时它应答 403 并说明这一点，而不是 404。"
+    "en": "ac6b3c87e6a2b5b8",
+    "text": "集成认证，也是此处唯一一个依赖本服务真正验证过的凭据的登录。在其他地方，所输入的用户名就是身份；Kerberos 无法这样工作，因为那里的密码就是密钥——所以这个入口会针对真实的长期密钥检查真实的服务票据，经由本服务自己的接受方，且没有任何自己的协议代码。其背后的 KDC 仍然在协议允许的范围内尽可能宽松（任意用户名、一个共享密码、首次见到时创建账户），这正是使开发模式保持宽松的原因——验证是真的，账户策略不是。它对每个应用都可用，且不为任何应用注册：/authn/login 上的按钮为任何正在进行的流程提供它，将 spnego 作为应用所指定身份验证策略（appAuthnPolicy）的唯一第一因素，会将该应用的人员直接送到这里，而身份提供方一侧联合关系上的 fedAuthnMechanism: spnego 则使 Kerberos 票据能满足一个从未听说过 Kerberos 的外部合作方。会话随后声明的内容读取自票据自身的标志——pre-authent 对应 amr [\"pwd\"]，hw-authent 对应 [\"hwk\"]，两者都有则两者都声明，两者都不声明的票据则什么都不声明，因为本服务不会说出任何凭据都未证明的因素。它接受 ?authn=，绝不接受 returnTo：返回地址在待处理记录上，因此这里完全没有开放重定向的攻击面。无法获取票据的客户端会看到一个链接到登录界面的页面，因为对于未针对此主机配置的每个浏览器来说，单纯的 401 Negotiate 都是死路。krb5.spnegoAuthentication 可将其关闭，届时它应答 403 并说明这一点，而不是 404。"
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
     "text": "以 \"WWW-Authenticate: Negotiate\" 应答 401；对携带有效服务票据的请求，则建立浏览器会话并返回到被中断的流程"
   },
   "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "595ee670036d604e",
-    "text": "以经过验证的出示作为登录（2026-09-17）。与 Kerberos 按钮一样，在 /authn/login 上为每个正在进行的流程提供：它接受 ?authn=（或 ?mfa=，即在密码之后以钱包作为第二因素），绝不接受 returnTo。自 #574 起，这是静态登录界面的一条路由：请求由 POST /authn-api/wallet 发出，绝不由此 GET 发出。请求总是已签名的，以 oid4vp.signInFormats 所列的每种格式索要本颁发者的凭证（每种一个凭证查询，外加一个凭证集），并且也通过 Digital Credentials API 提供（openid4vp-v1-signed、expected_origins）。只有本领域基于其验证过且无人否认的访问令牌为某个人颁发的、此后未被否认、状态为 VALID，并带有新鲜持有者证明出示的凭证，才能让人登录——以该凭证所颁发给的目录条目的身份。amr [\"pop\"] 和 acr \"1\"，或者在经过验证的密钥证明表明如此时为 hwk 和 acr \"mfa\"；要求两个因素的请求会在钱包之后再索要第二个因素。appAuthnMechanism: wallet 会将应用的人员直接送到这里。oid4vp.signIn 可将其关闭，届时它应答 403 并说明这一点。"
+    "en": "8b8887edb3d1d7a1",
+    "text": "以经过验证的出示作为登录（2026-09-17）。与 Kerberos 按钮一样，在 /authn/login 上为每个正在进行的流程提供：它接受 ?authn=（或 ?mfa=，即在密码之后以钱包作为第二因素），绝不接受 returnTo。自 #574 起，这是静态登录界面的一条路由：请求由 POST /authn-api/wallet 发出，绝不由此 GET 发出。请求总是已签名的，以 oid4vp.signInFormats 所列的每种格式索要本颁发者的凭证（每种一个凭证查询，外加一个凭证集），并且也通过 Digital Credentials API 提供（openid4vp-v1-signed、expected_origins）。只有本领域基于其验证过且无人否认的访问令牌为某个人颁发的、此后未被否认、状态为 VALID，并带有新鲜持有者证明出示的凭证，才能让人登录——以该凭证所颁发给的目录条目的身份。amr [\"pop\"] 和 acr \"1\"，或者在经过验证的密钥证明表明如此时为 hwk 和 acr \"mfa\"；要求两个因素的请求会在钱包之后再索要第二个因素。将 wallet 作为应用所指定身份验证策略（appAuthnPolicy）的唯一第一因素，会将该应用的人员直接送到这里。oid4vp.signIn 可将其关闭，届时它应答 403 并说明这一点。"
   },
   "stsmetadata.endpoints./authn/wallet.effect": {
     "en": "79a0035468001881",

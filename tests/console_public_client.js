@@ -164,7 +164,7 @@ function childMain() {
     // The management API is a client_credentials client: oauth2 alone.
     [['sts-admin-console', ['oauth2', 'oidc']],
      ['sts-user-portal', ['oauth2', 'oidc']],
-     ['sts-management-api', ['oauth2']]].forEach(function (pair) {
+     ['sts-api-client', ['oauth2']]].forEach(function (pair) {
       const families = applications.declaredFamiliesOf(
         applications.get(pair[0])).sort();
       note(JSON.stringify(families) === JSON.stringify(pair[1]),

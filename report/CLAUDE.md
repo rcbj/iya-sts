@@ -20,6 +20,19 @@ delegated permissions and `sts-report` held the grant**; the bare words
 with `resource` never consult a grant, so it decided nothing and both
 are gone (*Who may run one*, below). `common/applications.js` seeds
 `sts-report`, in every realm.
+**`sts-report-api` IS BACK SINCE #1139 (2026-10-29), as something else**:
+the reports API's own application object, an OAuth 2.0 RESOURCE of kind
+`oauth2-resource-server` holding the audience (`oauthAudience`, the seeded
+base + `/report-api`) — rcbj's model, in which every API is an object and a
+caller is always a separate client configured to call it. It defines no
+permission and holds no grant, so #1030's argument still stands, and it is
+NEVER a client: `oauth-oidc/oauth2.ts` refuses its client_id everywhere a
+client presents itself (`STS-OAUTH-0985`; `common/CLAUDE.md` has the four
+resource objects). The machine caller is `sts-api-client`, seeded a member
+of REPORT_USE (`common/roles.js`) and declaring `report:use`; as an
+application it reaches only what it defined (`ownerKind`, below), and its
+`client_credentials` token is unbound, so it arrives as `Bearer`.
+`docs/reporting.md`'s *From another program* is the operator's half.
 With `authn.multipleAccounts` on, the account control is the console's
 menu: the summary is the account this tab is, and the panel lists the
 browser's other signed-in accounts as switch buttons, plus a sign-in as
@@ -1198,16 +1211,17 @@ The fourteen sources are `users`, `groups`, `applications`, `federation`,
 `reportJobs`, `attributeSources`, `credentialHolders`,
 `postLoginProgress`, `passkeyHistory` and `passkeyCeremonies` (above,
 #1107). `authMechanisms` is the realm policy
-(application `realm`) plus one row per value an application lists in
-`appAuthnMechanism` or `appMfaMechanism`. An empty list inherits the
-realm policy and adds no row. `authActivity` is the four attempt actions
-still in the audit ring (`authentication`, `authentication.refused`,
-`session.refuse`, `session.refused`). `mechanism` is `detail.method`, or
-`detail.amr` when the row has no method. A session id, an address, a note
-and a presented credential are not fields. `attributeSources` is the
-register. It does not run SQL and it does not read the remote table.
-Connection details and secrets are not fields. `serviceMetrics` is one
-level of numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`.
-It is not a time series, and it is not the per-route or per-kind tables.
-`/admin/metrics` and `/admin-api/metrics` stay. `docs/reporting.md` is
-the migration note.
+(application `realm`) plus one row per value listed by the named
+authentication policy an application names (`appAuthnPolicy`, #1148; its
+own `appAuthnMechanism` and `appMfaMechanism` until then). An application
+on `default`, or whose policy lists none, inherits the realm policy and
+adds no row; a policy that does not exist adds none. `authActivity` is the four
+attempt actions still in the audit ring (`authentication`,
+`authentication.refused`, `session.refuse`, `session.refused`). `mechanism` is
+`detail.method`, or `detail.amr` when the row has no method. A session id, an
+address, a note and a presented credential are not fields. `attributeSources` is
+the register. It does not run SQL and it does not read the remote table.
+Connection details and secrets are not fields. `serviceMetrics` is one level of
+numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`. It is not a
+time series, and it is not the per-route or per-kind tables. `/admin/metrics`
+and `/admin-api/metrics` stay. `docs/reporting.md` is the migration note.

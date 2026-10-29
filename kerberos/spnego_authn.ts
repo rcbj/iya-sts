@@ -27,8 +27,10 @@
 //      is named: whatever flow is in progress carries on afterwards, because
 //      the button hands this door the pending record the screen was drawn
 //      from.
-//   2. `appAuthnMechanism: spnego` ON THE APPLICATION ENTRY, which is home
-//      realm discovery by configuration — that application's people never see
+//   2. `spnego` AS THE ONE FIRST FACTOR OF THE NAMED AUTHENTICATION POLICY
+//      THE APPLICATION ENTRY NAMES (`appAuthnPolicy`, #1148; the entry's own
+//      `appAuthnMechanism: spnego` until then), which is home realm
+//      discovery by configuration — that application's people never see
 //      the screen at all.
 //   3. `fedAuthnMechanism: spnego` ON AN IDENTITY-PROVIDER-SIDE FEDERATION
 //      RELATIONSHIP, which answers a different question: when THAT partner

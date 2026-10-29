@@ -293,6 +293,10 @@ function ownershipOver(registers) {
         },
         declaredScopes: function (id) {
           return id === 'scim-feeder' ? ['scim:write', 'openid'] : null;
+        },
+        // The scopes a delegated permission grant declares (#1141).
+        delegatedPermissionScopes: function () {
+          return [];
         } };
     }
   });

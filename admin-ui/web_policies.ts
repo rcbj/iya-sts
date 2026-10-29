@@ -163,8 +163,13 @@ class PoliciesPage {
           t.html('consolePolicies.authn.noMailLink') + '</a>.')) +
 
       kit.warn('<strong>' + t.html('consolePolicies.authn.emailWarning') +
-        '</strong> ' + kit.esc(ap.nistWarning)) +
-
+        '</strong> ' + kit.esc(ap.nistWarning));
+    // THREE SUB-TABS, AS THE PASSKEY POLICY HAS (rcbj, 2026-10-29): Default
+    // (the realm's own policy, its forms and what it accepts now), Named
+    // policies (each one an application may name, #1148) and New policy.
+    // The schema is reference for all three, so it stays under them.
+    const named = PoliciesPage.namedAuthnPoliciesSection(ap, t);
+    const byDefault =
       PoliciesPage.policyProblems(profile, t) +
 
       kit.note(profile.from === 'realm'
@@ -189,11 +194,120 @@ class PoliciesPage {
           yesNo(m.primary, m.active) + '</td><td>' +
           yesNo(m.secondFactor, m.active) + '</td></tr>';
       }).join('') + '</table>' +
-      kit.note(t.html('consolePolicies.authn.dash')) +
-
+      kit.note(t.html('consolePolicies.authn.dash'));
+    return out + kit.subTabbedPanels(kind.label, [
+      { id: 'authn-sub-default',
+        label: t.text('consolePolicies.sub.default'), html: byDefault },
+      { id: 'authn-sub-named',
+        label: t.text('consolePolicies.sub.named'), html: named.list },
+      { id: 'authn-sub-new',
+        label: t.text('consolePolicies.sub.new'), html: named.add }
+    ]) +
       '<h3 id="authn-schema">' + t.html('consolePolicies.schema') + '</h3>' +
       PoliciesPage.policySchemaTables(ap.schema, t);
-    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // NAMED AUTHENTICATION POLICIES (#1148, rcbj 2026-10-29): the policies an
+  // application names in `appAuthnPolicy`, each holding the first-factor
+  // mechanisms and the second factors it allows. A row each — its lists, the
+  // applications naming it, a Change form under a disclosure and a Delete —
+  // and a form for a new one. Each checkbox group posts an EMPTY value first,
+  // so a policy saved with nothing ticked is an empty list ("every one"),
+  // and the save replaces a policy of the same name.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the named authentication policies of the authentication tab: the
+   * list for its Named policies sub-tab and the form for its New policy one.
+   *
+   * @param ap - the authentication policy's member of the policies view
+   * @param t - the page's translator (#539)
+   * @returns `{ list, add }`, each as HTML
+   */
+  static namedAuthnPoliciesSection(ap, t) {
+    const vocabulary = ap.vocabulary || { mechanisms: [], secondFactors: [] };
+    const named = ap.named || [];
+    const boxes = function (member, ids, held, prefix) {
+      return '<input type="hidden" name="' + member + '" value="">' +
+        ids.map(function (id) {
+          return '<label class="fg-radio"><input type="checkbox" name="' +
+            member + '" value="' + kit.esc(id) + '" id="' +
+            kit.esc(prefix + member + '-' + id) + '"' +
+            (held.indexOf(id) >= 0 ? ' checked' : '') + '> ' +
+            kit.esc(id) + '</label>';
+        }).join(' ');
+    };
+    const form = function (policy) {
+      const prefix = 'nap-' + (policy ? policy.name : 'new') + '-';
+      return '<form method="post" action="/admin/policies#authn-named">' +
+        '<input type="hidden" name="action" ' +
+        'value="save-named-authn-policy">' +
+        (policy
+          ? '<input type="hidden" name="name" value="' +
+            kit.esc(policy.name) + '">'
+          : '<div class="formrow"><label for="' + prefix + 'name">' +
+            t.html('consolePolicies.authnNamed.name') + '</label> ' +
+            '<input type="text" id="' + prefix + 'name" name="name" ' +
+            'required pattern="[a-z0-9][a-z0-9-]{0,62}" ' +
+            'placeholder="passkeys-only"></div>') +
+        '<div class="formrow"><label for="' + prefix + 'description">' +
+        t.html('consolePolicies.form.description') + '</label> ' +
+        '<input type="text" id="' + prefix + 'description" ' +
+        'name="description" size="60" maxlength="1024" value="' +
+        kit.esc(policy ? policy.description : '') + '"></div>' +
+        '<div class="formrow"><span>' +
+        t.html('consolePolicies.authnNamed.first') + '</span> ' +
+        boxes('mechanisms', vocabulary.mechanisms,
+              policy ? policy.mechanisms : [], prefix) + '</div>' +
+        '<div class="formrow"><span>' +
+        t.html('consolePolicies.authnNamed.second') + '</span> ' +
+        boxes('secondFactors', vocabulary.secondFactors,
+              policy ? policy.secondFactors : [], prefix) + '</div>' +
+        '<div class="formrow"><button>' +
+        t.html('consolePolicies.authnNamed.save') + '</button></div></form>';
+    };
+    const none = '<span class="state-none">' +
+      t.html('consolePolicies.authnNamed.every') + '</span>';
+    const listCell = function (list) {
+      return list.length ? kit.codeList(list) : none;
+    };
+    const rows = named.map(function (policy) {
+      return '<tr><td><code>' + kit.esc(policy.name) + '</code>' +
+        (policy.description ? '<br><span class="sub">' +
+          kit.esc(policy.description) + '</span>' : '') + '</td><td>' +
+        listCell(policy.mechanisms) + '</td><td>' +
+        listCell(policy.secondFactors) + '</td><td>' +
+        (policy.namedBy.length ? kit.codeList(policy.namedBy)
+          : '<span class="state-none">' +
+            t.html('consolePolicies.authnNamed.nobody') + '</span>') +
+        '</td><td><details><summary>' +
+        t.html('consolePolicies.authnNamed.change') + '</summary>' +
+        form(policy) + '</details>' +
+        '<form method="post" action="/admin/policies#authn-named" ' +
+        'class="inline"><input type="hidden" name="action" ' +
+        'value="delete-named-authn-policy"><input type="hidden" ' +
+        'name="name" value="' + kit.esc(policy.name) + '"><button ' +
+        'class="secondary"' + (policy.namedBy.length
+          ? ' disabled' + kit.tip(t.text('consolePolicies.authnNamed.inUse'))
+          : '') + '>' + t.html('consolePolicies.authnNamed.delete') +
+        '</button></form></td></tr>';
+    }).join('');
+    return {
+      list: '<h3 id="authn-named">' +
+        t.html('consolePolicies.authnNamed.heading') + '</h3>' +
+        kit.note(t.html('consolePolicies.authnNamed.lead')) +
+        '<table><tr><th>' + t.html('consolePolicies.authnNamed.name') +
+        '</th><th>' + t.html('consolePolicies.authnNamed.first') +
+        '</th><th>' + t.html('consolePolicies.authnNamed.second') +
+        '</th><th>' + t.html('consolePolicies.authnNamed.namedBy') +
+        '</th><th></th></tr>' +
+        (rows || '<tr><td colspan="5" class="sub">' +
+          t.html('consolePolicies.authnNamed.empty') + '</td></tr>') +
+        '</table>',
+      add: '<h3 id="authn-new">' +
+        t.html('consolePolicies.authnNamed.newHeading') + '</h3>' +
+        form(null)
+    };
   }
 
   // ---------------------------------------------------------------------------

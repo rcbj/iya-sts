@@ -549,8 +549,12 @@ function childMain() {
       protocols: ['oauth2'],
       fields: { oauthClientId: CLIENT,
                 oauthTokenEndpointAuthMethod: ['client_secret_basic'],
-                oauthAllowedScope: ['openid', 'report:use',
-                                    'report:admin'] } });
+                oauthAllowedScope: ['openid'],
+                // The report scopes are delegated permission grants since
+                // #1141.
+                oauthDelegatedPermission: [
+                  'urn:sts:report-api:report:use',
+                  'urn:sts:report-api:report:admin'] } });
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -559,7 +563,7 @@ function childMain() {
     const admin = await inDefault(function () {
       return oauth2.accessTokenAsync(base, {
         audience: base + '/admin-api', scope: 'admin:read admin:write',
-        client_id: 'sts-management-api', sub: 'sts-management-api' });
+        client_id: 'sts-api-client', sub: 'sts-api-client' });
     });
     const reporter = await oauth2.accessTokenAsync(base, {
       audience: base + '/report-api', client_id: CLIENT, username: ADMIN,

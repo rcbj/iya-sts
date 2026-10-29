@@ -704,8 +704,10 @@ const AUTHN_ATTRIBUTE = {
   // events by `common/authn_mechanisms.ts`. Sent on a browser issuance to an
   // application that allows only some.
   MECHANISM: 'urn:sts:xacml:authn-mechanism',
-  // A BAG (#457): the mechanisms the application allows, its
-  // `appAuthnMechanism`. Absent where it allows every one.
+  // A BAG (#457): the mechanisms the application allows — its own
+  // `appAuthnMechanism` until #1148, the first-factor list of the named
+  // authentication policy it names (`appAuthnPolicy`) since. Absent where
+  // it allows every one.
   ALLOWED_MECHANISM: 'urn:sts:xacml:allowed-authn-mechanism',
   // The obligation the `authn-mechanism` rule's Deny carries (#457): the PEP
   // reads it as "sign in again with one of the allowed mechanisms", never as
@@ -717,8 +719,10 @@ const AUTHN_ATTRIBUTE = {
   // to an application that allows only some, and only when the
   // authentication gave one.
   MFA_MECHANISM: 'urn:sts:xacml:mfa-mechanism',
-  // A BAG (#475): the second factors the application allows, its
-  // `appMfaMechanism`. Absent where it leaves the realm's.
+  // A BAG (#475): the second factors the application allows — its own
+  // `appMfaMechanism` until #1148, the second-factor list of the named
+  // authentication policy it names (`appAuthnPolicy`) since. Absent where
+  // it leaves the realm's.
   ALLOWED_MFA_MECHANISM: 'urn:sts:xacml:allowed-mfa-mechanism',
   // The obligation the `mfa-mechanism` rule's Deny carries (#475): the PEP
   // reads it as "sign in again with one of the allowed second factors".
@@ -1385,23 +1389,25 @@ const TEMPLATES: TemplateRow[] = [
         label: 'Require a second factor the application allows',
         dflt: 'yes', type: 'string',
         help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
-              'application that lists the second factors it allows ' +
-              '(appMfaMechanism) is denied when the person\'s session gave ' +
-              'a second factor and none of them is listed, with an ' +
+              'application that lists the second factors it allows (the ' +
+              'second factors of the authentication policy it names, ' +
+              'appAuthnPolicy) is denied when the person\'s session gave a ' +
+              'second factor and none of them is listed, with an ' +
               'obligation the sign-in door reads as "sign in again with one ' +
               'of these". A session on one factor is not denied by it, and ' +
-              'an application that lists none leaves the realm\'s second ' +
+              'a policy that lists none leaves the realm\'s second ' +
               'factors. No builds the policy without the rule.' },
       { name: 'decideAuthnMechanisms',
         label: 'Require a sign-in mechanism the application allows',
         dflt: 'yes', type: 'string',
         help: 'yes or no. When yes, in both modes, a browser sign-in to an ' +
-              'application that lists the mechanisms it allows ' +
-              '(appAuthnMechanism) is denied unless the person\'s session ' +
+              'application that lists the mechanisms it allows (the first ' +
+              'factors of the authentication policy it names, ' +
+              'appAuthnPolicy) is denied unless the person\'s session ' +
               'satisfies one of them, with an obligation the sign-in door ' +
-              'reads as "sign in again with one of these". An application ' +
-              'that lists none allows every one. No builds the policy ' +
-              'without the rule.' },
+              'reads as "sign in again with one of these". A policy that ' +
+              'lists none allows every one. No builds the policy without ' +
+              'the rule.' },
       { name: 'deviceExempt',
         label: 'Applications the compliant-device rule never refuses',
         dflt: 'sts-admin-console, sts-user-portal', type: 'string',
@@ -2118,8 +2124,9 @@ const TEMPLATES: TemplateRow[] = [
         effect: model.EFFECT.DENY,
         description: 'Ask a person to sign in again when their ' +
                      'authentication used none of the mechanisms the ' +
-                     'application allows (appAuthnMechanism). An ' +
-                     'application that lists none allows every one.',
+                     'application allows (the first factors of the ' +
+                     'authentication policy it names, appAuthnPolicy). A ' +
+                     'policy that lists none allows every one.',
         target: null,
         condition: and([
           holdsSome(model.CATEGORY.ENVIRONMENT,
@@ -2149,8 +2156,9 @@ const TEMPLATES: TemplateRow[] = [
         effect: model.EFFECT.DENY,
         description: 'Ask a person to sign in again when their ' +
                      'authentication gave a second factor and none of the ' +
-                     'ones the application allows (appMfaMechanism). An ' +
-                     'application that lists none leaves the realm\'s.',
+                     'ones the application allows (the second factors of ' +
+                     'the authentication policy it names, appAuthnPolicy). ' +
+                     'A policy that lists none leaves the realm\'s.',
         target: null,
         condition: and([
           holdsSome(model.CATEGORY.ENVIRONMENT,

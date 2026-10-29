@@ -9,15 +9,17 @@
 // WHICH SIGN-IN MECHANISMS A SESSION HAS SATISFIED, AND WHICH AN APPLICATION
 // ALLOWS (#457, 2026-10-06).
 //
-// `appAuthnMechanism` on an application entry is the list of the mechanisms
-// its people may sign in to it with — `federation.MECHANISM_IDS`: password,
-// password-mfa, webauthn, federation, spnego, wallet — and none listed allows
-// every one. `webauthn` names EVERY passkey the person holds alike since
-// #1135 (until then, a key enrolled in the `primary` role): a key has no
-// role, and this list, over the realm's policy, decides whether any key may
-// sign somebody in to this application on its own. Until #457 it was one
-// value and only ROUTED a sign-in; nothing
-// refused a person whose session stood on another mechanism. Now the issuance
+// The list of the mechanisms an application's people may sign in to it with
+// was `appAuthnMechanism` on its entry until #1148, and is since then the
+// first-factor list (`stsAuthnPolicyMechanism`) of the NAMED AUTHENTICATION
+// POLICY the entry names (`appAuthnPolicy`) — `federation.MECHANISM_IDS`:
+// password, password-mfa, webauthn, federation, spnego, wallet — and none
+// listed allows every one. `webauthn` names EVERY passkey the person holds
+// alike since #1135 (until then, a key enrolled in the `primary` role): a
+// key has no role, and this list, over the realm's policy, decides whether
+// any key may sign somebody in to this application on its own. Until #457
+// it was one value and only ROUTED a sign-in; nothing refused a person
+// whose session stood on another mechanism. Now the issuance
 // policy decides it at every BROWSER issuance (rcbj: browser-based
 // authentication only, both modes, a re-prompt rather than a refusal), and
 // this module supplies its two facts:
@@ -29,7 +31,10 @@
 //     answered (`context.credential.kind`). Every event of the session counts:
 //     a re-prompt APPENDS one, and the session then satisfies what it asked
 //     for.
-//   * **WHAT THE APPLICATION ALLOWS**, its entry's values, as written.
+//   * **WHAT THE APPLICATION ALLOWS**: since #1148 the first-factor list of
+//     the NAMED AUTHENTICATION POLICY its `appAuthnPolicy` names
+//     (`authn_policy.ts`'s `mechanismsFor()`), which replaced its own
+//     `appAuthnMechanism`; none named, or `default`, allows every one.
 //
 // **THE DECISION IS NOT HERE** (rcbj, 2026-09-22: every authorization
 // decision is XACML policy). The built-in issuance policy's
@@ -165,16 +170,20 @@ class AuthnMechanisms {
   }
 
   /**
-   * The mechanisms an application entry allows, as written: none is every
-   * one. A value no mechanism has is kept, so a misspelt list allows
-   * nothing rather than everything.
+   * The mechanisms an application allows: the first-factor list of the
+   * named authentication policy its `appAuthnPolicy` names (#1148). None is
+   * every one. A value no mechanism has is kept, so a misspelt list — or a
+   * policy that does not exist — allows nothing rather than everything.
    *
    * @param fields - the entry's fields, or null
    * @returns the mechanism ids, each once
    */
   static allowedOf(fields: any): string[] {
     log.debug('Entering AuthnMechanisms.allowedOf().');
-    const held = fields ? fields.appAuthnMechanism : null;
+    // Required lazily: the policy is a leaf over the directory slot, and
+    // this module is required by its callers before the slot is filled.
+    const held = fields
+      ? require('./authn_policy').mechanismsFor(fields).mechanisms : null;
     const out: string[] = [];
     [].concat(held === undefined || held === null ? [] : held)
       .forEach(function (one: any) {

@@ -15,7 +15,7 @@
 // the XACML PIP's role designator:
 //
 //   A. THE CONSOLE ROLES. A realm is seeded with ADMIN_READ and ADMIN_WRITE,
-//      configured, each held by sts-management-api and authorizing its own
+//      configured, each held by sts-api-client and authorizing its own
 //      admin scope; people and groups cannot be written onto them, their
 //      permission cannot be changed, and they cannot be deleted.
 //   B. A PERSON AND admin:*. While the realm's console is open, both; once
@@ -166,13 +166,18 @@ function setUp(t) {
     applications.createApplication({ identifier: CLIENT,
       protocols: ['oauth2'],
       fields: { oauthClientId: CLIENT,
-                oauthAllowedScope: ['openid', 'admin:read', 'admin:write',
-                                    PERMISSION] } }),
+                oauthAllowedScope: ['openid', PERMISSION],
+                // The admin scopes are delegated permission grants since #1141.
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
+                                           'urn:sts:admin-api:admin:write']
+              } }),
     applications.createApplication({ identifier: MACHINE,
       protocols: ['oauth2'],
       fields: { oauthClientId: MACHINE,
-                oauthAllowedScope: ['admin:read', 'admin:write',
-                                    'device:compliance', PERMISSION] } }),
+                oauthAllowedScope: ['device:compliance', PERMISSION],
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
+                                           'urn:sts:admin-api:admin:write']
+              } }),
     applications.createApplication({ identifier: RESOURCE,
       protocols: ['oauth2'],
       fields: { oauthClientId: RESOURCE,
@@ -195,10 +200,10 @@ function consoleRoles(t) {
           'ADMIN_READ,ADMIN_WRITE',
           'A1. the realm was seeded with the two console roles');
   t.check(rows.every(function (row) {
-    return row.applications.indexOf('sts-management-api') >= 0 &&
+    return row.applications.indexOf('sts-api-client') >= 0 &&
            row.permissions.join() === (row.name === 'ADMIN_READ'
              ? 'admin:read' : 'admin:write');
-  }), 'A2. each is held by sts-management-api and authorizes its own scope',
+  }), 'A2. each is held by sts-api-client and authorizes its own scope',
           JSON.stringify(rows));
   t.check(!roles.isBuiltIn('ADMIN_READ') && !roles.isBuiltIn('ADMIN_WRITE'),
           'A3. and neither is a built-in any longer');
@@ -264,7 +269,7 @@ async function machines(t) {
   const read = await machineToken(MACHINE, 'admin:read admin:write');
   t.equal(read.scope, 'admin:read',
           'C2. in ADMIN_READ, it is issued admin:read and not admin:write');
-  const seeded = await machineToken('sts-management-api',
+  const seeded = await machineToken('sts-api-client',
                                     'admin:read admin:write');
   t.equal(seeded.scope, 'admin:read admin:write',
           'C3. the seeded management client, in both, is issued both');

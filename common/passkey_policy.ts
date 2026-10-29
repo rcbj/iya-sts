@@ -31,7 +31,9 @@
 //                            REPLACES the setting `webauthn.usernameless`
 //                            (retired, no shim; `REPLACED_SETTINGS`).
 //   requireUsernameless      FALSE (#608, rcbj 2026-10-13). On, and only
-//                            for an application whose appAuthnMechanism is
+//                            for an application whose named authentication
+//                            policy (`appAuthnPolicy`, #1148; its own
+//                            appAuthnMechanism until then) lists
 //                            `webauthn` and nothing else, the sign-in
 //                            screen asks for no username: *Sign in with a
 //                            passkey* is the way in, and a sign-in that
@@ -770,10 +772,11 @@ const FIELDS: PolicyField[] = [
     type: 'bool', dflt: false,
     label: 'Require a passkey sign-in with no username',
     what: 'OFF BY DEFAULT. On, an application whose authentication ' +
-          'mechanism is a passkey and nothing else (appAuthnMechanism ' +
-          '`webauthn` alone) gets a sign-in screen with no username field: ' +
-          '*Sign in with a passkey* is the way in, and a sign-in that names ' +
-          'a person is refused. It needs the row above. The realm\'s ' +
+          'mechanism is a passkey and nothing else (the authentication ' +
+          'policy it names, appAuthnPolicy, lists `webauthn` alone) gets ' +
+          'a sign-in screen with no username field: *Sign in with a ' +
+          'passkey* is the way in, and a sign-in that names a person is ' +
+          'refused. It needs the row above. The realm\'s ' +
           '`default` profile does not apply it to the admin console, the ' +
           'debugger or the user portal; a named profile selecting that ' +
           'application does.' },

@@ -22,10 +22,23 @@ the explorer on the console at `/admin/api-explorer`.
 
 ## Getting a token
 
-The service seeds an application called **`sts-management-api`** in every
-realm. It is a confidential OAuth client that can only use the
-client-credentials grant. It has no redirect URI, it authenticates with
-`client_secret_basic`, and its registered scope is `admin:read admin:write`.
+The management API is represented in every realm by an application called
+**`sts-management-api`**. It is the API itself, as an OAuth 2.0 resource: it
+holds the audience a token must name (`<base>/admin-api`) and is an
+application of the kind `oauth2-resource-server`. **It is never a client.**
+It has no secret and no grant type, and the authorization server refuses its
+client_id at every endpoint a client presents itself at, in every mode
+(`STS-OAUTH-0985`). A caller is always a separate client application that is
+configured to call it.
+
+The service seeds one such client in every realm, **`sts-api-client`**. It is
+a confidential OAuth client that can only use the client-credentials grant. It
+has no redirect URI, it authenticates with `client_secret_basic`, its
+registered scope is `admin:read admin:write report:use`, and it is a member of
+the `ADMIN_READ`, `ADMIN_WRITE` and `REPORT_USE` roles. Until 2026-10-29 this
+client was `sts-management-api` itself; a script that still authenticates as
+`sts-management-api` is now refused `invalid_client` and has to use
+`sts-api-client`.
 
 | Scope | Lets the token |
 |---|---|
@@ -36,7 +49,7 @@ To get a token, call the token endpoint with the client-credentials grant, the
 scopes you need, and `resource=<base>/admin-api`. The `resource` value sets
 the token's audience, and the API refuses a token audienced to anything else.
 
-**On a stack you run, getting in takes two steps.** Use `sts-management-api`
+**On a stack you run, getting in takes two steps.** Use `sts-api-client`
 for the **first** token only
 ([The first token](#the-first-token-on-a-stack-you-run)). With that token,
 create an application of your own that holds the admin roles, and use that
@@ -46,7 +59,7 @@ application from then on
 ```bash
 BASE=https://localhost:8081          # the main port is HTTPS by default
 
-TOKEN=$(curl -sk -u "sts-management-api:$ADMIN_API_CLIENT_SECRET" \
+TOKEN=$(curl -sk -u "sts-api-client:$ADMIN_API_CLIENT_SECRET" \
   --data-urlencode grant_type=client_credentials \
   --data-urlencode 'scope=admin:read admin:write' \
   --data-urlencode "resource=$BASE/admin-api" \
@@ -123,7 +136,7 @@ ADMIN_API_CLIENT_SECRET=$(docker compose exec -T \
     -field=adminApiClientSecret secret/sts-admin)
 ```
 
-Then mint the token as `sts-management-api`, as the example at the top of
+Then mint the token as `sts-api-client`, as the example at the top of
 this section does.
 
 * **If no operator token is printed,** `STS_BAO_PRINT_CREDENTIALS=false` is
@@ -148,7 +161,7 @@ Use the first token to set up the credential you will keep using: **create an
 application, give it a client secret and the `ADMIN_READ` and `ADMIN_WRITE`
 roles, and get its tokens with the OAuth 2.0 client credentials grant.** Each
 token it gets carries the admin scopes that its roles allow. Do not keep
-using `sts-management-api` for routine work: its secret is the stack's
+using `sts-api-client` for routine work: its secret is the stack's
 bootstrap, and reading it means unlocking the secret store.
 
 **The realm you create the application in decides what it may administer:**
@@ -176,8 +189,8 @@ api() {   # api <path under the API> '<json body>'
 # 1. A random secret, made by the service. This call stores nothing.
 APP_SECRET=$(api applications/generate-secret '{}' | jq -r .clientSecret)
 
-# 2. The application: an OAuth 2.0 client on client_credentials that
-#    declares the two admin scopes. The secret becomes its credential.
+# 2. The application: an OAuth 2.0 client on client_credentials. The
+#    secret becomes its credential.
 api applications/create '{
   "identifier": "'"$APP"'", "name": "'"$APP"'",
   "protocols": ["oauth2"],
@@ -185,11 +198,15 @@ api applications/create '{
     "oauthClientId": ["'"$APP"'"],
     "oauthClientSecret": "'"$APP_SECRET"'",
     "oauthGrantType": ["client_credentials"],
-    "oauthTokenEndpointAuthMethod": "client_secret_basic",
-    "oauthAllowedScope": ["admin:read", "admin:write"]
+    "oauthTokenEndpointAuthMethod": "client_secret_basic"
   }}'
 
-# 3. The two roles.
+# 3. Delegated permission grants of the two admin permissions the
+#    management API defines.
+api permissions/grant-permission '{"client":"'"$APP"'","permission":"urn:sts:admin-api:admin:read"}'
+api permissions/grant-permission '{"client":"'"$APP"'","permission":"urn:sts:admin-api:admin:write"}'
+
+# 4. The two roles.
 api roles/add-member '{"role":"ADMIN_READ","kind":"application","member":"'"$APP"'"}'
 api roles/add-member '{"role":"ADMIN_WRITE","kind":"application","member":"'"$APP"'"}'
 ```
@@ -221,20 +238,29 @@ place the act hands it out.
    Copy the value before you create the application.
 2. On the application's page, in **Change what it is allowed to do**: tick
    `client_secret_basic` under `oauthTokenEndpointAuthMethod` and nothing
-   else, add `client_credentials` to `oauthGrantType`, and add `admin:read`
-   and `admin:write` to `oauthAllowedScope`.
-3. On `/admin/roles`, under **Give a person, a group or an application a
+   else, and add `client_credentials` to `oauthGrantType`.
+3. On the application's **Permissions** tab, give it delegated permission
+   grants of `urn:sts:admin-api:admin:read` and
+   `urn:sts:admin-api:admin:write`, the two permissions the
+   `sts-management-api` application defines
+   ([Admin console → Delegated permissions](admin-console.md#delegated-permissions)).
+4. On `/admin/roles`, under **Give a person, a group or an application a
    role**, choose the role `ADMIN_READ`, the kind *application* and your
    application's identifier, and click **Add**. Do the same for
    `ADMIN_WRITE`.
 
-**Why it needs both the scopes and the roles.** The token endpoint issues
-`admin:read` and `admin:write` only to a client whose `oauthAllowedScope`
-declares them, and each one only while the client is a member of the role
-that authorizes it: `ADMIN_READ` for `admin:read`, `ADMIN_WRITE` for
-`admin:write`. The API checks both again on every call. So if you take the
-application out of a role, or remove a scope from its `oauthAllowedScope`,
-the tokens it already holds stop working at their next call. That is also how
+**Why it needs both the delegated permission grants and the roles.** The
+delegated permission grant is the client's half: the token endpoint issues
+`admin:read` and `admin:write` only to a client holding a delegated
+permission grant of that permission on `sts-management-api`. The role
+is the subject's half: each scope is issued only while the client is a member
+of the role that authorizes it, `ADMIN_READ` for `admin:read` and
+`ADMIN_WRITE` for `admin:write`. Listing the words in `oauthAllowedScope` no
+longer counts for these scopes. The API checks both again on every call. So
+if you take the application out of a role, or revoke a delegated permission
+grant
+(`permissions/revoke-permission`), the tokens it already holds stop working
+at their next call. That is also how
 to retire the application.
 
 In development mode, outside [RFC 9700 and OAuth 2.1 mode](oauth-security.md),
@@ -507,11 +533,11 @@ roles their client confers are mixed on every call. The frame and the
 operation list need `ADMIN_CONSOLE` alone, so a person with no console role is
 still told so; every other console operation needs `ADMIN_READ` too, or
 `ADMIN_WRITE` for a form helper. A token without `admin:console`, such as
-`sts-management-api`'s, is refused 403 (`STS-API-0127`).
+`sts-api-client`'s, is refused 403 (`STS-API-0127`).
 
-A console client entry persisted before #454 does not declare
-`admin:console`. Add it to that entry's `oauthAllowedScope` and
-`oauthGlobalConsent` and sign in again.
+The console client, `sts-admin-console`, holds delegated permission grants of
+`urn:sts:admin-api:admin:read`, `…:admin:write` and `…:admin:console`; a
+client is never declared these scopes through `oauthAllowedScope`.
 
 ### Request bodies
 
@@ -585,7 +611,7 @@ calling a prefix that no longer exists.
 | Token | Minted at | Accepted at | May do |
 |---|---|---|---|
 | The service token | the default realm's `/oauth2/token`, with `resource=<base>/admin-api` | `/admin-api` and every `/realm/<id>/admin-api` | everything its scopes allow |
-| A realm's own token | `/realm/<id>/oauth2/token` as that realm's `sts-management-api`, with `resource=<base>/realm/<id>/admin-api` | `/realm/<id>/admin-api` only | that realm's operations only |
+| A realm's own token | `/realm/<id>/oauth2/token` as that realm's `sts-api-client`, with `resource=<base>/realm/<id>/admin-api` | `/realm/<id>/admin-api` only | that realm's operations only |
 
 **Either token must have been issued to a client that declares the scope it
 uses** (#110). `admin:read` and `admin:write` are issued only to a
@@ -594,14 +620,14 @@ refused `invalid_scope` at the token endpoint — and the API asks again on ever
 call, in the realm that issued the token: a token whose client no longer
 declares the scope an operation needs is refused 403 (`STS-API-0123`), so
 withdrawing the declaration cuts off tokens already issued. The seeded
-`sts-management-api` and `sts-admin-console` declare both in every realm; an
+`sts-api-client` and `sts-admin-console` declare both in every realm; an
 administrator may declare them on another client with
 `POST /admin-api/applications/add`. A dynamic registration may not.
 
 **The subject of a token must also hold the role the scope goes with**
 (#302, #303). `ADMIN_READ` and `ADMIN_WRITE` are roles on
 [`/admin/roles`](admin-console.md) that authorize `admin:read` and
-`admin:write`. They are seeded in every realm, and `sts-management-api` is a
+`admin:write`. They are seeded in every realm, and `sts-api-client` is a
 member of both.
 
 * **A person** holds them through the console's Admin Read and Admin Write
@@ -640,7 +666,7 @@ refused whatever the console refuses the realm's administrators
 **A realm's client secret is generated at each start** and is not pinned by
 `adminApi.clientSecret`, which applies only to the default realm's client. A
 realm administrator reads or regenerates it on their realm's console at
-`/realm/<id>/admin/applications?application=sts-management-api`.
+`/realm/<id>/admin/applications?application=sts-api-client`.
 
 [Trust realms](trust-realms.md) covers realm administrators on the console
 side.
@@ -668,7 +694,7 @@ becoming the admin console's only gate, so a setting that opened the API
 would open the console too. Until then product fell back to the console's own
 session and roles when the switch was off; a console session is no longer a
 credential here in either mode. The recovery path in product is the seeded
-`sts-management-api` client: set `adminApi.clientSecret` before the service
+client `sts-api-client`: set `adminApi.clientSecret` before the service
 starts, so a token can always be minted. In the compose stack that secret is
 in OpenBao, and the seeder's operator token reads it
 ([The first token](#the-first-token-on-a-stack-you-run)). An application of
@@ -692,7 +718,7 @@ override them, because they decide who administers the service.
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `adminApi.authRequired` | `ADMIN_API_AUTH_REQUIRED` | `true` | yes | Require an access token on every `/admin-api` call; off restores the open API. Off is honoured in development mode only: product refuses it and ignores it where it is stored. |
-| `adminApi.clientSecret` | `ADMIN_API_CLIENT_SECRET` | empty (generated per start) | no | The `client_secret` of the default realm's seeded `sts-management-api` client; set it so the secret survives a restart. Secret. `ADMIN_API_CLIENT_SECRET_FILE` names a file to read it from instead; the file is deleted once read. |
+| `adminApi.clientSecret` | `ADMIN_API_CLIENT_SECRET` | empty (generated per start) | no | The `client_secret` of the default realm's seeded client `sts-api-client`; set it so the secret survives a restart. Secret. `ADMIN_API_CLIENT_SECRET_FILE` names a file to read it from instead; the file is deleted once read. |
 | `adminApi.audience` | `ADMIN_API_AUDIENCE` | derived: `global.publicBaseUrl` + `/admin-api`, or this process's scheme, host and port + `/admin-api` | yes | The `aud` a token must carry. At its default, `/admin-api` under the host the request arrived on is accepted as well; any other value pins that one value. |
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The directory group whose members hold Admin Read, which lets them read the console and, with the token gate off in product mode, `GET` the API. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The directory group whose members hold Admin Write; write implies read. |
@@ -804,7 +830,8 @@ them on the console or with `POST /admin-api/config/set`.
 | `GET /admin-api/me` | What the API decided about the caller: who, which authority, the roles in effect and the pages they may reach |
 | `/admin/api-explorer` | The explorer, on the console; `GET /admin-api/api-explorer` reports where the document is, how many operations it describes and what your roles would grant |
 | `/admin/rbac` | The two console roles, and the `adminApi.*` and `admin.*` settings; `GET /admin-api/rbac` and `POST /admin-api/rbac/{grant,revoke}` |
-| `/admin/applications?application=sts-management-api` | The seeded client in this realm, including its secret |
+| `/admin/applications?application=sts-api-client` | The seeded client in this realm, including its secret |
+| `/admin/applications?application=sts-management-api` | The management API's own application object in this realm: the audience a token must name. It is a resource, never a client |
 | `/admin/xacml` | The `access-control` policy the scope check runs through |
 | `/admin/error-codes` | The `STS-API-*` codes behind each refusal, also at `GET /admin-api/error-codes` |
 | `/admin/audit` | The audit log, also at `GET /admin-api/audit` |
@@ -816,7 +843,7 @@ token is currently required.
 
 * [Admin console](admin-console.md): the pages every operation mirrors
 * [Applications](applications.md): the registry, including the seeded
-  `sts-management-api` client
+  client `sts-api-client` and the `sts-management-api` resource
 * [Configuration](configuration.md): how settings resolve, and the runtime
   `config` operations
 * [Trust realms](trust-realms.md): realm prefixes and per-realm

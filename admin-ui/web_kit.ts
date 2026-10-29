@@ -1724,6 +1724,42 @@ class WebKit {
   }
 
   /**
+   * The key a list value a delegated permission grant declares carries
+   * (#1141), inline for the trash icon's reason.
+   *
+   * @returns the SVG as HTML
+   */
+  static delegatedIcon() {
+    return '<svg viewBox="0 0 16 16" width="12" height="12" ' +
+      'aria-hidden="true" focusable="false"><path fill="currentColor" ' +
+      'd="M10.5 1a4.5 4.5 0 0 0-4.3 5.8L1 12v3h3v-1.5h1.5V12H7l1.2-1.2A4.5 ' +
+      '4.5 0 1 0 10.5 1zm1 2.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/></svg>';
+  }
+
+  /**
+   * The values a delegated permission grant declares in a list cell
+   * (#1141): read-only, each with the key, its details as a tooltip, and a
+   * link to the Permissions tab where the delegated permission grant is
+   * changed. None is an input, so a save neither posts nor stores them.
+   *
+   * @param derived - `{ value, permission, api, apiName }` each
+   * @param t - the page's translator (#539)
+   * @returns the entries as HTML, or '' for none
+   */
+  static derivedListItems(derived, t) {
+    return (derived || []).map(function (one) {
+      return '<div class="fg-item fg-derived"><span class="fg-derived-value"' +
+        WebKit.tip(t.text('consoleKit.grid.delegatedTip',
+          { permission: String(one.permission), api: String(one.apiName) })) +
+        ' aria-label="' + WebKit.esc(t.text('consoleKit.grid.delegatedTip',
+          { permission: String(one.permission), api: String(one.apiName) })) +
+        '">' + WebKit.delegatedIcon() + WebKit.esc(String(one.value)) +
+        '</span><a class="fg-derived-link" href="#tab-permissions">' +
+        t.html('consoleKit.grid.delegatedLink') + '</a></div>';
+    }).join('');
+  }
+
+  /**
    * The warning mark a value seen but not declared carries (#708), inline for
    * the trash icon's reason.
    *
@@ -1769,7 +1805,9 @@ class WebKit {
    *   `secretLifetime` (HTML drawn after Generate Secret, #394),
    *   and `protocols`, the families a cell's labels are named from;
    *   `views` (#500), the cell is classed `fg-adv` unless `row.simple`, so
-   *   its form's simple / advanced switch (`viewSwitch()`) can hide it
+   *   its form's simple / advanced switch (`viewSwitch()`) can hide it;
+   *   `derived` (#1141), the read-only values a list holds without storing
+   *   them, by attribute (`derivedListItems()`)
    * @param t - optional; the translator (#539), the default when left out
    * @returns the cell as HTML
    */
@@ -1849,7 +1887,9 @@ class WebKit {
           WebKit.trashIcon() +
           '</button></div>';
       }).join('') +
-      (held.length ? '' : '<span class="state-none">' +
+      WebKit.derivedListItems((opts.derived || {})[row.attribute], t) +
+      (held.length || ((opts.derived || {})[row.attribute] || []).length
+        ? '' : '<span class="state-none">' +
         t.html('consoleKit.grid.noValues') + '</span>') +
       '<button type="submit" class="secondary fg-grow" name="grow" value="' +
       WebKit.esc(row.attribute) + '" formaction="' +

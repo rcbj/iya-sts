@@ -202,11 +202,11 @@ registered with nothing asked about its purpose. Whether it is used, and how,
 is decided at the sign-in in layers: the realm's authentication policy (its
 `passkey` first-factor and `securityKey` second-factor rows) with
 `webauthn.primaryAllowed` and `webauthn.mfaAllowed`; then, at a browser
-sign-in, the application where it overrides the realm (`appAuthnMechanism`
-with `webauthn` for the first factor, `appMfaMechanism` with `securityKey`
-for the second; see [Applications](applications.md#sign-in-mechanisms-how-its-people-may-sign-in));
-and never the key itself. A key a person holds may answer either of the two
-**uses** wherever those layers accept it:
+sign-in, the [named authentication
+policy](#named-authentication-policies) an application names, where it
+narrows the realm (`webauthn` among its first factors, `securityKey` among
+its second); and never the key itself. A key a person holds may answer
+either of the two **uses** wherever those layers accept it:
 
 * **as a second factor** after a password: `amr ["pwd","hwk"]`,
   `acr "mfa"`. Allowed while `webauthn.mfaAllowed` and the authentication
@@ -858,8 +858,9 @@ The button is a real submit button; without JavaScript it explains that a
 passkey needs it, and the password form works as before.
 
 **Requiring it** (the passkey policy's `requireUsernameless`, off by
-default). Where it is on, an application whose `appAuthnMechanism` is
-`webauthn` and nothing else gets a sign-in screen with **no username
+default). Where it is on, an application whose [named authentication
+policy](#named-authentication-policies) lists `webauthn` as its only first
+factor gets a sign-in screen with **no username
 field** and no *Sign In*: *Sign in with a passkey* is the way in, and the
 second-step box is greyed out. A sign-in that names a person anyway is
 refused (`STS-AUTHN-0333`), so the screen's shape is not the only thing
@@ -871,8 +872,9 @@ that enforces it. Three things hold it back:
 * the `default` profile **never applies it to the admin console, the
   embedded debugger or the user portal** (`sts-admin-console`,
   `sts-debugger-ui`, `sts-user-portal`). To hold one of them to it, create a
-  named profile that selects that application and turn it on there — and set
-  the application's `appAuthnMechanism` to `webauthn` alone.
+  named profile that selects that application and turn it on there — and
+  point the application at a named authentication policy whose only first
+  factor is `webauthn`.
 
 ### TOTP MFA
 
@@ -1015,6 +1017,53 @@ NEW enrolments and never a factor already held.
 
 API: `GET /admin-api/policies` (the `authn` member) and `POST
 /admin-api/policies/save-authn-policy` / `reset-authn-policy`.
+
+### Named authentication policies
+
+**An application can be held to fewer ways of signing in than the realm
+accepts** by naming a **named authentication policy** (#1148). They are on
+the same tab, Directory → Policies → *Authentication policy*, which has the
+passkey policy's three sub-tabs: **Default** (the realm's own policy),
+**Named policies** (the list, with Change and Delete) and **New policy**.
+Each named policy holds exactly two lists:
+
+* **the first-factor mechanisms it allows**: `password`, `password-mfa`,
+  `webauthn`, `spnego`, `wallet`, `federation`;
+* **the second factors it allows**: `password`, `securityKey`, `totp`,
+  `recoveryCode`, `emailCode`, `emailLink`, `wallet`.
+
+**None ticked in a list allows every one** (for the second factors: leaves
+the realm's as they are). Everything else about signing in — which
+mechanisms the realm accepts at all, and whether a second factor is
+required — stays the realm's policy above, and a named policy only narrows
+it: a mechanism the realm has switched off stays off.
+
+An application names one in **`appAuthnPolicy`**, on its Configuration tab
+(*Every protocol*). `default`, or empty, is the realm's policy as it is. One
+field replaced the two lists an application used to hold itself
+(`appAuthnMechanism` and `appMfaMechanism`). What the lists then do at a
+browser sign-in to the application — the routing, the re-prompt, the
+narrowed second factor — is in [Applications](applications.md#sign-in-mechanisms-how-its-people-may-sign-in).
+
+* A policy is stored as `cn=<name>,ou=authnPolicies` in the realm's
+  directory, beside the realm's own `cn=default`. A name is lower-case
+  letters, digits and hyphens, and cannot be `default` (`STS-AUTHN-0532`).
+  A realm's policies are its own: nothing is inherited from the default
+  realm.
+* **Deleting a policy an application names is refused** (`STS-AUTHN-0534`).
+  Point the application elsewhere first.
+* **A name no policy holds allows nothing.** The console and the API accept
+  only `default` or a policy the realm holds, but an `ldapmodify` can write
+  any value; an application naming a policy that does not exist allows no
+  mechanism at all until the policy exists or the name changes
+  (`STS-AUTHN-0536`).
+
+API: the `named` list in the `authn` member of `GET /admin-api/policies`;
+`POST /admin-api/policies/save-named-authn-policy` with `name`,
+`description`, `mechanisms` and `secondFactors` (it replaces a policy of the
+same name); `POST /admin-api/policies/delete-named-authn-policy` with
+`name`; and `POST /admin-api/applications/set` with
+`attribute: appAuthnPolicy` to point an application at one.
 
 ### Emailed codes and links
 
@@ -1192,7 +1241,7 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.rpName` | `STS_WEBAUTHN_RP_NAME` | `IYA STS` | yes | The `rp.name` a browser shows; no security meaning. |
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | *(empty: the host)* | yes | Widen the RP ID to a registrable domain suffix of the host. |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | *(empty: derived)* | yes | The origins a ceremony is accepted from; empty derives one from the address. |
-| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier checks, ML-DSA-87/65/44 (-50/-49/-48) first | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). A **Select all** switch ticks every algorithm `webauthn.insecureAlgorithms` and `webauthn.pqcOnly` allow, or unticks them all; Save needs at least one ticked. The **Metadata** tab lists the algorithms in the order they are requested. See [Configuration](configuration.md) for the list and [Passkeys](passkeys.md#algorithms-classical-and-post-quantum) for the controls. |
+| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`, in that order (#1150); every other algorithm may be ticked | yes | `pubKeyCredParams`, in preference order. On **Protocols → WebAuthn** each algorithm has a checkbox (requested or not) and a number (1 is the most preferred). A **Select all** switch ticks every algorithm `webauthn.insecureAlgorithms` and `webauthn.pqcOnly` allow, or unticks them all; Save needs at least one ticked. The **Metadata** tab lists the algorithms in the order they are requested. See [Configuration](configuration.md) for the list and [Passkeys](passkeys.md#algorithms-classical-and-post-quantum) for the controls. |
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` | yes | Development mode only: also request and accept SHA-1's `RS1` (-65535), offered last. Off, `RS1` is neither requested nor accepted even where `webauthn.algorithms` names it, and a key enrolled with it is refused at sign-in (`STS-AUTHN-0294`). Cannot be set in product mode. |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | Request only ML-DSA-44/65/87 (whichever `webauthn.algorithms` names, all three where it names none); a new passkey made with another algorithm is refused at registration. A classical key already enrolled goes on signing in. |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |

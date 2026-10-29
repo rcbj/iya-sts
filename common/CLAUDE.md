@@ -4454,8 +4454,9 @@ with `Cannot find module` naming a file the operator never mentioned.
      `/portal` reads the ambient realm's session; the console's since
      2026-09-11, when its code flow moved to the ambient realm (it was the
      DEFAULT realm's alone until then); the management API's since 2026-09-14
-     (#32), for a realm's own administrators. The embedded debugger's two
-     entries are the default realm's alone.
+     (#32), for a realm's own administrators — that client is `sts-api-client`
+     since #1139, below. The embedded debugger's two entries are the default
+     realm's alone.
    * **BOTH CARRY `oauthGlobalConsent`.** `oauth2.consentRequired` is on by
      default and is the only policy here that is, so without it a person
      signing in to look at their own account would first be asked to consent to
@@ -4479,6 +4480,66 @@ with `Cannot find module` naming a file the operator never mentioned.
      at all (it passed one object where `updateApplication()` takes an
      identifier and a change), so this bullet described a behaviour nothing had
      ever performed. `common/oidc_rp.ts`'s `ensureRedirectUri()` carries both.
+
+   **THIS SERVICE'S OWN APIS ARE APPLICATION OBJECTS SINCE #1139 (2026-10-29),
+   AND THE IDENTIFIER `sts-management-api` CHANGED MEANING.** rcbj's model: an
+   API object represents the API as an OAuth 2.0 RESOURCE — the audience and
+   the scopes valid at it — and NEVER authenticates; a caller is always a
+   separate client application configured to call it. Until then the
+   audiences were recognised by code alone (`registered_targets.ts`'s
+   `ownResourceServer()`) and `sts-management-api` was the bootstrap CLIENT.
+   `apiResourceApplications()` seeds four rows in every realm, kind
+   `oauth2-resource-server` (a new entry in `KINDS`, label *OAuth 2.0 resource
+   server*), with no secret, no registration access token, no redirect URI,
+   no grant and an empty `scope`:
+
+   | Identifier | Name | `oauthAudience` |
+   |---|---|---|
+   | `sts-management-api` | Management API | base + `/admin-api`; the default realm's also carries `adminApi.audience` |
+   | `sts-account-api` | Account API | base + `/account-api` |
+   | `sts-report-api` | Reporting API | base + `/report-api` (#1030 deleted an object of this name as a grant's home; this is the API's representation, `report/CLAUDE.md`) |
+   | `sts-resource` | Default resource | base + `/resource`, RFC 9068's default for a request naming none, which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management accept |
+
+   The base is `internalBaseUrl()` (`global.publicBaseUrl` with the realm's
+   prefix, else `localhost:<port>`), moved onto the API's listener by
+   `helpers.rebaseTo()`. **The audience is the pinned name** (rcbj's
+   decision): a service reached under another name does not add one here.
+
+   **A RESOURCE IS NEVER A CLIENT, AND THAT IS ENFORCED, NOT IMPLIED.**
+   `isResourceServer()` answers for an entry that is `oauth2-resource-server`
+   and NOT also `oauth2-client` (a client that defines an API is allowed, as
+   RFC 9767 allows a GNAP resource server), and `oauth-oidc/oauth2.ts`
+   refuses such a client_id at the authorization, token, PAR, introspection,
+   revocation, device authorization and CIBA endpoints, in every mode
+   (`STS-OAUTH-0985`: `invalid_client`, 401; 400 at the authorization
+   endpoint, never redirected). Emptying the grant lists would not have done
+   it: an entry declaring no grant type is held to none
+   (`declaredFlowsOf()`), and development verifies no client credential.
+
+   **THE BOOTSTRAP CLIENT IS `sts-api-client`** (*API client*), which took over
+   everything the old client carried: confidential, `client_secret_basic`,
+   `client_credentials` only, scope `admin:read admin:write report:use`, in
+   every realm, seeded a member of ADMIN_READ, ADMIN_WRITE and REPORT_USE
+   (`roles.js`). `adminApi.clientSecret` (and OpenBao's
+   `secret/sts-admin` field `adminApiClientSecret`) pins ITS secret, in the
+   default realm only (`pinnedSecretOf()`, `STS-REG-0061`, `STS-REG-0210`);
+   a realm's copy is minted, the #32 machine door. It does NOT call
+   `/account-api`, which acts only on a person (rcbj's decision): a
+   `client_credentials` token has no account there. `tests/tools/
+   admin-api-token.js` is still the one place the client id is written for
+   the launchers.
+
+   #1140 refuses any token whose audience no application object holds, in
+   both modes — which these four rows exist to make possible. **#1141 made a
+   delegated permission grant on one of these objects the CLIENT's half of
+   the scope check** (`scope_policy.ts`, 3au, *The scopes a delegated
+   permission grant declares*): the three API rows define their scopes as
+   permissions from `API_PERMISSIONS` under fixed `urn:sts:<api>:` bases,
+   the client rows hold delegated permission grants of what they use
+   (`delegatedPermissionGrants()`), and their registration `scope` lists
+   none of those words. The API rows are seeded FIRST, so a permission is
+   defined before anything holds a delegated permission grant of it (the
+   debugger's rule).
 
    **NO APPLICATION CREDENTIAL IS STORED IN THE CLEAR UNDER A DURABLE KEY SINCE
    2026-10-01.** `appRegistrationAccessToken` is sealed in `setField()` and
@@ -5098,12 +5159,54 @@ resource servers can require it without a cycle. The debugger permission's
 spelling is written out rather than required from `debugger/`, for
 `applications.js`'s reason, and `tests/scope_policy.js` compares the two.
 
+**THE SCOPES A DELEGATED PERMISSION GRANT DECLARES (#1141, rcbj's decision,
+2026-10-29).** "Grant" in this section, its code and its docs is ALWAYS a
+delegated permission grant — a permission identifier on a client's
+`oauthDelegatedPermission` — and never RFC 6749's authorization grant
+(`grant_type`), Grant Management's or GNAP's; rcbj asked for the whole phrase
+every time, because the bare word is ambiguous across the specifications.
+For this service's own three APIs the client's half of "may it ask for this
+scope" is a DELEGATED PERMISSION GRANT on the API's resource object
+(#1139), Microsoft Entra ID's `requiredResourceAccess`, and NOT
+`oauthAllowedScope`. The
+vocabulary is `applications.js`'s `API_PERMISSIONS` — `admin:read`,
+`admin:write`, `admin:console`, `owner:read`, `owner:write` on
+`sts-management-api` (`urn:sts:admin-api:`), `account:manage` on
+`sts-account-api`, `report:use` and `report:admin` on `sts-report-api` —
+and `delegatedPermissionApiOf()` names a word's API. Three consequences, each
+deliberate:
+
+* **`declaredScopes()` takes these words OFF the list**, so listing one in
+  `oauthAllowedScope` declares nothing; `declares()` answers them from
+  `delegatedPermissionScopes()` alone, and the issuance fact
+  `SCOPE_DECLARED` asks `declares()` for them. Every resource server's
+  per-call re-check (`admin_api.ts`, `report_api.ts`, `account_api.ts`) is
+  `declares()`, so a revoked delegated permission grant stops the tokens a
+  client holds.
+* **The permission must be defined by THAT API's own object**
+  (`forPermission(id).identifier === api`): an operator entry defining the
+  same identifier does not stand in for it.
+* **A FIXED `urn:sts:` BASE, NOT THE API'S URL**, because an own API's
+  audience is a URL under any name this service is reached by (#1140) and a
+  delegated permission grant must not depend on a host. A client still asks
+  for the BARE word with `resource`, which is the path #1030 found never
+  consulted a delegated permission grant; it does now. A client asking for
+  the full identifier gets the base as `aud` (`audienceScopes()`'s rule),
+  which the API's own audience check refuses — the bare word is the way.
+
+Roles are unchanged as the subject's half (3u, `role_permissions.ts`): a
+delegated permission grant says what a client may ASK for, never whether its
+subject holds it.
+
 **NO MIGRATION.** A persisted `sts-management-api` or `sts-admin-console` seeded
 before #110 is left alone by `seedInternalApplication()` and carries no
 declaration: add `admin:read admin:write` to its `oauthAllowedScope` on the
 console (the application's page — the console's own gate is a session, which
 this does not touch) or by `ldapmodify`, since `/admin-api` then refuses its
-tokens; or delete the entry and restart.
+tokens; or delete the entry and restart. **The same rule meets #1139**: a
+store persisted before it keeps `sts-management-api` as the CLIENT it was
+written as (a seeded row never overwrites), and gains `sts-api-client` beside
+it; deleting the old entry and restarting reseeds it as the resource.
 
 ## 3az. `delegation_policy.ts`: who may act for whom, and as what (#108, 2026-09-23; #186, 2026-10-03)
 
@@ -5240,9 +5343,10 @@ SAYING.** Every attribute here used to be either RECORDED (what happened) or
 DECLARED (what somebody said, which nothing reads). These are declared AND read:
 `saml/saml2_sso.ts` and `saml/saml11_sso.ts` resolve every one of their five
 settings through `settingFor()` on every assertion. They join
-`appFederationRelationship` and `appAuthnMechanism` on the short list of
-declarations that actually do something — and unlike those two, what they change
-is not WHERE somebody signs in but what the document they get looks like.
+`appFederationRelationship` and `appAuthnMechanism` (`appAuthnPolicy` since
+#1148) on the short list of declarations that actually do something — and unlike
+those two, what they change is not WHERE somebody signs in but what the document
+they get looks like.
 
 **THE MAPPING IS BUILT FROM THE SCHEMA, ONCE, AND THERE IS NO SECOND TABLE.**
 `OVERRIDE_ATTRIBUTES` is derived from the rows' own `overrides` members at
@@ -5425,6 +5529,15 @@ rather than being an error.
 
 ### `appAuthnMechanism` — the THIRD of that group, and the generalisation of the other two
 
+**#1148 (2026-10-29): GONE, WITH `appMfaMechanism` BELOW, AND REPLACED BY ONE
+REFERENCE.** `appAuthnPolicy` (`single`, checked at the write against
+`default` and the realm's named policies) names a NAMED AUTHENTICATION POLICY
+(3bd, below), whose first-factor list is what this attribute's list was and
+whose second-factor list is what `appMfaMechanism`'s was. What follows is the
+history and the behaviour of the LIST, which is unchanged: it is read through
+`authn_mechanisms.ts`'s and `mfa_mechanisms.ts`'s `allowedOf()` from
+`authn_policy.ts`'s `mechanismsFor()` instead of off the entry.
+
 **#457 (2026-10-06): A LIST OF THE MECHANISMS THE APPLICATION ALLOWS, AND
 ENFORCED.** What follows describes the single routing value it was. Now it is
 `multi`, one checkbox per mechanism, a value checked at the write
@@ -5482,19 +5595,20 @@ accepted — exactly what `appFederationRelationship` changes.
 
 ### `appMfaMechanism` — the FOURTH of that group: which second factors (#475)
 
-The second factors an application allows (rcbj, 2026-10-07), `multi`, one
-checkbox per second-factor mechanism of the authentication policy, checked at
-the write (`CHOICES_CHECKED_HERE`). **It only narrows the realm's policy and
-never says a second factor is needed**; none listed leaves the realm's.
-`common/mfa_mechanisms.ts` is its leaf, `authn_mechanisms.ts`'s arrangement:
-the ids (held to `authn_policy.ts`'s MECHANISMS by
-`tests/mfa_mechanism_enforcement.js`), what an EVENT gave — only a local event
-with `acr` `mfa`, named by the credential that answered last, `webauthn` only
-after a first factor because a passkey alone is a first factor — the union
-over a session, and the entry's list. `issuance_gate.js`'s `mfaFactsOf()`
-sends the two bags on #457's four browser kinds, and only when a second factor
-was given: a one-factor session is not the rule's to deny. The sign-in side is
-`authn/CLAUDE.md`; the rule, `xacml/CLAUDE.md`.
+**Since #1148 the second-factor list of the named authentication policy
+`appAuthnPolicy` names, as above.** The second factors an application allows
+(rcbj, 2026-10-07), `multi`, one checkbox per second-factor mechanism of the
+authentication policy, checked at the write (`CHOICES_CHECKED_HERE`). **It only
+narrows the realm's policy and never says a second factor is needed**; none
+listed leaves the realm's. `common/mfa_mechanisms.ts` is its leaf,
+`authn_mechanisms.ts`'s arrangement: the ids (held to `authn_policy.ts`'s
+MECHANISMS by `tests/mfa_mechanism_enforcement.js`), what an EVENT gave — only a
+local event with `acr` `mfa`, named by the credential that answered last,
+`webauthn` only after a first factor because a passkey alone is a first factor —
+the union over a session, and the entry's list. `issuance_gate.js`'s
+`mfaFactsOf()` sends the two bags on #457's four browser kinds, and only when a
+second factor was given: a one-factor session is not the rule's to deny. The
+sign-in side is `authn/CLAUDE.md`; the rule, `xacml/CLAUDE.md`.
 
 ## WHERE THE ONE CRYPTO MODULE IS DESCRIBED TO A READER
 
@@ -5961,7 +6075,8 @@ is written down.
 **ADMIN_READ AND ADMIN_WRITE ARE THE TWO CONSOLE ROLES.** Configured entries
 seeded in every realm (`seedConsoleRoles()`, beside the internal
 applications), each authorizing its own admin scope, each held by the
-realm's `sts-management-api`. Their groups are `admin.readGroup` /
+realm's `sts-api-client` (`sts-management-api` until #1139 made that the
+management API's resource object). Their groups are `admin.readGroup` /
 `admin.writeGroup`, read when the entry is read rather than stored; a PERSON's
 membership is answered by the console roster (`admin_rbac.ts`), which carries
 development's open console and the bootstrap administrator's claim to the API
@@ -5977,7 +6092,7 @@ each authorizes one native permission, is seeded in every realm, cannot be
 deleted and cannot authorize anything else. DEVICE_COMPLIANCE is otherwise an
 ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 (rcbj's decision): no client is the MDM feed until an operator adds it, and
-`sts-management-api` is not one — the separation #164 decision 2 made.
+`sts-api-client` is not one — the separation #164 decision 2 made.
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
 
@@ -10792,11 +10907,12 @@ policy's decision, in layers, for every key alike; the key has no role and no
 say.** The realm's policy says what the realm supports (its `passkey`
 first-factor and `securityKey` second-factor rows, with
 `webauthn.primaryAllowed` / `webauthn.mfaAllowed`, asked by
-`webauthnPolicy.useAllowed()`). An application overrides it through
-`appAuthnMechanism` (first factors, `webauthn` among them, enforced by the
-issuance policy's authn-mechanism rule) and `appMfaMechanism` (second factors,
-`securityKey` among them, applied where the second step is chosen:
-`authn.ts`'s `mfaAllowedFor()` / `narrowSecondFactor()`). So a held passkey
+`webauthnPolicy.useAllowed()`). An application overrides it through the
+named authentication policy it names (`appAuthnPolicy`, #1148): its first
+factors (`webauthn` among them, enforced by the issuance policy's
+authn-mechanism rule) and its second factors (`securityKey` among them,
+applied where the second step is chosen: `authn.ts`'s `mfaAllowedFor()` /
+`narrowSecondFactor()`). So a held passkey
 makes a second step only where the realm, and the application if it
 overrides, accepts a passkey as a second factor.
 
@@ -10962,8 +11078,21 @@ rows and the selection alike.
   `STS-REG-0214` and the realm's selection is used.
 * **Not done**, as for the rows: no CAEP `token-claims-change` on an
   application's change.
+* **The OAuth sub-tab draws the three OAuth sets as ONE table** (#1144, rcbj
+  2026-10-29): a checkbox column each for the access token, the ID Token and
+  UserInfo (`web_applications.ts`'s `applicationClaimSelectionTable()`), under
+  ONE Save, `set-claim-selections`. **It writes only the columns that
+  changed**: a column posted with exactly the selection in force is left as
+  it is, so a Save that did not touch an INHERITING column does not freeze
+  the realm's ticks into an own copy that a later realm change would no
+  longer reach. Every column is checked before any is written. Each column
+  posts an empty value first, so a column with nothing ticked is an empty
+  list and not an absent one. `set-claim-attributes` and
+  `inherit-claim-attributes` still write one set each (the column's "Use the
+  realm's selection" is the latter, by a `formaction` query); the SAML and
+  credential sub-tabs keep one table each.
 
-`tests/application_claim_selections.js` holds it.
+`tests/application_claim_selections.js` holds it (F, for #1144).
 
 ## 3ay. `identity_assurance.ts`: a person's identity verifications, and `verified_claims` (#127, 2026-09-23)
 
@@ -11947,8 +12076,49 @@ administrator cannot decide who is one. The default realm's
 is the account a service is recovered through. `tests/admin_second_factor.js`
 holds it.
 
-`tests/authn_policy.js` holds the module, the inheritance, the mail guard,
-the retired settings and a kind registered later.
+**NAMED AUTHENTICATION POLICIES (#1148, rcbj 2026-10-29)** replaced an
+application's own `appAuthnMechanism` and `appMfaMechanism`: the application
+holds ONE reference, `appAuthnPolicy` (`common/applications.js`), and the
+lists live on a policy. rcbj's decisions:
+
+- **THE APPLICATION NAMES ITS POLICY**, one value — the opposite direction
+  from a named passkey policy (3ch), which names its applications.
+- **A NAMED POLICY HOLDS TWO LISTS AND NOTHING ELSE**: the first-factor
+  mechanisms allowed (`stsAuthnPolicyMechanism`, `federation.MECHANISM_IDS`)
+  and the second factors allowed (`stsAuthnPolicySecondFactor`), each "none
+  is every one" exactly as the two attributes were. Everything else about
+  authentication — the rows above, `requireSecondFactor` — stays the
+  realm's, on `cn=default`.
+- **STORED BESIDE `cn=default`** as `cn=<name>,ou=authnPolicies`, in THIS
+  realm only: nothing is inherited from the default realm, because a realm's
+  applications name its own policies. `default` is not a name a policy can
+  take (`STS-AUTHN-0532`); an application naming it, or nothing, is narrowed
+  by nothing beyond the realm's policy.
+- **`mechanismsFor(fields)` IS THE ONE QUESTION** every reader of the two old
+  attributes asks now — the routing in `authn.ts`, `authn_mechanisms.ts`'s
+  and `mfa_mechanisms.ts`'s `allowedOf()` (and so the issuance gate), the
+  `authMechanisms` report source. **A name no policy holds allows NO
+  mechanism** (`missing`, `STS-AUTHN-0536`): a reference fails closed, as a
+  misspelt list did. The console's and the API's writes are checked against
+  `default` and the realm's policies (`CHOICES_CHECKED_HERE`,
+  `STS-REG-0203`), so that state is reached only past them — an
+  `ldapmodify`; a delete of a name the realm does not hold is
+  `STS-AUTHN-0535`.
+- **TWO ACTS BESIDE SAVE AND RESET**, `policy_kinds.ts`'s `extraActions`:
+  `save-named-authn-policy` {name, description, mechanisms, secondFactors}
+  (an unknown value is `STS-AUTHN-0533`) and `delete-named-authn-policy`
+  {name}, REFUSED while an application of the realm names it
+  (`STS-AUTHN-0534`; `applications.js`'s `applicationsNamingAuthnPolicy()`,
+  reached lazily because this file is a leaf). The console draws the
+  Authentication policy tab as the passkey policy's three sub-tabs (rcbj):
+  Default, Named policies and New policy, the last two from
+  `admin-ui/web_policies.ts`'s `namedAuthnPoliciesSection()`.
+- **NO MIGRATION IS OWED** (`applications.js`): the two old attributes are
+  no longer read.
+
+`tests/named_authn_policies.js` holds the named policies, and
+`tests/authn_policy.js` the module, the inheritance, the mail guard, the
+retired settings and a kind registered later.
 
 ## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
 
@@ -12446,9 +12616,14 @@ product, to one definition, this file's:
   client_id, identifier or permission base URI — the embedded debugger's api
   is one, seeded registered.
 
-`unregistered()` answers the targets that are neither — none in development,
-behind #496's `mode.issuesToUnregisteredApplications()` and the
-`unregistered-resource-targets` REQUIREMENTS row. A STATIC UTILITY CLASS like
+`unregistered()` answers the targets that are neither — IN EVERY MODE since
+#1140 (it answered none in development until then, behind #496's
+`mode.issuesToUnregisteredApplications()` and an
+`unregistered-resource-targets` REQUIREMENTS row, both now gone from it), and
+`oauth2.ts`'s `accessTokenPlan()` asks it of every audience a token would
+carry (`oauth-oidc/CLAUDE.md`). An own resource server counts only while its
+#1139 application object exists (`seeded()`), and is matched by path under the
+request's base or the authorization server's. A STATIC UTILITY CLASS like
 `issuer_names.ts`: the registry, the access-token profile and the management
 API are reached lazily, at request time only, and a converted module is
 ASKED, NEVER BUILT (an uninstalled instance answers nothing), so neither a

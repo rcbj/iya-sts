@@ -41,7 +41,7 @@
 //     given (`scim`, `ldap`, `ldap50k`, `api`). Found and deleted through SCIM
 //     (`/scim/v2`), which is this service's door for deleting a person or a
 //     group: `/admin-api` has none. The token is the seeded
-//     `sts-management-api` client's with `scim:read scim:write`, minted the
+//     `sts-api-client` client's with `scim:read scim:write`, minted the
 //     way the SCIM bulk-load job mints it (tests/tools/admin-api-token.js).
 //     Groups first, so no deleted person is left dangling in a group that is
 //     about to go anyway. In SCIM Bulk requests of the service's advertised
@@ -512,12 +512,12 @@ async function scimToken(base, token, dryRun) {
   if (!dryRun) {
     for (const scope of ['scim:read', 'scim:write']) {
       const r = await request('POST', base + '/admin-api/applications/add',
-                              token, { application: 'sts-management-api',
+                              token, { application: 'sts-api-client',
                                        attribute: 'oauthAllowedScope',
                                        value: scope });
       if (r.status !== 200 && !/already/i.test(r.text)) {
         log.debug('Leaving scimToken().');
-        throw new Error('declaring ' + scope + ' on sts-management-api ' +
+        throw new Error('declaring ' + scope + ' on sts-api-client ' +
                         'answered ' + brief(r));
       }
     }

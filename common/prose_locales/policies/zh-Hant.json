@@ -304,16 +304,16 @@
     "text": "密碼金鑰（無密碼）——作為第一因素"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式自己的清單（appAuthnMechanism）另有規定。"
+    "en": "1cab77157f5d6263",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式所指名之驗證原則（appAuthnPolicy）的第一因素另有規定。"
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
     "en": "4e99afea50969c29",
     "text": "密碼金鑰（第二因素）——作為第二因素"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式自己的清單（appMfaMechanism）另有規定。"
+    "en": "5577b57e8d01187e",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式所指名之驗證原則（appAuthnPolicy）的第二因素另有規定。"
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式自己的清單（appAuthnMechanism）另有規定。"
+    "en": "1cab77157f5d6263",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式所指名之驗證原則（appAuthnPolicy）的第一因素另有規定。"
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式自己的清單（appMfaMechanism）另有規定。"
+    "en": "5577b57e8d01187e",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式所指名之驗證原則（appAuthnPolicy）的第二因素另有規定。"
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -571,6 +571,14 @@
     "en": "93538e6b201100c5",
     "text": "此設定檔的用途，供下一位接手的人參考。"
   },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "9c184b4ac272a663",
+    "text": "在「具名」驗證原則上（#1148）：指名此原則的應用程式（appAuthnPolicy）所允許的一種第一因素機制——password、password-mfa、webauthn、spnego、wallet 或 federation，每個值一種。一個都不列則允許領域所允許的每一種。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "b59799bd06b5022d",
+    "text": "在「具名」驗證原則上（#1148）：指名此原則的應用程式所允許的一種第二因素——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每個值一種。一個都不列則維持領域的驗證原則不變。"
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "此人選擇使用哪種以電子郵件寄送的第二因素：`code` 或 `link`。不存在：無。在 /portal/mfa 上設定，在 /admin/mfa 上或連續失敗過多次後清除。"
@@ -592,16 +600,16 @@
     "text": "密碼金鑰（無密碼）"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式自己的清單（appAuthnMechanism）另有規定。"
+    "en": "1cab77157f5d6263",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），無需密碼即可讓其登入。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第一因素，除非某個應用程式所指名之驗證原則（appAuthnPolicy）的第一因素另有規定。"
   },
   "authn.MECHANISMS.securityKey.label": {
     "en": "7474add07b92939d",
     "text": "密碼金鑰（第二因素）"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "ea543723944fb410",
-    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式自己的清單（appMfaMechanism）另有規定。"
+    "en": "5577b57e8d01187e",
+    "text": "此人持有的任何密碼金鑰（WebAuthn 認證），在第一因素之後被要求。密碼金鑰沒有角色：此列在每次登入時說明其中任何一把是否可以在本領域作為第二因素，除非某個應用程式所指名之驗證原則（appAuthnPolicy）的第二因素另有規定。"
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1064,8 +1072,8 @@
     "text": "要求不需使用者名稱的密碼金鑰登入"
   },
   "passkey.FIELDS.requireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "預設關閉。開啟時，驗證機制只有密碼金鑰（僅 appAuthnMechanism `webauthn`）的應用程式會得到沒有使用者名稱欄位的登入畫面：*Sign in with a passkey* 是唯一的入口，指名某人的登入會被拒絕。需要上一列開啟。領域的 `default` 設定檔不會將其套用於管理主控台、偵錯工具或使用者入口網站；選取該應用程式的具名設定檔則會。"
+    "en": "3f8988c76401d34a",
+    "text": "預設關閉。開啟時，驗證機制只有密碼金鑰（其所指名的驗證原則 appAuthnPolicy 只列出 `webauthn`）的應用程式會得到沒有使用者名稱欄位的登入畫面：*Sign in with a passkey* 是唯一的入口，指名某人的登入會被拒絕。需要上一列開啟。領域的 `default` 設定檔不會將其套用於管理主控台、偵錯工具或使用者入口網站；選取該應用程式的具名設定檔則會。"
   },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
@@ -1272,8 +1280,8 @@
     "text": "預設開啟。開啟時，登入畫面會提供 *Sign in with a passkey* 與使用者名稱欄位的自動填入，它們會向瀏覽器要求此領域的任何可探索認證（WebAuthn Level 3 第 5.4 節，`allowCredentials` 為空），並登入其使用者控制代碼所指名的帳戶，且要求並檢查使用者驗證。關閉時兩者皆不提供，登入一律先指名該人。取代設定 webauthn.usernameless。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "預設關閉。開啟時，驗證機制只有密碼金鑰（僅 appAuthnMechanism `webauthn`）的應用程式會得到沒有使用者名稱欄位的登入畫面：*Sign in with a passkey* 是唯一的入口，指名某人的登入會被拒絕。需要上一列開啟。領域的 `default` 設定檔不會將其套用於管理主控台、偵錯工具或使用者入口網站；選取該應用程式的具名設定檔則會。"
+    "en": "3f8988c76401d34a",
+    "text": "預設關閉。開啟時，驗證機制只有密碼金鑰（其所指名的驗證原則 appAuthnPolicy 只列出 `webauthn`）的應用程式會得到沒有使用者名稱欄位的登入畫面：*Sign in with a passkey* 是唯一的入口，指名某人的登入會被拒絕。需要上一列開啟。領域的 `default` 設定檔不會將其套用於管理主控台、偵錯工具或使用者入口網站；選取該應用程式的具名設定檔則會。"
   },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",

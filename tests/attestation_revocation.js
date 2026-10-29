@@ -219,6 +219,52 @@ module.exports = {
             'E2. the job fetches Google\'s address through fetchPublished(), ' +
             'with its cap, and imports what it got', JSON.stringify(fetched));
 
+    // G. RELOAD A REMOVED VERSION (#1157): one the job downloaded, from the
+    // address configured now, comes back by downloading it again; a file
+    // that is not the version's is refused, and so is an uploaded one.
+    const reloadWith = function (body) {
+      return new datasets.RiskDatasets(Object.assign(
+        datasets.RiskDatasets.defaultDeps(), {
+          federationHttp: function () {
+            return { fetchPublished: function () {
+              return Promise.resolve({ ok: true, status: 200,
+                                       body: Buffer.from(body) });
+            } };
+          } }));
+    };
+    const sameBody = list({ dd: { status: 'REVOKED' } });
+    const removed = await fetcher.deleteVersion('',
+      'android.attestation-status', fetched.version, 'a test');
+    const listed = (await fetcher.registry('default')).datasets
+      .filter(function (d) {
+        return d.dataset === 'android.attestation-status';
+      })[0].versions.filter(function (v) {
+        return v.version === fetched.version;
+      })[0];
+    t.check(removed.ok && listed && listed.state === 'deleted' &&
+            listed.reloadable === true,
+            'G1. a removed version the job downloaded from the configured ' +
+            'address is reloadable', JSON.stringify(listed));
+    const changed = await reloadWith(list({ ff: { status: 'REVOKED' } }))
+      .reloadVersion('', 'android.attestation-status', fetched.version,
+                     'a test');
+    t.check(!changed.ok && /different file/.test(changed.errors[0]) &&
+            errorCodes.codeOf(changed) === 'STS-RISK-0053',
+            'G2. a download that is not the version\'s file is refused, ' +
+            'and nothing is loaded', JSON.stringify(changed));
+    const reloaded = await reloadWith(sameBody).reloadVersion('',
+      'android.attestation-status', fetched.version, 'a test');
+    t.check(reloaded.ok && !reloaded.duplicate &&
+            reloaded.version === fetched.version,
+            'G3. RELOAD downloads the removed version again and loads it as ' +
+            'that version', JSON.stringify(reloaded));
+    const notRemoved = await reloadWith(sameBody).reloadVersion('',
+      'android.attestation-status', fetched.version, 'a test');
+    t.check(!notRemoved.ok &&
+            errorCodes.codeOf(notRemoved) === 'STS-RISK-0051',
+            'G4. a version that is not removed is not reloaded',
+            JSON.stringify(notRemoved));
+
     // F. THE RECHECK'S WEBAUTHN HALF, over stubs.
     await load(list({ ee: { status: 'REVOKED', reason: 'KEY_COMPROMISE' } }));
     const untrusted = [];

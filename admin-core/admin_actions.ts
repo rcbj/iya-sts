@@ -602,6 +602,7 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
                              'remove-custom-claim', 'set-claim-attributes',
+                             'set-claim-selections',
                              'inherit-claim-attributes', 'set-access-type',
                              'remove-access-type', 'set-permission-claims',
                              'clear-permission-claims', 'export-ldif',
@@ -6097,6 +6098,7 @@ class AdminActions {
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
+                      'set-claim-selections',
                       'inherit-claim-attributes', 'set-access-type',
                       'remove-access-type', 'set-permission-claims',
                       'clear-permission-claims', 'export-ldif', 'forget'];
@@ -6446,6 +6448,101 @@ class AdminActions {
     // realm's selection is in force again. The names are held to the
     // catalogue by `updateApplication()` (`STS-REG-0215`).
     // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // THE OAUTH SUB-TAB'S ONE TABLE (#1144, rcbj 2026-10-29): the access
+    // token, ID Token and UserInfo selections, a column each, under ONE Save
+    // that writes only the columns that CHANGED. A column posted with exactly
+    // the selection in force is left as it is — the realm's, if it was
+    // inheriting it, so a Save that did not touch a column does not turn the
+    // realm's ticks into this application's own copy of them. Every column
+    // is held to the catalogue before any is written; a column not posted
+    // at all is not asked about. `set-claim-attributes` and
+    // `inherit-claim-attributes` still write one set each.
+    // ---------------------------------------------------------------------
+    if (action === 'set-claim-selections') {
+      const COLUMNS = ['access_token', 'id_token', 'userinfo'];
+      const entry = applications.get(identifier);
+      if (!entry) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": no such application.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['There is no application called "' + identifier +
+                   '".'] });
+      }
+      const declaredFamilies = applications.declaredFamiliesOf(entry);
+      if (!['oauth2', 'oidc'].some(function (one) {
+        return declaredFamilies.indexOf(one) >= 0;
+      })) {
+        log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                  ": not declared for OAuth.");
+        return this.refused('STS-REG-0215', { ok: false,
+          errors: ['The application "' + identifier + '" is not declared ' +
+            'for OAuth 2.0 or OpenID Connect, so its access token, ID Token ' +
+            'and UserInfo selections would reach nothing. Tick the family ' +
+            'first.'] });
+      }
+      const posted = COLUMNS.filter(function (one) {
+        return body[one] !== undefined;
+      });
+      const asked: any = {};
+      for (const setId of posted) {
+        const offered = body[setId];
+        const list = (Array.isArray(offered) ? offered
+          : (offered === null || offered === '' ? []
+            : String(offered).split(/[\s,]+/)))
+          .map(String).filter(function (one: string) { return one !== ''; });
+        const checked = claimAttributes.checkNames(list);
+        if (!checked.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": an attribute the catalogue does not hold.");
+          return this.refused('STS-REG-0215', { ok: false,
+            errors: checked.errors });
+        }
+        asked[setId] = checked.names;
+      }
+      const sameNames = function (a: string[], b: string[]): boolean {
+        const norm = function (list: string[]): string {
+          return list.map(function (one) { return one.toLowerCase(); })
+            .sort().join(' ');
+        };
+        return norm(a) === norm(b);
+      };
+      const sets: any[] = [];
+      for (const setId of posted) {
+        const own = claimAttributes.applicationSelection(setId, entry);
+        const inForce = own === null ? claimAttributes.selectedNames(setId)
+                                     : own;
+        if (sameNames(asked[setId], inForce)) {
+          sets.push({ set: setId, changed: false, inherited: own === null,
+                      attributes: inForce });
+          continue;
+        }
+        const write = applications.updateApplication(identifier, {
+          mode: 'set',
+          attribute: claimAttributes.APP_SELECTION_ATTRIBUTES[setId],
+          value: JSON.stringify(asked[setId]) });
+        if (!write.ok) {
+          log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                    ": the write was refused.");
+          return this.refusedBy('STS-REG-0215', write);
+        }
+        sets.push({ set: setId, changed: true, inherited: false,
+                    attributes: asked[setId] });
+      }
+      const changed = sets.filter(function (one) { return one.changed; })
+        .map(function (one) { return one.set; });
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                " ok, " + changed.length + " changed.");
+      return { ok: true, application: identifier, sets: sets,
+               message: changed.length
+                 ? '"' + identifier + '" now holds its own ' +
+                   changed.join(', ') + ' selection' +
+                   (changed.length === 1 ? '' : 's') + ', in place of the ' +
+                   'realm\'s; the other columns are as they were.'
+                 : 'Nothing changed: every column of "' + identifier +
+                   '" is as it was.' };
+    }
+
     if (action === 'set-claim-attributes' ||
         action === 'inherit-claim-attributes') {
       const setId = String(body.set || '');

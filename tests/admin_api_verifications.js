@@ -116,7 +116,7 @@ function childMain() {
     const stamp = String(process.pid);
     const WRITER = 'av-writer-' + stamp;
     const READER = 'av-reader-' + stamp;
-    const CLIENT = 'sts-management-api';
+    const CLIENT = 'sts-api-client';
     [WRITER, READER].forEach(function (name) {
       ldap.createUser(name, { invent: false });
     });

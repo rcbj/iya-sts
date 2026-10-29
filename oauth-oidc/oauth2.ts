@@ -5619,7 +5619,8 @@ class OAuth2Server {
     // a token must not be issued ambiguous because the grant is old.
     const explicit = self.audienceList(opts.audience);
     const plan = self.accessTokenPlan(base, opts.scope, opts.client_id,
-                                      explicit, opts.authorization_details);
+                                      explicit, opts.authorization_details,
+                                      opts.request || null);
     if (plan.refusal) {
       log.debug("Leaving OAuth2Server.tokenSet(). RFC 9068 refused the " +
                 "audience.");
@@ -8535,11 +8536,13 @@ class OAuth2Server {
    * @param clientId - the client
    * @param explicit - the audiences the request named
    * @param details - the authorization details
+   * @param req - the request, for the names this process is reached by, or
+   *   nothing where there is none (a CIBA push)
    * @returns the plan, with its refusal where there is one
    */
   accessTokenPlan(base: Json, scope: Json, clientId: Json, explicit: Json,
-                  details: Json): Json {
-    const { log, jwtAccessToken, richAuthorization } = this.deps;
+                  details: Json, req?: Json): Json {
+    const { log, jwtAccessToken, richAuthorization, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.accessTokenPlan(). scope=" +
               (scope || '(none)'));
@@ -8587,6 +8590,44 @@ class OAuth2Server {
     // What the scope list named, for the refresh token's `resources` — see
     // tokenSet().
     plan.derived = named.audiences.slice(0);
+    // NO ACCESS TOKEN FOR AN AUDIENCE NO APPLICATION OBJECT HOLDS (#1140,
+    // rcbj, 2026-10-29), in every mode. Asked of the PLAN's audiences, which
+    // is every one a token can carry: the default (`<base>/resource`,
+    // `sts-resource`), a `resource` the request named, a client's own on
+    // client_credentials (its client_id or `oauthAudience`, #550), and one a
+    // scope or `authorization_details` derived. `registered_targets.ts`
+    // decides: this service's own APIs while their objects exist, matched by
+    // path under any name this process is reached by, or a registered
+    // application by any of the names an audience addresses one by.
+    // RFC 8707 section 2's `invalid_target`.
+    //
+    // THE CLIENT BEING SERVED IS ALWAYS AN AUDIENCE IT MAY NAME (rcbj's
+    // decision on #1140: a client's own client_id counts): its client_id,
+    // registry identifier or `oauthAudience` (`clientAudienceNames()`), the
+    // default a client_credentials token naming nothing takes (#550) and what
+    // a self exchange names. The client already passed the client checks to
+    // be served at all — in product, registration (#496) — so its own entry
+    // IS the application object holding that audience, sighted or not.
+    //
+    // AND AN AUDIENCE AN `authorization_details` TYPE'S DECLARING OBJECT
+    // ANSWERS TO (RFC 9396): the identifiers `audienceFor()` lists are that
+    // resource's own — its permission base, `oauthAudience`, client_id and
+    // the locations its type definition declares — so the object that
+    // declared the type is the one holding them. A detail naming a location
+    // outside them is still asked.
+    if (!plan.refusal) {
+      const own = self.clientAudienceNames(clientId).all.concat(
+        (richAuthorization.audienceFor(details) || {}).identifiers || []);
+      const strangers = RegisteredTargets.unregistered(
+        (plan.audiences || []).filter(function (one: Json) {
+          return own.indexOf(String(one)) < 0;
+        }), req || null, String(base || ''));
+      if (strangers.length) {
+        plan.refusal = errorCodes.mark({ error: 'invalid_target',
+          description: 'The access token would be addressed to ' +
+            RegisteredTargets.describe(strangers) }, 'STS-OAUTH-0986');
+      }
+    }
     if (plan.stripped.length) {
       log.info('RFC 9068 section 2.2.3: the access token for client "' +
                String(clientId || '(unnamed)') + '" is addressed to ' +
@@ -8822,12 +8863,13 @@ class OAuth2Server {
     // naming none or several. Implicit and hybrid mint here, so they keep
     // the whole request's plan.
     let audiencePlan = self.accessTokenPlan(base, scope, query.client_id,
-                                            resources, authorizationDetails);
+                                            resources, authorizationDetails,
+                                            req);
     if (audiencePlan.refusal && types.indexOf('token') < 0 &&
         resources.length > 1) {
       const one = resources.map(function (resource: string) {
         return self.accessTokenPlan(base, scope, query.client_id, [resource],
-                                    authorizationDetails);
+                                    authorizationDetails, req);
       }).filter(function (plan: Json) {
         return !plan.refusal;
       })[0];
@@ -10837,7 +10879,8 @@ class OAuth2Server {
         : redirectable(fapiCheck.errorCode, fapiCheck.error,
                        fapiCheck.description);
     }
-    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505). An
+    // RFC 8707: A RESOURCE NAMES A REGISTERED TARGET (#505), IN EVERY MODE
+    // SINCE #1140 (`accessTokenPlan()` holds every audience to it). An
     // authorization request's or a pushed request's `resource` becomes the
     // `aud` of every access token the grant yields, and until #505 product
     // accepted any absolute URI there — #496's audit's remaining OAuth gap.
@@ -10848,8 +10891,7 @@ class OAuth2Server {
     // check, so nobody is sent to sign in for a request that was going to be
     // refused. A malformed resource is left for the shape check after
     // sign-in (STS-OAUTH-0154), which answers it as it always did. The token
-    // exchange's own targets are `resolveTarget()`'s. Development is
-    // unchanged.
+    // exchange's own targets are `resolveTarget()`'s.
     const askedResources = self.parseResourceIndicators(q.resource);
     const unregisteredResources = askedResources.error ? []
       : RegisteredTargets.unregistered(askedResources.resources, req);
@@ -11518,7 +11560,7 @@ class OAuth2Server {
         !self.accessTokenPlan(
           self.asBaseOf(req), String(q.scope || ''), q.client_id,
           self.parseResourceIndicators(q.resource).resources || [],
-          consentDetails.details).refusal;
+          consentDetails.details, req).refusal;
       const detailsDigest = detailsPlannable &&
         richAuthorization.needsConsent(consentDetails.details)
         ? richAuthorization.digestOf(consentDetails.details) : '';
@@ -14353,14 +14395,15 @@ class OAuth2Server {
       logArtifact('RFC 8707 resource indicators', 'on the Token Request',
                   requestedResources);
     }
-    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505), on
+    // RFC 8707: A RESOURCE NAMES A REGISTERED TARGET (#505, every mode since
+    // #1140), on
     // every grant but the token exchange — whose `resource` and `audience`
     // are RFC 8693's targets, resolved and refused (`unregistered-target`,
     // STS-OAUTH-0793) by the delegation policy in its branch — and BEFORE
     // anything a grant spends: a code redeemed, a refresh token rotated. The
     // authorization endpoint asked the same of a code's resources; this is
     // the door every direct grant comes through. `vetAuthorizationRequest()`
-    // above argues the rest. Development is unchanged.
+    // above argues the rest.
     if (grant !== 'urn:ietf:params:oauth:grant-type:token-exchange') {
       const unregisteredResources = RegisteredTargets.unregistered(
         requestedResources, req);
@@ -14461,7 +14504,7 @@ class OAuth2Server {
          requestedDetails)) {
       const earlyPlan = self.accessTokenPlan(base, String(body.scope || ''),
         (client && client.client_id) || body.client_id, requestedResources,
-        requestedDetails);
+        requestedDetails, req);
       if (earlyPlan.refusal) {
         log.debug("Leaving the token endpoint. RFC 9068 refused the audience.");
         errorCodes.mark(res, errorCodes.codeOf(earlyPlan.refusal) ||
@@ -18657,7 +18700,7 @@ class OAuth2Server {
     // resource naming another are refused here, at the push, rather than when
     // the request_uri is used.
     let plan = self.accessTokenPlan(base, scope, clientId,
-                                    resources.resources, details.details);
+                                    resources.resources, details.details, req);
     // SEVERAL RESOURCES ON A CODE (#607): the authorization endpoint's rule
     // (`issueAuthorizationResponse()`) — refused only where no one of them
     // could be issued a token alone, because the token request picks one.
@@ -18666,7 +18709,7 @@ class OAuth2Server {
         resources.resources.length > 1) {
       const one = resources.resources.map(function (resource: string) {
         return self.accessTokenPlan(base, scope, clientId, [resource],
-                                    details.details);
+                                    details.details, req);
       }).filter(function (each: Json) {
         return !each.refusal;
       })[0];
@@ -21272,6 +21315,54 @@ class OAuth2Server {
         // ensureFor() never rejects; the request goes on regardless.
         next();
       });
+    });
+
+    // -------------------------------------------------------------------------
+    // AN API RESOURCE OBJECT IS NEVER A CLIENT (#1139, 2026-10-29), IN EVERY
+    // MODE. rcbj: the API application objects "will never be used to
+    // authenticate an application." An entry of kind
+    // `oauth2-resource-server` alone (`applications.isResourceServer()`) is
+    // refused wherever a request names it as a client — the query or form
+    // `client_id`, the Basic user, a client assertion's `sub`
+    // (`presentedClientIdsOf()`) — at every endpoint a client presents itself
+    // at. ONE GUARD AHEAD OF THEM ALL, and not a check in each handler,
+    // because development verifies no client credential and an entry
+    // declaring no grant type is held to none (`declaredFlowsOf()`): without
+    // this, `client_id=sts-management-api` minted a token in development.
+    // The authorization endpoint answers 400 and never redirects (RFC 6749
+    // section 4.1.2.1: an invalid client is not redirected to); the others
+    // answer RFC 6749 section 5.2's `invalid_client`, 401.
+    // -------------------------------------------------------------------------
+    app.use(['/oauth2/authorize', '/oauth2/token', '/oauth2/par',
+             '/oauth2/introspect', '/oauth2/revoke',
+             '/oauth2/device_authorization', '/oauth2/bc-authorize',
+             '/:as/oauth2/authorize', '/:as/oauth2/token', '/:as/oauth2/par',
+             '/:as/oauth2/introspect', '/:as/oauth2/revoke',
+             '/:as/oauth2/device_authorization', '/:as/oauth2/bc-authorize'],
+            function (req: Req, res: Res, next: () => void): void {
+      log.debug("Entering the resource-object guard.");
+      const named = self.presentedClientIdsOf(req).filter(function (id) {
+        return applications.isResourceServer(id);
+      });
+      if (!named.length) {
+        log.debug("Leaving the resource-object guard. No resource named.");
+        next();
+        return;
+      }
+      // `req.path` is relative to the mount point inside `app.use()`; the
+      // mounted path is `req.baseUrl`.
+      const authorize = /\/oauth2\/authorize$/.test(String(req.baseUrl || ''));
+      if (!authorize &&
+          /^Basic\s/i.test(String(req.headers.authorization || ''))) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      errorCodes.mark(res, 'STS-OAUTH-0985');
+      log.debug("Leaving the resource-object guard. " + named[0] +
+                " is an API resource object.");
+      self.oauthError(res, authorize ? 400 : 401, 'invalid_client',
+        '"' + named[0] + '" is an API resource object (an OAuth 2.0 ' +
+        'resource server), and a resource is never a client. Call this ' +
+        'API as a client application configured to call it.');
     });
 
     // -------------------------------------------------------------------------

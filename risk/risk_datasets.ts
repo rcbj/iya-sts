@@ -148,6 +148,18 @@ const PROVIDERS = riskTerms.PROVIDERS;
 // otherwise.
 // ---------------------------------------------------------------------------
 /** The formats a dataset file may be in, and whose data each carries. */
+// The datasets this service downloads itself, and how (#1157's Reload): the
+// setting holding the address, the setting capping the body, what is asked
+// for, and whether the text is trimmed — as the scheduled job does, so a
+// reload's digest is comparable with the one the job recorded.
+const DOWNLOADS: Record<string, Json> = {
+  'android.attestation-status': { setting: 'devices.androidStatusUrl',
+    cap: 'devices.androidStatusMaxBytes', accept: 'application/json',
+    trim: false },
+  'fido.mds3': { setting: 'risk.mdsUrl', cap: 'risk.mdsMaxBytes',
+    accept: 'application/jwt, application/octet-stream, */*', trim: true }
+};
+
 const FORMATS: Record<string, Json> = {
   'dbip-city-csv': { provider: 'dbip-lite',
     what: 'DB-IP Lite "IP to City": start, end, continent, country, region, ' +
@@ -617,6 +629,24 @@ class RiskDatasets {
   // The question above, asked ahead of an upload (#215): null when the
   // import may begin, the refusal otherwise. Records nothing but the
   // refusal's audit row.
+  // A VERSION REMOVED IS UPLOADED AGAIN ONLY BY AN ADMINISTRATOR (#1155,
+  // rcbj): the console's upload and paste and `/admin-api/risk/import` and
+  // `/upload` pass `reloadDeleted`. The scheduled downloads, the dataset
+  // directory and the install-time loader do not, so a version an
+  // administrator removed is not brought back behind their back.
+  /**
+   * The `beginVersion()` options an import asks for.
+   *
+   * @param o - the import's fields
+   * @returns `{ reloadDeleted }`
+   */
+  private reloadOf(o: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering RiskDatasets.reloadOf().");
+    log.debug("Leaving RiskDatasets.reloadOf().");
+    return { reloadDeleted: o.reloadDeleted === true };
+  }
+
   /**
    * Asks, ahead of an upload, whether an import may begin: the dataset,
    * format, realm, provider and accepted terms.
@@ -710,7 +740,7 @@ class RiskDatasets {
       log.debug("Leaving RiskDatasets.importVersion(). Android status.");
       return this.importAndroidStatus(o, meta);
     }
-    const began = await store.beginVersion(meta);
+    const began = await store.beginVersion(meta, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importVersion(). Already recorded.");
       return { ok: true, duplicate: true, dataset: o.dataset, version: version,
@@ -1043,7 +1073,7 @@ class RiskDatasets {
         legalHeader: String(payload.legalHeader || '').slice(0, 500) },
         overridden ? { signatureOverride: overridden.slice(0, 500),
                        signatureOverrideBy: String(o.actor || '') } : {}) });
-    const began = await store.beginVersion(staged);
+    const began = await store.beginVersion(staged, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importMds(). Already recorded.");
       return { ok: true, duplicate: true, dataset: staged.dataset,
@@ -1262,7 +1292,7 @@ class RiskDatasets {
     const staged = Object.assign({}, meta, {
       version: String(o.version || 'sha-' + meta.sha256.slice(0, 16)),
       verification: o.source === 'url' ? 'tls' : meta.verification });
-    const began = await store.beginVersion(staged);
+    const began = await store.beginVersion(staged, this.reloadOf(o));
     if (!began) {
       log.debug("Leaving RiskDatasets.importAndroidStatus(). Already " +
                 "recorded.");
@@ -2006,7 +2036,10 @@ class RiskDatasets {
   }
 
   /**
-   * Deletes a version's rows; never the active or a loading one.
+   * Deletes a version's rows; never a loading one. THE ACTIVE ONE IS
+   * UNLOADED FIRST (#1152, rcbj): the dataset is left with no active version
+   * before a row goes, so no lookup reads a half-deleted version, and nothing
+   * else is activated in its place — Roll back is offered for that.
    *
    * @param realm - the realm
    * @param dataset - the dataset
@@ -2014,6 +2047,93 @@ class RiskDatasets {
    * @param actor - who did it
    * @returns `{ ok: true, dataset, version, rows, … }`, or a refusal
    */
+  // ---------------------------------------------------------------------------
+  // RELOAD A REMOVED VERSION BY DOWNLOADING IT AGAIN (#1157, rcbj): only a
+  // dataset this service itself downloads, from the address it is configured
+  // with (the two rows of DOWNLOADS), and only when the version's record
+  // names that same address — so an administrator's Reload dials nothing the
+  // scheduled job does not (federation/CLAUDE.md's tenth and eighteenth
+  // dialled URLs). The file must be the version's: a different SHA-256 is a
+  // different version, which the job will load, and is refused here. Every
+  // other removed version is uploaded again (#1155). The content is built as
+  // the job builds it (the BLOB trimmed, the list as it came), so the digest
+  // compared is the one the job's import recorded.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a version may be reloaded by downloading it again: removed,
+   * of a dataset this service downloads, from the address configured now.
+   *
+   * @param dataset - the dataset
+   * @param v - the version's record
+   * @returns true when Reload applies
+   */
+  reloadable(dataset: string, v: Json): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskDatasets.reloadable().");
+    const how = DOWNLOADS[dataset];
+    const url = how ? String(config.value(how.setting) || '') : '';
+    log.debug("Leaving RiskDatasets.reloadable().");
+    return !!how && !!url && v.state === 'deleted' && v.source === 'url' &&
+           String(v.sourceUri || '') === url;
+  }
+
+  /**
+   * Downloads a removed version again and loads it as that version.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version
+   * @param actor - who did it
+   * @returns what `importVersion()` answers, or a refusal with its code
+   */
+  async reloadVersion(realm: string, dataset: string, version: string,
+                      actor: string): Promise<Json> {
+    const { log, store, config } = this.deps;
+    log.debug("Entering RiskDatasets.reloadVersion(). " + dataset + " " +
+              version);
+    const how = DOWNLOADS[dataset];
+    const versions = CATALOGUE[dataset]
+      ? await store.listVersions(String(realm || ''), dataset) : [];
+    const row = versions.filter(function (v: Json): boolean {
+      return v.version === version;
+    })[0];
+    if (!row || !this.reloadable(dataset, row)) {
+      log.debug("Leaving RiskDatasets.reloadVersion(). Not reloadable.");
+      return errorCodes.mark({ ok: false, errors: [
+        'Version "' + version + '" of ' + dataset + ' cannot be downloaded ' +
+        'again: ' + (!row ? 'it is not recorded.'
+          : row.state !== 'deleted' ? 'it is ' + row.state + ', not removed.'
+            : 'this service downloads it from no configured address, or ' +
+              'not from the one it came from. Upload the file again.')] },
+        'STS-RISK-0051');
+    }
+    const url = String(config.value(how.setting) || '');
+    const fetched = await this.deps.federationHttp().fetchPublished(url, {
+      accept: how.accept, maxBytes: Number(config.value(how.cap)) });
+    if (!fetched.ok) {
+      log.debug("Leaving RiskDatasets.reloadVersion(). Not fetched.");
+      return errorCodes.mark({ ok: false, errors: [
+        dataset + ' could not be downloaded from ' + url + ': ' +
+        String(fetched.why || fetched.status) + '.'] }, 'STS-RISK-0052');
+    }
+    const text = Buffer.from(fetched.body).toString('utf8');
+    const content = how.trim ? text.trim() : text;
+    const sha256 = stsCrypto.truncatedSha256Hex(content, 64);
+    if (sha256 !== String(row.sha256 || '')) {
+      log.debug("Leaving RiskDatasets.reloadVersion(). Changed.");
+      return errorCodes.mark({ ok: false, errors: [
+        url + ' now serves a different file (SHA-256 ' + sha256 + ', not ' +
+        'the removed version\'s ' + row.sha256 + '), which is a new ' +
+        'version rather than "' + version + '"; the scheduled download ' +
+        'loads it. Nothing was loaded.'] }, 'STS-RISK-0053');
+    }
+    log.debug("Leaving RiskDatasets.reloadVersion(). Importing.");
+    return this.importVersion({
+      dataset: dataset, format: row.format, realm: String(realm || ''),
+      content: content, version: version, source: 'url', sourceUri: url,
+      reloadDeleted: true, actor: actor });
+  }
+
   async deleteVersion(realm: string, dataset: string, version: string,
                       actor: string): Promise<Json> {
     const { log, store, now } = this.deps;
@@ -2025,12 +2145,27 @@ class RiskDatasets {
     const row = versions.filter(function (v: Json): boolean {
       return v.version === version;
     })[0];
-    if (!row || row.state === 'active' || row.state === 'loading') {
+    if (!row || row.state === 'loading') {
       log.debug("Leaving RiskDatasets.deleteVersion(). Refused.");
       return errorCodes.mark({ ok: false, errors: [
         'Version "' + version + '" of ' + dataset + ' cannot be deleted: ' +
         (row ? 'it is ' + row.state + '.' : 'it is not recorded.')] },
         'STS-RISK-0007');
+    }
+    const wasActive = row.state === 'active';
+    if (wasActive) {
+      const off = await store.deactivate(String(realm || ''), dataset, version,
+                                         now());
+      if (!off || !off.deactivated) {
+        // Another request activated something else between the read and
+        // here; the version asked about is no longer the active one, and
+        // what it now is was not what the caller saw.
+        log.debug("Leaving RiskDatasets.deleteVersion(). Moved under us.");
+        return errorCodes.mark({ ok: false, errors: [
+          'Version "' + version + '" of ' + dataset + ' stopped being the ' +
+          'active version while it was being removed; look again.'] },
+          'STS-RISK-0007');
+      }
     }
     const gone = await this.dropRows(RiskDatasets.rowKindOf(entry),
                                      String(realm || ''), dataset, version);
@@ -2038,11 +2173,17 @@ class RiskDatasets {
     this.auditRow('risk.dataset.delete', { dataset: dataset, realm: realm,
                                            actor: actor, source: 'admin' },
                   version, 'success', '', gone + ' row(s) of ' + dataset +
-                  ' ' + version + ' deleted');
+                  ' ' + version + ' deleted' +
+                  (wasActive ? '; it was the active version, and ' +
+                               dataset + ' has none now' : ''));
     log.debug("Leaving RiskDatasets.deleteVersion().");
     return { ok: true, dataset: dataset, version: version, rows: gone,
+             unloaded: wasActive,
              message: gone + ' row(s) of ' + dataset + ' version ' + version +
-                      ' deleted; its record stays.' };
+                      ' deleted; its record stays.' +
+                      (wasActive ? ' It was the active version, so ' +
+                                   dataset + ' has no active version now ' +
+                                   'and risk scores stop reading it.' : '') };
   }
 
   // ===== WHAT IS ACTIVE, AND WHETHER IT IS FRESH ============================
@@ -2251,8 +2392,17 @@ class RiskDatasets {
   async registry(realmId: string): Promise<Json> {
     const { log, store, now } = this.deps;
     log.debug("Entering RiskDatasets.registry().");
+    const self = this;
     const realm = String(realmId || '');
     const actives = await this.activeVersions();
+    // A dataset whose active version was removed (#1152) has no entry in
+    // `actives` and still remembers the version it replaced, which is what
+    // Roll back offers; so `previousVersion` is read off the dataset rows.
+    const previousOf = new Map<string, string>();
+    (await store.listDatasets()).forEach(function (d: Json): void {
+      previousOf.set(d.realm + '\u0000' + d.dataset,
+                     String(d.previousVersion || ''));
+    });
     const at = now();
     const rows = [];
     const terms = await riskTerms.status();
@@ -2277,13 +2427,16 @@ class RiskDatasets {
         state: !active ? 'empty'
           : (this.isStale(entry, active, at) ? 'stale' : 'active'),
         activeVersion: active ? active.version : '',
-        previousVersion: active ? active.previousVersion : '',
+        previousVersion: active ? active.previousVersion
+          : previousOf.get(inRealm + '\u0000' + id) || '',
         publishedAt: active ? active.publishedAt : 0,
         rows: active ? active.rowCount : 0,
         provider: active ? active.provider : entry.provider || '',
         attribution: active ? active.attribution : '',
         attributionUrl: active ? active.attributionUrl : '',
-        versions: versions
+        versions: versions.map(function (v: Json): Json {
+          return Object.assign({}, v, { reloadable: self.reloadable(id, v) });
+        })
       });
     }
     log.debug("Leaving RiskDatasets.registry().");
@@ -2588,6 +2741,8 @@ export = {
   activateVersion: slot.forward('activateVersion'),
   rollback: slot.forward('rollback'),
   deleteVersion: slot.forward('deleteVersion'),
+  reloadVersion: slot.forward('reloadVersion'),
+  reloadable: slot.forward('reloadable'),
   lookup: slot.forward('lookup'),
   lookupAuthenticator: slot.forward('lookupAuthenticator'),
   lookupAttestationSerials: slot.forward('lookupAttestationSerials'),

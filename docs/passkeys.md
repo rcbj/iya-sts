@@ -94,13 +94,14 @@ alike:
    `0046`, `0254` as a second). Where it accepts neither, no new passkey can
    be registered (`STS-AUTHN-0531`), because it could never be used.
 2. **The application**, where it overrides the realm, and only at a browser
-   sign-in to it. Its `appAuthnMechanism` lists the first-factor mechanisms
-   its people may sign in with (`webauthn` among them); the issuance
-   policy's `authn-mechanism` rule enforces it and re-prompts a session that
-   used another. Its `appMfaMechanism` lists the second factors it allows
-   (`securityKey` among them); it narrows the second step to another factor
-   the person holds, or has them prove one and set up an allowed one, or
-   refuses. It only narrows: what the realm switched off stays off. See
+   sign-in to it: the [named authentication policy](authentication.md#named-authentication-policies)
+   it names in `appAuthnPolicy`. The policy's first-factor list names the
+   mechanisms its people may sign in with (`webauthn` among them); the
+   issuance policy's `authn-mechanism` rule enforces it and re-prompts a
+   session that used another. Its second-factor list names the second
+   factors it allows (`securityKey` among them); it narrows the second step to
+   another factor the person holds, or has them prove one and set up an allowed
+   one, or refuses. It only narrows: what the realm switched off stays off. See
    [Sign-in mechanisms](applications.md#sign-in-mechanisms-how-its-people-may-sign-in)
    and [Second factors](applications.md#second-factors-which-ones-its-people-may-use).
 3. **The passkey itself has no say.** A registered passkey is used wherever
@@ -237,8 +238,9 @@ the person, and the passkey's user handle names the account.
   use it with no username.
 
 **Making it the only way in for one application** (the passkey policy's
-`requireUsernameless`). Set the application's `appAuthnMechanism` to
-`webauthn` and nothing else
+`requireUsernameless`). Point the application's `appAuthnPolicy` at a
+[named authentication policy](authentication.md#named-authentication-policies)
+whose only first factor is `webauthn`
 ([Sign-in mechanisms](applications.md#sign-in-mechanisms-how-its-people-may-sign-in)),
 and turn `requireUsernameless` on. That application's sign-in screen then has
 no username field. A sign-in that names a person anyway is refused
@@ -342,8 +344,8 @@ they apply to:
 | everybody in a realm must have a second factor | the authentication policy's `requireSecondFactor`: `always` | [Requiring a second factor of everybody](authentication.md#requiring-a-second-factor-of-everybody) |
 | one person | **Require MFA for this person** on their page (`POST /admin-api/users/require-mfa`) | [Admin console](admin-console.md) |
 | administrators | the authentication policy's `requireSecondFactorForAdministrators` | [Administrators](#administrators) below |
-| the people of one application, which second factor | the application's `appMfaMechanism`: tick `securityKey` alone | [Second factors](applications.md#second-factors-which-ones-its-people-may-use) |
-| the people of one application, which sign-in | the application's `appAuthnMechanism`: tick `webauthn` alone for a passkey with no password | [Sign-in mechanisms](applications.md#sign-in-mechanisms-how-its-people-may-sign-in) |
+| the people of one application, which second factor | the [named authentication policy](authentication.md#named-authentication-policies) the application names in `appAuthnPolicy`: tick `securityKey` alone among its second factors | [Second factors](applications.md#second-factors-which-ones-its-people-may-use) |
+| the people of one application, which sign-in | the named authentication policy the application names: tick `webauthn` alone among its first factors for a passkey with no password | [Sign-in mechanisms](applications.md#sign-in-mechanisms-how-its-people-may-sign-in) |
 | one request | `acr_values=hwk` (a hardware key), or `phr` / `phrh` | [Which second factor is asked for](authentication.md#which-second-factor-is-asked-for), [Phishing-resistant sign-in](oauth-security.md#phishing-resistant-sign-in-phr-phrh) |
 | everything an application is issued | the issuance policy's `requirePhishingResistant` or `requireHardwareProtected` option | [Phishing-resistant sign-in](oauth-security.md#phishing-resistant-sign-in-phr-phrh) |
 
@@ -359,7 +361,7 @@ factor**). The set-up step then offers only a passkey. **This does not take
 an authenticator app away from somebody who already has one**: they go on
 being asked for it. Remove it on their page (**Disable all MFA**, or `POST
 /admin-api/users/clear-totp`), or narrow an application to `securityKey`
-with `appMfaMechanism`
+with the named authentication policy it names
 ([Second factors](applications.md#second-factors-which-ones-its-people-may-use)).
 
 **A request can demand a passkey.** An OpenID Connect client that sends
@@ -383,9 +385,10 @@ one-time code or a recovery code is refused (`STS-AUTHN-0204`).
    `sts-admin-console`. In it, set for example **backupEligibility** to
    `disallow` (device-bound passkeys only) or **postQuantumRequired** to
    `sign-in`. Give it a low precedence number, such as `5`.
-3. **Require a passkey, rather than any second factor, for the console.** On
-   the application `sts-admin-console`, set `appMfaMechanism` to `securityKey`
-   alone.
+3. **Require a passkey, rather than any second factor, for the console.**
+   Create a [named authentication policy](authentication.md#named-authentication-policies)
+   with `securityKey` alone among its second factors, and choose it in the
+   `appAuthnPolicy` of the application `sts-admin-console`.
 
 > **Warning.** Changes 2 and 3 can lock an administrator out of the console
 > if they hold no passkey that meets them. Before you save, make sure each
@@ -1857,7 +1860,7 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.rpName` | `STS_WEBAUTHN_RP_NAME` | `IYA STS` |
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | empty (the host) |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | empty (derived from the address) |
-| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | every algorithm the verifier knows: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, then the classical ones |
+| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`, in that order (#1150); every other algorithm may be ticked
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` |
@@ -2087,7 +2090,9 @@ way, because the browser refuses the ceremony before the service sees it.
   TOTP, recovery codes, and the full reasoning behind passkeys
 * [Security profiles](oauth-security.md): `acr_values`, step-up and
   phishing-resistant sign-in
-* [Applications](applications.md): `appAuthnMechanism` and `appMfaMechanism`
+* [Applications](applications.md) and [named authentication
+  policies](authentication.md#named-authentication-policies):
+  `appAuthnPolicy`
 * [Devices](devices.md): linking a platform passkey to a registered device,
   and a remembered browser skipping the second factor
 * [Risk scoring](risk-scoring.md): the FIDO metadata, and compromised

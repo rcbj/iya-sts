@@ -327,7 +327,7 @@ make it a member of a role whose `rolePermission` names the permission — an
 app role of the resource (`<role>@<resource>`) or a realm role. Without one the
 permission is left off the token, and a request asking for nothing else is
 refused with `invalid_scope`. See
-[Permissions on another application](oauth-oidc.md#permissions-on-another-application-delegated-or-the-applications-own). The seeded `sts-management-api` client is a
+[Permissions on another application](oauth-oidc.md#permissions-on-another-application-delegated-or-the-applications-own). The seeded client `sts-api-client` is a
 working example of this grant.
 
 ### This service's own scopes
@@ -380,11 +380,12 @@ A request may name the API its token is for with `resource`, on every grant.
 [OAuth 2.0 and OpenID Connect](oauth-oidc.md) explains how the audience is
 chosen. Three rules matter when you configure a client:
 
-* **In product mode a resource must be a registered target**: one of this
-  service's own resource servers, or an application registered in the realm,
-  named by its `oauthAudience`, permission base URI, `client_id` or
-  identifier. Anything else is `invalid_target`. Development mode accepts any
-  absolute URI.
+* **A resource must be a registered target, in every mode** (#1140): one of
+  this service's own resource servers, or an application registered in the
+  realm, named by its `oauthAudience`, permission base URI, `client_id` or
+  identifier. Anything else is `invalid_target`. To test a client against an
+  API of your own, register an application holding its audience first (kind
+  *OAuth 2.0 resource server*, with `oauthAudience`).
 * **An authorization code may name several resources** (#607). The code
   request is refused only when no one of them could be issued a token alone.
   Each token request then names the one resource its access token is for, and

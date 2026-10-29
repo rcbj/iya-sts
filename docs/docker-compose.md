@@ -215,7 +215,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_WORKERS_SURFACE_COUNT` | `0` | Workers for `/admin` and `/portal` only, so they never queue behind protocol traffic |
 | `UV_THREADPOOL_SIZE` | `32` | Threads in libuv's pool, where post-quantum signing, scrypt password hashing and node's file and DNS work run. Node's own default is 4, which queued sign-ins under load. |
 | `STS_RESTART` | `unless-stopped` | The `sts` service's restart policy. With it, an `sts` that exits (for example STS-CLUSTER-0011, a node fencing itself off) is back within seconds instead of staying down. `no` keeps an exited service down; the test launchers set it. |
-| `ADMIN_API_CLIENT_SECRET` | unset (generated) | Fixes the management API client's secret. It is given to the seeder, which stores it in OpenBao; the service never sees it in its environment. See [Management API](management-api.md). |
+| `ADMIN_API_CLIENT_SECRET` | unset (generated) | Fixes the secret of `sts-api-client`, the seeded client that calls the management API. It is given to the seeder, which stores it in OpenBao; the service never sees it in its environment. See [Management API](management-api.md). |
 | `ADMIN_API_AUDIENCE`, `ADMIN_API_AUTH_REQUIRED` | unset | Passed through to the service when set |
 | `PKI_DISTRIBUTION_BASE_URL` | empty | The base URL certificates name for CRL and OCSP, when the stack is reached by a host name rather than `localhost` ([PKI](pki.md)) |
 | `STS_POSTGRES_SHARED_BUFFERS` | `2GB` | The database's `shared_buffers`. Lower it on a small machine; see [the database's settings](#the-databases-settings) |
@@ -286,10 +286,12 @@ verifier's web site would:
 It calls `/admin-api` as an application of its own, `iya-sts-companion`,
 holding Admin Read and Admin Write. Give it either
 `COMPANION_CLIENT_ID`/`COMPANION_CLIENT_SECRET` for an application you
-registered (it must declare `admin:read admin:write`, be a member of
+registered (it must hold delegated permission grants of
+`urn:sts:admin-api:admin:read` and
+`urn:sts:admin-api:admin:write`, be a member of
 `ADMIN_READ` and `ADMIN_WRITE`, and list the companion's `/verifier/done` as a
-redirect URI), or let it register itself: it reads the management API client's
-secret from `ADMIN_API_CLIENT_SECRET` once, creates the application, and uses
+redirect URI), or let it register itself: it reads the secret of the seeded
+client `sts-api-client` from `ADMIN_API_CLIENT_SECRET` once, creates the application, and uses
 only its own credentials afterwards.
 
 | Variable | Default | What it does |

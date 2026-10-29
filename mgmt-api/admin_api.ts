@@ -1582,8 +1582,9 @@ class AdminApi {
               'its own follows the default realm\'s. `allowUsernameless` ' +
               '(on by default) offers a passkey sign-in with no username. ' +
               '`requireUsernameless` (off, #608) makes it the only way in ' +
-              'for an application whose `appAuthnMechanism` is `webauthn` ' +
-              'alone: no username field, and a sign-in naming a person ' +
+              'for an application whose named authentication policy ' +
+              '(`appAuthnPolicy`) lists `webauthn` alone as its first ' +
+              'factor: no username field, and a sign-in naming a person ' +
               'refused; it needs `allowUsernameless`, and the `default` ' +
               'profile never applies it to the admin console, the debugger ' +
               'or the user portal. ' +
@@ -4324,7 +4325,9 @@ class AdminApi {
                      'shrink). A refusal found before the version is ' +
                      'recorded — the dataset, format, realm or provider, ' +
                      'terms not accepted — is the answer (400), as is a ' +
-                     'version already recorded (200, `duplicate: true`). ' +
+                     'version already recorded (200, `duplicate: true`), ' +
+                     'unless its record is `deleted`: a removed version is ' +
+                     'loaded again (#1155). ' +
                      'Send a `Content-Length`: without one the whole of ' +
                      'risk.uploadMaxBytes must be free.',
         mirrors: 'POST /admin/risk/upload',
@@ -4448,7 +4451,9 @@ class AdminApi {
                          'has more than risk.datasetShrinkLimitPercent ' +
                          'fewer rows than the active version. A version ' +
                          'already recorded is not loaded again ' +
-                         '(`duplicate: true`). The provider\'s current ' +
+                         '(`duplicate: true`), unless its record is ' +
+                         '`deleted` (removed): that one is loaded again ' +
+                         '(#1155). The provider\'s current ' +
                          'terms must have been accepted (accept-terms, or ' +
                          '`acceptTerms: true` here) unless the list is the ' +
                          'operator\'s own. `activate: false` loads ' +
@@ -4497,6 +4502,31 @@ class AdminApi {
               additionalProperties: false },
             responseDescription: 'The active version and the one it ' +
                                  'replaced.' },
+          { action: 'reload', operationId: 'reloadRiskDatasetVersion',
+            summary: 'Download a removed version again, and load it',
+            description: 'For a removed (`deleted`) version of a dataset ' +
+              'this service downloads itself (the Android attestation ' +
+              'status list, `devices.androidStatusUrl`; the FIDO MDS3 ' +
+              'BLOB, `risk.mdsUrl`) whose record names the address ' +
+              'configured now, as the view\'s `reloadable` says: ' +
+              'downloaded again and loaded as that version. Refused when ' +
+              'the version is not reloadable (STS-RISK-0051), the ' +
+              'download fails (STS-RISK-0052), or the file is not the ' +
+              'version\'s (STS-RISK-0053: a newer one, which the ' +
+              'scheduled download loads). Any other removed version is ' +
+              'uploaded again (#1155, #1157).',
+            requestBodyRequired: true,
+            requestBody: { type: 'object',
+              properties: { dataset: { type: 'string',
+                                       enum: closed.riskDatasets },
+                            version: { type: 'string' },
+                            realm: { type: 'string' } },
+              required: ['dataset', 'version'],
+              examples: [{ dataset: 'android.attestation-status',
+                           version: 'sha-e1d9d5eafeea416f' }],
+              additionalProperties: false },
+            responseDescription: 'What the import answers: the version ' +
+              'loaded and active.' },
           { action: 'rollback', operationId: 'rollbackRiskDataset',
             summary: 'Make the previous version of a dataset active again',
             description: 'Refused when there is no previous version.',
@@ -4528,8 +4558,12 @@ class AdminApi {
               additionalProperties: false },
             responseDescription: 'The acceptance recorded.' },
           { action: 'delete', operationId: 'deleteRiskDatasetVersion',
-            summary: 'Delete the rows of a version that is not active',
-            description: 'Its record stays, as `deleted`.',
+            summary: 'Remove a version: delete its rows',
+            description: 'Its record stays, as `deleted`. A version still ' +
+              'loading is refused. Removing the ACTIVE version unloads it ' +
+              '(#1152): the dataset has no active version afterwards, ' +
+              'nothing else is activated in its place, and `rollback` is ' +
+              'offered when there is an earlier version.',
             requestBodyRequired: true,
             requestBody: { type: 'object',
               properties: { dataset: { type: 'string',
@@ -15477,7 +15511,7 @@ class AdminApi {
                          'the attribute and never the value — though `GET ' +
                          '/admin-api/applications?application=` reads the ' +
                          'entry back for an `admin:read` token, as it always ' +
-                         'has.\n\n`sts-management-api` is REFUSED while ' +
+                         'has.\n\n`sts-api-client` is REFUSED while ' +
                          '`adminApi.clientSecret` pins its secret: every ' +
                          'token for this API is minted with that setting, ' +
                          'and seeding never writes over an existing entry.',
@@ -15563,7 +15597,7 @@ class AdminApi {
                          'are in the application\'s `credentials.clientSecret' +
                          '.secrets`); it stops authenticating at once. The ' +
                          'secret `adminApi.clientSecret` pins on ' +
-                         '`sts-management-api` is refused.',
+                         '`sts-api-client` is refused.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -15831,6 +15865,48 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The selection now held, in `attributes`.' },
+          // THE OAUTH SUB-TAB'S ONE TABLE (#1144): the three OAuth
+          // selections, a column each, under one Save.
+          { action: 'set-claim-selections',
+            operationId: 'setApplicationClaimSelections',
+            summary: 'Set an application\'s access token, ID Token and ' +
+                     'UserInfo directory-attribute selections together, ' +
+                     'writing only the ones that changed',
+            description: 'The console\'s OAuth 2.0 / OpenID Connect claims ' +
+                         'table, a column per set. Each of `access_token`, ' +
+                         '`id_token` and `userinfo` that is sent is the ' +
+                         'whole list of catalogue attributes that set ' +
+                         'should carry. A set sent with exactly the ' +
+                         'selection in force is LEFT AS IT IS — the ' +
+                         'realm\'s, if the application was inheriting it — ' +
+                         'and a set that differs becomes the application\'s ' +
+                         'own selection, replacing the realm\'s for it, as ' +
+                         '`set-claim-attributes` writes one. A set not sent ' +
+                         'is not touched. Every set is checked before any ' +
+                         'is written. Refused (`STS-REG-0215`) for an ' +
+                         'attribute the catalogue does not hold, or an ' +
+                         'application not declared for OAuth 2.0 or OpenID ' +
+                         'Connect.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                access_token: { type: 'array', items: { type: 'string' } },
+                id_token: { type: 'array', items: { type: 'string' } },
+                userinfo: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application'],
+              examples: [{ application: 'my-web-app',
+                           access_token: ['mail'],
+                           id_token: ['mail', 'givenName', 'sn'],
+                           userinfo: ['mail', 'givenName', 'sn',
+                                      'telephoneNumber'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'Each set sent, in `sets`: `changed`, ' +
+                                 '`inherited` and the `attributes` now in ' +
+                                 'force.' },
           { action: 'inherit-claim-attributes',
             operationId: 'inheritApplicationClaimAttributes',
             summary: 'Return an application to the realm\'s ' +
@@ -26092,7 +26168,8 @@ class AdminApi {
   // (STS-API-0111). The token endpoint now issues `admin:*` only to a client
   // whose `oauthAllowedScope` lists it, and this asks the same question again
   // on every call, so an allowance removed from a client stops the tokens it
-  // already holds. The seeded `sts-management-api` and `sts-admin-console`
+  // already holds. The seeded `sts-api-client` (`sts-management-api` until
+  // #1139) and `sts-admin-console`
   // declare both in every realm.
   // ---------------------------------------------------------------------------
   /**
@@ -26672,7 +26749,7 @@ class AdminApi {
         // when the request is under a realm prefix, so a realm's key is never
         // tried at `/admin-api` itself or at another realm's. What such a token
         // may do is then bounded three ways below: its issuer and audience are
-        // this realm's, it was issued to this realm's `sts-management-api`
+        // this realm's, it was issued to this realm's `sts-api-client`
         // client, and `admin-ui/admin_scope.ts` refuses it every service-wide
         // operation.
         //
@@ -27062,12 +27139,18 @@ class AdminApi {
             'This access token carries "' + neededScope + '", and the ' +
             'client it was issued to, ' +
             JSON.stringify(claims.client_id || null) + ', does not declare ' +
-            'it: a token is honoured here only while its client\'s ' +
-            'oauthAllowedScope lists the scope it uses. ' + (mdmFeed
-              ? 'Declare device:compliance on the MDM feed\'s application.'
-              : 'The seeded sts-management-api declares both admin ' +
-                'scopes. Declare it on the application (POST ' +
-                '/admin-api/applications/add) or use that client.')] });
+            'it: a token is honoured here only while its client still ' +
+            'holds the scope it uses. ' + (mdmFeed
+              ? 'Declare device:compliance on the MDM feed\'s ' +
+                'application\'s oauthAllowedScope.'
+              : 'An admin or owner scope is held by a delegated permission ' +
+                'grant on sts-management-api (#1141): give the client a ' +
+                'delegated permission grant of ' +
+                'urn:sts:admin-api:' + neededScope + ' (POST ' +
+                '/admin-api/permissions/grant-permission), or use ' +
+                'sts-api-client, which holds delegated permission grants of ' +
+                'admin:read and ' +
+                'admin:write.')] });
         }
         if (effective.withdrawn.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0125');
@@ -27794,7 +27877,7 @@ function startupBanner(operations: number): string {
              'scope admin:read to read and admin:write to write, checked as ' +
              'a XACML access decision against the ADMIN_READ and ADMIN_WRITE ' +
              'roles. Get one from the client_credentials grant as the seeded ' +
-             'application sts-management-api, whose secret is ' +
+             'application sts-api-client, whose secret is ' +
              'adminApi.clientSecret. THAT SETTING IS THE BOOTSTRAP: this ' +
              'surface used to be the way back in when nobody held a console ' +
              'role, and it is only still that if the secret was pinned ' +

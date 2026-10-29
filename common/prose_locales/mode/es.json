@@ -236,8 +236,8 @@
     "text": "Un bind simple LDAP, un UsernameToken de WS-Security, HTTP Basic de SCIM y SSF y Basic de EST aceptan la contraseña como aceptan cualquier contraseña; la pantalla de inicio de sesión sigue pidiendo el segundo factor."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "c06e9e3a02393490",
-    "text": "En esas cinco puertas se rechaza la propia contraseña de la persona — respondiendo exactamente como a una contraseña incorrecta, y contando como tal contra el límite de frecuencia (STS-AUTHN-0213 solo en la fila de auditoría y en el registro) — siempre que tenga una aplicación de autenticación o cualquier llave de acceso donde el dominio (o la lista propia de la aplicación) acepte una llave de acceso como segundo factor, o se le exija un segundo factor (stsMfaRequired, la política de autenticación). En su lugar se acepta una CONTRASEÑA DE APLICACIÓN que haya creado en /portal/app-passwords, limitada a esa puerta. authn.passwordAloneDoors nombra puertas que aceptan la contraseña de todos modos, lo que reduce allí a toda persona así a un solo factor."
+    "en": "a4d4c20c45b2d573",
+    "text": "En esas cinco puertas se rechaza la propia contraseña de la persona — respondiendo exactamente como a una contraseña incorrecta, y contando como tal contra el límite de frecuencia (STS-AUTHN-0213 solo en la fila de auditoría y en el registro) — siempre que tenga una aplicación de autenticación o cualquier llave de acceso donde el dominio (o la política de autenticación que nombra la aplicación) acepte una llave de acceso como segundo factor, o se le exija un segundo factor (stsMfaRequired, la política de autenticación). En su lugar se acepta una CONTRASEÑA DE APLICACIÓN que haya creado en /portal/app-passwords, limitada a esa puerta. authn.passwordAloneDoors nombra puertas que aceptan la contraseña de todos modos, lo que reduce allí a toda persona así a un solo factor."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "El KDC emite un TGT a un AS-REQ preautenticado solo con la contraseña (PA-ENC-TIMESTAMP, o el PA-ENCRYPTED-CHALLENGE de FAST), como acepta cualquier contraseña."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "a1e60b4ee5cac599",
-    "text": "Ese AS-REQ se rechaza con KDC_ERR_POLICY (12), STS-KRB-0135, después de verificarse la contraseña (una incorrecta sigue siendo KDC_ERR_PREAUTH_FAILED), siempre que la persona tenga una aplicación de autenticación o cualquier llave de acceso donde el dominio (o la lista propia de la aplicación) acepte una llave de acceso como segundo factor, o se le exija un segundo factor. Una persona con aplicación de autenticación obtiene un ticket mediante el blindaje FAST de RFC 6113 con preautenticación OTP de RFC 6560 — contraseña y código en un solo intercambio — y lleva el indicador `otp` de RFC 8129. Una contraseña de aplicación nunca es una clave Kerberos."
+    "en": "ab8a6af4d276b0bc",
+    "text": "Ese AS-REQ se rechaza con KDC_ERR_POLICY (12), STS-KRB-0135, después de verificarse la contraseña (una incorrecta sigue siendo KDC_ERR_PREAUTH_FAILED), siempre que la persona tenga una aplicación de autenticación o cualquier llave de acceso donde el dominio (o la política de autenticación que nombra la aplicación) acepte una llave de acceso como segundo factor, o se le exija un segundo factor. Una persona con aplicación de autenticación obtiene un ticket mediante el blindaje FAST de RFC 6113 con preautenticación OTP de RFC 6560 — contraseña y código en un solo intercambio — y lleva el indicador `otp` de RFC 8129. Una contraseña de aplicación nunca es una clave Kerberos."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",
@@ -742,18 +742,6 @@
   "mode.requirements.unregistered-gnap-clients.product": {
     "en": "43ea90ee5ea17888",
     "text": "Una clave desconocida se rechaza (STS-GNAP-0082), y también una clave o un identificador de instancia que pertenece a una entrada que nadie registró (appRegisteredBy sin definir — una creada a primera vista no es un registro): 401 invalid_client o invalid_resource_server (STS-GNAP-0902), antes de que la entrada se vuelva a observar o se emita nada."
-  },
-  "mode.requirements.unregistered-resource-targets.what": {
-    "en": "c9e70b1944bd9dca",
-    "text": "Un resource de RFC 8707 y las locations de un derecho GNAP nombran un destino registrado (#505)"
-  },
-  "mode.requirements.unregistered-resource-targets.development": {
-    "en": "fd6dc100e791e280",
-    "text": "Cualquier URI absoluto se acepta como resource en los endpoints de autorización, PAR y token y se convierte en el aud del token; una location de GNAP que no nombra ningún servidor de recursos queda fuera de la audiencia del token y el derecho se concede, siempre que otra cosa en el token nombre uno — un token cuyo acceso no nombra ninguno se rechaza con invalid_request en todos los modos (STS-GNAP-0904)."
-  },
-  "mode.requirements.unregistered-resource-targets.product": {
-    "en": "5f6d00d42845d0e5",
-    "text": "Un recurso (fuera de un intercambio de tokens, cuyos destinos son el unregistered-target de la política) y cada ubicación de un derecho de acceso GNAP deben nombrar un destino registrado: uno de los propios servidores de recursos de este servicio (el indicador de recurso predeterminado que aceptan UserInfo, SCIM, Shared Signals y OpenID4VCI; /admin-api; /account-api; /report-api) o una aplicación registrada de antemano (appRegisteredBy establecido — un avistamiento no es un registro), por su oauthAudience, su URI base de permiso, su client_id o su identificador — la api del depurador integrado es uno, sembrado como registrado. Una ubicación GNAP en un servidor de recursos registrado, o bajo su gnapResourceServerUri, también lo nombra. De lo contrario, invalid_target: redirigido desde el endpoint de autorización y 400 en PAR (STS-OAUTH-0950), 400 en el endpoint de token antes de gastar nada (STS-OAUTH-0951); para GNAP la solicitud se rechaza con invalid_request (STS-GNAP-0903), sin descartar el derecho."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",

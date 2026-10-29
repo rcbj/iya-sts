@@ -220,6 +220,12 @@ const certificateSubject = require('./certificate_subject');
 const KINDS = [
   { kind: 'oauth2-client', label: 'OAuth 2.0 client',
     what: 'A client_id presented at the authorization or token endpoint.' },
+  // #1139: this service's own APIs as resources, and any API an operator
+  // registers the same way. The one OAuth kind that is never a client.
+  { kind: 'oauth2-resource-server', label: 'OAuth 2.0 resource server',
+    what: 'An API access tokens are addressed to, named by its ' +
+          'oauthAudience. It is never a client: its client_id is refused ' +
+          'at every endpoint a client presents itself at.' },
   { kind: 'oidc-relying-party', label: 'OpenID Connect relying party',
     what: 'The same client_id where the request asked for the openid scope — ' +
           'a relying party is an OAuth client that also wants an ID Token, ' +
@@ -456,8 +462,10 @@ const PROTOCOLS = [
           'acceptor may be asked to be. This covers SPNEGO (HTTP Negotiate, ' +
           'RFC 4559) to a Kerberos-protected service, which carries the same ' +
           'ticket. Signing people in to this application with SPNEGO is not ' +
-          'a family: list spnego in appAuthnMechanism, and declare the ' +
-          'protocol the application gets its tokens or assertions through.' },
+          'a family: list spnego among the first-factor mechanisms of the ' +
+          'authentication policy the application names (appAuthnPolicy), ' +
+          'and declare the protocol the application gets its tokens or ' +
+          'assertions through.' },
   { id: 'oid4vci', label: 'OpenID4VCI', kind: '',
     kinds: [],
     identifierAttribute: 'oauthClientId', redirectAttribute: 'oauthRedirectUri',
@@ -4442,129 +4450,61 @@ const SCHEMA = {
             'cleared should not refuse the next write.' },
 
     // ---------------------------------------------------------------------
-    // AND THE THIRD, WHICH GENERALISES THE PAIR ABOVE IT.
+    // AND THE THIRD, WHICH GENERALISES THE PAIR ABOVE IT — AND SINCE #1148
+    // NAMES A POLICY RATHER THAN HOLDING THE LISTS.
     //
-    // The two attributes above can say "send my people to a federated
-    // identity provider" and cannot say anything else, because until
-    // 2026-08-26 there was nothing else to say: every way of authenticating
-    // somebody here was either this service's own screen or somebody else's
-    // service. The SPNEGO sign-in is neither — it is a credential the
-    // browser already holds — so an application had no way to ask for the
-    // commonest integrated-authentication deployment there is.
+    // `appAuthnMechanism` (#457, 2026-08-26) was the list of the mechanisms an
+    // application's people may sign in with, in `federation.MECHANISM_IDS`'s
+    // vocabulary (`password`, `password-mfa`, `webauthn`, `spnego`, `wallet`,
+    // `federation`), and `appMfaMechanism` (#475) its second factors'
+    // companion. rcbj, 2026-10-29: "replace the appAuthnMechanism and
+    // appMfaMechanism fields with scoped authentication policy reference ...
+    // one field that points at a named, scoped authentication policy." Both
+    // are GONE (no migration is owed); `appAuthnPolicy` names a NAMED
+    // AUTHENTICATION POLICY (`common/authn_policy.ts`, Directory > Policies),
+    // which holds the two lists. Everything the two attributes did, the
+    // policy's lists do, read through `authn_mechanisms.ts`'s and
+    // `mfa_mechanisms.ts`'s `allowedOf()`:
     //
-    // ITS VOCABULARY IS THE FEDERATION REGISTER'S, and deliberately the same
-    // one: `password`, `password-mfa`, `webauthn`, `spnego`, `wallet`,
-    // `federation` — `federation.MECHANISM_IDS`. Two tables would have
-    // drifted the first time either grew a value, and the two attributes
-    // answer the same question from two sides — this one says how THIS
-    // APPLICATION's people may sign in, and `fedAuthnMechanism` says what to
-    // do when THAT PARTNER asks. The list is read LAZILY where it is checked
-    // (ATTRIBUTE_CHOICES), because `federation.js` requires this file.
+    //   * **None listed allows every mechanism** (and leaves the realm's
+    //     second factors as they are); one listed routes the sign-in
+    //     (/authn/spnego, /authn/wallet, the partner, or the screen in the
+    //     shape named); several draw the screen with only those on it.
+    //   * **Every BROWSER issuance is put to the issuance policy** — its
+    //     `authn-mechanism` and `mfa-mechanism` rules re-prompt a session
+    //     standing on a mechanism the policy does not allow — in both modes.
+    //     Non-browser doors (the password grant, WS-Trust, an LDAP bind) are
+    //     not covered.
     //
-    // **A LIST OF WHAT IS ALLOWED, AND ENFORCED (#457, rcbj 2026-10-06).** It
-    // was one value that only ROUTED a sign-in — "it is not a permission",
-    // this comment said — and nothing refused a person whose session stood
-    // on another mechanism. Now:
-    //
-    //   * **None listed allows every mechanism**, and routes as an empty
-    //     value always did: appFederationRelationship, then the screen.
-    //   * **One listed routes as the one value did** — straight to
-    //     /authn/spnego, /authn/wallet, the partner, or the screen in the
-    //     shape named.
-    //   * **Several listed draw the screen with only those on it.**
-    //   * **Every BROWSER issuance to the application is put to the issuance
-    //     policy** with the mechanisms the person's session satisfies
-    //     (`common/authn_mechanisms.ts`). Its `authn-mechanism` rule denies
-    //     one that satisfies none of these, with an obligation the door
-    //     reads as "sign in again with one of these": OAuth's authorization
-    //     endpoint, SAML 2.0, SAML 1.1 and WS-Federation re-prompt, once, and
-    //     a sign-in made with a mechanism the application does not allow is
-    //     refused at the screen. In both modes. Non-browser doors (the
-    //     password grant, WS-Trust, an LDAP bind) are not covered: their
-    //     caveats do not fit one field (rcbj).
-    //
-    // A VALUE IS CHECKED AT THE WRITE (CHOICES_CHECKED_HERE) now that it is
-    // enforced — a misspelling would otherwise allow nothing — and is kept as
-    // written where an `ldapmodify` put it, so an unknown value allows
-    // nothing rather than everything. A mechanism this service has switched
-    // off (`spnego` while krb5.spnegoAuthentication is off, `wallet` while
-    // oid4vp.signIn is off) is reported on the screen and cannot be offered.
+    // CHECKED AT THE WRITE (CHOICES_CHECKED_HERE): the value must be
+    // `default` or a named policy this realm holds (ATTRIBUTE_CHOICES reads
+    // them lazily). A name an `ldapmodify` wrote that no policy holds allows
+    // NOTHING (`authn_policy.ts`'s `mechanismsFor()`, STS-AUTHN-0536): a
+    // reference fails closed, as a misspelt list did.
     // ---------------------------------------------------------------------
-    { name: 'appAuthnMechanism', kind: 'multi',
+    { name: 'appAuthnPolicy', kind: 'single',
       from: 'the console, the management API, or by hand',
-      what: 'THE MECHANISMS THIS APPLICATION\'S PEOPLE MAY SIGN IN WITH, ' +
-            'from the closed list fedAuthnMechanism uses: password, ' +
-            'password-mfa, webauthn, spnego, wallet, federation. NONE ' +
-            'TICKED ALLOWS EVERY ONE.\n\n`webauthn` decides for EVERY ' +
-            'passkey the person holds alike: a passkey has no role ' +
-            '(#1135), so listing it lets any of them sign in to this ' +
-            'application on its own, and leaving it out of a list that ' +
-            'names others lets none.\n\n' +
-            'ENFORCED at every browser sign-in ' +
-            'to the application, in both modes: a person whose session ' +
-            'stands on no mechanism listed is sent to sign in again with ' +
-            'one that is, and a sign-in made with one that is not is ' +
-            'refused. Non-browser doors (the password grant, WS-Trust, an ' +
-            'LDAP bind) are not covered.\n\nOne listed is also where the ' +
-            'sign-in goes: `spnego` sends the person to /authn/spnego, ' +
-            'signed in on the Kerberos ticket their machine holds; `wallet` ' +
-            'to /authn/wallet; `federation` to the relationships named in ' +
-            'appFederationRelationship; `password`, `password-mfa` and ' +
-            '`webauthn` are the sign-in screen in its three shapes. Several ' +
-            'listed draw the screen with only those offered.\n\nA ' +
-            'mechanism this service has switched off — `spnego` while ' +
-            'krb5.spnegoAuthentication is off, `wallet` while oid4vp.signIn ' +
-            'is off — is reported on the screen and cannot be offered.\n\n' +
-            'It is WRITTEN BY NOBODY: no protocol presents it, so it is ' +
-            'editable and starts empty.' },
-
-    // ---------------------------------------------------------------------
-    // `appMfaMechanism` (#475, rcbj 2026-10-07) — THE SECOND FACTORS THIS
-    // APPLICATION ALLOWS, `appAuthnMechanism`'s companion and drawn beside it
-    // on the Every protocol sub-tab. Its vocabulary is the authentication
-    // policy's second-factor mechanisms (`common/mfa_mechanisms.ts`, held to
-    // `common/authn_policy.ts` by its test). rcbj's four rules, argued in
-    // that module's header:
-    //
-    //   * **Narrow only**: the realm's policy is asked first, and a factor it
-    //     has switched off stays off; none ticked leaves the realm's list.
-    //   * **Options only**: WHICH second factors, never WHETHER one is
-    //     needed.
-    //   * **A re-prompt, as #457**: every BROWSER issuance to the
-    //     application is put to the issuance policy with the second factors
-    //     the session gave, and its `mfa-mechanism` rule sends the person to
-    //     sign in again when it gave some and none is allowed.
-    //   * **None held, enrol one** — after proving a factor they hold, if
-    //     they hold any.
-    //
-    // Checked at the write (CHOICES_CHECKED_HERE) for `appAuthnMechanism`'s
-    // reason: enforced, a misspelt factor would allow nothing.
-    // ---------------------------------------------------------------------
-    { name: 'appMfaMechanism', kind: 'multi',
-      from: 'the console, the management API, or by hand',
-      what: 'THE SECOND FACTORS THIS APPLICATION\'S PEOPLE MAY USE: ' +
-            'password, securityKey, totp, recoveryCode, emailCode, ' +
-            'emailLink, wallet. NONE TICKED LEAVES THE REALM\'S ' +
-            'AUTHENTICATION POLICY AS IT IS.\n\n`securityKey` decides for ' +
-            'EVERY passkey the person holds alike: a passkey has no role ' +
-            '(#1135), so listing it lets any of them be the second factor ' +
-            'here, and leaving it out of a list that names others lets ' +
-            'none.\n\nIt only NARROWS that ' +
-            'policy (Directory > Policies): a second factor the realm has ' +
-            'switched off stays off here, and an emailed one is still never ' +
-            'offered while the realm cannot send mail. It says WHICH second ' +
-            'factors, never WHETHER one is needed — that is still the ' +
-            'realm\'s, the account\'s and risk\'s.\n\nThe sign-in screen ' +
-            'asks only for a second factor listed here. A person who holds ' +
-            'none of them is offered one to set up (a passkey or an ' +
-            'authenticator app, where listed) — after giving the second ' +
-            'factor they do hold, if they hold one.\n\nENFORCED at every ' +
-            'browser sign-in to the application, in both modes: a person ' +
-            'whose session gave a second factor not listed here is sent to ' +
-            'sign in again. Non-browser doors (the password grant, ' +
-            'WS-Trust, an LDAP bind) are not covered.\n\nIt is WRITTEN BY ' +
-            'NOBODY: no protocol presents it, so it is editable and starts ' +
-            'empty.' }
+      what: 'THE AUTHENTICATION POLICY THIS APPLICATION\'S PEOPLE SIGN IN ' +
+            'UNDER: `default` (or empty), or the name of a named ' +
+            'authentication policy of this realm (Directory > Policies). A ' +
+            'named policy holds the first-factor mechanisms allowed ' +
+            '(password, password-mfa, webauthn, spnego, wallet, federation; ' +
+            'none allows every one) and the second factors allowed ' +
+            '(password, securityKey, totp, recoveryCode, emailCode, ' +
+            'emailLink, wallet; none leaves the realm\'s as it is). ' +
+            '`default` allows every mechanism the realm\'s authentication ' +
+            'policy allows.\n\nENFORCED at every browser sign-in to the ' +
+            'application, in both modes: a person whose session stands on a ' +
+            'mechanism the policy does not allow is sent to sign in again ' +
+            'with one it does. One first-factor mechanism listed is also ' +
+            'where the sign-in goes (`spnego` to /authn/spnego, `wallet` to ' +
+            '/authn/wallet, `federation` to appFederationRelationship). The ' +
+            'second factors only NARROW the realm\'s policy: one it has ' +
+            'switched off stays off here.\n\nA name no policy of this ' +
+            'realm holds — written past the console — allows NO mechanism ' +
+            'until the policy exists (STS-AUTHN-0536).\n\nIt is WRITTEN ' +
+            'BY NOBODY: no protocol presents it, so it is editable and ' +
+            'starts empty.' }
   ]
 };
 
@@ -4839,11 +4779,10 @@ const EDITABLE = {
   // reason the other two are: nothing in this service can OBSERVE how an
   // application's people are supposed to authenticate, so if it cannot be
   // written here it cannot be written at all. `multi` since #457: it is the
-  // list of mechanisms the application ALLOWS, one checkbox each.
-  appAuthnMechanism: 'multi',
-  // The second factors it allows (#475), one checkbox each, for the same
-  // reason: nothing can observe it.
-  appMfaMechanism: 'multi',
+  // list of mechanisms the application ALLOWS, one checkbox each. Since #1148
+  // the lists are a named authentication policy's and this names it: `set`,
+  // one value, for the same reason — nothing can observe it.
+  appAuthnPolicy: 'set',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -6050,11 +5989,11 @@ const ATTRIBUTE_CHOICES = {
   gnapAccessTokenFormat: function () {
     return settingValues('gnap.accessTokenFormat');
   },
-  appAuthnMechanism: function () {
-    return require('../federation/federation').MECHANISM_IDS.slice(0);
-  },
-  appMfaMechanism: function () {
-    return require('./mfa_mechanisms').IDS.slice(0);
+  // `default` and this realm's named authentication policies (#1148), read
+  // when asked: a policy saved a moment ago is a choice at once.
+  appAuthnPolicy: function () {
+    return ['default'].concat(require('./authn_policy').named()
+      .map(function (one) { return one.name; }));
   },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
@@ -6119,7 +6058,8 @@ const ATTRIBUTE_CHOICES = {
 // (the others have a validator of their own, which says more). A value
 // outside one is refused (STS-REG-0203). `appAuthnMechanism` joined them
 // with #457, and `appMfaMechanism` with #475: enforced, a misspelt mechanism
-// would allow nothing.
+// would allow nothing. Both gave way to `appAuthnPolicy` (#1148), held to
+// `default` and this realm's named authentication policies.
 // The realm-vs-application combine modes (#395), lazily for the reason the
 // rest of this table reads its modules lazily.
 function realmCombineModes() {
@@ -6144,10 +6084,9 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'gnapSymmetricAlg', 'gnapInteractionStartModes', 'gnapAccessTokenFormat',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
-  'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism',
+  'secretDestProvider', 'secretDestPayload', 'appAuthnPolicy',
   'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
   'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
-  'appMfaMechanism',
   // #395: a misspelt mode would silently be the default, and a misspelt
   // claim would be one no token ever carries.
   'oauthClaimsCombineAccessToken', 'oauthClaimsCombineIdToken',
@@ -7010,7 +6949,8 @@ const FIELD_SECTIONS = [
 // HOW THE TWO SETS WERE CHOSEN, because a reader adding an attribute has to
 // choose again. Every protocol and OAuth 2.0 / OpenID Connect are the
 // fields two working applications on rcbj's own instance hold (and, on Every
-// protocol, `appMfaMechanism`, which rcbj asked for beside them) — a web
+// protocol, the second factors, which rcbj asked for beside them — a
+// policy reference, `appAuthnPolicy`, since #1148) — a web
 // application that delegates to an API (rcbj0002) and that API (rcbj0003) —
 // so the simple view is what configuring a real client and resource server
 // took, and everything else on those sub-tabs is advanced. The other
@@ -7021,9 +6961,9 @@ const FIELD_SECTIONS = [
 // of their own.
 // ---------------------------------------------------------------------------
 const SIMPLE_FIELD_ATTRIBUTES = [
-  // Every protocol (rcbj0002, rcbj0003), and the second factors an
-  // application allows (#475), which rcbj added on 2026-10-07.
-  'description', 'appHomePageUrl', 'appAuthnMechanism', 'appMfaMechanism',
+  // Every protocol (rcbj0002, rcbj0003), and the authentication policy an
+  // application names (#1148; its two lists were here since #457 and #475).
+  'description', 'appHomePageUrl', 'appAuthnPolicy',
   'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
   'appDelegationSubjectGroup', 'appDelegationSemantics',
   // OAuth 2.0 / OpenID Connect (rcbj0002, rcbj0003).
@@ -16557,7 +16497,9 @@ function sweepClientSecrets(nowMs) {
   return out;
 }
 
-// THE MANAGEMENT API'S OWN CLIENT, WHILE ITS SECRET IS PINNED. Seeding writes
+// THE BOOTSTRAP CLIENT, WHILE ITS SECRET IS PINNED — `sts-api-client` since
+// #1139, `sts-management-api` until that identifier became the management
+// API's resource object. Seeding writes
 // `adminApi.clientSecret` onto a FRESH entry and never over an existing one,
 // so a secret regenerated, rotated out or removed here would go on
 // disagreeing with the setting every launcher and deployment mints its API
@@ -16567,7 +16509,7 @@ function sweepClientSecrets(nowMs) {
 function pinnedSecretOf(identifier) {
   log.debug("Entering pinnedSecretOf().");
   log.debug("Leaving pinnedSecretOf().");
-  return String(identifier) === 'sts-management-api' && realms.isDefault()
+  return String(identifier) === 'sts-api-client' && realms.isDefault()
     ? String(config.value('adminApi.clientSecret') || '') : '';
 }
 
@@ -16823,7 +16765,7 @@ function removeClientSecret(identifier, options) {
   if (pinned && target.secret === pinned) {
     log.debug("Leaving removeClientSecret(). The pinned secret.");
     return errorCodes.mark({ ok: false, errors: ['That client secret of ' +
-      '"sts-management-api" is pinned by the adminApi.clientSecret ' +
+      '"sts-api-client" is pinned by the adminApi.clientSecret ' +
       'setting, which is what every token for /admin-api is minted with. ' +
       'Change the setting instead.'] }, 'STS-REG-0210');
   }
@@ -16889,7 +16831,7 @@ function regenerateClientSecret(identifier, options) {
   if (pinnedSecretOf(identifier)) {
     log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
     return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
-                             '"sts-management-api" is pinned by the ' +
+                             '"sts-api-client" is pinned by the ' +
                              'adminApi.clientSecret setting, which is what ' +
                              'every token for /admin-api is minted with. ' +
                              'Regenerating it here would leave the entry and ' +
@@ -18432,6 +18374,29 @@ function list() {
   return rows;
 }
 
+// THE APPLICATIONS NAMING AN AUTHENTICATION POLICY (#1148): what refuses its
+// delete and what Directory > Policies draws beside it. Compared lower-case,
+// as `authn_policy.ts` names a policy.
+/**
+ * Lists the applications whose `appAuthnPolicy` names an authentication
+ * policy, in the ambient realm.
+ *
+ * @param name - the policy's name
+ * @returns the applications' identifiers
+ */
+function applicationsNamingAuthnPolicy(name) {
+  log.debug("Entering applicationsNamingAuthnPolicy().");
+  const wanted = String(name == null ? '' : name).trim().toLowerCase();
+  const out = !wanted ? [] : list().filter(function (row) {
+    const held = [].concat(((row && row.fields) || {}).appAuthnPolicy || [])[0];
+    return String(held || '').trim().toLowerCase() === wanted;
+  }).map(function (row) {
+    return row.identifier;
+  });
+  log.debug("Leaving applicationsNamingAuthnPolicy(). " + out.length + ".");
+  return out;
+}
+
 // Every application's `appOwner` values, read off the kept listing with no
 // view built (#759): `ownership.ownsAnything()` asks it on every scope
 // decision, and read the owners out of `list()`, a view of every
@@ -19600,6 +19565,33 @@ function didClaimWithPairwiseOf(clientId) {
   return on;
 }
 
+// AN API AS A RESOURCE, NEVER A CLIENT (#1139): whether the entry a client_id
+// (or registry identifier) names is an `oauth2-resource-server` and NOT an
+// OAuth client as well. `oauth-oidc/oauth2.ts` refuses such a client_id at
+// every endpoint a client presents itself at, in every mode. An entry
+// carrying both kinds is a client that also defines an API, which RFC 9767
+// allows a GNAP resource server and nothing here forbids an OAuth one.
+/**
+ * Says whether a client_id names a resource object that is no client.
+ *
+ * @param clientId - a client_id or registry identifier
+ * @returns true for an `oauth2-resource-server` without `oauth2-client`
+ */
+function isResourceServer(clientId) {
+  log.debug("Entering isResourceServer().");
+  const id = String(clientId == null ? '' : clientId).trim();
+  if (!id) {
+    log.debug("Leaving isResourceServer(). Nothing was asked for.");
+    return false;
+  }
+  const entry = forClientId(id) || get(id);
+  const kinds = (entry && entry.kinds) || [];
+  const resource = kinds.indexOf('oauth2-resource-server') >= 0 &&
+    kinds.indexOf('oauth2-client') < 0;
+  log.debug("Leaving isResourceServer(). " + resource);
+  return resource;
+}
+
 /**
  * Returns the application whose `oauthClientId` lists a value, matched exactly.
  *
@@ -20124,6 +20116,191 @@ function debuggerApplications() {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// THIS SERVICE'S OWN APIS, AS OAUTH 2.0 RESOURCES (#1139, 2026-10-29).
+//
+// rcbj: "They represent the APIs as an OAuth2 Resource. They hold the
+// audience and scope information that is valid. To call this API, a separate
+// application object must be created that is configured to call the desired
+// API object." Until #1139 none of these APIs was an object: the audiences
+// were recognised by code (`common/registered_targets.ts`'s
+// `ownResourceServer()`), and `sts-management-api` was a client. Four rows,
+// in every realm:
+//
+//   * `sts-management-api` — `/admin-api`. The identifier was the bootstrap
+//     CLIENT until #1139; that client is `sts-api-client` now (above).
+//   * `sts-account-api` — `/account-api`, the user portal's only door.
+//   * `sts-report-api` — `/report-api`, the reports application's. A resource
+//     object of this name existed until #1030 deleted it for a grant that
+//     decided nothing (`report/CLAUDE.md`); this is the object back, as the
+//     API's representation rather than a grant's home.
+//   * `sts-resource` — `<issuer base>/resource`, the default resource
+//     indicator RFC 9068 section 3 requires for a request that names none,
+//     which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management
+//     accept (`jwt_access_token.ts`'s `isOwnResourceAudience()`).
+//
+// **THE AUDIENCE IS THE PINNED NAME** (rcbj's decision on #1139): the
+// seeded base (`internalBaseUrl()`: `global.publicBaseUrl` with the realm's
+// prefix, else `localhost:<port>`), moved onto the listener that serves the
+// API (`helpers.rebaseTo()`). The default realm's management API carries
+// `adminApi.audience` as well, which is what `/admin-api` has always
+// required a token to name; it is the same value unless an operator pinned
+// another.
+//
+// **A RESOURCE IS NEVER A CLIENT.** Its kind is `oauth2-resource-server`
+// and nothing else, and `oauth-oidc/oauth2.ts` refuses its client_id at
+// every endpoint a client presents itself at, in every mode
+// (STS-OAUTH-0985). Emptying the grant-type lists would not have done it: an
+// entry declaring no grant type is held to none (`declaredFlowsOf()`), and
+// development verifies no client credential. So it carries no secret, no
+// registration access token, no redirect URI and no grant type.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PERMISSIONS EACH OF THIS SERVICE'S APIS DEFINES (#1141, 2026-10-29),
+// and the one table both their seeding and `common/scope_policy.ts` read.
+//
+// rcbj's decision on #1141: for these three APIs a DELEGATED PERMISSION GRANT
+// on the API's object is the client's half of "may this client ask for this
+// scope" — Microsoft Entra ID's `requiredResourceAccess`, the shape
+// `common/app_permissions.ts` already keeps for the debugger — replacing the
+// registration's `scope` (`oauthAllowedScope`, #110), which listing one of
+// these words no longer satisfies. ROLES ARE UNCHANGED as the subject's half
+// (`common/role_permissions.ts`): a delegated permission grant says what a
+// client may ASK for, never whether the person or application holds the
+// right. "Grant" in this file's #1141 prose is always a delegated permission
+// grant, never RFC 6749's authorization grant (rcbj, 2026-10-29).
+//
+// **A FIXED `urn:sts:` BASE, NOT THE API'S URL.** A permission is identified
+// by its base followed by its name (`urn:sts:admin-api:admin:read`), and the
+// delegated permission grant is that string on the client's
+// `oauthDelegatedPermission`. The API's audience is a URL under whatever name
+// this service is reached by (#1140), so a URL base would make every
+// delegated permission grant depend on a host name; the debugger's
+// `urn:sts:debugger-api:` is the precedent. A client still asks for the BARE
+// word with `resource` naming the API — what the console, the portal and the
+// reports application send — and `scope_policy.ts` reads the delegated
+// permission grant for it.
+// ---------------------------------------------------------------------------
+/**
+ * The permissions this service's own APIs define, by resource object (#1141).
+ */
+const API_PERMISSIONS = Object.freeze({
+  'sts-management-api': Object.freeze({ base: 'urn:sts:admin-api:',
+    permissions: Object.freeze([
+      ['admin:read', 'Every read on /admin-api (ADMIN_READ)'],
+      ['admin:write', 'Every /admin-api operation that changes anything ' +
+                      '(ADMIN_WRITE)'],
+      ['admin:console', 'The admin console\'s own operations under ' +
+                        '/admin-api/console (ADMIN_CONSOLE)'],
+      ['owner:read', 'Read what the person owns, through /admin-api ' +
+                     '(OWNER_READ)'],
+      ['owner:write', 'Change what the person owns, through /admin-api ' +
+                      '(OWNER_WRITE)']]) }),
+  'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
+    permissions: Object.freeze([
+      ['account:manage', 'The person\'s own account, through /account-api']
+    ]) }),
+  'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
+    permissions: Object.freeze([
+      ['report:use', 'Reports as a user (REPORT_USE)'],
+      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) })
+});
+
+// The delegated permission grants a seeded client holds, as
+// `oauthDelegatedPermission` values, from the table: `{ api: [names] }`.
+function delegatedPermissionGrants(wanted) {
+  log.debug("Entering delegatedPermissionGrants().");
+  const out = [];
+  Object.keys(wanted).forEach(function (api) {
+    wanted[api].forEach(function (name) {
+      out.push(API_PERMISSIONS[api].base + name);
+    });
+  });
+  log.debug("Leaving delegatedPermissionGrants(). " + out.length +
+            " delegated permission grant(s).");
+  return out;
+}
+
+/**
+ * The resource objects for this service's own APIs, one row each.
+ *
+ * @param base - the seeded base, with the realm's prefix
+ * @returns the rows
+ */
+function apiResourceApplications(base) {
+  log.debug("Entering apiResourceApplications().");
+  const issued = nowSec();
+  // `internalBaseUrl()` carries the realm's prefix only where
+  // `global.publicBaseUrl` is pinned (its own comment says why: development
+  // LEARNS a surface's callback past it). An audience is learnt from
+  // nothing, so a realm's must carry its prefix either way, or every realm's
+  // management API would answer to the default realm's.
+  const realmBase = helpers.pinnedBaseUrl() ? base
+    : base + realms.currentPrefix();
+  const row = function (identifier, name, audiences, what) {
+    const unique = [];
+    const defined = API_PERMISSIONS[identifier];
+    audiences.forEach(function (one) {
+      const text = String(one || '').trim();
+      if (text && unique.indexOf(text) < 0) {
+        unique.push(text);
+      }
+    });
+    return {
+      identifier: identifier,
+      name: name,
+      kinds: ['oauth2-resource-server'],
+      protocols: ['OAuth 2.0'],
+      realmScope: 'every',
+      description: 'seeded at startup: ' + what + ', as an OAuth 2.0 ' +
+                   'resource (applications.seedInternal)',
+      attributes: Object.assign({ appAllowedProtocol: ['oauth2'],
+                                  oauthAudience: unique },
+        // THE SCOPES IT DEFINES (#1141), as permissions under its fixed base;
+        // the default resource defines none.
+        defined ? {
+          oauthPermissionBaseUri: defined.base,
+          oauthPermission: defined.permissions.map(function (one) {
+            return permissionValueOf(one[0], one[1]);
+          })
+        } : {}),
+      registration: {
+        client_id: identifier,
+        client_name: name,
+        client_id_issued_at: issued,
+        client_uri: unique[0],
+        application_type: 'web',
+        redirect_uris: [],
+        grant_types: [],
+        response_types: [],
+        scope: ''
+      }
+    };
+  };
+  const adminApi = helpers.rebaseTo(realmBase, 'management-api') +
+    '/admin-api';
+  const rows = [
+    row('sts-management-api', 'Management API',
+        [adminApi].concat(realms.isDefault()
+          ? [String(config.value('adminApi.audience') || '')] : []),
+        'this service\'s own management API at /admin-api'),
+    row('sts-account-api', 'Account API',
+        [helpers.rebaseTo(realmBase, 'portal') + '/account-api'],
+        'this service\'s own account API at /account-api, the user ' +
+        'portal\'s'),
+    row('sts-report-api', 'Reporting API',
+        [helpers.rebaseTo(realmBase, 'report') + '/report-api'],
+        'this service\'s own reports API at /report-api'),
+    row('sts-resource', 'Default resource',
+        [helpers.rebaseTo(realmBase, 'oauth-oidc') + '/resource'],
+        'this service\'s default resource indicator (UserInfo, SCIM, ' +
+        'Shared Signals, OpenID4VCI, Grant Management)')
+  ];
+  log.debug("Leaving apiResourceApplications(). " + rows.length +
+            " row(s).");
+  return rows;
+}
+
 // THE CLIENTS THIS SERVICE'S OWN HOSTED SURFACES SIGN IN AS — the three rows
 // above and below, by identifier, and `common/oidc_rp.ts`'s SURFACES by
 // clientId (`tests/oidc_core_units.js` holds the two lists equal). Each is
@@ -20148,7 +20325,12 @@ function internalApplications() {
   log.debug("Entering internalApplications().");
   const base = internalBaseUrl();
   const issued = nowSec();
-  const rows = [
+  // THE API OBJECTS FIRST (#1141): a permission is defined before anything
+  // holds a delegated permission grant of it, the debugger's rule, and the
+  // clients below hold delegated permission grants of them.
+  // Two shapes in one list (a resource and a client), which the checker would
+  // otherwise type by the first; an edit for the checker, the same program.
+  const rows = /** @type {any[]} */ (apiResourceApplications(base)).concat([
     { identifier: 'sts-admin-console',
       name: 'Admin console',
       kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -20192,7 +20374,14 @@ function internalApplications() {
       // `appProtocol`; the console's protocol checkboxes and the issuance
       // policy read `appAllowedProtocol`, which nothing seeded, so the
       // service's own client read as declared for nothing.
+      // THE DELEGATED PERMISSION GRANTS ARE THE CLIENT'S HALF (#1141): of
+      // the three admin permissions on `sts-management-api`, which
+      // `scope_policy.ts` reads where `oauthAllowedScope` used to list the
+      // words.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-management-api': ['admin:read', 'admin:write',
+                                             'admin:console'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'admin:read',
                                          'admin:write', 'admin:console'] },
@@ -20216,8 +20405,7 @@ function internalApplications() {
         // them to the roles the person holds. `admin:console` (#454) is the
         // console's own operations', authorized by the ADMIN_CONSOLE role
         // this client confers.
-        scope: 'openid profile email offline_access admin:read admin:write ' +
-               'admin:console',
+        scope: 'openid profile email offline_access',
         // A PUBLIC CLIENT SINCE THE CUTOVER (#446, rcbj's decision 1): the
         // console is a static application signing in in the browser with
         // PKCE, so it holds no credential — and every token issued to it is
@@ -20259,7 +20447,13 @@ function internalApplications() {
       // (#607) for the same reason: what a person owns is theirs to
       // administer, and the policy's owner rule — not a consent screen —
       // is what bounds it.
+      // Delegated permission grants of `account:manage` on
+      // `sts-account-api` and the owner pair on `sts-management-api`
+      // (#1141), the client's half of each.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-account-api': ['account:manage'],
+                      'sts-management-api': ['owner:read', 'owner:write'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access',
                                          'account:manage', 'owner:read',
@@ -20283,8 +20477,7 @@ function internalApplications() {
         // owner's two on `/admin-api` (#607), which the authorization server
         // issues only to a person who owns something (OWNER_READ,
         // OWNER_WRITE).
-        scope: 'openid profile email offline_access account:manage ' +
-               'owner:read owner:write',
+        scope: 'openid profile email offline_access',
         // A PUBLIC CLIENT SINCE #568 (rcbj's decision 1, the console's
         // #446 pattern): the portal is a static application signing in in
         // the browser with PKCE, so it holds no credential — and every token
@@ -20297,14 +20490,16 @@ function internalApplications() {
     // application signing in in the browser as the public client
     // `sts-report`, PKCE, every token DPoP-bound. `/report` reads the
     // ambient realm's session, so a realm without this entry could not
-    // sign anybody in. The two report scopes are declared here, as
-    // `admin:read` and `admin:write` are declared on the console, and the
-    // native roles REPORT_USE and REPORT_ADMIN decide at issuance who is
-    // issued them (`common/roles.js`, `common/role_permissions.ts`). Until
-    // #1030 (2026-10-27) a resource application `sts-report-api` DEFINED
-    // the two as delegated permissions and this client was granted them:
-    // the browser asks for the bare words with `resource`, which never
-    // consults a grant, so the grant decided nothing and both are gone.
+    // sign anybody in. It holds delegated permission grants of the two
+    // report scopes (#1141), as the console holds them of `admin:read` and
+    // `admin:write`, and the native roles REPORT_USE and REPORT_ADMIN
+    // decide at issuance who is issued them (`common/roles.js`,
+    // `common/role_permissions.ts`). Until #1030 (2026-10-27) a resource
+    // application `sts-report-api` DEFINED the two as delegated permissions
+    // and this client held delegated permission grants of them, but the
+    // browser asks for the bare words with `resource`, which then never
+    // consulted a delegated permission grant, so it decided nothing and both
+    // went. #1141 brought both back and made that path consult it.
     { identifier: 'sts-report',
       name: 'Reports',
       kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -20312,7 +20507,11 @@ function internalApplications() {
       realmScope: 'every',
       description: 'seeded at startup: this service\'s own reports at ' +
                    '/report (applications.seedInternal)',
+      // Delegated permission grants of both report permissions on
+      // `sts-report-api` (#1141).
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-report-api': ['report:use', 'report:admin'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'report:use',
                                          'report:admin'] },
@@ -20331,12 +20530,25 @@ function internalApplications() {
                                     '/report'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access report:use ' +
-               'report:admin',
+        scope: 'openid profile email offline_access',
         token_endpoint_auth_method: 'none'
       } },
-    { identifier: 'sts-management-api',
-      name: 'Management API',
+    // THE CLIENT EVERY MACHINE CALLER HERE STARTS AS (#1139, 2026-10-29). It
+    // was `sts-management-api` until #1139 made that identifier the
+    // management API ITSELF, as a resource (`apiResourceApplications()`,
+    // below): rcbj, "The API application object ... will never be used to
+    // authenticate an application. A separate application object has to be
+    // created for any API client." This is that separate object, and it took
+    // over everything the old client carried — `adminApi.clientSecret`, the
+    // OpenBao seeding, the test launchers, the companion, the AWS reset.
+    //
+    // It calls `/admin-api` and `/report-api`: a member of ADMIN_READ,
+    // ADMIN_WRITE and REPORT_USE (`common/roles.js`'s `seedApplications`),
+    // declaring the three scopes those roles authorize. NOT `/account-api`,
+    // which acts only on a person (rcbj's decision on #1139): a
+    // client_credentials token has no account there to act on.
+    { identifier: 'sts-api-client',
+      name: 'API client',
       kinds: ['oauth2-client'],
       protocols: ['OAuth 2.0'],
       // EVERY REALM SINCE 2026-09-14 (#32), and it was the default realm only.
@@ -20346,16 +20558,23 @@ function internalApplications() {
       // at `/realm/<id>/admin-api` and nowhere else, and never at a
       // service-wide operation (`mgmt-api/admin_api.ts`'s gate and
       // `admin-ui/admin_scope.ts`). The default realm's copy is still the
-      // service's and works everywhere.
+      // service's and works everywhere. (Written of `sts-management-api`;
+      // carried over with the rest by #1139.)
       realmScope: 'every',
-      description: 'seeded at startup: this service\'s own management API at ' +
-                   '/admin-api (applications.seedInternal)',
+      description: 'seeded at startup: the client this service\'s own ' +
+                   'management API (/admin-api) and reports API ' +
+                   '(/report-api) are called as (applications.seedInternal)',
       // Declared OAuth 2.0 alone, the console's reason: a client_credentials
       // client with no ID Token, so not OpenID Connect.
-      attributes: { appAllowedProtocol: ['oauth2'] },
+      // Delegated permission grants of admin:read, admin:write and
+      // report:use (#1141).
+      attributes: { appAllowedProtocol: ['oauth2'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-management-api': ['admin:read', 'admin:write'],
+                      'sts-report-api': ['report:use'] }) },
       registration: {
-        client_id: 'sts-management-api',
-        client_name: 'Management API',
+        client_id: 'sts-api-client',
+        client_name: 'API client',
         client_id_issued_at: issued,
         // CONFIGURED WHERE THERE IS ONE, and minted otherwise. Since
         // `/admin-api` began requiring an access token, a secret that is
@@ -20373,7 +20592,7 @@ function internalApplications() {
         client_secret_expires_at: 0,
         registration_access_token: randomId(24),
         registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
-                                 '/oauth2/register/sts-management-api',
+                                 '/oauth2/register/sts-api-client',
         client_uri: helpers.rebaseTo(base, 'admin-console') +
                     '/admin/api-explorer',
         application_type: 'web',
@@ -20383,10 +20602,11 @@ function internalApplications() {
         redirect_uris: [],
         grant_types: ['client_credentials'],
         response_types: [],
-        scope: 'admin:read admin:write',
+        scope: '',
         token_endpoint_auth_method: 'client_secret_basic'
       } }
-  ].concat(/** @type {any} */ (debuggerApplications()));
+  ]);
+  rows.push.apply(rows, /** @type {any} */ (debuggerApplications()));
   log.debug("Leaving internalApplications(). " + rows.length + " row(s).");
   return rows;
 }
@@ -20817,6 +21037,7 @@ module.exports = {
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
+  applicationsNamingAuthnPolicy: applicationsNamingAuthnPolicy,
   // The clock `list()` is kept by (#625).
   listingVersion: listingVersion,
   ownerValues: ownerValues,
@@ -20835,6 +21056,8 @@ module.exports = {
   // The client_id lookup beside it, exported for oauth2.js's audienceScopes().
   // Two lookups rather than one that tries both — see forClientId()'s header.
   forClientId: forClientId,
+  isResourceServer: isResourceServer,
+  API_PERMISSIONS: API_PERMISSIONS,
   // And the WS-Trust / SAML spelling of forAudience(), exported for
   // wstrust.js's delegation act. Its header says why it reads two attributes
   // where the other two read one.

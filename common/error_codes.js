@@ -6205,9 +6205,9 @@ const CODES = [
       '(STS-AUTHN-0235); none at a recheck' },
   { code: 'STS-AUTHN-0298',
     summary: 'A sign-in was refused at the sign-in door because it used a ' +
-      'mechanism the application being signed in to does not allow ' +
-      '(appAuthnMechanism, #457). The screen is drawn again, naming the ' +
-      'mechanisms it allows.',
+      'mechanism the application being signed in to does not allow (the ' +
+      'first factors of the authentication policy it names, appAuthnPolicy, ' +
+      '#457). The screen is drawn again, naming the mechanisms it allows.',
     spec: 'the sign-in screen, drawn again' },
   { code: 'STS-AUTHN-0299',
     summary: 'Renaming a passkey named a credential id that is not ' +
@@ -6243,21 +6243,24 @@ const CODES = [
     spec: 'none — the sign-in screen is drawn again' },
   { code: 'STS-AUTHN-0305',
     summary: 'A sign-in was refused at the sign-in door because its second ' +
-      'factor is one the application being signed in to does not allow ' +
-      '(appMfaMechanism, #475). The screen is drawn again, naming the ' +
-      'second factors it allows.',
+      'factor is one the application being signed in to does not allow (the ' +
+      'second factors of the authentication policy it names, appAuthnPolicy, ' +
+      '#475). The screen is drawn again, naming the second factors it ' +
+      'allows.',
     spec: 'the sign-in screen, drawn again' },
   { code: 'STS-AUTHN-0306',
     summary: 'A second factor was needed of a person who holds none the ' +
-      'application allows (appMfaMechanism, #475), and none of the allowed ' +
-      'ones (a security key, an authenticator app) can be set up at sign-in ' +
-      'in this realm; refused rather than signed in on one factor.',
+      'application allows (the second factors of the authentication policy ' +
+      'it names, appAuthnPolicy, #475), and none of the allowed ones (a ' +
+      'security key, an authenticator app) can be set up at sign-in in this ' +
+      'realm; refused rather than signed in on one factor.',
     spec: 'the sign-in screen, drawn again' },
   { code: 'STS-AUTHN-0307',
     summary: 'A second factor was DEMANDED — a security key by the relying ' +
-      'party or on risk, or a second factor on risk — and the second ' +
-      'factors the application allows (appMfaMechanism, #475) leave the ' +
-      'person none that answers it. A step-up never enrols one.',
+      'party or on risk, or a second factor on risk — and the second factors ' +
+      'the application allows (the second factors of the authentication ' +
+      'policy it names, appAuthnPolicy, #475) leave the person none that ' +
+      'answers it. A step-up never enrols one.',
     spec: 'the sign-in screen, drawn again' },
   { code: 'STS-AUTHN-0308',
     summary: 'A passkey policy profile name was refused: it is neither ' +
@@ -7157,6 +7160,34 @@ const CODES = [
       '(webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication ' +
       'policy), so it could never be used (#1135).',
     spec: 'action result or page with the reason' },
+  { code: 'STS-AUTHN-0532',
+    summary: 'A named authentication policy was not saved: its name is not ' +
+      'lower-case letters, digits and hyphens (at most 63, starting with a ' +
+      'letter or digit), or it is "default", the realm\'s own policy ' +
+      '(#1148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0533',
+    summary: 'A named authentication policy was not saved: a first-factor ' +
+      'mechanism or a second factor it lists is not one this service knows ' +
+      '(#1148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0534',
+    summary: 'A named authentication policy was not deleted: an application ' +
+      'of this realm still names it (appAuthnPolicy), and would then allow ' +
+      'no mechanism (#1148).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0535',
+    summary: 'This realm holds no named authentication policy of that name ' +
+      '(#1148): a delete, or an application\'s appAuthnPolicy, named one ' +
+      'that does not exist.',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0536',
+    summary: 'An application names an authentication policy (appAuthnPolicy) ' +
+      'that this realm does not hold — written past the console, or the ' +
+      'policy was deleted by hand — so it allows no mechanism until the ' +
+      'policy exists or the reference changes (#1148).',
+    spec: 'none (logged; the sign-in is refused as for a mechanism the ' +
+      'application does not allow)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -10396,13 +10427,15 @@ const CODES = [
     spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-OAUTH-0945',
     summary: 'An authorization request reached a session whose sign-in ' +
-      'mechanism the client does not allow (appAuthnMechanism, #457); the ' +
-      'person was sent to sign in again with one it does.',
+      'mechanism the client does not allow (the first factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #457); the person was ' +
+      'sent to sign in again with one it does.',
     spec: 'HTTP 302 to the sign-in screen' },
   { code: 'STS-OAUTH-0946',
     summary: 'An authorization request with prompt=none reached a session ' +
-      'whose sign-in mechanism the client does not allow ' +
-      '(appAuthnMechanism, #457), and prompt=none forbids asking.',
+      'whose sign-in mechanism the client does not allow (the first factors ' +
+      'of the authentication policy it names, appAuthnPolicy, #457), and ' +
+      'prompt=none forbids asking.',
     spec: 'login_required (OIDC Core 3.1.2.6)' },
   { code: 'STS-OAUTH-0947',
     summary: 'Product mode: an authorization request (or a pushed one) ' +
@@ -10421,28 +10454,30 @@ const CODES = [
       'was counted or recorded (#496).',
     spec: 'invalid_client (HTTP 401, RFC 6749 section 5.2)' },
   { code: 'STS-OAUTH-0950',
-    summary: 'Product mode: an authorization request or a pushed ' +
-      'authorization request named an RFC 8707 resource that is no ' +
+    summary: 'In every mode since #1140: an authorization request or a ' +
+      'pushed authorization request named an RFC 8707 resource that is no ' +
       'registered target — none of this service\'s own resource servers, ' +
       'and no registered application (no appRegisteredBy) by its ' +
       'oauthAudience, permission base URI, client_id or identifier ' +
       '(#505).',
     spec: 'invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR' },
   { code: 'STS-OAUTH-0951',
-    summary: 'Product mode: a token request (any grant but the token ' +
-      'exchange) named an RFC 8707 resource that is no registered target ' +
+    summary: 'In every mode since #1140: a token request (any grant but ' +
+      'the token exchange) named an RFC 8707 resource that is no registered target ' +
       '— none of this service\'s own resource servers, and no registered ' +
       'application — and was refused before anything was spent (#505).',
     spec: 'invalid_target (HTTP 400, RFC 8707 section 2)' },
   { code: 'STS-OAUTH-0952',
-    summary: 'An authorization request reached a session whose second ' +
-      'factor the client does not allow (appMfaMechanism, #475); the ' +
-      'person was sent to sign in again with one it does.',
+    summary: 'An authorization request reached a session whose second factor ' +
+      'the client does not allow (the second factors of the authentication ' +
+      'policy it names, appAuthnPolicy, #475); the person was sent to sign ' +
+      'in again with one it does.',
     spec: 'HTTP 302 to the sign-in screen' },
   { code: 'STS-OAUTH-0953',
     summary: 'An authorization request with prompt=none reached a session ' +
-      'whose second factor the client does not allow (appMfaMechanism, ' +
-      '#475), and prompt=none forbids asking.',
+      'whose second factor the client does not allow (the second factors of ' +
+      'the authentication policy it names, appAuthnPolicy, #475), and ' +
+      'prompt=none forbids asking.',
     spec: 'login_required (OIDC Core 3.1.2.6)' },
   { code: 'STS-OAUTH-0954',
     summary: 'A token exchange asked for a delegated permission ' +
@@ -10577,6 +10612,22 @@ const CODES = [
     summary: 'An opaque access token was not minted: three fresh 256-bit ' +
       'handles each collided with a digest already stored (#501).',
     spec: 'none — the mint throws; no token is issued' },
+  { code: 'STS-OAUTH-0985',
+    summary: 'A request at an endpoint a client presents itself at ' +
+      '(authorization, token, PAR, introspection, revocation, device ' +
+      'authorization, CIBA) named the client_id of an API resource object ' +
+      '(kind oauth2-resource-server). A resource is never a client; refused ' +
+      'in every mode (#1139).',
+    spec: 'invalid_client (RFC 6749 section 5.2), HTTP 401; HTTP 400 at the ' +
+      'authorization endpoint, never redirected' },
+  { code: 'STS-OAUTH-0986',
+    summary: 'An access token was not minted: an audience it would carry — ' +
+      'the default resource, a resource the request named, the client\'s ' +
+      'own, or one a scope or authorization_details derived — is held by ' +
+      'no application object (an own API whose object was deleted, or an ' +
+      'audience nobody registered). Refused in every mode (#1140).',
+    spec: 'invalid_target (RFC 8707 section 2), HTTP 400; redirected from ' +
+      'the authorization endpoint' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -11085,23 +11136,26 @@ const CODES = [
       '(HTTP 200) — the empty response' },
   { code: 'STS-SAML-0099',
     summary: 'A SAML 2.0 sign-in reached a session whose sign-in mechanism ' +
-      'the service provider does not allow (appAuthnMechanism, #457); the ' +
-      'person was sent to sign in again with one it does, once.',
+      'the service provider does not allow (the first factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #457); the person was ' +
+      'sent to sign in again with one it does, once.',
     spec: 'HTTP 303 to the sign-in screen' },
   { code: 'STS-SAML-0100',
     summary: 'A SAML 2.0 request back from its one sign-in trip, or with ' +
       'IsPassive, still rested on a sign-in mechanism the service provider ' +
-      'does not allow (appAuthnMechanism, #457).',
+      'does not allow (the first factors of the authentication policy it ' +
+      'names, appAuthnPolicy, #457).',
     spec: 'Responder / RequestDenied' },
   { code: 'STS-SAML-0101',
     summary: 'A SAML 1.1 sign-in reached a session whose sign-in mechanism ' +
-      'the relying party does not allow (appAuthnMechanism, #457); the ' +
-      'person was sent to sign in again with one it does, once.',
+      'the relying party does not allow (the first factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #457); the person was ' +
+      'sent to sign in again with one it does, once.',
     spec: 'HTTP 303 to the sign-in screen' },
   { code: 'STS-SAML-0102',
-    summary: 'A SAML 1.1 flow back from its one sign-in trip still rested ' +
-      'on a sign-in mechanism the relying party does not allow ' +
-      '(appAuthnMechanism, #457).',
+    summary: 'A SAML 1.1 flow back from its one sign-in trip still rested on ' +
+      'a sign-in mechanism the relying party does not allow (the first ' +
+      'factors of the authentication policy it names, appAuthnPolicy, #457).',
     spec: 'HTTP 403 page' },
   { code: 'STS-SAML-0103',
     summary: 'Product mode: an AuthnRequest named an Issuer that is no ' +
@@ -11121,23 +11175,26 @@ const CODES = [
     spec: 'HTTP 403 page' },
   { code: 'STS-SAML-0106',
     summary: 'A SAML 2.0 sign-in reached a session whose second factor the ' +
-      'service provider does not allow (appMfaMechanism, #475); the person ' +
-      'was sent to sign in again with one it does, once.',
+      'service provider does not allow (the second factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #475); the person was ' +
+      'sent to sign in again with one it does, once.',
     spec: 'HTTP 303 to the sign-in screen' },
   { code: 'STS-SAML-0107',
     summary: 'A SAML 2.0 request back from its one sign-in trip, or with ' +
-      'IsPassive, still rested on a second factor the service provider ' +
-      'does not allow (appMfaMechanism, #475).',
+      'IsPassive, still rested on a second factor the service provider does ' +
+      'not allow (the second factors of the authentication policy it names, ' +
+      'appAuthnPolicy, #475).',
     spec: 'Responder / RequestDenied' },
   { code: 'STS-SAML-0108',
     summary: 'A SAML 1.1 sign-in reached a session whose second factor the ' +
-      'relying party does not allow (appMfaMechanism, #475); the person ' +
-      'was sent to sign in again with one it does, once.',
+      'relying party does not allow (the second factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #475); the person was ' +
+      'sent to sign in again with one it does, once.',
     spec: 'HTTP 303 to the sign-in screen' },
   { code: 'STS-SAML-0109',
-    summary: 'A SAML 1.1 flow back from its one sign-in trip still rested ' +
-      'on a second factor the relying party does not allow ' +
-      '(appMfaMechanism, #475).',
+    summary: 'A SAML 1.1 flow back from its one sign-in trip still rested on ' +
+      'a second factor the relying party does not allow (the second factors ' +
+      'of the authentication policy it names, appAuthnPolicy, #475).',
     spec: 'HTTP 403 page' },
   { code: 'STS-SAML-0110',
     summary: 'A SAML 2.0 or SAML 1.1 artifact could not be issued: the ' +
@@ -11577,13 +11634,15 @@ const CODES = [
     spec: '', retired: true },
   { code: 'STS-WSFED-0017',
     summary: 'A WS-Federation sign-in reached a session whose sign-in ' +
-      'mechanism the relying party does not allow (appAuthnMechanism, ' +
-      '#457); the person was sent to sign in again with one it does, once.',
+      'mechanism the relying party does not allow (the first factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #457); the person was ' +
+      'sent to sign in again with one it does, once.',
     spec: 'HTTP 303 to the sign-in screen' },
   { code: 'STS-WSFED-0018',
     summary: 'A WS-Federation request back from its one sign-in trip still ' +
-      'rested on a sign-in mechanism the relying party does not allow ' +
-      '(appAuthnMechanism, #457).',
+      'rested on a sign-in mechanism the relying party does not allow (the ' +
+      'first factors of the authentication policy it names, appAuthnPolicy, ' +
+      '#457).',
     spec: 'HTTP 403 page' },
   { code: 'STS-WSFED-0019',
     summary: '/wsfed/metadata/{rp} named no registered relying party, which ' +
@@ -11604,13 +11663,15 @@ const CODES = [
     spec: 'HTTP 404 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0022',
     summary: 'A WS-Federation sign-in reached a session whose second factor ' +
-      'the relying party does not allow (appMfaMechanism, #475); the ' +
-      'person was sent to sign in again with one it does, once.',
+      'the relying party does not allow (the second factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #475); the person was ' +
+      'sent to sign in again with one it does, once.',
     spec: 'HTTP 303 to the sign-in screen' },
   { code: 'STS-WSFED-0023',
     summary: 'A WS-Federation request back from its one sign-in trip still ' +
-      'rested on a second factor the relying party does not allow ' +
-      '(appMfaMechanism, #475).',
+      'rested on a second factor the relying party does not allow (the ' +
+      'second factors of the authentication policy it names, appAuthnPolicy, ' +
+      '#475).',
     spec: 'HTTP 403 page' },
   { code: 'STS-WSFED-0024',
     summary: 'An identity-provider-initiated sign-in (/wsfed/initiate/{rp} ' +
@@ -17863,6 +17924,21 @@ const CODES = [
       'door, for the network-signups signal to count. No password signal ' +
       'counts it (#565).',
     spec: 'none (a risk register row; the sign-in proceeds)' },
+  { code: 'STS-RISK-0051',
+    summary: 'A Reload of a risk dataset version was refused: the version ' +
+      'is not removed, or this service does not download its dataset from ' +
+      'the address it came from (an uploaded version is uploaded again, ' +
+      '#1157).',
+    spec: 'none (an administrator\'s act on Monitoring → Risk)' },
+  { code: 'STS-RISK-0052',
+    summary: 'A Reload could not download the removed version again from ' +
+      'the dataset\'s configured address; nothing was loaded (#1157).',
+    spec: 'none (an administrator\'s act on Monitoring → Risk)' },
+  { code: 'STS-RISK-0053',
+    summary: 'A Reload downloaded a file whose SHA-256 is not the removed ' +
+      'version\'s: the address serves a newer version, which the scheduled ' +
+      'download loads, and nothing was loaded (#1157).',
+    spec: 'none (an administrator\'s act on Monitoring → Risk)' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
@@ -20727,24 +20803,28 @@ const CODES = [
     spec: '' },
   { code: 'STS-XACML-0169',
     summary: 'The application registry could not be read for the sign-in ' +
-      'mechanisms an application allows (appAuthnMechanism, #457), so the ' +
+      'mechanisms an application allows (the first factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #457), so the ' +
       'issuance gate required none for that issuance.',
     spec: '' },
   { code: 'STS-XACML-0170',
     summary: 'The issuance policy denied a browser issuance on the sign-in ' +
-      'mechanism (#457): the application allows only some mechanisms ' +
-      '(appAuthnMechanism) and the person\'s authentication used none of ' +
-      'them. The door re-prompts for an allowed one.',
+      'mechanism (#457): the application allows only some mechanisms (the ' +
+      'first factors of the authentication policy it names, appAuthnPolicy) ' +
+      'and the person\'s authentication used none of them. The door ' +
+      're-prompts for an allowed one.',
     spec: '' },
   { code: 'STS-XACML-0171',
     summary: 'The issuance policy denied a browser issuance on the second ' +
-      'factor (#475): the application allows only some second factors ' +
-      '(appMfaMechanism) and the person\'s authentication gave another. ' +
-      'The door re-prompts for an allowed one.',
+      'factor (#475): the application allows only some second factors (the ' +
+      'second factors of the authentication policy it names, appAuthnPolicy) ' +
+      'and the person\'s authentication gave another. The door re-prompts ' +
+      'for an allowed one.',
     spec: '' },
   { code: 'STS-XACML-0172',
     summary: 'The application registry could not be read for the second ' +
-      'factors an application allows (appMfaMechanism, #475), so the ' +
+      'factors an application allows (the second factors of the ' +
+      'authentication policy it names, appAuthnPolicy, #475), so the ' +
       'issuance gate required none for that issuance.',
     spec: '' },
   { code: 'STS-XACML-0173',
@@ -23396,7 +23476,7 @@ const CODES = [
       'uploaded-realm-ca and uploaded-external-ca.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0061',
-    summary: 'Regenerating the client secret of sts-management-api was ' +
+    summary: 'Regenerating the client secret of sts-api-client was ' +
       'refused because adminApi.clientSecret pins it.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   // Reserved block STS-REG-0070..0079 (2026-09-13).
@@ -23834,7 +23914,7 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-REG-0210',
     summary: 'The client secret pinned by adminApi.clientSecret on ' +
-      'sts-management-api was not removed: every /admin-api token is ' +
+      'sts-api-client was not removed: every /admin-api token is ' +
       'minted with it.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-REG-0211',

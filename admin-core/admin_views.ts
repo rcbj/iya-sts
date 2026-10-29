@@ -2686,7 +2686,19 @@ class AdminViews {
                  active: (primary || second) ? (!m.email || mailUsable)
                    : false,
                  what: m.what };
-      })
+      }),
+      // THE NAMED POLICIES (#1148), each with the applications naming it,
+      // and the two vocabularies the form offers.
+      named: authn.named().map((one) => {
+        return Object.assign({}, one, {
+          namedBy: this.deps.applications
+            .applicationsNamingAuthnPolicy(one.name)
+        });
+      }),
+      vocabulary: {
+        mechanisms: require('../federation/federation').MECHANISM_IDS.slice(0),
+        secondFactors: require('../common/mfa_mechanisms').IDS.slice(0)
+      }
     };
     log.debug("Leaving AdminViews.authnPolicyExtras().");
     return out;
@@ -9737,7 +9749,13 @@ class AdminViews {
   // at the head of its OAuth and SAML sub-tabs. Each list value carries
   // `declared`: FALSE where the application declares a list and the value is
   // not on it — rcbj's warning mark — so the page never compares lists
-  // itself. The four comparisons are the ones the endpoints make: a grant or
+  // itself. A SCOPE A DELEGATED PERMISSION GRANT DECLARES IS ON THE LIST
+  // (rcbj, 2026-10-29: "consistent and intuitive"): every permission
+  // identifier the client's `oauthDelegatedPermission` holds, and, for this
+  // service's three APIs, the bare word it asks for with `resource` (#1141,
+  // `scope_policy.ts`'s `delegatedPermissionScopes()`), which is what the
+  // issuance policy accepts — so the console's own client no longer reads
+  // as having been seen asking for what it was never declared. The four comparisons are the ones the endpoints make: a grant or
   // response type outside a NON-EMPTY declared list (#289: an empty one
   // restricts nothing), a redirect URI that is not registered (an empty list
   // registers none), and a scope outside a non-empty `oauthAllowedScope`
@@ -9750,9 +9768,11 @@ class AdminViews {
    * value marked whether its declared twin allows it.
    *
    * @param fields - the application's fields
+   * @param identifier - the application's identifier, for the scopes its
+   *   delegated permission grants declare (#1141)
    * @returns the lists, the last SAML request and the observed certificate
    */
-  applicationObservedState(fields) {
+  applicationObservedState(fields, identifier?) {
     const { log, applications, stsCrypto } = this.deps;
     log.debug("Entering AdminViews.applicationObservedState().");
     const listOf = function (name) {
@@ -9794,6 +9814,25 @@ class AdminViews {
         certificate = { subject: '', sha256: '', unreadable: true };
       }
     }
+    // The declared scopes: `oauthAllowedScope`, and what the client's
+    // delegated permission grants declare — still null where nothing is
+    // listed in `oauthAllowedScope`, since an empty list restricts nothing.
+    let declaredScopes = nonEmpty('oauthAllowedScope');
+    if (declaredScopes) {
+      let delegated: string[] = [];
+      try {
+        delegated = require('../common/scope_policy')
+          .delegatedPermissionScopes(identifier || '') || [];
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationObservedState(): " +
+                  ((e && e.message) || e));
+        // No scope policy built (a view tested on its own): the grants'
+        // identifiers below still count.
+        delegated = [];
+      }
+      declaredScopes = declaredScopes
+        .concat(listOf('oauthDelegatedPermission'), delegated);
+    }
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
@@ -9802,7 +9841,7 @@ class AdminViews {
         nonEmpty('oauthResponseType'), applications.canonicalResponseType),
       appRedirectUriObserved: marked('appRedirectUriObserved',
                                      listOf('oauthRedirectUri')),
-      oauthScope: marked('oauthScope', nonEmpty('oauthAllowedScope')),
+      oauthScope: marked('oauthScope', declaredScopes),
       appAuthorizationServer: marked('appAuthorizationServer', null),
       samlNameIdFormat: marked('samlNameIdFormat', null),
       samlResponseBinding: marked('samlResponseBinding', null),
@@ -9815,6 +9854,49 @@ class AdminViews {
     };
     log.debug("Leaving AdminViews.applicationObservedState().");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SCOPES AN APPLICATION'S DELEGATED PERMISSION GRANTS DECLARE (#1141),
+  // for the `oauthAllowedScope` cell (rcbj, 2026-10-29): "show the scopes the
+  // delegated permission grants declare inside the oauthAllowedScope list, as
+  // read-only derived entries ... Nothing extra would be stored." One entry
+  // per permission the client's `oauthDelegatedPermission` names that some
+  // application defines: the BARE word for one of this service's three APIs
+  // (what its clients send with `resource`, `scope_policy.ts`), the full
+  // identifier for any other API (what a client sends to name it). A value
+  // naming a permission nobody defines declares nothing and is left out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the scopes an application's delegated permission grants declare,
+   * by the attribute they are drawn in.
+   *
+   * @param fields - the application's fields
+   * @returns `{ oauthAllowedScope: [{ value, permission, api, apiName }] }`
+   */
+  applicationDerivedValues(fields) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationDerivedValues().");
+    const own = applications.API_PERMISSIONS || {};
+    const out: any[] = [];
+    [].concat(fields.oauthDelegatedPermission || []).map(String)
+      .forEach(function (id) {
+        const permission = applications.forPermission(id);
+        if (!permission) {
+          return;
+        }
+        const value = own[permission.identifier] ? permission.name : id;
+        if (out.some(function (one) { return one.value === value; })) {
+          return;
+        }
+        out.push({ value: value, permission: id,
+                   api: permission.identifier,
+                   apiName: String((permission.application || {}).name ||
+                                   permission.identifier) });
+      });
+    log.debug("Leaving AdminViews.applicationDerivedValues(). " +
+              out.length + " scope(s).");
+    return { oauthAllowedScope: out };
   }
 
   // `<outcome> <binding> <sigAlg> [weak]`, as the SSO service records it, as
@@ -11105,7 +11187,11 @@ class AdminViews {
         // WHAT THE APPLICATION WAS SEEN DOING (#706, #708), drawn read-only
         // at the head of the sub-tab whose settings each one shadows. None is
         // a field of the grid, so none is in `fields`.
-        observed: self.applicationObservedState(fields)
+        observed: self.applicationObservedState(fields, row.identifier),
+        // WHAT A LIST DECLARES WITHOUT HOLDING IT (#1141): the scopes the
+        // client's delegated permission grants declare, drawn read-only in
+        // the `oauthAllowedScope` cell; none is a value of the attribute.
+        derived: self.applicationDerivedValues(fields)
       },
       // #609: the named passkey policies naming this application, read-only
       // on the Every protocol sub-tab.
@@ -11418,8 +11504,13 @@ class AdminViews {
     const rolesState = this.applicationRolesState(row.identifier, row);
     const signalsState = this.applicationSignalsState(req, row);
     const enrollmentState = this.applicationEnrollmentState(req, row);
+    // THE PREVIEW PERSON (#1144, rcbj 2026-10-29): the one asked for, else
+    // the signed-in administrator — a person the realm's directory holds,
+    // where the old default, `alice`, is nobody in a product install.
+    const caller = (req && req.adminApiCaller) || null;
     const claimsState = this.applicationClaimsState(row,
-      req && req.query ? req.query.claimsUser : '');
+      (req && req.query && String(req.query.claimsUser || '').trim()) ||
+      (caller && caller.kind === 'person' ? String(caller.name || '') : ''));
     const lifetimesState = this.applicationTokenLifetimesState(row);
     const attempts = this.applicationAuthenticationEvents(req, row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
@@ -11965,7 +12056,9 @@ class AdminViews {
    *
    * @param row - the application's view
    * @param previewUser - optional; the person the selections are previewed
-   *   for (`?claimsUser=`), `alice` by default as on the realm's pages
+   *   for (`?claimsUser=`); the application page passes the signed-in
+   *   administrator when none is asked for (#1144), and `alice` is the
+   *   default for a caller passing nobody
    * @returns `{ sets, json, selections }`, one member of `sets` per set it
    *   is declared for
    */

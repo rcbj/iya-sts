@@ -33,7 +33,8 @@ below, and the application attribute editor.
 | `/admin/vc#vc-tab-verifier-request` | the same page, tab **Verifier request** | What the Verifier asks for, in which format, and the **Start a verification** form with the **Open verifications** list. |
 | `/admin/vc/monitor` | **Monitoring → Verifiable Credentials** | Suspend, reinstate or revoke a credential, which stops it signing in. |
 | `/admin/users` | **Directory → Users**, a person's page | Enrol or remove a person's self-issued IDs. |
-| `/admin/applications?application=<id>` | **Directory → Applications** | `appAuthnMechanism`, and an application's DID. |
+| `/admin/applications?application=<id>` | **Directory → Applications** | `appAuthnPolicy`, and an application's DID. |
+| `/admin/policies#authn-named` | **Directory → Policies**, tab **Authentication policy** | The named authentication policies an application may name. |
 | `/portal/wallet`, `/portal/self-issued` | user portal | A person collects a credential, and enrols their own self-issued ID. |
 
 `GET /admin-api/oid4vp-settings` reads the settings tab, and
@@ -306,16 +307,22 @@ Taken from `oid4vp_wallet_mfa.js`. Nothing extra needs configuring:
 
 ### Send an application's people straight to the wallet
 
-`appAuthnMechanism` lists the mechanisms an application's people may sign in
-with. With `wallet` listed, a sign-in to that application goes straight to
-`/authn/wallet`. Taken from `oid4vp_wallet_mfa.js`.
+The [named authentication
+policy](authentication.md#named-authentication-policies) an application
+names in `appAuthnPolicy` lists the mechanisms its people may sign in with.
+With `wallet` the only one listed, a sign-in to that application goes
+straight to `/authn/wallet`. Taken from `oid4vp_wallet_mfa.js`.
 
-**Console:** on the application's page, in **Change what it is allowed to
-do**, tick `wallet` under `appAuthnMechanism`.
+**Console:** on **Directory → Policies**, tab **Authentication policy**,
+sub-tab **New policy**, create a named policy (`wallet-only`, say) with only `wallet` ticked under
+the first-factor mechanisms. Then on the application's **Configuration**
+tab, **Every protocol** sub-tab, choose it in `appAuthnPolicy` and click
+**Save Every protocol**.
 
 **API:**
 ```bash
-api applications/add '{"application":"wsi-wallet","attribute":"appAuthnMechanism","value":"wallet"}'
+api policies/save-named-authn-policy '{"name":"wallet-only","mechanisms":["wallet"],"secondFactors":[]}'
+api applications/set '{"application":"wsi-wallet","attribute":"appAuthnPolicy","value":"wallet-only"}'
 ```
 
 While `oid4vp.signIn` is off, the screen says the wallet is switched off

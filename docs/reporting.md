@@ -12,9 +12,14 @@ PostgreSQL or to an operator's attribute-source database.
 
 Open `/report` — the front page links to it — and sign in. The browser uses the public client
 `sts-report` (PKCE S256, a DPoP-bound token, `resource` this realm's
-`/report-api`). `sts-report` declares `report:use` and `report:admin`,
-the same way the admin console declares `admin:read` and `admin:write`;
-who is issued them is decided by two roles, below. The words on the page come from the signed-in user's
+`/report-api`). `sts-report` holds delegated permission grants of
+`report:use` and
+`report:admin`, the two permissions the `sts-report-api` application defines
+(`urn:sts:report-api:report:use` and `…:report:admin`), the same way the
+admin console holds them of `admin:read` and `admin:write` on
+`sts-management-api`. The delegated permission grant is the client's half;
+who is issued the
+scopes is decided by two roles, below. The words on the page come from the signed-in user's
 language. The API stays language-free, and every error sentence is
 English. When several accounts in one browser are enabled, the page uses
 the same account switcher as the portal.
@@ -79,6 +84,46 @@ result as for the query that created the job. A realm that wants
 something else — a helpdesk group that may read everything, shares that
 may edit — writes an override of `access-control` into its own policies
 (`/admin/xacml/policies`); the built-in rules are documented there.
+
+## From another program
+
+The reports API is represented in every realm by the application
+**`sts-report-api`**. It holds the audience a token for `/report-api` names
+(this realm's base address followed by `/report-api`), and it is an OAuth 2.0
+resource, **never a client**: the authorization server refuses its client_id
+at every endpoint a client presents itself at (`STS-OAUTH-0985`). A report
+generator, a scheduler or a script calls the API as a client application
+configured to call it.
+
+The seeded client **`sts-api-client`** is one. It is a member of
+`REPORT_USE` and holds a delegated permission grant of `report:use`, so it
+can mint a token with the
+client credentials grant and use it at once. Its secret is the one the
+[management API](management-api.md#the-client-secret) describes:
+
+```bash
+BASE=https://localhost:8081
+
+TOKEN=$(curl -sk -u "sts-api-client:$ADMIN_API_CLIENT_SECRET" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode scope=report:use \
+  --data-urlencode "resource=$BASE/report-api" \
+  "$BASE/oauth2/token" | jq -r .access_token)
+
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/report-api/catalog" | jq
+```
+
+That token is not bound to a key, so it is sent as `Bearer`; a token bound
+with DPoP or a client certificate is presented the way it was bound. Like
+every application, **`sts-api-client` reaches only the definitions and jobs
+it defined itself**, whichever role it holds; it does not see a person's
+reports. For anything that lasts, create an application of your own in the
+realm, give it a client secret, give it a delegated permission grant of
+`urn:sts:report-api:report:use`
+(`POST /admin-api/permissions/grant-permission`, or its Permissions tab) and
+add it to `REPORT_USE`, as
+[An application of your own](management-api.md#an-application-of-your-own-for-every-token-after-that)
+does for the admin roles.
 
 ## The page
 
@@ -394,15 +439,18 @@ The realm's configured federation relationships, as they are now.
 ### `authMechanisms`
 
 The realm authentication policy, one row per mechanism with `application`
-`realm`, plus one row per mechanism an application lists. An application
-that lists none inherits the realm policy and adds no row. This is not a
-count of sign-ins. Non-browser doors are outside `appAuthnMechanism`.
+`realm`, plus one row per mechanism the [named authentication
+policy](authentication.md#named-authentication-policies) an application
+names in `appAuthnPolicy` lists. An application on `default`, or whose
+policy lists none, inherits the realm policy and adds no row; so does one
+naming a policy that does not exist. This is not a count of sign-ins.
+Non-browser doors are outside the policy.
 
 | Field | Type | Meaning | Filter | Sort | Group |
 |---|---|---|---|---|---|
 | `id` | string | The mechanism id. Realm rows use the policy names. An application row uses the value it lists. | yes | yes | no |
-| `type` | string | `both`, `primary`, `second` or `other` for a realm row. `primary` for `appAuthnMechanism` and `second` for `appMfaMechanism`. | yes | yes | yes |
-| `enabled` | boolean | For a realm row, whether that policy flag is on. For an application row, `true` because the application lists it. A listed second factor the realm has switched off stays off at sign-in. | yes | yes | yes |
+| `type` | string | `both`, `primary`, `second` or `other` for a realm row. `primary` for a first-factor mechanism of the application's authentication policy and `second` for a second factor. | yes | yes | yes |
+| `enabled` | boolean | For a realm row, whether that policy flag is on. For an application row, `true` because its policy lists it. A listed second factor the realm has switched off stays off at sign-in. | yes | yes | yes |
 | `application` | string | `realm`, or the application identifier. | yes | yes | yes |
 
 ### `auditEvents`
@@ -1196,8 +1244,9 @@ clear, readable only by the service's own user. See
 
 Send `Authorization: DPoP` and the proof. The token is for `sts-report`,
 audienced to this realm's `/report-api`, with `report:use` or
-`report:admin`. Paths sit after the realm prefix. The default realm has
-none.
+`report:admin`. An application's client-credentials token is sent as
+`Bearer` unless it is bound ([From another program](#from-another-program)).
+Paths sit after the realm prefix. The default realm has none.
 
 A job id, a definition id and a share are not credentials. Retrieving a
 result takes the same token the query took. Group share is run and

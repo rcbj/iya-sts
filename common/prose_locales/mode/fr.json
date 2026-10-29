@@ -236,8 +236,8 @@
     "text": "Une liaison simple LDAP, un UsernameToken WS-Security, SCIM et SSF en HTTP Basic et EST Basic acceptent le mot de passe comme ils acceptent tout mot de passe ; l’écran de connexion demande toujours le second facteur."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "c06e9e3a02393490",
-    "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la liste propre de l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
+    "en": "a4d4c20c45b2d573",
+    "text": "À ces cinq portes, le propre mot de passe de la personne est refusé — avec exactement la même réponse qu’un mauvais mot de passe, et compté comme tel dans la limitation de débit (STS-AUTHN-0213 uniquement sur la ligne d’audit et dans le journal) — dès qu’elle détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la politique d’authentification que nomme l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé (stsMfaRequired, la politique d’authentification). Un MOT DE PASSE D’APPLICATION qu’elle a créé sur /portal/app-passwords, limité à la porte, est accepté à la place. authn.passwordAloneDoors nomme des portes qui acceptent malgré tout le mot de passe, ce qui ramène chacune de ces personnes à un seul facteur à cet endroit."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "Le KDC émet un TGT pour un AS-REQ pré-authentifié avec le seul mot de passe (PA-ENC-TIMESTAMP, ou le PA-ENCRYPTED-CHALLENGE de FAST), comme il accepte tout mot de passe."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "a1e60b4ee5cac599",
-    "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la liste propre de l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
+    "en": "ab8a6af4d276b0bc",
+    "text": "Cet AS-REQ est refusé avec KDC_ERR_POLICY (12), STS-KRB-0135, après vérification du mot de passe (un mauvais mot de passe donne toujours KDC_ERR_PREAUTH_FAILED), dès que la personne détient une application d’authentification ou une clé d’accès quelconque là où le domaine (ou la politique d’authentification que nomme l’application) accepte une clé d’accès comme second facteur, ou qu’un second facteur lui est exigé. Une personne disposant d’une application d’authentification obtient un ticket via l’armure FAST de RFC 6113 avec la pré-authentification OTP de RFC 6560 — mot de passe et code en un seul échange — et il porte l’indicateur RFC 8129 `otp`. Un mot de passe d’application n’est jamais une clé Kerberos."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",
@@ -742,18 +742,6 @@
   "mode.requirements.unregistered-gnap-clients.product": {
     "en": "43ea90ee5ea17888",
     "text": "Une clé inconnue est refusée (STS-GNAP-0082), de même qu’une clé ou un identifiant d’instance appartenant à une entrée que personne n’a enregistrée (appRegisteredBy non défini — une entrée créée à la première observation n’est pas un enregistrement) : 401 invalid_client ou invalid_resource_server (STS-GNAP-0902), avant que l’entrée ne soit de nouveau observée ou que quoi que ce soit ne soit émis."
-  },
-  "mode.requirements.unregistered-resource-targets.what": {
-    "en": "c9e70b1944bd9dca",
-    "text": "Une ressource RFC 8707 et les emplacements d’un droit GNAP nomment une cible enregistrée (#505)"
-  },
-  "mode.requirements.unregistered-resource-targets.development": {
-    "en": "fd6dc100e791e280",
-    "text": "N’importe quelle URI absolue est acceptée comme ressource aux points de terminaison d’autorisation, PAR et de jeton, et devient l’aud du jeton ; un emplacement GNAP qui ne nomme aucun serveur de ressources est exclu de l’audience du jeton et le droit est accordé, tant qu’autre chose dans le jeton en nomme un — un jeton dont l’accès n’en nomme aucun est refusé avec invalid_request dans tous les modes (STS-GNAP-0904)."
-  },
-  "mode.requirements.unregistered-resource-targets.product": {
-    "en": "5f6d00d42845d0e5",
-    "text": "Une ressource (hors échange de jetons, dont les cibles relèvent de la cible non enregistrée de la politique) et chaque emplacement d’un droit d’accès GNAP doivent désigner une cible enregistrée : l’un des serveurs de ressources propres à ce service (l’indicateur de ressource par défaut qu’acceptent UserInfo, SCIM, Shared Signals et OpenID4VCI ; /admin-api ; /account-api ; /report-api) ou une application enregistrée à l’avance (appRegisteredBy renseigné — une observation n’est pas un enregistrement), par son oauthAudience, son URI de base de permission, son client_id ou son identifiant — l’api du débogueur embarqué en est une, semée comme enregistrée. Un emplacement GNAP sur ou sous l’URI de serveur de ressources gnapResourceServerUri d’un serveur enregistré le désigne aussi. Sinon invalid_target : redirection depuis le point de terminaison d’autorisation et 400 au PAR (STS-OAUTH-0950), 400 au point de terminaison de jeton avant que rien ne soit consommé (STS-OAUTH-0951) ; pour GNAP, la requête est refusée avec invalid_request (STS-GNAP-0903), et le droit n’est pas simplement écarté."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",

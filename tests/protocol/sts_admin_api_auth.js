@@ -233,7 +233,7 @@ async function withAGarbageToken() {
   const forged = Buffer.from('{"alg":"RS256","typ":"JWT"}')
                        .toString("base64url") +
     "." + Buffer.from(JSON.stringify({
-      sub: "sts-management-api", client_id: "sts-management-api",
+      sub: "sts-api-client", client_id: "sts-api-client",
       scope: "admin:read admin:write",
       aud: base + "/admin-api",
       exp: Math.floor(Date.now() / 1000) + 3600

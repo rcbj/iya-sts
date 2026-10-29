@@ -205,6 +205,23 @@ function truthTable(t, m) {
                  source: ['dp-front'], targets: ['dp-back'] });
     t.check(d.allowed && d.semantics === 'delegation',
             m + ' A2. actor = R, the token handed on to it', show(d));
+    // A8 (#1139): the subject token's audience is one of this service's
+    // own API resource objects — the default resource, the management API
+    // — and is passed over as S, so its client_id decides, as before.
+    const ownAudiences = ['sts-resource', 'sts-management-api']
+      .map(function (id) {
+        const entry = applications.get(id);
+        return [].concat(((entry && entry.fields) || {}).oauthAudience ||
+                         [])[0] || '';
+      });
+    d = decide({ actor: 'dp-front', subject: 'dp-alice',
+                 source: ownAudiences.concat(['dp-front']),
+                 targets: [AUDIENCE] });
+    t.check(ownAudiences.every(Boolean) && d.allowed &&
+            d.semantics === 'delegation' && d.audience === 'dp-back',
+            m + ' A8. a subject token addressed to one of this service\'s ' +
+            'own API resource objects: S is its client, not the resource ' +
+            '(#1139)', show([ownAudiences, d]));
     d = decide({ actor: 'dp-rbcd-front', subject: 'dp-alice',
                  source: ['dp-rbcd-front'], targets: ['dp-rbcd-back'] });
     t.check(d.allowed, m + ' A3. resource-based: R accepts S ' +

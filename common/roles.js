@@ -561,8 +561,10 @@ function isBuiltIn(name) {
 // **AN APPLICATION IS AN ORDINARY MEMBER**, and that is what changed for
 // machines (decision 3 on #303): a client on `client_credentials` is issued
 // `admin:*` only while it holds the role, so declaring the scope in
-// `oauthAllowedScope` is no longer enough. `sts-management-api` — the
-// machine door every launcher uses — is seeded as a member of both.
+// `oauthAllowedScope` is no longer enough. `sts-api-client` — the
+// machine door every launcher uses — is seeded as a member of both. It was
+// `sts-management-api` until #1139 made that identifier the management API's
+// resource object.
 //
 // They cannot be deleted, and their permission cannot be changed: a realm
 // without them could never be administered by a machine, and ADMIN_READ
@@ -579,14 +581,14 @@ function isBuiltIn(name) {
 const CONSOLE_ROLES = [
   { name: 'ADMIN_READ', consoleRole: 'read', permission: 'admin:read',
     groupSettings: ['admin.readGroup', 'admin.writeGroup'],
-    seedApplications: ['sts-management-api'],
+    seedApplications: ['sts-api-client'],
     what: 'Admin Read: every READ on /admin-api. Held by the console\'s ' +
           'Admin Read and Admin Write groups (Admin Write implies Admin ' +
           'Read) and by the applications listed here. Authorizes the ' +
           'admin:read permission.' },
   { name: 'ADMIN_WRITE', consoleRole: 'write', permission: 'admin:write',
     groupSettings: ['admin.writeGroup'],
-    seedApplications: ['sts-management-api'],
+    seedApplications: ['sts-api-client'],
     what: 'Admin Write: every /admin-api operation that CHANGES anything. ' +
           'Held by the console\'s Admin Write group and by the applications ' +
           'listed here. Authorizes the admin:write permission. It does not ' +
@@ -594,13 +596,13 @@ const CONSOLE_ROLES = [
           'the policy asks for the one the operation needs.' }
 ];
 
-// The application the seed puts in both. The management API's own seeded
-// client, `common/applications.js`'s `sts-management-api`.
+// The application the seed puts in both. The bootstrap client,
+// `common/applications.js`'s `sts-api-client` (#1139).
 /**
- * The application seeded as a member of both console roles: the management
- * API's own client.
+ * The application seeded as a member of both console roles: the bootstrap
+ * client this service's own APIs are called as.
  */
-const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
+const CONSOLE_ROLE_APPLICATION = 'sts-api-client';
 
 // ---------------------------------------------------------------------------
 // THE NATIVE ROLES (#309, a follow-up to #88, 2026-09-28): every role that
@@ -691,8 +693,11 @@ const NATIVE_ROLES = CONSOLE_ROLES.concat([
   // roster reaches every realm's reports through `report/report_api.ts`.
   // What a holder may reach is the access-control policy's report rules
   // (`xacml/xacml_templates.ts`), never these rows.
+  // `sts-api-client` (#1139) is seeded a member: the bootstrap client calls
+  // the reports API as well as the management API.
   { name: 'REPORT_USE', consoleRole: '', permission: 'report:use',
-    groupSettings: [], seedApplications: [], seedGroups: ['report-users'],
+    groupSettings: [], seedApplications: ['sts-api-client'],
+    seedGroups: ['report-users'],
     what: 'Reports, as a user. Authorizes the report:use permission: the ' +
           'reports application and /report-api for the definitions and ' +
           'jobs the holder owns or is shared, as the access-control ' +
@@ -700,7 +705,8 @@ const NATIVE_ROLES = CONSOLE_ROLES.concat([
           'seeded as report-users, as a direct member, or on the console ' +
           'roster (Admin Read or Admin Write); an application ' +
           'holds it as a member and is issued it on its own token, ' +
-          'reaching only the definitions and jobs it defined.' },
+          'reaching only the definitions and jobs it defined. The ' +
+          'bootstrap client, sts-api-client, is seeded a member.' },
   { name: 'REPORT_ADMIN', consoleRole: '', permission: 'report:admin',
     groupSettings: [], seedApplications: [], seedGroups: ['report-admins'],
     what: 'Reports, as an administrator. Authorizes the report:admin ' +
@@ -1519,9 +1525,10 @@ function ensureSeedGroups(row) {
 /**
  * Creates the native roles in the ambient realm when they are missing.
  *
- * The console roles are seeded with the management API's client as a
- * member. SSF_READ and SSF_MANAGE are seeded with their groups and with no
- * application. An existing role entry is left as it is.
+ * The console roles and REPORT_USE are seeded with the bootstrap client,
+ * `sts-api-client`, as a member (#1139). SSF_READ and SSF_MANAGE are seeded
+ * with their groups and with no application. An existing role entry is left
+ * as it is.
  * @returns how many were created
  */
 function seedNativeRoles() {

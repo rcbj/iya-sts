@@ -161,7 +161,7 @@ jobs:
       # /oauth2/authorize and every merge to main from 2026-09-09 failed at
       # the metadata check. /admin-api has required an access token since
       # 2026-09-09 as well. So the job now does what the test launchers do:
-      # it pins the seeded `sts-management-api` client's secret BEFORE the
+      # it pins the seeded `sts-api-client` client's secret BEFORE the
       # service starts (the client reads it while it is seeded, so a secret
       # chosen afterwards is one the service never heard of), mints a token,
       # and signs in to the console. Masked, because a run log is public.

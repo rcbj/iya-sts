@@ -4127,7 +4127,7 @@ than by refusing the roster. rcbj's four decisions are the design:
 | Who is on a realm's roster | the realm's own `cn=admin-read` and `cn=admin-write`, and a seeded `admin` with a forced password change |
 | What a realm administrator reaches | their realm; service pages, actions and settings are hidden and refused |
 | How the plain `/admin` and `/portal` pick a realm | a chooser — a list of every realm, remembered on the `sts_realm` cookie |
-| The machine door | a realm-scoped `sts-management-api` token per realm |
+| The machine door | a realm-scoped `sts-api-client` token per realm (`sts-management-api` until #1139) |
 
 **THE DEFAULT REALM'S ROSTER IS STILL THE SERVICE ROSTER** and administers every
 realm exactly as before, which rcbj stated as a requirement in its own right.
@@ -6569,8 +6569,9 @@ console's.
 `tests/protocol/sts_admin_console.js` presses every button it finds, and on an
 application page that now includes Regenerate and Take off: both are safe to
 press on any entry the walk reaches (the console's and portal's own clients
-read their secret fresh on every sign-in, and `sts-management-api` is refused
-while `adminApi.clientSecret` pins it).
+read their secret fresh on every sign-in, and `sts-api-client` is refused
+while `adminApi.clientSecret` pins it; `sts-management-api` has had no secret
+since #1139).
 
 ## THE CERTIFICATE DETAILS DIALOG, ON `/admin/pki` AND `/admin/crypto-metadata` (2026-09-13)
 
@@ -7564,13 +7565,13 @@ the existing `:has()` rules hide by.
   (`applicationFields()`'s `simple`); that file's comment says how the set
   was chosen — Every protocol and OAuth are what rcbj's two working
   applications hold (and `appMfaMechanism` on Every protocol, rcbj's
-  addition), the rest inferred on that model. **A sub-tab of fewer
-  than six fields, or none of one kind, has no switch** (`WebKit.hasViews()`).
-  The switch is two `view` radios INSIDE the sub-tab's form and the
-  stylesheet hides its `fg-adv` cells while Simplified is ticked: no round
-  trip, and a hidden field stays in the form, so a Save posts the value the
-  entry holds and writes nothing for it. `view` is a member no operation
-  declares, so `shapeFields()` drops it before the request; it rides a
+  addition — `appAuthnPolicy` in its place since #1148), the rest inferred on
+  that model. **A sub-tab of fewer than six fields, or none of one kind, has no
+  switch** (`WebKit.hasViews()`). The switch is two `view` radios INSIDE the
+  sub-tab's form and the stylesheet hides its `fg-adv` cells while Simplified is
+  ticked: no round trip, and a hidden field stays in the form, so a Save posts
+  the value the entry holds and writes nothing for it. `view` is a member no
+  operation declares, so `shapeFields()` drops it before the request; it rides a
   redraw in the draft, which is how "+", the bin, a search or a refused Save
   keep the view the reader was in. A person's Attributes sub-tabs do the same
   from `ldap/person_editor.ts`'s `SIMPLE_FIELDS` (one list with the create

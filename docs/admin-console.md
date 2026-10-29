@@ -621,7 +621,11 @@ too, and so does completing a reset link. `caep.autoEmitTypes` and
 `GET /admin-api/policies` answers each as a member, and
 `POST /admin-api/policies/save-<kind>-policy` and `reset-<kind>-policy`
 write them, where the kind is `password`, `authn`, `serviceAccount`,
-`passkey`, `locale`, `attributes` or `postLogin`.
+`passkey`, `locale`, `attributes` or `postLogin`. The authentication policy
+tab also holds the realm's [named authentication
+policies](authentication.md#named-authentication-policies), which an
+application names in `appAuthnPolicy`
+(`save-named-authn-policy`, `delete-named-authn-policy`).
 
 **The password policy** is a minimum length (12), how many previous passwords
 may not be reused (5), a minimum number of symbols (1), and whether an uppercase

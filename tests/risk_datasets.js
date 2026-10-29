@@ -247,9 +247,9 @@ async function partD(t) {
   t.check(back.ok && back.version === 'asn-1' && !after.asn,
           'D2. rollback makes the previous version active again, and ' +
           'lookups follow at once', JSON.stringify(back));
-  const refusedDelete = await riskDatasets.deleteVersion('', 'asn', 'asn-1',
-                                                         'a test');
-  t.check(!refusedDelete.ok, 'D3. the active version cannot be deleted');
+  // D3 refused the active version's deletion until #1152; removing the
+  // active version is part L now, at the end, where unloading `asn` cannot
+  // change what the parts after this one read.
   const deleted = await riskDatasets.deleteVersion('', 'asn', 'asn-2',
                                                    'a test');
   const versions = await riskStore.listVersions('', 'asn');
@@ -394,8 +394,8 @@ async function partI(t) {
   const unknown = await riskAdmin.riskAction({ action: 'explode',
                                                dataset: 'asn' }, 'a test');
   t.equal(unknown.errors && unknown.errors[0],
-          'Unknown action "explode". The 6 are: import, activate, rollback, ' +
-          'delete, accept-terms, upload.',
+          'Unknown action "explode". The 7 are: import, activate, rollback, ' +
+          'delete, reload, accept-terms, upload.',
           'I1. an unknown action is refused in rule 7\'s sentence');
   const imported = await riskAdmin.riskAction({
     action: 'import', dataset: 'iplist.operator-allow', realm: 'acme',
@@ -491,6 +491,83 @@ async function partJ(t) {
 // install-time loader writes its acceptances to the store and a log file.
 // Run first, before anything has been accepted.
 // ---------------------------------------------------------------------------
+async function partL(t) {
+  log.debug("Entering partL().");
+  // REMOVE ON THE ACTIVE VERSION (#1152): its rows go, the dataset has no
+  // active version, nothing else is activated, and Roll back is offered.
+  config.setOverride('risk.datasetShrinkLimitPercent', 100);
+  const loaded = await riskDatasets.importVersion({ dataset: 'asn',
+    format: 'dbip-asn-csv', version: 'asn-L', source: 'upload',
+    content: '203.0.113.0,203.0.113.255,64511,Removal Test Networks' });
+  config.setOverride('risk.datasetShrinkLimitPercent', 50);
+  const before = await riskDatasets.lookup('203.0.113.9', 'default');
+  t.check(loaded.ok && before.asn && before.asn.asn === 64511,
+          'L1. precondition: asn-L is active and answers lookups',
+          JSON.stringify(loaded) + ' ' + JSON.stringify(before.asn));
+  const removed = await riskDatasets.deleteVersion('', 'asn', 'asn-L',
+                                                   'a test');
+  const after = await riskDatasets.lookup('203.0.113.9', 'default');
+  t.check(removed.ok && removed.unloaded === true && removed.rows === 1 &&
+          !after.asn && !after.datasets.asn,
+          'L2. REMOVE ON THE ACTIVE VERSION deletes its rows and unloads it: ' +
+          'lookups stop reading the dataset at once',
+          JSON.stringify(removed) + ' ' + JSON.stringify(after));
+  const registry = await riskDatasets.registry('default');
+  const asn = registry.datasets.filter(function (d) {
+    return d.dataset === 'asn';
+  })[0];
+  const record = asn.versions.filter(function (v) {
+    return v.version === 'asn-L';
+  })[0];
+  t.check(asn.state === 'empty' && asn.activeVersion === '' &&
+          record && record.state === 'deleted',
+          'L3. nothing else was made active, and the version\'s record ' +
+          'stays, marked deleted', JSON.stringify(asn.state) + ' ' +
+          JSON.stringify(record));
+  t.check(asn.previousVersion !== '' && asn.previousVersion !== 'asn-L',
+          'L4. the version it replaced is still offered for Roll back',
+          JSON.stringify(asn.previousVersion));
+  const again = await riskDatasets.deleteVersion('', 'asn', 'asn-L',
+                                                 'a test');
+  const reactivate = await riskDatasets.activateVersion('', 'asn', 'asn-L',
+                                                        'a test');
+  t.check(again.ok && again.rows === 0 && !again.unloaded && !reactivate.ok,
+          'L5. removing it again deletes nothing, and it cannot be made ' +
+          'active', JSON.stringify(again) + ' ' + JSON.stringify(reactivate));
+
+  // UPLOADED AGAIN (#1155): an administrator's door may load the version
+  // they removed; a job (no `reloadDeleted`) still finds it recorded.
+  const sameFile = { dataset: 'asn', format: 'dbip-asn-csv',
+    version: 'asn-L', source: 'upload',
+    content: '203.0.113.0,203.0.113.255,64511,Removal Test Networks' };
+  const byJob = await riskDatasets.importVersion(sameFile);
+  t.check(byJob.ok && byJob.duplicate === true,
+          'L6. a removed version imported by a door that is not an ' +
+          'administrator\'s is still already recorded, and nothing loads',
+          JSON.stringify(byJob));
+  config.setOverride('risk.datasetShrinkLimitPercent', 100);
+  const byAdmin = await riskDatasets.importVersion(
+    Object.assign({ reloadDeleted: true, actor: 'a test' }, sameFile));
+  config.setOverride('risk.datasetShrinkLimitPercent', 50);
+  const back = await riskDatasets.lookup('203.0.113.9', 'default');
+  const reloaded = (await riskStore.listVersions('', 'asn'))
+    .filter(function (v) {
+      return v.version === 'asn-L';
+    })[0];
+  t.check(byAdmin.ok && !byAdmin.duplicate && byAdmin.activated &&
+          back.asn && back.asn.asn === 64511 &&
+          reloaded.state === 'active' && reloaded.rowsDeletedAt === 0,
+          'L7. AN ADMINISTRATOR UPLOADS THE REMOVED VERSION AGAIN: the ' +
+          'record is reused, loaded, made active and answers lookups',
+          JSON.stringify(byAdmin) + ' ' + JSON.stringify(reloaded));
+  const notDeleted = await riskDatasets.importVersion(
+    Object.assign({ reloadDeleted: true }, sameFile));
+  t.check(notDeleted.ok && notDeleted.duplicate === true,
+          'L8. a version that is not deleted is still already recorded, ' +
+          'whoever imports it', JSON.stringify(notDeleted));
+  log.debug("Leaving partL().");
+}
+
 async function partK(t) {
   log.debug("Entering partK().");
   const refused = await riskDatasets.importVersion({ dataset: 'asn',
@@ -586,6 +663,7 @@ async function run(t) {
   await partH(t);
   await partI(t);
   await partJ(t);
+  await partL(t);
   log.debug("Leaving run().");
 }
 

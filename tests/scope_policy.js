@@ -34,6 +34,12 @@
 //      when it is on.
 //   E. The debugger permission is spelt the same here as in
 //      `debugger/debugger_access.ts`.
+//   F. FOR THIS SERVICE'S THREE APIS A DELEGATED PERMISSION GRANT IS THE
+//      DECLARATION (#1141): an admin, owner, account or report word listed
+//      in oauthAllowedScope no
+//      longer declares it, a delegated permission grant on the API's object
+//      does, and the seeded clients hold the delegated permission grants
+//      they use.
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS. The truth table needs both modes and a realm's settings in
@@ -138,9 +144,9 @@ function claimA(t) {
       config.clearOverride('global.mode');
     }
   });
-  t.check(scopePolicy.declares('sts-management-api', 'admin:read') &&
-          scopePolicy.declares('sts-management-api', 'admin:write'),
-          'the seeded sts-management-api declares both admin scopes');
+  t.check(scopePolicy.declares('sts-api-client', 'admin:read') &&
+          scopePolicy.declares('sts-api-client', 'admin:write'),
+          'the seeded sts-api-client declares both admin scopes');
   t.check(scopePolicy.declares('sts-admin-console', 'admin:write'),
           'and so does sts-admin-console, whose explorer mints admin tokens');
   t.check(scopePolicy.isProtected('report:use') &&
@@ -158,14 +164,26 @@ function claimA(t) {
   // THE DELEGATED GRANT IS GONE (#1030): no resource application defines
   // the two words, and sts-report holds no grant — the browser asks for
   // the bare words with `resource`, which never consulted one.
-  t.check(!applications.get('sts-report-api'),
-          'sts-report-api is not seeded (#1030)');
+  // THE IDENTIFIER CAME BACK AS THE REPORTS API'S RESOURCE OBJECT (#1139),
+  // AND THE DELEGATED PERMISSION GRANT CAME BACK AS THE CLIENT'S HALF
+  // (#1141): sts-report-api
+  // defines both words under urn:sts:report-api:, sts-report holds delegated
+  // permission grants of both, and since #1141 a bare word with `resource`
+  // DOES consult the delegated permission grant
+  // (`scope_policy.ts`'s `declares()`), which is what #1030 found missing.
+  const reportApi = applications.get('sts-report-api');
   const reportClient = applications.get('sts-report');
-  t.check(!!reportClient && !(reportClient.fields || {})
-            .oauthDelegatedPermission,
-          'sts-report holds no delegated permission (#1030)',
-          JSON.stringify(reportClient && reportClient.fields &&
-                         reportClient.fields.oauthDelegatedPermission));
+  const held = [].concat((reportClient && reportClient.fields || {})
+    .oauthDelegatedPermission || []);
+  t.check(!!reportApi &&
+          reportApi.kinds.indexOf('oauth2-resource-server') >= 0 &&
+          String((reportApi.fields || {}).oauthPermissionBaseUri) ===
+            'urn:sts:report-api:' &&
+          held.indexOf('urn:sts:report-api:report:use') >= 0 &&
+          held.indexOf('urn:sts:report-api:report:admin') >= 0,
+          'sts-report-api defines the report permissions and sts-report ' +
+          'holds delegated permission grants of both (#1141)',
+          JSON.stringify([reportApi && reportApi.fields, held]));
   const made = realms.get('report-api-seed') ||
     realms.create({ id: 'report-api-seed', name: 'report-api-seed' });
   t.check(made && (made.ok || made.id),
@@ -173,10 +191,10 @@ function claimA(t) {
           JSON.stringify(made));
   realms.run(realms.get('report-api-seed'), function () {
     t.check(!!applications.get('sts-report') &&
-            !applications.get('sts-report-api') &&
+            !!applications.get('sts-report-api') &&
             !applications.get('sts-debugger-api'),
-            'a new realm gets the reports client, and neither a report ' +
-            'API application nor the debugger');
+            'a new realm gets the reports client and the reports API\'s ' +
+            'resource object (#1139), and not the debugger');
     t.check(scopePolicy.declares('sts-report', 'report:use') &&
             scopePolicy.declares('sts-report', 'report:admin'),
             'and that realm\'s sts-report declares both report scopes');
@@ -316,6 +334,76 @@ function claimD(t) {
   log.debug("Leaving claimD().");
 }
 
+// F (#1141): for this service's three APIs a delegated permission grant on
+// the API's object is the client's half, and oauthAllowedScope is not.
+function claimF(t) {
+  log.debug("Entering claimF().");
+  t.log.info('=== F. a delegated permission grant is the declaration for ' +
+             'an API scope ===');
+  const made = [
+    applications.createApplication({ identifier: 'sp-listed',
+      protocols: ['oauth2'],
+      fields: { oauthClientId: 'sp-listed',
+                oauthAllowedScope: ['openid', 'admin:read', 'report:use',
+                                    'account:manage'] } }),
+    applications.createApplication({ identifier: 'sp-delegated',
+      protocols: ['oauth2'],
+      fields: { oauthClientId: 'sp-delegated',
+                oauthAllowedScope: ['openid'],
+                oauthDelegatedPermission: ['urn:sts:admin-api:admin:read',
+                  'urn:sts:report-api:report:use',
+                  'urn:sts:account-api:account:manage'] } })
+  ];
+  t.check(made.every(function (one) { return one && one.ok; }),
+          'precondition: a listing client and one holding delegated ' +
+          'permission grants',
+          JSON.stringify(made));
+  ['admin:read', 'report:use', 'account:manage'].forEach(function (one) {
+    t.check(!scopePolicy.declares('sp-listed', one) &&
+            codeOf(scopePolicy.refusal(one, 'sp-listed')) ===
+              'STS-OAUTH-0577',
+            'F. listing ' + one + ' in oauthAllowedScope no longer declares ' +
+            'it: refused STS-OAUTH-0577');
+    t.check(scopePolicy.declares('sp-delegated', one) &&
+            codeOf(scopePolicy.refusal(one, 'sp-delegated')) === null,
+            'F. a delegated permission grant of ' + one + ' on its API\'s ' +
+            'object declares it');
+  });
+  t.check(!scopePolicy.declares('sp-delegated', 'admin:write') &&
+          !scopePolicy.declares('sp-delegated', 'report:admin'),
+          'F. a delegated permission grant declares the permission it names ' +
+          'and no other');
+  const listed = scopePolicy.declaredScopes('sp-listed') || [];
+  t.check(listed.join() === 'openid',
+          'F. declaredScopes() leaves the words a delegated permission grant ' +
+          'governs off the list',
+          JSON.stringify(listed));
+  const apiOf = function (scope) {
+    log.debug("Entering apiOf().");
+    log.debug("Leaving apiOf().");
+    return scopePolicy.delegatedPermissionApiOf(scope);
+  };
+  t.check(apiOf('owner:write') === 'sts-management-api' &&
+          apiOf('account:manage') === 'sts-account-api' &&
+          apiOf('report:admin') === 'sts-report-api' &&
+          apiOf('scim:write') === '',
+          'F. each word a delegated permission grant governs belongs to its ' +
+          'API, and the SCIM scopes are not among them');
+  t.check(['sts-admin-console', 'sts-user-portal', 'sts-report',
+           'sts-api-client'].every(function (id) {
+    return (scopePolicy.declaredScopes(id) || []).every(function (one) {
+      return !scopePolicy.delegatedPermissionApiOf(one);
+    });
+  }) && scopePolicy.declares('sts-user-portal', 'account:manage') &&
+          scopePolicy.declares('sts-user-portal', 'owner:write') &&
+          scopePolicy.declares('sts-admin-console', 'admin:console') &&
+          scopePolicy.declares('sts-api-client', 'report:use') &&
+          !scopePolicy.declares('sts-api-client', 'report:admin'),
+          'F. the seeded clients list none of these words and hold the ' +
+          'delegated permission grants they use');
+  log.debug("Leaving claimF().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   makeApplications(t);
@@ -323,6 +411,7 @@ async function run(t) {
   claimB(t);
   await claimC(t);
   claimD(t);
+  claimF(t);
   t.log.info('=== E. one spelling ===');
   t.equal(scopePolicy.DEBUGGER_PERMISSION, debuggerAccess.PERMISSION_ID,
           'the debugger permission is spelt as debugger_access.ts spells it');

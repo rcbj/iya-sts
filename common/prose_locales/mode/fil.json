@@ -236,8 +236,8 @@
     "text": "Tinatanggap ng LDAP simple bind, WS-Security UsernameToken, SCIM at SSF HTTP Basic at EST Basic ang password tulad ng pagtanggap nila sa bawat password; humihingi pa rin ng second factor ang sign-in screen."
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "c06e9e3a02393490",
-    "text": "Sa limang pintong iyon, tinatanggihan ang sariling password ng tao — sinasagot eksakto tulad ng maling password, at binibilang laban sa rate limit bilang isa (STS-AUTHN-0213 sa audit row at sa log lang) — tuwing may hawak siyang authenticator app o alinmang passkey kung saan tinatanggap ng realm (o ng sariling listahan ng application) ang passkey bilang second factor, o hinihingan siya ng second factor (stsMfaRequired, ang authentication policy). Ang APP PASSWORD na ginawa niya sa /portal/app-passwords, naka-scope sa pinto, ang tinatanggap sa halip. Pinapangalanan ng authn.passwordAloneDoors ang mga pintong tumatanggap pa rin ng password, na nagbababa sa bawat ganoong tao sa iisang factor doon."
+    "en": "a4d4c20c45b2d573",
+    "text": "Sa limang pintong iyon, tinatanggihan ang sariling password ng tao — sinasagot eksakto tulad ng maling password, at binibilang laban sa rate limit bilang isa (STS-AUTHN-0213 sa audit row at sa log lang) — tuwing may hawak siyang authenticator app o alinmang passkey kung saan tinatanggap ng realm (o ng authentication policy na pinangangalanan ng application) ang passkey bilang second factor, o hinihingan siya ng second factor (stsMfaRequired, ang authentication policy). Ang APP PASSWORD na ginawa niya sa /portal/app-passwords, naka-scope sa pinto, ang tinatanggap sa halip. Pinapangalanan ng authn.passwordAloneDoors ang mga pintong tumatanggap pa rin ng password, na nagbababa sa bawat ganoong tao sa iisang factor doon."
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "Nag-iissue ang KDC ng TGT sa AS-REQ na pre-authenticated gamit ang password lang (PA-ENC-TIMESTAMP, o ang PA-ENCRYPTED-CHALLENGE ng FAST), tulad ng pagtanggap nito sa bawat password."
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "a1e60b4ee5cac599",
-    "text": "Ang AS-REQ na iyon ay tinatanggihan nang KDC_ERR_POLICY (12), STS-KRB-0135, pagkatapos ma-verify ang password (ang mali ay KDC_ERR_PREAUTH_FAILED pa rin), tuwing may hawak ang tao na authenticator app o alinmang passkey kung saan tinatanggap ng realm (o ng sariling listahan ng application) ang passkey bilang second factor, o hinihingan siya ng second factor. Ang taong may authenticator app ay nakakakuha ng ticket sa pamamagitan ng RFC 6113 FAST armor na may RFC 6560 OTP pre-authentication — password at code sa iisang exchange — at may dala itong RFC 8129 indicator na `otp`. Hindi kailanman Kerberos key ang app password."
+    "en": "ab8a6af4d276b0bc",
+    "text": "Ang AS-REQ na iyon ay tinatanggihan nang KDC_ERR_POLICY (12), STS-KRB-0135, pagkatapos ma-verify ang password (ang mali ay KDC_ERR_PREAUTH_FAILED pa rin), tuwing may hawak ang tao na authenticator app o alinmang passkey kung saan tinatanggap ng realm (o ng authentication policy na pinangangalanan ng application) ang passkey bilang second factor, o hinihingan siya ng second factor. Ang taong may authenticator app ay nakakakuha ng ticket sa pamamagitan ng RFC 6113 FAST armor na may RFC 6560 OTP pre-authentication — password at code sa iisang exchange — at may dala itong RFC 8129 indicator na `otp`. Hindi kailanman Kerberos key ang app password."
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",
@@ -742,18 +742,6 @@
   "mode.requirements.unregistered-gnap-clients.product": {
     "en": "43ea90ee5ea17888",
     "text": "Tinatanggihan ang hindi kilalang key (STS-GNAP-0082), at ganoon din ang key o instance identifier na pag-aari ng entry na walang nag-register (hindi nakatakda ang appRegisteredBy — hindi registration ang ginawa sa unang pagkakita): 401 invalid_client o invalid_resource_server (STS-GNAP-0902), bago makita ulit ang entry o may ma-issue."
-  },
-  "mode.requirements.unregistered-resource-targets.what": {
-    "en": "c9e70b1944bd9dca",
-    "text": "Pinangangalanan ng RFC 8707 resource at ng mga location ng GNAP right ang isang naka-register na target (#505)"
-  },
-  "mode.requirements.unregistered-resource-targets.development": {
-    "en": "fd6dc100e791e280",
-    "text": "Tinatanggap ang anumang absolute URI bilang resource sa authorization, PAR at token endpoint at nagiging aud ito ng token; ang GNAP location na walang pinangangalanang resource server ay iniiwan sa labas ng audience ng token at ibinibigay ang right, basta may ibang bahagi ng token na nagpapangalan ng isa — ang token na walang pinangangalanan ang access ay tinatanggihan ng invalid_request sa bawat mode (STS-GNAP-0904)."
-  },
-  "mode.requirements.unregistered-resource-targets.product": {
-    "en": "5f6d00d42845d0e5",
-    "text": "Ang isang resource (maliban sa token exchange, na ang mga target ay ang unregistered-target ng policy) at bawat lokasyon ng isang GNAP access right ay dapat pangalanan ang isang rehistradong target: isa sa mga sariling resource server ng serbisyong ito (ang default na resource indicator na tinatanggap ng UserInfo, SCIM, Shared Signals at OpenID4VCI; /admin-api; /account-api; /report-api) o isang application na narehistro nang maaga (nakatakda ang appRegisteredBy — ang isang sighting ay hindi registration), sa pamamagitan ng oauthAudience, permission base URI, client_id o identifier nito — ang api ng embedded debugger ay isa, seeded na rehistrado. Ang isang GNAP location na nasa o sa ilalim ng gnapResourceServerUri ng isang rehistradong resource server ay pinapangalanan din ito. Kung hindi, invalid_target: ire-redirect mula sa authorization endpoint at 400 sa PAR (STS-OAUTH-0950), 400 sa token endpoint bago may magastos (STS-OAUTH-0951); para sa GNAP, tinatanggihan ang request ng invalid_request (STS-GNAP-0903), hindi basta inaalis ang right."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",

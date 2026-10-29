@@ -2502,13 +2502,12 @@ const REQUIREMENTS = [
              'answered exactly as a wrong password, and counted against the ' +
              'rate limit as one (STS-AUTHN-0213 on the audit row and in the ' +
              'log only) — whenever they hold an authenticator app or any ' +
-             'passkey where the realm (or the application\'s own list) ' +
-             'accepts a passkey as a second factor, or a second factor is ' +
-             'required of them (stsMfaRequired, the authentication ' +
-             'policy). An APP ' +
-             'PASSWORD ' +
-             'they made on /portal/app-passwords, scoped to the door, is ' +
-             'accepted instead. authn.passwordAloneDoors names doors that ' +
+             'passkey where the realm (or the authentication policy the ' +
+             'application names) accepts a passkey as a second factor, or ' +
+             'a second factor is required of them (stsMfaRequired, the ' +
+             'authentication policy). An APP PASSWORD they made on ' +
+             '/portal/app-passwords, scoped to the door, is accepted ' +
+             'instead. authn.passwordAloneDoors names doors that ' +
              'accept the password anyway, which lowers every such person to ' +
              'one factor there.',
     where: 'common/credentials.ts, common/app_passwords.ts' },
@@ -2535,10 +2534,10 @@ const REQUIREMENTS = [
              'after the password verified (a wrong one is still ' +
              'KDC_ERR_PREAUTH_FAILED), whenever the person holds an ' +
              'authenticator app or any passkey where the realm (or the ' +
-             'application\'s own list) accepts a passkey as a second ' +
-             'factor, or a second factor is required of them. A person ' +
-             'with an ' +
-             'authenticator app gets a ticket through RFC 6113 FAST armor ' +
+             'authentication policy the application names) accepts a ' +
+             'passkey as a second factor, or a second factor is required ' +
+             'of them. A person with an authenticator app gets a ticket ' +
+             'through RFC 6113 FAST armor ' +
              'with RFC 6560 OTP pre-authentication — password and code in ' +
              'one exchange — and it carries the RFC 8129 indicator `otp`. An ' +
              'app password is never a Kerberos key.',
@@ -3165,34 +3164,6 @@ const REQUIREMENTS = [
              'invalid_resource_server (STS-GNAP-0902), before the entry is ' +
              'sighted again or anything is issued.',
     where: 'gnap/gnap_grants.ts' },
-  { id: 'unregistered-resource-targets',
-    what: 'An RFC 8707 resource and a GNAP right\'s locations name a ' +
-          'registered target (#505)',
-    development: 'Any absolute URI is accepted as a resource at the ' +
-                 'authorization, PAR and token endpoints and becomes the ' +
-                 'token\'s aud; a GNAP location that names no resource ' +
-                 'server is left out of the token\'s audience and the ' +
-                 'right is granted, while something else in the token ' +
-                 'names one — a token whose access names none is refused ' +
-                 'invalid_request in every mode (STS-GNAP-0904).',
-    product: 'A resource (outside a token exchange, whose targets are the ' +
-             'policy\'s unregistered-target) and every location of a GNAP ' +
-             'access right must name a registered target: one of this ' +
-             'service\'s own resource servers (the default resource ' +
-             'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; /account-api; /report-api) ' +
-             'or an application registered ahead of time (appRegisteredBy ' +
-             'set — a sighting is not a registration), by its ' +
-             'oauthAudience, permission base URI, client_id or identifier ' +
-             '— the embedded debugger\'s api is one, seeded registered. A ' +
-             'GNAP location at or under a registered resource server\'s ' +
-             'gnapResourceServerUri names it too. Otherwise invalid_target: ' +
-             'redirected from the authorization endpoint and 400 at PAR ' +
-             '(STS-OAUTH-0950), 400 at the token endpoint before anything ' +
-             'is spent (STS-OAUTH-0951); for GNAP the request is refused ' +
-             'invalid_request (STS-GNAP-0903), not the right dropped.',
-    where: 'common/registered_targets.ts, oauth-oidc/oauth2.ts, ' +
-           'gnap/gnap_grants.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +

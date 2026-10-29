@@ -66,6 +66,13 @@ application entry declares it in `oauthAllowedScope`, and only
 manage a person's own account, declare the scope on that application. It
 then signs the person in the same way.
 
+The API itself is represented in every realm by the application
+**`sts-account-api`**, which holds the audience a token for it names. It is an
+OAuth 2.0 resource and never a client: its client_id is refused at the
+authorization and token endpoints (`STS-OAUTH-0985`). The seeded machine
+client `sts-api-client` does not call this API, because every operation acts
+on a signed-in person and a client-credentials token has none.
+
 ## The document
 
 The OpenAPI 3.1 document is built from the same table that registers the

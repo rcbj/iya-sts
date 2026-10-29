@@ -230,7 +230,7 @@ draws it with a description of every field.
 | Who may start a sign-in (#426; [Identity-provider-initiated sign-in](idp-initiated-sso.md)) | `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso` (each TRUE or FALSE, overriding the realm setting of the same name; identity-provider-initiated is off by default), `oauthInitiateLoginUri` (OpenID Connect Core section 4's `initiate_login_uri`; https, no fragment), `appLaunchProtocol` (`saml2`, `saml11`, `wsfed` or `oidc`: what `/launch/{app}` starts when the link names none) |
 | Kerberos service | `krb5ServicePrincipalName`, `krb5ServiceKeys` (**sealed**), `krb5ServiceKeyInfo` |
 | Delegation (#108, #186; [Delegation and impersonation](delegation.md)) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSemantics`, `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`, `appNotDelegated`, `appMayAct`, and for a Kerberos service `krb5TrustedForDelegation` |
-| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnMechanism`, `appMfaMechanism` |
+| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnPolicy` (the [named authentication policy](authentication.md#named-authentication-policies) it signs in under; it replaced `appAuthnMechanism` and `appMfaMechanism`) |
 | Certificate enrollment | `appEnrolledCertificate`, `appEnrolledPrivateKey`, `appAcmeEabKey`, `appScepChallenge`, `appCertificateHostName` |
 | GNAP | `gnapInstanceId`, `gnapClassId`, `gnapKey`, `gnapKeyIdentity`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey` (**withheld**), `gnapSymmetricAlg`, `gnapDisplayUri`, `gnapLogoUri`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapResourceServerUri`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapMacaroonKey`, `gnapScopedSignals` |
 | Links to other registries | `oid4vpClientId`, `federationPartnerId`, `appFederationRelationship`, `appFederationAutoRedirect`, `ldapBindDn`, `scimClientId`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `spiffeWorkloadId` |
@@ -276,7 +276,7 @@ no object class and gains one on its next save.
 (`appRequiredRole` on an application). Which of an application's permissions need a role at all is
 `oauthRoleGatedPermission` on the resource application. Every realm is seeded with two roles, `ADMIN_READ` and
 `ADMIN_WRITE`, which authorize `admin:read` and `admin:write`. Their groups come from `admin.readGroup` and
-`admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. A third seeded role,
+`admin.writeGroup` and are not stored on the entry; `sts-api-client` is a member of both. A third seeded role,
 `DEVICE_COMPLIANCE`, authorizes `device:compliance` and has no members until the MDM feed's application is added
 (#309). A fourth, `ADMIN_CONSOLE`, authorizes `admin:console` and has no members either: it is conferred by the
 console's client, `sts-admin-console`, on everybody who signs in to the console (#454). Two more, `SSF_READ` and

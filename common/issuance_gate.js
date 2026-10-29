@@ -464,10 +464,12 @@ function deviceBoundFactOf(asked) {
 
 // ---------------------------------------------------------------------------
 // THE SIGN-IN MECHANISM FACTS OF A BROWSER ISSUANCE (#457): the mechanisms
-// the named application allows (`appAuthnMechanism`) and those the person's
-// authentication satisfies, or null when there is nothing to compare — no
-// application, one that allows every mechanism, or an issuance that is not a
-// browser sign-in (rcbj: browser-based authentication only).
+// the named application allows (the first-factor list of the authentication
+// policy it names, `appAuthnPolicy`, since #1148; its own `appAuthnMechanism`
+// until then) and those the person's authentication satisfies, or null
+// when there is nothing to compare — no application, one that allows every
+// mechanism, or an issuance that is not a browser sign-in (rcbj:
+// browser-based authentication only).
 //
 // A BROWSER ISSUANCE is one of four: a session started at a sign-in door,
 // which names the event it is about to record (`authenticationEvent`); and
@@ -557,12 +559,14 @@ function mechanismFactsOf(asked) {
 
 // ---------------------------------------------------------------------------
 // THE SECOND-FACTOR FACTS OF A BROWSER ISSUANCE (#475): the second factors
-// the named application allows (`appMfaMechanism`) and those the person's
-// authentication gave, or null when there is nothing to compare — for
-// mechanismFactsOf()'s reasons, on the same four browser kinds, and also
-// when the authentication gave no second factor at all: the list says which
-// second factors, never whether one is needed (rcbj), so a session on one
-// factor is not this rule's to deny. Never throws: a registry that cannot
+// the named application allows (the second-factor list of the
+// authentication policy it names, `appAuthnPolicy`, since #1148; its own
+// `appMfaMechanism` until then) and those the person's authentication
+// gave, or null when there is nothing to compare — for mechanismFactsOf()'s
+// reasons, on the same four browser kinds, and also when the authentication
+// gave no second factor at all: the list says which second factors, never
+// whether one is needed (rcbj), so a session on one factor is not this
+// rule's to deny. Never throws: a registry that cannot
 // be read allows whatever the realm allows.
 // ---------------------------------------------------------------------------
 /**

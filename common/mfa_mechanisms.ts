@@ -9,16 +9,19 @@
 // WHICH SECOND FACTORS A SESSION HAS GIVEN, AND WHICH AN APPLICATION ALLOWS
 // (#475, 2026-10-07).
 //
-// `appMfaMechanism` on an application entry is the list of the second
-// factors its people may use — the authentication policy's second-factor
-// mechanisms (`common/authn_policy.ts`'s MECHANISMS, the ones that can take
-// that role): password, securityKey, totp, recoveryCode, emailCode,
-// emailLink, wallet. `securityKey` names EVERY passkey the person holds
-// alike since #1135 (until then, a key enrolled in the `mfa` role): a key
-// has no role, and this list, over the realm's policy, decides whether any
-// key may answer the second step for this application. None listed leaves
-// the realm's policy as it is. It is
-// `appAuthnMechanism`'s (#457) companion, and its four rules are rcbj's
+// The list of the second factors an application's people may use was
+// `appMfaMechanism` on its entry until #1148, and is since then the
+// second-factor list (`stsAuthnPolicySecondFactor`) of the NAMED
+// AUTHENTICATION POLICY the entry names (`appAuthnPolicy`) — the
+// authentication policy's second-factor mechanisms
+// (`common/authn_policy.ts`'s MECHANISMS, the ones that can take that role):
+// password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet.
+// `securityKey` names EVERY passkey the person holds alike since #1135
+// (until then, a key enrolled in the `mfa` role): a key has no role, and
+// this list, over the realm's policy, decides whether any key may answer
+// the second step for this application. None listed leaves the realm's
+// policy as it is. It is the first-factor list's (#457,
+// `appAuthnMechanism` until #1148) companion, and its four rules are rcbj's
 // (2026-10-07):
 //
 //   * **NARROW ONLY.** The list is read beside the realm's authentication
@@ -180,16 +183,20 @@ class MfaMechanisms {
   }
 
   /**
-   * The second factors an application entry allows, as written: none is
+   * The second factors an application allows: the second-factor list of the
+   * named authentication policy its `appAuthnPolicy` names (#1148). None is
    * whatever the realm allows. A value no mechanism has is kept, so a
-   * misspelt list allows nothing rather than everything.
+   * misspelt list — or a policy that does not exist — allows nothing rather
+   * than everything.
    *
    * @param fields - the entry's fields, or null
    * @returns the mechanism ids, each once
    */
   static allowedOf(fields: any): string[] {
     log.debug('Entering MfaMechanisms.allowedOf().');
-    const held = fields ? fields.appMfaMechanism : null;
+    // Required lazily, as `authn_mechanisms.ts` does it.
+    const held = fields
+      ? require('./authn_policy').mechanismsFor(fields).secondFactors : null;
     const out: string[] = [];
     [].concat(held === undefined || held === null ? [] : held)
       .forEach(function (one: any) {

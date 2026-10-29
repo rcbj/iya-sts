@@ -266,7 +266,7 @@ development-mode instance on a public address.
 **`/admin-api` requires an OAuth 2.0 access token** —
 audienced to this API, carrying `admin:read` to read and `admin:write` to
 change anything. Ask the token endpoint for one with the client-credentials
-grant as the seeded `sts-management-api` client, whose secret is
+grant as the seeded client `sts-api-client`, whose secret is
 `adminApi.clientSecret`, and send `resource=<base>/admin-api` so the audience is
 right. On the compose stack that secret is kept in OpenBao and is for the
 first token only; after that, use an application of your own that holds the

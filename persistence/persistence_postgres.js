@@ -8728,7 +8728,12 @@ function create(options) {
     // A version begun: its row in `loading`, or false when that version of
     // that dataset is already recorded — a second node importing the same
     // file, or the same file seen again, loads nothing twice.
-    riskBeginVersion: function (v) {
+    // With `reloadDeleted` (#1155, an administrator's door) a version whose
+    // record is `deleted` is begun again in the same statement: the conflict
+    // updates that row — new provenance, `loading`, every later stamp and
+    // count cleared — and only when it is `deleted`, so any other state
+    // still returns no row and reads as "already recorded".
+    riskBeginVersion: function (v, reloadDeleted) {
       log.debug("Entering riskBeginVersion(). " + v.dataset + " " +
                 v.version);
       log.debug("Leaving riskBeginVersion().");
@@ -8738,7 +8743,21 @@ function create(options) {
         'sha256, byte_count, parameters, verification, published_at, ' +
         'next_update_at, fetched_at, state, origin) VALUES ($1, $2, $3, $4, ' +
         '$5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, ' +
-        '\'loading\', $17) ON CONFLICT (realm, dataset, version) DO NOTHING ' +
+        '\'loading\', $17) ON CONFLICT (realm, dataset, version) ' +
+        (reloadDeleted
+          ? 'DO UPDATE SET format = EXCLUDED.format, provider = ' +
+            'EXCLUDED.provider, licence = EXCLUDED.licence, attribution = ' +
+            'EXCLUDED.attribution, source = EXCLUDED.source, source_uri = ' +
+            'EXCLUDED.source_uri, sha256 = EXCLUDED.sha256, byte_count = ' +
+            'EXCLUDED.byte_count, parameters = EXCLUDED.parameters, ' +
+            'verification = EXCLUDED.verification, published_at = ' +
+            'EXCLUDED.published_at, next_update_at = EXCLUDED.next_update_at, ' +
+            'fetched_at = EXCLUDED.fetched_at, state = \'loading\', ' +
+            'origin = EXCLUDED.origin, row_count = 0, loaded_at = 0, ' +
+            'activated_at = 0, superseded_at = 0, rows_deleted_at = 0, ' +
+            'refusal = \'\', error_code = \'\' ' +
+            'WHERE sts_risk_dataset_versions.state = \'deleted\' '
+          : 'DO NOTHING ') +
         'RETURNING version',
         [v.realm || '', v.dataset, v.version, v.format, v.provider,
          v.licence, v.attribution || '', v.source, v.sourceUri || '',
@@ -8990,6 +9009,47 @@ function create(options) {
         params
       ).then(function (r) {
         return r.rowCount || 0;
+      });
+    },
+
+    // -------------------------------------------------------------------------
+    // THE ACTIVE VERSION REMOVED (#1152). In one transaction, and only while
+    // `version` is still the dataset's active one: the dataset is left with
+    // no active version and state `empty` (its previous_version kept, which
+    // is what Roll back offers), the version becomes `superseded` so its rows
+    // may be deleted, and a `risk-dataset` change row tells every other
+    // process to drop what it cached, as riskActivate does.
+    // -------------------------------------------------------------------------
+    riskDeactivate: function (realm, dataset, version, now) {
+      log.debug("Entering riskDeactivate(). " + dataset + " " + version);
+      const r0 = String(realm || '');
+      log.debug("Leaving riskDeactivate().");
+      return withTransaction(function (client) {
+        return client.query(
+          'SELECT active_version FROM sts_risk_datasets WHERE realm = $1 ' +
+          'AND dataset = $2 FOR UPDATE', [r0, dataset]
+        ).then(function (d) {
+          const active = d.rows[0] ? d.rows[0].active_version : '';
+          if (!active || active !== version) {
+            return { deactivated: false };
+          }
+          return client.query(
+            'UPDATE sts_risk_datasets SET active_version = \'\', ' +
+            'state = \'empty\', updated_at = $3 WHERE realm = $1 AND ' +
+            'dataset = $2', [r0, dataset, Number(now)]
+          ).then(function () {
+            return client.query(
+              'UPDATE sts_risk_dataset_versions SET state = \'superseded\', ' +
+              'superseded_at = $4 WHERE realm = $1 AND dataset = $2 AND ' +
+              'version = $3 AND state = \'active\'',
+              [r0, dataset, version, Number(now)]);
+          }).then(function () {
+            return recordChanges(client, [{ kind: 'risk-dataset',
+                                            realm: r0, key: dataset }]);
+          }).then(function () {
+            return { deactivated: true };
+          });
+        });
       });
     },
 

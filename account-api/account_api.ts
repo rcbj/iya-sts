@@ -852,7 +852,9 @@ class AccountApi {
       log.debug("Leaving AccountApi.authenticate(). Undeclared.");
       this.refuse(res, 403, 'STS-ACCOUNT-0014',
         'The client this token was issued to, ' + JSON.stringify(issuedTo) +
-        ', no longer declares "' + SCOPE + '" in its oauthAllowedScope.',
+        ', no longer holds a delegated permission grant of "' + SCOPE +
+        '" (urn:sts:account-api:' +
+        SCOPE + ' on sts-account-api, #1141).',
         { error: 'forbidden' });
       return null;
     }

@@ -48,6 +48,8 @@
   "grid.delete": "Burahin ang value na ito",
   "grid.deleteN": "Burahin ang value {n} ng {attribute}",
   "grid.noValues": "walang value",
+  "grid.delegatedTip": "Idineklara ng isang delegated permission grant ng {permission} sa {api}. Hindi ito nakatago sa oauthAllowedScope at hindi maaalis dito: baguhin ang delegated permission grant sa tab na Mga permission.",
+  "grid.delegatedLink": "tab na Mga permission",
   "grid.add": "Magdagdag ng value",
   "grid.addTo": "Magdagdag ng value sa {attribute}",
   "grid.generate.tip": "Gumawa ng client secret gaya ng ginagawa ng POST /oauth2/register at ilagay ito sa box na ito. Walang isusulat hangga't hindi nagagawa ang application. Mananatili ang lahat ng iba pang na-type mo sa pahinang ito.",

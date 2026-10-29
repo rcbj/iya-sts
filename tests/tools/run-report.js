@@ -1394,7 +1394,7 @@ function chosenPorts(instance) {
 // one missing token. The coverage job in CI is where that was found.
 //
 // **THE SECRET HAS TO BE PINNED BEFORE THE SERVICE STARTS, WHICH IS WHY THIS
-// IS TWO FUNCTIONS AND NOT ONE.** `applications.js` seeds `sts-management-api`
+// IS TWO FUNCTIONS AND NOT ONE.** `applications.js` seeds `sts-api-client`
 // with a secret minted at every start, readable only THROUGH the API it
 // unlocks — so a secret chosen after the child is up is a secret nobody can
 // use. `adminApi.clientSecret` exists for exactly this, and its environment

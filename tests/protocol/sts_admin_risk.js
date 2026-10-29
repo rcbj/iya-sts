@@ -25,7 +25,9 @@
 //      balancer in the `cluster` mode, so a version activated on one node is
 //      answered by BOTH, which is the `risk-dataset` change row at work;
 //   5. RULE 7: an unknown action is refused in the sentence the API's own
-//      tests parse, and a superseded version's rows can be deleted;
+//      tests parse, and a superseded version's rows can be deleted — and,
+//      since #1152, the active one's, which unloads the dataset, and since
+//      #1155 an administrator imports the removed version again;
 //   5b. TERMS: every provider is listed with its terms; accepting FireHOL's
 //      through the API is recorded, GeoLite2's cannot be, and a FireHOL list
 //      then imports (the second licence review on #62);
@@ -322,9 +324,9 @@ async function ruleSeven() {
         function () {
           assert.strictEqual(unknown.status, 400, unknown.text.slice(0, 300));
           assert.strictEqual(unknown.body.errors[0],
-                             'Unknown action "explode". The 6 are: import, ' +
-                             'activate, rollback, delete, accept-terms, ' +
-                             'upload.');
+                             'Unknown action "explode". The 7 are: import, ' +
+                             'activate, rollback, delete, reload, ' +
+                             'accept-terms, upload.');
         });
   const deleted = await api("POST", "/admin-api/risk/delete", {
     dataset: DATASET, realm: REALM, version: "run-" + STAMP + "-b" });
@@ -333,6 +335,57 @@ async function ruleSeven() {
           assert.strictEqual(deleted.status, 200, deleted.text.slice(0, 300));
           assert.strictEqual(deleted.body.rows, 5, deleted.text);
         });
+  // REMOVE ON THE ACTIVE VERSION (#1152): version a is unloaded — the
+  // dataset has no active version afterwards, on every node, and its record
+  // stays. putBack() restores whatever was active before this job.
+  const removed = await api("POST", "/admin-api/risk/delete", {
+    dataset: DATASET, realm: REALM, version: "run-" + STAMP + "-a" });
+  check("the ACTIVE version is removed: its rows go and it is unloaded",
+        function () {
+          assert.strictEqual(removed.status, 200, removed.text.slice(0, 300));
+          assert.strictEqual(removed.body.unloaded, true, removed.text);
+        });
+  for (let i = 0; i < 4; i++) {
+    await until("every node to stop reading the removed version",
+                async function () {
+      const v = await lookup("198.18.22.1");
+      return denyVersionIn(v) === "" ? v : null;
+    });
+  }
+  const view = await api("GET", "/admin-api/risk");
+  const row = (view.body.datasets || []).filter(function (d) {
+    return d.dataset === DATASET;
+  })[0] || {};
+  const record = (row.versions || []).filter(function (v) {
+    return v.version === "run-" + STAMP + "-a";
+  })[0] || {};
+  check("and the dataset has no active version, nothing activated in its " +
+        "place, the version's record kept as deleted", function () {
+    assert.strictEqual(row.state, "empty", JSON.stringify(row).slice(0, 300));
+    assert.strictEqual(row.activeVersion, "",
+                       JSON.stringify(row.activeVersion));
+    assert.strictEqual(record.state, "deleted", JSON.stringify(record));
+  });
+  // UPLOADED AGAIN (#1155): the administrator's import of the removed
+  // version loads it once more — the postgres driver's ON CONFLICT DO
+  // UPDATE … WHERE state = 'deleted' — and every node reads it again.
+  const again = await api("POST", "/admin-api/risk/import", {
+    dataset: DATASET, realm: REALM, format: "ip-list", content: listOf(10),
+    version: "run-" + STAMP + "-a" });
+  check("the removed version imported again by an administrator is loaded " +
+        "and active", function () {
+          assert.strictEqual(again.status, 200, again.text.slice(0, 400));
+          assert.ok(!again.body.duplicate, again.text.slice(0, 400));
+          assert.strictEqual(again.body.rows, 5, again.text.slice(0, 400));
+          assert.strictEqual(again.body.activated, true);
+        });
+  for (let i = 0; i < 4; i++) {
+    await until("every node to read the reloaded version", async function () {
+      const v = await lookup("198.18.12.34");
+      return denyVersionIn(v) === "run-" + STAMP + "-a" ? v : null;
+    });
+  }
+  check("and every node reads it again", function () {});
   log.debug("Leaving ruleSeven().");
 }
 

@@ -485,9 +485,12 @@ function childMain() {
       }
 
       // --- E. the mechanism re-prompt, once ---------------------------------
+      // The mechanisms are a named authentication policy's (#1148).
+      require(ROOT + '/common/authn_policy').saveNamed('si-wallet-only',
+        { mechanisms: ['wallet'] });
       const spMech = party('mech', 'saml2-service-provider',
                            { saml2IdpInitiatedSso: 'TRUE',
-                             appAuthnMechanism: ['wallet'] });
+                             appAuthnPolicy: 'si-wallet-only' });
       r = await request('GET', unsolicited(spMech), alice.cookie);
       note(r.status === 303 && r.code === 'STS-SAML-0099',
            'E1. a session on a mechanism the service provider does not ' +

@@ -57,6 +57,8 @@ type Json = any;
 const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskInsertRows', 'riskFinishVersion', 'riskActivate',
                     'riskDeleteRows', 'riskMarkRowsDeleted', 'riskLookupRange',
+                    // #1152: the active version removed.
+                    'riskDeactivate',
                     'riskRecordFailure', 'riskListFailures',
                     'riskPurgeFailures', 'riskFeatureCounts',
                     'riskDistinctValues', 'riskIncrementCounts',
@@ -516,19 +518,26 @@ class RiskStore {
   /**
    * Records a new version as `loading`.
    *
+   * With `reloadDeleted` (#1155, an administrator's door only) a version
+   * whose record is `deleted` is begun again: the record is reused, its
+   * provenance replaced and its state back to `loading`. Any other state
+   * is still "already recorded".
    * @param v - the version's realm, dataset, version and provenance
+   * @param opts - `{ reloadDeleted }`
    * @returns false when that version already exists
    */
-  beginVersion(v: Json): Promise<boolean> {
+  beginVersion(v: Json, opts?: Json): Promise<boolean> {
     const { log } = this.deps;
     log.debug("Entering RiskStore.beginVersion(). " + v.dataset + " " +
               v.version);
+    const reload = !!(opts && opts.reloadDeleted);
     if (this.driver) {
       log.debug("Leaving RiskStore.beginVersion(). Database.");
-      return Promise.resolve(this.driver.riskBeginVersion(v));
+      return Promise.resolve(this.driver.riskBeginVersion(v, reload));
     }
     const k = RiskStore.key(v.realm, v.dataset, v.version);
-    if (this.versions.has(k)) {
+    const held = this.versions.get(k);
+    if (held && !(reload && held.state === 'deleted')) {
       log.debug("Leaving RiskStore.beginVersion(). Already recorded.");
       return Promise.resolve(false);
     }
@@ -773,6 +782,55 @@ class RiskStore {
                             updatedAt: now });
     log.debug("Leaving RiskStore.activate(). Memory.");
     return Promise.resolve(done({ activated: true, previous: previous }));
+  }
+
+  /**
+   * Unloads a dataset's ACTIVE version (#1152): the dataset is left with no
+   * active version (`empty`), the version becomes `superseded` so its rows
+   * can be deleted and it marked `deleted`, and the listeners are told, so
+   * no reader goes on answering from it. The version the removed one
+   * replaced stays the dataset's `previousVersion`, which is what Roll back
+   * offers.
+   *
+   * @param realm - the realm
+   * @param dataset - the dataset
+   * @param version - the version, which must be the active one
+   * @param now - when
+   * @returns `{ deactivated: true }`, or `{ deactivated: false }` when that
+   *   version is not the active one
+   */
+  deactivate(realm: string, dataset: string, version: string,
+             now: number): Promise<Json> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering RiskStore.deactivate(). " + dataset + " " + version);
+    const done = function (answer: Json): Json {
+      if (answer && answer.deactivated) {
+        self.noteActivated(realm, dataset);
+      }
+      return answer;
+    };
+    if (this.driver) {
+      log.debug("Leaving RiskStore.deactivate(). Database.");
+      return Promise.resolve(this.driver.riskDeactivate(realm, dataset,
+                                                         version, now))
+        .then(done);
+    }
+    const current = this.datasets.get(RiskStore.key(realm, dataset));
+    if (!current || current.activeVersion !== version) {
+      log.debug("Leaving RiskStore.deactivate(). Not the active version.");
+      return Promise.resolve({ deactivated: false });
+    }
+    current.activeVersion = '';
+    current.state = 'empty';
+    current.updatedAt = now;
+    const row = this.versions.get(RiskStore.key(realm, dataset, version));
+    if (row && row.state === 'active') {
+      row.state = 'superseded';
+      row.supersededAt = now;
+    }
+    log.debug("Leaving RiskStore.deactivate(). Memory.");
+    return Promise.resolve(done({ deactivated: true }));
   }
 
   /**
@@ -2038,6 +2096,7 @@ export = {
   activate: slot.forward('activate'),
   deleteRows: slot.forward('deleteRows'),
   markRowsDeleted: slot.forward('markRowsDeleted'),
+  deactivate: slot.forward('deactivate'),
   lookupRange: slot.forward('lookupRange'),
   lookupFido: slot.forward('lookupFido'),
   failuresInDatabase: slot.forward('failuresInDatabase'),

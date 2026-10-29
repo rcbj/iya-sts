@@ -18,7 +18,7 @@
 // In a CHILD PROCESS with the whole stack on an ephemeral port, one person
 // holding Admin Write, and two tokens minted as the token endpoint mints
 // them — the person's, issued to `sts-admin-console`, and a
-// `client_credentials` one for `sts-management-api`:
+// `client_credentials` one for `sts-api-client`:
 //
 //   1. a read with the person's token: the HTTP row names the person;
 //   2. a write whose action reads `body.actor` (a group create): the HTTP
@@ -129,7 +129,7 @@ function childMain() {
     const WRITER = 'aa-writer-' + stamp;
     const OTHER = 'aa-other-' + stamp;
     const FALSE_NAME = 'aa-named-by-the-caller-' + stamp;
-    const CLIENT = 'sts-management-api';
+    const CLIENT = 'sts-api-client';
     ldap.createUser(WRITER, { invent: false });
     const inDefault = function (fn) {
       return realms.run(realms.DEFAULT_REALM, fn);

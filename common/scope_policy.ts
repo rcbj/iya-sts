@@ -32,7 +32,10 @@
 //     embedded debugger's permission, Grant Management's two (#142), the
 //     VC-API test endpoints' two (#194) and the device compliance feed's
 //     `device:compliance` (#164). Issued ONLY to a client whose
-//     `oauthAllowedScope` lists them — for a Shared Signals name, names
+//     `oauthAllowedScope` lists them — except the management, account and
+//     reports APIs' words, which since #1141 a client holds by a delegated
+//     permission grant on the API's object instead (*The scopes a delegated
+//     permission grant declares*, below) — for a Shared Signals name, names
 //     granting every permission it grants, write including read — IN BOTH
 //     MODES: the resource servers behind them are this service's own,
 //     development already gates them, and
@@ -43,8 +46,9 @@
 //   * A SCOPE NAMING AN APPLICATION OR A DELEGATED PERMISSION — the audience
 //     rule and `oauthDelegatedPermission` (`oauth2.ts`'s `audienceScopes()`,
 //     `permissionRefusal()`). They keep their own rules and are never judged
-//     here: a grant IS the declaration for a permission, and a scope that is
-//     another application's client_id is an audience, not a privilege.
+//     here: a delegated permission grant IS the declaration for a
+//     permission, and a scope that is another application's client_id is an
+//     audience, not a privilege.
 //   * EVERY OTHER SCOPE — held to the declaration in PRODUCT only
 //     (`mode.grantsUndeclaredScopes()`). A client whose list names it gets it;
 //     a client with no list at all gets the documented DEFAULT: OpenID Connect
@@ -353,20 +357,97 @@ class ScopePolicy {
     return answer;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SCOPES A DELEGATED PERMISSION GRANT DECLARES (#1141, 2026-10-29).
+  // "Grant" here is always that and never RFC 6749's authorization grant,
+  // Grant Management's or GNAP's (rcbj, 2026-10-29). For this service's own
+  // three APIs — `/admin-api`, `/account-api`, `/report-api` — the client's
+  // half of "may it ask for this scope" is a DELEGATED PERMISSION GRANT on the
+  // API's resource object (rcbj's decision on #1141), and not the
+  // registration's `oauthAllowedScope`: `applications.js`'s `API_PERMISSIONS`
+  // is the vocabulary, `oauthDelegatedPermission` on the client the
+  // delegated permission grant. Listing one of these words in
+  // `oauthAllowedScope` no longer declares it — `declaredScopes()` takes them
+  // off — so the delegated permission grant is the one way. The
+  // permission must still be DEFINED by that API's own object (an operator
+  // entry defining `urn:sts:admin-api:admin:read` does not stand in for it),
+  // and roles still decide whether the subject holds the right.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the API whose object defines a scope as a delegated permission,
+   * or '' for a scope no delegated permission grant governs.
+   *
+   * @param scope - a scope word
+   * @returns the resource object's identifier, or ''
+   */
+  delegatedPermissionApiOf(scope: string): string {
+    const { log, applications } = this.deps;
+    log.debug("Entering ScopePolicy.delegatedPermissionApiOf().");
+    const name = String(scope == null ? '' : scope);
+    const table = applications.API_PERMISSIONS;
+    const api = Object.keys(table).filter(function (one: string) {
+      return table[one].permissions.some(function (row: string[]) {
+        return row[0] === name;
+      });
+    })[0] || '';
+    log.debug("Leaving ScopePolicy.delegatedPermissionApiOf(). " +
+              (api || 'None.'));
+    return api;
+  }
+
+  /**
+   * Returns the scopes a client holds a delegated permission grant of
+   * (#1141): each permission its `oauthDelegatedPermission` names that the
+   * API's own object defines.
+   *
+   * @param clientId - the client_id
+   * @returns the scope words
+   */
+  delegatedPermissionScopes(clientId: unknown): string[] {
+    const { log, applications } = this.deps;
+    log.debug("Entering ScopePolicy.delegatedPermissionScopes().");
+    const who = String(clientId == null ? '' : clientId).trim();
+    const out: string[] = [];
+    if (!who) {
+      log.debug("Leaving ScopePolicy.delegatedPermissionScopes(). No client.");
+      return out;
+    }
+    const table = applications.API_PERMISSIONS;
+    Object.keys(table).forEach(function (api: string) {
+      table[api].permissions.forEach(function (row: string[]) {
+        const id = table[api].base + row[0];
+        const defined = applications.forPermission(id);
+        if (defined && defined.identifier === api &&
+            applications.holdsPermission(who, id) &&
+            out.indexOf(row[0]) < 0) {
+          out.push(row[0]);
+        }
+      });
+    });
+    log.debug("Leaving ScopePolicy.delegatedPermissionScopes(). " +
+              out.length + ".");
+    return out;
+  }
+
   // The client's declared list, or null when it declares none.
   /**
    * Returns a client's declared scopes (`oauthAllowedScope`) in the ambient
-   * realm.
+   * realm, less the words a delegated permission grant declares instead
+   * (#1141).
    *
    * @param clientId - the client_id
    * @returns the declared list, or null when the client declares none
    */
   declaredScopes(clientId: unknown): string[] | null {
     const { log, applications } = this.deps;
+    const self = this;
     log.debug("Entering ScopePolicy.declaredScopes().");
     const held = applications.allowedScopesOf(clientId);
+    const out = held ? held.filter(function (one: string) {
+      return !self.delegatedPermissionApiOf(one);
+    }) : held;
     log.debug("Leaving ScopePolicy.declaredScopes().");
-    return held;
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -388,8 +469,16 @@ class ScopePolicy {
   declares(clientId: unknown, scope: string): boolean {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.declares().");
-    const held = this.declaredScopes(clientId);
     const name = String(scope);
+    // A word a delegated permission grant governs (#1141): that grant, and
+    // nothing else.
+    if (this.delegatedPermissionApiOf(name)) {
+      const held = this.delegatedPermissionScopes(clientId).indexOf(name) >= 0;
+      log.debug("Leaving ScopePolicy.declares(). " + held + " (a " +
+                "delegated permission grant).");
+      return held;
+    }
+    const held = this.declaredScopes(clientId);
     // An exact listing, or — for a Shared Signals name — declared names
     // granting every permission it grants, write including read (#334).
     // Other scopes stay an exact match.
@@ -484,8 +573,9 @@ class ScopePolicy {
           scopeVerdicts.resourceFact(A.SCOPE_PROTECTED,
                                      protectedNames.indexOf(one) >= 0),
           scopeVerdicts.resourceFact(A.SCOPE_DECLARED,
-            !!declared && (declared.indexOf(one) >= 0 ||
-              ssfScopes.declarationCovers(declared, one))),
+            self.delegatedPermissionApiOf(one) ? self.declares(clientId, one)
+              : (!!declared && (declared.indexOf(one) >= 0 ||
+                 ssfScopes.declarationCovers(declared, one)))),
           scopeVerdicts.resourceFact(A.SCOPE_NAMES_PARTY,
                                      self.namesAnotherParty(one)),
           scopeVerdicts.resourceFact(A.SCOPE_IN_DEFAULTS,
@@ -574,8 +664,12 @@ class ScopePolicy {
           (judged.protectedRefused.length === 1 ? 'scope' : 'scopes') +
           ', issued in every mode only to a client that declares ' +
           (judged.protectedRefused.length === 1 ? 'it' : 'them') + ', and ' +
-          client + ' does not.' + where + ' A dynamic registration cannot ' +
-          'declare one; an administrator does.' };
+          client + ' does not.' + where + ' An admin, owner, account or ' +
+          'report scope is declared instead by a delegated permission ' +
+          'grant on that API\'s object — urn:sts:admin-api:, ' +
+          'urn:sts:account-api: or urn:sts:report-api: followed by the ' +
+          'scope (POST /admin-api/permissions/grant-permission, #1141). A ' +
+          'dynamic registration cannot declare one; an administrator does.' };
     }
     if (judged.nativeSsoRefused.length) {
       log.debug("Leaving ScopePolicy.refusal(). Native SSO.");
@@ -796,6 +890,8 @@ export = {
   isProtected: slot.forward('isProtected'),
   declaredScopes: slot.forward('declaredScopes'),
   declares: slot.forward('declares'),
+  delegatedPermissionApiOf: slot.forward('delegatedPermissionApiOf'),
+  delegatedPermissionScopes: slot.forward('delegatedPermissionScopes'),
   defaultScopes: slot.forward('defaultScopes'),
   judge: slot.forward('judge'),
   refusal: slot.forward('refusal'),

@@ -236,8 +236,8 @@
     "text": "LDAP 简单绑定、WS-Security UsernameToken、SCIM 和 SSF HTTP Basic 以及 EST Basic 会接受密码，就像它们接受每个密码一样；登录屏幕仍会要求第二因素。"
   },
   "mode.requirements.second-factor-doors.product": {
-    "en": "c06e9e3a02393490",
-    "text": "只要此人持有身份验证器应用或 任何通行密钥（在本领域或应用自己的列表接受通行密钥作为第二因素的情况下），或者被要求提供第二因素（stsMfaRequired、身份验证策略），在这五个入口，此人自己的密码就会被拒绝——应答方式与密码错误完全相同，并且同样计入速率限制（STS-AUTHN-0213 仅出现在审计行和日志中）。改为接受他在 /portal/app-passwords 上创建的、限定于该入口的应用密码。authn.passwordAloneDoors 指定无论如何都接受密码的入口，这会让每个此类人员在那里降为单一因素。"
+    "en": "a4d4c20c45b2d573",
+    "text": "只要此人持有身份验证器应用或 任何通行密钥（在本领域或应用所指定的身份验证策略接受通行密钥作为第二因素的情况下），或者被要求提供第二因素（stsMfaRequired、身份验证策略），在这五个入口，此人自己的密码就会被拒绝——应答方式与密码错误完全相同，并且同样计入速率限制（STS-AUTHN-0213 仅出现在审计行和日志中）。改为接受他在 /portal/app-passwords 上创建的、限定于该入口的应用密码。authn.passwordAloneDoors 指定无论如何都接受密码的入口，这会让每个此类人员在那里降为单一因素。"
   },
   "mode.requirements.kerberos-sid-filtering.what": {
     "en": "e3950aa2a75faaec",
@@ -260,8 +260,8 @@
     "text": "KDC 会向仅凭密码预身份验证（PA-ENC-TIMESTAMP，或 FAST 的 PA-ENCRYPTED-CHALLENGE）的 AS-REQ 签发 TGT，就像它接受每个密码一样。"
   },
   "mode.requirements.kerberos-second-factor.product": {
-    "en": "a1e60b4ee5cac599",
-    "text": "只要此人持有身份验证器应用或 任何通行密钥（在本领域或应用自己的列表接受通行密钥作为第二因素的情况下），或者被要求提供第二因素，该 AS-REQ 就会在密码验证通过后以 KDC_ERR_POLICY（12）、STS-KRB-0135 被拒绝（错误的密码仍然是 KDC_ERR_PREAUTH_FAILED）。持有身份验证器应用的人可通过 RFC 6113 FAST armor 配合 RFC 6560 OTP 预身份验证获得票据——密码和验证码在一次交换中完成——该票据带有 RFC 8129 指示符 `otp`。应用密码永远不是 Kerberos 密钥。"
+    "en": "ab8a6af4d276b0bc",
+    "text": "只要此人持有身份验证器应用或 任何通行密钥（在本领域或应用所指定的身份验证策略接受通行密钥作为第二因素的情况下），或者被要求提供第二因素，该 AS-REQ 就会在密码验证通过后以 KDC_ERR_POLICY（12）、STS-KRB-0135 被拒绝（错误的密码仍然是 KDC_ERR_PREAUTH_FAILED）。持有身份验证器应用的人可通过 RFC 6113 FAST armor 配合 RFC 6560 OTP 预身份验证获得票据——密码和验证码在一次交换中完成——该票据带有 RFC 8129 指示符 `otp`。应用密码永远不是 Kerberos 密钥。"
   },
   "mode.requirements.recovery-assurance.what": {
     "en": "3c8ef817d4ad4971",
@@ -742,18 +742,6 @@
   "mode.requirements.unregistered-gnap-clients.product": {
     "en": "43ea90ee5ea17888",
     "text": "未知密钥会被拒绝（STS-GNAP-0082），属于无人注册的条目（appRegisteredBy 未设置——首次观察时创建的条目不等于注册）的密钥或实例标识符也会被拒绝：返回 401 invalid_client 或 invalid_resource_server（STS-GNAP-0902），且在条目再次被观察或签发任何内容之前拒绝。"
-  },
-  "mode.requirements.unregistered-resource-targets.what": {
-    "en": "c9e70b1944bd9dca",
-    "text": "RFC 8707 资源和 GNAP 权限的位置指明已注册的目标（#505）"
-  },
-  "mode.requirements.unregistered-resource-targets.development": {
-    "en": "fd6dc100e791e280",
-    "text": "在授权、PAR 和令牌端点，任何绝对 URI 都被接受为资源并成为令牌的 aud；未指明任何资源服务器的 GNAP 位置会被排除在令牌受众之外，但只要令牌中另有内容指明了资源服务器，权限照样授予——访问未指明任何资源服务器的令牌在每种模式下都以 invalid_request 拒绝（STS-GNAP-0904）。"
-  },
-  "mode.requirements.unregistered-resource-targets.product": {
-    "en": "5f6d00d42845d0e5",
-    "text": "资源（令牌交换除外，其目标由策略的 unregistered-target 决定）以及 GNAP 访问权限的每个位置，都必须指明已注册的目标：本服务自己的资源服务器之一（UserInfo、SCIM、Shared Signals 和 OpenID4VCI 接受的默认资源标识符；/admin-api；/account-api；/report-api），或预先注册的应用程序（已设置 appRegisteredBy——被发现不等于注册），通过其 oauthAudience、权限基础 URI、client_id 或标识符指明——内嵌调试器的 api 就是其一，已作为已注册种子写入。位于已注册资源服务器的 gnapResourceServerUri 处或其之下的 GNAP 位置同样指明该服务器。否则返回 invalid_target：在授权端点重定向，在 PAR 返回 400 (STS-OAUTH-0950)，在令牌端点于任何内容被消耗之前返回 400 (STS-OAUTH-0951)；对于 GNAP，请求以 invalid_request 被拒绝 (STS-GNAP-0903)，而不是丢弃该权限。"
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",

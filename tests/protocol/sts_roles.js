@@ -542,10 +542,15 @@ async function anUnconfiguredRealmRefusesNobody() {
                      row.name === "ADMIN_CONSOLE" ||
                      row.name === "SSF_READ" || row.name === "SSF_MANAGE" ||
                      row.name === "REPORT_USE" || row.name === "REPORT_ADMIN";
+      // REPORT_USE IS HELD BY THE BOOTSTRAP CLIENT (#1139): sts-api-client
+      // calls /report-api as well as /admin-api, and is seeded its one
+      // application member; it is still not a console role.
+      const machine = row.name === "REPORT_USE"
+        ? JSON.stringify(row.applications) === "[\"sts-api-client\"]"
+        : (unheld ? row.applications.length === 0
+                  : row.applications.indexOf("sts-api-client") >= 0);
       assert.ok(row.native === true && row.console === !unheld &&
-                (unheld ? row.applications.length === 0
-                        : row.applications.indexOf("sts-management-api") >=
-                          0) &&
+                machine &&
                 (row.name !== "ADMIN_CONSOLE" ||
                  (row.conferredBy || []).indexOf("sts-admin-console") >= 0) &&
                 (row.name !== "SSF_READ" ||
@@ -559,9 +564,9 @@ async function anUnconfiguredRealmRefusesNobody() {
                 row.permissions.length === 1 &&
                 row.permissions[0] === wanted[row.name],
                 "each authorizes its own native permission; the console " +
-                "roles are held by sts-management-api, and " +
-                "DEVICE_COMPLIANCE, ADMIN_CONSOLE, SSF_READ, SSF_MANAGE, " +
-                "REPORT_USE and REPORT_ADMIN by no application: " +
+                "roles and REPORT_USE are held by sts-api-client, and " +
+                "DEVICE_COMPLIANCE, ADMIN_CONSOLE, SSF_READ, SSF_MANAGE " +
+                "and REPORT_ADMIN by no application: " +
                 JSON.stringify(row));
     });
   });

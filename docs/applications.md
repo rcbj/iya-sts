@@ -191,7 +191,11 @@ startup, under `ou=applications` with everything else:
 |---|---|---|
 | `sts-admin-console` | The admin console at `/admin`: a PUBLIC client on the authorization code grant with PKCE, its tokens always DPoP-bound and audienced to the realm's `/admin-api`, redirect URI `/admin/callback` | every realm |
 | `sts-user-portal` | The user portal at `/portal`: a confidential OpenID Connect relying party on the authorization code grant, redirect URI `/portal/callback` | every realm |
-| `sts-management-api` | The [management API](management-api.md): a confidential OAuth client on `client_credentials`, with `client_secret_basic`, scope `admin:read admin:write`, and no redirect URI | every realm |
+| `sts-api-client` | The client a program calls this service's own APIs as: a confidential OAuth client on `client_credentials`, with `client_secret_basic`, scope `admin:read admin:write report:use`, no redirect URI, and a member of the `ADMIN_READ`, `ADMIN_WRITE` and `REPORT_USE` roles. It calls the [management API](management-api.md#getting-a-token) and the [reports API](reporting.md#from-another-program) | every realm |
+| `sts-management-api` | The [management API](management-api.md), `/admin-api`, as an OAuth 2.0 resource. Until 2026-10-29 this identifier was the client that `sts-api-client` is now | every realm |
+| `sts-account-api` | The [account API](account-api.md), `/account-api`, as an OAuth 2.0 resource: the user portal's only door | every realm |
+| `sts-report-api` | The [reports API](reporting.md), `/report-api`, as an OAuth 2.0 resource | every realm |
+| `sts-resource` | The default resource, `<issuer base>/resource`: the audience a token gets when its request names no `resource`, which UserInfo, SCIM, Shared Signals, OpenID4VCI and Grant Management accept | every realm |
 | `sts-debugger-api` | The [embedded protocol debugger's](admin-console.md#the-embedded-protocol-debugger) api: a resource server that defines one delegated permission, `urn:sts:debugger-api:debugger` | default realm, whether or not the debugger is embedded |
 | `sts-debugger-ui` | The embedded debugger's browser client: a relying party granted that permission | default realm, whether or not the debugger is embedded |
 
@@ -201,10 +205,62 @@ service's own authorization server: an unauthenticated request is sent to
 `/oauth2/authorize` with the entry's `client_id`, comes back to its redirect
 URI with a code, and the code is redeemed at `/oauth2/token`. The three hosted
 surfaces authenticate there with `private_key_jwt`, using a key this service
-issued them; the management API has a `client_secret`. Each entry also carries
-a registration access token, so `GET /oauth2/register/sts-admin-console`
+issued them; `sts-api-client` has a `client_secret`. Each client entry also
+carries a registration access token, so `GET /oauth2/register/sts-admin-console`
 returns the registration to whoever holds it. RFC 9700 mode checks these
 clients by the same rules as anybody else's.
+
+**`sts-management-api`, `sts-account-api`, `sts-report-api` and
+`sts-resource` are not clients.** Each represents one of this service's own
+APIs as an OAuth 2.0 resource: it holds the audience a token for that API
+names, in `oauthAudience` (the realm's base address followed by the API's
+path; the default realm's management API also holds `adminApi.audience`).
+Their kind is `oauth2-resource-server`, shown on `/admin/applications` as
+*OAuth 2.0 resource server*. They carry no secret, no grant type and no
+redirect URI, and **the authorization server refuses the client_id of an
+entry of that kind** (one that is not also an `oauth2-client`) at the
+authorization, token, PAR, introspection, revocation, device authorization
+and CIBA endpoints, in every mode, with `invalid_client` (`STS-OAUTH-0985`).
+To call one of these APIs, use a client application configured for it, such
+as `sts-api-client`, or create one of your own.
+
+**The three APIs also define their scopes, and a client holds a delegated
+permission grant of each one it may ask for.**
+`sts-management-api` defines `admin:read`, `admin:write`, `admin:console`,
+`owner:read` and `owner:write`; `sts-account-api` defines `account:manage`;
+`sts-report-api` defines `report:use` and `report:admin`. Each is a delegated
+permission under a fixed base, `urn:sts:admin-api:`, `urn:sts:account-api:`
+or `urn:sts:report-api:`, so the permission `admin:read` is
+`urn:sts:admin-api:admin:read` whatever host name the service is reached by.
+**A delegated permission grant of the permission is the client's half** of
+being issued the
+scope: listing one of these words in `oauthAllowedScope` does not declare
+it. A client still asks for the bare word with `resource` naming the API.
+The roles that authorize each scope (`ADMIN_READ`, `REPORT_USE` and the
+rest) are the subject's half, as before. (A delegated permission grant is
+configuration on the client's application entry, `oauthDelegatedPermission`;
+it is not an OAuth authorization grant or `grant_type`, and not a Grant
+Management grant.) The seeded clients hold the delegated permission grants
+they use:
+
+| Client | Delegated permission grants |
+|---|---|
+| `sts-admin-console` | `admin:read`, `admin:write`, `admin:console` |
+| `sts-user-portal` | `account:manage`, `owner:read`, `owner:write` |
+| `sts-report` | `report:use`, `report:admin` |
+| `sts-api-client` | `admin:read`, `admin:write`, `report:use` |
+
+On the client's **Configuration → OAuth 2.0 / OpenID Connect** sub-tab, the
+`oauthAllowedScope` list also shows each scope a delegated permission grant
+declares, marked with a key icon. These entries are read-only: their tooltip
+names the permission and the application that defines it, and their link
+opens the Permissions tab, where the delegated permission grant itself is
+changed. They are not stored in `oauthAllowedScope`.
+
+Give a client a delegated permission grant on its **Permissions** tab
+([Admin console → Delegated permissions](admin-console.md#delegated-permissions))
+or with `POST /admin-api/permissions/grant-permission`
+(`{"client": "<id>", "permission": "urn:sts:admin-api:admin:read"}`).
 
 The console, portal and debugger entries carry `oauthGlobalConsent` for
 `openid`, `profile`, `email` and `offline_access` (and the debugger's
@@ -747,6 +803,20 @@ attribute row above still wins over a selected attribute of the same name. Both
 rules can be changed per token type: see *How the realm's set and the
 application's own combine*, below.
 
+**On the OAuth 2.0 / OpenID Connect sub-tab the three sets are one table**
+(#1144): a row per directory attribute, and a column of checkboxes each for
+the **Access token**, the **ID Token** and **UserInfo**. Each column's
+header says whether the realm's selection or the application's own is in
+force; a small **realm** mark beside a box says the realm's selection ticks
+that attribute for that column (its tooltip says so). Tick what each should
+carry and press **Save** once: **a column whose ticks you did not change
+keeps the realm's selection**, and a changed column becomes the
+application's own, replacing the realm's for that column. A column holding
+its own selection has a **Use the realm's selection** button in its header.
+Below the table, what each of the three would carry for the previewed person,
+under a heading each. The SAML 2.0, SAML 1.1 and Verifiable Credentials
+sub-tabs keep one table for their one set.
+
 | Set | Applies to |
 |---|---|
 | Access token, ID Token, UserInfo | tokens and UserInfo answered to this client (`client_id`) |
@@ -759,14 +829,22 @@ to what the metadata advertises, and then given those this client's selection
 holds.
 
 Each section previews what its selection would carry for one person
-(**Preview for**, `alice` by default). An unknown attribute, or a set whose
+(**Preview for**): you, the signed-in administrator, unless you type another
+username. If the realm's directory holds no person of that name, a note above
+the table says so — nothing shown for them is theirs. An unknown attribute, or a set whose
 protocol the application is not declared for, is refused (`STS-REG-0215`).
 
 The management API: `POST /admin-api/applications/set-claim-attributes`
 (with `set` = `access_token`, `id_token`, `userinfo`, `saml2`, `saml11` or
 `credential`, and `attributes`, a list of catalogue names from `GET
 /admin-api/claims`) and `POST
-/admin-api/applications/inherit-claim-attributes`. `GET
+/admin-api/applications/inherit-claim-attributes`. The OAuth table's one Save
+is `POST /admin-api/applications/set-claim-selections`, with any of
+`access_token`, `id_token` and `userinfo`, each the whole list for that set:
+a set sent with exactly the selection in force is left as it is (still the
+realm's, if it was inheriting), a changed one becomes the application's own,
+and a set not sent is not touched. Its answer lists each set sent, with
+`changed`, `inherited` and the `attributes` in force. `GET
 /admin-api/applications?application=<id>&claimsUser=<person>` returns
 `claimSelections`.
 
@@ -914,9 +992,13 @@ the origin).
 
 ### Sign-in mechanisms: how its people may sign in
 
-**`appAuthnMechanism`** is the list of mechanisms an application's people may
-sign in to it with. It is a checkbox per mechanism on the application's
-Configuration tab (*Every protocol*):
+**`appAuthnPolicy`** names the [named authentication
+policy](authentication.md#named-authentication-policies) an application's
+people sign in under. It is a choice on the application's Configuration tab
+(*Every protocol*): `default` (or empty), the realm's authentication policy
+as it is, or one of the realm's named policies. The policy's **first-factor
+list** is the list of mechanisms the application's people may sign in to it
+with (until #1148 the application held it itself, as `appAuthnMechanism`):
 
 | Mechanism | A session satisfies it when |
 |---|---|
@@ -927,11 +1009,11 @@ Configuration tab (*Every protocol*):
 | `wallet` | a wallet presentation signed the person in at `/authn/wallet` |
 | `federation` | a federation partner signed the person in |
 
-**None ticked allows every mechanism.** With some ticked it is **enforced, in
-both modes, at every browser sign-in to the application**: OAuth 2.0 /
-OpenID Connect's authorization endpoint, SAML 2.0 (solicited and
-identity-provider-initiated), SAML 1.1 and WS-Federation. The issuance
-policy's `authn-mechanism` rule decides it (`decideAuthnMechanisms` on the
+**None listed, or `default`, allows every mechanism.** With some listed it is
+**enforced, in both modes, at every browser sign-in to the application**: OAuth
+2.0 / OpenID Connect's authorization endpoint, SAML 2.0 (solicited and
+identity-provider-initiated), SAML 1.1 and WS-Federation. The issuance policy's
+`authn-mechanism` rule decides it (`decideAuthnMechanisms` on the
 `role-issuance` template). It compares the mechanisms the person's session
 satisfies with the ones the application allows:
 
@@ -947,24 +1029,27 @@ satisfies with the ones the application allows:
 * **A sign-in made with a mechanism the application does not allow is
   refused at the sign-in door** (`STS-AUTHN-0298`), and the screen is drawn
   again naming the ones it does.
-* **One ticked is also where the sign-in goes**: straight to
+* **One listed is also where the sign-in goes**: straight to
   `/authn/spnego`, `/authn/wallet` or the partner, or the screen in the shape
-  named. Several ticked draw the screen with only those offered. A mechanism
+  named. Several listed draw the screen with only those offered. A mechanism
   this service has switched off (`spnego` while `krb5.spnegoAuthentication`
   is off, `wallet` while `oid4vp.signIn` is off) is named on the screen and
   not offered.
 
 Browser authentication only. The password grant, WS-Trust, an LDAP bind,
-the token endpoint and SAML 2.0's attribute query are not covered. Set it
-from the application's page, `POST /admin-api/applications/update-fields`, or
-`add` / `remove` with `attribute: appAuthnMechanism`. A value that is not a
-mechanism is refused (`STS-REG-0203`).
+the token endpoint and SAML 2.0's attribute query are not covered. Edit the
+lists on Directory → Policies → *Authentication policy*. Point the
+application at a policy from its page, `POST
+/admin-api/applications/update-fields`, or `set` with
+`attribute: appAuthnPolicy`. A value that is neither `default` nor a policy
+the realm holds is refused (`STS-REG-0203`). A name written past the console
+that no policy holds allows no mechanism at all (`STS-AUTHN-0536`).
 
 ### Second factors: which ones its people may use
 
-**`appMfaMechanism`** is the list of second factors an application's people
-may use. It is a checkbox per factor on the application's Configuration tab
-(*Every protocol*), beside the sign-in mechanisms:
+The **second-factor list** of the policy `appAuthnPolicy` names is the list
+of second factors an application's people may use (until #1148 the
+application held it itself, as `appMfaMechanism`):
 
 | Second factor | A session gave it when |
 |---|---|
@@ -976,8 +1061,8 @@ may use. It is a checkbox per factor on the application's Configuration tab
 | `password` | the person's password was checked after a wallet sign-in |
 | `wallet` | a wallet presentation was checked after a password |
 
-**None ticked leaves the realm's authentication policy as it is.** With some
-ticked:
+**None listed, or `default`, leaves the realm's authentication policy as it
+is.** With some listed:
 
 * **It only narrows.** The realm's policy (Directory > Policies) is asked
   first. A second factor the realm has switched off stays off for every
@@ -990,11 +1075,11 @@ ticked:
   holds several is asked for one the application allows, and the links to
   the others are not drawn.
 * **A person who holds none of the allowed ones is offered one to set up** (a
-  security key or an authenticator app, where ticked). If they hold some
+  security key or an authenticator app, where listed). If they hold some
   other second factor, they give it first, and only then are offered the
   set-up. Offering it before would let anybody who knows the password skip
   the factor the account already has. If neither a security key nor an
-  authenticator app is ticked, or the realm allows neither to be set up, the
+  authenticator app is listed, or the realm allows neither to be set up, the
   sign-in is refused (`STS-AUTHN-0306`).
 * **A second factor demanded and not allowed is refused.** A security key
   the relying party demanded (`acr_values`, `wauth`), or a step-up on risk,
@@ -1009,10 +1094,8 @@ ticked:
   `STS-WSFED-0023`). The issuance policy's `mfa-mechanism` rule decides it
   (`decideMfaMechanisms` on the `role-issuance` template).
 
-Browser authentication only, as for sign-in mechanisms. Set it from the
-application's page, `POST /admin-api/applications/update-fields`, or `add` /
-`remove` with `attribute: appMfaMechanism`. A value that is not a second
-factor is refused (`STS-REG-0203`).
+Browser authentication only, as for sign-in mechanisms, and set the same
+way: the list on the named policy, the policy named by `appAuthnPolicy`.
 
 ### What it has been seen doing
 
@@ -1121,7 +1204,8 @@ The live source for every setting is its console page and
 | `oauth2.softwareStatementOpensRegistration` | `STS_OAUTH2_SOFTWARE_STATEMENT_OPENS_REGISTRATION` | `true` | yes | A trusted statement is accepted where registration is otherwise closed (product mode with `oauth2.openRegistration` off). |
 | `oauth2.softwareStatementRequired` | `STS_OAUTH2_SOFTWARE_STATEMENT_REQUIRED` | `false` | yes | Refuse a registration or update that carries no statement. |
 
-`adminApi.clientSecret` pins the management API client's secret; it is on
+`adminApi.clientSecret` pins the secret of `sts-api-client`, the seeded
+client that calls the management API; it is on
 [Management API](management-api.md#configuration).
 
 ## Design decisions

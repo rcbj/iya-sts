@@ -572,12 +572,35 @@ class DelegationPolicy {
               " by " + question.actor + " for " + question.subject);
     const subject = this.partyFacts(question.subject);
     const actor = this.partyFacts(question.actor);
-    // S: the first candidate that resolves to an application.
+    // S: the first candidate that resolves to an application — AND IS NOT AN
+    // API RESOURCE OBJECT (#1139). A token's audience comes first among the
+    // candidates, and since #1139 this service's own APIs are application
+    // objects holding theirs: a subject token for the default resource
+    // resolved to `sts-resource` wherever the seeded name is the one the
+    // request came in on (the single-node suite, which pins it), and the
+    // exchange was refused for want of a relationship nothing can hold. A
+    // resource object is never a client (STS-OAUTH-0985), so it is never
+    // the actor and never the application a token was issued FOR; the
+    // candidate is passed over and the token's client_id decides, as it did
+    // before those objects existed.
     let sourceId = '';
+    const resourceOnly = function (id: string): boolean {
+      try {
+        return !!id && self.deps.applications.isResourceServer(id);
+      } catch (e) {
+        log.debug("Caught in DelegationPolicy.decide(): " +
+                  ((e && e.message) || e));
+        // No registry (a library tested on its own): nothing is one.
+        return false;
+      }
+    };
     (question.source || []).some(function (one) {
       sourceId = self.resolveTarget(String(one || ''), question.targetKind) ||
         (self.applicationFor(String(one || '')) || { identifier: '' })
           .identifier || '';
+      if (resourceOnly(sourceId)) {
+        sourceId = '';
+      }
       return !!sourceId;
     });
     // A FRONT END OF ANOTHER KERBEROS REALM (#430) has no entry here; it is

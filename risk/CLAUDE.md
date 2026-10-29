@@ -224,6 +224,32 @@ imported into memory costs memory; postgres is where that belongs.
   dataset out and names it in `stale`. The page draws the state.
 * **An operator list is per realm**, and refused for a realm that does not
   exist; every other dataset is the whole service's (`realm = ''`).
+* **Remove unloads the active version (#1152, rcbj).** `deleteVersion()`
+  refuses only a version still `loading`. For the active one,
+  `store.deactivate()` (`riskDeactivate`, one transaction and a
+  `risk-dataset` change row, like `riskActivate`) first leaves the dataset
+  `empty`, with no active version and its `previousVersion` kept, and only
+  then are the rows deleted, so no lookup reads a half-deleted version.
+  Nothing is activated in its place; the registry still offers Roll back,
+  reading `previousVersion` off the dataset row because `activeVersions()`
+  has no entry for an empty dataset.
+* **A removed version can be loaded again by an administrator (#1155,
+  rcbj).** The console's upload and paste and `/admin-api/risk/import` and
+  `/upload` pass `reloadDeleted`. `beginVersion()` then reuses a `deleted`
+  record: postgres does it in the same `INSERT … ON CONFLICT DO UPDATE …
+  WHERE state = 'deleted'`, so any other state still returns no row. The
+  scheduled downloads, the directory job and the loader do not pass it, so
+  a job never undoes a Remove. FIDO's rollback check is unchanged: it reads
+  the `active` and `superseded` serials.
+* **A removed version's row brings it back (#1157, rcbj).** `reloadable()`
+  is true only for a dataset in `DOWNLOADS` (Android status, FIDO MDS3)
+  whose record's `sourceUri` is the address configured now. `reloadVersion()`
+  then downloads it through `fetchPublished()` with the job's cap, builds the
+  content as the job does (the BLOB trimmed), and refuses a different
+  SHA-256 (`STS-RISK-0053`): that is a newer version, the job's to load.
+  Every other removed version gets an Upload again form in its row
+  (`web_risk.ts`'s `uploadAgain()`). No new address is dialled: these are
+  the tenth and eighteenth rows of `federation/CLAUDE.md`'s list.
 
 **Retention is a scheduler job**, `risk.retention` (hourly, cluster):
 superseded versions past `risk.supersededRetentionDays` and refused versions

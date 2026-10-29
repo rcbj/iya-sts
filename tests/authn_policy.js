@@ -312,6 +312,7 @@ function kinds(t) {
             'everything it said before', JSON.stringify(view.kinds));
     t.check(view.actions.join(',') === 'save-password-policy,' +
             'reset-password-policy,save-authn-policy,reset-authn-policy,' +
+            'save-named-authn-policy,delete-named-authn-policy,' +
             'save-serviceAccount-policy,reset-serviceAccount-policy,' +
             'save-passkey-policy,reset-passkey-policy,' +
             // #1112: the passkey policy's own two acts, its learned clients.

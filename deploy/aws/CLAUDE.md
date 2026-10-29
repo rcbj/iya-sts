@@ -77,7 +77,7 @@ in this order:
    — about 15,000 entries a run, named `bulk-<door>-…` by
    `tests/protocol/bulk_load.js`, deleted through SCIM Bulk (`/admin-api` has
    no person or group delete) with a token the script mints for the seeded
-   `sts-management-api` client, so it needs `STS_ADMIN_API_CLIENT_SECRET` as
+   `sts-api-client` (`sts-management-api` until #1139), so it needs `STS_ADMIN_API_CLIENT_SECRET` as
    well as the admin token (both runners have it);
 3. **the applications suite runs registered in the default realm**, through
    `/admin-api/applications/forget`: the identifiers jobs name per run

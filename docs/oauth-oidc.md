@@ -210,9 +210,17 @@ management) is addressed to **the client itself**: its `oauthAudience`
 values, or its `client_id` when it declares none. That is the token a client
 sends as an RFC 8693 `actor_token`.
 
-**In product mode a resource must name a registered target** (#505), at the
+**A resource must name a registered target, in every mode** (#505, and in
+development too since #1140), at the
 authorization endpoint, at `POST /oauth2/par` and at the token endpoint for
-every grant but the token exchange (whose targets are RFC 8693's, below). A
+every grant but the token exchange (whose targets are RFC 8693's, below).
+**And no access token is minted for any audience no application object
+holds** (#1140, `STS-OAUTH-0986`, `invalid_target`): the rule covers the
+default audience, an audience a scope or `authorization_details` derived, and
+a client's own, not only a `resource` a request names. The client being
+served may always be its token's audience, and so may a location the
+`authorization_details` type's declaring application answers to. This
+service's own four count only while their applications exist. A
 registered target is one of this service's own resource servers — the
 default resource indicator `<base>/resource` (or a named authorization
 server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
@@ -220,10 +228,17 @@ server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded
-debugger's api is such an application, seeded in every install.
+debugger's api is such an application, seeded in every install. So are this
+service's own four, seeded in every realm as applications of the kind
+`oauth2-resource-server` that hold each audience: `sts-resource`,
+`sts-management-api`, `sts-account-api` and `sts-report-api`
+([Applications](applications.md#the-applications-that-are-this-service)).
+**A resource object is never a client**: its client_id is refused at the
+authorization, token, PAR, introspection, revocation, device authorization
+and CIBA endpoints, in every mode (`invalid_client`, `STS-OAUTH-0985`).
 Anything else is `invalid_target` (RFC 8707 section 2): redirected to the
 client from the authorization endpoint, a 400 from PAR and from the token
-endpoint. Development mode accepts any absolute URI, as before.
+endpoint, in development mode as in product.
 
 **A redeemed code is refused if it is presented again, in every mode**, and
 what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
@@ -609,7 +624,7 @@ records what the client has asked for.
   `/admin-api`, SCIM and Shared Signals ask again on every call, so withdrawing
   a declaration cuts off tokens already issued. A registration cannot declare
   one (`invalid_client_metadata`); an administrator does. The seeded
-  `sts-management-api` and `sts-admin-console` declare the admin scopes.
+  `sts-api-client` and `sts-admin-console` declare the admin scopes.
 * **Every other scope, in product mode**, is issued only when the list names it.
   A client with **no list** has the default set: `openid`, `profile`, `email`,
   `address`, `phone`, `offline_access` and this realm's OpenID4VCI credential
@@ -2125,8 +2140,6 @@ on [What is not checked](what-is-not-checked.md).
 | RFC 9700 | only where `oauth2.rfc9700` or `oauth2.oauth21` is set | **always**, for every realm — see [OAuth security](oauth-security.md) |
 | Unknown client or authorization server | created the first time it is named | refused; create it ahead of time |
 | A client nobody **registered** — unknown, or recorded only because a development request named it | served | the authorization endpoint answers a 400 page and never redirects (`invalid_client`; no `client_id` at all is `invalid_request`); the token endpoint answers 401 `invalid_client` before anything is recorded (#496). Registered means through the console, `/admin-api`, `POST /oauth2/register` or an OpenID Federation |
-| Token exchange to an audience or resource nobody registered | the issuance policy notes it would refuse, and issues | refused `invalid_target`; an application a development request merely recorded is not a target |
-| A `resource` outside a token exchange that names no registered target | accepted, and becomes the token's `aud` | refused `invalid_target` — redirected from the authorization endpoint, a 400 from PAR and the token endpoint; this service's own resource servers and registered applications are targets (#505) |
 | Redirect URIs | any | only one registered for the client |
 | Password grant | offered; accepts any password but `invalid` | not offered (RFC 9700 section 2.4) |
 | Grants for a public client | all | authorization code and refresh only |

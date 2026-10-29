@@ -13,6 +13,7 @@ no test runs them.
 | `sessions-1m/sessions.js` | Signs each person in once through the OIDC code flow with PKCE, then keeps every session alive by refreshing. |
 | `sessions-1m/teardown.js` | Puts back every setting `setup.js` changed. |
 | `sessions-1m/soak-check.sh` | One stability reading of a running soak; `--brief` for one line. |
+| `create-rcbj-apps-8081.sh` | Rebuilds a demonstration set around one person: a resource application (`oauth2-resource-server`) defining two permissions, a confidential client granted them, a group, a role and two service accounts, all owned by that person. Its header says what it makes and the scope rules it follows (#1139). |
 
 Each `run-*.sh` runs its script with the service's Root trusted and appends
 to a log beside it. `sessions-1m/README.md` describes the session test.

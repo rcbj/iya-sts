@@ -304,16 +304,16 @@
     "text": "Clé d’accès (sans mot de passe) — comme premier facteur"
   },
   "authn.FIELDS.passkeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si la liste propre d’une application (appAuthnMechanism) en dispose autrement."
+    "en": "1cab77157f5d6263",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si les premiers facteurs de la politique d’authentification que nomme une application (appAuthnPolicy) en disposent autrement."
   },
   "authn.FIELDS.securityKeySecondFactor.label": {
     "en": "4e99afea50969c29",
     "text": "Clé d’accès (second facteur) — comme second facteur"
   },
   "authn.FIELDS.securityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si la liste propre d’une application (appMfaMechanism) en dispose autrement."
+    "en": "5577b57e8d01187e",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si les seconds facteurs de la politique d’authentification que nomme une application (appAuthnPolicy) en disposent autrement."
   },
   "authn.FIELDS.totpSecondFactor.label": {
     "en": "4dbb7fdae02261a7",
@@ -492,12 +492,12 @@
     "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
   },
   "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si la liste propre d’une application (appAuthnMechanism) en dispose autrement."
+    "en": "1cab77157f5d6263",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si les premiers facteurs de la politique d’authentification que nomme une application (appAuthnPolicy) en disposent autrement."
   },
   "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
-    "en": "ea543723944fb410",
-    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si la liste propre d’une application (appMfaMechanism) en dispose autrement."
+    "en": "5577b57e8d01187e",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si les seconds facteurs de la politique d’authentification que nomme une application (appAuthnPolicy) en disposent autrement."
   },
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
@@ -571,6 +571,14 @@
     "en": "93538e6b201100c5",
     "text": "À quoi sert le profil, pour la personne suivante."
   },
+  "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
+    "en": "9c184b4ac272a663",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148) : un mécanisme de premier facteur qu’autorisent les applications qui nomment cette politique (appAuthnPolicy) — password, password-mfa, webauthn, spnego, wallet ou federation, une valeur chacun. Si aucun n’est indiqué, tous ceux qu’autorise le domaine le sont."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
+    "en": "b59799bd06b5022d",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148) : un second facteur qu’autorisent les applications qui nomment cette politique — password, securityKey, totp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Si aucun n’est indiqué, la politique d’authentification du domaine reste telle quelle."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Le second facteur par e-mail que cette personne a choisi : `code` ou `link`. Absent : aucun. Défini sur /portal/mfa, effacé sur /admin/mfa et après un trop grand nombre d’échecs consécutifs."
@@ -592,16 +600,16 @@
     "text": "Clé d’accès (sans mot de passe)"
   },
   "authn.MECHANISMS.passkey.what": {
-    "en": "a85fd3ef50432e75",
-    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si la liste propre d’une application (appAuthnMechanism) en dispose autrement."
+    "en": "1cab77157f5d6263",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, qui la connecte sans mot de passe. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un premier facteur dans ce domaine, sauf si les premiers facteurs de la politique d’authentification que nomme une application (appAuthnPolicy) en disposent autrement."
   },
   "authn.MECHANISMS.securityKey.label": {
     "en": "7474add07b92939d",
     "text": "Clé d’accès (second facteur)"
   },
   "authn.MECHANISMS.securityKey.what": {
-    "en": "ea543723944fb410",
-    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si la liste propre d’une application (appMfaMechanism) en dispose autrement."
+    "en": "5577b57e8d01187e",
+    "text": "Toute clé d’accès (identifiant WebAuthn) que détient la personne, demandée après un premier facteur. Une clé d’accès n’a pas de rôle : cette ligne dit, à chaque connexion, si l’une d’elles peut être un second facteur dans ce domaine, sauf si les seconds facteurs de la politique d’authentification que nomme une application (appAuthnPolicy) en disposent autrement."
   },
   "authn.MECHANISMS.totp.label": {
     "en": "6e6d78e296bae6dd",
@@ -1064,8 +1072,8 @@
     "text": "Exiger une connexion par clé d’accès sans nom d’utilisateur"
   },
   "passkey.FIELDS.requireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (appAuthnMechanism `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
+    "en": "3f8988c76401d34a",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (la politique d’authentification qu’elle nomme, appAuthnPolicy, indique `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
   },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
@@ -1272,8 +1280,8 @@
     "text": "ACTIVÉ PAR DÉFAUT. Activé, l’écran de connexion propose *Se connecter avec une clé d’accès* et le remplissage automatique du champ du nom d’utilisateur, qui demandent au navigateur n’importe quel identifiant détectable de ce domaine (WebAuthn Level 3 section 5.4, `allowCredentials` vide) et connectent le compte que nomme son identifiant d’utilisateur (user handle), la vérification de l’utilisateur étant exigée et contrôlée. Désactivé, aucun des deux n’est proposé et une connexion nomme toujours d’abord la personne. Remplace le paramètre webauthn.usernameless."
   },
   "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
-    "en": "c1be5d9eef41e055",
-    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (appAuthnMechanism `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
+    "en": "3f8988c76401d34a",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (la politique d’authentification qu’elle nomme, appAuthnPolicy, indique `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
   },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",

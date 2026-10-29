@@ -6,8 +6,8 @@
 // File: registered_targets.js
 //
 // ===========================================================================
-// IN PRODUCT, AN RFC 8707 RESOURCE AND A GNAP RIGHT'S LOCATIONS NAME A
-// REGISTERED TARGET (#505).
+// AN RFC 8707 RESOURCE AND A GNAP RIGHT'S LOCATIONS NAME A REGISTERED TARGET
+// (#505), AND SINCE #1140 IN EVERY MODE AND FOR EVERY AUDIENCE A TOKEN CARRIES.
 //
 // rcbj's follow-up to #496: a `resource` at the authorization, PAR and token
 // endpoints outside a token exchange, and every location of a GNAP access
@@ -15,34 +15,37 @@
 // own resource servers, or an application registered ahead of time
 // (`appRegisteredBy`), found by its oauthAudience, permission base URI,
 // client_id or identifier. `common/registered_targets.ts` is the one
-// definition; development is unchanged.
+// definition. #1140 (rcbj, 2026-10-29): no access token for an audience no
+// application object holds, in BOTH modes — development's exemption and its
+// `mode.js` row are gone, and this service's own APIs are targets only while
+// their #1139 objects exist.
 //
-//   T1. the `unregistered-resource-targets` row is in mode.report(), naming
-//       the three codes, and the predicate is #496's;
+//   T1. the `unregistered-resource-targets` row is no longer in
+//       mode.report(): the modes no longer differ (#1140);
 //   T2. the definition, in product: a registered application by each of its
 //       four names is a registered target; this service's own resource
 //       servers (the default resource indicator, a named authorization
 //       server's, the realm's /admin-api, /account-api and /report-api)
 //       are, and the deleted GNAP
 //       demonstration resource server is one in neither mode (#593); an
-//       address nobody registered and one only SEEN are not; in development
-//       nothing is unregistered;
+//       address nobody registered and one only SEEN are not, in development
+//       as in product (#1140);
 //   T3. the authorization endpoint's request check (shared with PAR): in
 //       product an unregistered resource is a REDIRECTED invalid_target
 //       (STS-OAUTH-0950), a seen-only one too; a registered application's
 //       audience and the default resource indicator pass; development
-//       refuses neither;
+//       refuses the same (#1140);
 //   T4. the token endpoint: in product an unregistered resource is a 400
 //       invalid_target (STS-OAUTH-0951) before the grant is looked at; a
 //       registered one and one of this service's own pass the check; a
 //       token exchange is not asked (its targets are RFC 8693's);
-//       development refuses none;
+//       development refuses the same (#1140);
 //   T5. GNAP's request stage: in product a right whose location names no
 //       registered resource server, or a seen-only one, is refused
 //       invalid_request (STS-GNAP-0903); a location at or under a
 //       registered GNAP resource server's gnapResourceServerUri, a
 //       registered application's audience pass; a reference string is not
-//       asked; development refuses none;
+//       asked; development refuses the same (#1140);
 //   T6. GNAP's request stage, in BOTH modes (#593, rcbj's decision 4 on
 //       #591): an access token request whose access names no resource
 //       server — a location naming none, an unknown reference, an
@@ -51,6 +54,12 @@
 //       a registered GNAP resource server, or this service's Shared Signals
 //       transmitter by its scope or the `ssf` type, is not; there is no
 //       default audience any more.
+//   T7. THE PLAN (#1140): `accessTokenPlan()` refuses invalid_target
+//       (STS-OAUTH-0986) a token whose audience no application object holds
+//       — an unknown resource, in development too — and plans the default
+//       audience, a client's own client_id and an own API; once
+//       `sts-report-api` and `sts-resource` are deleted, /report-api and
+//       the default audience are refused.
 //
 // IN PROCESS, in a throwaway realm, because the cases are product's and
 // development's both and a job over HTTP runs in one mode.
@@ -162,14 +171,9 @@ function modeRow(t) {
   const row = mode.report().requirements.filter(function (one) {
     return one.id === 'unregistered-resource-targets';
   })[0];
-  t.check(!!row && /STS-OAUTH-0950/.test(row.product) &&
-          /STS-OAUTH-0951/.test(row.product) &&
-          /STS-GNAP-0903/.test(row.product) && !!row.development &&
-          /registered_targets/.test(row.where) &&
-          inMode('product', mode.issuesToUnregisteredApplications) ===
-            false,
-          'T1. the unregistered-resource-targets row is reported, with its ' +
-          'three codes, under #496\'s predicate', JSON.stringify(row));
+  t.check(!row,
+          'T1. the unregistered-resource-targets row is gone: the modes no ' +
+          'longer differ (#1140)', JSON.stringify(row));
   log.debug("Leaving modeRow().");
 }
 
@@ -265,8 +269,9 @@ function definition(t, f) {
   const dev = inMode('development', function () {
     return RegisteredTargets.unregistered([NOBODY, f.seen], req);
   });
-  t.check(dev.length === 0,
-          'T2d. development: nothing is unregistered', JSON.stringify(dev));
+  t.check(dev.length === 2,
+          'T2e. development: an address nobody registered and one only seen ' +
+          'are not registered targets either (#1140)', JSON.stringify(dev));
   log.debug("Leaving definition().");
   return base;
 }
@@ -293,24 +298,24 @@ function authorize(t, f, base) {
              redirect: !!out.redirect, description: out.description || '' };
   };
   const refused = [vet('product', NOBODY), vet('product', f.seen),
-                   vet('product', [API, NOBODY])];
+                   vet('product', [API, NOBODY]),
+                   vet('development', NOBODY), vet('development', f.seen)];
   t.check(refused.every(function (r) {
     return !r.ok && r.code === 'STS-OAUTH-0950' &&
       r.error === 'invalid_target' && r.redirect === true;
   }), 'T3. product: an authorization request whose resource names no ' +
           'registered target (unknown, seen-only, or one of two) is a ' +
-          'redirected invalid_target (STS-OAUTH-0950)',
+          'redirected invalid_target (STS-OAUTH-0950), in development too',
           JSON.stringify(refused));
   const passed = [vet('product', API), vet('product', base + '/resource'),
                   vet('product', base + '/account-api'),
                   vet('product', base + '/report-api'),
-                  vet('product', undefined),
-                  vet('development', NOBODY), vet('development', f.seen)];
+                  vet('product', undefined), vet('development', API)];
   t.check(passed.every(function (r) {
     return r.code !== 'STS-OAUTH-0950';
   }), 'T3b. a registered application\'s audience, the default resource ' +
-          'indicator, /account-api and /report-api pass in product, as ' +
-          'does no resource; development refuses neither',
+          'indicator, /account-api and /report-api pass, as does no ' +
+          'resource',
           JSON.stringify(passed));
   log.debug("Leaving authorize().");
   return server;
@@ -336,7 +341,8 @@ async function token(t, f, base, server) {
              code_verifier: 'v'.repeat(43), resource: resource };
   };
   const refused = [await ask('product', code(NOBODY)),
-                   await ask('product', code(f.seen))];
+                   await ask('product', code(f.seen)),
+                   await ask('development', code(NOBODY))];
   t.check(refused.every(function (r) {
     return r.status === 400 && r.code === 'STS-OAUTH-0951' &&
       /invalid_target/.test(r.body);
@@ -347,11 +353,11 @@ async function token(t, f, base, server) {
                   await ask('product', code(base + '/admin-api')),
                   await ask('product', code(base + '/account-api')),
                   await ask('product', code(base + '/report-api')),
-                  await ask('development', code(NOBODY))];
+                  await ask('development', code(API))];
   t.check(passed.every(function (r) {
     return r.code !== 'STS-OAUTH-0951';
   }), 'T4b. a registered application and one of this service\'s own pass ' +
-          'the check in product; development refuses none',
+          'the check, in either mode',
           JSON.stringify(passed));
   const exchange = await ask('product', {
     grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
@@ -389,7 +395,9 @@ async function gnap(t, f, base) {
   };
   const refused = [await judge('product', [right([NOBODY])]),
                    await judge('product', [right([f.seen])]),
-                   await judge('product', [right([GNAP_RS, NOBODY])])];
+                   await judge('product', [right([GNAP_RS, NOBODY])]),
+                   await judge('development', [right([NOBODY])]),
+                   await judge('development', [right([f.seen])])];
   t.check(refused.every(function (r) {
     return !r.ok && r.code === 'STS-GNAP-0903' &&
       r.error === 'invalid_request' && r.status === 400;
@@ -400,13 +408,12 @@ async function gnap(t, f, base) {
                   await judge('product', [right([GNAP_RS + '/photos/1'])]),
                   await judge('product', [right([API])]),
                   await judge('product', ['rt-some-reference']),
-                  await judge('development', [right([NOBODY])]),
-                  await judge('development', [right([f.seen])])];
+                  await judge('development', [right([GNAP_RS])])];
   t.check(passed.every(function (r) {
     return r.code !== 'STS-GNAP-0903';
   }), 'T5b. a location at or under a registered GNAP resource server, a ' +
           'registered application\'s audience pass in product, a ' +
-          'reference is not asked, and development refuses none',
+          'reference is not asked, in either mode',
           JSON.stringify(passed));
   log.debug("Leaving gnap().");
 }
@@ -447,13 +454,12 @@ async function nobody(t) {
   for (const m of ['development', 'product']) {
     refused.push(await judge(m, one(['rt-unknown-reference'])));
   }
-  refused.push(await judge('development', one([photos([NOBODY])])));
   refused.push(await judge('development', one([photos(null)])));
   t.check(refused.every(function (r) {
     return !r.ok && r.code === 'STS-GNAP-0904' &&
       r.error === 'invalid_request' && r.status === 400;
   }), 'T6. an access token request naming no resource server — an unknown ' +
-          'reference in either mode, a location naming none, an uncatalogued ' +
+          'reference in either mode, an uncatalogued ' +
           'type with no location — is refused invalid_request ' +
           '(STS-GNAP-0904)', JSON.stringify(refused));
   const second = await judge('development', [
@@ -470,17 +476,60 @@ async function nobody(t) {
     passed.push(await judge(m, one(['ssf.manage'])));
     passed.push(await judge(m, one([{ type: 'ssf', actions: ['read'] }])));
   }
-  passed.push(await judge('development',
-                          one([photos([GNAP_RS]), photos([NOBODY])])));
   passed.push(await judge('development', []));
   t.check(passed.every(function (r) {
     return r.code !== 'STS-GNAP-0904';
   }), 'T6c. a token naming a registered GNAP resource server, or this ' +
           'service\'s Shared Signals transmitter by its scope or the ssf ' +
-          'type, is not refused for it in either mode; nor is a token with ' +
-          'one right naming a resource server beside one naming none, nor ' +
-          'a request for no access token', JSON.stringify(passed));
+          'type, is not refused for it in either mode; nor is a request for ' +
+          'no access token', JSON.stringify(passed));
   log.debug("Leaving nobody().");
+}
+
+// T7 (#1140): the plan every minted access token goes through.
+function plan(t, f, base, server) {
+  log.debug("Entering plan().");
+  const req = request({});
+  const ask = function (m, explicit, clientId) {
+    log.debug("Entering ask(). " + m);
+    const out = inMode(m, function () {
+      return server.accessTokenPlan(base, '', clientId || 'rt-oauth',
+                                    explicit, null, req);
+    });
+    log.debug("Leaving ask().");
+    return { audiences: out.audiences || [],
+             code: out.refusal ? errorCodes.codeOf(out.refusal) || '' : '',
+             error: out.refusal ? out.refusal.error : '' };
+  };
+  const refused = [ask('development', [NOBODY]), ask('product', [NOBODY]),
+                   ask('development', [f.seen])];
+  t.check(refused.every(function (r) {
+    return r.code === 'STS-OAUTH-0986' && r.error === 'invalid_target';
+  }), 'T7. a token whose audience no application object holds is not ' +
+          'planned, in either mode (STS-OAUTH-0986)', JSON.stringify(refused));
+  const planned = [ask('development', []), ask('product', []),
+                   ask('development', ['rt-api-client'], 'rt-api-client'),
+                   ask('development', [API]),
+                   ask('development', [base + '/report-api'])];
+  t.check(planned.every(function (r) {
+    return !r.code && r.audiences.length === 1;
+  }), 'T7b. the default audience, a client\'s own client_id, a registered ' +
+          'application\'s audience and an own API are planned',
+          JSON.stringify(planned));
+  const gone = ['sts-report-api', 'sts-resource'].map(function (id) {
+    return applications.deleteApplication(id, { actor: 'test' });
+  });
+  t.check(gone.every(function (one) {
+    return one && one.ok;
+  }), 'precondition: the reports API\'s and the default resource\'s objects ' +
+          'were deleted in the throwaway realm', JSON.stringify(gone));
+  const after = [ask('development', [base + '/report-api']),
+                 ask('development', [])];
+  t.check(after.every(function (r) {
+    return r.code === 'STS-OAUTH-0986';
+  }), 'T7c. with its object deleted, /report-api is refused, and so is the ' +
+          'default audience', JSON.stringify(after));
+  log.debug("Leaving plan().");
 }
 
 function run(t) {
@@ -505,6 +554,8 @@ function run(t) {
         return gnap(t, f, base);
       }).then(function () {
         return nobody(t);
+      }).then(function () {
+        return plan(t, f, base, server);
       });
     });
   } catch (e) {

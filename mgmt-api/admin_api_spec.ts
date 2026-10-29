@@ -471,7 +471,7 @@ class AdminApiSpec {
         type: 'oauth2',
         description:
           'An access token from this service\'s own token endpoint. ' +
-          'Ask as the seeded client `sts-management-api`, whose secret is ' +
+          'Ask as the seeded client `sts-api-client`, whose secret is ' +
           'the `adminApi.clientSecret` setting, and **send ' +
           '`resource=' + String(baseUrl || '') + '/admin-api`** with the ' +
           'request: OpenAPI has no field for RFC 8707\'s resource indicator ' +
@@ -6063,7 +6063,7 @@ const PROTECTED_PARAGRAPH =
   '**Every operation here requires an OAuth 2.0 access token, and this ' +
   'document says which scope each one needs.** Ask this service\'s own token ' +
   'endpoint for one: `grant_type=client_credentials` as the seeded client ' +
-  '`sts-management-api` (its secret is `adminApi.clientSecret`), ' +
+  '`sts-api-client` (its secret is `adminApi.clientSecret`), ' +
   '`scope=admin:read admin:write`, and **`resource=<this ' +
   'server>/admin-api`** — that last parameter is what puts this API in the ' +
   'token\'s `aud`, and a token audienced at anything else is refused however ' +
@@ -6077,7 +6077,7 @@ const PROTECTED_PARAGRAPH =
   'groups in the default realm — a per-realm one would let anybody who can ' +
   'create a realm mint themselves an administrator. A trust realm\'s own ' +
   'administrators have a narrower token of their own: issued to that ' +
-  'realm\'s `sts-management-api` client, accepted only under ' +
+  'realm\'s `sts-api-client` client, accepted only under ' +
   '`/realm/<id>/admin-api`, and refused every service-wide operation. ' +
   '`adminApi.authRequired` ' +
   'turns this off and restores the open API exactly; what follows is what ' +

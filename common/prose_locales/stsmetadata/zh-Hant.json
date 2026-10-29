@@ -2604,16 +2604,16 @@
     "text": "詢問登入以瀏覽器中哪個已登入帳號繼續；需要 ?authn= id，因此直接前往會回應 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "23818b4a272ea292",
-    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的使用者名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過本服務自己的接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何使用者名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的使用者直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回位址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的用戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
+    "en": "ac6b3c87e6a2b5b8",
+    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的使用者名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過本服務自己的接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何使用者名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，將 spnego 作為應用程式所指名之驗證原則（appAuthnPolicy）的唯一第一因素，會將該應用程式的使用者直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回位址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的用戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
     "text": "以 \"WWW-Authenticate: Negotiate\" 回應 401，並對帶有有效服務票證的請求建立瀏覽器工作階段，返回被中斷的流程"
   },
   "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "595ee670036d604e",
-    "text": "「以經過驗證的出示作為登入」（2026-09-17）。與 Kerberos 按鈕一樣，在 /authn/login 上為每個進行中的流程提供：它接受 ?authn=（或 ?mfa=，即在密碼之後以錢包作為第二要素），「絕不」接受 returnTo。自 #574 起，這是靜態登入介面的一條路由：請求由 POST /authn-api/wallet 發出，絕不由此 GET 發出。請求一律簽署，以 oid4vp.signInFormats 所指名的每種格式要求此簽發者的認證（每種一個認證查詢，加上一個認證集），並同時透過 Digital Credentials API 提供（openid4vp-v1-signed、expected_origins）。只有「此領域」簽發的認證——在它驗證過且無人否認的存取權杖上、簽發給某個人、此後未被否認、狀態為 VALID，並附上新的持有者證明出示——才能讓人登入，身分為該認證簽發對象的目錄項目。amr [\"pop\"] 與 acr \"1\"，或在經過驗證的金鑰證明如此表示時為 hwk 與 acr \"mfa\"；要求兩個要素的請求會在錢包之後要求第二要素。appAuthnMechanism: wallet 會將應用程式的使用者直接送來這裡。oid4vp.signIn 可將其關閉，此時它會回應 403 並說明。"
+    "en": "8b8887edb3d1d7a1",
+    "text": "「以經過驗證的出示作為登入」（2026-09-17）。與 Kerberos 按鈕一樣，在 /authn/login 上為每個進行中的流程提供：它接受 ?authn=（或 ?mfa=，即在密碼之後以錢包作為第二要素），「絕不」接受 returnTo。自 #574 起，這是靜態登入介面的一條路由：請求由 POST /authn-api/wallet 發出，絕不由此 GET 發出。請求一律簽署，以 oid4vp.signInFormats 所指名的每種格式要求此簽發者的認證（每種一個認證查詢，加上一個認證集），並同時透過 Digital Credentials API 提供（openid4vp-v1-signed、expected_origins）。只有「此領域」簽發的認證——在它驗證過且無人否認的存取權杖上、簽發給某個人、此後未被否認、狀態為 VALID，並附上新的持有者證明出示——才能讓人登入，身分為該認證簽發對象的目錄項目。amr [\"pop\"] 與 acr \"1\"，或在經過驗證的金鑰證明如此表示時為 hwk 與 acr \"mfa\"；要求兩個要素的請求會在錢包之後要求第二要素。將 wallet 作為應用程式所指名之驗證原則（appAuthnPolicy）的唯一第一因素，會將該應用程式的使用者直接送來這裡。oid4vp.signIn 可將其關閉，此時它會回應 403 並說明。"
   },
   "stsmetadata.endpoints./authn/wallet.effect": {
     "en": "79a0035468001881",

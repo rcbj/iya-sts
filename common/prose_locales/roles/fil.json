@@ -116,8 +116,8 @@
     "text": "Pagsulat ng Shared Signals. Nagbibigay ng pahintulot na ssf.manage. Natatanggap ito ng isang tao habang kabilang siya sa grupo ng tungkuling ito, na inihasik bilang ssf-manage, at miyembro ng tungkuling ito ang aplikasyon na pinapasukan niya. Natatanggap ito ng isang aplikasyon sa sarili nitong token habang miyembro ito. Hindi nito pinahihintulutan ang ssf.read."
   },
   "roles.native.REPORT_USE.what": {
-    "en": "3dc6cff824e184e8",
-    "text": "Mga ulat, bilang user. Nagpapahintulot sa permission na report:use: ang reports application at /report-api para sa mga definition at job na pag-aari ng may hawak o ibinahagi sa kanya, ayon sa pasya ng access-control policy. Hawak ito ng isang tao sa pamamagitan ng grupo ng role na ito, na na-seed bilang report-users, bilang direktang miyembro, o sa roster ng console (Admin Read o Admin Write); hawak ito ng isang application bilang miyembro at ibinibigay ito sa sarili nitong token, na umaabot lamang sa mga definition at job na ito mismo ang nagtakda."
+    "en": "7457776f7906d309",
+    "text": "Mga ulat, bilang user. Nagpapahintulot sa permission na report:use: ang reports application at /report-api para sa mga definition at job na pag-aari ng may hawak o ibinahagi sa kanya, ayon sa pasya ng access-control policy. Hawak ito ng isang tao sa pamamagitan ng grupo ng role na ito, na na-seed bilang report-users, bilang direktang miyembro, o sa roster ng console (Admin Read o Admin Write); hawak ito ng isang application bilang miyembro at ibinibigay ito sa sarili nitong token, na umaabot lamang sa mga definition at job na ito mismo ang nagtakda. Ang bootstrap client, ang sts-api-client, ay isine-seed bilang miyembro."
   },
   "roles.native.REPORT_ADMIN.what": {
     "en": "d17c8f34f20ced92",

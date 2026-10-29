@@ -30,7 +30,9 @@
 //
 //   E. the OAuth block's five lines in order, a value outside a declared
 //      list marked with a warning instead of a check, and a line cut at ten
-//      values with "+N more" to the Directory entry tab;
+//      values with "+N more" to the Directory entry tab; a scope a delegated
+//      permission grant declares counts as on the list, and the
+//      oauthAllowedScope cell draws it read-only with a tooltip (#1141);
 //   F. a URN choice is labelled by its last two sections, its full value and
 //      meaning in the tooltip, and still posts the full value;
 //   G. the SAML panels: SAML 2.0's lists, its last AuthnRequest and the
@@ -312,6 +314,51 @@ function childMain() {
              .test(scopeLine),
            'E3. ten values, then "+3 more" to the Directory entry tab; a ' +
            'scope outside oauthAllowedScope is marked', scopeLine);
+      // E4 (#1141): a scope a delegated permission grant declares is on the
+      // list — the bare word of one of this service's APIs, and the
+      // permission identifier — and one with no grant is still marked.
+      const granted = applications.updateApplication('ft-web', {
+        attribute: 'oauthDelegatedPermission', mode: 'add',
+        value: 'urn:sts:admin-api:admin:read' });
+      applications.seen({ identifier: 'ft-web', kind: 'oauth2-client',
+        protocol: 'OAuth 2.0 / OIDC', counts: false, note: 'a test sighting',
+        fields: { oauthClientId: 'ft-web',
+                  oauthScope: ['admin:read', 'admin:write',
+                               'urn:sts:admin-api:admin:read'] } });
+      const seenScopes = views.applicationDetailJson(request, 'ft-web').json
+        .page.config.observed.oauthScope;
+      const declaredOf = function (value) {
+        const hit = seenScopes.filter(function (one) {
+          return one.value === value;
+        })[0];
+        return hit ? hit.declared : null;
+      };
+      note(granted && granted.ok && declaredOf('admin:read') === true &&
+           declaredOf('urn:sts:admin-api:admin:read') === true &&
+           declaredOf('admin:write') === false,
+           'E4. a scope a delegated permission grant declares is not marked, ' +
+           'as its bare word or its identifier; one without is (#1141)',
+           JSON.stringify([granted && granted.errors, seenScopes]));
+      // E5 (#1141): the oauthAllowedScope cell draws it read-only — the key,
+      // the details in a tooltip, a link to the Permissions tab — and never
+      // as an input, so a save neither posts nor stores it.
+      const json3 = views.applicationDetailJson(request, 'ft-web').json;
+      const derived = (json3.page.config.derived || {}).oauthAllowedScope ||
+        [];
+      const cellHtml = page.applicationFieldsSection(ctx, json3, '');
+      const cellAt = cellHtml.indexOf('id="fgc-oauthAllowedScope"');
+      const cell = cellAt < 0 ? '' : cellHtml.slice(cellAt,
+        cellHtml.indexOf('class="fg-grow"', cellAt));
+      note(derived.length === 1 && derived[0].value === 'admin:read' &&
+           derived[0].api === 'sts-management-api' &&
+           derived[0].permission === 'urn:sts:admin-api:admin:read' &&
+           /class="fg-item fg-derived"><span class="fg-derived-value"[^>]*title="[^"]*urn:sts:admin-api:admin:read[^"]*"[^>]*><svg[^]*?<\/svg>admin:read<\/span><a class="fg-derived-link" href="#tab-permissions">/
+             .test(cell) &&
+           !/value="admin:read"/.test(cell),
+           'E5. the oauthAllowedScope cell draws a delegated permission ' +
+           'grant\'s scope read-only, with its details as a tooltip and a ' +
+           'link to the Permissions tab, and no input (#1141)',
+           JSON.stringify(derived) + ' | ' + cell.slice(0, 600));
 
       // --- F. URN choices by their last two sections ---------------------
       const section2 = page.applicationFieldsSection(ctx, json2, '');

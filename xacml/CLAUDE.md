@@ -1823,11 +1823,13 @@ application declared for nothing and a session are never refused by it.
 
 `authn-mechanism`, a Deny right after the protocol rule and before risk, **in
 both modes**: a browser issuance to an application that lists the sign-in
-mechanisms it allows (`appAuthnMechanism`) is denied when the person's
-authentication satisfies none of them. Two ENVIRONMENT bags carry it —
-`AUTHN_ATTRIBUTE.ALLOWED_MECHANISM` (the application's list) and `MECHANISM`
-(what the session satisfies, from `common/authn_mechanisms.ts`) — and the rule
-fires only when the allowed bag holds something.
+mechanisms it allows (the first factors of the named authentication policy
+it names, `appAuthnPolicy`, since #1148; its own `appAuthnMechanism` until
+then) is denied when the person's authentication satisfies none of them. Two
+ENVIRONMENT bags carry it — `AUTHN_ATTRIBUTE.ALLOWED_MECHANISM` (the
+application's list) and `MECHANISM` (what the session satisfies, from
+`common/authn_mechanisms.ts`) — and the rule fires only when the allowed bag
+holds something.
 
 * **The gate supplies both** (`issuance_gate.js`'s `mechanismFactsOf()`), on
   four BROWSER kinds only — a session started at a sign-in door (which names
@@ -1852,12 +1854,13 @@ fires only when the allowed bag holds something.
 
 `mfa-mechanism`, a Deny right after `authn-mechanism` and for its reasons,
 **in both modes**: a browser issuance to an application that lists the second
-factors it allows (`appMfaMechanism`) is denied when the person's
-authentication GAVE a second factor and none of them is listed. Two
-ENVIRONMENT bags: `AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM` and `MFA_MECHANISM`
-(from `common/mfa_mechanisms.ts`), and the rule requires BOTH to hold
-something — so a session on one factor is never denied by it (rcbj: the list
-says which second factors, never whether one is needed), whatever built the
+factors it allows (the second factors of the named authentication policy it
+names, `appAuthnPolicy`, since #1148; its own `appMfaMechanism` until then) is
+denied when the person's authentication GAVE a second factor and none of them is
+listed. Two ENVIRONMENT bags: `AUTHN_ATTRIBUTE.ALLOWED_MFA_MECHANISM` and
+`MFA_MECHANISM` (from `common/mfa_mechanisms.ts`), and the rule requires BOTH to
+hold something — so a session on one factor is never denied by it (rcbj: the
+list says which second factors, never whether one is needed), whatever built the
 request.
 
 * **The gate supplies both** (`mfaFactsOf()`) on #457's four browser kinds,

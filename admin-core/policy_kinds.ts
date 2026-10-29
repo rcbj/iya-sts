@@ -430,7 +430,67 @@ PolicyKinds.register({
   appliesTo: 'the NEXT sign-in in this realm; a session already started ' +
              'keeps the factors it was started with',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
-               'built-in defaults where it has not'
+               'built-in defaults where it has not',
+  // NAMED AUTHENTICATION POLICIES (#1148): the mechanisms an application
+  // naming one (`appAuthnPolicy`) allows, saved and deleted beside the
+  // realm's own policy.
+  extraActions: [
+    { action: 'save-named-authn-policy',
+      operationId: 'saveNamedAuthnPolicy',
+      summary: 'Create or replace a named authentication policy in this ' +
+               'realm',
+      description: 'Writes `cn=<name>,ou=authnPolicies` in this realm\'s ' +
+                   'directory: the first-factor mechanisms (`mechanisms`) ' +
+                   'and the second factors (`secondFactors`) an application ' +
+                   'naming this policy in `appAuthnPolicy` allows — each ' +
+                   'list the WHOLE list, none allowing every one (and ' +
+                   'leaving the realm\'s second factors as they are). ' +
+                   '**The realm\'s own**: not inherited from the default ' +
+                   'realm. The name is lower-case letters, digits and ' +
+                   'hyphens, not `default` (STS-AUTHN-0532); an unknown ' +
+                   'mechanism is refused (STS-AUTHN-0533).',
+      auditAction: 'admin.authn-policy.save-named',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,62}$',
+                  description: 'The policy\'s name.' },
+          description: { type: 'string', maxLength: 1024,
+                         description: 'What the policy is for.' },
+          mechanisms: { type: 'array', items: { type: 'string' },
+                        description: 'The first-factor mechanisms allowed: ' +
+                                     'password, password-mfa, webauthn, ' +
+                                     'spnego, wallet, federation.' },
+          secondFactors: { type: 'array', items: { type: 'string' },
+                           description: 'The second factors allowed: ' +
+                                        'password, securityKey, totp, ' +
+                                        'recoveryCode, emailCode, ' +
+                                        'emailLink, wallet.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'passkeys-only', description: 'Passwordless',
+                     mechanisms: ['webauthn'], secondFactors: [] }],
+        additionalProperties: false
+      } },
+    { action: 'delete-named-authn-policy',
+      operationId: 'deleteNamedAuthnPolicy',
+      summary: 'Delete a named authentication policy',
+      description: 'Deletes `cn=<name>,ou=authnPolicies` in this realm. ' +
+                   'Refused while an application of this realm names it in ' +
+                   '`appAuthnPolicy` (STS-AUTHN-0534) — it would then allow ' +
+                   'no mechanism — and for a name the realm does not hold ' +
+                   '(STS-AUTHN-0535).',
+      auditAction: 'admin.authn-policy.delete-named',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The policy\'s name.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'passkeys-only' }],
+        additionalProperties: false
+      } }
+  ]
 });
 
 // #221: the third kind, rcbj's "a third kind of policy, the service-account
