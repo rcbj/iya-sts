@@ -20364,7 +20364,9 @@ function internalApplications() {
   const issued = nowSec();
   // THE API OBJECTS FIRST (#1141): a permission is defined before it is
   // granted, the debugger's rule, and the clients below hold grants of them.
-  const rows = apiResourceApplications(base).concat([
+  // Two shapes in one list (a resource and a client), which the checker would
+  // otherwise type by the first; an edit for the checker, the same program.
+  const rows = /** @type {any[]} */ (apiResourceApplications(base)).concat([
     { identifier: 'sts-admin-console',
       name: 'Admin console',
       kinds: ['oauth2-client', 'oidc-relying-party'],

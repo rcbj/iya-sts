@@ -632,8 +632,11 @@ function childMain() {
         protocols: ['oauth2'],
         fields: { oauthClientId: RCLIENT,
                   oauthTokenEndpointAuthMethod: ['client_secret_basic'],
-                  oauthAllowedScope: ['openid', 'report:use',
-                                      'report:admin'] } });
+                  oauthAllowedScope: ['openid'],
+                  // The report scopes are grants since #1141.
+                  oauthDelegatedPermission: [
+                    'urn:sts:report-api:report:use',
+                    'urn:sts:report-api:report:admin'] } });
       const issued = await oauth2.tokenSet(realmBase, {
         client_id: RCLIENT, grant: 'refresh_token', withRefresh: false,
         scope: asked, sub: RADMIN, username: RADMIN,
