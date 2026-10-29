@@ -71,6 +71,14 @@
     "en": "6965ae9cced8a957",
     "text": "Su propio repositorio de políticas (ou=policies) y registro de PEP remotos (ou=peps), ambos en el directorio del dominio. El repositorio de un dominio nuevo empieza VACÍO y nunca recurre al del dominio predeterminado, lo que acoplaría dos dominios: las dos políticas con las que este servicio decide su propia emisión y acceso están integradas y se LLAMAN, así que deciden en todos los dominios, y una entrada del repositorio en un dominio las anula solo allí. Un PEP remoto pertenece al dominio en el que está registrado, y el certificado de su escucha HTTPS lo emite la CA emisora pep-tls de ese dominio."
   },
+  "realms.support.authzen.family": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "realms.support.authzen.note": {
+    "en": "8477ecf26c38a2a6",
+    "text": "El dominio es el inquilino de AuthZEN: un llamante se busca en el propio directorio del dominio, así que el llamante de otro dominio no es nadie aquí, y una pregunta se decide frente a la política raíz propia del dominio. El catálogo de atributos es el objeto sts-authzen-api del dominio, y cada ajuste authzen.* es del dominio."
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "Federación"

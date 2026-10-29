@@ -71,6 +71,14 @@
     "en": "6965ae9cced8a957",
     "text": "擁有自己的原則存放庫（ou=policies）與遠端 PEP 登錄簿（ou=peps），兩者都在領域的目錄中。新領域的存放庫一開始是「空的」，且絕不退回使用預設領域的存放庫，否則會讓兩個領域耦合：本服務用來決定自身簽發與存取的兩個原則是內建並被「呼叫」的，因此在每個領域中都會做出決定，而領域中的存放庫項目只在該領域中覆寫它們。遠端 PEP 屬於其註冊所在的領域，其 HTTPS 接聽程式憑證由該領域的 pep-tls 簽發 CA 簽發。"
   },
+  "realms.support.authzen.family": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "realms.support.authzen.note": {
+    "en": "8477ecf26c38a2a6",
+    "text": "領域是 AuthZEN 的租用戶：呼叫端是在領域自己的目錄中查找，因此另一個領域的呼叫端在此誰也不是；問題則依領域自己的根原則做決定。屬性目錄是該領域的 sts-authzen-api 物件，而每個 authzen.* 設定都屬於該領域。"
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "聯合"

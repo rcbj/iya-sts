@@ -707,6 +707,14 @@
     "en": "5a0acf9625882942",
     "text": "RFC 9396 第 10 节 `authorization_details_types`：此客户端唯一可以使用的 authorization_details 类型，每个值一种。为空表示此授权服务器支持的任何类型。"
   },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "AuthZEN 属性目录中的一行（#563），位于 sts-authzen-api 资源对象上：一个 JSON 对象 {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}。`object` 为 subject、resource、action 或 context；`property` 为成员名称，或指向嵌套对象内部的点分路径；`attributeId` 为发送时使用的 XACML 属性；`category`（默认为该对象自己的类别）、`dataType`（默认为 string）和 `multiplicity`（single 或 bag）。任何行都未指明的属性在所有模式下均被拒绝；一行不得指明本服务自己的 urn:sts:xacml: 标识符、subject-id、resource-id 或 action-id，也不得在主体类别中指明裸目录属性名。"
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "AuthZEN 应用范围（#563）：此客户端使用自己的 client_credentials 令牌调用 /access/v1 时，可以在 context.application 中指明的应用——每个值一个标识符。客户端自己的标识符始终在范围内。由管理员设置，绝不由调用方设置。"
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 第 3 节：此应用作为资源服务器，对访问令牌背后的身份验证所要求的 acr 值——以空格分隔，最优先的在前。acr 一个都不满足的令牌会收到 401 insufficient_user_authentication 质询，并以这些值作为 acr_values。级别 0 < 1 < mfa 是有序的；hwk、phr 和 phrh 由密码加安全密钥满足；任何其他值只能由完全相同的 acr 满足。为空表示不作要求。"

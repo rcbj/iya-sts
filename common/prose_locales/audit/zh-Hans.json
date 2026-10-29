@@ -879,6 +879,10 @@
     "en": "d9fe267d0aae76d6",
     "text": "嵌入式 PEP 执行了决策"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "一次 AuthZEN 访问评估已作出决策"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "签发 PEP 拒绝让本服务铸造某项内容"

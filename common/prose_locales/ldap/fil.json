@@ -707,6 +707,14 @@
     "en": "5a0acf9625882942",
     "text": "RFC 9396 section 10 `authorization_details_types`: ang TANGING mga authorization_details type na puwedeng gamitin ng client na ito, isa bawat value. ANG WALANG LAMAN AY NANGANGAHULUGANG kahit anong type na sinusuportahan ng authorization server na ito."
   },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "ISANG ROW NG AUTHZEN ATTRIBUTE CATALOGUE (#563), sa sts-authzen-api resource object: isang JSON object {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}. Ang `object` ay subject, resource, action o context; ang `property` ay pangalan ng member, o isang dotted path papasok sa isang nested object; ang `attributeId` ay ang XACML attribute kung saan ito ipinapadala; ang `category` (default ang sarili ng object), `dataType` (default string) at `multiplicity` (single o bag). Tinatanggihan sa bawat mode ang property na hindi pinangangalanan ng anumang row, at hindi puwedeng pangalanan ng isang row ang sariling urn:sts:xacml: na mga identifier ng serbisyong ito, ang subject-id, resource-id o action-id, o isang hubad na pangalan ng directory attribute sa isang subject category."
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "AUTHZEN APPLICATION SCOPE (#563): ang mga application na puwedeng pangalanan ng client na ito sa context.application, kapag tumatawag sa /access/v1 gamit ang sarili nitong client_credentials token — isang identifier bawat value. Laging nasa scope ang sariling identifier ng client. Itinatakda ng administrator, hindi kailanman ng caller."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 section 3: ang mga acr value na hinihingi ng application na ito, bilang resource server, sa authentication sa likod ng isang access token — pinaghihiwalay ng espasyo, ang pinakagusto ang una. Ang token na walang natutugunang acr ay hinahamon ng 401 insufficient_user_authentication na ang mga ito ang acr_values. Nakaayos ang mga level na 0 < 1 < mfa; ang hwk, phr at phrh ay natutugunan ng password kasama ang security key; ang anumang ibang value ay ng eksaktong acr na iyon lang. ANG WALANG LAMAN ay walang hinihingi."

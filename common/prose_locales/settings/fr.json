@@ -6891,6 +6891,38 @@
     "en": "b02ca7d48b1cb3f5",
     "text": "Pendant combien de temps attendre qu’un PEP réponde à une notification. PLUS COURT QUE LES DIX SECONDES DE SSF À DESSEIN, et la raison est ce qui fait d’une notification une notification : un push perdu est un événement perdu, donc SSF attend ; une notification perdue coûte un intervalle d’interrogation de latence et rien d’autre, si bien qu’attendre est l’erreur coûteuse. Ce qui ATTEND réellement, c’est le formulaire de console de la personne qui vient d’enregistrer une politique."
   },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "AuthZEN activé"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "Activé, l’AuthZEN Authorization API répond sous /access/v1. Désactivé, ses routes restent ENREGISTRÉES et répondent 501, comme celles de XACML : la fonctionnalité est désactivée, l’URL n’est pas erronée. Il décide avec le moteur XACML, il répond donc aussi 501 tant que xacml.enabled est désactivé. Un appelant a toujours besoin du rôle AUTHZEN_PEPS (roles.authzenPepGroup) et d’une portée d’application avant qu’on lui dise quoi que ce soit."
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "Comment un appelant AuthZEN s’authentifie"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls, la valeur par défaut : un certificat client que ce service VÉRIFIE d’après son magasin de confiance des clients, résolu en l’entrée d’annuaire qui le stocke (ou en la personne qu’il nomme, pour un certificat que ce service a émis). bearer : un jeton d’accès OAuth 2.0 issu de client_credentials, dont l’audience est le /access/v1 de ce domaine et portant authzen:evaluate ; l’appelant est le client. mtls+bearer : les deux, et le jeton doit être lié au certificat présenté (RFC 8705), de sorte que les deux nomment une seule partie. Vérifié dans tous les modes : AuthZEN laisse l’authentification du PEP au déploiement (section 11.2), et un point de terminaison de décision que n’importe qui peut piloter est un oracle de la politique."
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "Types de sujet qui nomment une personne de l’annuaire"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "Les valeurs de subject.type dont le subject.id est une personne de l’annuaire de ce domaine, séparées par des virgules. Pour celles-ci, le Policy Information Point fournit les rôles et les attributs d’annuaire du sujet, et ils font AUTORITÉ : un appelant ne peut pas les envoyer. Pour tout autre type, l’annuaire n’est pas consulté, de sorte qu’un id qui correspond par hasard au nom d’une personne n’est pas cette personne. Vide signifie que l’annuaire n’est jamais consulté."
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "Renvoyer les raisons d’une décision"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "Activé, une décision porte un context contenant la décision XACML, sa raison, tout advice et les obligations qui ont fait d’un Permit un false. Désactivé par défaut : une raison apprend à un appelant quelque chose sur la politique, et decision seul est la réponse dans les deux cas."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "SSF activé"
@@ -8022,6 +8054,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré XACML_USER, qu’exigent les trois endpoints XACML proprement dits — GET /xacml, POST /xacml/pdp et GET /xacml/policies. Un appelant présentant un certificat client que ce service a VÉRIFIÉ est quelqu’un qu’il peut nommer ; l’appartenance à ce groupe est ce qui en fait quelqu’un qu’il laisse entrer, et les deux sont séparés pour la même raison que pour roles.remotePepGroup ci-dessus : un certificat prouve une identité et un groupe accorde une permission. C’EST UN SECOND GROUPE ET NON LE MÊME : REMOTE_PEPS donne accès aux trois endpoints /xacml/pep, qui distribuent les documents avec lesquels ce service applique son propre contrôle d’accès, et un seul groupe accordant les deux ferait qu’admettre un appelant sur l’interface XACML proprement dite l’admettrait silencieusement sur ceux-là. Le définir à la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme ces trois endpoints à tout appelant ; c’est le moyen de retirer l’interface XACML sans désactiver xacml.enabled et perdre avec lui les PEP intégrés d’émission et d’accès."
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "Groupe accordant le rôle AUTHZEN_PEPS"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "Le groupe d’annuaire dont les membres détiennent le rôle intégré AUTHZEN_PEPS, qui est ce qu’exige l’AuthZEN Authorization API sous /access/v1. Un membre est une personne, un compte de service ou une application (pour un appelant qui s’authentifie avec son propre jeton d’accès). C’EST UN TROISIÈME GROUPE ET AUCUN DES DEUX AUTRES : AUTHZEN_PEPS demande des décisions et rien d’autre, alors que XACML_USER lit aussi le dépôt et que REMOTE_PEPS récupère les documents avec lesquels ce service applique son propre contrôle d’accès ainsi que les attributs d’une personne nommée. Le définir sur la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme /access/v1 à tout appelant."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

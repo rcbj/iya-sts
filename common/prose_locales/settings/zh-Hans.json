@@ -6891,6 +6891,38 @@
     "en": "b02ca7d48b1cb3f5",
     "text": "等待 PEP 应答提醒的时长。有意比 SSF 的十秒更短，原因正是提醒之所以为提醒的那一点：丢失的推送就是丢失的事件，所以 SSF 会等待；丢失的提醒只付出一个轮询间隔的延迟，别无代价，所以等待才是代价高昂的错误。真正在等待它的，是刚刚保存了策略的人的控制台表单。"
   },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "启用 AuthZEN"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "开启时，AuthZEN Authorization API 在 /access/v1 下应答。关闭时，其路由仍保持注册状态并应答 501，与 XACML 的路由一样：功能已关闭，而不是 URL 有误。它使用 XACML 引擎作出决策，因此在 xacml.enabled 关闭时也会应答 501。调用方仍需拥有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）和应用范围，才会得到任何答复。"
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "AuthZEN 调用方的身份验证方式"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls，默认值：本服务依据其客户端信任库验证的客户端证书，解析为存储该证书的目录条目（对于本服务签发的证书，则解析为其指明的人员）。bearer：来自 client_credentials 的 OAuth 2.0 访问令牌，受众为本领域的 /access/v1，并携带 authzen:evaluate；调用方即该客户端。mtls+bearer：两者兼具，且令牌必须绑定到出示的证书（RFC 8705），使两者指明同一方。在所有模式下都会检查：AuthZEN 将 PEP 的身份验证留给部署方（第 11.2 节），而任何人都能驱动的决策端点就是策略的预言机。"
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "指明目录人员的主体类型"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "其 subject.id 为本领域目录中人员的 subject.type 值，以逗号分隔。对于这些类型，策略信息点会提供主体的角色和目录属性，且这些值具有权威性：调用方无法发送它们。对于任何其他类型，不会查询目录，因此恰好与某人姓名匹配的 id 并不是那个人。为空表示从不查询目录。"
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "返回决策的原因"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "开启时，决策会携带一个 context，其中包含 XACML 决策、原因、任何 advice，以及使 Permit 变为 false 的 obligations。默认关闭：原因会向调用方透露有关策略的信息，而无论如何，单独的 decision 就是答案。"
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "启用 SSF"
@@ -8022,6 +8054,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "其成员拥有内置 XACML_USER 角色的目录组，这是三个 XACML 端点本身所要求的角色——GET /xacml、POST /xacml/pdp 和 GET /xacml/policies。出示了经本服务验证的客户端证书的调用方，是本服务能够指明身份的一方；而该组的成员身份才使其成为本服务允许进入的一方，两者被分开的理由与上面的 roles.remotePepGroup 相同：证书证明身份，组授予权限。这是第二个组，而不是同一个组：REMOTE_PEPS 可访问三个 /xacml/pep 端点，它们分发本服务用于执行其自身访问控制的文档，若由一个组同时授予两者，那么允许调用方访问XACML 界面本身就会悄无声息地允许其访问那些端点。设置为空字符串表示没有人拥有该角色，这会对每个调用方关闭这三个端点；这是在不关闭 xacml.enabled、从而不连带失去嵌入式签发和访问 PEP 的情况下移除 XACML 界面的方法。"
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "授予 AUTHZEN_PEPS 角色的组"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "其成员持有内置 AUTHZEN_PEPS 角色的目录组，/access/v1 下的 AuthZEN Authorization API 要求的就是该角色。成员可以是人员、服务账户或应用（对于使用自己的访问令牌进行身份验证的调用方）。它是第三个组，而不是另外两个组中的任何一个：AUTHZEN_PEPS 只请求决策，别无其他；而 XACML_USER 还会读取策略库，REMOTE_PEPS 则拉取本服务用于执行自身访问控制的文档以及指定人员的属性。将其设为空字符串意味着没有任何人持有该角色，从而对每个调用方关闭 /access/v1。"
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

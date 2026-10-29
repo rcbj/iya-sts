@@ -707,6 +707,14 @@
     "en": "5a0acf9625882942",
     "text": "RFC 9396 section 10 `authorization_details_types` : les SEULS types authorization_details que ce client peut utiliser, un par valeur. VIDE SIGNIFIE tout type que ce serveur d’autorisation prend en charge."
   },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "UNE LIGNE DU CATALOGUE D’ATTRIBUTS AUTHZEN (#563), sur l’objet de ressource sts-authzen-api : un objet JSON {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}. `object` vaut subject, resource, action ou context ; `property` est le nom du membre, ou un chemin pointé dans un objet imbriqué ; `attributeId` l’attribut XACML sous lequel il est envoyé ; `category` (par défaut celle de l’objet lui-même), `dataType` (par défaut string) et `multiplicity` (single ou bag). Une propriété qu’aucune ligne ne nomme est refusée dans tous les modes, et une ligne ne peut nommer ni les identifiants urn:sts:xacml: propres à ce service, ni subject-id, resource-id ou action-id, ni un nom d’attribut d’annuaire nu dans une catégorie de sujet."
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "PORTÉE D’APPLICATIONS AUTHZEN (#563) : les applications que ce client, appelant /access/v1 avec son propre jeton client_credentials, peut nommer dans context.application — un identifiant par valeur. L’identifiant propre du client est toujours dans la portée. Défini par un administrateur, jamais par l’appelant."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 section 3 : les valeurs acr que cette application, en tant que serveur de ressources, exige de l’authentification sous-jacente à un jeton d’accès — séparées par des espaces, la préférée en premier. Un jeton dont l’acr ne satisfait aucune d’elles reçoit un défi 401 insufficient_user_authentication avec celles-ci comme acr_values. Les niveaux 0 < 1 < mfa sont ordonnés ; hwk, phr et phrh sont satisfaits par un mot de passe accompagné d’une clé de sécurité ; toute autre valeur uniquement par cet acr exact. VIDE n’exige rien."

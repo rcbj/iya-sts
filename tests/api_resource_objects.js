@@ -103,6 +103,7 @@ function childMain() {
       ['sts-management-api', '/admin-api'],
       ['sts-account-api', '/account-api'],
       ['sts-report-api', '/report-api'],
+      ['sts-authzen-api', '/access/v1'],
       ['sts-resource', '/resource']
     ];
     const CLIENT = 'sts-api-client';

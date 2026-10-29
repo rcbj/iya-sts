@@ -389,6 +389,26 @@ class XacmlMonitor {
           log.debug("Leaving bias().");
           return null;
         },
+        obligations: false },
+
+      // THE AUTHZEN ENDPOINTS (#563): the PDP endpoint's case again, in
+      // AuthZEN's shape. A decision is counted; the enforcement was the
+      // caller's, so the allowed and refused cells stay empty.
+      { id: 'authzen',
+        label: 'The AuthZEN endpoints',
+        kind: 'endpoint',
+        where: 'POST /access/v1/evaluation, POST /access/v1/evaluations',
+        module: 'authzen/authzen.ts',
+        guards: 'NOTHING. An AuthZEN Policy Enforcement Point asked a ' +
+                'question and enforced the true or false it was told in ' +
+                'its own process. Counted once per evaluation, a batch\'s ' +
+                'one by one.',
+        enforces: false,
+        bias: function () {
+          log.debug("Entering bias().");
+          log.debug("Leaving bias().");
+          return null;
+        },
         obligations: false }
     ];
     log.debug("Leaving XacmlMonitor.catalogue().");

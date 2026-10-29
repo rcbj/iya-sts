@@ -267,6 +267,14 @@
     "en": "fbd4d4a27b747323",
     "text": "策略决策点、其策略以及远程 PEP 的入口。"
   },
+  "listeners.applications.authzen.label": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "listeners.applications.authzen.what": {
+    "en": "26f176a9b231df2f",
+    "text": "AuthZEN Authorization API：基于 XACML 引擎的访问评估，以及其元数据文档。"
+  },
   "listeners.applications.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"

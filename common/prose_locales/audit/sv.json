@@ -879,6 +879,10 @@
     "en": "d9fe267d0aae76d6",
     "text": "Den inbäddade PEP:en verkställde ett beslut"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "En AuthZEN-åtkomstutvärdering avgjordes"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Utfärdande-PEP:en vägrade låta den här tjänsten prägla något"

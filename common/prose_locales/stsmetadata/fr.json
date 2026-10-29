@@ -95,6 +95,10 @@
     "en": "6803d7137bac3178",
     "text": "full pour l’ensemble des fonctionnalités obligatoires : le langage de politiques, les sept valeurs de décision dont les trois Indeterminate étendus, la correspondance des cibles, les conditions, les variables, les douze algorithmes de combinaison, les obligations et les conseils (advice), les références de politiques, et la bibliothèque de fonctions standard sur les dix-sept types de données. Conforme à la suite de conformité OASIS — 454 des 455 cas obligatoires réussissent, et l’unique exception est consignée avec son argumentation dans xacml/conformance/MANIFEST.js. NON couverts : AttributeSelector et les fonctions XPath (une politique qui en utilise un est Indeterminate plutôt que silencieusement vide), les profils Multiple Decision et Hierarchical Resource, et la délégation administrative."
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "837796da675e27fc",
+    "text": "partial : l’Access Evaluation API (section 6), décidée par le moteur XACML d’après la politique racine du domaine au moyen d’un catalogue d’attributs par domaine, avec X-Request-ID et le défi de la section 11.3. Manquent : les trois Search APIs, signed_metadata et chaque profil (Obligations, Access Request and Approval, ceux d’OAuth), tous encore à l’état de brouillon."
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full pour la requête et la réponse : les noms abrégés des catégories, les noms courts des types de données, l’inférence du type de données à partir du type JSON (y compris la distinction entier/double, lue dans le texte source parce que JSON.parse l’a déjà perdue), les tableaux comme sacs (bags), les obligations, les conseils et la PolicyIdentifierList. Le profil ne définit aucune syntaxe de politique ; les politiques restent donc en XML."
@@ -754,6 +758,10 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML en entrée, XML en sortie. Envoyez en POST un <PIPRequest> portant la <Request> XACML que vous décidez et un <AttributeDesignator> par attribut voulu ; recevez en retour des <Attributes> SOUS LA FORME DANS LAQUELLE UNE <Request> LES PORTE. IL EXISTE PARCE QU’UN PEP DISTANT DÉTIENT LE MOTEUR ET NON L’ANNUAIRE : le PIP de ce service EST ou=users, de sorte qu’une politique désignant un attribut que la requête ne portait pas se résout en un sac vide dans un autre conteneur et en une valeur réelle ici — la même politique décidant de deux façons dans deux points d’application, la dérive qu’un référentiel partagé existe pour empêcher, réapparaissant une couche plus bas. XACML NE DÉFINIT AUCUN PROTOCOLE PIP ; celui-ci invente donc le moins possible : les deux sens sont le propre XML de XACML, lu et écrit par xacml_xml.js plutôt que par quoi que ce soit de nouveau, et la réponse est un FRAGMENT DE REQUÊTE qu’un PEP insère dans sa propre requête — après quoi son moteur trouve les valeurs là où un désignateur les cherche, sans traduction et sans branche. Il répond via le MÊME resolverFor() que celui confié au PDP intégré, de sorte que les deux ne peuvent pas diverger, et il résout l’entrée UNE SEULE FOIS par appel, de sorte qu’un lot de désignateurs ne peut pas voir deux personnes différentes. TROIS RÈGLES : un désignateur non résolu est un <Attribute> ABSENT et jamais un attribut vide ni une erreur, car c’est à cela que ressemble une requête qui ne l’a jamais porté ; MustBePresent est lu et NON appliqué, car ce que signifie un sac vide est réglé par le désignateur et la fonction à laquelle il est confié, tous deux dans le moteur de l’APPELANT ; et seule la catégorie access-subject est résolue. Les cinq raisons pour lesquelles un sac peut être vide reviennent dans <Unresolved>, dans l’espace de noms PROPRE à ce service, afin qu’un PEP qui ne lit que l’espace de noms du cœur XACML ne le voie jamais. Il exige REMOTE_PEPS plutôt que le XACML_USER qu’exige le reste de /xacml — le seul point de terminaison ici dont le rôle ne suit pas son chemin, car ce qui revient, ce sont les données propres d’une personne plutôt qu’une règle que chacun peut vérifier."
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "Envoyez par POST un subject, une action, une resource et un context AuthZEN ; recevez decision true ou false. Décidé par le moteur XACML d’après la politique RACINE du domaine, avec protocol = authzen dans la requête. Une propriété n’atteint la politique qu’à travers le catalogue d’attributs du domaine, et une propriété non déclarée donne un 400 dans tous les modes. L’APPELANT s’authentifie selon authzen.callerAuthentication — un certificat client par défaut, un jeton d’accès portant authzen:evaluate, ou les deux — et doit détenir AUTHZEN_PEPS et avoir une portée sur l’application dont il s’enquiert. Un refus est un 200 false ; une erreur atteinte par le PDP est un 500, jamais false."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -3578,6 +3586,10 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "Un Policy Decision Point, un référentiel de politiques qui EST ou=policies dans l’annuaire intégré, un Policy Information Point qui lit les attributs dans l’entrée propre du sujet, et un Policy Enforcement Point intégré. LA SEULE FAMILLE ICI QUI RÉPOND À UNE QUESTION SUR LA FRONTIÈRE DE QUELQU’UN D’AUTRE : tout autre protocole de ce service authentifie ou provisionne quelqu’un, alors que celui-ci reçoit un sujet déjà authentifié ailleurs et doit dire s’il en a le droit. Soumis à la suite de conformité OASIS plutôt qu’à un test écrit ici."
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "L’AuthZEN Authorization API sur le moteur XACML : un Policy Enforcement Point pose une question par accès et reçoit true ou false, décidé d’après la politique racine du domaine. Un ADAPTATEUR : la requête est convertie en requête XACML au moyen d’un catalogue d’attributs par domaine et de l’unique constructeur de requêtes, et la réponse est reconvertie en mode fail-closed. Les points de terminaison XACML et le conteneur du PEP distant n’en sont pas affectés."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

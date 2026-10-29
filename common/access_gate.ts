@@ -100,6 +100,7 @@ import InstanceSlot = require('./instance_slot');
 //   spire-server-api    `spiffe/spiffe_grpc.ts`'s prepareCall()
 //   xacml-pep-api       `xacml/xacml.ts`'s pepAccess()
 //   xacml-api           `xacml/xacml.ts`'s xacmlAccess()
+//   authzen-api         `authzen/authzen_caller.ts`'s mayAsk() (#563)
 //   protocol-debugger   `debugger/debugger_access.ts`
 //
 // **THE LAST THREE ARE NOT LIKE THE FIVE ABOVE THEM AND THE DIFFERENCE IS THE
@@ -173,6 +174,12 @@ const RESOURCE = {
   // prevent — and a policy layer that cannot express the distinction its own
   // register makes is a policy layer somebody will work around.
   XACML_API: 'xacml-api',
+  // THE AUTHZEN AUTHORIZATION API (#563): `POST /access/v1/evaluation` and
+  // its batch sibling. Restricted from the start, like the two XACML ones —
+  // `authzen/authzen_caller.ts` puts AUTHZEN_PEPS in the request — and a
+  // resource of its own so an operator can narrow decision-only callers
+  // without touching either XACML surface (rcbj on #563, decision 2).
+  AUTHZEN_API: 'authzen-api',
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the third resource that
   // is restricted from the start: `debugger/debugger_access.ts` puts the two
   // console roles in the request, so only a console administrator is issued

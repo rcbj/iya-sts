@@ -71,6 +71,14 @@
     "en": "6965ae9cced8a957",
     "text": "拥有自己的策略存储库（ou=policies）和远程 PEP 登记簿（ou=peps），两者都在领域的目录中。新领域的存储库一开始为空，并且永远不会回退到默认领域的存储库，否则会把两个领域耦合起来：本服务用来决定自身签发和访问的两项策略是内置并被调用的，因此在每个领域中都起决定作用，而某个领域中的存储库条目只在该领域覆盖它们。远程 PEP 属于其注册所在的领域，其 HTTPS 监听器证书由该领域的 pep-tls 签发 CA 签发。"
   },
+  "realms.support.authzen.family": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "realms.support.authzen.note": {
+    "en": "8477ecf26c38a2a6",
+    "text": "领域是 AuthZEN 的租户：调用方在领域自己的目录中查找，因此另一个领域的调用方在这里谁也不是；问题依据领域自己的根策略作出决策。属性目录是该领域的 sts-authzen-api 对象，每个 authzen.* 设置都属于该领域。"
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "联合"

@@ -85,18 +85,20 @@ module.exports = {
     monitor.resetForTests();
 
     // -------------------------------------------------------------------
-    // 1. THE CATALOGUE. Three askers, and only two of them enforce (the
-    //    demonstration PEP, `protected`, moved to the remote PEP in #596).
+    // 1. THE CATALOGUE. Four askers, and only two of them enforce (the
+    //    demonstration PEP, `protected`, moved to the remote PEP in #596;
+    //    the AuthZEN endpoints joined the PDP endpoint in #563).
     // -------------------------------------------------------------------
-    t.log.info('=== the three askers of the PDP in this process ===');
+    t.log.info('=== the four askers of the PDP in this process ===');
 
     const first = shot();
-    t.equal(first.rows.length, 3,
-            'three things ask the PDP in this process and all three are ' +
-            'listed — the two embedded PEPs and the PDP endpoint');
+    t.equal(first.rows.length, 4,
+            'four things ask the PDP in this process and all four are ' +
+            'listed — the two embedded PEPs, the PDP endpoint and the ' +
+            'AuthZEN endpoints');
     t.equal(first.rows.filter(function (r) { return r.enforces; }).length, 2,
-            'TWO of them enforce; the third is POST /xacml/pdp, which ' +
-            'answers somebody else\'s PEP');
+            'TWO of them enforce; POST /xacml/pdp and /access/v1 answer ' +
+            'somebody else\'s PEP');
     t.check(!first.rows.some(function (r) { return r.id === 'protected'; }),
             'and the demonstration PEP is not among them: it is the remote ' +
             'PEP\'s GET /protected since #596');
@@ -198,7 +200,7 @@ module.exports = {
             'heard of is NOT counted — that page claims to list every asker ' +
             'of the PDP in this process, and a row nothing describes would ' +
             'break the claim rather than extend it');
-    t.equal(shot().rows.length, 3,
+    t.equal(shot().rows.length, 4,
             'and it does not appear as a row');
 
     monitor.record('access', { decision: 'SomethingNew', allowed: true });

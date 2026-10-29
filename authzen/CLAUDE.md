@@ -29,8 +29,12 @@ of its own when its semantics are settled, and none is advertised until then.
 |---|---|
 | `authzen_catalogue.ts` | The per-realm ATTRIBUTE CATALOGUE's grammar: a row (object, property or dotted path → attribute id, category, datatype, `single` or `bag`), its defaults, its reserved identifiers, and the reading of an entry's rows. **Pure.** |
 | `authzen_map.ts` | One access evaluation read against the catalogue and refused where it cannot be represented, the XACML request built, and the decision mapped back fail-closed. **Pure.** |
+| `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application. |
+| `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`. Thin, as `xacml/xacml.ts` is. |
 
-`tests/authzen_map.js` holds both, in process.
+`tests/authzen_map.js` holds the two pure modules in process;
+`tests/authzen_evaluation.js` drives the route over real handshakes in a child
+process, in a throwaway realm whose root policy it wrote.
 
 ## The mapping, in one table
 
@@ -126,7 +130,67 @@ Reasons and advice go in the response's `context` only when
 `authzen.returnReasons` is on (#1161), and never decide anything: section 5.5
 keeps `decision` alone as the answer.
 
+## Who is asking (#1161)
+
+**Three doors, chosen per realm by `authzen.callerAuthentication`, mutual TLS
+by default** (rcbj, 2026-10-29: "for remote PDPs, use Mutual Auth TLS by
+default"). The design comment on #563 asked for mutual TLS AND a token;
+`mtls+bearer` is that, and it binds the two — the token must carry the
+presented certificate's RFC 8705 `x5t#S256` — so they name one party rather
+than two that would each need a role. `bearer` alone is for a PEP that cannot
+present a certificate. Every door is checked in every mode: AuthZEN section
+11.2 leaves the PEP's authentication to the deployment, and a decision
+endpoint anybody can drive is an oracle that maps the policy.
+
+* **The certificate is read by `xacml/xacml.ts`'s `callerIdentity()`** —
+  public for this since #563 — so one certificate names one entry on every
+  surface (the four links' first two, `xacml/CLAUDE.md`).
+* **The token is read as `report/report_api.ts` reads its own**, less the
+  person: a token whose `sub` is not its client (`client_id`, or
+  `urn:sts:client:<id>` in RFC 9700 mode) is refused 403 — a person is not an
+  enforcement point.
+* **A 401 carries `WWW-Authenticate: Bearer realm="<issuer>"`** wherever a
+  token is a door (section 11.3's SHOULD). On the certificate door alone there
+  is no HTTP scheme to name, so there is none.
+
+**AUTHZEN_PEPS, NOT XACML_USER OR REMOTE_PEPS** (decision 2), through
+`roles.authzenPepGroup` (default `authzen-peps`, seeded empty in every
+realm), decided by the access-control policy on resource `authzen-api` with
+the role in `requiredRoles` — so `/admin/xacml/decide` reproduces it. An
+APPLICATION caller's groups are the ones whose `member` names its entry's
+DN; `roles.rolesOf()` resolves groups only for a person by itself, so
+`authzen_caller.ts` passes them in.
+
+**The application scope** (decision 1): the realm is the tenant; within it,
+`stsAuthzenApplication` on a person's or service account's entry,
+`appAuthzenApplication` (plus its own identifiers) on an application's.
+Administrator-set: `sts*` is refused by every self-service and provisioning
+door, and the attribute is not in the portal's list. `context.application`
+must be in the set (403 `0025`), none named and one in the set picks it,
+none in the set is `0026`, several and none named `0027`. **`ou=peps` is not
+consulted**: registration is not a permission.
+
+## What is decided, and what is recorded
+
+* **The realm's ROOT policy** (decision 7), through the XACML surface's own
+  `decide()`; `protocol = authzen` tells the question apart. `decide()`
+  gained an optional `{ resolve: false }` for this: a subject whose type is
+  not in `authzen.resolveSubjectTypes` is decided with NO PIP, so an id that
+  happens to match a person's name is not that person.
+* **One audit row per evaluation** (`authzen.decision`): the caller, the
+  application, the two types, the action, the request id, the decision, and
+  the obligation that made a Permit false (`0029`) or the fault (`0028`).
+  Never a property value, an id the caller sent, or a credential (decision 9).
+* **`/admin/xacml/monitor`'s `authzen` row** counts decisions and leaves the
+  enforcement cells empty, the PDP endpoint's reason.
+* **`sts-authzen-api` is the API** (#1139's model): its `oauthAudience` is the
+  realm's `/access/v1`, it defines `authzen:evaluate`
+  (`urn:sts:authzen-api:`), and deleting it turns the API off (`0014`) and
+  every token for it (`common/registered_targets.ts`).
+
 ## Error codes
 
 `STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
-the request's shape and values, 0010–0012 the catalogue's writes.
+the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
+the API being off, 0015–0023 the caller's authentication, 0024–0027 its
+admission and scope, 0028–0029 the result.

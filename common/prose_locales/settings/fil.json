@@ -6891,6 +6891,38 @@
     "en": "b02ca7d48b1cb3f5",
     "text": "Gaano katagal maghihintay na sagutin ng PEP ang isang nudge. SINADYANG MAS MAIKLI KAYSA SA SAMPUNG SEGUNDO NG SSF, at ang dahilan ay ang mismong gumagawang nudge sa isang nudge: ang nawalang push ay nawalang event, kaya naghihintay ang SSF; ang nawalang nudge ay nagkakahalaga ng isang polling interval ng latency at wala nang iba, kaya ang paghihintay ang mahal na pagkakamali. Ang TALAGANG naghihintay dito ay ang console form ng kung sinumang kakasave lang ng policy."
   },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "Naka-enable ang AuthZEN"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "Kapag naka-on, sumasagot ang AuthZEN Authorization API sa ilalim ng /access/v1. Kapag naka-off, nananatiling NAKA-REGISTER ang mga route nito at sumasagot ng 501, gaya ng sa XACML: naka-off ang feature, hindi mali ang URL. Nagpapasya ito gamit ang XACML engine, kaya sumasagot din ito ng 501 habang naka-off ang xacml.enabled. Kailangan pa rin ng caller ang AUTHZEN_PEPS role (roles.authzenPepGroup) at isang application scope bago ito sabihan ng anuman."
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "Paano nag-a-authenticate ang isang AuthZEN caller"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls, ang default: isang client certificate na VINE-VERIFY ng serbisyong ito laban sa client truststore nito, na nire-resolve sa directory entry na nag-iimbak nito (o sa taong pinangangalanan nito, para sa isang inisyu ng serbisyong ito). bearer: isang OAuth 2.0 access token mula sa client_credentials, na ang audience ay ang /access/v1 ng realm na ito at may dalang authzen:evaluate; ang caller ay ang client. mtls+bearer: pareho, at dapat naka-bind ang token sa ipinakitang certificate (RFC 8705), kaya iisang party ang pinangangalanan ng dalawa. Sinusuri sa bawat mode: iniiwan ng AuthZEN sa deployment ang pag-authenticate sa PEP (section 11.2), at ang decision endpoint na kayang patakbuhin ng kahit sino ay isang oracle para sa policy."
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "Mga subject type na nagpapangalan sa isang tao sa directory"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "Ang mga value ng subject.type na ang subject.id ay isang tao sa directory ng realm na ito, pinaghihiwalay ng kuwit. Para sa mga iyon, sinasagot ng Policy Information Point ang mga role at directory attribute ng subject, at AUTHORITATIVE ang mga ito: hindi maipapadala ng caller ang mga ito. Para sa anumang ibang type, hindi kinokonsulta ang directory, kaya ang id na nagkataong tumugma sa pangalan ng isang tao ay hindi ang taong iyon. Ang walang laman ay nangangahulugang hindi kailanman kinokonsulta ang directory."
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "Ibalik ang mga dahilan ng isang decision"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "Kapag naka-on, may dalang context ang isang decision na may XACML decision, ang dahilan, anumang advice, at ang mga obligation na nagpa-false sa isang Permit. Naka-off bilang default: may sinasabi ang isang dahilan sa caller tungkol sa policy, at ang decision lamang ang sagot alinman dito."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "Naka-enable ang SSF"
@@ -8022,6 +8054,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Ang grupo sa directory na ang mga miyembro ay may hawak ng built-in na role na XACML_USER, na siyang hinihingi ng tatlong mismong XACML endpoint — GET /xacml, POST /xacml/pdp at GET /xacml/policies. Ang tumatawag na nagpapakita ng client certificate na BINERIPIKA ng serbisyong ito ay isang kaya nitong pangalanan; ang pagiging miyembro ng grupong ito ang nagpapasya kung papapasukin ito, at magkahiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: nagpapatunay ng pagkakakilanlan ang certificate at nagbibigay ng pahintulot ang grupo. IKALAWANG GRUPO ITO AT HINDI ANG PAREHO: naaabot ng REMOTE_PEPS ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access control, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo. Ang pagtatakda nito sa walang laman na string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa tatlong endpoint na iyon sa bawat tumatawag; iyon ang paraan ng pag-alis sa XACML surface nang hindi pinapatay ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "Group na nagbibigay ng AUTHZEN_PEPS role"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na AUTHZEN_PEPS role, na siyang kailangan ng AuthZEN Authorization API sa ilalim ng /access/v1. Ang isang miyembro ay isang tao, isang service account, o isang application (para sa caller na nag-a-authenticate gamit ang sarili nitong access token). ITO AY IKATLONG GROUP AT HINDI ALINMAN SA DALAWA PANG IBA: humihingi lamang ng mga decision ang AUTHZEN_PEPS at wala nang iba, samantalang binabasa rin ng XACML_USER ang repository at kinukuha ng REMOTE_PEPS ang mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access at ang mga attribute ng isang pinangalanang tao. Ang pagtakda nito sa empty string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa /access/v1 sa bawat caller."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

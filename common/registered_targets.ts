@@ -37,7 +37,8 @@
 //          configured base and `/admin-api` under this host, and a realm's
 //          own `/admin-api`;
 //        * the account API, `/account-api` (#568);
-//        * the reports API, `/report-api` (#956).
+//        * the reports API, `/report-api` (#956);
+//        * the AuthZEN API, `/access/v1` (#563).
 //      The GNAP demonstration resource server, `/gnap/rs/resource`, was the
 //      fourth until #593 deleted it.
 //      The embedded debugger's api is not in this list because it needs no
@@ -254,6 +255,15 @@ export = class RegisteredTargets {
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
                 "reports API; its object " + (on ? 'exists.' : 'is gone.'));
       return on ? 'the reports API (/report-api)' : '';
+    }
+    // THE AUTHZEN API (#563): this realm's `/access/v1`, which a PEP asks
+    // for as its `resource` on client_credentials and which
+    // `authzen/authzen_caller.ts` accepts as a token's audience.
+    if (underAny('/access/v1')) {
+      const on = RegisteredTargets.seeded('sts-authzen-api');
+      log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
+                "AuthZEN API; its object " + (on ? 'exists.' : 'is gone.'));
+      return on ? 'the AuthZEN API (/access/v1)' : '';
     }
     log.debug("Leaving RegisteredTargets.ownResourceServer(). None.");
     return '';

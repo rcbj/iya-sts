@@ -879,6 +879,10 @@
     "en": "d9fe267d0aae76d6",
     "text": "內嵌 PEP 執行了決策"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "一次 AuthZEN 存取評估已做出決策"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "簽發 PEP 拒絕讓本服務產生某項內容"

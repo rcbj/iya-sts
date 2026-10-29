@@ -641,6 +641,15 @@ const SPECS: Spec[] = [
               'policy using one is Indeterminate rather than silently ' +
               'empty), the Multiple Decision and Hierarchical Resource ' +
               'profiles, and administrative delegation.' },
+  { id: 'authzen10', name: 'AuthZEN Authorization API 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/authorization-api-1_0.html',
+    coverage: 'partial: the Access Evaluation API (section 6), decided by ' +
+              'the XACML engine against the realm\'s root policy through a ' +
+              'per-realm attribute catalogue, with X-Request-ID and the ' +
+              'section 11.3 challenge. Missing: the three Search APIs, ' +
+              'signed_metadata, and every profile (Obligations, Access ' +
+              'Request and Approval, the OAuth ones), all still drafts.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -3630,6 +3639,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'endpoint here whose role does not follow its path, because what ' +
           'comes back is a person\'s own data rather than a rule anybody may ' +
           'check.' },
+  // --- AuthZEN (#563). authzen/CLAUDE.md argues the adapter.
+  { path: '/access/v1/evaluation', group: 'AuthZEN',
+    name: 'An access evaluation',
+    specs: ['authzen10'],
+    what: 'POST an AuthZEN subject, action, resource and context; get ' +
+          'decision true or false. Decided by the XACML engine against the ' +
+          'realm\'s ROOT policy, with protocol = authzen in the request. A ' +
+          'property reaches the policy only through the realm\'s attribute ' +
+          'catalogue, and an undeclared one is a 400 in every mode. The ' +
+          'CALLER authenticates by authzen.callerAuthentication — a client ' +
+          'certificate by default, an access token carrying ' +
+          'authzen:evaluate, or both — and must hold AUTHZEN_PEPS and be ' +
+          'scoped to the application it asks about. A denial is 200 false; ' +
+          'a fault the PDP reached is a 500, never false.' },
   // --- GNAP (2026-09-12). gnap/CLAUDE.md argues the module split.
   { path: '/gnap', group: 'GNAP', name: 'The grant endpoint',
     specs: ['rfc9635', 'rfc9421', 'rfc9530', 'rfc9493'],
@@ -9784,6 +9807,15 @@ const PROTOCOLS: Protocol[] = [
           'and this one is handed a subject that has already been ' +
           'authenticated elsewhere and asked whether they may. Held to the ' +
           'OASIS conformance suite rather than to a test written here.' },
+  { name: 'AuthZEN', groups: ['AuthZEN'],
+    specs: ['authzen10'],
+    what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
+          'Enforcement Point asks one question per access and is told true ' +
+          'or false, decided against the realm\'s root policy. An ADAPTER: ' +
+          'the request is mapped onto an XACML request through a per-realm ' +
+          'attribute catalogue and the one request builder, and the answer ' +
+          'is mapped back fail-closed. The XACML endpoints and the remote ' +
+          'PEP container are untouched by it.' },
   { name: 'Federation', groups: ['Federation'],
     specs: ['saml2-profiles', 'saml11-profiles', 'ws-federation', 'oidc',
             'rfc6749'],

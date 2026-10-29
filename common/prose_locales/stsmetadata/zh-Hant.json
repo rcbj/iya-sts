@@ -95,6 +95,10 @@
     "en": "6803d7137bac3178",
     "text": "full——就必要功能集而言：原則語言、七種決策值（包括三種延伸的 Indeterminate）、目標比對、條件、變數、十二種組合演算法、義務與建議、原則參照，以及涵蓋全部十七種資料類型的標準函式庫。依 OASIS 一致性測試套件檢驗——455 個必要案例中通過 454 個，唯一的例外連同其論證記錄於 xacml/conformance/MANIFEST.js。「未」涵蓋：AttributeSelector 與 XPath 函式（使用它們的原則會是 Indeterminate，而不是默默為空）、Multiple Decision 與 Hierarchical Resource 設定檔，以及管理委派。"
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "837796da675e27fc",
+    "text": "partial——Access Evaluation API（第 6 節），由 XACML 引擎透過各領域的屬性目錄，依領域的根原則做決定，並支援 X-Request-ID 與第 11.3 節的挑戰。缺少：三個 Search API、signed_metadata，以及每個設定檔（Obligations、Access Request and Approval、OAuth 相關設定檔），這些都仍是草案。"
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full——就請求與回應而言：簡寫類別名稱、簡短資料類型名稱、從 JSON 類型推斷資料類型（包括整數／雙精度的區別，這是從原始文字讀取的，因為 JSON.parse 已經把它丟棄了）、以陣列表示 bag、義務、建議與 PolicyIdentifierList。此設定檔未定義原則語法，因此原則仍為 XML。"
@@ -754,6 +758,10 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML 進、XML 出。POST 一個 <PIPRequest>，攜帶你正在決策的 XACML <Request>，以及每個所需屬性一個 <AttributeDesignator>；取回的 <Attributes> 會「以 <Request> 攜帶它們的形狀」呈現。它之所以存在，是因為遠端 PEP 擁有引擎而沒有目錄：本服務的 PIP「就是」ou=users，因此一項指定了請求未攜帶之屬性的原則，在另一個容器中會解析為空袋，在這裡則解析為真實的值——同一項原則在兩個強制執行點做出兩種決策，這正是共用存放庫要防止的偏移在低一層重新出現。XACML 並未定義 PIP 協定，因此這裡盡可能少發明：兩個方向都是 XACML 自己的 XML，由 xacml_xml.js 讀寫，而非任何新元件，回應則是一個 PEP 拼接進自己請求的「請求片段」——之後其引擎就會在指定子（designator）尋找的地方找到這些值，無需轉換也無需分支。它透過交給內嵌 PDP 的「同一個」resolverFor() 回答，因此兩者不可能不一致，而且每次呼叫只解析項目「一次」，讓一批指定子不會看到兩個不同的人。三條規則：無法解析的指定子是「不存在」的 <Attribute>，絕不是空的或錯誤，因為那正是從未攜帶它的請求的樣子；MustBePresent 會被讀取但「不」套用，因為空袋的意義由指定子以及它被交付的函式決定，兩者都在「呼叫端」的引擎中；且只有 access-subject 類別會被解析。袋子可能為空的五個原因會在 <Unresolved> 中傳回，使用本服務「自己的」命名空間，讓只讀取 XACML 核心命名空間的 PEP 永遠看不到它。它需要 REMOTE_PEPS，而非 /xacml 其餘部分所需的 XACML_USER——這是此處唯一角色不依循其路徑的端點，因為傳回的是一個人自己的資料，而不是任何人都可以檢查的規則。"
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "POST 一個 AuthZEN subject、action、resource 與 context；取得 decision 為 true 或 false。由 XACML 引擎依領域的「根」原則做決定，請求中帶有 protocol = authzen。屬性只能透過領域的屬性目錄到達原則，未宣告的屬性在每種模式下皆為 400。「呼叫端」依 authzen.callerAuthentication 進行驗證——預設為用戶端憑證，或攜帶 authzen:evaluate 的存取權杖，或兩者皆是——且必須持有 AUTHZEN_PEPS，並具備其所詢問之應用程式的範圍。拒絕為 200 false；PDP 遇到的錯誤為 500，絕不是 false。"
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -3578,6 +3586,10 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "一個 Policy Decision Point、一個「就是」內嵌目錄中 ou=policies 的原則存放庫、一個從主體自身項目讀取屬性的 Policy Information Point，以及一個內嵌的 Policy Enforcement Point。「此處唯一回答關於他人界限之問題的系列」：本服務上的其他每個協定都在驗證或佈建某人，而這一個則是接收一個已在別處通過驗證的主體，並被詢問其是否可以。以 OASIS 合規測試套件為準，而非以此處撰寫的測試為準。"
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "以 XACML 引擎實作的 AuthZEN Authorization API：原則執行點每次存取提出一個問題，並得到 true 或 false 的回覆，依領域的根原則做決定。這是一個「轉接器」：請求透過各領域的屬性目錄與唯一的請求建構器對應為 XACML 請求，而回覆則以 fail-closed 方式對應回來。XACML 端點與遠端 PEP 容器不受其影響。"
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

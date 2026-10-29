@@ -1860,6 +1860,36 @@ class CryptoMetadata {
              'than a security mechanism', ['SHA-256']]
           ];
         } },
+      // AUTHZEN (#563): the XACML row's position, and the caller's two
+      // credentials are verified by the layers that own them.
+      { name: 'AuthZEN',
+        signs: 'Nothing. A decision is a JSON boolean and carries no ' +
+               'signature; the metadata document is not signed ' +
+               '(signed_metadata is not produced).',
+        verifies: 'The caller\'s credential, by the layer that owns it: a ' +
+                  'client certificate by the TLS layer and the client ' +
+                  'truststore (see TLS / mutual TLS), an access token by ' +
+                  'this realm\'s own JWS verification (see OAuth2 / OIDC), ' +
+                  'and under mtls+bearer the token\'s RFC 8705 x5t#S256 ' +
+                  'against the certificate presented.',
+        encrypts: 'Nothing.',
+        decrypts: 'Nothing.',
+        keys: 'None of its own. The realm\'s signing keys verify the ' +
+              'tokens it accepts, as everywhere else.',
+        hashes: 'The SHA-256 thumbprint of the presented certificate, ' +
+                'compared with the token\'s cnf under mtls+bearer.',
+        whatItDoesNot: 'It signs no decision: a decision rests on the ' +
+                       'transport, as an XACML one does.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            ['Nothing is signed, encrypted or decrypted here', []],
+            ['The certificate thumbprint a bound token is compared with ' +
+             '(RFC 8705)', ['SHA-256']]
+          ];
+        } },
       { name: 'OAuth2 / OIDC',
         signs: 'Every access token and refresh token, and the ID Token, with ' +
                'the realm\'s RSA key as RS256. A client that registers ' +

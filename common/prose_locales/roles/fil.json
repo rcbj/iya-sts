@@ -83,6 +83,10 @@
     "en": "1b417a98ec7e824b",
     "text": "Isang tumatawag sa mismong XACML surface: sinumang miyembro ng grupong pinangalanan ng `roles.xacmlUserGroup` (default na \"xacml-users\"). Ito ang hinihingi ng `GET /xacml`, `POST /xacml/pdp` at `GET /xacml/policies`, at ang may hawak nito ay karaniwang isang client-certificate DN — sinasabi ng certificate kung SINO, at sinasabi ng grupong ito kung puwede sila. Sadya itong HINDI REMOTE_PEPS: naaabot ng role na iyon ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo."
   },
+  "roles.builtIn.AUTHZEN_PEPS.what": {
+    "en": "45abfea4c617fd17",
+    "text": "Isang AuthZEN Policy Enforcement Point: sinumang miyembro ng group na pinangangalanan ng `roles.authzenPepGroup` (default \"authzen-peps\") — isang tao, isang service account, o isang application na tumatawag gamit ang sarili nitong access token. Ito ang kailangan ng AuthZEN Authorization API sa ilalim ng `/access/v1`, at wala nang iba: wala itong binabasang policy at walang attribute ng sinumang tao, kaya hindi ito XACML_USER o REMOTE_PEPS."
+  },
   "roles.builtIn.OWNER_READ.what": {
     "en": "ff8296bdbd88d5ad",
     "text": "Isang MAY-ARI (#607): sinumang pinangangalanang may-ari ng isang role, grupo, service account o application sa realm na ito, nang direkta o sa pamamagitan ng grupong kinabibilangan niya. Pinahihintulutan ang permission na owner:read: pagbasa, sa pamamagitan ng /admin-api, ng mga object na pag-aari niya at wala nang iba. Kinakalkula kapag gumagawa ng desisyon."

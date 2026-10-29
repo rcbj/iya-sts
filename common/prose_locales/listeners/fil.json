@@ -267,6 +267,14 @@
     "en": "fbd4d4a27b747323",
     "text": "Ang policy decision point, ang mga policy nito at ang mga pinto ng mga remote PEP."
   },
+  "listeners.applications.authzen.label": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "listeners.applications.authzen.what": {
+    "en": "26f176a9b231df2f",
+    "text": "Ang AuthZEN Authorization API: mga access evaluation sa ibabaw ng XACML engine, at ang metadata document nito."
+  },
   "listeners.applications.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"

@@ -707,6 +707,14 @@
     "en": "5a0acf9625882942",
     "text": "RFC 9396 sección 10 `authorization_details_types`: los ÚNICOS tipos de authorization_details que puede usar este cliente, uno por valor. VACÍO SIGNIFICA cualquier tipo que admita este servidor de autorización."
   },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "UNA FILA DEL CATÁLOGO DE ATRIBUTOS DE AUTHZEN (#563), en el objeto de recurso sts-authzen-api: un objeto JSON {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}. `object` es subject, resource, action o context; `property` el nombre del miembro, o una ruta con puntos dentro de un objeto anidado; `attributeId` el atributo XACML con el que se envía; `category` (de forma predeterminada la del propio objeto), `dataType` (de forma predeterminada string) y `multiplicity` (single o bag). Una propiedad que ninguna fila nombra se rechaza en todos los modos, y una fila no puede nombrar los identificadores urn:sts:xacml: propios de este servicio, subject-id, resource-id ni action-id, ni un nombre de atributo de directorio sin más en una categoría de sujeto."
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "ALCANCE DE APLICACIONES DE AUTHZEN (#563): las aplicaciones que este cliente, al llamar a /access/v1 con su propio token de client_credentials, puede nombrar en context.application — un identificador por valor. El identificador propio del cliente siempre está en el alcance. Lo establece un administrador, nunca el llamante."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk, phr y phrh se cumplen con una contraseña más una llave de seguridad; cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."

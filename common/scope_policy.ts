@@ -128,6 +128,15 @@ const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
  */
 const REPORT_SCOPES = Object.freeze(['report:use', 'report:admin']);
 
+// THE AUTHZEN API'S ONE (#563): `/access/v1` is this service's own resource
+// server, so its scope is protected like the rest — a client must hold a
+// delegated permission grant of it on `sts-authzen-api`, in both modes, and
+// the API asks again on every call. AuthZEN defines no scope; this is ours.
+/**
+ * The AuthZEN Authorization API's one scope, protected like the rest.
+ */
+const AUTHZEN_SCOPE = 'authzen:evaluate';
+
 // AN OWNER'S TWO (#607): `/admin-api` for the objects a person owns, read
 // and changed within the access-control policy's owner rule. Protected like
 // the admin scopes — a client must declare them, in both modes, and the API
@@ -330,7 +339,8 @@ class ScopePolicy {
     const names = ADMIN_SCOPES.slice(0).concat(REPORT_SCOPES);
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
-     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE]
+     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE,
+     AUTHZEN_SCOPE]
       .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
               OWNER_SCOPES)
       .forEach(function (one) {

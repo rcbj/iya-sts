@@ -83,6 +83,10 @@
     "en": "1b417a98ec7e824b",
     "text": "En anropare av den egentliga XACML-ytan: den som är medlem i gruppen som `roles.xacmlUserGroup` namnger (som standard \"xacml-users\"). Det är vad `GET /xacml`, `POST /xacml/pdp` och `GET /xacml/policies` kräver, och den som har den är normalt ett klientcertifikats DN — certifikatet säger VEM, och den här gruppen säger om de får. Den är med avsikt INTE REMOTE_PEPS: den rollen når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också."
   },
+  "roles.builtIn.AUTHZEN_PEPS.what": {
+    "en": "45abfea4c617fd17",
+    "text": "En AuthZEN Policy Enforcement Point: den som är medlem i gruppen som namnges av `roles.authzenPepGroup` (standard \"authzen-peps\") — en person, ett tjänstekonto eller en applikation som anropar med sin egen åtkomsttoken. Det är vad AuthZEN Authorization API under `/access/v1` kräver, och inget annat: den läser ingen policy och ingen persons attribut, vilket är varför den varken är XACML_USER eller REMOTE_PEPS."
+  },
   "roles.builtIn.OWNER_READ.what": {
     "en": "ff8296bdbd88d5ad",
     "text": "En ÄGARE (#607): den som en roll, en grupp, ett tjänstekonto eller en applikation i den här sfären anger som ägare, direkt eller genom en grupp hen är medlem i. Ger behörigheten owner:read: att via /admin-api läsa de objekt hen äger och inget annat. Beräknas när ett beslut fattas."

@@ -54,7 +54,8 @@
 //     member and is issued the scope;
 //   * a GROUP that grants something by being named — the console rosters
 //     (`admin.readGroup`, `admin.writeGroup`), `roles.remotePepGroup`,
-//     `roles.xacmlUserGroup` — or that is a member of a protected role;
+//     `roles.xacmlUserGroup`, `roles.authzenPepGroup` (#563) — or that is a
+//     member of a protected role;
 //   * an APPLICATION that is one of this service's own (the console's, the
 //     portal's, the management API's and the debugger's clients), that is a
 //     member of a protected role, or that declares a protected scope — its
@@ -143,13 +144,13 @@ interface OwnershipDeps {
 class Ownership {
   /**
    * The settings that name a group which grants something by being held:
-   * the console rosters and the two group-derived roles. One list, read here
+   * the console rosters and the three group-derived roles. One list, read here
    * and by `ldap/ldap_server.js`'s federated-group guard (#358), so the two
    * cannot disagree about which groups are authority.
    */
   static readonly GRANTING_GROUP_SETTINGS: readonly string[] = [
     'admin.readGroup', 'admin.writeGroup', 'roles.remotePepGroup',
-    'roles.xacmlUserGroup'];
+    'roles.xacmlUserGroup', 'roles.authzenPepGroup'];
 
   /**
    * Builds the module over its dependencies.
@@ -625,7 +626,8 @@ class Ownership {
         }) : [];
         const closing = held.filter(function (role: string) {
           return protectedNames.indexOf(role) >= 0 ||
-                 role === 'REMOTE_PEPS' || role === 'XACML_USER';
+                 role === 'REMOTE_PEPS' || role === 'XACML_USER' ||
+                 role === 'AUTHZEN_PEPS';
         });
         if (closing.length) {
           reasons.push('it holds ' + closing.join(', ') + ', which no ' +
