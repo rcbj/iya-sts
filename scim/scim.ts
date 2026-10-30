@@ -2275,7 +2275,13 @@ class Scim {
             const prospective = Object.assign({ uid: [userName] },
                                               preview.attributes);
             attributePolicy.deriveCommonName(prospective);
-            const incomplete = attributePolicy.createRefusal(prospective);
+            // WHOSE PROFILE (#1241): the newcomer's — the uid's groups
+            // (any already listing the DN they will have) and their own
+            // reference, which SCIM does not map, so `default` unless a
+            // group names one. SCIM's `groups` is read-only (RFC 7643
+            // section 4.1.2), so a create adds no group.
+            const incomplete = attributePolicy.createRefusal(
+              prospective, { uid: userName, attributes: prospective });
             if (incomplete) {
               throw coded('STS-LDAP-0162',
                 new SCIMMY.Types.Error(400, 'invalidValue',
@@ -2355,8 +2361,14 @@ class Scim {
         // value taken away — a PATCH reaches here as the whole resource too.
         attributePolicy.deriveCommonName(converted.attributes);
         if (existing && before) {
-          const taken = attributePolicy.editRefusal(before.attributes || {},
-                                                    converted.attributes);
+          // WHOSE PROFILE (#1241): the person as the write leaves them —
+          // their own stsAttributePolicy (SCIM maps none, so the entry's)
+          // and the groups they are in, read by their uid.
+          const taken = attributePolicy.editRefusal(
+            before.attributes || {}, converted.attributes,
+            { uid: userName,
+              attributes: Object.assign({}, before.attributes || {},
+                                        converted.attributes) });
           if (taken) {
             throw coded('STS-LDAP-0164',
               new SCIMMY.Types.Error(400, 'invalidValue', taken.message));
