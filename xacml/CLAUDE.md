@@ -389,6 +389,8 @@ POST /xacml/pdp             a decision. JSON Profile in, JSON Profile out
 GET  /xacml/policies        the repository as the PDP sees it, documents included
 POST /xacml/pep/register    a REMOTE PEP registers, over mutual TLS
 GET  /xacml/pep/policies    the enabled policies, for a remote PEP to LOAD
+GET  /xacml/pep/authzen-catalogue
+                            the AuthZEN catalogue, for its edge PDP (#1179)
 POST /xacml/pep/heartbeat   what a remote PEP has enforced
 POST /xacml/pip             the PIP over HTTP — XACML XML in, XACML XML out
 ```
@@ -417,7 +419,7 @@ survives being refused.
 | Endpoints | Role | Group |
 |---|---|---|
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | `XACML_USER` | `roles.xacmlUserGroup` (default `xacml-users`) |
-| `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `POST /xacml/pep/heartbeat`, **`POST /xacml/pip`** | `REMOTE_PEPS` | `roles.remotePepGroup` (default `remote-peps`) |
+| `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `GET /xacml/pep/authzen-catalogue`, `POST /xacml/pep/heartbeat`, **`POST /xacml/pip`** | `REMOTE_PEPS` | `roles.remotePepGroup` (default `remote-peps`) |
 
 **ONE GROUP GRANTING BOTH WOULD BE THE MISTAKE.** The `/xacml/pep/*` endpoints
 hand out the documents this service enforces its own access with, and
@@ -1091,6 +1093,38 @@ consequences, and the third is why it is not a modification stamp:
 
 `current` is therefore a COMPARISON this service performs rather than a claim
 the PEP makes about itself.
+
+## `GET /xacml/pep/authzen-catalogue` — the pull's other half (#1179)
+
+**The container answers AuthZEN as an edge PDP** (`xacml-pep/CLAUDE.md`), and
+an AuthZEN request means nothing until the realm's attribute catalogue says
+what each property is. So the catalogue travels with the policies: this
+endpoint answers the rows `authzen/authzen.ts` maps a request with — read
+through the same `authzen_catalogue.ts` `rowsOf()` off the same
+`sts-authzen-api` object, written back through `valueOf()` — and the AuthZEN
+settings that change the mapping or the answer, behind `pepAccess()` and
+`REMOTE_PEPS` like the policy pull (rcbj's decision on #1179).
+
+* **ITS OWN SYNC TOKEN**, a digest of exactly the body it sends (the realm,
+  whether the object exists, the rows, the settings), with the same ETag and
+  `?since=` 304. **Not folded into `syncToken()`**: that token is what a
+  heartbeat compares, and `/xacml/pep/policies` stays as it is.
+* **A VALUE THAT IS NOT A ROW IS LEFT OUT AND COUNTED** (`leftOut`,
+  `STS-AUTHZEN-0060` in the log), never sent — the evaluation leaves it out
+  too, so the edge maps that property as undeclared exactly as this service
+  does. The container re-reads every row it is sent through its own port of
+  the grammar anyway.
+* **NO NUDGE.** The registry's change observer is about the policy
+  repository; a catalogue change reaches the container on its poll. Nudging on
+  it would be a change to the nudge, which this ticket does not make.
+* **`GET /xacml`'s endpoint list does not name it**, because that document is
+  one of the existing endpoints rcbj said stay unchanged; `/admin/sts-metadata`
+  and `/admin/xacml`'s protocol-endpoint table do.
+
+`tests/authzen_evaluation.js` K holds it in process: the gate (no certificate,
+and an AUTHZEN_PEPS caller that is not a remote PEP, both 403), the rows and
+settings, the ETag and 304, a token that moves with a row and a setting, and
+`/xacml/pep/policies`' token that does not.
 
 ## What the console page is NOT
 

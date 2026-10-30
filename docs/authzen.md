@@ -30,9 +30,15 @@ converted back.
 
 AuthZEN is an addition. The XACML endpoints (`/xacml`, `/xacml/pdp`,
 `/xacml/policies`, `/xacml/pep/*`, `/xacml/pip`) and the
-[remote PEP](remote-pep.md) container are unchanged. The difference between
+[remote PEP](remote-pep.md) container's pull are unchanged. The difference between
 the two is where the decision is made: a remote PEP pulls the policies and
 decides locally, and an AuthZEN PEP asks this service per request.
+
+The [remote PEP](remote-pep.md#an-authzen-edge-pdp) container answers the same
+access evaluations itself, as an **edge PDP** over the policy and the attribute
+catalogue it pulls from the realm — so a PEP in its network can ask a PDP
+nearby, and gets the answer the service would give. What it cannot do that the
+service can is listed there.
 
 ## The conversion, AuthZEN to XACML
 
@@ -569,7 +575,6 @@ metadata.
 
 | | Ticket |
 |---|---|
-| An AuthZEN endpoint on the remote PEP container | #1179 |
 | The Access Request and Approval Profile (design) | #1180 |
 | The OAuth token issuance and token exchange binding (design) | #1181 |
 
@@ -578,5 +583,5 @@ metadata.
 * [XACML 3.0 and ALFA](xacml.md) — the engine, the repository and writing a
   policy
 * [Remote PEP](remote-pep.md) — the container that pulls the policies and
-  decides locally
+  decides locally, and answers AuthZEN as an edge PDP
 * [Error codes](error-codes.md) — the `STS-AUTHZEN-*` section
