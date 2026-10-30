@@ -84,6 +84,8 @@ pub mod vocabulary {
     pub const UMA_CLAIM_ISSUER: &str = "urn:sts:xacml:uma:claim-issuer";
     pub const UMA_CLAIM_ISSUER_DECLARED: &str =
         "urn:sts:xacml:uma:claim-issuer-declared";
+    pub const UMA_REQUESTING_PARTY_GROUP: &str =
+        "urn:sts:xacml:uma:requesting-party-group";
     pub const UMA_CLIENT_GRANT_DECLARED: &str =
         "urn:sts:xacml:uma:client-grant-declared";
     pub const UMA_CLAIM_PREFIX: &str = "urn:sts:xacml:uma:claim:";

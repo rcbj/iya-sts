@@ -27,7 +27,7 @@ put to the XACML engine, and this page says which policies answer it.
 |---|---|---|
 | 1 (#1190) | The contract: the facts, the two policy templates, the stores, the settings, the error codes | built |
 | 2 (#1191) | The protection API: the PAT, resource registration, the permission endpoint, discovery | built |
-| 3 (#1192) | The resource owner's own policy, and the portal's *Sharing* section | |
+| 3 (#1192) | The resource owner's own policy, and the portal's *Sharing* section | built |
 | 4 (#1193) | The `uma-ticket` grant: the layers, `need_info`, the RPT, the PCT, upgrade, introspection, revocation | |
 | 5 (#1194) | Claims interaction, `claim_token`, `request_submitted` and the owner's approval | |
 | 6 (#1195) | The console, `/admin-api` and the monitor | |
@@ -63,6 +63,35 @@ mode.
 | `GET /uma` | A page describing UMA in the realm; `?format=json` for the same as data. |
 
 While `uma.enabled` is off, every one of these answers 501.
+
+## Sharing on the portal
+
+A person's resources, and who may reach them, are on the portal under
+**Sharing**:
+
+* **What I share** (`/portal/shared`) lists every resource a resource server
+  registered for you. Under each one, the **Share** form names the scopes,
+  and who the share is with:
+  * a person, by username;
+  * a group, by name (its direct members);
+  * anyone signed in to this realm;
+  * anyone whose gathered claim has a given value.
+
+  A share may also end on a date, require an authentication level, and
+  **ask me each time**. **Remove** takes a share away and ends every
+  requesting party token that carried it.
+* **Shared with me** (`/portal/shared-with-me`) lists what others share with
+  you: each resource, its owner, the scopes and until when.
+
+**Each share is one rule of your own XACML policy.** The page reads the
+policy back and draws every rule of the form's shape as a share. A rule you
+did not write with the form is drawn as *A custom rule*, read-only. Where the
+realm turns on `uma.ownerAlfaEditing`, the page also offers your whole
+policy as ALFA; saving it ends every token issued over your resources.
+
+Your policy is kept in a store of its own, never in the realm's policy
+repository, and is only ever asked about your own resources. It is deleted
+with your account.
 
 ## How a permission is decided
 

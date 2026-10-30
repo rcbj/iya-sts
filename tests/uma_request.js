@@ -66,7 +66,7 @@ function facts(over) {
     requestingParty: { id: 'urn:uuid:bob', kind: 'user', known: true,
                        isOwner: false, claimSource: 'session',
                        claimIssuer: '', claimIssuerDeclared: true,
-                       acr: 'phr' },
+                       acr: 'phr', groups: ['cn=staff,ou=groups,dc=x'] },
     clientId: 'viewer', clientGrantDeclared: true,
     claims: { email: ['bob@example.com'], groups: ['staff', 'ops'] },
     ticketAgeS: 12.9, rptPresented: false, mode: 'development',
@@ -107,8 +107,11 @@ function theCategories(t) {
           valuesOf(built, S, V.UMA_CLAIM_SOURCE).join() === 'session' &&
           valuesOf(built, S, V.UMA_CLAIM_ISSUER_DECLARED).join() === 'true' &&
           valuesOf(built, S, V.UMA_CLIENT_GRANT_DECLARED).join() === 'true' &&
-          valuesOf(built, S, V.ACR).join() === 'phr',
-          'A2. the requesting party: who, how known, the client, the acr');
+          valuesOf(built, S, V.ACR).join() === 'phr' &&
+          valuesOf(built, S, V.UMA_REQUESTING_PARTY_GROUP).join() ===
+            'cn=staff,ou=groups,dc=x',
+          'A2. the requesting party: who, how known, the client, the acr, ' +
+          'its groups');
   const booleans = categoryOf(built, S).attributes.filter(function (one) {
     return [V.UMA_REQUESTING_PARTY_KNOWN, V.UMA_REQUESTING_PARTY_IS_OWNER,
             V.UMA_CLAIM_ISSUER_DECLARED, V.UMA_CLIENT_GRANT_DECLARED]

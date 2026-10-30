@@ -151,6 +151,7 @@ not drawn.
 | Your signing key | `/portal/signing-key` |
 | Sign in a device | `/portal/device` |
 | Resources I own: roles, groups, service accounts, applications | `/portal/owned/roles`, `/portal/owned/groups`, `/portal/owned/service-accounts`, `/portal/owned/applications` |
+| Sharing: what you share through User-Managed Access, and what others share with you ([User-Managed Access](uma.md#sharing-on-the-portal)) | `/portal/shared`, `/portal/shared-with-me` |
 
 **Resources I own** is a section of the portal's column with four pages. Each
 lists the roles, groups, service accounts or applications whose owners name

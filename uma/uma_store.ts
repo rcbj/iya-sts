@@ -686,6 +686,35 @@ class UmaStore {
     return out;
   }
 
+  /**
+   * Revokes the tokens of RPT records and forgets the records — the one
+   * way a withdrawn share, resource or owner reaches the tokens that
+   * carried it (decision 11): `admin_stats.revoke()`, so introspection
+   * answers inactive and the status list says so.
+   *
+   * @param rows - the RPT records
+   * @param via - what withdrew them, for the revocation record
+   * @returns how many tokens were newly revoked
+   */
+  revokeRpts(rows: Json[], via: string): number {
+    const { log, stores } = this.deps;
+    log.debug("Entering UmaStore.revokeRpts(). " + (rows || []).length);
+    const stats = require('../common/admin_stats');
+    let revoked = 0;
+    (rows || []).forEach(function (row: Json) {
+      if (!row || !row.jti) {
+        return;
+      }
+      if (stats.revoke(String(row.jti), via, { uma: true },
+                       Number(row.exp) || 0)) {
+        revoked += 1;
+      }
+      stores.rpts.delete(String(row.jti));
+    });
+    log.debug("Leaving UmaStore.revokeRpts(). " + revoked);
+    return revoked;
+  }
+
   // -------------------------------------------------------------------------
   // PENDING APPROVALS (phase 5 fills them).
   // -------------------------------------------------------------------------
@@ -935,6 +964,7 @@ export = {
   rpt: slot.forward('rpt'),
   deleteRpt: slot.forward('deleteRpt'),
   rptsBy: slot.forward('rptsBy'),
+  revokeRpts: slot.forward('revokeRpts'),
   savePending: slot.forward('savePending'),
   pendingOne: slot.forward('pendingOne'),
   pendingOf: slot.forward('pendingOf'),

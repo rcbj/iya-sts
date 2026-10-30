@@ -22011,6 +22011,57 @@ const CODES = [
     summary: 'A path under /.well-known/uma2-configuration names no realm ' +
       'of this service (#1168).',
     spec: 'HTTP 404' },
+  // The resource owner's document and the portal's Sharing section (#1192).
+  { code: 'STS-UMA-0300',
+    summary: 'A share named a resource that is not one of the owner\'s ' +
+      'registered resources (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0301',
+    summary: 'A share named no scope, or a scope the resource was not ' +
+      'registered with (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0302',
+    summary: 'A share named no kind of recipient, a person this realm does ' +
+      'not hold, or the owner themselves (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0303',
+    summary: 'A share with a group named a group this realm does not hold ' +
+      '(#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0304',
+    summary: 'A share by claim named a malformed claim name or value ' +
+      '(#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0305',
+    summary: 'A share\'s expiry was not a date in the future, or its ' +
+      'authentication level was not one printable word (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0306',
+    summary: 'A resource owner asked to edit their UMA document as ALFA ' +
+      'while uma.ownerAlfaEditing is off (#1192).',
+    spec: 'HTTP 403 on the account API' },
+  { code: 'STS-UMA-0307',
+    summary: 'A resource owner\'s ALFA did not parse or validate, or a ' +
+      'share was asked of a document that is a policy set (#1192).',
+    spec: 'HTTP 400 on the account API; the document is left as it was' },
+  { code: 'STS-UMA-0308',
+    summary: 'A share to remove is not one of the owner\'s (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0309',
+    summary: 'A resource owner\'s stored UMA document does not parse. ' +
+      'Nothing was decided with it, and the portal says it could not be ' +
+      'read (#1192).',
+    spec: 'HTTP 500 on the account API; server_error at the token ' +
+      'endpoint (phase 4)' },
+  { code: 'STS-UMA-0310',
+    summary: 'The portal\'s Sharing section was asked for by a person ' +
+      'whose subject could not be read (#1192).',
+    spec: 'HTTP 500 on the account API' },
+  { code: 'STS-UMA-0311',
+    summary: 'A person was deleted from the directory and what UMA held for ' +
+      'them — their document, resources and RPTs — could not be forgotten ' +
+      '(#1192).',
+    spec: 'none — logged; the delete stands' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

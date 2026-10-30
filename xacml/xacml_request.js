@@ -413,6 +413,12 @@ const VOCABULARY = Object.freeze({
   UMA_CLAIM_SOURCE: 'urn:sts:xacml:uma:claim-source',
   UMA_CLAIM_ISSUER: 'urn:sts:xacml:uma:claim-issuer',
   UMA_CLAIM_ISSUER_DECLARED: 'urn:sts:xacml:uma:claim-issuer-declared',
+  // access-subject: the DNs of the groups the requesting party is a DIRECT
+  // member of, normalised, computed by the UMA endpoint from the directory
+  // (#1192). A fact rather than `memberOf`, which nothing here maintains —
+  // `ldap_server.js` says so — so a share with a group reads what the
+  // group lists, as the console's rosters do.
+  UMA_REQUESTING_PARTY_GROUP: 'urn:sts:xacml:uma:requesting-party-group',
   UMA_CLIENT_GRANT_DECLARED: 'urn:sts:xacml:uma:client-grant-declared',
   // access-subject: EACH GATHERED CLAIM, after this prefix under its own
   // name (`urn:sts:xacml:uma:claim:email`) — only from a VERIFIED token or
@@ -1432,7 +1438,7 @@ class AuthorizationRequest {
   //                        PAT that made it — never the client's
   //   scope                the one scope being asked about
   //   requestingParty { id, kind, known, isOwner, claimSource, claimIssuer,
-  //                     claimIssuerDeclared, acr }
+  //                     claimIssuerDeclared, acr, groups }
   //                        who is asking, once anybody is known. With no id
   //                        there is NO subject-id and no subject kind at all
   //                        (`fga()`'s rule): the built-in rule that requires
@@ -1497,6 +1503,9 @@ class AuthorizationRequest {
     this.subject(V.UMA_CLIENT_GRANT_DECLARED,
                  yes(given.clientGrantDeclared), model.TYPE.BOOLEAN);
     this.subject(V.ACR, one(party.acr));
+    this.subject(V.UMA_REQUESTING_PARTY_GROUP,
+                 (Array.isArray(party.groups) ? party.groups : [])
+                   .map(String).filter(Boolean));
     const self = this;
     const claims = given.claims && typeof given.claims === 'object'
       ? given.claims : {};

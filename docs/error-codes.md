@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4983** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4995** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
-* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 25
+* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 37
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4894,6 +4894,18 @@ Raised from: uma/.
 | `STS-UMA-0118` | A UMA permission request named a resource_id this resource server did not register (#1168). | HTTP 400 invalid_resource_id |
 | `STS-UMA-0119` | A UMA permission request named a scope the resource was not registered with (#1168). | HTTP 400 invalid_scope |
 | `STS-UMA-0120` | A path under /.well-known/uma2-configuration names no realm of this service (#1168). | HTTP 404 |
+| `STS-UMA-0300` | A share named a resource that is not one of the owner's registered resources (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0301` | A share named no scope, or a scope the resource was not registered with (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0302` | A share named no kind of recipient, a person this realm does not hold, or the owner themselves (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0303` | A share with a group named a group this realm does not hold (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0304` | A share by claim named a malformed claim name or value (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0305` | A share's expiry was not a date in the future, or its authentication level was not one printable word (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0306` | A resource owner asked to edit their UMA document as ALFA while uma.ownerAlfaEditing is off (#1192). | HTTP 403 on the account API |
+| `STS-UMA-0307` | A resource owner's ALFA did not parse or validate, or a share was asked of a document that is a policy set (#1192). | HTTP 400 on the account API; the document is left as it was |
+| `STS-UMA-0308` | A share to remove is not one of the owner's (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0309` | A resource owner's stored UMA document does not parse. Nothing was decided with it, and the portal says it could not be read (#1192). | HTTP 500 on the account API; server_error at the token endpoint (phase 4) |
+| `STS-UMA-0310` | The portal's Sharing section was asked for by a person whose subject could not be read (#1192). | HTTP 500 on the account API |
+| `STS-UMA-0311` | A person was deleted from the directory and what UMA held for them — their document, resources and RPTs — could not be forgotten (#1192). | none — logged; the delete stands |
 
 ## STS-ADMIN
 

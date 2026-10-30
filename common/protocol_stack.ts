@@ -483,6 +483,11 @@ class ProtocolStack {
     this.build('portal/portal_owned',
                require('../portal/portal_owned'),
                'PortalOwned');
+    // #1192: /portal/shared and /portal/shared-with-me, UMA's Sharing
+    // section. It reaches the UMA family (23d-ii) lazily.
+    this.build('portal/portal_shared',
+               require('../portal/portal_shared'),
+               'PortalShared');
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');
@@ -2046,6 +2051,10 @@ class ProtocolStack {
     require('../uma/uma');
     this.build('uma/uma_store', require('../uma/uma_store'), 'UmaStore');
     this.build('uma/uma_pat', require('../uma/uma_pat'), 'UmaPat');
+    // #1192: a resource owner's own document — a library over the store
+    // and the templates, which the portal reaches lazily.
+    this.build('uma/uma_owner_policy', require('../uma/uma_owner_policy'),
+               'UmaOwnerPolicy');
     this.build('uma/uma', require('../uma/uma'), 'UmaSurface');
     this.register(app, require('../uma/uma'), 'uma/uma');
 

@@ -134,8 +134,9 @@ interface SurfaceDeps {
   // What the later phases have filled; nothing in phase 2.
   capabilities(): Capabilities;
   loadOauth2(): Json;
-  loadStats(): Json;
   loadScheduler(): Json;
+  // The directory (21), for its account observer: a cache hit at 23d-ii.
+  loadDirectory(): Json;
 }
 
 /**
@@ -180,10 +181,10 @@ class UmaSurface {
         log.debug("Leaving loadOauth2().");
         return require('../oauth-oidc/oauth2');
       },
-      loadStats: function (): Json {
-        log.debug("Entering loadStats().");
-        log.debug("Leaving loadStats().");
-        return require('../common/admin_stats');
+      loadDirectory: function (): Json {
+        log.debug("Entering loadDirectory().");
+        log.debug("Leaving loadDirectory().");
+        return require('../ldap/ldap_server');
       },
       loadScheduler: function (): Json {
         log.debug("Entering loadScheduler().");
@@ -470,24 +471,16 @@ class UmaSurface {
       number {
     const { log, store } = this.deps;
     log.debug("Entering UmaSurface.revokeFor(). " + resourceId);
-    const stats = this.deps.loadStats();
-    let revoked = 0;
-    store.rptsBy('resource', resourceId).forEach(function (row: Json) {
-      const affected = (row.permissions || []).some(function (p: Json) {
-        return String(p.resource_id) === String(resourceId) &&
-          (!scopes || (p.resource_scopes || []).some(function (s: string) {
-            return scopes.indexOf(s) >= 0;
-          }));
+    const affected = store.rptsBy('resource', resourceId)
+      .filter(function (row: Json) {
+        return (row.permissions || []).some(function (p: Json) {
+          return String(p.resource_id) === String(resourceId) &&
+            (!scopes || (p.resource_scopes || []).some(function (s: string) {
+              return scopes.indexOf(s) >= 0;
+            }));
+        });
       });
-      if (!affected) {
-        return;
-      }
-      if (stats.revoke(String(row.jti), via, { uma: true },
-                       Number(row.exp) || 0)) {
-        revoked += 1;
-      }
-      store.deleteRpt(String(row.jti));
-    });
+    const revoked = store.revokeRpts(affected, via);
     log.debug("Leaving UmaSurface.revokeFor(). " + revoked);
     return revoked;
   }
@@ -731,6 +724,83 @@ class UmaSurface {
       }
     });
     log.debug("Leaving UmaSurface.registerJobs().");
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // A PERSON DELETED TAKES THEIR UMA DATA WITH THEM (#1192): their document,
+  // their registered resources, and every RPT issued over them, revoked.
+  // Heard through the directory's `addAccountObserver()` — #151's
+  // arrangement for a listener beside SSF's slot — so no slot is added; the
+  // directory is 21 and this module 23d-ii, so the require is a cache hit
+  // and moves no route. An observer never throws into the directory's write.
+  // -------------------------------------------------------------------------
+  /**
+   * Forgets everything UMA holds about one owner, revoking the RPTs issued
+   * over their resources.
+   *
+   * @param owner - the owner's key
+   * @param via - what ended it, for the revocation record
+   * @returns `{ resources, rpts, document }`
+   */
+  forgetOwner(owner: string, via: string): Json {
+    const { log, store } = this.deps;
+    log.debug("Entering UmaSurface.forgetOwner().");
+    const rpts = store.revokeRpts(store.rptsBy('owner', owner), via);
+    const resources = store.resourcesOf(owner);
+    resources.forEach(function (row: Json) {
+      store.deleteResource(String(row._id));
+    });
+    const document = store.deleteOwnerPolicy(owner);
+    log.debug("Leaving UmaSurface.forgetOwner().");
+    return { resources: resources.length, rpts: rpts, document: document };
+  }
+
+  /**
+   * Becomes one of the directory's account observers, once.
+   *
+   * @returns true when it is listening
+   */
+  watchAccounts(): boolean {
+    const self = this;
+    const { log, errorCodes, realms } = this.deps;
+    log.debug("Entering UmaSurface.watchAccounts().");
+    let directory: Json = null;
+    try {
+      directory = self.deps.loadDirectory();
+    } catch (e) {
+      log.debug("Caught in UmaSurface.watchAccounts(): " +
+                ((e && e.message) || e));
+      directory = null;
+    }
+    if (!directory || typeof directory.addAccountObserver !== 'function') {
+      log.debug("Leaving UmaSurface.watchAccounts(). No directory.");
+      return false;
+    }
+    directory.addAccountObserver(function (event: Json): void {
+      if (!event || String(event.kind).indexOf('deleted') !== 0) {
+        return;
+      }
+      const before = event.before || {};
+      const uuid = String([].concat(before.entryuuid || before.entryUUID ||
+                                    [])[0] || '');
+      if (!uuid) {
+        return;
+      }
+      try {
+        const realm = realms.get(String(event.realm || '')) ||
+                      realms.get(realms.DEFAULT_ID);
+        realms.run(realm, function () {
+          self.forgetOwner('urn:uuid:' + uuid, 'the owner\'s account ' +
+                           'was deleted');
+        });
+      } catch (e) {
+        log.error(errorCodes.tag('STS-UMA-0311') + 'uma: ' + event.dn +
+                  ' was deleted and what UMA held for them could not be ' +
+                  'forgotten: ' + ((e && e.message) || e));
+      }
+    });
+    log.debug("Leaving UmaSurface.watchAccounts().");
     return true;
   }
 
@@ -1044,6 +1114,7 @@ const slot = new InstanceSlot<UmaSurface>(
   () => new UmaSurface(UmaSurface.defaultDeps()),
   function (instance: UmaSurface): void {
     instance.registerJobs();
+    instance.watchAccounts();
   },
   helpers.log);
 
@@ -1062,6 +1133,7 @@ export = {
   metadata: slot.forward('metadata'),
   description: slot.forward('description'),
   revokeFor: slot.forward('revokeFor'),
+  forgetOwner: slot.forward('forgetOwner'),
   API_OBJECT: API_OBJECT,
   GRANT_TYPE: GRANT_TYPE,
   RREG_PATH: RREG_PATH,

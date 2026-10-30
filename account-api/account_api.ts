@@ -107,6 +107,10 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_owned');
   },
+  // #1192: Sharing, the section after Resources I own.
+  function () {
+    return require('../portal/portal_shared');
+  },
   function () {
     return require('../portal/account_password');
   },

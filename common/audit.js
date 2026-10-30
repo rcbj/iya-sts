@@ -1140,6 +1140,14 @@ const ACTIONS = [
     label: 'A UMA resource server deleted a registered resource' },
   { action: 'uma.permission.ticket', category: 'protocol',
     label: 'A UMA resource server was issued a permission ticket' },
+  // A resource owner's acts on their own policy (#1192): the share's id and
+  // resource, never a recipient's claim value or a resource's name.
+  { action: 'uma.share.add', category: 'admin',
+    label: 'A resource owner shared a resource through UMA' },
+  { action: 'uma.share.remove', category: 'admin',
+    label: 'A resource owner removed a UMA share' },
+  { action: 'uma.policy.alfa', category: 'admin',
+    label: 'A resource owner rewrote their UMA policy as ALFA' },
   { action: 'gnap.grant.finalize', category: 'protocol',
     label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
            'rejected or expired' },

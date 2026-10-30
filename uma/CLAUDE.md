@@ -144,6 +144,39 @@ and `hosted_applications.js` gives the family its two prefixes.
   family its own page, as AuthZEN's are; the description page is the
   family's public face until then.
 
+## Phase 3 (#1192): the owner's document and the portal's Sharing section
+
+| File | What it is |
+|---|---|
+| `uma_owner_policy.ts` | The owner's document: `ruleFor()` (one share, one rule of a fixed shape), `specOf()` (a rule back to a share, or null), `view()`, `share()`, `unshare()`, `setAlfa()`, `documentXml()` (what phase 4 decides with). |
+| `../portal/portal_shared.ts`, `../portal/web_shared.ts` | `/portal/shared` and `/portal/shared-with-me`, three `/account-api` operations, the `portalShared` catalogs. `portal/CLAUDE.md`'s rules hold: the person is the token's. |
+
+### Decisions made here, and why
+
+* **A rule is a share only if rebuilding it from the fields read off it
+  gives the SAME XML.** Reading fields alone would draw a card for a rule a
+  hand edit had widened; the comparison makes the card unable to say what
+  the rule does not (`tests/uma_owner_policy.js` C2).
+* **A group share tests a FACT, not `memberOf`.** The directory does not
+  maintain `memberOf` (`ldap_server.js` says so), so phase 4 sends the
+  requesting party's direct groups as
+  `urn:sts:xacml:uma:requesting-party-group`, normalised DNs, and the rule
+  tests the group's normalised DN in it. A person share tests their
+  `urn:uuid:` subject, which survives a rename.
+* **An expiry is `current-dateTime` < the date, inside the rule**, so an
+  expired share simply stops permitting; nothing sweeps it.
+* **Removing a share revokes the RPTs over its resource AND scopes, whoever
+  holds them** — conservative where two shares overlap, and the next
+  request re-decides. An ALFA edit revokes every RPT over the owner's
+  resources, because nothing can tell which rule a hand edit narrowed.
+* **A person deleted takes their UMA data with them**: `uma.ts` is one of
+  the directory's account observers (`addAccountObserver()`, #151's
+  arrangement), and `forgetOwner()` revokes their RPTs and removes their
+  resources and document. Phase 4 adds the disabled account.
+* **The Sharing section is always in the portal's column**; the page says
+  when UMA is off in the realm. A column that changed with a setting would
+  be a second thing the static NAV table cannot say.
+
 ## What is deliberately not here
 
 * `uma_profiles_supported` is empty until a profile is implemented end to
