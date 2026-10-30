@@ -21108,6 +21108,41 @@ function fgaStateOf(identifier) {
   return { known: true, policy: policy, enforced: enforced };
 }
 
+// THE APPLICATIONS THAT ENFORCE FINE-GRAINED AUTHORIZATION (#564, P7), for
+// the AuthZEN catalogue a remote PEP pulls (`xacml/xacml.ts`'s
+// `authzenCatalogue()`): the edge PDP forwards an evaluation about one of
+// these to the service rather than deciding it from the root. Read off the
+// kept listing with no view built, as `ownerValues()` is, and SORTED, so the
+// catalogue's sync token moves when the set changes and only then. A store
+// that cannot be read THROWS rather than answering an empty list: an empty
+// list would tell the edge to decide every enforcing application from the
+// root, which is the restriction silently not applying.
+/**
+ * Lists the applications in the ambient realm whose `appFgaEnforced` is
+ * TRUE.
+ *
+ * @returns their identifiers, sorted
+ */
+function applicationsEnforcingFga() {
+  log.debug("Entering applicationsEnforcingFga().");
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving applicationsEnforcingFga(). No store.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    const enforced = String(valuesOf(item.record.fields.appFgaEnforced)[0] ||
+                            '').toUpperCase() === 'TRUE';
+    if (enforced && item.record.identifier) {
+      out.push(String(item.record.identifier));
+    }
+  });
+  out.sort();
+  log.debug("Leaving applicationsEnforcingFga(). " + out.length + ".");
+  return out;
+}
+
 /**
  * Writes an application's fine-grained authorization attributes; the one
  * door `xacml/fga_policies.ts` writes them through. Audited as an
@@ -21234,6 +21269,7 @@ module.exports = {
   fgaLifecycleInstalled: fgaLifecycleInstalled,
   fgaStateOf: fgaStateOf,
   setFgaState: setFgaState,
+  applicationsEnforcingFga: applicationsEnforcingFga,
   prose: prose,
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,

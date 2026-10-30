@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4909** of them, in **50** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4915** of them, in **50** subsystems.
 
 ## Where a code appears
 
@@ -87,9 +87,9 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 54
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 49
-* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 31
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4712,6 +4712,11 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0052` | The realm the remote PEP pulled its AuthZEN callers from authenticates them by a token (authzen.callerAuthentication bearer or mtls+bearer), which the edge PDP cannot check, so it admits nobody (#1189). | HTTP 401, an error message |
 | `STS-XPEP-0053` | A caller on the remote PEP's pulled AuthZEN caller list asked an endpoint the service's access-control policy does not admit it to (#1189). | HTTP 403, an error message |
 | `STS-XPEP-0054` | A caller on the remote PEP's pulled AuthZEN caller list is not on PEP_AUTHZEN_CALLERS, which, when it is set, narrows the pulled list to the certificates it names (#1189). | HTTP 403, an error message |
+| `STS-XPEP-0055` | The remote PEP's edge PDP could not forward an AuthZEN evaluation about an application that enforces fine-grained authorization to the service: the service could not be reached, or did not answer within PEP_AUTHZEN_FORWARD_TIMEOUT_MS (#564). The evaluation is an error, never false. | HTTP 502 (504 on a timeout), or a batch item's context.error |
+| `STS-XPEP-0056` | The service refused the remote PEP itself when its edge PDP forwarded an AuthZEN evaluation about an application that enforces fine-grained authorization (401 or 403): the PEP's directory entry must hold AUTHZEN_PEPS and have the application in its stsAuthzenApplication scope (#564). | HTTP 502, or a batch item's context.error |
+| `STS-XPEP-0057` | The service answered an error to an AuthZEN evaluation the remote PEP's edge PDP forwarded (an application that enforces fine-grained authorization): its status and message are passed to the caller, never turned into false (#564). | the service's own status and message, or a batch item's context.error |
+| `STS-XPEP-0058` | The service answered 200 to an AuthZEN evaluation the remote PEP's edge PDP forwarded, with something that is not an AuthZEN decision (no boolean decision) (#564). | HTTP 502, or a batch item's context.error |
+| `STS-XPEP-0059` | The AuthZEN catalogue the remote PEP pulled carried an fgaApplications member that is not an array of application identifiers. The catalogue is refused whole and the one held is kept: which evaluations must be forwarded cannot be told (#564). | none; the edge keeps what it holds |
 
 ## STS-AUTHZEN
 
@@ -4810,6 +4815,7 @@ Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacm
 | `STS-FGA-0105` | A member of an authorization detail had a JSON type its xacml row's datatype does not take, or a string outside that datatype's lexical space. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0106` | A member of an authorization detail was an array where its xacml row sends a single value, or carried more than 256 values. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0107` | A member of an authorization detail was an object where its xacml row sends values (a nested object reaches a request only through rows for its own members), or was nested too deeply. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0108` | Which applications enforce fine-grained authorization could not be read when a remote PEP pulled the AuthZEN catalogue (GET /xacml/pep/authzen-catalogue), so the catalogue was not sent: one naming no enforcing application would have the edge PDP decide their evaluations from the root (#564). | HTTP 500 server_error; the edge keeps the catalogue it holds |
 
 ## STS-ADMIN
 

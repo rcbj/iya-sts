@@ -39,7 +39,10 @@
 //      /xacml/pep/authzen-catalogue behind REMOTE_PEPS (no certificate and
 //      an AUTHZEN_PEPS caller both refused), the rows the evaluation maps
 //      with, the settings, the ETag and ?since= 304, a token that moves with
-//      a row and a setting, and /xacml/pep/policies' token that does not.
+//      a row and a setting, and /xacml/pep/policies' token that does not;
+//      since #564's P7, the applications that enforce fine-grained
+//      authorization (fgaApplications), a switch that moves the token, and
+//      the policies' token that does not.
 //   P. THE CALLERS A REMOTE PEP PULLS (#1189): GET
 //      /xacml/pep/authzen-callers behind REMOTE_PEPS, each admitted caller
 //      named EXACTLY as the certificate door names it on a real handshake
@@ -1079,6 +1082,44 @@ async function childBody() {
           r.json.settings.returnReasons === true,
           'K9. a setting that changes the answer moves the token too',
           brief(r));
+  // THE APPLICATIONS THAT ENFORCE FINE-GRAINED AUTHORIZATION (#564, P7):
+  // named in the catalogue so the edge forwards their evaluations, inside
+  // the token so a switch flip is pulled, and never in /xacml/pep/policies'
+  // token, which withholds their policies.
+  r = await request(port, 'GET', CATALOGUE, pullCred);
+  const thirdToken = tokenOf(r);
+  const fgaBefore = r.json ? r.json.fgaApplications : null;
+  const policiesBeforeFga = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  inRealm(function () {
+    applications.setFgaState('azeval-front', { enforced: true },
+                             { actor: 'test' });
+  });
+  r = await request(port, 'GET', CATALOGUE + '?since=' +
+                    encodeURIComponent(thirdToken), pullCred);
+  const policiesAfterFga = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  inRealm(function () {
+    applications.setFgaState('azeval-front', { enforced: false },
+                             { actor: 'test' });
+  });
+  const fgaAfter = r.json ? r.json.fgaApplications : null;
+  t.check(Array.isArray(fgaBefore) &&
+          fgaBefore.indexOf('azeval-front') < 0 && r.status === 200 &&
+          Array.isArray(fgaAfter) && fgaAfter.indexOf('azeval-front') >= 0 &&
+          tokenOf(r) !== thirdToken,
+          'K10. the applications that enforce fine-grained authorization ' +
+          'are named (fgaApplications), and switching one on moves the ' +
+          'token', JSON.stringify([fgaBefore, fgaAfter]));
+  t.check(policiesBeforeFga.status === 200 &&
+          tokenOf(policiesBeforeFga) === tokenOf(policiesAfterFga),
+          'K11. /xacml/pep/policies\' token does not move with the switch',
+          tokenOf(policiesBeforeFga) + ' / ' + tokenOf(policiesAfterFga));
+  r = await request(port, 'GET', CATALOGUE + '?since=' +
+                    encodeURIComponent(thirdToken), pullCred);
+  t.check(r.status === 304,
+          'K12. switching it off again restores the catalogue the edge ' +
+          'held, token and all', brief(r));
 
   // -------------------------------------------------------------------------
   // P. THE CALLERS A REMOTE PEP PULLS (#1189)

@@ -344,7 +344,8 @@ interface XacmlSurfaceDeps {
   // load: the application registry the catalogue lives on, and the grammar
   // `authzen/authzen.ts` reads it with — so the edge PDP is sent exactly the
   // rows the service maps a request with.
-  loadApplications(): { get(identifier: string): any };
+  loadApplications(): { get(identifier: string): any;
+                        applicationsEnforcingFga(): string[] };
   loadAuthzenCatalogue(): { rowsOf(values: unknown):
                               { rows: any[]; problems: string[] };
                             valueOf(row: any): string };
@@ -872,14 +873,28 @@ class XacmlSurface {
   // **A VALUE THAT IS NOT A ROW IS LEFT OUT AND COUNTED**, never sent: the
   // service leaves it out of the mapping too, so the edge maps that property
   // as undeclared exactly as the service does. Its text is not sent.
+  //
+  // **AND THE APPLICATIONS THAT ENFORCE FINE-GRAINED AUTHORIZATION (#564,
+  // P7; rcbj's decision of 2026-10-30, extending decision 4).** An
+  // evaluation about one of them is decided HERE, against the application's
+  // own policy, which `/xacml/pep/policies` withholds — so the edge cannot
+  // decide it, and forwards it to this realm's `/access/v1/evaluation`.
+  // `fgaApplications` is how it tells which: an additive member, inside the
+  // digest, so switching `appFgaEnforced` moves the token and the edge pulls
+  // again on its next poll. Only the identifiers travel, never a policy. A
+  // registry that cannot be read is NOT an empty list (that would send every
+  // enforcing application to the root): the whole catalogue is refused with
+  // a 500 (`STS-FGA-0108`), and the edge keeps the one it holds.
   // ===========================================================================
   /**
    * The AuthZEN catalogue a remote PEP pulls, and its sync token, for the
    * realm the request is answered in.
    *
-   * @returns `{ token, body }`
+   * @returns `{ token, body }`, or `{ token: '', body: null, unreadable }`
+   *   when which applications enforce fine-grained authorization cannot be
+   *   read
    */
-  authzenCatalogue(): { token: string; body: any } {
+  authzenCatalogue(): { token: string; body: any; unreadable?: string } {
     const { log, config, errorCodes } = this.deps;
     log.debug('Entering XacmlSurface.authzenCatalogue().');
     const grammar = this.deps.loadAuthzenCatalogue();
@@ -918,9 +933,25 @@ class XacmlSurface {
       maxBodyBytes: Number(config.value('authzen.maxBodyBytes')),
       returnReasons: config.value('authzen.returnReasons') === true
     };
+    let fgaApplications: string[] = [];
+    try {
+      fgaApplications = this.deps.loadApplications()
+        .applicationsEnforcingFga();
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.authzenCatalogue(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-FGA-0108') + 'xacml: which ' +
+                'applications enforce fine-grained authorization could not ' +
+                'be read, so the AuthZEN catalogue is not sent: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving XacmlSurface.authzenCatalogue(). Unreadable.');
+      return { token: '', body: null,
+               unreadable: String((e && e.message) || e) };
+    }
     const realm = String(realms.currentId() || '');
     const token = this.deps.sha256Base64(JSON.stringify({
-      realm: realm, apiObject: !!object, rows: rows, settings: settings }))
+      realm: realm, apiObject: !!object, rows: rows, settings: settings,
+      fgaApplications: fgaApplications }))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const body = {
       syncToken: token,
@@ -929,11 +960,15 @@ class XacmlSurface {
       rows: rows,
       leftOut: read.problems.length,
       settings: settings,
+      fgaApplications: fgaApplications,
       note: 'The AuthZEN attribute catalogue of this realm: the rows of ' +
             'authzenAttribute on sts-authzen-api, read as this service ' +
             'reads them for POST /access/v1/evaluation, and the settings ' +
             'that change the mapping or the answer. An edge PDP maps a ' +
-            'request with exactly these, or not at all.'
+            'request with exactly these, or not at all. fgaApplications ' +
+            'names the applications that enforce fine-grained ' +
+            'authorization: an evaluation about one of them is decided by ' +
+            'this service alone, so an edge PDP forwards it here.'
     };
     log.debug('Leaving XacmlSurface.authzenCatalogue(). ' + rows.length +
               ' row(s).');
@@ -2618,6 +2653,23 @@ class XacmlSurface {
         return;
       }
       const catalogue = self.authzenCatalogue();
+      if (!catalogue.body) {
+        // NOT SENT RATHER THAN SENT WITHOUT THE FGA LIST (#564, P7): a
+        // catalogue naming no enforcing application would have the edge
+        // decide those from the root. A 500 keeps the edge on what it holds.
+        errorCodes.mark(res, 'STS-FGA-0108');
+        res.status(500).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({
+             error: 'server_error',
+             error_description: 'Which applications enforce fine-grained ' +
+               'authorization could not be read, so the AuthZEN catalogue ' +
+               'is not sent; keep the one held.'
+           }, null, 2));
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. The FGA ' +
+                  'applications could not be read.');
+        return;
+      }
       const since = String(req.query.since || '');
       if (since && since === catalogue.token) {
         res.status(304)

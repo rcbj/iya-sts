@@ -21181,6 +21181,38 @@ const CODES = [
       'not on PEP_AUTHZEN_CALLERS, which, when it is set, narrows the ' +
       'pulled list to the certificates it names (#1189).',
     spec: 'HTTP 403, an error message' },
+  { code: 'STS-XPEP-0055',
+    summary: 'The remote PEP\'s edge PDP could not forward an AuthZEN ' +
+      'evaluation about an application that enforces fine-grained ' +
+      'authorization to the service: the service could not be reached, ' +
+      'or did not answer within PEP_AUTHZEN_FORWARD_TIMEOUT_MS (#564). ' +
+      'The evaluation is an error, never false.',
+    spec: 'HTTP 502 (504 on a timeout), or a batch item\'s context.error' },
+  { code: 'STS-XPEP-0056',
+    summary: 'The service refused the remote PEP itself when its edge PDP ' +
+      'forwarded an AuthZEN evaluation about an application that ' +
+      'enforces fine-grained authorization (401 or 403): the PEP\'s ' +
+      'directory entry must hold AUTHZEN_PEPS and have the application ' +
+      'in its stsAuthzenApplication scope (#564).',
+    spec: 'HTTP 502, or a batch item\'s context.error' },
+  { code: 'STS-XPEP-0057',
+    summary: 'The service answered an error to an AuthZEN evaluation the ' +
+      'remote PEP\'s edge PDP forwarded (an application that enforces ' +
+      'fine-grained authorization): its status and message are passed to ' +
+      'the caller, never turned into false (#564).',
+    spec: 'the service\'s own status and message, or a batch item\'s ' +
+      'context.error' },
+  { code: 'STS-XPEP-0058',
+    summary: 'The service answered 200 to an AuthZEN evaluation the remote ' +
+      'PEP\'s edge PDP forwarded, with something that is not an AuthZEN ' +
+      'decision (no boolean decision) (#564).',
+    spec: 'HTTP 502, or a batch item\'s context.error' },
+  { code: 'STS-XPEP-0059',
+    summary: 'The AuthZEN catalogue the remote PEP pulled carried an ' +
+      'fgaApplications member that is not an array of application ' +
+      'identifiers. The catalogue is refused whole and the one held is ' +
+      'kept: which evaluations must be forwarded cannot be told (#564).',
+    spec: 'none; the edge keeps what it holds' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
@@ -21617,6 +21649,13 @@ const CODES = [
       'through rows for its own members), or was nested too deeply.',
     spec: 'access_denied at the authorization endpoint, ' +
       'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0108',
+    summary: 'Which applications enforce fine-grained authorization could ' +
+      'not be read when a remote PEP pulled the AuthZEN catalogue (GET ' +
+      '/xacml/pep/authzen-catalogue), so the catalogue was not sent: one ' +
+      'naming no enforcing application would have the edge PDP decide ' +
+      'their evaluations from the root (#564).',
+    spec: 'HTTP 500 server_error; the edge keeps the catalogue it holds' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
