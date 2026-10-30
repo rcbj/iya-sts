@@ -6955,6 +6955,30 @@
     "en": "d856eb355e794d04",
     "text": "AuthZEN 的 Obligations Profile（草案）。开启时，仅当请求的 context.supported_obligations 列出答复中的每种义务类型时，才在 context.obligations 中把 XACML 义务交给 PEP——携带义务的 Permit 才应答 true；元数据公布 supported_obligations。没有该声明或关闭此项时，携带本服务自身无法履行的义务的 Permit 应答 false，因为从未听说过该配置文件的 PEP 否则会授予访问。"
   },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "启用 Search APIs"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "开启时，三种 AuthZEN 搜索在 /access/v1/search 下应答（主体、资源、操作），元数据会列出它们。一次搜索用领域的根策略对本服务能列出的每个候选作出决定，并应答被允许的那些：主体是领域目录中的人员，资源是其应用、API 和委托关系，操作是策略用来与 action-id 比较的名称。关闭时，这些路由应答 501。"
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "一次搜索决定的候选数"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "一次搜索最多决定的候选数。每个候选都是本服务线程上的一次完整决策；超过上限后，其余候选不再决定，应答的 context.incomplete 表示结果不完整。"
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "每个搜索页的结果数"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "请求未指定 page.limit 时，一次搜索在一页中应答的结果数；用 page.next_token 继续。"
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "返回决策的原因"

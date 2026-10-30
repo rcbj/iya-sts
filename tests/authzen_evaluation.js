@@ -75,6 +75,8 @@ const POLICY = [
   '        type = string }',
   '    attribute tags { category = resourceCat id = "urn:example:tags"',
   '        type = string }',
+  '    attribute rtype { category = resourceCat',
+  '        id = "urn:sts:xacml:authzen:resource-type" type = string }',
   '    policy azevalRoot {',
   '        id = "urn:test:azeval-root"',
   '        apply firstApplicable',
@@ -92,6 +94,16 @@ const POLICY = [
   '        rule noDelete {',
   '            deny',
   '            target clause act == "delete"',
+  '        }',
+  '        rule inspectApplications {',
+  '            permit',
+  '            target clause act == "inspect"',
+  '            target clause rtype == "application" or rtype == "api"',
+  '        }',
+  '        rule followDelegation {',
+  '            permit',
+  '            target clause act == "follow"',
+  '            target clause rtype == "delegation"',
   '        }',
   '        rule approve {',
   '            permit',
@@ -514,6 +526,136 @@ async function childBody() {
           brief(r));
 
   // -------------------------------------------------------------------------
+  // S. THE THREE SEARCHES (#1175)
+  // -------------------------------------------------------------------------
+  inRealm(function () {
+    applications.createApplication({ identifier: 'azeval-front',
+      protocols: ['oauth2'],
+      fields: { oauthClientId: 'azeval-front',
+                appAllowedToDelegateTo: ['azeval-back'] } });
+  });
+  const SEARCH = PREFIX + '/access/v1/search/';
+  r = await request(port, 'POST', SEARCH + 'subject', pepCred, {
+    subject: { type: 'user' }, action: { name: 'write' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  let ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.type + ':' + one.id;
+  });
+  t.check(r.status === 200 && ids.indexOf('user:azalice') >= 0 &&
+          ids.indexOf('user:azpep') < 0 && r.json.page &&
+          typeof r.json.page.next_token === 'string' &&
+          Object.keys(r.json)[0] === 'page',
+          'S1. Subject Search answers the directory people the policy ' +
+          'permits (staff azalice, not azpep), the page first', brief(r));
+  r = await request(port, 'POST', SEARCH + 'subject', pepCred, {
+    subject: { type: 'service', id: 'ignored' }, action: { name: 'write' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  t.check(r.status === 200 && r.json.results.length === 0,
+          'S2. a subject type this realm does not resolve has no candidates, ' +
+          'and an id sent is ignored', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'inspect' },
+    resource: { type: 'application' },
+    context: { application: 'todo-app' } });
+  ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.id;
+  });
+  t.check(r.status === 200 && ids.indexOf('azeval-front') >= 0 &&
+          ids.indexOf('sts-authzen-api') >= 0 &&
+          r.json.results.every(function (one) {
+            return one.type === 'application';
+          }),
+          'S3. Resource Search answers the realm\'s applications, all of the ' +
+          'searched type', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'inspect' },
+    resource: { type: 'api' }, context: { application: 'todo-app' } });
+  ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.id;
+  });
+  t.check(r.status === 200 && ids.indexOf('sts-authzen-api') >= 0 &&
+          ids.indexOf('azeval-front') < 0,
+          'S4. the api type is the resource-server objects alone', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'follow' },
+    resource: { type: 'delegation' }, context: { application: 'todo-app' } });
+  t.check(r.status === 200 && r.json.results.length === 1 &&
+          r.json.results[0].id === 'azeval-front|azeval-back',
+          'S5. the delegation type is each declared relationship, ' +
+          '<source>|<target>', brief(r));
+  r = await request(port, 'POST', SEARCH + 'action', pepCred, {
+    subject: { type: 'user', id: 'azalice' },
+    resource: { type: 'document', id: 'doc-1',
+                properties: { classification: 'internal' } },
+    context: { application: 'todo-app' } });
+  const names = ((r.json && r.json.results) || []).map(function (one) {
+    return one.name;
+  });
+  t.check(r.status === 200 && names.indexOf('read') >= 0 &&
+          names.indexOf('write') >= 0 && names.indexOf('delete') < 0 &&
+          names.indexOf('approve') < 0,
+          'S6. Action Search answers the policy\'s actions the subject is ' +
+          'permitted (read, write; not delete, nor approve whose ' +
+          'obligation was not declared)', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SEARCH + 'action', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'read' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0009'),
+          'S7. an Action Search carrying action is refused', brief(r));
+  const paged = { subject: { type: 'user', id: 'azalice' },
+                  action: { name: 'inspect' },
+                  resource: { type: 'application' },
+                  context: { application: 'todo-app' },
+                  page: { limit: 1 } };
+  const first = await request(port, 'POST', SEARCH + 'resource', pepCred,
+                              paged);
+  const pageToken = first.json && first.json.page &&
+                    first.json.page.next_token;
+  const second = await request(port, 'POST', SEARCH + 'resource', pepCred,
+    Object.assign({}, paged, { page: { limit: 1, token: pageToken } }));
+  t.check(first.status === 200 && first.json.results.length === 1 &&
+          !!pageToken && second.status === 200 &&
+          second.json.results.length === 1 &&
+          second.json.results[0].id !== first.json.results[0].id &&
+          first.json.page.total === second.json.page.total,
+          'S8. page.limit pages, and next_token continues to the next page',
+          brief(first) + ' / ' + brief(second));
+  since = marks.length;
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred,
+    Object.assign({}, paged, { action: { name: 'follow' },
+                               page: { limit: 1, token: pageToken } }));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0043'),
+          'S9. a token continued with a changed request is refused ' +
+          '(STS-AUTHZEN-0043)', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.searchMaxCandidates', 1);
+  });
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred,
+                    Object.assign({}, paged, { page: undefined }));
+  inRealm(function () {
+    config.setOverride('authzen.searchMaxCandidates', 1000);
+    config.setOverride('authzen.searchEnabled', false);
+  });
+  t.check(r.status === 200 && r.json.context &&
+          r.json.context.incomplete === true,
+          'S10. past authzen.searchMaxCandidates the answer says it is ' +
+          'incomplete', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SEARCH + 'subject', pepCred, {
+    subject: { type: 'user' }, action: { name: 'write' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  inRealm(function () {
+    config.setOverride('authzen.searchEnabled', true);
+  });
+  t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0044'),
+          'S11. authzen.searchEnabled off answers 501', brief(r));
+
+  // -------------------------------------------------------------------------
   // W. THE METADATA (#1163)
   // -------------------------------------------------------------------------
   const fromRoot = await request(port, 'GET',
@@ -538,14 +680,12 @@ async function childBody() {
           'W0. the metadata advertises supported_obligations (#1177)',
           JSON.stringify(doc));
   t.check(advertised.every(function (key) {
-    return ['access_evaluation_endpoint',
-            'access_evaluations_endpoint'].indexOf(key) >= 0;
-  }) && !doc.capabilities &&
-          Object.keys(doc).every(function (key) {
-            return key.indexOf('search') < 0;
-          }),
-          'W3. nothing unimplemented is advertised: no search endpoint and ' +
-          'no capabilities', JSON.stringify(doc));
+    return ['access_evaluation_endpoint', 'access_evaluations_endpoint',
+            'search_subject_endpoint', 'search_resource_endpoint',
+            'search_action_endpoint'].indexOf(key) >= 0;
+  }) && advertised.length === 5 && !doc.capabilities,
+          'W3. every implemented endpoint is advertised, the three searches ' +
+          'among them, and no capabilities', JSON.stringify(doc));
   for (let i = 0; i < advertised.length; i += 1) {
     const at = String(doc[advertised[i]]).replace(/^https?:\/\/[^/]+/, '');
     const answered = await request(port, 'POST', at, null, {});

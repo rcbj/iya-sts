@@ -545,6 +545,41 @@ async function theBatch() {
   log.debug("Leaving theBatch().");
 }
 
+// THE TODO SCENARIO'S QUESTIONS AS SEARCHES (#1175): who may create a todo,
+// and what beth may do with her own.
+async function theSearches() {
+  log.debug("Entering theSearches().");
+  log.info("=== 6b. the searches ===");
+  let r = await pep("POST", PREFIX + "/access/v1/search/subject", caller, {
+    subject: { type: "user" }, action: { name: "can_create_todo" },
+    resource: { type: "todo", id: "todo-1" },
+    context: { application: APPLICATION } });
+  const who = ((r.body && r.body.results) || []).map(function (one) {
+    return one.id;
+  }).sort();
+  check("Subject Search: who may create a todo", function () {
+    assert.ok(r.status === 200 && who.indexOf("rick") >= 0 &&
+              who.indexOf("morty") >= 0 && who.indexOf("summer") >= 0 &&
+              who.indexOf("beth") < 0 && who.indexOf("jerry") < 0,
+      "answered " + r.status + " " + String(r.text).slice(0, 300));
+  });
+  r = await pep("POST", PREFIX + "/access/v1/search/action", caller, {
+    subject: { type: "user", id: "beth" },
+    resource: { type: "todo", id: "todo-1",
+                properties: { ownerID: "beth@the-smiths.com" } },
+    context: { application: APPLICATION } });
+  const can = ((r.body && r.body.results) || []).map(function (one) {
+    return one.name;
+  });
+  check("Action Search: what a viewer may do with a todo", function () {
+    assert.ok(r.status === 200 && can.indexOf("can_read_todos") >= 0 &&
+              can.indexOf("can_create_todo") < 0 &&
+              can.indexOf("can_delete_todo") < 0,
+      "answered " + r.status + " " + String(r.text).slice(0, 300));
+  });
+  log.debug("Leaving theSearches().");
+}
+
 async function theMetadata() {
   log.debug("Entering theMetadata().");
   log.info("=== 7. the metadata ===");
@@ -557,11 +592,12 @@ async function theMetadata() {
                 PREFIX,
       "answered " + r.status + " " + r.text);
   });
-  check("nothing unimplemented is advertised, and signed_metadata is a JWT",
-        function () {
+  check("the searches are advertised, no capabilities, and signed_metadata " +
+        "is a JWT", function () {
     assert.ok(!doc.capabilities && typeof doc.signed_metadata === "string" &&
-              Object.keys(doc).every(function (key) {
-                return key.indexOf("search") < 0;
+              ["subject", "resource", "action"].every(function (kind) {
+                return /\/access\/v1\/search\//.test(
+                  String(doc["search_" + kind + "_endpoint"]));
               }), JSON.stringify(doc));
   });
   for (const key of Object.keys(doc)) {
@@ -606,6 +642,7 @@ async function test() {
   await theShapeAndValues();
   await theTrustBoundaries();
   await theBatch();
+  await theSearches();
   await theMetadata();
   await theXacmlSurfaceIsUnchanged();
   assert.ok(checks >= 35,

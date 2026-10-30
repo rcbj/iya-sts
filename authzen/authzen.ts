@@ -12,6 +12,8 @@
 //   GET  /.well-known/authzen-configuration[/realm/<id>]
 //                                 the PDP's metadata (section 9) — #1163
 //   POST /access/v1/evaluations   a batch of evaluations (section 7) — #1164
+//   POST /access/v1/search/{subject,resource,action}
+//                                 the three searches (section 8) — #1175
 //
 // per realm, under the realm's prefix. Deliberately thin, as `xacml/xacml.ts`
 // is: it reads a request, asks `authzen_caller.ts` who is asking and whether
@@ -45,6 +47,7 @@ import InstanceSlot = require('../common/instance_slot');
 import catalogue = require('./authzen_catalogue');
 import map = require('./authzen_map');
 import callers = require('./authzen_caller');
+import search = require('./authzen_search');
 
 const { log } = helpers;
 
@@ -66,6 +69,8 @@ const API_OBJECT = 'sts-authzen-api';
 const EVALUATION_PATH = '/access/v1/evaluation';
 const EVALUATIONS_PATH = '/access/v1/evaluations';
 const METADATA_PATH = '/.well-known/authzen-configuration';
+// The three searches (#1175), at the specification's default paths.
+const SEARCH_PATH = '/access/v1/search/';
 
 // The three batch semantics (section 7.1.2), the first the default.
 const SEMANTICS = Object.freeze(['execute_all', 'deny_on_first_deny',
@@ -96,6 +101,7 @@ interface SurfaceDeps {
   realms: any;
   applications: any;
   caller: any;
+  search: any;
   loadXacml(): any;
   loadMonitor(): any;
   // The authorization server's published-document signer, for
@@ -137,6 +143,7 @@ class AuthzenSurface {
       realms: require('../common/realms'),
       applications: require('../common/applications'),
       caller: new callers.AuthzenCaller(callers.AuthzenCaller.defaultDeps()),
+      search: new search.AuthzenSearch(search.AuthzenSearch.defaultDeps()),
       loadXacml: function (): any {
         log.debug("Entering loadXacml().");
         log.debug("Leaving loadXacml().");
@@ -338,24 +345,10 @@ class AuthzenSurface {
       log.debug("Leaving AuthzenSurface.evaluateOne(). " + scoped.code);
       return failed(scoped.status, scoped.code, scoped.message);
     }
-    const request = map.request(evaluation, {
-      realm: String(realms.currentId() || ''),
-      caller: caller.name,
-      application: scoped.application
-    });
-    const xacml = self.deps.loadXacml();
-    const answer = xacml.decide(request,
-      { resolve: self.resolves(evaluation.subject.type) });
-    const faultCode = String(errorCodes.codeOf(answer) || '');
-    const enforcement = xacml.enforce(answer, 'deny-biased');
-    // THE OBLIGATIONS PROFILE (#1177), while `authzen.obligationsProfile`
-    // is on: the PEP's declaration decides what is handed (`outcome()`).
-    const profile = config.value('authzen.obligationsProfile') !== false;
-    const outcome = map.outcome(answer, enforcement, faultCode,
-      profile ? evaluation.supportedObligations : null);
-    // COUNTED AS A DECISION AND NOT AN ENFORCEMENT, the PDP endpoint's
-    // reason: the caller enforced it, in its own process.
-    self.deps.loadMonitor().record('authzen', { decision: answer.decision });
+    const decided = self.decideEvaluation(evaluation, caller.name,
+                                          scoped.application);
+    const outcome = decided.outcome;
+    const faultCode = decided.faultCode;
     const recorded = outcome.fault
       ? (faultCode || 'STS-AUTHZEN-0028')
       : (outcome.obligationProblems.length ? 'STS-AUTHZEN-0041'
@@ -407,6 +400,179 @@ class AuthzenSurface {
   }
 
   /**
+   * Decides one evaluation that has been read and scoped: the XACML request
+   * built, the root policy asked, the answer enforced and mapped back, and
+   * the decision counted. The one place a question is put to the policy, for
+   * an evaluation, a batch item and every candidate of a search.
+   *
+   * @param evaluation - the evaluation `authzen_map.ts` read
+   * @param callerName - the trusted caller
+   * @param application - the trusted application
+   * @returns `{ outcome, faultCode }`
+   */
+  decideEvaluation(evaluation: any, callerName: string,
+                   application: string): { outcome: any; faultCode: string } {
+    const self = this;
+    const { log, config, errorCodes, realms } = this.deps;
+    log.debug("Entering AuthzenSurface.decideEvaluation().");
+    const request = map.request(evaluation, {
+      realm: String(realms.currentId() || ''),
+      caller: callerName,
+      application: application
+    });
+    const xacml = self.deps.loadXacml();
+    const answer = xacml.decide(request,
+      { resolve: self.resolves(evaluation.subject.type) });
+    const faultCode = String(errorCodes.codeOf(answer) || '');
+    const enforcement = xacml.enforce(answer, 'deny-biased');
+    // THE OBLIGATIONS PROFILE (#1177), while `authzen.obligationsProfile`
+    // is on: the PEP's declaration decides what is handed (`outcome()`).
+    const profile = config.value('authzen.obligationsProfile') !== false;
+    const outcome = map.outcome(answer, enforcement, faultCode,
+      profile ? evaluation.supportedObligations : null);
+    // COUNTED AS A DECISION AND NOT AN ENFORCEMENT, the PDP endpoint's
+    // reason: the caller enforced it, in its own process.
+    self.deps.loadMonitor().record('authzen', { decision: answer.decision });
+    log.debug("Leaving AuthzenSurface.decideEvaluation().");
+    return { outcome: outcome, faultCode: faultCode };
+  }
+
+  /**
+   * Whether the search endpoints answer in this realm
+   * (`authzen.searchEnabled`).
+   *
+   * @returns true unless switched off
+   */
+  searchEnabled(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AuthzenSurface.searchEnabled().");
+    log.debug("Leaving AuthzenSurface.searchEnabled().");
+    return config.value('authzen.searchEnabled') !== false;
+  }
+
+  /**
+   * Runs one search (section 8) for a caller: the request read, its
+   * candidates each decided as an evaluation, the permitted ones paged.
+   * One audit row per search. Shared by the three routes and the reports
+   * application's sources (#1176), whose caller is the signed-in person.
+   *
+   * @param kind - subject, resource or action
+   * @param given - the request
+   * @param caller - the caller, `{ name }` with the scope checks applied by
+   *   `applicationOf()` when `checkScope` is true
+   * @param options - `checkScope` (false for a caller whose application is
+   *   given), `application` (the application then), `where` and `id`
+   * @returns `{ status, body }` or `{ status, code, error }`
+   */
+  runSearch(kind: string, given: unknown, caller: any, options: any): any {
+    const self = this;
+    const { log, config, audit, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.runSearch(). " + kind);
+    const opts = options || {};
+    const failed = function (status: number, code: string,
+                             message: string): any {
+      log.debug("Entering failed(). " + code);
+      log.debug("Leaving failed().");
+      return { status: status, code: code,
+               error: { status: status, message: message } };
+    };
+    const asked = self.deps.search.read(kind, given);
+    if (asked.refusal) {
+      log.debug("Leaving AuthzenSurface.runSearch(). " + asked.refusal.code);
+      return failed(asked.refusal.status, asked.refusal.code,
+                    asked.refusal.message);
+    }
+    const read = map.read(asked.body, self.rows());
+    if (read.refusal) {
+      log.debug("Leaving AuthzenSurface.runSearch(). " + read.refusal.code);
+      return failed(read.refusal.status, read.refusal.code,
+                    read.refusal.message);
+    }
+    const evaluation = read.evaluation;
+    let application = String(opts.application || '');
+    if (opts.checkScope !== false) {
+      const scoped = self.deps.caller.applicationOf(caller,
+                                                    evaluation.application);
+      if (!scoped.application) {
+        log.debug("Leaving AuthzenSurface.runSearch(). " + scoped.code);
+        return failed(scoped.status, scoped.code, scoped.message);
+      }
+      application = scoped.application;
+    }
+    const offset = self.deps.search.offsetOf(asked.page.token,
+                                             asked.fingerprint);
+    if (offset < 0) {
+      log.debug("Leaving AuthzenSurface.runSearch(). A foreign token.");
+      return failed(400, 'STS-AUTHZEN-0043', 'page.token is not one this ' +
+                    'search issued, or the request changed since it was ' +
+                    'issued; a continued request must repeat every entity ' +
+                    'and the limit unchanged (section 8.2).');
+    }
+    const most = Number(config.value('authzen.searchMaxCandidates'));
+    const named = self.deps.search.candidates(kind, evaluation,
+      self.resolves(evaluation.subject.type), most);
+    const permitted: string[] = [];
+    let faults = 0;
+    named.values.forEach(function (candidate: string) {
+      const one = JSON.parse(JSON.stringify(evaluation));
+      if (kind === 'subject') {
+        one.subject.id = candidate;
+      } else if (kind === 'resource') {
+        one.resource.id = candidate;
+      } else {
+        one.action.name = candidate;
+      }
+      const decided = self.decideEvaluation(one, caller.name, application);
+      if (decided.outcome.fault) {
+        faults += 1;
+      } else if (decided.outcome.decision === true) {
+        permitted.push(candidate);
+      }
+    });
+    const limit = asked.page.limit === null
+      ? Number(config.value('authzen.searchPageSize')) : asked.page.limit;
+    const shown = permitted.slice(offset, offset + limit);
+    const results = shown.map(function (candidate: string) {
+      return kind === 'action' ? { name: candidate }
+        : { type: kind === 'subject' ? evaluation.subject.type
+                                     : evaluation.resource.type,
+            id: candidate };
+    });
+    const out: any = {};
+    // THE PAGE FIRST, as section 8.3 RECOMMENDS, so a PEP reads the count
+    // before the results.
+    out.page = { next_token: search.nextToken(offset + shown.length,
+                                              permitted.length,
+                                              asked.fingerprint),
+                 count: shown.length, total: permitted.length };
+    out.results = results;
+    // AN INCOMPLETE RESULT IS SAID SO: candidates past the cap were not
+    // decided, and a candidate the PDP could not decide is not a result.
+    if (named.truncated || faults) {
+      out.context = { incomplete: true,
+        reason_admin: { en: (named.truncated
+          ? 'More than authzen.searchMaxCandidates (' + most + ') ' +
+            'candidates; only the first were decided. ' : '') +
+          (faults ? faults + ' candidate(s) could not be decided.' : '') } };
+    }
+    audit.audit({
+      action: 'authzen.search',
+      actor: caller.name,
+      protocol: 'AuthZEN',
+      errorCode: named.truncated ? 'STS-AUTHZEN-0045'
+        : (faults ? 'STS-AUTHZEN-0028' : undefined),
+      detail: String(opts.where || 'search') + ' searched ' + kind +
+        's: ' + named.values.length + ' candidate(s) decided, ' +
+        permitted.length + ' permitted' + (named.truncated
+          ? ', more not decided' : '') + ', application "' + application +
+        '"' + (opts.id ? ', request ' + opts.id : '') + '.'
+    });
+    log.debug("Leaving AuthzenSurface.runSearch(). " + permitted.length +
+              " permitted.");
+    return { status: 200, body: out };
+  }
+
+  /**
    * Admits a caller: authentication by the realm's door, then the policy.
    *
    * @param req - the request
@@ -446,8 +612,9 @@ class AuthzenSurface {
   /**
    * The PDP's metadata document (section 9), for the realm the request is
    * answered in. It names ONLY what answers here: the single endpoint, and
-   * the batch one while `authzen.batchEnabled` is on — no search endpoint
-   * and no `capabilities` until one is implemented end to end — and, while
+   * the batch one while `authzen.batchEnabled` is on, the three searches
+   * while `authzen.searchEnabled` is on (#1175), no `capabilities` — and,
+   * while
    * `authzen.signedMetadata` is on, `signed_metadata` (#1178).
    *
    * @param req - the request
@@ -467,6 +634,11 @@ class AuthzenSurface {
     };
     if (self.batchEnabled()) {
       out.access_evaluations_endpoint = base + EVALUATIONS_PATH;
+    }
+    if (self.searchEnabled()) {
+      out.search_subject_endpoint = base + SEARCH_PATH + 'subject';
+      out.search_resource_endpoint = base + SEARCH_PATH + 'resource';
+      out.search_action_endpoint = base + SEARCH_PATH + 'action';
     }
     // The Obligations Profile's member (its section 6), while it is on.
     if (self.deps.config.value('authzen.obligationsProfile') !== false) {
@@ -781,6 +953,48 @@ class AuthzenSurface {
     });
 
     // -----------------------------------------------------------------------
+    // POST /access/v1/search/{subject,resource,action} — section 8 (#1175).
+    // -----------------------------------------------------------------------
+    search.KINDS.forEach(function (kind: string) {
+      const path = SEARCH_PATH + kind;
+      app.post(path, function (req, res) {
+        log.debug('Entering POST ' + path + '.');
+        const id = self.requestId(req, res);
+        if (self.offCheck(res)) {
+          log.debug('Leaving POST ' + path + '. Off.');
+          return;
+        }
+        if (!self.searchEnabled()) {
+          errorCodes.mark(res, 'STS-AUTHZEN-0044');
+          callers.send(res, 501, 'The search endpoints are turned off in ' +
+                       'this realm (authzen.searchEnabled).');
+          log.debug('Leaving POST ' + path + '. Search off.');
+          return;
+        }
+        const caller = self.admit(req, res);
+        if (!caller) {
+          log.debug('Leaving POST ' + path + '. Not admitted.');
+          return;
+        }
+        const body = AuthzenSurface.bodyOf(req);
+        const result = self.runSearch(kind, body === undefined ? null : body,
+                                      caller, { where: 'POST ' + path,
+                                                id: id });
+        if (result.error) {
+          errorCodes.mark(res, result.code);
+          // error-code: none — marked on the line above with its code.
+          callers.send(res, result.status, result.error.message);
+          log.debug('Leaving POST ' + path + '. ' + result.code);
+          return;
+        }
+        res.status(200).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify(result.body));
+        log.debug('Leaving POST ' + path + '.');
+      });
+    });
+
+    // -----------------------------------------------------------------------
     // GET /.well-known/authzen-configuration — the metadata (section 9).
     //
     // SECTION 9.2 INSERTS the well-known segment between the host and the
@@ -843,6 +1057,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   enabled: slot.forward('enabled'),
   metadata: slot.forward('metadata'),
+  runSearch: slot.forward('runSearch'),
   API_OBJECT: API_OBJECT,
   EVALUATION_PATH: EVALUATION_PATH,
   EVALUATIONS_PATH: EVALUATIONS_PATH,

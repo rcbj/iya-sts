@@ -96,8 +96,8 @@
     "text": "full：覆盖强制功能集：策略语言、七种决策值（包括三种扩展的 Indeterminate）、目标匹配、条件、变量、十二种组合算法、义务和建议、策略引用，以及覆盖全部十七种数据类型的标准函数库。按 OASIS 一致性测试套件验证——455 个强制用例中通过 454 个，唯一的例外连同其论证记录在 xacml/conformance/MANIFEST.js 中。未覆盖：AttributeSelector 和 XPath 函数（使用它们的策略结果为 Indeterminate，而不是悄无声息地为空）、Multiple Decision 和 Hierarchical Resource 配置文件，以及管理委托。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "84df34d7cb483e0a",
-    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；Access Evaluations API（第 7 节）及其三种语义；两种形式的 PDP 元数据（第 9 节），包括 signed_metadata；以及面向声明了类型的 PEP 的 Obligations Profile 草案。缺少：三个 Search API，以及 Access Request and Approval 和 OAuth 配置文件，它们仍是草案。"
+    "en": "587fa315b80f6a67",
+    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；Access Evaluations API（第 7 节）及其三种语义；两种形式的 PDP 元数据（第 9 节），包括 signed_metadata；面向声明了类型的 PEP 的 Obligations Profile 草案；以及三个 Search APIs（第 8 节），覆盖本服务自己的人员、应用、API、委托关系和策略操作，分页且不具传递性。缺少：搜索中按结果的义务，以及 Access Request and Approval 和 OAuth 配置文件，它们仍是草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -767,9 +767,21 @@
     "en": "8bc09fb8f18ab7e3",
     "text": "POST 顶层的 subject、action、resource 和 context 默认值，以及其条目覆盖这些默认值的 evaluations 数组；返回 evaluations，按请求顺序每个条目一个决定。options.evaluations_semantic 为 execute_all（默认）、deny_on_first_deny 或 permit_on_first_permit。条目的失败为带 context.error 的 false，绝不会被 200 掩盖；超过 authzen.maxEvaluations 或 authzen.maxBodyBytes 的批次在作出任何决定之前即为 400。每个条目都是单独的审计行，带有批次 id。"
   },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "POST 第 8 节的请求；获得 results 和一个分页。应答某一类型中可对某资源执行某操作的主体：领域目录中的人员，类型须在 authzen.resolveSubjectTypes 中。每个候选都由领域的根策略按与评估完全相同的方式决定，只有被允许的才是结果；以 page.next_token 分页，受 authzen.searchMaxCandidates 限制，超过时标为不完整。"
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "POST 第 8 节的请求；获得 results 和一个分页。应答某主体可对其执行某操作的某一类型的资源：来自应用目录的 application、api 或 delegation。每个候选都由领域的根策略按与评估完全相同的方式决定，只有被允许的才是结果；以 page.next_token 分页，受 authzen.searchMaxCandidates 限制，超过时标为不完整。"
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "POST 第 8 节的请求；获得 results 和一个分页。应答某主体可对某资源执行的操作：根策略用来与 action-id 比较的名称，以及应用或 API 自身的权限。每个候选都由领域的根策略按与评估完全相同的方式决定，只有被允许的才是结果；以 page.next_token 分页，受 authzen.searchMaxCandidates 限制，超过时标为不完整。"
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "64cb62bbdb06b873",
-    "text": "第 9 节的文档：policy_decision_point（本领域的基址，与获取它的 URL 一致），以及仅在此处应答的端点——在某项功能端到端实现之前没有搜索端点、没有 capabilities——以及 signed_metadata，一个包含相同成员、iss 为 PDP 标识符、可用领域 JWKS 验证的 JWT（authzen.signedMetadata）。公开；API 关闭时应答 501。"
+    "en": "3b9a539920fa8ef3",
+    "text": "第 9 节的文档：policy_decision_point（本领域的基址，与获取它的 URL 一致），以及仅在此处应答的端点（批量端点和三种搜索，各自开启时），不含 capabilities；包含 supported_obligations，以及 signed_metadata，一个包含相同成员、iss 为 PDP 标识符、可用领域 JWKS 验证的 JWT（authzen.signedMetadata）。公开；API 关闭时应答 501。"
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

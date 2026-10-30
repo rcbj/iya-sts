@@ -6955,6 +6955,30 @@
     "en": "d856eb355e794d04",
     "text": "AuthZEN 的 Obligations Profile（草案）。開啟時，僅當請求的 context.supported_obligations 列出答覆中的每種義務類型時，才在 context.obligations 中把 XACML 義務交給 PEP——攜帶義務的 Permit 才回應 true；中繼資料公布 supported_obligations。沒有該宣告或關閉此項時，攜帶本服務本身無法履行之義務的 Permit 回應 false，因為從未聽過該設定檔的 PEP 否則會授予存取。"
   },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "啟用 Search APIs"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "開啟時，三種 AuthZEN 搜尋在 /access/v1/search 下回應（主體、資源、動作），中繼資料會列出它們。一次搜尋以領域的根原則對本服務能列出的每個候選作出決定，並回應被允許者：主體是領域目錄中的人員，資源是其應用程式、API 與委派關係，動作是原則用來與 action-id 比較的名稱。關閉時，這些路由回應 501。"
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "一次搜尋決定的候選數"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "一次搜尋最多決定的候選數。每個候選都是本服務執行緒上的一次完整決策；超過上限後，其餘候選不再決定，回應的 context.incomplete 表示結果不完整。"
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "每個搜尋頁的結果數"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "請求未指定 page.limit 時，一次搜尋在一頁中回應的結果數；以 page.next_token 繼續。"
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "傳回決策的原因"

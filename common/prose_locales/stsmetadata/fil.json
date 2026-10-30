@@ -96,8 +96,8 @@
     "text": "full para sa mandatoryong feature set: ang policy language, ang pitong decision value kasama ang tatlong extended Indeterminate, target matching, mga condition, mga variable, ang labindalawang combining algorithm, mga obligation at advice, mga policy reference, at ang standard function library sa lahat ng labimpitong datatype. Sinusuri laban sa OASIS conformance suite — 454 sa 455 na mandatoryong case ang pumapasa, at ang nag-iisang exception ay nakatala kasama ang argumento nito sa xacml/conformance/MANIFEST.js. HINDI saklaw: AttributeSelector at ang mga XPath function (Indeterminate ang policy na gumagamit ng isa sa halip na tahimik na walang laman), ang Multiple Decision at Hierarchical Resource profile, at administrative delegation."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "84df34d7cb483e0a",
-    "text": "partial: ang Access Evaluation API (seksyon 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng katalogo ng attribute bawat realm, kasama ang X-Request-ID at ang hamon ng seksyon 11.3, ang Access Evaluations API (seksyon 7) kasama ang tatlong semantika nito, at ang metadata ng PDP (seksyon 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang draft ng Obligations Profile para sa PEP na nagdedeklara ng mga uri. Kulang: ang tatlong Search API, at ang mga profile na Access Request and Approval at OAuth, na mga draft pa."
+    "en": "587fa315b80f6a67",
+    "text": "partial: ang Access Evaluation API (seksyon 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng katalogo ng attribute bawat realm, kasama ang X-Request-ID at ang hamon ng seksyon 11.3, ang Access Evaluations API (seksyon 7) kasama ang tatlong semantika nito, at ang metadata ng PDP (seksyon 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang draft ng Obligations Profile para sa PEP na nagdedeklara ng mga uri, at ang tatlong Search APIs (seksyon 8) sa sariling mga tao, application, API, ugnayang delegation at policy action ng serbisyong ito, hinahati sa pahina at hindi transitive. Kulang: ang obligations bawat resulta sa isang search, at ang mga profile na Access Request and Approval at OAuth, na mga draft pa."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -767,9 +767,21 @@
     "en": "8bc09fb8f18ab7e3",
     "text": "POST ng mga top-level na default na subject, action, resource at context at ng evaluations array na pinapalitan ng mga item nito ang mga iyon; ang sagot ay evaluations, isang desisyon bawat item ayon sa pagkakasunod ng request. Ang options.evaluations_semantic ay execute_all (ang default), deny_on_first_deny o permit_on_first_permit. Ang pagkabigo ng isang item ay false na may context.error at hindi kailanman itinatago ng 200; ang batch na lampas sa authzen.maxEvaluations o authzen.maxBodyBytes ay 400 bago may mapagpasyahan. Bawat item ay sarili nitong audit row, dala ang id ng batch."
   },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "I-POST ang request ng seksyon 8; makakuha ng results at isang pahina. Sinasagot ang mga subject ng isang uri na maaaring gumawa ng action sa isang resource: ang mga tao sa directory ng realm, para sa uring nasa authzen.resolveSubjectTypes. Bawat kandidato ay pinagpapasyahan ng root policy ng realm nang eksakto gaya ng isang evaluation, at ang mga pinahihintulutan lamang ang mga resulta; hinahati sa pahina gamit ang page.next_token, nililimitahan ng authzen.searchMaxCandidates, at sinasabing hindi kumpleto lampas dito."
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "I-POST ang request ng seksyon 8; makakuha ng results at isang pahina. Sinasagot ang mga resource ng isang uri na maaaring gawan ng action ng isang subject: application, api o delegation, mula sa directory ng mga application. Bawat kandidato ay pinagpapasyahan ng root policy ng realm nang eksakto gaya ng isang evaluation, at ang mga pinahihintulutan lamang ang mga resulta; hinahati sa pahina gamit ang page.next_token, nililimitahan ng authzen.searchMaxCandidates, at sinasabing hindi kumpleto lampas dito."
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "I-POST ang request ng seksyon 8; makakuha ng results at isang pahina. Sinasagot ang mga action na maaaring gawin ng isang subject sa isang resource: ang mga pangalang ikinukumpara ng root policy sa action-id, at ang sariling mga permission ng isang application o API. Bawat kandidato ay pinagpapasyahan ng root policy ng realm nang eksakto gaya ng isang evaluation, at ang mga pinahihintulutan lamang ang mga resulta; hinahati sa pahina gamit ang page.next_token, nililimitahan ng authzen.searchMaxCandidates, at sinasabing hindi kumpleto lampas dito."
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "64cb62bbdb06b873",
-    "text": "Ang dokumento ng seksyon 9: policy_decision_point (ang base ng realm na ito, na tugma sa URL kung saan ito kinukuha) at ang mga endpoint lamang na sumasagot dito — walang search endpoint at walang capabilities hangga't wala pang naipapatupad nang buo — at signed_metadata, isang JWT ng parehong mga miyembro na ang iss ay ang identifier ng PDP, mabe-verify gamit ang JWKS ng realm (authzen.signedMetadata). Pampubliko; sumasagot ng 501 habang naka-off ang API."
+    "en": "3b9a539920fa8ef3",
+    "text": "Ang dokumento ng seksyon 9: policy_decision_point (ang base ng realm na ito, na tugma sa URL kung saan ito kinukuha) at ang mga endpoint lamang na sumasagot dito (ang batch at ang tatlong search habang naka-on ang bawat isa), walang capabilities, supported_obligations, at signed_metadata, isang JWT ng parehong mga miyembro na ang iss ay ang identifier ng PDP, mabe-verify gamit ang JWKS ng realm (authzen.signedMetadata). Pampubliko; sumasagot ng 501 habang naka-off ang API."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

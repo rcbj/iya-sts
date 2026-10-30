@@ -39,6 +39,18 @@
     "en": "71ce33d985a6eced",
     "text": "Un lot d'évaluations d'accès"
   },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "Recherche de sujets"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "Recherche de ressources"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "Recherche d'actions"
+  },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",
     "text": "Métadonnées du PDP"

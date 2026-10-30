@@ -883,6 +883,10 @@
     "en": "9a9264e25acb9778",
     "text": "一次 AuthZEN 访问评估已作出决策"
   },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "一次 AuthZEN 搜索已应答"
+  },
   "audit.actions.admin.authzen.attribute.set.label": {
     "en": "c5eff2fc8ecdf500",
     "text": "添加或替换了一行 AuthZEN 属性目录"

@@ -39,6 +39,18 @@
     "en": "71ce33d985a6eced",
     "text": "Isang batch ng mga pagsusuri ng access"
   },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "Paghahanap ng subject"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "Paghahanap ng resource"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "Paghahanap ng action"
+  },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",
     "text": "Metadata ng PDP"

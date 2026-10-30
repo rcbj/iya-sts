@@ -39,6 +39,18 @@
     "en": "71ce33d985a6eced",
     "text": "一批访问评估"
   },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "主体搜索"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "资源搜索"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "操作搜索"
+  },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",
     "text": "PDP 元数据"

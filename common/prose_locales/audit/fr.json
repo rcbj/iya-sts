@@ -883,6 +883,10 @@
     "en": "9a9264e25acb9778",
     "text": "Une évaluation d’accès AuthZEN a été décidée"
   },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "Une recherche AuthZEN a reçu une réponse"
+  },
   "audit.actions.admin.authzen.attribute.set.label": {
     "en": "c5eff2fc8ecdf500",
     "text": "Une ligne du catalogue d'attributs AuthZEN a été ajoutée ou remplacée"
