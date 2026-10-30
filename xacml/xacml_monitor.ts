@@ -385,6 +385,12 @@ class XacmlMonitor {
       // allowed and refused like the two PEPs above. Only decisions the PDP
       // reached are counted; a policy that cannot be resolved is audited
       // (`fga.decision`) and not counted, as no engine decided anything.
+      // AN AUTHZEN EVALUATION DECIDED BY AN APPLICATION'S POLICY (#564, P4)
+      // IS NOT COUNTED HERE but on the `authzen` row: this row counts what
+      // this process ENFORCES, and that answer is enforced by the AuthZEN
+      // caller in its own process — counting it here would add an allowed
+      // or refused figure nobody here produced, and counting it on both rows
+      // would count one decision twice.
       { id: 'fga',
         label: 'The fine-grained authorization PEP',
         kind: 'embedded',
@@ -421,7 +427,13 @@ class XacmlMonitor {
 
       // THE AUTHZEN ENDPOINTS (#563): the PDP endpoint's case again, in
       // AuthZEN's shape. A decision is counted; the enforcement was the
-      // caller's, so the allowed and refused cells stay empty.
+      // caller's, so the allowed and refused cells stay empty. Since #564's
+      // P4 an evaluation about an application that enforces fine-grained
+      // authorization is decided by that application's policy and STILL
+      // counted here, once: the row is the asker's, whichever policy
+      // answered, and the `authzen.decision` audit row names the policy. An
+      // evaluation whose policy could not be used reached no engine and is
+      // not counted.
       { id: 'authzen',
         label: 'The AuthZEN endpoints',
         kind: 'endpoint',
