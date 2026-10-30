@@ -77,6 +77,10 @@ const POLICY = [
   '        type = string }',
   '    attribute rtype { category = resourceCat',
   '        id = "urn:sts:xacml:authzen:resource-type" type = string }',
+  '    attribute caller { category = environmentCat',
+  '        id = "urn:sts:xacml:authzen:caller" type = string }',
+  '    attribute app { category = environmentCat',
+  '        id = "urn:sts:xacml:authzen:application" type = string }',
   '    policy azevalRoot {',
   '        id = "urn:test:azeval-root"',
   '        apply firstApplicable',
@@ -104,6 +108,12 @@ const POLICY = [
   '            permit',
   '            target clause act == "follow"',
   '            target clause rtype == "delegation"',
+  '        }',
+  '        rule reportOwnerAudits {',
+  '            permit',
+  '            target clause act == "audit"',
+  '            target clause caller == "azalice"',
+  '            target clause app == "sts-report"',
   '        }',
   '        rule approve {',
   '            permit',
@@ -654,6 +664,122 @@ async function childBody() {
   });
   t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0044'),
           'S11. authzen.searchEnabled off answers 501', brief(r));
+
+  // -------------------------------------------------------------------------
+  // R. THE SEARCHES AS REPORT SOURCES (#1176): run as the report's owner,
+  //    the caller of the search, with `sts-report` the application — the
+  //    `reportOwnerAudits` rule permits `audit` for azalice there only.
+  // -------------------------------------------------------------------------
+  const reportSources = require(ROOT + '/report/sources');
+  const ReportQuery = require(ROOT + '/report/query');
+  const ReportCatalog = require(ROOT + '/report/catalog');
+  const reportRun = async function (source, inputs, owner, ownerRealm) {
+    log.debug("Entering reportRun().");
+    const args = Object.keys(inputs).map(function (key) {
+      return { op: 'eq', field: key, value: inputs[key] };
+    });
+    const validated = new ReportQuery({ catalog: new ReportCatalog() })
+      .validate({ source: source, where: { op: 'and', args: args },
+                  select: ['subjectType', 'subjectId', 'action',
+                           'resourceType', 'resourceId'],
+                  limit: 500 });
+    if (!validated.ok) {
+      log.debug("Leaving reportRun(). Invalid.");
+      return validated;
+    }
+    const read = await inRealm(function () {
+      return reportSources.read(validated.plan, {
+        startedMs: Date.now(), budgetMs: 60000, execution: 'sync',
+        owner: owner, ownerRealm: ownerRealm || '' });
+    });
+    log.debug("Leaving reportRun().");
+    return read;
+  };
+  const column = function (read, name) {
+    return ((read && read.rows) || []).map(function (row) {
+      return row[name];
+    });
+  };
+  const catalogIds = new ReportCatalog().list().map(function (one) {
+    return one.id;
+  });
+  t.check(['authzenSubjects', 'authzenResources', 'authzenActions']
+            .every(function (id) {
+              return catalogIds.indexOf(id) >= 0;
+            }), 'R1. the catalog carries the three search sources');
+  let read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azalice');
+  t.check(read.ok && column(read, 'resourceId').indexOf('azeval-front') >= 0 &&
+          column(read, 'resourceId').indexOf('sts-authzen-api') >= 0 &&
+          column(read, 'subjectId').every(function (id) {
+            return id === 'azalice';
+          }),
+          'R2. a resource search answers what the policy permits the ' +
+          'OWNER, each row carrying the inputs', JSON.stringify(read).
+            slice(0, 300));
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azpep');
+  t.check(read.ok && read.rows.length === 0,
+          'R3. the same report owned by somebody else answers nothing: it ' +
+          'runs with its owner\'s permissions', JSON.stringify(read).
+            slice(0, 300));
+  read = await reportRun('authzenActions', { subjectType: 'user',
+    subjectId: 'azalice', resourceType: 'application',
+    resourceId: 'azeval-front' }, 'azalice');
+  t.check(read.ok && column(read, 'action').indexOf('audit') >= 0 &&
+          column(read, 'action').indexOf('inspect') >= 0 &&
+          column(read, 'action').indexOf('delete') < 0,
+          'R4. an action search answers the permitted action names',
+          JSON.stringify(column(read, 'action')));
+  read = await reportRun('authzenSubjects', { subjectType: 'user',
+    action: 'audit', resourceType: 'application',
+    resourceId: 'azeval-front' }, 'azalice');
+  t.check(read.ok && column(read, 'subjectId').indexOf('azalice') >= 0 &&
+          column(read, 'resourceId').every(function (id) {
+            return id === 'azeval-front';
+          }), 'R5. a subject search answers the realm\'s people',
+          JSON.stringify(column(read, 'subjectId')).slice(0, 300));
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    action: 'audit', resourceType: 'application' }, 'azalice');
+  t.check(!read.ok && read.code === 'STS-REPORT-0054' &&
+          /subjectId/.test(read.description),
+          'R6. a missing input is refused, the input named', read.code);
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azalice', 'another-realm');
+  t.check(!read.ok && read.code === 'STS-REPORT-0055' &&
+          read.error === 'forbidden',
+          'R7. an owner from another realm is refused rather than asked ' +
+          'about', read.code);
+  inRealm(function () {
+    config.setOverride('authzen.searchEnabled', false);
+  });
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azalice');
+  inRealm(function () {
+    config.setOverride('authzen.searchEnabled', true);
+  });
+  t.check(!read.ok && read.code === 'STS-REPORT-0055' &&
+          read.error === 'unavailable',
+          'R8. with the search APIs off the source is refused', read.code);
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'no such action',
+    resourceType: 'application' }, 'azalice');
+  t.check(read.ok && read.rows.length === 0,
+          'R9. an action no rule names answers no rows', read.code);
+  const searchRows = inRealm(function () {
+    return require(ROOT + '/common/audit').list().filter(function (row) {
+      return row.action === 'authzen.search' && row.actor === 'azalice' &&
+        /^report searched/.test(String(row.summary || ''));
+    });
+  });
+  t.check(searchRows.length >= 4,
+          'R10. each run is one authzen.search audit row, the owner its ' +
+          'actor and the reports application its place',
+          String(searchRows.length));
 
   // -------------------------------------------------------------------------
   // W. THE METADATA (#1163)

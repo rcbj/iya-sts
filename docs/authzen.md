@@ -308,7 +308,7 @@ The answer is `{ "decision": true }` if alice's entry says `staff`, and
 11. **Internal applications follow the same rules.** This service's own
     applications, the reports application among them, ask their questions
     through the same conversion and the same XACML policies. A report runs
-    with the permissions of the person signed in to it (#1176).
+    with the permissions of the person who owns it, as the caller.
 
 ## Calling it
 
@@ -412,6 +412,29 @@ specification says. The answer is:
   in `context.incomplete`.
 * Searches are not transitive: a candidate is decided as named.
 * Each search is one `authzen.search` audit row.
+
+#### From the reports application
+
+The same three searches are report sources in `/report`: `authzenSubjects`,
+`authzenResources` and `authzenActions` ([Reports](reporting.md#the-authzen-search-sources)).
+A report runs **with the permissions of the person who owns it**. The owner
+is the search's caller, `urn:sts:xacml:authzen:caller`, and `sts-report` is
+the application, `urn:sts:xacml:authzen:application`. A policy can tell a
+report's question from a PEP's, and one person's report from another's:
+
+```
+rule reportOwnersAudit {
+    permit
+    target clause act == "audit"
+    target clause app == "sts-report"
+    target clause caller == "alice"
+}
+```
+
+Every report rule still applies first: the report rights, the access-control
+policy on the definition, and the anchor and time caps. An owner who is a
+person of another realm is refused, because the caller is a name and in this
+realm that name is somebody else, or nobody.
 
 ### Metadata
 
@@ -546,7 +569,6 @@ metadata.
 
 | | Ticket |
 |---|---|
-| Searches as `/report` sources, run with the permissions of the person signed in | #1176 |
 | An AuthZEN endpoint on the remote PEP container | #1179 |
 | The Access Request and Approval Profile (design) | #1180 |
 | The OAuth token issuance and token exchange binding (design) | #1181 |

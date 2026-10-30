@@ -24685,7 +24685,19 @@ const CODES = [
       'refused or went away while its pieces were written), so the job ' +
       'failed and nothing of it was kept (#1045). Until #1045 this read ' +
       'as STS-REPORT-0042, could not be sealed.',
-    spec: 'none (the job fails as unavailable)' }
+    spec: 'none (the job fails as unavailable)' },
+  { code: 'STS-REPORT-0054',
+    summary: 'A query on an AuthZEN search source (authzenSubjects, ' +
+      'authzenResources, authzenActions) does not give every input the ' +
+      'search is asked with as an eq filter of the top-level "and", so ' +
+      'it was refused rather than run (#1176).',
+    spec: 'invalid_query (the job fails)' },
+  { code: 'STS-REPORT-0055',
+    summary: 'An AuthZEN search source could not be asked: the search APIs ' +
+      'are off in the realm (authzen.searchEnabled), or the report\'s ' +
+      'owner is not a person of the realm it runs in, and a search runs ' +
+      'as its owner (#1176).',
+    spec: 'unavailable or forbidden (the job fails)' }
   // ===== END ===============================================================
 ];
 
