@@ -183,20 +183,28 @@ class MfaMechanisms {
   }
 
   /**
-   * The second factors an application allows: the second-factor list of the
-   * named authentication policy its `appAuthnPolicy` names (#1148). None is
+   * The second factors a sign-in allows: the second-factor list of the
+   * named authentication policy that applies — the one its application's
+   * `appAuthnPolicy` names (#1148) or one of the person's groups'
+   * `stsAuthnPolicy` names, the lowest precedence winning (#1237). None is
    * whatever the realm allows. A value no mechanism has is kept, so a
    * misspelt list — or a policy that does not exist — allows nothing rather
    * than everything.
    *
    * @param fields - the entry's fields, or null
+   * @param person - the person signing in, where known (#1237): the policy
+   *   one of their groups names competes with the application's
    * @returns the mechanism ids, each once
    */
-  static allowedOf(fields: any): string[] {
+  static allowedOf(fields: any, person?: unknown): string[] {
     log.debug('Entering MfaMechanisms.allowedOf().');
     // Required lazily, as `authn_mechanisms.ts` does it.
-    const held = fields
-      ? require('./authn_policy').mechanismsFor(fields).secondFactors : null;
+    // The person too, once known (#1237): their groups' policies compete
+    // with the application's on precedence.
+    const held = fields || person
+      ? require('./authn_policy').mechanismsFor(fields || null, person)
+        .secondFactors
+      : null;
     const out: string[] = [];
     [].concat(held === undefined || held === null ? [] : held)
       .forEach(function (one: any) {

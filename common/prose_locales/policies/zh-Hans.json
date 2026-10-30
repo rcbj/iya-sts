@@ -579,6 +579,7 @@
     "en": "b59799bd06b5022d",
     "text": "在命名身份验证策略上（#1148）：指定此策略的应用所允许的一种第二因素——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每个值一种。一个都不列则保持领域的身份验证策略不变。"
   },
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": "用于命名身份验证策略（#1237）：一次登录由应用（appAuthnPolicy）和此人的组（stsAuthnPolicy）指定了多个策略时，哪一个适用——数值最低者，取值 1 到 1000，相同时按名称决定。缺省为 100。",
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "此人选择启用的电子邮件第二因素：`code` 或 `link`。不存在：无。在 /portal/mfa 上设置，在 /admin/mfa 上以及连续失败次数过多后清除。"

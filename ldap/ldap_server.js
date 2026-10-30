@@ -10727,7 +10727,11 @@ if (typeof authnPolicy.setDirectory === 'function') {
   authnPolicy.setDirectory({
     allAuthnPolicies: allAuthnPolicies,
     writeAuthnPolicy: writeAuthnPolicy,
-    deleteAuthnPolicy: deleteAuthnPolicy
+    deleteAuthnPolicy: deleteAuthnPolicy,
+    // A person's groups' references and the groups naming a policy
+    // (#1237), from the group index (rule 3cx).
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy
   });
 } else {
   log.warn('ldap: common/authn_policy.ts offers no setDirectory(), so ' +

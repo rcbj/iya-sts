@@ -443,8 +443,10 @@ PolicyKinds.register({
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not',
   // NAMED AUTHENTICATION POLICIES (#1148): the mechanisms an application
-  // naming one (`appAuthnPolicy`) allows, saved and deleted beside the
-  // realm's own policy.
+  // (`appAuthnPolicy`) or a group (`stsAuthnPolicy`, #1237) naming one
+  // allows, saved and deleted beside the realm's own policy. Drawn as the
+  // Default / Named policies / New policy sub-tabs (#1237, rule 3cx).
+  tabbed: true,
   extraActions: [
     { action: 'save-named-authn-policy',
       operationId: 'saveNamedAuthnPolicy',
@@ -452,14 +454,19 @@ PolicyKinds.register({
                'realm',
       description: 'Writes `cn=<name>,ou=authnPolicies` in this realm\'s ' +
                    'directory: the first-factor mechanisms (`mechanisms`) ' +
-                   'and the second factors (`secondFactors`) an application ' +
-                   'naming this policy in `appAuthnPolicy` allows — each ' +
-                   'list the WHOLE list, none allowing every one (and ' +
-                   'leaving the realm\'s second factors as they are). ' +
-                   '**The realm\'s own**: not inherited from the default ' +
-                   'realm. The name is lower-case letters, digits and ' +
-                   'hyphens, not `default` (STS-AUTHN-0532); an unknown ' +
-                   'mechanism is refused (STS-AUTHN-0533).',
+                   'and the second factors (`secondFactors`) a sign-in ' +
+                   'allows where this policy applies — each list the WHOLE ' +
+                   'list, none allowing every one (and leaving the realm\'s ' +
+                   'second factors as they are) — and its `precedence` ' +
+                   '(#1237). It applies where the application names it ' +
+                   '(`appAuthnPolicy`) or one of the person\'s groups does ' +
+                   '(`stsAuthnPolicy`) and its precedence is the lowest of ' +
+                   'those named, ties by name. **The realm\'s own**: not ' +
+                   'inherited from the default realm. The name is ' +
+                   'lower-case letters, digits and hyphens, not `default` ' +
+                   '(STS-AUTHN-0532); an unknown mechanism is refused ' +
+                   '(STS-AUTHN-0533), and a precedence that is not a whole ' +
+                   'number from 1 to 1000 (STS-AUTHN-0539).',
       auditAction: 'admin.authn-policy.save-named',
       requestBody: {
         type: 'object',
@@ -468,6 +475,12 @@ PolicyKinds.register({
                   description: 'The policy\'s name.' },
           description: { type: 'string', maxLength: 1024,
                          description: 'What the policy is for.' },
+          precedence: { oneOf: [{ type: 'integer', minimum: 1,
+                                  maximum: 1000 },
+                                { type: 'string' }],
+                        description: 'Where several named policies are ' +
+                                     'named for one sign-in, the lowest ' +
+                                     'applies; 100 when omitted.' },
           mechanisms: { type: 'array', items: { type: 'string' },
                         description: 'The first-factor mechanisms allowed: ' +
                                      'password, password-mfa, webauthn, ' +
@@ -480,16 +493,18 @@ PolicyKinds.register({
         },
         required: ['name'],
         examples: [{ name: 'passkeys-only', description: 'Passwordless',
-                     mechanisms: ['webauthn'], secondFactors: [] }],
+                     precedence: 50, mechanisms: ['webauthn'],
+                     secondFactors: [] }],
         additionalProperties: false
       } },
     { action: 'delete-named-authn-policy',
       operationId: 'deleteNamedAuthnPolicy',
       summary: 'Delete a named authentication policy',
       description: 'Deletes `cn=<name>,ou=authnPolicies` in this realm. ' +
-                   'Refused while an application of this realm names it in ' +
-                   '`appAuthnPolicy` (STS-AUTHN-0534) — it would then allow ' +
-                   'no mechanism — and for a name the realm does not hold ' +
+                   'Refused while an application (`appAuthnPolicy`) or a ' +
+                   'group (`stsAuthnPolicy`, #1237) of this realm names it ' +
+                   '(STS-AUTHN-0534) — it would then allow no mechanism — ' +
+                   'and for a name the realm does not hold ' +
                    '(STS-AUTHN-0535).',
       auditAction: 'admin.authn-policy.delete-named',
       requestBody: {

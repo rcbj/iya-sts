@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 416
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 417
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
@@ -1614,11 +1614,12 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0531` | A new passkey was not enrolled: this realm accepts a passkey neither as a first factor nor as a second factor (webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication policy), so it could never be used (#1135). | action result or page with the reason |
 | `STS-AUTHN-0532` | A named authentication policy was not saved: its name is not lower-case letters, digits and hyphens (at most 63, starting with a letter or digit), or it is "default", the realm's own policy (#1148). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0533` | A named authentication policy was not saved: a first-factor mechanism or a second factor it lists is not one this service knows (#1148). | none (a console or management API refusal, HTTP 400) |
-| `STS-AUTHN-0534` | A named authentication policy was not deleted: an application of this realm still names it (appAuthnPolicy), and would then allow no mechanism (#1148). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0534` | A named authentication policy was not deleted: an application (appAuthnPolicy) or a group (stsAuthnPolicy, #1237) of this realm still names it, and would then allow no mechanism (#1148). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0535` | This realm holds no named authentication policy of that name (#1148): a delete, or an application's appAuthnPolicy, named one that does not exist. | none (a console or management API refusal, HTTP 400) |
-| `STS-AUTHN-0536` | An application names an authentication policy (appAuthnPolicy) that this realm does not hold — written past the console, or the policy was deleted by hand — so it allows no mechanism until the policy exists or the reference changes (#1148). | none (logged; the sign-in is refused as for a mechanism the application does not allow) |
+| `STS-AUTHN-0536` | An application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy, #1237) names an authentication policy that this realm does not hold — written past the console, or the policy was deleted by hand — so the sign-in allows no mechanism until the policy exists or the reference changes (#1148). | none (logged; the sign-in is refused as for a mechanism the application does not allow) |
 | `STS-AUTHN-0537` | An application (appPasskeyPolicy) or a group (stsPasskeyPolicy) names a passkey policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default passkey policy, where nothing else names one) until the policy exists or the reference changes (#1235). | none (logged; the sign-in goes on under the default profile) |
 | `STS-AUTHN-0538` | A named passkey policy was not deleted: an application (appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm still names it (#1235). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0539` | A named authentication policy was not saved: its precedence is not a whole number from 1 to 1000 (#1237). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 

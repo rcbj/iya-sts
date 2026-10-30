@@ -209,12 +209,19 @@ class PoliciesPage {
 
   // ---------------------------------------------------------------------------
   // NAMED AUTHENTICATION POLICIES (#1148, rcbj 2026-10-29): the policies an
-  // application names in `appAuthnPolicy`, each holding the first-factor
-  // mechanisms and the second factors it allows. A row each — its lists, the
-  // applications naming it, a Change form under a disclosure and a Delete —
-  // and a form for a new one. Each checkbox group posts an EMPTY value first,
-  // so a policy saved with nothing ticked is an empty list ("every one"),
-  // and the save replaces a policy of the same name.
+  // application names in `appAuthnPolicy` — and, since #1237, a group in
+  // `stsAuthnPolicy` — each holding the first-factor mechanisms and the
+  // second factors it allows, and a precedence. A row each — its lists, what
+  // names it, a Change form under a disclosure and a Delete — and a form for
+  // a new one. Each checkbox group posts an EMPTY value first, so a policy
+  // saved with nothing ticked is an empty list ("every one"), and the save
+  // replaces a policy of the same name.
+  //
+  // THE GENERIC NAMED-POLICY SECTION WHERE IT FITS (#1237, rule 3cx): the
+  // precedence row, the "named by" line and their sentences are
+  // `namedProfileParts()`'s, read from the member's `references`; the two
+  // checkbox lists stay this kind's own, because a named authentication
+  // policy holds them and none of the realm policy's rows.
   // ---------------------------------------------------------------------------
   /**
    * Draws the named authentication policies of the authentication tab: the
@@ -227,6 +234,37 @@ class PoliciesPage {
   static namedAuthnPoliciesSection(ap, t) {
     const vocabulary = ap.vocabulary || { mechanisms: [], secondFactors: [] };
     const named = ap.named || [];
+    const references = ap.references || {};
+    // What names a policy (#1237): `{ applications, groups, people }`, or
+    // a list of applications from a view before groups could name one.
+    const holdersOf = function (policy) {
+      const by = policy.namedBy || {};
+      return Array.isArray(by) ? { applications: by, groups: [], people: [] }
+        : { applications: by.applications || [], groups: by.groups || [],
+            people: by.people || [] };
+    };
+    const heldBy = function (policy) {
+      const by = holdersOf(policy);
+      return by.applications.length + by.groups.length + by.people.length;
+    };
+    const namedByCell = function (policy) {
+      const by = holdersOf(policy);
+      const listed = function (values) {
+        return values.length ? kit.codeList(values)
+          : '<span class="state-none">—</span>';
+      };
+      if (!heldBy(policy)) {
+        return '<span class="state-none">' +
+          t.html('consolePolicies.authnNamed.nobody') + '</span>';
+      }
+      return t.html('consolePolicies.named.namedByApplications',
+                    { attribute: references.application ||
+                                 'appAuthnPolicy' }) + ': ' +
+        listed(by.applications) + '<br>' +
+        t.html('consolePolicies.named.namedByGroups',
+               { attribute: references.group || 'stsAuthnPolicy' }) + ': ' +
+        listed(by.groups);
+    };
     const boxes = function (member, ids, held, prefix) {
       return '<input type="hidden" name="' + member + '" value="">' +
         ids.map(function (id) {
@@ -255,6 +293,13 @@ class PoliciesPage {
         '<input type="text" id="' + prefix + 'description" ' +
         'name="description" size="60" maxlength="1024" value="' +
         kit.esc(policy ? policy.description : '') + '"></div>' +
+        '<div class="formrow"><label for="' + prefix + 'precedence">' +
+        t.html('consolePolicies.named.precedence') + '</label> ' +
+        '<input type="number" id="' + prefix + 'precedence" ' +
+        'name="precedence" min="1" max="1000" value="' +
+        kit.esc(String((policy && policy.precedence) || 100)) + '"> ' +
+        '<span class="sub">' + t.html('consolePolicies.named.lowestApplies') +
+        '</span></div>' +
         '<div class="formrow"><span>' +
         t.html('consolePolicies.authnNamed.first') + '</span> ' +
         boxes('mechanisms', vocabulary.mechanisms,
@@ -273,13 +318,13 @@ class PoliciesPage {
     };
     const rows = named.map(function (policy) {
       return '<tr><td><code>' + kit.esc(policy.name) + '</code>' +
+        t.html('consolePolicies.named.precedenceOf',
+               { n: String(policy.precedence || 100) }) +
         (policy.description ? '<br><span class="sub">' +
           kit.esc(policy.description) + '</span>' : '') + '</td><td>' +
         listCell(policy.mechanisms) + '</td><td>' +
         listCell(policy.secondFactors) + '</td><td>' +
-        (policy.namedBy.length ? kit.codeList(policy.namedBy)
-          : '<span class="state-none">' +
-            t.html('consolePolicies.authnNamed.nobody') + '</span>') +
+        namedByCell(policy) +
         '</td><td><details><summary>' +
         t.html('consolePolicies.authnNamed.change') + '</summary>' +
         form(policy) + '</details>' +
@@ -287,7 +332,7 @@ class PoliciesPage {
         'class="inline"><input type="hidden" name="action" ' +
         'value="delete-named-authn-policy"><input type="hidden" ' +
         'name="name" value="' + kit.esc(policy.name) + '"><button ' +
-        'class="secondary"' + (policy.namedBy.length
+        'class="secondary"' + (heldBy(policy)
           ? ' disabled' + kit.tip(t.text('consolePolicies.authnNamed.inUse'))
           : '') + '>' + t.html('consolePolicies.authnNamed.delete') +
         '</button></form></td></tr>';

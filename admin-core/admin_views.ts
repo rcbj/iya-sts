@@ -2706,12 +2706,18 @@ class AdminViews {
                    : false,
                  what: m.what };
       }),
-      // THE NAMED POLICIES (#1148), each with the applications naming it,
-      // and the two vocabularies the form offers.
+      // THE NAMED POLICIES (#1148), each with its precedence and what names
+      // it — the applications and, since #1237, the groups (`namedBy()`,
+      // the group index) — and the two vocabularies the form offers. The
+      // selector and the references are the generic named-policy section's
+      // (rule 3cx), set here rather than through the module's SELECTORS:
+      // this kind's save and reset take `default` alone, its named policies
+      // having acts of their own.
+      selectors: ['precedence'],
+      references: Object.assign({}, authn.REFERENCES),
       named: authn.named().map((one) => {
         return Object.assign({}, one, {
-          namedBy: this.deps.applications
-            .applicationsNamingAuthnPolicy(one.name)
+          namedBy: authn.namedBy(one.name)
         });
       }),
       vocabulary: {
