@@ -752,8 +752,8 @@
     "text": "每条已启用的策略以及哪一条是根策略，外加一个基于这些字节的同步令牌；?since=<token> 返回 304。拉取就是契约——远程 PEP 按自己的间隔轮询此端点，并使用自己的引擎副本在本地求值，因为每次请求都询问的 PEP 就相当于在每个访问决策前多了一跳网络的 /xacml/pdp。需要 REMOTE_PEPS——这是与上面四个端点所要求的 XACML_USER 不同的角色，也是不同的组，因为此端点发布的是本服务用来执行自身访问控制的文档。已禁用的策略会被排除，而不是带着标记发送，因为加载了它的 PEP 会执行一条本服务并不执行的策略。"
   },
   "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
-    "en": "e684892d931f5313",
-    "text": "该领域的 AuthZEN 属性目录——sts-authzen-api 上 authzenAttribute 的各行，按 POST /access/v1/evaluation 的读取方式读取——以及会改变映射或答复的 AuthZEN 设置，外加其自己的同步令牌；?since=<token> 返回 304。由 xacml-pep 容器与策略一同拉取，其边缘 PDP 正是用这些行答复 AuthZEN，因此同一请求在两处以同一种方式映射。与策略拉取一样需要 REMOTE_PEPS。这是新增的：/xacml/pep/policies 保持不变。"
+    "en": "bcec1fc31c824002",
+    "text": "该领域的 AuthZEN 属性目录——sts-authzen-api 上 authzenAttribute 的各行，按 POST /access/v1/evaluation 的读取方式读取——以及会改变映射或答复的 AuthZEN 设置，外加其自己的同步令牌；?since=<token> 返回 304。由 xacml-pep 容器与策略一同拉取，其边缘 PDP 正是用这些行答复 AuthZEN，因此同一请求在两处以同一种方式映射。与策略拉取一样需要 REMOTE_PEPS。这是新增的：/xacml/pep/policies 保持不变。fgaApplications 列出实施细粒度授权的应用，并计入同步令牌：边缘 PDP 不自行判定关于其中某个应用的评估，而是将其转发到此领域的 POST /access/v1/evaluation（#564）。"
   },
   "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
     "en": "59db273e0a0989c3",

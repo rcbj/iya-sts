@@ -752,8 +752,8 @@
     "text": "每一項「已啟用」的原則以及哪一項是根原則，外加一個正好涵蓋這些位元組的同步權杖；?since=<token> 會回應 304。拉取就是契約——遠端 PEP 依自己的間隔輪詢此端點，並以自己的引擎複本在本機評估，因為每個請求都詢問的 PEP 就等於在每個存取決策前多一道網路跳轉的 /xacml/pdp。需要 REMOTE_PEPS——這是與上方四個端點所需的 XACML_USER「不同」的角色，也是不同的群組，因為這個端點發布的是本服務用來強制執行自身存取的文件。「已停用」的原則會被略去，而不是附帶旗標傳送，因為載入它的 PEP 會強制執行一項本服務並未執行的原則。"
   },
   "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
-    "en": "e684892d931f5313",
-    "text": "該領域的 AuthZEN 屬性目錄——sts-authzen-api 上 authzenAttribute 的各列，依 POST /access/v1/evaluation 的讀取方式讀取——以及會改變對應或答覆的 AuthZEN 設定，外加其自己的同步權杖；?since=<token> 回覆 304。由 xacml-pep 容器與政策一同拉取，其邊緣 PDP 正是以這些列答覆 AuthZEN，因此同一請求在兩處以同一種方式對應。與政策拉取一樣需要 REMOTE_PEPS。這是新增的：/xacml/pep/policies 維持不變。"
+    "en": "bcec1fc31c824002",
+    "text": "該領域的 AuthZEN 屬性目錄——sts-authzen-api 上 authzenAttribute 的各列，依 POST /access/v1/evaluation 的讀取方式讀取——以及會改變對應或答覆的 AuthZEN 設定，外加其自己的同步權杖；?since=<token> 回覆 304。由 xacml-pep 容器與政策一同拉取，其邊緣 PDP 正是以這些列答覆 AuthZEN，因此同一請求在兩處以同一種方式對應。與政策拉取一樣需要 REMOTE_PEPS。這是新增的：/xacml/pep/policies 維持不變。fgaApplications 列出實施細粒度授權的應用程式，並計入同步權杖：邊緣 PDP 不自行判定關於其中某個應用程式的評估，而是將其轉送到此領域的 POST /access/v1/evaluation（#564）。"
   },
   "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
     "en": "59db273e0a0989c3",
