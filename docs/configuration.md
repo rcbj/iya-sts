@@ -2391,6 +2391,15 @@ above.
 | `logout.ldapDisconnect` | `LOGOUT_LDAP_DISCONNECT` | `true` | yes | Whether a logout closes every connection to the embedded directory, 389 and 636 alike, whose bind DN names that person. RFC 4511 section 4.2 makes the bind the authorization state of a CONNECTION, so the connection is the session. Off, they are left alone and listed on `/logout` as untouched rather than hidden. |
 | `logout.maxRows` | `LOGOUT_MAX_ROWS` | `500` | yes | How many live items `/logout` lists for one person. The cap is on what is DRAWN and offered as a checkbox, never on what a termination reaches — a global logout still ends all of them. |
 
+### AuthZEN
+
+The AuthZEN settings are listed in full on [AuthZEN](authzen.md#configuration);
+this row is the one that changes how token exchanges are decided.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `authzen.tokenExchange` | `STS_AUTHZEN_TOKEN_EXCHANGE` | `false` | yes | The AuthZEN Binding for OAuth 2.0 Token Exchange (a draft), with this service as the PDP another authorization server asks. When on, the binding's gate tuples (`audience`, `issue:<type>:token_exchange`) and scope tuples (`protected_resource`) are decided by fixed conversion rules from the same delegation settings and issuance policy as a local RFC 8693 exchange; the subject gate may carry `context.issuance`, which only narrows; and the metadata advertises the token issuance capability. Off, those tuples are ordinary questions for the root policy. |
+
 ### SPIFFE
 
 **There is no setting that opens the SPIRE Server API.** Its TCP port is bound

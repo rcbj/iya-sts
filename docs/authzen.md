@@ -466,7 +466,7 @@ so a realm's document is at `/.well-known/authzen-configuration/realm/<id>`:
 
 It lists only what answers in that realm: the batch endpoint while
 `authzen.batchEnabled` is on and the three searches while
-`authzen.searchEnabled` is on. There are no `capabilities`. It carries `signed_metadata`: a JWT of the same members, with
+`authzen.searchEnabled` is on. It carries `capabilities` only while `authzen.tokenExchange` is on (see *OAuth token exchange*). It carries `signed_metadata`: a JWT of the same members, with
 `iss` the PDP identifier, signed with the realm's key the way the OAuth
 metadata is and verifiable with the realm's JWKS (`/oauth2/jwks`).
 `authzen.signedMetadata` turns it off. While the API is off in the realm the
@@ -515,6 +515,205 @@ same answers: it pulls the callers admitted now, each with the name above,
 its certificates' SHA-256 digests and its scope, from
 `GET /xacml/pep/authzen-callers`, and converges on its poll.
 
+## OAuth token exchange: deciding for another authorization server
+
+The [AuthZEN Binding for OAuth 2.0 Token Exchange](https://github.com/openid/authzen/blob/main/profiles/authzen-oauth/authzen-oauth-token-exchange-1_0.md)
+(a draft) and the Token Issuance Profile it builds on let an authorization
+server that is about to perform an RFC 8693 token exchange ask a PDP whether
+it may. This service can be that PDP. It is off by default; turn on
+`authzen.tokenExchange` in the realm.
+
+The authorization server sends one batch to `/access/v1/evaluations` with
+`execute_all`:
+
+* the **subject gate**: the exchange subject, the action
+  `issue:<type>:token_exchange`, and a resource of type `audience` naming
+  the target;
+* the **requesting party gate**: the same action and resource, with the
+  party that is asking (the `actor_token`'s party, or else the
+  authenticated client) as the subject. When the two are the same, the
+  authorization server can send one gate;
+* one **scope tuple** per requested scope: the exchange subject, the scope as
+  the action, and a resource of type `protected_resource`.
+
+The token types are `access_token`, `refresh_token`, `id_token`, `jwt`,
+`saml1`, `saml2`, `id_jag` (an Identity Assertion JWT Authorization Grant)
+and `txn_token` (a Transaction Token).
+
+### The same decision as this service's own exchanges
+
+This service already decides who may act for whom when it performs a token
+exchange itself, from the delegation settings on `/admin/delegation`
+(`appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, the delegation
+semantics, the protected groups, `may_act`) and the issuance policy's
+exchange rules. The binding uses the same facts and the same rules. There
+is no second list of who may act for whom, and nothing about a local RFC
+8693, WS-Trust or Kerberos delegation changes. An exchange asked over AuthZEN
+gets the answer the same exchange would get at this service's token
+endpoint:
+
+* both gates are `true` when this service would issue the token;
+* when the issuance policy refuses, the gate the refusal is about is
+  `false`: the subject gate for a fact about the subject or the target, the
+  requesting party gate for a fact about the party, and both for a protected
+  subject or a refusal of the realm's own policy. The authorization server
+  fails the exchange on either. The audit row says which;
+* in development mode, a refusal the policy does not enforce answers `true`,
+  because the local token endpoint would issue the token too. The audit row
+  carries `STS-AUTHZEN-0110` and says what product mode would answer. A
+  `may_act` naming somebody else is refused in every mode.
+
+A scope tuple is `true` when the scope survives the same three checks a
+local exchange's scope meets: the issuance policy's exchange stage (a scope
+the subject token does not carry is refused in product mode), the client's
+declared scopes (`oauthAllowedScope`, from `context.client_id`), and the
+subject's roles for a gated permission.
+
+The parties are looked up in this realm: the subject by name or `urn:uuid:`
+subject, the requesting party and the source application by identifier or
+`client_id`. An external authorization server whose clients and users are
+not registered here gets the answer an unregistered party gets here.
+
+### The fixed rules
+
+These conversion rules are built in and cannot be edited. A realm's
+attribute catalogue can add rows (a `context.tenant`, say, whose attribute
+reaches the exchange question beside these facts), but it cannot override
+them: a row naming any of the context members below, or a path under one,
+is refused.
+
+| Member | Fixed rule |
+|---|---|
+| `resource.type = audience, action.name = issue:<type>:token_exchange` | a GATE tuple. The first one for a target is the subject gate; one naming another subject for the same target and type is the requesting party gate; a third subject is refused |
+| `resource.type = audience, action.name = issue:<type>:<grant>` | any other grant, or a token type not registered: decided false (this PDP decides the token-exchange gate only) |
+| `resource.type = protected_resource` | a SCOPE tuple: action.name is the scope, verbatim; decided only beside a token-exchange gate in the same batch, and only for the exchange subject (or, for txn_token, the requesting party) |
+| `<type> of the gate action` | the token type short name: access_token, refresh_token, id_token, jwt, saml1, saml2, id_jag, txn_token; sent as urn:sts:xacml:authzen:token-type |
+| `subject (subject gate)` | the exchange subject: the access-subject of the exchange question, a person by name or urn:uuid subject, an application by identifier or client_id (urn:sts:client:<id> is <id>) |
+| `subject (requesting party gate)` | the actor: the intermediary-subject of the exchange question; with no requesting party gate, the subject itself (the gates coincide) |
+| `subject.type` | user, client or workload, else 400; sent as urn:sts:xacml:authzen:subject-type on each party |
+| `resource.id (gate)` | the one target R, resolved as a local exchange's audience is |
+| `context.subject_token.aud, .client_id, .azp` | S, the application the subject token was issued for, in that order, as a local exchange reads its subject_token |
+| `context.may_act` | may-act-present, and may-act-names-actor compared with the requesting party (sub, and iss where the claim has one); never a permit by itself |
+| `context.act` | its depth, as urn:sts:xacml:authzen:act-depth |
+| `context.subject_token_type, context.actor_token_type` | verbatim, as urn:sts:xacml:authzen:subject-token-type and ...:actor-token-type |
+| `context.subject_token.scope` | what a scope tuple may not widen (exchange stage), and the set granted_scope narrows when the request names no scope |
+| `context.subject_token.exp` | the ceiling on token_lifetime; none left is a false subject gate |
+| `context.client_id` | the client whose declared scopes a scope tuple is held to, and whose access-token lifetime bounds token_lifetime |
+| `context.cnf, .acr, .amr, .auth_time, .jti` | read for their type only; no rule decides on them |
+| `exchange_semantics` | not sent: the policy chooses by its precedence, as for a local exchange that named none |
+| `urn:sts:xacml:protocol` | OAuth 2.0, the act's protocol, so one policy decides both; the trusted urn:sts:xacml:authzen:caller tells this one apart |
+
+A policy can tell an exchange asked over AuthZEN from one this service
+performs: only the AuthZEN one carries `urn:sts:xacml:authzen:caller`,
+`urn:sts:xacml:authzen:token-type` and the other `urn:sts:xacml:authzen:*`
+facts above.
+
+### What the answer carries
+
+The subject gate may carry the Token Issuance Profile's `context.issuance`.
+It only ever narrows what the authorization server would otherwise issue:
+
+* `token_lifetime`: the lesser of the subject token's remaining lifetime
+  (`context.subject_token.exp`) and, for an access token, this realm's
+  access-token lifetime for the client. A subject token with no lifetime left
+  makes the subject gate `false`;
+* `granted_scope`: only when the request names no scope. It is the subject
+  token's scope (`context.subject_token.scope`), narrowed by the same three
+  checks as a scope tuple. Without a subject token scope it is left out, and
+  the authorization server uses its own defaults.
+
+The answer never sets `sub`, `aud`, `act`, `may_act` or any other claim. The
+binding reserves them: a PDP that could write `act` could invent a
+delegation history. `context.issuance` is sent whatever
+`authzen.returnReasons` says; with that setting on, each item also carries
+`xacml_decision`, `reason_admin` and, for a gate, `exchange_semantics` (the
+delegation or impersonation the policy chose).
+
+While the binding is on, the metadata advertises
+`"capabilities": ["urn:openid:authzen:capability:token-issuance"]`. A gate
+for any other grant (`issue:access_token:authorization_code`, say) or an
+unregistered token type is answered `false`: this PDP decides the token
+exchange gate only.
+
+### ID-JAG and Transaction Tokens
+
+* **ID-JAG.** The gates name the resource authorization server that will
+  redeem the grant (level 1), and are decided by whether the identity
+  provider's client may delegate to it. Scope tuples may name the resources
+  behind it (level 2); they are decided as any scope tuple.
+* **Txn-Token.** The requesting party is a workload. The authorization server
+  sends scope tuples for the workload as well as for the subject, and the
+  workload's are decided as the workload's own (its declared scopes and
+  roles). Outside a Txn-Token, a scope tuple for the requesting party is
+  `false`: scope is the subject's authority.
+
+### A worked example
+
+A gateway client `gw` exchanges Alice's access token for one addressed to
+`https://api.example`, which is registered here as the application `api`.
+`gw` has `appAllowedToDelegateTo: api` and declares `read:docs`.
+
+```http
+POST /access/v1/evaluations HTTP/1.1
+Content-Type: application/json
+
+{
+  "resource": { "type": "audience", "id": "https://api.example" },
+  "context": {
+    "client_id": "gw",
+    "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+    "subject_token": { "aud": "gw", "scope": "read:docs write:docs",
+                       "exp": 1767225900 }
+  },
+  "evaluations": [
+    { "subject": { "type": "user", "id": "alice" },
+      "action": { "name": "issue:access_token:token_exchange" } },
+    { "subject": { "type": "client", "id": "gw" },
+      "action": { "name": "issue:access_token:token_exchange" } },
+    { "subject": { "type": "user", "id": "alice" },
+      "action": { "name": "read:docs" },
+      "resource": { "type": "protected_resource",
+                    "id": "https://api.example" } },
+    { "subject": { "type": "user", "id": "alice" },
+      "action": { "name": "write:docs" },
+      "resource": { "type": "protected_resource",
+                    "id": "https://api.example" } }
+  ],
+  "options": { "evaluations_semantic": "execute_all" }
+}
+```
+
+In product mode the answer is:
+
+```json
+{
+  "evaluations": [
+    { "decision": true,
+      "context": { "issuance": { "token_lifetime": 300 } } },
+    { "decision": true },
+    { "decision": true },
+    { "decision": false }
+  ]
+}
+```
+
+The two gates are `true` because `gw` is the application Alice's token was
+issued for and it may delegate to `api`, which is what the same exchange at
+this service's token endpoint would need. `read:docs` is in Alice's token and
+`gw` declares it. `write:docs` is in Alice's token, but `gw` does not declare
+it. `token_lifetime` is what is left of Alice's token, or this realm's
+access-token lifetime for `gw` if that is shorter.
+
+### A guideline on delegation
+
+Write who may act for whom once, as delegation settings and, where those are
+not enough, as exchange rules in the realm's issuance policy. Do not write it
+again in the root policy for AuthZEN. The binding never reaches the root
+policy, and one rule set means a local exchange and one decided for another
+authorization server cannot disagree. If a rule must apply only to exchanges
+asked over AuthZEN, test `urn:sts:xacml:authzen:caller` in the issuance
+policy's exchange rules.
+
 ## The console and the management API
 
 **Protocols → XACML → AuthZEN** (`/admin/xacml`, the AuthZEN tab) shows whether
@@ -560,6 +759,7 @@ live source; this table is a copy.
 | `authzen.maxBodyBytes` | `STS_AUTHZEN_MAX_BODY_BYTES` | `262144` | The largest batch request body |
 | `authzen.signedMetadata` | `STS_AUTHZEN_SIGNED_METADATA` | `true` | The metadata carries `signed_metadata` |
 | `authzen.obligationsProfile` | `STS_AUTHZEN_OBLIGATIONS_PROFILE` | `true` | Hand obligations to a PEP that declares every type (see *Obligations*) |
+| `authzen.tokenExchange` | `STS_AUTHZEN_TOKEN_EXCHANGE` | `false` | Decide OAuth token exchanges for another authorization server (see *OAuth token exchange*), and advertise the token issuance capability |
 | `authzen.searchEnabled` | `STS_AUTHZEN_SEARCH_ENABLED` | `true` | The three searches answer, and the metadata names them |
 | `authzen.searchMaxCandidates` | `STS_AUTHZEN_SEARCH_MAX_CANDIDATES` | `1000` | The most candidates one search decides |
 | `authzen.searchPageSize` | `STS_AUTHZEN_SEARCH_PAGE_SIZE` | `50` | Results per page when the request names no `page.limit` |
@@ -584,7 +784,6 @@ metadata.
 | | Ticket |
 |---|---|
 | The Access Request and Approval Profile (design) | #1180 |
-| The OAuth token issuance and token exchange binding (design) | #1181 |
 
 ## Related
 
