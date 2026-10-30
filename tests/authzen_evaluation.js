@@ -1009,7 +1009,7 @@ async function childBody() {
     log.debug("Leaving tokenOf().");
     return answer.json ? String(answer.json.syncToken || '') : '';
   };
-  const first = tokenOf(pulled);
+  const firstToken = tokenOf(pulled);
   t.check(pulled.status === 200 && pulledRows.length === 2 &&
           classification.object === 'resource' &&
           classification.attributeId === 'urn:example:classification' &&
@@ -1029,12 +1029,12 @@ async function childBody() {
           JSON.stringify(settings.resolveSubjectTypes) === '["user"]',
           'K4. and the settings that change the mapping or the answer',
           JSON.stringify(settings));
-  t.check(!!first && pulled.headers.etag === '"' + first + '"' &&
+  t.check(!!firstToken && pulled.headers.etag === '"' + firstToken + '"' &&
           /no-store/.test(String(pulled.headers['cache-control'])),
           'K5. with a sync token, in an ETag too, and Cache-Control: ' +
           'no-store', JSON.stringify(pulled.headers));
   r = await request(port, 'GET', CATALOGUE + '?since=' +
-                    encodeURIComponent(first), pullCred);
+                    encodeURIComponent(firstToken), pullCred);
   t.check(r.status === 304 && r.text === '',
           'K6. ?since=<token> of an unchanged catalogue is 304', brief(r));
   const policiesBefore = await request(port, 'GET',
@@ -1046,11 +1046,11 @@ async function childBody() {
         attributeId: 'urn:example:region' }) });
   });
   r = await request(port, 'GET', CATALOGUE + '?since=' +
-                    encodeURIComponent(first), pullCred);
+                    encodeURIComponent(firstToken), pullCred);
   const policiesAfter = await request(port, 'GET',
     PREFIX + '/xacml/pep/policies', pullCred);
-  const second = tokenOf(r);
-  t.check(r.status === 200 && second && second !== first &&
+  const secondToken = tokenOf(r);
+  t.check(r.status === 200 && secondToken && secondToken !== firstToken &&
           ((r.json && r.json.rows) || []).length === 3,
           'K7. a new row moves the token, and ?since= of the old one is ' +
           'answered whole', brief(r));
@@ -1066,7 +1066,7 @@ async function childBody() {
   inRealm(function () {
     config.setOverride('authzen.returnReasons', false);
   });
-  t.check(r.status === 200 && tokenOf(r) !== second && r.json &&
+  t.check(r.status === 200 && tokenOf(r) !== secondToken && r.json &&
           r.json.settings.returnReasons === true,
           'K9. a setting that changes the answer moves the token too',
           brief(r));
