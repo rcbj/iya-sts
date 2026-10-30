@@ -223,6 +223,29 @@ const ADMIN_FIELDS = [
     generate: false }
 ];
 
+// THE MANAGEMENT API SECRET, WHEN THIS SEEDER MAKES ONE (#1212): 48 random
+// bytes, base64url — 64 characters, the shape `applications.
+// mintClientSecret()` gives every other client secret at the default
+// `oauth2.registeredSecretBytes`. It was 24 letters and digits, the shape the
+// compose file's wrapper used to mint into a file, which left the one secret
+// that opens `/admin-api` with `admin:write` the shortest on the application
+// list. A constant rather than the setting: this container reads no
+// operator's settings, only `env/defaults.js`, so the setting would only ever
+// be its default here. base64url's `-` and `_` are unreserved, so the value
+// needs no escaping in a Basic header or a form.
+const GENERATED_SECRET_BYTES = 48;
+
+/**
+ * Mints the management API secret this seeder stores when nobody pins one.
+ *
+ * @returns 64 characters of base64url
+ */
+function generatedClientSecret() {
+  log.debug("Entering generatedClientSecret().");
+  log.debug("Leaving generatedClientSecret().");
+  return stsCrypto.randomBytes(GENERATED_SECRET_BYTES).toString('base64url');
+}
+
 let ca = null;
 
 function say(what) {
@@ -760,10 +783,7 @@ async function ensureAdminSecrets(token) {
         data[one.field] = pinned;
         changed.push(one.field + ' (from ' + one.from + ')');
       } else if (!pinned && !data[one.field] && one.generate) {
-        // 24 characters of base64url's alphabet without its two symbols, the
-        // shape the compose file's wrapper used to mint into a file.
-        data[one.field] = stsCrypto.randomBytes(32).toString('base64')
-          .replace(/[^A-Za-z0-9]/g, '').slice(0, 24);
+        data[one.field] = generatedClientSecret();
         changed.push(one.field + ' (generated)');
       }
     });
@@ -1263,7 +1283,14 @@ async function main() {
   log.debug("Leaving main().");
 }
 
-main().catch(function (e) {
-  log.error((e && e.message) ? e.message : e);
-  process.exit(1);
-});
+// RUN ONLY WHEN EXECUTED (#1212): compose starts this as `node
+// openbao/seed.js`, and a test requires it to check what it generates without
+// dialling a store.
+if (require.main === module) {
+  main().catch(function (e) {
+    log.error((e && e.message) ? e.message : e);
+    process.exit(1);
+  });
+}
+
+module.exports = { generatedClientSecret: generatedClientSecret };
