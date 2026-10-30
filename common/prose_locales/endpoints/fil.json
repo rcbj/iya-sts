@@ -27,6 +27,10 @@
     "en": "19bdeda29bc135e4",
     "text": "Ang katalogo ng AuthZEN, para I-LOAD ng isang remote na PEP"
   },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "Ang mga tumatawag sa AuthZEN, na TINATANGGAP ng isang remote PEP"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Ang ipinatupad ng isang remote PEP"

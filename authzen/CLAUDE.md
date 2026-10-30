@@ -30,7 +30,7 @@ own, and none is advertised until it is implemented.
 |---|---|
 | `authzen_catalogue.ts` | The per-realm ATTRIBUTE CATALOGUE's grammar: a row (object, property or dotted path → attribute id, category, datatype, `single` or `bag`), its defaults, its reserved identifiers, and the reading of an entry's rows. **Pure.** |
 | `authzen_map.ts` | One access evaluation read against the catalogue and refused where it cannot be represented, the XACML request built, and the decision mapped back fail-closed. **Pure.** |
-| `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application. |
+| `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application — and, asked ahead of any request, the callers a remote PEP's edge PDP admits (`edgeCallers()`, #1189). |
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
@@ -38,6 +38,8 @@ own, and none is advertised until it is implemented.
 `tests/authzen_evaluation.js` drives the route over real handshakes in a child
 process, in a throwaway realm whose root policy it wrote;
 `tests/authzen_admin.js` holds the tab's view and acts.
+`tests/authzen_evaluation.js` K and P hold the two pulls the edge PDP
+makes, the catalogue and the callers.
 `tests/protocol/sts_authzen.js` (`local: true`, #1165) asks a running service
 the same questions over HTTP in a throwaway realm, and carries the **AuthZEN
 interop "Todo" scenario** — its five people, five actions and owner rule
@@ -359,12 +361,52 @@ or the two drift with both suites green.
 * **The codes are shared where the condition is the contract's**: a request
   refused there carries the `STS-AUTHZEN-*` code it carries here, and the
   `501`s for a realm with the API off are `0013` and `0014`. Its own
-  conditions — the caller allow-list, the client CA, the catalogue pull — are
-  `STS-XPEP-*`.
-* **What differs is who may ask**, because that is decided against this
-  service's directory: there it is a configured allow-list of certificates,
-  mutual TLS only, no revocation check, a log line instead of an audit row.
-  `xacml-pep/CLAUDE.md` states each.
+  conditions — the client CA, the catalogue and caller pulls, admission by
+  the pulled list and the local narrowing — are `STS-XPEP-*`.
+* **Who may ask is this service's answer, pulled** (#1189, below):
+  `GET /xacml/pep/authzen-callers`. What still differs there is mutual TLS
+  only, no revocation check of an outside authority, and a log line instead
+  of an audit row; `xacml-pep/CLAUDE.md` states each.
+
+### The callers the edge PDP admits (#1189)
+
+**rcbj's decision on #1189: the edge admits by pulling who this service
+admits**, with the cost accepted that anybody holding `REMOTE_PEPS` can read
+who may ask the PDP. `authzen_caller.ts`'s `edgeCallers()` is the list, and it
+is the three questions of *Who is asking* asked ahead of any request, by the
+same functions:
+
+* **WHO**: each certificate through the certificate door's own reading,
+  `xacml.ts`'s `certificateCaller()` (`xacml/CLAUDE.md`), so the name sent is
+  the DN the door resolves it to — the value `urn:sts:xacml:authzen:caller`
+  carries — and the certificate is sent by the SHA-256 of its DER.
+* **MAY THEY**: `admission()`, the writeless half of `mayAsk()`, for the path
+  of each endpoint the edge serves (the realm's prefix included). The OUTCOME
+  is sent, not the membership: a member the policy refuses is counted
+  (`notAdmitted`) and left out.
+* **WHICH APPLICATION**: `scopeOf()`, as is.
+
+**THE CANDIDATES ARE THE GROUP'S MEMBERS** (`roles.authzenPepGroup`, read
+through `authzen_admin.ts`'s `edgeCandidates()` over the tab's directory
+slot), and their certificates are what the door accepts: the values of
+`userCertificate` on the entry (read with the directory codec's
+`certificateDerOf()`, the reading the stored-certificate index keys) and the
+TLS client certificates this realm issued them that are valid
+(`tls_client_certificates.js`'s `activeFor()`). Two things the service admits
+are therefore NOT listed, and the edge is narrower there, never wider: an
+entry a policy admits without the role, and a certificate enrolled over ACME,
+EST or SCEP that is not stored on the entry. Bounded at 500 members and 64
+certificates each; past either the list says `truncated` and the log carries
+`STS-AUTHZEN-0061`. A certificate that cannot be read is `STS-AUTHZEN-0062`.
+
+**A REALM WHOSE DOOR IS A TOKEN LISTS NOBODY.** The edge has mutual TLS only,
+and `bearer` and `mtls+bearer` admit no certificate alone, so with either the
+list is empty and says why.
+
+**REVOCATION IS THE REGISTER'S ONLY.** A certificate the register records as
+revoked is left out, so revoking one this realm issued reaches the edge on its
+poll; an outside authority's CRL or OCSP answer is never consulted for the
+list, and the edge consults none either.
 
 ## Error codes
 
@@ -373,4 +415,5 @@ the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
 admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
 the metadata path, 0036–0039 the batch, 0060 a value left out of the
-catalogue a remote PEP pulled (#1179).
+catalogue a remote PEP pulled (#1179), 0061–0062 a caller list a remote PEP
+pulled that was cut or held a certificate that could not be read (#1189).

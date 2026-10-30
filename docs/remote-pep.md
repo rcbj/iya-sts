@@ -23,6 +23,7 @@ is opt-in: a plain `docker compose up` does not start it.
                                     │
                                     ├── GET  /xacml/pep/policies ──▶  pull, every 15s
                                     ├── GET  /xacml/pep/authzen-catalogue ▶ beside it
+                                    ├── GET  /xacml/pep/authzen-callers ──▶ and after it
                                     ├── POST /xacml/pip ───────────▶  attributes, per decision
                                     ├── POST /xacml/pep/register ──▶  a row on the console
                                     ├── POST /xacml/pep/heartbeat ─▶  counters, every 60s
@@ -459,31 +460,79 @@ policy repository. Until the container has pulled both the policies and the
 catalogue, the AuthZEN endpoints answer `503` rather than map a request
 differently from the service.
 
-### Its callers authenticate by mutual TLS
+### Its callers: mutual TLS, admitted by the service's own list
 
 The AuthZEN endpoints answer on the **HTTPS listener** (above) to a caller
 presenting a client certificate, and to nobody else — the service's default
-door, `authzen.callerAuthentication=mtls`. Two settings say who:
+door, `authzen.callerAuthentication=mtls`. `PEP_AUTHZEN_CLIENT_CA` is the CA
+bundle a caller's certificate must chain to. With it set the listener **asks**
+every client for a certificate (`/protected` still takes none); without it the
+AuthZEN endpoints admit nobody.
 
-* `PEP_AUTHZEN_CLIENT_CA` — the CA bundle a caller's certificate must chain
-  to. With it set the listener **asks** every client for a certificate
-  (`/protected` still takes none); without it the AuthZEN endpoints admit
-  nobody.
-* `PEP_AUTHZEN_CALLERS` — the certificates admitted, by the SHA-256 of each,
-  with the name a policy sees as `urn:sts:xacml:authzen:caller` and the
-  applications the caller may ask about:
+**Who may ask is pulled from the service.** After the catalogue the container
+pulls `GET /xacml/pep/authzen-callers`, on the same poll, with the same
+credential and the same `REMOTE_PEPS` role, and its own sync token. It lists,
+for every caller the realm admits to `/access/v1` **now**:
+
+* the **name** a policy sees as `urn:sts:xacml:authzen:caller` — the DN of the
+  directory entry the service's certificate door resolves the caller's
+  certificate to, exactly as the service would put it there;
+* the **SHA-256 of the DER** of every certificate the service would resolve to
+  that entry: the ones stored in `userCertificate` on it, and the TLS client
+  certificates its realm issued it that are still valid;
+* its **application scope** (`stsAuthzenApplication`, set by an administrator
+  on the AuthZEN tab), checked against `context.application` exactly as the
+  service checks it;
+* the **endpoints** the access-control policy admits it to.
+
+The list is the **outcome**, not the membership: the candidates are the members
+of the group named by `roles.authzenPepGroup` (`authzen-peps`), and each is
+listed only if the access-control policy on resource `authzen-api` admits it,
+as it would admit the same caller asking the service. The container admits a
+certificate only if the list names it, under that name and scope.
+
+**Anybody holding `REMOTE_PEPS` can read this list** — who may ask the PDP,
+and with which certificates. That is the accepted cost of the edge admitting
+by the service's answer rather than by a second copy of it. Nothing else is
+sent: no certificate, no attribute, no group.
+
+**It converges on the poll.** The list's token moves when a member is added to
+or taken out of the group, a certificate is stored on or taken off an entry, a
+certificate the realm issued is issued, expires or is revoked, a scope is set,
+the realm's `authzen.callerAuthentication` changes, or the access-control
+policy's answer about a caller changes. Nothing is pushed: a caller the service
+stops admitting is still admitted here until the next poll
+(`PEP_POLL_INTERVAL_MS`, 15 seconds by default). A failed pull keeps the last
+good list.
+
+**A realm whose door is a token lists nobody.** With
+`authzen.callerAuthentication` set to `bearer` or `mtls+bearer` a certificate
+alone is not enough at the service, and the container cannot check a token, so
+the list is empty and the edge PDP answers `401` to everybody.
+
+#### `PEP_AUTHZEN_CALLERS`, the optional narrowing
+
+`PEP_AUTHZEN_CALLERS` is a JSON array of `{ "name", "sha256", "applications" }`
+naming certificates by their SHA-256. It is **optional**:
+
+* **unset** — the pulled list alone decides, and the AuthZEN endpoints answer
+  `503` until the first caller pull has loaded;
+* **set** — a pulled caller must **also** be on it, so an operator can confine
+  an edge to some of the service's callers. The pulled name and scope are
+  used; the local `name` and `applications` are not. Before the first caller
+  pull — or against a service older than the caller list, which answers `404`
+  — the local list decides alone, as it did before the list existed. Set to a
+  list that names nobody, it admits nobody.
 
   ```bash
   PEP_AUTHZEN_CLIENT_CA=/certs/authzen-ca.pem
-  PEP_AUTHZEN_CALLERS='[{"name":"cn=todo-pep,ou=people,dc=acme,dc=example",
+  PEP_AUTHZEN_CALLERS='[{"name":"uid=todo-pep,ou=users,dc=acme,dc=example",
                          "sha256":"3f:1a:…:9c",
                          "applications":["todo-app"]}]'
   ```
 
-  Give a caller the name of the directory entry the service would resolve its
-  certificate to, and a policy that reads the caller decides the same in both
-  places. `context.application` is checked against `applications` exactly as
-  the service checks it against the entry's scope.
+The narrowing is the default chosen while this was built; it can be reversed
+(the list removed, or made to decide alone) if that is the better answer.
 
 ```bash
 curl --cacert service-root.pem --cert pep.crt --key pep.key \
@@ -503,10 +552,11 @@ arrived at.
 
 | The service | The edge PDP |
 |---|---|
-| A caller holds `AUTHZEN_PEPS`, decided by the access-control policy | A caller is in `PEP_AUTHZEN_CALLERS`. There is no directory here, so no role and no policy decides who may ask |
-| A caller's application scope is `stsAuthzenApplication` (or the application's own) on its entry, set by an administrator | The scope is `applications` in `PEP_AUTHZEN_CALLERS` |
-| Three doors: `mtls`, `bearer` and `mtls+bearer` | Mutual TLS only. It cannot check a token's issuer, audience, revocation or client against the realm |
-| A client certificate is checked for revocation | Not checked |
+| A caller holds `AUTHZEN_PEPS`, decided by the access-control policy, at the moment it asks | The same answer, pulled: a caller the service admits now is admitted here from the next poll, and one it stops admitting is admitted here until then |
+| Any entry the access-control policy admits | The members of `roles.authzenPepGroup` the policy admits. A policy written to admit an entry outside the group admits it at the service and not here |
+| Every certificate the door resolves to an entry | The certificates stored on the entry and the TLS client certificates the realm issued it. A certificate enrolled over ACME, EST or SCEP and not stored on the entry is not listed |
+| Three doors: `mtls`, `bearer` and `mtls+bearer` | Mutual TLS only. It cannot check a token's issuer, audience, revocation or client against the realm, so a realm whose door is a token admits nobody here |
+| A client certificate is checked for revocation | Not checked. A certificate the service's own register records as revoked leaves the pulled list on the next poll; an outside authority's CRL or OCSP answer is never consulted |
 | The PIP answers from the directory in process | The PIP is the service's `POST /xacml/pip`, asked over the network; if that fails the subject's attributes are an empty bag, as for `/protected` |
 | One `authzen.decision` row per evaluation in the audit log, and a row on `/admin/xacml/monitor` | A log line per evaluation with the same content, never a property value or an id the caller sent; `GET /` counts the answers. Nothing reaches the service's audit log |
 | `reason_admin` is the service's sentence | It is this container's; the decision and the code are the same |
@@ -515,7 +565,9 @@ arrived at.
 | `signed_metadata` in the metadata document | Not sent; the edge PDP holds no signing key of the realm's |
 
 `GET /`'s `authzen` block says what it holds: the catalogue's token, its rows,
-the settings, the last pull and what it has answered.
+the settings, the last pull, how many callers and certificates the pulled
+list holds (counted, never named — `GET /` answers whoever reaches the
+container), whether `PEP_AUTHZEN_CALLERS` narrows it, and what it has answered.
 
 ## Reading `GET /` when something is wrong
 
@@ -529,6 +581,8 @@ the settings, the last pull and what it has answered.
 | `pip.credentialed: false` | no client certificate, so the PIP query is refused and only what the request asserts decides |
 | `https.listening: false` | no usable listener pair yet. `https.problem` says whether the files are missing (issue one) or refused (the key is not the certificate's, or a file will not parse) |
 | `authzen.catalogue.loaded: false` | no AuthZEN catalogue pulled yet, so the AuthZEN endpoints answer `503`. `authzen.catalogue.lastPullWhy` says why; a `404` means a service older than the catalogue endpoint |
+| `authzen.pulledCallers.loaded: false` | no caller list pulled yet. Without `PEP_AUTHZEN_CALLERS` the AuthZEN endpoints answer `503`; with it, that list alone decides. `authzen.pulledCallers.lastPullWhy` says why; a `404` means a service older than the caller list |
+| `authzen.pulledCallers.door` other than `mtls` | the realm authenticates its AuthZEN callers by a token, so the list is empty and every caller is refused `401` |
 
 **The two ends can disagree about staleness, and that is deliberate**: this PEP
 counts missed *polls* and the PDP counts missed *heartbeats*. A PEP pulling
@@ -566,7 +620,7 @@ and a PEP has none.
 | `PEP_RESOURCE` | | the resource id used when a request names none |
 | `PEP_AUTHZEN` | `true` | the AuthZEN edge PDP. `false` answers `501` |
 | `PEP_AUTHZEN_CLIENT_CA` | — | the CA bundle an AuthZEN caller's certificate must chain to. Unset, nobody is admitted |
-| `PEP_AUTHZEN_CALLERS` | — | a JSON array of `{ "name", "sha256", "applications" }`: the AuthZEN callers admitted, by their certificate's SHA-256 |
+| `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at |
 | `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
 
@@ -599,7 +653,12 @@ change anything here:
   the service's own enforcement rule to as well, so the two agree over seven
   decisions under both biases — and the AuthZEN mapping against
   `xacml-pep/authzen_cases.json`, which **`tests/authzen_map.js`** holds the
-  service's mapping to as well. None of it makes an HTTP request.
+  service's mapping to as well, and the caller list's grammar and the
+  admission by it. None of it makes an HTTP request.
+- **`tests/authzen_evaluation.js`** holds the service's side of the two
+  AuthZEN pulls in process: the catalogue (K) and the callers (P), whose
+  names it checks against what the certificate door names over a real
+  handshake.
 - **`tests/protocol/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the service's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is

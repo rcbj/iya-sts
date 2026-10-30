@@ -492,15 +492,21 @@ impl Pep {
                     authzen::METADATA_PATH
                 ]),
             );
+            // THE LOCAL NARROWING, COUNTED (#1189): who may ask is the
+            // service's list, pulled, and `pulledCallers` above counts it
+            // without naming anybody, for the reason given there.
             map.insert(
-                "callers".into(),
-                json!(o
-                    .authzen_callers
-                    .iter()
-                    .map(|c| json!({
-                        "name": c.name, "applications": c.applications
-                    }))
-                    .collect::<Vec<Value>>()),
+                "localCallers".into(),
+                json!({
+                    "configured": o.authzen_callers_configured,
+                    "certificates": o.authzen_callers.len(),
+                    "role": if o.authzen_callers_configured {
+                        "narrows the pulled list; decides alone until the \
+                         first pull"
+                    } else {
+                        "not set: the pulled list alone decides"
+                    }
+                }),
             );
             map.insert(
                 "clientCertificatesAsked".into(),
@@ -520,11 +526,13 @@ impl Pep {
                     "An AuthZEN edge PDP: the service's mapping contract \
                        — the catalogue and settings pulled beside the \
                        policies — decided here against the pulled root \
-                       policy. Callers authenticate by mutual TLS only, are \
-                       admitted by PEP_AUTHZEN_CALLERS rather than the \
-                       service's AUTHZEN_PEPS role and application scope, \
-                       are not checked for revocation, and each decision is \
-                       a log line rather than an audit row."
+                       policy. Callers authenticate by mutual TLS only and \
+                       are admitted by the caller list pulled from the \
+                       service (who holds AUTHZEN_PEPS as its policy decides \
+                       it, and each caller's application scope), narrowed by \
+                       PEP_AUTHZEN_CALLERS when that is set; an outside \
+                       authority's revocation is not checked, and each \
+                       decision is a log line rather than an audit row."
                 ),
             );
         }

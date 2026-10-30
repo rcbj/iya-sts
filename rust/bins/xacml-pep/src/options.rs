@@ -58,19 +58,26 @@ pub struct Options {
     pub https_reload_interval_ms: u64,
     /// The AuthZEN edge PDP (#1179): on by default, reachable only over the
     /// HTTPS listener by a caller presenting a certificate this container
-    /// verifies against `authzen_client_ca` and finds in `authzen_callers`.
+    /// verifies against `authzen_client_ca` and finds on the caller list it
+    /// pulled from the service (#1189) — narrowed, when
+    /// `authzen_callers_configured`, to `authzen_callers`.
     pub authzen_enabled: bool,
     pub authzen_client_ca: Option<Vec<u8>>,
     pub authzen_callers: Vec<AuthzenCaller>,
+    /// `PEP_AUTHZEN_CALLERS` was SET (non-empty), whatever it held: the
+    /// operator asked for a narrowing, so a value that admits nobody
+    /// narrows to nobody rather than being read as "not set" (#1189).
+    pub authzen_callers_configured: bool,
     /// The PDP identifier the metadata names, an `https` origin; empty means
     /// "the origin the HTTPS request arrived at".
     pub authzen_pdp_identifier: String,
 }
 
-/// One caller the edge PDP admits: the certificate it presents, by the
-/// SHA-256 of its DER, under a name, scoped to applications. The
-/// container's stand-in for an entry in the service's directory holding
-/// AUTHZEN_PEPS and `stsAuthzenApplication` (`xacml-pep/CLAUDE.md`).
+/// One caller `PEP_AUTHZEN_CALLERS` names: the certificate it presents, by
+/// the SHA-256 of its DER, under a name, scoped to applications. Since
+/// #1189 the list is an OPTIONAL NARROWING of the callers pulled from the
+/// service (a pulled caller must also be on it), and decides alone only
+/// until the first caller pull loads (`xacml-pep/CLAUDE.md`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuthzenCaller {
     pub name: String,
@@ -277,6 +284,10 @@ impl Options {
                 != Ok("false"),
             authzen_client_ca: authzen_client_ca(),
             authzen_callers: authzen_callers(),
+            authzen_callers_configured: !std::env::var("PEP_AUTHZEN_CALLERS")
+                .unwrap_or_default()
+                .trim()
+                .is_empty(),
             authzen_pdp_identifier: authzen_pdp_identifier(),
         }
     }

@@ -37,8 +37,11 @@ decides locally, and an AuthZEN PEP asks this service per request.
 The [remote PEP](remote-pep.md#an-authzen-edge-pdp) container answers the same
 access evaluations itself, as an **edge PDP** over the policy and the attribute
 catalogue it pulls from the realm — so a PEP in its network can ask a PDP
-nearby, and gets the answer the service would give. What it cannot do that the
-service can is listed there.
+nearby, and gets the answer the service would give. **It admits the callers
+this realm admits**, pulled from the service: who holds `AUTHZEN_PEPS` as the
+access-control policy decides it, by their certificates, with their
+application scopes. Anybody holding `REMOTE_PEPS` can read that list. What it
+cannot do that the service can is listed there.
 
 ## The conversion, AuthZEN to XACML
 
@@ -506,6 +509,11 @@ about:
 caller has exactly one, that one is used. The application a policy sees is
 `urn:sts:xacml:authzen:application`, never the value as the caller sent it.
 The remote PEP register (`ou=peps`) is not consulted.
+
+A remote PEP's [edge PDP](remote-pep.md#an-authzen-edge-pdp) admits by the
+same answers: it pulls the callers admitted now, each with the name above,
+its certificates' SHA-256 digests and its scope, from
+`GET /xacml/pep/authzen-callers`, and converges on its poll.
 
 ## The console and the management API
 

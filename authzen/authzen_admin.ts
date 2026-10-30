@@ -295,6 +295,74 @@ class AuthzenAdmin {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // WHO MIGHT BE A CALLER, FOR THE LIST A REMOTE PEP PULLS (#1189).
+  //
+  // The members of `roles.authzenPepGroup` — the group whose membership IS
+  // the AUTHZEN_PEPS role — each located in the directory, with the
+  // attributes its stored certificates are read from. These are CANDIDATES
+  // and nothing more: `authzen_caller.ts`'s `edgeCallers()` asks the
+  // certificate door who each certificate names and the access-control
+  // policy whether that caller may ask, so the list the edge holds is the
+  // outcome rather than the membership. A member that locates to no person,
+  // service account or application (a DN left behind by a deletion, a nested
+  // group) is counted and left out: nothing can present a certificate as it.
+  //
+  // Bounded at `max`, and the total is answered beside, so a list that was
+  // cut is said to be (`STS-AUTHZEN-0061`, logged by the caller).
+  // ---------------------------------------------------------------------------
+  /**
+   * The members of the AuthZEN group, located, for the edge caller list.
+   *
+   * @param max - the most members read
+   * @returns `{ group, total, candidates, unlocated }`; each candidate is
+   *   `{ dn, kind, name, attributes }`, kind `person`, `service-account`
+   *   or `application`
+   */
+  edgeCandidates(max: number): any {
+    const { log, config, applications } = this.deps;
+    log.debug("Entering AuthzenAdmin.edgeCandidates().");
+    const group = String(config.value('roles.authzenPepGroup') || '');
+    const members = directory && group ? directory.members(group) : [];
+    // The applications by DN, read once rather than once per member: a
+    // member is a person's, a service account's or an application's DN,
+    // and `callerOf()`'s per-key search would walk the registry for each.
+    const byDn = new Map<string, any>();
+    try {
+      (applications.list() || []).forEach(function (one: any) {
+        if (one && one.dn) {
+          byDn.set(String(one.dn).toLowerCase(), one);
+        }
+      });
+    } catch (e) {
+      log.debug("Caught in AuthzenAdmin.edgeCandidates(): " +
+                ((e && e.message) || e));
+    }
+    const candidates: any[] = [];
+    let unlocated = 0;
+    members.slice(0, Math.max(0, max)).forEach(function (member: string) {
+      const entry = directory ? directory.locate(String(member)) : null;
+      const app = entry ? byDn.get(String(entry.dn).toLowerCase()) : null;
+      if (entry && app) {
+        candidates.push({ dn: String(entry.dn), kind: 'application',
+                          name: String(app.identifier),
+                          attributes: entry.attributes || {} });
+      } else if (entry && entry.person) {
+        candidates.push({ dn: String(entry.dn),
+                          kind: entry.serviceAccount ? 'service-account'
+                                                     : 'person',
+                          name: String(entry.name || entry.dn),
+                          attributes: entry.attributes || {} });
+      } else {
+        unlocated++;
+      }
+    });
+    log.debug("Leaving AuthzenAdmin.edgeCandidates(). " + candidates.length +
+              " of " + members.length + ".");
+    return { group: group, total: members.length, candidates: candidates,
+             unlocated: unlocated };
+  }
+
   /**
    * Performs one act of the AuthZEN tab.
    *
@@ -530,5 +598,6 @@ export = {
   },
   view: slot.forward('view'),
   act: slot.forward('act'),
-  callerOf: slot.forward('callerOf')
+  callerOf: slot.forward('callerOf'),
+  edgeCandidates: slot.forward('edgeCandidates')
 };

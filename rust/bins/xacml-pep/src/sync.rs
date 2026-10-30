@@ -22,6 +22,14 @@
 //!   nothing about `/protected`. A catalogue change does not nudge — the
 //!   service's nudge is about the policy repository — so it converges on
 //!   the poll.
+//! * **AND THE AUTHZEN CALLERS AFTER THE CATALOGUE** (#1189), from `GET
+//!   /xacml/pep/authzen-callers`: who the service admits to its AuthZEN API
+//!   now, by the SHA-256 of each certificate, with the name a policy sees
+//!   and the application scope. Its own token, the same rule — a failed
+//!   pull keeps the last good list — and every entry read again by this
+//!   container's own grammar (`parse_pulled_callers()`), never taken on
+//!   trust. It converges on the poll too: a caller the service stops
+//!   admitting is admitted here until the next one.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -135,6 +143,128 @@ pub struct Catalogue {
     pub last_pull_why: String,
 }
 
+/// One caller the service admits to its AuthZEN API, as the pull carries it
+/// (#1189): the name a policy sees as `urn:sts:xacml:authzen:caller`, the
+/// SHA-256 of every certificate the service's door resolves to it, its
+/// application scope, and the endpoints its access-control policy admits
+/// it to (`evaluation`, `evaluations`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PulledCaller {
+    pub name: String,
+    pub sha256: Vec<String>,
+    pub applications: Vec<String>,
+    pub endpoints: Vec<String>,
+}
+
+/// The AuthZEN caller list this PEP holds, replaced WHOLE on a successful
+/// pull, as the catalogue is.
+#[derive(Debug, Clone, Default)]
+pub struct Callers {
+    /// A list was pulled at least once. Until then `PEP_AUTHZEN_CALLERS`,
+    /// when it is set, decides alone, and when it is not the edge answers
+    /// 503.
+    pub loaded: bool,
+    pub sync_token: String,
+    /// The realm's `authzen.callerAuthentication`: only `mtls` admits a
+    /// certificate alone, so any other door admits nobody here.
+    pub door: String,
+    pub callers: Arc<Vec<PulledCaller>>,
+    /// The service said its list was cut (`STS-AUTHZEN-0061` there).
+    pub truncated: bool,
+    /// Entries this container's grammar refused.
+    pub refused: Vec<String>,
+    pub last_pull_at: String,
+    pub last_pull_ok: bool,
+    pub last_pull_why: String,
+}
+
+/// The endpoint names a pulled caller may be admitted to.
+pub const CALLER_ENDPOINTS: [&str; 2] = ["evaluation", "evaluations"];
+
+/// Reads a pulled caller list STRICTLY, as `parse_callers()` reads
+/// `PEP_AUTHZEN_CALLERS`: an entry that is not a name, at least one 64-digit
+/// SHA-256, at most 64 applications of at most 256 characters and endpoints
+/// from `CALLER_ENDPOINTS` is LEFT OUT and named, so a defect admits nobody
+/// rather than somebody. Answers the door, the callers, and the problems.
+pub fn parse_pulled_callers(
+    said: &Value,
+) -> (String, Vec<PulledCaller>, Vec<String>) {
+    let door = said["door"].as_str().unwrap_or("").to_string();
+    let mut out: Vec<PulledCaller> = Vec::new();
+    let mut problems = Vec::new();
+    let entries = said["callers"].as_array().cloned().unwrap_or_default();
+    for (i, entry) in entries.iter().enumerate() {
+        let name = entry["name"].as_str().unwrap_or("").trim().to_string();
+        let sha256: Option<Vec<String>> =
+            entry["certificates"].as_array().and_then(|list| {
+                list.iter()
+                    .map(|one| {
+                        one["sha256"]
+                            .as_str()
+                            .and_then(crate::options::fingerprint_of)
+                    })
+                    .collect::<Option<Vec<String>>>()
+                    .filter(|l| !l.is_empty() && l.len() <= 64)
+            });
+        let applications: Option<Vec<String>> =
+            entry["applications"].as_array().and_then(|list| {
+                list.iter()
+                    .map(|one| {
+                        one.as_str()
+                            .filter(|s| {
+                                !s.is_empty()
+                                    && s.chars().count() <= 256
+                                    && !s.chars().any(char::is_control)
+                            })
+                            .map(str::to_string)
+                    })
+                    .collect::<Option<Vec<String>>>()
+                    .filter(|l| l.len() <= 64)
+            });
+        let endpoints: Option<Vec<String>> =
+            entry["endpoints"].as_array().and_then(|list| {
+                list.iter()
+                    .map(|one| {
+                        one.as_str()
+                            .filter(|e| CALLER_ENDPOINTS.contains(e))
+                            .map(str::to_string)
+                    })
+                    .collect::<Option<Vec<String>>>()
+            });
+        match (name.is_empty(), sha256, applications, endpoints) {
+            (false, Some(sha256), Some(applications), Some(endpoints)) => {
+                let named_twice = sha256
+                    .iter()
+                    .find(|fp| out.iter().any(|c| c.sha256.contains(fp)));
+                if let Some(fp) = named_twice {
+                    // The service names a certificate once (it resolves to
+                    // one entry); two entries naming it is a defect, and
+                    // the second is not believed.
+                    problems.push(format!(
+                        "entry {} names the certificate {} an earlier \
+                         entry names, and is left out",
+                        i, fp
+                    ));
+                } else {
+                    out.push(PulledCaller {
+                        name,
+                        sha256,
+                        applications,
+                        endpoints,
+                    });
+                }
+            }
+            _ => problems.push(format!(
+                "entry {} is not {{ \"name\", \"certificates\": 1 to 64 \
+                 {{ \"sha256\" }}, \"applications\": at most 64 strings, \
+                 \"endpoints\" }} and is left out",
+                i
+            )),
+        }
+    }
+    (door, out, problems)
+}
+
 /// What the AuthZEN endpoints have answered, cumulative in this process —
 /// kept apart from the enforcement counters the heartbeat reports, because
 /// these decisions are ENFORCED by the caller, in its own process.
@@ -185,6 +315,8 @@ struct Counters {
 struct State {
     held: Held,
     catalogue: Catalogue,
+    callers: Callers,
+    last_callers_kept_why: String,
     authzen: AuthzenCounters,
     last_catalogue_kept_why: String,
     registration: Registration,
@@ -227,6 +359,11 @@ impl Sync {
                     last_pull_why: "No pull has been attempted yet.".into(),
                     ..Catalogue::default()
                 },
+                callers: Callers {
+                    last_pull_why: "No pull has been attempted yet.".into(),
+                    ..Callers::default()
+                },
+                last_callers_kept_why: String::new(),
                 authzen: AuthzenCounters::default(),
                 last_catalogue_kept_why: String::new(),
             }),
@@ -260,6 +397,11 @@ impl Sync {
         self.lock().catalogue.clone()
     }
 
+    /// The AuthZEN caller list held now (#1189).
+    pub fn callers(&self) -> Callers {
+        self.lock().callers.clone()
+    }
+
     /// One AuthZEN answer: `Some(decision)`, or `None` for an error.
     pub fn count_authzen(&self, decision: Option<bool>) {
         let mut state = self.lock();
@@ -276,7 +418,24 @@ impl Sync {
         let state = self.lock();
         let c = &state.catalogue;
         let a = state.authzen;
+        let p = &state.callers;
         json!({
+            // COUNTS, NEVER NAMES (#1189). `GET /` answers whoever reaches
+            // this container; the list it counts is the service's, which
+            // only a holder of REMOTE_PEPS may read there.
+            "pulledCallers": {
+                "loaded": p.loaded,
+                "syncToken": p.sync_token,
+                "door": p.door,
+                "callers": p.callers.len(),
+                "certificates": p.callers.iter()
+                    .map(|c| c.sha256.len()).sum::<usize>(),
+                "truncatedByThePdp": p.truncated,
+                "refused": p.refused,
+                "lastPullAt": p.last_pull_at,
+                "lastPullOk": p.last_pull_ok,
+                "lastPullWhy": p.last_pull_why
+            },
             "catalogue": {
                 "loaded": c.loaded,
                 "syncToken": c.sync_token,
@@ -478,6 +637,7 @@ impl Sync {
         let changed_before = self.lock().held.last_change_at.clone();
         self.pull_once(cause).await;
         self.pull_catalogue().await;
+        self.pull_callers().await;
         let mut state = self.lock();
         if cause == "nudge" {
             state.held.last_nudge_at = iso_now();
@@ -842,6 +1002,144 @@ impl Sync {
     }
 
     // -----------------------------------------------------------------------
+    // THE AUTHZEN CALLERS (#1189). Pulled after the catalogue, with its own
+    // token; a failure keeps what is held.
+    // -----------------------------------------------------------------------
+    async fn pull_callers(&self) {
+        let token = self.lock().callers.sync_token.clone();
+        let query = if token.is_empty() {
+            String::new()
+        } else {
+            format!("?since={}", encode(&token))
+        };
+        let answer = self
+            .client
+            .call(
+                Method::GET,
+                &format!("/xacml/pep/authzen-callers{}", query),
+                None,
+            )
+            .await;
+        if let Some(error) = &answer.error {
+            self.keep_callers(
+                &format!("Could not reach the PDP: {}", error),
+                "STS-XPEP-0047",
+            );
+            return;
+        }
+        if answer.status == 304 {
+            let mut state = self.lock();
+            state.callers.last_pull_at = iso_now();
+            state.callers.last_pull_ok = true;
+            state.callers.last_pull_why =
+                "Unchanged; this caller list is current.".into();
+            state.last_callers_kept_why.clear();
+            return;
+        }
+        if answer.status != 200 {
+            let detail = answer
+                .error_description()
+                .map(|d| format!(": {}", d))
+                .unwrap_or_default();
+            let older = if answer.status == 404 {
+                " A PDP older than #1189 has no caller endpoint."
+            } else {
+                ""
+            };
+            self.keep_callers(
+                &format!(
+                    "The PDP answered {} to the caller pull{}.{}",
+                    answer.status, detail, older
+                ),
+                "STS-XPEP-0048",
+            );
+            return;
+        }
+        let Some(said) = answer.json.filter(|j| j["callers"].is_array()) else {
+            self.keep_callers(
+                "The PDP answered 200 with something that is not an \
+                 AuthZEN caller list.",
+                "STS-XPEP-0048",
+            );
+            return;
+        };
+        self.load_callers(&said);
+    }
+
+    /// Reads every pulled entry through this container's own grammar: an
+    /// entry it refuses is left out and named, never admitted.
+    fn load_callers(&self, said: &Value) {
+        let (door, callers, refused) = parse_pulled_callers(said);
+        if !refused.is_empty() {
+            tracing::warn!(
+                "{}xacml-pep: {} pulled AuthZEN caller(s) were refused by \
+                 this container's grammar and left out, so they are not \
+                 admitted here: {}",
+                tag("STS-XPEP-0049"),
+                refused.len(),
+                refused.join("; ")
+            );
+        }
+        let token = said["syncToken"].as_str().unwrap_or("").to_string();
+        let count = callers.len();
+        let mut state = self.lock();
+        state.last_callers_kept_why.clear();
+        state.callers = Callers {
+            loaded: true,
+            sync_token: token.clone(),
+            door: door.clone(),
+            callers: Arc::new(callers),
+            truncated: said["truncated"].as_bool().unwrap_or(false),
+            refused,
+            last_pull_at: iso_now(),
+            last_pull_ok: true,
+            last_pull_why: format!("Pulled {} caller(s).", count),
+        };
+        tracing::info!(
+            "xacml-pep: pulled the AuthZEN callers: {} caller(s), door {}, \
+             token {}.",
+            count,
+            door,
+            token
+        );
+    }
+
+    /// A failed caller pull keeps what is held, and warns once per distinct
+    /// reason.
+    fn keep_callers(&self, why: &str, code: &str) {
+        let configured = self.options.authzen_callers_configured;
+        let mut state = self.lock();
+        state.callers.last_pull_ok = false;
+        state.callers.last_pull_why = if state.callers.loaded {
+            format!(
+                "{} KEEPING the caller list pulled at {}, so the edge PDP \
+                 goes on admitting as it did.",
+                why, state.callers.last_pull_at
+            )
+        } else if configured {
+            format!(
+                "{} NO CALLER LIST IS HELD, so PEP_AUTHZEN_CALLERS alone \
+                 decides who may ask until one is.",
+                why
+            )
+        } else {
+            format!(
+                "{} NO CALLER LIST IS HELD and PEP_AUTHZEN_CALLERS is not \
+                 set, so the AuthZEN endpoints answer 503.",
+                why
+            )
+        };
+        if state.last_callers_kept_why != why {
+            state.last_callers_kept_why = why.to_string();
+            tracing::warn!(
+                "{}xacml-pep: {}",
+                tag(code),
+                state.callers.last_pull_why
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // HEARTBEAT. What this PEP has enforced, so a person can see it.
     // -----------------------------------------------------------------------
     #[tracing::instrument(level = "debug", skip_all)]
@@ -951,4 +1249,54 @@ pub fn encode(text: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pulled list is read strictly (#1189): a well-formed entry is
+    /// kept with its digests lower-cased; an entry with no certificate, a
+    /// digest that is not one, an endpoint this edge does not serve, an
+    /// application list that is not strings, or no name is left out and
+    /// named; and a certificate two entries name is believed of the first.
+    #[test]
+    fn pulled_callers_are_read_strictly() {
+        let fp = "AB".repeat(32);
+        let said = json!({
+            "door": "mtls",
+            "callers": [
+                { "name": "uid=a,ou=users", "applications": ["todo-app"],
+                  "certificates": [{ "sha256": fp, "source": "stored" }],
+                  "endpoints": ["evaluation", "evaluations"] },
+                { "name": "uid=b,ou=users", "applications": [],
+                  "certificates": [], "endpoints": ["evaluation"] },
+                { "name": "uid=c,ou=users", "applications": [],
+                  "certificates": [{ "sha256": "nothex" }],
+                  "endpoints": ["evaluation"] },
+                { "name": "uid=d,ou=users", "applications": [],
+                  "certificates": [{ "sha256": "cd".repeat(32) }],
+                  "endpoints": ["search"] },
+                { "name": "uid=e,ou=users", "applications": [1],
+                  "certificates": [{ "sha256": "ef".repeat(32) }],
+                  "endpoints": [] },
+                { "name": "", "applications": [],
+                  "certificates": [{ "sha256": "01".repeat(32) }],
+                  "endpoints": [] },
+                { "name": "uid=f,ou=users", "applications": [],
+                  "certificates": [{ "sha256": "ab".repeat(32) }],
+                  "endpoints": ["evaluation"] }
+            ]
+        });
+        let (door, callers, problems) = parse_pulled_callers(&said);
+        assert_eq!(door, "mtls");
+        assert_eq!(callers.len(), 1);
+        assert_eq!(callers[0].name, "uid=a,ou=users");
+        assert_eq!(callers[0].sha256, vec!["ab".repeat(32)]);
+        assert_eq!(callers[0].applications, ["todo-app"]);
+        assert_eq!(callers[0].endpoints, ["evaluation", "evaluations"]);
+        assert_eq!(problems.len(), 6, "{:?}", problems);
+        let (none, nothing, refused) = parse_pulled_callers(&json!({}));
+        assert!(none.is_empty() && nothing.is_empty() && refused.is_empty());
+    }
 }

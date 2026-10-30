@@ -27,6 +27,10 @@
     "en": "19bdeda29bc135e4",
     "text": "AuthZEN 目錄，供遠端 PEP 載入"
   },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "AuthZEN 呼叫方，供遠端 PEP 准入"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "遠端 PEP 已執行的內容"

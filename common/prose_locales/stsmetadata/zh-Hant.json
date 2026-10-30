@@ -755,6 +755,10 @@
     "en": "e684892d931f5313",
     "text": "該領域的 AuthZEN 屬性目錄——sts-authzen-api 上 authzenAttribute 的各列，依 POST /access/v1/evaluation 的讀取方式讀取——以及會改變對應或答覆的 AuthZEN 設定，外加其自己的同步權杖；?since=<token> 回覆 304。由 xacml-pep 容器與政策一同拉取，其邊緣 PDP 正是以這些列答覆 AuthZEN，因此同一請求在兩處以同一種方式對應。與政策拉取一樣需要 REMOTE_PEPS。這是新增的：/xacml/pep/policies 維持不變。"
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "此領域現在准許誰存取其 AuthZEN API，供 xacml-pep 容器的邊緣 PDP 據此准入：存取控制原則准許存取 /access/v1/* 的每個呼叫方（AUTHZEN_PEPS，由原則決定），以原則在 urn:sts:xacml:authzen:caller 中看到的名稱命名，附上本服務會解析到該名稱的每個憑證的 DER 的 SHA-256、其應用程式範圍以及其被准許存取的端點，另有自己的同步權杖；?since=<token> 回應 304。成員、憑證、範圍或原則的答覆有所變更時權杖隨之改變，邊緣在下一次輪詢時趨於一致。需要 REMOTE_PEPS，與原則拉取相同，因此持有該角色的任何人都能讀到誰可以詢問 PDP（rcbj 於 #1189）。為新增內容：/xacml/pep/policies 與 /xacml/pep/authzen-catalogue 維持不變。"
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "它的累計計數器以及它持有的同步權杖——正是這一點讓「最新」成為本服務執行的比較，而不是 PEP 對自己的宣稱。那些決策發生在另一個程序中，本服務一個也沒看到，這正是遠端 PEP 的全部意義。它「不會」建立資料列：來自從未註冊者的心跳會被拒絕並指出註冊端點，因為在此建立的資料列不會有憑證、通知 URL 與註冊日期。"

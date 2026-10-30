@@ -391,11 +391,13 @@ POST /xacml/pep/register    a REMOTE PEP registers, over mutual TLS
 GET  /xacml/pep/policies    the enabled policies, for a remote PEP to LOAD
 GET  /xacml/pep/authzen-catalogue
                             the AuthZEN catalogue, for its edge PDP (#1179)
+GET  /xacml/pep/authzen-callers
+                            who that edge PDP admits, and as whom (#1189)
 POST /xacml/pep/heartbeat   what a remote PEP has enforced
 POST /xacml/pip             the PIP over HTTP — XACML XML in, XACML XML out
 ```
 
-**ALL EIGHT REQUIRE A CLIENT CERTIFICATE NOW, AND THIS SECTION SAID THE
+**ALL NINE REQUIRE A CLIENT CERTIFICATE NOW, AND THIS SECTION SAID THE
 OPPOSITE.** What stood here was an argument for `POST /xacml/pdp`
 authenticating nobody, and half of it is still true and still load-bearing: **a
 PDP is not an authorization boundary.** It answers a question about somebody
@@ -419,7 +421,7 @@ survives being refused.
 | Endpoints | Role | Group |
 |---|---|---|
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | `XACML_USER` | `roles.xacmlUserGroup` (default `xacml-users`) |
-| `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `GET /xacml/pep/authzen-catalogue`, `POST /xacml/pep/heartbeat`, **`POST /xacml/pip`** | `REMOTE_PEPS` | `roles.remotePepGroup` (default `remote-peps`) |
+| `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `GET /xacml/pep/authzen-catalogue`, `GET /xacml/pep/authzen-callers`, `POST /xacml/pep/heartbeat`, **`POST /xacml/pip`** | `REMOTE_PEPS` | `roles.remotePepGroup` (default `remote-peps`) |
 
 **ONE GROUP GRANTING BOTH WOULD BE THE MISTAKE.** The `/xacml/pep/*` endpoints
 hand out the documents this service enforces its own access with, and
@@ -1125,6 +1127,44 @@ settings that change the mapping or the answer, behind `pepAccess()` and
 and an AUTHZEN_PEPS caller that is not a remote PEP, both 403), the rows and
 settings, the ETag and 304, a token that moves with a row and a setting, and
 `/xacml/pep/policies`' token that does not.
+
+## `GET /xacml/pep/authzen-callers` — who the edge PDP admits (#1189)
+
+**rcbj's decision on #1189: the edge PDP admits callers by PULLING the
+service's answer**, not by the list its operator configures, **and the cost
+is accepted: anybody holding `REMOTE_PEPS` can read who may ask the PDP.** So
+this endpoint answers, behind `pepAccess()` like the other two pulls,
+`authzen/authzen_caller.ts`'s `edgeCallers()`: for every caller the
+access-control policy admits to `/access/v1/*` now, its name, the SHA-256 of
+each certificate that names it, its application scope and the endpoints it is
+admitted to. `authzen/CLAUDE.md` argues what is a candidate and what is left
+out; what belongs here is the door.
+
+* **THE NAME AND THE DIGEST ARE THE DOOR'S, NOT A SECOND READING OF IT.**
+  `certificateCaller(der)` is `callerIdentity()` for a certificate in hand:
+  the naming is one private `namedBy()` both call — `certificatePlan()`
+  across the register's slot, the stored-certificate lookup for an outside
+  authority — over `X509Certificate.toLegacyObject()`, the object
+  `getPeerCertificate()` hands a handshake, so the DN cannot be spelt twice.
+  What a handshake's `mtls.peerVerified()` adds is applied to the DER the
+  same way: `tls_client_certificates.js`'s `checkCertificate()` (the half of
+  `checkSocket()` that needs no socket) and `revocation_status.js`'s
+  register-only `localVerdictFor()`. Whether the CHAIN verifies is the one
+  thing not asked: that is each door's own, against its own trust anchors.
+  `tests/authzen_evaluation.js` P holds the name to the actor of a real
+  handshake's audit row, for a stored outside certificate and for one the
+  realm issued.
+* **ITS OWN SYNC TOKEN**, a digest of exactly the body it sends, with the
+  same ETag and `?since=` 304 and `no-store`; neither the policies' token nor
+  the catalogue's moves with it. It moves with a membership, a certificate
+  (stored, issued, expired, revoked in the register), a scope, the realm's
+  `authzen.callerAuthentication` and the policy's answer. **NO NUDGE**, for
+  the catalogue's reason: the edge converges on its poll.
+* **NOTHING BUT NAMES, DIGESTS AND SCOPES** is sent — no certificate, no
+  attribute, no group membership — and the counts of what was left out.
+* **`GET /xacml`'s endpoint list does not name it**, for the catalogue's
+  reason; `/admin/sts-metadata` and `/admin/xacml`'s protocol-endpoint table
+  do.
 
 ## What the console page is NOT
 

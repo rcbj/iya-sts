@@ -324,7 +324,19 @@ interface XacmlSurfaceDeps {
   // `common/tls_client_certificates.js`, the one mapping from a verified
   // certificate to an entry (#1061), required when a certificate is read.
   loadTlsClientCertificates(): { checkSocket(socket: any,
-                                             options?: any): any };
+                                             options?: any): any;
+                                 checkCertificate(input: any,
+                                                  options?: any): any };
+  // `common/revocation_status.js`'s register-only verdict, for a
+  // certificate read without a handshake (#1189), required when asked.
+  loadRevocationStatus(): { localVerdictFor(input: any): any };
+  // `authzen/authzen_caller.ts`, required when a remote PEP pulls the edge
+  // caller list (#1189): the caller checks the list is the outcome of.
+  loadAuthzenCaller(): any;
+  // The certificate a DER is, in the shape `getPeerCertificate()` hands
+  // back (`X509Certificate.toLegacyObject()`), so the door names it from
+  // exactly the object a handshake would have given it.
+  legacyCertificateOf(der: Buffer): any;
   // Required at the moment a nudge is due, never at load.
   loadBarrier(): Barrier;
   loadPersistence(): CommitWaiter;
@@ -451,6 +463,23 @@ class XacmlSurface {
       accessGate: accessGate,
       loadTlsClientCertificates: function () {
         return require('../common/tls_client_certificates');
+      },
+      loadRevocationStatus: function (): any {
+        helpers.log.debug("Entering loadRevocationStatus().");
+        helpers.log.debug("Leaving loadRevocationStatus().");
+        return require('../common/revocation_status');
+      },
+      loadAuthzenCaller: function (): any {
+        helpers.log.debug("Entering loadAuthzenCaller().");
+        const callers = require('../authzen/authzen_caller');
+        helpers.log.debug("Leaving loadAuthzenCaller().");
+        return new callers.AuthzenCaller(callers.AuthzenCaller.defaultDeps());
+      },
+      legacyCertificateOf: function (der: Buffer): any {
+        helpers.log.debug("Entering legacyCertificateOf().");
+        helpers.log.debug("Leaving legacyCertificateOf().");
+        return require('../common/crypto').parseCertificate(der)
+          .toLegacyObject();
       },
       loadBarrier: function (): Barrier {
         return require('../cluster/cluster_barrier');
@@ -878,6 +907,74 @@ class XacmlSurface {
   }
 
   // ===========================================================================
+  // THE AUTHZEN CALLERS A REMOTE PEP PULLS (#1189).
+  //
+  // The edge PDP admitted callers off a list its operator wrote
+  // (`PEP_AUTHZEN_CALLERS`) until rcbj's decision on #1189: it admits by the
+  // service's own answer, pulled. What is sent is `authzen_caller.ts`'s
+  // `edgeCallers()` — for every caller the access-control policy admits to
+  // `/access/v1/*` NOW, the name a policy sees as
+  // `urn:sts:xacml:authzen:caller`, the SHA-256 of the DER of each
+  // certificate this service's door would resolve to that name, its
+  // application scope and the endpoints it is admitted to. That function
+  // argues what is a candidate and what is left out.
+  //
+  // **THE ACCEPTED COST, rcbj's words on #1189: anybody holding REMOTE_PEPS
+  // can read who may ask the PDP.** The gate is the pull's own
+  // (`pepAccess()`), and nothing but the names, the digests and the scopes
+  // is sent: no certificate, no attribute, no group.
+  //
+  // **ITS OWN SYNC TOKEN, A DIGEST OF EXACTLY WHAT IS SENT**, beside the
+  // catalogue's and apart from the policies' (which heartbeats compare), so
+  // it MOVES WITH: a member added to or taken out of `roles.authzenPepGroup`;
+  // a certificate stored on or taken off an entry, issued, expired or
+  // revoked in the register; a scope (`stsAuthzenApplication`) set; the
+  // realm's `authzen.callerAuthentication`; and any change to the
+  // access-control policy that changes its answer about a caller. Nothing
+  // is pushed: it CONVERGES ON THE EDGE'S POLL, and a caller removed here is
+  // admitted there until the next one.
+  // ===========================================================================
+  /**
+   * The AuthZEN callers a remote PEP's edge PDP admits, and their sync
+   * token, for the realm the request is answered in.
+   *
+   * @returns `{ token, body }`
+   */
+  authzenCallers(): { token: string; body: any } {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.authzenCallers().');
+    const read = this.deps.loadAuthzenCaller().edgeCallers();
+    const realm = String(realms.currentId() || '');
+    const sent = {
+      realm: realm,
+      door: read.door,
+      role: 'AUTHZEN_PEPS',
+      group: read.group,
+      callers: read.callers,
+      truncated: !!read.truncated,
+      counts: { members: read.members, read: read.candidates,
+                unlocated: read.unlocated, unnamed: read.unnamed,
+                notAdmitted: read.notAdmitted, unreadable: read.unreadable }
+    };
+    const token = this.deps.sha256Base64(JSON.stringify(sent))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const body = Object.assign({ syncToken: token }, sent, {
+      note: read.door === 'mtls'
+        ? 'The callers this realm admits to its AuthZEN API now: each the ' +
+          'name a policy sees as urn:sts:xacml:authzen:caller, the SHA-256 ' +
+          'of the DER of every certificate this service would resolve to ' +
+          'it, its application scope, and the endpoints the access-control ' +
+          'policy admits it to. An edge PDP admits by exactly these.'
+        : 'This realm\'s callers authenticate by ' + read.door + ' ' +
+          '(authzen.callerAuthentication), which a certificate alone does ' +
+          'not meet, so no caller is listed and an edge PDP admits nobody.'
+    });
+    log.debug('Leaving XacmlSurface.authzenCallers(). ' +
+              read.callers.length + ' caller(s).');
+    return { token: token, body: body };
+  }
+
+  // ===========================================================================
   // PHASE FIVE: THE REMOTE PEP. THREE ENDPOINTS, AND THE PULL IS THE CONTRACT.
   //
   //   POST /xacml/pep/register   a PEP says it exists, over mutual TLS
@@ -1022,7 +1119,7 @@ class XacmlSurface {
    * @returns the caller's identity, never a verdict
    */
   callerIdentity(req: Req): CallerIdentity {
-    const { log, mtls, peps } = this.deps;
+    const { log, mtls } = this.deps;
     log.debug('Entering XacmlSurface.callerIdentity().');
     const certificate = mtls.peerCertificate(req);
     if (!certificate) {
@@ -1042,23 +1139,8 @@ class XacmlSurface {
     // caller chose for itself, and the identity resolution below must not rest
     // on one.
     const verdict = mtls.peerVerified(req);
-    // The DN and the common name come from `certificatePlan()`, across the
-    // register's slot — this service already has exactly one answer to "what
-    // identity is this certificate" and a second one written here would be how
-    // a PEP ends up filed under two names on two pages.
-    let named = peps.certificateIdentity(certificate);
-    // AN OUTSIDE AUTHORITY'S CERTIFICATE IS THE ENTRY IT IS STORED ON (#1061,
-    // rcbj 2026-10-27). `certificatePlan()` names an entry from the
-    // certificate's common name — and for a certificate THIS service issued
-    // that is the person's own name, which its authority wrote, so it stays.
-    // An outside authority could write anybody's, so its certificate is,
-    // byte for byte, the one entry of this realm storing it in
-    // `userCertificate`, through the one mapping every door asks; stored on
-    // no entry or on several, it resolves to NO name, and the policy below
-    // refuses a caller with none.
-    let unmapped = '';
+    let gate: any = null;
     if (verdict.verified) {
-      let gate: any = null;
       try {
         gate = this.deps.loadTlsClientCertificates()
           .checkSocket(req.socket, { stored: true });
@@ -1067,18 +1149,9 @@ class XacmlSurface {
                   ((e && e.message) || e));
         gate = null;
       }
-      const found = gate && gate.identity;
-      if (found && !found.issuedHere && found.outside === true) {
-        if (found.accepted && found.dn) {
-          named = { dn: String(found.dn),
-                    commonName: String(found.username || ''),
-                    subject: named.subject };
-        } else {
-          unmapped = String(found.error || 'NOT_STORED');
-          named = { dn: '', commonName: '', subject: named.subject };
-        }
-      }
     }
+    const { named, unmapped } = this.namedBy(certificate, verdict.verified,
+                                             gate && gate.identity);
     const identity = {
       authenticated: true,
       verified: verdict.verified,
@@ -1107,6 +1180,119 @@ class XacmlSurface {
             'one is stored again)');
     }
     log.debug('Leaving XacmlSurface.callerIdentity(). dn=' + identity.dn);
+    return identity;
+  }
+
+  // THE NAMING HALF OF THE DOOR, shared by `callerIdentity()` (a handshake)
+  // and `certificateCaller()` (a certificate in hand, #1189), so the two
+  // cannot name one certificate differently.
+  //
+  // The DN and the common name come from `certificatePlan()`, across the
+  // register's slot — this service already has exactly one answer to "what
+  // identity is this certificate" and a second one written here would be how
+  // a PEP ends up filed under two names on two pages.
+  //
+  // AN OUTSIDE AUTHORITY'S CERTIFICATE IS THE ENTRY IT IS STORED ON (#1061,
+  // rcbj 2026-10-27). `certificatePlan()` names an entry from the
+  // certificate's common name — and for a certificate THIS service issued
+  // that is the person's own name, which its authority wrote, so it stays.
+  // An outside authority could write anybody's, so its certificate is,
+  // byte for byte, the one entry of this realm storing it in
+  // `userCertificate`, through the one mapping every door asks; stored on
+  // no entry or on several, it resolves to NO name, and the policy below
+  // refuses a caller with none.
+  private namedBy(certificate: any, verified: boolean, found: any):
+      { named: { dn: string; commonName: string; subject: string };
+        unmapped: string } {
+    const { log, peps } = this.deps;
+    log.debug('Entering XacmlSurface.namedBy().');
+    let named = peps.certificateIdentity(certificate);
+    let unmapped = '';
+    if (verified && found && !found.issuedHere && found.outside === true) {
+      if (found.accepted && found.dn) {
+        named = { dn: String(found.dn),
+                  commonName: String(found.username || ''),
+                  subject: named.subject };
+      } else {
+        unmapped = String(found.error || 'NOT_STORED');
+        named = { dn: '', commonName: '', subject: named.subject };
+      }
+    }
+    log.debug('Leaving XacmlSurface.namedBy(). dn=' + named.dn);
+    return { named: named, unmapped: unmapped };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DOOR, FOR A CERTIFICATE IN HAND (#1189).
+  //
+  // `callerIdentity()` reads a handshake; the AuthZEN callers a remote PEP
+  // pulls are worked out from the certificates a caller HOLDS, before any
+  // handshake, and must be named exactly as that door would name them. So
+  // this is the same three steps over the leaf's DER: the chain is taken
+  // as verified (that is the edge's own question, against
+  // `PEP_AUTHZEN_CLIENT_CA`), then the gate `mtls.peerVerified()` applies
+  // to a certificate this service issued (`checkCertificate()`, the one
+  // `checkSocket()` asks) and the register's revocation verdict, then the
+  // naming above with the stored lookup. A certificate the door would
+  // refuse comes back `verified: false`, and one it would resolve to
+  // nobody with no `dn`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reads a certificate's DER as the certificate door would read it on a
+   * handshake that verified: whether it is accepted, and the entry it names.
+   *
+   * @param der - the leaf certificate's DER
+   * @returns the caller's identity, never a verdict
+   */
+  certificateCaller(der: Buffer): CallerIdentity {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.certificateCaller().');
+    const input = { leaf: der, chain: [], verified: true };
+    const refused = function (why: string): CallerIdentity {
+      log.debug('Entering refused().');
+      log.debug('Leaving refused().');
+      return { authenticated: true, verified: false, subject: '',
+               thumbprint: '', dn: '', commonName: '', why: why };
+    };
+    let certificate: any = null;
+    try {
+      certificate = self.deps.legacyCertificateOf(der);
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.certificateCaller(): ' +
+                ((e && e.message) || e));
+      certificate = null;
+    }
+    if (!certificate) {
+      log.debug('Leaving XacmlSurface.certificateCaller(). Unreadable.');
+      return refused('the certificate could not be read');
+    }
+    const certificates = self.deps.loadTlsClientCertificates();
+    const issued = certificates.checkCertificate(input, {});
+    if (!issued.ok) {
+      log.debug('Leaving XacmlSurface.certificateCaller(). The gate ' +
+                'refused it.');
+      return refused(String(issued.why || issued.error || 'refused'));
+    }
+    const verdict = self.deps.loadRevocationStatus().localVerdictFor(input);
+    if (verdict && verdict.refused) {
+      log.debug('Leaving XacmlSurface.certificateCaller(). Revoked.');
+      return Object.assign(refused(String(verdict.why || 'revoked')),
+                           { revocationRefused: true, revocation: verdict });
+    }
+    const stored = certificates.checkCertificate(input, { stored: true });
+    const { named, unmapped } = self.namedBy(certificate, true,
+                                             stored && stored.identity);
+    const identity: CallerIdentity = {
+      authenticated: true, verified: true, subject: named.subject,
+      thumbprint: '', dn: named.dn, commonName: named.commonName,
+      why: unmapped ? 'the certificate is from an outside certificate ' +
+        'authority and is ' + (unmapped === 'STORED_TWICE'
+          ? 'stored on more than one entry here' : 'stored on no entry here')
+        : 'named as a verified handshake would name it',
+      unmapped: unmapped || undefined
+    };
+    log.debug('Leaving XacmlSurface.certificateCaller(). dn=' + identity.dn);
     return identity;
   }
 
@@ -2368,6 +2554,46 @@ class XacmlSurface {
     });
 
     // -------------------------------------------------------------------------
+    // GET /xacml/pep/authzen-callers — WHO MAY ASK A REMOTE PEP'S EDGE PDP
+    // (#1189).
+    //
+    // ADDITIVE, as the catalogue was: `/xacml/pep/policies` and
+    // `/xacml/pep/authzen-catalogue` are unchanged. The same gate —
+    // `pepAccess()`, REMOTE_PEPS on resource `xacml-pep-api` — the same
+    // `?since=` and ETag over a token of its own, and `no-store`
+    // (`authzenCallers()` argues what is sent and when the token moves).
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/authzen-callers', function (req, res) {
+      log.debug('Entering GET /xacml/pep/authzen-callers.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/authzen-callers. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP AuthZEN caller pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/authzen-callers. The access ' +
+                  'policy refused.');
+        return;
+      }
+      const callers = self.authzenCallers();
+      const since = String(req.query.since || '');
+      if (since && since === callers.token) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + callers.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/authzen-callers. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + callers.token + '"')
+         .send(JSON.stringify(callers.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/authzen-callers. ' +
+                callers.body.callers.length + ' caller(s).');
+    });
+
+    // -------------------------------------------------------------------------
     // POST /xacml/pep/heartbeat — WHAT A REMOTE PEP REPORTS.
     //
     // Its counters, and the sync token it is holding. The second is what makes
@@ -2865,6 +3091,9 @@ export = {
   // The connection's client certificate, read once for every surface that
   // admits a caller by one (#563, `authzen/authzen_caller.ts`).
   callerIdentity: slot.forward('callerIdentity'),
+  // The same door for a certificate in hand, for the edge caller list a
+  // remote PEP pulls (#1189, `authzen_caller.ts`'s `edgeCallers()`).
+  certificateCaller: slot.forward('certificateCaller'),
   description: slot.forward('description'),
   enabled: slot.forward('enabled'),
   // The designator cap a PIP query is held to, for

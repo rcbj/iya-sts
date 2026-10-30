@@ -351,11 +351,23 @@ async fn start(options: Options, info: version::VersionInfo) {
     if options.authzen_enabled {
         tracing::info!(
             "xacml-pep: the AuthZEN edge PDP answers POST {} and {} on the \
-             HTTPS listener, to {} caller(s) presenting a certificate that \
-             verifies against PEP_AUTHZEN_CLIENT_CA{}.",
+             HTTPS listener, to the callers pulled from the PDP ({}) \
+             presenting a certificate that verifies against \
+             PEP_AUTHZEN_CLIENT_CA{}.",
             authzen::EVALUATION_PATH,
             authzen::EVALUATIONS_PATH,
-            options.authzen_callers.len(),
+            if options.authzen_callers_configured {
+                format!(
+                    "narrowed to the {} certificate(s) of \
+                     PEP_AUTHZEN_CALLERS, which decides alone until the \
+                     first pull",
+                    options.authzen_callers.len()
+                )
+            } else {
+                "PEP_AUTHZEN_CALLERS is not set; nothing is answered until \
+                 the first pull"
+                    .to_string()
+            },
             if https.asks_for_client_certificates() {
                 ""
             } else {

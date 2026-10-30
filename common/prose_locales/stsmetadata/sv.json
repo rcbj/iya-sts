@@ -755,6 +755,10 @@
     "en": "e684892d931f5313",
     "text": "Sfärens AuthZEN-attributkatalog — raderna i authzenAttribute på sts-authzen-api, lästa så som POST /access/v1/evaluation läser dem — och de AuthZEN-inställningar som ändrar mappningen eller svaret, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Hämtas bredvid policyerna av containern xacml-pep, vars kant-PDP besvarar AuthZEN med exakt dessa rader, så att en begäran mappas på ett och samma sätt på båda ställena. Kräver REMOTE_PEPS, liksom policyhämtningen. Ett tillägg: /xacml/pep/policies är oförändrad."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "Vilka denna sfär släpper in i sitt AuthZEN-API nu, så att edge-PDP:n i containern xacml-pep släpper in efter det: varje anropare som åtkomstpolicyn släpper in till /access/v1/* (AUTHZEN_PEPS, så som policyn avgör det), namngiven som en policy ser den i urn:sts:xacml:authzen:caller, med SHA-256 av DER för varje certifikat som denna tjänst skulle koppla till det namnet, dess applikationsomfång och de slutpunkter den släpps in till, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Token ändras med en medlem, ett certifikat, ett omfång eller policyns svar, och edge-noden når samma läge vid nästa avfrågning. Kräver REMOTE_PEPS, liksom policyhämtningen, så den som har den rollen kan läsa vem som får fråga PDP:n (rcbj på #1189). Tillägg: /xacml/pep/policies och /xacml/pep/authzen-catalogue är oförändrade."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Dess kumulativa räknare och den synktoken den innehar — vilket är det som gör \"aktuell\" till en jämförelse som den här tjänsten utför snarare än ett påstående som PEP:n gör om sig själv. De besluten fattades i en annan process och den här tjänsten såg inget av dem, vilket är hela poängen med en fjärr-PEP. Den skapar INTE någon rad: ett hjärtslag från något som aldrig registrerats nekas med en hänvisning till registreringsslutpunkten, eftersom en rad som skapades här inte skulle bära något certifikat, ingen notifierings-URL och inget registreringsdatum."

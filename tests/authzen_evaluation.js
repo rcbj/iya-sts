@@ -40,6 +40,15 @@
 //      an AUTHZEN_PEPS caller both refused), the rows the evaluation maps
 //      with, the settings, the ETag and ?since= 304, a token that moves with
 //      a row and a setting, and /xacml/pep/policies' token that does not.
+//   P. THE CALLERS A REMOTE PEP PULLS (#1189): GET
+//      /xacml/pep/authzen-callers behind REMOTE_PEPS, each admitted caller
+//      named EXACTLY as the certificate door names it on a real handshake
+//      (the audit row's actor), the SHA-256 of each certificate's DER, the
+//      scope and the endpoints; a member outside the group absent; the ETag
+//      and ?since= 304; a token that moves with a membership, a stored
+//      certificate, a scope, an issued certificate and its revocation, and
+//      the realm's door; and the policies' and the catalogue's tokens that
+//      do not.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -1070,6 +1079,193 @@ async function childBody() {
           r.json.settings.returnReasons === true,
           'K9. a setting that changes the answer moves the token too',
           brief(r));
+
+  // -------------------------------------------------------------------------
+  // P. THE CALLERS A REMOTE PEP PULLS (#1189)
+  // -------------------------------------------------------------------------
+  const CALLERS = PREFIX + '/xacml/pep/authzen-callers';
+  const hex = function (minted) {
+    log.debug("Entering hex().");
+    log.debug("Leaving hex().");
+    return nodeCrypto.createHash('sha256').update(derOf(minted))
+      .digest('hex');
+  };
+  const callerNamed = function (answer, name) {
+    log.debug("Entering callerNamed().");
+    log.debug("Leaving callerNamed().");
+    return ((answer.json && answer.json.callers) || [])
+      .filter(function (one) {
+        return String(one.name).toLowerCase() === String(name).toLowerCase();
+      })[0] || null;
+  };
+  // THE NAME THE DOOR GAVE: the actor of the evaluation rows a person's
+  // certificate made over a real handshake — one name, or none.
+  const actorOf = function (person) {
+    log.debug("Entering actorOf().");
+    const names = [];
+    inRealm(function () {
+      return audit.list();
+    }).forEach(function (row) {
+      const actor = String((row && row.actor) || '');
+      if (row && row.action === 'authzen.decision' &&
+          actor.toLowerCase().indexOf(person) >= 0 &&
+          names.indexOf(actor) < 0) {
+        names.push(actor);
+      }
+    });
+    log.debug("Leaving actorOf(). " + names.length);
+    return names.length === 1 ? names[0] : '';
+  };
+  since = marks.length;
+  r = await request(port, 'GET', CALLERS, null);
+  const noCert = r;
+  r = await request(port, 'GET', CALLERS, pepCred);
+  t.check(noCert.status === 403 && r.status === 403 &&
+          markedSince(since, 'STS-XACML-0007') &&
+          markedSince(since, 'STS-XACML-0009'),
+          'P1. the callers are behind the pull\'s gate: no certificate and ' +
+          'an AUTHZEN_PEPS caller without REMOTE_PEPS are both 403',
+          brief(noCert) + ' / ' + brief(r));
+  const pepName = actorOf('azpep');
+  const listed = await request(port, 'GET', CALLERS, pullCred);
+  const pepEntry = callerNamed(listed, pepName) || {};
+  const pepDigests = (pepEntry.certificates || []).map(function (one) {
+    return one.sha256;
+  });
+  t.check(listed.status === 200 && !!pepName && pepEntry.name === pepName &&
+          JSON.stringify(pepDigests) === JSON.stringify([hex(pepCred)]) &&
+          pepEntry.certificates[0].source === 'stored' &&
+          JSON.stringify(pepEntry.applications) ===
+            JSON.stringify(['todo-app', 'wiki']) &&
+          JSON.stringify(pepEntry.endpoints) ===
+            JSON.stringify(['evaluation', 'evaluations']) &&
+          listed.json.door === 'mtls' && listed.json.realm === REALM &&
+          listed.json.role === 'AUTHZEN_PEPS',
+          'P2. an admitted caller is named exactly as the certificate door ' +
+          'named it on a handshake (' + pepName + '), with the SHA-256 of ' +
+          'its stored certificate\'s DER, its scope and both endpoints',
+          brief(listed));
+  const otherDn = inRealm(function () {
+    return ldap.locateEntry('azother').stored.dn;
+  });
+  t.check(!callerNamed(listed, otherDn) && listed.json.callers.length === 1,
+          'P3. a person storing a certificate and outside the group is not ' +
+          'listed', JSON.stringify(listed.json.callers));
+  const callersToken = tokenOf(listed);
+  t.check(!!callersToken &&
+          listed.headers.etag === '"' + callersToken + '"' &&
+          /no-store/.test(String(listed.headers['cache-control'])),
+          'P4. with a sync token, in an ETag too, and Cache-Control: no-store',
+          JSON.stringify(listed.headers));
+  r = await request(port, 'GET', CALLERS + '?since=' +
+                    encodeURIComponent(callersToken), pullCred);
+  t.check(r.status === 304 && r.text === '',
+          'P5. ?since=<token> of an unchanged list is 304', brief(r));
+  const policiesToken = tokenOf(await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred));
+  const catalogueToken = tokenOf(await request(port, 'GET', CATALOGUE,
+                                               pullCred));
+  // A MEMBERSHIP.
+  inRealm(function () {
+    adminActions.groupsAction({ action: 'add-member', group: group,
+                                member: 'azother' });
+  });
+  r = await request(port, 'GET', CALLERS + '?since=' +
+                    encodeURIComponent(callersToken), pullCred);
+  const afterMember = tokenOf(r);
+  const otherEntry = callerNamed(r, otherDn) || {};
+  t.check(r.status === 200 && afterMember && afterMember !== callersToken &&
+          ((otherEntry.certificates || [])[0] || {}).sha256 ===
+            hex(otherCred) &&
+          JSON.stringify(otherEntry.applications) === '[]',
+          'P6. a member added to the group moves the token and is listed, ' +
+          'scoped to nothing', brief(r));
+  // A CERTIFICATE.
+  inRealm(function () {
+    ldap.changeStoredCertificate('person', 'azpep',
+                                 { add: derOf(strayCred) });
+  });
+  r = await request(port, 'GET', CALLERS, pullCred);
+  const afterCert = tokenOf(r);
+  t.check(afterCert && afterCert !== afterMember &&
+          ((callerNamed(r, pepName) || {}).certificates || []).length === 2,
+          'P7. a certificate stored on a caller\'s entry moves the token, ' +
+          'and both are listed', brief(r));
+  // A SCOPE.
+  inRealm(function () {
+    ldap.locateEntry('azpep').stored.attributes.stsauthzenapplication =
+      ['todo-app'];
+  });
+  r = await request(port, 'GET', CALLERS, pullCred);
+  const afterScope = tokenOf(r);
+  t.check(afterScope && afterScope !== afterCert &&
+          JSON.stringify((callerNamed(r, pepName) || {}).applications) ===
+            JSON.stringify(['todo-app']),
+          'P8. a scope set on a caller moves the token', brief(r));
+  // A CERTIFICATE THIS REALM ISSUED: listed, named as the door names it
+  // on a real handshake, and gone when revoked.
+  const tlsClient = require(ROOT + '/common/tls_client_certificates');
+  inRealm(function () {
+    ldap.createUser('azissued', { invent: false });
+    ldap.locateEntry('azissued').stored.attributes.stsauthzenapplication =
+      ['todo-app'];
+    adminActions.groupsAction({ action: 'add-member', group: group,
+                                member: 'azissued' });
+  });
+  const issued = await inRealm(function () {
+    return tlsClient.issue(undefined, { username: 'azissued',
+                                        label: 'edge', keyAlg: 'ec-p256' });
+  });
+  const issuedCred = issued && issued.ok ? {
+    certPem: issued.issued.certificatePem + issued.issued.chainPem.join(''),
+    keyPem: issued.issued.privateKeyPem } : null;
+  r = await request(port, 'POST', URL, issuedCred, asked());
+  const issuedAnswer = r;
+  const issuedName = actorOf('azissued');
+  r = await request(port, 'GET', CALLERS, pullCred);
+  const afterIssue = tokenOf(r);
+  const issuedEntry = callerNamed(r, issuedName) || {};
+  const issuedDigest = issued && issued.ok
+    ? nodeCrypto.createHash('sha256').update(
+      new nodeCrypto.X509Certificate(issued.issued.certificatePem).raw)
+      .digest('hex') : '';
+  t.check(issuedAnswer.status === 200 && !!issuedName &&
+          issuedEntry.name === issuedName && afterIssue !== afterScope &&
+          ((issuedEntry.certificates || [])[0] || {}).sha256 ===
+            issuedDigest &&
+          issuedEntry.certificates[0].source === 'issued',
+          'P9. a TLS client certificate this realm issued a member is ' +
+          'listed, under the name the door gave it on a handshake (' +
+          issuedName + ')', brief(issuedAnswer) + ' / ' + brief(r));
+  const revoked = issued && issued.ok ? inRealm(function () {
+    return tlsClient.revoke(undefined, 'azissued', issued.issued.serialHex,
+                            'keyCompromise');
+  }) : null;
+  r = await request(port, 'GET', CALLERS, pullCred);
+  t.check(revoked && revoked.ok && tokenOf(r) !== afterIssue &&
+          !callerNamed(r, issuedName),
+          'P10. revoked in the register, it leaves the list on the next ' +
+          'pull', brief(r));
+  const afterRevoke = tokenOf(r);
+  // THE REALM'S DOOR.
+  inRealm(function () {
+    config.setOverride('authzen.callerAuthentication', 'bearer');
+  });
+  r = await request(port, 'GET', CALLERS, pullCred);
+  inRealm(function () {
+    config.setOverride('authzen.callerAuthentication', 'mtls');
+  });
+  t.check(r.status === 200 && r.json && r.json.door === 'bearer' &&
+          r.json.callers.length === 0 && tokenOf(r) !== afterRevoke,
+          'P11. a realm whose door is a token lists no caller: a ' +
+          'certificate alone does not meet it', brief(r));
+  t.check(tokenOf(await request(port, 'GET', PREFIX + '/xacml/pep/policies',
+                                pullCred)) === policiesToken &&
+          tokenOf(await request(port, 'GET', CATALOGUE, pullCred)) ===
+            catalogueToken,
+          'P12. the policies\' and the catalogue\'s tokens do not move with ' +
+          'the callers: three pulls, three contracts', policiesToken + ' / ' +
+          catalogueToken);
 
   // -------------------------------------------------------------------------
   // O. OFF

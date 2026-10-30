@@ -755,6 +755,10 @@
     "en": "e684892d931f5313",
     "text": "该领域的 AuthZEN 属性目录——sts-authzen-api 上 authzenAttribute 的各行，按 POST /access/v1/evaluation 的读取方式读取——以及会改变映射或答复的 AuthZEN 设置，外加其自己的同步令牌；?since=<token> 返回 304。由 xacml-pep 容器与策略一同拉取，其边缘 PDP 正是用这些行答复 AuthZEN，因此同一请求在两处以同一种方式映射。与策略拉取一样需要 REMOTE_PEPS。这是新增的：/xacml/pep/policies 保持不变。"
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "此领域现在准许谁访问其 AuthZEN API，供 xacml-pep 容器的边缘 PDP 据此准入：访问控制策略准许访问 /access/v1/* 的每个调用方（AUTHZEN_PEPS，由策略决定），以策略在 urn:sts:xacml:authzen:caller 中看到的名称命名，附上本服务会解析到该名称的每个证书的 DER 的 SHA-256、其应用范围以及其被准许访问的端点，另有自己的同步令牌；?since=<token> 返回 304。成员、证书、范围或策略的答复发生变化时令牌随之改变，边缘在下一次轮询时趋于一致。需要 REMOTE_PEPS，与策略拉取相同，因此持有该角色的任何人都能读到谁可以询问 PDP（rcbj 于 #1189）。为新增内容：/xacml/pep/policies 和 /xacml/pep/authzen-catalogue 保持不变。"
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "PEP 的累计计数器及其持有的同步令牌——正因如此，“是否最新”才是本服务执行的比较，而不是 PEP 对自身的声称。那些决策发生在另一个进程中，本服务一个也没看到，而这正是远程 PEP 的全部意义。它不会创建记录行：来自从未注册者的心跳会被拒绝，并指明注册端点，因为在此创建的记录行将没有证书、没有通知 URL，也没有注册日期。"
