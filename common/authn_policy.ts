@@ -460,16 +460,21 @@ const SCHEMA = {
       what: 'What the profile is for, for the next person.' },
     // A NAMED AUTHENTICATION POLICY'S TWO LISTS (#1148).
     { name: 'stsAuthnPolicyMechanism',
-      what: 'On a NAMED authentication policy (#1148): a first-factor ' +
-            'mechanism the applications naming this policy (appAuthnPolicy) ' +
-            'allow — password, password-mfa, webauthn, spnego, wallet or ' +
-            'federation, one value each. None allows every one the realm ' +
-            'allows.' },
+      what: 'On a NAMED authentication policy (#1148, #1237): a ' +
+            'first-factor mechanism a sign-in it applies to allows — where ' +
+            'the application (appAuthnPolicy) or one of the person\'s ' +
+            'groups (stsAuthnPolicy) names it and its precedence is the ' +
+            'lowest named — password, password-mfa, webauthn, spnego, ' +
+            'wallet or federation, one value each. None allows every one ' +
+            'the realm allows.' },
     { name: 'stsAuthnPolicySecondFactor',
-      what: 'On a NAMED authentication policy (#1148): a second factor the ' +
-            'applications naming this policy allow — password, securityKey, ' +
-            'totp, recoveryCode, emailCode, emailLink or wallet, one value ' +
-            'each. None leaves the realm\'s authentication policy as it is.' },
+      what: 'On a NAMED authentication policy (#1148, #1237): a second ' +
+            'factor a sign-in it applies to allows — where the application ' +
+            '(appAuthnPolicy) or one of the person\'s groups ' +
+            '(stsAuthnPolicy) names it and its precedence is the lowest ' +
+            'named — password, securityKey, totp, recoveryCode, emailCode, ' +
+            'emailLink or wallet, one value each. None leaves the realm\'s ' +
+            'authentication policy as it is.' },
     // ITS PRECEDENCE (#1237): the policy an application names and the
     // policies a person's groups name compete, and the lowest wins.
     { name: 'stsAuthnPolicyPrecedence',

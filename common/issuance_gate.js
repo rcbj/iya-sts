@@ -577,13 +577,14 @@ function mechanismFactsOf(asked) {
 // THE SECOND-FACTOR FACTS OF A BROWSER ISSUANCE (#475): the second factors
 // the named application allows (the second-factor list of the
 // authentication policy it names, `appAuthnPolicy`, since #1148; its own
-// `appMfaMechanism` until then) and those the person's authentication
-// gave, or null when there is nothing to compare — for mechanismFactsOf()'s
-// reasons, on the same four browser kinds, and also when the authentication
-// gave no second factor at all: the list says which second factors, never
-// whether one is needed (rcbj), so a session on one factor is not this
-// rule's to deny. Never throws: a registry that cannot
-// be read allows whatever the realm allows.
+// `appMfaMechanism` until then — or, since #1237, the policy one of the
+// PERSON'S GROUPS names where its precedence is lower) and those the
+// person's authentication gave, or null when there is nothing to compare —
+// for mechanismFactsOf()'s reasons, on the same four browser kinds, and also
+// when the authentication gave no second factor at all: the list says which
+// second factors, never whether one is needed (rcbj), so a session on one
+// factor is not this rule's to deny. Never throws: a registry that cannot be
+// read allows whatever the realm allows.
 // ---------------------------------------------------------------------------
 /**
  * The second-factor facts of a browser issuance (#475).
