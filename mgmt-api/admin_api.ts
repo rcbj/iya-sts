@@ -1734,10 +1734,17 @@ class AdminApi {
               'the person\'s first invitation Skip is refused ' +
               '(STS-AUTHN-0474) and the sign-in is held until it is done, ' +
               'and a door that cannot ask for it refuses the sign-in ' +
-              '(STS-AUTHN-0473). A named profile ' +
-              'applies to the members of `selectGroups`; the lowest ' +
-              '`precedence` wins, so a named profile with `enabled` off ' +
-              'excludes its groups. `method` (#1100) is how a classical ' +
+              '(STS-AUTHN-0473). A named profile carries a ' +
+              '`precedence` and nothing else: a group names it in ' +
+              '`stsPostLoginPolicy` (`POST /admin-api/groups/set-policy`) ' +
+              'and an application in `appPostLoginPolicy` ' +
+              '(`POST /admin-api/applications/set`). Of the profile the ' +
+              'application signed in to names and those the person\'s ' +
+              'groups name the lowest `precedence` wins, so a named ' +
+              'profile with `enabled` off excludes them; a started ' +
+              'activity\'s mail and the progress report know no ' +
+              'application and select by the groups alone. A profile ' +
+              'something names is not deleted (STS-AUTHN-0540). `method` (#1100) is how a classical ' +
               'passkey is migrated: `upgrade` (proved once, then replaced ' +
               'in place on its authenticator), `alongside` (an ML-DSA ' +
               'passkey beside it) or `automatic` (the lanes decide). ' +

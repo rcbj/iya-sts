@@ -4644,6 +4644,31 @@ const SCHEMA = {
             'attribute names cannot be deleted (STS-I18N-0014).\n\nIt is ' +
             'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
             'and starts empty.' },
+    // ---------------------------------------------------------------------
+    // THE POST-LOGIN ACTIVITY POLICY THIS APPLICATION NAMES (#1239, rcbj on
+    // #1234): `appPasskeyPolicy`'s arrangement. A sign-in to the application
+    // ranks it with the profiles the person's groups name; a question asked
+    // of a person outside a sign-in (a started activity's mail, the
+    // progress report) has no application and does not read it.
+    // ---------------------------------------------------------------------
+    { name: 'appPostLoginPolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE POST-LOGIN ACTIVITY POLICY A SIGN-IN TO THIS APPLICATION ' +
+            'FOLLOWS: `default` (or empty), or the name of a named ' +
+            'post-login policy of this realm (Directory > Policies). It ' +
+            'competes on precedence with the post-login policy each of the ' +
+            'person\'s groups names (stsPostLoginPolicy): the lowest ' +
+            'precedence applies, ties by name, and `default` where nothing ' +
+            'names one. A named policy with its activity off EXCLUDES a ' +
+            'sign-in to this application where it wins.\n\nIt is read at ' +
+            'the sign-in only: a started activity\'s reminder mail and the ' +
+            'progress report know no application, and select by the ' +
+            'person\'s groups alone.\n\nA name no policy of this realm ' +
+            'holds — written past the console — names nothing and is ' +
+            'logged (STS-AUTHN-0539). A named post-login policy this ' +
+            'attribute names cannot be deleted (STS-AUTHN-0540).\n\nIt is ' +
+            'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
+            'and starts empty.' },
     // -------------------------------------------------------------------
     // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564). The RESOURCE
     // application that declares an authorization_details type owns the
@@ -4971,6 +4996,8 @@ const EDITABLE = {
   appPasskeyPolicy: 'set',
   // #1238: the locale policy, the same reason.
   appLocalePolicy: 'set',
+  // #1239: the post-login activity policy, the same reason.
+  appPostLoginPolicy: 'set',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -6203,6 +6230,12 @@ const ATTRIBUTE_CHOICES = {
       .map(function (one) { return String(one.name); })
       .filter(function (one) { return one !== 'default'; }));
   },
+  // `default` and this realm's named post-login policies (#1239), the same.
+  appPostLoginPolicy: function () {
+    return ['default'].concat(require('./post_login_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
   },
@@ -6290,7 +6323,7 @@ function enrollmentProfileChoices(withDevice) {
 // one per kind that an application selects: indexed by the kept listing and
 // asked by `applicationsNamingPolicy()`.
 const POLICY_REFERENCES = ['appAuthnPolicy', 'appPasskeyPolicy',
-  'appLocalePolicy'];
+  'appLocalePolicy', 'appPostLoginPolicy'];
 
 const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelTokenDeliveryMode',
@@ -6303,6 +6336,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'appPasskeyPolicy',
   // #1238: the same, for the locale policy.
   'appLocalePolicy',
+  // #1239: the post-login activity policy's, the same.
+  'appPostLoginPolicy',
   'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
   'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
   // #395: a misspelt mode would silently be the default, and a misspelt

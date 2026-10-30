@@ -831,6 +831,10 @@ class PostLoginActivities {
     const { log, now } = this.deps;
     log.debug("Entering PostLoginActivities.decide().");
     const postLogin = this.deps.postLogin();
+    // NO APPLICATION (#1239): a mail is sent outside any sign-in, so the
+    // profile is the one the person's groups select. An application naming
+    // a profile that excludes them is asked at the sign-in to it, which is
+    // where its exclusion holds.
     const due = postLogin.dueFor(username);
     if (!due || due.activity !== record.activity) {
       log.debug("Leaving PostLoginActivities.decide(). Not due.");

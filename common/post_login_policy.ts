@@ -54,23 +54,49 @@
 //                  offered where the device cannot make ML-DSA).
 //
 // ---------------------------------------------------------------------------
-// TARGETING IS BY GROUP, AND EXCLUSION IS A PROFILE.
+// TARGETING IS BY REFERENCE, AND EXCLUSION IS A PROFILE.
 //
-// `cn=default` reaches every person in the realm. A named profile reaches the
-// members of its groups (`stsPostLoginSelectGroup`, a group's cn or DN), and
-// where several reach one person the LOWEST precedence wins
-// (`stsPostLoginPrecedence`, 1 to 1000; ties by name) — the passkey policy's
-// selection (#535), by group alone because rcbj asked for groups. So a group
-// is EXCLUDED by a named profile that reaches it with `enabled` off and a
-// lower precedence than the one that would ask it: no second list to keep in
-// step with the first.
+// `cn=default` reaches every person in the realm. Since #1239 (rcbj's
+// decisions on #1234, rule 3cx) a named profile lists nothing: what it
+// covers NAMES it. A GROUP names its post-login profile in
+// `stsPostLoginPolicy` on its own entry, and an APPLICATION in
+// `appPostLoginPolicy` on its registry entry (each `default`, empty, or a
+// named profile of the realm, checked at its one door — STS-LDAP-0195,
+// STS-REG-0203). The candidates are the profile the application signed in
+// to names and the profile each of the person's groups names; the LOWEST
+// precedence wins (`stsPostLoginPrecedence`, 1 to 1000; ties by name), else
+// `default` — `common/policy_selection.ts`'s ranking, the one every kind
+// shares. `stsPostLoginSelectGroup` is gone, from the schema too (no
+// migration is owed: a stored list is simply not read). So a group, or now an
+// application, is EXCLUDED by naming a profile with `enabled` off and a
+// lower precedence than the one that would ask it: no second list to keep
+// in step with the first.
+//
+// AN APPLICATION IS KNOWN ONLY AT A SIGN-IN. `post_login.ts`'s `dueFor()`
+// is handed the application by the sign-in, and selects with all three
+// kinds of reference there. A question asked of a PERSON with no sign-in in
+// hand — a started activity's mail walk (#1111), the progress report
+// (#1110) — has no application, and selects by the person's groups alone:
+// the profile an application names applies when the person signs in to it,
+// and not before. So a started activity mails a person whose groups do not
+// exclude them even where one application would, and that application's
+// exclusion still holds at the sign-in, which is where it is asked.
+//
+// A REFERENCE TO A PROFILE THE REALM DOES NOT HOLD (written past the
+// console, or the profile deleted by hand) selects nothing and is logged
+// (STS-AUTHN-0539); the other references rank as usual, else `default`.
+// The policy asks a person to do something, it guards no door, so there is
+// nothing to fail closed on — the passkey policy's reading. A named profile
+// a group or an application still names is not deleted (STS-AUTHN-0540).
 //
 // IT IS SELECTION, NOT AUTHORIZATION: which rows apply to whom. What the rows
 // then cause is `common/post_login.ts`'s.
 //
 // IT IS A LIBRARY (rule 3) AND A LEAF: `helpers`, `realms`, `error_codes`,
-// the instance slot and `server_prose`, and the directory through a slot
-// `ldap/ldap_server.js` fills.
+// the instance slot, `server_prose` and `policy_selection`, the directory
+// through a slot `ldap/ldap_server.js` fills, and the application registry
+// LAZILY (it is loaded after this leaf; a require at load would close a
+// cycle).
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -106,12 +132,24 @@ interface DirectoryHooks {
                         attributes: Record<string, unknown>): unknown;
   deletePostLoginPolicy?(name: string): unknown;
   personGroups?(username: string): { cn?: string; dn?: string }[];
+  personGroupReferences?(username: string, attribute: string):
+    { cn?: string; dn?: string; value?: string }[];
+  groupsNamingPolicy?(attribute: string, name: unknown): string[];
   [hook: string]: unknown;
+}
+
+/**
+ * One of the person's groups, with the post-login profile it names
+ * (`stsPostLoginPolicy`, '' for none) — what `personGroups()` answers.
+ */
+interface HeldGroup {
+  cn?: string;
+  dn?: string;
+  value?: string;
 }
 
 interface PostLoginProfile {
   name: string;
-  selectGroups: string[];
   precedence: number;
   stored: boolean;
   inherited: boolean;
@@ -174,6 +212,13 @@ const SELECTION = { precedenceAttribute: 'stsPostLoginPrecedence',
                     defaultPrecedence: DEFAULT_PRECEDENCE };
 
 /**
+ * The attributes that NAME a post-login profile (#1239, rule 3cx): on an
+ * application and on a group.
+ */
+const REFERENCES = Object.freeze({ application: 'appPostLoginPolicy',
+                                   group: 'stsPostLoginPolicy' });
+
+/**
  * The activities a profile may ask for. One today.
  */
 const ACTIVITIES = ['pqc-passkey-migration'];
@@ -208,18 +253,18 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'post-quantum passkey, and may always skip it',
   noPasskeyRequire: 'a person holding no passkey is asked to register a ' +
     'post-quantum passkey, and may skip it until the grace period ends',
-  appliesTo: 'applies to the members of {{list}}, at precedence ' +
-    '{{precedence}}',
-  'param.noGroup': 'no group'
+  appliesTo: 'applies where an application or a group names it ' +
+    '(appPostLoginPolicy, stsPostLoginPolicy), at precedence ' +
+    '{{precedence}}'
 });
 
+// A NAMED PROFILE CARRIES ITS PRECEDENCE AND NOTHING ELSE (#1239): the
+// groups and applications it covers name it.
 const SELECTORS = [
-  { key: 'selectGroups', attribute: 'stsPostLoginSelectGroup',
-    what: 'The groups (cn or DN) whose members a named post-login profile ' +
-          'applies to.' },
   { key: 'precedence', attribute: 'stsPostLoginPrecedence',
-    what: 'Which named post-login profile wins where several reach one ' +
-          'person: the lowest, from 1 to 1000.' }
+    what: 'Which named post-login profile wins where several are named for ' +
+          'one sign-in — by the application and by the person\'s groups: ' +
+          'the lowest, from 1 to 1000.' }
 ];
 
 /**
@@ -233,7 +278,8 @@ const FIELDS: PolicyField[] = [
     what: 'OFF BY DEFAULT. On, every person this profile reaches who is due ' +
           'the activity below is asked to do it after signing in, before ' +
           'they are sent back to the application. A named profile with this ' +
-          'off EXCLUDES the members of its groups.' },
+          'off EXCLUDES whoever it is selected for: the members of the ' +
+          'groups naming it, and a sign-in to an application naming it.' },
   { key: 'activity', attribute: 'stsPostLoginActivity', type: 'enum',
     dflt: 'pqc-passkey-migration', values: ACTIVITIES,
     label: 'Activity',
@@ -316,7 +362,8 @@ const SCHEMA = {
     { name: 'stsPostLoginPolicy',
       what: 'This service\'s class for a post-login activity profile: what ' +
             'a person is asked to do after signing in. Named by the PROFILE ' +
-            '(`cn=default`, or a named profile chosen by group).' }
+            '(`cn=default`, or a named profile an application or a group ' +
+            'names).' }
   ],
   attributes: FIELDS.map(function (field) {
     return { name: field.attribute, what: field.what };
@@ -335,7 +382,7 @@ const SCHEMA = {
 
 /**
  * The post-login activity policy: what a person is asked to do after signing
- * in, with named profiles chosen by group.
+ * in, with named profiles an application or a group names.
  *
  * Kept as `stsPostLoginPolicy` entries in `ou=postLoginPolicies`; a realm with
  * no `cn=default` of its own inherits the default realm's, and failing that
@@ -374,6 +421,10 @@ class PostLoginPolicy {
    * The activities a profile may ask for.
    */
   static readonly ACTIVITIES = ACTIVITIES;
+  /**
+   * The attributes that name a named profile (#1239).
+   */
+  static readonly REFERENCES = REFERENCES;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -457,20 +508,6 @@ class PostLoginPolicy {
     log.debug("Leaving PostLoginPolicy.firstValue().");
     return Array.isArray(found) ? (found[0] === undefined ? '' : found[0])
       : (found === undefined || found === null ? '' : found);
-  }
-
-  // Every value of an attribute, as strings (the selector is a list).
-  private allValues(attributes: Record<string, unknown>,
-                    name: string): string[] {
-    const { log } = this.deps;
-    log.debug("Entering PostLoginPolicy.allValues().");
-    const found = attributes[name] !== undefined ? attributes[name]
-      : attributes[name.toLowerCase()];
-    log.debug("Leaving PostLoginPolicy.allValues().");
-    return (Array.isArray(found) ? found : (found === undefined ||
-                                            found === null || found === ''
-                                              ? [] : [found]))
-      .map(String).filter(Boolean);
   }
 
   // `password_policy.ts`'s parse, for the three types here. Never guesses.
@@ -614,8 +651,6 @@ class PostLoginPolicy {
     }
     const out = Object.assign({
       name: profile,
-      selectGroups: profile === DEFAULT_PROFILE ? []
-        : this.allValues(at, 'stsPostLoginSelectGroup'),
       precedence: profile === DEFAULT_PROFILE ? DEFAULT_PRECEDENCE
         : this.precedenceOf(at),
       stored: found.from === 'realm',
@@ -666,45 +701,90 @@ class PostLoginPolicy {
   }
 
   /**
-   * The groups a person is in, as the directory's group hook answers (#535's
-   * `personGroups()`, the passkey policy's): each `{ cn, dn }`, from the
-   * person's own membership and never a walk of any group's members. Empty
-   * where there is no directory or no hook; throws where the hook does, for
-   * the caller to decide what a failure means.
+   * The groups a person is in, each with the post-login profile it names
+   * (`stsPostLoginPolicy`, #1239): the directory's `personGroupReferences()`
+   * hook (#1235), riding its `personGroups()` (#535's, the passkey
+   * policy's) — from the person's own membership and the group index, never
+   * a walk of any group's members. Each `{ cn, dn, value }`, `value` '' for
+   * a group that names nothing. Empty where there is no directory or no
+   * hook; throws where the hook does, for the caller to decide what a
+   * failure means.
    *
    * @param username - the person
    * @returns the groups
    */
-  personGroups(username: unknown): { cn: string; dn: string }[] {
+  personGroups(username: unknown): { cn: string; dn: string;
+                                     value: string }[] {
     const { log } = this.deps;
     log.debug("Entering PostLoginPolicy.personGroups().");
-    const hook = this.haveDirectory() && this.directory
-      ? this.directory.personGroups : null;
-    const out = username && typeof hook === 'function'
-      ? (hook.call(this.directory, String(username)) || [])
-        .map(function (g: any) {
-          return { cn: String((g && g.cn) || ''),
-                   dn: String((g && g.dn) || '') };
-        })
-      : [];
+    const directory = this.haveDirectory() ? this.directory : null;
+    const references = directory ? directory.personGroupReferences : null;
+    const plain = directory ? directory.personGroups : null;
+    let held: HeldGroup[] = [];
+    if (username && typeof references === 'function') {
+      held = references.call(directory, String(username),
+                             REFERENCES.group) || [];
+    } else if (username && typeof plain === 'function') {
+      held = plain.call(directory, String(username)) || [];
+    }
+    const out = held.map(function (g: HeldGroup) {
+      return { cn: String((g && g.cn) || ''), dn: String((g && g.dn) || ''),
+               value: String((g && g.value) || '') };
+    });
     log.debug("Leaving PostLoginPolicy.personGroups(). " + out.length);
     return out;
   }
 
+  // THE PROFILE AN APPLICATION NAMES (#1239): its `appPostLoginPolicy`,
+  // found by what a sign-in names it by — a client_id, else its identifier.
+  // The registry is required LAZILY: it is loaded after this leaf, and a
+  // require at load would close a cycle. '' where nothing is named or
+  // nothing can be asked.
+  private applicationReference(application: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering PostLoginPolicy.applicationReference().");
+    const name = String(application === undefined || application === null
+      ? '' : application).trim();
+    if (!name) {
+      log.debug("Leaving PostLoginPolicy.applicationReference(). None.");
+      return '';
+    }
+    let out = '';
+    try {
+      const applications = require('./applications');
+      const row = applications.forClientId(name) || applications.get(name);
+      out = String([].concat(((row && row.fields) || {})[
+        REFERENCES.application] || [])[0] || '');
+    } catch (e) {
+      log.debug("Caught in PostLoginPolicy.applicationReference(): " +
+                ((e && e.message) || e));
+      out = '';
+    }
+    log.debug("Leaving PostLoginPolicy.applicationReference(). " +
+              (out || 'none'));
+    return out;
+  }
+
   /**
-   * Returns the name of the profile that reaches a person: the named profile
-   * of lowest precedence one of whose groups they are in (ties by name), else
-   * `default`.
+   * Returns the name of the profile that reaches a person: of the profile
+   * the application signed in to names (`appPostLoginPolicy`) and the
+   * profiles the person's groups name (`stsPostLoginPolicy`), the lowest
+   * precedence (ties by name), else `default` — `PolicySelection.rank()`
+   * (#1239, rule 3cx). With no application — a question asked of a person
+   * outside a sign-in — the groups alone.
    *
    * @param username - the person
-   * @param groupsOf - optional; answers the person's groups, so a caller
-   *   that needs them too (`post_login.ts`, for a started activity's
-   *   groups, #1126) asks the directory once; `personGroups()` otherwise
+   * @param groupsOf - optional; answers the person's groups as
+   *   `personGroups()` does, so a caller that needs them too
+   *   (`post_login.ts`, for a started activity's groups, #1126) asks the
+   *   directory once; `personGroups()` otherwise
+   * @param application - optional; the application signed in to (its
+   *   client_id or identifier)
    * @returns the profile name
    */
-  profileNameFor(username: unknown,
-                 groupsOf?: () => { cn?: string; dn?: string }[]): string {
-    const { log } = this.deps;
+  profileNameFor(username: unknown, groupsOf?: () => HeldGroup[],
+                 application?: unknown): string {
+    const { log, errorCodes } = this.deps;
     log.debug("Entering PostLoginPolicy.profileNameFor().");
     if (!username || !this.haveDirectory()) {
       log.debug("Leaving PostLoginPolicy.profileNameFor(). default.");
@@ -712,33 +792,32 @@ class PostLoginPolicy {
     }
     let out = DEFAULT_PROFILE;
     try {
-      // THE SHARED RANKING (#1235, rule 3cx). This kind still keeps its
-      // groups on the profile (`stsPostLoginSelectGroup`) until #1239 moves
-      // them onto the groups, so a profile listing one of the person's
-      // groups is handed to the ranking as that group's reference to it.
       const entries = this.directory.allPostLoginPolicies();
+      // THE CHEAP QUESTION FIRST: with no named profile there is nothing to
+      // rank, and no group or application is asked.
       if (PolicySelection.named(entries, SELECTION).length) {
         const held = typeof groupsOf === 'function' ? groupsOf()
           : this.personGroups(username);
-        const mine: string[] = [];
-        (held || []).forEach(function (g: any) {
-          [PolicySelection.fold(g && g.cn), PolicySelection.fold(g && g.dn)]
-            .forEach(function (one) {
-              if (one) {
-                mine.push(one);
-              }
-            });
+        const references: Array<{ by: string; holder?: string;
+                                  value: unknown }> = [];
+        const app = this.applicationReference(application);
+        if (app) {
+          references.push({ by: 'application',
+                            holder: String(application), value: app });
+        }
+        const ranked = PolicySelection.rank(entries, SELECTION, references
+          .concat(PolicySelection.groupReferences(held || [])));
+        ranked.missing.forEach(function (one) {
+          // A REFERENCE NO PROFILE ANSWERS selects nothing; the others rank
+          // as usual. The policy asks, it guards no door, so there is
+          // nothing to fail closed on (the header argues it).
+          log.warn(errorCodes.tag('STS-AUTHN-0539') + 'post-login policy: ' +
+                   'the ' + one.by + ' "' + one.holder + '" names the ' +
+                   'post-login policy "' + one.name + '", which this realm ' +
+                   'does not hold; it selects nothing until the policy ' +
+                   'exists or the reference changes.');
         });
-        const references = mine.length ? entries.filter((entry) => {
-          return this.allValues(entry.attributes || {},
-                                'stsPostLoginSelectGroup')
-            .some(function (one) {
-              return mine.indexOf(PolicySelection.fold(one)) >= 0;
-            });
-        }).map(function (entry) {
-          return { by: 'group', value: entry.name };
-        }) : [];
-        out = PolicySelection.rank(entries, SELECTION, references).name;
+        out = ranked.name;
       }
     } catch (e) {
       // A directory that cannot be asked gives the default: the sign-in is
@@ -756,16 +835,49 @@ class PostLoginPolicy {
    *
    * @param username - the person
    * @param groupsOf - optional; as `profileNameFor()` takes it
+   * @param application - optional; as `profileNameFor()` takes it
    * @returns the profile
    */
-  forPerson(username: unknown,
-            groupsOf?: () => { cn?: string; dn?: string }[]):
-      PostLoginProfile {
+  forPerson(username: unknown, groupsOf?: () => HeldGroup[],
+            application?: unknown): PostLoginProfile {
     const { log } = this.deps;
     log.debug("Entering PostLoginPolicy.forPerson().");
-    const out = this.read(this.profileNameFor(username, groupsOf));
+    const out = this.read(this.profileNameFor(username, groupsOf,
+                                              application));
     log.debug("Leaving PostLoginPolicy.forPerson(). " + out.name);
     return out;
+  }
+
+  /**
+   * What names a named profile (#1239): the applications (the application
+   * listing's index, lazily, for `applicationReference()`'s reason) and the
+   * groups (the directory's group index) — what refuses its delete and what
+   * its Named policies entry lists.
+   *
+   * @param name - the profile's name
+   * @returns `{ applications, groups, people }`; nobody names a post-login
+   *   profile from their own entry
+   */
+  namedBy(name: unknown): { applications: string[]; groups: string[];
+                            people: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering PostLoginPolicy.namedBy().");
+    let applications: string[] = [];
+    try {
+      applications = require('./applications')
+        .applicationsNamingPolicy(REFERENCES.application, name);
+    } catch (e) {
+      log.debug("Caught in PostLoginPolicy.namedBy(): " +
+                ((e && e.message) || e));
+      applications = [];
+    }
+    const hook = this.haveDirectory() ? this.directory.groupsNamingPolicy
+      : null;
+    const groups = typeof hook === 'function'
+      ? (hook.call(this.directory, REFERENCES.group, name) || []) : [];
+    log.debug("Leaving PostLoginPolicy.namedBy(). " + applications.length +
+              " application(s), " + groups.length + " group(s).");
+    return { applications: applications, groups: groups, people: [] };
   }
 
   /**
@@ -826,8 +938,6 @@ class PostLoginPolicy {
       ? [SENTENCES.fallbackClassical] : []);
     if (rules.name !== DEFAULT_PROFILE) {
       out.unshift(fill(SENTENCES.appliesTo, {
-        list: rules.selectGroups.length ? rules.selectGroups.join(', ')
-                                        : SENTENCES['param.noGroup'],
         precedence: String(rules.precedence) }));
     }
     log.debug("Leaving PostLoginPolicy.describe().");
@@ -849,34 +959,6 @@ class PostLoginPolicy {
     }
     log.debug("Leaving PostLoginPolicy.checkProfileName().");
     return null;
-  }
-
-  // A named profile's groups as sent: a list by comma, line or array, each at
-  // most 512 characters with no control character, at most 64, at least one.
-  private checkGroups(raw: unknown): { groups: string[];
-                                       problems: string[] } {
-    const { log } = this.deps;
-    log.debug("Entering PostLoginPolicy.checkGroups().");
-    const problems: string[] = [];
-    const items = (Array.isArray(raw) ? raw : String(raw === undefined ||
-                                                     raw === null ? '' : raw)
-      .split(/[,\n]/)).map(function (one) {
-        return String(one).trim();
-      }).filter(Boolean);
-    if (items.length > 64 || items.some(function (one) {
-      return one.length > 512 || /[\u0000-\u001f\u007f]/.test(one);
-    })) {
-      problems.push('The groups a named profile applies to must be at most ' +
-                    '64 values of at most 512 characters each, with no ' +
-                    'control character.');
-    }
-    if (!items.length) {
-      problems.push('A named profile with no group would reach nobody; name ' +
-                    'at least one.');
-    }
-    log.debug("Leaving PostLoginPolicy.checkGroups(). " + problems.length +
-              " problem(s).");
-    return { groups: items.slice(0, 64), problems: problems };
   }
 
   /**
@@ -923,8 +1005,7 @@ class PostLoginPolicy {
    * Saves a profile of this realm, replacing it whole.
    *
    * @param name - the profile name: `default`, or a named profile
-   * @param given - every field, and for a named profile its groups and
-   *   precedence
+   * @param given - every field, and for a named profile its precedence
    * @returns `ok` and the profile now in force, or `ok: false` with `errors`
    */
   save(name: unknown, given?: Record<string, any> | null): PolicyResult {
@@ -939,23 +1020,16 @@ class PostLoginPolicy {
     }
     const which = String(name || DEFAULT_PROFILE).trim().toLowerCase();
     const checked = this.validate(given);
-    const groups = which === DEFAULT_PROFILE ? null
-      : this.checkGroups((given || {}).selectGroups);
+    // A NAMED PROFILE CARRIES A PRECEDENCE AND NOTHING ELSE (#1239): the
+    // applications and groups it covers name it on their own entries.
+    const named = which !== DEFAULT_PROFILE;
     let precedence = DEFAULT_PRECEDENCE;
-    if (groups) {
-      groups.problems.forEach(function (one) {
+    if (named) {
+      const ranked = PolicySelection.checkPrecedence(given, SELECTION);
+      ranked.problems.forEach(function (one) {
         checked.problems.push(one);
       });
-      const raw = (given || {}).precedence;
-      const text = String(raw === undefined || raw === null || raw === ''
-        ? DEFAULT_PRECEDENCE : raw).trim();
-      if (!/^[0-9]{1,4}$/.test(text) || Number(text) < 1 ||
-          Number(text) > 1000) {
-        checked.problems.push('Precedence is a whole number from 1 to 1000; ' +
-                              '"' + text.slice(0, 40) + '" is not.');
-      } else {
-        precedence = Number(text);
-      }
+      precedence = ranked.precedence;
     }
     if (checked.problems.length) {
       log.debug('Leaving PostLoginPolicy.save(). The values were refused.');
@@ -982,8 +1056,7 @@ class PostLoginPolicy {
     if (!attributes.description) {
       delete attributes.description;
     }
-    if (groups) {
-      attributes.stsPostLoginSelectGroup = groups.groups;
+    if (named) {
       attributes.stsPostLoginPrecedence = String(precedence);
     }
     const written = this.directory.writePostLoginPolicy(which, attributes);
@@ -1020,6 +1093,16 @@ class PostLoginPolicy {
       log.debug('Leaving PostLoginPolicy.reset(). No directory.');
       return { ok: true, removed: false, profile: this.read(which) };
     }
+    // NOT WHILE AN APPLICATION OR A GROUP NAMES IT (#1239): it would be
+    // left naming a profile the realm does not hold.
+    const held = which === DEFAULT_PROFILE ? null
+      : PolicySelection.deleteProblem('post-login policy', which,
+                                      this.namedBy(which));
+    if (held) {
+      log.debug('Leaving PostLoginPolicy.reset(). Still named.');
+      return errorCodes.mark({ ok: false, errors: [held] },
+                             'STS-AUTHN-0540');
+    }
     const removed = !!this.directory.deletePostLoginPolicy(which);
     log.debug('Leaving PostLoginPolicy.reset(). ' +
               (removed ? 'Removed.' : 'Nothing stored.'));
@@ -1047,10 +1130,24 @@ const slot = new InstanceSlot<PostLoginPolicy>(
 
 slot.buildNowUnlessDeferred();
 
+// A GROUP NAMES ITS POST-LOGIN PROFILE (#1239): declared, so the group page
+// draws its picker and the directory's group writer checks it, offering
+// `default` and the realm's named profiles as they stand when asked.
+PolicySelection.declareReference('group', REFERENCES.group,
+  'post-login policy',
+  function () {
+    log.debug("Entering post-login policy reference choices.");
+    const names = slot.get().list().map(function (one) {
+      return String(one.name);
+    });
+    log.debug("Leaving post-login policy reference choices.");
+    return names;
+  });
+
 /**
  * The post-login activity policy (#1096): what a person is asked to do after
- * signing in, with named profiles chosen by group. The seventh policy on
- * Directory > Policies. The exports forward to the instance the composition
+ * signing in, with named profiles an application or a group names. The
+ * seventh policy on Directory > Policies. The exports forward to the instance the composition
  * root installs.
  *
  * @namespace
@@ -1073,6 +1170,7 @@ export = {
   SCHEMA: PostLoginPolicy.SCHEMA,
   SENTENCES: PostLoginPolicy.SENTENCES,
   ACTIVITIES: PostLoginPolicy.ACTIVITIES,
+  REFERENCES: PostLoginPolicy.REFERENCES,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),
@@ -1080,6 +1178,7 @@ export = {
   personGroups: slot.forward('personGroups'),
   profileNameFor: slot.forward('profileNameFor'),
   forPerson: slot.forward('forPerson'),
+  namedBy: slot.forward('namedBy'),
   anyEnabled: slot.forward('anyEnabled'),
   validate: slot.forward('validate'),
   save: slot.forward('save'),

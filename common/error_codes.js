@@ -7250,6 +7250,20 @@ const CODES = [
       '(appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm ' +
       'still names it (#1235).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0539',
+    summary: 'An application (appPostLoginPolicy) or a group ' +
+      '(stsPostLoginPolicy) names a post-login activity policy that this ' +
+      'realm does not hold — written past the console, or the policy was ' +
+      'deleted by hand — so that reference selects nothing (the default ' +
+      'post-login policy, where nothing else names one) until the policy ' +
+      'exists or the reference changes (#1239).',
+    spec: 'none (logged; the sign-in goes on under the profile the other ' +
+      'references select)' },
+  { code: 'STS-AUTHN-0540',
+    summary: 'A named post-login activity policy was not deleted: an ' +
+      'application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of ' +
+      'this realm still names it (#1239).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

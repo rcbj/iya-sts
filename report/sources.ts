@@ -2803,6 +2803,9 @@ async function reportReadPostLogin(rows: any, control: any): Promise<void> {
     if (!profiles.has(username)) {
       let found: any = { name: '', graceDays: 0 };
       try {
+        // THE PERSON'S GROUPS ALONE (#1239): a progress row belongs to no
+        // sign-in, so no application's profile is a candidate; the profile
+        // that applied at the ask is the row's own stamp (`profile`).
         const rules = policy.forPerson(username);
         found = { name: String(rules.name || ''),
                   graceDays: Number(rules.graceDays) || 0 };

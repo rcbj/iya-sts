@@ -689,7 +689,8 @@ PolicyKinds.register({
 // #1096: the seventh kind, rcbj's "post login activity" — what a person is
 // asked to do after signing in, targeted by group membership, configurable
 // and enabled per realm. The first activity is the post-quantum passkey
-// migration.
+// migration. Since #1239 a group or an application names its named policy,
+// and the page is tabbed (Default / Named policies / New policy, #1235).
 PolicyKinds.register({
   id: 'postLogin',
   label: 'Post-login activity policy',
@@ -698,6 +699,7 @@ PolicyKinds.register({
            'sent back to the application — today, to register a ' +
            'post-quantum passkey',
   module: postLoginPolicy as unknown as PolicyModule,
+  tabbed: true,
   auditAction: 'admin.post-login-policy.change',
   appliesTo: 'the NEXT sign-in of every person the profile reaches in this ' +
              'realm; a session already started is not interrupted',
