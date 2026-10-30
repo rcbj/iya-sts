@@ -1781,8 +1781,8 @@ class AdminApi {
                        description: 'What the profile is for, for the next ' +
                                     'person. Optional.' }
       };
-      // Each selector the kind declares, and no other (#539: the locale
-      // policy selects by application alone).
+      // Each selector the kind declares, and no other (#1235: a precedence;
+      // what a profile covers names it).
       const selects = function (key: string): boolean {
         log.debug("Entering selects().");
         log.debug("Leaving selects().");

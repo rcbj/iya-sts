@@ -1182,6 +1182,16 @@ The API answer is `page.passkeyPolicies` on
 `GET /admin-api/applications?application=<id>`: `named`, `missing`,
 `applies`, `precedence`, `groupPolicies` and `link`.
 
+### The locale policy it names
+
+An application names its locale policy in **`appLocalePolicy`**, a field of
+the same tab: `default`, or a named locale policy of the realm. Nothing else
+is accepted. It decides the language the application's pages fall back to
+when nobody names one a catalog answers, and the language a person it causes
+to be created is given. Once the person is known, a locale policy one of their
+groups names competes with it on precedence. See [the locale
+policy](languages.md#named-profiles-for-applications-and-groups).
+
 ## Development and product mode
 
 | | Development | Product |

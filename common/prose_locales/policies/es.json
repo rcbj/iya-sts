@@ -1588,24 +1588,24 @@
     "text": "Asignar este idioma a una persona nueva"
   },
   "locale.FIELDS.populatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "ACTIVADO DE FORMA PREDETERMINADA. A una entrada de persona creada en este dominio sin preferredLanguage (RFC 2798 sección 2.7) se le asigna como tal el idioma predeterminado indicado arriba, ya sea por la consola, la API de administración, SCIM, un registro federado o de autoservicio, o una carga masiva. Un perfil con nombre se aplica cuando la aplicación que provocó la creación es una de sus aplicaciones. Las entradas existentes nunca se reescriben."
+    "en": "aac6446069dd5f66",
+    "text": "ACTIVADO DE FORMA PREDETERMINADA. A una entrada de persona creada en este dominio sin preferredLanguage (RFC 2798 sección 2.7) se le asigna como tal el idioma predeterminado indicado arriba, ya sea por la consola, la API de administración, SCIM, un registro federado o de autoservicio, o una carga masiva. Un perfil con nombre se aplica cuando lo nombra la aplicación que provocó la creación, o uno de los grupos de la persona. Las entradas existentes nunca se reescriben."
   },
   "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
-    "en": "2c86d88e73ffc794",
-    "text": "La clase de este servicio para una política de configuración regional: el idioma al que recurren las páginas de un dominio y que asigna a una persona nueva. Lleva el nombre del PERFIL (`cn=default`, o un perfil con nombre elegido por aplicación)."
+    "en": "796100ae10a7611a",
+    "text": "La clase de este servicio para una política de configuración regional: el idioma al que recurren las páginas de un dominio y que asigna a una persona nueva. Lleva el nombre del PERFIL (`cn=default`, o un perfil con nombre que nombra una aplicación o un grupo)."
   },
   "locale.SCHEMA.attributes.stsLocaleDefault.what": {
     "en": "7b103155bd0c34db",
     "text": "Una etiqueta de idioma BCP 47 (RFC 5646), como en, fr-CA o zh-TW. Las páginas se dibujan en ese idioma cuando la solicitud, el preferredLanguage de la persona, el selector de idioma y el navegador no indican nada que responda un catálogo; las fechas y los números se formatean para él aunque ningún catálogo lo haga. El correo a una persona cuya entrada no indica ningún idioma se escribe en él. Reemplaza la configuración mail.defaultLanguage."
   },
   "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "ACTIVADO DE FORMA PREDETERMINADA. A una entrada de persona creada en este dominio sin preferredLanguage (RFC 2798 sección 2.7) se le asigna como tal el idioma predeterminado indicado arriba, ya sea por la consola, la API de administración, SCIM, un registro federado o de autoservicio, o una carga masiva. Un perfil con nombre se aplica cuando la aplicación que provocó la creación es una de sus aplicaciones. Las entradas existentes nunca se reescriben."
+    "en": "aac6446069dd5f66",
+    "text": "ACTIVADO DE FORMA PREDETERMINADA. A una entrada de persona creada en este dominio sin preferredLanguage (RFC 2798 sección 2.7) se le asigna como tal el idioma predeterminado indicado arriba, ya sea por la consola, la API de administración, SCIM, un registro federado o de autoservicio, o una carga masiva. Un perfil con nombre se aplica cuando lo nombra la aplicación que provocó la creación, o uno de los grupos de la persona. Las entradas existentes nunca se reescriben."
   },
-  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Las aplicaciones (identificador o client_id) a las que se aplica una política de configuración regional con nombre. Una aplicación está como máximo en un perfil con nombre."
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Qué política de configuración regional con nombre prevalece cuando se nombran varias para una página: la más baja, de 1 a 1000."
   },
   "locale.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1615,9 +1615,9 @@
     "en": "839242d6ed29c817",
     "text": "El preferredLanguage que la política de configuración regional asignó a esta persona cuando se creó su entrada. Mientras preferredLanguage siga siendo igual, es la elección de la POLÍTICA y una página lo coloca por debajo del idioma del navegador; en cuanto alguien establece otro, es el de la persona. Solo lo escribe este servicio."
   },
-  "locale.SELECTORS.selectApplications.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Las aplicaciones (identificador o client_id) a las que se aplica una política de configuración regional con nombre. Una aplicación está como máximo en un perfil con nombre."
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Qué política de configuración regional con nombre prevalece cuando se nombran varias para una página: la más baja, de 1 a 1000."
   },
   "locale.sentences.drawnIn": {
     "en": "def5bb364db8e407",
@@ -1638,14 +1638,6 @@
   "locale.sentences.mail": {
     "en": "ab1ab635d8ef149d",
     "text": "el correo a una persona cuya entrada no indica ningún idioma se escribe en {{tag}}"
-  },
-  "locale.sentences.appliesTo": {
-    "en": "098d842668109368",
-    "text": "se aplica a {{list}}"
-  },
-  "locale.sentences.param.noApplication": {
-    "en": "cb8bd4fa96dda063",
-    "text": "ninguna aplicación"
   },
   "kinds.attributes.label": {
     "en": "6619889d4a9f485d",

@@ -8343,8 +8343,8 @@ tab, and a service account's section of the person page —
   post-login policies' named profiles are drawn as they were.
 * **`PoliciesPage.namedProfileParts()` draws what the kind declares**
   (`member.selectors`, `member.references`): a box per list selector a kind
-  still keeps (the locale policy's applications, the post-login policy's
-  groups), the precedence, and on a tabbed kind's Named policies sub-tab,
+  still keeps (the post-login policy's groups; the locale policy's
+  applications left with #1238), the precedence, and on a tabbed kind's Named policies sub-tab,
   above each profile's form, the applications, groups and people NAMING it
   (`named.namedBy`), read-only. **The application search the forms carried
   (#609) is gone with the applications box** — `policySearch()`, the

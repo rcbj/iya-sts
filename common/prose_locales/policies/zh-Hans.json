@@ -1588,24 +1588,24 @@
     "text": "为新人员设置此语言"
   },
   "locale.FIELDS.populatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "默认开启。在此领域中创建的、没有 preferredLanguage（RFC 2798 第 2.7 节）的人员条目，会被赋予上面的默认语言——无论是通过控制台、管理 API、SCIM、联合注册或自助注册，还是批量加载创建。若促成创建的应用属于某个命名配置文件的应用之一，则适用该命名配置文件。现有条目永远不会被改写。"
+    "en": "aac6446069dd5f66",
+    "text": "默认开启。在此领域中创建的、没有 preferredLanguage（RFC 2798 第 2.7 节）的人员条目，会被赋予上面的默认语言——无论是通过控制台、管理 API、SCIM、联合注册或自助注册，还是批量加载创建。若促成创建的应用或此人的某个组指定了某个命名配置文件，则适用该命名配置文件。现有条目永远不会被改写。"
   },
   "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
-    "en": "2c86d88e73ffc794",
-    "text": "本服务用于语言策略的类：领域页面回退使用的、并赋予新人员的语言。以配置文件命名（`cn=default`，或按应用选择的命名配置文件）。"
+    "en": "796100ae10a7611a",
+    "text": "本服务用于语言策略的类：领域页面回退使用的、并赋予新人员的语言。以配置文件命名（`cn=default`，或由应用或组指定的命名配置文件）。"
   },
   "locale.SCHEMA.attributes.stsLocaleDefault.what": {
     "en": "7b103155bd0c34db",
     "text": "BCP 47 语言标记（RFC 5646），例如 en、fr-CA 或 zh-TW。当请求、此人的 preferredLanguage、语言选择器和浏览器都未指明任何有目录对应的语言时，页面以该语言显示；即使没有目录对应，日期和数字也按该语言格式化。发给条目未指明语言的人员的邮件以该语言撰写。取代设置 mail.defaultLanguage。"
   },
   "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "默认开启。在此领域中创建的、没有 preferredLanguage（RFC 2798 第 2.7 节）的人员条目，会被赋予上面的默认语言——无论是通过控制台、管理 API、SCIM、联合注册或自助注册，还是批量加载创建。若促成创建的应用属于某个命名配置文件的应用之一，则适用该命名配置文件。现有条目永远不会被改写。"
+    "en": "aac6446069dd5f66",
+    "text": "默认开启。在此领域中创建的、没有 preferredLanguage（RFC 2798 第 2.7 节）的人员条目，会被赋予上面的默认语言——无论是通过控制台、管理 API、SCIM、联合注册或自助注册，还是批量加载创建。若促成创建的应用或此人的某个组指定了某个命名配置文件，则适用该命名配置文件。现有条目永远不会被改写。"
   },
-  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "命名语言策略所适用的应用（标识符或 client_id）。一个应用最多属于一个命名配置文件。"
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "多个命名语言策略被指定给同一页面时哪一个生效：最低者，取值 1 到 1000。"
   },
   "locale.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1615,9 +1615,9 @@
     "en": "839242d6ed29c817",
     "text": "创建此人条目时语言策略赋予其的 preferredLanguage。只要 preferredLanguage 仍等于该值，它就是策略的选择，页面会将其排在浏览器语言之后；一旦有人设置了其他值，它就是此人自己的选择。仅由本服务写入。"
   },
-  "locale.SELECTORS.selectApplications.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "命名语言策略所适用的应用（标识符或 client_id）。一个应用最多属于一个命名配置文件。"
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "多个命名语言策略被指定给同一页面时哪一个生效：最低者，取值 1 到 1000。"
   },
   "locale.sentences.drawnIn": {
     "en": "def5bb364db8e407",
@@ -1638,14 +1638,6 @@
   "locale.sentences.mail": {
     "en": "ab1ab635d8ef149d",
     "text": "发给条目未指明语言的人员的邮件以 {{tag}} 撰写"
-  },
-  "locale.sentences.appliesTo": {
-    "en": "098d842668109368",
-    "text": "适用于 {{list}}"
-  },
-  "locale.sentences.param.noApplication": {
-    "en": "cb8bd4fa96dda063",
-    "text": "无应用"
   },
   "kinds.attributes.label": {
     "en": "6619889d4a9f485d",

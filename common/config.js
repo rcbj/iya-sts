@@ -19007,7 +19007,7 @@ const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
 // What #539's row says when it is still named.
 const LOCALE = ' decides it now — the locale policy on Directory → ' +
   'Policies, per realm and inherited from the default realm, with named ' +
-  'profiles chosen by application — POST ' +
+  'profiles an application or a group names — POST ' +
   '/admin-api/policies/save-locale-policy, or the console. It is the one ' +
   'default language: a page falls back to it and mail to a person who ' +
   'names none is written in it.';

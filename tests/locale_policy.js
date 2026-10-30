@@ -10,17 +10,25 @@
 //
 // rcbj: "add a policy default per realm that automatically populates user
 // locale parameter", and "create multiple locale policies per realm an assign
-// them to application objects". In a realm this test creates, so it starts
-// from nothing it did not make:
+// them to application objects" — named since #1238 by an application
+// (`appLocalePolicy`) or a group (`stsLocalePolicy`), ranked by precedence
+// (rule 3cx). In a realm this test creates, so it starts from nothing it did
+// not make:
 //
 //   A. `cn=default` is saved whole; a tag that is not BCP 47 and a profile
 //      name that is not one are refused under their codes.
-//   B. A named profile needs an application, and an application is on one
-//      named profile at most (STS-I18N-0007); the profile for an
-//      application is its named one, and `default` otherwise.
+//   B. A named profile carries a precedence and lists nothing. An
+//      application names one (a name the realm does not hold is refused,
+//      STS-REG-0203), and so does a group; with the person known, the
+//      lowest precedence of the application's and their groups' wins, at
+//      the page translator and a static surface's shell; with nobody known
+//      the application alone chooses. A reference to a profile the realm
+//      does not hold selects nothing (STS-I18N-0013) — `default` where
+//      nothing else names one. A profile something names is not deleted
+//      (STS-I18N-0014).
 //   C. A person CREATED without a preferredLanguage is given the default
-//      profile's tag, or the tag of the profile of the application that
-//      caused the create; one created with a value keeps it; a profile with
+//      profile's tag, or the tag of the profile the application that caused
+//      the create names; one created with a value keeps it; a profile with
 //      population off gives none; an UPDATE never adds one.
 //   D. Named profiles are the realm's own: another realm does not see them.
 //   E. A page's language: ui_locales, then the person's preferredLanguage,
@@ -41,12 +49,48 @@ const ldap = require('../ldap/ldap_server');
 const log = require('bunyan').createLogger({ name: 'locale_policy',
   level: process.env.LOG_LEVEL || 'info' });
 
-function save(name, fields, applications) {
+function save(name, fields, precedence) {
   log.debug('Entering save().');
   log.debug('Leaving save().');
   return localePolicy.save(name, Object.assign({}, localePolicy.DEFAULTS,
-    fields || {}, applications === undefined ? {}
-      : { selectApplications: applications }));
+    fields || {}, precedence === undefined ? {}
+      : { precedence: precedence }));
+}
+
+// Names a locale profile from an application, through the console's act.
+function point(identifier, value) {
+  log.debug('Entering point().');
+  log.debug('Leaving point().');
+  return require('../admin-core/admin_actions').applicationsAction({
+    action: 'set', application: identifier, attribute: 'appLocalePolicy',
+    value: value }, [], {});
+}
+
+// The locale register as installed, so `hide()` can be undone.
+let installed = null;
+
+// Makes the register stop answering one profile, as a delete made past the
+// console leaves a reference to it.
+function hide(name) {
+  log.debug('Entering hide().');
+  installed = localePolicy.directoryInstalled();
+  localePolicy.setDirectory(Object.assign({}, installed, {
+    allLocalePolicies: function () {
+      return installed.allLocalePolicies().filter(function (one) {
+        return String(one.name).toLowerCase() !== name;
+      });
+    }
+  }));
+  log.debug('Leaving hide().');
+}
+
+function unhide() {
+  log.debug('Entering unhide().');
+  if (installed) {
+    localePolicy.setDirectory(installed);
+    installed = null;
+  }
+  log.debug('Leaving unhide().');
 }
 
 function inRealm(realm, fn) {
@@ -71,10 +115,115 @@ async function run(t) {
   try {
     checks(t, made, other, app, tag);
   } finally {
+    unhide();
     realms.remove(made.realm ? made.realm.id : 'loc-' + tag);
     realms.remove(other.realm ? other.realm.id : 'loc2-' + tag);
   }
   log.debug('Leaving run().');
+}
+
+// B: what names a profile, and what applies (#1238). Leaves `mobile` (sv,
+// precedence 50) named by the application, which C reads.
+function references(t, app, tag) {
+  log.debug('Entering references().');
+  const adminActions = require('../admin-core/admin_actions');
+  const PageLocale = require('../common/page_locale');
+  const group = 'loc-group-' + tag;
+  const member = 'loc-member-' + tag;
+  const outsider = 'loc-outsider-' + tag;
+  const mobile = save('mobile', { defaultLocale: 'sv' }, 50);
+  const teams = save('teams', { defaultLocale: 'es-MX' }, 10);
+  const badRank = save('ranked', { defaultLocale: 'sv' }, 0);
+  t.check(mobile.ok && mobile.profile.precedence === 50 &&
+          teams.ok && teams.profile.precedence === 10 &&
+          mobile.profile.selectApplications === undefined,
+          'B. named profiles are saved with a precedence and no list',
+          JSON.stringify([mobile.errors, teams.errors]));
+  t.check(!badRank.ok && errorCodes.codeOf(badRank) === 'STS-I18N-0004',
+          'B. a precedence outside 1 to 1000 is refused',
+          JSON.stringify(badRank.errors));
+  t.check(JSON.stringify(localePolicy.list().map(function (one) {
+    return one.name;
+  })) === '["default","teams","mobile"]',
+          'B. the profiles list default first, then by precedence');
+  const created = adminActions.applicationsAction({ action: 'create',
+                                                    identifier: app }, []);
+  const named = point(app, 'mobile');
+  const ghost = point(app, 'nowhere');
+  t.check(created && created.ok && named.ok && !ghost.ok &&
+          errorCodes.codeOf(ghost) === 'STS-REG-0203',
+          'B. an application names a profile the realm holds in ' +
+          'appLocalePolicy, and is refused one it does not',
+          JSON.stringify([created && created.errors, named.errors,
+                          ghost.errors]));
+  ldap.createUser(member, { invent: false });
+  ldap.createUser(outsider, { invent: false });
+  ldap.createGroup(group);
+  ldap.addGroupMember(group, member);
+  const grouped = ldap.setGroupPolicy(group, 'stsLocalePolicy', 'teams');
+  const badGroup = ldap.setGroupPolicy(group, 'stsLocalePolicy', 'nowhere');
+  t.check(grouped.ok && !badGroup.ok &&
+          errorCodes.codeOf(badGroup) === 'STS-LDAP-0195',
+          'B. a group names a profile in stsLocalePolicy, and is refused ' +
+          'one the realm does not hold',
+          JSON.stringify([grouped.errors, badGroup.errors]));
+  t.check(localePolicy.profileNameFor(app) === 'mobile' &&
+          localePolicy.profileNameFor(app, outsider) === 'mobile' &&
+          localePolicy.profileNameFor(app, member) === 'teams' &&
+          localePolicy.profileNameFor('', member) === 'teams' &&
+          localePolicy.profileNameFor('nobody-' + tag) === 'default' &&
+          localePolicy.profileNameFor('') === 'default',
+          'B. with nobody known the application chooses; for a member the ' +
+          'group\'s profile outranks it by precedence; else default');
+  const lang = function (page) {
+    log.debug('Entering lang().');
+    log.debug('Leaving lang().');
+    return PageLocale.translatorFor({ headers: {} }, page).locale;
+  };
+  const shellDefault = function (person) {
+    log.debug('Entering shellDefault().');
+    log.debug('Leaving shellDefault().');
+    return PageLocale.shellAttributes({ headers: {} }, app, person)
+      .filter(function (one) {
+        return one[0] === 'data-sts-locale-default';
+      })[0][1];
+  };
+  t.check(lang({ application: app }) === 'sv' &&
+          lang({ application: app, username: outsider }) === 'sv' &&
+          lang({ application: app, username: member }) === 'es-MX' &&
+          shellDefault('') === 'sv' && shellDefault(member) === 'es-MX',
+          'B. the page translator and a static surface\'s shell fall back ' +
+          'to the profile for the application and the person',
+          JSON.stringify([lang({ application: app, username: member }),
+                          shellDefault(member)]));
+  const by = localePolicy.namedBy('teams');
+  const appBy = localePolicy.namedBy('mobile');
+  t.check(by.groups.indexOf(group) >= 0 &&
+          appBy.applications.indexOf(app) >= 0,
+          'B. namedBy() answers the groups and applications naming a ' +
+          'profile', JSON.stringify([by, appBy]));
+  const keptByGroup = localePolicy.reset('teams');
+  const keptByApp = localePolicy.reset('mobile');
+  t.check(!keptByGroup.ok &&
+          errorCodes.codeOf(keptByGroup) === 'STS-I18N-0014' &&
+          !keptByApp.ok && errorCodes.codeOf(keptByApp) === 'STS-I18N-0014',
+          'B. a profile an application or a group names is not deleted',
+          JSON.stringify([keptByGroup.errors, keptByApp.errors]));
+  // A REFERENCE TO A PROFILE THE REALM DOES NOT HOLD selects nothing:
+  // `default` with nothing else named, the group's where it names one.
+  hide('mobile');
+  t.check(localePolicy.profileNameFor(app) === 'default' &&
+          localePolicy.defaultLocaleFor(app) === 'fr-CA' &&
+          localePolicy.profileNameFor(app, member) === 'teams',
+          'B. a missing reference selects nothing and does not fail closed');
+  unhide();
+  ldap.setGroupPolicy(group, 'stsLocalePolicy', '');
+  const gone = localePolicy.reset('teams');
+  t.check(gone.ok && gone.removed === true &&
+          localePolicy.profileNameFor(app, member) === 'mobile',
+          'B. once nothing names it the profile is deleted',
+          JSON.stringify(gone.errors));
+  log.debug('Leaving references().');
 }
 
 // Everything run() asks of the two realms it made, apart so that run() can
@@ -94,7 +243,7 @@ function checks(t, made, other, app, tag) {
             'A. the default profile is saved, its tag canonicalised',
             JSON.stringify(saved.errors || saved.profile));
     const badTag = save('default', { defaultLocale: 'not a tag!' });
-    const badName = save('Mobile!', {}, app);
+    const badName = save('Mobile!', {}, 10);
     t.check(!badTag.ok && errorCodes.codeOf(badTag) === 'STS-I18N-0004' &&
             !badName.ok && errorCodes.codeOf(badName) === 'STS-I18N-0003',
             'A. a malformed tag and a malformed name are refused under ' +
@@ -105,26 +254,7 @@ function checks(t, made, other, app, tag) {
             JSON.stringify(missing.errors));
 
     // B.
-    const mobile = save('mobile', { defaultLocale: 'sv' }, app);
-    const noApp = save('lonely', { defaultLocale: 'sv' }, '');
-    const twice = save('second', { defaultLocale: 'es-MX' }, app);
-    t.check(mobile.ok && mobile.profile.name === 'mobile' &&
-            JSON.stringify(mobile.profile.selectApplications) ===
-              JSON.stringify([app]),
-            'B. a named profile is saved with its application',
-            JSON.stringify(mobile.errors));
-    t.check(!noApp.ok && errorCodes.codeOf(noApp) === 'STS-I18N-0004',
-            'B. a named profile naming no application is refused',
-            JSON.stringify(noApp.errors));
-    t.check(!twice.ok && errorCodes.codeOf(twice) === 'STS-I18N-0007',
-            'B. an application already on a named profile cannot be put on ' +
-            'a second', JSON.stringify(twice.errors));
-    t.check(localePolicy.profileNameFor(app) === 'mobile' &&
-            localePolicy.profileNameFor('nobody-' + tag) === 'default' &&
-            localePolicy.defaultLocaleFor(app) === 'sv' &&
-            localePolicy.defaultLocaleFor('') === 'fr-CA',
-            'B. an application reads its named profile, anything else the ' +
-            'default');
+    references(t, app, tag);
 
     // C.
     ldap.createUser('loc-plain-' + tag, { invent: false });
@@ -139,13 +269,14 @@ function checks(t, made, other, app, tag) {
             'profile\'s tag',
             localePolicy.preferredLanguageOf('loc-plain-' + tag));
     t.check(localePolicy.preferredLanguageOf('loc-app-user-' + tag) === 'sv',
-            'C. one an application caused is given its profile\'s tag',
+            'C. one an application caused is given the tag of the profile ' +
+            'it names',
             localePolicy.preferredLanguageOf('loc-app-user-' + tag));
     t.check(localePolicy.preferredLanguageOf('loc-own-' + tag) === 'es-PA',
             'C. one created with a language keeps it',
             localePolicy.preferredLanguageOf('loc-own-' + tag));
     save('mobile', { defaultLocale: 'sv', populatePreferredLanguage: false },
-         app);
+         50);
     ldap.createUser('loc-none-' + tag, { invent: false, application: app });
     t.check(localePolicy.preferredLanguageOf('loc-none-' + tag) === '',
             'C. a profile with population off gives none',
@@ -240,8 +371,9 @@ function checks(t, made, other, app, tag) {
 
 module.exports = {
   name: 'locale_policy',
-  describe: 'the locale policy: the default and named profiles chosen by ' +
-            'application, a new person given a language, and the order a ' +
-            'page\'s language is chosen in (#539)',
+  describe: 'the locale policy: the default and named profiles an ' +
+            'application or a group names, ranked by precedence, a new ' +
+            'person given a language, and the order a page\'s language is ' +
+            'chosen in (#539, #1238)',
   run: run
 };

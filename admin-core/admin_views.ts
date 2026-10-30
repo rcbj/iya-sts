@@ -2606,9 +2606,10 @@ class AdminViews {
     // profile of this realm, with its rows and its selectors, in precedence
     // order, for the console's forms and the API.
     if (Array.isArray(module.SELECTORS)) {
-      // WHICH SELECTORS the kind's named profiles carry (#539): the passkey
-      // policy's three, or the locale policy's applications alone, so the
-      // console draws the controls the kind has and no others.
+      // WHICH SELECTORS the kind's named profiles carry (#539): the
+      // precedence, or a list a kind still keeps (the post-login policy's
+      // groups, until #1239), so the console draws the controls the kind
+      // has and no others.
       (out as any).selectors = module.SELECTORS.map(function (one) {
         return one.key;
       });
