@@ -1030,6 +1030,7 @@ var config = {
     maxBodyBytes: 262144,         // Largest batch request (bytes)
     signedMetadata: true,         // Sign the AuthZEN metadata
     obligationsProfile: true,     // Hand obligations to a PEP that declares them
+    tokenExchange: false,         // Decide OAuth token exchanges for other servers
     searchEnabled: true,          // Search APIs enabled
     searchMaxCandidates: 1000,    // Candidates one search decides
     searchPageSize: 50,           // Results per search page

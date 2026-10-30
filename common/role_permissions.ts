@@ -803,7 +803,8 @@ class RolePermissions {
    * nothing gated comes back unchanged.
    * @param scope - the requested scope
    * @param subject - `{ kind, name, authenticated }`
-   * @param context - optional `{ clientId, grant }` for the audit row
+   * @param context - optional `{ clientId, grant, stage, record }`; `record:
+   *   false` asks without writing the audit row (#1181)
    * @returns `{ scope, removed, emptied, why }`
    */
   narrowScope(scope: unknown, subject: Subject, context?: any): Narrowed {
@@ -925,6 +926,18 @@ class RolePermissions {
     // carrying an errorCode to the log itself.
     // STS-ADMIN-0821 unless the policy named another code for the first
     // scope it took off.
+    // `record: false` (#1181): the same question asked for a decision this
+    // service does not issue on — AuthZEN's token-exchange binding answering
+    // another authorization server — writes no row here, since nothing was
+    // taken off a token; the binding's own audit row says what it decided.
+    if (ctx.record === false) {
+      log.debug("Leaving RolePermissions.narrowScope(). " + removed.length +
+                " would be taken off; not recorded.");
+      return { scope: kept.join(' '), removed: removed,
+               emptied: kept.length === 0 || refused.length > 0,
+               why: 'the permission(s) ' + removed.join(', ') + ' cannot ' +
+                    'be issued: ' + reason };
+    }
     audit.failure(decided(removed[0]).code || 'STS-ADMIN-0821', {
       actor: name,
       protocol: 'OAuth 2.0 / OIDC',

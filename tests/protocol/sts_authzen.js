@@ -32,6 +32,14 @@
 //      unimplemented advertised, every advertised URL answering.
 //   8. REGRESSION: the XACML surface's own gate is unchanged — an AuthZEN
 //      caller is not an XACML_USER.
+//   9. THE OAUTH TOKEN-EXCHANGE BINDING (#1181), with authzen.tokenExchange
+//      turned on in the realm: two applications with a delegation between
+//      them, the two gates and a scope tuple answered as the token endpoint
+//      would answer the same exchange (the realm is in development mode, so
+//      only the refusal enforced in every mode — a may_act naming somebody
+//      else — is false), context.issuance narrowing only, a gate for
+//      another grant false, a binding member on an ordinary tuple refused,
+//      and the capability advertised only while the binding is on.
 //
 // **THE BEARER DOOR IS HELD IN PROCESS ONLY** (`tests/authzen_evaluation.js`
 // B): issuing a client a delegated permission grant of `authzen:evaluate`
@@ -629,6 +637,108 @@ async function theXacmlSurfaceIsUnchanged() {
   log.debug("Leaving theXacmlSurfaceIsUnchanged().");
 }
 
+// THE OAUTH TOKEN-EXCHANGE BINDING (#1181): an exchange of rick's token by
+// the client the token was issued for, toward an API it may delegate to.
+async function theTokenExchangeBinding() {
+  log.debug("Entering theTokenExchangeBinding().");
+  log.info("=== 9. the OAuth token-exchange binding ===");
+  const front = "aztx-front-" + names.runStamp().toLowerCase();
+  const back = "aztx-back-" + names.runStamp().toLowerCase();
+  const audience = "https://" + back + ".example.net";
+  await must("/applications/create", { identifier: back,
+    protocols: ["oauth2"],
+    fields: { oauthClientId: [back], oauthAudience: [audience] } },
+    "created " + back);
+  await must("/applications/create", { identifier: front,
+    protocols: ["oauth2"],
+    fields: { oauthClientId: [front], appAllowedToDelegateTo: [back],
+              oauthAllowedScope: ["read:docs"] } },
+    "created " + front);
+  const set = await postJson(api("/config/set"),
+                             { key: "authzen.tokenExchange", value: true });
+  assert.ok(set.status === 200, "setting authzen.tokenExchange answered " +
+            set.status + " " + set.text);
+  try {
+    const action = { name: "issue:access_token:token_exchange" };
+    const exchange = function (context, extra) {
+      log.debug("Entering exchange().");
+      log.debug("Leaving exchange().");
+      return pep("POST", PREFIX + "/access/v1/evaluations", caller, {
+        resource: { type: "audience", id: audience },
+        context: Object.assign({ application: APPLICATION,
+                                 client_id: front,
+                                 subject_token: { aud: front,
+                                                  scope: "read:docs" } },
+                               context || {}),
+        evaluations: [
+          { subject: { type: "user", id: "rick" }, action: action },
+          { subject: { type: "client", id: front }, action: action }
+        ].concat(extra || []),
+        options: { evaluations_semantic: "execute_all" } });
+    };
+    let r = await exchange(null, [
+      { subject: { type: "user", id: "rick" }, action: { name: "read:docs" },
+        resource: { type: "protected_resource", id: audience } }]);
+    check("both gates and the scope tuple are true for an exchange the " +
+          "delegation settings allow", function () {
+      const all = (r.body && r.body.evaluations) || [];
+      assert.ok(r.status === 200 && all.length === 3 &&
+                all.every(function (one) { return one.decision === true; }),
+        "answered " + r.status + " " + r.text);
+    });
+    r = await exchange({ subject_token: { aud: front, scope: "read:docs",
+                                          exp: Math.floor(Date.now() / 1000) +
+                                               90 } });
+    check("a scopeless request's subject gate carries only narrowing " +
+          "shaping: token_lifetime within the subject token's life, and " +
+          "granted_scope", function () {
+      const first = ((r.body && r.body.evaluations) || [])[0] || {};
+      const issuance = (first.context || {}).issuance || {};
+      assert.ok(first.decision === true && issuance.token_lifetime > 0 &&
+                issuance.token_lifetime <= 90 &&
+                issuance.granted_scope === "read:docs" &&
+                Object.keys(issuance).every(function (key) {
+                  return ["token_lifetime", "granted_scope"]
+                    .indexOf(key) >= 0;
+                }), "answered " + r.status + " " + r.text);
+    });
+    r = await exchange({ may_act: { sub: "somebody-else" } });
+    check("a may_act naming somebody else refuses the requesting party " +
+          "gate, in development mode too", function () {
+      const all = (r.body && r.body.evaluations) || [];
+      assert.ok(r.status === 200 && all[0].decision === true &&
+                all[1].decision === false, "answered " + r.status + " " +
+                r.text);
+    });
+    r = await pep("POST", PREFIX + "/access/v1/evaluation", caller, {
+      subject: { type: "user", id: "rick" },
+      action: { name: "issue:access_token:authorization_code" },
+      resource: { type: "audience", id: audience },
+      context: { application: APPLICATION } });
+    check("a gate for another grant is a decision, false", function () {
+      assert.ok(r.status === 200 && r.body && r.body.decision === false,
+        "answered " + r.status + " " + r.text);
+    });
+    r = await evaluate(Object.assign(todo("rick", "can_read_user"), {
+      context: { application: APPLICATION, client_id: front } }));
+    check("a binding context member on an ordinary tuple is 400", function () {
+      assert.strictEqual(r.status, 400, r.text);
+    });
+    const doc = await get(base + "/.well-known/authzen-configuration" +
+                          PREFIX);
+    check("the token issuance capability is advertised while the binding " +
+          "is on", function () {
+      assert.ok(doc.status === 200 && doc.body &&
+                JSON.stringify(doc.body.capabilities) ===
+                  JSON.stringify(["urn:openid:authzen:capability:" +
+                                  "token-issuance"]), doc.text);
+    });
+  } finally {
+    await postJson(api("/config/reset"), { key: "authzen.tokenExchange" });
+  }
+  log.debug("Leaving theTokenExchangeBinding().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving IYA STS's AuthZEN API at " + base + PREFIX +
@@ -645,7 +755,8 @@ async function test() {
   await theSearches();
   await theMetadata();
   await theXacmlSurfaceIsUnchanged();
-  assert.ok(checks >= 35,
+  await theTokenExchangeBinding();
+  assert.ok(checks >= 41,
     "only " + checks + " checks ran; a section stopped being called.");
   log.info(checks + " checks passed.");
   log.info("Test completed successfully.");

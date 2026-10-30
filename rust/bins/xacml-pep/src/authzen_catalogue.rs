@@ -19,7 +19,8 @@
 //! would let a caller name the roles of the subject it asks about. Refused:
 //! all of `urn:sts:xacml:` (case-insensitively), subject-id, resource-id,
 //! action-id and the three current-time attributes, `context.application`,
-//! and a bare LDAP-shaped name in any subject category.
+//! the context members the token-exchange binding reads (#1181), and a bare
+//! LDAP-shaped name in any subject category.
 //!
 //! `xacml-pep/authzen_cases.json` holds this file and the service's to the
 //! same cases (`tests/authzen_map.js` S, and this file's own test).
@@ -54,6 +55,25 @@ pub const OBJECTS: [&str; 4] = ["subject", "resource", "action", "context"];
 
 /// The context members the adapter reads itself.
 pub const RESERVED_CONTEXT: [&str; 1] = ["application"];
+
+/// The context members the service's OAuth token-exchange binding reads by
+/// fixed rules (#1181), which a row may add to but never override: refused
+/// at the write there, so refused here too, and a pulled catalogue never
+/// carries one. This container does not implement the binding; a request
+/// naming one of them here is an undeclared property.
+pub const BINDING_CONTEXT: [&str; 11] = [
+    "client_id",
+    "acr",
+    "amr",
+    "auth_time",
+    "cnf",
+    "jti",
+    "subject_token_type",
+    "actor_token_type",
+    "subject_token",
+    "act",
+    "may_act",
+];
 
 /// This service's own namespace: everything in it is reserved.
 const RESERVED_PREFIX: &str = "urn:sts:xacml:";
@@ -309,6 +329,17 @@ pub fn parse(value: &Value) -> Result<Row, Problem> {
                 "context.{} is read by the adapter to choose the caller's \
                  application, and the application a policy sees is the \
                  trusted urn:sts:xacml:authzen:application",
+                segments[0]
+            ),
+        });
+    }
+    if object == "context" && BINDING_CONTEXT.contains(&segments[0]) {
+        return Err(Problem {
+            code: "STS-AUTHZEN-0011",
+            problem: format!(
+                "context.{} is read by the OAuth token-exchange binding's \
+                 fixed conversion rules, which a catalogue row may add to \
+                 but never override",
                 segments[0]
             ),
         });
