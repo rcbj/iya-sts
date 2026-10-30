@@ -47,6 +47,15 @@
 //   stsOwnerProtected            TRUE: closed to its owners (#607) — an
 //                                administrator's mark, which the
 //                                access-control policy's owner rule reads.
+//   stsServiceAccountPolicy      the NAMED service-account policy the
+//                                account is governed by (#1240), or absent
+//                                for `default`. Written on the person
+//                                editor's Policies tab (its declaration is
+//                                `service_account_policy.ts`'s) or by an
+//                                LDAP modify; it is in this list so that it
+//                                is read with the rest, never self-writable,
+//                                and CLEARED with the flag — only a service
+//                                account may name one.
 //
 // The rotation state is on the ENTRY, not in a process, because any node may
 // run the job next (#49) and the count of failures has to survive it moving.
@@ -89,7 +98,7 @@ const ATTRIBUTES = ['stsServiceAccount', 'stsServiceAccountOwner',
                     'stsPasswordRotatedAt', 'stsPreviousPassword',
                     'stsPreviousPasswordExpires', 'stsRotationFailures',
                     'stsRotationLastError', 'stsRotationLastAttempt',
-                    'stsOwnerProtected'];
+                    'stsOwnerProtected', 'stsServiceAccountPolicy'];
 
 /**
  * The attributes no directory read hands out: the previous password's hash.
@@ -150,7 +159,12 @@ const SCHEMA = {
     { name: 'stsOwnerProtected',
       what: 'TRUE: the account\'s owners may not administer it through ' +
             '/admin-api (#607) — an administrator\'s mark, read by the ' +
-            'access-control policy\'s owner rule. Absent is FALSE.' }
+            'access-control policy\'s owner rule. Absent is FALSE.' },
+    { name: 'stsServiceAccountPolicy',
+      what: 'The named service-account policy that governs this account ' +
+            '(#1240): `default` or a policy in ou=serviceAccountPolicies ' +
+            'of this realm. Absent is `default`. Only a service account ' +
+            'may hold it, and it is cleared with stsServiceAccount.' }
   ]
 };
 
@@ -192,6 +206,8 @@ interface ServiceAccountFacts {
   rotation: { failures: number; lastError: string; lastAttempt: number };
   // Closed to its owners (#607).
   ownerProtected: boolean;
+  // The named service-account policy it names (#1240), '' for none.
+  policy: string;
 }
 
 interface Refusal {
@@ -205,8 +221,9 @@ interface ServiceAccountsDeps {
     mark<T>(target: T, code: string): T;
     tag(code: string): string;
   };
-  // The policy's `requireOwner`, asked lazily.
-  requiresOwner(): boolean;
+  // The `requireOwner` of the policy an account naming `reference` is
+  // governed by (#1240), asked lazily.
+  requiresOwner(reference: string, holder: string): boolean;
   // A destination by its DN, asked lazily: `{ found, usable, problems }`;
   // `found: null` where the register is not loaded in this process.
   destination(dn: string): { found: boolean | null; name?: string;
@@ -338,10 +355,11 @@ class ServiceAccounts {
     return {
       log: log,
       errorCodes: errorCodes,
-      requiresOwner: function () {
+      requiresOwner: function (reference, holder) {
         log.debug("Entering ServiceAccounts requiresOwner().");
         const policy = require('./service_account_policy');
-        const out = !!policy.requiresOwner();
+        const out = !!policy.requiresOwner(
+          policy.profileForReference(reference, holder));
         log.debug("Leaving ServiceAccounts requiresOwner().");
         return out;
       },
@@ -453,6 +471,26 @@ class ServiceAccounts {
   }
 
   /**
+   * Reads the named service-account policy a service account names
+   * (#1240) — one entry read, the account's own.
+   *
+   * @param username - any key the directory locates an entry by
+   * @returns the reference, trimmed and lower-cased; '' for none, and for
+   *   an entry that is not a service account
+   */
+  policyReference(username: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.policyReference().");
+    const found = this.read(username);
+    const out = found && found.person &&
+                ServiceAccounts.isServiceAccount(found.values)
+      ? firstOf(found.values, 'stsServiceAccountPolicy').trim().toLowerCase()
+      : '';
+    log.debug("Leaving ServiceAccounts.policyReference(). " + (out || 'none'));
+    return out;
+  }
+
+  /**
    * Reads what a service account is: its owners, destination and rotation
    * state.
    *
@@ -501,7 +539,8 @@ class ServiceAccounts {
         lastError: value('stsRotationLastError'),
         lastAttempt: Number(value('stsRotationLastAttempt')) || 0
       },
-      ownerProtected: value('stsOwnerProtected').toUpperCase() === 'TRUE'
+      ownerProtected: value('stsOwnerProtected').toUpperCase() === 'TRUE',
+      policy: value('stsServiceAccountPolicy').trim().toLowerCase()
     };
     log.debug("Leaving ServiceAccounts.of().");
     return out;
@@ -637,7 +676,14 @@ class ServiceAccounts {
         'at most ' + MAX_OWNERS + ' owners, and ' + owners.length + ' were ' +
         'given. Make a group of them and name the group.');
     }
-    if (!owners.length && this.deps.requiresOwner()) {
+    // THE ACCOUNT'S OWN POLICY decides whether an owner is required
+    // (#1240): the reference the caller is about to write (`policy`, a
+    // create's), else the one already on the entry.
+    const reference = body.policy !== undefined && body.policy !== null
+      ? String(body.policy)
+      : (selfDn ? this.policyReference(selfDn) : '');
+    if (!owners.length &&
+        this.deps.requiresOwner(reference, String(selfDn || ''))) {
       log.debug("Leaving ServiceAccounts.check(). No owner.");
       return this.refusal('STS-SVCACCT-0023', 'This realm\'s ' +
         'service-account policy requires an owner — a person or a group ' +
@@ -1089,6 +1135,7 @@ export = {
   directoryInstalled: slot.forward('directoryInstalled'),
   isServiceAccountName: slot.forward('isServiceAccountName'),
   of: slot.forward('of'),
+  policyReference: slot.forward('policyReference'),
   list: slot.forward('list'),
   names: slot.forward('names'),
   secretNameInUse: slot.forward('secretNameInUse'),
