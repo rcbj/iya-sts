@@ -1192,6 +1192,18 @@ to be created is given. Once the person is known, a locale policy one of their
 groups names competes with it on precedence. See [the locale
 policy](languages.md#named-profiles-for-applications-and-groups).
 
+### The post-login activity policy that applies to it
+
+An application names its post-login activity policy in
+**`appPostLoginPolicy`**, a field of the same *Every protocol* sub-tab:
+`default`, or a named post-login profile of the realm. A sign-in to the
+application ranks it against the profiles the person's groups name, the
+lowest precedence winning; a named profile with its activity off, named
+here, keeps a sign-in to this application from being asked. It is read at
+the sign-in only: a started activity's reminder mails and the progress
+report go by the person's groups. See
+[post-login activities](post-login-activities.md#which-profile-applies-groups-and-applications-name-it).
+
 ## Development and product mode
 
 | | Development | Product |

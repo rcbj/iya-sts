@@ -690,7 +690,7 @@ without the directory being asked again for every row.
 |---|---|---|---|---|---|
 | `username` | string | The person's uid. | yes | yes | no |
 | `activity` | string | The post-login activity: `pqc-passkey-migration`. | yes | yes | yes |
-| `profile` | string | The post-login profile that reached the person (`default`, or a named profile). | yes | yes | yes |
+| `profile` | string | The post-login profile that reached the person (`default`, or a named profile), as recorded when they were asked; a row recorded without one shows the profile their groups select now (no application is known outside a sign-in). | yes | yes | yes |
 | `role` | string | Retired (#1135): a passkey has no role, so a row written since is empty. A row written before keeps the role it was asked for then, `primary` or `mfa`. | yes | yes | yes |
 | `progress` | string | Where the person stands, the first that holds: `done`, `past-grace`, `snoozed`, `asked`, `mailed`. | yes | yes | yes |
 | `invitedAt` | timestamp | When the person was first asked at a sign-in; the allotted time counts from here. Null when they were only mailed. | yes | yes | no |

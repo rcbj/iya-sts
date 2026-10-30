@@ -63,29 +63,58 @@ had **Registered by a person with no passkey as** (`noPasskeyRole`,
 a time. A passkey has no role now, so the field is gone; a profile stored
 with it still loads.
 
-### Targeting by group
+### Which profile applies: groups and applications name it
 
 The `default` profile reaches everyone in the realm. A realm without its own
 `default` profile follows the default realm's.
 
-A **named profile** reaches the members of the groups it lists in
-`selectGroups` (a group's cn or DN). When several named profiles reach the same
-person, the one with the lowest `precedence` (1–1000) wins.
+A **named profile** lists nothing: it has its fields and a `precedence`
+(1–1000). What it applies to **names it**:
 
-**To exclude a group**, create a named profile for that group, switch `enabled`
-off, and give it a lower precedence than the profile that would otherwise reach
-its members. That also keeps its members out of every
-[started activity](#starting-an-activity).
+- **a group**, in `stsPostLoginPolicy` on the group's entry: on the group's
+  page under *Policies this group names*, or with
+  `POST /admin-api/groups/set-policy`;
+- **an application**, in `appPostLoginPolicy`: a field of the application's
+  Configuration tab, *Every protocol*, or `POST /admin-api/applications/set`.
+
+Each takes `default` or a named post-login profile of the realm, and nothing
+else. When a person signs in to an application, the candidates are the
+profile the application names and the profile each of the person's groups
+names; the one with the lowest `precedence` wins (ties by name), and
+`default` applies when nothing names one. A profile that a group or an
+application still names cannot be deleted (`STS-AUTHN-0540`). A name the
+realm does not hold — written with an LDAP client — counts for nothing
+(`STS-AUTHN-0539`).
+
+**An application is known only at a sign-in.** The reminder mails of a
+[started activity](#starting-an-activity) and the
+[progress report](#following-the-migration) are about a person, not a sign-in, so they use
+the profile the person's **groups** select. The profile an application names
+applies when the person signs in to that application.
+
+**To exclude a group**, create a named profile, switch `enabled` off, give
+it a lower precedence than the profile that would otherwise reach its
+members, and name it from the group. That keeps its members out of the policy
+and out of every started activity, mails included.
+
+**To exclude an application**, do the same and name the profile from the
+application. A sign-in to that application asks nothing, unless a profile one
+of the person's groups names has a lower precedence still. The person may
+still be asked when they sign in to another application, and a started
+activity may still mail them.
 
 **Example: a pilot group, required within 30 days**
 
 ```json
 POST /admin-api/policies/save-postLogin-policy
-{ "profile": "pqc-pilot",
-  "selectGroups": ["pqc-pilot"], "precedence": 10,
+{ "profile": "pqc-pilot", "precedence": 10,
   "enabled": true, "activity": "pqc-passkey-migration",
   "snoozeDays": 3, "graceDays": 30,
   "noPasskey": "invite" }
+
+POST /admin-api/groups/set-policy
+{ "group": "pqc-pilot", "attribute": "stsPostLoginPolicy",
+  "policy": "pqc-pilot" }
 ```
 
 ## What the person sees
@@ -163,15 +192,18 @@ runs:
   deadline; the reminders bring them to the sign-in.
 
 **The rules come from the policy.** For each person, the profile the policy
-selects for them on **Directory → Policies** — a named profile that reaches
-one of their groups, else `default` — supplies the snooze, the allotted
+selects for them on **Directory → Policies** — the named profile of lowest
+precedence among those the application and their groups name, else
+`default` — supplies the snooze, the allotted
 time, the method, what a person with no passkey is asked, the
 attestation and the fallback. The started activity only switches it on.
 
 **Excluding still works.** A named profile with `enabled` off that reaches a
 person (at a lower precedence than any profile that would switch it on) keeps
-them out of every started activity, as it keeps them out of the policy. The
-`default` profile being off excludes nobody: that is how every realm starts.
+them out of every started activity, as it keeps them out of the policy. One a
+group names keeps its members out of the mails too; one an application names
+keeps them out at a sign-in to that application only. The `default` profile
+being off excludes nobody: that is how every realm starts.
 
 **Paused or ended, it asks nobody.** A person the policy itself switches on
 is still asked, as before.
@@ -282,6 +314,8 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | STS-AUTHN-0493 | A started activity's run could not read its people (or one of its groups is gone); its place did not move. |
 | STS-AUTHN-0494 | The mail channel refused some reminders (no address, declined, a ceiling). |
 | STS-AUTHN-0495 | A post-login activity is running in a realm with no mail transport. |
+| STS-AUTHN-0539 | A group or an application names a post-login profile the realm does not hold; that reference counts for nothing. |
+| STS-AUTHN-0540 | A named post-login profile was not deleted: a group or an application still names it. |
 
 See [error codes](error-codes.md) for the full list.
 

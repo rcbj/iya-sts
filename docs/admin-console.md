@@ -727,7 +727,8 @@ WebAuthn), `narrow` or `list-and-refuse`
 **The post-login activity policy** (#1096) asks the people it reaches to do
 something after they sign in, before they are sent back to the application:
 today, register a post-quantum (ML-DSA) passkey. It is off by default, has a
-`default` profile and named profiles that select groups by precedence, and
+`default` profile and named profiles that groups and applications name,
+ranked by precedence, and
 says how long Skip puts it off, when it becomes required, what a person with
 no passkey is asked, and how a classical passkey is moved (upgraded in place
 or added alongside). See
@@ -774,7 +775,8 @@ else reads it.
 
 **Policies this group names.** On the drill-down, below the email address,
 one choice per kind of policy a group may name — today the passkey policy
-(`stsPasskeyPolicy`) — offering `default` and the realm's named policies of
+(`stsPasskeyPolicy`) and the post-login activity policy
+(`stsPostLoginPolicy`) — offering `default` and the realm's named policies of
 that kind. **Save** writes it onto the group's own entry; `POST
 /admin-api/groups/set-policy` is the same act. The policy a group names
 applies to its members where it has a lower precedence than the policy the
