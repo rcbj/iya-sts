@@ -67,19 +67,18 @@
 // RULES are the selected profile's either way (method, snoozeDays,
 // graceDays, noPasskey, noPasskeyRole, attestation, noPasskeyFallback);
 // a started activity overrides only `enabled`. EXCLUSION STILL HOLDS: the
-// selected profile is the named profile of lowest precedence among those
-// the application signed in to and the person's groups name (#1239), so
-// when it is a NAMED profile with `enabled` off the person is excluded
-// from every started activity too — the policy's one way to exclude a
-// group, or a sign-in to an application. `default` off excludes nobody: off is its built-in state, and a
-// started activity that `default` could veto would ask nobody in every
-// realm that never saved a policy. Paused or ended, the activity asks
-// nobody; a person the policy itself enables is still asked. Membership
-// is the person's own groups (`postLoginPolicy.personGroups()`, the
-// passkey policy's hook), asked once a sign-in and only where a running
-// activity names groups or a named profile exists — never a member walk.
-// Which source asked is `askedBy` on the progress row: `policy`, or the
-// started activity's id.
+// selected profile is the named profile of lowest precedence among those the
+// application signed in to and the person's groups name (#1239), so when it is
+// a NAMED profile with `enabled` off the person is excluded from every started
+// activity too — the policy's one way to exclude a group, or a sign-in to an
+// application. `default` off excludes nobody: off is its built-in state, and a
+// started activity that `default` could veto would ask nobody in every realm
+// that never saved a policy. Paused or ended, the activity asks nobody; a
+// person the policy itself enables is still asked. Membership is the person's
+// own groups (`postLoginPolicy.personGroups()`, the passkey policy's hook),
+// asked once a sign-in and only where a running activity names groups or a
+// named profile exists — never a member walk. Which source asked is `askedBy`
+// on the progress row: `policy`, or the started activity's id.
 //
 // A LIBRARY (rule 3): it registers no route. It requires the credential
 // store, the WebAuthn and passkey policies and the post-login policy, none of

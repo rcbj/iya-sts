@@ -1147,8 +1147,8 @@ PolicySelection.declareReference('group', REFERENCES.group,
 /**
  * The post-login activity policy (#1096): what a person is asked to do after
  * signing in, with named profiles an application or a group names. The
- * seventh policy on Directory > Policies. The exports forward to the instance the composition
- * root installs.
+ * seventh policy on Directory > Policies. The exports forward to the
+ * instance the composition root installs.
  *
  * @namespace
  */

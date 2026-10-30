@@ -1744,7 +1744,8 @@ class AdminApi {
               'profile with `enabled` off excludes them; a started ' +
               'activity\'s mail and the progress report know no ' +
               'application and select by the groups alone. A profile ' +
-              'something names is not deleted (STS-AUTHN-0540). `method` (#1100) is how a classical ' +
+              'something names is not deleted (STS-AUTHN-0540). ' +
+              '`method` (#1100) is how a classical ' +
               'passkey is migrated: `upgrade` (proved once, then replaced ' +
               'in place on its authenticator), `alongside` (an ML-DSA ' +
               'passkey beside it) or `automatic` (the lanes decide). ' +
