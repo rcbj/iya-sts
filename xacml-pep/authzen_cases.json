@@ -236,6 +236,24 @@
       "code": "STS-AUTHZEN-0011"
     },
     {
+      "what": "C15b. context.may_act is the token-exchange binding's, read by a fixed rule (#1181)",
+      "value": {
+        "object": "context",
+        "property": "may_act",
+        "attributeId": "urn:example:may-act"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C15c. and so is a path under one of its members, context.subject_token.scope",
+      "value": {
+        "object": "context",
+        "property": "subject_token.scope",
+        "attributeId": "urn:example:scope"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
       "what": "C16. a bare directory name in a subject category",
       "value": {
         "object": "subject",
@@ -1469,6 +1487,28 @@
         "context": {
           "when": "yesterday",
           "10": "x"
+        }
+      },
+      "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V30. context.act with no row is an undeclared property: the binding's members reach a request only through its fixed rules (#1181)",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "act": {
+            "sub": "gateway"
+          }
         }
       },
       "code": "STS-AUTHZEN-0004"
