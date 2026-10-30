@@ -941,6 +941,47 @@ Both acts are audited (`application.export`, `application.import`) with the
 attribute NAMES and never a value. `tests/application_ldif.js` and
 `tests/protocol/sts_application_ldif.js` hold it.
 
+## Fine-grained authorization: the application's half, and the `setFgaLifecycle()` slot (#564, 2026-10-29)
+
+Every application created gets a fine-grained authorization policy it owns
+in `ou=policies`, and every application deleted has that policy retired —
+disabled, marked orphaned, kept (rcbj's decisions 2 and 3 on #564). The
+policy and the lifecycle are `xacml/fga_policies.ts`'s and argued in
+`xacml/CLAUDE.md` (*Application-scoped fine-grained authorization*); this
+module keeps two attributes and says WHEN.
+
+* **`appFgaPolicy`** names the policy's entry and **`appFgaEnforced`** is
+  the switch (`TRUE`; absent or `FALSE` is off, the default). Both are
+  schema rows and in NO `EDITABLE` row: switching enforcement on creates the
+  policy first, and an ordinary field write through `update-fields` would
+  skip that. `fgaStateOf()` reads them and `setFgaState()` is the one door
+  that writes them, audited as `application.update`. Being derived, an LDIF
+  export leaves them out and an import refuses them (`STS-REG-0350`), so an
+  imported application gets a policy of its own.
+* **`createApplication()` calls the `created` hook and `deleteApplication()`
+  the `deleted` one**, the second with the `appFgaPolicy` read before the
+  entry went. Not `seen()`, `register()` or `seedInternalApplication()`:
+  each files an entry no administrator created, the first two at a possibly
+  unauthenticated caller's request, and a policy per entry there would let
+  such a caller fill `ou=policies` to `xacml.maxPolicies`. They get their
+  policy at first enable. A hook's failure or throw is logged
+  (`STS-FGA-0010`) and never fails the create or delete it follows.
+
+**`setFgaLifecycle()` is a rule 3e slot, and the test answers yes both ways
+round.** A require of `xacml/fga_policies` from here AT LOAD closes a cycle
+(that module requires this one for the two attributes) and loads the XACML
+store and templates into whatever first requires this module — nearly
+everything, long before 23c — where their `InstanceSlot`s would build
+default instances and the composition root's install would then be refused.
+A LAZY require at the write, as `authzenAttributeProblem()` takes, avoids
+both but not the third cost: this module is in the parent project's Kerberos
+COPY closure through `kerberos/krb5_delegation.ts`, and a create or delete
+in those jobs would reach for a file their image does not carry. The slot
+adds no require at all. The other direction is the natural one, and is what
+`fga_policies.ts` does; its wire step at 23c fills the slot. VALIDATED WHOLE
+(`STS-FGA-0011`): `created` without `deleted` would make policies nothing
+retires. `fgaLifecycleInstalled()` is for a test that replaces it.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a

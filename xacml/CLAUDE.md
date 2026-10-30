@@ -34,7 +34,8 @@ and the nudge.
 | `xacml_store.ts` | The repository. Owns the policy schema; `ou=policies` IS the store. |
 | `xacml_pip.ts` | Attribute resolution off the subject's own directory entry. |
 | `xacml.ts` | The protocol routes: the four under `/xacml` proper, the three under `/xacml/pep` and `POST /xacml/pip`, plus the embedded PEP. |
-| `xacml_templates.ts` | Five starting points: RBAC, ABAC, this service's own two, and **`blank`** — an empty Policy or PolicySet, which is the only way to create a PolicySet from the console without ALFA. **Adding one is a row in `TEMPLATES` and nothing else.** No DOM. |
+| `xacml_templates.ts` | The starting points: RBAC, ABAC, this service's own four, **`blank`** — an empty Policy or PolicySet, which is the only way to create a PolicySet from the console without ALFA — and **`fga-default`**, the policy every application is created with (#564). **Adding one is a row in `TEMPLATES` and nothing else.** No DOM. |
+| `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
@@ -194,6 +195,14 @@ the repository.
 Filtered BY NAME and not by a flag on the entry, because those two names are
 settings: an operator who points `xacml.accessPolicy` at a document of their own
 has made THAT one internal, and a stored flag would still be on the old one.
+
+**Every policy an application owns is withheld too (#564), and BY ITS FLAG**
+(`xacmlApplication`) — the opposite choice, for the opposite reason:
+ownership is not a setting that can be pointed elsewhere but a fact written
+with the policy. It is named in `withheld` like the two above. The filter is
+`XacmlSurface.pepPull()`, the route's body as a method so a test can hold it
+without the mutual-TLS gate. See *Application-scoped fine-grained
+authorization* below.
 
 ## ALFA
 
@@ -1088,6 +1097,12 @@ consequences, and the third is why it is not a modification stamp:
   LDIF restore — because it is computed from the store on the ask. A counter
   incremented by the write path would have been correct for the two doors that
   remembered to increment it.
+
+**A policy an application owns is not in it (#564)**, because it is never
+sent: were it counted, every client created in a realm would make every
+remote PEP re-pull bytes that had not changed. (The two service policies the
+pull withholds BY NAME are still in the digest, as they were before #564: a
+token that moves when nothing sent moved costs a re-pull and no more.)
 
 `current` is therefore a COMPARISON this service performs rather than a claim
 the PEP makes about itself.
@@ -2442,3 +2457,101 @@ arrangement is the owner rule's, read the other way round:
 
 `tests/report_access_policy.js` holds it end to end; `tests/access_policy.js`
 is untouched, which is the claim that the other surfaces are.
+
+## Application-scoped fine-grained authorization (#564)
+
+**The RESOURCE application that declares an `authorization_details` type
+owns the policy that decides details of that type** (rcbj's decision 1 on
+#564; the design and the six decisions are his comment of 2026-10-29). This
+is phase 1: the policy model and its lifecycle. The mapping grammar (P2),
+enforcement at issuance (P3), AuthZEN against an application's policy (P4),
+the console and `/admin-api` (P5) and the protocol tests (P6) follow, each
+adding to this section.
+
+### The model
+
+* **The policy is an ordinary `ou=policies` entry carrying
+  `xacmlApplication`**, the owner's realm-local identifier. Beside it,
+  `xacmlOrphanedAt` once the owner is deleted. Both are facts about the
+  DEPLOYMENT, as `xacmlEnabled` is, and not about the document — so
+  `xacml_store.ts`'s `write()` CARRIES THEM FORWARD when a caller does not
+  name them. `writePolicy()` replaces the entry, and every door that rewrites
+  a policy (the editor's save, enable, disable, the root demotion in
+  set-root) passes only the document and the flags it read: without the
+  carry, one edit in the editor would have turned an application's policy
+  into an ordinary one, eligible as the root and sent to every remote PEP.
+* **The application names it**: `appFgaPolicy` (the entry name) and
+  `appFgaEnforced` (the switch, off by default) on its entry,
+  `common/CLAUDE.md` (*Fine-grained authorization: the application's half*).
+* **The default document is the `fga-default` template**: one Permit rule
+  with no Target under deny-unless-permit, Version 1.0. A REAL decision, not
+  a fallback: an empty permit-unless-deny document would answer Permit by
+  falling through, which reads in an audit row like a policy that decided,
+  and the day somebody deletes the rule this one denies. Its PolicyId is
+  `urn:sts:xacml:fga:` and the identifier with every UTF-8 octet outside RFC
+  3986's unreserved set percent-encoded (`PolicyBuilders.fgaPolicyId()`) —
+  injective, which `slug()` is not (`a.b` and `a-b` slug alike), and a valid
+  URI whatever the identifier holds. The ENTRY name is a handle for a
+  reader: `fga-`, an 80-character slug, and twelve hex digits of the
+  identifier's SHA-256; `-2`, `-3`… when that is taken.
+
+### Never the root, and why the store says it rather than the callers
+
+`root()`'s "the only enabled policy" fallback is the reason. Every
+application created gets an ENABLED policy, so a realm with one ordinary
+policy would hold two enabled policies the moment somebody registered a
+client, the fallback would stop answering, and the realm would decide
+NotApplicable to everything. So `root()` ignores an owned row in both halves
+(a flagged one too, which only an `ldapmodify` can produce); `repository()`
+leaves it out of the PolicyIdReference map (its PolicyId is chosen by whoever
+named the application, and an orphan and its successor share one);
+`write()` refuses one as the root (STS-FGA-0001); and `xacml_admin.ts`'s
+set-root refuses it (STS-FGA-0002) BEFORE demoting the incumbent, which the
+store's refusal alone would have left the repository without. The console
+draws no make-root control on one. Every caller of `root()` and
+`repository()` — the PDP's decide, the three embedded PEPs' repositories,
+the remote PEP pull, `GET /xacml`, the console's counts — inherits the
+exclusion without an edit; that is why it lives in the store.
+
+### The lifecycle, `fga_policies.ts`
+
+* **Created with the application** on the console's door —
+  `createApplication()`, which the console, `/admin-api` and an LDIF import
+  all go through. **NOT** a development-mode sighting, an RFC 7591
+  registration or this service's own seeded applications: the first two can
+  be made by an unauthenticated caller, and a policy per entry would let one
+  fill `ou=policies` to `xacml.maxPolicies` and lock administrators out of
+  writing policies. Every one of them gets its policy at first enable —
+  decision 2's own fallback — as does any application created before 23c.
+* **`ensure()` FOLLOWS THE REFERENCE AND NEVER ADOPTS.** A policy that merely
+  carries the identifier is not attached. An application deleted through
+  LDAP (which bypasses retirement) and created again under the same
+  identifier would otherwise inherit a policy written for the one that went
+  — exactly what keeping an orphan for audit must not grant. A failed
+  reference write takes the new policy back, so no unreferenced live policy
+  is left behind.
+* **`enable()`** ensures, then refuses while the policy is disabled
+  (STS-FGA-0006) or does not parse (STS-FGA-0007): an enforced application
+  with such a policy refuses every detail, and the moment to say so is while
+  somebody is switching it on. **`disable()`** touches only the switch.
+* **`retire()` on deletion**: disabled, `xacmlOrphanedAt` written (RFC 4517
+  GeneralizedTime), kept until an administrator deletes it (decision 3).
+  **Orphaned is an explicit MARK, not a computation**: "its owner is not in
+  the registry" stops being true when an application of the same identifier
+  is created again, and the orphan would silently read as the new one's. The
+  reference arrives from `deleteApplication()`, read before the entry went.
+* **`resolve()`** is what P3 and P4 decide with: the row, parsed, and
+  `enforced` — or a failure named and coded: `unknown-application` (0009),
+  `no-policy` (0003), `missing-policy` (0004), `not-its-policy` (0005, also
+  an orphan), `disabled-policy` (0006), `unparseable-policy` (0007). Each
+  carries `enforced`, since only an enforced application's failure refuses.
+* **Not by mode.** Nothing here differs between development and product.
+
+**`xacml.maxPolicies` (200) bounds these too**, and `applications.max` is
+500. An application created past the cap is still created, without a policy
+(STS-FGA-0008, logged under STS-FGA-0010 by the hook), and gets one at
+enable once there is room. Whether owned policies should have a bound of
+their own is open.
+
+`tests/fga_policies.js` holds all of it in a throwaway realm.
+

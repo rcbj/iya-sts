@@ -423,8 +423,9 @@ const SUBSYSTEMS = [
   // and an operator holding one wants xacml/CLAUDE.md's FGA section, not the
   // engine's or the registry's.
   { id: 'FGA', label: 'Fine-grained authorization',
-    where: 'xacml/fga_policies.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, ' +
-      'and the lifecycle slot in common/applications.js',
+    where: 'xacml/fga_policies.ts, xacml/xacml_store.ts, ' +
+      'xacml/xacml_admin.ts, and the lifecycle slot in ' +
+      'common/applications.js',
     what: 'Application-scoped fine-grained authorization: the policy each ' +
           'application owns in ou=policies (created with it, retired ' +
           'with it), the appFgaEnforced switch, and the refusals that keep ' +
