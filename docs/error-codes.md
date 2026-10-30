@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4867** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4877** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -87,8 +87,8 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 46
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 46
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 54
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 48
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4703,6 +4703,14 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0044` | An AuthZEN request reached a remote PEP whose edge PDP is turned off (PEP_AUTHZEN=false) (#1179). | HTTP 501, an error message |
 | `STS-XPEP-0045` | The remote PEP's AuthZEN metadata was asked for with no PDP identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path and was ignored (#1179). | HTTP 404 from GET /.well-known/authzen-configuration; logged at start |
 | `STS-XPEP-0046` | A single AuthZEN evaluation sent to the remote PEP's edge PDP was larger than PEP_MAX_BODY_BYTES and was refused unread (#1179). | HTTP 413, an error message |
+| `STS-XPEP-0047` | The remote PEP could not reach the PDP to pull the AuthZEN callers (GET /xacml/pep/authzen-callers). The caller list already held is kept (#1189). | none — logged; the PEP carries on |
+| `STS-XPEP-0048` | The PDP refused the remote PEP's AuthZEN caller pull, or answered with something that is not a caller list (a PDP older than #1189 answers 404). The caller list already held is kept, and before the first one PEP_AUTHZEN_CALLERS alone decides. | none — logged; the PEP carries on |
+| `STS-XPEP-0049` | Entries of a pulled AuthZEN caller list were not a name, 64-digit SHA-256 digests, at most 64 applications and the endpoints admitted to, and were left out: the remote PEP's edge PDP admits nobody it cannot read (#1189). | none — logged; the pull is kept |
+| `STS-XPEP-0050` | An AuthZEN request reached the remote PEP's edge PDP before it had pulled the callers from the PDP, and no PEP_AUTHZEN_CALLERS is configured to decide meanwhile (#1189). | HTTP 503, an error message |
+| `STS-XPEP-0051` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP verified, and its SHA-256 is not one the pulled caller list names: the service would not admit it (#1189). | HTTP 403, an error message |
+| `STS-XPEP-0052` | The realm the remote PEP pulled its AuthZEN callers from authenticates them by a token (authzen.callerAuthentication bearer or mtls+bearer), which the edge PDP cannot check, so it admits nobody (#1189). | HTTP 401, an error message |
+| `STS-XPEP-0053` | A caller on the remote PEP's pulled AuthZEN caller list asked an endpoint the service's access-control policy does not admit it to (#1189). | HTTP 403, an error message |
+| `STS-XPEP-0054` | A caller on the remote PEP's pulled AuthZEN caller list is not on PEP_AUTHZEN_CALLERS, which, when it is set, narrows the pulled list to the certificates it names (#1189). | HTTP 403, an error message |
 
 ## STS-AUTHZEN
 
@@ -4758,6 +4766,8 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0044` | An AuthZEN search reached a realm where authzen.searchEnabled is off. | HTTP 501, an error message |
 | `STS-AUTHZEN-0045` | An AuthZEN search named more candidates than authzen.searchMaxCandidates; only the first were decided and the answer said it was incomplete. | context.incomplete |
 | `STS-AUTHZEN-0060` | The AuthZEN catalogue a remote PEP pulled from GET /xacml/pep/authzen-catalogue left out values of authzenAttribute on sts-authzen-api that are not catalogue rows; the edge PDP maps those properties as undeclared, as the service does (#1179). | none — logged; the pull is answered |
+| `STS-AUTHZEN-0061` | The AuthZEN caller list a remote PEP pulled from GET /xacml/pep/authzen-callers was cut: the AuthZEN group has more members than are read, or a member more certificates (#1189). A caller past the cut is refused at the edge and still answered here. | none — logged; the pull is answered |
+| `STS-AUTHZEN-0062` | A certificate held by a member of the AuthZEN group could not be read for the caller list a remote PEP pulled, and was left out (#1189). | none — logged; the pull is answered |
 
 ## STS-ADMIN
 

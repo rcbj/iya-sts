@@ -21119,6 +21119,49 @@ const CODES = [
       'PDP was larger than PEP_MAX_BODY_BYTES and was refused unread ' +
       '(#1179).',
     spec: 'HTTP 413, an error message' },
+  { code: 'STS-XPEP-0047',
+    summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
+      'callers (GET /xacml/pep/authzen-callers). The caller list already ' +
+      'held is kept (#1189).',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0048',
+    summary: 'The PDP refused the remote PEP\'s AuthZEN caller pull, or ' +
+      'answered with something that is not a caller list (a PDP older than ' +
+      '#1189 answers 404). The caller list already held is kept, and ' +
+      'before the first one PEP_AUTHZEN_CALLERS alone decides.',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0049',
+    summary: 'Entries of a pulled AuthZEN caller list were not a name, ' +
+      '64-digit SHA-256 digests, at most 64 applications and the endpoints ' +
+      'admitted to, and were left out: the remote PEP\'s edge PDP admits ' +
+      'nobody it cannot read (#1189).',
+    spec: 'none — logged; the pull is kept' },
+  { code: 'STS-XPEP-0050',
+    summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
+      'it had pulled the callers from the PDP, and no PEP_AUTHZEN_CALLERS ' +
+      'is configured to decide meanwhile (#1189).',
+    spec: 'HTTP 503, an error message' },
+  { code: 'STS-XPEP-0051',
+    summary: 'The client certificate an AuthZEN caller presented to the ' +
+      'remote PEP\'s edge PDP verified, and its SHA-256 is not one the ' +
+      'pulled caller list names: the service would not admit it (#1189).',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-XPEP-0052',
+    summary: 'The realm the remote PEP pulled its AuthZEN callers from ' +
+      'authenticates them by a token (authzen.callerAuthentication bearer ' +
+      'or mtls+bearer), which the edge PDP cannot check, so it admits ' +
+      'nobody (#1189).',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-XPEP-0053',
+    summary: 'A caller on the remote PEP\'s pulled AuthZEN caller list asked ' +
+      'an endpoint the service\'s access-control policy does not admit it ' +
+      'to (#1189).',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-XPEP-0054',
+    summary: 'A caller on the remote PEP\'s pulled AuthZEN caller list is ' +
+      'not on PEP_AUTHZEN_CALLERS, which, when it is set, narrows the ' +
+      'pulled list to the certificates it names (#1189).',
+    spec: 'HTTP 403, an error message' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
@@ -21337,6 +21380,17 @@ const CODES = [
       'authzenAttribute on sts-authzen-api that are not catalogue rows; ' +
       'the edge PDP maps those properties as undeclared, as the service ' +
       'does (#1179).',
+    spec: 'none — logged; the pull is answered' },
+  { code: 'STS-AUTHZEN-0061',
+    summary: 'The AuthZEN caller list a remote PEP pulled from ' +
+      'GET /xacml/pep/authzen-callers was cut: the AuthZEN group has more ' +
+      'members than are read, or a member more certificates (#1189). A ' +
+      'caller past the cut is refused at the edge and still answered here.',
+    spec: 'none — logged; the pull is answered' },
+  { code: 'STS-AUTHZEN-0062',
+    summary: 'A certificate held by a member of the AuthZEN group could ' +
+      'not be read for the caller list a remote PEP pulled, and was left ' +
+      'out (#1189).',
     spec: 'none — logged; the pull is answered' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +

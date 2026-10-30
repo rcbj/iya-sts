@@ -3614,6 +3614,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'these rows, so one request is mapped one way in both places. ' +
           'Requires REMOTE_PEPS, as the policy pull does. Additive: ' +
           '/xacml/pep/policies is unchanged.' },
+  { path: '/xacml/pep/authzen-callers', group: 'XACML',
+    name: 'The AuthZEN callers, for a remote PEP to ADMIT',
+    specs: ['xacml30', 'authzen10'],
+    what: 'Who this realm admits to its AuthZEN API now, for the xacml-pep ' +
+          'container\'s edge PDP to admit by: each caller the ' +
+          'access-control policy admits to /access/v1/* (AUTHZEN_PEPS, as ' +
+          'the policy decides it), named as a policy sees it in ' +
+          'urn:sts:xacml:authzen:caller, with the SHA-256 of the DER of ' +
+          'every certificate this service would resolve to that name, its ' +
+          'application scope and the endpoints it is admitted to, plus a ' +
+          'sync token of its own; ?since=<token> answers 304. The token ' +
+          'moves with a member, a certificate, a scope or the policy\'s ' +
+          'answer, and the edge converges on its poll. Requires ' +
+          'REMOTE_PEPS, as the policy pull does, so anybody holding that ' +
+          'role can read who may ask the PDP (rcbj on #1189). Additive: ' +
+          '/xacml/pep/policies and /xacml/pep/authzen-catalogue are ' +
+          'unchanged.' },
   { path: '/xacml/pep/heartbeat', group: 'XACML',
     name: 'What a remote PEP has enforced', specs: ['xacml30'],
     what: 'Its cumulative counters and the sync token it holds — which is ' +
