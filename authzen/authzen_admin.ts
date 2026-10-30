@@ -304,9 +304,9 @@ class AuthzenAdmin {
   // and nothing more: `authzen_caller.ts`'s `edgeCallers()` asks the
   // certificate door who each certificate names and the access-control
   // policy whether that caller may ask, so the list the edge holds is the
-  // outcome rather than the membership. A member that locates to nothing (a
-  // DN left behind by a deletion, a nested group) is counted and left out:
-  // nothing can present a certificate as it.
+  // outcome rather than the membership. A member that locates to no person,
+  // service account or application (a DN left behind by a deletion, a nested
+  // group) is counted and left out: nothing can present a certificate as it.
   //
   // Bounded at `max`, and the total is answered beside, so a list that was
   // cut is said to be (`STS-AUTHZEN-0061`, logged by the caller).
@@ -320,24 +320,42 @@ class AuthzenAdmin {
    *   or `application`
    */
   edgeCandidates(max: number): any {
-    const self = this;
-    const { log, config } = this.deps;
+    const { log, config, applications } = this.deps;
     log.debug("Entering AuthzenAdmin.edgeCandidates().");
     const group = String(config.value('roles.authzenPepGroup') || '');
     const members = directory && group ? directory.members(group) : [];
+    // The applications by DN, read once rather than once per member: a
+    // member is a person's, a service account's or an application's DN,
+    // and `callerOf()`'s per-key search would walk the registry for each.
+    const byDn = new Map<string, any>();
+    try {
+      (applications.list() || []).forEach(function (one: any) {
+        if (one && one.dn) {
+          byDn.set(String(one.dn).toLowerCase(), one);
+        }
+      });
+    } catch (e) {
+      log.debug("Caught in AuthzenAdmin.edgeCandidates(): " +
+                ((e && e.message) || e));
+    }
     const candidates: any[] = [];
     let unlocated = 0;
     members.slice(0, Math.max(0, max)).forEach(function (member: string) {
-      const caller = self.callerOf(member);
-      const entry = directory && caller && caller.dn
-        ? directory.locate(String(caller.dn)) : null;
-      if (!caller || !entry) {
+      const entry = directory ? directory.locate(String(member)) : null;
+      const app = entry ? byDn.get(String(entry.dn).toLowerCase()) : null;
+      if (entry && app) {
+        candidates.push({ dn: String(entry.dn), kind: 'application',
+                          name: String(app.identifier),
+                          attributes: entry.attributes || {} });
+      } else if (entry && entry.person) {
+        candidates.push({ dn: String(entry.dn),
+                          kind: entry.serviceAccount ? 'service-account'
+                                                     : 'person',
+                          name: String(entry.name || entry.dn),
+                          attributes: entry.attributes || {} });
+      } else {
         unlocated++;
-        return;
       }
-      candidates.push({ dn: String(entry.dn), kind: String(caller.kind),
-                        name: String(caller.name),
-                        attributes: entry.attributes || {} });
     });
     log.debug("Leaving AuthzenAdmin.edgeCandidates(). " + candidates.length +
               " of " + members.length + ".");
