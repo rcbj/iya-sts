@@ -6382,6 +6382,8 @@ class AdminActions {
       return '';
     }
     const names = function (list: any[]): string {
+      helpers.log.debug("Entering names().");
+      helpers.log.debug("Leaving names().");
       return (list || []).map(function (one: any) {
         return String(one.name || one.dn || '?');
       }).join(', ');
