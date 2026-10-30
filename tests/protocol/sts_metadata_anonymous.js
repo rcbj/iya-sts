@@ -1067,6 +1067,15 @@ const CONTROLS = [
 // read, and it is in DOCUMENTS.
 // ---------------------------------------------------------------------------
 const NO_PUBLIC_METADATA = {
+  // NOT IN DOCUMENTS because the stack this job meets has it off:
+  // uma.enabled defaults to false, and while it is off the discovery
+  // document answers 501 like the rest of the family (uma/uma.ts). Its
+  // document is fetched and held by tests/protocol/sts_uma.js, which turns
+  // UMA on in a realm of its own.
+  "UMA 2.0":
+    "off by default (uma.enabled), and its discovery document, " +
+    "/.well-known/uma2-configuration, answers 501 until it is turned on; " +
+    "sts_uma.js reads it in a realm where it is on.",
   "Kerberos":
     "RFC 4120 has no metadata document. What a client needs — the realm, the " +
     "KDC's address — comes from its own krb5.conf, and the KDC is on raw " +

@@ -586,7 +586,13 @@ async function discovery() {
       continue;
     }
     const method = methods[name] || "GET";
-    const got = await fetchJson(value, { method: method,
+    // GRANT MANAGEMENT'S ENDPOINT IS A BASE: a grant is
+    // `{grant_management_endpoint}/{grant_id}`, so the bare URL is no route
+    // and one with an id appended is (it answers 401 or 404, not express's
+    // "Cannot GET").
+    const probe = name === "grant_management_endpoint"
+      ? value + "/no-such-grant" : value;
+    const got = await fetchJson(probe, { method: method,
       headers: method === "POST" ? { "Content-Type":
         "application/x-www-form-urlencoded" } : {},
       body: method === "POST" ? "" : undefined });

@@ -371,8 +371,17 @@ async function signIn(driver, withKey) {
   // any trust realm exists (#32), which in a full run every earlier job has
   // made sure of — sts_portal_backup_codes' PORTAL_DOOR, for its reason.
   await driver.get(url("/portal?realm=default"));
+  // THE AUTOFILL CAN FINISH BEFORE THIS LOOKS (the memory run of 2026-10-30):
+  // the screen's conditional request, answered by the virtual authenticator
+  // with the key alone (#1135), can sign the person in and land the browser
+  // back on /portal between two polls, so a `withKey` sign-in also accepts
+  // the portal already signed in — the case handled below.
   await waitFor(driver, async function () {
-    return (await path(driver)).indexOf("/authn/login") >= 0;
+    if ((await path(driver)).indexOf("/authn/login") >= 0) {
+      return true;
+    }
+    return withKey && (await path(driver)).indexOf("/portal") === 0 &&
+      (await bodyText(driver)).indexOf("Signed in as " + PERSON) >= 0;
   }, "an unauthenticated browser at /portal was never shown the sign-in " +
      "screen.");
   // THE SCREEN SETTLES FIRST (2026-10-10): with usernameless sign-in on, it
