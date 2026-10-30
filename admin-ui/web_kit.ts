@@ -407,8 +407,9 @@ class WebKit {
    * @returns the text
    */
   static plainTextOf(html) {
-    return String(html == null ? '' : html)
-      .replace(/<[^>]*>/g, '')
+    // The stripper repeats until nothing is left to strip; `web_messages.ts`
+    // says why one pass was not enough.
+    return webMessages.WebMessages.stripTags(String(html == null ? '' : html))
       .replace(/\s+/g, ' ')
       .trim();
   }

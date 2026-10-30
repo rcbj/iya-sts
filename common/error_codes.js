@@ -25276,7 +25276,12 @@ function tag(code) {
 function escapeCell(text) {
   log.debug("Entering escapeCell().");
   log.debug("Leaving escapeCell().");
-  return String(text || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  // The backslash first, since the pipe's escape adds one: a summary that
+  // carried `\|` would otherwise come out as `\\|`, which Markdown reads as
+  // a literal backslash and a cell boundary (CodeQL js/incomplete-sanitization,
+  // 2026-10-30). No row carries a backslash today, so the page is unchanged.
+  return String(text || '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
 }
 
 /**

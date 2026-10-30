@@ -510,11 +510,38 @@ class WebTranslator {
     if (asHtml) {
       return out;
     }
-    return out.replace(/<[^>]*>/g, '').replace(/\uE000(\d+)\uE001/g,
+    return WebMessages.stripTags(out).replace(/\uE000(\d+)\uE001/g,
       function (whole: string, index: string): string {
         const value = (slots as string[])[Number(index)];
         return value === undefined ? '' : value;
       });
+  }
+
+  // THE ONE TAG STRIPPER, AND IT REPEATS (2026-10-30). One pass of
+  // `/<[^>]*>/g` is not a sanitizer: it turns `<scr<b>ipt>` into `<script>`,
+  // because removing the inner tag joins the two halves of an outer one that
+  // the pass had already stepped over. CodeQL's
+  // js/incomplete-multi-character-sanitization found the three copies of
+  // that one-liner (here, `web_kit.ts`'s plainTextOf(), `web_pages.ts`'s
+  // textOf()); this replaces all three. The pass repeats until it removes
+  // nothing, which no interleaving survives — each pass that changes the
+  // string shortens it, so it ends. A `<` with no `>` after it stays: a lone
+  // `<` is text, and what the callers do with the result (HTML text that is
+  // valid already, or a value a renderer escapes) is unchanged.
+  /**
+   * Removes every tag from a fragment, repeatedly, until none is left.
+   *
+   * @param text - the fragment
+   * @returns the fragment with no `<…>` left in it
+   */
+  static stripTags(text: string): string {
+    let out = String(text == null ? '' : text);
+    let before: string;
+    do {
+      before = out;
+      out = out.replace(/<[^>]*>/g, '');
+    } while (out !== before);
+    return out;
   }
 
   /**
