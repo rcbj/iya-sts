@@ -162,6 +162,21 @@ const RESERVED_IDS = Object.freeze([
 const RESERVED_CONTEXT = Object.freeze(['application',
                                         'supported_obligations']);
 
+// THE CONTEXT MEMBERS THE TOKEN-EXCHANGE BINDING'S FIXED RULES READ (#1181;
+// rcbj, 2026-10-30: the built-in conversion rules are fixed, "like the five
+// fixed AuthZEN members", and a realm's catalogue may add rules but never
+// override them). The Token Issuance Profile's six context keys and the
+// binding's five: `authzen/authzen_exchange.ts` reads each by a rule of its
+// own, so a row naming one — or a path under one, `may_act.sub` — would be
+// a second, contradicting conversion of the same member. Refused at the
+// write whether or not `authzen.tokenExchange` is on, so turning it on never
+// meets a catalogue that already disagrees.
+const BINDING_CONTEXT = Object.freeze(['client_id', 'acr', 'amr',
+                                       'auth_time', 'cnf', 'jti',
+                                       'subject_token_type',
+                                       'actor_token_type', 'subject_token',
+                                       'act', 'may_act']);
+
 // The subject categories, where a bare name would be read as a directory
 // attribute of the subject.
 const SUBJECT_CATEGORIES = Object.freeze([
@@ -297,6 +312,15 @@ class AuthzenCatalogue {
                         'itself (the caller\'s application, or the ' +
                         'obligations the PEP can carry out), never sent to ' +
                         'the policy as a property' };
+    }
+    if (object === 'context' && BINDING_CONTEXT.indexOf(segments[0]) >= 0) {
+      log.debug("Leaving AuthzenCatalogue.parse(). A member the token-" +
+                "exchange binding reads.");
+      return { code: 'STS-AUTHZEN-0011',
+               problem: 'context.' + segments[0] + ' is read by the OAuth ' +
+                        'token-exchange binding\'s fixed conversion rules ' +
+                        '(docs/authzen.md), which a catalogue row may add ' +
+                        'to but never override' };
     }
     const attributeId = text('attributeId');
     if (!attributeId || attributeId.length > MAX_ID_LENGTH ||
@@ -441,6 +465,7 @@ export = {
   MULTIPLICITIES: MULTIPLICITIES,
   RESERVED_PREFIX: RESERVED_PREFIX,
   RESERVED_CONTEXT: RESERVED_CONTEXT,
+  BINDING_CONTEXT: BINDING_CONTEXT,
   parse: AuthzenCatalogue.parse,
   valueOf: AuthzenCatalogue.valueOf,
   keyOf: AuthzenCatalogue.keyOf,

@@ -13358,6 +13358,22 @@ const SETTINGS = [
                  'this off, a Permit with an obligation this service cannot ' +
                  'carry out itself answers false, as a PEP that never heard ' +
                  'of the profile would otherwise grant.' },
+  { key: 'authzen.tokenExchange', group: 'AuthZEN',
+    label: 'Decide OAuth token exchanges for other servers',
+    env: 'STS_AUTHZEN_TOKEN_EXCHANGE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Binding for OAuth 2.0 Token Exchange (a ' +
+                 'draft), with this service as the PDP another ' +
+                 'authorization server asks. When on, a tuple whose ' +
+                 'resource.type is audience and whose action is ' +
+                 'issue:<type>:token_exchange is a gate, and one whose ' +
+                 'resource.type is protected_resource a scope, decided by ' +
+                 'fixed conversion rules with the same delegation facts ' +
+                 'and issuance policy a local RFC 8693 exchange is decided ' +
+                 'with; the subject gate may carry context.issuance, which ' +
+                 'only narrows; and the metadata advertises the token ' +
+                 'issuance capability. Off, those tuples are ordinary ' +
+                 'questions for the root policy.' },
   { key: 'authzen.searchEnabled', group: 'AuthZEN',
     label: 'Search APIs enabled',
     env: 'STS_AUTHZEN_SEARCH_ENABLED', type: 'bool', dflt: true,

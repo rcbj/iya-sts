@@ -6955,6 +6955,14 @@
     "en": "d856eb355e794d04",
     "text": "AuthZEN 的 Obligations Profile（草案）。開啟時，僅當請求的 context.supported_obligations 列出答覆中的每種義務類型時，才在 context.obligations 中把 XACML 義務交給 PEP——攜帶義務的 Permit 才回應 true；中繼資料公布 supported_obligations。沒有該宣告或關閉此項時，攜帶本服務本身無法履行之義務的 Permit 回應 false，因為從未聽過該設定檔的 PEP 否則會授予存取。"
   },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "為其他伺服器決定 OAuth 權杖交換"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "AuthZEN Binding for OAuth 2.0 Token Exchange（草案），本服務作為另一個授權伺服器所詢問的 PDP。開啟時，resource.type 為 audience 且動作為 issue:<type>:token_exchange 的元組是一道閘門，resource.type 為 protected_resource 的元組是一個範圍，兩者都依固定的轉換規則決定，所用的委派事實與簽發政策與決定本地 RFC 8693 交換時相同；主體閘門可攜帶 context.issuance，它只會收窄；中繼資料會宣告權杖簽發能力。關閉時，這些元組是交給根政策的一般問題。"
+  },
   "authzen.searchEnabled|label": {
     "en": "dc167dc0906f464e",
     "text": "啟用 Search APIs"

@@ -6955,6 +6955,14 @@
     "en": "d856eb355e794d04",
     "text": "L'Obligations Profile d'AuthZEN (un brouillon). Activé, une obligation XACML est remise au PEP dans context.obligations — et un Permit qui en porte une répond true — UNIQUEMENT quand context.supported_obligations de la requête énumère chaque type d'obligation de la réponse ; les métadonnées annoncent supported_obligations. Sans cette déclaration, ou si ceci est désactivé, un Permit portant une obligation que ce service ne peut pas exécuter lui-même répond false, car un PEP qui ne connaît pas le profil accorderait l'accès."
   },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "Décider les échanges de jetons OAuth pour d'autres serveurs"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "L'AuthZEN Binding for OAuth 2.0 Token Exchange (un brouillon), ce service étant le PDP qu'interroge un autre serveur d'autorisation. Activé, un tuple dont resource.type est audience et dont l'action est issue:<type>:token_exchange est une porte, et un tuple dont resource.type est protected_resource une portée, décidés par des règles de conversion fixes avec les mêmes faits de délégation et la même politique d'émission qu'un échange RFC 8693 local ; la porte du sujet peut porter context.issuance, qui ne fait que restreindre ; et les métadonnées annoncent la capacité d'émission de jetons. Désactivé, ces tuples sont des questions ordinaires pour la politique racine."
+  },
   "authzen.searchEnabled|label": {
     "en": "dc167dc0906f464e",
     "text": "Search APIs activées"

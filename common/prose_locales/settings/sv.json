@@ -6955,6 +6955,14 @@
     "en": "d856eb355e794d04",
     "text": "AuthZEN:s Obligations Profile (ett utkast). När det är på lämnas en XACML-skyldighet över till PEP:en i context.obligations — och en Permit som bär en svarar true — ENDAST när begärans context.supported_obligations räknar upp varje skyldighetstyp i svaret; metadatan annonserar supported_obligations. Utan den deklarationen, eller med detta av, svarar en Permit med en skyldighet som tjänsten inte själv kan utföra false, eftersom en PEP som aldrig hört talas om profilen annars skulle ge åtkomst."
   },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "Avgör OAuth-tokenutbyten åt andra servrar"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "AuthZEN Binding for OAuth 2.0 Token Exchange (ett utkast), med den här tjänsten som den PDP en annan auktoriseringsserver frågar. När den är på är en tupel vars resource.type är audience och vars åtgärd är issue:<type>:token_exchange en grind, och en vars resource.type är protected_resource ett omfång, avgjorda av fasta konverteringsregler med samma delegeringsfakta och samma utfärdandepolicy som ett lokalt RFC 8693-utbyte avgörs med; subjektets grind kan bära context.issuance, som bara begränsar; och metadata annonserar förmågan att utfärda token. Av är de tuplerna vanliga frågor till rotpolicyn."
+  },
   "authzen.searchEnabled|label": {
     "en": "dc167dc0906f464e",
     "text": "Search APIs aktiverade"
