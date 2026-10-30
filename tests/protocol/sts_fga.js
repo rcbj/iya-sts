@@ -25,7 +25,9 @@
 //   3. THE TYPE AND THE SWITCH: `document_access` declared with xacml rows
 //      and one member left uncovered; FGA off, issuance and AuthZEN are
 //      unchanged; enabling is refused naming the member, then accepted once
-//      it is listed in notForPolicy.
+//      it is listed in notForPolicy. Since P7 the remote PEP's AuthZEN
+//      catalogue names the application once it enforces (`fgaApplications`,
+//      what the edge PDP forwards by), and its token moves with the switch.
 //   4. THE DEFAULT POLICY DECIDES: client_credentials with the detail is
 //      issued; the token response, the access token and introspection (by
 //      the resource application, the type's owner) carry the details.
@@ -41,7 +43,8 @@
 //   8. A REFRESH AFTER THE POLICY CHANGES is refused.
 //   9. A DISABLED POLICY: AuthZEN answers 500, never false; the token
 //      endpoint answers server_error.
-//  10. FGA OFF AGAIN: issuance and AuthZEN are back to the old behaviour.
+//  10. FGA OFF AGAIN: issuance and AuthZEN are back to the old behaviour,
+//      and the catalogue no longer names the application.
 //  11. DELETING THE APPLICATION: its policy stays, disabled and orphaned,
 //      and an administrator removes it through `/admin-api`.
 //
@@ -51,7 +54,13 @@
 // asserts the refusal and the member it names. PAR, `prompt=none`, limits
 // lowered at consent and a MISSING policy are `tests/fga_issuance.js`'s
 // alone: each is one more request of the same shape, against branches that
-// file reaches with nothing but the endpoints.
+// file reaches with nothing but the endpoints. **THE EDGE PDP'S FORWARD
+// ITSELF** (#564, P7: the xacml-pep container sends an evaluation about an
+// enforcing application to this realm's `/access/v1/evaluation`) is not
+// driven here: no protocol job configures the container's edge PDP (its
+// client CA and an AuthZEN caller certificate presented to it). This file
+// holds the service's half of the contract — the list the edge forwards by
+// — and the Rust crate's tests hold the forward against a mock service.
 //
 // THE REALM IS LEFT IN PLACE (tests/CLAUDE.md, *No job removes a realm*);
 // what this file stored on entries and the anchors it added are taken off
@@ -547,6 +556,23 @@ async function theDefaultPolicy() {
   log.debug("Leaving theDefaultPolicy().");
 }
 
+// THE APPLICATIONS THE EDGE PDP FORWARDS (#564, P7): `fgaApplications` on
+// the remote PEP's AuthZEN catalogue pull, read as the container reads it.
+async function catalogueFga() {
+  log.debug("Entering catalogueFga().");
+  const r = await withCertificate("GET",
+    PREFIX + "/xacml/pep/authzen-catalogue", remotePep);
+  const out = {
+    status: r.status,
+    list: (r.body && Array.isArray(r.body.fgaApplications))
+      ? r.body.fgaApplications : null,
+    token: r.body ? String(r.body.syncToken || "") : "",
+    text: String(r.text).slice(0, 300)
+  };
+  log.debug("Leaving catalogueFga().");
+  return out;
+}
+
 // ===========================================================================
 // 3. THE TYPE AND THE SWITCH.
 // ===========================================================================
@@ -579,6 +605,13 @@ async function theTypeAndTheSwitch() {
   check("and the refused switch is still off", function () {
     assert.strictEqual(stillOff, false, "a refused enable switched FGA on");
   });
+  const before = await catalogueFga();
+  check("FGA off: the edge PDP's catalogue does not name the application",
+        function () {
+    assert.ok(before.status === 200 && Array.isArray(before.list) &&
+              before.list.indexOf(DOCS) < 0,
+      "the catalogue pull answered " + before.status + " " + before.text);
+  });
   await must("/applications/set-not-for-policy",
              { application: DOCS, type: "document_access",
                notForPolicy: ["note"] }, "listed note as not for the policy");
@@ -586,6 +619,14 @@ async function theTypeAndTheSwitch() {
                         "enabled FGA once every member is covered");
   check("enabling is accepted once covered", function () {
     assert.ok(on.enforced === true, JSON.stringify(on));
+  });
+  const after = await catalogueFga();
+  check("FGA on: the catalogue names it, so the edge PDP forwards its " +
+        "evaluations, and the token moved so the edge pulls it", function () {
+    assert.ok(after.status === 200 && Array.isArray(after.list) &&
+              after.list.indexOf(DOCS) >= 0 && after.token &&
+              after.token !== before.token,
+      "the catalogue pull answered " + after.status + " " + after.text);
   });
   log.debug("Leaving theTypeAndTheSwitch().");
 }
@@ -803,6 +844,12 @@ async function offAgain() {
   check("and AuthZEN about the application is the root's again", function () {
     assert.ok(r.status === 200 && r.body && r.body.decision === true,
       "answered " + r.status + " " + r.text);
+  });
+  const pulled = await catalogueFga();
+  check("and the edge PDP's catalogue no longer names it", function () {
+    assert.ok(pulled.status === 200 && Array.isArray(pulled.list) &&
+              pulled.list.indexOf(DOCS) < 0,
+      "the catalogue pull answered " + pulled.status + " " + pulled.text);
   });
   log.debug("Leaving offAgain().");
 }
