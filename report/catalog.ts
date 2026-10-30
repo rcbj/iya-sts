@@ -528,9 +528,13 @@ function standardSources(): SourceSpec[] {
       'The realm authentication policy, one row per mechanism with ' +
       'application realm, plus one row per mechanism the named ' +
       'authentication policy an application names (appAuthnPolicy) ' +
-      'lists. An application on the default policy, or whose policy ' +
-      'lists none, inherits the realm policy and adds no row. Not a ' +
-      'count of sign-ins. Non-browser doors are outside the policy.',
+      'lists, plus one row per mechanism the named authentication policy ' +
+      'a group names (stsAuthnPolicy) lists. An application on the ' +
+      'default policy, or whose policy lists none, inherits the realm ' +
+      'policy and adds no row. Where an application\'s and a member\'s ' +
+      'groups\' policies are named for one sign-in, the lowest ' +
+      'precedence applies. Not a count of sign-ins. Non-browser doors ' +
+      'are outside the policy.',
       [field('id', 'string',
          'The mechanism id. Realm rows use the policy names. An ' +
          'application row uses the value it lists.'),
@@ -546,7 +550,13 @@ function standardSources(): SourceSpec[] {
          'at sign-in.'),
        field('application', 'string',
          'realm, or the application identifier when the row comes from ' +
-         'that application\'s list.')]),
+         'that application\'s list; empty on a group\'s row.'),
+       field('group', 'string',
+         'The group cn when the row comes from the policy that group ' +
+         'names; empty otherwise.'),
+       field('policy', 'string',
+         'default for a realm row; otherwise the named authentication ' +
+         'policy the row\'s list comes from.')]),
     source('auditEvents',
       'The audit rings still held by the service\'s processes, newest ' +
       'first, each capped by audit.maxEvents (5000 unless an operator set ' +
