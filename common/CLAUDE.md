@@ -5317,6 +5317,13 @@ gathers the facts from real entries in both modes and drives WS-Trust's
 `handleRst()`; `tests/token_exchange_product.js` and the local job
 `tests/protocol/sts_delegation_policy.js` are every outcome at the doors.
 
+**A FOURTH CALLER, AND NOT A FOURTH REGISTER (#1181).** AuthZEN's OAuth
+token-exchange binding (`authzen/authzen_exchange.ts`) asks `decide()` the
+question the token endpoint asks, for an exchange another authorization
+server is about to perform; `DecideQuestion.authzen`, which no local door
+sends, is carried into the facts untouched and written to the request only
+when present (`authzen/CLAUDE.md`). Nothing here reads it.
+
 ## An OAuth client is not a person, and now it has somewhere to be
 
 * **An OAuth client is not a person, and now it has somewhere to be.** It is still
