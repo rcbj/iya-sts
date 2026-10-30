@@ -544,3 +544,25 @@ test is about a require, and there is none.
 It is here rather than in `common/` for this directory's reason: both admin
 surfaces read it, and what it reads is route-registering, lazily or not.
 `tests/protocol_endpoints.js` holds it.
+
+## `policy_kinds.ts`: WHAT A KIND DECLARES, SO THE CONSOLE AND THE API NEED NOTHING PER KIND (#1235, 2026-10-30)
+
+A kind on Directory → Policies is a module and a row here (#64,
+`common/CLAUDE.md` 3bd). Since #1235 the named-policy machinery reads only
+what the kind declares, so the six kinds of #1234 (#1236–#1241) each adopt
+named policies without touching the console, the API or each other:
+
+* **On the module**: `SELECTORS` (the save's selector fields — the
+  `precedence` row for a kind whose holders name its policies; the locale
+  and post-login policies still list applications or groups until #1238 and
+  #1239), `REFERENCES` (`{ application?, group?, person? }`, the attribute by
+  which each holder names a profile) and `namedBy(name)` (`{ applications,
+  groups, people }`). `admin_views.policyKindMember()` publishes them as
+  `selectors`, `references` and each named row's `namedBy`; `admin_api.ts`
+  describes a field per `SELECTORS` key; `web_policies.ts`'
+  `namedProfileParts()` draws what is declared.
+* **On the row**: `tabbed: true` draws the Default / Named policies / New
+  policy sub-tabs (carried to the console as `kind.tabbed`).
+* **The ranking and the recipe** are `common/policy_selection.ts`'s,
+  `common/CLAUDE.md` 3cx; the group and person halves are
+  `ldap/CLAUDE.md`'s.

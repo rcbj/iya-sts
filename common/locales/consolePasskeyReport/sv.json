@@ -55,7 +55,7 @@
   "other": "andra modeller",
   "noModels": "Ingen autentiserarmodell räknas här.",
   "profileName": "Profil",
-  "selectGroups": "Väljer grupper",
+  "selectGroups": "Namngiven av grupper (stsPasskeyPolicy)",
   "namedByApplications": "Namngiven av applikationer (appPasskeyPolicy)",
   "precedence": "Företräde",
   "countThisProfile": "räkna dess population",

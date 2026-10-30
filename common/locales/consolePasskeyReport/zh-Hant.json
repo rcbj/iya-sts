@@ -55,7 +55,7 @@
   "other": "其他型號",
   "noModels": "此處未統計到任何驗證器型號。",
   "profileName": "設定檔",
-  "selectGroups": "選取的群組",
+  "selectGroups": "由群組指定（stsPasskeyPolicy）",
   "namedByApplications": "由應用程式指定（appPasskeyPolicy）",
   "precedence": "優先順序",
   "countThisProfile": "統計其族群",

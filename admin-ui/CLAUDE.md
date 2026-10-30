@@ -8317,47 +8317,47 @@ tab, and a service account's section of the person page —
 * Without Admin Write the section says whether the mark is set and draws no
   form.
 
-## AN APPLICATION'S PASSKEY POLICY, AND THE PASSKEY POLICY TAB'S SEARCH AND SUB-TABS (#609; rcbj, 2026-10-13)
+## AN APPLICATION'S PASSKEY POLICY, AND THE POLICY KINDS' SUB-TABS (#609, rcbj 2026-10-13; reshaped by #1235, 2026-10-30)
 
-* **Nothing is stored on the application** (rcbj's decision 1). The relation
-  is a named passkey policy's `stsPasskeySelectApplication`, and
-  `passkeyPolicy.forApplication()` reads it, matching an application's
-  identifier and each client_id as `selectionFor()` matches the one a
-  sign-in names. The application read carries it as `page.passkeyPolicies`
-  (`admin_views.applicationPasskeyPolicies()`), and
-  `ApplicationsPage.applicationPasskeyPolicyCard()` draws it READ-ONLY at
-  the foot of the Every protocol sub-tab: the policies naming it with their
-  precedence, the lowest marked, each linked to `#passkey-profile-<name>`
-  on the Policies page, the group note. **`appliesBy` is there because a
-  sign-in names ONE of the names** — an OAuth sign-in the client_id — so two
-  policies naming the application by different names give different
-  answers; the card says so per name rather than pretending there is one.
-* **The Passkey policy tab is three sub-tabs** (`kit.subTabbedPanels()`):
-  `passkey-sub-default`, `passkey-sub-named`, `passkey-sub-new`, the schema
-  under all three. `PoliciesPage.isTabbedKind()` limits it to the passkey
-  policy; the locale policy's named profiles are drawn as they were.
-* **The applications box's search is #459's machinery in a plain form**: a
-  `fg-cell fg-search` around the comma-separated box, `WebKit.fieldSearchOf()`
-  with kind `policy-applications` (its own `boxTip` branch: no "this
-  application itself"), keyed per form (`passkey-apps` for New policy,
-  `passkey-apps.<name>` for a stored one) so no two forms share a cell. The
-  forms still post to `/admin/policies`; `isFieldSearch()` knows the page
-  (`WebAnswers.POLICIES_PAGE`) and `ConsoleRuntime.policySearch()` answers
-  the press in the browser: the Applications list, five a page, leaving out
-  what the box names, the form's posted fields kept as
-  `state.policyDrafts[<key>]` and an Add appending the IDENTIFIER
-  (`WebAnswers.withListedValue()`). Nothing is written until the form's
-  Save. **A refused create keeps that draft** (#841): the New policy form
-  posts `newProfile`, and `WebAnswers.redraw()` stores the posted fields in
-  the same `passkey-apps` cell and the refusal in
-  `state.policySaveErrors['passkey-apps']`, drawn above the form. The key
-  is the form's, not the typed name, so a collision with a stored profile
-  does not overlay that profile. **Each searching form opens with a hidden
-  `default-submit`**, the
-  application grid's reason: otherwise Enter in any box presses Find.
-  `tests/passkey_policy_on_application.js` holds the data, the card, the
-  sub-tabs and the search; `tests/protocol/sts_passkey_policy_application.js`
-  the API half.
+* **The application NAMES its passkey policy since #1235** (rcbj on #1234,
+  reversing #609's decision 1, "nothing is stored on the application"):
+  `appPasskeyPolicy`, a field of the Every protocol sub-tab with its closed
+  set (`default` and the realm's named profiles), is the control. The card
+  `ApplicationsPage.applicationPasskeyPolicyCard()` stays READ-ONLY at the
+  foot of that sub-tab and says what the reference comes to
+  (`page.passkeyPolicies`, `admin_views.applicationPasskeyPolicies()` over
+  `passkeyPolicy.forApplication()`): the profile named and its precedence,
+  a warning where the realm holds no profile of that name, a link to
+  `#passkey-profile-<name>`, and how many named profiles a group names and
+  could still win for a member. #609's `appliesBy` went: one attribute has
+  one value, whichever name a sign-in uses.
+* **A group names its policy on the group page** (#1235): one picker per
+  kind that declared a group reference (`GroupsPage.policyPickers()`, from
+  the group read's `policyReferences`), each its own `set-policy` form,
+  which the directory's `setGroupPolicy()` checks. A person's references are
+  the person editor's Policies tab (`ldap/CLAUDE.md`).
+* **Sub-tabs are a declaration** (`tabbed: true` on the kind's row in
+  `admin-core/policy_kinds.ts`, carried as `kind.tabbed` on the view):
+  `<kind>-sub-default`, `<kind>-sub-named`, `<kind>-sub-new`, the schema
+  under all three. Only the passkey policy declares it today; the locale and
+  post-login policies' named profiles are drawn as they were.
+* **`PoliciesPage.namedProfileParts()` draws what the kind declares**
+  (`member.selectors`, `member.references`): a box per list selector a kind
+  still keeps (the locale policy's applications, the post-login policy's
+  groups), the precedence, and on a tabbed kind's Named policies sub-tab,
+  above each profile's form, the applications, groups and people NAMING it
+  (`named.namedBy`), read-only. **The application search the forms carried
+  (#609) is gone with the applications box** — `policySearch()`, the
+  `policy-applications` kind and its `boxTip` branch were deleted.
+* **A refused create keeps its draft** (#841): the New policy form posts
+  `newProfile`, and `WebAnswers.redraw()` stores the posted fields in
+  `state.policyDrafts['<kind>-new']` and the refusal in
+  `state.policySaveErrors['<kind>-new']`, drawn above the form
+  (`PoliciesPage.draftKeyOf()`). The key is the form's, not the typed name,
+  so a collision with a stored profile does not overlay that profile.
+  `tests/passkey_policy_on_application.js` holds the references, the card,
+  the sub-tabs, the group picker and the delete;
+  `tests/protocol/sts_passkey_policy_application.js` the API half.
 
 ## AN APPLICATION'S DECLARED AND OBSERVED ATTRIBUTES (#706, #708; rcbj, 2026-10-19)
 

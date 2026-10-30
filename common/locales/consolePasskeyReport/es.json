@@ -55,7 +55,7 @@
   "other": "otros modelos",
   "noModels": "Aquí no se cuenta ningún modelo de autenticador.",
   "profileName": "Perfil",
-  "selectGroups": "Selecciona grupos",
+  "selectGroups": "Nombrado por grupos (stsPasskeyPolicy)",
   "namedByApplications": "Nombrado por aplicaciones (appPasskeyPolicy)",
   "precedence": "Precedencia",
   "countThisProfile": "contar su población",

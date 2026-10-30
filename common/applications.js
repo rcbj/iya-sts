@@ -4599,7 +4599,7 @@ const SCHEMA = {
     // 2026-10-30: "a unique application or user attribute ... that points at
     // each type of named policy"). It replaced the named passkey policy's
     // own list of applications (`stsPasskeySelectApplication`, #535, #609),
-    // and no migration is owed. `appAuthnPolicy`'s arrangement: one value,
+    // and no migration is owed; a group names one in `stsPasskeyPolicy`. `appAuthnPolicy`'s arrangement: one value,
     // CHECKED AT THE WRITE (CHOICES_CHECKED_HERE) against `default` and this
     // realm's named passkey policies, and listed in POLICY_REFERENCES so the
     // policy can ask which applications name it.
@@ -4609,13 +4609,13 @@ const SCHEMA = {
       what: 'THE PASSKEY POLICY A SIGN-IN TO THIS APPLICATION IS HELD TO: ' +
             '`default` (or empty), or the name of a named passkey policy ' +
             'of this realm (Directory > Policies). It competes on ' +
-            'precedence with every named passkey policy that selects one ' +
-            'of the person\'s groups: the lowest precedence applies, ties ' +
-            'by name, and `default` where none does.\n\nA name no policy ' +
-            'of this realm holds — written past the console — is logged ' +
-            '(STS-AUTHN-0537) and the default passkey policy applies until ' +
-            'the policy exists. A named passkey policy this attribute ' +
-            'names cannot be deleted (STS-AUTHN-0538).\n\nIt is WRITTEN ' +
+            'precedence with the passkey policy each of the person\'s ' +
+            'groups names (stsPasskeyPolicy): the lowest precedence ' +
+            'applies, ties by name, and `default` where nothing names ' +
+            'one.\n\nA name no policy of this realm holds — written past ' +
+            'the console — names nothing and is logged (STS-AUTHN-0537). A ' +
+            'named passkey policy this attribute names cannot be deleted ' +
+            '(STS-AUTHN-0538).\n\nIt is WRITTEN ' +
             'BY NOBODY: no protocol presents it, so it is editable and ' +
             'starts empty.' },
     // -------------------------------------------------------------------

@@ -55,7 +55,7 @@
   "other": "iba pang modelo",
   "noModels": "Walang modelo ng authenticator na binilang dito.",
   "profileName": "Profile",
-  "selectGroups": "Pinipiling grupo",
+  "selectGroups": "Pinangalanan ng mga group (stsPasskeyPolicy)",
   "namedByApplications": "Pinangalanan ng mga application (appPasskeyPolicy)",
   "precedence": "Precedence",
   "countThisProfile": "bilangin ang populasyon nito",

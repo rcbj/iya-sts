@@ -365,8 +365,9 @@ function refusedNew(t, drawn, names) {
   const policies = require(ROOT + '/admin-ui/web_policies');
   const answers = require(ROOT + '/admin-ui/web_answers');
   const kit = require(ROOT + '/admin-ui/web_kit');
+  // No character the page escapes, so the drawn refusal reads as sent.
   const why = 'The precedence of a named policy is a whole number from 1 ' +
-    'to 1000; "0" is not.';
+    'to 1000, and 0 is not.';
   const fields = {
     action: 'save-passkey-policy', newProfile: '1', profile: names.group,
     precedence: '9', minPinLength: '12', allowUsernameless: 'TRUE',

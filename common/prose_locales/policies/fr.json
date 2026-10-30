@@ -1379,14 +1379,6 @@
     "en": "5098a9645fefe2ff",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
   },
-  "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
-    "en": "03ba679923c40b45",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique des clés d’accès nommée, lors d’une connexion pour l’une d’elles."
-  },
-  "passkey.SCHEMA.attributes.stsPasskeySelectGroup.what": {
-    "en": "8c6adaafe4e8fbc4",
-    "text": "Les groupes (cn ou DN) aux membres desquels s’applique une politique des clés d’accès nommée."
-  },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",
     "text": "Quelle politique des clés d’accès nommée l’emporte lorsque plusieurs correspondent : la plus basse, de 1 à 1000."
@@ -1402,14 +1394,6 @@
   "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
     "en": "110d1231fc9be5f4",
     "text": "Qui a émis le lien de réinitialisation du mot de passe présent sur cette entrée : `self` (le formulaire de mot de passe oublié) ou `operator` (un administrateur). Écrit et effacé avec le lien. Tenu à jour par ce service."
-  },
-  "passkey.SELECTORS.selectApplications.what": {
-    "en": "03ba679923c40b45",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique des clés d’accès nommée, lors d’une connexion pour l’une d’elles."
-  },
-  "passkey.SELECTORS.selectGroups.what": {
-    "en": "8c6adaafe4e8fbc4",
-    "text": "Les groupes (cn ou DN) aux membres desquels s’applique une politique des clés d’accès nommée."
   },
   "passkey.SELECTORS.precedence.what": {
     "en": "cd02467de702ad24",

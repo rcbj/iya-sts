@@ -196,6 +196,13 @@ The console groups are created on first grant, and the bootstrap `admin` holds b
 
 The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remotePepGroup` and `roles.xacmlUserGroup`. The directory also treats `groupOfUniqueNames`, `posixGroup` and `groupOfURLs` entries as groups, and reads `uniqueMember` and `memberUid` as well as `member`.
 
+A group may name the policy its members are held to, one attribute per kind
+of policy: today `stsPasskeyPolicy`, a [named passkey
+policy](passkeys.md#different-rules-for-different-applications-or-groups) or
+`default`. It is set on the group's page or with
+`POST /admin-api/groups/set-policy`, which accepts only a policy the realm
+holds; it competes on precedence with the policy the application names.
+
 A group `fedProvisionGroups` creates also carries `federationRelationship`,
 the relationship id that created it. A later sign-in through that
 relationship may add people only to groups carrying that mark. A token that
@@ -234,7 +241,7 @@ draws it with a description of every field.
 | Who may start a sign-in (#426; [Identity-provider-initiated sign-in](idp-initiated-sso.md)) | `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso` (each TRUE or FALSE, overriding the realm setting of the same name; identity-provider-initiated is off by default), `oauthInitiateLoginUri` (OpenID Connect Core section 4's `initiate_login_uri`; https, no fragment), `appLaunchProtocol` (`saml2`, `saml11`, `wsfed` or `oidc`: what `/launch/{app}` starts when the link names none) |
 | Kerberos service | `krb5ServicePrincipalName`, `krb5ServiceKeys` (**sealed**), `krb5ServiceKeyInfo` |
 | Delegation (#108, #186; [Delegation and impersonation](delegation.md)) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSemantics`, `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`, `appNotDelegated`, `appMayAct`, and for a Kerberos service `krb5TrustedForDelegation` |
-| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnPolicy` (the [named authentication policy](authentication.md#named-authentication-policies) it signs in under; it replaced `appAuthnMechanism` and `appMfaMechanism`) |
+| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnPolicy` (the [named authentication policy](authentication.md#named-authentication-policies) it signs in under; it replaced `appAuthnMechanism` and `appMfaMechanism`), `appPasskeyPolicy` (the [named passkey policy](passkeys.md#different-rules-for-different-applications-or-groups) a sign-in to it is held to) |
 | Certificate enrollment | `appEnrolledCertificate`, `appEnrolledPrivateKey`, `appAcmeEabKey`, `appScepChallenge`, `appCertificateHostName` |
 | GNAP | `gnapInstanceId`, `gnapClassId`, `gnapKey`, `gnapKeyIdentity`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey` (**withheld**), `gnapSymmetricAlg`, `gnapDisplayUri`, `gnapLogoUri`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapResourceServerUri`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapMacaroonKey`, `gnapScopedSignals` |
 | Links to other registries | `oid4vpClientId`, `federationPartnerId`, `appFederationRelationship`, `appFederationAutoRedirect`, `ldapBindDn`, `scimClientId`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `spiffeWorkloadId` |

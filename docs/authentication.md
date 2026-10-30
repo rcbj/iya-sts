@@ -789,45 +789,40 @@ one, with a link back to choose another. The choice is a list of links. The rule
 asked for after a password. Either way the assertion is checked against the
 passkey it names; only the request changes.
 
-**Named passkey policies** (#535). Beside `default`, a realm may keep named
-passkey policies, for example a strict one for administrators. Each has all
-the rows above and three selectors:
+**Named passkey policies** (#535, #1235). Beside `default`, a realm may keep
+named passkey policies, for example a strict one for administrators. Each has
+all the rows above and a precedence, from 1 to 1000. A named policy lists
+nothing itself; what it covers names it:
 
-- the applications it applies to (identifier or client_id);
-- the groups whose members it applies to (by cn or DN);
-- a precedence, from 1 to 1000.
+- an application, in its `appPasskeyPolicy`;
+- a group, in its `stsPasskeyPolicy`, chosen on the group's page.
 
-At a sign-in, the named policy that applies is one listing the application
-being signed in to, or a group the person is in. Where several match, the
-one with the **lowest precedence** wins, and where none matches, `default`
-applies. An application's policy and a person's are not ranked by kind: give
+At a sign-in, the candidates are the policy the application names and the
+policy each of the person's groups names. The one with the **lowest
+precedence** wins, ties by name, and where nothing names one, `default`
+applies. An application's policy and a group's are not ranked by kind: give
 the stricter one the lower number. For example, a strict application at 5
 beats a lenient group at 50.
 
 Registration on `/portal/keys` or through an activation link has no
-application, so only group selectors apply there. A realm's named policies
-are its own: unlike `default`, they are not inherited from the default realm.
+application, so only the groups' policies apply there. A realm's named
+policies are its own: unlike `default`, they are not inherited from the
+default realm. A named policy that an application or a group names cannot be
+removed until they name another.
 
 Manage them on Directory → Policies, or with
-`POST /admin-api/policies/save-passkey-policy` naming `profile`,
-`selectApplications`, `selectGroups` and `precedence`.
-`reset-passkey-policy` with a named `profile` removes it.
+`POST /admin-api/policies/save-passkey-policy` naming `profile` and
+`precedence`. `reset-passkey-policy` with a named `profile` removes it. Name
+one with `POST /admin-api/applications/set` (`appPasskeyPolicy`) or
+`POST /admin-api/groups/set-policy` (`stsPasskeyPolicy`).
 
 The *Passkey policy* tab there has three sub-tabs (#609):
 
 - **Default**: the `default` policy, which applies wherever no named one
   does.
 - **Named policies**: every named policy, each with the applications and
-  groups it selects, its precedence, its form and a Remove.
+  groups that name it, its precedence, its form and a Remove.
 - **New policy**: the form that adds one.
-
-The applications box of a named policy's form has a search under it: type
-part of an application's identifier or name and press **Find** (or Enter).
-The realm's applications are listed five to a page, leaving out the ones the
-box already names, each with an **Add**. Add puts the application's
-**identifier** in the box; nothing is written until the policy's Save, which
-stores the box as `stsPasskeySelectApplication`, as before. A client_id
-typed by hand still works.
 
 An application's own page shows the same relation read-only: see
 [the passkey policy card](applications.md#the-passkey-policy-that-applies-to-it).

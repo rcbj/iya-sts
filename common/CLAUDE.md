@@ -12992,6 +12992,14 @@ draws a form per named profile and an add form (`namedProfilesSection()`).
 The API's `profile` became a pattern for this kind, and it takes the
 selectors.
 
+**#1235 TURNED THE SELECTION ROUND (2026-10-30)**: `stsPasskeySelectApplication`
+and `stsPasskeySelectGroup` are gone. An application names its profile in
+`appPasskeyPolicy` and a group in `stsPasskeyPolicy`; a profile keeps its
+precedence; `selectionFor()` hands the references to
+`PolicySelection.rank()` (3cx). A dangling reference selects nothing and is
+logged (STS-AUTHN-0537); a profile anything names is not deleted
+(STS-AUTHN-0538).
+
 **#536 (2026-10-09) MOVED THE REFUSALS INTO THE ISSUANCE POLICY.** rcbj first
 accepted them as code, then reversed: "move them into XACML policy, but
 continue to have all functionality available in the Passkey policy be
@@ -14184,3 +14192,98 @@ policy's to say; there is no second switch.
   because `credentials.ts` may not reach the audit log.
 * **`lanes`** on the passkey policy (#1104) feeds
   `webauthnPolicy.alongsideClassical()` through `registrationRows()`.
+
+## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
+
+rcbj's decisions on #1234 (2026-10-30, twice that day): every kind on
+Directory → Policies gets named policies, and
+
+* **WHAT A POLICY COVERS NAMES IT; THE POLICY LISTS NOTHING.** One
+  single-valued attribute per kind on each kind of holder the kind maps to:
+  `app<Kind>Policy` on the application (as `appAuthnPolicy` since #1148),
+  `sts<Kind>Policy` on the group and the person (one spelling for both).
+  A named policy keeps its rows and its precedence (`sts<Kind>Precedence`,
+  1 to 1000). The names: applications `appPasswordPolicy`,
+  `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`,
+  `appPostLoginPolicy`; groups `stsPasswordPolicy`, `stsAuthnPolicy`,
+  `stsPasskeyPolicy`, `stsLocalePolicy`, `stsAttributePolicy`,
+  `stsPostLoginPolicy`; people `stsServiceAccountPolicy`,
+  `stsAttributePolicy`.
+* **THE RANKING**: the candidates are the policy the application names, the
+  policy the person names and the policy each of the person's groups names.
+  The lowest precedence wins, ties by name, else `default`. An empty
+  reference and `default` are no candidate. A name the realm does not hold
+  is no candidate either and comes back in `missing`: what it MEANS is the
+  kind's (the authentication policy fails closed, #1148; the passkey policy
+  logs it and reads on, its default being the realm's baseline).
+* **CHECKED AT THE WRITE, AND NOT DELETED WHILE NAMED.** Each holder has one
+  door: an application's field through `applications.js`'
+  CHOICES_CHECKED_HERE (STS-REG-0203), a group's through the directory's
+  `setGroupPolicy()` (STS-LDAP-0194, 0195), a person's through the person
+  editor (STS-LDAP-0106). A named policy any holder names is not deleted:
+  `PolicySelection.deleteProblem()` words the refusal, under the kind's own
+  code.
+* **SELECTION, NOT AUTHORIZATION** (#535's decision): it chooses which rows
+  apply; the rows' refusals decide, in the issuance policy where they are
+  decisions.
+
+What the module is: **a leaf of static methods** (rule 3) over values the
+caller hands in — `rank()`, `named()`, `precedenceOf()`, `groupReferences()`
+(a person's groups as references), `forReference()` (what one holder's
+reference comes to, the application page's card), `nameProblem()`,
+`checkPrecedence()`, `referenceProblem()`, `deleteProblem()`, and
+`MIN_PRECEDENCE`, `MAX_PRECEDENCE`, `DEFAULT_PRECEDENCE`. **Its one state is
+the register of person and group references** (`declareReference()`,
+`referenceOf()`, `referencesOn()`): a kind declares at load, and the person
+editor and the group writer read it, so neither requires any kind's module
+and the console draws one picker per declared kind.
+
+**Who names a policy is each register's own question**, reached lazily so
+the leaves stay leaves, and none of it a walk:
+`applications.applicationsNamingPolicy(attribute, name)` (the application
+listing indexes every attribute in `POLICY_REFERENCES`;
+`applicationsNamingAuthnPolicy()` is it for `appAuthnPolicy`), the
+directory's `groupsNamingPolicy()` (the group index, which holds all six
+group references already) and `peopleNamingPolicyAsync()` (the holders of
+the attribute, async: a kind whose delete must ask it awaits it).
+
+**The post-login policy keeps its own group list until #1239** and hands a
+profile listing one of the person's groups to `rank()` as that group's
+reference: the same answer as before, by construction.
+
+### The recipe a kind follows (#1236–#1241)
+
+1. **The module** (`common/<kind>_policy.ts`): a `SELECTION` spec
+   (`{ precedenceAttribute: 'sts<Kind>Precedence', defaultPrecedence:
+   PolicySelection.DEFAULT_PRECEDENCE }`), `REFERENCES` (`{ application?,
+   group?, person? }`, exported), `SELECTORS` holding the `precedence` row
+   only (the console and the API draw a field per row and nothing else),
+   a precedence on `read()` of a named profile
+   (`PolicySelection.precedenceOf()`), `checkPrecedence()` and
+   `nameProblem()` in `save()`, and `namedBy(name)` answering `{
+   applications, groups, people }`. The selection: gather the references —
+   the application's (lazily through `applications.js`), the person's (their
+   entry), the groups' (`directory.personGroupReferences(key,
+   REFERENCES.group)` and `PolicySelection.groupReferences()`) — and
+   `PolicySelection.rank(entries, SELECTION, references)`; decide what
+   `missing` means and log it under the kind's code. `reset()` of a named
+   profile refuses with `deleteProblem(noun, name, this.namedBy(name))`.
+   At load, after the slot: `PolicySelection.declareReference('group' |
+   'person', attribute, noun, choices)` for each group or person reference.
+2. **The kind's row** in `admin-core/policy_kinds.ts`: `tabbed: true` for
+   the Default / Named policies / New policy sub-tabs.
+3. **An application reference**: a declaration row in `applications.js`
+   (`appPasskeyPolicy`'s, beside `appAuthnPolicy`), and the attribute in
+   `EDITABLE` (`'set'`), `ATTRIBUTE_CHOICES` (`default` and the kind's
+   named policies, read lazily), `CHOICES_CHECKED_HERE`, `POLICY_REFERENCES`
+   and, where its people configure it, `SIMPLE_FIELD_ATTRIBUTES`.
+4. **A group reference**: nothing in `ldap_server.js` beyond handing
+   `personGroupReferences` and `groupsNamingPolicy` to the module's
+   `setDirectory()`; the index and `setGroupPolicy()` are generic.
+5. **A person reference**: the declaration, `peopleNamingPolicyAsync` in the
+   module's hooks; the Policies tab is the person editor's.
+6. **The rest of what #1234 lists**: the kind's error codes, the prose
+   catalogs (the `SELECTORS` and `SCHEMA` sentences are the policies
+   namespace's), `docs/`, and tests on `tests/policy_selection.js`'s
+   pattern.
+
