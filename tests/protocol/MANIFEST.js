@@ -1032,6 +1032,13 @@ const JOBS = [
   // ALFA, the doors, the batch and the metadata, in a realm of its own.
   // `local: true`: the API is ours.
   { file: 'sts_authzen.js',              browser: false },
+  // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION OVER HTTP (#564 P6): the
+  // default policy (never root, withheld from the pull), the switch and its
+  // coverage refusal, the token and authorization endpoints, the exchange
+  // bound, a refresh after the policy changes, AuthZEN against the
+  // application's policy, and the orphan — in a realm of its own.
+  // `local: true`: the policies and the API are ours.
+  { file: 'sts_fga.js',                  browser: false },
   { file: 'sts_xacml_remote_pep.js',     browser: false,
     docker: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
