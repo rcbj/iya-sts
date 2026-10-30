@@ -96,8 +96,8 @@
     "text": "full pour l’ensemble des fonctionnalités obligatoires : le langage de politiques, les sept valeurs de décision dont les trois Indeterminate étendus, la correspondance des cibles, les conditions, les variables, les douze algorithmes de combinaison, les obligations et les conseils (advice), les références de politiques, et la bibliothèque de fonctions standard sur les dix-sept types de données. Conforme à la suite de conformité OASIS — 454 des 455 cas obligatoires réussissent, et l’unique exception est consignée avec son argumentation dans xacml/conformance/MANIFEST.js. NON couverts : AttributeSelector et les fonctions XPath (une politique qui en utilise un est Indeterminate plutôt que silencieusement vide), les profils Multiple Decision et Hierarchical Resource, et la délégation administrative."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "96dbb5058267c713",
-    "text": "partial: l'Access Evaluation API (section 6), décidée par le moteur XACML selon la politique racine du domaine au moyen d'un catalogue d'attributs par domaine, avec X-Request-ID et le défi de la section 11.3, l'Access Evaluations API (section 7) avec ses trois sémantiques, et les métadonnées du PDP (section 9) sous leurs deux formes. Manquent : les trois Search APIs, signed_metadata et tous les profils (Obligations, Access Request and Approval, ceux d'OAuth), tous encore à l'état de brouillon."
+    "en": "587fa315b80f6a67",
+    "text": "partial: l'Access Evaluation API (section 6), décidée par le moteur XACML selon la politique racine du domaine au moyen d'un catalogue d'attributs par domaine, avec X-Request-ID et le défi de la section 11.3, l'Access Evaluations API (section 7) avec ses trois sémantiques, et les métadonnées du PDP (section 9) sous leurs deux formes, signed_metadata compris, et le brouillon de l'Obligations Profile pour un PEP qui déclare les types, et les trois Search APIs (section 8) sur les propres personnes, applications, API, relations de délégation et actions de politique de ce service, paginées et non transitives. Manquent : les obligations par résultat dans une recherche, et les profils Access Request and Approval et OAuth, encore à l'état de brouillon."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -751,6 +751,14 @@
     "en": "f21e16beea449f7d",
     "text": "Chaque politique ACTIVÉE et celle qui est la racine, plus un jeton de synchronisation portant exactement sur ces octets ; ?since=<token> répond 304. LA RÉCUPÉRATION EST LE CONTRAT — un PEP distant interroge ce point à son propre intervalle et évalue localement avec sa propre copie du moteur, car un PEP qui interrogerait à chaque requête serait /xacml/pdp avec un saut réseau devant chaque décision d’accès. Exige REMOTE_PEPS — un rôle DIFFÉRENT du XACML_USER qu’exigent les quatre points de terminaison ci-dessus, et un groupe différent, car c’est le point de terminaison qui publie les documents avec lesquels ce service contrôle son propre accès. Une politique DÉSACTIVÉE est omise plutôt qu’envoyée avec un indicateur, car un PEP qui la chargerait appliquerait une politique que ce service n’applique pas."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "e684892d931f5313",
+    "text": "Le catalogue d'attributs AuthZEN du domaine — les lignes de authzenAttribute sur sts-authzen-api, lues comme POST /access/v1/evaluation les lit — et les paramètres AuthZEN qui changent la correspondance ou la réponse, plus un jeton de synchronisation qui lui est propre ; ?since=<token> répond 304. Récupéré à côté des politiques par le conteneur xacml-pep, dont le PDP de périphérie répond à AuthZEN avec exactement ces lignes, si bien qu'une requête est mise en correspondance de la même façon aux deux endroits. Exige REMOTE_PEPS, comme la récupération des politiques. Additif : /xacml/pep/policies est inchangé."
+  },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "Qui ce domaine admet maintenant dans son API AuthZEN, pour que le PDP de périphérie du conteneur xacml-pep admette d'après cela : chaque appelant que la politique de contrôle d'accès admet sur /access/v1/* (AUTHZEN_PEPS, tel que la politique en décide), nommé comme une politique le voit dans urn:sts:xacml:authzen:caller, avec le SHA-256 du DER de chaque certificat que ce service résoudrait vers ce nom, sa portée d'applications et les points de terminaison auxquels il est admis, plus un jeton de synchronisation qui lui est propre ; ?since=<token> répond 304. Le jeton change avec un membre, un certificat, une portée ou la réponse de la politique, et la périphérie converge à son interrogation suivante. Exige REMOTE_PEPS, comme la récupération des politiques, si bien que quiconque détient ce rôle peut lire qui peut interroger le PDP (rcbj sur #1189). Additif : /xacml/pep/policies et /xacml/pep/authzen-catalogue sont inchangés."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Ses compteurs cumulés et le jeton de synchronisation qu’il détient — ce qui fait de « à jour » une comparaison que ce service effectue plutôt qu’une affirmation que le PEP fait sur lui-même. Ces décisions ont eu lieu dans un autre processus et ce service n’en a vu aucune, ce qui est tout l’intérêt d’un PEP distant. Il ne crée PAS de ligne : un battement de cœur provenant de quelque chose qui ne s’est jamais enregistré est refusé en nommant le point de terminaison d’enregistrement, car une ligne créée ici ne porterait ni certificat, ni URL de notification, ni date d’enregistrement."
@@ -767,9 +775,21 @@
     "en": "8bc09fb8f18ab7e3",
     "text": "POST de valeurs par défaut de premier niveau subject, action, resource et context et d'un tableau evaluations dont les éléments les remplacent ; on obtient evaluations, une décision par élément dans l'ordre de la requête. options.evaluations_semantic vaut execute_all (par défaut), deny_on_first_deny ou permit_on_first_permit. L'échec d'un élément est false avec context.error et n'est jamais masqué par le 200 ; un lot au-delà d'authzen.maxEvaluations ou d'authzen.maxBodyBytes est un 400 avant toute décision. Chaque élément est sa propre ligne d'audit, portant l'identifiant du lot."
   },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "Faites un POST de la requête de la section 8 ; obtenez results et une page. Renvoie les sujets d'un type qui peuvent effectuer une action sur une ressource : les personnes de l'annuaire du domaine, pour un type figurant dans authzen.resolveSubjectTypes. Chaque candidat est décidé par la politique racine du domaine exactement comme une évaluation, et seuls ceux qui sont permis sont des résultats ; paginé par page.next_token, borné par authzen.searchMaxCandidates, et déclaré incomplet au-delà."
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "Faites un POST de la requête de la section 8 ; obtenez results et une page. Renvoie les ressources d'un type sur lesquelles un sujet peut effectuer une action : application, api ou delegation, depuis l'annuaire des applications. Chaque candidat est décidé par la politique racine du domaine exactement comme une évaluation, et seuls ceux qui sont permis sont des résultats ; paginé par page.next_token, borné par authzen.searchMaxCandidates, et déclaré incomplet au-delà."
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "Faites un POST de la requête de la section 8 ; obtenez results et une page. Renvoie les actions qu'un sujet peut effectuer sur une ressource : les noms auxquels la politique racine compare action-id, et les permissions propres d'une application ou d'une API. Chaque candidat est décidé par la politique racine du domaine exactement comme une évaluation, et seuls ceux qui sont permis sont des résultats ; paginé par page.next_token, borné par authzen.searchMaxCandidates, et déclaré incomplet au-delà."
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "411b951f2d32a644",
-    "text": "Le document de la section 9 : policy_decision_point (la base de ce domaine, identique à l'URL sous laquelle il est obtenu) et seulement les points de terminaison qui répondent ici — aucun point de recherche ni capabilities tant qu'aucun n'est implémenté de bout en bout, et pas de signed_metadata. Public ; répond 501 tant que l'API est désactivée."
+    "en": "3b9a539920fa8ef3",
+    "text": "Le document de la section 9 : policy_decision_point (la base de ce domaine, identique à l'URL sous laquelle il est obtenu) et seulement les points de terminaison qui répondent ici (le lot et les trois recherches tant que chacun est activé), aucun capabilities, supported_obligations, et signed_metadata, un JWT des mêmes membres dont iss est l'identifiant du PDP, vérifiable avec le JWKS du domaine (authzen.signedMetadata). Public ; répond 501 tant que l'API est désactivée."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

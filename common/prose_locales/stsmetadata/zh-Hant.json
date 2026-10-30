@@ -96,8 +96,8 @@
     "text": "full——就必要功能集而言：原則語言、七種決策值（包括三種延伸的 Indeterminate）、目標比對、條件、變數、十二種組合演算法、義務與建議、原則參照，以及涵蓋全部十七種資料類型的標準函式庫。依 OASIS 一致性測試套件檢驗——455 個必要案例中通過 454 個，唯一的例外連同其論證記錄於 xacml/conformance/MANIFEST.js。「未」涵蓋：AttributeSelector 與 XPath 函式（使用它們的原則會是 Indeterminate，而不是默默為空）、Multiple Decision 與 Hierarchical Resource 設定檔，以及管理委派。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "96dbb5058267c713",
-    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；Access Evaluations API（第 7 節）及其三種語意；以及兩種形式的 PDP 中繼資料（第 9 節）。缺少：三個 Search API、signed_metadata 以及所有設定檔（Obligations、Access Request and Approval、OAuth 相關），皆仍為草案。"
+    "en": "587fa315b80f6a67",
+    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；Access Evaluations API（第 7 節）及其三種語意；兩種形式的 PDP 中繼資料（第 9 節），包括 signed_metadata；面向宣告了類型之 PEP 的 Obligations Profile 草案；以及三個 Search APIs（第 8 節），涵蓋本服務自己的人員、應用程式、API、委派關係與原則動作，分頁且不具遞移性。缺少：搜尋中依結果的義務，以及 Access Request and Approval 與 OAuth 設定檔，皆仍為草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -751,6 +751,14 @@
     "en": "f21e16beea449f7d",
     "text": "每一項「已啟用」的原則以及哪一項是根原則，外加一個正好涵蓋這些位元組的同步權杖；?since=<token> 會回應 304。拉取就是契約——遠端 PEP 依自己的間隔輪詢此端點，並以自己的引擎複本在本機評估，因為每個請求都詢問的 PEP 就等於在每個存取決策前多一道網路跳轉的 /xacml/pdp。需要 REMOTE_PEPS——這是與上方四個端點所需的 XACML_USER「不同」的角色，也是不同的群組，因為這個端點發布的是本服務用來強制執行自身存取的文件。「已停用」的原則會被略去，而不是附帶旗標傳送，因為載入它的 PEP 會強制執行一項本服務並未執行的原則。"
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "e684892d931f5313",
+    "text": "該領域的 AuthZEN 屬性目錄——sts-authzen-api 上 authzenAttribute 的各列，依 POST /access/v1/evaluation 的讀取方式讀取——以及會改變對應或答覆的 AuthZEN 設定，外加其自己的同步權杖；?since=<token> 回覆 304。由 xacml-pep 容器與政策一同拉取，其邊緣 PDP 正是以這些列答覆 AuthZEN，因此同一請求在兩處以同一種方式對應。與政策拉取一樣需要 REMOTE_PEPS。這是新增的：/xacml/pep/policies 維持不變。"
+  },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "此領域現在准許誰存取其 AuthZEN API，供 xacml-pep 容器的邊緣 PDP 據此准入：存取控制原則准許存取 /access/v1/* 的每個呼叫方（AUTHZEN_PEPS，由原則決定），以原則在 urn:sts:xacml:authzen:caller 中看到的名稱命名，附上本服務會解析到該名稱的每個憑證的 DER 的 SHA-256、其應用程式範圍以及其被准許存取的端點，另有自己的同步權杖；?since=<token> 回應 304。成員、憑證、範圍或原則的答覆有所變更時權杖隨之改變，邊緣在下一次輪詢時趨於一致。需要 REMOTE_PEPS，與原則拉取相同，因此持有該角色的任何人都能讀到誰可以詢問 PDP（rcbj 於 #1189）。為新增內容：/xacml/pep/policies 與 /xacml/pep/authzen-catalogue 維持不變。"
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "它的累計計數器以及它持有的同步權杖——正是這一點讓「最新」成為本服務執行的比較，而不是 PEP 對自己的宣稱。那些決策發生在另一個程序中，本服務一個也沒看到，這正是遠端 PEP 的全部意義。它「不會」建立資料列：來自從未註冊者的心跳會被拒絕並指出註冊端點，因為在此建立的資料列不會有憑證、通知 URL 與註冊日期。"
@@ -767,9 +775,21 @@
     "en": "8bc09fb8f18ab7e3",
     "text": "POST 頂層的 subject、action、resource 與 context 預設值，以及其項目覆寫這些預設值的 evaluations 陣列；回傳 evaluations，依請求順序每個項目一個決定。options.evaluations_semantic 為 execute_all（預設）、deny_on_first_deny 或 permit_on_first_permit。項目的失敗為帶 context.error 的 false，絕不會被 200 掩蓋；超過 authzen.maxEvaluations 或 authzen.maxBodyBytes 的批次在作出任何決定之前即為 400。每個項目都是單獨的稽核列，帶有批次 id。"
   },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "POST 第 8 節的請求；取得 results 與一個分頁。回應某一類型中可對某資源執行某動作的主體：領域目錄中的人員，類型須在 authzen.resolveSubjectTypes 中。每個候選都由領域的根原則以與評估完全相同的方式決定，只有被允許者才是結果；以 page.next_token 分頁，受 authzen.searchMaxCandidates 限制，超過時標示為不完整。"
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "POST 第 8 節的請求；取得 results 與一個分頁。回應某主體可對其執行某動作的某一類型資源：來自應用程式目錄的 application、api 或 delegation。每個候選都由領域的根原則以與評估完全相同的方式決定，只有被允許者才是結果；以 page.next_token 分頁，受 authzen.searchMaxCandidates 限制，超過時標示為不完整。"
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "POST 第 8 節的請求；取得 results 與一個分頁。回應某主體可對某資源執行的動作：根原則用來與 action-id 比較的名稱，以及應用程式或 API 本身的權限。每個候選都由領域的根原則以與評估完全相同的方式決定，只有被允許者才是結果；以 page.next_token 分頁，受 authzen.searchMaxCandidates 限制，超過時標示為不完整。"
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "411b951f2d32a644",
-    "text": "第 9 節的文件：policy_decision_point（本領域的基底，與取得它的 URL 一致），以及僅在此處回應的端點——在某項功能端到端實作之前沒有搜尋端點、沒有 capabilities，也沒有 signed_metadata。公開；API 關閉時回應 501。"
+    "en": "3b9a539920fa8ef3",
+    "text": "第 9 節的文件：policy_decision_point（本領域的基底，與取得它的 URL 一致），以及僅在此處回應的端點（批次端點與三種搜尋，各自開啟時），不含 capabilities；包含 supported_obligations，以及 signed_metadata，一個包含相同成員、iss 為 PDP 識別碼、可用領域 JWKS 驗證的 JWT（authzen.signedMetadata）。公開；API 關閉時回應 501。"
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

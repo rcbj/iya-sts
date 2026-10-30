@@ -23,6 +23,14 @@
     "en": "d7b1a01d26f2cc80",
     "text": "Le référentiel, qu’un PEP distant CHARGE"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "Le catalogue AuthZEN, que charge un PEP distant"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "Les appelants AuthZEN, qu'un PEP distant ADMET"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Ce qu’un PEP distant a appliqué"
@@ -38,6 +46,18 @@
   "endpoints.route./access/v1/evaluations.name": {
     "en": "71ce33d985a6eced",
     "text": "Un lot d'évaluations d'accès"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "Recherche de sujets"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "Recherche de ressources"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "Recherche d'actions"
   },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",

@@ -883,6 +883,10 @@
     "en": "9a9264e25acb9778",
     "text": "En AuthZEN-åtkomstutvärdering avgjordes"
   },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "En AuthZEN-sökning besvarades"
+  },
   "audit.actions.fga.decision.label": {
     "en": "c2696096c0749879",
     "text": "Ett finkornigt auktoriseringsbeslut fattades vid utfärdandet"

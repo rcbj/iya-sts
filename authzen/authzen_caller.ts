@@ -106,7 +106,39 @@ interface CallerDeps {
   loadOAuth(): any;
   // `xacml/xacml.ts`'s surface, for the certificate reading.
   loadXacml(): any;
+  // Loaded when a remote PEP pulls the edge caller list (#1189), never at
+  // load: the AuthZEN tab's directory reading (the group's members), the
+  // TLS client certificates this realm issued, and the directory codec's
+  // one reading of a stored `userCertificate` value.
+  loadAdmin(): any;
+  loadCertificates(): any;
+  loadCodec(): any;
+  // The SHA-256 of a certificate's DER, lower-case hex: the spelling the
+  // door's index keys a stored certificate by.
+  sha256Hex(der: Buffer): string;
 }
+
+// What `admission()` answers.
+interface Admission {
+  allowed: boolean;
+  why: string;
+}
+
+// The most group members, and the most certificates of one caller, the
+// edge caller list reads (#1189). Bounds, because the list is built per
+// pull; past either the list is CUT and says so, which leaves an edge
+// narrower than the service and never wider.
+const EDGE_MAX_MEMBERS = 500;
+const EDGE_MAX_CERTIFICATES = 64;
+
+// The two endpoints an edge PDP serves, whose paths the access-control
+// policy is asked about for each caller — the path a request to the
+// service itself would carry, so a policy that tells the single endpoint
+// from the batch decides the edge's list the same way.
+const EDGE_ENDPOINTS = Object.freeze([
+  { name: 'evaluation', path: '/access/v1/evaluation' },
+  { name: 'evaluations', path: '/access/v1/evaluations' }
+]);
 
 /**
  * The AuthZEN caller: its authentication, the access-control policy's
@@ -160,6 +192,27 @@ class AuthzenCaller {
         log.debug("Entering loadXacml().");
         log.debug("Leaving loadXacml().");
         return require('../xacml/xacml');
+      },
+      loadAdmin: function (): any {
+        log.debug("Entering loadAdmin().");
+        log.debug("Leaving loadAdmin().");
+        return require('./authzen_admin');
+      },
+      loadCertificates: function (): any {
+        log.debug("Entering loadCertificates().");
+        log.debug("Leaving loadCertificates().");
+        return require('../common/tls_client_certificates');
+      },
+      loadCodec: function (): any {
+        log.debug("Entering loadCodec().");
+        log.debug("Leaving loadCodec().");
+        return require('../persistence/directory_codec');
+      },
+      sha256Hex: function (der: Buffer): string {
+        log.debug("Entering sha256Hex().");
+        log.debug("Leaving sha256Hex().");
+        return String(require('../common/crypto').digest('sha256', der,
+                                                         'hex'));
       }
     };
   }
@@ -563,21 +616,11 @@ class AuthzenCaller {
    */
   mayAsk(req: Req, res: Res, caller: Caller): boolean {
     const self = this;
-    const { log, config, accessGate } = this.deps;
+    const { log, config } = this.deps;
     log.debug("Entering AuthzenCaller.mayAsk().");
     caller.roles = self.rolesOf(caller);
-    const policy = accessGate.check({
-      resource: accessGate.RESOURCE.AUTHZEN_API,
-      // WRITE, for `POST /xacml/pdp`'s reason: a decision is work a caller
-      // directs on this service's thread, not a page it reads.
-      action: accessGate.ACTION.WRITE,
-      requiredRoles: [AUTHZEN_ROLE],
-      subject: { name: caller.kind === 'entry' ? caller.name
-                                                : caller.clientId,
-                 kind: caller.kind === 'entry' ? 'user' : 'application',
-                 authenticated: true, roles: caller.roles },
-      context: { method: req.method, path: req.originalUrl || req.url }
-    });
+    const policy = self.admission(caller, req.method,
+                                  req.originalUrl || req.url);
     if (policy.allowed) {
       log.debug("Leaving AuthzenCaller.mayAsk(). Allowed.");
       return true;
@@ -593,6 +636,37 @@ class AuthzenCaller {
       (caller.roles.length ? caller.roles.join(', ') : 'no role') + '.');
     log.debug("Leaving AuthzenCaller.mayAsk(). Refused.");
     return false;
+  }
+
+  /**
+   * The access-control policy's answer about a caller whose roles are
+   * filled in, for a method and a path: resource `authzen-api`,
+   * AUTHZEN_PEPS required. Writes nothing — `mayAsk()` writes the refusal
+   * for a request, and `edgeCallers()` asks it for each caller a remote
+   * PEP is told about, so the two cannot ask different questions.
+   *
+   * @param caller - the caller, `roles` filled in
+   * @param method - the HTTP method
+   * @param path - the request path, the realm's prefix included
+   * @returns `{ allowed, why }`
+   */
+  admission(caller: Caller, method: string, path: string): Admission {
+    const { log, accessGate } = this.deps;
+    log.debug("Entering AuthzenCaller.admission().");
+    const policy = accessGate.check({
+      resource: accessGate.RESOURCE.AUTHZEN_API,
+      // WRITE, for `POST /xacml/pdp`'s reason: a decision is work a caller
+      // directs on this service's thread, not a page it reads.
+      action: accessGate.ACTION.WRITE,
+      requiredRoles: [AUTHZEN_ROLE],
+      subject: { name: caller.kind === 'entry' ? caller.name
+                                                : caller.clientId,
+                 kind: caller.kind === 'entry' ? 'user' : 'application',
+                 authenticated: true, roles: caller.roles },
+      context: { method: method, path: path }
+    });
+    log.debug("Leaving AuthzenCaller.admission(). " + !!policy.allowed);
+    return { allowed: !!policy.allowed, why: String(policy.why || '') };
   }
 
   /**
@@ -633,6 +707,228 @@ class AuthzenCaller {
     }
     log.debug("Leaving AuthzenCaller.scopeOf(). " + out.length);
     return out;
+  }
+
+  // ===========================================================================
+  // THE CALLERS A REMOTE PEP'S EDGE PDP ADMITS (#1189).
+  //
+  // rcbj's decision on #1189: the `xacml-pep` container's AuthZEN edge PDP
+  // admits callers by PULLING them from here (`GET
+  // /xacml/pep/authzen-callers`), with the cost accepted that anybody holding
+  // REMOTE_PEPS can read who may ask the PDP. So this is the three questions
+  // above asked AHEAD of any request, of every certificate a candidate holds,
+  // by the same functions a request is asked them by:
+  //
+  //   1. WHO. Each certificate goes through the certificate door's own
+  //      reading — `xacml.ts`'s `certificateCaller()`, `callerIdentity()`
+  //      without a socket, over `tls_client_certificates.js`'s one gate — so
+  //      the NAME sent is the DN that door would resolve the certificate to,
+  //      byte for byte the value a policy sees as
+  //      `urn:sts:xacml:authzen:caller`, and the certificate is sent by the
+  //      SHA-256 of its DER, which is what the edge compares.
+  //   2. MAY THEY. `admission()`, the policy `mayAsk()` asks, for the path of
+  //      each endpoint the edge serves, so the OUTCOME is sent — who holds
+  //      AUTHZEN_PEPS now as the policy decides it — and not the membership.
+  //   3. ABOUT WHICH APPLICATION. `scopeOf()`, as is.
+  //
+  // **THE CANDIDATES ARE THE GROUP'S MEMBERS** (`roles.authzenPepGroup`,
+  // read by `authzen_admin.ts`), and their certificates are the two kinds
+  // the door accepts: those stored in `userCertificate` on the entry (an
+  // outside authority's, #1061 — and one of this service's own, if stored),
+  // and the TLS client certificates this realm issued them that are still
+  // valid (`activeFor()`). An entry the policy admits WITHOUT the role, or a
+  // certificate enrolled over ACME, EST or SCEP and not stored on the entry,
+  // is not found this way and is not listed: the edge is narrower there than
+  // the service, never wider.
+  //
+  // **THE DOOR IS THE REALM'S.** The edge has mutual TLS only; a realm whose
+  // `authzen.callerAuthentication` is `bearer` or `mtls+bearer` admits no
+  // certificate alone, so it is sent no caller, and the edge admits nobody.
+  //
+  // **WHAT IS NOT KNOWN HERE IS NOT SENT AS KNOWN.** Whether a chain
+  // verifies is each door's own (the service against its Client
+  // Truststores, the edge against `PEP_AUTHZEN_CLIENT_CA`). Revocation is
+  // the service's register only: a certificate it records as revoked is
+  // left out, so a revocation of one it issued reaches the edge on the
+  // poll, while an outside authority's CRL or OCSP answer never does.
+  // ===========================================================================
+  /**
+   * The callers an edge PDP admits in the ambient realm: each the name a
+   * policy sees, the SHA-256 of every certificate the door would resolve to
+   * it, its application scope and the endpoints the policy admits it to.
+   *
+   * @returns `{ door, group, callers, members, candidates, unlocated,
+   *   notAdmitted, unnamed, unreadable, truncated }`
+   */
+  edgeCallers(): any {
+    const self = this;
+    const { log, realms, errorCodes } = this.deps;
+    log.debug("Entering AuthzenCaller.edgeCallers().");
+    const door = self.door();
+    const read = self.deps.loadAdmin().edgeCandidates(EDGE_MAX_MEMBERS) ||
+      { group: '', total: 0, candidates: [], unlocated: 0 };
+    const out: any = {
+      door: door, group: String(read.group || ''), callers: [],
+      members: Number(read.total || 0),
+      candidates: (read.candidates || []).length,
+      unlocated: Number(read.unlocated || 0),
+      notAdmitted: 0, unnamed: 0, unreadable: 0,
+      truncated: Number(read.total || 0) > EDGE_MAX_MEMBERS
+    };
+    if (door !== 'mtls') {
+      log.debug("Leaving AuthzenCaller.edgeCallers(). The realm's door is " +
+                door + ", which admits no certificate alone.");
+      return out;
+    }
+    const xacml = self.deps.loadXacml();
+    const named = new Map<string, any>();
+    (read.candidates || []).forEach(function (candidate: any) {
+      const held = self.edgeCertificatesOf(candidate);
+      if (held.cut) {
+        out.truncated = true;
+      }
+      out.unreadable += held.unreadable;
+      held.certificates.forEach(function (one: any) {
+        let identity: any = null;
+        try {
+          identity = xacml.certificateCaller(one.der);
+        } catch (e) {
+          log.debug("Caught in AuthzenCaller.edgeCallers(): " +
+                    ((e && e.message) || e));
+          identity = null;
+        }
+        if (!identity) {
+          out.unreadable++;
+          return;
+        }
+        if (!identity.verified || !identity.dn) {
+          out.unnamed++;
+          return;
+        }
+        const key = String(identity.dn).toLowerCase();
+        const entry = named.get(key) ||
+          { name: String(identity.dn), certificates: [] };
+        if (!entry.certificates.some(function (c: any) {
+          return c.sha256 === one.sha256;
+        })) {
+          entry.certificates.push({ sha256: one.sha256,
+                                    source: one.source });
+        }
+        named.set(key, entry);
+      });
+    });
+    const prefix = String(realms.currentPrefix() || '');
+    Array.from(named.values()).forEach(function (entry: any) {
+      const caller: Caller = { kind: 'entry', name: entry.name,
+                               door: 'mtls', identifier: '', clientId: '',
+                               roles: [] };
+      caller.roles = self.rolesOf(caller);
+      const endpoints = EDGE_ENDPOINTS.filter(function (one) {
+        return self.admission(caller, 'POST', prefix + one.path).allowed;
+      }).map(function (one) {
+        return one.name;
+      });
+      if (!endpoints.length) {
+        out.notAdmitted++;
+        return;
+      }
+      out.callers.push({
+        name: entry.name,
+        certificates: entry.certificates.sort(function (a: any, b: any) {
+          return a.sha256 < b.sha256 ? -1 : (a.sha256 > b.sha256 ? 1 : 0);
+        }),
+        applications: self.scopeOf(caller),
+        endpoints: endpoints
+      });
+    });
+    out.callers.sort(function (a: any, b: any) {
+      const x = a.name.toLowerCase();
+      const y = b.name.toLowerCase();
+      return x < y ? -1 : (x > y ? 1 : 0);
+    });
+    if (out.truncated) {
+      log.warn(errorCodes.tag('STS-AUTHZEN-0061') + 'authzen: the caller ' +
+               'list a remote PEP pulled was cut: the group "' + out.group +
+               '" has ' + out.members + ' member(s) and at most ' +
+               EDGE_MAX_MEMBERS + ' are read, each with at most ' +
+               EDGE_MAX_CERTIFICATES + ' certificates. A caller past the ' +
+               'cut is refused at the edge and still answered here.');
+    }
+    if (out.unreadable) {
+      log.warn(errorCodes.tag('STS-AUTHZEN-0062') + 'authzen: ' +
+               out.unreadable + ' certificate(s) held by members of "' +
+               out.group + '" could not be read for the caller list a ' +
+               'remote PEP pulled, and were left out.');
+    }
+    log.debug("Leaving AuthzenCaller.edgeCallers(). " + out.callers.length +
+              " caller(s).");
+    return out;
+  }
+
+  // The certificates one candidate holds, each `{ der, sha256, source }`:
+  // stored on its entry (`userCertificate`, either spelling, read as the
+  // directory codec reads it for the index the door looks a digest up in),
+  // then the TLS client certificates this realm issued it that are valid.
+  private edgeCertificatesOf(candidate: any): any {
+    const { log, realms } = this.deps;
+    log.debug("Entering AuthzenCaller.edgeCertificatesOf(). " +
+              candidate.kind + " " + candidate.name);
+    const self = this;
+    const codec = this.deps.loadCodec();
+    const out: any[] = [];
+    let unreadable = 0;
+    let cut = false;
+    const add = function (der: any, source: string): void {
+      log.debug("Entering add().");
+      if (!der) {
+        unreadable++;
+        log.debug("Leaving add(). Not a certificate.");
+        return;
+      }
+      const sha256 = self.deps.sha256Hex(der);
+      if (out.some(function (one: any) {
+        return one.sha256 === sha256;
+      })) {
+        log.debug("Leaving add(). Already held.");
+        return;
+      }
+      if (out.length >= EDGE_MAX_CERTIFICATES) {
+        cut = true;
+        log.debug("Leaving add(). Past the cap.");
+        return;
+      }
+      out.push({ der: der, sha256: sha256, source: source });
+      log.debug("Leaving add().");
+    };
+    const attributes = candidate.attributes || {};
+    Object.keys(attributes).forEach(function (name: string) {
+      const lower = name.toLowerCase();
+      if (lower !== 'usercertificate;binary' && lower !== 'usercertificate') {
+        return;
+      }
+      const values = attributes[name];
+      (Array.isArray(values) ? values : [values]).forEach(function (value) {
+        add(codec.certificateDerOf(value), 'stored');
+      });
+    });
+    let issued: any[] = [];
+    try {
+      issued = this.deps.loadCertificates().activeFor(
+        String(realms.currentId() || ''), candidate.name,
+        candidate.kind === 'application' ? 'application' : 'person') || [];
+    } catch (e) {
+      // No certificate authority in this process: nothing was issued here,
+      // so there is nothing of that kind to list.
+      log.debug("Caught in AuthzenCaller.edgeCertificatesOf(): " +
+                ((e && e.message) || e));
+      issued = [];
+    }
+    issued.forEach(function (one: any) {
+      add(codec.certificateDerOf(one && one.certificatePem), 'issued');
+    });
+    log.debug("Leaving AuthzenCaller.edgeCertificatesOf(). " + out.length +
+              ".");
+    return { certificates: out, unreadable: unreadable, cut: cut };
   }
 
   /**
@@ -686,6 +982,9 @@ export = {
   AUTHZEN_ROLE: AUTHZEN_ROLE,
   AUTHZEN_SCOPE: AUTHZEN_SCOPE,
   DOORS: DOORS,
+  EDGE_ENDPOINTS: EDGE_ENDPOINTS,
+  EDGE_MAX_MEMBERS: EDGE_MAX_MEMBERS,
+  EDGE_MAX_CERTIFICATES: EDGE_MAX_CERTIFICATES,
   send: AuthzenCaller.send,
   presented: AuthzenCaller.presented,
   audienceOk: AuthzenCaller.audienceOk

@@ -602,7 +602,8 @@ const DOCUMENTS = [
   // -- AuthZEN (#563) -----------------------------------------------------
   // The PDP's metadata (AuthZEN 1.0 section 9), public by the specification.
   // The default realm's identifier is the host's base, and the document names
-  // only what answers there: no search endpoint, no capabilities.
+  // only what answers there: the searches at their default paths (#1175),
+  // and no capabilities.
   { family: "AuthZEN", spec: "AuthZEN Authorization API 1.0 section 9",
     path: "/.well-known/authzen-configuration",
     type: JSON_TYPE, json: true, badCredential: "ignored",
@@ -618,12 +619,17 @@ const DOCUMENTS = [
         bad.push("access_evaluation_endpoint is " +
                  d.access_evaluation_endpoint);
       }
-      Object.keys(d).forEach(function (key) {
-        if (key.indexOf("search") >= 0 || key === "capabilities") {
-          bad.push(key + " is advertised, and nothing behind it is " +
-                   "implemented");
+      ["subject", "resource", "action"].forEach(function (kind) {
+        const key = "search_" + kind + "_endpoint";
+        if (d[key] !== undefined &&
+            d[key] !== base + "/access/v1/search/" + kind) {
+          bad.push(key + " is " + d[key]);
         }
       });
+      if (d.capabilities !== undefined) {
+        bad.push("capabilities is advertised, and no capability is " +
+                 "implemented end to end");
+      }
       log.debug("Leaving must().");
       return bad;
     } },

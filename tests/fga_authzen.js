@@ -29,7 +29,7 @@
 //      version, and the monitor counts the decision once, on `authzen` and
 //      not on `fga`.
 //   E. ERRORS, NEVER FALSE: a disabled policy and an unparseable one are
-//      500 (STS-AUTHZEN-0040), the audit row carrying the STS-FGA code that
+//      500 (STS-AUTHZEN-0046), the audit row carrying the STS-FGA code that
 //      says why (0006, 0007); in a batch, that item's context.error.
 //   S. SCOPE: a caller scoped away from an enforcing application cannot
 //      reach its policy by naming it (403, STS-AUTHZEN-0025).
@@ -393,9 +393,9 @@ async function childBody() {
   });
   let since = marks.length;
   r = await ask('fgaz-docs', 'read');
-  t.check(r.status === 500 && markedSince(since, 'STS-AUTHZEN-0040') &&
+  t.check(r.status === 500 && markedSince(since, 'STS-AUTHZEN-0046') &&
           !(r.json && r.json.decision === false),
-          'E1. a DISABLED policy is 500 (STS-AUTHZEN-0040), never false ' +
+          'E1. a DISABLED policy is 500 (STS-AUTHZEN-0046), never false ' +
           'and never the root instead', brief(r));
   r = await request(port, 'POST', BATCH, pepCred, {
     subject: { type: 'user', id: 'fgazalice' },
@@ -421,8 +421,8 @@ async function childBody() {
   });
   since = marks.length;
   r = await ask('fgaz-docs', 'read');
-  t.check(r.status === 500 && markedSince(since, 'STS-AUTHZEN-0040'),
-          'E3. an UNPARSEABLE policy is 500 (STS-AUTHZEN-0040)', brief(r));
+  t.check(r.status === 500 && markedSince(since, 'STS-AUTHZEN-0046'),
+          'E3. an UNPARSEABLE policy is 500 (STS-AUTHZEN-0046)', brief(r));
   const codes = authzenRows().map(function (row) {
     return row.errorCode;
   });

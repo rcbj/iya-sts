@@ -21,25 +21,27 @@ engine and the repository and nothing else.
 
 rcbj's design is the comment of 2026-10-29 on #563; the phases are #1160
 (this contract), #1161 (single evaluation), #1162 (console and API), #1163
-(metadata), #1164 (batch), #1165 (protocol tests). Search, the Obligations
-Profile, Access Request and Approval, the token-exchange binding and an
-AuthZEN endpoint on the remote PEP container are NOT filed: each is a ticket
-of its own when its semantics are settled, and none is advertised until then.
+(metadata), #1164 (batch), #1165 (protocol tests). **The remote PEP
+container answers AuthZEN too since #1179**, as an edge PDP — *The edge PDP*
+below. Search (#1175), the Obligations Profile (#1177), Access Request and
+Approval (#1180) and the token-exchange binding (#1181) are tickets of their
+own, and none is advertised until it is implemented.
 
 | File | What it is |
 |---|---|
 | `authzen_catalogue.ts` | The per-realm ATTRIBUTE CATALOGUE's grammar: a row (object, property or dotted path → attribute id, category, datatype, `single` or `bag`), its defaults, its reserved identifiers, and the reading of an entry's rows. **Pure.** |
 | `authzen_map.ts` | One access evaluation read against the catalogue and refused where it cannot be represented, the XACML request built, and the decision mapped back fail-closed. **Pure.** |
-| `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application. |
+| `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application — and, asked ahead of any request, the callers a remote PEP's edge PDP admits (`edgeCallers()`, #1189). |
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
 `tests/authzen_map.js` holds the two pure modules in process;
 `tests/authzen_evaluation.js` drives the route over real handshakes in a child
 process, in a throwaway realm whose root policy it wrote;
-`tests/authzen_admin.js` holds the tab's view and acts;
-`tests/fga_authzen.js` holds an evaluation decided by an application's own
-fine-grained policy (#564).
+`tests/authzen_admin.js` holds the tab's view and acts.
+`tests/authzen_evaluation.js` K and P hold the two pulls the edge PDP
+makes, the catalogue and the callers. `tests/fga_authzen.js` holds an
+evaluation decided by an application's own fine-grained policy (#564).
 `tests/protocol/sts_authzen.js` (`local: true`, #1165) asks a running service
 the same questions over HTTP in a throwaway realm, and carries the **AuthZEN
 interop "Todo" scenario** — its five people, five actions and owner rule
@@ -49,6 +51,12 @@ permission grant and a token over the network is a second stack's worth of
 setup for checks the report API's jobs already drive.
 
 ## The mapping, in one table
+
+**The public statement of the conversion, and the guidelines for a realm's
+conversion rules and the policies that read them, is `docs/authzen.md`**
+(#1182). This file is why the code is the way it is; that page is what a
+policy author relies on, and `tests/authzen_map.js` X holds its worked
+example (the ALFA policy and the request) to the code.
 
 | AuthZEN | XACML category | Attribute |
 |---|---|---|
@@ -145,10 +153,9 @@ Indeterminate over a missing attribute are an ordinary `false`. **An
 Indeterminate over a FAULT** (`STS-XACML-0012`, a root policy that will not
 load; `STS-XACML-0013`, a processing or syntax error) **is an error, never a
 denial**: a PEP told `false` about a broken policy enforces its bias over
-somebody else's outage. A Permit with an undischargeable obligation is `false`
-until the Obligations Profile is implemented end to end — there is no way yet
-to hand one to the PEP and know it was done. `urn:sts:xacml:obligation:log`
-is the one discharged.
+somebody else's outage. A Permit with an obligation is `false` unless
+the PEP declared it carries the obligation out (the Obligations Profile,
+below). `urn:sts:xacml:obligation:log` is the one discharged here.
 
 Reasons and advice go in the response's `context` only when
 `authzen.returnReasons` is on (#1161), and never decide anything: section 5.5
@@ -210,9 +217,40 @@ is advertised under (#472), so it matches the URL a PEP built — section
 9.2.3 has the PEP refuse a document whose identifier does not. **It names
 only what answers**: the single endpoint, and the batch one while it is on;
 no search endpoint and no `capabilities` until one is implemented end to
-end, and no `signed_metadata` (a follow-up may sign it with the realm's key).
+end. **`signed_metadata` since #1178**: the same members, `iss` the PDP
+identifier, signed by `oauth2.ts`'s `signPublishedDocument()` under the
+`oauth-signed-metadata` use case (the one signer of a published document; so
+`oauth2.signedMetadata*` choose its algorithm and certificate header), signed
+per fetch from the very object it is served beside, and switched by
+`authzen.signedMetadata`. A failure to sign leaves it out (`0040`) rather
+than failing the document: the plain members are the metadata.
 While the API is off the document answers 501 rather than advertising an
 endpoint that does not.
+
+## The Obligations Profile (#1177)
+
+**Handed only to a PEP that declares every type** (rcbj, 2026-10-30). The
+profile sends a Permit with obligations as `decision: true` and trusts the PEP
+to treat what it cannot carry out as a deny; a PEP that never heard of the
+profile would grant instead. So `context.supported_obligations` — reserved
+in the catalogue as `context.application` is — is the declaration, and
+`outcome()` hands the converted obligations only when it names every type the
+answer carries. Otherwise the old rule stands: a Permit carrying anything but
+the log obligation is `false` (`0029`).
+
+* **The conversion is one rule** (`obligationsOf()`):
+  `urn:sts:xacml:authzen:obligation:<type>` is the registered type
+  (`step-up`, `notification`, `session_termination`), anything else but
+  `urn:sts:xacml:obligation:log` is `custom` with its XACML id kept, and an
+  assignment is a property named by its attribute id's last segment, an
+  array where the type says so. A registered type without a property it
+  requires hands nothing and the Permit is `false` (`0041`).
+* **A denial's obligations are handed too**, beside `false` (the profile's
+  section 2), under the same declaration.
+* `authzen.obligationsProfile` off is the pre-#1177 behaviour, and the
+  metadata then leaves out `supported_obligations`.
+* **Not implemented:** the profile's per-result obligations in search
+  responses (its section 4.3), until search exists (#1175).
 
 ## The batch (#1164)
 
@@ -238,6 +276,46 @@ same audit row and monitor count per item — with section 7's additions:
   row carries it with the item's position (`<id>#<n>`), decision 9.
 * `authzen.batchEnabled` off answers 501 (`0039`) and takes the endpoint out
   of the metadata; the single endpoint is unaffected.
+
+## The searches (#1175)
+
+**XACML has no reverse query, so a search is a loop of evaluations**
+(`authzen_search.ts`): the candidates this service can NAME for the
+searched kind, each decided by `decideEvaluation()` — the one place a
+question meets the policy, shared with the evaluation and the batch — and
+the permitted ones answered. A result is therefore a real Permit, section
+8.1's SHOULD kept as a MUST; search is not transitive.
+
+**Candidates are this service's own objects** (rcbj, 2026-10-30: start with
+the application directory — applications, APIs, the delegation relationships
+between them): directory people for a resolved subject type; `application`,
+`api` (resource-server kinds) and `delegation`
+(`appAllowedToDelegateTo`, as `<source>|<target>`) resources; and as
+actions, every literal the repository's policies compare action-id with
+(a static walk of the model) plus an application's own `oauthPermission`
+names. A type with no source answers empty results, never a 400.
+
+* **Bounded, and said so**: `authzen.searchMaxCandidates` caps the decisions;
+  past it, or with a candidate the PDP could not decide, `context.incomplete`
+  says the answer is partial (`0045`, `0028` on the one audit row per
+  search).
+* **Paging is offset-based** over the whole permitted list, decided per call
+  (bounded above). `next_token` is `<offset>.<fingerprint>`, the fingerprint a
+  digest of the request without its token, so a continued request that
+  changed an entity or the limit is refused (`0043`) — section 8.2's SHOULD
+  kept. Not snapshot-consistent, which section 8.2 allows.
+* **`runSearch()` takes its caller and application from its own caller**, so
+  the reports application (#1176) searches as the report's owner, with
+  application `sts-report` and no scope check (`report/CLAUDE.md`).
+* **A search about an application that enforces fine-grained authorization
+  (#564) decides every candidate against THAT application's policy**, for
+  free: the routing is in `decideEvaluation()`, which every candidate goes
+  through. A policy that cannot be used makes the WHOLE search an error
+  (`0046`, 500, the `authzen.search` row carrying the STS-FGA code), never
+  an empty or `incomplete` answer: every candidate would meet the same
+  policy, and an empty result would be the restriction answering "nobody"
+  by accident.
+* Not implemented: per-result obligations (the Obligations Profile's 4.3).
 
 ## The console and the API (#1162)
 
@@ -274,14 +352,19 @@ mirrors name the tab too.
 * **AMENDED 2026-10-30 BY #564's P4 (rcbj's decision 4 on #564): an
   application that ENFORCES fine-grained authorization is decided against
   ITS OWN policy instead.** Once `applicationOf()` has chosen the
-  application, `evaluateOne()` reads `applications.fgaStateOf()` — the
+  application, `decideEvaluation()` — since #1175 the one place a question
+  meets a policy, for an evaluation, a batch item and every search
+  candidate — reads `applications.fgaStateOf()` — the
   registry's switch, no XACML needed to ask — and, when it is on, hands the
   request to `xacml/fga_pep.ts`'s `decideAccess()`: the same resolve and the
   same `decidePolicy()` (no PolicyIdReference map) an issuance question
   uses, so the two cannot disagree about which policy is the application's.
-  Resource servers reach FGA only here — directly, or through a remote PEP
-  that forwards (its AuthZEN proxy is #1179) — because FGA is decided only
-  in this service (decision 4); the policies are withheld from the pull.
+  Resource servers reach FGA only here, because FGA is decided only in this
+  service (decision 4); the policies are withheld from the pull. **The
+  remote PEP's edge PDP (#1179) does NOT forward**: it decides every
+  evaluation against the root it pulled, so about an enforcing application
+  it answers the root's answer (*The edge PDP*, below). Forwarding, or an
+  embedded FGA PDP there, is future work this design does not rule out.
   What stays AuthZEN's, and why:
   * **The request** is AuthZEN's mapping unchanged, plus the two facts the
     policy needs to know what it is asked — `urn:sts:xacml:fga:application`
@@ -292,9 +375,9 @@ mirrors name the tab too.
   * **The result rules** are decision 8's: a Permit with nothing
     undischargeable is true; an Indeterminate through a fault is 500
     (`0028`). **A policy that cannot be used is an ERROR, never false and
-    never the root instead** (`0040`, 500, a batch item's `context.error`):
+    never the root instead** (`0046`, 500, a batch item's `context.error`):
     the application enforces, and answering from the root would be the
-    restriction silently not applying. The response is marked `0040`; the
+    restriction silently not applying. The response is marked `0046`; the
     audit row carries the STS-FGA code that says why (0003–0007, 0009, or
     0015 for a throw), and nothing is counted, since no engine decided. A
     registry that cannot be read is the same error rather than "not
@@ -324,11 +407,87 @@ mirrors name the tab too.
   (`urn:sts:authzen-api:`), and deleting it turns the API off (`0014`) and
   every token for it (`common/registered_targets.ts`).
 
+## The edge PDP in the `xacml-pep` container (#1179)
+
+**The same contract in a second place, which is why the contract is now a
+table.** `rust/bins/xacml-pep` ports `authzen_catalogue.ts`
+(`authzen_catalogue.rs`), `authzen_map.ts` (`authzen_map.rs`) and the batch
+and metadata of `authzen.ts` (`authzen.rs`), and `sts-xacml`'s builder ports
+`xacml_request.js`'s `authzen()`. **`xacml-pep/authzen_cases.json` is the one
+table both are held to** — catalogue values and requests, the code each is
+refused with, and what an accepted one supplies and maps to:
+`tests/authzen_map.js` S runs this directory's modules over it and `cargo
+test -p xacml-pep` the port. **A change to a rule here owes a case there**,
+or the two drift with both suites green.
+
+* **The catalogue reaches it by the pull**: `GET /xacml/pep/authzen-catalogue`
+  (`xacml/CLAUDE.md`), beside the policies, with the settings that change the
+  mapping or the answer. The container re-reads each row through its port of
+  `parse()`, so a reserved row cannot reach a request there either.
+* **The codes are shared where the condition is the contract's**: a request
+  refused there carries the `STS-AUTHZEN-*` code it carries here, and the
+  `501`s for a realm with the API off are `0013` and `0014`. Its own
+  conditions — the client CA, the catalogue and caller pulls, admission by
+  the pulled list and the local narrowing — are `STS-XPEP-*`.
+* **Who may ask is this service's answer, pulled** (#1189, below):
+  `GET /xacml/pep/authzen-callers`. What still differs there is mutual TLS
+  only, no revocation check of an outside authority, and a log line instead
+  of an audit row; `xacml-pep/CLAUDE.md` states each.
+* **It knows nothing of fine-grained authorization (#564).** An
+  application's policy is withheld from `GET /xacml/pep/policies`, and
+  neither the catalogue nor the caller pull says which applications enforce,
+  so an evaluation there about an enforcing application is decided against
+  the pulled ROOT — a different answer from this service's, documented in
+  `docs/remote-pep.md`'s table. Forwarding such an evaluation here, or an
+  embedded FGA PDP, is a ticket of its own; nothing here rules either out.
+
+### The callers the edge PDP admits (#1189)
+
+**rcbj's decision on #1189: the edge admits by pulling who this service
+admits**, with the cost accepted that anybody holding `REMOTE_PEPS` can read
+who may ask the PDP. `authzen_caller.ts`'s `edgeCallers()` is the list, and it
+is the three questions of *Who is asking* asked ahead of any request, by the
+same functions:
+
+* **WHO**: each certificate through the certificate door's own reading,
+  `xacml.ts`'s `certificateCaller()` (`xacml/CLAUDE.md`), so the name sent is
+  the DN the door resolves it to — the value `urn:sts:xacml:authzen:caller`
+  carries — and the certificate is sent by the SHA-256 of its DER.
+* **MAY THEY**: `admission()`, the writeless half of `mayAsk()`, for the path
+  of each endpoint the edge serves (the realm's prefix included). The OUTCOME
+  is sent, not the membership: a member the policy refuses is counted
+  (`notAdmitted`) and left out.
+* **WHICH APPLICATION**: `scopeOf()`, as is.
+
+**THE CANDIDATES ARE THE GROUP'S MEMBERS** (`roles.authzenPepGroup`, read
+through `authzen_admin.ts`'s `edgeCandidates()` over the tab's directory
+slot), and their certificates are what the door accepts: the values of
+`userCertificate` on the entry (read with the directory codec's
+`certificateDerOf()`, the reading the stored-certificate index keys) and the
+TLS client certificates this realm issued them that are valid
+(`tls_client_certificates.js`'s `activeFor()`). Two things the service admits
+are therefore NOT listed, and the edge is narrower there, never wider: an
+entry a policy admits without the role, and a certificate enrolled over ACME,
+EST or SCEP that is not stored on the entry. Bounded at 500 members and 64
+certificates each; past either the list says `truncated` and the log carries
+`STS-AUTHZEN-0061`. A certificate that cannot be read is `STS-AUTHZEN-0062`.
+
+**A REALM WHOSE DOOR IS A TOKEN LISTS NOBODY.** The edge has mutual TLS only,
+and `bearer` and `mtls+bearer` admit no certificate alone, so with either the
+list is empty and says why.
+
+**REVOCATION IS THE REGISTER'S ONLY.** A certificate the register records as
+revoked is left out, so revoking one this realm issued reaches the edge on its
+poll; an outside authority's CRL or OCSP answer is never consulted for the
+list, and the edge consults none either.
+
 ## Error codes
 
 `STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
 the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
 admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
-the metadata path, 0036–0039 the batch, 0040 an application's fine-grained
-policy that cannot be used (#564).
+the metadata path, 0036–0039 the batch, 0046 an application's fine-grained
+policy that cannot be used (#564), 0060 a value left out of the
+catalogue a remote PEP pulled (#1179), 0061–0062 a caller list a remote PEP
+pulled that was cut or held a certificate that could not be read (#1189).

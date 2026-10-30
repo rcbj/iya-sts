@@ -204,10 +204,12 @@ an [AuthZEN](authzen.md) access evaluation naming the application in
 `context.application`. When that application has `appFgaEnforced` on, the
 evaluation is decided against the application's own policy alone, never the
 realm's root policy and never a policy the root references. Every other
-application is decided against the root, as before. The remote PEP's own
-AuthZEN endpoint, which forwards a resource server's evaluation here, comes
-in a later release; until then a resource server or PEP calls this service's
-AuthZEN endpoint directly.
+application is decided against the root, as before. **Ask this service, not
+a remote PEP's [edge PDP](remote-pep.md#an-authzen-edge-pdp)**: the edge PDP
+answers AuthZEN from the policies it pulls, which never include an
+application's own policy, so about an application that enforces fine-grained
+authorization it answers from the root. It does not forward such an
+evaluation here.
 
 **What the caller needs** is what every AuthZEN caller needs:
 
@@ -244,7 +246,7 @@ this service cannot carry out is `true`; Deny, NotApplicable and a missing
 attribute are `false`. A policy that cannot be used — none, missing, not the
 application's own, disabled, or one that does not parse — is an error,
 `500`, and in a batch that item's `context.error`; it is never `false`, and
-the root policy is never asked instead (`STS-AUTHZEN-0040`, with the
+the root policy is never asked instead (`STS-AUTHZEN-0046`, with the
 `STS-FGA-*` code that says why on the audit row).
 
 Each evaluation is one `authzen.decision` row in the audit log, which names

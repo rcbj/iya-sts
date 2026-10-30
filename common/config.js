@@ -13332,6 +13332,58 @@ const SETTINGS = [
                  'Over it the whole batch is refused 400 before it is ' +
                  'read. The service\'s own body limit (5 MB) is the ' +
                  'ceiling.' },
+  { key: 'authzen.signedMetadata', group: 'AuthZEN',
+    label: 'Sign the AuthZEN metadata',
+    env: 'STS_AUTHZEN_SIGNED_METADATA', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When on, /.well-known/authzen-configuration carries ' +
+                 'signed_metadata (AuthZEN 1.0 section 9.1): a JWT of the ' +
+                 'same members, iss the PDP identifier, signed with the ' +
+                 'realm\'s key as RFC 8414\'s metadata is ' +
+                 '(oauth2.signedMetadataAlgorithm, ' +
+                 'oauth2.signedMetadataCertificateHeader), and verifiable ' +
+                 'with the realm\'s JWKS. A PEP that supports it believes ' +
+                 'the signed values over the plain ones.' },
+  { key: 'authzen.obligationsProfile', group: 'AuthZEN',
+    label: 'Hand obligations to a PEP that declares them',
+    env: 'STS_AUTHZEN_OBLIGATIONS_PROFILE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'The AuthZEN Obligations Profile (a draft). When on, an ' +
+                 'XACML obligation is handed to the PEP in ' +
+                 'context.obligations — and a Permit carrying one answers ' +
+                 'true — ONLY when the request\'s ' +
+                 'context.supported_obligations lists every obligation type ' +
+                 'in the answer; the metadata advertises ' +
+                 'supported_obligations. Without that declaration, or with ' +
+                 'this off, a Permit with an obligation this service cannot ' +
+                 'carry out itself answers false, as a PEP that never heard ' +
+                 'of the profile would otherwise grant.' },
+  { key: 'authzen.searchEnabled', group: 'AuthZEN',
+    label: 'Search APIs enabled',
+    env: 'STS_AUTHZEN_SEARCH_ENABLED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When on, the three AuthZEN searches answer under ' +
+                 '/access/v1/search (subject, resource, action), and the ' +
+                 'metadata names them. A search decides each candidate this ' +
+                 'service can name with the realm\'s root policy and answers ' +
+                 'the permitted ones: subjects are the realm\'s directory ' +
+                 'people, resources its applications, APIs and delegation ' +
+                 'relationships, actions the names the policy compares ' +
+                 'action-id with. Off, the routes answer 501.' },
+  { key: 'authzen.searchMaxCandidates', group: 'AuthZEN',
+    label: 'Candidates one search decides',
+    env: 'STS_AUTHZEN_SEARCH_MAX_CANDIDATES', type: 'int', dflt: 1000,
+    min: 1, max: 100000, runtime: true,
+    description: 'The most candidates one search decides. Every candidate ' +
+                 'is a full decision on this service\'s thread; past the ' +
+                 'cap the rest are not decided and the answer\'s ' +
+                 'context.incomplete says the result is partial.' },
+  { key: 'authzen.searchPageSize', group: 'AuthZEN',
+    label: 'Results per search page',
+    env: 'STS_AUTHZEN_SEARCH_PAGE_SIZE', type: 'int', dflt: 50, min: 1,
+    max: 1000, runtime: true,
+    description: 'How many results a search answers in one page when the ' +
+                 'request names no page.limit; page.next_token continues.' },
   { key: 'authzen.returnReasons', group: 'AuthZEN',
     label: 'Return the reasons for a decision',
     env: 'STS_AUTHZEN_RETURN_REASONS', type: 'bool', dflt: false,

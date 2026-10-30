@@ -23,6 +23,14 @@
     "en": "d7b1a01d26f2cc80",
     "text": "El repositorio, para que un PEP remoto lo CARGUE"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "El catálogo AuthZEN, para que un PEP remoto lo CARGUE"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "Los llamantes de AuthZEN, que un PEP remoto ADMITE"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Lo que ha aplicado un PEP remoto"
@@ -38,6 +46,18 @@
   "endpoints.route./access/v1/evaluations.name": {
     "en": "71ce33d985a6eced",
     "text": "Un lote de evaluaciones de acceso"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "Búsqueda de sujetos"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "Búsqueda de recursos"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "Búsqueda de acciones"
   },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",

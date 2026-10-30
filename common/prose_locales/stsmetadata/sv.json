@@ -96,8 +96,8 @@
     "text": "full för den obligatoriska funktionsuppsättningen: policyspråket, de sju beslutsvärdena inklusive de tre utökade Indeterminate, målmatchning, villkor, variabler, de tolv kombinationsalgoritmerna, obligations och advice, policyreferenser, och standardfunktionsbiblioteket över alla sjutton datatyper. Hållen mot OASIS konformitetssvit — 454 av de 455 obligatoriska fallen godkänns, och det enda undantaget är dokumenterat med sitt argument i xacml/conformance/MANIFEST.js. INTE täckt: AttributeSelector och XPath-funktionerna (en policy som använder en av dem är Indeterminate snarare än tyst tom), profilerna Multiple Decision och Hierarchical Resource, och administrativ delegering."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "96dbb5058267c713",
-    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda dess former. Saknas: de tre Search APIs, signed_metadata och alla profiler (Obligations, Access Request and Approval, OAuth-profilerna), alla fortfarande utkast."
+    "en": "587fa315b80f6a67",
+    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda dess former, signed_metadata inräknad, och utkastet till Obligations Profile för en PEP som deklarerar typerna, och de tre Search APIs (avsnitt 8) över den här tjänstens egna personer, applikationer, API:er, delegeringsrelationer och policyåtgärder, sidindelade och inte transitiva. Saknas: obligations per resultat i en sökning, och profilerna Access Request and Approval och OAuth, fortfarande utkast."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -751,6 +751,14 @@
     "en": "f21e16beea449f7d",
     "text": "Varje AKTIVERAD policy och vilken som är roten, plus en synktoken över exakt de byten; ?since=<token> svarar 304. HÄMTNINGEN ÄR KONTRAKTET — en fjärr-PEP pollar detta med sitt eget intervall och utvärderar lokalt med sin egen kopia av motorn, eftersom en PEP som frågade per begäran vore /xacml/pdp med ett nätverkshopp framför varje åtkomstbeslut. Kräver REMOTE_PEPS — en ANNAN roll än den XACML_USER som de fyra slutpunkterna ovan vill ha, och en annan grupp, eftersom detta är slutpunkten som publicerar de dokument som den här tjänsten upprätthåller sin egen åtkomst med. En INAKTIVERAD policy utelämnas snarare än skickas med en flagga, eftersom en PEP som laddade den skulle upprätthålla en policy som den här tjänsten inte gör."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "e684892d931f5313",
+    "text": "Sfärens AuthZEN-attributkatalog — raderna i authzenAttribute på sts-authzen-api, lästa så som POST /access/v1/evaluation läser dem — och de AuthZEN-inställningar som ändrar mappningen eller svaret, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Hämtas bredvid policyerna av containern xacml-pep, vars kant-PDP besvarar AuthZEN med exakt dessa rader, så att en begäran mappas på ett och samma sätt på båda ställena. Kräver REMOTE_PEPS, liksom policyhämtningen. Ett tillägg: /xacml/pep/policies är oförändrad."
+  },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "Vilka denna sfär släpper in i sitt AuthZEN-API nu, så att edge-PDP:n i containern xacml-pep släpper in efter det: varje anropare som åtkomstpolicyn släpper in till /access/v1/* (AUTHZEN_PEPS, så som policyn avgör det), namngiven som en policy ser den i urn:sts:xacml:authzen:caller, med SHA-256 av DER för varje certifikat som denna tjänst skulle koppla till det namnet, dess applikationsomfång och de slutpunkter den släpps in till, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Token ändras med en medlem, ett certifikat, ett omfång eller policyns svar, och edge-noden når samma läge vid nästa avfrågning. Kräver REMOTE_PEPS, liksom policyhämtningen, så den som har den rollen kan läsa vem som får fråga PDP:n (rcbj på #1189). Tillägg: /xacml/pep/policies och /xacml/pep/authzen-catalogue är oförändrade."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Dess kumulativa räknare och den synktoken den innehar — vilket är det som gör \"aktuell\" till en jämförelse som den här tjänsten utför snarare än ett påstående som PEP:n gör om sig själv. De besluten fattades i en annan process och den här tjänsten såg inget av dem, vilket är hela poängen med en fjärr-PEP. Den skapar INTE någon rad: ett hjärtslag från något som aldrig registrerats nekas med en hänvisning till registreringsslutpunkten, eftersom en rad som skapades här inte skulle bära något certifikat, ingen notifierings-URL och inget registreringsdatum."
@@ -767,9 +775,21 @@
     "en": "8bc09fb8f18ab7e3",
     "text": "POST med standardvärden på toppnivå för subject, action, resource och context och en evaluations-array vars poster ersätter dem; svaret är evaluations, ett beslut per post i begärans ordning. options.evaluations_semantic är execute_all (standard), deny_on_first_deny eller permit_on_first_permit. En posts fel är false med context.error och döljs aldrig av 200; en batch över authzen.maxEvaluations eller authzen.maxBodyBytes är en 400 innan något avgörs. Varje post är sin egen granskningsrad, med batchens id."
   },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "POST:a begäran i avsnitt 8; få results och en sida. Svarar med de subjekt av en typ som får utföra en åtgärd på en resurs: sfärens personer i katalogen, för en typ i authzen.resolveSubjectTypes. Varje kandidat avgörs av sfärens rotpolicy exakt som en utvärdering, och bara de tillåtna är resultat; sidindelat med page.next_token, begränsat av authzen.searchMaxCandidates, och angivet som ofullständigt bortom det."
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "POST:a begäran i avsnitt 8; få results och en sida. Svarar med de resurser av en typ som ett subjekt får utföra en åtgärd på: application, api eller delegation, från applikationskatalogen. Varje kandidat avgörs av sfärens rotpolicy exakt som en utvärdering, och bara de tillåtna är resultat; sidindelat med page.next_token, begränsat av authzen.searchMaxCandidates, och angivet som ofullständigt bortom det."
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "POST:a begäran i avsnitt 8; få results och en sida. Svarar med de åtgärder ett subjekt får utföra på en resurs: de namn som rotpolicyn jämför action-id med, och en applikations eller ett API:s egna behörigheter. Varje kandidat avgörs av sfärens rotpolicy exakt som en utvärdering, och bara de tillåtna är resultat; sidindelat med page.next_token, begränsat av authzen.searchMaxCandidates, och angivet som ofullständigt bortom det."
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "411b951f2d32a644",
-    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som stämmer med den URL det hämtas under) och bara de slutpunkter som svarar här — ingen sökslutpunkt och inga capabilities förrän någon är implementerad hela vägen, och ingen signed_metadata. Offentligt; svarar 501 medan API:t är avstängt."
+    "en": "3b9a539920fa8ef3",
+    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som stämmer med den URL det hämtas under) och bara de slutpunkter som svarar här (batchen och de tre sökningarna medan var och en är på), inga capabilities, supported_obligations, och signed_metadata, en JWT av samma medlemmar med iss PDP-identifieraren, verifierbar med sfärens JWKS (authzen.signedMetadata). Offentligt; svarar 501 medan API:t är avstängt."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

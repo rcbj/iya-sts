@@ -23,6 +23,14 @@
     "en": "d7b1a01d26f2cc80",
     "text": "供远程 PEP 加载的存储库"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "AuthZEN 目录，供远程 PEP 加载"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "AuthZEN 调用方，供远程 PEP 准入"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "远程 PEP 已执行的内容"
@@ -38,6 +46,18 @@
   "endpoints.route./access/v1/evaluations.name": {
     "en": "71ce33d985a6eced",
     "text": "一批访问评估"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "主体搜索"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "资源搜索"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "操作搜索"
   },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",

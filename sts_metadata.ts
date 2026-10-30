@@ -649,9 +649,13 @@ const SPECS: Spec[] = [
               'per-realm attribute catalogue, with X-Request-ID and the ' +
               'section 11.3 challenge, the Access Evaluations API (section ' +
               '7) with its three semantics, and the PDP metadata (section ' +
-              '9) at both its forms. Missing: the three Search APIs, ' +
-              'signed_metadata, and every profile (Obligations, Access ' +
-              'Request and Approval, the OAuth ones), all still drafts.' },
+              '9) at both its forms, signed_metadata included, and the ' +
+              'Obligations Profile draft for a PEP that declares the types, ' +
+              'and the three Search APIs (section 8) over this service\'s ' +
+              'own people, applications, APIs, delegation relationships and ' +
+              'policy actions, paged and not transitive. Missing: ' +
+              'per-result obligations in a search, and the Access Request ' +
+              'and Approval and OAuth profiles, still drafts.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -3598,6 +3602,35 @@ const ENDPOINTS: EndpointEntry[] = [
           'with a ' +
           'flag, because a PEP that loaded one would enforce a policy this ' +
           'service does not.' },
+  { path: '/xacml/pep/authzen-catalogue', group: 'XACML',
+    name: 'The AuthZEN catalogue, for a remote PEP to LOAD',
+    specs: ['xacml30', 'authzen10'],
+    what: 'The realm\'s AuthZEN attribute catalogue — the rows of ' +
+          'authzenAttribute on sts-authzen-api, read as POST ' +
+          '/access/v1/evaluation reads them — and the AuthZEN settings that ' +
+          'change the mapping or the answer, plus a sync token of its own; ' +
+          '?since=<token> answers 304. Pulled beside the policies by the ' +
+          'xacml-pep container, whose edge PDP answers AuthZEN with exactly ' +
+          'these rows, so one request is mapped one way in both places. ' +
+          'Requires REMOTE_PEPS, as the policy pull does. Additive: ' +
+          '/xacml/pep/policies is unchanged.' },
+  { path: '/xacml/pep/authzen-callers', group: 'XACML',
+    name: 'The AuthZEN callers, for a remote PEP to ADMIT',
+    specs: ['xacml30', 'authzen10'],
+    what: 'Who this realm admits to its AuthZEN API now, for the xacml-pep ' +
+          'container\'s edge PDP to admit by: each caller the ' +
+          'access-control policy admits to /access/v1/* (AUTHZEN_PEPS, as ' +
+          'the policy decides it), named as a policy sees it in ' +
+          'urn:sts:xacml:authzen:caller, with the SHA-256 of the DER of ' +
+          'every certificate this service would resolve to that name, its ' +
+          'application scope and the endpoints it is admitted to, plus a ' +
+          'sync token of its own; ?since=<token> answers 304. The token ' +
+          'moves with a member, a certificate, a scope or the policy\'s ' +
+          'answer, and the edge converges on its poll. Requires ' +
+          'REMOTE_PEPS, as the policy pull does, so anybody holding that ' +
+          'role can read who may ask the PDP (rcbj on #1189). Additive: ' +
+          '/xacml/pep/policies and /xacml/pep/authzen-catalogue are ' +
+          'unchanged.' },
   { path: '/xacml/pep/heartbeat', group: 'XACML',
     name: 'What a remote PEP has enforced', specs: ['xacml30'],
     what: 'Its cumulative counters and the sync token it holds — which is ' +
@@ -3667,13 +3700,45 @@ const ENDPOINTS: EndpointEntry[] = [
           '200; a batch over authzen.maxEvaluations or ' +
           'authzen.maxBodyBytes is a 400 before anything is decided. ' +
           'Every item is its own audit row, carrying the batch id.' },
+  { path: '/access/v1/search/subject', group: 'AuthZEN',
+    name: 'Subject Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the subjects of a type that may do an action on a resource: the ' +
+          'realm\'s directory people, for a type in ' +
+          'authzen.resolveSubjectTypes. Every candidate is decided by the ' +
+          'realm\'s root policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/search/resource', group: 'AuthZEN',
+    name: 'Resource Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the resources of a type a subject may do an action on: ' +
+          'application, api or delegation, from the application directory. ' +
+          'Every candidate is decided by the realm\'s root policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/search/action', group: 'AuthZEN',
+    name: 'Action Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the actions a subject may do on a resource: the names the root ' +
+          'policy compares action-id with, and an application\'s or API\'s ' +
+          'own permissions. Every candidate is decided by the realm\'s root ' +
+          'policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
   { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
     name: 'PDP metadata', specs: ['authzen10'],
     what: 'The section 9 document: policy_decision_point (this realm\'s ' +
           'base, matching the URL it is fetched under) and only the ' +
-          'endpoints that answer here — no search endpoint and no ' +
-          'capabilities until one is implemented end to end, and no ' +
-          'signed_metadata. Public; answers 501 while the API is off.' },
+          'endpoints that answer here (the batch and the three searches ' +
+          'while each is on), no capabilities, supported_obligations, and ' +
+          'signed_metadata, a JWT of the same members with iss the PDP ' +
+          'identifier, verifiable with the realm\'s JWKS ' +
+          '(authzen.signedMetadata). Public; answers 501 while the API is ' +
+          'off.' },
   { path: '/.well-known/authzen-configuration/*', group: 'AuthZEN',
     name: 'PDP metadata (identifier with a path)', specs: ['authzen10'],
     what: 'The same document at section 9.2\'s inserted form, where the ' +

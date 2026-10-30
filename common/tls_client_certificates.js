@@ -1584,10 +1584,35 @@ function checkSocket(socket, options) {
     log.debug("Caught in checkSocket(): " + ((e && e.message) || e));
     input = null;
   }
+  log.debug("Leaving checkSocket().");
+  return checkCertificate(input, options);
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME GATE WITHOUT A SOCKET (#1189).
+//
+// `checkSocket()` above reads what a handshake carried and asks this. The
+// AuthZEN callers a remote PEP pulls (`GET /xacml/pep/authzen-callers`) are
+// the certificates this gate WOULD accept, worked out ahead of any handshake
+// from the certificates a caller holds, so the question is asked of the
+// leaf's DER, `{ leaf, chain: [], verified: true }`, through exactly the
+// rules a socket's certificate meets: one gate, two ways in, and the edge's
+// list cannot be a second reading of who a certificate is.
+// ---------------------------------------------------------------------------
+/**
+ * Applies `checkSocket()`'s gate to a certificate already in hand.
+ *
+ * @param input - `{ leaf, chain, verified }`, as
+ *   `revocation_status.fromSocket()` answers, or null
+ * @param options - `{ stored, realm }`, both optional
+ * @returns `{ ok, identity }`, with `error` and `why` when refused
+ */
+function checkCertificate(input, options) {
+  log.debug("Entering checkCertificate().");
   const opts = options || {};
   const identity = identityOf(input, opts);
   if (!identity.issuedHere && identity.outside === true) {
-    log.debug("Leaving checkSocket(). An outside certificate, " +
+    log.debug("Leaving checkCertificate(). An outside certificate, " +
               (identity.accepted ? 'stored on one entry.' : 'refused.'));
     return identity.accepted
       ? { ok: true, identity: identity }
@@ -1595,17 +1620,17 @@ function checkSocket(socket, options) {
           why: identity.why };
   }
   if (!identity.issuedHere) {
-    log.debug("Leaving checkSocket(). Not ours.");
+    log.debug("Leaving checkCertificate(). Not ours.");
     return { ok: true, identity: identity };
   }
   if (!identity.accepted) {
-    log.debug("Leaving checkSocket(). Refused.");
+    log.debug("Leaving checkCertificate(). Refused.");
     return { ok: false, identity: identity, error: identity.error,
              why: identity.why };
   }
   const ambient = opts.realm ? String(opts.realm) : realms.currentId();
   if (identity.realm !== ambient) {
-    log.debug("Leaving checkSocket(). Another realm's.");
+    log.debug("Leaving checkCertificate(). Another realm's.");
     return { ok: false, identity: identity, error: 'OTHER_REALM',
              why: 'the certificate is a TLS client certificate issued in the ' +
                   '"' + identity.realm + '" realm and this request is in "' +
@@ -1613,7 +1638,7 @@ function checkSocket(socket, options) {
                   'realm\'s ' +
                   'people and nobody else\'s' };
   }
-  log.debug("Leaving checkSocket(). Accepted.");
+  log.debug("Leaving checkCertificate(). Accepted.");
   return { ok: true, identity: identity };
 }
 
@@ -1688,6 +1713,7 @@ module.exports = {
   trustAnchorPem: trustAnchorPem,
   identityOf: identityOf,
   checkSocket: checkSocket,
+  checkCertificate: checkCertificate,
   MESSAGE_SIGNING_USE_CASE: MESSAGE_SIGNING_USE_CASE,
   PURPOSES: PURPOSES,
   signingIdentityOf: signingIdentityOf,

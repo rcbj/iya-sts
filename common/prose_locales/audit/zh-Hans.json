@@ -883,6 +883,10 @@
     "en": "9a9264e25acb9778",
     "text": "一次 AuthZEN 访问评估已作出决策"
   },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "一次 AuthZEN 搜索已应答"
+  },
   "audit.actions.fga.decision.label": {
     "en": "c2696096c0749879",
     "text": "在签发时作出了一项细粒度授权决策"

@@ -694,7 +694,7 @@ function standardSources(): SourceSpec[] {
     postLoginProgressSource(),
     passkeyHistorySource(),
     passkeyCeremonySource()
-  ];
+  ].concat(authzenSearchSources());
   log.debug("Leaving standardSources().");
   return sources;
 }
@@ -871,6 +871,64 @@ function passkeyCeremonySource(): SourceSpec {
   return spec;
 }
 
+// THE AUTHZEN SEARCHES AS SOURCES (#1176): the three searches of AuthZEN
+// Authorization API 1.0 section 8, asked of the realm's root XACML policy
+// through `authzen/authzen.ts`'s `runSearch()`, AS THE PERSON WHO OWNS THE
+// REPORT (rcbj, 2026-10-29: "reports should run with the permissions of the
+// person logged into the report"): the owner is the AuthZEN caller and
+// `sts-report` the application, so a policy decides a report's answer as it
+// decides any PEP's. Every source has the same five fields: the ones a
+// search is asked with are REQUIRED `eq` filters (`AUTHZEN_INPUTS`, refused
+// as STS-REPORT-0054 when one is missing), and the one it answers is a row
+// each. No field is indexed, and none needs to be: the read is one search,
+// bounded by `authzen.searchMaxCandidates`.
+const AUTHZEN_INPUTS: Record<string, string[]> = {
+  authzenSubjects: ['subjectType', 'action', 'resourceType', 'resourceId'],
+  authzenResources: ['subjectType', 'subjectId', 'action', 'resourceType'],
+  authzenActions: ['subjectType', 'subjectId', 'resourceType', 'resourceId']
+};
+
+function authzenSearchSources(): SourceSpec[] {
+  log.debug("Entering authzenSearchSources().");
+  const fields = function (): FieldSpec[] {
+    return [
+      field('subjectType', 'string',
+        'The subject type: user for a directory person, or a type the ' +
+        'realm\'s catalogue declares.'),
+      field('subjectId', 'string',
+        'The subject\'s id; on authzenSubjects, a subject the policy ' +
+        'permits.'),
+      field('action', 'string',
+        'The action name; on authzenActions, an action the policy ' +
+        'permits.'),
+      field('resourceType', 'string',
+        'The resource type: application, api or delegation for this ' +
+        'service\'s own directory objects (#1175), or a declared type.'),
+      field('resourceId', 'string',
+        'The resource\'s id; on authzenResources, a resource the policy ' +
+        'permits.')];
+  };
+  const out = [
+    source('authzenSubjects',
+      'Nothing is kept: each run is one AuthZEN Subject Search (section ' +
+      '8.4), decided now by the root XACML policy with the report\'s owner ' +
+      'as the caller. Required filters: subjectType, action, resourceType ' +
+      'and resourceId, each as eq.', fields()),
+    source('authzenResources',
+      'Nothing is kept: each run is one AuthZEN Resource Search (section ' +
+      '8.5), decided now by the root XACML policy with the report\'s owner ' +
+      'as the caller. Required filters: subjectType, subjectId, action and ' +
+      'resourceType, each as eq.', fields()),
+    source('authzenActions',
+      'Nothing is kept: each run is one AuthZEN Action Search (section ' +
+      '8.6), decided now by the root XACML policy with the report\'s owner ' +
+      'as the caller. Required filters: subjectType, subjectId, ' +
+      'resourceType and resourceId, each as eq.', fields())
+  ];
+  log.debug("Leaving authzenSearchSources().");
+  return out;
+}
+
 /**
  * The closed set of sources a report may name, and the fields of each.
  */
@@ -884,6 +942,21 @@ class Catalog {
     log.debug("Entering Catalog().");
     this.sources = sources ? sources.slice() : standardSources();
     log.debug("Leaving Catalog().");
+  }
+
+  /**
+   * The fields an AuthZEN search source is asked with (#1176), each a
+   * required `eq` filter; null for every other source.
+   *
+   * @param sourceId - the source
+   * @returns the field ids, or null
+   */
+  authzenInputs(sourceId: string): string[] | null {
+    log.debug("Entering Catalog.authzenInputs().");
+    const inputs = Object.prototype.hasOwnProperty.call(AUTHZEN_INPUTS,
+      sourceId) ? AUTHZEN_INPUTS[sourceId].slice() : null;
+    log.debug("Leaving Catalog.authzenInputs().");
+    return inputs;
   }
 
   /**

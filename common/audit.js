@@ -1024,6 +1024,8 @@ const ACTIONS = [
   // AUTHZEN (#563): one row per evaluation, a batch's each with the batch id.
   { action: 'authzen.decision', category: 'authorization',
     label: 'An AuthZEN access evaluation was decided' },
+  { action: 'authzen.search', category: 'authorization',
+    label: 'An AuthZEN search was answered' },
   // FINE-GRAINED AUTHORIZATION (#564): one row per authorization detail an
   // enforcing application's policy decided at issuance — facts and digests,
   // never the detail's values (`xacml/fga_pep.ts`).

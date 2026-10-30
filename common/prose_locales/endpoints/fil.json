@@ -23,6 +23,14 @@
     "en": "d7b1a01d26f2cc80",
     "text": "Ang repository, para I-LOAD ng isang remote PEP"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "Ang katalogo ng AuthZEN, para I-LOAD ng isang remote na PEP"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "Ang mga tumatawag sa AuthZEN, na TINATANGGAP ng isang remote PEP"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Ang ipinatupad ng isang remote PEP"
@@ -38,6 +46,18 @@
   "endpoints.route./access/v1/evaluations.name": {
     "en": "71ce33d985a6eced",
     "text": "Isang batch ng mga pagsusuri ng access"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "Paghahanap ng subject"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "Paghahanap ng resource"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "Paghahanap ng action"
   },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",

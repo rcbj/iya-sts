@@ -883,6 +883,10 @@
     "en": "9a9264e25acb9778",
     "text": "Napagpasyahan ang isang AuthZEN access evaluation"
   },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "Nasagot ang isang AuthZEN search"
+  },
   "audit.actions.fga.decision.label": {
     "en": "c2696096c0749879",
     "text": "Isang desisyon ng fine-grained authorization ang ginawa sa pag-isyu"

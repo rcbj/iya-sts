@@ -35,6 +35,20 @@
 //   E. THE BATCH (#1164): every semantic, an item's failure in its own
 //      context.error, the defaults overridden per item, no items as one
 //      evaluation, both bounds, the switch, and the batch id on each row.
+//   K. THE CATALOGUE A REMOTE PEP PULLS (#1179): GET
+//      /xacml/pep/authzen-catalogue behind REMOTE_PEPS (no certificate and
+//      an AUTHZEN_PEPS caller both refused), the rows the evaluation maps
+//      with, the settings, the ETag and ?since= 304, a token that moves with
+//      a row and a setting, and /xacml/pep/policies' token that does not.
+//   P. THE CALLERS A REMOTE PEP PULLS (#1189): GET
+//      /xacml/pep/authzen-callers behind REMOTE_PEPS, each admitted caller
+//      named EXACTLY as the certificate door names it on a real handshake
+//      (the audit row's actor), the SHA-256 of each certificate's DER, the
+//      scope and the endpoints; a member outside the group absent; the ETag
+//      and ?since= 304; a token that moves with a membership, a stored
+//      certificate, a scope, an issued certificate and its revocation, and
+//      the realm's door; and the policies' and the catalogue's tokens that
+//      do not.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -75,6 +89,12 @@ const POLICY = [
   '        type = string }',
   '    attribute tags { category = resourceCat id = "urn:example:tags"',
   '        type = string }',
+  '    attribute rtype { category = resourceCat',
+  '        id = "urn:sts:xacml:authzen:resource-type" type = string }',
+  '    attribute caller { category = environmentCat',
+  '        id = "urn:sts:xacml:authzen:caller" type = string }',
+  '    attribute app { category = environmentCat',
+  '        id = "urn:sts:xacml:authzen:application" type = string }',
   '    policy azevalRoot {',
   '        id = "urn:test:azeval-root"',
   '        apply firstApplicable',
@@ -92,6 +112,31 @@ const POLICY = [
   '        rule noDelete {',
   '            deny',
   '            target clause act == "delete"',
+  '        }',
+  '        rule inspectApplications {',
+  '            permit',
+  '            target clause act == "inspect"',
+  '            target clause rtype == "application" or rtype == "api"',
+  '        }',
+  '        rule followDelegation {',
+  '            permit',
+  '            target clause act == "follow"',
+  '            target clause rtype == "delegation"',
+  '        }',
+  '        rule reportOwnerAudits {',
+  '            permit',
+  '            target clause act == "audit"',
+  '            target clause caller == "azalice"',
+  '            target clause app == "sts-report"',
+  '        }',
+  '        rule approve {',
+  '            permit',
+  '            target clause act == "approve"',
+  '            on permit {',
+  '                obligation "urn:sts:xacml:authzen:obligation:step-up" {',
+  '                    "acr_value" = "phr"',
+  '                }',
+  '            }',
   '        }',
   '        rule explode {',
   '            permit',
@@ -238,11 +283,12 @@ async function childBody() {
   const pepCred = await mint('CN=azpep,O=Outside');
   const otherCred = await mint('CN=azother,O=Outside');
   const strayCred = await mint('CN=azstray,O=Outside');
-  const added = tls.addAnchors([pepCred, otherCred, strayCred]
+  const pullCred = await mint('CN=azpull,O=Outside');
+  const added = tls.addAnchors([pepCred, otherCred, strayCred, pullCred]
     .map(function (one) {
       return one.anchorPem;
     }).join(''));
-  t.check(added && added.added === 3,
+  t.check(added && added.added === 4,
           'setup: the outside Root CAs are in the client truststore',
           JSON.stringify(added));
   const derOf = function (minted) {
@@ -254,7 +300,7 @@ async function childBody() {
   let catalogued = null;
   let client = null;
   inRealm(function () {
-    ['azalice', 'azpep', 'azother'].forEach(function (name) {
+    ['azalice', 'azpep', 'azother', 'azpull'].forEach(function (name) {
       ldap.createUser(name, { invent: false });
     });
     ldap.locateEntry('azalice').stored.attributes.employeetype = ['staff'];
@@ -263,6 +309,12 @@ async function childBody() {
                                  { add: derOf(otherCred) });
     adminActions.groupsAction({ action: 'add-member', group: group,
                                 member: 'azpep' });
+    // `azpull` is a remote PEP (REMOTE_PEPS), the catalogue's reader (K).
+    ldap.changeStoredCertificate('person', 'azpull',
+                                 { add: derOf(pullCred) });
+    adminActions.groupsAction({ action: 'add-member',
+      group: String(config.value('roles.remotePepGroup')),
+      member: 'azpull' });
     catalogued = applications.updateApplication('sts-authzen-api', {
       mode: 'add', attribute: 'authzenAttribute',
       value: JSON.stringify({ object: 'resource',
@@ -484,6 +536,273 @@ async function childBody() {
   });
 
   // -------------------------------------------------------------------------
+  // B2. THE OBLIGATIONS PROFILE (#1177)
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', URL, pepCred,
+                    asked({ action: { name: 'approve' } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          !r.json.context,
+          'G1. a Permit with a step-up obligation, asked by a PEP that ' +
+          'declared none, is false', brief(r));
+  r = await request(port, 'POST', URL, pepCred,
+    asked({ action: { name: 'approve' },
+            context: { application: 'todo-app',
+                       supported_obligations: ['step-up'] } }));
+  const handed = (r.json && r.json.context &&
+                  r.json.context.obligations) || [];
+  t.check(r.status === 200 && r.json.decision === true &&
+          handed.length === 1 && handed[0].type === 'step-up' &&
+          handed[0].properties.acr_value === 'phr',
+          'G2. declared, it is true with the step-up in context.obligations',
+          brief(r));
+
+  // -------------------------------------------------------------------------
+  // S. THE THREE SEARCHES (#1175)
+  // -------------------------------------------------------------------------
+  inRealm(function () {
+    applications.createApplication({ identifier: 'azeval-front',
+      protocols: ['oauth2'],
+      fields: { oauthClientId: 'azeval-front',
+                appAllowedToDelegateTo: ['azeval-back'] } });
+  });
+  const SEARCH = PREFIX + '/access/v1/search/';
+  r = await request(port, 'POST', SEARCH + 'subject', pepCred, {
+    subject: { type: 'user' }, action: { name: 'write' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  let ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.type + ':' + one.id;
+  });
+  t.check(r.status === 200 && ids.indexOf('user:azalice') >= 0 &&
+          ids.indexOf('user:azpep') < 0 && r.json.page &&
+          typeof r.json.page.next_token === 'string' &&
+          Object.keys(r.json)[0] === 'page',
+          'S1. Subject Search answers the directory people the policy ' +
+          'permits (staff azalice, not azpep), the page first', brief(r));
+  r = await request(port, 'POST', SEARCH + 'subject', pepCred, {
+    subject: { type: 'service', id: 'ignored' }, action: { name: 'write' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  t.check(r.status === 200 && r.json.results.length === 0,
+          'S2. a subject type this realm does not resolve has no candidates, ' +
+          'and an id sent is ignored', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'inspect' },
+    resource: { type: 'application' },
+    context: { application: 'todo-app' } });
+  ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.id;
+  });
+  t.check(r.status === 200 && ids.indexOf('azeval-front') >= 0 &&
+          ids.indexOf('sts-authzen-api') >= 0 &&
+          r.json.results.every(function (one) {
+            return one.type === 'application';
+          }),
+          'S3. Resource Search answers the realm\'s applications, all of the ' +
+          'searched type', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'inspect' },
+    resource: { type: 'api' }, context: { application: 'todo-app' } });
+  ids = ((r.json && r.json.results) || []).map(function (one) {
+    return one.id;
+  });
+  t.check(r.status === 200 && ids.indexOf('sts-authzen-api') >= 0 &&
+          ids.indexOf('azeval-front') < 0,
+          'S4. the api type is the resource-server objects alone', brief(r));
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'follow' },
+    resource: { type: 'delegation' }, context: { application: 'todo-app' } });
+  t.check(r.status === 200 && r.json.results.length === 1 &&
+          r.json.results[0].id === 'azeval-front|azeval-back',
+          'S5. the delegation type is each declared relationship, ' +
+          '<source>|<target>', brief(r));
+  r = await request(port, 'POST', SEARCH + 'action', pepCred, {
+    subject: { type: 'user', id: 'azalice' },
+    resource: { type: 'document', id: 'doc-1',
+                properties: { classification: 'internal' } },
+    context: { application: 'todo-app' } });
+  const names = ((r.json && r.json.results) || []).map(function (one) {
+    return one.name;
+  });
+  t.check(r.status === 200 && names.indexOf('read') >= 0 &&
+          names.indexOf('write') >= 0 && names.indexOf('delete') < 0 &&
+          names.indexOf('approve') < 0,
+          'S6. Action Search answers the policy\'s actions the subject is ' +
+          'permitted (read, write; not delete, nor approve whose ' +
+          'obligation was not declared)', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SEARCH + 'action', pepCred, {
+    subject: { type: 'user', id: 'azalice' }, action: { name: 'read' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0009'),
+          'S7. an Action Search carrying action is refused', brief(r));
+  const paged = { subject: { type: 'user', id: 'azalice' },
+                  action: { name: 'inspect' },
+                  resource: { type: 'application' },
+                  context: { application: 'todo-app' },
+                  page: { limit: 1 } };
+  const first = await request(port, 'POST', SEARCH + 'resource', pepCred,
+                              paged);
+  const pageToken = first.json && first.json.page &&
+                    first.json.page.next_token;
+  const second = await request(port, 'POST', SEARCH + 'resource', pepCred,
+    Object.assign({}, paged, { page: { limit: 1, token: pageToken } }));
+  t.check(first.status === 200 && first.json.results.length === 1 &&
+          !!pageToken && second.status === 200 &&
+          second.json.results.length === 1 &&
+          second.json.results[0].id !== first.json.results[0].id &&
+          first.json.page.total === second.json.page.total,
+          'S8. page.limit pages, and next_token continues to the next page',
+          brief(first) + ' / ' + brief(second));
+  since = marks.length;
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred,
+    Object.assign({}, paged, { action: { name: 'follow' },
+                               page: { limit: 1, token: pageToken } }));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0043'),
+          'S9. a token continued with a changed request is refused ' +
+          '(STS-AUTHZEN-0043)', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.searchMaxCandidates', 1);
+  });
+  r = await request(port, 'POST', SEARCH + 'resource', pepCred,
+                    Object.assign({}, paged, { page: undefined }));
+  inRealm(function () {
+    config.setOverride('authzen.searchMaxCandidates', 1000);
+    config.setOverride('authzen.searchEnabled', false);
+  });
+  t.check(r.status === 200 && r.json.context &&
+          r.json.context.incomplete === true,
+          'S10. past authzen.searchMaxCandidates the answer says it is ' +
+          'incomplete', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SEARCH + 'subject', pepCred, {
+    subject: { type: 'user' }, action: { name: 'write' },
+    resource: { type: 'document', id: 'doc-1' },
+    context: { application: 'todo-app' } });
+  inRealm(function () {
+    config.setOverride('authzen.searchEnabled', true);
+  });
+  t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0044'),
+          'S11. authzen.searchEnabled off answers 501', brief(r));
+
+  // -------------------------------------------------------------------------
+  // R. THE SEARCHES AS REPORT SOURCES (#1176): run as the report's owner,
+  //    the caller of the search, with `sts-report` the application — the
+  //    `reportOwnerAudits` rule permits `audit` for azalice there only.
+  // -------------------------------------------------------------------------
+  const reportSources = require(ROOT + '/report/sources');
+  const ReportQuery = require(ROOT + '/report/query');
+  const ReportCatalog = require(ROOT + '/report/catalog');
+  const reportRun = async function (source, inputs, owner, ownerRealm) {
+    log.debug("Entering reportRun().");
+    const args = Object.keys(inputs).map(function (key) {
+      return { op: 'eq', field: key, value: inputs[key] };
+    });
+    const validated = new ReportQuery({ catalog: new ReportCatalog() })
+      .validate({ source: source, where: { op: 'and', args: args },
+                  select: ['subjectType', 'subjectId', 'action',
+                           'resourceType', 'resourceId'],
+                  limit: 500 });
+    if (!validated.ok) {
+      log.debug("Leaving reportRun(). Invalid.");
+      return validated;
+    }
+    const read = await inRealm(function () {
+      return reportSources.read(validated.plan, {
+        startedMs: Date.now(), budgetMs: 60000, execution: 'sync',
+        owner: owner, ownerRealm: ownerRealm || '' });
+    });
+    log.debug("Leaving reportRun().");
+    return read;
+  };
+  const column = function (read, name) {
+    return ((read && read.rows) || []).map(function (row) {
+      return row[name];
+    });
+  };
+  const catalogIds = new ReportCatalog().list().map(function (one) {
+    return one.id;
+  });
+  t.check(['authzenSubjects', 'authzenResources', 'authzenActions']
+            .every(function (id) {
+              return catalogIds.indexOf(id) >= 0;
+            }), 'R1. the catalog carries the three search sources');
+  let read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azalice');
+  t.check(read.ok && column(read, 'resourceId').indexOf('azeval-front') >= 0 &&
+          column(read, 'resourceId').indexOf('sts-authzen-api') >= 0 &&
+          column(read, 'subjectId').every(function (id) {
+            return id === 'azalice';
+          }),
+          'R2. a resource search answers what the policy permits the ' +
+          'OWNER, each row carrying the inputs', JSON.stringify(read).
+            slice(0, 300));
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azpep');
+  t.check(read.ok && read.rows.length === 0,
+          'R3. the same report owned by somebody else answers nothing: it ' +
+          'runs with its owner\'s permissions', JSON.stringify(read).
+            slice(0, 300));
+  read = await reportRun('authzenActions', { subjectType: 'user',
+    subjectId: 'azalice', resourceType: 'application',
+    resourceId: 'azeval-front' }, 'azalice');
+  t.check(read.ok && column(read, 'action').indexOf('audit') >= 0 &&
+          column(read, 'action').indexOf('inspect') >= 0 &&
+          column(read, 'action').indexOf('delete') < 0,
+          'R4. an action search answers the permitted action names',
+          JSON.stringify(column(read, 'action')));
+  read = await reportRun('authzenSubjects', { subjectType: 'user',
+    action: 'audit', resourceType: 'application',
+    resourceId: 'azeval-front' }, 'azalice');
+  t.check(read.ok && column(read, 'subjectId').indexOf('azalice') >= 0 &&
+          column(read, 'resourceId').every(function (id) {
+            return id === 'azeval-front';
+          }), 'R5. a subject search answers the realm\'s people',
+          JSON.stringify(column(read, 'subjectId')).slice(0, 300));
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    action: 'audit', resourceType: 'application' }, 'azalice');
+  t.check(!read.ok && read.code === 'STS-REPORT-0054' &&
+          /subjectId/.test(read.description),
+          'R6. a missing input is refused, the input named', read.code);
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azalice', 'another-realm');
+  t.check(!read.ok && read.code === 'STS-REPORT-0055' &&
+          read.error === 'forbidden',
+          'R7. an owner from another realm is refused rather than asked ' +
+          'about', read.code);
+  inRealm(function () {
+    config.setOverride('authzen.searchEnabled', false);
+  });
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'audit', resourceType: 'application' },
+    'azalice');
+  inRealm(function () {
+    config.setOverride('authzen.searchEnabled', true);
+  });
+  t.check(!read.ok && read.code === 'STS-REPORT-0055' &&
+          read.error === 'unavailable',
+          'R8. with the search APIs off the source is refused', read.code);
+  read = await reportRun('authzenResources', { subjectType: 'user',
+    subjectId: 'azalice', action: 'no such action',
+    resourceType: 'application' }, 'azalice');
+  t.check(read.ok && read.rows.length === 0,
+          'R9. an action no rule names answers no rows', read.code);
+  const searchRows = inRealm(function () {
+    return require(ROOT + '/common/audit').list().filter(function (row) {
+      return row.action === 'authzen.search' && row.actor === 'azalice' &&
+        /^report searched/.test(String(row.summary || ''));
+    });
+  });
+  t.check(searchRows.length >= 4,
+          'R10. each run is one authzen.search audit row, the owner its ' +
+          'actor and the reports application its place',
+          String(searchRows.length));
+
+  // -------------------------------------------------------------------------
   // W. THE METADATA (#1163)
   // -------------------------------------------------------------------------
   const fromRoot = await request(port, 'GET',
@@ -503,15 +822,17 @@ async function childBody() {
   const advertised = Object.keys(doc).filter(function (key) {
     return /_endpoint$/.test(key);
   });
+  t.check(Array.isArray(doc.supported_obligations) &&
+          doc.supported_obligations.indexOf('step-up') >= 0,
+          'W0. the metadata advertises supported_obligations (#1177)',
+          JSON.stringify(doc));
   t.check(advertised.every(function (key) {
-    return ['access_evaluation_endpoint',
-            'access_evaluations_endpoint'].indexOf(key) >= 0;
-  }) && !doc.capabilities && !doc.signed_metadata &&
-          Object.keys(doc).every(function (key) {
-            return key.indexOf('search') < 0;
-          }),
-          'W3. nothing unimplemented is advertised: no search endpoint, no ' +
-          'capabilities, no signed_metadata', JSON.stringify(doc));
+    return ['access_evaluation_endpoint', 'access_evaluations_endpoint',
+            'search_subject_endpoint', 'search_resource_endpoint',
+            'search_action_endpoint'].indexOf(key) >= 0;
+  }) && advertised.length === 5 && !doc.capabilities,
+          'W3. every implemented endpoint is advertised, the three searches ' +
+          'among them, and no capabilities', JSON.stringify(doc));
   for (let i = 0; i < advertised.length; i += 1) {
     const at = String(doc[advertised[i]]).replace(/^https?:\/\/[^/]+/, '');
     const answered = await request(port, 'POST', at, null, {});
@@ -519,6 +840,33 @@ async function childBody() {
             'W4. ' + advertised[i] + ' is a registered route (' + at + ')',
             brief(answered));
   }
+  let signedClaims = null;
+  try {
+    signedClaims = inRealm(function () {
+      return helpers.verifyOwnJws(String(doc.signed_metadata || ''));
+    });
+  } catch (e) {
+    log.debug("Caught in childBody(): " + ((e && e.message) || e));
+    signedClaims = null;
+  }
+  t.check(!!signedClaims && signedClaims.iss === own &&
+          signedClaims.policy_decision_point === own &&
+          signedClaims.access_evaluation_endpoint ===
+            doc.access_evaluation_endpoint &&
+          signedClaims.signed_metadata === undefined,
+          'W7. signed_metadata verifies with the realm\'s key, iss is the ' +
+          'PDP identifier, and its claims are the plain members (#1178)',
+          JSON.stringify(signedClaims));
+  inRealm(function () {
+    config.setOverride('authzen.signedMetadata', false);
+  });
+  r = await request(port, 'GET', '/.well-known/authzen-configuration' +
+                    PREFIX, null);
+  inRealm(function () {
+    config.setOverride('authzen.signedMetadata', true);
+  });
+  t.check(r.json && r.json.signed_metadata === undefined,
+          'W8. authzen.signedMetadata off leaves it out', brief(r));
   r = await request(port, 'GET',
                     '/.well-known/authzen-configuration/realm/nowhere', null);
   t.check(r.status === 404, 'W5. a path naming no realm is a 404', brief(r));
@@ -644,6 +992,280 @@ async function childBody() {
           'with authzen.batchEnabled off the route answers 501 and the ' +
           'metadata leaves it out', JSON.stringify([withBatch, off.status,
                                                     without.json]));
+
+  // -------------------------------------------------------------------------
+  // K. THE CATALOGUE A REMOTE PEP PULLS (#1179)
+  // -------------------------------------------------------------------------
+  const CATALOGUE = PREFIX + '/xacml/pep/authzen-catalogue';
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, null);
+  t.check(r.status === 403 && markedSince(since, 'STS-XACML-0007'),
+          'K1. the catalogue is behind the pull\'s gate: no certificate is ' +
+          '403 (STS-XACML-0007)', brief(r));
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pepCred);
+  t.check(r.status === 403 && markedSince(since, 'STS-XACML-0009'),
+          'K2. an AuthZEN caller is not a remote PEP: AUTHZEN_PEPS without ' +
+          'REMOTE_PEPS is 403 (STS-XACML-0009)', brief(r));
+  const pulled = await request(port, 'GET', CATALOGUE, pullCred);
+  const pulledRows = (pulled.json && pulled.json.rows) || [];
+  const classification = pulledRows.filter(function (row) {
+    return row.property === 'classification';
+  })[0] || {};
+  const settings = (pulled.json && pulled.json.settings) || {};
+  const tokenOf = function (answer) {
+    log.debug("Entering tokenOf().");
+    log.debug("Leaving tokenOf().");
+    return answer.json ? String(answer.json.syncToken || '') : '';
+  };
+  const firstToken = tokenOf(pulled);
+  t.check(pulled.status === 200 && pulledRows.length === 2 &&
+          classification.object === 'resource' &&
+          classification.attributeId === 'urn:example:classification' &&
+          classification.category ===
+            'urn:oasis:names:tc:xacml:3.0:attribute-category:resource' &&
+          classification.dataType ===
+            'http://www.w3.org/2001/XMLSchema#string' &&
+          classification.multiplicity === 'single' &&
+          pulled.json.realm === REALM &&
+          pulled.json.apiObject === 'sts-authzen-api',
+          'K3. a remote PEP is sent the realm\'s rows, as the evaluation ' +
+          'reads them (URIs, defaults written in)', brief(pulled));
+  t.check(settings.enabled === true && settings.batchEnabled === true &&
+          settings.returnReasons === false &&
+          settings.maxEvaluations === 64 &&
+          settings.maxBodyBytes === 262144 &&
+          JSON.stringify(settings.resolveSubjectTypes) === '["user"]',
+          'K4. and the settings that change the mapping or the answer',
+          JSON.stringify(settings));
+  t.check(!!firstToken && pulled.headers.etag === '"' + firstToken + '"' &&
+          /no-store/.test(String(pulled.headers['cache-control'])),
+          'K5. with a sync token, in an ETag too, and Cache-Control: ' +
+          'no-store', JSON.stringify(pulled.headers));
+  r = await request(port, 'GET', CATALOGUE + '?since=' +
+                    encodeURIComponent(firstToken), pullCred);
+  t.check(r.status === 304 && r.text === '',
+          'K6. ?since=<token> of an unchanged catalogue is 304', brief(r));
+  const policiesBefore = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  inRealm(function () {
+    applications.updateApplication('sts-authzen-api', {
+      mode: 'add', attribute: 'authzenAttribute',
+      value: JSON.stringify({ object: 'context', property: 'region',
+        attributeId: 'urn:example:region' }) });
+  });
+  r = await request(port, 'GET', CATALOGUE + '?since=' +
+                    encodeURIComponent(firstToken), pullCred);
+  const policiesAfter = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  const secondToken = tokenOf(r);
+  t.check(r.status === 200 && secondToken && secondToken !== firstToken &&
+          ((r.json && r.json.rows) || []).length === 3,
+          'K7. a new row moves the token, and ?since= of the old one is ' +
+          'answered whole', brief(r));
+  t.check(policiesBefore.status === 200 && policiesAfter.status === 200 &&
+          tokenOf(policiesBefore) === tokenOf(policiesAfter),
+          'K8. /xacml/pep/policies\' own token does not move with the ' +
+          'catalogue: the two pulls are two contracts',
+          tokenOf(policiesBefore) + ' / ' + tokenOf(policiesAfter));
+  inRealm(function () {
+    config.setOverride('authzen.returnReasons', true);
+  });
+  r = await request(port, 'GET', CATALOGUE, pullCred);
+  inRealm(function () {
+    config.setOverride('authzen.returnReasons', false);
+  });
+  t.check(r.status === 200 && tokenOf(r) !== secondToken && r.json &&
+          r.json.settings.returnReasons === true,
+          'K9. a setting that changes the answer moves the token too',
+          brief(r));
+
+  // -------------------------------------------------------------------------
+  // P. THE CALLERS A REMOTE PEP PULLS (#1189)
+  // -------------------------------------------------------------------------
+  const CALLERS = PREFIX + '/xacml/pep/authzen-callers';
+  const hex = function (minted) {
+    log.debug("Entering hex().");
+    log.debug("Leaving hex().");
+    return nodeCrypto.createHash('sha256').update(derOf(minted))
+      .digest('hex');
+  };
+  const callerNamed = function (answer, name) {
+    log.debug("Entering callerNamed().");
+    log.debug("Leaving callerNamed().");
+    return ((answer.json && answer.json.callers) || [])
+      .filter(function (one) {
+        return String(one.name).toLowerCase() === String(name).toLowerCase();
+      })[0] || null;
+  };
+  // THE NAME THE DOOR GAVE: the actor of the evaluation rows a person's
+  // certificate made over a real handshake — one name, or none.
+  const actorOf = function (person) {
+    log.debug("Entering actorOf().");
+    const names = [];
+    inRealm(function () {
+      return audit.list();
+    }).forEach(function (row) {
+      const actor = String((row && row.actor) || '');
+      if (row && row.action === 'authzen.decision' &&
+          actor.toLowerCase().indexOf(person) >= 0 &&
+          names.indexOf(actor) < 0) {
+        names.push(actor);
+      }
+    });
+    log.debug("Leaving actorOf(). " + names.length);
+    return names.length === 1 ? names[0] : '';
+  };
+  since = marks.length;
+  r = await request(port, 'GET', CALLERS, null);
+  const noCert = r;
+  r = await request(port, 'GET', CALLERS, pepCred);
+  t.check(noCert.status === 403 && r.status === 403 &&
+          markedSince(since, 'STS-XACML-0007') &&
+          markedSince(since, 'STS-XACML-0009'),
+          'P1. the callers are behind the pull\'s gate: no certificate and ' +
+          'an AUTHZEN_PEPS caller without REMOTE_PEPS are both 403',
+          brief(noCert) + ' / ' + brief(r));
+  const pepName = actorOf('azpep');
+  const listed = await request(port, 'GET', CALLERS, pullCred);
+  const pepEntry = callerNamed(listed, pepName) || {};
+  const pepDigests = (pepEntry.certificates || []).map(function (one) {
+    return one.sha256;
+  });
+  t.check(listed.status === 200 && !!pepName && pepEntry.name === pepName &&
+          JSON.stringify(pepDigests) === JSON.stringify([hex(pepCred)]) &&
+          pepEntry.certificates[0].source === 'stored' &&
+          JSON.stringify(pepEntry.applications) ===
+            JSON.stringify(['todo-app', 'wiki']) &&
+          JSON.stringify(pepEntry.endpoints) ===
+            JSON.stringify(['evaluation', 'evaluations']) &&
+          listed.json.door === 'mtls' && listed.json.realm === REALM &&
+          listed.json.role === 'AUTHZEN_PEPS',
+          'P2. an admitted caller is named exactly as the certificate door ' +
+          'named it on a handshake (' + pepName + '), with the SHA-256 of ' +
+          'its stored certificate\'s DER, its scope and both endpoints',
+          brief(listed));
+  const otherDn = inRealm(function () {
+    return ldap.locateEntry('azother').stored.dn;
+  });
+  t.check(!callerNamed(listed, otherDn) && listed.json.callers.length === 1,
+          'P3. a person storing a certificate and outside the group is not ' +
+          'listed', JSON.stringify(listed.json.callers));
+  const callersToken = tokenOf(listed);
+  t.check(!!callersToken &&
+          listed.headers.etag === '"' + callersToken + '"' &&
+          /no-store/.test(String(listed.headers['cache-control'])),
+          'P4. with a sync token, in an ETag too, and Cache-Control: no-store',
+          JSON.stringify(listed.headers));
+  r = await request(port, 'GET', CALLERS + '?since=' +
+                    encodeURIComponent(callersToken), pullCred);
+  t.check(r.status === 304 && r.text === '',
+          'P5. ?since=<token> of an unchanged list is 304', brief(r));
+  const policiesToken = tokenOf(await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred));
+  const catalogueToken = tokenOf(await request(port, 'GET', CATALOGUE,
+                                               pullCred));
+  // A MEMBERSHIP.
+  inRealm(function () {
+    adminActions.groupsAction({ action: 'add-member', group: group,
+                                member: 'azother' });
+  });
+  r = await request(port, 'GET', CALLERS + '?since=' +
+                    encodeURIComponent(callersToken), pullCred);
+  const afterMember = tokenOf(r);
+  const otherEntry = callerNamed(r, otherDn) || {};
+  t.check(r.status === 200 && afterMember && afterMember !== callersToken &&
+          ((otherEntry.certificates || [])[0] || {}).sha256 ===
+            hex(otherCred) &&
+          JSON.stringify(otherEntry.applications) === '[]',
+          'P6. a member added to the group moves the token and is listed, ' +
+          'scoped to nothing', brief(r));
+  // A CERTIFICATE.
+  inRealm(function () {
+    ldap.changeStoredCertificate('person', 'azpep',
+                                 { add: derOf(strayCred) });
+  });
+  r = await request(port, 'GET', CALLERS, pullCred);
+  const afterCert = tokenOf(r);
+  t.check(afterCert && afterCert !== afterMember &&
+          ((callerNamed(r, pepName) || {}).certificates || []).length === 2,
+          'P7. a certificate stored on a caller\'s entry moves the token, ' +
+          'and both are listed', brief(r));
+  // A SCOPE.
+  inRealm(function () {
+    ldap.locateEntry('azpep').stored.attributes.stsauthzenapplication =
+      ['todo-app'];
+  });
+  r = await request(port, 'GET', CALLERS, pullCred);
+  const afterScope = tokenOf(r);
+  t.check(afterScope && afterScope !== afterCert &&
+          JSON.stringify((callerNamed(r, pepName) || {}).applications) ===
+            JSON.stringify(['todo-app']),
+          'P8. a scope set on a caller moves the token', brief(r));
+  // A CERTIFICATE THIS REALM ISSUED: listed, named as the door names it
+  // on a real handshake, and gone when revoked.
+  const tlsClient = require(ROOT + '/common/tls_client_certificates');
+  inRealm(function () {
+    ldap.createUser('azissued', { invent: false });
+    ldap.locateEntry('azissued').stored.attributes.stsauthzenapplication =
+      ['todo-app'];
+    adminActions.groupsAction({ action: 'add-member', group: group,
+                                member: 'azissued' });
+  });
+  const issued = await inRealm(function () {
+    return tlsClient.issue(undefined, { username: 'azissued',
+                                        label: 'edge', keyAlg: 'ec-p256' });
+  });
+  const issuedCred = issued && issued.ok ? {
+    certPem: issued.issued.certificatePem + issued.issued.chainPem.join(''),
+    keyPem: issued.issued.privateKeyPem } : null;
+  r = await request(port, 'POST', URL, issuedCred, asked());
+  const issuedAnswer = r;
+  const issuedName = actorOf('azissued');
+  r = await request(port, 'GET', CALLERS, pullCred);
+  const afterIssue = tokenOf(r);
+  const issuedEntry = callerNamed(r, issuedName) || {};
+  const issuedDigest = issued && issued.ok
+    ? nodeCrypto.createHash('sha256').update(
+      new nodeCrypto.X509Certificate(issued.issued.certificatePem).raw)
+      .digest('hex') : '';
+  t.check(issuedAnswer.status === 200 && !!issuedName &&
+          issuedEntry.name === issuedName && afterIssue !== afterScope &&
+          ((issuedEntry.certificates || [])[0] || {}).sha256 ===
+            issuedDigest &&
+          issuedEntry.certificates[0].source === 'issued',
+          'P9. a TLS client certificate this realm issued a member is ' +
+          'listed, under the name the door gave it on a handshake (' +
+          issuedName + ')', brief(issuedAnswer) + ' / ' + brief(r));
+  const revoked = issued && issued.ok ? inRealm(function () {
+    return tlsClient.revoke(undefined, 'azissued', issued.issued.serialHex,
+                            'keyCompromise');
+  }) : null;
+  r = await request(port, 'GET', CALLERS, pullCred);
+  t.check(revoked && revoked.ok && tokenOf(r) !== afterIssue &&
+          !callerNamed(r, issuedName),
+          'P10. revoked in the register, it leaves the list on the next ' +
+          'pull', brief(r));
+  const afterRevoke = tokenOf(r);
+  // THE REALM'S DOOR.
+  inRealm(function () {
+    config.setOverride('authzen.callerAuthentication', 'bearer');
+  });
+  r = await request(port, 'GET', CALLERS, pullCred);
+  inRealm(function () {
+    config.setOverride('authzen.callerAuthentication', 'mtls');
+  });
+  t.check(r.status === 200 && r.json && r.json.door === 'bearer' &&
+          r.json.callers.length === 0 && tokenOf(r) !== afterRevoke,
+          'P11. a realm whose door is a token lists no caller: a ' +
+          'certificate alone does not meet it', brief(r));
+  t.check(tokenOf(await request(port, 'GET', PREFIX + '/xacml/pep/policies',
+                                pullCred)) === policiesToken &&
+          tokenOf(await request(port, 'GET', CATALOGUE, pullCred)) ===
+            catalogueToken,
+          'P12. the policies\' and the catalogue\'s tokens do not move with ' +
+          'the callers: three pulls, three contracts', policiesToken + ' / ' +
+          catalogueToken);
 
   // -------------------------------------------------------------------------
   // O. OFF

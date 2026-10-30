@@ -1028,6 +1028,11 @@ var config = {
     batchEnabled: true,           // Batch evaluations enabled
     maxEvaluations: 64,           // Evaluations one batch may carry
     maxBodyBytes: 262144,         // Largest batch request (bytes)
+    signedMetadata: true,         // Sign the AuthZEN metadata
+    obligationsProfile: true,     // Hand obligations to a PEP that declares them
+    searchEnabled: true,          // Search APIs enabled
+    searchMaxCandidates: 1000,    // Candidates one search decides
+    searchPageSize: 50,           // Results per search page
     returnReasons: false          // Return the reasons for a decision
   },
 

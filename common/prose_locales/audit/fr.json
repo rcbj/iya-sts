@@ -883,6 +883,10 @@
     "en": "9a9264e25acb9778",
     "text": "Une évaluation d’accès AuthZEN a été décidée"
   },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "Une recherche AuthZEN a reçu une réponse"
+  },
   "audit.actions.fga.decision.label": {
     "en": "c2696096c0749879",
     "text": "Une décision d’autorisation fine a été prise lors de l’émission"

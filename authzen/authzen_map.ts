@@ -111,6 +111,9 @@ interface Evaluation {
   action: { name: string };
   resource: { type: string; id: string };
   application: string;
+  // The Obligations Profile's `context.supported_obligations` (#1177), or
+  // null when the request did not say.
+  supportedObligations: string[] | null;
   attributes: MappedAttribute[];
   supplied: string[];
 }
@@ -139,6 +142,13 @@ interface Trusted {
   fga?: boolean;
 }
 
+// One obligation as the Obligations Profile sends it (#1177).
+interface Obligation {
+  id: string;
+  type: string;
+  properties: any;
+}
+
 // What `outcome()` answers.
 interface Outcome {
   fault: boolean;
@@ -148,7 +158,27 @@ interface Outcome {
   undischargeable: string[];
   discharged: string[];
   advice: any[];
+  // The obligations handed to the PEP in `context.obligations`, and why any
+  // could not be (#1177).
+  obligations: Obligation[];
+  obligationProblems: string[];
 }
+
+// THE OBLIGATIONS PROFILE'S REGISTERED TYPES (#1177, its section 5), each
+// with the properties it requires and those that are arrays. An XACML
+// obligation `urn:sts:xacml:authzen:obligation:<type>` is that type; any
+// other but the one this service discharges is `custom`.
+const OBLIGATION_TYPES = Object.freeze({
+  'step-up': { required: ['acr_value'], arrays: ['amr_values'] },
+  'notification': { required: ['to', 'body'], arrays: ['to'] },
+  'session_termination': { required: ['subject'], arrays: [] }
+});
+
+// The XACML obligation id prefix that names a registered type.
+const OBLIGATION_PREFIX = 'urn:sts:xacml:authzen:obligation:';
+
+// The one obligation this service discharges itself, as an audit row.
+const DISCHARGED = 'urn:sts:xacml:obligation:log';
 
 // The members each object may carry, beside `properties`.
 const MEMBERS = Object.freeze({
@@ -286,6 +316,20 @@ class AuthzenMap {
       return refused('STS-AUTHZEN-0003', 'context must be a JSON object.');
     }
     const context = given.context || {};
+    let supportedObligations: string[] | null = null;
+    if (context.supported_obligations !== undefined) {
+      const sent = context.supported_obligations;
+      if (!Array.isArray(sent) || sent.length > 32 ||
+          !sent.every(function (one: unknown) {
+            return typeof one === 'string' && one.length <= 64;
+          })) {
+        log.debug("Leaving AuthzenMap.read(). A bad supported_obligations.");
+        return refused('STS-AUTHZEN-0003',
+          'context.supported_obligations must be an array of at most 32 ' +
+          'obligation type names.');
+      }
+      supportedObligations = sent.slice(0);
+    }
     let application = '';
     if (context.application !== undefined) {
       if (typeof context.application !== 'string' || !context.application ||
@@ -301,6 +345,9 @@ class AuthzenMap {
                       'resource.type', 'resource.id'];
     if (application) {
       supplied.push('context.application');
+    }
+    if (supportedObligations) {
+      supplied.push('context.supported_obligations');
     }
     const attributes: MappedAttribute[] = [];
     const walked = [
@@ -323,6 +370,7 @@ class AuthzenMap {
     return { evaluation: { subject: parts.subject, action: parts.action,
                            resource: parts.resource,
                            application: application,
+                           supportedObligations: supportedObligations,
                            attributes: attributes, supplied: supplied } };
   }
 
@@ -502,9 +550,13 @@ class AuthzenMap {
    * @param answer - the PDP's answer
    * @param enforcement - `xacml.ts`'s `enforce()` of it, deny-biased
    * @param faultCode - the error code marked on the answer, or ''
+   * @param supported - the Obligations Profile's
+   *   `context.supported_obligations` when the profile is on (#1177): the
+   *   obligation types the PEP says it can carry out, or null to hand none
    * @returns the outcome
    */
-  static outcome(answer: any, enforcement: any, faultCode: string): Outcome {
+  static outcome(answer: any, enforcement: any, faultCode: string,
+                 supported?: string[] | null): Outcome {
     log.debug("Entering AuthzenMap.outcome(). " + (answer || {}).decision);
     const decision = String((answer || {}).decision || '');
     const status = ((answer || {}).status || {}).code || '';
@@ -523,11 +575,119 @@ class AuthzenMap {
         : String((enforcement && enforcement.why) || ''),
       undischargeable: (enforcement && enforcement.undischargeable) || [],
       discharged: (enforcement && enforcement.discharged) || [],
-      advice: (answer && answer.advice) || []
+      advice: (answer && answer.advice) || [],
+      obligations: [],
+      obligationProblems: []
     };
+    // THE OBLIGATIONS PROFILE (#1177; rcbj, 2026-10-30): obligations are
+    // handed to the PEP ONLY when it declared, in
+    // `context.supported_obligations`, every type the answer carries. A PEP
+    // that never heard of the profile would read `decision: true` and grant,
+    // so without the declaration the answer stays what it was: false for a
+    // Permit carrying an obligation this service cannot carry out itself.
+    // With it, a Permit whose obligations are all handed is true — the PEP
+    // is now the one that must carry them out, and the profile makes it
+    // treat any it cannot as a deny. A denial's obligations are handed the
+    // same way, beside `false` (section 2).
+    if (!out.fault && Array.isArray(supported)) {
+      const converted = AuthzenMap.obligationsOf(answer);
+      out.obligationProblems = converted.problems;
+      const handed = converted.handed;
+      const declared = handed.length > 0 && !converted.problems.length &&
+        handed.every(function (one: Obligation) {
+          return supported.indexOf(one.type) >= 0;
+        });
+      if (declared) {
+        out.obligations = handed;
+        out.undischargeable = [];
+        if (decision === model.DECISION.PERMIT) {
+          out.decision = true;
+          out.why = 'The PDP said Permit, with obligations the PEP declared ' +
+                    'it carries out.';
+        }
+      }
+    }
     log.debug("Leaving AuthzenMap.outcome(). " +
               (out.fault ? 'A fault.' : String(out.decision)));
     return out;
+  }
+
+  /**
+   * Converts the XACML obligations of an answer into the Obligations
+   * Profile's (#1177): `urn:sts:xacml:authzen:obligation:<type>` is that
+   * registered type, any other obligation but the one this service
+   * discharges is `custom` (its XACML id kept as `xacml_obligation`), and
+   * each attribute assignment is a property named by its attribute id's
+   * last segment (`…:acr_value` is `acr_value`). A registered type missing a
+   * property it requires is a problem, and the answer then hands nothing.
+   *
+   * @param answer - the PDP's answer
+   * @returns `{ handed, problems }`
+   */
+  static obligationsOf(answer: any): { handed: Obligation[];
+                                       problems: string[] } {
+    log.debug("Entering AuthzenMap.obligationsOf().");
+    const handed: Obligation[] = [];
+    const problems: string[] = [];
+    ((answer && answer.obligations) || []).forEach(function (one: any) {
+      const xacmlId = String(one.id || '');
+      if (xacmlId === DISCHARGED) {
+        return;
+      }
+      const named = xacmlId.indexOf(OBLIGATION_PREFIX) === 0
+        ? xacmlId.slice(OBLIGATION_PREFIX.length) : '';
+      const type = Object.prototype.hasOwnProperty.call(OBLIGATION_TYPES,
+                                                       named)
+        ? named : 'custom';
+      const rule = OBLIGATION_TYPES[type] || { required: [], arrays: [] };
+      const properties: any = type === 'custom'
+        ? { xacml_obligation: xacmlId } : {};
+      (one.assignments || []).forEach(function (a: any) {
+        const name = String(a.attributeId || '').replace(/^.*:/, '');
+        let value: unknown = a.value;
+        try {
+          value = datatypes.writeValue(a.type, a.value);
+        } catch (e) {
+          // The engine's own value, as it holds it; a property is data.
+          log.debug("Caught in AuthzenMap.obligationsOf(): " +
+                    ((e && e.message) || e));
+        }
+        if (!name) {
+          return;
+        }
+        if (properties[name] === undefined) {
+          properties[name] = rule.arrays.indexOf(name) >= 0 ? [value]
+                                                           : value;
+        } else {
+          properties[name] = [].concat(properties[name], [value]);
+        }
+      });
+      const missing = rule.required.filter(function (name: string) {
+        return properties[name] === undefined || properties[name] === '';
+      });
+      if (missing.length) {
+        problems.push(xacmlId + ' is a ' + type + ' obligation without ' +
+                      missing.join(', '));
+        return;
+      }
+      handed.push({ id: 'obligation-' + (handed.length + 1), type: type,
+                    properties: properties });
+    });
+    log.debug("Leaving AuthzenMap.obligationsOf(). " + handed.length +
+              " handed, " + problems.length + " problem(s).");
+    return { handed: handed, problems: problems };
+  }
+
+  /**
+   * The obligation types this service can hand a PEP, which the metadata
+   * advertises as `supported_obligations` (#1177).
+   *
+   * @returns the type names
+   */
+  static supportedObligationTypes(): string[] {
+    log.debug("Entering AuthzenMap.supportedObligationTypes().");
+    log.debug("Leaving AuthzenMap.supportedObligationTypes().");
+    return Object.keys(OBLIGATION_TYPES).concat(['custom']);
   }
 
   /**
@@ -580,5 +740,8 @@ export = {
   read: AuthzenMap.read,
   request: AuthzenMap.request,
   outcome: AuthzenMap.outcome,
-  reasons: AuthzenMap.reasons
+  reasons: AuthzenMap.reasons,
+  obligationsOf: AuthzenMap.obligationsOf,
+  supportedObligationTypes: AuthzenMap.supportedObligationTypes,
+  OBLIGATION_PREFIX: OBLIGATION_PREFIX
 };

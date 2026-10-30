@@ -400,8 +400,9 @@ class ProtocolEndpoints {
       ]),
       '/admin/xacml': [
         '/xacml', '/xacml/pdp', '/xacml/policies',
-        '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
-        '/xacml/pip'
+        '/xacml/pep/register', '/xacml/pep/policies',
+        '/xacml/pep/authzen-catalogue', '/xacml/pep/authzen-callers',
+        '/xacml/pep/heartbeat', '/xacml/pip'
       ].map(route),
       '/admin/scim': [
         '/scim', '/scim/v2/ServiceProviderConfig', '/scim/v2/ResourceTypes',

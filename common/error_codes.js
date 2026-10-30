@@ -21073,6 +21073,114 @@ const CODES = [
       'after it had started, and contained it rather than exiting (#355), ' +
       'throttled as STS-XPEP-0033 is.',
     spec: 'none — logged; the PEP carries on', retired: true },
+  { code: 'STS-XPEP-0035',
+    summary: 'An AuthZEN request reached the remote PEP\'s edge PDP with no ' +
+      'client certificate: over plain HTTP, or on the HTTPS listener ' +
+      'without presenting one (#1179). Its callers authenticate by mutual ' +
+      'TLS only.',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-XPEP-0036',
+    summary: 'The client certificate an AuthZEN caller presented to the ' +
+      'remote PEP\'s edge PDP did not verify against PEP_AUTHZEN_CLIENT_CA ' +
+      '(#1179).',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-XPEP-0037',
+    summary: 'The client certificate an AuthZEN caller presented to the ' +
+      'remote PEP\'s edge PDP verified, and its SHA-256 is not in ' +
+      'PEP_AUTHZEN_CALLERS, the container\'s stand-in for the service\'s ' +
+      'AUTHZEN_PEPS role (#1179).',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-XPEP-0038',
+    summary: 'PEP_AUTHZEN_CALLERS is not a JSON array, or an entry of it ' +
+      'is not a name, a 64-digit SHA-256 and at most 64 applications, and ' +
+      'was left out; the remote PEP\'s edge PDP admits nobody it cannot ' +
+      'read (#1179).',
+    spec: 'none — logged at start' },
+  { code: 'STS-XPEP-0039',
+    summary: 'The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, ' +
+      'unreadable or holding no certificate), so its HTTPS listener asks ' +
+      'no caller for a certificate and its AuthZEN edge PDP admits nobody ' +
+      '(#1179).',
+    spec: 'HTTP 401 from the AuthZEN endpoints; logged at start' },
+  { code: 'STS-XPEP-0040',
+    summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
+      'catalogue (GET /xacml/pep/authzen-catalogue). The catalogue already ' +
+      'held is kept (#1179).',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0041',
+    summary: 'The PDP refused the remote PEP\'s AuthZEN catalogue pull, or ' +
+      'answered with something that is not a catalogue (a PDP older than ' +
+      '#1179 answers 404). The catalogue already held is kept.',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0042',
+    summary: 'Rows of a pulled AuthZEN catalogue were refused by the ' +
+      'remote PEP\'s own catalogue grammar and left out, so those ' +
+      'properties are undeclared at its edge PDP (#1179).',
+    spec: 'none — logged; the rest is loaded' },
+  { code: 'STS-XPEP-0043',
+    summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
+      'it had pulled both the policies and the AuthZEN catalogue, so it ' +
+      'cannot map a request as the service does (#1179).',
+    spec: 'HTTP 503, an error message' },
+  { code: 'STS-XPEP-0044',
+    summary: 'An AuthZEN request reached a remote PEP whose edge PDP is ' +
+      'turned off (PEP_AUTHZEN=false) (#1179).',
+    spec: 'HTTP 501, an error message' },
+  { code: 'STS-XPEP-0045',
+    summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
+      'identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), ' +
+      'or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path ' +
+      'and was ignored (#1179).',
+    spec: 'HTTP 404 from GET /.well-known/authzen-configuration; logged at ' +
+      'start' },
+  { code: 'STS-XPEP-0046',
+    summary: 'A single AuthZEN evaluation sent to the remote PEP\'s edge ' +
+      'PDP was larger than PEP_MAX_BODY_BYTES and was refused unread ' +
+      '(#1179).',
+    spec: 'HTTP 413, an error message' },
+  { code: 'STS-XPEP-0047',
+    summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
+      'callers (GET /xacml/pep/authzen-callers). The caller list already ' +
+      'held is kept (#1189).',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0048',
+    summary: 'The PDP refused the remote PEP\'s AuthZEN caller pull, or ' +
+      'answered with something that is not a caller list (a PDP older than ' +
+      '#1189 answers 404). The caller list already held is kept, and ' +
+      'before the first one PEP_AUTHZEN_CALLERS alone decides.',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0049',
+    summary: 'Entries of a pulled AuthZEN caller list were not a name, ' +
+      '64-digit SHA-256 digests, at most 64 applications and the endpoints ' +
+      'admitted to, and were left out: the remote PEP\'s edge PDP admits ' +
+      'nobody it cannot read (#1189).',
+    spec: 'none — logged; the pull is kept' },
+  { code: 'STS-XPEP-0050',
+    summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
+      'it had pulled the callers from the PDP, and no PEP_AUTHZEN_CALLERS ' +
+      'is configured to decide meanwhile (#1189).',
+    spec: 'HTTP 503, an error message' },
+  { code: 'STS-XPEP-0051',
+    summary: 'The client certificate an AuthZEN caller presented to the ' +
+      'remote PEP\'s edge PDP verified, and its SHA-256 is not one the ' +
+      'pulled caller list names: the service would not admit it (#1189).',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-XPEP-0052',
+    summary: 'The realm the remote PEP pulled its AuthZEN callers from ' +
+      'authenticates them by a token (authzen.callerAuthentication bearer ' +
+      'or mtls+bearer), which the edge PDP cannot check, so it admits ' +
+      'nobody (#1189).',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-XPEP-0053',
+    summary: 'A caller on the remote PEP\'s pulled AuthZEN caller list asked ' +
+      'an endpoint the service\'s access-control policy does not admit it ' +
+      'to (#1189).',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-XPEP-0054',
+    summary: 'A caller on the remote PEP\'s pulled AuthZEN caller list is ' +
+      'not on PEP_AUTHZEN_CALLERS, which, when it is set, narrows the ' +
+      'pulled list to the certificates it names (#1189).',
+    spec: 'HTTP 403, an error message' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
@@ -21260,6 +21368,34 @@ const CODES = [
       'authzen.batchEnabled is off.',
     spec: 'HTTP 501, an error message' },
   { code: 'STS-AUTHZEN-0040',
+    summary: 'The AuthZEN metadata document could not be signed for its ' +
+      'signed_metadata, which was left out; the plain document was served.',
+    spec: '' },
+  { code: 'STS-AUTHZEN-0041',
+    summary: 'An AuthZEN answer carried an XACML obligation that cannot be ' +
+      'handed as an Obligations Profile obligation (a registered type ' +
+      'without a property it requires), so none was handed and a Permit ' +
+      'answered false.',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0042',
+    summary: 'An AuthZEN search carried a page that is not an object of ' +
+      'token (a string), limit (a non-negative integer) and properties (an ' +
+      'object).',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0043',
+    summary: 'An AuthZEN search continued with a page.token this search did ' +
+      'not issue, or after an entity or the limit changed (section 8.2).',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0044',
+    summary: 'An AuthZEN search reached a realm where authzen.searchEnabled ' +
+      'is off.',
+    spec: 'HTTP 501, an error message' },
+  { code: 'STS-AUTHZEN-0045',
+    summary: 'An AuthZEN search named more candidates than ' +
+      'authzen.searchMaxCandidates; only the first were decided and the ' +
+      'answer said it was incomplete.',
+    spec: 'context.incomplete' },
+  { code: 'STS-AUTHZEN-0046',
     summary: 'An AuthZEN evaluation about an application that enforces ' +
       'fine-grained authorization could not be decided: the application\'s ' +
       'policy cannot be used, or whether it enforces could not be read. ' +
@@ -21267,6 +21403,24 @@ const CODES = [
       '0015). Answered as an error, never as a denial, and never decided ' +
       'against the realm root instead (#564).',
     spec: 'HTTP 500, an error message (a batch item\'s context.error)' },
+  { code: 'STS-AUTHZEN-0060',
+    summary: 'The AuthZEN catalogue a remote PEP pulled from ' +
+      'GET /xacml/pep/authzen-catalogue left out values of ' +
+      'authzenAttribute on sts-authzen-api that are not catalogue rows; ' +
+      'the edge PDP maps those properties as undeclared, as the service ' +
+      'does (#1179).',
+    spec: 'none — logged; the pull is answered' },
+  { code: 'STS-AUTHZEN-0061',
+    summary: 'The AuthZEN caller list a remote PEP pulled from ' +
+      'GET /xacml/pep/authzen-callers was cut: the AuthZEN group has more ' +
+      'members than are read, or a member more certificates (#1189). A ' +
+      'caller past the cut is refused at the edge and still answered here.',
+    spec: 'none — logged; the pull is answered' },
+  { code: 'STS-AUTHZEN-0062',
+    summary: 'A certificate held by a member of the AuthZEN group could ' +
+      'not be read for the caller list a remote PEP pulled, and was left ' +
+      'out (#1189).',
+    spec: 'none — logged; the pull is answered' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
@@ -21284,14 +21438,14 @@ const CODES = [
       'is empty.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
       'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
       'none otherwise' },
   { code: 'STS-FGA-0004',
     summary: 'An application\'s appFgaPolicy names a policy entry that is ' +
       'not in this realm\'s ou=policies.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
       'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
       'none otherwise' },
   { code: 'STS-FGA-0005',
     summary: 'An application\'s appFgaPolicy names a policy entry that does ' +
@@ -21299,7 +21453,7 @@ const CODES = [
       'another application, or the entry is marked orphaned.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
       'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
       'none otherwise' },
   { code: 'STS-FGA-0006',
     summary: 'An application\'s fine-grained policy is disabled ' +
@@ -21308,14 +21462,14 @@ const CODES = [
       'enabled.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
       'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
       'none otherwise' },
   { code: 'STS-FGA-0007',
     summary: 'An application\'s fine-grained policy does not parse or does ' +
       'not type-check.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
       'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
       'none otherwise' },
   { code: 'STS-FGA-0008',
     summary: 'An application\'s default fine-grained policy could not be ' +
@@ -21327,7 +21481,7 @@ const CODES = [
   { code: 'STS-FGA-0009',
     summary: 'A fine-grained authorization act named an application this ' +
       'realm\'s registry does not hold.',
-    spec: 'the caller\'s refusal; an AuthZEN error (STS-AUTHZEN-0040, ' +
+    spec: 'the caller\'s refusal; an AuthZEN error (STS-AUTHZEN-0046, ' +
       'HTTP 500) when the application went between the two reads' },
   { code: 'STS-FGA-0010',
     summary: 'The application lifecycle hook (create or delete) failed or ' +
@@ -21365,7 +21519,7 @@ const CODES = [
       'Permit.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
       'redirected at the authorization endpoint); an AuthZEN error ' +
-      '(STS-AUTHZEN-0040, HTTP 500) for an access question that threw' },
+      '(STS-AUTHZEN-0046, HTTP 500) for an access question that threw' },
   { code: 'STS-FGA-0016',
     summary: 'An authorization detail\'s type belongs to an application ' +
       'that enforces fine-grained authorization, and no FGA decider is ' +
@@ -24882,7 +25036,19 @@ const CODES = [
       'refused or went away while its pieces were written), so the job ' +
       'failed and nothing of it was kept (#1045). Until #1045 this read ' +
       'as STS-REPORT-0042, could not be sealed.',
-    spec: 'none (the job fails as unavailable)' }
+    spec: 'none (the job fails as unavailable)' },
+  { code: 'STS-REPORT-0054',
+    summary: 'A query on an AuthZEN search source (authzenSubjects, ' +
+      'authzenResources, authzenActions) does not give every input the ' +
+      'search is asked with as an eq filter of the top-level "and", so ' +
+      'it was refused rather than run (#1176).',
+    spec: 'invalid_query (the job fails)' },
+  { code: 'STS-REPORT-0055',
+    summary: 'An AuthZEN search source could not be asked: the search APIs ' +
+      'are off in the realm (authzen.searchEnabled), or the report\'s ' +
+      'owner is not a person of the realm it runs in, and a search runs ' +
+      'as its owner (#1176).',
+    spec: 'unavailable or forbidden (the job fails)' }
   // ===== END ===============================================================
 ];
 
