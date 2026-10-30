@@ -67,10 +67,14 @@ transmitter; otherwise the request is refused `invalid_request`
 
 What differs:
 
-* **An unknown client key.** Development mode gives it an application entry on
-  first sight. Product mode refuses it `invalid_client` until it is
-  registered, and an entry made on first sight does not count as a
-  registration (`STS-GNAP-0902`).
+* **An unknown client key.** One whose request names a registered client in
+  `class_id` is an instance of it in both modes, with
+  `gnap.unregisteredInstances` on (the default); see
+  [a browser application](#a-browser-application-a-key-per-browser).
+  Otherwise development mode gives it an application entry on first sight,
+  and product mode refuses it `invalid_client` until it is registered. An
+  entry made on first sight does not count as a registration
+  (`STS-GNAP-0902`).
 * **Finish URIs.** Development mode records a new finish URI as observed.
   Product mode uses only one listed in `gnapFinishUri`, and refuses any other
   with `invalid_interaction` (`STS-GNAP-0101`).
@@ -147,6 +151,55 @@ member.
 
 `gnapMacaroonKey` is not one you set. The service writes it when the resource
 server first registers a resource set.
+
+## A browser application: a key per browser
+
+A single-page application makes its key in the browser, so every browser has
+its own and none can be registered in advance. Register the APPLICATION, with
+no key. Each browser's key is then accepted as an instance of it when the
+grant request names it in `client.class_id` (`gnap.unregisteredInstances`, on
+by default). See [GNAP → An unregistered key as an instance of a registered
+client](gnap.md#an-unregistered-key-as-an-instance-of-a-registered-client).
+
+**Console:**
+1. **Applications → New application ›**. Set **Identifier** to `my-spa` and
+   tick **GNAP**.
+2. Click **Show every field (advanced view)** and fill in:
+   - `gnapFinishUri`: `https://app.example.com/callback`
+   - `gnapInteractionStartModes`: `redirect`
+   - `appCorsOrigin`: `https://app.example.com`
+   - `oauthAllowedScope`: the protected scopes it asks for, such as
+     `ssf.read` and `ssf.manage`
+3. Click **Create the application**.
+
+**API:**
+```bash
+api applications/create '{
+  "identifier": "my-spa", "kind": "gnap-client", "protocols": ["gnap"],
+  "fields": {
+    "gnapFinishUri": ["https://app.example.com/callback"],
+    "gnapInteractionStartModes": ["redirect"],
+    "appCorsOrigin": ["https://app.example.com"],
+    "oauthAllowedScope": ["ssf.read", "ssf.manage"]
+  }}'
+```
+
+**Request:** the browser's key by value, and the application's identifier as
+`class_id`:
+```json
+POST /gnap
+{"client": {"key": {"proof": "httpsig", "jwk": {…}}, "class_id": "my-spa"},
+ "access_token": {"access": ["ssf.read"]},
+ "interact": {"start": ["redirect"],
+              "finish": {"method": "redirect",
+                         "uri": "https://app.example.com/callback",
+                         "nonce": "n-<random>"}}}
+```
+
+Such an instance always shows the person the approval page: neither
+`gnapSkipInteraction` nor a remembered approval skips it. A `class_id` naming
+no registered GNAP client with a registered finish URI is refused
+`invalid_client` (`STS-GNAP-0906`).
 
 ## A client instance with its own key
 

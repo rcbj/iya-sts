@@ -250,11 +250,56 @@ kinds: `gnap-client` or `gnap-resource-server`. The attributes:
 | `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSan*` | RFC 8705's certificate subject, shared with OAuth: under a PKI, a certificate carrying it is this client's |
 | `gnapClassId`, `gnapDisplayUri`, `gnapLogoUri` | what the approval page shows |
 
-**An unknown key** is given an entry on first sight in development mode. In
+**An unknown key** that names a registered client in `class_id` is an
+instance of that client, in every mode (see
+[below](#an-unregistered-key-as-an-instance-of-a-registered-client)). Any
+other unknown key is given an entry on first sight in development mode. In
 product mode it is refused `invalid_client` until it is registered — and so
 is a key, or an instance identifier, belonging to an entry development
 created that way: an entry made on first sight is not a registration (#496,
 `STS-GNAP-0902`). Register the client through the console or `/admin-api`.
+
+### An unregistered key as an instance of a registered client
+
+A browser application makes its own key in every browser, so it cannot
+register its key in advance. RFC 9635 separates a client's **class** (the
+application) from its **instances** (one key each), and lets the authorization
+server accept a key it has not seen (section 2.3.3). With
+`gnap.unregisteredInstances` on (the default), a key no entry holds is
+accepted as an instance of the application its request names in `client.class_id`:
+
+```json
+POST /gnap
+{"client": {"key": {"proof": "httpsig", "jwk": {…}}, "class_id": "my-spa"},
+ "access_token": {"access": ["ssf.read"]},
+ "interact": {"start": ["redirect"],
+              "finish": {"method": "redirect", "uri": "https://app.example.com/callback", "nonce": "…"}}}
+```
+
+The application must be a **registered** GNAP client (not one created on first
+sight) that lists at least one registered `gnapFinishUri`. Otherwise the request
+is refused `invalid_client` (`STS-GNAP-0906`). Register the application once,
+with its finish URIs, CORS origin and allowed scopes, and no key.
+
+**`class_id` selects; it does not raise trust.** The instance is held to the
+application's registered rules and gets nothing they do not already guarantee:
+
+* **The finish URI is the boundary.** In product mode the interaction
+  reference and hash go only to a registered finish URI, so they reach the
+  real application, never whoever made the request.
+* **The person always approves on the page.** `gnapSkipInteraction` is not
+  honoured for an unregistered instance, and a remembered approval does not
+  stand in for the page. `gnap.consentRequired` off keeps its meaning. A right
+  whose type declares `interaction: never` is issued as to any client acting
+  as itself.
+* **The key is never written to the entry.** Each grant records the key it
+  was made with, and every later continuation, rotation and resource-server
+  proof is checked against it. An `instance_id` handed to such a key keeps
+  resolving to the same application, and stops when the setting is turned off.
+
+This is the arrangement OAuth uses for public clients: the `client_id` is public,
+and the trust is in the registered redirect URI and the person approving.
+Turn `gnap.unregisteredInstances` off to require every key to be registered.
 
 **A right's locations must name a registered resource server in product
 mode** (#505). Each location of each access right must be at or under the
@@ -849,6 +894,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.durableTokens` | `STS_GNAP_DURABLE_TOKENS` | `false` | yes | Section 3.2.1's `durable` flag: a token survives the grant being modified. |
 | `gnap.revokeOnModify` | `STS_GNAP_REVOKE_ON_MODIFY` | `true` | yes | A modification revokes the grant's earlier tokens, unless they were issued durable (section 5.3). |
 | `gnap.instanceIds` | `STS_GNAP_INSTANCE_IDS` | `true` | yes | A client that sent its key by value is handed an `instance_id` to send by reference next time (section 3.5). |
+| `gnap.unregisteredInstances` | `STS_GNAP_UNREGISTERED_INSTANCES` | `true` | yes | A key no application registers is accepted as an instance of the registered GNAP client its `class_id` names, when that client lists a registered `gnapFinishUri` ([unregistered instances](#an-unregistered-key-as-an-instance-of-a-registered-client)). Off: such a key is refused in product. |
 | `gnap.continueAfterApproval` | `STS_GNAP_CONTINUE_AFTER_APPROVAL` | `true` | yes | Whether an approved grant's response carries `continue`, so the client can modify or revoke it later. |
 | `gnap.consentRequired` | `STS_GNAP_CONSENT_REQUIRED` | `true` | yes | Off approves every interactive grant as soon as the resource owner has signed in, with no approval page. |
 | `gnap.rememberApprovals` | `STS_GNAP_REMEMBER_APPROVALS` | `true` | yes | Records what a resource owner approved in the consent register on their entry, so the same rights are not asked for again. |

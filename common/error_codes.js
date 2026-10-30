@@ -19991,6 +19991,14 @@ const CODES = [
       'refusal (#738).',
     spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403), at the next ' +
       'continuation' },
+  { code: 'STS-GNAP-0906',
+    summary: 'In product mode, a GNAP client instance proved a key no ' +
+      'application entry registers, and the class_id its request sent does ' +
+      'not name an application such a key may be an instance of: no GNAP ' +
+      'client of that identifier in the realm, a resource server, one nobody ' +
+      'registered, or one listing no registered gnapFinishUri (#1216). With ' +
+      'no class_id, the refusal is STS-GNAP-0082.',
+    spec: 'HTTP 401 GNAP invalid_client (RFC 9635 sections 2.3 and 2.3.3)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +

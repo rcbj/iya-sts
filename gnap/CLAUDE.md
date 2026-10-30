@@ -19,7 +19,7 @@ CAEP/RISC for GNAP web applications. Asked, rcbj decided:
 | Question | Decision |
 |---|---|
 | What seals `gnapSymmetricKey` / `gnapMacaroonKey` | the **process key-encryption key** (`keystore.seal()`), under the existing rule — sealed only when `keystore.persists()` |
-| An unknown client key | **mode-gated**: development creates an application entry on first sight (`mode.autoCreates()`), product refuses `invalid_client` |
+| An unknown client key | **mode-gated**: development creates an application entry on first sight (`mode.autoCreates()`), product refuses `invalid_client` — **except (#1216, rcbj 2026-10-30, the default) a key whose `class_id` names a registered GNAP client listing a registered `gnapFinishUri`: an instance of that client in both modes, never skipping the page, its key never written to the entry (`classInstanceOf()`; `gnap.unregisteredInstances`)** |
 | CAEP / RISC | **GNAP sessions emit CAEP**, **GNAP web apps are scoped receivers**, **grant revocation emits CAEP** — and explicitly NOT "signals revoke grants" (**REVERSED 2026-10-03, #432** — see *Shared Signals*) |
 | Where the tests live | **owned here**: `tests/*.js` in process, plus `tests/protocol/` `local: true` jobs with an independent client |
 
