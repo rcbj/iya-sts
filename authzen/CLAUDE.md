@@ -5,10 +5,11 @@
 question per access — subject, action, resource, context in; `decision` out.
 This directory reads that question, maps it onto an XACML request through THE
 builder (`xacml/xacml_request.js`, rule 3br), decides it with the XACML
-surface's own `decide()` against the realm's ROOT policy, and maps the answer
-back. **No decision logic lives here**: what is permitted is the policy's, and
-policies tell an AuthZEN question apart by the trusted `urn:sts:xacml:protocol
-= authzen`.
+surface's own `decide()` against the realm's ROOT policy — or, since #564,
+against the application's own fine-grained policy when it enforces one (*What
+is decided*, below) — and maps the answer back. **No decision logic lives
+here**: what is permitted is the policy's, and policies tell an AuthZEN
+question apart by the trusted `urn:sts:xacml:protocol = authzen`.
 
 **IT IS THE OTHER MODEL FROM THE REMOTE PEP, AND IT CHANGES NOTHING THERE.**
 `xacml-pep/` PULLS the repository and decides locally (`xacml/CLAUDE.md`,
@@ -36,7 +37,9 @@ of its own when its semantics are settled, and none is advertised until then.
 `tests/authzen_map.js` holds the two pure modules in process;
 `tests/authzen_evaluation.js` drives the route over real handshakes in a child
 process, in a throwaway realm whose root policy it wrote;
-`tests/authzen_admin.js` holds the tab's view and acts.
+`tests/authzen_admin.js` holds the tab's view and acts;
+`tests/fga_authzen.js` holds an evaluation decided by an application's own
+fine-grained policy (#564).
 `tests/protocol/sts_authzen.js` (`local: true`, #1165) asks a running service
 the same questions over HTTP in a throwaway realm, and carries the **AuthZEN
 interop "Todo" scenario** — its five people, five actions and owner rule
@@ -57,6 +60,7 @@ setup for checks the report API's jobs already drive.
 | `*.properties.*`, `context.*` | the catalogue row's | the catalogue row's, and nothing else |
 | `context.application` | — | read by the adapter to choose the caller's application |
 | *(trusted)* | environment | `urn:sts:xacml:protocol` = `authzen`, `urn:sts:xacml:realm`, `urn:sts:xacml:authzen:caller`, `urn:sts:xacml:authzen:application`, `urn:sts:xacml:authzen:supplied` |
+| *(trusted, FGA only)* | resource, environment | `urn:sts:xacml:fga:application`, `urn:sts:xacml:fga:stage` = `access` — only when the application's own policy decides (#564), written by the builder's `fgaAccess()` |
 
 The two type identifiers and the three trusted AuthZEN facts are in
 `VOCABULARY`, and the Rust builder spells them the same
@@ -266,7 +270,46 @@ mirrors name the tab too.
 ## What is decided, and what is recorded
 
 * **The realm's ROOT policy** (decision 7), through the XACML surface's own
-  `decide()`; `protocol = authzen` tells the question apart. `decide()`
+  `decide()`; `protocol = authzen` tells the question apart.
+* **AMENDED 2026-10-30 BY #564's P4 (rcbj's decision 4 on #564): an
+  application that ENFORCES fine-grained authorization is decided against
+  ITS OWN policy instead.** Once `applicationOf()` has chosen the
+  application, `evaluateOne()` reads `applications.fgaStateOf()` — the
+  registry's switch, no XACML needed to ask — and, when it is on, hands the
+  request to `xacml/fga_pep.ts`'s `decideAccess()`: the same resolve and the
+  same `decidePolicy()` (no PolicyIdReference map) an issuance question
+  uses, so the two cannot disagree about which policy is the application's.
+  Resource servers reach FGA only here — directly, or through a remote PEP
+  that forwards (its AuthZEN proxy is #1179) — because FGA is decided only
+  in this service (decision 4); the policies are withheld from the pull.
+  What stays AuthZEN's, and why:
+  * **The request** is AuthZEN's mapping unchanged, plus the two facts the
+    policy needs to know what it is asked — `urn:sts:xacml:fga:application`
+    and `urn:sts:xacml:fga:stage = access` — written by the builder's
+    `fgaAccess()` (rule 3br), never by a row (both are in `urn:sts:xacml:`,
+    so the catalogue cannot name them). The action is the caller's, not
+    `grant-authorization-detail`.
+  * **The result rules** are decision 8's: a Permit with nothing
+    undischargeable is true; an Indeterminate through a fault is 500
+    (`0028`). **A policy that cannot be used is an ERROR, never false and
+    never the root instead** (`0040`, 500, a batch item's `context.error`):
+    the application enforces, and answering from the root would be the
+    restriction silently not applying. The response is marked `0040`; the
+    audit row carries the STS-FGA code that says why (0003–0007, 0009, or
+    0015 for a throw), and nothing is counted, since no engine decided. A
+    registry that cannot be read is the same error rather than "not
+    enforced", for the same reason.
+  * **The audit row** is the same `authzen.decision`, naming the policy's
+    entry, PolicyId and version when it decided — never a value.
+  * **The monitor** counts it on `authzen`, once: the rows are per asker,
+    and the `fga` row counts what THIS process enforces at issuance;
+    counting an AuthZEN answer there would invent an enforcement, and
+    counting it on both would count one decision twice.
+  * **The scope rule is unchanged**: a caller reaches an application's
+    policy only by an application in its scope (`0025`).
+  * **The metadata is unchanged**: nothing new is advertised.
+  Every application without FGA enforced is decided exactly as before.
+  `tests/fga_authzen.js` holds it. `decide()`
   gained an optional `{ resolve: false }` for this: a subject whose type is
   not in `authzen.resolveSubjectTypes` is decided with NO PIP, so an id that
   happens to match a person's name is not that person.
@@ -287,4 +330,5 @@ mirrors name the tab too.
 the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
 admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
-the metadata path, 0036–0039 the batch.
+the metadata path, 0036–0039 the batch, 0040 an application's fine-grained
+policy that cannot be used (#564).

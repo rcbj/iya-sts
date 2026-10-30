@@ -2054,11 +2054,22 @@ so must `admin-ui/admin.ts`.
      A denial is `access_denied` through `fail()` — redirected, `prompt=none`
      included (the answer needs no interaction, so `consent_required` would
      be wrong); a fault is `server_error`.
+   * **Again after consent, for LOWERED limits, where this pass mints an
+     access token** (#564's P4, a P3 leftover): the check above decided the
+     details the client SENT, and the Allow replaces them with the ones the
+     person lowered, which no policy has seen — and a policy may refuse a
+     lower value. With `token` in the response type (implicit, hybrid) the
+     token is minted in `issueAuthorizationResponse()` and never reaches
+     `tokenSet()`, so the lowered set is asked there, stage `authorize`,
+     with the same two refusals. A bare `code` is not asked twice: the
+     token endpoint asks about the code's lowered details at redemption.
    * **The PAR endpoint**, after the audience plan, in the token endpoint's
      style as every refusal there is: `invalid_authorization_details` (400)
      or `server_error` (500, the endpoint's own fault answer). Nobody has
-     signed in, so the subject is left out; the authorization endpoint asks
-     again with the person.
+     signed in, so the subject is left out — since P4 ENTIRELY, no
+     `subject-id` and no subject kind, never `''`, which a policy would read
+     as somebody (`xacml_request.js`'s `fga()`); the authorization endpoint
+     asks again with the person.
    * **`tokenSet()`, THE FUNNEL, not each grant**: every grant that yields
      details mints through it — code, refresh, client credentials, password,
      both assertion grants, exchange, device, CIBA poll and push — so one

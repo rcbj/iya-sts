@@ -37,7 +37,7 @@ and the nudge.
 | `xacml_pip.ts` | Attribute resolution off the subject's own directory entry. |
 | `xacml.ts` | The protocol routes: the four under `/xacml` proper, the three under `/xacml/pep` and `POST /xacml/pip`, plus the embedded PEP. |
 | `xacml_templates.ts` | The starting points: RBAC, ABAC, this service's own four, **`blank`** — an empty Policy or PolicySet, which is the only way to create a PolicySet from the console without ALFA — and **`fga-default`**, the policy every application is created with (#564). **Adding one is a row in `TEMPLATES` and nothing else.** No DOM. |
-| `fga_pep.ts` | **The embedded fine-grained authorization PEP (#564, P3).** One RFC 9396 detail of an application that enforces FGA: the policy resolved, the detail mapped, decided against THAT policy alone (`xacml.ts`'s `decidePolicy()`), deny-biased, audited (`fga.decision`) and counted (the monitor's `fga` row). Fills `common/fga_gate.ts`'s decider when wired at 23c. A LIBRARY. Rule 3cz. |
+| `fga_pep.ts` | **The embedded fine-grained authorization PEP (#564, P3).** One RFC 9396 detail of an application that enforces FGA: the policy resolved, the detail mapped, decided against THAT policy alone (`xacml.ts`'s `decidePolicy()`), deny-biased, audited (`fga.decision`) and counted (the monitor's `fga` row). Fills `common/fga_gate.ts`'s decider when wired at 23c. **Since P4 also `decideAccess()`**: an AuthZEN evaluation about an enforcing application, decided against its policy alone for `authzen/authzen.ts`. A LIBRARY. Rule 3cz. |
 | `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
@@ -2690,3 +2690,47 @@ application somebody switched on.
 
 `tests/fga_issuance.js` holds the gate, the PEP over stubs, and the
 endpoints end to end in a throwaway realm.
+
+### AuthZEN against an application's policy, `decideAccess()` (P4)
+
+**rcbj's decision 4: resource servers talk to remote PEPs, and FGA is
+decided ONLY here, at the AuthZEN endpoint.** An evaluation whose resolved
+application has `appFgaEnforced` TRUE is decided against THAT application's
+policy instead of the realm root (this amends #563's decision 7;
+`authzen/CLAUDE.md`, *What is decided*, carries AuthZEN's half). This
+directory's half:
+
+* **One first step for both questions.** `policyOf()` is the resolve and its
+  coded failure, logged once, and both `evaluate()` (issuance) and
+  `decideAccess()` (access) start with it; both then call `xacml.ts`'s
+  `decidePolicy()` with NO repository. So an issuance question and an access
+  question about one application cannot come to disagree about which
+  document is its policy, or about how a PolicyIdReference in it resolves
+  (it does not: the map is the root's, and owned policies are kept out of
+  it).
+* **What `decideAccess()` does NOT do**, because AuthZEN already does it:
+  build the request (AuthZEN's mapping, with the builder's `fgaAccess()`),
+  read the answer (decision 8's `outcome()`, which tells a fault by the
+  STS-XACML-0013 mark `decidePolicy()` leaves), audit (`authzen.decision`,
+  naming the policy) and count. **It is counted on the monitor's `authzen`
+  row, never `fga`**: that row is the issuance PEP's and counts
+  enforcements, and an AuthZEN answer is enforced by its caller; counting it
+  on both would count one decision twice.
+* **It answers, never throws**: the PDP's answer with the policy's entry,
+  PolicyId and version, or `{ ok: false }` under the resolve's code
+  (0003–0007, 0009) or `STS-FGA-0015` for a throw — which AuthZEN answers
+  as an ERROR (`STS-AUTHZEN-0040`, 500), never `false` and never the root.
+* **The builder, rule 3br**: `fgaAccess({ application })` adds
+  `urn:sts:xacml:fga:application` (resource, as `fga()` writes it, so one
+  target matches both questions) and `urn:sts:xacml:fga:stage = access`
+  (always) to AuthZEN's request, and nothing else. Both identifiers were
+  already in `VOCABULARY` and spelt by the Rust builder, so the remote PEP
+  needed nothing; an embedded FGA PDP there (future work) would find them.
+* **And `fga()` writes no subject when there is no id** (a P3 leftover):
+  `principal()` writes `''` for an absent name, which several PEPs mean as
+  "nobody", but an application's administrator reads `subject-id == ""` as
+  somebody. At PAR, before anybody signed in, the request now carries no
+  `subject-id` and no subject kind; the client stays.
+
+`tests/fga_authzen.js` holds it end to end; `tests/xacml_request.js` F7 and
+F8 hold the builder.
