@@ -3602,6 +3602,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'with a ' +
           'flag, because a PEP that loaded one would enforce a policy this ' +
           'service does not.' },
+  { path: '/xacml/pep/authzen-catalogue', group: 'XACML',
+    name: 'The AuthZEN catalogue, for a remote PEP to LOAD',
+    specs: ['xacml30', 'authzen10'],
+    what: 'The realm\'s AuthZEN attribute catalogue — the rows of ' +
+          'authzenAttribute on sts-authzen-api, read as POST ' +
+          '/access/v1/evaluation reads them — and the AuthZEN settings that ' +
+          'change the mapping or the answer, plus a sync token of its own; ' +
+          '?since=<token> answers 304. Pulled beside the policies by the ' +
+          'xacml-pep container, whose edge PDP answers AuthZEN with exactly ' +
+          'these rows, so one request is mapped one way in both places. ' +
+          'Requires REMOTE_PEPS, as the policy pull does. Additive: ' +
+          '/xacml/pep/policies is unchanged.' },
   { path: '/xacml/pep/heartbeat', group: 'XACML',
     name: 'What a remote PEP has enforced', specs: ['xacml30'],
     what: 'Its cumulative counters and the sync token it holds — which is ' +

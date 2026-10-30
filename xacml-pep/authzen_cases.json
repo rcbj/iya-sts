@@ -1,0 +1,1477 @@
+{
+  "what": "THE AUTHZEN MAPPING CONTRACT AS A TABLE (#1179). authzen/authzen_catalogue.ts and authzen/authzen_map.ts in the service, and authzen_catalogue.rs and authzen_map.rs in the xacml-pep container, are held to these cases: tests/authzen_map.js section S runs the service's, and cargo test -p xacml-pep the container's. A case is a value or a request, and the code it is refused with ('' when it is accepted); a request case may also name the paths it supplies and the attributes it maps to. Edit it here, never in either test.",
+  "rows": [
+    {
+      "object": "subject",
+      "property": "department",
+      "attributeId": "urn:example:department"
+    },
+    {
+      "object": "subject",
+      "property": "clearance",
+      "dataType": "integer",
+      "attributeId": "urn:example:clearance"
+    },
+    {
+      "object": "subject",
+      "property": "groups",
+      "multiplicity": "bag",
+      "attributeId": "urn:example:groups"
+    },
+    {
+      "object": "resource",
+      "property": "classification",
+      "attributeId": "urn:example:classification"
+    },
+    {
+      "object": "resource",
+      "property": "owner.country",
+      "attributeId": "urn:example:owner-country"
+    },
+    {
+      "object": "resource",
+      "property": "size",
+      "dataType": "double",
+      "attributeId": "urn:example:size"
+    },
+    {
+      "object": "action",
+      "property": "urgent",
+      "dataType": "boolean",
+      "attributeId": "urn:example:urgent"
+    },
+    {
+      "object": "context",
+      "property": "when",
+      "dataType": "dateTime",
+      "attributeId": "urn:example:when"
+    },
+    {
+      "object": "context",
+      "property": "source_ip",
+      "attributeId": "urn:example:source-ip"
+    }
+  ],
+  "catalogue": [
+    {
+      "what": "C1. a row takes its object's category, string and single by default",
+      "value": {
+        "object": "resource",
+        "property": "classification",
+        "attributeId": "urn:example:c"
+      },
+      "code": ""
+    },
+    {
+      "what": "C2. short category and datatype names, as text",
+      "value": "{\"object\": \"context\", \"property\": \"when\", \"attributeId\": \"urn:example:when\", \"category\": \"environment\", \"dataType\": \"dateTime\", \"multiplicity\": \"bag\"}",
+      "code": ""
+    },
+    {
+      "what": "C4. a value that is not JSON",
+      "value": "{not json",
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C4b. JSON that is not an object",
+      "value": "[1]",
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C5. an unknown member of a row",
+      "value": {
+        "object": "resource",
+        "property": "x",
+        "attributeId": "u:x",
+        "colour": "red"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C6. an object AuthZEN does not have",
+      "value": {
+        "object": "principal",
+        "property": "x",
+        "attributeId": "u:x"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C7. an empty path segment",
+      "value": {
+        "object": "resource",
+        "property": "a..b",
+        "attributeId": "u:x"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C7b. a path seven deep",
+      "value": {
+        "object": "resource",
+        "property": "a.b.c.d.e.f.g",
+        "attributeId": "u:x"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C7c. a path six deep",
+      "value": {
+        "object": "resource",
+        "property": "a.b.c.d.e.f",
+        "attributeId": "u:x"
+      },
+      "code": ""
+    },
+    {
+      "what": "C8. xpathExpression, which JSON cannot carry",
+      "value": {
+        "object": "resource",
+        "property": "x",
+        "attributeId": "u:x",
+        "dataType": "xpathExpression"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C8b. a datatype by its URI",
+      "value": {
+        "object": "resource",
+        "property": "x",
+        "attributeId": "u:x",
+        "dataType": "http://www.w3.org/2001/XMLSchema#integer"
+      },
+      "code": ""
+    },
+    {
+      "what": "C9. a multiplicity other than single or bag",
+      "value": {
+        "object": "resource",
+        "property": "x",
+        "attributeId": "u:x",
+        "multiplicity": "many"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C9b. an attributeId with white space",
+      "value": {
+        "object": "resource",
+        "property": "x",
+        "attributeId": "u: x"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C9c. an unknown category",
+      "value": {
+        "object": "resource",
+        "property": "x",
+        "attributeId": "u:x",
+        "category": "elsewhere"
+      },
+      "code": "STS-AUTHZEN-0010"
+    },
+    {
+      "what": "C10. a row onto urn:sts:xacml:role",
+      "value": {
+        "object": "subject",
+        "property": "roles",
+        "attributeId": "urn:sts:xacml:role"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C11. a row onto a trusted AuthZEN fact",
+      "value": {
+        "object": "context",
+        "property": "p",
+        "attributeId": "urn:sts:xacml:authzen:application"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C12. the namespace is reserved however it is cased",
+      "value": {
+        "object": "context",
+        "property": "p",
+        "attributeId": "URN:STS:XACML:setting:x"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C13. a row onto subject-id",
+      "value": {
+        "object": "subject",
+        "property": "who",
+        "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C14. a row onto resource-id",
+      "value": {
+        "object": "resource",
+        "property": "r",
+        "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C14b. a row onto current-dateTime",
+      "value": {
+        "object": "context",
+        "property": "now",
+        "attributeId": "urn:oasis:names:tc:xacml:1.0:environment:current-dateTime"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C15. context.application is the adapter's",
+      "value": {
+        "object": "context",
+        "property": "application",
+        "attributeId": "urn:example:app"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C16. a bare directory name in a subject category",
+      "value": {
+        "object": "subject",
+        "property": "type",
+        "attributeId": "employeeType"
+      },
+      "code": "STS-AUTHZEN-0012"
+    },
+    {
+      "what": "C17. by the row's category, not its object",
+      "value": {
+        "object": "context",
+        "property": "who",
+        "attributeId": "employeeType",
+        "category": "access-subject"
+      },
+      "code": "STS-AUTHZEN-0012"
+    },
+    {
+      "what": "C18. a bare name in the resource category is any other name",
+      "value": {
+        "object": "resource",
+        "property": "owner",
+        "attributeId": "owner"
+      },
+      "code": ""
+    }
+  ],
+  "requests": [
+    {
+      "what": "R1. a body that is not an object",
+      "body": "a string",
+      "code": "STS-AUTHZEN-0001"
+    },
+    {
+      "what": "R1b. a body that is null",
+      "body": null,
+      "code": "STS-AUTHZEN-0001"
+    },
+    {
+      "what": "R2. no subject",
+      "body": {
+        "action": {
+          "name": "r"
+        },
+        "resource": {
+          "type": "d",
+          "id": "1"
+        }
+      },
+      "code": "STS-AUTHZEN-0002"
+    },
+    {
+      "what": "R2b. a subject that is null",
+      "body": {
+        "subject": null,
+        "action": {
+          "name": "r"
+        },
+        "resource": {
+          "type": "d",
+          "id": "1"
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "R3. an empty subject.type is a missing one",
+      "body": {
+        "subject": {
+          "type": "",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0002"
+    },
+    {
+      "what": "R4. a null action.name is a missing one",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": null
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0002"
+    },
+    {
+      "what": "R5. a number for resource.id is the wrong type",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": 7
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "R5b. a resource.id longer than 1024",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "R6. properties that are not an object",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": []
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "R7. a context that is not an object",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": "x"
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "R8. a context.application that is not a string",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "application": 5
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "R8b. an empty context.application",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "application": ""
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "R9. a member a single evaluation does not define",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "evaluations": []
+      },
+      "code": "STS-AUTHZEN-0009"
+    },
+    {
+      "what": "R10. and one of subject's",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "name": "x"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0009"
+    },
+    {
+      "what": "R11. context.application is the application and sends no attribute",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "application": "portal"
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id",
+        "context.application"
+      ],
+      "attributes": []
+    },
+    {
+      "what": "R12. the unknown member is found before the missing one",
+      "body": {
+        "x": 1
+      },
+      "code": "STS-AUTHZEN-0009"
+    },
+    {
+      "what": "V1. an undeclared property",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "title": "x"
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V2. an undeclared context member",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "other": "x"
+        }
+      },
+      "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V3. null",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "department": null
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0005"
+    },
+    {
+      "what": "V4. a number is not quietly a string",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "department": 3
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0006"
+    },
+    {
+      "what": "V5. an integer row refuses a fraction",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "clearance": 1.5
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0006"
+    },
+    {
+      "what": "V6. and a string that is not an integer",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "clearance": "1.5"
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0006"
+    },
+    {
+      "what": "V7. a whole number reaches an integer row",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "clearance": 3
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V8. so does a string in its lexical form",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "clearance": "3"
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V9. a number is not a boolean",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read",
+          "properties": {
+            "urgent": 1
+          }
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0006"
+    },
+    {
+      "what": "V10. true reaches a boolean row",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read",
+          "properties": {
+            "urgent": true
+          }
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V11. a number reaches a double row",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "size": 2.5
+          }
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V12. a string that does not parse at the row's datatype",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "when": "yesterday"
+        }
+      },
+      "code": "STS-AUTHZEN-0006"
+    },
+    {
+      "what": "V13. and one that does",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "when": "2026-10-29T12:00:00Z"
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V14. an array for a single row",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "department": [
+              "a"
+            ]
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0007"
+    },
+    {
+      "what": "V15. a null inside a bag",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "groups": [
+              "a",
+              null
+            ]
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0005"
+    },
+    {
+      "what": "V16. a bag is of scalars",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "groups": [
+              [
+                "a"
+              ]
+            ]
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0008"
+    },
+    {
+      "what": "V17. an object for a scalar row is refused, never flattened",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "classification": {
+              "level": 1
+            }
+          }
+        }
+      },
+      "code": "STS-AUTHZEN-0008"
+    },
+    {
+      "what": "V18. a nested object reaches a request through its dotted row",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "owner": {
+              "country": "SE"
+            }
+          }
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V19. a member of it no row names is undeclared",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "owner": {
+              "city": "Lund"
+            }
+          }
+        }
+      },
+      "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V20. a branch sent as a scalar is undeclared",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "owner": "SE"
+          }
+        }
+      },
+      "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V20b. a branch sent as null is undeclared, not null",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "owner": null
+          }
+        }
+      },
+      "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V23. a bag of more than 256 values",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "groups": [
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g",
+              "g"
+            ]
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0007"
+    },
+    {
+      "what": "V24. a string value longer than 8192",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "department": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "STS-AUTHZEN-0006"
+    },
+    {
+      "what": "V25. a scalar for a bag row is a bag of one",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "groups": "staff"
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V26. 3.0 is the whole number 3",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "clearance": 3.0
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": ""
+    },
+    {
+      "what": "V21. absent and empty stay distinguishable",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "department": "",
+            "groups": []
+          }
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id",
+        "subject.properties.department",
+        "subject.properties.groups"
+      ],
+      "attributes": [
+        {
+          "attributeId": "urn:example:department",
+          "values": [
+            ""
+          ]
+        },
+        {
+          "attributeId": "urn:example:groups",
+          "values": []
+        }
+      ]
+    },
+    {
+      "what": "V21b. and nothing sent is in supplied",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id"
+      ],
+      "attributes": []
+    },
+    {
+      "what": "V27. a nested branch is supplied at each level",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "owner": {
+              "country": "SE"
+            }
+          }
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id",
+        "resource.properties.owner",
+        "resource.properties.owner.country"
+      ],
+      "attributes": [
+        {
+          "attributeId": "urn:example:owner-country",
+          "values": [
+            "SE"
+          ]
+        }
+      ]
+    },
+    {
+      "what": "V28. values are written in their lexical forms",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice",
+          "properties": {
+            "clearance": 4
+          }
+        },
+        "action": {
+          "name": "read",
+          "properties": {
+            "urgent": true
+          }
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1",
+          "properties": {
+            "size": 2.5
+          }
+        },
+        "context": {
+          "source_ip": "192.0.2.25"
+        }
+      },
+      "code": "",
+      "attributes": [
+        {
+          "attributeId": "urn:example:clearance",
+          "values": [
+            "4"
+          ]
+        },
+        {
+          "attributeId": "urn:example:urgent",
+          "values": [
+            "true"
+          ]
+        },
+        {
+          "attributeId": "urn:example:size",
+          "values": [
+            "2.5"
+          ]
+        },
+        {
+          "attributeId": "urn:example:source-ip",
+          "values": [
+            "192.0.2.25"
+          ]
+        }
+      ]
+    },
+    {
+      "what": "V29. members are walked in Object.keys order: an index-like name first, so the undeclared 10 is found before the bad when",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "when": "yesterday",
+          "10": "x"
+        }
+      },
+      "code": "STS-AUTHZEN-0004"
+    }
+  ]
+}

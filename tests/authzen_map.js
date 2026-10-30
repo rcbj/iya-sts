@@ -33,6 +33,11 @@
 //      `enforce()`: Permit, Deny, NotApplicable, Indeterminate over a missing
 //      attribute (false) and over a fault (an error), and a Permit carrying
 //      an obligation this PDP cannot discharge (false).
+//   S. THE SHARED TABLE (#1179), `xacml-pep/authzen_cases.json`: the same
+//      catalogue values and requests the remote PEP's edge PDP is held to
+//      (`cargo test -p xacml-pep`), so the service and the container
+//      refuse, supply and map one request one way. The table is the one
+//      place a case is added; neither test owns it.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -48,6 +53,9 @@ const alfa = require('../xacml/xacml_alfa');
 const xacmlRequest = require('../xacml/xacml_request');
 
 const V = xacmlRequest.VOCABULARY;
+
+const CASES = require('path').join(__dirname, '..', 'xacml-pep',
+                                   'authzen_cases.json');
 
 // The rows every value check below reads.
 function rows() {
@@ -645,6 +653,61 @@ function theObligations(t) {
   log.debug("Leaving theObligations().");
 }
 
+function theSharedTable(t) {
+  log.debug("Entering theSharedTable().");
+  t.log.info('=== S. the table the edge PDP shares (#1179) ===');
+  const table = JSON.parse(require('fs').readFileSync(CASES, 'utf8'));
+  const shared = table.rows.map(function (value) {
+    return catalogue.parse(value).row;
+  });
+  t.check(shared.every(Boolean) && shared.length === table.rows.length,
+          'S1. every row of the shared table is a row here',
+          JSON.stringify(shared));
+  const wrong = [];
+  table.catalogue.forEach(function (one) {
+    const code = catalogue.parse(one.value).code || '';
+    if (code !== one.code) {
+      wrong.push(one.what + ': expected "' + one.code + '", got "' + code +
+                 '"');
+    }
+  });
+  t.check(table.catalogue.length >= 15 && !wrong.length,
+          'S2. every catalogue case of the shared table (' +
+          table.catalogue.length + ') is read here as the edge PDP reads it',
+          wrong.join('; '));
+  const different = [];
+  table.requests.forEach(function (one) {
+    const read = map.read(one.body, shared);
+    const code = read.refusal ? read.refusal.code : '';
+    if (code !== one.code ||
+        (read.refusal && read.refusal.status !== 400)) {
+      different.push(one.what + ': expected "' + one.code + '", got "' +
+                     code + '"');
+      return;
+    }
+    if (read.evaluation && one.supplied &&
+        JSON.stringify(read.evaluation.supplied) !==
+          JSON.stringify(one.supplied)) {
+      different.push(one.what + ': supplied ' +
+                     JSON.stringify(read.evaluation.supplied));
+    }
+    if (read.evaluation && one.attributes) {
+      const got = read.evaluation.attributes.map(function (attribute) {
+        return { attributeId: attribute.attributeId,
+                 values: attribute.values };
+      });
+      if (JSON.stringify(got) !== JSON.stringify(one.attributes)) {
+        different.push(one.what + ': attributes ' + JSON.stringify(got));
+      }
+    }
+  });
+  t.check(table.requests.length >= 30 && !different.length,
+          'S3. every request case of the shared table (' +
+          table.requests.length + ') is refused, supplied and mapped here ' +
+          'as the edge PDP does it', different.join('; '));
+  log.debug("Leaving theSharedTable().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   theCatalogue(t);
@@ -655,6 +718,7 @@ async function run(t) {
   theDecision(t);
   thePublishedExample(t);
   theObligations(t);
+  theSharedTable(t);
   log.debug("Leaving run().");
 }
 

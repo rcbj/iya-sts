@@ -23,6 +23,10 @@
     "en": "d7b1a01d26f2cc80",
     "text": "供远程 PEP 加载的存储库"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "AuthZEN 目录，供远程 PEP 加载"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "远程 PEP 已执行的内容"

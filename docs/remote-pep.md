@@ -22,6 +22,7 @@ is opt-in: a plain `docker compose up` does not start it.
                                200 / 403
                                     │
                                     ├── GET  /xacml/pep/policies ──▶  pull, every 15s
+                                    ├── GET  /xacml/pep/authzen-catalogue ▶ beside it
                                     ├── POST /xacml/pip ───────────▶  attributes, per decision
                                     ├── POST /xacml/pep/register ──▶  a row on the console
                                     ├── POST /xacml/pep/heartbeat ─▶  counters, every 60s
@@ -56,8 +57,10 @@ reports them rather than hiding them.
 
 They are plain HTTP on port 9090 — and the same four over **HTTPS on 9443**
 once the PEP has been given a certificate by the realm it registered to, which
-is the section below. The container generates no key of its own: both key pairs
-it can hold, the client certificate and the listener's, are handed to it.
+is the section below. The HTTPS listener also answers AuthZEN, as an
+[edge PDP](#an-authzen-edge-pdp). The container generates no key of its own:
+both key pairs it can hold, the client certificate and the listener's, are
+handed to it.
 
 ## The quickest look
 
@@ -423,6 +426,97 @@ off is a decision for your network edge. `/admin/xacml/peps` says which
 certificate the realm *issued*; only the PEP's `GET /` can say which one it is
 *serving*.
 
+## An AuthZEN edge PDP
+
+The container also answers [AuthZEN](authzen.md) access evaluations itself, so a
+PEP in its network can ask a PDP nearby instead of the service:
+
+```
+POST /access/v1/evaluation                 one evaluation
+POST /access/v1/evaluations                a batch
+GET  /.well-known/authzen-configuration    its metadata
+```
+
+**A request is mapped exactly as the service maps it.** What a property of a
+request means is the realm's AuthZEN attribute catalogue, and the container
+pulls it from `GET /xacml/pep/authzen-catalogue` beside the policies, on the
+same poll, with its own sync token — the same credential and the same
+`REMOTE_PEPS` role as the policy pull. The pull also carries the realm's
+AuthZEN settings that change the mapping or the answer
+(`authzen.enabled`, `authzen.resolveSubjectTypes`, `authzen.batchEnabled`,
+`authzen.maxEvaluations`, `authzen.maxBodyBytes`, `authzen.returnReasons`), so
+switching one on the service switches it here at the next poll. The
+identifiers, the value rules, the refusals and their statuses, the batch's
+three semantics and bounds, `X-Request-ID` and the fail-closed result are the
+service's: `true` only on a Permit carrying nothing it cannot discharge
+(`urn:sts:xacml:obligation:log` is the one it can), whatever `PEP_BIAS` says.
+It decides against the root policy it pulled, and asks the service's PIP
+(`POST /xacml/pip`) about a subject whose type the realm resolves, as
+`/protected` does.
+
+A catalogue change converges on the poll — the service's nudge is about the
+policy repository. Until the container has pulled both the policies and the
+catalogue, the AuthZEN endpoints answer `503` rather than map a request
+differently from the service.
+
+### Its callers authenticate by mutual TLS
+
+The AuthZEN endpoints answer on the **HTTPS listener** (above) to a caller
+presenting a client certificate, and to nobody else — the service's default
+door, `authzen.callerAuthentication=mtls`. Two settings say who:
+
+* `PEP_AUTHZEN_CLIENT_CA` — the CA bundle a caller's certificate must chain
+  to. With it set the listener **asks** every client for a certificate
+  (`/protected` still takes none); without it the AuthZEN endpoints admit
+  nobody.
+* `PEP_AUTHZEN_CALLERS` — the certificates admitted, by the SHA-256 of each,
+  with the name a policy sees as `urn:sts:xacml:authzen:caller` and the
+  applications the caller may ask about:
+
+  ```bash
+  PEP_AUTHZEN_CLIENT_CA=/certs/authzen-ca.pem
+  PEP_AUTHZEN_CALLERS='[{"name":"cn=todo-pep,ou=people,dc=acme,dc=example",
+                         "sha256":"3f:1a:…:9c",
+                         "applications":["todo-app"]}]'
+  ```
+
+  Give a caller the name of the directory entry the service would resolve its
+  certificate to, and a policy that reads the caller decides the same in both
+  places. `context.application` is checked against `applications` exactly as
+  the service checks it against the entry's scope.
+
+```bash
+curl --cacert service-root.pem --cert pep.crt --key pep.key \
+  -H 'Content-Type: application/json' \
+  -d '{"subject":{"type":"user","id":"alice"},"action":{"name":"read"},
+       "resource":{"type":"document","id":"doc-1"}}' \
+  https://pep.example.test:9444/access/v1/evaluation
+# {"decision":true}
+```
+
+The metadata names the container's own PDP identifier:
+`PEP_AUTHZEN_PDP_IDENTIFIER` (an `https` origin, such as
+`https://pep.example.test:9444`) or, unset, the origin the HTTPS request
+arrived at.
+
+### What it cannot do that the service can
+
+| The service | The edge PDP |
+|---|---|
+| A caller holds `AUTHZEN_PEPS`, decided by the access-control policy | A caller is in `PEP_AUTHZEN_CALLERS`. There is no directory here, so no role and no policy decides who may ask |
+| A caller's application scope is `stsAuthzenApplication` (or the application's own) on its entry, set by an administrator | The scope is `applications` in `PEP_AUTHZEN_CALLERS` |
+| Three doors: `mtls`, `bearer` and `mtls+bearer` | Mutual TLS only. It cannot check a token's issuer, audience, revocation or client against the realm |
+| A client certificate is checked for revocation | Not checked |
+| The PIP answers from the directory in process | The PIP is the service's `POST /xacml/pip`, asked over the network; if that fails the subject's attributes are an empty bag, as for `/protected` |
+| One `authzen.decision` row per evaluation in the audit log, and a row on `/admin/xacml/monitor` | A log line per evaluation with the same content, never a property value or an id the caller sent; `GET /` counts the answers. Nothing reaches the service's audit log |
+| `reason_admin` is the service's sentence | It is this container's; the decision and the code are the same |
+| The three Search APIs (`/access/v1/search/*`) | Not served. The metadata does not list them |
+| The Obligations Profile: an obligation is handed in `context.obligations` when the PEP declares its type in `context.supported_obligations` | Not implemented. A Permit carrying any obligation but `urn:sts:xacml:obligation:log` answers `false`; `context.supported_obligations` is an undeclared member |
+| `signed_metadata` in the metadata document | Not sent; the edge PDP holds no signing key of the realm's |
+
+`GET /`'s `authzen` block says what it holds: the catalogue's token, its rows,
+the settings, the last pull and what it has answered.
+
 ## Reading `GET /` when something is wrong
 
 | What you see | What it means |
@@ -434,6 +528,7 @@ certificate the realm *issued*; only the PEP's `GET /` can say which one it is
 | `registration.registered: false` | it is not on the PDP's console and will not be nudged. It is retried on every poll, and `registration.attempts` says how many it took |
 | `pip.credentialed: false` | no client certificate, so the PIP query is refused and only what the request asserts decides |
 | `https.listening: false` | no usable listener pair yet. `https.problem` says whether the files are missing (issue one) or refused (the key is not the certificate's, or a file will not parse) |
+| `authzen.catalogue.loaded: false` | no AuthZEN catalogue pulled yet, so the AuthZEN endpoints answer `503`. `authzen.catalogue.lastPullWhy` says why; a `404` means a service older than the catalogue endpoint |
 
 **The two ends can disagree about staleness, and that is deliberate**: this PEP
 counts missed *polls* and the PDP counts missed *heartbeats*. A PEP pulling
@@ -469,6 +564,10 @@ and a PEP has none.
 | `PEP_HTTPS_PORT` | `9443` | published on 9444 by `docker-compose.yml` |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read |
 | `PEP_RESOURCE` | | the resource id used when a request names none |
+| `PEP_AUTHZEN` | `true` | the AuthZEN edge PDP. `false` answers `501` |
+| `PEP_AUTHZEN_CLIENT_CA` | — | the CA bundle an AuthZEN caller's certificate must chain to. Unset, nobody is admitted |
+| `PEP_AUTHZEN_CALLERS` | — | a JSON array of `{ "name", "sha256", "applications" }`: the AuthZEN callers admitted, by their certificate's SHA-256 |
+| `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at |
 | `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
 
 ## Against a trust realm
@@ -498,7 +597,9 @@ change anything here:
   the listener's reload rules, and the enforcement rule against
   `xacml-pep/enforcement_cases.json` — the table **`tests/xacml_pep.js`** holds
   the service's own enforcement rule to as well, so the two agree over seven
-  decisions under both biases. None of it makes an HTTP request.
+  decisions under both biases — and the AuthZEN mapping against
+  `xacml-pep/authzen_cases.json`, which **`tests/authzen_map.js`** holds the
+  service's mapping to as well. None of it makes an HTTP request.
 - **`tests/protocol/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the service's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is

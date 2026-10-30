@@ -18,6 +18,15 @@
 //!
 //! OpenSSL rather than rustls (rust/DESIGN.md section 6): the realm's
 //! `pep-tls` CA may issue an ML-DSA certificate, which only OpenSSL serves.
+//!
+//! **IT ASKS FOR A CLIENT CERTIFICATE WHEN `PEP_AUTHZEN_CLIENT_CA` IS SET**
+//! (#1179), the AuthZEN edge PDP's one door. It ASKS and does not REQUIRE,
+//! and a certificate that does not verify still completes the handshake,
+//! as the service's main port does (`requestCert`, `rejectUnauthorized:
+//! false`): the other endpoints on this listener take no certificate, and
+//! the AuthZEN handler is where a refusal can say why — a handshake alert
+//! says nothing a PEP's operator can act on. [`peer_of`] reads what was
+//! presented and whether it verified.
 
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
@@ -27,8 +36,10 @@ use chrono::{DateTime, Utc};
 use openssl::asn1::{Asn1Time, Asn1TimeRef};
 use openssl::hash::{hash, MessageDigest};
 use openssl::pkey::PKey;
-use openssl::ssl::{SslAcceptor, SslMethod};
-use openssl::x509::{X509NameRef, X509};
+use openssl::ssl::{SslAcceptor, SslMethod, SslRef, SslVerifyMode};
+use openssl::stack::Stack;
+use openssl::x509::store::X509StoreBuilder;
+use openssl::x509::{X509Name, X509NameRef, X509VerifyResult, X509};
 use serde_json::{json, Value};
 use sts_core::log::tag;
 
@@ -54,6 +65,69 @@ pub struct HttpsListener {
     reload_interval_ms: u64,
     status: Mutex<Status>,
     acceptor: RwLock<Option<Arc<SslAcceptor>>>,
+    /// The authorities a caller's certificate must chain to (#1179); none
+    /// means no certificate is asked for.
+    client_ca: Vec<X509>,
+}
+
+/// The certificate a caller presented on an HTTPS connection: the SHA-256
+/// of its DER as lower-case hex, its subject for a log line, and whether it
+/// verified against `PEP_AUTHZEN_CLIENT_CA` — with why not, when it did not.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Peer {
+    pub sha256: String,
+    pub subject: String,
+    pub verified: bool,
+    pub why: String,
+}
+
+/// What the handler knows about the connection a request came in on: a
+/// request extension, set per connection by `main.rs`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Transport {
+    pub https: bool,
+    pub peer: Option<Peer>,
+}
+
+/// The caller's certificate on an accepted connection, read with the
+/// library that verified it.
+pub fn peer_of(ssl: &SslRef) -> Option<Peer> {
+    let leaf = ssl.peer_certificate()?;
+    let sha256 = leaf
+        .digest(MessageDigest::sha256())
+        .map(|d| d.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+        .unwrap_or_default();
+    let result = ssl.verify_result();
+    Some(Peer {
+        sha256,
+        subject: name_text(leaf.subject_name()),
+        verified: result == X509VerifyResult::OK,
+        why: if result == X509VerifyResult::OK {
+            String::new()
+        } else {
+            result.error_string().to_string()
+        },
+    })
+}
+
+/// The client CA bundle, parsed once. One that will not parse asks for no
+/// certificate, which admits nobody to AuthZEN — and says so.
+fn client_authorities(bundle: Option<&[u8]>) -> Vec<X509> {
+    let Some(bundle) = bundle else {
+        return Vec::new();
+    };
+    match X509::stack_from_pem(bundle) {
+        Ok(list) if !list.is_empty() => list,
+        Ok(_) | Err(_) => {
+            tracing::error!(
+                "{}xacml-pep: PEP_AUTHZEN_CLIENT_CA holds no certificate \
+                 OpenSSL can read, so the HTTPS listener asks no caller for \
+                 one and the AuthZEN endpoints admit nobody.",
+                tag("STS-XPEP-0039")
+            );
+            Vec::new()
+        }
+    }
 }
 
 fn time_of(t: &Asn1TimeRef) -> Option<DateTime<Utc>> {
@@ -143,10 +217,12 @@ fn describe_served(
     )
 }
 
-/// Builds an acceptor from a pair, checked whole.
+/// Builds an acceptor from a pair, checked whole, asking for a client
+/// certificate chaining to `client_ca` when there is one.
 fn acceptor_for(
     cert: &[u8],
     key: &[u8],
+    client_ca: &[X509],
 ) -> Result<(SslAcceptor, X509), String> {
     let chain = X509::stack_from_pem(cert).map_err(|e| e.to_string())?;
     let mut chain = chain.into_iter();
@@ -173,6 +249,30 @@ fn acceptor_for(
         .set_private_key(&private)
         .map_err(|e| e.to_string())?;
     builder.check_private_key().map_err(|e| e.to_string())?;
+    if !client_ca.is_empty() {
+        let mut store = X509StoreBuilder::new().map_err(|e| e.to_string())?;
+        let mut names = Stack::<X509Name>::new().map_err(|e| e.to_string())?;
+        for authority in client_ca {
+            store
+                .add_cert(authority.clone())
+                .map_err(|e| e.to_string())?;
+            if let Ok(name) = authority.subject_name().to_owned() {
+                names.push(name).map_err(|e| e.to_string())?;
+            }
+        }
+        builder
+            .set_verify_cert_store(store.build())
+            .map_err(|e| e.to_string())?;
+        builder.set_client_ca_list(names);
+        // ASKED, NOT REQUIRED, and a failure is the handler's to refuse:
+        // the verify result is still recorded on the connection.
+        builder.set_verify_callback(SslVerifyMode::PEER, |_, _| true);
+        // A server that asks for a client certificate must name a session
+        // context, or OpenSSL refuses every resumed session.
+        builder
+            .set_session_id_context(b"xacml-pep-authzen")
+            .map_err(|e| e.to_string())?;
+    }
     Ok((builder.build(), leaf))
 }
 
@@ -182,6 +282,7 @@ impl HttpsListener {
         key_path: &str,
         port: u16,
         reload_interval_ms: u64,
+        client_ca: Option<&[u8]>,
     ) -> HttpsListener {
         HttpsListener {
             cert_path: cert_path.to_string(),
@@ -190,7 +291,13 @@ impl HttpsListener {
             reload_interval_ms,
             status: Mutex::new(Status::default()),
             acceptor: RwLock::new(None),
+            client_ca: client_authorities(client_ca),
         }
+    }
+
+    /// Whether this listener asks callers for a certificate (#1179).
+    pub fn asks_for_client_certificates(&self) -> bool {
+        !self.client_ca.is_empty()
     }
 
     fn status(&self) -> MutexGuard<'_, Status> {
@@ -292,7 +399,8 @@ impl HttpsListener {
         if digest == self.status().digest {
             return false;
         }
-        let (acceptor, leaf) = match acceptor_for(&cert, &key) {
+        let (acceptor, leaf) = match acceptor_for(&cert, &key, &self.client_ca)
+        {
             Ok(built) => built,
             Err(error) => {
                 let listening = self.status().listening;
@@ -415,6 +523,7 @@ impl HttpsListener {
             "certificate": s.certificate,
             "loadedAt": s.loaded_at,
             "lastCheckedAt": s.last_checked_at,
+            "asksForClientCertificates": !self.client_ca.is_empty(),
             "problem": s.last_problem,
             "what": what
         })
@@ -476,6 +585,7 @@ mod tests {
             key_path.to_str().unwrap(),
             0,
             100,
+            None,
         );
         assert!(!listener.reload(), "nothing on disk yet");
         assert!(listener.current().is_none());
@@ -496,5 +606,71 @@ mod tests {
             .contains("not the key"));
         std::fs::remove_file(&cert_path).unwrap();
         std::fs::remove_file(&key_path).unwrap();
+    }
+
+    /// One mutual-TLS handshake against an acceptor built as `reload()`
+    /// builds one: what the server reads of the caller's certificate.
+    fn handshake(
+        client_ca: &[X509],
+        presented: Option<&(Vec<u8>, Vec<u8>)>,
+    ) -> Option<Peer> {
+        use openssl::ssl::{SslConnector, SslVerifyMode};
+        let (cert, key) = pair();
+        let (acceptor, _) = acceptor_for(&cert, &key, client_ca).unwrap();
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        let thread = std::thread::spawn(move || {
+            let (stream, _) = server.accept().unwrap();
+            let tls = acceptor.accept(stream).unwrap();
+            peer_of(tls.ssl())
+        });
+        let mut connector =
+            SslConnector::builder(SslMethod::tls_client()).unwrap();
+        connector.set_verify(SslVerifyMode::NONE);
+        if let Some((cert, key)) = presented {
+            connector
+                .set_certificate(&X509::from_pem(cert).unwrap())
+                .unwrap();
+            connector
+                .set_private_key(&PKey::private_key_from_pem(key).unwrap())
+                .unwrap();
+        }
+        let stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let tls = connector
+            .build()
+            .configure()
+            .unwrap()
+            .verify_hostname(false)
+            .connect("localhost", stream)
+            .unwrap();
+        let peer = thread.join().unwrap();
+        drop(tls);
+        peer
+    }
+
+    /// The AuthZEN door's half of the listener (#1179): a certificate that
+    /// chains to the client CA is read and verified; one that does not
+    /// still completes the handshake and is read as not verified; none is
+    /// none; and with no client CA nothing is asked for.
+    #[test]
+    fn reads_and_verifies_a_client_certificate() {
+        let caller = pair();
+        let stranger = pair();
+        let authority = X509::from_pem(&caller.0).unwrap();
+        let expected = authority
+            .digest(MessageDigest::sha256())
+            .unwrap()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+        let ca = vec![authority];
+        let peer = handshake(&ca, Some(&caller)).unwrap();
+        assert!(peer.verified, "{}", peer.why);
+        assert_eq!(peer.sha256, expected);
+        let other = handshake(&ca, Some(&stranger)).unwrap();
+        assert!(!other.verified);
+        assert!(!other.why.is_empty());
+        assert!(handshake(&ca, None).is_none());
+        assert!(handshake(&[], Some(&caller)).is_none());
     }
 }

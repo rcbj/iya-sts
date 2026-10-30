@@ -21054,6 +21054,71 @@ const CODES = [
       'after it had started, and contained it rather than exiting (#355), ' +
       'throttled as STS-XPEP-0033 is.',
     spec: 'none — logged; the PEP carries on', retired: true },
+  { code: 'STS-XPEP-0035',
+    summary: 'An AuthZEN request reached the remote PEP\'s edge PDP with no ' +
+      'client certificate: over plain HTTP, or on the HTTPS listener ' +
+      'without presenting one (#1179). Its callers authenticate by mutual ' +
+      'TLS only.',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-XPEP-0036',
+    summary: 'The client certificate an AuthZEN caller presented to the ' +
+      'remote PEP\'s edge PDP did not verify against PEP_AUTHZEN_CLIENT_CA ' +
+      '(#1179).',
+    spec: 'HTTP 401, an error message' },
+  { code: 'STS-XPEP-0037',
+    summary: 'The client certificate an AuthZEN caller presented to the ' +
+      'remote PEP\'s edge PDP verified, and its SHA-256 is not in ' +
+      'PEP_AUTHZEN_CALLERS, the container\'s stand-in for the service\'s ' +
+      'AUTHZEN_PEPS role (#1179).',
+    spec: 'HTTP 403, an error message' },
+  { code: 'STS-XPEP-0038',
+    summary: 'PEP_AUTHZEN_CALLERS is not a JSON array, or an entry of it ' +
+      'is not a name, a 64-digit SHA-256 and at most 64 applications, and ' +
+      'was left out; the remote PEP\'s edge PDP admits nobody it cannot ' +
+      'read (#1179).',
+    spec: 'none — logged at start' },
+  { code: 'STS-XPEP-0039',
+    summary: 'The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, ' +
+      'unreadable or holding no certificate), so its HTTPS listener asks ' +
+      'no caller for a certificate and its AuthZEN edge PDP admits nobody ' +
+      '(#1179).',
+    spec: 'HTTP 401 from the AuthZEN endpoints; logged at start' },
+  { code: 'STS-XPEP-0040',
+    summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
+      'catalogue (GET /xacml/pep/authzen-catalogue). The catalogue already ' +
+      'held is kept (#1179).',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0041',
+    summary: 'The PDP refused the remote PEP\'s AuthZEN catalogue pull, or ' +
+      'answered with something that is not a catalogue (a PDP older than ' +
+      '#1179 answers 404). The catalogue already held is kept.',
+    spec: 'none — logged; the PEP carries on' },
+  { code: 'STS-XPEP-0042',
+    summary: 'Rows of a pulled AuthZEN catalogue were refused by the ' +
+      'remote PEP\'s own catalogue grammar and left out, so those ' +
+      'properties are undeclared at its edge PDP (#1179).',
+    spec: 'none — logged; the rest is loaded' },
+  { code: 'STS-XPEP-0043',
+    summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
+      'it had pulled both the policies and the AuthZEN catalogue, so it ' +
+      'cannot map a request as the service does (#1179).',
+    spec: 'HTTP 503, an error message' },
+  { code: 'STS-XPEP-0044',
+    summary: 'An AuthZEN request reached a remote PEP whose edge PDP is ' +
+      'turned off (PEP_AUTHZEN=false) (#1179).',
+    spec: 'HTTP 501, an error message' },
+  { code: 'STS-XPEP-0045',
+    summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
+      'identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), ' +
+      'or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path ' +
+      'and was ignored (#1179).',
+    spec: 'HTTP 404 from GET /.well-known/authzen-configuration; logged at ' +
+      'start' },
+  { code: 'STS-XPEP-0046',
+    summary: 'A single AuthZEN evaluation sent to the remote PEP\'s edge ' +
+      'PDP was larger than PEP_MAX_BODY_BYTES and was refused unread ' +
+      '(#1179).',
+    spec: 'HTTP 413, an error message' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
@@ -21266,6 +21331,13 @@ const CODES = [
       'authzen.searchMaxCandidates; only the first were decided and the ' +
       'answer said it was incomplete.',
     spec: 'context.incomplete' },
+  { code: 'STS-AUTHZEN-0060',
+    summary: 'The AuthZEN catalogue a remote PEP pulled from ' +
+      'GET /xacml/pep/authzen-catalogue left out values of ' +
+      'authzenAttribute on sts-authzen-api that are not catalogue rows; ' +
+      'the edge PDP maps those properties as undeclared, as the service ' +
+      'does (#1179).',
+    spec: 'none — logged; the pull is answered' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

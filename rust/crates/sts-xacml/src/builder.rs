@@ -33,6 +33,7 @@ pub mod vocabulary {
     pub const MODE: &str = "urn:sts:xacml:mode";
     pub const SETTING_PREFIX: &str = "urn:sts:xacml:setting:";
     pub const SCOPE_STAGE: &str = "urn:sts:xacml:scope-stage";
+    pub const REALM: &str = "urn:sts:xacml:realm";
     // AuthZEN's facts (#563): written by the service's AuthZEN adapter
     // alone; spelt here so a policy reading them matches either builder.
     pub const AUTHZEN_SUBJECT_TYPE: &str =
@@ -70,6 +71,44 @@ impl From<String> for Fact {
 impl From<bool> for Fact {
     fn from(value: bool) -> Fact {
         Fact::Boolean(value)
+    }
+}
+
+/// One catalogue-mapped attribute of an AuthZEN question: a row's category,
+/// identifier and datatype, and the LEXICAL values the request carried.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuthzenAttribute {
+    pub category: String,
+    pub attribute_id: String,
+    pub data_type: String,
+    pub values: Vec<String>,
+}
+
+/// The facts of one AuthZEN question (#563), as `xacml_request.js`'s
+/// `authzen()` takes them: the five members AuthZEN requires, already
+/// validated; the realm, the caller and its application, TRUSTED, from the
+/// caller's authentication; every path the caller sent; and the catalogue's
+/// attributes.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AuthzenFacts {
+    pub subject_type: String,
+    pub subject_id: String,
+    pub action_name: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub realm: String,
+    pub caller: String,
+    pub application: String,
+    pub supplied: Vec<String>,
+    pub attributes: Vec<AuthzenAttribute>,
+}
+
+/// `one()` in `xacml_request.js`: an empty value is no value.
+fn one(value: &str) -> Vec<&str> {
+    if value.is_empty() {
+        Vec::new()
+    } else {
+        vec![value]
     }
 }
 
@@ -278,6 +317,47 @@ impl AuthorizationRequest {
             [name],
             None,
         )
+    }
+
+    /// THE FACTS OF AN AUTHZEN QUESTION (#563), in exactly the order and
+    /// spelling `xacml_request.js`'s `authzen()` writes them, so a policy
+    /// written against one builder's request matches the other's: the
+    /// subject's id is XACML's subject-id, the action's name its action-id
+    /// and the resource's id its resource-id; everything else reaches the
+    /// request only through the catalogue's rows. An empty realm, caller or
+    /// application is left out rather than sent as `""`.
+    pub fn authzen(&mut self, facts: &AuthzenFacts) -> &mut Self {
+        self.principal(&facts.subject_id, None);
+        self.subject(
+            vocabulary::AUTHZEN_SUBJECT_TYPE,
+            one(&facts.subject_type),
+        );
+        self.requested_action(&facts.action_name);
+        self.target(&facts.resource_id, None);
+        self.resource(
+            vocabulary::AUTHZEN_RESOURCE_TYPE,
+            one(&facts.resource_type),
+        );
+        self.protocol(Some("authzen"));
+        self.environment(vocabulary::REALM, one(&facts.realm));
+        self.environment(vocabulary::AUTHZEN_CALLER, one(&facts.caller));
+        self.environment(
+            vocabulary::AUTHZEN_APPLICATION,
+            one(&facts.application),
+        );
+        self.environment(
+            vocabulary::AUTHZEN_SUPPLIED,
+            facts.supplied.iter().map(String::as_str),
+        );
+        for row in &facts.attributes {
+            self.attribute(
+                &row.category,
+                &row.attribute_id,
+                row.values.iter().map(String::as_str),
+                Some(&row.data_type),
+            );
+        }
+        self
     }
 
     /// The request, in the engine's shape.

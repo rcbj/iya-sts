@@ -751,6 +751,10 @@
     "en": "f21e16beea449f7d",
     "text": "Cada política HABILITADA y cuál es la raíz, más un token de sincronización sobre exactamente esos bytes; ?since=<token> responde 304. LA OBTENCIÓN ES EL CONTRATO: un PEP remoto consulta esto en su propio intervalo y evalúa localmente con su propia copia del motor, porque un PEP que preguntara en cada solicitud sería /xacml/pdp con un salto de red delante de cada decisión de acceso. Requiere REMOTE_PEPS, un rol DISTINTO del XACML_USER que piden los cuatro endpoints anteriores, y un grupo distinto, porque este es el endpoint que publica los documentos con los que este servicio aplica su propio control de acceso. Una política DESHABILITADA se omite en lugar de enviarse con un indicador, porque un PEP que la cargara aplicaría una política que este servicio no aplica."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "e684892d931f5313",
+    "text": "El catálogo de atributos AuthZEN del dominio — las filas de authzenAttribute en sts-authzen-api, leídas como las lee POST /access/v1/evaluation — y los ajustes de AuthZEN que cambian la correspondencia o la respuesta, más un token de sincronización propio; ?since=<token> responde 304. Lo descarga junto a las políticas el contenedor xacml-pep, cuyo PDP perimetral responde a AuthZEN exactamente con estas filas, de modo que una solicitud se traduce de una sola manera en ambos lugares. Requiere REMOTE_PEPS, como la descarga de políticas. Aditivo: /xacml/pep/policies no cambia."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Sus contadores acumulados y el token de sincronización que tiene, que es lo que hace de \"actual\" una comparación que realiza este servicio en lugar de una afirmación que el PEP hace sobre sí mismo. Esas decisiones ocurrieron en otro proceso y este servicio no vio ninguna, que es todo el sentido de un PEP remoto. NO crea una fila: un latido de algo que nunca se registró se rechaza nombrando el endpoint de registro, porque una fila creada aquí no llevaría certificado, ni URL de notificación, ni fecha de registro."

@@ -20,10 +20,11 @@ engine and the repository and nothing else.
 
 rcbj's design is the comment of 2026-10-29 on #563; the phases are #1160
 (this contract), #1161 (single evaluation), #1162 (console and API), #1163
-(metadata), #1164 (batch), #1165 (protocol tests). Search, the Obligations
-Profile, Access Request and Approval, the token-exchange binding and an
-AuthZEN endpoint on the remote PEP container are NOT filed: each is a ticket
-of its own when its semantics are settled, and none is advertised until then.
+(metadata), #1164 (batch), #1165 (protocol tests). **The remote PEP
+container answers AuthZEN too since #1179**, as an edge PDP — *The edge PDP*
+below. Search (#1175), the Obligations Profile (#1177), Access Request and
+Approval (#1180) and the token-exchange binding (#1181) are tickets of their
+own, and none is advertised until it is implemented.
 
 | File | What it is |
 |---|---|
@@ -338,10 +339,38 @@ mirrors name the tab too.
   (`urn:sts:authzen-api:`), and deleting it turns the API off (`0014`) and
   every token for it (`common/registered_targets.ts`).
 
+## The edge PDP in the `xacml-pep` container (#1179)
+
+**The same contract in a second place, which is why the contract is now a
+table.** `rust/bins/xacml-pep` ports `authzen_catalogue.ts`
+(`authzen_catalogue.rs`), `authzen_map.ts` (`authzen_map.rs`) and the batch
+and metadata of `authzen.ts` (`authzen.rs`), and `sts-xacml`'s builder ports
+`xacml_request.js`'s `authzen()`. **`xacml-pep/authzen_cases.json` is the one
+table both are held to** — catalogue values and requests, the code each is
+refused with, and what an accepted one supplies and maps to:
+`tests/authzen_map.js` S runs this directory's modules over it and `cargo
+test -p xacml-pep` the port. **A change to a rule here owes a case there**,
+or the two drift with both suites green.
+
+* **The catalogue reaches it by the pull**: `GET /xacml/pep/authzen-catalogue`
+  (`xacml/CLAUDE.md`), beside the policies, with the settings that change the
+  mapping or the answer. The container re-reads each row through its port of
+  `parse()`, so a reserved row cannot reach a request there either.
+* **The codes are shared where the condition is the contract's**: a request
+  refused there carries the `STS-AUTHZEN-*` code it carries here, and the
+  `501`s for a realm with the API off are `0013` and `0014`. Its own
+  conditions — the caller allow-list, the client CA, the catalogue pull — are
+  `STS-XPEP-*`.
+* **What differs is who may ask**, because that is decided against this
+  service's directory: there it is a configured allow-list of certificates,
+  mutual TLS only, no revocation check, a log line instead of an audit row.
+  `xacml-pep/CLAUDE.md` states each.
+
 ## Error codes
 
 `STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
 the request's shape and values, 0010–0012 the catalogue's writes, 0013–0014
 the API being off, 0015–0023 the caller's authentication, 0024–0027 its
 admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
-the metadata path, 0036–0039 the batch.
+the metadata path, 0036–0039 the batch, 0060 a value left out of the
+catalogue a remote PEP pulled (#1179).
