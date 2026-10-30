@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5042** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5046** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 14
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 358
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
-* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
@@ -4518,7 +4518,7 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-SVCACCT-0001` | A service-account policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second. | HTTP 400 (management API) |
+| `STS-SVCACCT-0001` | A service-account policy profile was named with something that is neither `default` nor a name of lower-case letters, digits and hyphens (#1240). | HTTP 400 (management API) |
 | `STS-SVCACCT-0002` | A service-account policy save was refused: a field was missing or out of range, the rotated password's length was below the password policy's minimum, or rotation was turned on in a realm with no push destination. | HTTP 400 (management API) |
 | `STS-SVCACCT-0003` | There is no embedded directory in this process, so a service-account policy could not be saved. | HTTP 400 (management API) |
 | `STS-SVCACCT-0004` | The directory would not store the service-account policy profile: it holds its maximum number of entries. | HTTP 400 (management API) |
@@ -4547,6 +4547,10 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 | `STS-SVCACCT-0044` | A service account's rotated password could not be pushed to its destination (or the destination register is not loaded); nothing changed and the next run tries again. | none — a warning in the log and an audit row |
 | `STS-SVCACCT-0045` | ALARM: a service account's rotated password was pushed to its destination and could not be committed here, so the destination holds a password this service does not accept until the next rotation. | none — an error in the log and an audit row |
 | `STS-SVCACCT-0046` | No generated password of the service-account policy's length satisfied the password policy, so the rotation stopped before pushing anything. | none — a warning in the log and an audit row |
+| `STS-SVCACCT-0047` | A service account names, in stsServiceAccountPolicy, a service-account policy the realm does not hold; `default` governs it until the policy exists or the reference changes (#1240). | none — a warning in the log |
+| `STS-SVCACCT-0048` | stsServiceAccountPolicy was written on a person who is not a service account; only a service account names a service-account policy (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0049` | A named service-account policy was not deleted because a service account still names it in stsServiceAccountPolicy (#1240). | HTTP 400 (management API) |
+| `STS-SVCACCT-0050` | stsServiceAccountPolicy was written, over LDAP or at a create, naming neither `default` nor a service-account policy of this realm (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
 
 ## STS-XACML
 

@@ -513,9 +513,13 @@ PolicyKinds.register({
   governs: 'what a service account may do — the second factor, the ' +
            'browser, the password doors — and how its password rotates',
   module: serviceAccountPolicy as unknown as PolicyModule,
+  // Named profiles, each named by a service account's
+  // `stsServiceAccountPolicy` (#1240).
+  tabbed: true,
   auditAction: 'admin.service-account-policy.change',
-  appliesTo: 'every service account in this realm from the next time it ' +
-             'signs in, binds or is rotated',
+  appliesTo: 'every service account it governs — those naming it, and for ' +
+             '`default` those naming none — from the next time it signs ' +
+             'in, binds or is rotated',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
 });

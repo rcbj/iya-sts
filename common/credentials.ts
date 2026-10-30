@@ -1499,8 +1499,9 @@ class Credentials {
    *
    * @param username - the account (any key the directory locates)
    * @param door - `browser`, a password door's id, or `kerberos`
-   * @returns true when the name is a service account and the realm's
-   *   service-account policy does not open that door
+   * @returns true when the name is a service account and ITS
+   *   service-account policy (#1240: the profile it names, else `default`)
+   *   does not open that door
    */
   serviceAccountRefusesDoor(username, door) {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
@@ -1510,7 +1511,8 @@ class Credentials {
       log.debug('Leaving Credentials.serviceAccountRefusesDoor(). Not one.');
       return false;
     }
-    const out = !serviceAccountPolicy.allowsDoor(String(door || ''));
+    const out = !serviceAccountPolicy.allowsDoor(String(door || ''),
+      serviceAccountPolicy.profileFor(name));
     log.debug('Leaving Credentials.serviceAccountRefusesDoor(). ' + out);
     return out;
   }
@@ -2439,8 +2441,12 @@ class Credentials {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
     log.debug('Entering Credentials.rotatesThroughDestination().');
     const facts = username ? serviceAccounts.of(username) : null;
+    // THE ACCOUNT'S OWN PROFILE (#1240): the one its facts name.
     const out = !!facts && !!facts.destination &&
-                serviceAccountPolicy.rotation().enabled;
+                serviceAccountPolicy.rotation(
+                  serviceAccountPolicy.profileForReference(facts.policy,
+                                                           facts.username))
+                  .enabled;
     log.debug('Leaving Credentials.rotatesThroughDestination(). ' + out);
     return out;
   }
@@ -11754,10 +11760,12 @@ class Credentials {
     const directory = this.directory;
     log.debug("Entering Credentials.mfaRequirementFor().");
     const name = String(username || '').trim();
-    // A SERVICE ACCOUNT IN A REALM THAT EXEMPTS THEM (#221): nothing is
-    // required of it, by its entry, the realm or a console role.
-    if (name && this.deps.serviceAccountPolicy.exemptFromSecondFactor() &&
-        this.deps.serviceAccounts.isServiceAccountName(name)) {
+    // A SERVICE ACCOUNT WHOSE POLICY EXEMPTS IT (#221; its own profile
+    // since #1240): nothing is required of it, by its entry, the realm or a
+    // console role.
+    if (name && this.deps.serviceAccounts.isServiceAccountName(name) &&
+        this.deps.serviceAccountPolicy.exemptFromSecondFactor(
+          this.deps.serviceAccountPolicy.profileFor(name))) {
       log.debug("Leaving Credentials.mfaRequirementFor(). An exempt service " +
                 "account.");
       return { required: false, byUser: false, byRealm: false,

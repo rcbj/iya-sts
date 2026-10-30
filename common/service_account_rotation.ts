@@ -54,8 +54,8 @@
 // jobs scoped per realm:
 //
 //   service-accounts.rotate            every hour: every service account
-//                                      whose interval has passed, where the
-//                                      realm's policy turns rotation on.
+//                                      whose interval has passed, where its
+//                                      OWN policy turns rotation on.
 //   service-accounts.rotate-now        manual only: one account, now —
 //                                      what Rotate now and POST
 //                                      /admin-api/users/rotate-password
@@ -67,6 +67,15 @@
 //                                      (`service_accounts.previousPassword()`),
 //                                      so a run that is late changes nothing
 //                                      anybody can observe.
+//
+// **EACH ACCOUNT ROTATES ON ITS OWN POLICY (#1240)**: the profile its
+// `stsServiceAccountPolicy` names, else `default` — its interval, overlap,
+// generated length and alarm threshold. The hourly run reads what it always
+// read, the realm's service accounts (`service_accounts.list()`, one entry
+// each, the account's reference among its attributes), and resolves each
+// reference ONCE per run: a run costs the accounts plus the handful of
+// profiles they name, never a walk of the realm. The job is off in a realm
+// only where no profile — `default` or named — rotates.
 //
 // IT IS A LIBRARY (rule 3): it registers jobs and no route. Everything it
 // reaches is reached lazily, because it is built with the scheduler's other
@@ -245,13 +254,27 @@ class ServiceAccountRotation {
     log.debug("Leaving ServiceAccountRotation.record().");
   }
 
-  // A failure counted on the entry, and the alarm where it is due.
+  // The rotation settings of the profile an account names (#1240): its
+  // `policy` reference, else `default`.
+  private rotationOf(facts: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccountRotation.rotationOf().");
+    const policy = this.deps.policy();
+    const out = policy.rotation(policy.profileForReference(
+      (facts && facts.policy) || '', (facts && facts.username) || ''));
+    log.debug("Leaving ServiceAccountRotation.rotationOf(). enabled=" +
+              out.enabled);
+    return out;
+  }
+
+  // A failure counted on the entry, and the alarm where it is due — at the
+  // threshold of the account's own profile (#1240).
   private failed(username: string, code: string, why: string,
-                 alarmNow: boolean): Json {
+                 alarmNow: boolean, rotation: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering ServiceAccountRotation.failed(). " + code);
     const failures = this.deps.serviceAccounts().recordFailure(username, code);
-    const threshold = this.deps.policy().rotation().alarmFailures;
+    const threshold = rotation.alarmFailures;
     const alarm = alarmNow || failures >= threshold;
     if (alarm) {
       log.error(errorCodes.tag(alarmNow ? 'STS-SVCACCT-0045'
@@ -312,12 +335,14 @@ class ServiceAccountRotation {
                                       'would reach nobody.' },
                              'STS-SVCACCT-0041');
     }
+    // ITS OWN PROFILE (#1240), read once for the whole rotation.
+    const rotation = this.rotationOf(facts);
     const destinations = this.deps.destinations();
     if (!destinations || typeof destinations.push !== 'function') {
       log.debug("Leaving ServiceAccountRotation.rotateOne(). No register.");
       return this.failed(facts.username, 'STS-SVCACCT-0044',
                          'the push destination register is not loaded in ' +
-                         'this process', false);
+                         'this process', false, rotation);
     }
     const realms = this.deps.realms();
     const realmId = String(realms.currentId());
@@ -340,7 +365,6 @@ class ServiceAccountRotation {
                              'STS-SVCACCT-0043');
     }
     try {
-      const rotation = this.deps.policy().rotation();
       const passwordPolicy = this.deps.passwordPolicy();
       const profile = Object.assign({}, passwordPolicy.read(),
                                     { generatedLength:
@@ -354,7 +378,7 @@ class ServiceAccountRotation {
         return this.failed(facts.username, 'STS-SVCACCT-0046',
                            'no password of ' + rotation.generatedLength +
                            ' characters satisfied the password policy',
-                           false);
+                           false, rotation);
       }
       const rotatedAt = new Date(this.deps.now()).toISOString();
       // THE PUSH, FIRST.
@@ -368,7 +392,7 @@ class ServiceAccountRotation {
                            (pushed && pushed.code) || 'STS-SVCACCT-0044',
                            'the push to ' + facts.destination + ' failed: ' +
                            String((pushed && pushed.error) || 'no answer'),
-                           false);
+                           false, rotation);
       }
       // THE COMMIT, ONLY NOW.
       const set = this.deps.credentials().setPassword(facts.username,
@@ -382,7 +406,8 @@ class ServiceAccountRotation {
                            'the password was pushed (version ' +
                            String(pushed.version || '?') + ') and could not ' +
                            'be committed: ' +
-                           ((set && set.errors) || []).join(' '), true);
+                           ((set && set.errors) || []).join(' '), true,
+                           rotation);
       }
       const signals = this.deps.accountSignals();
       if (signals && typeof signals.credentialChanged === 'function') {
@@ -425,11 +450,13 @@ class ServiceAccountRotation {
   offReason(realmId: string): string {
     const { log } = this.deps;
     log.debug("Entering ServiceAccountRotation.offReason().");
+    // ON WHERE ANY PROFILE ROTATES (#1240): an account may name a named
+    // profile that does while `default` does not.
     const on = this.inRealm(realmId, () => {
-      return this.deps.policy().rotation().enabled;
+      return this.deps.policy().rotatesAnywhere();
     });
     log.debug("Leaving ServiceAccountRotation.offReason(). " + on);
-    return on ? '' : 'the realm\'s service-account policy does not rotate ' +
+    return on ? '' : 'no service-account policy of the realm rotates ' +
                      'passwords (rotationEnabled)';
   }
 
@@ -446,14 +473,23 @@ class ServiceAccountRotation {
     const c = ctx || {};
     const out = { rotated: 0, failed: 0, skipped: 0, accounts: 0 };
     const due = this.inRealm(realmId, () => {
-      const rotation = this.deps.policy().rotation();
-      if (!rotation.enabled) {
-        return [];
-      }
       const now = c.nowMs ? c.nowMs() : this.deps.now();
+      // EACH REFERENCE RESOLVED ONCE PER RUN (#1240): accounts naming the
+      // same profile share its settings, so the run costs the accounts and
+      // the profiles they name.
+      const byReference: Record<string, Json> = {};
       return this.deps.serviceAccounts().list().filter((one: Json) => {
         out.accounts += 1;
         if (!one.destination) {
+          out.skipped += 1;
+          return false;
+        }
+        const reference = String(one.policy || '');
+        if (!byReference[reference]) {
+          byReference[reference] = this.rotationOf(one);
+        }
+        const rotation = byReference[reference];
+        if (!rotation.enabled) {
           out.skipped += 1;
           return false;
         }
