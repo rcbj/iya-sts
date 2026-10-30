@@ -182,6 +182,10 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
      has no box); it centres the open section's heading, or moves nothing.
    * A GROUP inside a section (`navgrp`) is not collapsible; only the five
      sections are.
+   * **THE PORTAL'S COLUMN IS THE SAME SINCE #1229**, and the section's
+     markup, `onNavToggle()`'s rule, the first drawing's choice and the
+     heading's CSS live in `common/web_nav_sections.ts`, which both read —
+     a change to the behaviour is a change to both surfaces.
 
    **PROTOCOLS HAS A THIRD LEVEL AND NOTHING ELSE DOES.** An item in a section's
    `items` is either a page (`path` + `label`) or a GROUP (`title` + `what` +

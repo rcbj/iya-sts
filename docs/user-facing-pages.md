@@ -116,6 +116,14 @@ one process keeps in memory.
 portal's tokens. A person signed in to the admin console is signed in to the
 portal through single sign-on, with no screen.
 
+**The navigation column works as the admin console's.** Each section is
+collapsed until you open it, by clicking (or pressing Enter or Space on) its
+heading, and opening one closes whichever was open. Loading a page opens the
+section that holds it; after that the section you opened, or closed, stays
+that way as you move between portal pages in that tab. The section holding
+the page you are on is marked by a rule down its left even while it is
+collapsed.
+
 **Switch user**, with [several accounts in one browser](multiple-accounts.md)
 on in the realm (the default), is a menu in the header beside Sign out: it lists
 the other accounts signed in to this browser — choosing one draws this tab
