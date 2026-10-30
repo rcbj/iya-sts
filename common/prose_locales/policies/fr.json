@@ -152,8 +152,8 @@
     "text": "La classe de draft-behera-ldap-password-policy pour une entrée de politique de mot de passe. `pwdAttribute` nomme l’attribut que régit la politique, et ici c’est toujours `userPassword`."
   },
   "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
-    "en": "4daf3a60dd76691a",
-    "text": "La classe propre à ce service, qui porte les règles de composition et la longueur générée, pour lesquelles le brouillon n’a pas d’attribut. L’entrée est nommée par le PROFIL (`cn=default`)."
+    "en": "4a651241a26c3b18",
+    "text": "La classe propre à ce service, qui porte les règles de composition et la longueur générée, pour lesquelles le brouillon n’a pas d’attribut. L’entrée est nommée par le PROFIL : `cn=default`, ou le nom d’une politique nommée."
   },
   "password.SCHEMA.attributes.pwdAttribute.what": {
     "en": "603a95b316f4b6f5",
@@ -211,6 +211,10 @@
     "en": "b088d02f4ec32169",
     "text": "Le parallélisme de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt. Node le calcule sur un seul thread, donc une valeur plus élevée coûte du temps plutôt que des cœurs ; la description du coût liste les paires acceptées par l'OWASP."
   },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Quelle politique de mot de passe nommée l’emporte lorsque plusieurs sont nommées pour une personne : la plus basse, de 1 à 1000."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "À quoi sert le profil, pour la personne suivante."
@@ -222,6 +226,10 @@
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",
     "text": "La date à laquelle le mot de passe a été défini pour la dernière fois, au format GeneralizedTime. Tenu à jour par ce service."
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Quelle politique de mot de passe nommée l’emporte lorsque plusieurs sont nommées pour une personne : la plus basse, de 1 à 1000."
   },
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",

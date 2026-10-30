@@ -312,8 +312,13 @@ Tokens can carry the groups a person is in. See the `groups.*` settings below.
 ### The password policy is a directory entry
 
 A realm's password policy is the entry `cn=default,ou=passwordPolicies,<base>`.
-It is not seeded: an absent entry means the built-in defaults apply. Its
-attributes are:
+It is not seeded: an absent entry means the built-in defaults apply. A named
+password policy is `cn=<name>` in the same container with the same
+attributes and `stsPasswordPrecedence`, and applies to the members of a group
+whose `stsPasswordPolicy` names it — so an LDAP write of a member's
+`userPassword` is held to it ([named password
+policies](authentication.md#different-password-rules-for-different-applications-or-groups)).
+Its attributes are:
 
 | Attribute | Default | Meaning |
 |---|---|---|

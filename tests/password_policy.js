@@ -259,9 +259,12 @@ async function checkThePolicy(t, who) {
             'rather than resetting them — a save that quietly loosened a ' +
             'rule nobody mentioned is the mistake nobody ' +
             'sees', JSON.stringify(partial.errors));
-    t.check(!passwordPolicy.save('strict', Object.assign({},
+    // Since #1236 a named policy may be saved (tests/password_named_policies
+    // .js); a name no cn here may be is still refused.
+    t.check(!passwordPolicy.save('Strict!', Object.assign({},
               passwordPolicy.DEFAULTS)).ok,
-            'a profile other than default is refused: nothing assigns one yet');
+            'a profile name that is neither default nor lower-case letters, ' +
+            'digits and hyphens is refused');
     t.check(!passwordPolicy.save('default', Object.assign({},
               passwordPolicy.DEFAULTS,
               { minSymbols: 12, generatedLength: 20 })).ok,

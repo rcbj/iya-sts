@@ -10714,7 +10714,11 @@ if (typeof passwordPolicy.setDirectory === 'function') {
   passwordPolicy.setDirectory({
     allPasswordPolicies: allPasswordPolicies,
     writePasswordPolicy: writePasswordPolicy,
-    deletePasswordPolicy: deletePasswordPolicy
+    deletePasswordPolicy: deletePasswordPolicy,
+    // THE POLICY EACH OF A PERSON'S GROUPS NAMES, AND THE GROUPS NAMING ONE
+    // (#1236): `stsPasswordPolicy` on the group, from the group index.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy
   });
 } else {
   log.warn('ldap: common/password_policy.ts offers no setDirectory(), so ' +
@@ -19887,6 +19891,23 @@ function clearPasswordsIn(attributes) {
 // not read is `unavailable` (52), as it is there, and anything else an
 // operations error (STS-LDAP-0143).
 // ---------------------------------------------------------------------------
+// The person an LDAP add or modify writes a password for (#1236), for the
+// profile the off-loop hash uses; '' where the request names no entry, and
+// then the profile is `default`, as `preparePassword()` would make it.
+function prehashUsername(req) {
+  log.debug('Entering prehashUsername().');
+  let out = '';
+  try {
+    out = String(usernameOfEntry({ dn: String((req && req.dn) || '') }) ||
+                 '');
+  } catch (e) {
+    log.debug('Caught in prehashUsername(): ' + ((e && e.message) || e));
+    out = '';
+  }
+  log.debug('Leaving prehashUsername().');
+  return out;
+}
+
 function screenedThen(req, next, passwords, run) {
   log.debug('Entering screenedThen().');
   let breached = null;
@@ -19927,8 +19948,10 @@ function screenedThen(req, next, passwords, run) {
     // A PERSON'S PASSWORD, so the password policy's algorithm and
     // parameters (#847) — the same spec `preparePassword()` checks the hash
     // against before it takes it.
+    // THE PERSON'S OWN PROFILE (#1236): the entry being written, so a named
+    // policy's parameters are the ones hashed with here.
     return stsCrypto.hashPasswordAsync(one, passwordPolicy.hashSpec(
-      passwordPolicy.profileFor())).then(function (hash) {
+      passwordPolicy.profileFor(prehashUsername(req)))).then(function (hash) {
       return { password: one, hash: hash };
     }, function (e) {
       // The body hashes it itself, as it did before #756.
@@ -22938,10 +22961,10 @@ function deleteRole(name) {
 // ---------------------------------------------------------------------------
 // ou=passwordPolicies AS A STORE (2026-09-12).
 //
-// The same three functions a fourth time, named by the PROFILE (`cn=default`).
-// Two things differ from ou=roles and both are small: there is no cap of its
-// own, because `common/password_policy.ts` refuses every profile name but one
-// before a write reaches here; and the CONTAINER is put back if it is missing,
+// The same three functions a fourth time, named by the PROFILE (`cn=default`,
+// or a named policy's name since #1236). Two things differ from ou=roles and
+// both are small: there is no cap of its own beyond the directory's, as for
+// every other policy container; and the CONTAINER is put back if it is missing,
 // because a directory restored from a store written before this container
 // existed has none, and a profile whose parent is absent is an entry an
 // `ldapsearch` of the realm cannot reach.

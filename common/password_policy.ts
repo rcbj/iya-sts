@@ -119,6 +119,33 @@
 // what a password writer asks.
 //
 // ---------------------------------------------------------------------------
+// NAMED POLICIES, AND WHAT NAMES ONE (#1236, 2026-10-30; rule 3cx). Until
+// then the container held `cn=default` alone and a second name was refused,
+// because nothing could ASSIGN one. #1234 gave every kind a way to: an
+// application names its password policy in `appPasswordPolicy`, a group in
+// `stsPasswordPolicy`, and a named policy carries every row `default` has
+// plus `stsPasswordPrecedence`. `profileFor(username, application)` ranks
+// the candidates — the application's reference and each of the person's
+// groups' — through `common/policy_selection.ts`: the lowest precedence
+// wins, ties by name, else `default`. A person names none of their own
+// (#1234's table). A reader with no person in hand (the service-account
+// policy's save check, a page with nobody signed in) reads `default`.
+//
+// **A REFERENCE TO A POLICY THE REALM DOES NOT HOLD FAILS CLOSED TO
+// `default`** (STS-AUTHN-0539) — the WHOLE answer is `default`, whatever
+// else ranked. Both writes are checked and a named policy is not deleted
+// while anything names it (STS-AUTHN-0540), so only a write past the
+// console makes one. `default` is the one policy an operator has stated
+// for everybody, never weaker than no policy; letting the rest of the
+// ranking stand would hand a person whatever lax profile some other group
+// names exactly when the reference meant to override it is broken. The
+// case against: an application's stricter policy is displaced by a broken
+// GROUP reference. It was weighed and accepted — the answer must not
+// depend on which reference broke, and the log names it.
+//
+// Named policies are the realm's own and are not inherited (#1234's
+// decision 3); neither is `default`, which never was.
+// ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3) AND A LEAF. It requires `helpers.js`, `mode.js`,
 // `crypto.js` and `error_codes.js`, registers no route, and reaches the
 // directory through a slot `ldap/ldap_server.js` fills — `common/roles.js`'s
@@ -149,6 +176,9 @@ import stsCrypto = require('./crypto');
 // nothing that serialises the answer can send it anywhere.
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// The shared named-policy ranking (#1235, rule 3cx): a leaf of static
+// methods over values handed in, so requiring it closes no cycle.
+import PolicySelection = require('./policy_selection');
 // The sentences `describe()` makes are filled from SENTENCES below, so the
 // server can translate them into a console reader's language (#543).
 import serverProse = require('./server_prose');
@@ -184,6 +214,11 @@ interface DirectoryHooks {
   writePasswordPolicy?(name: string,
                        attributes: Record<string, unknown>): unknown;
   deletePasswordPolicy?(name: string): unknown;
+  // #1236: the policy each of a person's groups names (`stsPasswordPolicy`),
+  // and the groups naming one — the group index, no walk.
+  personGroupReferences?(key: string, attribute: string):
+    Array<{ cn?: string; dn?: string; value?: string }>;
+  groupsNamingPolicy?(attribute: string, name: unknown): string[];
   [hook: string]: unknown;
 }
 
@@ -208,6 +243,36 @@ interface PasswordPolicyDeps {
 }
 
 const DEFAULT_PROFILE = 'default';
+
+// WHAT A NAMED POLICY CARRIES BESIDE ITS ROWS (#1236): its precedence, and
+// nothing else — what it covers names it (rule 3cx).
+const SELECTORS = [
+  { key: 'precedence', attribute: 'stsPasswordPrecedence',
+    what: 'Which named password policy wins where several are named for ' +
+          'one person: the lowest, from 1 to 1000.' }
+];
+/**
+ * How `common/policy_selection.ts` reads a named password policy (#1236).
+ */
+const SELECTION = { precedenceAttribute: 'stsPasswordPrecedence',
+                    defaultPrecedence: PolicySelection.DEFAULT_PRECEDENCE };
+/**
+ * The attributes that NAME a password policy (#1236): on an application
+ * and on a group. A person names none of their own.
+ */
+const REFERENCES = Object.freeze({ application: 'appPasswordPolicy',
+                                   group: 'stsPasswordPolicy' });
+/**
+ * What a refusal or a log line calls one.
+ */
+const NOUN = 'password policy';
+/**
+ * The missing references already logged in this process, so a broken
+ * reference is said once rather than at every password a sign-in verifies
+ * (the upgrade check asks the profile then). Bounded.
+ */
+const MISSING_SAID = new Set<string>();
+const MISSING_SAID_MAX = 1000;
 
 // The two characters the generator leaves out of its symbol pool. See the
 // header.
@@ -448,13 +513,16 @@ const SCHEMA = {
     { name: 'stsPasswordPolicy',
       what: 'This service\'s own class, carrying the composition rules and ' +
             'the generated length the draft has no attribute for. The entry ' +
-            'is named by the PROFILE (`cn=default`).' }
+            'is named by the PROFILE: `cn=default`, or a named policy\'s ' +
+            'name.' }
   ],
   attributes: [
     { name: 'pwdAttribute',
       what: 'The attribute this policy governs: `userPassword`.' }
   ].concat(FIELDS.map(function (field) {
     return { name: field.attribute, what: field.what };
+  })).concat(SELECTORS.map(function (one) {
+    return { name: one.attribute, what: one.what };
   })).concat([
     { name: 'description',
       what: 'What the profile is for, for the next person.' }
@@ -503,12 +571,14 @@ const OCTET_STRING_OID = '1.3.6.1.4.1.1466.115.121.1.40';
  * The password policy: what a password here must look like, which of a person's
  * old ones it may not be, and how one is generated.
  *
- * One profile, `default`, kept as an entry under `ou=passwordPolicies` with
- * built-in defaults for anything absent. Enforced in product mode.
+ * `default` and any number of named policies, each an entry under
+ * `ou=passwordPolicies` with built-in defaults for anything absent; an
+ * application (`appPasswordPolicy`) and a group (`stsPasswordPolicy`) name
+ * the one they are held to (#1236). Enforced in product mode.
  */
 class PasswordPolicy {
   /**
-   * The one profile's name: `default`.
+   * The profile every realm has: `default`.
    */
   static readonly DEFAULT_PROFILE = DEFAULT_PROFILE;
   /**
@@ -537,6 +607,15 @@ class PasswordPolicy {
    * The syntax OID `pwdHistory`'s data half is named by: Octet String.
    */
   static readonly OCTET_STRING_OID = OCTET_STRING_OID;
+  /**
+   * What a named policy carries beside its rows: its precedence (#1236).
+   */
+  static readonly SELECTORS = SELECTORS;
+  /**
+   * The attributes naming a password policy: `appPasswordPolicy` on an
+   * application, `stsPasswordPolicy` on a group (#1236).
+   */
+  static readonly REFERENCES = REFERENCES;
 
   // -------------------------------------------------------------------------
   // THE SLOT.
@@ -752,7 +831,7 @@ class PasswordPolicy {
   read(name?: string): PasswordProfile {
     const { log, mode } = this.deps;
     log.debug('Entering PasswordPolicy.read(). name=' + name);
-    const profile = String(name || DEFAULT_PROFILE);
+    const profile = String(name || DEFAULT_PROFILE).trim().toLowerCase();
     const entry = this.entryFor(profile);
     const values: Record<string, unknown> = Object.assign({}, DEFAULTS);
     const problems: string[] = [];
@@ -792,40 +871,183 @@ class PasswordPolicy {
       problems: problems,
       enforced: mode.verifiesCredentials()
     }, values) as PasswordProfile;
+    // A NAMED POLICY'S PRECEDENCE (#1236), as the ranking reads it; `default`
+    // ranks under nothing and carries none.
+    if (profile.toLowerCase() !== DEFAULT_PROFILE) {
+      out.precedence = entry
+        ? PolicySelection.precedenceOf(entry.attributes || {}, SELECTION)
+        : SELECTION.defaultPrecedence;
+    }
     log.debug('Leaving PasswordPolicy.read(). ' +
               (entry ? 'Stored.' : 'Built-in defaults.'));
     return out;
   }
 
-  // The profile that applies to a password being set. ONE today, and the
-  // function exists so that assigning profiles later changes this body and no
-  // caller — the username is accepted now for exactly that reason.
+  // THE PROFILE THAT APPLIES TO A PASSWORD (#1236): the function existed
+  // with a username it ignored so that assigning profiles would change this
+  // body and no caller, and that is what happened. Every door already hands
+  // in the person; the sign-in's forced change hands in the application too.
   /**
-   * Returns the profile that applies to a person's password: today always the
-   * default one.
+   * Returns the profile that applies to a person's password: of the policy
+   * the application names (`appPasswordPolicy`) and the policies the
+   * person's groups name (`stsPasswordPolicy`), the lowest precedence (ties
+   * by name), else `default`. A reference to a policy this realm does not
+   * hold makes the answer `default` (STS-AUTHN-0539).
    *
-   * @param username - the person; accepted for when profiles are assigned
+   * @param username - the person, or nothing: then `default`, unless an
+   *   application names a policy
+   * @param application - the application (a client_id or its identifier),
+   *   where one is known
    * @returns the profile
    */
-  profileFor(username?: unknown): PasswordProfile {
+  profileFor(username?: unknown, application?: unknown): PasswordProfile {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.profileFor().");
-    void username;
-    log.debug("Leaving PasswordPolicy.profileFor().");
-    return this.read(DEFAULT_PROFILE);
+    const name = this.selectionFor(username, application);
+    log.debug("Leaving PasswordPolicy.profileFor(). " + name);
+    return this.read(name);
   }
 
-  // Every profile. One today; paged by the caller like every list this
-  // console draws.
   /**
-   * Lists every profile: today the default one.
+   * Works out which profile's name applies to a person and an application,
+   * without reading it: `profileFor()`'s ranking.
+   *
+   * @param username - the person, or nothing
+   * @param application - the application, or nothing
+   * @returns the profile's name
+   */
+  selectionFor(username?: unknown, application?: unknown): string {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering PasswordPolicy.selectionFor().");
+    if (!this.haveDirectory()) {
+      log.debug("Leaving PasswordPolicy.selectionFor(). No directory.");
+      return DEFAULT_PROFILE;
+    }
+    const entries = this.directory.allPasswordPolicies();
+    // NO NAMED POLICY, NOTHING TO RANK: the common case costs no group
+    // lookup at all.
+    if (!PolicySelection.named(entries, SELECTION).length) {
+      log.debug("Leaving PasswordPolicy.selectionFor(). None named.");
+      return DEFAULT_PROFILE;
+    }
+    const who = String(username === undefined || username === null ? ''
+      : username).trim();
+    const hook = this.directory.personGroupReferences;
+    const groups = who && typeof hook === 'function'
+      ? (hook.call(this.directory, who, REFERENCES.group) || []) : [];
+    const references: Array<{ by: string; holder?: string;
+                              value: unknown }> = [
+      { by: 'application', holder: String(application || ''),
+        value: this.applicationReference(application) }
+    ];
+    const ranked = PolicySelection.rank(entries, SELECTION, references
+      .concat(PolicySelection.groupReferences(groups)));
+    if (ranked.missing.length) {
+      // FAIL CLOSED TO `default` (the header): the whole answer, whatever
+      // else ranked. Said once per broken reference in this process.
+      ranked.missing.forEach(function (one) {
+        const key = one.by + '\u0000' + one.holder + '\u0000' + one.name;
+        if (MISSING_SAID.has(key)) {
+          return;
+        }
+        if (MISSING_SAID.size >= MISSING_SAID_MAX) {
+          MISSING_SAID.clear();
+        }
+        MISSING_SAID.add(key);
+        log.warn(errorCodes.tag('STS-AUTHN-0539') + 'password policy: the ' +
+                 one.by + ' "' + one.holder + '" names the password ' +
+                 'policy "' + one.name + '", which this realm does not ' +
+                 'hold, so the default password policy applies to every ' +
+                 'password it reaches until the policy exists or the ' +
+                 'reference changes.');
+      });
+      log.debug("Leaving PasswordPolicy.selectionFor(). A reference is " +
+                "missing; default.");
+      return DEFAULT_PROFILE;
+    }
+    log.debug("Leaving PasswordPolicy.selectionFor(). " + ranked.name +
+              " (" + ranked.by + ").");
+    return ranked.name;
+  }
+
+  // THE PROFILE AN APPLICATION NAMES (#1236): its `appPasswordPolicy`, found
+  // by what a sign-in names it by — a client_id, else its identifier. The
+  // registry is required LAZILY: it is loaded after this leaf, and a require
+  // at load would close a cycle. '' where nothing is named or nothing can be
+  // asked — the passkey policy's `applicationReference()`.
+  private applicationReference(application: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.applicationReference().");
+    const name = String(application === undefined || application === null
+      ? '' : application).trim();
+    if (!name) {
+      log.debug("Leaving PasswordPolicy.applicationReference(). None.");
+      return '';
+    }
+    let out = '';
+    try {
+      const applications = require('./applications');
+      const row = applications.forClientId(name) || applications.get(name);
+      out = String([].concat(((row && row.fields) || {})[
+        REFERENCES.application] || [])[0] || '');
+    } catch (e) {
+      log.debug("Caught in PasswordPolicy.applicationReference(): " +
+                ((e && e.message) || e));
+      out = '';
+    }
+    log.debug("Leaving PasswordPolicy.applicationReference(). " +
+              (out || 'none'));
+    return out;
+  }
+
+  /**
+   * What names a named policy (#1236): the applications (the application
+   * listing's index, lazily) and the groups (the directory's group index) —
+   * what refuses its delete and what its Named policies entry lists.
+   *
+   * @param name - the policy's name
+   * @returns `{ applications, groups, people }`; nobody names a password
+   *   policy from their own entry
+   */
+  namedBy(name: unknown): { applications: string[]; groups: string[];
+                            people: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.namedBy().");
+    let applications: string[] = [];
+    try {
+      applications = require('./applications')
+        .applicationsNamingPolicy(REFERENCES.application, name);
+    } catch (e) {
+      log.debug("Caught in PasswordPolicy.namedBy(): " +
+                ((e && e.message) || e));
+      applications = [];
+    }
+    const hook = this.haveDirectory() ? this.directory.groupsNamingPolicy
+      : null;
+    const groups = typeof hook === 'function'
+      ? (hook.call(this.directory, REFERENCES.group, name) || []) : [];
+    log.debug("Leaving PasswordPolicy.namedBy(). " + applications.length +
+              " application(s), " + groups.length + " group(s).");
+    return { applications: applications, groups: groups, people: [] };
+  }
+
+  // Every profile: `default` first, then this realm's named policies in
+  // precedence order (ties by name). Paged by the caller like every list
+  // this console draws.
+  /**
+   * Lists every profile: `default`, then the named policies by precedence.
    *
    * @returns the profiles
    */
   list(): PasswordProfile[] {
     const { log } = this.deps;
     log.debug('Entering PasswordPolicy.list().');
-    const rows = [this.read(DEFAULT_PROFILE)];
+    const named = (this.haveDirectory()
+      ? PolicySelection.named(this.directory.allPasswordPolicies(),
+                              SELECTION) : []).sort(PolicySelection.compare);
+    const rows = [this.read(DEFAULT_PROFILE)].concat(named.map((one) => {
+      return this.read(one.name);
+    }));
     log.debug('Leaving PasswordPolicy.list(). ' + rows.length +
               ' profile(s).');
     return rows;
@@ -835,24 +1057,18 @@ class PasswordPolicy {
   // WRITING.
   // -------------------------------------------------------------------------
 
-  // Only `default`, and saying why is the whole of this check. A second
-  // profile could be written perfectly well — the container holds any number
-  // — but nothing ASSIGNS one to anybody yet, so it would be an entry that
-  // decides nothing while looking exactly like one that does.
+  // `default` or a named policy's name (#1236): lower-case letters, digits
+  // and hyphens, which is what a cn here may be. Until #1236 only `default`
+  // was accepted, because nothing ASSIGNED a second profile to anybody; an
+  // application's and a group's reference now do.
   private checkProfileName(name: unknown): string | null {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.checkProfileName().");
-    const text = String(name || DEFAULT_PROFILE).trim();
-    if (text.toLowerCase() !== DEFAULT_PROFILE) {
-      log.debug("Leaving PasswordPolicy.checkProfileName().");
-      return 'There is one password policy profile, "' + DEFAULT_PROFILE +
-             '", and it applies to everybody in this realm. "' +
-             text.slice(0, 64) + '" cannot be created: nothing assigns a ' +
-             'profile to a person yet, so a second one would decide nothing ' +
-             'while looking exactly like one that does.';
-    }
+    const out = PolicySelection.nameProblem(
+      name === undefined || name === null || name === '' ? DEFAULT_PROFILE
+        : name, NOUN, true);
     log.debug("Leaving PasswordPolicy.checkProfileName().");
-    return null;
+    return out;
   }
 
   // A save carries EVERY field. A field left out is a problem rather than a
@@ -866,11 +1082,16 @@ class PasswordPolicy {
    * On the console's own form an absent boolean means false.
    *
    * @param given - the posted fields
+   * @param name - the profile being saved, whose stored value an optional
+   *   row left out keeps; `default` when absent
    * @returns `{ values, problems }`
    */
-  validate(given?: Record<string, any> | null) {
+  validate(given?: Record<string, any> | null, name?: unknown) {
     const { log } = this.deps;
     log.debug('Entering PasswordPolicy.validate().');
+    // THE PROFILE BEING SAVED (#1236): an optional row left out keeps ITS
+    // value in force, not `default`'s.
+    const which = String(name || DEFAULT_PROFILE).trim().toLowerCase();
     const body = given || {};
     const values: Record<string, number | boolean | string> = {};
     const problems: string[] = [];
@@ -888,7 +1109,7 @@ class PasswordPolicy {
         // LEFT OUT, THE VALUE IN FORCE STAYS (#847) — the stored one, or the
         // built-in default — so a save cannot lower a hash cost it did not
         // mention, which is the "every field is sent" rule's own reason.
-        inForce = inForce || this.read(DEFAULT_PROFILE);
+        inForce = inForce || this.read(which);
         values[field.key] = inForce[field.key];
         return;
       }
@@ -919,10 +1140,13 @@ class PasswordPolicy {
   }
 
   /**
-   * Replaces the default profile's entry with the values given.
+   * Replaces a profile's entry with the values given: `default`, or a named
+   * policy, which its first save creates.
    *
-   * @param name - the profile; only `default` is accepted (STS-AUTHN-0107)
-   * @param given - every field, and optionally `description`
+   * @param name - the profile: `default` or a name of lower-case letters,
+   *   digits and hyphens (STS-AUTHN-0107)
+   * @param given - every field, optionally `description`, and for a named
+   *   policy `precedence` (1 to 1000, 100 when left out)
    * @returns `{ ok, profile }`, or `{ ok: false, errors }` marked with its
    * error code
    */
@@ -936,7 +1160,16 @@ class PasswordPolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-AUTHN-0107');
     }
-    const checked = this.validate(given);
+    const which = String(name || DEFAULT_PROFILE).trim().toLowerCase();
+    const checked = this.validate(given, which);
+    // A NAMED POLICY'S PRECEDENCE (#1236), refused with the rows.
+    const selectors = which === DEFAULT_PROFILE ? null
+      : PolicySelection.checkPrecedence(given || {}, SELECTION);
+    if (selectors) {
+      selectors.problems.forEach(function (one) {
+        checked.problems.push(one);
+      });
+    }
     if (checked.problems.length) {
       log.debug('Leaving PasswordPolicy.save(). The values were refused.');
       return errorCodes.mark({ ok: false, errors: checked.problems },
@@ -963,8 +1196,10 @@ class PasswordPolicy {
     if (!attributes.description) {
       delete attributes.description;
     }
-    const written = this.directory.writePasswordPolicy(DEFAULT_PROFILE,
-                                                       attributes);
+    if (selectors) {
+      attributes[SELECTION.precedenceAttribute] = String(selectors.precedence);
+    }
+    const written = this.directory.writePasswordPolicy(which, attributes);
     if (!written) {
       log.debug('Leaving PasswordPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,
@@ -973,16 +1208,19 @@ class PasswordPolicy {
                              'STS-AUTHN-0110');
     }
     log.debug('Leaving PasswordPolicy.save(). Stored.');
-    return { ok: true, profile: this.read(DEFAULT_PROFILE) };
+    return { ok: true, profile: this.read(which) };
   }
 
   // Deleting the entry, which puts the BUILT-IN defaults back in force. It is
   // the one way to say "whatever this release thinks is reasonable" rather
-  // than writing today's numbers down and keeping them forever.
+  // than writing today's numbers down and keeping them forever. A NAMED
+  // policy is removed whole (#1236), and not while anything names it.
   /**
-   * Deletes the stored profile, putting the built-in defaults back in force.
+   * Deletes a stored profile: `default`'s puts the built-in defaults back in
+   * force; a named policy is removed, refused while an application or a
+   * group names it (STS-AUTHN-0540).
    *
-   * @param name - the profile; only `default` is accepted
+   * @param name - the profile
    * @returns `{ ok, removed, profile }`, or `{ ok: false, errors }`
    */
   reset(name: unknown): PolicyResult {
@@ -995,15 +1233,27 @@ class PasswordPolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-AUTHN-0107');
     }
+    const which = String(name || DEFAULT_PROFILE).trim().toLowerCase();
     if (!this.haveDirectory()) {
       log.debug('Leaving PasswordPolicy.reset(). No directory.');
-      return { ok: true, removed: false, profile: this.read(DEFAULT_PROFILE) };
+      return { ok: true, removed: false, profile: this.read(which) };
     }
-    const removed = !!this.directory.deletePasswordPolicy(DEFAULT_PROFILE);
+    // NOT WHILE AN APPLICATION OR A GROUP NAMES IT (#1236): it would be
+    // left naming a policy the realm does not hold, which fails closed to
+    // `default` — a loosening nobody asked for, made by a delete.
+    const held = which === DEFAULT_PROFILE ? null
+      : PolicySelection.deleteProblem(NOUN, which, this.namedBy(which));
+    if (held) {
+      log.debug('Leaving PasswordPolicy.reset(). Still named.');
+      return errorCodes.mark({ ok: false, errors: [held] },
+                             'STS-AUTHN-0540');
+    }
+    const removed = !!this.directory.deletePasswordPolicy(which);
     log.debug('Leaving PasswordPolicy.reset(). ' +
               (removed ? 'Removed.' : 'Nothing stored.'));
     return { ok: true, removed: removed,
-             profile: this.read(DEFAULT_PROFILE) };
+             profile: this.read(which === DEFAULT_PROFILE ? which
+                                                          : DEFAULT_PROFILE) };
   }
 
   // -------------------------------------------------------------------------
@@ -1265,6 +1515,19 @@ const slot = new InstanceSlot<PasswordPolicy>(
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
 
+// A GROUP NAMES ITS PASSWORD POLICY (#1236): declared, so the group page
+// draws its picker and the directory's group writer checks it, offering
+// `default` and the realm's named policies as they stand when asked.
+PolicySelection.declareReference('group', REFERENCES.group, NOUN,
+  function () {
+    log.debug("Entering password policy reference choices.");
+    const names = slot.get().list().map(function (one) {
+      return String(one.name);
+    });
+    log.debug("Leaving password policy reference choices.");
+    return names;
+  });
+
 /**
  * The password policy: composition rules, the history of previous passwords,
  * and the generator.
@@ -1289,11 +1552,15 @@ export = {
   SCHEMA: PasswordPolicy.SCHEMA,
   SENTENCES: PasswordPolicy.SENTENCES,
   OCTET_STRING_OID: PasswordPolicy.OCTET_STRING_OID,
+  SELECTORS: PasswordPolicy.SELECTORS,
+  REFERENCES: PasswordPolicy.REFERENCES,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),
   list: slot.forward('list'),
   profileFor: slot.forward('profileFor'),
+  selectionFor: slot.forward('selectionFor'),
+  namedBy: slot.forward('namedBy'),
   validate: slot.forward('validate'),
   save: slot.forward('save'),
   reset: slot.forward('reset'),

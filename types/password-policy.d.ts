@@ -15,6 +15,8 @@ export interface PasswordProfile {
   sources: Record<string, string>;
   problems: string[];
   enforced: boolean;
+  // A named policy's precedence (#1236); absent on `default`.
+  precedence?: number;
   // The FIELDS rows.
   minLength: number;
   history: number;

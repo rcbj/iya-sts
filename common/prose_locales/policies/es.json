@@ -152,8 +152,8 @@
     "text": "La clase de draft-behera-ldap-password-policy para una entrada de política de contraseñas. `pwdAttribute` indica el atributo que rige la política, y aquí siempre es `userPassword`."
   },
   "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
-    "en": "4daf3a60dd76691a",
-    "text": "La clase propia de este servicio, que contiene las reglas de composición y la longitud generada, para las que el borrador no tiene atributo. La entrada lleva el nombre del PERFIL (`cn=default`)."
+    "en": "4a651241a26c3b18",
+    "text": "La clase propia de este servicio, que contiene las reglas de composición y la longitud generada, para las que el borrador no tiene atributo. La entrada lleva el nombre del PERFIL: `cn=default`, o el nombre de una política con nombre."
   },
   "password.SCHEMA.attributes.pwdAttribute.what": {
     "en": "603a95b316f4b6f5",
@@ -211,6 +211,10 @@
     "en": "b088d02f4ec32169",
     "text": "El paralelismo de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt. Node lo calcula en un solo hilo, así que un valor mayor cuesta tiempo y no núcleos; la descripción del coste enumera los pares que acepta OWASP."
   },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Qué política de contraseñas con nombre prevalece cuando se nombran varias para una persona: la más baja, de 1 a 1000."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
@@ -222,6 +226,10 @@
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",
     "text": "Cuándo se estableció la contraseña por última vez, como GeneralizedTime. Lo mantiene este servicio."
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Qué política de contraseñas con nombre prevalece cuando se nombran varias para una persona: la más baja, de 1 a 1000."
   },
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
