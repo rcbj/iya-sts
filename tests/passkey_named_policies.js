@@ -6,11 +6,13 @@
 // File: tests/passkey_named_policies.js
 //
 // ===========================================================================
-// NAMED PASSKEY POLICIES, SELECTED BY APPLICATION OR GROUP (#535).
+// NAMED PASSKEY POLICIES, NAMED BY AN APPLICATION OR A GROUP (#535; since
+// #1235 the application names one in `appPasskeyPolicy` and the group in
+// `stsPasskeyPolicy`, and a profile keeps only its precedence).
 //
-//   A. In process: a named profile saved with its selectors, and refused
-//      with none, with a bad name or a bad precedence; selection by group,
-//      by application and by precedence, with `default` the fallback; the
+//   A. In process: a named profile saved with its precedence, and refused
+//      with a bad name or a bad precedence; selection by group, by
+//      application and by precedence, with `default` the fallback; the
 //      ambient selection read by every answer; a realm's named profiles not
 //      inherited; a removed profile selecting the default.
 //   B. Over HTTP, in a CHILD PROCESS serving the stack on a loopback port
@@ -31,6 +33,7 @@ const childProcess = require('child_process');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 const passkeyPolicy = require('../common/passkey_policy');
+const applications = require('../common/applications');
 const ldap = require('../ldap/ldap_server');
 
 const log = require('bunyan').createLogger({ name: 'passkey_named_policies',
@@ -55,28 +58,29 @@ function inProcess(t) {
   ldap.createUser(user, { invent: false });
   ldap.createGroup(group);
   ldap.addGroupMember(group, admin);
+  applications.createApplication({ identifier: 'pnp-app', protocols: [],
+                                   fields: {} });
   try {
     const saved = named('admins', { backupEligibility: 'disallow' },
-                        { selectGroups: group, precedence: 20 });
+                        { precedence: 20 });
     const app = named('strict-app', { enforcePinLength: true },
-                      { selectApplications: 'pnp-app', precedence: 5 });
-    const none = named('nobody', {}, {});
-    const badName = named('Admins!', {}, { selectGroups: group });
-    const badRank = named('ranked', {}, { selectGroups: group,
-                                          precedence: 0 });
+                      { precedence: 5 });
+    const badName = named('Admins!', {}, {});
+    const badRank = named('ranked', {}, { precedence: 0 });
+    const byGroup = ldap.setGroupPolicy(group, 'stsPasskeyPolicy', 'admins');
+    const byApp = applications.updateApplication('pnp-app',
+      { attribute: 'appPasskeyPolicy', mode: 'set', value: 'strict-app' });
     t.check(saved.ok && saved.profile.name === 'admins' &&
-            saved.profile.precedence === 20 &&
-            JSON.stringify(saved.profile.selectGroups) ===
-              JSON.stringify([group]) && app.ok,
-            'A1. a named profile is saved with its selectors',
-            JSON.stringify([saved.errors, app.errors]));
-    t.check(!none.ok && errorCodes.codeOf(none) === 'STS-AUTHN-0309' &&
-            !badName.ok && errorCodes.codeOf(badName) === 'STS-AUTHN-0308' &&
-            !badRank.ok,
-            'A1b. one with no selector, a bad name, or a precedence out of ' +
-            '1..1000 is refused', JSON.stringify([none.errors,
-                                                  badName.errors,
-                                                  badRank.errors]));
+            saved.profile.precedence === 20 && app.ok && byGroup.ok &&
+            byApp.ok,
+            'A1. a named profile is saved with its precedence, and a group ' +
+            'and an application name one',
+            JSON.stringify([saved.errors, app.errors, byGroup.errors,
+                            byApp.errors]));
+    t.check(!badName.ok && errorCodes.codeOf(badName) === 'STS-AUTHN-0308' &&
+            !badRank.ok && errorCodes.codeOf(badRank) === 'STS-AUTHN-0309',
+            'A1b. a bad name, or a precedence out of 1..1000, is refused',
+            JSON.stringify([badName.errors, badRank.errors]));
     t.check(passkeyPolicy.selectionFor(admin, '') === 'admins' &&
             passkeyPolicy.selectionFor(user, '') === 'default' &&
             passkeyPolicy.selectionFor(user, 'pnp-app') === 'strict-app' &&
@@ -84,8 +88,7 @@ function inProcess(t) {
             passkeyPolicy.selectionFor(admin, 'other-app') === 'admins',
             'A2. by group, by application, the lower precedence where both ' +
             'match, and default where none does');
-    named('strict-app', { enforcePinLength: true },
-          { selectApplications: 'pnp-app', precedence: 50 });
+    named('strict-app', { enforcePinLength: true }, { precedence: 50 });
     t.check(passkeyPolicy.selectionFor(admin, 'pnp-app') === 'admins',
             'A2b. raising the application profile\'s number lets the group ' +
             'profile win');
@@ -130,11 +133,20 @@ function inProcess(t) {
     t.check(JSON.stringify(listed) === '["default","admins","strict-app"]',
             'A5. the list: default, then the named by precedence',
             JSON.stringify(listed));
+    const held = passkeyPolicy.reset('admins');
+    t.check(!held.ok && errorCodes.codeOf(held) === 'STS-AUTHN-0538',
+            'A6. a profile a group names is not removed (#1235)',
+            JSON.stringify(held.errors));
+    ldap.setGroupPolicy(group, 'stsPasskeyPolicy', '');
     passkeyPolicy.reset('admins');
     t.check(passkeyPolicy.selectionFor(admin, '') === 'default' &&
             passkeyPolicy.read('admins').name === 'default',
-            'A6. a removed profile selects nobody, and reads as the default');
+            'A6b. once nothing names it, it is removed: it selects nobody, ' +
+            'and reads as the default');
   } finally {
+    ldap.setGroupPolicy(group, 'stsPasskeyPolicy', '');
+    applications.updateApplication('pnp-app',
+      { attribute: 'appPasskeyPolicy', mode: 'set', value: 'default' });
     passkeyPolicy.reset('admins');
     passkeyPolicy.reset('strict-app');
   }
@@ -432,8 +444,11 @@ function childMain() {
     ldap.createGroup('pkn-admins');
     ldap.addGroupMember('pkn-admins', 'pkn-admin');
     const ok = policy({ backupEligibility: 'disallow' }, 'admins',
-                      { selectGroups: 'pkn-admins', precedence: 10 });
-    note(ok.ok, 'B1. the group profile is saved', JSON.stringify(ok.errors));
+                      { precedence: 10 });
+    const grouped = ldap.setGroupPolicy('pkn-admins', 'stsPasskeyPolicy',
+                                        'admins');
+    note(ok.ok && grouped.ok, 'B1. the group profile is saved, and the ' +
+         'group names it', JSON.stringify([ok.errors, grouped.errors]));
     let r = await register('pkn-admin', makeAuthenticator(RPID, ORIGIN,
                                                           'synced'));
     note(r.status === 400 && !redirected(r) &&
@@ -446,17 +461,21 @@ function childMain() {
          'B3. somebody else in the same realm: the default takes it',
          r.status + ' ' + r.text.slice(0, 200));
     policy({ allowUsernameless: true });
-    policy({ allowUsernameless: false }, 'strict-app',
-           { selectApplications: 'pkn-public', precedence: 5 });
+    policy({ allowUsernameless: false }, 'strict-app', { precedence: 5 });
+    applications.updateApplication('pkn-public',
+      { attribute: 'appPasskeyPolicy', mode: 'set', value: 'strict-app' });
     const s = await screenFor();
     note(s.screen.status === 200 && s.view.passkey === false,
          'B4. the application\'s profile decides what its sign-in screen ' +
          'offers: no usernameless passkey, where the default allows one',
          s.screen.status);
+    applications.updateApplication('pkn-public',
+      { attribute: 'appPasskeyPolicy', mode: 'set', value: 'default' });
     passkeyPolicy.reset('strict-app');
     const s2 = await screenFor();
     note(s2.view.passkey === true,
          'B4b. and with it removed, the default\'s is offered again');
+    ldap.setGroupPolicy('pkn-admins', 'stsPasskeyPolicy', '');
     passkeyPolicy.reset('admins');
     passkeyPolicy.reset('default');
     server.close();
