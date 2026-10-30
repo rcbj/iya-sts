@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4859** of them, in **50** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4867** of them, in **50** subsystems.
 
 ## Where a code appears
 
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 39
-* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 13
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 21
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4743,9 +4743,9 @@ Raised from: authzen/.
 
 ## STS-FGA
 
-**Fine-grained authorization.** Application-scoped fine-grained authorization: the policy each application owns in ou=policies (created with it, retired with it), the appFgaEnforced switch, and the refusals that keep such a policy out of the repository root.
+**Fine-grained authorization.** Application-scoped fine-grained authorization: the policy each application owns in ou=policies (created with it, retired with it), the appFgaEnforced switch, the refusals that keep such a policy out of the repository root, and an RFC 9396 authorization detail mapped onto an XACML request through its type's xacml rows and asked of the owning application's policy.
 
-Raised from: xacml/fga_policies.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, and the lifecycle slot in common/applications.js.
+Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, and the lifecycle slot in common/applications.js.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -4762,6 +4762,14 @@ Raised from: xacml/fga_policies.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, 
 | `STS-FGA-0011` | The FGA lifecycle slot offered to common/applications.js was incomplete (it needs both created and deleted) and was not installed. | none — logged at load |
 | `STS-FGA-0012` | An application's appFgaPolicy or appFgaEnforced could not be written to its entry: the directory refused the write. | the caller's refusal |
 | `STS-FGA-0013` | A deleted application's fine-grained policy could not be disabled and marked orphaned; it is left as it was. | none — logged; the delete succeeds |
+| `STS-FGA-0100` | A fine-grained authorization question was asked with a type definition that is not usable (it carries a problem, or names no type), so no request could be built for the detail. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0101` | A fine-grained authorization question was asked about a detail that is not a JSON object of the definition's type. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0102` | A fine-grained authorization question was asked without the trusted facts the adapter must supply: the owning application, or a stage that is one of authorize, token, refresh, exchange, par or access. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0103` | An authorization detail carried a member its type neither maps (xacml) nor lists in notForPolicy, so it could not reach the owning application's policy and was never read as an attribute. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0104` | A member of an authorization detail that a type's xacml row maps was null, or a bag held a null. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0105` | A member of an authorization detail had a JSON type its xacml row's datatype does not take, or a string outside that datatype's lexical space. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0106` | A member of an authorization detail was an array where its xacml row sends a single value, or carried more than 256 values. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0107` | A member of an authorization detail was an object where its xacml row sends values (a nested object reaches a request only through rows for its own members), or was nested too deeply. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
 
 ## STS-ADMIN
 

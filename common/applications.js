@@ -10723,6 +10723,23 @@ function gnapMtlsTrustProblem(attribute, value) {
 //                                  `limits` member must meet; a type that
 //                                  declares none refuses `limits` (phase 5
 //                                  uses it)
+//
+// AND, SINCE #564 (application-scoped fine-grained authorization), the two
+// members that say how a detail of the type reaches the owning application's
+// XACML policy — read by `xacml/fga_map.ts`'s `mappingOf()`, required
+// LAZILY and only for a definition that carries one of them, so a definition
+// without either reads exactly as before:
+//
+//   xacml                          rows of member path -> attributeId,
+//                                  category, dataType, single or bag:
+//                                  AuthZEN's catalogue grammar, its
+//                                  reserved-identifier refusal shared rather
+//                                  than copied (`xacml/xacml_attribute_rows
+//                                  .ts`), so a detail can never forge a
+//                                  trusted attribute
+//   notForPolicy                   member paths deliberately NOT mapped
+//
+// The five common data fields need neither: a built-in row maps each.
 // ---------------------------------------------------------------------------
 /**
  * The RFC 9396 authorization details types this service defines itself.
@@ -10738,7 +10755,8 @@ const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
                                                   'maxLifetimeS', 'acr',
                                                   'derivableFrom',
                                                   'introspectionClaims',
-                                                  'limits'];
+                                                  'limits', 'xacml',
+                                                  'notForPolicy'];
 
 // The three values `interaction` may take (#432 phase 4; enforced by phase
 // 6): `always` asks the resource owner whatever the client is, `never` lets a
@@ -10849,7 +10867,11 @@ function authorizationDetailsTypeOf(value) {
                 required: [], interaction: 'default', consentActions: [],
                 bearer: null, maxLifetimeS: null, acr: '',
                 derivableFrom: [], introspectionClaims: [], limits: null,
-                validateLimits: null };
+                validateLimits: null,
+                // FINE-GRAINED AUTHORIZATION (#564): the type's rows and
+                // the members it deliberately leaves out, and the
+                // definition object itself, which `fga_map.ts` digests.
+                xacml: [], notForPolicy: [], source: null };
   if (!text) {
     out.problem = 'the definition is empty';
     log.debug("Leaving authorizationDetailsTypeOf(). Empty.");
@@ -10954,6 +10976,21 @@ function authorizationDetailsTypeOf(value) {
     log.debug("Leaving authorizationDetailsTypeOf(). A catalogue member.");
     return out;
   }
+  if (definition.xacml !== undefined ||
+      definition.notForPolicy !== undefined) {
+    // Lazily: the mapping is a library over the XACML engine's model, and
+    // this module is required long before the XACML family — and only a
+    // definition that asks for it pays for loading it.
+    const mapping = require('../xacml/fga_map').mappingOf(definition);
+    if (mapping.problem) {
+      out.problem = mapping.problem;
+      log.debug("Leaving authorizationDetailsTypeOf(). The FGA mapping.");
+      return out;
+    }
+    out.xacml = mapping.xacml;
+    out.notForPolicy = mapping.notForPolicy;
+  }
+  out.source = definition;
   log.debug("Leaving authorizationDetailsTypeOf(). " + out.type + ".");
   return out;
 }

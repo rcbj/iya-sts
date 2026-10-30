@@ -2027,6 +2027,18 @@ so must `admin-ui/admin.ts`.
      GNAP tokens only, so an RS counting RAR limits keys its totals on the
      token's `grant_id` the same way.
 
+   **AND SINCE #564 A DEFINITION SAYS HOW ITS DETAILS REACH A POLICY**:
+   `xacml` (rows of member path -> attribute, AuthZEN's catalogue grammar)
+   and `notForPolicy` (members deliberately not mapped), read by
+   `xacml/fga_map.ts`'s `mappingOf()` at every write door (`STS-REG-0112`)
+   and carried on `declaredTypes()`'s entry with the definition object
+   (`source`) the policy's digest is taken of. The five common fields need
+   neither — built-in rows map them. Nothing in RAR's own processing reads
+   the two members: they matter only to fine-grained authorization, which
+   asks the OWNING application's policy about each detail
+   (`xacml/CLAUDE.md` rule 3cy; enforcement at issuance is #564's P3).
+   GNAP reads the same catalogue and ignores them.
+
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5
    says MUST, and spec compliance is above development's convenience. The

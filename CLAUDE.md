@@ -684,6 +684,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cs | `passkey_report.ts` (#942): who holds which passkey algorithm, kept rather than counted | `common/CLAUDE.md` |
 | 3ct | `post_login_policy.ts`, `post_login.ts` (#1096, #1100–#1105): post-login activities, the session held, the PQC migration's upgrade ceremony (#939's, which replaced the portal's Upgrade button); `post_login_activities.ts` (#1111, #1123): a post-login activity started for the realm or the union of groups chosen by search, and its reminder mail; their progress a `/report` source (#1110) | `common/CLAUDE.md`, `authn/CLAUDE.md`, `report/CLAUDE.md` |
 | 3cw | `opaque_access_token.ts` (#501): opaque OAuth access tokens, off by default | `oauth-oidc/CLAUDE.md` |
+| 3cy | `fga_map.ts`, `xacml_attribute_rows.ts` (#564): an RFC 9396 detail as its owning application's XACML request; the row grammar and value rules shared with AuthZEN | `xacml/CLAUDE.md`, `authzen/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |

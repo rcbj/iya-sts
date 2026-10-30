@@ -417,19 +417,24 @@ const SUBSYSTEMS = [
           'both) and its application scope, and the batch endpoint\'s ' +
           'bounds.' },
   // FGA (#564): application-scoped fine-grained authorization. Its own
-  // subsystem rather than XACML's or REG's, because a code here is about the
-  // relationship between an application and the policy it owns — the policy
-  // created with it, the switch that enforces it, the policy retired with it —
-  // and an operator holding one wants xacml/CLAUDE.md's FGA section, not the
-  // engine's or the registry's.
+  // subsystem rather than XACML's, REG's or OAUTH's, because a code here is
+  // about the relationship between an application and the policy it owns —
+  // the policy created with it, the switch that enforces it, the policy
+  // retired with it — and about mapping an RFC 9396 detail onto that
+  // policy's request; the engine's faults keep their XACML codes and RFC
+  // 9396's validation its OAUTH ones. The lifecycle's codes start at 0001,
+  // the mapping's at 0100.
   { id: 'FGA', label: 'Fine-grained authorization',
-    where: 'xacml/fga_policies.ts, xacml/xacml_store.ts, ' +
+    where: 'xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, ' +
       'xacml/xacml_admin.ts, and the lifecycle slot in ' +
       'common/applications.js',
     what: 'Application-scoped fine-grained authorization: the policy each ' +
           'application owns in ou=policies (created with it, retired ' +
-          'with it), the appFgaEnforced switch, and the refusals that keep ' +
-          'such a policy out of the repository root.' },
+          'with it), the appFgaEnforced switch, the refusals that keep ' +
+          'such a policy out of the repository root, and an RFC 9396 ' +
+          'authorization detail mapped onto an XACML request through its ' +
+          'type\'s xacml rows and asked of the owning application\'s ' +
+          'policy.' },
   { id: 'ADMIN', label: 'Admin console',
     where: 'admin-ui/ (except pki_admin.js), admin-core/',
     what: 'The console at /admin, its gate, and the actions behind its ' +
@@ -21316,6 +21321,52 @@ const CODES = [
     summary: 'A deleted application\'s fine-grained policy could not be ' +
       'disabled and marked orphaned; it is left as it was.',
     spec: 'none — logged; the delete succeeds' },
+  { code: 'STS-FGA-0100',
+    summary: 'A fine-grained authorization question was asked with a ' +
+      'type definition that is not usable (it carries a problem, or names ' +
+      'no type), so no request could be built for the detail.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
+  { code: 'STS-FGA-0101',
+    summary: 'A fine-grained authorization question was asked about a ' +
+      'detail that is not a JSON object of the definition\'s type.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
+  { code: 'STS-FGA-0102',
+    summary: 'A fine-grained authorization question was asked without ' +
+      'the trusted facts the adapter must supply: the owning application, ' +
+      'or a stage that is one of authorize, token, refresh, exchange, par ' +
+      'or access.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
+  { code: 'STS-FGA-0103',
+    summary: 'An authorization detail carried a member its type neither ' +
+      'maps (xacml) nor lists in notForPolicy, so it could not reach the ' +
+      'owning application\'s policy and was never read as an attribute.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
+  { code: 'STS-FGA-0104',
+    summary: 'A member of an authorization detail that a type\'s xacml ' +
+      'row maps was null, or a bag held a null.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
+  { code: 'STS-FGA-0105',
+    summary: 'A member of an authorization detail had a JSON type its ' +
+      'xacml row\'s datatype does not take, or a string outside that ' +
+      'datatype\'s lexical space.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
+  { code: 'STS-FGA-0106',
+    summary: 'A member of an authorization detail was an array where its ' +
+      'xacml row sends a single value, or carried more than 256 values.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
+  { code: 'STS-FGA-0107',
+    summary: 'A member of an authorization detail was an object where its ' +
+      'xacml row sends values (a nested object reaches a request only ' +
+      'through rows for its own members), or was nested too deeply.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the token endpoint' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

@@ -43,6 +43,25 @@ pub mod vocabulary {
     pub const AUTHZEN_APPLICATION: &str =
         "urn:sts:xacml:authzen:application";
     pub const AUTHZEN_SUPPLIED: &str = "urn:sts:xacml:authzen:supplied";
+    // Fine-grained authorization's facts (#564): written by the service's
+    // FGA adapter (`xacml/fga_map.ts`) alone; spelt here so a policy
+    // reading them matches either builder, and so an embedded FGA PDP in
+    // the remote PEP — future work — finds them already named.
+    pub const FGA_APPLICATION: &str = "urn:sts:xacml:fga:application";
+    pub const FGA_DETAIL_TYPE: &str = "urn:sts:xacml:fga:detail-type";
+    pub const FGA_DEFINITION_DIGEST: &str =
+        "urn:sts:xacml:fga:definition-digest";
+    pub const FGA_STAGE: &str = "urn:sts:xacml:fga:stage";
+    pub const FGA_SUPPLIED: &str = "urn:sts:xacml:fga:supplied";
+    pub const FGA_DETAIL_ACTION: &str = "urn:sts:xacml:fga:detail:action";
+    pub const FGA_DETAIL_LOCATION: &str =
+        "urn:sts:xacml:fga:detail:location";
+    pub const FGA_DETAIL_DATATYPE: &str =
+        "urn:sts:xacml:fga:detail:datatype";
+    pub const FGA_DETAIL_IDENTIFIER: &str =
+        "urn:sts:xacml:fga:detail:identifier";
+    pub const FGA_DETAIL_PRIVILEGE: &str =
+        "urn:sts:xacml:fga:detail:privilege";
 }
 
 /// The principal types a request may name; anything else is a person.
