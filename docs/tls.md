@@ -405,7 +405,7 @@ remote PEP endpoints, Shared Signals, WS-Trust and LDAP SASL EXTERNAL.
   so it costs the same with a million people as with ten.
 
 **Storing one.** Store the leaf (only the leaf — its issuing authority goes in
-the truststore) on the person's entry:
+the truststore) on the person's or the application's entry:
 
 * the console: **Users →** the person **→ Stored certificates**, paste the
   PEM, **Store**; **Remove** beside a stored one takes it off;
@@ -413,15 +413,23 @@ the truststore) on the person's entry:
   `{"user":"alice","certificate":"-----BEGIN CERTIFICATE-----…"}`,
   `POST /admin-api/users/remove-certificate` `{"user":"alice","sha256":"…"}`,
   and `GET /admin-api/users/certificates?user=alice` to list them;
+* for an application: the console's **Applications →** the application **→
+  Credentials → Stored certificates**, and
+  `POST /admin-api/applications/add-certificate`
+  `{"application":"my-ssf-receiver","certificate":"-----BEGIN CERTIFICATE-----…"}`,
+  `POST /admin-api/applications/remove-certificate`
+  `{"application":"my-ssf-receiver","sha256":"…"}`, with the list under
+  `credentials.stored` of `GET /admin-api/applications?application=…`;
 * LDAP: a modify adding `userCertificate;binary` to the entry, under product
   mode's write authorization ([LDAP](ldap.md)).
 
 The console and the API refuse a certificate that is not one X.509 certificate
-(`STS-ADMIN-0897`), a person with no entry (`STS-ADMIN-0898`), a certificate
-already stored on another entry (`STS-ADMIN-0899`), and removing one the entry
-does not store (`STS-ADMIN-0900`). An application's entry may store one too
-(over LDAP), which is how a Shared Signals receiver or a SCIM client is
-authenticated by an outside certificate. SCIM does not write it: its
+(`STS-ADMIN-0897`), a person with no entry (`STS-ADMIN-0898`), an application
+the registry does not hold (`STS-ADMIN-0906`), a certificate already stored on
+another entry (`STS-ADMIN-0899`), and removing one the entry does not store
+(`STS-ADMIN-0900`). A certificate stored on an application's entry is how a
+Shared Signals receiver or a SCIM client is authenticated by an outside
+certificate. SCIM does not write it: its
 `x509Certificates` member is not published ([SCIM](scim.md)).
 
 **Upgrading a deployment.** Before upgrading a deployment that signs people

@@ -394,7 +394,9 @@ The metadata document lists the schemes it accepts in
   `POST /admin-api/applications/issue-tls-client-certificate`) while the
   application still holds it, or one from an outside certificate authority
   stored byte for byte in `userCertificate` on that application's entry and
-  on no other ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). Either is refused when revoked. The receiver is that application: it owns the streams it creates
+  on no other — stored from the **Credentials** section of its page or with
+  `POST /admin-api/applications/add-certificate`
+  ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). Either is refused when revoked. The receiver is that application: it owns the streams it creates
   under its identifier, exactly as a GNAP token for it would, and reaches no
   other receiver's. It holds what a token for the application would be
   issued: the Shared Signals scopes its `oauthAllowedScope` declares and its

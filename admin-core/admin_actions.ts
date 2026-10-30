@@ -598,6 +598,7 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'revoke-tls-client-certificate',
                              'issue-signing-certificate',
                              'revoke-signing-certificate',
+                             'add-certificate', 'remove-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
@@ -2526,6 +2527,19 @@ class AdminActions {
   //
   // Each says so over Shared Signals, as an issued certificate does: a CAEP
   // credential-change of type x509.
+  //
+  // AN APPLICATION'S HALF (#1227, 2026-10-30). The directory and every door
+  // already took a certificate stored on an APPLICATION's entry as that
+  // application (`ldap_server.js`'s `changeStoredCertificate('application',
+  // …)`, `{ stored: true }`), but the only door that wrote one was the
+  // person's. `POST /admin-api/applications/add-certificate` and
+  // `remove-certificate`, the Stored certificates block of the application
+  // page's Credentials tab, and `credentials.stored` on
+  // `GET /admin-api/applications?application=` are the same acts here, with
+  // the same refusals (0897, 0899, 0900) — an application the registry does
+  // not hold is STS-ADMIN-0906, since 0898 says person — and the CAEP
+  // credential-change goes under the APPLICATION's subject (#221 P5), which
+  // `accountSignals` reads off `application` and mails nobody about.
   // ---------------------------------------------------------------------------
   /**
    * The certificates stored on a person's entry in `userCertificate`, each
@@ -2543,24 +2557,61 @@ class AdminActions {
       return this.refused('STS-ADMIN-0518', { ok: false,
         errors: ['Name the person in `user`.'] });
     }
+    log.debug("Leaving AdminActions.storedCertificatesOf().");
+    return this.storedCertificatesFor('person', name);
+  }
+
+  /**
+   * The certificates stored on an application's entry in `userCertificate`
+   * (#1227), in `storedCertificatesOf()`'s shape with `application` for
+   * `user`.
+   *
+   * @param identifier - the application, as the registry holds it
+   * @returns `{ ok: true, application, dn, certificates }`, or a refusal
+   */
+  applicationStoredCertificatesOf(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.applicationStoredCertificatesOf().");
+    const name = String(identifier || '').trim();
+    if (!name) {
+      log.debug("Leaving AdminActions.applicationStoredCertificatesOf(). " +
+                "Nothing named.");
+      return this.refused('STS-ADMIN-0529', { ok: false,
+        errors: ['Name the application in `application`.'] });
+    }
+    log.debug("Leaving AdminActions.applicationStoredCertificatesOf().");
+    return this.storedCertificatesFor('application', name);
+  }
+
+  // The two lists above, read off the entry of either kind.
+  private storedCertificatesFor(kind, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.storedCertificatesFor(). " + kind);
+    const application = kind === 'application';
     const held = require('../ldap/ldap_server')
-      .storedCertificatesOf('person', name);
+      .storedCertificatesOf(kind, name);
     if (!held) {
-      log.debug("Leaving AdminActions.storedCertificatesOf(). No entry.");
-      return this.refused('STS-ADMIN-0898', { ok: false,
-        errors: ['There is no person called "' + name + '" here.'] });
+      log.debug("Leaving AdminActions.storedCertificatesFor(). No entry.");
+      return this.refused(application ? 'STS-ADMIN-0906' : 'STS-ADMIN-0898',
+        { ok: false,
+          errors: ['There is no ' + (application ? 'application' : 'person') +
+                   ' called "' + name + '" here.'] });
     }
     const self = this;
     const rows = held.certificates.map(function (one) {
       return self.describeStoredCertificate(one.der, one.sha256);
     });
-    log.debug("Leaving AdminActions.storedCertificatesOf(). " + rows.length +
-              ".");
-    return { ok: true, user: name, dn: held.dn, certificates: rows,
-             rule: 'A certificate from an outside certificate authority ' +
-                   'signs this person in only while it is stored here, ' +
-                   'byte for byte, and on no other entry of the realm. A ' +
-                   'renewed certificate is stored again.' };
+    log.debug("Leaving AdminActions.storedCertificatesFor(). " +
+              rows.length + ".");
+    return Object.assign(application ? { ok: true, application: name }
+                                     : { ok: true, user: name },
+      { dn: held.dn, certificates: rows,
+        rule: 'A certificate from an outside certificate authority ' +
+              (application ? 'authenticates this application'
+                           : 'signs this person in') +
+              ' only while it is stored here, byte for byte, and on no ' +
+              'other entry of the realm. A renewed certificate is stored ' +
+              'again.' });
   }
 
   // One stored certificate, described from its DER.
@@ -2619,21 +2670,33 @@ class AdminActions {
     return der;
   }
 
-  private storedCertificateAction(action, body, ctx) {
+  // Stores a certificate on a person's entry, or on an application's
+  // (#1227) when `kind` is 'application' and `id` its identifier as the
+  // registry holds it; a person is read off `body.user`.
+  private storedCertificateAction(action, body, ctx, kind?, id?) {
     const { log, auditLog, accountSignals } = this.deps;
     log.debug("Entering AdminActions.storedCertificateAction(). " + action);
-    const who = String(body.user || body.username || '').trim();
+    const application = kind === 'application';
+    const noun = application ? 'application' : 'person';
+    const who = application ? String(id || '').trim()
+                            : String(body.user || body.username || '').trim();
     if (!who) {
       log.debug("Leaving AdminActions.storedCertificateAction(). Nobody.");
-      return this.refused('STS-ADMIN-0518', { ok: false,
-        errors: ['Name the person in `user`.'] });
+      return application
+        ? this.refused('STS-ADMIN-0529', { ok: false,
+            errors: ['Name the application in `application`.'] })
+        : this.refused('STS-ADMIN-0518', { ok: false,
+            errors: ['Name the person in `user`.'] });
     }
+    // The refusal for an entry that is not there, by kind: 0898 names a
+    // person, so an application has a code of its own (#1227).
+    const noEntry = application ? 'STS-ADMIN-0906' : 'STS-ADMIN-0898';
     const ldap = require('../ldap/ldap_server');
-    const before = ldap.storedCertificatesOf('person', who);
+    const before = ldap.storedCertificatesOf(noun, who);
     if (!before) {
       log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
-      return this.refused('STS-ADMIN-0898', { ok: false,
-        errors: ['There is no person called "' + who + '" here, and ' +
+      return this.refused(noEntry, { ok: false,
+        errors: ['There is no ' + noun + ' called "' + who + '" here, and ' +
                  'storing a certificate creates nobody.'] });
     }
     let der: any = null;
@@ -2677,18 +2740,22 @@ class AdminActions {
                   "held.");
         return this.refused('STS-ADMIN-0900', { ok: false,
           errors: ['The entry of "' + who + '" stores no certificate with ' +
-                   'the SHA-256 "' + sha256 + '". GET ' +
-                   '/admin-api/users/certificates lists what it stores.'] });
+                   'the SHA-256 "' + sha256 + '". ' + (application
+                     ? 'GET /admin-api/applications?application= lists ' +
+                       'what it stores, under credentials.stored.'
+                     : 'GET /admin-api/users/certificates lists what it ' +
+                       'stores.')] });
       }
     }
-    const done = ldap.changeStoredCertificate('person', who,
+    const done = ldap.changeStoredCertificate(noun, who,
       action === 'add-certificate' ? { add: der } : { remove: sha256 });
     if (!done || !done.ok) {
       log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
-      return this.refused('STS-ADMIN-0898', { ok: false,
-        errors: ['There is no person called "' + who + '" here.'] });
+      return this.refused(noEntry, { ok: false,
+        errors: ['There is no ' + noun + ' called "' + who + '" here.'] });
     }
     const verb = action === 'add-certificate' ? 'stored' : 'removed';
+    const label = application ? 'the application ' + who : who;
     auditLog.record({
       category: 'authentication',
       action: action === 'add-certificate' ? 'certificate.stored'
@@ -2696,24 +2763,36 @@ class AdminActions {
       actor: ctx.actor, target: who, outcome: 'success',
       summary: 'a certificate (SHA-256 ' + sha256 + ') was ' + verb +
                (action === 'add-certificate' ? ' on ' : ' from ') +
-               'the entry of ' + who,
-      detail: { username: who, dn: done.dn, sha256: sha256, via: ctx.via,
-                changed: done.changed }
+               'the entry of ' + label,
+      detail: Object.assign(application ? { application: who }
+                                        : { username: who },
+        { dn: done.dn, sha256: sha256, via: ctx.via,
+          changed: done.changed })
     });
     if (done.changed) {
-      accountSignals.certificateChanged({
-        username: who, initiatingEntity: 'admin', via: ctx.via,
-        pem: '-----BEGIN CERTIFICATE-----\n' +
-          Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n')
-            .replace(/\n$/, '') + '\n-----END CERTIFICATE-----\n',
-        changeType: action === 'add-certificate' ? 'create' : 'delete',
-        friendlyName: 'stored certificate',
-        reasonAdmin: 'A certificate was ' + verb + ' for ' + who + '.',
-        reasonUser: action === 'add-certificate'
-          ? 'A certificate was stored on your account; it signs you in.'
-          : 'A certificate stored on your account was removed.' });
+      // UNDER THE APPLICATION'S OWN SUBJECT for an application (#221 P5):
+      // `application` in place of `username` is what makes the event about
+      // it, and what tells `accountSignals` there is nobody to mail.
+      accountSignals.certificateChanged(Object.assign(
+        application ? { application: who } : { username: who },
+        { initiatingEntity: 'admin', via: ctx.via,
+          pem: '-----BEGIN CERTIFICATE-----\n' +
+            Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n')
+              .replace(/\n$/, '') + '\n-----END CERTIFICATE-----\n',
+          changeType: action === 'add-certificate' ? 'create' : 'delete',
+          friendlyName: 'stored certificate',
+          reasonAdmin: 'A certificate was ' + verb + ' for ' + label + '.',
+          reasonUser: application
+            ? (action === 'add-certificate'
+              ? 'A certificate was stored on this application; it ' +
+                'authenticates the application.'
+              : 'A certificate stored on this application was removed.')
+            : (action === 'add-certificate'
+              ? 'A certificate was stored on your account; it signs you in.'
+              : 'A certificate stored on your account was removed.') }));
     }
-    const after = this.storedCertificatesOf(who);
+    const after = application ? this.applicationStoredCertificatesOf(who)
+                              : this.storedCertificatesOf(who);
     log.debug("Leaving AdminActions.storedCertificateAction(). " + verb +
               ".");
     return Object.assign({}, after, {
@@ -6440,6 +6519,7 @@ class AdminActions {
                       'revoke-tls-client-certificate',
                       'issue-signing-certificate',
                       'revoke-signing-certificate',
+                      'add-certificate', 'remove-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
@@ -7580,6 +7660,29 @@ class AdminActions {
                 "message-signing certificate.");
       return this.signingCertificateAction(action, 'application',
         String(target.identifier), body);
+    }
+
+    // A STORED CERTIFICATE ON THE APPLICATION'S ENTRY (#1227): the person's
+    // `add-certificate` and `remove-certificate` (#1061), on the entry a
+    // certificate from an outside authority is to authenticate as. The
+    // registry is asked first, so an identifier it does not hold is
+    // STS-ADMIN-0906 and the entry is never created.
+    if (action === 'add-certificate' || action === 'remove-certificate') {
+      const target = applications.get(identifier);
+      if (!target) {
+        log.debug("Leaving AdminActions.applicationsAction(). No such " +
+                  "application.");
+        return this.refused('STS-ADMIN-0906', { ok: false, errors: ['There ' +
+            'is no application called "' + identifier + '" here, and ' +
+            'storing a certificate creates nothing.'] });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). A stored " +
+                "certificate.");
+      const asked = context || {};
+      return this.storedCertificateAction(action, body,
+        { actor: String(asked.actor || body.actor || ''),
+          via: String(asked.via || 'console') },
+        'application', String(target.identifier));
     }
 
     if (action === 'revoke-registration') {
@@ -11650,6 +11753,8 @@ export = {
   USERS_ACTIONS: USERS_ACTIONS,
   usersAction: slot.forward('usersAction'),
   storedCertificatesOf: slot.forward('storedCertificatesOf'),
+  applicationStoredCertificatesOf:
+    slot.forward('applicationStoredCertificatesOf'),
   signingCertificatesOf: slot.forward('signingCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,

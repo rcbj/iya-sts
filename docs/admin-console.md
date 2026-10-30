@@ -590,7 +590,10 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   (`STS-ADMIN-0899`), as is anything that is not one X.509 certificate
   (`STS-ADMIN-0897`). `POST /admin-api/users/add-certificate` and
   `remove-certificate`, and `GET /admin-api/users/certificates`, are the same
-  acts; each sends a CAEP `credential-change` of type `x509`.
+  acts; each sends a CAEP `credential-change` of type `x509`. An
+  application's are the **Stored certificates** block of the **Credentials**
+  section of its page, through `/admin-api/applications/add-certificate` and
+  `remove-certificate` ([Applications](applications.md#the-console-page-and-the-api)).
 * **Message-signing certificates** lists the certificates the realm's
   Message Signing Issuing CA issued the person — what they sign a WS-Trust
   request with — with **Revoke** per valid row, and a form (a label, the key

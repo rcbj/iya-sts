@@ -23332,25 +23332,29 @@ const CODES = [
       'the directory; the refusal carries the directory\'s own code.',
     spec: 'HTTP 400' },
   { code: 'STS-ADMIN-0897',
-    summary: 'Storing a certificate on a person\'s entry was refused: ' +
-      'what was ' +
-      'given is not one PEM or base64 DER X.509 certificate (#1061).',
-    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+    summary: 'Storing a certificate on a person\'s or an application\'s ' +
+      'entry was refused: what was given is not one PEM or base64 DER ' +
+      'X.509 certificate (#1061, #1227).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s or the ' +
+      'application\'s page' },
   { code: 'STS-ADMIN-0898',
     summary: 'Storing or removing a certificate was refused: the person ' +
       'named ' +
       'has no entry in this realm, and none is created (#1061).',
     spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
   { code: 'STS-ADMIN-0899',
-    summary: 'Storing a certificate on a person\'s entry was refused: ' +
-      'the same ' +
-      'certificate is already stored on another entry of the realm, and ' +
-      'a certificate stored on two entries names nobody (#1061).',
-    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+    summary: 'Storing a certificate on a person\'s or an application\'s ' +
+      'entry was refused: the same certificate is already stored on ' +
+      'another entry of the realm, and a certificate stored on two ' +
+      'entries names nobody (#1061, #1227).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s or the ' +
+      'application\'s page' },
   { code: 'STS-ADMIN-0900',
-    summary: 'Removing a stored certificate was refused: the person\'s entry ' +
-      'stores no certificate with that SHA-256 (#1061).',
-    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+    summary: 'Removing a stored certificate was refused: the person\'s ' +
+      'or the application\'s entry stores no certificate with that ' +
+      'SHA-256 (#1061, #1227).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s or the ' +
+      'application\'s page' },
   { code: 'STS-ADMIN-0901',
     summary: 'Issuing a person or an application a message-signing ' +
       'certificate was refused with no more specific code (the key ' +
@@ -23372,6 +23376,11 @@ const CODES = [
     summary: 'A message-signing certificate action named a person with no ' +
       'entry in this realm, and none is created (#521).',
     spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0906',
+    summary: 'Storing, removing or listing a certificate on an ' +
+      'application\'s entry was refused: the registry holds no ' +
+      'application by that identifier, and none is created (#1227).',
+    spec: 'HTTP 400 (API) or a refusal on the application\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
