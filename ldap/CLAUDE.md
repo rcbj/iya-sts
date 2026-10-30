@@ -4135,8 +4135,11 @@ policy kind follows are `common/policy_selection.ts`'s (3cx).
   schema row was owed; an `ldapmodify` can still write anything, and the
   kind decides what a dangling name means.
 * **A person names theirs on the person editor's Policies tab**: an
-  attribute a kind declared with `declareReference('person', ...)` is drawn
-  there as one value from `default` and the realm's named policies, and
+  attribute a kind declared with `declareReference('person', ...)` joins the
+  editor's universe by the declaration alone (the directory is schemaless,
+  and the schema's and the catalogue's lists do not hold a kind's own
+  attribute), and is drawn there as one value from `default` and the
+  realm's named policies, and
   `update()` refuses another (STS-LDAP-0106). The create form leaves it
   out: a create does not pass through that check. The names chosen are
   `stsServiceAccountPolicy` and `stsAttributePolicy` (#1240, #1241).

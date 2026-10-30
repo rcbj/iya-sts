@@ -633,6 +633,14 @@ class PersonEditor {
                'custom attribute (' + row.syntax + ')',
                { custom: { syntax: row.syntax, multi: !!row.multi } });
     });
+    // THE POLICY REFERENCES THE KINDS DECLARED (#1235), last: a kind's
+    // person attribute (`stsServiceAccountPolicy`) is in neither list above,
+    // and the directory is schemaless, so the declaration is what puts it on
+    // the Policies tab. One the lists already hold keeps their row.
+    PolicySelection.referencesOn('person').forEach(function (row) {
+      consider(row.attribute, 'The ' + row.noun + ' this person names',
+               'policy reference (#1235)', {});
+    });
     log.debug("Leaving PersonEditor.universe(). " + editable.length +
               " editable, " + withheld.length + " withheld.");
     return { editable: editable, withheld: withheld };

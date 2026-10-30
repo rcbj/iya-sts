@@ -279,6 +279,25 @@ async function doors(t) {
             JSON.stringify(row.choices) === '["default","strict"]',
             'D4. a declared person reference is drawn on the Policies tab, ' +
             'one value from its choices', JSON.stringify(row));
+    // An attribute in neither the schema's list nor the catalogue — a
+    // kind's own, as `stsServiceAccountPolicy` will be — is put on the tab
+    // by its declaration alone.
+    PolicySelection.declareReference('person', 'stsTestOnlyPolicy',
+      'test policy', function () {
+        return ['loose'];
+      });
+    const own = personEditor.editorFor(member).attributes
+      .filter(function (one) {
+        return one.name === 'stsTestOnlyPolicy';
+      })[0];
+    PolicySelection.withdrawReference('person', 'stsTestOnlyPolicy');
+    t.check(!!own && own.group === 'policies' &&
+            JSON.stringify(own.choices) === '["default","loose"]' &&
+            !personEditor.editorFor(member).attributes.some(function (one) {
+              return one.name === 'stsTestOnlyPolicy';
+            }),
+            'D4b. a declared attribute the schema does not list is drawn ' +
+            'there too, and gone once withdrawn', JSON.stringify(own));
     const set = personEditor.update(member, { attribute: 'employeeType',
                                               mode: 'set', value: 'strict' });
     const bad = personEditor.update(member, { attribute: 'employeeType',
