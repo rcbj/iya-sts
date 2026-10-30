@@ -59,6 +59,18 @@
     "en": "c5373b52e1fb5ed4",
     "text": "動作搜尋"
   },
+  "endpoints.route./access/v1/access-requests.name": {
+    "en": "4b0c4feb0af59f04",
+    "text": "提交存取請求"
+  },
+  "endpoints.route./access/v1/access-requests/:id.name": {
+    "en": "c8bcbb33d07cfb8f",
+    "text": "存取請求的工作狀態"
+  },
+  "endpoints.route./access/v1/access-requests/:id/cancel.name": {
+    "en": "90087f975ac5dec9",
+    "text": "取消存取請求"
+  },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",
     "text": "PDP 中繼資料"

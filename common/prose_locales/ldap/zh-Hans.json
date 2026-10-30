@@ -715,6 +715,10 @@
     "en": "6a97533f3574f71e",
     "text": "AuthZEN 应用范围（#563）：此客户端使用自己的 client_credentials 令牌调用 /access/v1 时，可以在 context.application 中指明的应用——每个值一个标识符。客户端自己的标识符始终在范围内。由管理员设置，绝不由调用方设置。"
   },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "AuthZEN 访问请求回调（#1180）：此客户端作为 AuthZEN PEP 可指定为访问请求 callback.endpoint 的 https URL——每个值一个，须完全匹配。指定其他任何 URL 的请求都会被拒绝；本服务绝不会仅凭请求中的 URL 就向其发起回调。由管理员设置，绝不由调用方设置。"
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 第 3 节：此应用作为资源服务器，对访问令牌背后的身份验证所要求的 acr 值——以空格分隔，最优先的在前。acr 一个都不满足的令牌会收到 401 insufficient_user_authentication 质询，并以这些值作为 acr_values。级别 0 < 1 < mfa 是有序的；hwk、phr 和 phrh 由密码加安全密钥满足；任何其他值只能由完全相同的 acr 满足。为空表示不作要求。"

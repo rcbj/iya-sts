@@ -6995,6 +6995,62 @@
     "en": "b02d024ed71640ad",
     "text": "Si está activado, una decisión lleva un context con la decisión XACML, el motivo, cualquier advice y las obligations que convirtieron un Permit en false. Desactivado de forma predeterminada: un motivo le dice a un llamante algo sobre la política, y decision por sí sola es la respuesta en cualquier caso."
   },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "Solicitudes de acceso y aprobaciones"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "El perfil AuthZEN Access Request and Approval (un borrador), con su complemento de callback. Cuando está activado, un Deny cuya respuesta XACML lleva el advice urn:sts:xacml:advice:access-request responde false con context.access_request; un PEP lo envía a POST /access/v1/access-requests, un aprobador nombrado por el advice lo decide en el portal o la consola, y una aprobación presentada en la siguiente evaluación llega a la política raíz como hechos de confianza. Los metadatos nombran el endpoint y la capacidad. Una denegación sin el advice nunca se puede solicitar. Desactivado, las rutas responden 501 y ninguna denegación se puede solicitar."
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "Durante cuánto tiempo se puede enviar una denegación solicitable (segundos)"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "El expires_at de una denegación solicitable y la vida útil de su binding_token: un envío posterior se rechaza con expired_denial y el PEP vuelve a evaluar."
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "Cuánto espera una solicitud de acceso a un aprobador (segundos)"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "Una solicitud de acceso pendiente que pase de este tiempo vence, por el trabajo programado authzen.access-requests y en cada lectura. Una terminada se conserva un día más para que el PEP la lea."
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "Lo máximo que dura una aprobación (segundos)"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "El techo del approved_until de una aprobación. El advice de la política (max-approval-seconds) y el requested_until del solicitante pueden acortarla; ninguno la alarga."
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "Cuánto dura el acceso de emergencia (segundos)"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "Una solicitud de acceso de emergencia — requested_access.emergency, donde el advice de la política lo permite, con un context.business_justification — se aprueba de inmediato por este tiempo como máximo, y se envía un correo a sus aprobadores para que la revisen."
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "Retry-After en una solicitud de acceso pendiente (segundos)"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "El Retry-After que responde el endpoint de estado de la tarea mientras una solicitud está pendiente; un PEP espera al menos este tiempo antes de volver a preguntar."
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "Solicitudes de acceso pendientes que retiene un dominio"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "El máximo de solicitudes de acceso que un dominio retiene pendientes; superado, un envío se rechaza con 503 hasta que algunas se decidan o venzan."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "SSF habilitado"

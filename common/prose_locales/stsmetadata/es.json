@@ -96,8 +96,16 @@
     "text": "full para el conjunto de funcionalidades obligatorias: el lenguaje de políticas, los siete valores de decisión incluidos los tres Indeterminate extendidos, la coincidencia de objetivos, las condiciones, las variables, los doce algoritmos de combinación, las obligaciones y los consejos, las referencias a políticas y la biblioteca estándar de funciones sobre los diecisiete tipos de datos. Verificado con la suite de conformidad de OASIS — se superan 454 de los 455 casos obligatorios, y la única excepción se registra con su argumento en xacml/conformance/MANIFEST.js. NO cubierto: AttributeSelector y las funciones XPath (una política que use una es Indeterminate en lugar de quedar vacía en silencio), los perfiles Multiple Decision y Hierarchical Resource, y la delegación administrativa."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "587fa315b80f6a67",
-    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en sus dos formas, signed_metadata incluido, y el borrador del Obligations Profile para un PEP que declara los tipos, y las tres Search APIs (sección 8) sobre las propias personas, aplicaciones, API, relaciones de delegación y acciones de política de este servicio, paginadas y no transitivas. Falta: las obligaciones por resultado en una búsqueda, y los perfiles Access Request and Approval y de OAuth, aún borradores."
+    "en": "73b5afdb5c895b9d",
+    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en ambas formas, signed_metadata incluido, y el borrador Obligations Profile para un PEP que declara los tipos, y las tres Search APIs (sección 8) sobre las personas, aplicaciones, API, relaciones de delegación y acciones de política de este servicio, paginadas y no transitivas. Falta: obligaciones por resultado en una búsqueda, y el perfil OAuth, todavía un borrador."
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial: la denegación solicitable (context.access_request, evaluation_id, evaluated_at, reason) donde la política del dominio marca un Deny con el advice access-request, vinculada por valor con un binding_token que este dominio firma (los claims en línea); el envío con Idempotency-Key, 201 o 202 y un Task Handle; el endpoint de estado de la tarea con Retry-After; la cancelación por POST o DELETE; los seis estados; el modo de finalización reevaluate, approval.id resuelto en el estado de confianza y la aprobación llegando a la política como hechos de confianza; next_action y las cinco razones; cada tipo de problema; el miembro de metadatos, jwks_uri y la capacidad. Falta: evaluation_id como vinculación por referencia, approval.state, la forma de vinculación con hash, las formas legibles por máquina (form_url, request_schema_url), display, y los complementos BULK, ACTOR y CATALOG."
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial: el callback de un envío (endpoint, state, events), con el endpoint limitado a las URL que un administrador registró para el PEP solicitante, un callback de solo notificación para cada evento terminal solicitado, autenticado por un JWT corto que este dominio firma, bajo la política de salida. Falta: el evento partial (BULK) y las suscripciones a eventos a nivel de despliegue; una entrega fallida no se reintenta."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -787,9 +795,21 @@
     "en": "b5c83db3aa38640f",
     "text": "Haga POST de la solicitud de la sección 8; obtenga results y una página. Responde las acciones que un sujeto puede realizar sobre un recurso: los nombres con los que la política raíz compara action-id, y los permisos propios de una aplicación o API. Cada candidato lo decide la política raíz del dominio exactamente como una evaluación, y solo los permitidos son resultados; paginado por page.next_token, acotado por authzen.searchMaxCandidates, y marcado como incompleto más allá de ese límite."
   },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "POST con el sujeto, el recurso, la acción y el contexto de una evaluación denegada junto con la denegación recibida (su binding_token y su expires_at, devueltos sin cambios); se obtiene 202 y un Task Handle, o 201 con el resultado cuando se decide de inmediato (acceso de emergencia que la política permite). Solo un Deny que la política del dominio marcó con el advice urn:sts:xacml:advice:access-request es solicitable. La misma puerta de llamadores y AUTHZEN_PEPS que una evaluación; Idempotency-Key respetado por llamador; un callback solo a una URL registrada para el llamador. Todo rechazo es problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "GET de la tarea: su estado (pending, approved, denied, expired, cancelled, failed), Retry-After mientras está pendiente y, una vez aprobada, el resultado reevaluate con la aprobación que el PEP lleva en su siguiente evaluación como context.approval. Una tarea solo es visible para el llamador que la envió; para cualquier otro es unknown_task."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "POST, o DELETE, para cancelar una tarea pendiente del llamador; una terminada responde 409 invalid_task_state."
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "3b9a539920fa8ef3",
-    "text": "El documento de la sección 9: policy_decision_point (la base de este dominio, que coincide con la URL desde la que se obtiene) y solo los endpoints que responden aquí (el lote y las tres búsquedas mientras cada uno está activado), sin capabilities, supported_obligations, y signed_metadata, un JWT con los mismos miembros con iss el identificador del PDP, verificable con el JWKS del dominio (authzen.signedMetadata). Público; responde 501 mientras la API está desactivada."
+    "en": "eb2dea870b873bc2",
+    "text": "El documento de la sección 9: policy_decision_point (la base de este dominio, que coincide con la URL bajo la que se obtiene) y solo los endpoints que responden aquí (el lote y las tres búsquedas mientras cada uno esté activado, y access_request_endpoint con jwks_uri y la capacidad access-request mientras authzen.accessRequests esté activado), supported_obligations, y signed_metadata, un JWT con los mismos miembros con iss el identificador del PDP, verificable con el JWKS del dominio (authzen.signedMetadata). Público; responde 501 mientras la API está desactivada."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",
@@ -1920,12 +1940,12 @@
     "text": "NO ESTÁNDAR (#221). add-destination, update-destination, remove-destination y test-push (una versión canario escrita en un secreto de prueba): los cuatro actos de la consola, cada uno auditado. La credencial de escritura se recibe y nunca se devuelve."
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
-    "en": "13078c3a299db762",
-    "text": "NO ESPECIFICADO (#563). Lo que muestra la pestaña AuthZEN de /admin/xacml: si /access/v1 responde en el dominio, cómo se autentican sus llamantes, la configuración de AuthZEN, el catálogo de atributos en sts-authzen-api y los miembros de roles.authzenPepGroup con las aplicaciones sobre las que puede preguntar cada uno."
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563). Lo que dibuja la pestaña AuthZEN de /admin/xacml: si /access/v1 responde en el dominio, cómo se autentican sus llamadores, los ajustes de AuthZEN, el catálogo de atributos en sts-authzen-api, los miembros de roles.authzenPepGroup con las aplicaciones sobre las que cada uno puede preguntar y sus URL de callback registradas, y las solicitudes de acceso del dominio (#1180)."
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
-    "en": "7efc1c9a3697b22a",
-    "text": "NO ESPECIFICADO (#563). set-attribute, remove-attribute y set-scope: las tres acciones de la pestaña, cada una auditada. Una fila del catálogo sobre un identificador reservado se rechaza aquí como en cualquier escritura."
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563). set-attribute, remove-attribute, set-scope y set-callbacks, y los cuatro actos sobre una solicitud de acceso (#1180) — approve, deny, revoke y cancel, los tres primeros consultados a la política de control de acceso como los consulta el portal: los actos de la pestaña, cada uno auditado. Una fila de catálogo hacia un identificador reservado se rechaza aquí como en cada escritura."
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",

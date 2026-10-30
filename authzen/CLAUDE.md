@@ -23,9 +23,9 @@ rcbj's design is the comment of 2026-10-29 on #563; the phases are #1160
 (metadata), #1164 (batch), #1165 (protocol tests). **The remote PEP
 container answers AuthZEN too since #1179**, as an edge PDP — *The edge PDP*
 below. Search (#1175), the Obligations Profile (#1177), Access Request and
-Approval (#1180) and the token-exchange binding (#1181, direction A — *The
-token-exchange binding* below) are tickets of their own, and none is
-advertised until it is implemented.
+Approval (#1180, *Access requests* below) and the token-exchange binding
+(#1181, direction A — *The token-exchange binding* below) are tickets of
+their own, and each is advertised only while it is on.
 
 | File | What it is |
 |---|---|
@@ -34,6 +34,7 @@ advertised until it is implemented.
 | `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application — and, asked ahead of any request, the callers a remote PEP's edge PDP admits (`edgeCallers()`, #1189). |
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_exchange.ts` | The OAuth 2.0 Token Exchange Binding, direction A (#1181): which tuples are its gates and scopes, the FIXED conversion rules, and each tuple's answer from the questions a local RFC 8693 exchange asks. Built by `authzen.ts`'s `defaultDeps()` beside the caller and the search. |
+| `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial and its `binding_token`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its three routes. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
 `tests/authzen_map.js` holds the two pure modules in process;
@@ -473,6 +474,67 @@ revoked is left out, so revoking one this realm issued reaches the edge on its
 poll; an outside authority's CRL or OCSP answer is never consulted for the
 list, and the edge consults none either.
 
+## The Access Request and Approval Profile (#1180)
+
+rcbj's decisions of 2026-10-30 on #1180 are the design; `authzen_access_request.ts`'s
+header argues each. What a maintainer needs quickly:
+
+* **A denial is requestable only by the POLICY**: the advice
+  `urn:sts:xacml:advice:access-request` on a Deny (assignments under
+  `ADVICE_PREFIX`: `approver-role`, `approver-group`, `approver-owners`,
+  `max-approval-seconds`, `emergency`, `context-member`, `template`,
+  `reason`). No per-application switch; `authzen.accessRequests` turns the
+  whole profile off. A NotApplicable carries no advice in XACML, so in
+  practice only a Deny is requestable.
+* **The denial is bound BY VALUE, the approval BY REFERENCE.** The
+  `binding_token` is signed with `oauth2.ts`'s `signPublishedDocument()`
+  (use case `oauth-signed-metadata`, the metadata's signer) over the tuple
+  whole less `subject.properties.act`, the advice's context members, the
+  caller, the application and the advice's terms; nothing is stored per
+  denial, so `evaluation_id` alone is refused (`0073`). The approval is a
+  store row, looked up by a digest of `approval.id`, so revocation is a
+  write. `approval.state` is never issued and never read.
+* **AN APPROVAL NEVER PERMITS BY ITSELF.** `verify()` (same caller, same
+  application, exact tuple, not revoked, inside `approved_until`) adds
+  `urn:sts:xacml:authzen:approval-id`, `:approved-until`, `:approver` to the
+  request through `xacml_request.js`'s `authzen()`; the root policy decides.
+  `approval` is reserved in the catalogue's `RESERVED_CONTEXT` so no row can
+  forge those facts. The Rust edge PDP does not reserve it (nor
+  `supported_obligations`, a drift predating this); its catalogue arrives
+  through this `parse()`, so no such row can reach it either.
+* **Who may decide is the access-control policy's**: resource
+  `authzen-access-request`, action `approve-access-request`, the facts in
+  `access_gate.ts`'s `accessRequestObject`. The built-in document's FOURTH
+  rule (`xacml_templates.ts`, `permitAccessRequestApproval`,
+  `permitAdministratorApproval`, `forbidSelfApproval`) permits the advice's
+  approvers and an ADMIN_WRITE caller of `/admin-api`, never one of whose
+  names is the subject or the requester; the FIRST rule now excludes that
+  resource, or a role it required would bypass the self-approval rule.
+  `mayDecide()` needs a real Permit: the gate's allow-when-nothing-decides is
+  right for a console and wrong for an approval.
+* **Eligibility is computed, the decision is not**: `eligible()` (role,
+  group, application owners) is routing — who is mailed, whose
+  `/portal/access-requests` lists it — and a fact the rule reads.
+* **The callback** goes only to a URL in `appAuthzenCallbackUri` /
+  `stsAuthzenCallbackUri` (the tab's `set-callbacks`; `ldap_server.js`'s
+  AuthZEN `write` hook now takes both `sts*` names), through
+  `federation_http.deliverJson()` under the SENDABLE attribute
+  `authzenCallbackEndpoint`, once, with a 300-second JWT as the Bearer. Not
+  retried: the task status endpoint is the record (`federation/CLAUDE.md`,
+  the twentieth row).
+* **The store is cell-tier** (`authzen.accessRequests`,
+  `authzen.accessRequestIndex`), and `/access/v1` is placed `local`: under
+  cells a PEP must poll the cell it submitted to.
+* **Expiry**: read-time (a pending task past `expiresAt` is finished as
+  expired by `task()`) and the `authzen.access-requests` cluster job, realm
+  scope, every minute, which also removes rows past `keepUntil` (a day after
+  finishing, or the approval's end).
+* Not built: `evaluation_id` binding by reference, `approval.state`, the
+  hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
+  CATALOG, a `failed` transition, and revocation from the portal (the console
+  revokes). `tests/authzen_access_request.js` holds it in process and
+  `tests/protocol/sts_authzen.js` section 9 over HTTP.
+
 ## Error codes
 
 `STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
@@ -482,7 +544,10 @@ admission and scope, 0028–0029 the result, 0030–0034 the tab's acts, 0035
 the metadata path, 0036–0039 the batch, 0060 a value left out of the
 catalogue a remote PEP pulled (#1179), 0061–0062 a caller list a remote PEP
 pulled that was cut or held a certificate that could not be read (#1189),
-0100–0115 the token-exchange binding (#1181): 0100–0102 a tuple's shape,
-0103–0107 a fixed-rule `false`, 0108–0110 the exchange question's answer,
-0111–0113 a scope's, 0114 an expired subject token, 0115 the no-broadening
-check.
+0070–0096 the Access Request and Approval Profile (#1180): 0070–0083 and 0096
+the endpoints, 0084–0086 a presented approval not used, 0087 an unsigned
+binding, 0088–0090 and 0094–0095 the approvers' and the tab's acts, 0091–0093
+the callback, the job and the mail; 0100–0115 the token-exchange binding
+(#1181): 0100–0102 a tuple's shape, 0103–0107 a fixed-rule `false`, 0108–0110
+the exchange question's answer, 0111–0113 a scope's, 0114 an expired subject
+token, 0115 the no-broadening check.

@@ -715,6 +715,10 @@
     "en": "6a97533f3574f71e",
     "text": "ALCANCE DE APLICACIONES DE AUTHZEN (#563): las aplicaciones que este cliente, al llamar a /access/v1 con su propio token de client_credentials, puede nombrar en context.application — un identificador por valor. El identificador propio del cliente siempre está en el alcance. Lo establece un administrador, nunca el llamante."
   },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "CALLBACK DE SOLICITUD DE ACCESO AUTHZEN (#1180): una URL https que este cliente, como PEP de AuthZEN, puede nombrar como callback.endpoint de una solicitud de acceso — una por valor, comparada exactamente. Una solicitud que nombre cualquier otra se rechaza; este servicio nunca llama a una URL de callback tomada solo de una solicitud. La define un administrador, nunca el llamador."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk, phr y phrh se cumplen con una contraseña más una llave de seguridad; cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."

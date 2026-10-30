@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "Met fin à chaque session d’authentification unique dont la durée de vie ou le délai d’inactivité est dépassé et, dans chaque domaine, à au plus authn.sessionShedPerSweep sessions excédentaires propres à un même sujet, selon la valeur de ce domaine."
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "Expiration des demandes d’accès AuthZEN"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "Fait passer à expired toute demande d’accès AuthZEN (#1180) en attente dont l’expires_at est dépassé — en écrivant sa ligne d’audit et en envoyant son rappel (callback) — et supprime une demande terminée un jour après sa fin, ou une fois son approbation écoulée si c’est plus tard. Une lecture applique elle-même l’échéance ; il s’agit donc de l’enregistrement et du nettoyage, jamais de ce qui décide."
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "Éjection des entrées de cache expirées"

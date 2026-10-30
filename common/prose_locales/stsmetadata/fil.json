@@ -96,8 +96,16 @@
     "text": "full para sa mandatoryong feature set: ang policy language, ang pitong decision value kasama ang tatlong extended Indeterminate, target matching, mga condition, mga variable, ang labindalawang combining algorithm, mga obligation at advice, mga policy reference, at ang standard function library sa lahat ng labimpitong datatype. Sinusuri laban sa OASIS conformance suite — 454 sa 455 na mandatoryong case ang pumapasa, at ang nag-iisang exception ay nakatala kasama ang argumento nito sa xacml/conformance/MANIFEST.js. HINDI saklaw: AttributeSelector at ang mga XPath function (Indeterminate ang policy na gumagamit ng isa sa halip na tahimik na walang laman), ang Multiple Decision at Hierarchical Resource profile, at administrative delegation."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "587fa315b80f6a67",
-    "text": "partial: ang Access Evaluation API (seksyon 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng katalogo ng attribute bawat realm, kasama ang X-Request-ID at ang hamon ng seksyon 11.3, ang Access Evaluations API (seksyon 7) kasama ang tatlong semantika nito, at ang metadata ng PDP (seksyon 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang draft ng Obligations Profile para sa PEP na nagdedeklara ng mga uri, at ang tatlong Search APIs (seksyon 8) sa sariling mga tao, application, API, ugnayang delegation at policy action ng serbisyong ito, hinahati sa pahina at hindi transitive. Kulang: ang obligations bawat resulta sa isang search, at ang mga profile na Access Request and Approval at OAuth, na mga draft pa."
+    "en": "73b5afdb5c895b9d",
+    "text": "partial: ang Access Evaluation API (section 6), pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng per-realm na attribute catalogue, na may X-Request-ID at ang section 11.3 challenge, ang Access Evaluations API (section 7) na may tatlong semantics nito, at ang PDP metadata (section 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang Obligations Profile draft para sa PEP na nagdedeklara ng mga type, at ang tatlong Search API (section 8) sa mga tao, application, API, delegation relationship at policy action ng serbisyong ito, may paging at hindi transitive. Kulang: per-result na obligation sa isang search, at ang OAuth profile, na draft pa rin."
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial: ang requestable na denial (context.access_request, evaluation_id, evaluated_at, reason) kung saan minamarkahan ng policy ng realm ang isang Deny ng access-request advice, naka-bind ayon sa value sa pamamagitan ng binding_token na pinipirmahan ng realm na ito (ang mga inline claim); ang pagsumite na may Idempotency-Key, 201 o 202 at isang Task Handle; ang task status endpoint na may Retry-After; pagkansela sa pamamagitan ng POST o DELETE; ang anim na status; ang reevaluate completion mode, ang approval.id na nireresolba sa trusted state at ang approval na umaabot sa policy bilang trusted facts; next_action at ang limang reason; bawat problem type; ang metadata member, jwks_uri at capability. Kulang: evaluation_id bilang binding ayon sa reference, approval.state, ang hashed na binding form, mga machine-readable na anyo (form_url, request_schema_url), display, at ang mga companion na BULK, ACTOR at CATALOG."
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial: ang callback ng isang pagsumite (endpoint, state, events), ang endpoint na nililimitahan sa mga URL na nirehistro ng administrator para sa humihiling na PEP, isang notification-only na callback para sa bawat hiniling na terminal event, na inaauthenticate ng maikling JWT na pinipirmahan ng realm na ito, sa ilalim ng outbound policy. Kulang: ang partial event (BULK) at mga event subscription sa antas ng deployment; hindi na muling sinusubukan ang nabigong delivery."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -787,9 +795,21 @@
     "en": "b5c83db3aa38640f",
     "text": "I-POST ang request ng seksyon 8; makakuha ng results at isang pahina. Sinasagot ang mga action na maaaring gawin ng isang subject sa isang resource: ang mga pangalang ikinukumpara ng root policy sa action-id, at ang sariling mga permission ng isang application o API. Bawat kandidato ay pinagpapasyahan ng root policy ng realm nang eksakto gaya ng isang evaluation, at ang mga pinahihintulutan lamang ang mga resulta; hinahati sa pahina gamit ang page.next_token, nililimitahan ng authzen.searchMaxCandidates, at sinasabing hindi kumpleto lampas dito."
   },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "I-POST ang subject, resource, action at context ng isang tinanggihang evaluation kasama ang denial na natanggap nito (ang binding_token at expires_at nito, ibinabalik nang hindi binabago); makakuha ng 202 at isang Task Handle, o 201 na may resulta kapag agad itong napagpasyahan (emergency access na pinapayagan ng policy). Tanging ang Deny na minarkahan ng policy ng realm ng advice na urn:sts:xacml:advice:access-request ang requestable. Parehong caller door at AUTHZEN_PEPS gaya ng isang evaluation; iginagalang ang Idempotency-Key bawat caller; callback lang sa URL na nakarehistro para sa caller. Bawat pagtanggi ay problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "I-GET ang task: ang status nito (pending, approved, denied, expired, cancelled, failed), Retry-After habang pending, at kapag naaprubahan na ang reevaluate result kasama ang approval na dala ng PEP sa susunod nitong evaluation bilang context.approval. Ang task ay nakikita lang ng caller na nagsumite nito; sa iba, ito ay unknown_task."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "I-POST, o i-DELETE, para kanselahin ang pending na task ng caller; ang tapos na isa ay sumasagot ng 409 invalid_task_state."
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "3b9a539920fa8ef3",
-    "text": "Ang dokumento ng seksyon 9: policy_decision_point (ang base ng realm na ito, na tugma sa URL kung saan ito kinukuha) at ang mga endpoint lamang na sumasagot dito (ang batch at ang tatlong search habang naka-on ang bawat isa), walang capabilities, supported_obligations, at signed_metadata, isang JWT ng parehong mga miyembro na ang iss ay ang identifier ng PDP, mabe-verify gamit ang JWKS ng realm (authzen.signedMetadata). Pampubliko; sumasagot ng 501 habang naka-off ang API."
+    "en": "eb2dea870b873bc2",
+    "text": "Ang dokumento ng section 9: policy_decision_point (ang base ng realm na ito, tumutugma sa URL na pinagkukunan nito) at ang mga endpoint lang na sumasagot dito (ang batch at ang tatlong search habang naka-on ang bawat isa, at access_request_endpoint na may jwks_uri at ang access-request capability habang naka-on ang authzen.accessRequests), supported_obligations, at signed_metadata, isang JWT ng parehong mga member na ang iss ay ang PDP identifier, na mabe-verify gamit ang JWKS ng realm (authzen.signedMetadata). Pampubliko; sumasagot ng 501 habang naka-off ang API."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",
@@ -1920,12 +1940,12 @@
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination at test-push (isang canary version na isinulat sa isang test secret): ang apat na act ng console, bawat isa ay ina-audit. Tinatanggap ang write credential at hindi kailanman ibinabalik."
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
-    "en": "13078c3a299db762",
-    "text": "HINDI-SPEC (#563). Ang ipinapakita ng tab na AuthZEN ng /admin/xacml: kung sumasagot ang /access/v1 sa realm, kung paano nag-a-authenticate ang mga tumatawag dito, ang mga setting ng AuthZEN, ang katalogo ng attribute sa sts-authzen-api, at ang mga miyembro ng roles.authzenPepGroup kasama ang mga application na maaaring itanong ng bawat isa."
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563). Ang iginuguhit ng AuthZEN tab ng /admin/xacml: kung sumasagot ang /access/v1 sa realm, kung paano nag-aauthenticate ang mga caller nito, ang mga setting ng AuthZEN, ang attribute catalogue sa sts-authzen-api, ang mga miyembro ng roles.authzenPepGroup kasama ang mga application na maaaring itanong ng bawat isa at ang mga nakarehistro nilang callback URL, at ang mga access request ng realm (#1180)."
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
-    "en": "7efc1c9a3697b22a",
-    "text": "HINDI-SPEC (#563). set-attribute, remove-attribute at set-scope: ang tatlong aksyon ng tab, bawat isa ay naa-audit. Ang isang row ng katalogo papunta sa isang reserbadong identifier ay tinatanggihan dito gaya ng sa bawat pagsulat."
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563). set-attribute, remove-attribute, set-scope at set-callbacks, at ang apat na act sa isang access request (#1180) — approve, deny, revoke at cancel, ang unang tatlo ay itinatanong sa access-control policy gaya ng pagtatanong ng portal: ang mga act ng tab, bawat isa ay naka-audit. Ang catalogue row papunta sa reserved identifier ay tinatanggihan dito gaya sa bawat write."
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
