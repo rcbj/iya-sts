@@ -47,6 +47,12 @@ setup for checks the report API's jobs already drive.
 
 ## The mapping, in one table
 
+**The public statement of the conversion, and the guidelines for a realm's
+conversion rules and the policies that read them, is `docs/authzen.md`**
+(#1182). This file is why the code is the way it is; that page is what a
+policy author relies on, and `tests/authzen_map.js` X holds its worked
+example (the ALFA policy and the request) to the code.
+
 | AuthZEN | XACML category | Attribute |
 |---|---|---|
 | `subject.id` | access-subject | `urn:oasis:names:tc:xacml:1.0:subject:subject-id` |

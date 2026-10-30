@@ -505,6 +505,58 @@ function theDecision(t) {
   log.debug("Leaving theDecision().");
 }
 
+// THE PUBLIC PAGE'S WORKED EXAMPLE (#1182) IS HELD TO THE CODE: its ALFA
+// policy parses, and the request it shows converts and decides as the page
+// says — true for a staff subject, false otherwise.
+function thePublishedExample(t) {
+  log.debug("Entering thePublishedExample().");
+  t.log.info('=== X. docs/authzen.md\'s worked example ===');
+  const fs = require('fs');
+  const text = fs.readFileSync(require('path').join(__dirname, '..', 'docs',
+                                                     'authzen.md'), 'utf8');
+  const start = text.indexOf('namespace docs {');
+  const block = start >= 0 ? text.slice(start, text.indexOf('```', start))
+    : '';
+  let policy = null;
+  try {
+    policy = alfa.parse(block);
+  } catch (e) {
+    log.debug("Caught in thePublishedExample(): " + ((e && e.message) || e));
+    policy = null;
+  }
+  t.check(!!policy, 'X1. the page\'s ALFA policy parses', block.slice(0, 80));
+  if (!policy) {
+    log.debug("Leaving thePublishedExample(). No policy.");
+    return;
+  }
+  const rows = catalogue.rowsOf([JSON.stringify({ object: 'resource',
+    property: 'classification',
+    attributeId: 'urn:example:classification' })]).rows;
+  const read = map.read({
+    subject: { type: 'user', id: 'alice' },
+    action: { name: 'read' },
+    resource: { type: 'document', id: 'doc-1',
+                properties: { classification: 'internal' } },
+    context: { application: 'engineering-portal' } }, rows);
+  const built = map.request(read.evaluation, { realm: 'acme',
+    caller: 'cn=docs-pep,ou=users,dc=acme,dc=example',
+    application: 'engineering-portal' });
+  const decideAs = function (role) {
+    log.debug("Entering decideAs().");
+    const answer = pdp.evaluate(policy, built, { resolver: function (d) {
+      return d.attributeId === 'employeeType' ? [role] : [];
+    } });
+    log.debug("Leaving decideAs().");
+    return answer.decision;
+  };
+  t.check(decideAs('staff') === model.DECISION.PERMIT &&
+          decideAs('contractor') !== model.DECISION.PERMIT,
+          'X2. the worked example decides as the page says: Permit for a ' +
+          'staff subject, not for another',
+          decideAs('staff') + ' / ' + decideAs('contractor'));
+  log.debug("Leaving thePublishedExample().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   theCatalogue(t);
@@ -513,6 +565,7 @@ async function run(t) {
   theBuiltRequest(t);
   thePip(t);
   theDecision(t);
+  thePublishedExample(t);
   log.debug("Leaving run().");
 }
 
