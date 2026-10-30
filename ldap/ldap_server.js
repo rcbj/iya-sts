@@ -395,6 +395,9 @@ const serviceAccounts = require('../common/service_accounts');
 // THE PASSKEY POLICY REGISTER (#527, 2026-10-08), `ou=passkeyPolicies`, for
 // the three policies' reason exactly: a LEAF whose store this directory is.
 const passkeyPolicy = require('../common/passkey_policy');
+// The references a group may make to a policy, declared by the kinds
+// (#1235, rule 3cx): a leaf.
+const PolicySelection = require('../common/policy_selection');
 // THE LOCALE POLICY REGISTER (#539, 2026-10-09), `ou=localePolicies`, for
 // the four policies' reason exactly: a LEAF whose store this directory is.
 // It is also asked at every person entry's creation, for the
@@ -9980,18 +9983,204 @@ function groupsFor(dn) {
 // The cache itself is declared beside the username index, up by the store —
 // see the note there. Everything else about it is here.
 
+// ---------------------------------------------------------------------------
+// A GROUP NAMES ITS POLICY OF EACH KIND (#1235, rcbj on #1234, 2026-10-30:
+// "groups point at their policy too"; rule 3cx). One single-valued attribute
+// per policy kind on the group's own entry, the person's spelling where the
+// kind maps to both:
+//
+//   stsPasswordPolicy   the password policy (#1236)
+//   stsAuthnPolicy      the authentication policy (#1237)
+//   stsPasskeyPolicy    the passkey policy (#1235)
+//   stsLocalePolicy     the locale policy (#1238)
+//   stsAttributePolicy  the attribute policy (#1241; on a person too)
+//   stsPostLoginPolicy  the post-login activity policy (#1239)
+//
+// All six are INDEXED by the group index from today, whichever kinds have
+// adopted them, so a kind adopting its reference touches nothing here: the
+// index answers a person's groups' references (`personGroupReferences()`,
+// riding `groupsOfUser()`, no walk) and which groups name a policy
+// (`groupsNamingPolicy()`, the inverse map). The directory is schemaless, so
+// no schema row is owed; what a value may be is checked at the one door that
+// writes it, `setGroupPolicy()`, against the kind's declaration
+// (`PolicySelection.declareReference('group', ...)`) — an attribute no kind
+// has declared is refused there.
+// ---------------------------------------------------------------------------
+const GROUP_POLICY_REFERENCES = ['stsPasswordPolicy', 'stsAuthnPolicy',
+  'stsPasskeyPolicy', 'stsLocalePolicy', 'stsAttributePolicy',
+  'stsPostLoginPolicy'];
+
+/**
+ * The person's groups with the policy each names through one reference
+ * attribute (#1235).
+ *
+ * @param key - the person
+ * @param attribute - the group reference attribute
+ * @returns `[{ cn, dn, value }]`, every group the person is in, `value` ''
+ *   where the group names nothing
+ */
+function personGroupReferences(key, attribute) {
+  log.debug('Entering personGroupReferences().');
+  const held = String(attribute || '').toLowerCase();
+  const index = groupIndexNow();
+  const out = (groupsOfUser(key).groups || []).map(function (group) {
+    const indexed = index.byDn.get(normalizeDn(group.dn));
+    return { cn: String(group.cn || ''), dn: String(group.dn || ''),
+             value: String(((indexed && indexed.policies) || {})[held] ||
+                           '') };
+  });
+  log.debug('Leaving personGroupReferences(). ' + out.length + '.');
+  return out;
+}
+
+/**
+ * The groups whose reference attribute names a policy (#1235), from the
+ * group index.
+ *
+ * @param attribute - the group reference attribute
+ * @param name - the policy's name, any case
+ * @returns the groups' cns, in DN order
+ */
+function groupsNamingPolicy(attribute, name) {
+  log.debug('Entering groupsNamingPolicy().');
+  const index = groupIndexNow();
+  const map = index.byPolicy &&
+    index.byPolicy.get(String(attribute || '').toLowerCase());
+  const keys = map ? (map.get(String(name == null ? '' : name).trim()
+    .toLowerCase()) || []) : [];
+  const out = keys.slice(0).sort().map(function (key) {
+    const group = index.byDn.get(key);
+    return group ? String(group.cn) : key;
+  });
+  log.debug('Leaving groupsNamingPolicy(). ' + out.length + '.');
+  return out;
+}
+
+/**
+ * Sets or clears the policy a group names through a reference attribute a
+ * policy kind declared (#1235).
+ *
+ * @param group - the group's `cn` or its whole DN
+ * @param attribute - the reference attribute
+ * @param value - `default`, a named policy of the kind, or '' to remove it
+ * @param options - `origin`, `channel`, `protocol`, `actor`
+ * @returns `{ ok, changed, dn, attribute, value }`, or a coded refusal
+ */
+function setGroupPolicy(group, attribute, value, options) {
+  log.debug('Entering setGroupPolicy().');
+  const opts = options || {};
+  const wantedGroup = String(group == null ? '' : group).trim();
+  const wanted = String(value == null ? '' : value).trim().toLowerCase();
+  if (!wantedGroup) {
+    log.debug('Leaving setGroupPolicy(). No group.');
+    return coded('STS-LDAP-0042', { ok: false, errors: [
+      'Which group? Send `group` with its `cn` or its whole DN.'] });
+  }
+  const reference = PolicySelection.referenceOf('group', attribute);
+  if (!reference || GROUP_POLICY_REFERENCES.indexOf(reference.attribute) < 0) {
+    log.debug('Leaving setGroupPolicy(). Not a reference.');
+    return coded('STS-LDAP-0194', { ok: false, errors: ['"' +
+      String(attribute).slice(0, 64) + '" is not an attribute by which a ' +
+      'group names a policy here. It is one of ' +
+      PolicySelection.referencesOn('group').map(function (one) {
+        return one.attribute;
+      }).join(', ') + '.'] });
+  }
+  const notHeld = PolicySelection.referenceProblem(wanted, reference.choices,
+                                                   reference.attribute);
+  if (notHeld) {
+    log.debug('Leaving setGroupPolicy(). Not a policy here.');
+    return coded('STS-LDAP-0195', { ok: false, errors: [notHeld] });
+  }
+  const dn = DN_SHAPED.test(wantedGroup) ? wantedGroup :
+             groupDnFor(wantedGroup);
+  const existing = readGroupEntry(dn);
+  if (!existing) {
+    log.debug('Leaving setGroupPolicy(). No group there.');
+    return coded('STS-LDAP-0050', { ok: false, errors: [
+      'There is no group at ' + dn + '.'] });
+  }
+  const lower = reference.attribute.toLowerCase();
+  const attributes = {};
+  let heldKey = reference.attribute;
+  Object.keys(existing.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0) {
+      return;
+    }
+    if (name.toLowerCase() === lower) {
+      heldKey = name;
+      return;
+    }
+    attributes[name] = existing.attributes[name].slice(0);
+  });
+  const before = String(((existing.attributes[heldKey] || [])[0]) || '');
+  if (before.toLowerCase() === wanted) {
+    log.debug('Leaving setGroupPolicy(). Unchanged.');
+    return { ok: true, changed: false, dn: existing.dn,
+             attribute: reference.attribute, value: wanted };
+  }
+  if (wanted) {
+    attributes[heldKey] = [wanted];
+  }
+  const written = writeGroupEntry(existing.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving setGroupPolicy(). Not written: ' + written.reason);
+    return coded(errorCodes.codeOf(written),
+                 { ok: false, reason: written.reason,
+             errors: ['The policy could not be written onto ' +
+                      existing.dn + ' (' + written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: 'group.set-policy',
+    actor: String(opts.actor || ''),
+    target: existing.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: wanted
+      ? existing.dn + ' now names the ' + reference.noun + ' ' + wanted
+      : existing.dn + ' no longer names a ' + reference.noun,
+    detail: { attribute: reference.attribute, value: wanted,
+              before: before }
+  });
+  log.debug('Leaving setGroupPolicy().');
+  return { ok: true, changed: true, dn: existing.dn,
+           attribute: reference.attribute, value: wanted };
+}
+
 // `uncounted`: a build for comparison (`groupIndexState()`), not kept and
 // not counted among the builds.
 function buildGroupIndex(uncounted) {
   log.debug('Entering buildGroupIndex().');
   const byMember = new Map();
   const byDn = new Map();
+  // THE POLICY EACH GROUP NAMES (#1235): reference attribute (lower-case) →
+  // policy name (lower-case) → the group keys naming it.
+  const byPolicy = new Map();
+  GROUP_POLICY_REFERENCES.forEach(function (attribute) {
+    byPolicy.set(attribute.toLowerCase(), new Map());
+  });
   eachGroupEntry(function (entry) {
     const rule = groupRuleFor(entry);
     if (!rule) {
       return;
     }
     const groupKey = normalizeDn(entry.dn);
+    const policies = {};
+    GROUP_POLICY_REFERENCES.forEach(function (attribute) {
+      const key = attribute.toLowerCase();
+      const named = String((entry.attributes[key] || [])[0] || '').trim()
+        .toLowerCase();
+      if (!named) {
+        return;
+      }
+      policies[key] = named;
+      const held = byPolicy.get(key);
+      if (!held.has(named)) {
+        held.set(named, []);
+      }
+      held.get(named).push(groupKey);
+    });
     byDn.set(groupKey, {
       dn: entry.dn,
       // The same two sources groupsFor() uses and in the same order, so the cn
@@ -9999,7 +10188,8 @@ function buildGroupIndex(uncounted) {
       // still has a name — its RDN — and a group with no name in a claim would
       // be an empty string in a list.
       cn: (entry.attributes.cn || [])[0] || commonNameOf(entry.dn),
-      rule: rule
+      rule: rule,
+      policies: policies
     });
     // MEMBER_ATTRIBUTES is walked in ITS order, once per group, which is what
     // keeps each `via` list in the order the old code produced: member,
@@ -10042,7 +10232,7 @@ function buildGroupIndex(uncounted) {
   log.debug('Leaving buildGroupIndex(). ' + byDn.size + ' group(s) and ' +
             byMember.size + ' member name(s), built ' + groupIndexes().builds +
             ' time(s) so far.');
-  return { byMember: byMember, byDn: byDn };
+  return { byMember: byMember, byDn: byDn, byPolicy: byPolicy };
 }
 
 // The index, rebuilt if a GROUP may have been written since it was made
@@ -10285,7 +10475,8 @@ if (typeof admin.setGroupWriter === 'function') {
                          addGroupMember: addGroupMember,
                          addGroupOwner: addGroupOwner,
                          removeGroupOwner: removeGroupOwner,
-                         setGroupMail: setGroupMail });
+                         setGroupMail: setGroupMail,
+                         setGroupPolicy: setGroupPolicy });
 } else {
   log.warn('ldap: the admin console offers no setGroupWriter(), so ' +
            '/admin/groups cannot create a group or add a member to one. The ' +
@@ -10572,6 +10763,10 @@ if (typeof passkeyPolicy.setDirectory === 'function') {
         return { cn: String(group.cn || ''), dn: String(group.dn || '') };
       });
     },
+    // THE POLICY EACH OF THE PERSON'S GROUPS NAMES, AND THE GROUPS NAMING
+    // ONE (#1235): `stsPasskeyPolicy` on the group, from the group index.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy,
     personAttributeValues: function (key, attribute) {
       log.debug("Entering personAttributeValues().");
       const name = String(attribute || '').toLowerCase();
@@ -29118,6 +29313,10 @@ module.exports = {
   // the report itself reaches them through its slot.
   passkeyScanAsync: passkeyScanAsync,
   peopleNamingPolicyAsync: peopleNamingPolicyAsync,
+  personGroupReferences: personGroupReferences,
+  groupsNamingPolicy: groupsNamingPolicy,
+  setGroupPolicy: setGroupPolicy,
+  GROUP_POLICY_REFERENCES: GROUP_POLICY_REFERENCES,
   passkeyPopulationAsync: passkeyPopulationAsync,
   // A started post-login activity's walk of its groups' people after a
   // key cursor (#1111, #1123), reached lazily from the job's body; the

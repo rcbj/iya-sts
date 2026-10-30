@@ -12,7 +12,7 @@
   "scopeGroup": "les membres du groupe <code>{name}</code>.",
   "scopeProfile": "les personnes que le profil de clé d’accès <code>{name}</code> sélectionne par groupe.",
   "scopeApplication": "tout le domaine, en tant que population de l’application <code>{name}</code>.",
-  "applicationNote": "N’importe qui peut se connecter à une application : sa population est donc le domaine. Ses connexions relèvent du profil de clé d’accès <code>{profile}</code> ; {groups} profils qui sélectionnent par groupe pourraient encore l’emporter pour une personne.",
+  "applicationNote": "N’importe qui peut se connecter à une application : sa population est donc le domaine. Ses connexions relèvent du profil de clé d’accès <code>{profile}</code> ; {groups} profils que nomment des groupes pourraient encore l’emporter pour une personne.",
   "filterGroup": "Groupe (cn ou DN)",
   "filterProfile": "Profil de clé d’accès",
   "filterApplication": "Application",

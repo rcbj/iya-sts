@@ -12,7 +12,7 @@
   "scopeGroup": "mga miyembro ng grupong <code>{name}</code>.",
   "scopeProfile": "mga taong pinipili ng passkey profile na <code>{name}</code> ayon sa grupo.",
   "scopeApplication": "buong realm, bilang populasyon ng application na <code>{name}</code>.",
-  "applicationNote": "Kahit sino ay maaaring mag-sign in sa isang application, kaya ang populasyon nito ay ang realm. Ang mga sign-in nito ay pinamamahalaan ng passkey profile na <code>{profile}</code>; may {groups} profile na pumipili ayon sa grupo na maaari pa ring manaig para sa isang tao.",
+  "applicationNote": "Kahit sino ay maaaring mag-sign in sa isang application, kaya ang populasyon nito ay ang realm. Ang mga sign-in nito ay pinamamahalaan ng passkey profile na <code>{profile}</code>; may {groups} profile na pinapangalanan ng mga grupo na maaari pa ring manaig para sa isang tao.",
   "filterGroup": "Grupo (cn o DN)",
   "filterProfile": "Passkey profile",
   "filterApplication": "Application",

@@ -831,7 +831,7 @@
   "passkey.default": "Un inicio de sesión para esta aplicación recibe la política de llaves de acceso <strong>default</strong>.",
   "passkey.missing": "Esta aplicación nombra la política de claves de acceso <strong>{name}</strong>, que este dominio no tiene, así que un inicio de sesión para ella recibe la política de claves de acceso <strong>default</strong> hasta que la política exista o cambie <code>appPasskeyPolicy</code>.",
   "passkey.open": "Abrir en Directorio → Políticas",
-  "passkey.groupNote": "Una política con nombre que selecciona por grupo aún puede prevalecer para una persona concreta: si una política que nombra uno de los grupos de la persona tiene una precedencia menor, se le aplica esa. Este dominio tiene {n} política(s) de llaves de acceso con nombre que seleccionan por grupo.",
+  "passkey.groupNote": "Una política con nombre que nombra uno de los grupos de una persona aún puede prevalecer para esa persona: si tiene una precedencia menor que la que nombra esta aplicación, se le aplica esa. En este dominio, los grupos nombran {n} política(s) de llaves de acceso con nombre.",
   "launch.heading": "Inicio de sesión iniciado por el proveedor de identidad",
   "launch.lead": "Este enlace inicia aquí un inicio de sesión {protocol} en esta aplicación. El enlace <strong>Iniciar sesión</strong> del portal de usuario es la misma URL, y también funciona en cualquier otro lugar: un marcador, una página de la intranet, un correo electrónico.",
   "launch.off": "Está <strong>desactivado</strong> para esta aplicación, así que el enlace se rechaza: establezca <code>{attribute}</code> en TRUE abajo, o active <code>{setting}</code> para el dominio.",

@@ -168,11 +168,9 @@ const PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const DEFAULT_PRECEDENCE = PolicySelection.DEFAULT_PRECEDENCE;
 
 /**
- * How `common/policy_selection.ts` reads a named profile (#1235): by group
- * alone.
+ * How `common/policy_selection.ts` ranks a named profile (#1235).
  */
-const SELECTION = { groupAttribute: 'stsPostLoginSelectGroup',
-                    precedenceAttribute: 'stsPostLoginPrecedence',
+const SELECTION = { precedenceAttribute: 'stsPostLoginPrecedence',
                     defaultPrecedence: DEFAULT_PRECEDENCE };
 
 /**
@@ -714,13 +712,33 @@ class PostLoginPolicy {
     }
     let out = DEFAULT_PROFILE;
     try {
-      // THE SHARED SELECTION (#1235, rule 3cx), by group alone: no
-      // reference names a post-login profile yet.
+      // THE SHARED RANKING (#1235, rule 3cx). This kind still keeps its
+      // groups on the profile (`stsPostLoginSelectGroup`) until #1239 moves
+      // them onto the groups, so a profile listing one of the person's
+      // groups is handed to the ranking as that group's reference to it.
       const entries = this.directory.allPostLoginPolicies();
       if (PolicySelection.named(entries, SELECTION).length) {
         const held = typeof groupsOf === 'function' ? groupsOf()
           : this.personGroups(username);
-        out = PolicySelection.rank(entries, SELECTION, [], held || []).name;
+        const mine: string[] = [];
+        (held || []).forEach(function (g: any) {
+          [PolicySelection.fold(g && g.cn), PolicySelection.fold(g && g.dn)]
+            .forEach(function (one) {
+              if (one) {
+                mine.push(one);
+              }
+            });
+        });
+        const references = mine.length ? entries.filter((entry) => {
+          return this.allValues(entry.attributes || {},
+                                'stsPostLoginSelectGroup')
+            .some(function (one) {
+              return mine.indexOf(PolicySelection.fold(one)) >= 0;
+            });
+        }).map(function (entry) {
+          return { by: 'group', value: entry.name };
+        }) : [];
+        out = PolicySelection.rank(entries, SELECTION, references).name;
       }
     } catch (e) {
       // A directory that cannot be asked gives the default: the sign-in is

@@ -12,7 +12,7 @@
   "scopeGroup": "群組 <code>{name}</code> 的成員。",
   "scopeProfile": "密碼金鑰設定檔 <code>{name}</code> 依群組選取的人員。",
   "scopeApplication": "整個領域，作為應用程式 <code>{name}</code> 的族群。",
-  "applicationNote": "任何人都可以登入某個應用程式，因此其族群就是整個領域。其登入受密碼金鑰設定檔 <code>{profile}</code> 約束；另有 {groups} 個依群組選取的設定檔仍可能對某個人生效。",
+  "applicationNote": "任何人都可以登入某個應用程式，因此其族群就是整個領域。其登入受密碼金鑰設定檔 <code>{profile}</code> 約束；另有 {groups} 個由群組指定的設定檔仍可能對某個人生效。",
   "filterGroup": "群組（cn 或 DN）",
   "filterProfile": "密碼金鑰設定檔",
   "filterApplication": "應用程式",

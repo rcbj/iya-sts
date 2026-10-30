@@ -10157,6 +10157,52 @@ class AdminApi {
             responseDescription: 'Whether anything changed, and the ' +
                                  'address now on the entry.' },
 
+          // THE POLICY A GROUP NAMES (#1235, rule 3cx): the group page's
+          // picker, one per kind a group selects. The directory owns the
+          // check and the refusals.
+          { action: 'set-policy', operationId: 'setGroupPolicy',
+            summary: 'Set or clear the named policy a group names of one ' +
+                     'kind',
+            description: 'Writes one value of `attribute` — the attribute ' +
+                         'by which a group names its policy of a kind, ' +
+                         '`stsPasskeyPolicy` for the passkey policy — onto ' +
+                         'the group\'s own entry, or removes it when ' +
+                         '`policy` is empty. `policy` is `default` or a ' +
+                         'named policy of that kind this realm holds ' +
+                         '(STS-LDAP-0195 otherwise); an attribute no kind ' +
+                         'declares is refused (STS-LDAP-0194). The policy a ' +
+                         'group names competes for each of its members on ' +
+                         'precedence with the policy the application ' +
+                         'names, the policy the person names and the ' +
+                         'policies their other groups name: the lowest ' +
+                         'applies, ties by name, else `default`. A named ' +
+                         'policy a group still names cannot be deleted. ' +
+                         '`GET /admin-api/groups?group=` lists the ' +
+                         'attributes and their choices as ' +
+                         '`policyReferences`. **Idempotent**: the value the ' +
+                         'group already names answers `changed: false`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                group: { type: 'string',
+                         description: 'The group\'s `cn` or its whole DN.' },
+                attribute: { type: 'string',
+                             description: 'The reference attribute, as ' +
+                                          '`policyReferences` lists it.' },
+                policy: { type: 'string',
+                          description: '`default`, a named policy of the ' +
+                                       'kind, or empty to remove it.' }
+              },
+              required: ['group', 'attribute'],
+              examples: [{ group: 'developers',
+                           attribute: 'stsPasskeyPolicy',
+                           policy: 'strict-keys' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and the policy ' +
+                                 'the group now names.' },
+
           // A GROUP'S OWNERS (#603): what the group page's Owners tab saves
           // the moment Add or Remove is pressed.
           { action: 'add-owner', operationId: 'addGroupOwner',
@@ -14825,8 +14871,8 @@ class AdminApi {
                      'applies), `applies` and its `precedence` (what a ' +
                      'sign-in for the application gets before any person ' +
                      'is known), `groupPolicies` (how many named policies ' +
-                     'select by group and could still win for a given ' +
-                     'person, on a lower precedence) and `link`.' +
+                     'a group names, which could still win for a member on ' +
+                     'a lower precedence) and `link`.' +
                      '\n\n**The ?application= reply\'s ' +
                      '`credentials.stored`** (#1227) is what the entry ' +
                      'stores in `userCertificate`, each certificate\'s ' +
@@ -24599,14 +24645,15 @@ class AdminApi {
                      '\n\n**A kind with NAMED profiles (#535, #1235)** ' +
                      'carries `selectors` (the selector fields its save ' +
                      'takes), `references` (the attribute by which an ' +
-                     '`application` and/or a `person` names one of its ' +
-                     'profiles: `appPasskeyPolicy` for the passkey policy) ' +
-                     'and `named`, each profile with its `selectGroups`, ' +
-                     '`precedence` and `namedBy` — the `applications` and ' +
+                     '`application`, a `group` and/or a `person` names one ' +
+                     'of its profiles: `appPasskeyPolicy` and ' +
+                     '`stsPasskeyPolicy` for the passkey policy) ' +
+                     'and `named`, each profile with its `precedence` and ' +
+                     '`namedBy` — the `applications`, `groups` and ' +
                      '`people` whose reference names it. Of the profile an ' +
                      'application names, the profile a person names and ' +
-                     'every profile selecting one of the person\'s groups, ' +
-                     'the lowest `precedence` applies (ties by name), else ' +
+                     'the profiles the person\'s groups name, the lowest ' +
+                     '`precedence` applies (ties by name), else ' +
                      '`default`; a profile something still names cannot be ' +
                      'deleted.' +
                      '\n\nIt is NOT the XACML policy repository, which ' +

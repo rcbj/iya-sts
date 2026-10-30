@@ -831,7 +831,7 @@
   "passkey.default": "En inloggning för det här programmet får policyn för nyckelpass <strong>default</strong>.",
   "passkey.missing": "Den här applikationen namnger nyckelpolicyn <strong>{name}</strong>, som den här sfären inte har, så en inloggning till den får nyckelpolicyn <strong>default</strong> tills policyn finns eller <code>appPasskeyPolicy</code> ändras.",
   "passkey.open": "Öppna under Katalog → Policyer",
-  "passkey.groupNote": "En namngiven policy som väljer efter grupp kan ändå vinna för en viss person: när en policy som anger en av personens grupper har lägre prioritet gäller den i stället. Den här sfären har {n} namngivna policyer för nyckelpass som väljer efter grupp.",
+  "passkey.groupNote": "En namngiven policy som en av en persons grupper namnger kan ändå vinna för den personen: när den har lägre prioritet än den som den här applikationen namnger gäller den i stället. I den här sfären namnger grupper {n} namngivna policyer för nyckelpass.",
   "launch.heading": "Inloggning initierad av identitetsleverantören",
   "launch.lead": "Den här länken startar här en {protocol}-inloggning till det här programmet. Användarportalens länk <strong>Logga in</strong> är samma URL, och den fungerar var som helst annars också — ett bokmärke, en intranätsida, ett e-postmeddelande.",
   "launch.off": "Den är <strong>avstängd</strong> för det här programmet, så länken nekas: sätt <code>{attribute}</code> till TRUE nedan, eller slå på <code>{setting}</code> för sfären.",

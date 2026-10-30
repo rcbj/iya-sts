@@ -7238,15 +7238,17 @@ const CODES = [
     spec: 'none (logged; the sign-in is refused as for a mechanism the ' +
       'application does not allow)' },
   { code: 'STS-AUTHN-0537',
-    summary: 'An application names a passkey policy (appPasskeyPolicy) ' +
-      'that this realm does not hold — written past the console, or the ' +
-      'policy was deleted by hand — so the default passkey policy applies ' +
-      'to a sign-in for it until the policy exists or the reference ' +
-      'changes (#1235).',
+    summary: 'An application (appPasskeyPolicy) or a group ' +
+      '(stsPasskeyPolicy) names a passkey policy that this realm does not ' +
+      'hold — written past the console, or the policy was deleted by hand ' +
+      '— so that reference selects nothing (the default passkey policy, ' +
+      'where nothing else names one) until the policy exists or the ' +
+      'reference changes (#1235).',
     spec: 'none (logged; the sign-in goes on under the default profile)' },
   { code: 'STS-AUTHN-0538',
-    summary: 'A named passkey policy was not deleted: an application of ' +
-      'this realm still names it (appPasskeyPolicy) (#1235).',
+    summary: 'A named passkey policy was not deleted: an application ' +
+      '(appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm ' +
+      'still names it (#1235).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -14783,6 +14785,16 @@ const CODES = [
       'stored in userCertificate on more than one entry of the bind\'s ' +
       'realm (#1061).',
     spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0194',
+    summary: 'A group\'s policy reference was not set: the attribute is ' +
+      'not one by which a group names a policy of a kind that has ' +
+      'declared one (stsPasskeyPolicy, ...) (#1235).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0195',
+    summary: 'A group\'s policy reference was not set: the value names ' +
+      'neither `default` nor a named policy of that kind this realm holds ' +
+      '(#1235).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -23394,6 +23406,11 @@ const CODES = [
       'application\'s entry was refused: the registry holds no ' +
       'application by that identifier, and none is created (#1227).',
     spec: 'HTTP 400 (API) or a refusal on the application\'s page' },
+  { code: 'STS-ADMIN-0907',
+    summary: 'Setting or clearing the policy a group names of one kind was ' +
+      'refused by the directory (#1235); the refusal carries the ' +
+      'directory\'s own code.',
+    spec: 'HTTP 400 (API) or a refusal on the group\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

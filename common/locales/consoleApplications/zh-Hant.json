@@ -831,7 +831,7 @@
   "passkey.default": "此應用程式的登入使用 <strong>default</strong> 通行金鑰原則。",
   "passkey.missing": "此應用程式指定了通行金鑰原則 <strong>{name}</strong>，但此領域沒有該原則，因此在該原則存在或 <code>appPasskeyPolicy</code> 變更之前，登入它會採用 <strong>default</strong> 通行金鑰原則。",
   "passkey.open": "在目錄 → 原則中開啟",
-  "passkey.groupNote": "依群組選取的具名原則仍可能對某個人生效：如果指定此人所屬某個群組的原則優先順序數值更低，則對其適用該原則。此領域有 {n} 個依群組選取的具名通行金鑰原則。",
+  "passkey.groupNote": "某人所屬群組指定的具名原則仍可能對其生效：如果其優先順序數值低於此應用程式指定的原則，則對其適用該原則。此領域中，各群組共指定了 {n} 個具名通行金鑰原則。",
   "launch.heading": "身分提供者發起的登入",
   "launch.lead": "此連結會在這裡發起對該應用程式的 {protocol} 登入。使用者入口網站的<strong>登入</strong>連結就是同一個 URL，它在其他任何地方也能使用——書籤、內部網路頁面或電子郵件。",
   "launch.off": "此應用程式的這項功能已<strong>關閉</strong>，因此該連結會被拒絕：請在下方將 <code>{attribute}</code> 設為 TRUE，或為該領域開啟 <code>{setting}</code>。",

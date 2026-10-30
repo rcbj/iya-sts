@@ -10,44 +10,46 @@
 // rule 3cx).
 //
 // Every kind on Directory > Policies may keep NAMED policies beside
-// `cn=default`, and rcbj's decisions on #1234 (2026-10-30) say how one is
-// chosen, once, for all of them:
+// `cn=default`, and rcbj's decisions on #1234 (2026-10-30, twice that day)
+// say how one is chosen, once, for all of them:
 //
-//   * AN APPLICATION OR A PERSON NAMES ITS POLICY. One single-valued
-//     attribute per kind on the application (`app<Kind>Policy`, as
-//     `appAuthnPolicy` has done since #1148) and/or on the person
-//     (`sts<Kind>Policy`). The policy does not list them.
-//   * A POLICY NAMES THE GROUPS IT COVERS (`sts<Kind>SelectGroup`, a group's
-//     cn or DN) and carries a precedence (`sts<Kind>Precedence`, 1 to 1000).
+//   * WHAT A POLICY COVERS NAMES IT; THE POLICY LISTS NOTHING. One
+//     single-valued attribute per kind on each kind of holder the kind maps
+//     to: on the application `app<Kind>Policy` (as `appAuthnPolicy` has done
+//     since #1148), and on the person and the group `sts<Kind>Policy`. A
+//     named policy keeps only its rows and its PRECEDENCE
+//     (`sts<Kind>Precedence`, 1 to 1000).
 //   * THE CANDIDATES are the policy the application names, the policy the
-//     person names, and every named policy selecting one of the person's
-//     groups. THE LOWEST PRECEDENCE WINS, ties broken by name (#535's rule),
-//     and `default` applies where there is no candidate. A reference that is
+//     person names, and the policy each of the person's groups names. THE
+//     LOWEST PRECEDENCE WINS, ties broken by name (#535's rule), and
+//     `default` applies where there is no candidate. A reference that is
 //     empty or says `default` is no candidate.
 //   * A REFERENCE TO A NAME THE REALM DOES NOT HOLD is no candidate either,
 //     and is handed back in `missing`: what it MEANS is the kind's (the
 //     authentication policy fails closed, #1148; the passkey policy reads its
 //     baseline), so this file decides nothing about it.
+//   * A REFERENCE IS CHECKED AT THE WRITE (`default` or a named policy the
+//     realm holds), and A POLICY SOMETHING NAMES IS NOT DELETED.
 //
-// Matching is trimmed and case-insensitive throughout: a group by cn or DN, a
-// reference by the policy's name.
+// Matching is trimmed and case-insensitive: a reference by the policy's name.
 //
 // IT IS A LEAF (rule 3): static methods over values the caller hands in — the
-// realm's named entries, the references, the person's groups — so it reads no
-// directory, requires nothing of this service but the logger, and cannot join
-// a require cycle. Who REFERENCES a policy is the registers' own question
-// (`applications.js`' `applicationsNamingPolicy()`, the directory's
-// `peopleNamingPolicyAsync()`), asked by the kind, lazily.
+// realm's named entries and the references — so it reads no directory,
+// requires nothing of this service but the logger, and cannot join a require
+// cycle. Who REFERENCES a policy is each register's own question, asked by
+// the kind, lazily: `applications.js`' `applicationsNamingPolicy()`, and the
+// directory's `groupsNamingPolicy()` (its group index) and
+// `peopleNamingPolicyAsync()` (the holders of the attribute).
 //
-// ITS ONE PIECE OF STATE is the register of PERSON references
-// (`declarePersonReference()`): a kind a person selects declares its
-// attribute here when its module loads, and `ldap/person_editor.ts` reads
-// the register when it builds a person's fields, so the person page draws
-// one picker per such kind (a closed set: `default` and the realm's named
-// policies, checked at the write) without the editor requiring any kind's
-// module. The application side needs no register here: an application's
-// fields are declared in `applications.js`, which checks a reference with
-// its own closed sets (CHOICES_CHECKED_HERE).
+// ITS ONE PIECE OF STATE is the register of PERSON and GROUP references
+// (`declareReference()`): a kind declares its attribute here when its module
+// loads, and the person editor and the directory's group writer read the
+// register, so the person page and the group page draw one picker per kind
+// (a closed set: `default` and the realm's named policies, checked at the
+// write) without either requiring any kind's module. The application side
+// needs no register here: an application's fields are declared in
+// `applications.js`, which checks a reference with its own closed sets
+// (CHOICES_CHECKED_HERE).
 //
 // IT IS SELECTION, NOT AUTHORIZATION (#535's decision): it chooses which rows
 // apply; what the rows then allow or refuse is the kind's, and where that is
@@ -68,31 +70,23 @@ interface PolicyEntry {
 }
 
 /**
- * How a kind's named policies are told apart: the attribute on a policy that
- * lists its groups (absent for a kind with no group selector) and the one
- * holding its precedence, and the kind's default precedence.
+ * How a kind's named policies rank: the attribute holding a policy's
+ * precedence, and the kind's default precedence.
  */
 interface SelectionSpec {
-  groupAttribute?: string;
   precedenceAttribute: string;
   defaultPrecedence?: number;
 }
 
 /**
- * What names a policy: an application's or a person's reference attribute's
- * value. `by` is what the caller calls the holder (`application`, `person`).
+ * What names a policy: an application's, a person's or a group's reference
+ * attribute's value. `by` is what the caller calls the holder
+ * (`application`, `person`, `group`), and `holder` which one it is.
  */
 interface Reference {
   by: string;
+  holder?: string;
   value: unknown;
-}
-
-/**
- * A group a person is in, as `personGroups()` answers it.
- */
-interface GroupRef {
-  cn?: unknown;
-  dn?: unknown;
 }
 
 /**
@@ -102,7 +96,6 @@ interface NamedPolicy {
   name: string;
   dn: string;
   precedence: number;
-  groups: string[];
 }
 
 /**
@@ -111,25 +104,31 @@ interface NamedPolicy {
 interface Ranked {
   name: string;
   by: string;
+  holder: string;
   precedence: number;
-  missing: Array<{ by: string; name: string }>;
+  missing: Array<{ by: string; holder: string; name: string }>;
 }
 
 /**
- * A person reference a kind declared: its attribute, what the kind calls a
- * policy, and where its choices come from.
+ * A reference a kind declared on a person or a group: its attribute, what
+ * the kind calls a policy, and where its choices come from.
  */
-interface PersonReference {
+interface DeclaredReference {
+  holder: string;
   attribute: string;
   noun: string;
   choices: () => string[];
 }
 
 /**
- * The person references declared so far (`declarePersonReference()`).
+ * The references declared so far (`declareReference()`).
  */
-const PERSON_REFERENCES: PersonReference[] = [];
+const DECLARED: DeclaredReference[] = [];
 
+/**
+ * The holders a reference may be declared on.
+ */
+const HOLDERS = ['person', 'group'];
 /**
  * The name of the policy every realm has.
  */
@@ -154,7 +153,8 @@ const DEFAULT_PRECEDENCE = 100;
 /**
  * Chooses a kind's named policy for a person and an application.
  *
- * A static utility class; it holds no state and takes no dependencies.
+ * A static utility class; its one state is the register of declared
+ * references.
  */
 export = class PolicySelection {
   static readonly DEFAULT_NAME = DEFAULT_NAME;
@@ -164,8 +164,8 @@ export = class PolicySelection {
   static readonly DEFAULT_PRECEDENCE = DEFAULT_PRECEDENCE;
 
   // THESE THREE CARRY NO Entering/Leaving PAIR: `rank()` asks them once per
-  // named policy on every sign-in, and a pair would drown the log (the
-  // style's hot-path exception).
+  // named policy and per reference on every sign-in, and a pair would drown
+  // the log (the style's hot-path exception).
   //
   // A value as matched: trimmed and lower-case; '' for nothing.
   static fold(value: unknown): string {
@@ -203,10 +203,10 @@ export = class PolicySelection {
 
   /**
    * Reads a realm's named policies — every entry but `default` — with their
-   * precedence and groups.
+   * precedence.
    *
    * @param entries - the kind's entries as the directory hook answers them
-   * @param spec - the kind's selector attributes
+   * @param spec - the kind's precedence attribute
    * @returns the named policies, unordered
    */
   static named(entries: PolicyEntry[] | null | undefined,
@@ -216,13 +216,10 @@ export = class PolicySelection {
       const name = PolicySelection.fold(one && one.name);
       return !!name && name !== DEFAULT_NAME;
     }).map(function (entry) {
-      const at = entry.attributes || {};
       return {
         name: PolicySelection.fold(entry.name),
         dn: String(entry.dn || ''),
-        precedence: PolicySelection.precedenceOf(at, spec),
-        groups: spec.groupAttribute
-          ? PolicySelection.valuesOf(at, spec.groupAttribute) : []
+        precedence: PolicySelection.precedenceOf(entry.attributes || {}, spec)
       };
     });
     log.debug("Leaving PolicySelection.named(). " + out.length + ".");
@@ -244,69 +241,50 @@ export = class PolicySelection {
   }
 
   /**
-   * Chooses the policy that applies: of the policies the references name and
-   * the named policies selecting one of the person's groups, the lowest
-   * precedence (ties by name), else `default`.
+   * Chooses the policy that applies: of the policies the references name —
+   * the application's, the person's, each of the person's groups' — the
+   * lowest precedence (ties by name), else `default`.
    *
    * @param entries - the kind's entries as the directory hook answers them
-   * @param spec - the kind's selector attributes
-   * @param references - what the application and the person name; an empty
-   *   value or `default` is no candidate
-   * @param groups - the person's groups, `{ cn, dn }`; empty for nobody yet
-   * @returns `{ name, by, precedence, missing }`: the winner, what selected
-   *   it (`group`, a reference's `by`, or `default`), its precedence (0 for
-   *   `default`), and each reference to a name the realm does not hold
+   * @param spec - the kind's precedence attribute
+   * @param references - every reference in hand; an empty value or
+   *   `default` is no candidate
+   * @returns `{ name, by, holder, precedence, missing }`: the winner, what
+   *   named it (a reference's `by` and `holder`, or `default`), its
+   *   precedence (0 for `default`), and each reference to a name the realm
+   *   does not hold
    */
   static rank(entries: PolicyEntry[] | null | undefined, spec: SelectionSpec,
-              references: Reference[] | null | undefined,
-              groups: GroupRef[] | null | undefined): Ranked {
+              references: Reference[] | null | undefined): Ranked {
     log.debug("Entering PolicySelection.rank().");
-    const named = PolicySelection.named(entries, spec);
     const byName: Record<string, NamedPolicy> = {};
-    named.forEach(function (one) {
+    PolicySelection.named(entries, spec).forEach(function (one) {
       byName[one.name] = one;
     });
-    const missing: Array<{ by: string; name: string }> = [];
-    const candidates: Array<{ name: string; precedence: number;
-                              by: string }> = [];
+    const missing: Array<{ by: string; holder: string; name: string }> = [];
+    const candidates: Array<{ name: string; precedence: number; by: string;
+                              holder: string }> = [];
     (Array.isArray(references) ? references : []).forEach(function (ref) {
       const wanted = PolicySelection.fold(ref && ref.value);
       if (!wanted || wanted === DEFAULT_NAME) {
         return;
       }
+      const by = String((ref && ref.by) || '');
+      const holder = String((ref && ref.holder) || '');
       const held = byName[wanted];
       if (!held) {
-        missing.push({ by: String(ref.by || ''), name: wanted });
+        missing.push({ by: by, holder: holder, name: wanted });
         return;
       }
       candidates.push({ name: held.name, precedence: held.precedence,
-                        by: String(ref.by || '') });
+                        by: by, holder: holder });
     });
-    const mine: string[] = [];
-    (Array.isArray(groups) ? groups : []).forEach(function (g) {
-      [PolicySelection.fold(g && g.cn), PolicySelection.fold(g && g.dn)]
-        .forEach(function (one) {
-          if (one) {
-            mine.push(one);
-          }
-        });
-    });
-    if (mine.length) {
-      named.forEach(function (one) {
-        if (one.groups.some(function (g) {
-          return mine.indexOf(PolicySelection.fold(g)) >= 0;
-        })) {
-          candidates.push({ name: one.name, precedence: one.precedence,
-                            by: 'group' });
-        }
-      });
-    }
     candidates.sort(PolicySelection.compare);
     const won = candidates[0];
     const out = won
-      ? { name: won.name, by: won.by, precedence: won.precedence,
-          missing: missing }
-      : { name: DEFAULT_NAME, by: DEFAULT_NAME, precedence: 0,
+      ? { name: won.name, by: won.by, holder: won.holder,
+          precedence: won.precedence, missing: missing }
+      : { name: DEFAULT_NAME, by: DEFAULT_NAME, holder: '', precedence: 0,
           missing: missing };
     log.debug("Leaving PolicySelection.rank(). " + out.name + " by " +
               out.by + "; " + missing.length + " missing.");
@@ -314,32 +292,47 @@ export = class PolicySelection {
   }
 
   /**
-   * What one holder's reference comes to before any person is known — the
-   * application page's answer (#609's, generalised): the policy it names,
-   * whether the realm holds it, what applies, and how many named policies
-   * select by group and could still win for a person.
+   * The references a person's groups make, as `rank()` takes them: one per
+   * group whose reference attribute names something.
+   *
+   * @param groups - the person's groups, each `{ cn, dn, value }` as the
+   *   directory's `personGroupReferences()` answers them
+   * @returns the references, `by: 'group'`, `holder` the group's cn or DN
+   */
+  static groupReferences(groups: Array<{ cn?: unknown; dn?: unknown;
+                                         value?: unknown }> | null |
+                                   undefined): Reference[] {
+    log.debug("Entering PolicySelection.groupReferences().");
+    const out = (Array.isArray(groups) ? groups : []).filter(function (g) {
+      return !!PolicySelection.fold(g && g.value);
+    }).map(function (g) {
+      return { by: 'group', holder: String(g.cn || g.dn || ''),
+               value: g.value };
+    });
+    log.debug("Leaving PolicySelection.groupReferences(). " + out.length);
+    return out;
+  }
+
+  /**
+   * What one holder's reference comes to on its own — the application
+   * page's answer (#609's, generalised): the policy it names, whether the
+   * realm holds it, and what applies before anything else is known.
    *
    * @param entries - the kind's entries as the directory hook answers them
-   * @param spec - the kind's selector attributes
+   * @param spec - the kind's precedence attribute
    * @param value - the holder's reference value
-   * @returns `{ named, missing, applies, precedence, groupPolicies }`
+   * @returns `{ named, missing, applies, precedence }`
    */
   static forReference(entries: PolicyEntry[] | null | undefined,
                       spec: SelectionSpec, value: unknown):
       { named: string; missing: boolean; applies: string;
-        precedence: number; groupPolicies: number } {
+        precedence: number } {
     log.debug("Entering PolicySelection.forReference().");
     const ranked = PolicySelection.rank(entries, spec,
-                                        [{ by: 'reference', value: value }],
-                                        []);
-    const groupPolicies = PolicySelection.named(entries, spec)
-      .filter(function (one) {
-        return one.groups.length > 0;
-      }).length;
+                                        [{ by: 'reference', value: value }]);
     const out = { named: PolicySelection.fold(value) || DEFAULT_NAME,
                   missing: ranked.missing.length > 0,
-                  applies: ranked.name, precedence: ranked.precedence,
-                  groupPolicies: groupPolicies };
+                  applies: ranked.name, precedence: ranked.precedence };
     log.debug("Leaving PolicySelection.forReference(). " + out.applies);
     return out;
   }
@@ -375,47 +368,24 @@ export = class PolicySelection {
   }
 
   /**
-   * Validates a named policy's selectors as a save sends them: its groups (a
-   * list, or comma- or line-separated; trimmed, at most `maxValues` of at most
-   * `maxLength` characters with no control character) and its precedence (a
-   * whole number from 1 to 1000; the kind's default when omitted).
+   * Validates a named policy's precedence as a save sends it: a whole number
+   * from 1 to 1000, the kind's default when omitted.
    *
-   * @param given - the save's body: `selectGroups` and `precedence`
-   * @param spec - the kind's selector attributes; no `groupAttribute` means
-   *   the kind has no group selector and `selectGroups` is ignored
-   * @param limits - optional `{ maxValues, maxLength }`; 64 and 512
-   * @returns `{ groups, precedence, problems }`
+   * @param given - the save's body: `precedence`
+   * @param spec - the kind's precedence attribute and default
+   * @returns `{ precedence, problems }`
    */
-  static checkSelectors(given: Record<string, unknown> | null | undefined,
-                        spec: SelectionSpec,
-                        limits?: { maxValues?: number; maxLength?: number }):
-      { groups: string[]; precedence: number; problems: string[] } {
-    log.debug("Entering PolicySelection.checkSelectors().");
+  static checkPrecedence(given: Record<string, unknown> | null | undefined,
+                         spec: SelectionSpec):
+      { precedence: number; problems: string[] } {
+    log.debug("Entering PolicySelection.checkPrecedence().");
     const body = given || {};
     const problems: string[] = [];
-    const most = (limits && limits.maxValues) || 64;
-    const longest = (limits && limits.maxLength) || 512;
-    let groups: string[] = [];
-    if (spec.groupAttribute) {
-      const raw = body.selectGroups;
-      groups = (Array.isArray(raw) ? raw : String(raw === undefined ||
-                                                  raw === null ? '' : raw)
-        .split(/[,\n]/)).map(function (one) {
-          return String(one).trim();
-        }).filter(Boolean);
-      if (groups.length > most || groups.some(function (one) {
-        return one.length > longest || /[\u0000-\u001f\u007f]/.test(one);
-      })) {
-        problems.push('The groups a named policy applies to must be at most ' +
-                      most + ' values of at most ' + longest + ' characters ' +
-                      'each, with no control character.');
-      }
-      groups = groups.slice(0, most);
-    }
+    const fallback = spec.defaultPrecedence || DEFAULT_PRECEDENCE;
     const raw = body.precedence;
     const text = String(raw === undefined || raw === null || raw === ''
-      ? (spec.defaultPrecedence || DEFAULT_PRECEDENCE) : raw).trim();
-    let precedence = spec.defaultPrecedence || DEFAULT_PRECEDENCE;
+      ? fallback : raw).trim();
+    let precedence = fallback;
     if (!/^[0-9]{1,4}$/.test(text) || Number(text) < MIN_PRECEDENCE ||
         Number(text) > MAX_PRECEDENCE) {
       problems.push('The precedence of a named policy is a whole number ' +
@@ -424,123 +394,171 @@ export = class PolicySelection {
     } else {
       precedence = Number(text);
     }
-    log.debug("Leaving PolicySelection.checkSelectors(). " + problems.length +
-              " problem(s).");
-    return { groups: groups, precedence: precedence, problems: problems };
+    log.debug("Leaving PolicySelection.checkPrecedence(). " +
+              problems.length + " problem(s).");
+    return { precedence: precedence, problems: problems };
   }
 
   /**
-   * Declares a person reference (#1235): the single-valued attribute on a
-   * person's entry by which they name their policy of a kind. Called once,
-   * when the kind's module loads; a second declaration of the attribute
-   * replaces the first.
+   * Refuses a reference that names neither `default` nor a policy the realm
+   * holds — the write-time check every holder's door makes.
    *
-   * @param attribute - the person attribute (`stsServiceAccountPolicy`)
-   * @param noun - what the kind calls a policy (`service-account policy`)
+   * @param value - the value written; '' clears it and is always allowed
+   * @param choices - `default` and the realm's named policies
+   * @param attribute - the reference attribute, for the sentence
+   * @returns the refusal, or null
+   */
+  static referenceProblem(value: unknown, choices: string[],
+                          attribute: string): string | null {
+    log.debug("Entering PolicySelection.referenceProblem().");
+    const text = PolicySelection.fold(value);
+    if (!text || (choices || []).map(PolicySelection.fold)
+      .indexOf(text) >= 0) {
+      log.debug("Leaving PolicySelection.referenceProblem(). Allowed.");
+      return null;
+    }
+    log.debug("Leaving PolicySelection.referenceProblem(). Not held.");
+    return 'The value for ' + attribute + ' is "' + DEFAULT_NAME + '" or a ' +
+      'named policy of this realm (' + (choices || []).join(', ') + '); "' +
+      String(value).slice(0, 80) + '" is neither.';
+  }
+
+  /**
+   * Declares a reference (#1235): the single-valued attribute on a person's
+   * or a group's entry by which it names its policy of a kind. Called once,
+   * when the kind's module loads; a second declaration of the holder and
+   * attribute replaces the first.
+   *
+   * @param holder - `person` or `group`
+   * @param attribute - the attribute (`stsPasskeyPolicy`)
+   * @param noun - what the kind calls a policy (`passkey policy`)
    * @param choices - answers the realm's named policies' names, read when
    *   asked, so a policy saved a moment ago is a choice at once
    */
-  static declarePersonReference(attribute: string, noun: string,
-                                choices: () => string[]): void {
-    log.debug("Entering PolicySelection.declarePersonReference(). " +
-              attribute);
-    const key = String(attribute || '').toLowerCase();
-    for (let n = PERSON_REFERENCES.length - 1; n >= 0; n--) {
-      if (PERSON_REFERENCES[n].attribute.toLowerCase() === key) {
-        PERSON_REFERENCES.splice(n, 1);
-      }
+  static declareReference(holder: string, attribute: string, noun: string,
+                          choices: () => string[]): void {
+    log.debug("Entering PolicySelection.declareReference(). " + holder +
+              " " + attribute);
+    if (HOLDERS.indexOf(holder) < 0) {
+      log.debug("Leaving PolicySelection.declareReference(). Not a holder.");
+      throw new Error('policy_selection: a reference is declared on a ' +
+                      'person or a group, not "' + holder + '".');
     }
-    PERSON_REFERENCES.push({ attribute: String(attribute), noun: noun,
-                             choices: choices });
-    log.debug("Leaving PolicySelection.declarePersonReference().");
+    PolicySelection.withdrawReference(holder, attribute);
+    DECLARED.push({ holder: holder, attribute: String(attribute),
+                    noun: noun, choices: choices });
+    log.debug("Leaving PolicySelection.declareReference().");
   }
 
   /**
-   * Withdraws a person reference — for a test that declared one.
+   * Withdraws a declared reference — for a test that declared one.
    *
-   * @param attribute - the person attribute
+   * @param holder - `person` or `group`
+   * @param attribute - the attribute
    */
-  static withdrawPersonReference(attribute: string): void {
-    log.debug("Entering PolicySelection.withdrawPersonReference().");
+  static withdrawReference(holder: string, attribute: string): void {
+    log.debug("Entering PolicySelection.withdrawReference().");
     const key = String(attribute || '').toLowerCase();
-    for (let n = PERSON_REFERENCES.length - 1; n >= 0; n--) {
-      if (PERSON_REFERENCES[n].attribute.toLowerCase() === key) {
-        PERSON_REFERENCES.splice(n, 1);
+    for (let n = DECLARED.length - 1; n >= 0; n--) {
+      if (DECLARED[n].holder === holder &&
+          DECLARED[n].attribute.toLowerCase() === key) {
+        DECLARED.splice(n, 1);
       }
     }
-    log.debug("Leaving PolicySelection.withdrawPersonReference().");
+    log.debug("Leaving PolicySelection.withdrawReference().");
   }
 
   /**
-   * The person reference an attribute is, with its choices now: `default`
-   * first, then the realm's named policies. A source that cannot be read
-   * offers `default` alone.
+   * The reference an attribute is on a holder, with its choices now:
+   * `default` first, then the realm's named policies. A source that cannot
+   * be read offers `default` alone.
    *
+   * @param holder - `person` or `group`
    * @param attribute - an attribute name, in any case
    * @returns `{ attribute, noun, choices }`, or null for an attribute no
-   *   kind declared
+   *   kind declared on that holder
    */
-  static personReferenceOf(attribute: string):
+  static referenceOf(holder: string, attribute: string):
       { attribute: string; noun: string; choices: string[] } | null {
-    log.debug("Entering PolicySelection.personReferenceOf().");
+    log.debug("Entering PolicySelection.referenceOf().");
     const key = String(attribute || '').toLowerCase();
-    const found = PERSON_REFERENCES.filter(function (one) {
-      return one.attribute.toLowerCase() === key;
+    const found = DECLARED.filter(function (one) {
+      return one.holder === holder && one.attribute.toLowerCase() === key;
     })[0];
     if (!found) {
-      log.debug("Leaving PolicySelection.personReferenceOf(). None.");
+      log.debug("Leaving PolicySelection.referenceOf(). None.");
       return null;
     }
     let names: string[] = [];
     try {
       names = (found.choices() || []).map(PolicySelection.fold);
     } catch (e) {
-      log.debug("Caught in PolicySelection.personReferenceOf(): " +
+      log.debug("Caught in PolicySelection.referenceOf(): " +
                 ((e && e.message) || e));
       names = [];
     }
     const choices = [DEFAULT_NAME].concat(names.filter(function (one, n, all) {
       return !!one && one !== DEFAULT_NAME && all.indexOf(one) === n;
     }));
-    log.debug("Leaving PolicySelection.personReferenceOf(). " +
-              choices.length + " choice(s).");
+    log.debug("Leaving PolicySelection.referenceOf(). " + choices.length +
+              " choice(s).");
     return { attribute: found.attribute, noun: found.noun,
              choices: choices };
   }
 
   /**
+   * Every reference declared on a holder, with its choices now — what the
+   * group page draws one picker for each of.
+   *
+   * @param holder - `person` or `group`
+   * @returns `[{ attribute, noun, choices }]`, in declaration order
+   */
+  static referencesOn(holder: string):
+      Array<{ attribute: string; noun: string; choices: string[] }> {
+    log.debug("Entering PolicySelection.referencesOn(). " + holder);
+    const out = DECLARED.filter(function (one) {
+      return one.holder === holder;
+    }).map(function (one) {
+      return PolicySelection.referenceOf(holder, one.attribute);
+    }).filter(Boolean);
+    log.debug("Leaving PolicySelection.referencesOn(). " + out.length);
+    return out;
+  }
+
+  /**
    * Words the refusal of a named policy's delete while something still names
-   * it — an application or a person would be left naming a policy the realm
-   * does not hold. A policy that selects a group is not refused: the
-   * selection is on the policy and goes with it.
+   * it — an application, a person or a group would be left naming a policy
+   * the realm does not hold.
    *
    * @param noun - what the kind calls one (`passkey policy`)
    * @param name - the policy's name
-   * @param holders - `{ applications, people }`, each a list of names
+   * @param holders - `{ applications, people, groups }`, each a list
    * @returns the refusal, or null where nothing names it
    */
   static deleteProblem(noun: string, name: string,
                        holders: { applications?: string[];
-                                  people?: string[] }): string | null {
+                                  people?: string[];
+                                  groups?: string[] }): string | null {
     log.debug("Entering PolicySelection.deleteProblem().");
-    const apps = (holders && holders.applications) || [];
-    const people = (holders && holders.people) || [];
-    if (!apps.length && !people.length) {
-      log.debug("Leaving PolicySelection.deleteProblem(). Named by nobody.");
-      return null;
-    }
+    const lists: Array<[string, string[]]> = [
+      ['the application(s) ', (holders && holders.applications) || []],
+      ['the group(s) ', (holders && holders.groups) || []],
+      ['the person or people ', (holders && holders.people) || []]
+    ];
     const shown = function (list: string[]): string {
       log.debug("Entering deleteProblem() shown().");
       log.debug("Leaving deleteProblem() shown().");
       return list.slice(0, 10).join(', ') +
         (list.length > 10 ? ' and ' + (list.length - 10) + ' more' : '');
     };
-    const parts: string[] = [];
-    if (apps.length) {
-      parts.push('the application(s) ' + shown(apps));
-    }
-    if (people.length) {
-      parts.push('the person or people ' + shown(people));
+    const parts = lists.filter(function (one) {
+      return one[1].length > 0;
+    }).map(function (one) {
+      return one[0] + shown(one[1]);
+    });
+    if (!parts.length) {
+      log.debug("Leaving PolicySelection.deleteProblem(). Named by nobody.");
+      return null;
     }
     log.debug("Leaving PolicySelection.deleteProblem(). Named.");
     return 'The ' + noun + ' "' + name + '" is still named by ' +

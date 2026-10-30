@@ -12,7 +12,7 @@
   "scopeGroup": "the members of group <code>{name}</code>.",
   "scopeProfile": "the people passkey profile <code>{name}</code> selects by group.",
   "scopeApplication": "the whole realm, as application <code>{name}</code>'s population.",
-  "applicationNote": "Anybody may sign in to an application, so its population is the realm. Its sign-ins are governed by passkey profile <code>{profile}</code>; {groups} profiles that select by group could still win for a person.",
+  "applicationNote": "Anybody may sign in to an application, so its population is the realm. Its sign-ins are governed by passkey profile <code>{profile}</code>; {groups} profiles that groups name could still win for a person.",
   "filterGroup": "Group (cn or DN)",
   "filterProfile": "Passkey profile",
   "filterApplication": "Application",

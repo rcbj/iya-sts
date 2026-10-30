@@ -12,7 +12,7 @@
   "scopeGroup": "组 <code>{name}</code> 的成员。",
   "scopeProfile": "通行密钥配置文件 <code>{name}</code> 按组选中的人员。",
   "scopeApplication": "整个领域，作为应用 <code>{name}</code> 的人群。",
-  "applicationNote": "任何人都可以登录某个应用，因此其人群就是整个领域。其登录受通行密钥配置文件 <code>{profile}</code> 约束；另有 {groups} 个按组选择的配置文件仍可能对某个人生效。",
+  "applicationNote": "任何人都可以登录某个应用，因此其人群就是整个领域。其登录受通行密钥配置文件 <code>{profile}</code> 约束；另有 {groups} 个由组指定的配置文件仍可能对某个人生效。",
   "filterGroup": "组（cn 或 DN）",
   "filterProfile": "通行密钥配置文件",
   "filterApplication": "应用",

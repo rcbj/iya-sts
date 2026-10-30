@@ -156,19 +156,22 @@
 //     sign-in screen), the application; `/portal/keys` and activation know
 //     no application, so only group selectors apply there.
 //
-// #1235 (2026-10-30, rcbj's decision on #1234) MOVED THE APPLICATION SIDE ONTO
-// THE APPLICATION: `stsPasskeySelectApplication` is gone, and an application
-// names its passkey policy in ONE attribute of its own, `appPasskeyPolicy`
-// (`default`, empty, or a named profile of the realm; checked at the write,
-// STS-REG-0203), as `appAuthnPolicy` names its authentication policy (#1148).
-// A profile still selects GROUPS. The candidates are the profile the
-// application names and every profile selecting one of the person's groups,
-// ranked as above by `common/policy_selection.ts` (rule 3cx), the one
+// #1235 (2026-10-30, rcbj's two decisions on #1234 that day) TURNED THE
+// SELECTION ROUND: what a profile covers NAMES it, and the profile lists
+// nothing. `stsPasskeySelectApplication` and `stsPasskeySelectGroup` are
+// gone; an application names its passkey profile in `appPasskeyPolicy`, and
+// a group in `stsPasskeyPolicy` on its own entry (`default`, empty, or a
+// named profile of the realm; each checked at its one door — STS-REG-0203,
+// STS-LDAP-0195), as `appAuthnPolicy` names an authentication policy
+// (#1148). A named profile keeps its precedence. The candidates are the
+// profile the application names and the profile each of the person's groups
+// names, ranked as above by `common/policy_selection.ts` (rule 3cx), the one
 // selection every kind shares. A name the realm does not hold — written past
-// the console — selects `default`, the realm's baseline, and is logged
-// (STS-AUTHN-0537); a profile an application still names is not deleted
-// (STS-AUTHN-0538). No migration is owed: a stored application list is
-// simply no longer read.
+// the console — is no candidate and is logged (STS-AUTHN-0537), so where
+// nothing else names a profile the realm's baseline, `default`, applies; a
+// profile an application or a group still names is not deleted
+// (STS-AUTHN-0538). No migration is owed: a stored list is simply no longer
+// read.
 //
 // #534 (2026-10-08) added `aggregateDevices`, ON — what the sign-in did
 // before: one "Use passkey" ceremony whose `allowCredentials` lists every
@@ -591,9 +594,6 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 const SELECTORS = [
-  { key: 'selectGroups', attribute: 'stsPasskeySelectGroup',
-    what: 'The groups (cn or DN) whose members a named passkey policy ' +
-          'applies to.' },
   { key: 'precedence', attribute: 'stsPasskeyPrecedence',
     what: 'Which named passkey policy wins where several match: the lowest, ' +
           'from 1 to 1000.' }
@@ -602,13 +602,14 @@ const DEFAULT_PRECEDENCE = PolicySelection.DEFAULT_PRECEDENCE;
 /**
  * How `common/policy_selection.ts` reads a named profile (#1235).
  */
-const SELECTION = { groupAttribute: 'stsPasskeySelectGroup',
-                    precedenceAttribute: 'stsPasskeyPrecedence',
+const SELECTION = { precedenceAttribute: 'stsPasskeyPrecedence',
                     defaultPrecedence: DEFAULT_PRECEDENCE };
 /**
- * The attributes that NAME a passkey profile (#1235): on an application.
+ * The attributes that NAME a passkey profile (#1235): on an application and
+ * on a group.
  */
-const REFERENCES = Object.freeze({ application: 'appPasskeyPolicy' });
+const REFERENCES = Object.freeze({ application: 'appPasskeyPolicy',
+                                   group: 'stsPasskeyPolicy' });
 /**
  * A selection (#535).
  */
@@ -1491,8 +1492,9 @@ class PasskeyPolicy {
   /**
    * Works out which profile applies to a person signing in to an
    * application, without selecting it: of the profile the application names
-   * (`appPasskeyPolicy`, #1235) and the named profiles selecting one of the
-   * person's groups, the lowest precedence (ties by name), else `default`.
+   * (`appPasskeyPolicy`, #1235) and the profiles the person's groups name
+   * (`stsPasskeyPolicy`), the lowest precedence (ties by name), else
+   * `default`.
    *
    * @param username - the person, or '' where not yet known
    * @param application - the application (its identifier or a client_id),
@@ -1511,22 +1513,26 @@ class PasskeyPolicy {
       log.debug("Leaving PasskeyPolicy.selectionFor(). None named.");
       return DEFAULT_PROFILE;
     }
-    const hook = this.directory.personGroups;
+    const hook = this.directory.personGroupReferences;
     const groups = username && typeof hook === 'function'
-      ? (hook.call(this.directory, username) || []) : [];
-    const ranked = PolicySelection.rank(entries, SELECTION, [
-      { by: 'application', value: this.applicationReference(application) }
-    ], groups);
-    if (ranked.missing.length) {
-      // A REFERENCE NO PROFILE ANSWERS (#1235) selects the baseline: the
-      // default profile is never weaker than nothing, which is why this kind
-      // reads it where the authentication policy fails closed.
+      ? (hook.call(this.directory, username, REFERENCES.group) || []) : [];
+    const references: Array<{ by: string; holder?: string;
+                              value: unknown }> = [
+      { by: 'application', holder: String(application || ''),
+        value: this.applicationReference(application) }
+    ];
+    const ranked = PolicySelection.rank(entries, SELECTION, references
+      .concat(PolicySelection.groupReferences(groups)));
+    ranked.missing.forEach(function (one) {
+      // A REFERENCE NO PROFILE ANSWERS (#1235) selects nothing; where
+      // nothing else names a profile the baseline applies — the default
+      // profile is never weaker than nothing, which is why this kind reads
+      // it where the authentication policy fails closed.
       log.warn(errorCodes.tag('STS-AUTHN-0537') + 'passkey policy: the ' +
-               'application "' + application + '" names the passkey ' +
-               'policy "' + ranked.missing[0].name + '", which this realm ' +
-               'does not hold; the default profile applies to it until ' +
-               'the policy exists or appPasskeyPolicy changes.');
-    }
+               one.by + ' "' + one.holder + '" names the passkey policy "' +
+               one.name + '", which this realm does not hold; it selects ' +
+               'nothing until the policy exists or the reference changes.');
+    });
     log.debug("Leaving PasskeyPolicy.selectionFor(). " + ranked.name);
     return ranked.name;
   }
@@ -1565,8 +1571,8 @@ class PasskeyPolicy {
   // THE APPLICATION PAGE'S ANSWER (#609, reshaped by #1235): the profile the
   // application names in `appPasskeyPolicy` (its picker is that field),
   // whether the realm holds it, what a sign-in naming it gets before any
-  // person is known, and how many named profiles select by group and could
-  // still win for a person.
+  // person is known, and how many named profiles a group names and could
+  // still win for a member.
   // -------------------------------------------------------------------------
   /**
    * Says which passkey profile an application's reference comes to.
@@ -1582,19 +1588,26 @@ class PasskeyPolicy {
     const entries = this.haveDirectory()
       ? this.directory.allPasskeyPolicies() : [];
     const out = PolicySelection.forReference(entries, SELECTION, reference);
+    const groupPolicies = PolicySelection.named(entries, SELECTION)
+      .filter((one) => {
+        return this.namedBy(one.name).groups.length > 0;
+      }).length;
     log.debug("Leaving PasskeyPolicy.forApplication(). " + out.applies);
-    return out;
+    return Object.assign({}, out, { groupPolicies: groupPolicies });
   }
 
   /**
-   * The applications naming a named profile (#1235): what refuses its delete
-   * and what its Named policies entry lists. Lazily, for
-   * `applicationReference()`'s reason.
+   * What names a named profile (#1235): the applications (the application
+   * listing's index, lazily, for `applicationReference()`'s reason) and the
+   * groups (the directory's group index) — what refuses its delete and what
+   * its Named policies entry lists.
    *
    * @param name - the profile's name
-   * @returns the applications' identifiers
+   * @returns `{ applications, groups, people }`; nobody names a passkey
+   *   profile from their own entry
    */
-  namedBy(name: unknown): { applications: string[]; people: string[] } {
+  namedBy(name: unknown): { applications: string[]; groups: string[];
+                            people: string[] } {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.namedBy().");
     let applications: string[] = [];
@@ -1606,8 +1619,13 @@ class PasskeyPolicy {
                 ((e && e.message) || e));
       applications = [];
     }
-    log.debug("Leaving PasskeyPolicy.namedBy(). " + applications.length);
-    return { applications: applications, people: [] };
+    const hook = this.haveDirectory() ? this.directory.groupsNamingPolicy
+      : null;
+    const groups = typeof hook === 'function'
+      ? (hook.call(this.directory, REFERENCES.group, name) || []) : [];
+    log.debug("Leaving PasskeyPolicy.namedBy(). " + applications.length +
+              " application(s), " + groups.length + " group(s).");
+    return { applications: applications, groups: groups, people: [] };
   }
 
   /**
@@ -1756,10 +1774,8 @@ class PasskeyPolicy {
     const at = entry ? (entry.attributes || {}) : {};
     const out = Object.assign({
       name: profile,
-      // THE SELECTORS (#535): empty for `default`, which needs none. The
-      // applications name a profile themselves since #1235.
-      selectGroups: profile === DEFAULT_PROFILE ? []
-        : this.allValues(at, 'stsPasskeySelectGroup'),
+      // THE PRECEDENCE (#535): 0 for `default`, which is never ranked. What
+      // a profile covers names it since #1235 (`namedBy()`).
       precedence: profile === DEFAULT_PROFILE ? 0
         : PolicySelection.precedenceOf(at, SELECTION),
       stored: found.from === 'realm',
@@ -3267,18 +3283,14 @@ class PasskeyPolicy {
     return null;
   }
 
-  // A named profile's selectors as sent (#535): its groups by comma, line or
-  // array, each at most 256 characters with no control character, at most
-  // 32, and a precedence from 1 to 1000 (100 when omitted) —
-  // `PolicySelection.checkSelectors()` (#1235). A profile with no group is
-  // no longer refused: an application may name it (`appPasskeyPolicy`).
+  // A named profile's precedence as sent (#535): from 1 to 1000, 100 when
+  // omitted — `PolicySelection.checkPrecedence()` (#1235). It carries no
+  // other selector: what it covers names it.
   private checkSelectors(given: Record<string, any>):
-      { groups: string[]; precedence: number; problems: string[] } {
+      { precedence: number; problems: string[] } {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.checkSelectors().");
-    const out = PolicySelection.checkSelectors(given, SELECTION,
-                                               { maxValues: 32,
-                                                 maxLength: 256 });
+    const out = PolicySelection.checkPrecedence(given, SELECTION);
     log.debug("Leaving PasskeyPolicy.checkSelectors(). " +
               out.problems.length + " problem(s).");
     return out;
@@ -3596,7 +3608,6 @@ class PasskeyPolicy {
       delete attributes.description;
     }
     if (selectors) {
-      attributes.stsPasskeySelectGroup = selectors.groups;
       attributes.stsPasskeyPrecedence = String(selectors.precedence);
     }
     const written = this.directory.writePasskeyPolicy(which, attributes);
@@ -3632,9 +3643,8 @@ class PasskeyPolicy {
       log.debug('Leaving PasskeyPolicy.reset(). No directory.');
       return { ok: true, removed: false, profile: this.read(which) };
     }
-    // NOT WHILE AN APPLICATION NAMES IT (#1235): it would be left naming a
-    // profile the realm does not hold. The groups it selects are on the
-    // profile and go with it, so they refuse nothing.
+    // NOT WHILE AN APPLICATION OR A GROUP NAMES IT (#1235): it would be left
+    // naming a profile the realm does not hold.
     const held = which === DEFAULT_PROFILE ? null
       : PolicySelection.deleteProblem('passkey policy', which,
                                       this.namedBy(which));
@@ -3672,6 +3682,19 @@ const slot = new InstanceSlot<PasskeyPolicy>(
   log);
 
 slot.buildNowUnlessDeferred();
+
+// A GROUP NAMES ITS PASSKEY PROFILE (#1235): declared, so the group page
+// draws its picker and the directory's group writer checks it, offering
+// `default` and the realm's named profiles as they stand when asked.
+PolicySelection.declareReference('group', REFERENCES.group, 'passkey policy',
+  function () {
+    log.debug("Entering passkey policy reference choices.");
+    const names = slot.get().list().map(function (one) {
+      return String(one.name);
+    });
+    log.debug("Leaving passkey policy reference choices.");
+    return names;
+  });
 
 /**
  * The passkey policy (#527): how a realm's passkeys behave. The fourth policy

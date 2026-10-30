@@ -99,6 +99,8 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
+// The policy references a group may make (#1235, rule 3cx): a leaf.
+import PolicySelection = require('../common/policy_selection');
 import InstanceSlot = require('../common/instance_slot');
 // The credential store, for the ways-in list the new-person form offers.
 import credentials = require('../common/credentials');
@@ -2611,9 +2613,9 @@ class AdminViews {
         return one.key;
       });
       // WHAT NAMES A PROFILE (#1235, rule 3cx): the attribute on an
-      // application and/or a person by which one names its profile of this
-      // kind, so the console says which; `{}` for a kind selected by its
-      // own lists alone.
+      // application, a group and/or a person by which one names its profile
+      // of this kind, so the console says which; `{}` for a kind selected
+      // by its own lists alone.
       (out as any).references = Object.assign({}, module.REFERENCES || {});
       (out as any).named = module.list().filter(function (one) {
         return one.name !== module.DEFAULT_PROFILE;
@@ -2623,11 +2625,11 @@ class AdminViews {
           selectApplications: one.selectApplications || [],
           selectGroups: one.selectGroups || [],
           precedence: one.precedence,
-          // The applications and people naming it (#1235), read-only here:
-          // each is edited on its own page.
+          // The applications, groups and people naming it (#1235),
+          // read-only here: each is edited on its own page.
           namedBy: typeof module.namedBy === 'function'
             ? module.namedBy(one.name)
-            : { applications: [], people: [] },
+            : { applications: [], groups: [], people: [] },
           rules: module.describe(one),
           fields: module.FIELDS.map(function (field) {
             return { key: field.key, attribute: field.attribute,
@@ -10695,6 +10697,10 @@ class AdminViews {
       json: Object.assign({ found: true }, info, {
         canWrite: !!groupWriter,
         group: pagedGroup,
+        // THE POLICY THE GROUP NAMES OF EACH KIND THAT A GROUP SELECTS
+        // (#1235, rule 3cx): one picker each, `default` and the realm's
+        // named policies; `set-policy` writes it.
+        policyReferences: this.groupPolicyReferences(group),
         // Closed to its owners, and why (#607).
         ownership: this.ownershipOf('group', group.dn),
         membersPaging: this.pagingJson(memberPage.paging),
@@ -10704,6 +10710,26 @@ class AdminViews {
                        write: config.value('admin.writeGroup') }
       })
     };
+  }
+
+  /**
+   * The policy references a group's page draws (#1235): each kind's
+   * declared group attribute, its choices and the value the group holds.
+   *
+   * @param group - the group's entry
+   * @returns `[{ attribute, noun, choices, value }]`
+   */
+  groupPolicyReferences(group) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.groupPolicyReferences().");
+    const held = (group && group.attributes) || {};
+    const out = PolicySelection.referencesOn('group').map(function (one) {
+      const value = PolicySelection.valuesOf(held, one.attribute)[0] || '';
+      return { attribute: one.attribute, noun: one.noun,
+               choices: one.choices, value: PolicySelection.fold(value) };
+    });
+    log.debug("Leaving AdminViews.groupPolicyReferences(). " + out.length);
+    return out;
   }
 
   // `?group=` means the drill-down — and the NO-DIRECTORY branch comes first,

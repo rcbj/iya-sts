@@ -831,7 +831,7 @@
   "passkey.default": "此应用程序的登录使用 <strong>default</strong> 通行密钥策略。",
   "passkey.missing": "此应用指定了通行密钥策略 <strong>{name}</strong>，但此领域没有该策略，因此在该策略存在或 <code>appPasskeyPolicy</code> 更改之前，登录它将采用 <strong>default</strong> 通行密钥策略。",
   "passkey.open": "在目录 → 策略中打开",
-  "passkey.groupNote": "按组选择的命名策略仍可能对某个人生效：如果指定此人所在某个组的策略优先级数值更低，则对其适用该策略。此领域有 {n} 个按组选择的命名通行密钥策略。",
+  "passkey.groupNote": "某人所在组指定的命名策略仍可能对其生效：如果其优先级数值低于此应用指定的策略，则对其适用该策略。此领域中，各组共指定了 {n} 个命名通行密钥策略。",
   "launch.heading": "身份提供方发起的登录",
   "launch.lead": "此链接在这里发起对该应用的 {protocol} 登录。用户门户的<strong>登录</strong>链接就是同一个 URL，它在其他任何地方也可以使用——书签、内网页面或电子邮件。",
   "launch.off": "该应用的此功能已<strong>关闭</strong>，因此该链接会被拒绝：请在下方将 <code>{attribute}</code> 设为 TRUE，或为该领域开启 <code>{setting}</code>。",

@@ -12,7 +12,7 @@
   "scopeGroup": "los miembros del grupo <code>{name}</code>.",
   "scopeProfile": "las personas que el perfil de llaves de acceso <code>{name}</code> selecciona por grupo.",
   "scopeApplication": "todo el dominio, como población de la aplicación <code>{name}</code>.",
-  "applicationNote": "Cualquiera puede iniciar sesión en una aplicación, así que su población es el dominio. Sus inicios de sesión se rigen por el perfil de llaves de acceso <code>{profile}</code>; {groups} perfiles que seleccionan por grupo aún podrían prevalecer para una persona.",
+  "applicationNote": "Cualquiera puede iniciar sesión en una aplicación, así que su población es el dominio. Sus inicios de sesión se rigen por el perfil de llaves de acceso <code>{profile}</code>; {groups} perfiles que nombran los grupos aún podrían prevalecer para una persona.",
   "filterGroup": "Grupo (cn o DN)",
   "filterProfile": "Perfil de llaves de acceso",
   "filterApplication": "Aplicación",

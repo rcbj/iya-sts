@@ -347,13 +347,13 @@ const FIELD_GROUPS = [
                  'schacCountryOfCitizenship', 'x500UniqueIdentifier'] },
   // THE POLICIES A PERSON NAMES (#1235, rule 3cx): one attribute per policy
   // kind that a person selects, each declared by its kind
-  // (`PolicySelection.declarePersonReference()`). `groupOf()` never answers
+  // (`PolicySelection.declareReference('person', ...)`). `groupOf()` never answers
   // it: a declared reference is put here by name when the universe is built.
   { id: 'policies', label: 'Policies',
     what: 'The named policy of each kind that this person names: `default`, ' +
           'or one of this realm\'s named policies of that kind (Directory > ' +
-          'Policies). It competes on precedence with the policies that ' +
-          'select one of the person\'s groups.',
+          'Policies). It competes on precedence with the policy the ' +
+          'application names and the policies the person\'s groups name.',
     attributes: [] as string[] },
   // A REALM'S OWN ATTRIBUTES (#396), drawn after the schema's groups.
   // `groupOf()` never answers it: a custom row is put here by name when the
@@ -590,7 +590,7 @@ class PersonEditor {
       const format = custom ? (SYNTAX_FORMATS[custom.syntax] || '')
                             : (FORMATS[key] || '');
       // A POLICY REFERENCE (#1235): one value, from a closed set.
-      const reference = PolicySelection.personReferenceOf(name);
+      const reference = PolicySelection.referenceOf('person', name);
       editable.push({ name: name, label: label, schema: schema,
                       multi: reference ? false
                         : custom ? custom.multi
@@ -987,13 +987,11 @@ class PersonEditor {
     // A POLICY REFERENCE NAMES A POLICY THE REALM HOLDS (#1235), the
     // application's CHOICES_CHECKED_HERE rule: one that does not would be
     // a reference the kind has to treat as missing.
-    if (row.choices && value !== '' &&
-        row.choices.indexOf(value.trim().toLowerCase()) < 0) {
+    const notHeld = row.choices
+      ? PolicySelection.referenceProblem(value, row.choices, row.name) : null;
+    if (notHeld) {
       log.debug("Leaving PersonEditor.update(). Not a policy here.");
-      return this.refused('STS-LDAP-0106', 'The value for ' + row.name +
-                          ' is "default" or a named policy of this realm (' +
-                          row.choices.join(', ') + '); "' +
-                          value.slice(0, 80) + '" is neither.');
+      return this.refused('STS-LDAP-0106', notHeld);
     }
     const before = (person.attributes[lower] || []).map(String);
     // A HOT PATH, run once per held value: no Entering/Leaving pair here,

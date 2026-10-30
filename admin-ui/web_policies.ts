@@ -703,9 +703,9 @@ class PoliciesPage {
    *
    * GENERIC OVER WHAT THE KIND DECLARES (#1235, rule 3cx): a box per
    * selector in `member.selectors` (`selectApplications` — the locale
-   * policy's, until it names its policy from the application —
-   * `selectGroups`, `precedence`), and, for a tabbed kind, what names each
-   * profile (`named.namedBy`, the applications and people whose reference
+   * policy's, until its applications name it — — the post-login policy's, until its groups name it —
+   * `precedence`), and, for a tabbed kind, what names each profile
+   * (`named.namedBy`, the applications, groups and people whose reference
    * attributes in `member.references` name it), read-only.
    *
    * @param kind - the policy kind
@@ -717,16 +717,17 @@ class PoliciesPage {
    */
   static namedProfileParts(kind, member, t, state) {
     // The selectors this kind carries (#539): the locale policy's
-    // applications, the passkey and post-login policies' groups and
+    // applications, the post-login policy's groups, and every ranked kind's
     // precedence. A view from before the member was published names none,
-    // and means groups and precedence.
+    // and means precedence alone.
     const selectors = Array.isArray(member.selectors) ? member.selectors
-      : ['selectGroups', 'precedence'];
+      : ['precedence'];
     const has = function (key) {
       return selectors.indexOf(key) >= 0;
     };
     const references = member.references || {};
-    const referenced = !!(references.application || references.person);
+    const referenced = !!(references.application || references.group ||
+                          references.person);
     const tabbed = PoliciesPage.isTabbedKind(kind, member);
     const drafts = (state && state.policyDrafts) || {};
     const saveErrors = (state && state.policySaveErrors) || {};
@@ -800,10 +801,10 @@ class PoliciesPage {
             'class="secondary">' + t.html('consolePolicies.named.remove') +
             '</button></form>');
     };
-    // WHAT A NAMED PROFILE SELECTS, AND WHAT NAMES IT (#609, #1235), said
-    // above its form on the Named policies sub-tab, so the list reads
-    // without opening a form: its groups, and — read-only, each edited on
-    // its own page — the applications and people that name it.
+    // WHAT NAMES A NAMED PROFILE (#609, #1235), said above its form on the
+    // Named policies sub-tab, so the list reads without opening a form:
+    // read-only, each edited on its own page, the applications, groups and
+    // people that name it (and any list the kind still keeps itself).
     const selects = function (named) {
       if (!tabbed) {
         return '';
@@ -826,6 +827,11 @@ class PoliciesPage {
         parts.push(t.html('consolePolicies.named.namedByApplications',
                           { attribute: references.application }) + ': ' +
                    listed(by.applications));
+      }
+      if (references.group) {
+        parts.push(t.html('consolePolicies.named.namedByGroups',
+                          { attribute: references.group }) + ': ' +
+                   listed(by.groups));
       }
       if (references.person) {
         parts.push(t.html('consolePolicies.named.namedByPeople',

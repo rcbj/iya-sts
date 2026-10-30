@@ -70,8 +70,8 @@
 // version for each dimension.
 //
 // **THE FILTERS ARE NOT THE AGGREGATE'S, AND THEY ARE BOUNDED.** By GROUP
-// (a cn or a DN) and by PASSKEY PROFILE (#535's populations: a named
-// profile selects people by its groups, `stsPasskeySelectGroup`), the report
+// (a cn or a DN) and by PASSKEY PROFILE (#535's populations: the members of
+// the groups naming the profile, `stsPasskeyPolicy` since #1235), the report
 // is counted from the population's own members — read asynchronously, at
 // most `POPULATION_LIMIT` of them, and said when the population is larger.
 // An APPLICATION selects sign-ins, not people — it names its profile in
@@ -1180,11 +1180,13 @@ class PasskeyReport {
         // The applications naming it (#1235): the listing's index, never a
         // walk of the applications.
         const by = name !== 'default' && typeof policy.namedBy === 'function'
-          ? policy.namedBy(name) : { applications: [] };
+          ? policy.namedBy(name) : { applications: [], groups: [] };
+        // `selectGroups` is the groups NAMING it (`stsPasskeyPolicy`,
+        // #1235): its population, as the profile's own list was before.
         return { name: name,
                  postQuantumRequired: String(p.postQuantumRequired || 'off'),
                  precedence: Number(p.precedence || 0),
-                 selectGroups: (p.selectGroups || []).map(String),
+                 selectGroups: (by.groups || []).map(String),
                  namedByApplications: (by.applications || []).map(String) };
       });
     } catch (e) {

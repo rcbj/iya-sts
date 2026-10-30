@@ -831,7 +831,7 @@
   "passkey.default": "Une connexion pour cette application reçoit la politique de clés d’accès <strong>default</strong>.",
   "passkey.missing": "Cette application nomme la politique de clés d’accès <strong>{name}</strong>, que ce domaine ne détient pas : une connexion pour elle reçoit donc la politique de clés d’accès <strong>default</strong> jusqu’à ce que la politique existe ou que <code>appPasskeyPolicy</code> change.",
   "passkey.open": "Ouvrir dans Annuaire → Politiques",
-  "passkey.groupNote": "Une politique nommée qui sélectionne par groupe peut tout de même l’emporter pour une personne donnée : lorsqu’une politique citant l’un des groupes de la personne a une priorité plus basse, c’est elle qui s’applique. Ce domaine compte {n} politique(s) de clés d’accès nommée(s) qui sélectionnent par groupe.",
+  "passkey.groupNote": "Une politique nommée que nomme l’un des groupes d’une personne peut tout de même l’emporter pour elle : si sa priorité est plus basse que celle que nomme cette application, c’est elle qui s’applique. Dans ce domaine, des groupes nomment {n} politique(s) de clés d’accès nommée(s).",
   "launch.heading": "Connexion initiée par le fournisseur d’identité",
   "launch.lead": "Ce lien démarre ici une connexion {protocol} à cette application. Le lien <strong>Se connecter</strong> du portail utilisateur est la même URL, et elle fonctionne aussi partout ailleurs — un signet, une page intranet, un courriel.",
   "launch.off": "Elle est <strong>désactivée</strong> pour cette application, et le lien est donc refusé : mettez <code>{attribute}</code> à TRUE ci-dessous, ou activez <code>{setting}</code> pour le domaine.",

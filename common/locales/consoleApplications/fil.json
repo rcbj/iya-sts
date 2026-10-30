@@ -831,7 +831,7 @@
   "passkey.default": "Ang pag-sign in para sa application na ito ay nakakakuha ng <strong>default</strong> na patakaran sa passkey.",
   "passkey.missing": "Pinapangalanan ng application na ito ang passkey policy na <strong>{name}</strong>, na wala sa realm na ito, kaya ang isang pag-sign in para dito ay makakakuha ng passkey policy na <strong>default</strong> hanggang umiral ang policy o magbago ang <code>appPasskeyPolicy</code>.",
   "passkey.open": "Buksan sa Directory → Policies",
-  "passkey.groupNote": "Ang isang pinangalanang patakaran na pumipili ayon sa grupo ay maaari pa ring manalo para sa isang partikular na tao: kung ang isang patakarang nagbabanggit sa isa sa mga grupo ng tao ay may mas mababang precedence, iyon ang nalalapat sa kanila. May {n} pinangalanang patakaran sa passkey ang realm na ito na pumipili ayon sa grupo.",
+  "passkey.groupNote": "Ang isang pinangalanang patakaran na pinapangalanan ng isa sa mga grupo ng isang tao ay maaari pa ring manalo para sa taong iyon: kung mas mababa ang precedence nito kaysa sa pinapangalanan ng application na ito, iyon ang nalalapat sa kanila. Sa realm na ito, pinapangalanan ng mga grupo ang {n} pinangalanang patakaran sa passkey.",
   "launch.heading": "Sign-in na sinimulan ng identity provider",
   "launch.lead": "Sinisimulan ng link na ito dito ang isang {protocol} na pag-sign in sa application na ito. Ang link na <strong>Mag-sign in</strong> ng user portal ay ang parehong URL, at gumagana rin ito kahit saan — isang bookmark, isang pahina sa intranet, isang email.",
   "launch.off": "<strong>Naka-off</strong> ito para sa application na ito, kaya tinatanggihan ang link: itakda ang <code>{attribute}</code> sa TRUE sa ibaba, o i-on ang <code>{setting}</code> para sa realm.",
