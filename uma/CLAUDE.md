@@ -100,6 +100,50 @@ checked at every read (`live()`), pruned opportunistically at writes, and
 swept by the scheduler job phase 2 registers — never by a timer of this
 family's own.
 
+## Phase 2 (#1191): the protection API
+
+| File | What it is |
+|---|---|
+| `uma_pat.ts` | The protection API token's door: AuthZEN's token door read again (signature or opaque handle, expiry, `at+jwt`, issuer, audience `/uma`, revocation, certificate binding, DPoP, sender constraints, `uma_protection` and the client's delegated permission grant of it, asked on every call), then the two facts a PAT adds: the client's application is DECLARED for `uma` (0104), and a token issued to the client as itself needs `umaOwnsResources` (0105). The caller it answers names the OWNER — a person's `urn:uuid:` subject or the application's identifier. |
+| `uma.ts` | The routes, registered at 23d-ii: `/uma/rreg` (and `/:id`), `/uma/perm`, `/.well-known/uma2-configuration` at both forms, and `/uma` (a description page on #584's shell, `web_uma_description.ts` with the `describeUma` catalogs). Its wire step registers the `uma.sweep` job. |
+
+The registry gained the `uma` protocol family (no identifier attribute: a
+resource server is an OAuth client, and declaring the family is what makes
+it one), the `umaOwnsResources` attribute, and the `sts-uma-protection-api`
+resource object with its one permission, `uma_protection` — the word
+Federated Authorization section 2 names. `scope_policy.ts` protects it,
+`registered_targets.ts` names `/uma` as this service's own resource server,
+and `hosted_applications.js` gives the family its two prefixes.
+
+### Decisions made here, and why
+
+* **An unknown member of a resource description is NOT STORED, not
+  refused.** Federated Authorization section 3.1 lets an authorization
+  server define extensions; this one defines none, and a peer such as
+  Keycloak sends members of its own (`owner`, `ownerManagedAccess`). The
+  one that matters is refused by construction: the owner is the PAT's,
+  never a member (`tests/uma_protection.js` R2).
+* **A resource another owner or another resource server registered is
+  `not_found`**, and at the permission endpoint `invalid_resource_id`: a
+  resource server cannot learn whether somebody else's `_id` exists.
+* **Nothing unimplemented is advertised.** `capabilities()` answers what
+  later phases have filled — the `uma-ticket` grant (phase 4) and the
+  claims interaction endpoint (phase 5) — and the discovery document adds
+  each only then. The document starts from `oauth2.ts`'s `asMetadata()` for
+  the request, so its RFC 8414 members are the realm's own; its
+  `signed_metadata` is dropped, because it signs the OAuth document and
+  not this one.
+* **The routes answer 501 while off, discovery included** (0108; 0109
+  without the API object), XACML's and AuthZEN's rule.
+* **Withdrawing a registration reaches the tokens that carried it**
+  (decision 11): `revokeFor()` walks `uma.rpts`' resource index and
+  revokes through `admin_stats.revoke()`, on a delete and on an update that
+  drops scopes. It finds nothing until phase 4 issues RPTs; the hook is
+  already the one phase 4 relies on.
+* **The settings are homed on `/admin/xacml` until phase 6** gives the
+  family its own page, as AuthZEN's are; the description page is the
+  family's public face until then.
+
 ## What is deliberately not here
 
 * `uma_profiles_supported` is empty until a profile is implemented end to

@@ -1128,6 +1128,18 @@ const ACTIONS = [
     label: 'The person at a GNAP approval page was not the user the ' +
            'request named, and the grant was sent to that user\'s portal ' +
            '(#432 phase 6)' },
+  // USER-MANAGED ACCESS 2.0 (#1168): the protection API's acts, each with
+  // the resource server, the owner and the resource's id — never a
+  // resource's name or description, which are the owner's data.
+  { action: 'uma.resource.register', category: 'protocol',
+    label: 'A UMA resource server registered a resource on an owner\'s ' +
+           'behalf' },
+  { action: 'uma.resource.update', category: 'protocol',
+    label: 'A UMA resource server updated a registered resource' },
+  { action: 'uma.resource.delete', category: 'protocol',
+    label: 'A UMA resource server deleted a registered resource' },
+  { action: 'uma.permission.ticket', category: 'protocol',
+    label: 'A UMA resource server was issued a permission ticket' },
   { action: 'gnap.grant.finalize', category: 'protocol',
     label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
            'rejected or expired' },

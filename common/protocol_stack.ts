@@ -2034,6 +2034,21 @@ class ProtocolStack {
     this.register(app, require('../gnap/gnap_interact'), 'gnap/gnap_interact');
     this.register(app, require('../gnap/gnap_admin'), 'gnap/gnap_admin');
 
+    // USER-MANAGED ACCESS 2.0 (#1168) — 23d-ii. After the console (18),
+    // `oauth2` (9), `authn` (8), `ldap_server` (21) and the armed XACML
+    // family (23c), all of which it reads; after `gnap` (23d) for a reader,
+    // since both are grants over the same engine. The store first (a
+    // library: six `realms.map()` stores, a cluster claim), then the PAT
+    // door (a library), then the surface, whose wire step registers the
+    // `uma.sweep` scheduler job. One require, and — as the phases land —
+    // the `register()` calls `uma`, `uma_claims`, `uma_admin`, GNAP's shape.
+    // `/uma/*` and `/.well-known/uma2-configuration` collide with nothing.
+    require('../uma/uma');
+    this.build('uma/uma_store', require('../uma/uma_store'), 'UmaStore');
+    this.build('uma/uma_pat', require('../uma/uma_pat'), 'UmaPat');
+    this.build('uma/uma', require('../uma/uma'), 'UmaSurface');
+    this.register(app, require('../uma/uma'), 'uma/uma');
+
     // CERTIFICATE ENROLLMENT (2026-09-13) — 23e, 23f, 23g. ACME (RFC 8555), EST
     // (RFC 7030) and SCEP (RFC 8894). After the console at 18, whose shell each
     // family's `<family>_admin.ts` draws its two pages with, and after `ldap`

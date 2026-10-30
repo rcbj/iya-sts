@@ -26,12 +26,43 @@ put to the XACML engine, and this page says which policies answer it.
 | Phase | What | State |
 |---|---|---|
 | 1 (#1190) | The contract: the facts, the two policy templates, the stores, the settings, the error codes | built |
-| 2 (#1191) | The protection API: the PAT, resource registration, the permission endpoint, discovery | |
+| 2 (#1191) | The protection API: the PAT, resource registration, the permission endpoint, discovery | built |
 | 3 (#1192) | The resource owner's own policy, and the portal's *Sharing* section | |
 | 4 (#1193) | The `uma-ticket` grant: the layers, `need_info`, the RPT, the PCT, upgrade, introspection, revocation | |
 | 5 (#1194) | Claims interaction, `claim_token`, `request_submitted` and the owner's approval | |
 | 6 (#1195) | The console, `/admin-api` and the monitor | |
 | 7 (#1196) | Protocol tests with Keycloak as the independent peer | |
+
+## The protection API
+
+A **resource server** is an application declared for the protocol `uma`
+(**Applications → the application → Protocols**). Its client needs a
+delegated permission grant of `urn:sts:uma-protection-api:uma_protection` on
+the realm's `sts-uma-protection-api` object.
+
+**The protection API access token (PAT)** is an ordinary access token of the
+realm, audienced to its `/uma` and carrying `uma_protection`. Its subject is
+the **resource owner** of everything registered with it:
+
+* obtained by the **authorization code flow**, the owner is the person who
+  signed in and consented;
+* obtained by **`client_credentials`**, the owner is the application itself,
+  which is allowed only where the application carries `umaOwnsResources`
+  `TRUE`.
+
+Nothing a resource server sends names an owner. The PAT is checked in every
+mode.
+
+| Endpoint | What it does |
+|---|---|
+| `POST /uma/rreg` | Registers a resource. `resource_scopes` is required; `name`, `type`, `description` and an https `icon_uri` are optional; other members are not stored. Answers 201 with `_id`, `user_access_policy_uri` and a `Location`. |
+| `GET /uma/rreg` | Lists the `_id`s this resource server registered for this owner. |
+| `GET`, `PUT`, `DELETE /uma/rreg/{_id}` | Reads, replaces or deletes one. A resource another owner or resource server registered is `not_found`. Withdrawing a scope, or deleting the resource, revokes every RPT that carried it. |
+| `POST /uma/perm` | Takes one `{resource_id, resource_scopes}` object or an array of them, and answers 201 with one permission `ticket`. An unregistered resource is `invalid_resource_id`; an unregistered scope is `invalid_scope`. |
+| `GET /.well-known/uma2-configuration` | The realm's RFC 8414 metadata plus `permission_endpoint`, `resource_registration_endpoint` and `uma_profiles_supported`. The `uma-ticket` grant and `claims_interaction_endpoint` appear once they are performed. Also answered at the inserted form, `/.well-known/uma2-configuration/realm/{id}`. |
+| `GET /uma` | A page describing UMA in the realm; `?format=json` for the same as data. |
+
+While `uma.enabled` is off, every one of these answers 501.
 
 ## How a permission is decided
 

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4961** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4983** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
-* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 3
+* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 25
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4872,6 +4872,28 @@ Raised from: uma/.
 | `STS-UMA-0001` | Whether a UMA permission ticket or PCT was already spent could not be asked of the cluster claim store, so the value was refused rather than accepted twice (#1168). | invalid_grant (HTTP 400) at the token endpoint; the value is not consumed |
 | `STS-UMA-0002` | A resource owner's UMA document was not written: it is larger than uma.maxOwnerPolicyBytes, or names no owner (#1168). | the caller's refusal (HTTP 400 on the account API); the document is left as it was |
 | `STS-UMA-0003` | A resource owner's UMA document was not written: it holds more rules than uma.maxOwnerRules (#1168). | the caller's refusal (HTTP 400 on the account API); the document is left as it was |
+| `STS-UMA-0004` | The uma.sweep scheduler job failed while removing expired permission tickets, PCTs, RPT records and pending approvals; a read still applies every deadline itself (#1168). | none — the run is recorded as failed |
+| `STS-UMA-0100` | A UMA protection API request carried no protection API token (PAT): no Authorization: Bearer or DPoP header (#1168). | HTTP 401, WWW-Authenticate: Bearer realm="<issuer>" |
+| `STS-UMA-0101` | The PAT presented at the UMA protection API does not verify: not this realm's signature, expired, not an access token, or another issuer's (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0102` | The PAT presented at the UMA protection API is not audienced to this realm's /uma (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0103` | The PAT presented at the UMA protection API does not carry uma_protection, or its client no longer holds a delegated permission grant of urn:sts:uma-protection-api:uma_protection on sts-uma-protection-api (#1168). | HTTP 403 insufficient_scope, WWW-Authenticate: Bearer scope="uma_protection" |
+| `STS-UMA-0104` | The client the PAT was issued to is not an application declared for the protocol uma, so it is no resource server here (#1168). | HTTP 403 invalid_token |
+| `STS-UMA-0105` | The PAT was issued to the client as ITSELF (client_credentials) while its application does not carry umaOwnsResources TRUE, so there is no resource owner for what it would register (#1168, rcbj's decision 5). | HTTP 403 invalid_token |
+| `STS-UMA-0106` | The PAT presented at the UMA protection API has been revoked (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0107` | The PAT's sender constraint was not met: a DPoP-bound token sent as Bearer or with a refused proof, or an RFC 8705 certificate-bound token without its certificate (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0108` | A UMA request reached a realm where uma.enabled is off: the routes stay registered and answer 501 (#1168). | HTTP 501 |
+| `STS-UMA-0109` | A UMA request reached a realm that has no sts-uma-protection-api object, the protection API's resource object, so the API is off there (#1168). | HTTP 501 |
+| `STS-UMA-0110` | A UMA resource registration body is not a JSON object; a member the resource description does not have is not stored (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0111` | A UMA resource registration carries no resource_scopes, or one that is not a non-empty array of scope strings (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0112` | A UMA resource registration carries more resource_scopes than uma.maxResourceScopes (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0113` | A UMA resource description member (name, type, description, icon_uri) is not a string, is too long, or icon_uri is not an https URL (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0114` | A UMA resource registration request named a resource this resource server did not register for this owner (#1168). | HTTP 404 not_found |
+| `STS-UMA-0115` | A UMA protection API request used a method the endpoint does not support (#1168). | HTTP 405 unsupported_method_type |
+| `STS-UMA-0116` | A UMA resource registration would take the owner past uma.maxResourcesPerOwner (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0117` | A UMA permission request body is not an object or an array of objects each with resource_id and resource_scopes (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0118` | A UMA permission request named a resource_id this resource server did not register (#1168). | HTTP 400 invalid_resource_id |
+| `STS-UMA-0119` | A UMA permission request named a scope the resource was not registered with (#1168). | HTTP 400 invalid_scope |
+| `STS-UMA-0120` | A path under /.well-known/uma2-configuration names no realm of this service (#1168). | HTTP 404 |
 
 ## STS-ADMIN
 

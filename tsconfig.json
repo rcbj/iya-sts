@@ -44,6 +44,7 @@
     "scep/*.js", "scep/*.ts",
     "scim/*.js", "scim/*.ts",
     "spiffe/*.js", "spiffe/*.ts",
+    "uma/*.js", "uma/*.ts",
     "ssf/*.js", "ssf/*.ts",
     "tls/*.js", "tls/*.ts",
     "ws-federation/*.js", "ws-federation/*.ts",

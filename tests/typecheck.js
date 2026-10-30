@@ -62,7 +62,8 @@ const CHECKED_DIRS = ['account-api', 'acme', 'admin-core', 'admin-ui',
                       'oauth-oidc', 'oid4vc', 'oidfed', 'persistence', 'pki',
                       'portal', 'report', 'risk', 'saml', 'scep', 'scim',
                       'spiffe',
-                      'ssf', 'tls', 'ws-federation', 'ws-trust', 'xacml'];
+                      'ssf', 'tls', 'uma', 'ws-federation', 'ws-trust',
+                      'xacml'];
 const CHECKED_FILES = ['server.js'];
 const ROOT_SOURCES = ['sts_metadata.ts'];
 const NOT_OURS = ['kerberos/krb5_primitives.js', 'kerberos/krb5_asn1.js',

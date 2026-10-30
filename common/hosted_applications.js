@@ -178,6 +178,14 @@ const APPLICATIONS = [
           'XACML engine, and its metadata document.',
     prefixes: ['/access/v1', '/.well-known/authzen-configuration'],
     exact: [] },
+  // USER-MANAGED ACCESS 2.0 (#1168): the protection API, the claims
+  // interaction page and, per realm, the discovery document. A family of
+  // its own, so a listener can carry the OAuth server without it.
+  { id: 'uma', label: 'User-Managed Access',
+    what: 'The UMA 2.0 protection API (resource registration and ' +
+          'permission tickets), the claims interaction page and the ' +
+          'uma2-configuration document.',
+    prefixes: ['/uma', '/.well-known/uma2-configuration'], exact: [] },
   { id: 'acme', label: 'ACME', what: 'Certificate enrollment by ACME.',
     prefixes: ['/enroll/acme'], exact: [] },
   { id: 'est', label: 'EST', what: 'Certificate enrollment by EST.',

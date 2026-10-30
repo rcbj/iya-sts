@@ -8937,6 +8937,9 @@ const SETTING_HOMES = [
   { group: 'XACML', pages: ['/admin/xacml'] },
   // AuthZEN (#563): decided by the XACML engine, so homed beside it.
   { group: 'AuthZEN', pages: ['/admin/xacml'] },
+  // UMA 2.0 (#1168): beside XACML, whose engine decides every permission,
+  // until phase 6 gives it a page of its own (/admin/uma).
+  { group: 'UMA', pages: ['/admin/xacml'] },
   // THE CERTIFICATE AUTHORITY'S FOUR SETTINGS, on the page that builds one.
   // They are DEFAULTS FOR A FORM rather than a policy — what a hierarchy was
   // built with is stored on the hierarchy — so the page that takes each of

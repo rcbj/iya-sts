@@ -21910,6 +21910,107 @@ const CODES = [
       'more rules than uma.maxOwnerRules (#1168).',
     spec: 'the caller\'s refusal (HTTP 400 on the account API); the ' +
       'document is left as it was' },
+  { code: 'STS-UMA-0004',
+    summary: 'The uma.sweep scheduler job failed while removing expired ' +
+      'permission tickets, PCTs, RPT records and pending approvals; a read ' +
+      'still applies every deadline itself (#1168).',
+    spec: 'none — the run is recorded as failed' },
+  // The protection API (Federated Authorization for UMA 2.0, sections 2–4).
+  { code: 'STS-UMA-0100',
+    summary: 'A UMA protection API request carried no protection API ' +
+      'token (PAT): no Authorization: Bearer or DPoP header (#1168).',
+    spec: 'HTTP 401, WWW-Authenticate: Bearer realm="<issuer>"' },
+  { code: 'STS-UMA-0101',
+    summary: 'The PAT presented at the UMA protection API does not verify: ' +
+      'not this realm\'s signature, expired, not an access token, or ' +
+      'another issuer\'s (#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0102',
+    summary: 'The PAT presented at the UMA protection API is not audienced ' +
+      'to this realm\'s /uma (#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0103',
+    summary: 'The PAT presented at the UMA protection API does not carry ' +
+      'uma_protection, or its client no longer holds a delegated ' +
+      'permission grant of urn:sts:uma-protection-api:uma_protection on ' +
+      'sts-uma-protection-api (#1168).',
+    spec: 'HTTP 403 insufficient_scope, WWW-Authenticate: Bearer ' +
+      'scope="uma_protection"' },
+  { code: 'STS-UMA-0104',
+    summary: 'The client the PAT was issued to is not an application ' +
+      'declared for the protocol uma, so it is no resource server here ' +
+      '(#1168).',
+    spec: 'HTTP 403 invalid_token' },
+  { code: 'STS-UMA-0105',
+    summary: 'The PAT was issued to the client as ITSELF (client_credentials) ' +
+      'while its application does not carry umaOwnsResources TRUE, so ' +
+      'there is no resource owner for what it would register (#1168, ' +
+      'rcbj\'s decision 5).',
+    spec: 'HTTP 403 invalid_token' },
+  { code: 'STS-UMA-0106',
+    summary: 'The PAT presented at the UMA protection API has been revoked ' +
+      '(#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0107',
+    summary: 'The PAT\'s sender constraint was not met: a DPoP-bound token ' +
+      'sent as Bearer or with a refused proof, or an RFC 8705 ' +
+      'certificate-bound token without its certificate (#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0108',
+    summary: 'A UMA request reached a realm where uma.enabled is off: the ' +
+      'routes stay registered and answer 501 (#1168).',
+    spec: 'HTTP 501' },
+  { code: 'STS-UMA-0109',
+    summary: 'A UMA request reached a realm that has no ' +
+      'sts-uma-protection-api object, the protection API\'s resource ' +
+      'object, so the API is off there (#1168).',
+    spec: 'HTTP 501' },
+  { code: 'STS-UMA-0110',
+    summary: 'A UMA resource registration body is not a JSON object; a ' +
+      'member the resource description does not have is not stored ' +
+      '(#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0111',
+    summary: 'A UMA resource registration carries no resource_scopes, or ' +
+      'one that is not a non-empty array of scope strings (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0112',
+    summary: 'A UMA resource registration carries more resource_scopes ' +
+      'than uma.maxResourceScopes (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0113',
+    summary: 'A UMA resource description member (name, type, description, ' +
+      'icon_uri) is not a string, is too long, or icon_uri is not an ' +
+      'https URL (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0114',
+    summary: 'A UMA resource registration request named a resource this ' +
+      'resource server did not register for this owner (#1168).',
+    spec: 'HTTP 404 not_found' },
+  { code: 'STS-UMA-0115',
+    summary: 'A UMA protection API request used a method the endpoint does ' +
+      'not support (#1168).',
+    spec: 'HTTP 405 unsupported_method_type' },
+  { code: 'STS-UMA-0116',
+    summary: 'A UMA resource registration would take the owner past ' +
+      'uma.maxResourcesPerOwner (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0117',
+    summary: 'A UMA permission request body is not an object or an array ' +
+      'of objects each with resource_id and resource_scopes (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0118',
+    summary: 'A UMA permission request named a resource_id this resource ' +
+      'server did not register (#1168).',
+    spec: 'HTTP 400 invalid_resource_id' },
+  { code: 'STS-UMA-0119',
+    summary: 'A UMA permission request named a scope the resource was not ' +
+      'registered with (#1168).',
+    spec: 'HTTP 400 invalid_scope' },
+  { code: 'STS-UMA-0120',
+    summary: 'A path under /.well-known/uma2-configuration names no realm ' +
+      'of this service (#1168).',
+    spec: 'HTTP 404' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
