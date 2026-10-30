@@ -2702,6 +2702,15 @@ route's, `admin:write`, with Admin Write on the console:
 | `remove-access-type-row` | `removeApplicationAccessTypeRow` | one row taken off |
 | `set-not-for-policy` | `setApplicationAccessTypeNotForPolicy` | the `notForPolicy` list replaced |
 
+**`fga-enable` answers `peps` (#1210)**: the realm's REMOTE_PEPS holders it
+granted AUTHZEN_PEPS and the application's scope (`granted`, each with
+`member` and `scope`), those that `held` both, and those that `failed`
+(`why`, `code` STS-FGA-0025), which never fail the act; its `message` says
+the same in English. Every enable re-runs it, so on an enforcing
+application it is the re-grant. `via` is `api` for the audit rows, the one
+door both the console and a script arrive through. `fga-create-policy`
+refuses at `xacml.maxApplicationPolicies` with STS-FGA-0024.
+
 `set-access-type` also takes `xacml` and `notForPolicy`, for a type written
 whole. The reads are `page.fga` on `GET /admin-api/applications?application=`
 and `applicationPolicies` on `GET /admin-api/xacml/policies`;

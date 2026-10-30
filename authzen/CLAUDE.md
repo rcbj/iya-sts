@@ -204,6 +204,43 @@ must be in the set (403 `0025`), none named and one in the set picks it,
 none in the set is `0026`, several and none named `0027`. **`ou=peps` is not
 consulted**: registration is not a permission.
 
+**ENABLING FGA ON AN APPLICATION WRITES BOTH FOR THE REALM'S REMOTE PEPS
+(#1210, rcbj's decision of 2026-10-30), WHICH DELIBERATELY MAKES THE
+REMOTE_PEPS GROUP A SOURCE OF AUTHZEN PERMISSION.** An edge PDP forwards an
+enforcing application's evaluations here as an AuthZEN caller (#564 P7), so
+`fga_policies.enable()` calls `authzen_admin.ts`'s `grantRemotePeps()`:
+each member of `roles.remotePepGroup`, located as `edgeCandidates()` locates
+the AuthZEN group's (`locateMembers()`: a person, a service account or an
+application by its entry's DN), is added to `roles.authzenPepGroup` if it is
+not a member and has the application added to its scope if absent. The rule
+above still holds — `ou=peps` is never read, and a registration grants
+nothing; what grants is an administrator's act over a group an
+administrator filled, written as ordinary state this tab shows and can take
+back.
+
+* **Through the ordinary doors**: the membership through `addGroupMember()`
+  (the AuthZEN slot gained `addMember`, validated whole with the other
+  three; audited `group.add-member`), a person's scope through the same
+  `write` `set-scope` uses, an application's through `updateApplication()`.
+  One `admin.authzen.pep.granted` row per holder changed; a holder that is
+  not is a row carrying STS-FGA-0025.
+* **One failing fails nothing else**, and never the enable: a member naming
+  no entry, an empty or missing AuthZEN group, a scope at `MAX_SCOPE`, a
+  refused write. A holder given the membership whose scope write then failed
+  keeps the membership, and its `why` says so.
+* **Nothing is ever removed.** Disable leaves both: a value set by hand is
+  indistinguishable from one an enable added.
+* **Not retroactive, and not periodic.** A holder added later is granted by
+  the next enable (the tab's *Grant the remote PEPs again* on an enforcing
+  application) or by hand here. Granting on a group change would be a
+  directory observer reaching into AuthZEN state on every membership write,
+  which nobody asked for.
+* **Bounded at `MAX_PEP_GRANT` (200) holders**, the answer's and the tab's
+  list; `truncated` says when the group is larger.
+
+`tests/fga_pep_grant.js` holds it in process; `tests/protocol/sts_fga.js`
+section 3 asserts it over HTTP.
+
 ## The metadata (#1163)
 
 **Section 9.2 INSERTS the well-known segment**, RFC 8414's shape: a realm's

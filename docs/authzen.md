@@ -185,6 +185,10 @@ search is `500` as a whole. A caller still reaches only applications in its
 scope: naming one outside it is `403`. Obligations are handed back by the
 rules under *Obligations* below, whichever policy decided.
 
+A remote PEP's [edge PDP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded)
+forwards evaluations about such an application here; enforcing it grants the
+realm's remote PEPs what that needs (see *Application scope*, below).
+
 The audit row of such an evaluation names the application's policy, its
 `PolicyId` and version. The decision is counted on the AuthZEN row of
 **XACML → Monitor**, like every AuthZEN decision.
@@ -582,6 +586,13 @@ about:
 caller has exactly one, that one is used. The application a policy sees is
 `urn:sts:xacml:authzen:application`, never the value as the caller sent it.
 The remote PEP register (`ou=peps`) is not consulted.
+
+**Enforcing fine-grained authorization on an application writes these for the
+realm's remote PEPs.** Each member of `remote-peps` (`roles.remotePepGroup`)
+is added to `authzen-peps` and given the application in its scope, where
+either is missing, so its edge PDP can forward evaluations about that
+application. See
+[What enforcing grants the remote PEPs](fga.md#what-enforcing-grants-the-remote-peps).
 
 A remote PEP's [edge PDP](remote-pep.md#an-authzen-edge-pdp) admits by the
 same answers: it pulls the callers admitted now, each with the name above,

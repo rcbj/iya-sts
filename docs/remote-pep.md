@@ -537,6 +537,24 @@ also:
    its callers ask about in its **application scope**
    (`stsAuthzenApplication`, on the AuthZEN tab).
 
+**Enforcing an application grants both.** Every time fine-grained
+authorization is switched on for an application (**Enforce** on its
+**Fine-grained authorization** tab, or `POST /admin-api/applications/fga-enable`),
+each member of `roles.remotePepGroup` (`remote-peps`) — a person, a service
+account or an application — is added to `authzen-peps` if it is not a member,
+and has the application added to its scope if it is absent. Nothing else in
+its scope changes. The answer lists which PEPs were granted, which already
+held both, and which could not be granted and why (`STS-FGA-0025`); a PEP that
+cannot be granted does not stop the application being enforced. Switching
+enforcement off takes nothing away. A PEP added to `remote-peps` afterwards
+is granted by enabling again (the tab's **Grant the remote PEPs again**), or
+by hand on the AuthZEN tab. See
+[What enforcing grants the remote PEPs](fga.md#what-enforcing-grants-the-remote-peps).
+
+Membership of `remote-peps` itself still admits a PEP only to `/xacml/pep/*`
+and `POST /xacml/pip`, and a registration in `ou=peps` grants nothing; the
+AuthZEN grant is written when an administrator enforces an application.
+
 Without them the service answers `401` or `403`, and the container answers
 `502` with a message saying exactly this. The realm's
 `authzen.callerAuthentication` must admit a certificate (`mtls`, the

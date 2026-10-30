@@ -222,8 +222,10 @@ application's policy and the edge PDP returns that answer. An error here
 is an error at the edge PDP, never `false`. For this to work, the remote
 PEP's own directory entry must hold `AUTHZEN_PEPS` and have the application
 in its scope — the requirements below, applied to the PEP; a policy then
-sees the PEP as `urn:sts:xacml:authzen:caller`. A switch of enforcement
-reaches the edge PDP at its next poll. See
+sees the PEP as `urn:sts:xacml:authzen:caller`. **Enforcing the application
+grants both to the realm's remote PEPs** (see
+[What enforcing grants the remote PEPs](#what-enforcing-grants-the-remote-peps)).
+A switch of enforcement reaches the edge PDP at its next poll. See
 [The remote PEP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded).
 
 **What the caller needs** is what every AuthZEN caller needs:
@@ -335,7 +337,9 @@ write needs Admin Write, or `admin:write` on the API token.
    (`POST /admin-api/applications/fga-enable`). The refusal names what to
    fix: an uncovered type with its paths (`STS-FGA-0018`), or a policy that
    is disabled (`STS-FGA-0006`) or does not parse (`STS-FGA-0007`).
-   **Stop enforcing** (`fga-disable`) switches it off and keeps the policy.
+   Enforcing also grants the realm's remote PEPs what forwarding needs
+   (below). **Stop enforcing** (`fga-disable`) switches it off and keeps the
+   policy.
 
 | Console | Operation | What it does |
 |---|---|---|
@@ -343,7 +347,8 @@ write needs Admin Write, or `admin:write` on the API token.
 | Access types → XACML mapping → **Remove** | `POST /admin-api/applications/remove-access-type-row` | Takes one row off |
 | Access types → XACML mapping → **Save the list** | `POST /admin-api/applications/set-not-for-policy` | Replaces the list of paths the policy never sees |
 | Access types → **Save the type** | `POST /admin-api/applications/set-access-type` | Writes the whole definition, `xacml` and `notForPolicy` included |
-| Fine-grained authorization → **Enforce** / **Stop enforcing** | `fga-enable` / `fga-disable` | Sets or clears `appFgaEnforced` |
+| Fine-grained authorization → **Enforce** / **Stop enforcing** | `fga-enable` / `fga-disable` | Sets or clears `appFgaEnforced`; enabling grants the realm's remote PEPs |
+| Fine-grained authorization → Remote PEPs → **Grant the remote PEPs again** | `fga-enable` | On an enforcing application, grants a remote PEP added since |
 | Fine-grained authorization → **Create the default policy** | `fga-create-policy` | Writes the `fga-default` policy for an application that has none |
 | Fine-grained authorization → **Reset to the default policy** | `fga-reset-policy` | Rewrites the policy from `fga-default`; needs `confirm` |
 | XACML → Policies → **Applications' own policies** → **Remove** | `POST /admin-api/xacml/delete` | Deletes a policy no application names |
@@ -353,8 +358,63 @@ draw: `page.accessTypes` (each type with its `xacml` rows and `notForPolicy`)
 and `page.fga`. `page.fga` holds `enforced`, `reference` (the
 `appFgaPolicy` value), `policy` (its entry name, `policyId`, `version`,
 `enabled`, whether it is the application's `own`, and the `editor` link),
-`usable` with the `code` and `why` when it cannot be used, and `types`, each
-with `covered`, `uncovered`, `rows` and `notForPolicy`.
+`usable` with the `code` and `why` when it cannot be used, `types`, each
+with `covered`, `uncovered`, `rows` and `notForPolicy`, `peps` (below), and
+`applicationPolicies`: how many applications' own policies the realm holds
+(`count`) and the most it may (`max`, `xacml.maxApplicationPolicies`).
+
+### What enforcing grants the remote PEPs
+
+A [remote PEP](remote-pep.md)'s edge PDP forwards each AuthZEN evaluation
+about an application that enforces fine-grained authorization to this
+service, as an AuthZEN caller. For that, the PEP's own entry needs
+`AUTHZEN_PEPS` (membership of the `authzen-peps` group,
+`roles.authzenPepGroup`) and the application in its AuthZEN scope.
+
+**Every enable grants both.** Each holder of `REMOTE_PEPS` in the realm — each
+member of the `remote-peps` group (`roles.remotePepGroup`), whether a person,
+a service account or an application — is:
+
+* added to the `authzen-peps` group, if it is not a member; and
+* given the application in its scope, if the scope does not already name it:
+  `stsAuthzenApplication` on a person or service account,
+  `appAuthzenApplication` on an application.
+
+Nothing else in its scope changes, and a value is never added twice.
+
+| Holder | In the `fga-enable` answer's `peps` |
+|---|---|
+| Something was added | `granted`, with `member` and `scope` saying which |
+| It had both already | `held` |
+| It could not be granted | `failed`, with `why` and `code` (`STS-FGA-0025`) |
+
+A holder fails when the group member names no person, service account or
+application in the realm, when `roles.authzenPepGroup` is empty or names no
+group, when its scope already names 64 applications, or when the directory
+refuses the write. **A failure never fails the enable**: the application is
+enforced, and every other holder is granted. The answer's `message` says who
+was granted, who already held it and who was not, with why. **Audit** has
+one `admin.authzen.pep.granted` row per holder changed, and one carrying
+`STS-FGA-0025` per holder that was not; the group change also has its own
+`group.add-member` row.
+
+* **Stop enforcing removes nothing.** A membership or a scope value an
+  administrator set by hand looks exactly like one an enable added, so
+  removing them could take away a grant somebody chose. Narrow a scope on
+  **XACML → AuthZEN** if you need to.
+* **A PEP added to `remote-peps` later is not granted on its own.** Enable
+  again: `fga-enable` on an application that already enforces grants it and
+  changes nothing else. On the application's **Fine-grained authorization**
+  tab, **Remote PEPs** lists each holder with whether it holds
+  `AUTHZEN_PEPS` and has the application in its scope, and offers **Grant
+  the remote PEPs again** while the application is enforced.
+  `page.fga.peps` returns the same list (`holders`, each with `member` and
+  `scoped`, and `group`, `authzenGroup` and `unlocated`).
+* It works the same in development and product mode.
+
+This makes membership of `remote-peps` a source of AuthZEN access, at the
+moment an administrator enforces an application. A remote PEP's
+registration in `ou=peps` still grants nothing.
 
 **Reset to the default policy** replaces every rule in the policy with the
 one rule of `fga-default`, which permits every detail. Tick **Replace every
@@ -416,8 +476,8 @@ listed in **Not for the policy**.
 
 Registrations and sightings do not write a policy, because they can be made
 by callers who are not administrators. A policy for each of them would let
-such a caller fill `ou=policies` up to `xacml.maxPolicies` and stop
-administrators writing policies at all.
+such a caller fill `ou=policies` up to `xacml.maxApplicationPolicies` and
+stop applications created by administrators getting one.
 
 ## The default policy
 
@@ -443,11 +503,24 @@ Nothing here differs between the two modes.
 
 ## Configuration
 
-There is no setting of its own yet. Every application's policy counts toward
-`xacml.maxPolicies` (default 200), the most entries `ou=policies` may hold.
-An application created when the container is full is still created, without
-a policy, and gets one when fine-grained authorization is switched on after
-there is room. Raise `xacml.maxPolicies` in a realm with many applications.
+| Setting | Environment variable | Default | What it does |
+|---|---|---|---|
+| `xacml.maxApplicationPolicies` | `STS_XACML_MAX_APPLICATION_POLICIES` | `500` | How many applications' own policies `ou=policies` may hold, orphaned ones included |
+
+Applications' own policies have this limit of their own. They do not count
+toward `xacml.maxPolicies` (default 200), which limits the policies
+administrators write, and administrators' policies do not count toward this
+one. The default is the default of `applications.max`, so every application
+the registry admits by default can have a policy; raise both together.
+
+An application created when the limit is reached is still created, without
+a policy. Switching fine-grained authorization on, or **Create the default
+policy**, is then refused (`STS-FGA-0024`) until there is room. Removing
+orphaned policies on **XACML → Policies** makes room.
+
+The groups the remote PEPs are granted through are `roles.remotePepGroup`
+and `roles.authzenPepGroup`; see [Remote PEP](remote-pep.md) and
+[AuthZEN](authzen.md).
 
 ## In the running service
 
@@ -460,6 +533,12 @@ there is room. Raise `xacml.maxPolicies` in a realm with many applications.
   switch, the policy and each declared type's coverage.
 * `GET /admin-api/ldap/applications` and `/admin/ldap/directory` show
   `appFgaPolicy` and `appFgaEnforced` on an application entry.
+* `/admin/ldap/policies` and `GET /admin-api/ldap/policies` count
+  administrators' policies (`ownCount`, against `max`) and applications'
+  own (`applicationCount`, against `applicationMax`) apart.
+* An application's **Fine-grained authorization** tab lists the realm's
+  remote PEPs, and **Audit** shows each grant as
+  `admin.authzen.pep.granted`.
 * `GET /xacml/pep/policies` names withheld policies in `withheld`.
 * **XACML → Monitor** and `GET /admin-api/xacml/monitor` count the
   decisions at issuance on the `fga` row, and those at access time on the

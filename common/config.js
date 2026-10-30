@@ -13066,17 +13066,20 @@ const SETTINGS = [
   // different people for different reasons, so each has its own ceiling.
   //
   // **THE DEFAULT IS THE LITERAL 500, applications.max's default, AND NOT
-  // A READ OF applications.max.** A row's default is a literal everywhere
-  // it is shown — env/defaults.js (generated from this column), the
-  // console's settings block, docs/configuration.md — and a default
-  // computed from another row would be the first of its kind, showing a
-  // value none of those could state. And the two count different things:
+  // A `derived` READ OF applications.max.** The four `derived` rows (this
+  // file's header) are derived because a literal would be WRONG for them —
+  // it would freeze the deployment's own address, scheme or Kerberos realm
+  // at whatever it was the day env/defaults.js was written. A literal is
+  // not wrong here, because the two settings count different things:
   // applications.max counts every entry under ou=applications, most of
   // which (a SAML entityID, a WS-Trust AppliesTo, a Kerberos SPN, this
   // service's own seeded ones) never declare an access type and never get
-  // a policy. An operator who raises applications.max raises this beside
-  // it when those applications will enforce fine-grained authorization;
-  // the refusal (STS-FGA-0024) names both settings.
+  // a policy. So this stays an ordinary row — in env/defaults.js, on the
+  // console, in docs/configuration.md as the value it is — rather than a
+  // fifth exemption from the refusal of a row with no value. An operator
+  // who raises applications.max raises this beside it when those
+  // applications will enforce fine-grained authorization; the refusal
+  // (STS-FGA-0024) names both settings and their values.
   { key: 'xacml.maxApplicationPolicies', group: 'XACML',
     label: 'Application policies the repository may hold',
     env: 'STS_XACML_MAX_APPLICATION_POLICIES', type: 'int', dflt: 500,
