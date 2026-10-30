@@ -29,6 +29,7 @@
 // ---------------------------------------------------------------------------
 
 import WebKit = require('./web_kit');
+import webMessages = require('../common/web_messages');
 import AcmePage = require('../acme/web_acme');
 import ApplicationsPage = require('./web_applications');
 import AuditPage = require('./web_audit');
@@ -1472,7 +1473,7 @@ class WebPages {
     const named: Json = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
                           nbsp: ' ', mdash: '—', ndash: '–', rsaquo: '›',
                           lsaquo: '‹', hellip: '…', middot: '·' };
-    return String(html || '').replace(/<[^>]*>/g, '')
+    return webMessages.WebMessages.stripTags(String(html || ''))
       .replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
         function (whole: string, code: string): string {
           if (code.charAt(0) === '#') {

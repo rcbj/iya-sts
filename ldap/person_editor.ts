@@ -441,7 +441,17 @@ const LANGUAGE_RANGE = /^(\*|[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*)(\s*;\s*q\s*=\s*(
 
 // The shape of a DN: one or more `type=value` RDNs. What a DN MEANS is the
 // directory's business; this only refuses a value that is not one.
-const DN_SHAPE = /^\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=]+(\s*,\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=]+)*\s*$/;
+//
+// WRITTEN SO THAT NO TWO PARTS CAN CLAIM THE SAME CHARACTER (2026-10-30).
+// The first version had `\s*` on both sides of each comma and at the end,
+// beside a value class `[^,=]+` that also matches whitespace: a value's
+// trailing spaces could be the value's or the separator's, and a string of
+// many `+ ,A=` repetitions with no match at the end made the engine try
+// every split — exponential backtracking (CodeQL js/redos). Now a value
+// starts with a non-blank and runs to the comma, taking any spaces before
+// it, and only the space AFTER a comma or `=` is the separator's. The one
+// value this refuses that the old shape passed is an all-blank one.
+const DN_SHAPE = /^\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=\s][^,=]*(,\s*[A-Za-z][A-Za-z0-9-]*\s*=\s*[^,=\s][^,=]*)*$/;
 
 // The directory, through its slot. Module-level rather than on the instance,
 // for `common/mail.ts`'s reason: `ldap_server.js` fills it at its own require,
@@ -1066,6 +1076,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   MAX_VALUE_LENGTH: MAX_VALUE_LENGTH,
+  // For `tests/sanitizer_shapes.js`, which holds the shape to its
+  // backtracking bound; the editor reaches it through normalised() only.
+  DN_SHAPE: DN_SHAPE,
   MODES: MODES,
   /**
    * The field grid's groups, in tab order; an attribute none names is in
