@@ -6955,6 +6955,30 @@
     "en": "d856eb355e794d04",
     "text": "AuthZEN:s Obligations Profile (ett utkast). När det är på lämnas en XACML-skyldighet över till PEP:en i context.obligations — och en Permit som bär en svarar true — ENDAST när begärans context.supported_obligations räknar upp varje skyldighetstyp i svaret; metadatan annonserar supported_obligations. Utan den deklarationen, eller med detta av, svarar en Permit med en skyldighet som tjänsten inte själv kan utföra false, eftersom en PEP som aldrig hört talas om profilen annars skulle ge åtkomst."
   },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "Search APIs aktiverade"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "När det är på svarar de tre AuthZEN-sökningarna under /access/v1/search (subjekt, resurs, åtgärd), och metadatan namnger dem. En sökning avgör varje kandidat som den här tjänsten kan namnge med sfärens rotpolicy och svarar med de tillåtna: subjekten är sfärens personer i katalogen, resurserna dess applikationer, API:er och delegeringsrelationer, åtgärderna de namn som policyn jämför action-id med. Av svarar vägarna 501."
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "Kandidater som en sökning avgör"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "Det största antalet kandidater som en sökning avgör. Varje kandidat är ett fullständigt beslut på den här tjänstens tråd; bortom taket avgörs resten inte och svarets context.incomplete säger att resultatet är partiellt."
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "Resultat per söksida"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "Hur många resultat en sökning svarar med på en sida när begäran inte anger page.limit; page.next_token fortsätter."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Returnera skälen för ett beslut"

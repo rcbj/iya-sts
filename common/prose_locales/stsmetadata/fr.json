@@ -96,8 +96,8 @@
     "text": "full pour l’ensemble des fonctionnalités obligatoires : le langage de politiques, les sept valeurs de décision dont les trois Indeterminate étendus, la correspondance des cibles, les conditions, les variables, les douze algorithmes de combinaison, les obligations et les conseils (advice), les références de politiques, et la bibliothèque de fonctions standard sur les dix-sept types de données. Conforme à la suite de conformité OASIS — 454 des 455 cas obligatoires réussissent, et l’unique exception est consignée avec son argumentation dans xacml/conformance/MANIFEST.js. NON couverts : AttributeSelector et les fonctions XPath (une politique qui en utilise un est Indeterminate plutôt que silencieusement vide), les profils Multiple Decision et Hierarchical Resource, et la délégation administrative."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "84df34d7cb483e0a",
-    "text": "partial: l'Access Evaluation API (section 6), décidée par le moteur XACML selon la politique racine du domaine au moyen d'un catalogue d'attributs par domaine, avec X-Request-ID et le défi de la section 11.3, l'Access Evaluations API (section 7) avec ses trois sémantiques, et les métadonnées du PDP (section 9) sous leurs deux formes, signed_metadata compris, et le brouillon de l'Obligations Profile pour un PEP qui déclare les types. Manquent : les trois Search APIs et les profils Access Request and Approval et OAuth, encore à l'état de brouillon."
+    "en": "587fa315b80f6a67",
+    "text": "partial: l'Access Evaluation API (section 6), décidée par le moteur XACML selon la politique racine du domaine au moyen d'un catalogue d'attributs par domaine, avec X-Request-ID et le défi de la section 11.3, l'Access Evaluations API (section 7) avec ses trois sémantiques, et les métadonnées du PDP (section 9) sous leurs deux formes, signed_metadata compris, et le brouillon de l'Obligations Profile pour un PEP qui déclare les types, et les trois Search APIs (section 8) sur les propres personnes, applications, API, relations de délégation et actions de politique de ce service, paginées et non transitives. Manquent : les obligations par résultat dans une recherche, et les profils Access Request and Approval et OAuth, encore à l'état de brouillon."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -767,9 +767,21 @@
     "en": "8bc09fb8f18ab7e3",
     "text": "POST de valeurs par défaut de premier niveau subject, action, resource et context et d'un tableau evaluations dont les éléments les remplacent ; on obtient evaluations, une décision par élément dans l'ordre de la requête. options.evaluations_semantic vaut execute_all (par défaut), deny_on_first_deny ou permit_on_first_permit. L'échec d'un élément est false avec context.error et n'est jamais masqué par le 200 ; un lot au-delà d'authzen.maxEvaluations ou d'authzen.maxBodyBytes est un 400 avant toute décision. Chaque élément est sa propre ligne d'audit, portant l'identifiant du lot."
   },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "Faites un POST de la requête de la section 8 ; obtenez results et une page. Renvoie les sujets d'un type qui peuvent effectuer une action sur une ressource : les personnes de l'annuaire du domaine, pour un type figurant dans authzen.resolveSubjectTypes. Chaque candidat est décidé par la politique racine du domaine exactement comme une évaluation, et seuls ceux qui sont permis sont des résultats ; paginé par page.next_token, borné par authzen.searchMaxCandidates, et déclaré incomplet au-delà."
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "Faites un POST de la requête de la section 8 ; obtenez results et une page. Renvoie les ressources d'un type sur lesquelles un sujet peut effectuer une action : application, api ou delegation, depuis l'annuaire des applications. Chaque candidat est décidé par la politique racine du domaine exactement comme une évaluation, et seuls ceux qui sont permis sont des résultats ; paginé par page.next_token, borné par authzen.searchMaxCandidates, et déclaré incomplet au-delà."
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "Faites un POST de la requête de la section 8 ; obtenez results et une page. Renvoie les actions qu'un sujet peut effectuer sur une ressource : les noms auxquels la politique racine compare action-id, et les permissions propres d'une application ou d'une API. Chaque candidat est décidé par la politique racine du domaine exactement comme une évaluation, et seuls ceux qui sont permis sont des résultats ; paginé par page.next_token, borné par authzen.searchMaxCandidates, et déclaré incomplet au-delà."
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "64cb62bbdb06b873",
-    "text": "Le document de la section 9 : policy_decision_point (la base de ce domaine, identique à l'URL sous laquelle il est obtenu) et seulement les points de terminaison qui répondent ici — aucun point de recherche ni capabilities tant qu'aucun n'est implémenté de bout en bout — et signed_metadata, un JWT des mêmes membres dont iss est l'identifiant du PDP, vérifiable avec le JWKS du domaine (authzen.signedMetadata). Public ; répond 501 tant que l'API est désactivée."
+    "en": "3b9a539920fa8ef3",
+    "text": "Le document de la section 9 : policy_decision_point (la base de ce domaine, identique à l'URL sous laquelle il est obtenu) et seulement les points de terminaison qui répondent ici (le lot et les trois recherches tant que chacun est activé), aucun capabilities, supported_obligations, et signed_metadata, un JWT des mêmes membres dont iss est l'identifiant du PDP, vérifiable avec le JWKS du domaine (authzen.signedMetadata). Public ; répond 501 tant que l'API est désactivée."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

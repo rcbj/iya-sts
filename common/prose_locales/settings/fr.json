@@ -6955,6 +6955,30 @@
     "en": "d856eb355e794d04",
     "text": "L'Obligations Profile d'AuthZEN (un brouillon). Activé, une obligation XACML est remise au PEP dans context.obligations — et un Permit qui en porte une répond true — UNIQUEMENT quand context.supported_obligations de la requête énumère chaque type d'obligation de la réponse ; les métadonnées annoncent supported_obligations. Sans cette déclaration, ou si ceci est désactivé, un Permit portant une obligation que ce service ne peut pas exécuter lui-même répond false, car un PEP qui ne connaît pas le profil accorderait l'accès."
   },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "Search APIs activées"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "Activé, les trois recherches AuthZEN répondent sous /access/v1/search (sujet, ressource, action), et les métadonnées les nomment. Une recherche décide chaque candidat que ce service peut nommer selon la politique racine du domaine et répond par ceux qui sont permis : les sujets sont les personnes de l'annuaire du domaine, les ressources ses applications, API et relations de délégation, les actions les noms auxquels la politique compare action-id. Désactivé, les routes répondent 501."
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "Candidats décidés par une recherche"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "Le nombre maximal de candidats qu'une recherche décide. Chaque candidat est une décision complète sur le fil de ce service ; au-delà du plafond, les autres ne sont pas décidés et le context.incomplete de la réponse indique que le résultat est partiel."
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "Résultats par page de recherche"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "Combien de résultats une recherche renvoie dans une page lorsque la requête ne précise pas page.limit ; page.next_token permet de continuer."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Renvoyer les raisons d’une décision"

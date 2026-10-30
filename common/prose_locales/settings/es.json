@@ -6955,6 +6955,30 @@
     "en": "d856eb355e794d04",
     "text": "El Obligations Profile de AuthZEN (un borrador). Activado, una obligación XACML se entrega al PEP en context.obligations — y un Permit que la lleva responde true — SOLO cuando context.supported_obligations de la solicitud enumera cada tipo de obligación de la respuesta; los metadatos anuncian supported_obligations. Sin esa declaración, o con esto desactivado, un Permit con una obligación que este servicio no puede cumplir por sí mismo responde false, ya que un PEP que nunca oyó del perfil concedería el acceso."
   },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "Search APIs activadas"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "Activado, las tres búsquedas de AuthZEN responden bajo /access/v1/search (sujeto, recurso, acción) y los metadatos las nombran. Una búsqueda decide cada candidato que este servicio puede nombrar con la política raíz del dominio y responde los permitidos: los sujetos son las personas del directorio del dominio, los recursos sus aplicaciones, API y relaciones de delegación, y las acciones los nombres con los que la política compara action-id. Desactivado, las rutas responden 501."
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "Candidatos que decide una búsqueda"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "El máximo de candidatos que decide una búsqueda. Cada candidato es una decisión completa en el hilo de este servicio; pasado el límite, el resto no se decide y el context.incomplete de la respuesta indica que el resultado es parcial."
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "Resultados por página de búsqueda"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "Cuántos resultados responde una búsqueda en una página cuando la solicitud no indica page.limit; page.next_token continúa."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Devolver los motivos de una decisión"
