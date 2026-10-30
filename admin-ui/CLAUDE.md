@@ -8420,7 +8420,12 @@ section's first design.**
   its path (selects for the category, data type and multiplicity, from
   `page.fga.choices`, the grammar's own sets), and the `notForPolicy` list
   as a textarea. The declare form gains `xacml` (JSON) and `notForPolicy`
-  boxes for a type written whole.
+  boxes for a type written whole. **The sub-tab being read is marked by
+  the runtime, not the stylesheet** (#564 P6): `atmap-<n>` is one id per
+  declared type, so it cannot be listed beside the fixed ids the
+  stylesheet's `:has()` rules name; `markOpenTabs()`' `tab-current` class
+  (#971) marks it, as it does a custom listener's tab, and
+  `tests/fga_console.js` D4 runs that walk over the drawn markup.
 * **A refusal is drawn at its field.** The action answers `field` (read off
   the grammar's sentence by `mappingFieldOf()`), and `WebAnswers.redraw()`
   keeps the form as typed in `state.fgaMapping` with the refusal; the

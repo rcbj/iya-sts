@@ -38,7 +38,8 @@ const log = require('bunyan').createLogger({ name: 'fga_console',
 //   R. THE OPERATIONS: the seven actions on POST
 //      /admin-api/applications/{action}, mirroring the application page.
 //   D. THE PAGES: the tab, the sub-tabs, a refusal drawn under its box,
-//      and the XACML section, from their views.
+//      the sub-tab being read marked by the runtime (P6), and the XACML
+//      section, from their views.
 //
 // In process, in a THROWAWAY REALM, as `fga_policies.js` is: a new realm's
 // `ou=policies` is empty, so every count is exact.
@@ -322,6 +323,7 @@ function sectionD(t, k) {
           mapping.indexOf('urn:example:amt') >= 0,
           'D2. the Access types tab draws a sub-tab per type with its rows ' +
           'and forms', mapping.slice(0, 300));
+  markedSubTab(t, page, ctx, json);
   const refused = k.act({ action: 'set-access-type-row', type: 'payment',
                           path: 'amount',
                           attributeId: 'urn:sts:xacml:role' });
@@ -339,6 +341,87 @@ function sectionD(t, k) {
           'D3. a refused row is drawn again as typed, the refusal under ' +
           'the attribute id box', drawn.slice(box, box + 400));
   log.debug("Leaving sectionD().");
+}
+
+// D4. THE SUB-TAB BEING READ IS MARKED (#564 P6). The stylesheet names the
+// tab ids it knows, since a selector cannot compare a link's href with the
+// targeted id; `atmap-<n>` is one id per declared type and cannot be named
+// in advance, so what marks it is the runtime's class-based `tab-current`
+// (`markOpenTabs()`, #971), as a custom listener's tab is marked. This holds
+// the markup to what that walk needs — the bar a `.tabbar` child of
+// `.subtabs`, each link naming a panel that exists — and runs the walk over
+// it with the SECOND type's panel targeted, so the mark cannot be the
+// default one on the first.
+function markedSubTab(t, page, ctx, json) {
+  log.debug("Entering markedSubTab().");
+  const two = JSON.parse(JSON.stringify(json));
+  const first = (two.page.accessTypes || [])[0];
+  two.page.accessTypes.push(Object.assign({}, first, { type: 'second' }));
+  const html = page.applicationAccessTypeMappingSection(ctx, two, '');
+  const bar = (html.match(/<div class="subtabs"><nav class="tabbar subbar"[^>]*>([\s\S]*?)<\/nav>/) || [])[1] || '';
+  const ids = [];
+  bar.replace(/href="#([^"]+)"/g, function (all, id) {
+    ids.push(id);
+    return all;
+  });
+  const cls = function () {
+    const set = {};
+    return { contains: function (c) { return !!set[c]; },
+             add: function (c) { set[c] = true; },
+             remove: function (c) { delete set[c]; } };
+  };
+  const node = function (tag, attrs, children) {
+    return {
+      tagName: tag, classList: cls(), attrs: attrs || {},
+      children: children || [],
+      getAttribute: function (name) {
+        return this.attrs[name] || null;
+      },
+      setAttribute: function (name, value) {
+        this.attrs[name] = value;
+      },
+      removeAttribute: function (name) {
+        delete this.attrs[name];
+      },
+      contains: function (other) {
+        return other === this;
+      }
+    };
+  };
+  const panels = {};
+  const links = ids.map(function (id, n) {
+    if (html.indexOf('<div class="subpanel' + (n === 0 ? ' first' : '') +
+                     '" id="' + id + '">') >= 0) {
+      panels[id] = node('DIV', { id: id }, []);
+    }
+    const link = node('A', { href: '#' + id }, []);
+    if (n === 0) {
+      link.classList.add('first');
+    }
+    return link;
+  });
+  const nav = node('NAV', {}, links);
+  nav.classList.add('tabbar');
+  const root = node('DIV', {}, [nav].concat(Object.keys(panels).map(
+    function (id) {
+      return panels[id];
+    })));
+  const Runtime = require('../admin-ui/web_runtime');
+  const rt = Object.create(Runtime.prototype);
+  rt.env = { document: {
+    querySelectorAll: function () { return [root]; },
+    querySelector: function () { return panels['atmap-1'] || null; },
+    getElementById: function (id) { return panels[id] || null; }
+  } };
+  rt.markOpenTabs();
+  t.check(ids.join() === 'atmap-0,atmap-1' &&
+          Object.keys(panels).length === 2 &&
+          links[1].classList.contains('tab-current') &&
+          links[1].attrs['aria-current'] === 'true' &&
+          !links[0].classList.contains('tab-current'),
+          'D4. the mapping sub-tab being read is marked tab-current by the ' +
+          'runtime, and the first is not', JSON.stringify(ids));
+  log.debug("Leaving markedSubTab().");
 }
 
 // X. XACML → Policies.
