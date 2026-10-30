@@ -425,6 +425,25 @@ async function decision(t, suffix) {
     t.check(r.status === 200 && /grant_request_endpoint/.test(r.body) &&
             acao(r) === ORIGIN_A,
             'and from an allowed one, with the CORS headers on it', r);
+    // #1214. A browser's discovery is itself an OPTIONS, so its preflight asks
+    // for OPTIONS, and the browser sends the request only if the answer lists
+    // it. The cors package's default list does not, so this path adds it.
+    r = await request(port, { method: 'OPTIONS', path: '/gnap',
+      headers: { Origin: ORIGIN_A,
+                 'Access-Control-Request-Method': 'OPTIONS' } });
+    const gnapMethods = String(r.headers['access-control-allow-methods'] ||
+                               '').split(',');
+    t.check(acao(r) === ORIGIN_A && gnapMethods.indexOf('OPTIONS') >= 0 &&
+            gnapMethods.indexOf('POST') >= 0,
+            'the preflight for GNAP\'s OPTIONS discovery lists OPTIONS (and ' +
+            'still POST, for the grant request) in ' +
+            'Access-Control-Allow-Methods (#1214)', r.headers);
+    r = await request(port, { method: 'OPTIONS', path: '/oauth2/token',
+      headers: { Origin: ORIGIN_A, 'Access-Control-Request-Method': 'POST' } });
+    t.check(String(r.headers['access-control-allow-methods'] || '')
+              .split(',').indexOf('OPTIONS') < 0,
+            'while a preflight on any other path keeps the cors package\'s ' +
+            'default list, without OPTIONS', r.headers);
   } finally {
     server.close();
     [A, B, EMPTY].forEach(function (one) {
