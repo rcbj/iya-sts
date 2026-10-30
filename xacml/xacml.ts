@@ -1645,6 +1645,46 @@ class XacmlSurface {
   }
 
   // ---------------------------------------------------------------------------
+  // WHAT A REMOTE PEP IS SENT: the body of `GET /xacml/pep/policies`, as a
+  // method so the filter is one piece of code a test can hold (#564) rather
+  // than an expression inside a handler behind mutual TLS. The route's own
+  // comment argues each exclusion.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns what `GET /xacml/pep/policies` sends: every enabled policy
+   * except this service's own two (by setting) and every policy an
+   * application owns (`xacmlApplication`), and the names of those withheld.
+   *
+   * @returns `{ root, policies, withheld }`
+   */
+  pepPull(): { root: string | null; policies: any[]; withheld: string[] } {
+    const { log, config, store } = this.deps;
+    log.debug("Entering XacmlSurface.pepPull().");
+    const root = store.root();
+    const internal = [config.value('xacml.accessPolicy') || 'access-control',
+                      config.value('xacml.issuancePolicy') || 'role-issuance']
+      .map(function (one) { return String(one).toLowerCase(); });
+    const withheld = [];
+    const policies = store.all().filter(function (row) {
+      if (internal.indexOf(String(row.name).toLowerCase()) >= 0 ||
+          row.application) {
+        withheld.push(row.name);
+        return false;
+      }
+      return row.enabled;
+    }).map(function (row) {
+      return { name: row.name, policyId: row.id, kind: row.kind,
+               version: row.version, combiningAlgId: row.combiningAlgId,
+               isRoot: !!(root && root.name === row.name),
+               description: row.description, document: row.document };
+    });
+    log.debug("Leaving XacmlSurface.pepPull(). " + policies.length +
+              " sent, " + withheld.length + " withheld.");
+    return { root: root ? root.name : null, policies: policies,
+             withheld: withheld };
+  }
+
+  // ---------------------------------------------------------------------------
   // GET /xacml — what this surface is.
   // ---------------------------------------------------------------------------
   /**
@@ -2172,23 +2212,9 @@ class XacmlSurface {
       // above are. An embedded FGA PDP in the remote PEP is future work and
       // would be a pull of its own, not this one.
       // =======================================================================
-      const internal = [config.value('xacml.accessPolicy') || 'access-control',
-                        config.value('xacml.issuancePolicy') || 'role-issuance']
-        .map(function (one) { return String(one).toLowerCase(); });
-      const withheld = [];
-      const rows = store.all().filter(function (row) {
-        if (internal.indexOf(String(row.name).toLowerCase()) >= 0 ||
-            row.application) {
-          withheld.push(row.name);
-          return false;
-        }
-        return row.enabled;
-      }).map(function (row) {
-        return { name: row.name, policyId: row.id, kind: row.kind,
-                 version: row.version, combiningAlgId: row.combiningAlgId,
-                 isRoot: !!(root && root.name === row.name),
-                 description: row.description, document: row.document };
-      });
+      const pulled = self.pepPull();
+      const rows = pulled.policies;
+      const withheld = pulled.withheld;
       res.status(200).type('application/json').set('Cache-Control', 'no-store')
          .set('ETag', '"' + token + '"')
          .send(JSON.stringify({
@@ -2726,6 +2752,8 @@ export = {
   // admits a caller by one (#563, `authzen/authzen_caller.ts`).
   callerIdentity: slot.forward('callerIdentity'),
   description: slot.forward('description'),
+  // What a remote PEP's pull is sent, and what it is not (#564).
+  pepPull: slot.forward('pepPull'),
   enabled: slot.forward('enabled'),
   // The designator cap a PIP query is held to, for
   // `tests/scan_and_rate_limits.js` (2026-09-12).

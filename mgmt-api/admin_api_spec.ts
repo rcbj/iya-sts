@@ -3993,6 +3993,10 @@ const SCHEMAS = {
         isRoot: { type: 'boolean' },
         combiningAlgId: { type: 'string' },
         description: { type: 'string' },
+        // #564: the application that owns the policy, and when that
+        // application was deleted; null for an ordinary policy.
+        application: { type: ['string', 'null'] },
+        orphanedAt: { type: ['string', 'null'] },
         problems: { type: 'array', items: { type: 'string' },
           description: 'Static type-check problems. XACML is statically ' +
                        'typed, so these are wrong for EVERY request rather ' +
