@@ -1058,6 +1058,7 @@ export = {
   enabled: slot.forward('enabled'),
   metadata: slot.forward('metadata'),
   runSearch: slot.forward('runSearch'),
+  searchEnabled: slot.forward('searchEnabled'),
   API_OBJECT: API_OBJECT,
   EVALUATION_PATH: EVALUATION_PATH,
   EVALUATIONS_PATH: EVALUATIONS_PATH,

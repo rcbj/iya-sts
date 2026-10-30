@@ -51,7 +51,7 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The fourteen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The seventeen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
 | `passkey_ceremonies.ts` | The `passkeyCeremonies` source's projection of the ceremony audit rows (#1107). A library; reaches `authn/webauthn_ceremonies` lazily. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
@@ -1188,6 +1188,36 @@ draws a flat `and` of comparisons, so a preset is written that way, and
 `whereLeaves()` now takes a boolean value (a saved or preset filter on a
 boolean field drew no rows before).
 
+## The AuthZEN searches as sources, run as the owner (#1176, 2026-10-30)
+
+`authzenSubjects`, `authzenResources` and `authzenActions` are AuthZEN 1.0's
+three searches (`authzen/CLAUDE.md`, *Search*), read through
+`authzen.runSearch()`. **rcbj's decisions (2026-10-29):** "reports should run
+with the permissions of the person logged into the report", and the person is
+the CALLER. So `reportRunOne()` puts `reportActor(job)` and `job.ownerRealm`
+on `control`, and `reportReadAuthzen()` asks with that name as
+`urn:sts:xacml:authzen:caller` and `sts-report` as the application, with
+`checkScope: false`, because the person is not a PEP and the report rights
+have already admitted them. A scheduled run therefore asks as the owner AT
+RUN TIME, never with what they held when they saved the definition.
+
+* **The inputs are required `eq` filters**, checked in `reportReadWork()`
+  beside the anchor rule (`reportAuthzenInputs()`, `STS-REPORT-0054`): a
+  search is asked with one value per input, so an input inside an `or` or a
+  `not` is not one. `Catalog.authzenInputs()` holds the lists.
+* **One call per run**, with the page as large as
+  `authzen.searchMaxCandidates`. The search decides every candidate on each
+  call anyway, and the report pages its own rows. One `authzen.search` audit
+  row per run, its summary starting `report searched`.
+* **An owner from another realm (#1038) is refused** (`STS-REPORT-0055`,
+  `forbidden`). The caller is a NAME, and in the realm the report runs in
+  that name is somebody else, or nobody. So is a run with the search APIs off
+  (`unavailable`).
+* A search's own refusal (an unknown action, an undeclared property) fails
+  the job under the search's `STS-AUTHZEN-*` code.
+* Tests: `tests/authzen_evaluation.js` R1–R10, against that file's realm and
+  policy (rule `reportOwnerAudits`).
+
 ## What the tests hold
 
 `tests/report_query.js` holds the document, the three formats, the fixed
@@ -1206,11 +1236,11 @@ writes reaching it, and the definitions published and filling the form.
 
 ## The sources
 
-The fourteen sources are `users`, `groups`, `applications`, `federation`,
+The seventeen sources are `users`, `groups`, `applications`, `federation`,
 `authMechanisms`, `auditEvents`, `authActivity`, `serviceMetrics`,
 `reportJobs`, `attributeSources`, `credentialHolders`,
-`postLoginProgress`, `passkeyHistory` and `passkeyCeremonies` (above,
-#1107). `authMechanisms` is the realm policy
+`postLoginProgress`, `passkeyHistory`, `passkeyCeremonies` (above,
+#1107) and the three AuthZEN searches (below, #1176). `authMechanisms` is the realm policy
 (application `realm`) plus one row per value listed by the named
 authentication policy an application names (`appAuthnPolicy`, #1148; its
 own `appAuthnMechanism` and `appMfaMechanism` until then). An application

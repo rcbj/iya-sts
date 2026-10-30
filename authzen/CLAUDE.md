@@ -288,7 +288,8 @@ names. A type with no source answers empty results, never a 400.
   changed an entity or the limit is refused (`0043`) — section 8.2's SHOULD
   kept. Not snapshot-consistent, which section 8.2 allows.
 * **`runSearch()` takes its caller and application from its own caller**, so
-  the reports application (#1176) can search as the signed-in person.
+  the reports application (#1176) searches as the report's owner, with
+  application `sts-report` and no scope check (`report/CLAUDE.md`).
 * Not implemented: per-result obligations (the Obligations Profile's 4.3).
 
 ## The console and the API (#1162)

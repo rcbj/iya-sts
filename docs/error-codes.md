@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4852** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4854** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 52
+* [Reporting (`STS-REPORT`)](#sts-report) — 54
 
 ## STS-HTTP
 
@@ -5574,6 +5574,8 @@ Raised from: report/.
 | `STS-REPORT-0051` | A stored report has a piece that is missing or will not open under the keys this process holds, its piece marker cannot be read, or its download did not match its digest: refused as gone before the answer began, or the response was cut part-way rather than completed (#1045). | result_expired (HTTP 410) before the answer; otherwise none (the connection is closed) |
 | `STS-REPORT-0052` | A report build file was left in the staging directory: one that could not be removed when its job ended, or a leftover the report.build-cleanup job removed (or could not) because no live process held it (#1045). | none (a warning) |
 | `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
+| `STS-REPORT-0054` | A query on an AuthZEN search source (authzenSubjects, authzenResources, authzenActions) does not give every input the search is asked with as an eq filter of the top-level "and", so it was refused rather than run (#1176). | invalid_query (the job fails) |
+| `STS-REPORT-0055` | An AuthZEN search source could not be asked: the search APIs are off in the realm (authzen.searchEnabled), or the report's owner is not a person of the realm it runs in, and a search runs as its owner (#1176). | unavailable or forbidden (the job fails) |
 
 ## Adding a code
 
