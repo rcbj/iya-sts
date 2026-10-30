@@ -116,6 +116,7 @@ var config = {
     durableTokens: false,                                                  // Mark access tokens durable
     revokeOnModify: true,                                                  // Revoke earlier tokens on modification
     instanceIds: true,                                                     // Issue instance identifiers
+    unregisteredInstances: true,                                           // Accept unregistered instances of a registered client
     continueAfterApproval: true,                                           // Keep approved grants continuable
     consentRequired: true,                                                 // Ask the resource owner
     rememberApprovals: true,                                               // Remember approvals

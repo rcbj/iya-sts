@@ -1606,6 +1606,17 @@ const SETTINGS = [
     dflt: true, runtime: true,
     description: 'Section 3.5: a client that sent its key by value is handed ' +
                  'an instance_id it can send by reference next time.' },
+  { key: 'gnap.unregisteredInstances', group: 'GNAP', label: 'Accept ' +
+      'unregistered instances of a registered client',
+    path: 'gnap.unregisteredInstances', env: 'STS_GNAP_UNREGISTERED_INSTANCES',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Sections 2.3 and 2.3.3: a key no application registers is ' +
+                 'accepted as an instance of the registered GNAP client its ' +
+                 'class_id names, when that client lists a registered ' +
+                 'gnapFinishUri — how a browser application, which makes a ' +
+                 'key per browser, signs people in. Such an instance never ' +
+                 'skips the approval page. Off: an unregistered key is ' +
+                 'refused in product (#1216).' },
   { key: 'gnap.continueAfterApproval', group: 'GNAP', label: 'Keep approved ' +
       'grants continuable',
     path: 'gnap.continueAfterApproval', env: 'STS_GNAP_CONTINUE_AFTER_APPROVAL',
