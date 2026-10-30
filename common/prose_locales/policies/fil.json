@@ -152,8 +152,8 @@
     "text": "Ang class ng draft-behera-ldap-password-policy para sa entry ng password policy. Pinangangalanan ng `pwdAttribute` ang attribute na pinamamahalaan ng policy, at dito ay palaging `userPassword` iyon."
   },
   "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
-    "en": "4daf3a60dd76691a",
-    "text": "Ang sariling class ng serbisyong ito, na may dalang mga patakaran sa komposisyon at ang haba ng ginawang password na walang attribute sa draft. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
+    "en": "4a651241a26c3b18",
+    "text": "Ang sariling class ng serbisyong ito, na may dalang mga patakaran sa komposisyon at ang haba ng ginawang password na walang attribute sa draft. Ang entry ay pinangangalanan ayon sa PROFILE: `cn=default`, o ang pangalan ng isang named policy."
   },
   "password.SCHEMA.attributes.pwdAttribute.what": {
     "en": "603a95b316f4b6f5",
@@ -211,6 +211,10 @@
     "en": "b088d02f4ec32169",
     "text": "Ang parallelism ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm. Kinukwenta ito ng Node sa iisang thread, kaya ang mas mataas na halaga ay gumagastos ng oras sa halip na mga core; inililista ng paglalarawan ng gastos ang mga pares na tinatanggap ng OWASP."
   },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Kung aling named password policy ang mananaig kapag ilan ang pinangalanan para sa isang tao: ang pinakamababa, mula 1 hanggang 1000."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para saan ang profile, para sa susunod na tao."
@@ -222,6 +226,10 @@
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",
     "text": "Kung kailan huling itinakda ang password, bilang GeneralizedTime. Pinapanatili ng serbisyong ito."
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Kung aling named password policy ang mananaig kapag ilan ang pinangalanan para sa isang tao: ang pinakamababa, mula 1 hanggang 1000."
   },
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
