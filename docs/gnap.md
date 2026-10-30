@@ -736,6 +736,21 @@ its tokens can be rotated (`invalid_rotation`), and it is finalized as
 grant's. A longer lifetime lets a client keep access by rotating its tokens
 for longer on the strength of one approval.
 
+### Instance identifiers
+
+With `gnap.instanceIds` on, a client that sends its key by value is handed an
+`instance_id` (RFC 9635 section 3.5). **The same key at the same application
+gets the same `instance_id` back** every time (#1221): the identifier is
+derived from the realm, the application and the key, under a cluster secret,
+so a client that signs in again does not add a record, and none is kept in a
+form that names the identifier.
+
+**A record nobody uses for `gnap.grantLifetimeS` is gone.** Its `instance_id`
+is then refused as unknown (`STS-GNAP-0080`), and the `gnap.grant-expiry` job
+deletes the record. Sending the key by value again, or using the
+`instance_id`, keeps a record alive. A client whose `instance_id` is refused
+sends its key by value and is handed the same identifier again.
+
 ### What a client is told about the person
 
 * **Subject identifiers are per client.** An `opaque` identifier is different
