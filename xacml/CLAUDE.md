@@ -25,6 +25,8 @@ and the nudge.
 |---|---|
 | `xacml_model.js` | The vocabulary: the identifiers the specification fixes, the shape of a policy tree, and the seven decision values. **No I/O.** |
 | `xacml_request.js` | **The one request builder (#306, part E of #88).** #88 section 7's AuthorizationRequest — principal and its type, roles, client, target, audience, requested action and scopes, protocol, grant type, intermediary — spelt from ONE vocabulary and grouped into XACML's categories. Every PEP builds through it: the issuance, access, risk and signal PEPs, the demonstration PEP at `/xacml/protected`, `/admin/xacml/decide`, and the remote PEP, which copies it beside the engine. It decides nothing; the shared identifiers (`ROLE`, `SUBJECT_KIND`) live here because a remote PEP cannot load `xacml_templates.ts`. `tests/xacml_request.js` fails on a module that goes back to building its own. **No I/O.** |
+| `xacml_attribute_rows.ts` | **The attribute-row grammar and value rules (#563, #564)**: the categories and datatypes a row may name, the reserved identifiers no row may name, the member-path grammar, and how a JSON value becomes XACML values under a row. Shared by AuthZEN's catalogue and FGA's `xacml` rows, never copied — see *Fine-grained authorization's request*, rule 3cy. **No I/O.** |
+| `fga_map.ts` | **A validated RFC 9396 authorization detail as an XACML request (#564, P2)**: the grammar of a type's `xacml` and `notForPolicy` members, the built-in rows of the common data fields, `uncovered()`, the definition digest, and `request()` through the builder's `fga()`. Rule 3cy. **No I/O.** |
 | `xacml_datatypes.js` | The seventeen datatypes — parse, write, equality, ordering. The table every function is generated over. **No I/O.** |
 | `xacml_functions.js` | The standard function library: 275 identifiers, about thirty implementations. **No I/O.** |
 | `xacml_validate.js` | Static type checking. What a policy is REFUSED for at load, before any request. **No I/O.** |
@@ -1310,6 +1312,7 @@ routing an internal decision through a policy engine that is already here.
 | access-subject | `urn:sts:xacml:home-jurisdiction` | the jurisdiction the subject is homed in — a transfer question only (#98) |
 | environment | `urn:sts:xacml:serving-jurisdiction`, `urn:sts:xacml:client-country`, `urn:sts:xacml:transfer-listed`, `urn:sts:xacml:realm`, `urn:sts:xacml:purpose`, `urn:sts:xacml:setting:cells.hardGeofence` | the serving cell's jurisdiction, the client's country when known, whether the realm lists the transfer, the realm, a release's purpose, the hard geofence — a transfer question only (#98) |
 | resource | `urn:sts:xacml:data-category` | `session`, `request` or `attributes` — a transfer question only (#98) |
+| resource, action, environment | `urn:sts:xacml:fga:*` | an RFC 9396 detail asked of its owning application's policy — a fine-grained authorization question only (#564, rule 3cy) |
 
 #### 3bs. One question per requested scope (#304, part C of #88)
 
@@ -1405,6 +1408,88 @@ obligation, and an interaction word the reader does not know reads as
 `always`. The grant engine does what they say (`gnap/CLAUDE.md`, *Phase 6*);
 the approval fact gained the value `owner`, the resource owner approving on
 their portal.
+
+#### Fine-grained authorization's request (#564) — rule 3cy
+
+**AN RFC 9396 DETAIL, ASKED OF THE POLICY OF THE APPLICATION THAT OWNS ITS
+TYPE** (rcbj's decision 1 on #564). This is phase P2: the mapping and the
+request, pure (`fga_map.ts`). Where the policy lives and its lifecycle are
+P1's, where the question is asked and what a refusal does are P3's, and
+AuthZEN deciding against the application's policy is P4's.
+
+| Detail | Category | Attribute |
+|---|---|---|
+| `type` | resource | `urn:sts:xacml:fga:detail-type`, and `resource-id` at an issuance stage |
+| `actions`, `privileges` | action | `urn:sts:xacml:fga:detail:action`, `…:detail:privilege` (string bags) |
+| `locations`, `datatypes` | resource | `urn:sts:xacml:fga:detail:location`, `…:detail:datatype` (string bags) |
+| `identifier` | resource | `urn:sts:xacml:fga:detail:identifier` |
+| any other member | the type's `xacml` row's | the row's, and nothing else |
+| a `notForPolicy` member | — | nothing, and not in `supplied` either |
+| *(trusted)* | access-subject | `subject-id`, `urn:sts:xacml:subject-kind`, `urn:sts:xacml:client-id` |
+| *(trusted)* | resource | `urn:sts:xacml:fga:application`, `urn:sts:xacml:fga:definition-digest` |
+| *(trusted)* | action | `action-id` = `grant-authorization-detail` at every issuance stage (`authorize`, `token`, `refresh`, `exchange`, `par`); the caller's action at `access` |
+| *(trusted)* | environment | `urn:sts:xacml:protocol` (`oauth2`), `urn:sts:xacml:realm`, `urn:sts:xacml:fga:stage`, `urn:sts:xacml:grant-type`, `urn:sts:xacml:fga:supplied` |
+
+**The common data fields are BUILT-IN rows**, applied when present: they mean
+the same in every type (and in a GNAP right), so a policy reads them with no
+declaration, and an absent field is an absent attribute. A type's row may not
+name `type` or a common field, and `notForPolicy` may not list one — each is
+mapped once, under one identifier. Strings, not `anyURI`, for `locations`, as
+GNAP's `right-location` is, so one `string-is-in` reads both protocols.
+
+**The facts are written by `xacml_request.js`'s `fga()` (rule 3br), and the
+action-id is FORCED at an issuance stage** whatever the caller passes, so an
+issuance question can never be asked as anything else. Every identifier is in
+`VOCABULARY` (`FGA_*`), spelt the same in the Rust builder
+(`tests/xacml_request.js` E2, F), with `FGA_STAGES`,
+`FGA_ISSUANCE_STAGES` and `FGA_GRANT_ACTION` exported beside it — engine
+data, so an embedded FGA PDP in the remote PEP (future work, decision 4)
+finds them named.
+
+**THE ROWS AND THE VALUE RULES ARE AUTHZEN'S, SHARED THROUGH
+`xacml_attribute_rows.ts`, NOT COPIED.** A row is AuthZEN's catalogue row with
+`path` for `property` and no `object`; its category defaults to resource. The
+reserved identifiers — all of `urn:sts:xacml:` by prefix, subject-id,
+resource-id, action-id, the current-time attributes, a bare LDAP-shaped name
+in a subject category — are refused when the DEFINITION is written
+(`applications.js`'s `authorizationDetailsTypeOf()`, `STS-REG-0112`, which
+requires `fga_map.ts` lazily and only for a definition carrying one of the two
+members). Two rows for one member, one inside another's member, two members
+onto one attribute, and a member both mapped and not for policy are refused
+too: each would make what a policy reads ambiguous. The value rules are the
+walk AuthZEN's request goes through, so a detail can never forge a trusted
+attribute and a member no row names is refused rather than guessed at
+(`STS-FGA-0103`).
+
+**COVERAGE IS A QUESTION ABOUT THE TYPE, `uncovered()`**, which P1/P3 ask
+before FGA may be enforced: the member paths the type's JSON Schema permits
+that are neither a common field, mapped, nor `notForPolicy` — and `*` (or
+`<path>.*`) where the schema permits members it does not name. **An open
+schema makes the type uncoverable**: no schema, or a level without
+`additionalProperties: false`. `unevaluatedProperties: false` closes a level
+only where it has no applicator (`allOf`, `anyOf`, `oneOf`, `$ref`,
+`$dynamicRef`, `if`/`then`/`else`, `dependentSchemas`) that could evaluate
+members this module cannot enumerate; `patternProperties` leaves it open.
+Conservative on purpose: an administrator closes a schema with one keyword,
+and closing it also makes RFC 9396 section 5 refuse the stranger before any
+policy is asked. A nested object is walked only where a row or a
+`notForPolicy` entry reaches into it; otherwise the member is mapped whole, or
+uncovered.
+
+**THE DIGEST** is a SHA-256, lowercase hex, of the definition's canonical JSON
+(members sorted; a bare name is `{"type":…}`), so a policy may be pinned to the
+definition it was written against; `authorizationDetailsTypeOf()` keeps the
+object as `source` and `declaredTypes()` carries it with `xacml` and
+`notForPolicy`, so P3 hands `fga_map.request()` a `declaredTypes()` entry as
+it stands.
+
+**`STS-FGA-0100`–`0107` are all DEFENSIVE**: details reach `request()` after
+RFC 9396 validation, so a definition that is not usable (0100), a detail not
+of its type (0101), missing trusted facts (0102), an uncovered member (0103)
+and the value rules' four kinds (0104 null, 0105 type, 0106 array, 0107
+object or depth) are refusals no well-formed path produces — never an
+attribute. They start at 0100 so P1's lifecycle codes keep the low numbers.
+`tests/fga_map.js` holds the contract, through the real engine at the end.
 
 #### Where a person's data may go (#98, D4 and D11) — rule 3bu
 

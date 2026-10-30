@@ -117,6 +117,17 @@ header argues each, and a JSON number is never quietly a string (nor a
 boolean a string): the only conversion is a STRING parsed at the row's type
 by `xacml_datatypes.js`, which owns every lexical space.
 
+**THE RULES, AND THE RESERVED IDENTIFIERS ABOVE, ARE SHARED SINCE #564**:
+both live in `xacml/xacml_attribute_rows.ts`, because an access type's `xacml`
+rows (fine-grained authorization, `xacml/fga_map.ts`, `xacml/CLAUDE.md` rule
+3cy) map a detail's members onto XACML the same way and must be refused for
+the same reasons. `authzen_catalogue.ts`'s `reservedProblem()` calls that
+one; `authzen_map.ts`'s walk is the shared walk, which answers a problem by
+KIND, and this directory maps each kind to the code it always had
+(`0004`–`0008`). What stays here is AuthZEN's: the object, its default
+category, `context.application`, the request's shape and the codes.
+`tests/fga_map.js` S holds the two refusing by one function.
+
 **Unknown members of the request itself are refused too** (`0009`): a member
 AuthZEN 1.0 does not define is either a newer version's or a mistake, and
 silently dropping either would decide a question the caller did not ask.
