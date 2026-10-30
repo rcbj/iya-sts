@@ -829,7 +829,8 @@ A grant ends when its client revokes it (RFC 9635 section 5.4), and also when:
 | A sign-out ends one of their sessions (a Revoke on `/admin/sessions`, a partner's sign-out) | the grants approved on that session |
 | An administrator revokes the grant on `/admin/gnap` or `/admin/sessions` | that grant |
 | The client's application entry is **deleted** | every grant of that client |
-| The entry's `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` is **removed or replaced** | the grants bound to a key the entry no longer names. Rotating an access token's key (section 6.1.1) changes nothing |
+| The entry's `gnapKey`, `gnapKeyIdentity` or `gnapKeyReference` is **removed or replaced** | the grants bound to a key the entry no longer names. Rotating an access token's key (section 6.1.1) changes nothing, and neither does this for an [unregistered instance](#an-unregistered-key-as-an-instance-of-a-registered-client)'s grants, whose key was never on the entry |
+| `gnap.unregisteredInstances` is **turned off** | every grant an unregistered instance holds, refused at its next use (`STS-GNAP-0907`) |
 | A registered **device is marked compromised** | the grants whose client key is one of the device's keys (by value or by its certificate, for mutual TLS), and the OAuth tokens bound to them by DPoP or mutual TLS |
 | A federation partner's verified signal (above) | the person's grants and tokens |
 
@@ -839,7 +840,10 @@ about it. Separately, **every use is checked**: a token or grant whose
 resource owner is disabled, or whose client's entry is gone or no longer names
 its key, is refused at its next continuation, rotation, derivation,
 presentation or introspection (`STS-GNAP-0730`–`0735`), whatever changed the
-account or the entry and on a cluster node the change has not reached yet.
+account or the entry and on a cluster node the change has not reached yet. An
+unregistered instance's grant is held to its entry still existing and to
+`gnap.unregisteredInstances` still being on (`STS-GNAP-0907`), not to a key on
+the entry (#1219).
 
 The person's grants appear on `/admin/logout` and as **GNAP grant** rows on
 `/admin/sessions`. A sign-out of one application elsewhere (`/oauth2/logout`,

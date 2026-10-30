@@ -29,7 +29,14 @@
 //       (STS-GNAP-0080);
 //   I6. a remembered approval does not stand in for the page for such an
 //       instance, while it does for the registered key of the same client;
-//   I7. a registered key is unchanged: identified, and not an instance.
+//   I7. a registered key is unchanged: identified, and not an instance;
+//   I8. #1219: such an instance's grant is live at use (grantProblem and
+//       tokenProblem) although its key is not on the entry, while another
+//       grant bound to a key the entry does not name is STS-GNAP-0731;
+//   I9. #1219: with gnap.unregisteredInstances off it is refused at use
+//       (STS-GNAP-0907);
+//   I10. #1219: an edit of the entry's key fields ends a grant bound to a
+//        key it no longer names, and leaves the instance's grant alone.
 //
 // IN PROCESS, in a throwaway realm, with the key proof stubbed: what is held
 // is who a proved key belongs to, decided after the proof verifies
@@ -43,6 +50,9 @@ const config = require('../common/config');
 const realms = require('../common/realms');
 require('../common/app');
 const applications = require('../common/applications');
+// The directory the application register lives in. Loaded here, not left to
+// a test that happens to sort earlier in the same process (#1219).
+require('../ldap/ldap_server');
 
 const log = require('bunyan').createLogger({
   name: 'gnap_unregistered_instances',
@@ -256,6 +266,46 @@ async function cases(t, suffix) {
           'I7. a registered key is identified by its key, whatever class_id ' +
           'it sends, and is not an instance', JSON.stringify(keyed));
 
+  // I8-I10 (#1219).
+  const revocation = require('../gnap/gnap_revocation');
+  const instanceGrant = store.newGrant({ client: { identifier: SPA,
+    key: browserKey, keyIdentity: 'ui-browser-' + suffix,
+    classInstance: true }, ro: null, request: { tokens: [] } });
+  const strayGrant = store.newGrant({ client: { identifier: SPA,
+    key: keyObject(), classInstance: false }, ro: null,
+    request: { tokens: [] } });
+  const live = [revocation.grantProblem(instanceGrant),
+                revocation.tokenProblem({ grantId: instanceGrant.id }),
+                revocation.grantProblem(strayGrant)];
+  t.check(live[0] === null && live[1] === null && live[2] &&
+          live[2].code === 'STS-GNAP-0731',
+          'I8. an unregistered instance\'s grant and its token are live at ' +
+          'use although its key is not on the entry, while a grant bound to ' +
+          'a key the entry does not name is STS-GNAP-0731',
+          JSON.stringify(live));
+  const offProblem = await withSettings({ 'gnap.unregisteredInstances':
+                                          false }, function () {
+    return [revocation.grantProblem(instanceGrant),
+            revocation.tokenProblem({ grantId: instanceGrant.id })];
+  });
+  t.check(offProblem.every(function (one) {
+    return one && one.code === 'STS-GNAP-0907';
+  }), 'I9. with gnap.unregisteredInstances off it is refused at use ' +
+      '(STS-GNAP-0907)', JSON.stringify(offProblem));
+  const swept = revocation.endForClientKeyChange(SPA,
+    { why: 'test: the entry\'s key fields edited', actor: 'test',
+      via: __filename, initiatingEntity: 'admin' });
+  const afterSweep = [store.getGrant(instanceGrant.id),
+                      store.getGrant(strayGrant.id)];
+  const FINALIZED = store.STATE.FINALIZED;
+  t.check(swept === 1 && afterSweep[0] && afterSweep[0].state !== FINALIZED &&
+          afterSweep[1] && afterSweep[1].state === FINALIZED,
+          'I10. an edit of the entry\'s key fields ends the grant bound to a ' +
+          'key it no longer names, and leaves the unregistered instance\'s ' +
+          'grant alone', JSON.stringify({ swept: swept,
+            instance: afterSweep[0] && afterSweep[0].state,
+            stray: afterSweep[1] && afterSweep[1].state }));
+
   [SPA, NO_FINISH, RS, SEEN, 'ui-keyed-' + suffix].forEach(function (one) {
     applications.deleteApplication(one);
   });
@@ -298,6 +348,7 @@ module.exports = {
   name: 'gnap_unregistered_instances',
   describe: 'an unregistered GNAP key whose class_id names a registered ' +
             'client is an instance of it, by default, and never skips the ' +
-            'approval page (#1216)',
+            'approval page, and its grant is not refused at use for a key ' +
+            'the entry never held (#1216, #1219)',
   run: run
 };
