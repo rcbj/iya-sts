@@ -136,10 +136,22 @@ function built(profiles) {
     refreshContributions: function () {
       return Promise.resolve(0);
     },
+    // What names each profile (#1235) is the policy's `namedBy()`; the
+    // rows below keep it as `selectGroups` and `selectApplications`, the
+    // shape the report hands on.
     passkeyPolicy: function () {
-      return { list: function () {
-        return profiles;
-      } };
+      return {
+        list: function () {
+          return profiles;
+        },
+        namedBy: function (name) {
+          const row = profiles.filter(function (one) {
+            return one.name === name;
+          })[0] || {};
+          return { applications: row.selectApplications || [],
+                   groups: row.selectGroups || [], people: [] };
+        }
+      };
     },
     randomId: function () {
       state.n += 1;

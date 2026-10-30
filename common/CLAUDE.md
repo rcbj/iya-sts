@@ -14276,7 +14276,9 @@ reference: the same answer as before, by construction.
    (`appPasskeyPolicy`'s, beside `appAuthnPolicy`), and the attribute in
    `EDITABLE` (`'set'`), `ATTRIBUTE_CHOICES` (`default` and the kind's
    named policies, read lazily), `CHOICES_CHECKED_HERE`, `POLICY_REFERENCES`
-   and, where its people configure it, `SIMPLE_FIELD_ATTRIBUTES`.
+   and not `SIMPLE_FIELD_ATTRIBUTES`, whose set is what two working
+   applications hold (`tests/subtab_views.js` holds it to that): a
+   reference is an advanced field.
 4. **A group reference**: nothing in `ldap_server.js` beyond handing
    `personGroupReferences` and `groupsNamingPolicy` to the module's
    `setDirectory()`; the index and `setGroupPolicy()` are generic.

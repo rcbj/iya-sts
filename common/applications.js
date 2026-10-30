@@ -7152,7 +7152,7 @@ const FIELD_SECTIONS = [
 const SIMPLE_FIELD_ATTRIBUTES = [
   // Every protocol (rcbj0002, rcbj0003), and the authentication policy an
   // application names (#1148; its two lists were here since #457 and #475).
-  'description', 'appHomePageUrl', 'appAuthnPolicy', 'appPasskeyPolicy',
+  'description', 'appHomePageUrl', 'appAuthnPolicy',
   'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
   'appDelegationSubjectGroup', 'appDelegationSemantics',
   // OAuth 2.0 / OpenID Connect (rcbj0002, rcbj0003).
