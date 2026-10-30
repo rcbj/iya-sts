@@ -35,6 +35,11 @@
 //   E. THE BATCH (#1164): every semantic, an item's failure in its own
 //      context.error, the defaults overridden per item, no items as one
 //      evaluation, both bounds, the switch, and the batch id on each row.
+//   K. THE CATALOGUE A REMOTE PEP PULLS (#1179): GET
+//      /xacml/pep/authzen-catalogue behind REMOTE_PEPS (no certificate and
+//      an AUTHZEN_PEPS caller both refused), the rows the evaluation maps
+//      with, the settings, the ETag and ?since= 304, a token that moves with
+//      a row and a setting, and /xacml/pep/policies' token that does not.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -269,11 +274,12 @@ async function childBody() {
   const pepCred = await mint('CN=azpep,O=Outside');
   const otherCred = await mint('CN=azother,O=Outside');
   const strayCred = await mint('CN=azstray,O=Outside');
-  const added = tls.addAnchors([pepCred, otherCred, strayCred]
+  const pullCred = await mint('CN=azpull,O=Outside');
+  const added = tls.addAnchors([pepCred, otherCred, strayCred, pullCred]
     .map(function (one) {
       return one.anchorPem;
     }).join(''));
-  t.check(added && added.added === 3,
+  t.check(added && added.added === 4,
           'setup: the outside Root CAs are in the client truststore',
           JSON.stringify(added));
   const derOf = function (minted) {
@@ -285,7 +291,7 @@ async function childBody() {
   let catalogued = null;
   let client = null;
   inRealm(function () {
-    ['azalice', 'azpep', 'azother'].forEach(function (name) {
+    ['azalice', 'azpep', 'azother', 'azpull'].forEach(function (name) {
       ldap.createUser(name, { invent: false });
     });
     ldap.locateEntry('azalice').stored.attributes.employeetype = ['staff'];
@@ -294,6 +300,12 @@ async function childBody() {
                                  { add: derOf(otherCred) });
     adminActions.groupsAction({ action: 'add-member', group: group,
                                 member: 'azpep' });
+    // `azpull` is a remote PEP (REMOTE_PEPS), the catalogue's reader (K).
+    ldap.changeStoredCertificate('person', 'azpull',
+                                 { add: derOf(pullCred) });
+    adminActions.groupsAction({ action: 'add-member',
+      group: String(config.value('roles.remotePepGroup')),
+      member: 'azpull' });
     catalogued = applications.updateApplication('sts-authzen-api', {
       mode: 'add', attribute: 'authzenAttribute',
       value: JSON.stringify({ object: 'resource',
@@ -971,6 +983,93 @@ async function childBody() {
           'with authzen.batchEnabled off the route answers 501 and the ' +
           'metadata leaves it out', JSON.stringify([withBatch, off.status,
                                                     without.json]));
+
+  // -------------------------------------------------------------------------
+  // K. THE CATALOGUE A REMOTE PEP PULLS (#1179)
+  // -------------------------------------------------------------------------
+  const CATALOGUE = PREFIX + '/xacml/pep/authzen-catalogue';
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, null);
+  t.check(r.status === 403 && markedSince(since, 'STS-XACML-0007'),
+          'K1. the catalogue is behind the pull\'s gate: no certificate is ' +
+          '403 (STS-XACML-0007)', brief(r));
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pepCred);
+  t.check(r.status === 403 && markedSince(since, 'STS-XACML-0009'),
+          'K2. an AuthZEN caller is not a remote PEP: AUTHZEN_PEPS without ' +
+          'REMOTE_PEPS is 403 (STS-XACML-0009)', brief(r));
+  const pulled = await request(port, 'GET', CATALOGUE, pullCred);
+  const pulledRows = (pulled.json && pulled.json.rows) || [];
+  const classification = pulledRows.filter(function (row) {
+    return row.property === 'classification';
+  })[0] || {};
+  const settings = (pulled.json && pulled.json.settings) || {};
+  const tokenOf = function (answer) {
+    log.debug("Entering tokenOf().");
+    log.debug("Leaving tokenOf().");
+    return answer.json ? String(answer.json.syncToken || '') : '';
+  };
+  const first = tokenOf(pulled);
+  t.check(pulled.status === 200 && pulledRows.length === 2 &&
+          classification.object === 'resource' &&
+          classification.attributeId === 'urn:example:classification' &&
+          classification.category ===
+            'urn:oasis:names:tc:xacml:3.0:attribute-category:resource' &&
+          classification.dataType ===
+            'http://www.w3.org/2001/XMLSchema#string' &&
+          classification.multiplicity === 'single' &&
+          pulled.json.realm === REALM &&
+          pulled.json.apiObject === 'sts-authzen-api',
+          'K3. a remote PEP is sent the realm\'s rows, as the evaluation ' +
+          'reads them (URIs, defaults written in)', brief(pulled));
+  t.check(settings.enabled === true && settings.batchEnabled === true &&
+          settings.returnReasons === false &&
+          settings.maxEvaluations === 64 &&
+          settings.maxBodyBytes === 262144 &&
+          JSON.stringify(settings.resolveSubjectTypes) === '["user"]',
+          'K4. and the settings that change the mapping or the answer',
+          JSON.stringify(settings));
+  t.check(!!first && pulled.headers.etag === '"' + first + '"' &&
+          /no-store/.test(String(pulled.headers['cache-control'])),
+          'K5. with a sync token, in an ETag too, and Cache-Control: ' +
+          'no-store', JSON.stringify(pulled.headers));
+  r = await request(port, 'GET', CATALOGUE + '?since=' +
+                    encodeURIComponent(first), pullCred);
+  t.check(r.status === 304 && r.text === '',
+          'K6. ?since=<token> of an unchanged catalogue is 304', brief(r));
+  const policiesBefore = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  inRealm(function () {
+    applications.updateApplication('sts-authzen-api', {
+      mode: 'add', attribute: 'authzenAttribute',
+      value: JSON.stringify({ object: 'context', property: 'region',
+        attributeId: 'urn:example:region' }) });
+  });
+  r = await request(port, 'GET', CATALOGUE + '?since=' +
+                    encodeURIComponent(first), pullCred);
+  const policiesAfter = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  const second = tokenOf(r);
+  t.check(r.status === 200 && second && second !== first &&
+          ((r.json && r.json.rows) || []).length === 3,
+          'K7. a new row moves the token, and ?since= of the old one is ' +
+          'answered whole', brief(r));
+  t.check(policiesBefore.status === 200 && policiesAfter.status === 200 &&
+          tokenOf(policiesBefore) === tokenOf(policiesAfter),
+          'K8. /xacml/pep/policies\' own token does not move with the ' +
+          'catalogue: the two pulls are two contracts',
+          tokenOf(policiesBefore) + ' / ' + tokenOf(policiesAfter));
+  inRealm(function () {
+    config.setOverride('authzen.returnReasons', true);
+  });
+  r = await request(port, 'GET', CATALOGUE, pullCred);
+  inRealm(function () {
+    config.setOverride('authzen.returnReasons', false);
+  });
+  t.check(r.status === 200 && tokenOf(r) !== second && r.json &&
+          r.json.settings.returnReasons === true,
+          'K9. a setting that changes the answer moves the token too',
+          brief(r));
 
   // -------------------------------------------------------------------------
   // O. OFF

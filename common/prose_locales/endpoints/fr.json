@@ -23,6 +23,10 @@
     "en": "d7b1a01d26f2cc80",
     "text": "Le référentiel, qu’un PEP distant CHARGE"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "Le catalogue AuthZEN, que charge un PEP distant"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Ce qu’un PEP distant a appliqué"

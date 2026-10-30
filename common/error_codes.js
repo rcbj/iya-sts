@@ -21266,6 +21266,13 @@ const CODES = [
       'authzen.searchMaxCandidates; only the first were decided and the ' +
       'answer said it was incomplete.',
     spec: 'context.incomplete' },
+  { code: 'STS-AUTHZEN-0060',
+    summary: 'The AuthZEN catalogue a remote PEP pulled from ' +
+      'GET /xacml/pep/authzen-catalogue left out values of ' +
+      'authzenAttribute on sts-authzen-api that are not catalogue rows; ' +
+      'the edge PDP maps those properties as undeclared, as the service ' +
+      'does (#1179).',
+    spec: 'none — logged; the pull is answered' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

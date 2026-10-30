@@ -751,6 +751,10 @@
     "en": "f21e16beea449f7d",
     "text": "每一項「已啟用」的原則以及哪一項是根原則，外加一個正好涵蓋這些位元組的同步權杖；?since=<token> 會回應 304。拉取就是契約——遠端 PEP 依自己的間隔輪詢此端點，並以自己的引擎複本在本機評估，因為每個請求都詢問的 PEP 就等於在每個存取決策前多一道網路跳轉的 /xacml/pdp。需要 REMOTE_PEPS——這是與上方四個端點所需的 XACML_USER「不同」的角色，也是不同的群組，因為這個端點發布的是本服務用來強制執行自身存取的文件。「已停用」的原則會被略去，而不是附帶旗標傳送，因為載入它的 PEP 會強制執行一項本服務並未執行的原則。"
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "e684892d931f5313",
+    "text": "該領域的 AuthZEN 屬性目錄——sts-authzen-api 上 authzenAttribute 的各列，依 POST /access/v1/evaluation 的讀取方式讀取——以及會改變對應或答覆的 AuthZEN 設定，外加其自己的同步權杖；?since=<token> 回覆 304。由 xacml-pep 容器與政策一同拉取，其邊緣 PDP 正是以這些列答覆 AuthZEN，因此同一請求在兩處以同一種方式對應。與政策拉取一樣需要 REMOTE_PEPS。這是新增的：/xacml/pep/policies 維持不變。"
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "它的累計計數器以及它持有的同步權杖——正是這一點讓「最新」成為本服務執行的比較，而不是 PEP 對自己的宣稱。那些決策發生在另一個程序中，本服務一個也沒看到，這正是遠端 PEP 的全部意義。它「不會」建立資料列：來自從未註冊者的心跳會被拒絕並指出註冊端點，因為在此建立的資料列不會有憑證、通知 URL 與註冊日期。"

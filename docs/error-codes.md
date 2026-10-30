@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4854** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4855** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 45
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 46
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4745,6 +4745,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0043` | An AuthZEN search continued with a page.token this search did not issue, or after an entity or the limit changed (section 8.2). | HTTP 400, an error message |
 | `STS-AUTHZEN-0044` | An AuthZEN search reached a realm where authzen.searchEnabled is off. | HTTP 501, an error message |
 | `STS-AUTHZEN-0045` | An AuthZEN search named more candidates than authzen.searchMaxCandidates; only the first were decided and the answer said it was incomplete. | context.incomplete |
+| `STS-AUTHZEN-0060` | The AuthZEN catalogue a remote PEP pulled from GET /xacml/pep/authzen-catalogue left out values of authzenAttribute on sts-authzen-api that are not catalogue rows; the edge PDP maps those properties as undeclared, as the service does (#1179). | none — logged; the pull is answered |
 
 ## STS-ADMIN
 

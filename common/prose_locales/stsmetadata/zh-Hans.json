@@ -751,6 +751,10 @@
     "en": "f21e16beea449f7d",
     "text": "每条已启用的策略以及哪一条是根策略，外加一个基于这些字节的同步令牌；?since=<token> 返回 304。拉取就是契约——远程 PEP 按自己的间隔轮询此端点，并使用自己的引擎副本在本地求值，因为每次请求都询问的 PEP 就相当于在每个访问决策前多了一跳网络的 /xacml/pdp。需要 REMOTE_PEPS——这是与上面四个端点所要求的 XACML_USER 不同的角色，也是不同的组，因为此端点发布的是本服务用来执行自身访问控制的文档。已禁用的策略会被排除，而不是带着标记发送，因为加载了它的 PEP 会执行一条本服务并不执行的策略。"
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "e684892d931f5313",
+    "text": "该领域的 AuthZEN 属性目录——sts-authzen-api 上 authzenAttribute 的各行，按 POST /access/v1/evaluation 的读取方式读取——以及会改变映射或答复的 AuthZEN 设置，外加其自己的同步令牌；?since=<token> 返回 304。由 xacml-pep 容器与策略一同拉取，其边缘 PDP 正是用这些行答复 AuthZEN，因此同一请求在两处以同一种方式映射。与策略拉取一样需要 REMOTE_PEPS。这是新增的：/xacml/pep/policies 保持不变。"
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "PEP 的累计计数器及其持有的同步令牌——正因如此，“是否最新”才是本服务执行的比较，而不是 PEP 对自身的声称。那些决策发生在另一个进程中，本服务一个也没看到，而这正是远程 PEP 的全部意义。它不会创建记录行：来自从未注册者的心跳会被拒绝，并指明注册端点，因为在此创建的记录行将没有证书、没有通知 URL，也没有注册日期。"

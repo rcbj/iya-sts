@@ -23,6 +23,10 @@
     "en": "d7b1a01d26f2cc80",
     "text": "El repositorio, para que un PEP remoto lo CARGUE"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "El catálogo AuthZEN, para que un PEP remoto lo CARGUE"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Lo que ha aplicado un PEP remoto"

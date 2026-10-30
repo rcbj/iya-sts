@@ -23,6 +23,10 @@
     "en": "d7b1a01d26f2cc80",
     "text": "Arkivet, för en fjärr-PEP att LADDA"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "AuthZEN-katalogen, för en fjärransluten PEP att LÄSA IN"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Vad en fjärr-PEP har tillämpat"

@@ -328,6 +328,15 @@ interface XacmlSurfaceDeps {
   // Required at the moment a nudge is due, never at load.
   loadBarrier(): Barrier;
   loadPersistence(): CommitWaiter;
+  // Required when a remote PEP pulls the AuthZEN catalogue (#1179), never at
+  // load: the application registry the catalogue lives on, and the grammar
+  // `authzen/authzen.ts` reads it with — so the edge PDP is sent exactly the
+  // rows the service maps a request with.
+  loadApplications(): { get(identifier: string): any };
+  loadAuthzenCatalogue(): { rowsOf(values: unknown):
+                              { rows: any[]; problems: string[] };
+                            valueOf(row: any): string };
+  sha256Base64(text: string): string;
 }
 
 // The role those four endpoints require. Named once here rather than written
@@ -448,6 +457,21 @@ class XacmlSurface {
       },
       loadPersistence: function (): CommitWaiter {
         return require('../persistence/persistence');
+      },
+      loadApplications: function (): any {
+        helpers.log.debug("Entering loadApplications().");
+        helpers.log.debug("Leaving loadApplications().");
+        return require('../common/applications');
+      },
+      loadAuthzenCatalogue: function (): any {
+        helpers.log.debug("Entering loadAuthzenCatalogue().");
+        helpers.log.debug("Leaving loadAuthzenCatalogue().");
+        return require('../authzen/authzen_catalogue');
+      },
+      sha256Base64: function (text: string): string {
+        helpers.log.debug("Entering sha256Base64().");
+        helpers.log.debug("Leaving sha256Base64().");
+        return require('../common/crypto').digest('sha256', text, 'base64');
       }
     };
   }
@@ -762,12 +786,108 @@ class XacmlSurface {
   }
 
   // ===========================================================================
+  // THE AUTHZEN CATALOGUE A REMOTE PEP PULLS (#1179).
+  //
+  // The `xacml-pep` container answers AuthZEN Access Evaluation itself, as an
+  // edge PDP over the policy it pulled — and a request is mapped onto XACML
+  // by the realm's ATTRIBUTE CATALOGUE (`authzen/authzen_catalogue.ts`). Two
+  // places mapping one request differently is the drift the pull exists to
+  // prevent, so the catalogue travels with the policies: what is sent is
+  // exactly what `authzen/authzen.ts`'s `rows()` maps with, read through the
+  // same `rowsOf()` off the same `sts-authzen-api` object, and the realm's
+  // settings that change the MAPPING or the answer (`authzen.enabled` with
+  // `xacml.enabled`, `authzen.resolveSubjectTypes`, `authzen.batchEnabled`,
+  // `authzen.maxEvaluations`, `authzen.maxBodyBytes`,
+  // `authzen.returnReasons`) beside them, so the container's answer follows
+  // the realm's switches rather than a second copy of them.
+  //
+  // **ITS OWN SYNC TOKEN, NOT THE POLICIES'.** A digest of exactly what is
+  // sent, so a catalogue change and a policy change are two different
+  // events, and `/xacml/pep/policies`' token — which heartbeats compare — is
+  // untouched (rcbj on #1179: that endpoint stays as it is).
+  //
+  // **A VALUE THAT IS NOT A ROW IS LEFT OUT AND COUNTED**, never sent: the
+  // service leaves it out of the mapping too, so the edge maps that property
+  // as undeclared exactly as the service does. Its text is not sent.
+  // ===========================================================================
+  /**
+   * The AuthZEN catalogue a remote PEP pulls, and its sync token, for the
+   * realm the request is answered in.
+   *
+   * @returns `{ token, body }`
+   */
+  authzenCatalogue(): { token: string; body: any } {
+    const { log, config, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.authzenCatalogue().');
+    const grammar = this.deps.loadAuthzenCatalogue();
+    let object: any = null;
+    try {
+      object = this.deps.loadApplications().get('sts-authzen-api');
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.authzenCatalogue(): ' +
+                ((e && e.message) || e));
+      object = null;
+    }
+    const values = object && object.fields
+      ? object.fields.authzenAttribute : null;
+    const read = grammar.rowsOf(values);
+    if (read.problems.length) {
+      log.warn(errorCodes.tag('STS-AUTHZEN-0060') + 'xacml: the AuthZEN ' +
+               'catalogue a remote PEP pulled left out ' +
+               read.problems.length + ' value(s) of authzenAttribute that ' +
+               'are not rows; the edge maps those properties as undeclared, ' +
+               'as this service does.');
+    }
+    const rows = read.rows.map(function (row: any) {
+      return JSON.parse(grammar.valueOf(row));
+    });
+    const types = config.value('authzen.resolveSubjectTypes');
+    const settings = {
+      enabled: config.value('authzen.enabled') !== false &&
+               config.value('xacml.enabled') !== false && !!object,
+      resolveSubjectTypes: (Array.isArray(types) ? types
+        : String(types || '').split(','))
+        .map(function (one: unknown) {
+          return String(one).trim();
+        }).filter(Boolean),
+      batchEnabled: config.value('authzen.batchEnabled') !== false,
+      maxEvaluations: Number(config.value('authzen.maxEvaluations')),
+      maxBodyBytes: Number(config.value('authzen.maxBodyBytes')),
+      returnReasons: config.value('authzen.returnReasons') === true
+    };
+    const realm = String(realms.currentId() || '');
+    const token = this.deps.sha256Base64(JSON.stringify({
+      realm: realm, apiObject: !!object, rows: rows, settings: settings }))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const body = {
+      syncToken: token,
+      realm: realm,
+      apiObject: object ? 'sts-authzen-api' : null,
+      rows: rows,
+      leftOut: read.problems.length,
+      settings: settings,
+      note: 'The AuthZEN attribute catalogue of this realm: the rows of ' +
+            'authzenAttribute on sts-authzen-api, read as this service ' +
+            'reads them for POST /access/v1/evaluation, and the settings ' +
+            'that change the mapping or the answer. An edge PDP maps a ' +
+            'request with exactly these, or not at all.'
+    };
+    log.debug('Leaving XacmlSurface.authzenCatalogue(). ' + rows.length +
+              ' row(s).');
+    return { token: token, body: body };
+  }
+
+  // ===========================================================================
   // PHASE FIVE: THE REMOTE PEP. THREE ENDPOINTS, AND THE PULL IS THE CONTRACT.
   //
   //   POST /xacml/pep/register   a PEP says it exists, over mutual TLS
   //   GET  /xacml/pep/policies   the repository, for a PEP to LOAD and
   //                              evaluate
   //   POST /xacml/pep/heartbeat  what it has enforced, and what it holds
+  //
+  // and, beside the policies since #1179, `GET /xacml/pep/authzen-catalogue`,
+  // the AuthZEN attribute catalogue the container's edge PDP maps with —
+  // additive, behind the same gate, with a sync token of its own.
   //
   // ---------------------------------------------------------------------------
   // WHY THE PEP PULLS AND THIS SERVICE DOES NOT PUSH.
@@ -2204,6 +2324,47 @@ class XacmlSurface {
          }, null, 2));
       log.debug('Leaving GET /xacml/pep/policies. ' + rows.length +
                 ' policy(ies).');
+    });
+
+    // -------------------------------------------------------------------------
+    // GET /xacml/pep/authzen-catalogue — THE AUTHZEN CATALOGUE, FOR A REMOTE
+    // PEP'S EDGE PDP (#1179).
+    //
+    // ADDITIVE: `/xacml/pep/policies` above is unchanged and so is every
+    // other endpoint here (rcbj on #1179). The same gate as the pull —
+    // `pepAccess()`, `REMOTE_PEPS` on resource `xacml-pep-api` — because it
+    // is the pull's other half: what the pulled policies are asked in terms
+    // of. The same `?since=` and ETag, over a token of its own
+    // (`authzenCatalogue()` argues both).
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/authzen-catalogue', function (req, res) {
+      log.debug('Entering GET /xacml/pep/authzen-catalogue.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP AuthZEN catalogue pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. The access ' +
+                  'policy refused.');
+        return;
+      }
+      const catalogue = self.authzenCatalogue();
+      const since = String(req.query.since || '');
+      if (since && since === catalogue.token) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + catalogue.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + catalogue.token + '"')
+         .send(JSON.stringify(catalogue.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/authzen-catalogue. ' +
+                catalogue.body.rows.length + ' row(s).');
     });
 
     // -------------------------------------------------------------------------

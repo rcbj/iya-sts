@@ -751,6 +751,10 @@
     "en": "f21e16beea449f7d",
     "text": "Varje AKTIVERAD policy och vilken som är roten, plus en synktoken över exakt de byten; ?since=<token> svarar 304. HÄMTNINGEN ÄR KONTRAKTET — en fjärr-PEP pollar detta med sitt eget intervall och utvärderar lokalt med sin egen kopia av motorn, eftersom en PEP som frågade per begäran vore /xacml/pdp med ett nätverkshopp framför varje åtkomstbeslut. Kräver REMOTE_PEPS — en ANNAN roll än den XACML_USER som de fyra slutpunkterna ovan vill ha, och en annan grupp, eftersom detta är slutpunkten som publicerar de dokument som den här tjänsten upprätthåller sin egen åtkomst med. En INAKTIVERAD policy utelämnas snarare än skickas med en flagga, eftersom en PEP som laddade den skulle upprätthålla en policy som den här tjänsten inte gör."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "e684892d931f5313",
+    "text": "Sfärens AuthZEN-attributkatalog — raderna i authzenAttribute på sts-authzen-api, lästa så som POST /access/v1/evaluation läser dem — och de AuthZEN-inställningar som ändrar mappningen eller svaret, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Hämtas bredvid policyerna av containern xacml-pep, vars kant-PDP besvarar AuthZEN med exakt dessa rader, så att en begäran mappas på ett och samma sätt på båda ställena. Kräver REMOTE_PEPS, liksom policyhämtningen. Ett tillägg: /xacml/pep/policies är oförändrad."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Dess kumulativa räknare och den synktoken den innehar — vilket är det som gör \"aktuell\" till en jämförelse som den här tjänsten utför snarare än ett påstående som PEP:n gör om sig själv. De besluten fattades i en annan process och den här tjänsten såg inget av dem, vilket är hela poängen med en fjärr-PEP. Den skapar INTE någon rad: ett hjärtslag från något som aldrig registrerats nekas med en hänvisning till registreringsslutpunkten, eftersom en rad som skapades här inte skulle bära något certifikat, ingen notifierings-URL och inget registreringsdatum."
