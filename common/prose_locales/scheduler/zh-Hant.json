@@ -591,6 +591,14 @@
     "en": "d685d1a2ff40e09e",
     "text": "在主動-主動叢集中，取代所有節點 TLS 接聽程式共用的工作階段票證金鑰，讓某個節點核發的票證能在另一個節點上恢復。被取代的金鑰會被刪除，藉此限制能從票證中復原已恢復工作階段之秘密的時間長度。"
   },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "UMA 到期"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "移除每個超過其有效期的 User-Managed Access 許可票證、持久化宣告權杖、RPT 記錄與待處理的擁有者核准（#1168）。讀取時會自行套用期限，因此這只是清理，絕不是作出決定的環節。"
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "僅限隨選"

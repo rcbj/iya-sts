@@ -995,6 +995,74 @@
     "en": "9756220c110d11f1",
     "text": "GNAP 批准页面上的人不是请求所指定的用户，授权被发送到该用户的门户（#432 第 6 阶段）"
   },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "UMA 资源服务器代表所有者注册了资源"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "UMA 资源服务器更新了已注册的资源"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "UMA 资源服务器删除了已注册的资源"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "向 UMA 资源服务器签发了许可票据"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "UMA 许可由其某项策略作出了决定"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "应答了 UMA uma-ticket 授权"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "撤销了 UMA 持久化声明令牌"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "UMA 请求已排队等待其资源所有者批准"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "资源所有者批准或拒绝了 UMA 请求"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "请求方在 UMA 声明交互端点登录"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "资源所有者通过 UMA 共享了资源"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "资源所有者移除了 UMA 共享"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "资源所有者以 ALFA 重写了其 UMA 策略"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "在控制台上将应用程序设为 UMA 资源服务器"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "在控制台上应用程序不再是 UMA 资源服务器，其 RPT 已被撤销"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "在控制台上更改了应用程序是否可拥有 UMA 资源"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "在控制台上撤销了 UMA RPT"
+  },
   "audit.actions.gnap.grant.finalize.label": {
     "en": "fee9afbd448956f2",
     "text": "GNAP 授权已终结，附原因：已签发、已吊销、已拒绝或已过期"

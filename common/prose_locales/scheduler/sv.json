@@ -591,6 +591,14 @@
     "en": "d685d1a2ff40e09e",
     "text": "Ersätter sessionsbiljettnyckeln som varje nods TLS-lyssnare delar i ett aktivt-aktivt kluster, så att en biljett som en nod utfärdat kan återupptas på en annan. Nyckeln den ersätter tas bort, vilket begränsar hur länge en återupptagen sessions hemligheter kan återvinnas ur en biljett."
   },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "UMA-utgång"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Tar bort varje behörighetsbiljett, beständig anspråkstoken, RPT-post och väntande ägargodkännande för User-Managed Access som passerat sin livstid (#1168). En läsning tillämpar tidsgränsen själv, så detta är städningen, aldrig det som avgör."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "endast på begäran"

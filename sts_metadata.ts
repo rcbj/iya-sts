@@ -4099,6 +4099,22 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/uma/description.js', group: 'UMA 2.0',
     name: 'The description page\'s script', specs: [],
     what: 'The description pages\' one bundle, on this family\'s path.' },
+  { path: '/admin-api/uma', group: 'UMA 2.0',
+    name: 'The UMA console page over JSON', specs: ['uma2-grant',
+                                                    'uma2-fedauthz'],
+    what: 'What GET /admin/uma draws, out of the same view function (#1195): ' +
+          'the resource servers, resources, live tickets and RPTs, waiting ' +
+          'requests, an owner and the dry-run what-if.' },
+  { path: '/admin-api/uma/monitor', group: 'UMA 2.0',
+    name: 'The UMA PEP\'s counts over JSON', specs: ['uma2-grant'],
+    what: 'The uma row of the XACML monitor and, per resource server, what ' +
+          'it holds now.' },
+  { path: '/admin-api/uma/:action', group: 'UMA 2.0',
+    name: 'The UMA console\'s nine acts', specs: ['uma2-grant',
+                                                  'uma2-fedauthz'],
+    what: 'Enable or disable a resource server, let it own resources, ' +
+          'delete a resource, revoke an RPT, and share, unshare, approve or ' +
+          'refuse on an application\'s own document.' },
   { path: '/pki/crl/:scope/:ca', group: 'PKI',
     name: 'The certificate revocation list of one authority',
     specs: ['rfc5280'],

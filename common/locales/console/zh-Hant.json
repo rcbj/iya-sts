@@ -101,6 +101,7 @@
   "nav.commands": "Provider Commands",
   "nav.claim-providers": "宣告提供者",
   "nav.gnap": "GNAP",
+  "nav.uma": "UMA 2.0",
   "nav.totp": "TOTP MFA",
   "nav.backup-codes": "復原碼",
   "nav.webauthn": "WebAuthn",

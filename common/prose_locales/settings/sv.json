@@ -7051,6 +7051,126 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Det högsta antalet åtkomstbegäranden en sfär rymmer som väntande; efter det avvisas en inskickning med 503 tills några avgjorts eller gått ut."
   },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "User-Managed Access aktiverat"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "När det är på svarar UMA 2.0:s skydds-API under /uma, tokenslutpunkten utför beviljandet urn:ietf:params:oauth:grant-type:uma-ticket och annonserar det, och /.well-known/uma2-configuration beskriver dem. Av förblir vägarna REGISTRERADE och svarar 501, som XACML:s gör, beviljandet är unsupported_grant_type och upptäcktsdokumentet serveras inte. Inget som en resursägare delat glöms bort när det slås av."
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "Sfärens UMA-auktoriseringspolicy"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "Namnet på den ou=policies-post som avgör SFÄRENS lager för varje UMA-behörighet: vilka resursservrar, klienter och utfärdare av anspråk som får delta, och att en begärande part måste vara känd. Utan någon post med det namnet avgör den inbyggda mallen uma-authorization; en post åsidosätter den, och en AVAKTIVERAD post faller inte tillbaka (utfärdandepolicyns regel). Resursägarens eget dokument och resursserverns finkorniga policy tillfrågas efter den, och varje lager måste svara Permit."
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "Behörighetsbiljettens livstid (sekunder)"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "Hur länge en behörighetsbiljett (Federated Authorization avsnitt 4) får visas upp vid tokenslutpunkten. Varje svar med need_info, request_submitted och request_denied ROTERAR biljetten, så en klient som fortsätter fråga visar aldrig upp en äldre än detta; en biljett förbrukas en gång i hela klustret."
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "RPT-livstid (sekunder)"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "Hur länge en token för begärande part lever. KORT MED AVSIKT: en RPT:s behörighet är vad ägaren tillät när den utfärdades, och en kort livstid begränsar hur länge en återtagen delning fortfarande respekteras av en resursserver som inte gör introspektion. En klient som vill ha längre visar upp sin biljett igen eller uppgraderar sin RPT, vilket avgör varje behörighet på nytt."
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "Utfärda en uppdateringstoken med en RPT"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "Huruvida uma-ticket-beviljandet svarar med en uppdateringstoken bredvid RPT:n. AV SOM STANDARD (rcbjs beslut 4 i #1168): Grant-specifikationen förbjuder en auktoriseringsbedömning vid uppdatering, den här tjänsten avgör på nytt vid varje uppdatering, och en RPT som inte kan avgöras på nytt bör hellre vara kortlivad. På kör uppdateringen om varje lager, som en uppgradering gör, och en behörighet som inte längre går igenom släpps."
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "Livstid för beständig anspråkstoken (sekunder)"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "Hur länge en beständig anspråkstoken (PCT) behåller de anspråk som samlats in om en begärande part för en klient. En PCT är ett handtag lagrat via sin hash, bundet till klienten och den begärande parten, återkallningsbart vid /oauth2/revoke med token_type_hint=pct, och avslutat av en utloggning från allt."
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "Utfärda en RPT för de beviljade behörigheterna när några vägras"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "När det är på (rcbjs beslut 3 i #1168) besvaras en biljett som begär flera behörigheter, av vilka några beviljas och andra vägras, med en RPT som bär den beviljade delmängden — Grant-specifikationens alternativ med partiell RPT — och med request_denied bara när ingen beviljas. Av vägrar varje vägrad behörighet hela begäran. need_info föredras framför båda så snart en fråga är Indeterminate med avseende på den begärande parten."
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "Låt en resursägare redigera sitt dokument som ALFA"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "När det är på låter /portal/shared en resursägare redigera hela sitt UMA-dokument som ALFA, bredvid delningsformuläret. AV SOM STANDARD (rcbjs beslut 2 i #1168): en regel som formuläret inte skrev visas då skrivskyddad som en anpassad regel. En ägares dokument tillfrågas bara någonsin om ägarens egna resurser, så det värsta en handskriven regel kan göra är att dela det dess författare äger."
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "Katalogattribut som ägarens lager får läsa"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "De attribut i en begärande parts katalogpost som Policy Information Point svarar med för resurs-ÄGARENS lager, kommaseparerade: vad en persons egen regel får läsa om en främling. Sfärens lager läser katalogen som varje utfärdandefråga gör. Tomt betyder att en ägares regel inte får läsa något utom det som samlats in som anspråk."
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "Hur länge en ägares godkännande inväntas (sekunder)"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "Hur länge en request_submitted-begäran väntar på /portal/shared på ägarens svar. Obesvarad efter det blir klientens nästa avfrågning request_denied. Ägaren meddelas via e-post där kanalen är konfigurerad och de inte har avböjt aviseringar."
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "Väntande godkännanden per ägare"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "Högsta antalet begäranden som samtidigt väntar på en ägares svar. Därutöver besvaras ytterligare en request_submitted med request_denied i stället för att köas: en obegränsad kö är ett sätt för en främling att fylla en persons portal."
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "Största ägardokument (byte)"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "Den största storlek i byte som en resursägares XACML-policydokument får ha. En delning som skulle ta det förbi gränsen vägras och dokumentet lämnas som det var."
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "Flest regler i ett ägardokument"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "Det högsta antalet Rules en resursägares dokument får innehålla: dess egen owner-self-regel, en per delning och en per givet godkännande. En delning som skulle ta det förbi gränsen vägras."
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "Registrerade resurser per ägare"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "Det högsta antalet resurser som registrerats för en ägares räkning, över alla resursservrar. En registrering därutöver vägras: annars skulle en resursserver med en skydds-API-token kunna registrera obegränsat i någons namn."
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "Flest omfång på en resurs"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "Det högsta antalet resource_scopes en registrerad resurs får bära. Ett omfång är en sträng och kontaktas aldrig: ett dokument med omfångsbeskrivning som specifikationen tillåter ett omfång att namnge hämtas inte."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "SSF aktiverat"

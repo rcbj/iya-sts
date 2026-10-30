@@ -79,6 +79,14 @@
     "en": "8477ecf26c38a2a6",
     "text": "領域是 AuthZEN 的租用戶：呼叫端是在領域自己的目錄中查找，因此另一個領域的呼叫端在此誰也不是；問題則依領域自己的根原則做決定。屬性目錄是該領域的 sts-authzen-api 物件，而每個 authzen.* 設定都屬於該領域。"
   },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "領域是 UMA 的租用戶：其資源伺服器是領域中為 uma 宣告的應用程式，其保護 API 權杖是領域自己的存取權杖，其六個儲存區——已註冊的資源、擁有者的文件、票證、PCT、RPT 與待處理的核准——屬於該領域，其領域層原則是領域的 uma-authorization 項目或內建範本，且每個 uma.* 設定都屬於該領域。"
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "聯合"

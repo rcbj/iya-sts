@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "GNAP 客户端实例、GNAP 资源服务器，或两者兼是：向 /gnap（RFC 9635）或面向资源服务器的 API（RFC 9767）证明持有密钥的参与方。其密钥是 gnapKey（公钥对象）或带有封存 gnapSymmetricKey 的 gnapKeyReference；其完成 URI 与其他返回地址一样；资源服务器携带它负责应答的位置，并在注册了资源集之后携带它用于验证的 macaroon 根密钥。"
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "User-Managed Access 2.0 资源服务器：一个 OAuth 客户端，为 /uma 获取保护 API 令牌，为资源所有者注册其持有的资源，为这些资源请求许可票据，并作为为它们签发的请求方令牌的受众。声明该协议族即是接纳它的方式；umaOwnsResources 允许应用程序本身成为所有者。"
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "注册时登记的重定向 URI，以及本服务为该应用接受过的任何 redirect_uri。两者并不是同一种声明，注册表也不会悄悄合并它们——参见 appRedirectUriObserved。"
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "/uma/claims 在收集声明后可将请求方送回此客户端的位置（UMA 2.0 Grant 第 3.3.2 节，claims_redirect_uri）。精确匹配；未在此列出的 claims_redirect_uri 会告知本人，且绝不会重定向到该地址。"
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -1730,6 +1742,10 @@
   "applications.schema.attributes.appFgaEnforced.what": {
     "en": "7857e5ec7ea0bfdf",
     "text": "当此应用的细粒度策略被强制执行时为 TRUE。缺失或为 FALSE 表示未强制执行，这是默认值。"
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "当此 UMA 2.0 资源服务器可通过以 client_credentials 获取的保护 API 令牌注册其自身拥有的资源时为 TRUE。缺失或 FALSE（默认值）表示 PAT 必须属于某个人（授权码流程），并由该人拥有其注册的内容。"
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

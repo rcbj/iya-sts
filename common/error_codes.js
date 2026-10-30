@@ -22194,6 +22194,35 @@ const CODES = [
       'another client presented (#1194).',
     spec: 'a redirect to the claims_redirect_uri with ' +
       'authorization_state=not_authorized' },
+  { code: 'STS-UMA-0500',
+    summary: 'An /admin-api UMA action threw (#1195).',
+    spec: 'HTTP 500 on the management API' },
+  { code: 'STS-UMA-0501',
+    summary: 'A UMA console action was not one of the nine (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0502',
+    summary: 'A UMA console action named an application this realm does ' +
+      'not hold (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0503',
+    summary: 'A UMA console action\'s write to an application entry was ' +
+      'refused by the application register (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0504',
+    summary: 'A UMA console action named a resource that is not ' +
+      'registered (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0505',
+    summary: 'A UMA console action named an RPT that is not live (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0506',
+    summary: 'A UMA owner action named an application that does not own ' +
+      'resources (umaOwnsResources) (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0507',
+    summary: 'A UMA owner action on an application\'s document was refused ' +
+      'without a code of its own (#1195).',
+    spec: 'HTTP 400 on the management API' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

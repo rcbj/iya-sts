@@ -7051,6 +7051,126 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "一个领域最多可同时持有的待处理访问请求数；超过后，提交会被以 503 拒绝，直到其中一些被决定或过期。"
   },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "启用 User-Managed Access"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "开启时，UMA 2.0 保护 API 在 /uma 下应答，令牌端点执行并公布 urn:ietf:params:oauth:grant-type:uma-ticket 授权，/.well-known/uma2-configuration 描述它们。关闭时，路由仍保持已注册并应答 501（与 XACML 的路由相同），该授权为 unsupported_grant_type，发现文档不提供。关闭它不会遗忘资源所有者共享过的任何内容。"
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "领域的 UMA 授权策略"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "决定每个 UMA 许可之领域层的 ou=policies 条目名称：哪些资源服务器、客户端和声明签发方可以参与，以及请求方必须是已知的。没有该名称的条目时，由内置的 uma-authorization 模板决定；条目会覆盖它，已禁用的条目不会回退到模板（签发策略的规则）。之后再询问资源所有者自己的文档和资源服务器的细粒度策略，每一层都必须为 Permit。"
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "许可票据有效期（秒）"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "许可票据（Federated Authorization 第 4 节）可在令牌端点出示的时长。每个 need_info、request_submitted 和 request_denied 应答都会轮换票据，因此不断询问的客户端出示的票据绝不会比此更旧；票据在整个集群中只能使用一次。"
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "RPT 有效期（秒）"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "请求方令牌的存活时长。有意设得较短：RPT 的许可是签发时所有者允许的内容，较短的有效期限制了不做内省的资源服务器仍然认可已撤回共享的时长。需要更长时间的客户端可再次出示其票据或升级其 RPT，这会重新决定每项许可。"
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "随 RPT 签发刷新令牌"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "uma-ticket 授权是否在 RPT 之外同时应答刷新令牌。默认关闭（rcbj 在 #1168 上的决定 4）：Grant 规范禁止在刷新时进行授权评估，而本服务在每次刷新时都会重新决定，无法重新决定的 RPT 最好改为短期有效。开启时，刷新会像升级一样重新运行每一层，不再通过的许可会被丢弃。"
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "持久化声明令牌有效期（秒）"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "持久化声明令牌（PCT）为某个客户端保留所收集的请求方声明的时长。PCT 是按摘要存储的句柄，绑定到客户端和请求方，可在 /oauth2/revoke 以 token_type_hint=pct 撤销，并在注销全部时终止。"
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "部分许可被拒绝时为已授予的许可签发 RPT"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "开启时（rcbj 在 #1168 上的决定 3），请求多项许可、其中一些被授予而另一些被拒绝的票据，会以携带已授予子集的 RPT 应答——即 Grant 规范的部分 RPT 选项——只有在全部未被授予时才应答 request_denied。关闭时，任何一项被拒绝的许可都会拒绝整个请求。只要某个问题对请求方为 Indeterminate，就优先应答 need_info 而不是以上两者。"
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "允许资源所有者以 ALFA 编辑其文档"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "开启时，/portal/shared 允许资源所有者在共享表单旁以 ALFA 编辑其整个 UMA 文档。默认关闭（rcbj 在 #1168 上的决定 2）：此时并非由表单编写的规则会以只读方式显示为自定义规则。所有者的文档只会被询问所有者自己的资源，因此手写规则最坏也只能共享其作者拥有的内容。"
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "所有者层可读取的目录属性"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "策略信息点（Policy Information Point）为资源所有者层所应答的请求方目录条目属性，以逗号分隔：即一个人自己的规则可读取的关于陌生人的信息。领域层读取目录的方式与每个签发问题相同。为空表示所有者的规则除了作为声明收集的内容外不能读取任何信息。"
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "等待所有者批准的时长（秒）"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "request_submitted 请求在 /portal/shared 上等待所有者答复的时长。超过后仍未答复，客户端的下一次轮询将为 request_denied。在已配置邮件通道且所有者未拒绝通知时，会通过邮件告知所有者。"
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "单个所有者可有的待处理批准数"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "同时等待某个所有者答复的最多请求数。超过后，再有 request_submitted 将应答 request_denied 而不是排队：无上限的队列会让陌生人填满一个人的门户。"
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "所有者文档最大大小（字节）"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "资源所有者策略的 XACML 文档最大可占的字节数。会使其超出上限的共享将被拒绝，文档保持原样。"
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "所有者文档中的最多规则数"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "资源所有者的文档可容纳的最多 Rule 数：它自己的 owner-self 规则、每个共享一条、每个已给出的批准一条。会使其超出上限的共享将被拒绝。"
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "单个所有者可注册的资源数"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "跨所有资源服务器代表某个所有者注册的最多资源数。超过后的注册将被拒绝：否则持有保护 API 令牌的资源服务器可以无限制地以他人名义注册。"
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "单个资源的最多范围数"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "一个已注册资源可携带的最多 resource_scopes 数。范围是字符串，绝不会被访问：规范允许范围指向的范围描述文档不会被获取。"
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "启用 SSF"

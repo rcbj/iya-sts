@@ -949,6 +949,9 @@ interface AdminViewsDeps {
   // order and this file is loaded at 18, as `mgmt-api/admin_api.ts` reaches
   // it. Optional, so a test building these views without it still draws.
   loadGnapConsole?: () => any;
+  // UMA's view layer (#1195), lazily and optional for GNAP's reasons: UMA
+  // is 23d-ii.
+  loadUmaConsole?: () => any;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -1167,6 +1170,9 @@ class AdminViews {
       fedEncryption: fedEncryption,
       loadGnapConsole: function () {
         return require('../gnap/gnap_console');
+      },
+      loadUmaConsole: function () {
+        return require('../uma/uma_console');
       },
       loadSignals: function () {
         return require('../ssf/ssf_transmitters');
@@ -14421,6 +14427,36 @@ class AdminViews {
     return { rows: view.rows, paging: view.paging, cells: view.cells };
   }
 
+  // A person's UMA (#1195), or nothing where UMA's view layer cannot be
+  // loaded in this process.
+  /**
+   * Returns a person's UMA: the resources they own, their shares, the
+   * permissions they hold in live RPTs and what waits for them, as
+   * `uma/uma_console.ts`'s `personView()` draws them.
+   *
+   * @param key - the person
+   * @returns the view, or null
+   */
+  umaOf(key) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.umaOf().");
+    const loader = this.deps.loadUmaConsole;
+    if (!loader) {
+      log.debug("Leaving AdminViews.umaOf(). No UMA here.");
+      return null;
+    }
+    let view = null;
+    try {
+      view = loader().personView(key);
+    } catch (e) {
+      log.debug("Caught in AdminViews.umaOf(): " + ((e && e.message) || e));
+      // A process without UMA's stores (an in-process test): no tab.
+      view = null;
+    }
+    log.debug("Leaving AdminViews.umaOf().");
+    return view;
+  }
+
   // `risk` is the person's current standing (#62), read by `riskFor()`
   // before this synchronous view runs and handed in, because a view reads
   // nothing off the request but its query.
@@ -14717,6 +14753,9 @@ class AdminViews {
     // `/portal/gnap`. Revoked with POST /admin-api/gnap/revoke-grant naming
     // the grant and this person.
     const gnapGrants = this.gnapGrantsOf(req.query, key);
+    // THEIR UMA (#1195): the GNAP grants tab's arrangement — what they own
+    // and share, and what they hold.
+    const uma = this.umaOf(key);
     // Their authentication attempts (#955), the audit log's rows for this
     // person across every application and protocol. Read once, for the
     // page and this reply.
@@ -14807,6 +14846,11 @@ class AdminViews {
           gnapGrants: gnapGrants.rows,
           gnapGrantsPaging: gnapGrants.paging,
           gnapGrantsCells: gnapGrants.cells,
+          // Their UMA (#1195): `resources` they own, `shares` in their
+          // document, `held` permissions in live RPTs, `pending` requests
+          // waiting for them. An RPT is revoked with POST
+          // /admin-api/uma/revoke-rpt.
+          uma: uma,
           // THE ATTEMPTS (#955). Not `authentications`: that member is the
           // count the tiles read. The rows are the audit log's, paged under
           // authenticationsPage so they do not move the session list.
@@ -16051,6 +16095,7 @@ export = {
   setRolePreviewer: slot.forward('setRolePreviewer'),
   setConfigSettingsJson: slot.forward('setConfigSettingsJson'),
   settingsBlockOf: slot.forward('settingsBlockOf'),
+  umaOf: slot.forward('umaOf'),
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),

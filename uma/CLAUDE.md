@@ -140,9 +140,8 @@ and `hosted_applications.js` gives the family its two prefixes.
   revokes through `admin_stats.revoke()`, on a delete and on an update that
   drops scopes. It finds nothing until phase 4 issues RPTs; the hook is
   already the one phase 4 relies on.
-* **The settings are homed on `/admin/xacml` until phase 6** gives the
-  family its own page, as AuthZEN's are; the description page is the
-  family's public face until then.
+* **The settings were homed on `/admin/xacml` until phase 6** gave the
+  family its own page (`SETTING_HOMES` now names `/admin/uma`).
 
 ## Phase 3 (#1192): the owner's document and the portal's Sharing section
 
@@ -256,6 +255,43 @@ template a notification, in every catalog.
   as a `claim_token_format`; `claims_redirect_uris` in RFC 7591 dynamic
   registration (set on the application instead); and requiring a claims
   redirect URI of every public client.
+
+## Phase 6 (#1195): the console, `/admin-api/uma`, the person's tab
+
+| File | What it is |
+|---|---|
+| `uma_console.ts` | The view and the nine acts both doors call (rule 7): `view()`, `monitorView()`, `personView()`, `ownerView()`, `whatIf()`, `act()`. Built at 23d-ii after `uma_claims`, reached lazily by the API and `admin_views.ts`. |
+| `web_uma.ts` | Protocols -> UMA 2.0 in the static console, a `web_` module drawn from `GET /admin-api/uma` alone. |
+| `../mgmt-api/uma_api.ts` | The three operations, spread into `admin_api.ts`'s table as AuthZEN's are; built beside them at 19. |
+
+### Decisions made here, and why
+
+* **A person's document is read on the console and never edited there.**
+  An administrator writing a share for a person would be the authorization
+  server deciding for the owner, which is what UMA exists to stop. The owner
+  tab edits only an APPLICATION's document (decision 5), which has nobody
+  else to edit it — the console's administrators, and the application's own
+  owners under `access-control`'s owner rule (`OWNER_OPERATIONS` rows for
+  `GET /uma?owner=` and `POST /uma/owner-*`, projected to the owner tab
+  alone; the four actions are in the template's `ownerApplicationActions`
+  default, so a realm whose policy predates it refuses them until edited).
+* **The what-if is on `/admin/uma`, not `/admin/xacml/decide`** (the ticket
+  asked for either). The owner's layer needs the resource and the owner's
+  document chosen together, and the decide page asks one policy of one
+  request; here the PEP's own `decide()` is asked with `dryRun: true`, so
+  every layer is the token endpoint's own question, reported layer by layer
+  (`Verdict.layers`), and nothing is audited or counted.
+* **A ticket is listed by twelve characters of its key**, which is a digest
+  of the value (phase 1's rule): the value is a bearer artifact.
+* **Disabling a resource server revokes its RPTs and keeps its
+  resources.** The tokens have nobody to honour them; the registrations are
+  the owners' data, and enabling it again brings them back. **Clearing
+  `umaOwnsResources` keeps the application's document** for the same
+  reason; the PAT the application obtains as itself is refused
+  (`STS-UMA-0105`) until it is set again.
+* **The person's UMA tab on `/admin/users` is read-only**, unlike the GNAP
+  grants tab's Revoke: every act it could offer is on `/admin/uma`, which it
+  links to by `?owner=`.
 
 ## What is deliberately not here
 

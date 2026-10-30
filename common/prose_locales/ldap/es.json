@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "Una instancia de cliente GNAP, o un servidor de recursos GNAP, o ambos: una parte que demuestra la posesión de una clave ante /gnap (RFC 9635) o ante la API orientada a RS (RFC 9767). Su clave es gnapKey (un objeto de clave pública) o gnapKeyReference con un gnapSymmetricKey sellado; sus URI de finalización son direcciones de retorno como cualquier otra; un servidor de recursos lleva las ubicaciones de las que responde y, una vez que ha registrado un conjunto de recursos, la clave raíz de macaroon con la que verifica."
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "Un servidor de recursos User-Managed Access 2.0: un cliente OAuth que obtiene un token de la API de protección para /uma, registra los recursos que guarda para un propietario del recurso, pide tickets de permiso para ellos y es la audiencia de los tokens de parte solicitante emitidos para ellos. Declarar la familia es lo que lo admite; umaOwnsResources permite que la propia aplicación sea propietaria."
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "URI de redirección registrados en un registro, y cualquier redirect_uri que este servicio haya ACEPTADO para la aplicación junto a ellos. Ambos no son la misma afirmación y el registro no los fusiona en silencio — vea appRedirectUriObserved."
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "Adónde puede /uma/claims devolver a la parte solicitante a este cliente tras recopilar los claims (UMA 2.0 Grant sección 3.3.2, claims_redirect_uri). Se compara exactamente; un claims_redirect_uri que no figure aquí se comunica a la persona y nunca se redirige a él."
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -1730,6 +1742,10 @@
   "applications.schema.attributes.appFgaEnforced.what": {
     "en": "7857e5ec7ea0bfdf",
     "text": "TRUE cuando se aplica la política detallada de esta aplicación. Ausente o FALSE significa que no se aplica, que es el valor predeterminado."
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "TRUE cuando este servidor de recursos UMA 2.0 puede registrar recursos de los que ES PROPIETARIO ÉL MISMO, mediante un token de la API de protección obtenido con client_credentials. Ausente o FALSE, el valor predeterminado, significa que un PAT debe ser de una persona (el flujo de código) y que esa persona es propietaria de lo que registra."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

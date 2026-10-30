@@ -99,6 +99,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/geolocation': 'risk-scoring.html',
   '/admin/gnap': 'gnap.html',
   '/admin/gnap/monitor': 'gnap.html',
+  '/admin/uma': 'uma.html',
   '/admin/grants':
     'oauth-oidc.html#grant-management-grant-management-for-oauth-20',
   '/admin/groups': 'admin-console.html#groups--admingroups',

@@ -1188,6 +1188,12 @@ class UsersPage {
           html: UsersPage.userGnapGrantsSection(t, key,
             { rows: json.gnapGrants, paging: json.gnapGrantsPaging,
               cells: json.gnapGrantsCells }, gate, params) },
+        // Their UMA 2.0 (#1195): the GNAP tab's arrangement for the other
+        // grant this realm makes over a person's resources. Read here; an
+        // RPT is revoked and an application's document edited on /admin/uma,
+        // and a person's own document is theirs, on /portal/shared.
+        { id: 'utab-uma', label: t.text('consoleUsers.detail.tabUma'),
+          html: UsersPage.userUmaSection(t, key, json.uma) },
         // Every attribute the entry holds, and the one-attribute forms the
         // Attributes tab replaced as the usual door (#228).
         { id: 'utab-entry', label: t.text('consoleUsers.detail.tabEntry'),
@@ -3366,6 +3372,77 @@ class UsersPage {
           t.text('consoleUsers.federationLinks.link'), false)
       : kit.note(t.html('consoleUsers.federationLinks.noRelationship'));
     return heading + nav.head + rows + nav.foot + add;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PERSON'S UMA 2.0 (#1195): the resources they own, the shares in
+  // their document, the permissions they hold in live RPTs, and what waits
+  // for them — `uma/uma_console.ts`'s `personView()`, as `uma` in
+  // /admin-api/users?user=. Read only: a person's document is theirs to
+  // edit, and an RPT is revoked on /admin/uma, which each list links to.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a person's UMA tab.
+   *
+   * @param t - the page's translator
+   * @param key - the person
+   * @param uma - `{ resources, shares, held, pending }`, or null
+   * @returns the tab's HTML
+   */
+  static userUmaSection(t, key, uma) {
+    const esc = kit.esc;
+    const heading = '<h2 id="uma">' +
+      t.html('consoleUsers.userUmaSection.heading') + '</h2>' +
+      kit.note(t.html('consoleUsers.userUmaSection.lead'));
+    if (!uma) {
+      return heading + kit.note(t.html('consoleUsers.userUmaSection.off'));
+    }
+    const none = '<span class="sub">' +
+      t.html('consoleUsers.secondFactorCell.none') + '</span>';
+    const permissions = function (list) {
+      return (list || []).map(function (p) {
+        return '<code>' + esc(p.name || p.resource) + '</code> ' +
+          '<span class="sub">' + esc((p.scopes || []).join(', ')) +
+          '</span>';
+      }).join('<br>') || none;
+    };
+    const resources = uma.resources.length
+      ? '<ul>' + uma.resources.map(function (row) {
+        return '<li><code>' + esc(row.name || row.id) + '</code> ' +
+          '<span class="sub">' + esc(row.resourceServer) + ' · ' +
+          esc(row.scopes.join(', ')) + '</span></li>';
+      }).join('') + '</ul>' : '<p>' + none + '</p>';
+    const shares = uma.shares.length
+      ? '<ul>' + uma.shares.map(function (share) {
+        const r = share.recipient || {};
+        return '<li><code>' + esc(share.resource) + '</code> ' +
+          esc((share.scopes || []).join(', ')) + ' → ' + esc(r.kind || '') +
+          ' ' + esc(r.label || r.value || '') + '</li>';
+      }).join('') + '</ul>' : '<p>' + none + '</p>';
+    const held = uma.held.length
+      ? '<table><tr><th>jti</th><th>' +
+        t.html('consoleUsers.userTokenTable.thClient') + '</th><th>' +
+        t.html('consoleUsers.userUmaSection.thPermissions') + '</th></tr>' +
+        uma.held.map(function (row) {
+          return '<tr><td><code>' + esc(row.jti) + '</code></td><td><code>' +
+            esc(row.client) + '</code></td><td>' +
+            permissions(row.permissions) + '</td></tr>';
+        }).join('') + '</table>' : '<p>' + none + '</p>';
+    const pending = uma.pending.length
+      ? '<ul>' + uma.pending.map(function (row) {
+        return '<li>' + esc(row.requester) + ' · <code>' + esc(row.client) +
+          '</code> · ' + permissions(row.permissions) + '</li>';
+      }).join('') + '</ul>' : '<p>' + none + '</p>';
+    return heading +
+      '<h3>' + t.html('consoleUsers.userUmaSection.resources') + '</h3>' +
+      resources +
+      '<h3>' + t.html('consoleUsers.userUmaSection.shares') + '</h3>' +
+      shares +
+      '<h3>' + t.html('consoleUsers.userUmaSection.held') + '</h3>' + held +
+      '<h3>' + t.html('consoleUsers.userUmaSection.pending') + '</h3>' +
+      pending + '<p class="links"><a href="/admin/uma?owner=' +
+      encodeURIComponent(key) + '#uma-tab-owner">' +
+      t.html('consoleUsers.userUmaSection.open') + '</a></p>';
   }
 
   // ---------------------------------------------------------------------------

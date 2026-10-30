@@ -995,6 +995,74 @@
     "en": "9756220c110d11f1",
     "text": "La personne présente sur une page d’approbation GNAP n’était pas l’utilisateur nommé par la requête, et le grant a été envoyé au portail de cet utilisateur (#432 phase 6)"
   },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "Un serveur de ressources UMA a enregistré une ressource pour le compte d’un propriétaire"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "Un serveur de ressources UMA a mis à jour une ressource enregistrée"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "Un serveur de ressources UMA a supprimé une ressource enregistrée"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "Un ticket de permission a été émis à un serveur de ressources UMA"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "Une permission UMA a été décidée par l’une de ses politiques"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "Un grant uma-ticket UMA a reçu une réponse"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "Un jeton de claims persisté (PCT) UMA a été révoqué"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "Une demande UMA a été mise en attente de l’approbation de son propriétaire de ressources"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "Un propriétaire de ressources a approuvé ou refusé une demande UMA"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "Une partie requérante s’est connectée au point de terminaison d’interaction des claims UMA"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "Un propriétaire de ressources a partagé une ressource par UMA"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "Un propriétaire de ressources a retiré un partage UMA"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "Un propriétaire de ressources a réécrit sa politique UMA en ALFA"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "Une application est devenue serveur de ressources UMA dans la console"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "Une application a cessé d’être serveur de ressources UMA dans la console, et ses RPT ont été révoqués"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "La possibilité pour une application de posséder des ressources UMA a été modifiée dans la console"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "Un RPT UMA a été révoqué dans la console"
+  },
   "audit.actions.gnap.grant.finalize.label": {
     "en": "fee9afbd448956f2",
     "text": "Un grant GNAP a été finalisé, avec le motif : émis, révoqué, rejeté ou expiré"

@@ -147,6 +147,14 @@
     "en": "c36892dc6db9d597",
     "text": "full：位於 /.well-known/gnap-as-rs、面向 RS 的探索文件，採用第 2.1 節權杖模型的權杖內省、資源集註冊、透過 existing_access_token 的權杖衍生，以及第 5.2 節權杖格式登錄中的每種格式——jwt-signed、jwt-encrypted、macaroon、biscuit 與 zcap——皆可鑄造與驗證。第 6.3 節中自行檢查權杖的資源伺服器能察覺撤銷（#432）：JWT 格式攜帶 Token Status List 狀態宣告，已撤銷 biscuit 的撤銷識別碼會被公布（非標準），已註冊的資源伺服器可擁有一個 Shared Signals 串流，接收針對以它為對象之權杖的 session-revoked。Macaroon 與 zcap 權杖沒有這樣的機制；內省是它們的途徑。"
   },
+  "stsmetadata.specs.uma2-grant.coverage": {
+    "en": "de5c44fe6f4c8008",
+    "text": "partial：探索（第 2 節）；urn:ietf:params:oauth:grant-type:uma-ticket 授權（第 3.3 節），票證在整個叢集中只使用一次並繫結至第一個出示它的用戶端，第 3.3.4 節的請求範圍，出示 PCT，帶輪替票證與 required_claims 的 need_info，request_denied，部分 RPT（uma.partialRpt），RPT 升級，以及每項許可均由領域的原則、資源擁有者自己的 XACML 文件、資源伺服器的細粒度原則與簽發閘門共同決定；收集宣告時簽發、可在 /oauth2/revoke 撤銷的 PCT；透過本服務唯一登入實現的宣告互動端點（第 3.3.2 節）；以 ID Token 格式推送、來自本領域或已宣告之判斷提示簽發者的 claim_token；以及 request_submitted，擁有者在入口網站上答覆，核准作為其自身原則的一條規則寫入。尚缺：作為 claim_token_format 的 SAML，以及在互動時提升至分享所要求的 acr（此時分享會拒絕）。uma_profiles_supported 為空。"
+  },
+  "stsmetadata.specs.uma2-fedauthz.coverage": {
+    "en": "6b8ea1097c24f058",
+    "text": "partial：保護 API 存取權杖（第 2 節），作為對象為 /uma、攜帶 uma_protection 的一般存取權杖，透過授權碼流程（擁有者為某個人）或 client_credentials（擁有者為應用程式，前提是其攜帶 umaOwnsResources）取得；資源註冊（第 3 節）——建立、讀取、更新、刪除與列出，含 user_access_policy_uri；以及許可端點（第 4 節），為一項或多項許可簽發一張票證，含 invalid_resource_id 與 invalid_scope。RPT 內省（第 5 節），在 /oauth2/introspect 以 PAT 作為 Bearer：回傳許可且不回傳範圍，僅限該資源伺服器的 RPT。範圍 URI 指向的範圍描述文件絕不會被擷取：範圍就是字串。"
+  },
   "stsmetadata.specs.rfc9421.coverage": {
     "en": "3326ecc9e0fc4e59",
     "text": "partial：對請求與回應進行簽署與驗證，支援每個衍生元件、標頭與結構化欄位元件參數（sf、key、bs、req）、多重簽章、第 3.3 節的六種演算法，以及第 3.3.7 節下本服務支援的每種 JWS 演算法，包括後量子演算法。由 tests/http_signatures.js 依規格附錄 B 的測試向量檢驗。它是 GNAP 的 httpsig 證明，也是 OAuth 資源伺服器上的 FAPI 2.0 HTTP Signatures 設定檔。尾端標頭（tr）會被拒絕，因為訊息模型沒有尾端區段。"
@@ -902,6 +910,50 @@
   "stsmetadata.endpoints./admin-api/gnap/:action.what": {
     "en": "d80279b4f86d8ba8",
     "text": "/admin/gnap 上的兩個控制項，合併為一個動作資源：revoke-grant（撤銷授權及其下每個權杖，並送出用戶端自己 DELETE 時會送出的 CAEP 事件）與 delete-resource-set。"
+  },
+  "stsmetadata.endpoints./uma/rreg.what": {
+    "en": "5b1209610fcc3969",
+    "text": "Federated Authorization 第 3 節。以保護 API 權杖（PAT）作為 Bearer 或 DPoP，POST 資源描述（resource_scopes 必填；name、type、description、icon_uri 選填；範圍是字串，絕不會被存取）：回傳 201，含 _id、user_access_policy_uri（擁有者的 /portal/shared）與 Location。GET 列出此 PAT 的擁有者與資源伺服器所註冊的 _id。PAT 的主體就是以它註冊之一切內容的擁有者——授權碼流程下為某個人，client_credentials 下且攜帶 umaOwnsResources 時為應用程式本身——資源伺服器傳送的任何內容都無法指定擁有者。PAT 在每種模式下都會被檢查。受 uma.maxResourcesPerOwner 與 uma.maxResourceScopes 限制；uma.enabled 關閉時為 501。"
+  },
+  "stsmetadata.endpoints./uma/rreg/:id.what": {
+    "en": "670e1795fbc003c3",
+    "text": "GET 資源描述；PUT 新的描述（200，含 _id）；DELETE 它（204）。由其他擁有者或其他資源伺服器註冊的資源在此處為 not_found（404），且不會說明是哪一種情況。任何其他方法為 unsupported_method_type（405）。"
+  },
+  "stsmetadata.endpoints./uma/perm.what": {
+    "en": "b9a235927c812cb9",
+    "text": "Federated Authorization 第 4 節。攜帶 PAT POST 一個 {resource_id, resource_scopes} 物件或陣列：回傳 201，含涵蓋全部許可的一張許可票證，用於在 Grant 規格第 3.2 節的 WWW-Authenticate 挑戰中交給用戶端。格式正確與否不是原則：未註冊的資源為 invalid_resource_id，未註冊的範圍為 invalid_scope，皆為 400，且在提出任何問題之前回傳。票證存活 uma.ticketLifetimeS，並在整個叢集中只使用一次。"
+  },
+  "stsmetadata.endpoints./uma/claims.what": {
+    "en": "d0075cc9de5f44f5",
+    "text": "Grant 規格第 3.3.2 節：收到 need_info 的用戶端將請求方連同 client_id、ticket、claims_redirect_uri 與 state 送到此處。請求方透過本服務唯一的登入進行登入，被記錄為該票證的請求方，然後帶著 authorization_state=claims_submitted 與一張新票證返回。claims_redirect_uri 必須是用戶端已註冊的位址（oauthClaimsRedirectUri），完全比對；其他任何位址都會告知本人，且絕不會重新導向至該位址。"
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration.what": {
+    "en": "9d41c4e007caa064",
+    "text": "Grant 規格第 2 節的文件：本領域授權伺服器的 RFC 8414 成員，加上 permission_endpoint、resource_registration_endpoint、introspection_endpoint、claims_interaction_endpoint 與 uma_profiles_supported（為空：沒有端對端實作的設定檔），且僅在執行 UMA 授權時才將其列入 grant_types_supported。Cache-Control: no-store，與每個攜帶金鑰的文件相同。uma.enabled 關閉時回應 501：公告不會回應之端點的文件將是謊言。"
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration/*.what": {
+    "en": "2b88d2429a93782c",
+    "text": "RFC 8414 插入形式下的同一份文件，此時簽發者是某個領域的：在該區段之後為 /realm/<id>，在該領域內回應。任何其他路徑都不指向任何領域，回傳 404。"
+  },
+  "stsmetadata.endpoints./uma.what": {
+    "en": "35251459226228a7",
+    "text": "本服務自己的頁面，說明 UMA 2.0 在這裡是什麼：端點、本領域中宣告的資源伺服器、決定一項許可的四個層，以及設定。靜態介面的外殼（#584）；?format=json 或偏好 JSON 的 Accept 會以資料形式回應相同內容。"
+  },
+  "stsmetadata.endpoints./uma/description.js.what": {
+    "en": "5427ba067f3c0091",
+    "text": "說明頁的唯一指令碼套件，位於本協定系列的路徑下。"
+  },
+  "stsmetadata.endpoints./admin-api/uma.what": {
+    "en": "6c3373c7363b58ee",
+    "text": "GET /admin/uma 所繪製的內容，出自同一個檢視函式（#1195）：資源伺服器、資源、有效的票證與 RPT、等待中的請求、某位擁有者，以及假設試算。"
+  },
+  "stsmetadata.endpoints./admin-api/uma/monitor.what": {
+    "en": "092fae243a21641a",
+    "text": "XACML 監視器中的 uma 列，以及每個資源伺服器目前持有的內容。"
+  },
+  "stsmetadata.endpoints./admin-api/uma/:action.what": {
+    "en": "dffe8070a25174ec",
+    "text": "啟用或停用資源伺服器、允許其擁有資源、刪除資源、撤銷 RPT，以及在應用程式自己的文件上分享、取消分享、核准或拒絕。"
   },
   "stsmetadata.endpoints./pki/crl/:scope/:ca.what": {
     "en": "ed94a6a95a2f95e4",
@@ -3650,6 +3702,10 @@
   "stsmetadata.protocols.AuthZEN.what": {
     "en": "fd1e05bdba949f8d",
     "text": "以 XACML 引擎實作的 AuthZEN Authorization API：原則執行點每次存取提出一個問題，並得到 true 或 false 的回覆，依領域的根原則做決定。這是一個「轉接器」：請求透過各領域的屬性目錄與唯一的請求建構器對應為 XACML 請求，而回覆則以 fail-closed 方式對應回來。XACML 端點與遠端 PEP 容器不受其影響。"
+  },
+  "stsmetadata.protocols.UMA 2.0.what": {
+    "en": "7c03af276f90480f",
+    "text": "User-Managed Access 2.0，是一種授權（GRANT）而非決策引擎：資源伺服器透過保護 API 為資源擁有者註冊其持有的資源，並在用戶端到來時請求許可票證；用戶端在權杖端點出示票證；每項許可——一個資源、一個範圍——只有在領域的 uma-authorization 原則、擁有者自己的 XACML 文件（透過入口網站上的表單撰寫）、資源伺服器的細粒度原則（若其強制執行）以及簽發閘門全部為 Permit 時才會簽發。UMA 帶來、而此處其他任何功能都沒有的唯一東西，是由個人撰寫的原則；沒有原則絕不等於同意。在領域開啟之前為關閉（uma.enabled）。"
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

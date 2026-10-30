@@ -905,6 +905,43 @@ class UmaStore {
   }
 
   /**
+   * Every live row of one of the stores, for the console (#1195): its
+   * lists are paged by the caller, and a row past its life is left out as
+   * a read leaves it out.
+   *
+   * @param which - `resources`, `rpts`, `tickets` or `pending`
+   * @returns the rows, newest first
+   */
+  all(which: string): Json[] {
+    const { log, stores, nowSec } = this.deps;
+    log.debug("Entering UmaStore.all(). " + which);
+    const store: Store | undefined = which === 'resources' ? stores.resources
+      : (which === 'rpts' ? stores.rpts
+        : (which === 'tickets' ? stores.tickets
+          : (which === 'pending' ? stores.pending : undefined)));
+    const out: Json[] = [];
+    if (!store) {
+      log.debug("Leaving UmaStore.all(). No such store.");
+      return out;
+    }
+    const now = nowSec();
+    const field = which === 'rpts' ? 'exp' : 'expiresAt';
+    store.forEach(function (row: Json) {
+      const until = Number(row && row[field]);
+      if (row && !(Number.isFinite(until) && until > 0 && until <= now) &&
+          !(which === 'tickets' && row.rotated)) {
+        out.push(row);
+      }
+    });
+    out.sort(function (a: Json, b: Json) {
+      return (Number(b.createdAt || b.issuedAt) || 0) -
+             (Number(a.createdAt || a.issuedAt) || 0);
+    });
+    log.debug("Leaving UmaStore.all(). " + out.length);
+    return out;
+  }
+
+  /**
    * Forgets every row of the ambient realm. For a test.
    */
   resetForTests(): void {
@@ -965,6 +1002,7 @@ export = {
   deleteRpt: slot.forward('deleteRpt'),
   rptsBy: slot.forward('rptsBy'),
   revokeRpts: slot.forward('revokeRpts'),
+  all: slot.forward('all'),
   savePending: slot.forward('savePending'),
   pendingOne: slot.forward('pendingOne'),
   pendingOf: slot.forward('pendingOf'),

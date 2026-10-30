@@ -79,6 +79,14 @@
     "en": "8477ecf26c38a2a6",
     "text": "Sfären är AuthZENs hyresgäst: en anropare slås upp i sfärens egen katalog, så en annan sfärs anropare är ingen här, och en fråga avgörs mot sfärens egen rotpolicy. Attributkatalogen är sfärens sts-authzen-api-objekt, och varje authzen.*-inställning är sfärens."
   },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "Sfären är UMA:s hyresgäst: dess resursservrar är sfärens applikationer deklarerade för uma, dess skydds-API-token är sfärens egen åtkomsttoken, dess sex lager — de registrerade resurserna, ägarnas dokument, biljetterna, PCT:erna, RPT:erna och de väntande godkännandena — är sfärens, dess policy på sfärsnivå är sfärens uma-authorization-post eller den inbyggda mallen, och varje uma.*-inställning är sfärens."
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "Federation"

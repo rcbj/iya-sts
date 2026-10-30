@@ -87,6 +87,9 @@ interface UmaQuestion {
   ticketAgeS: number;
   rptPresented: boolean;
   stage: string;
+  // A what-if (#1195): asked and read as any question, and neither audited
+  // nor counted — a dry run is a question about a decision and not one.
+  dryRun?: boolean;
 }
 
 /** One permission's verdict. */
@@ -97,6 +100,8 @@ interface Verdict {
   approval: boolean;
   missing: string[];
   why: string;
+  // Every layer asked, in order (#1195's what-if); the last decided.
+  layers?: Verdict[];
 }
 
 interface UmaPepDeps {
@@ -459,7 +464,11 @@ class UmaPep {
                   approval: false, missing: [],
                   why: 'the ' + layer + ' layer could not be asked' };
     }
-    self.record(q, layer, policyName, decision, verdict);
+    if (!q.dryRun) {
+      self.record(q, layer, policyName, decision, verdict);
+    }
+    (verdict as Json).policy = policyName;
+    (verdict as Json).decision = decision;
     log.debug("Leaving UmaPep.ask(). " + verdict.outcome);
     return verdict;
   }
@@ -476,15 +485,18 @@ class UmaPep {
     const self = this;
     const { log, applications } = this.deps;
     log.debug("Entering UmaPep.decide().");
+    const layers: Verdict[] = [];
     const realm = self.ask(q, 'realm');
+    layers.push(realm);
     if (realm.outcome !== 'permit') {
       log.debug("Leaving UmaPep.decide(). The realm: " + realm.outcome);
-      return realm;
+      return Object.assign(realm, { layers: layers });
     }
     const owner = self.ask(q, 'owner');
+    layers.push(owner);
     if (owner.outcome !== 'permit') {
       log.debug("Leaving UmaPep.decide(). The owner: " + owner.outcome);
-      return owner;
+      return Object.assign(owner, { layers: layers });
     }
     let enforced = false;
     try {
@@ -500,13 +512,14 @@ class UmaPep {
     }
     if (enforced) {
       const fga = self.ask(q, 'fga');
+      layers.push(fga);
       if (fga.outcome !== 'permit') {
         log.debug("Leaving UmaPep.decide(). FGA: " + fga.outcome);
-        return fga;
+        return Object.assign(fga, { layers: layers });
       }
     }
     log.debug("Leaving UmaPep.decide(). Permit.");
-    return owner;
+    return Object.assign({}, owner, { layers: layers });
   }
 
   /**

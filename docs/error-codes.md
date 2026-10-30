@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5023** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5031** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
-* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 65
+* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4934,6 +4934,14 @@ Raised from: uma/.
 | `STS-UMA-0407` | The UMA claims interaction endpoint was given a ticket that is unknown, expired or ended (#1194). | a redirect to the claims_redirect_uri with authorization_state=not_authorized |
 | `STS-UMA-0408` | A resource owner answered a UMA request that is not waiting for them (#1194). | HTTP 400 on the account API |
 | `STS-UMA-0409` | The UMA claims interaction endpoint was given a ticket that another client presented (#1194). | a redirect to the claims_redirect_uri with authorization_state=not_authorized |
+| `STS-UMA-0500` | An /admin-api UMA action threw (#1195). | HTTP 500 on the management API |
+| `STS-UMA-0501` | A UMA console action was not one of the nine (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0502` | A UMA console action named an application this realm does not hold (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0503` | A UMA console action's write to an application entry was refused by the application register (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0504` | A UMA console action named a resource that is not registered (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0505` | A UMA console action named an RPT that is not live (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0506` | A UMA owner action named an application that does not own resources (umaOwnsResources) (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0507` | A UMA owner action on an application's document was refused without a code of its own (#1195). | HTTP 400 on the management API |
 
 ## STS-ADMIN
 

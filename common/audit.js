@@ -1163,6 +1163,18 @@ const ACTIONS = [
     label: 'A resource owner removed a UMA share' },
   { action: 'uma.policy.alfa', category: 'admin',
     label: 'A resource owner rewrote their UMA policy as ALFA' },
+  // PROTOCOLS -> UMA'S ACTS (#1195). An application owner's document is
+  // changed under the three rows above; these are the administrator's own.
+  { action: 'uma.resource-server.enable', category: 'admin',
+    label: 'An application was made a UMA resource server on the console' },
+  { action: 'uma.resource-server.disable', category: 'admin',
+    label: 'An application stopped being a UMA resource server on the ' +
+           'console, and its RPTs were revoked' },
+  { action: 'uma.owns-resources.set', category: 'admin',
+    label: 'Whether an application may own UMA resources was changed on ' +
+           'the console' },
+  { action: 'uma.rpt.revoke', category: 'admin',
+    label: 'A UMA RPT was revoked on the console' },
   { action: 'gnap.grant.finalize', category: 'protocol',
     label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
            'rejected or expired' },

@@ -167,6 +167,50 @@
     "en": "812de4df596c12ef",
     "text": "Bawiin ang isang grant o burahin ang isang resource set"
   },
+  "endpoints.route./uma/rreg.name": {
+    "en": "b93e9a83c0d09d9a",
+    "text": "Resource registration: gumawa, maglista"
+  },
+  "endpoints.route./uma/rreg/:id.name": {
+    "en": "34337892864217b3",
+    "text": "Resource registration: basahin, i-update, burahin"
+  },
+  "endpoints.route./uma/perm.name": {
+    "en": "8896272faf315717",
+    "text": "Ang permission endpoint"
+  },
+  "endpoints.route./uma/claims.name": {
+    "en": "87870b4a58a75d4d",
+    "text": "Ang claims interaction endpoint"
+  },
+  "endpoints.route./.well-known/uma2-configuration.name": {
+    "en": "1600a854e8ebe343",
+    "text": "UMA discovery"
+  },
+  "endpoints.route./.well-known/uma2-configuration/*.name": {
+    "en": "146531da4c5d6ba9",
+    "text": "UMA discovery (inserted-path na anyo)"
+  },
+  "endpoints.route./uma.name": {
+    "en": "11e030203eddc757",
+    "text": "Ang UMA description page"
+  },
+  "endpoints.route./uma/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Ang script ng description page"
+  },
+  "endpoints.route./admin-api/uma.name": {
+    "en": "a706278ce3603ad8",
+    "text": "Ang UMA console page bilang JSON"
+  },
+  "endpoints.route./admin-api/uma/monitor.name": {
+    "en": "09df5f116b3c0624",
+    "text": "Ang mga bilang ng UMA PEP bilang JSON"
+  },
+  "endpoints.route./admin-api/uma/:action.name": {
+    "en": "af591f6b600855e2",
+    "text": "Ang siyam na aksyon ng UMA console"
+  },
   "endpoints.route./pki/crl/:scope/:ca.name": {
     "en": "8d20c59eb134e55e",
     "text": "Ang certificate revocation list ng isang authority"

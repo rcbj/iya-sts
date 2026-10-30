@@ -843,6 +843,42 @@
     "en": "349171490df64541",
     "text": "La huella del certificado con la que se compara un token vinculado (RFC 8705)"
   },
+  "crypto.families.uma-2-0.signs": {
+    "en": "c22ee886c8b04abd",
+    "text": "Nada propio. Un token de parte solicitante (RPT) es un token de acceso RFC 9068 que el dominio firma a través del único embudo (véase OAuth2 / OIDC); un ticket de permiso y un token de claims persistido son identificadores aleatorios, no firmas."
+  },
+  "crypto.families.uma-2-0.verifies": {
+    "en": "b4864c9dcb80100e",
+    "text": "El token de la API de protección (PAT), un token de acceso, mediante la verificación JWS propia de este dominio (véase OAuth2 / OIDC), con su prueba DPoP o su vinculación de certificado RFC 8705 cuando lleva una; un claim_token enviado, un ID Token de este dominio o de un emisor de aserciones declarado, de la misma manera."
+  },
+  "crypto.families.uma-2-0.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Nada."
+  },
+  "crypto.families.uma-2-0.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Nada."
+  },
+  "crypto.families.uma-2-0.hashes": {
+    "en": "d0596b4d7e7d1faa",
+    "text": "El SHA-256 bajo el que se almacenan un ticket de permiso y un token de claims persistido, de modo que el almacén no guarda ningún identificador utilizable."
+  },
+  "crypto.families.uma-2-0.keys": {
+    "en": "5ee5db5c94943e3d",
+    "text": "Ninguna propia. Las claves de firma del dominio firman el RPT y verifican el PAT, como en todas partes."
+  },
+  "crypto.families.uma-2-0.whatItDoesNot": {
+    "en": "68ffcefb9ff39fa2",
+    "text": "No firma ninguna decisión ni ningún permiso: un permiso es un claim del RPT, y la firma del RPT es la de OAuth."
+  },
+  "crypto.families.uma-2-0.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "Aquí no se firma, cifra ni descifra nada"
+  },
+  "crypto.families.uma-2-0.algorithms.1.what": {
+    "en": "2a781ca079088054",
+    "text": "El resumen bajo el que se almacena un ticket o un PCT"
+  },
   "crypto.families.oauth2-oidc.signs": {
     "en": "ba9dd042c619d87e",
     "text": "Cada token de acceso y token de actualización, y el ID Token, con la clave RSA del dominio como RS256. Un cliente que registra `id_token_signed_response_alg` recibe ese algoritmo en su lugar, para su ID Token y para su Logout Token de back-channel por igual (sección 2.4: las mismas claves que los ID Tokens), de la tabla JWS compartida — cada curva, ambas curvas de Edwards, y las poscuánticas y compuestas. Una respuesta UserInfo firmada de la misma manera, más la familia HMAC (firmada con el propio `client_secret` de ese cliente, y por eso no necesita ninguna clave publicada) y `none`. **Y UNA RESPUESTA DE INTROSPECCIÓN JWT RFC 9701** (2026-09-13), con tipo `token-introspection+jwt`, en RS256 o en el `introspection_signed_response_alg` que registró el servidor de recursos — la misma tabla y la familia HMAC, nunca `none`. **Y UNA RESPUESTA DE RECURSO** (#178): una firma de mensaje HTTP RFC 9421 etiquetada `fapi-2-response`, con la clave del dominio que nombra `oauth2.httpSignatureResponseAlg` (ES256 de forma predeterminada; se ofrece ML-DSA), sobre la respuesta y, mediante `;req`, la solicitud a la que responde."

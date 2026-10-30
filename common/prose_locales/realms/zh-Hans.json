@@ -79,6 +79,14 @@
     "en": "8477ecf26c38a2a6",
     "text": "领域是 AuthZEN 的租户：调用方在领域自己的目录中查找，因此另一个领域的调用方在这里谁也不是；问题依据领域自己的根策略作出决策。属性目录是该领域的 sts-authzen-api 对象，每个 authzen.* 设置都属于该领域。"
   },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "领域是 UMA 的租户：其资源服务器是领域中为 uma 声明的应用程序，其保护 API 令牌是领域自己的访问令牌，其六个存储——已注册的资源、所有者的文档、票据、PCT、RPT 和待处理的批准——属于该领域，其领域层策略是领域的 uma-authorization 条目或内置模板，每个 uma.* 设置都属于该领域。"
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "联合"

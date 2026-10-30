@@ -1562,6 +1562,9 @@ class ProtocolStack {
                'AuthzenAdmin');
     this.build('mgmt-api/authzen_api', require('../mgmt-api/authzen_api'),
                'AuthzenApi');
+    // PROTOCOLS -> UMA'S OPERATIONS (#1195), spread by `mgmt-api/admin_api`
+    // as AuthZEN's are. It reaches `uma/uma_console` (23d-ii) lazily.
+    this.build('mgmt-api/uma_api', require('../mgmt-api/uma_api'), 'UmaApi');
     // MONITORING -> PASSKEYS' OPERATIONS (#942), spread by
     // `mgmt-api/admin_api` into its table as the destinations' are.
     this.build('mgmt-api/passkey_report_api',
@@ -2067,6 +2070,10 @@ class ProtocolStack {
     // its wire step hands the grant this instance.
     this.build('uma/uma_claims', require('../uma/uma_claims'), 'UmaClaims');
     this.build('uma/uma', require('../uma/uma'), 'UmaSurface');
+    // #1195: Protocols -> UMA's view and acts, a library the management
+    // API reaches lazily; the page itself is the static console's.
+    this.build('uma/uma_console', require('../uma/uma_console'),
+               'UmaConsole');
     this.register(app, require('../uma/uma'), 'uma/uma');
     this.register(app, require('../uma/uma_claims'), 'uma/uma_claims');
 

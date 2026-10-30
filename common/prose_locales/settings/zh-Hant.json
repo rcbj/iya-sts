@@ -7051,6 +7051,126 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "一個領域最多可同時持有的待處理存取請求數；超過後，提交會以 503 被拒絕，直到其中一些被決定或過期。"
   },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "啟用 User-Managed Access"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "開啟時，UMA 2.0 保護 API 在 /uma 下回應，權杖端點執行並公告 urn:ietf:params:oauth:grant-type:uma-ticket 授權，/.well-known/uma2-configuration 描述它們。關閉時，路由仍保持「已註冊」並回應 501（與 XACML 的路由相同），該授權為 unsupported_grant_type，且不提供探索文件。關閉它不會遺忘資源擁有者分享過的任何內容。"
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "領域的 UMA 授權原則"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "決定每個 UMA 許可之「領域」層的 ou=policies 項目名稱：哪些資源伺服器、用戶端與宣告簽發者可以參與，以及請求方必須是已知的。沒有該名稱的項目時，由內建的 uma-authorization 範本決定；項目會覆寫它，而「已停用」的項目不會回退至範本（簽發原則的規則）。之後再詢問資源擁有者自己的文件與資源伺服器的細粒度原則，且每一層都必須為 Permit。"
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "許可票證有效期（秒）"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "許可票證（Federated Authorization 第 4 節）可在權杖端點出示的時間長度。每個 need_info、request_submitted 與 request_denied 回應都會「輪替」票證，因此持續詢問的用戶端所出示的票證絕不會比此更舊；票證在整個叢集中只能使用一次。"
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "RPT 有效期（秒）"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "請求方權杖的存活時間。刻意設得較短：RPT 的許可是簽發時擁有者所允許的內容，較短的有效期限制了不做內省的資源伺服器仍認可已撤回分享的時間長度。需要更長時間的用戶端可再次出示其票證或升級其 RPT，這會重新決定每項許可。"
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "隨 RPT 簽發重新整理權杖"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "uma-ticket 授權是否在 RPT 之外同時回應重新整理權杖。預設關閉（rcbj 在 #1168 上的決定 4）：Grant 規格禁止在重新整理時進行授權評估，而本服務在每次重新整理時都會重新決定，無法重新決定的 RPT 最好改為短期有效。開啟時，重新整理會像升級一樣重新執行每一層，不再通過的許可會被捨棄。"
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "持久化宣告權杖有效期（秒）"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "持久化宣告權杖（PCT）為某個用戶端保留所收集之請求方宣告的時間長度。PCT 是依摘要儲存的控制代碼，繫結至用戶端與請求方，可在 /oauth2/revoke 以 token_type_hint=pct 撤銷，並在登出全部時終止。"
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "部分許可遭拒時為已授予的許可簽發 RPT"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "開啟時（rcbj 在 #1168 上的決定 3），請求多項許可、其中部分獲授予而其他遭拒的票證，會以攜帶已授予子集的 RPT 回應——即 Grant 規格的部分 RPT 選項——只有在全部未獲授予時才回應 request_denied。關閉時，任何一項遭拒的許可都會拒絕整個請求。只要某個問題對請求方為 Indeterminate，就優先回應 need_info 而非以上兩者。"
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "允許資源擁有者以 ALFA 編輯其文件"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "開啟時，/portal/shared 允許資源擁有者在分享表單旁以 ALFA 編輯其整份 UMA 文件。預設關閉（rcbj 在 #1168 上的決定 2）：此時並非由表單撰寫的規則會以唯讀方式顯示為自訂規則。擁有者的文件只會被詢問擁有者自己的資源，因此手寫規則最壞也只能分享其作者所擁有的內容。"
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "擁有者層可讀取的目錄屬性"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "原則資訊點（Policy Information Point）為資源「擁有者」層所回應的請求方目錄項目屬性，以逗號分隔：即一個人自己的規則可讀取的關於陌生人的資訊。領域層讀取目錄的方式與每個簽發問題相同。空白表示擁有者的規則除了作為宣告收集的內容外不能讀取任何資訊。"
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "等待擁有者核准的時間（秒）"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "request_submitted 請求在 /portal/shared 上等待擁有者答覆的時間長度。超過後仍未答覆，用戶端的下一次輪詢將為 request_denied。在已設定郵件通道且擁有者未拒絕通知時，會以郵件告知擁有者。"
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "單一擁有者可有的待處理核准數"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "同時等待某位擁有者答覆的最多請求數。超過後，再有 request_submitted 將回應 request_denied 而非排入佇列：無上限的佇列會讓陌生人塞滿一個人的入口網站。"
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "擁有者文件大小上限（位元組）"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "資源擁有者原則的 XACML 文件最大可佔的位元組數。會使其超出上限的分享將被拒絕，文件維持原樣。"
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "擁有者文件中的規則數上限"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "資源擁有者的文件可容納的最多 Rule 數：它自己的 owner-self 規則、每個分享一條，以及每個已給予的核准一條。會使其超出上限的分享將被拒絕。"
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "單一擁有者可註冊的資源數"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "跨所有資源伺服器代表某位擁有者註冊的最多資源數。超過後的註冊將被拒絕：否則持有保護 API 權杖的資源伺服器可以無限制地以他人名義註冊。"
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "單一資源的範圍數上限"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "一個已註冊資源可攜帶的最多 resource_scopes 數。範圍是字串，絕不會被存取：規格允許範圍指向的範圍描述文件不會被擷取。"
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "啟用 SSF"

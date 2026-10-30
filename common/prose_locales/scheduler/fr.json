@@ -591,6 +591,14 @@
     "en": "d685d1a2ff40e09e",
     "text": "Remplace la clé de tickets de session que partagent les écouteurs TLS de chaque nœud dans un cluster actif-actif, afin qu’un ticket émis par un nœud reprenne sur un autre. La clé qu’elle remplace est supprimée, ce qui borne la durée pendant laquelle les secrets d’une session reprise peuvent être récupérés à partir d’un ticket."
   },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "Expiration UMA"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Supprime chaque ticket de permission, jeton de claims persisté, enregistrement de RPT et approbation de propriétaire en attente de User-Managed Access ayant dépassé sa durée de vie (#1168). Une lecture applique elle-même l’échéance : ceci est donc le nettoyage, jamais ce qui décide."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "à la demande uniquement"

@@ -4330,10 +4330,13 @@ const TEMPLATES: TemplateRow[] = [
         label: 'What an owner may do to an application',
         dflt: 'read, set, add, remove, update-fields, add-owner, ' +
               'remove-owner, regenerate-secret, rotate-secret, add-secret, ' +
-              'remove-secret',
+              'remove-secret, owner-share, owner-unshare, owner-approve, ' +
+              'owner-refuse',
         type: 'list',
         help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
-              '/admin-api/applications/{action}. The four that write ' +
+              '/admin-api/applications/{action}, and the four owner-* ' +
+              'actions of POST /admin-api/uma/{action} on the ' +
+              'application\'s UMA document (#1195). The four that write ' +
               'attributes are held to the next list. Never create or ' +
               'forget, and never reveal-secret.' },
       { name: 'ownerApplicationAttributes',
@@ -4603,7 +4606,8 @@ const TEMPLATES: TemplateRow[] = [
           'set-service-account-destination, rotate-password'),
         'application': listedOr('ownerApplicationActions',
           'read, set, add, remove, update-fields, add-owner, remove-owner, ' +
-          'regenerate-secret, rotate-secret, add-secret, remove-secret')
+          'regenerate-secret, rotate-secret, add-secret, remove-secret, ' +
+          'owner-share, owner-unshare, owner-approve, owner-refuse')
       };
       const ownerAttributes = listedOr('ownerApplicationAttributes',
         'appName, description, appHomePageUrl, appCorsOrigin, ' +

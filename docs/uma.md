@@ -30,7 +30,7 @@ put to the XACML engine, and this page says which policies answer it.
 | 3 (#1192) | The resource owner's own policy, and the portal's *Sharing* section | built |
 | 4 (#1193) | The `uma-ticket` grant: the layers, `need_info`, the RPT, the PCT, upgrade, introspection, revocation | built |
 | 5 (#1194) | Claims interaction, `claim_token`, `request_submitted` and the owner's approval | built |
-| 6 (#1195) | The console, `/admin-api` and the monitor | |
+| 6 (#1195) | The console, `/admin-api` and the monitor | built |
 | 7 (#1196) | Protocol tests with Keycloak as the independent peer | |
 
 ## The protection API
@@ -225,10 +225,41 @@ A share saved with *Ask me each time* is a Permit carrying the obligation
 `urn:sts:xacml:obligation:uma-approval`; the token endpoint answers
 `request_submitted` and the owner decides on the portal.
 
+## The console
+
+**Protocols → UMA 2.0** (`/admin/uma`) is the administrator's page, and every
+control on it is an operation of the management API as well:
+
+| Tab | What it shows and does | Operation |
+|---|---|---|
+| Metadata | The endpoints, and the UMA PEP's decisions, allowed and refused since the process started | `GET /admin-api/uma` |
+| Resource servers | The applications declared for `uma`; whether each may own resources (`umaOwnsResources`) and holds the delegated permission grant of `urn:sts:uma-protection-api:uma_protection` a PAT needs. **Enable** writes both; **No longer a resource server** removes both and revokes the RPTs issued for it | `POST /admin-api/uma/enable-resource-server`, `disable-resource-server`, `set-owns-resources` |
+| Resources | The registered resources, filtered by resource server and owner, each with **Delete**, which revokes the RPTs over it | `POST /admin-api/uma/delete-resource` |
+| Tokens | The live permission tickets, by the first characters of a hash (a ticket is never shown), and the live RPTs, each with **Revoke** | `POST /admin-api/uma/revoke-rpt` |
+| Pending | Every request waiting for an owner's answer | `GET /admin-api/uma` |
+| Owner | One owner's resources, document and waiting requests (`?owner=`). A person's document is read here only: it is theirs, on `/portal/shared`. An application that owns resources has its document edited here | `POST /admin-api/uma/owner-share`, `owner-unshare`, `owner-approve`, `owner-refuse` |
+| What if | What the token endpoint would answer for one resource, scope, requesting party and client, layer by layer, as a dry run that is neither audited nor counted | `GET /admin-api/uma?resource=&scope=&party=&client=` |
+| Settings | The `uma.*` settings below | `POST /admin-api/config/set-many` |
+
+`GET /admin-api/uma/monitor` gives the PEP's counts and, per resource server,
+its resources, live tickets, live RPTs and waiting requests. The same counts
+are the `uma` row of **Monitoring → XACML decisions**.
+
+**An application's owners edit its document too.** The access-control
+policy's owner rule lets a person who owns an application read
+`GET /admin-api/uma?owner=<application>`, which is answered with the owner tab
+alone, and take the four `owner-*` actions on that application. They are in
+the template's default `ownerApplicationActions`; a realm whose policy lists
+fewer refuses them.
+
+**A person's page on `/admin/users`** has a UMA tab: the resources they own,
+what they share, the permissions they hold in live RPTs, and what waits for
+their answer. `GET /admin-api/users?user=` carries it as `uma`.
+
 ## Configuration
 
-Every setting is the realm's, in the `UMA` group, homed on **Protocols → UMA**
-once that page exists. **UMA is off by default.**
+Every setting is the realm's, in the `UMA` group, homed on **Protocols → UMA**.
+**UMA is off by default.**
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|

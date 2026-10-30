@@ -7051,6 +7051,126 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "El máximo de solicitudes de acceso que un dominio retiene pendientes; superado, un envío se rechaza con 503 hasta que algunas se decidan o venzan."
   },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "User-Managed Access activado"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "Cuando está activado, la API de protección de UMA 2.0 responde bajo /uma, el endpoint de token realiza la concesión urn:ietf:params:oauth:grant-type:uma-ticket y la anuncia, y /.well-known/uma2-configuration los describe. Desactivado, las rutas siguen REGISTRADAS y responden 501, como las de XACML, la concesión es unsupported_grant_type y el documento de descubrimiento no se sirve. Nada de lo que un propietario del recurso compartió se olvida al desactivarlo."
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "La política de autorización UMA del dominio"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "El nombre de la entrada de ou=policies que decide la capa del DOMINIO de cada permiso UMA: qué servidores de recursos, clientes y emisores de claims pueden participar, y que una parte solicitante debe ser conocida. Sin una entrada con ese nombre decide la plantilla integrada uma-authorization; una entrada la anula, y una entrada DESACTIVADA no recurre a ella (la regla de la política de emisión). El documento propio del propietario del recurso y la política detallada del servidor de recursos se consultan después, y cada capa debe responder Permit."
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "Vida del ticket de permiso (segundos)"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "Cuánto tiempo puede presentarse un ticket de permiso (Federated Authorization sección 4) en el endpoint de token. Cada respuesta need_info, request_submitted y request_denied ROTA el ticket, así que un cliente que sigue preguntando nunca presenta uno más antiguo que esto; un ticket se gasta una sola vez en todo el clúster."
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "Vida del RPT (segundos)"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "Cuánto vive un token de parte solicitante. CORTO A PROPÓSITO: el permiso de un RPT es lo que el propietario permitía cuando se emitió, y una vida corta limita cuánto tiempo un recurso compartido retirado sigue respetándose por un servidor de recursos que no hace introspección. Un cliente que quiera más presenta de nuevo su ticket o actualiza su RPT, lo que vuelve a decidir cada permiso."
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "Emitir un token de actualización con un RPT"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "Si la concesión uma-ticket responde con un token de actualización junto al RPT. DESACTIVADO POR DEFECTO (decisión 4 de rcbj en #1168): la especificación Grant prohíbe una evaluación de autorización en la actualización, este servicio vuelve a decidir en cada actualización, y un RPT que no puede volver a decidirse más vale que tenga una vida corta. Activado, la actualización vuelve a ejecutar cada capa, como hace una mejora del RPT, y un permiso que ya no pasa se descarta."
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "Vida del token de claims persistido (segundos)"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "Cuánto tiempo conserva un token de claims persistido (PCT) los claims recopilados sobre una parte solicitante para un cliente. Un PCT es un identificador almacenado por su resumen, vinculado al cliente y a la parte solicitante, revocable en /oauth2/revoke con token_type_hint=pct, y terminado por un cierre de sesión de todo."
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "Emitir un RPT con los permisos concedidos cuando se rechazan algunos"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "Cuando está activado (decisión 3 de rcbj en #1168), un ticket que pide varios permisos, de los que unos se conceden y otros se rechazan, se responde con un RPT que lleva el subconjunto concedido — la opción de RPT parcial de la especificación Grant — y con request_denied solo cuando no se concede ninguno. Desactivado, cualquier permiso rechazado rechaza la solicitud entera. need_info se prefiere a ambos siempre que una pregunta sea Indeterminate respecto de la parte solicitante."
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "Permitir que un propietario del recurso edite su documento como ALFA"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "Cuando está activado, /portal/shared permite que un propietario del recurso edite todo su documento UMA como ALFA, junto al formulario de compartir. DESACTIVADO POR DEFECTO (decisión 2 de rcbj en #1168): una regla que el formulario no escribió se muestra entonces de solo lectura como regla personalizada. Al documento de un propietario solo se le pregunta por los recursos propios del propietario, así que lo peor que puede hacer una regla escrita a mano es compartir lo que su autor posee."
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "Atributos del directorio que puede leer la capa del propietario"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "Los atributos de la entrada de directorio de una parte solicitante que el Policy Information Point responde para la capa del PROPIETARIO del recurso, separados por comas: lo que la regla propia de una persona puede leer sobre un desconocido. La capa del dominio lee el directorio como lo hace cada pregunta de emisión. Vacío significa que la regla de un propietario no puede leer nada salvo lo recopilado como claims."
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "Cuánto se espera la aprobación de un propietario (segundos)"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "Cuánto tiempo espera una solicitud request_submitted en /portal/shared la respuesta del propietario. Sin respuesta pasado ese tiempo, el siguiente sondeo del cliente es request_denied. Se avisa al propietario por correo donde el canal está configurado y no ha rechazado las notificaciones."
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "Aprobaciones pendientes que puede tener un propietario"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "El máximo de solicitudes que esperan a la vez la respuesta de un propietario. Superado, una nueva request_submitted se responde request_denied en lugar de ponerse en cola: una cola sin límite es una forma de que un desconocido llene el portal de una persona."
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "Documento de propietario más grande (bytes)"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "El tamaño máximo en bytes que puede tener el documento XACML de la política de un propietario del recurso. Un recurso compartido que lo llevaría más allá del límite se rechaza y el documento queda como estaba."
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "Máximo de reglas en un documento de propietario"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "El máximo de Rules que puede contener el documento de un propietario del recurso: su propia regla owner-self, una por recurso compartido y una por aprobación dada. Un recurso compartido que lo llevaría más allá del límite se rechaza."
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "Recursos que puede tener registrados un propietario"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "El máximo de recursos registrados en nombre de un propietario, en todos los servidores de recursos. Un registro que lo supere se rechaza: de lo contrario, un servidor de recursos con un token de la API de protección podría registrar sin límite en nombre de alguien."
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "Máximo de ámbitos en un recurso"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "El máximo de resource_scopes que puede llevar un recurso registrado. Un ámbito es una cadena y nunca se contacta: un documento de descripción de ámbito que la especificación permite que un ámbito nombre no se obtiene."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "SSF habilitado"

@@ -591,6 +591,14 @@
     "en": "d685d1a2ff40e09e",
     "text": "替换双活集群中所有节点的 TLS 监听器共享的会话票据密钥，使一个节点签发的票据能在另一个节点上恢复会话。被替换的密钥会被删除，这限定了恢复会话的机密能从票据中恢复的时间范围。"
   },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "UMA 过期"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "移除每个超过其有效期的 User-Managed Access 许可票据、持久化声明令牌、RPT 记录和待处理的所有者批准（#1168）。读取时会自行应用截止时间，因此这只是清理，绝不是作出决定的环节。"
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "仅按需"
