@@ -621,11 +621,13 @@ class PoliciesPage {
     return out;
   }
 
-  // Whether a kind is drawn as sub-tabs (#609): the passkey policy, which
-  // has named profiles. The locale policy's named profiles are drawn as they
-  // were, under its default profile.
+  // Whether a kind is drawn as sub-tabs (#609): a kind whose registration
+  // says `tabbed` (#1235: declared, so a kind adopting named policies says
+  // so in its own row rather than here) and that has named profiles — the
+  // passkey policy. The locale and post-login policies' named profiles are
+  // drawn as they were, under the default profile.
   static isTabbedKind(kind, member) {
-    return kind.id === 'passkey' && Array.isArray(member.named);
+    return kind.tabbed === true && Array.isArray(member.named);
   }
 
   /**
@@ -646,28 +648,20 @@ class PoliciesPage {
       parts.add;
   }
 
-  // THE APPLICATION SEARCH OF A NAMED PROFILE'S FORM (#609, rcbj's decision
-  // 4): the field search the owner pages reuse (#459, #461) — a box, Find,
-  // five at a time, Add — under the applications box of each named passkey
-  // profile's form and the New policy form. Its key names the form, so two
-  // forms on the page never share a cell, a box or a result: `<kind>-apps`
-  // for the new profile, `<kind>-apps.<name>` for a stored one (a profile's
-  // name is `[a-z0-9-]`, and neither key holds the `|` a press splits on).
   /**
-   * The key of a named profile form's application search.
+   * The key a New policy form's draft is kept under (#841): the form's, not
+   * the typed name's.
    *
    * @param kindId - the policy kind's id
-   * @param name - the profile's name, or '' for the New policy form
-   * @returns the search's key
+   * @returns the key
    */
-  static searchKeyOf(kindId, name) {
-    return String(kindId) + '-apps' + (name ? '.' + String(name) : '');
+  static draftKeyOf(kindId) {
+    return String(kindId) + '-new';
   }
 
-  // A named profile as a REDRAW shows it (#609): the form's own posted
-  // fields — what the reader had typed when they pressed Find or Add, the
-  // Add's application put in the applications box — laid over the stored
-  // profile, so a search loses nothing the form held.
+  // The New policy form as a REDRAW shows it (#841): the form's own posted
+  // fields laid over the blank profile, so a refused save loses nothing the
+  // reader typed.
   static withDraft(named, draft) {
     if (!draft) {
       return named;
@@ -707,56 +701,53 @@ class PoliciesPage {
    * Draws a kind's named profiles in two parts: the list of profiles, each
    * with what it selects and its form, and the form that adds one.
    *
+   * GENERIC OVER WHAT THE KIND DECLARES (#1235, rule 3cx): a box per
+   * selector in `member.selectors` (`selectApplications` — the locale
+   * policy's, until its applications name it — — the post-login policy's, until its groups name it —
+   * `precedence`), and, for a tabbed kind, what names each profile
+   * (`named.namedBy`, the applications, groups and people whose reference
+   * attributes in `member.references` name it), read-only.
+   *
    * @param kind - the policy kind
    * @param member - the kind's member of the policies view
    * @param t - the page's translator (#539)
-   * @param state - the page's state: `policyDrafts` and `finds` by search
-   *   key (#609)
+   * @param state - the page's state: `policyDrafts` and `policySaveErrors`
+   *   by draft key (#841)
    * @returns `{ list, add }`, each HTML
    */
   static namedProfileParts(kind, member, t, state) {
-    // The selectors this kind carries (#539): all three for the passkey
-    // policy, applications alone for the locale policy. A view from before
-    // the member was published names none, and means all three.
+    // The selectors this kind carries (#539): the locale policy's
+    // applications, the post-login policy's groups, and every ranked kind's
+    // precedence. A view from before the member was published names none,
+    // and means precedence alone.
     const selectors = Array.isArray(member.selectors) ? member.selectors
-      : ['selectApplications', 'selectGroups', 'precedence'];
+      : ['precedence'];
     const has = function (key) {
       return selectors.indexOf(key) >= 0;
     };
-    // Only the passkey policy's forms search (#609).
-    const searching = kind.id === 'passkey';
+    const references = member.references || {};
+    const referenced = !!(references.application || references.group ||
+                          references.person);
+    const tabbed = PoliciesPage.isTabbedKind(kind, member);
     const drafts = (state && state.policyDrafts) || {};
     const saveErrors = (state && state.policySaveErrors) || {};
-    const finds = (state && state.finds) || {};
-    const appsRow = function (named, prefix, key) {
-      const input = '<input type="text" id="' +
-        kit.esc(prefix) + 'apps" name="selectApplications" size="60" ' +
-        'value="' + kit.esc((named.selectApplications || []).join(', ')) +
-        '" placeholder="' +
-        kit.esc(t.text('consolePolicies.named.applicationsPlaceholder')) +
-        '">';
-      // THE SEARCH'S CELL (#459's): open while focus is inside it, or while
-      // the page holds its results (`fg-search-open`, #462).
-      const cell = !searching ? input
-        : '<div id="fgc-' + kit.esc(key) + '" class="fg-cell fg-search' +
-          (finds[key] ? ' fg-search-open' : '') + '" tabindex="-1">' +
-          input + kit.fieldSearchOf(key, 'policy-applications',
-                                    finds[key], '/admin/policies', t) +
-          '</div>';
-      return '<tr><td><label for="' + kit.esc(prefix) + 'apps">' +
-        t.html('consolePolicies.named.applications') +
-        '</label></td><td colspan="4">' + cell + '</td></tr>';
+    const listRow = function (named, prefix, key, label, placeholder) {
+      return '<tr><td><label for="' + kit.esc(prefix) + key + '">' +
+        t.html(label) + '</label></td><td colspan="4"><input type="text" ' +
+        'id="' + kit.esc(prefix) + key + '" name="' +
+        (key === 'apps' ? 'selectApplications' : 'selectGroups') +
+        '" size="60" value="' +
+        kit.esc((named[key === 'apps' ? 'selectApplications'
+                                      : 'selectGroups'] || []).join(', ')) +
+        '" placeholder="' + kit.esc(t.text(placeholder)) + '"></td></tr>';
     };
-    const selectorRows = function (named, prefix, key) {
+    const selectorRows = function (named, prefix) {
       return (!has('selectApplications') ? '' :
-        appsRow(named, prefix, key)) + (!has('selectGroups') ? '' :
-        '<tr><td><label for="' + kit.esc(prefix) + 'groups">' +
-        t.html('consolePolicies.named.groups') +
-        '</label></td><td colspan="4"><input type="text" id="' +
-        kit.esc(prefix) + 'groups" name="selectGroups" size="60" value="' +
-        kit.esc((named.selectGroups || []).join(', ')) + '" placeholder=' +
-        '"' + kit.esc(t.text('consolePolicies.named.groupsPlaceholder')) +
-        '"></td></tr>') +
+        listRow(named, prefix, 'apps', 'consolePolicies.named.applications',
+                'consolePolicies.named.applicationsPlaceholder')) +
+        (!has('selectGroups') ? '' :
+        listRow(named, prefix, 'groups', 'consolePolicies.named.groups',
+                'consolePolicies.named.groupsPlaceholder')) +
         (!has('precedence') ? '' :
         '<tr><td><label for="' +
         kit.esc(prefix) + 'precedence">' +
@@ -767,9 +758,9 @@ class PoliciesPage {
         t.html('consolePolicies.named.lowestApplies') + '</span></td></tr>');
     };
     const form = function (stored, prefix, adding) {
-      const key = PoliciesPage.searchKeyOf(kind.id, adding ? '' : stored.name);
-      const named = searching ? PoliciesPage.withDraft(stored, drafts[key])
-                              : stored;
+      const key = PoliciesPage.draftKeyOf(kind.id);
+      const named = tabbed && adding
+        ? PoliciesPage.withDraft(stored, drafts[key]) : stored;
       // A refused create (#841) is drawn on this form. The hidden field is
       // what tells a Save apart from a save of a stored profile whose name
       // the reader happened to type.
@@ -782,18 +773,8 @@ class PoliciesPage {
       return refusal + '<form method="post" action="/admin/policies">' +
         '<input type="hidden" name="action" value="' +
         kit.esc(kind.actions[0]) + '">' +
-        (adding && searching
+        (adding && tabbed
           ? '<input type="hidden" name="newProfile" value="1">'
-          : '') +
-        // THE DEFAULT BUTTON, first in the form (#609), for the application
-        // grid's reason: Enter in a box presses the first submit button,
-        // which would otherwise be the search's Find. Enter in the search
-        // box itself still searches (the runtime reads `data-fg-find`).
-        (searching
-          ? '<button type="submit" class="default-submit" tabindex="-1" ' +
-            'aria-hidden="true">' + (adding
-              ? t.html('consolePolicies.named.add')
-              : t.html('consolePolicies.saveProfile')) + '</button>'
           : '') +
         (adding
           ? '<p><label for="' + kit.esc(prefix) + 'name">' +
@@ -805,7 +786,7 @@ class PoliciesPage {
           : '<input type="hidden" name="profile" value="' +
             kit.esc(named.name) + '">') +
         PoliciesPage.fieldHeader(t) +
-        selectorRows(named, prefix, key) +
+        selectorRows(named, prefix) +
         named.fields.map(function (field) {
           return PoliciesPage.policyFieldRow(field, prefix, t);
         }).join('') + '</table>' +
@@ -820,29 +801,55 @@ class PoliciesPage {
             'class="secondary">' + t.html('consolePolicies.named.remove') +
             '</button></form>');
     };
-    // WHAT A NAMED PROFILE SELECTS (#609), said above its form on the Named
-    // policies sub-tab, so the list reads without opening a form.
+    // WHAT NAMES A NAMED PROFILE (#609, #1235), said above its form on the
+    // Named policies sub-tab, so the list reads without opening a form:
+    // read-only, each edited on its own page, the applications, groups and
+    // people that name it (and any list the kind still keeps itself).
     const selects = function (named) {
-      if (!searching) {
+      if (!tabbed) {
         return '';
       }
       const listed = function (values) {
         return values && values.length ? kit.codeList(values)
           : '<span class="state-none">—</span>';
       };
-      return '<p class="sub">' + t.html('consolePolicies.named.applications') +
-        ': ' + listed(named.selectApplications) + ' · ' +
-        t.html('consolePolicies.named.groups') + ': ' +
-        listed(named.selectGroups) + '</p>';
+      const by = named.namedBy || {};
+      const parts = [];
+      if (has('selectApplications')) {
+        parts.push(t.html('consolePolicies.named.applications') + ': ' +
+                   listed(named.selectApplications));
+      }
+      if (has('selectGroups')) {
+        parts.push(t.html('consolePolicies.named.groups') + ': ' +
+                   listed(named.selectGroups));
+      }
+      if (references.application) {
+        parts.push(t.html('consolePolicies.named.namedByApplications',
+                          { attribute: references.application }) + ': ' +
+                   listed(by.applications));
+      }
+      if (references.group) {
+        parts.push(t.html('consolePolicies.named.namedByGroups',
+                          { attribute: references.group }) + ': ' +
+                   listed(by.groups));
+      }
+      if (references.person) {
+        parts.push(t.html('consolePolicies.named.namedByPeople',
+                          { attribute: references.person }) + ': ' +
+                   listed(by.people));
+      }
+      return '<p class="sub">' + parts.join(' · ') + '</p>';
     };
     const blank = { name: '', selectApplications: [], selectGroups: [],
                     precedence: 100, fields: member.fields.map(function (f) {
                       return Object.assign({}, f, { value: f.default,
                                                     source: 'built-in' });
                     }) };
-    const list = kit.note(has('precedence')
-        ? t.html('consolePolicies.named.noteRanked')
-        : t.html('consolePolicies.named.noteUnranked')) +
+    const list = kit.note(referenced
+        ? t.html('consolePolicies.named.noteReferenced')
+        : has('precedence')
+          ? t.html('consolePolicies.named.noteRanked')
+          : t.html('consolePolicies.named.noteUnranked')) +
       (member.named.length ? member.named.map(function (named) {
         // The heading's id is where an application's Passkey policy card
         // links to (#609): `<kind>-profile-<name>`.

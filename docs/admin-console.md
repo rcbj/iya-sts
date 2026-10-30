@@ -772,6 +772,15 @@ written up as `STS-REPORT-0037` when a notice is due. The box takes one
 address, `local-part@domain`; an emptied box removes the attribute. Nothing
 else reads it.
 
+**Policies this group names.** On the drill-down, below the email address,
+one choice per kind of policy a group may name — today the passkey policy
+(`stsPasskeyPolicy`) — offering `default` and the realm's named policies of
+that kind. **Save** writes it onto the group's own entry; `POST
+/admin-api/groups/set-policy` is the same act. The policy a group names
+applies to its members where it has a lower precedence than the policy the
+application names; a named policy a group names cannot be removed until the
+group names another.
+
 Three behaviours are the directory being consistent with itself:
 
 * **A member that names nothing is written, not refused.** This directory
@@ -1331,8 +1340,9 @@ is shown, but never decides the kind.
   one is known, and the algorithms its passkeys use. *Not reported* is the
   passkeys whose authenticator named no model.
 * **Profiles** shows what each [passkey policy](authentication.md#the-passkey-policy)
-  profile asks (`postQuantumRequired`) and what it selects. A named profile that
-  selects groups has a link to count its population.
+  profile asks (`postQuantumRequired`), and the groups and applications that
+  name it. A named profile a group names has a link to count its population,
+  the members of those groups.
 * **Attestation** counts passkeys by the signature algorithm of the
   attestation certificate (the leaf, #941). A passkey registered before that
   algorithm was stored, or one whose attestation carried no certificate, is

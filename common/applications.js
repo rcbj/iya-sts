@@ -4594,6 +4594,30 @@ const SCHEMA = {
             'until the policy exists (STS-AUTHN-0536).\n\nIt is WRITTEN ' +
             'BY NOBODY: no protocol presents it, so it is editable and ' +
             'starts empty.' },
+    // ---------------------------------------------------------------------
+    // THE PASSKEY POLICY THIS APPLICATION NAMES (#1235, rcbj on #1234,
+    // 2026-10-30: "a unique application or user attribute ... that points at
+    // each type of named policy"). It replaced the named passkey policy's
+    // own list of applications (`stsPasskeySelectApplication`, #535, #609),
+    // and no migration is owed; a group names one in `stsPasskeyPolicy`. `appAuthnPolicy`'s arrangement: one value,
+    // CHECKED AT THE WRITE (CHOICES_CHECKED_HERE) against `default` and this
+    // realm's named passkey policies, and listed in POLICY_REFERENCES so the
+    // policy can ask which applications name it.
+    // ---------------------------------------------------------------------
+    { name: 'appPasskeyPolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE PASSKEY POLICY A SIGN-IN TO THIS APPLICATION IS HELD TO: ' +
+            '`default` (or empty), or the name of a named passkey policy ' +
+            'of this realm (Directory > Policies). It competes on ' +
+            'precedence with the passkey policy each of the person\'s ' +
+            'groups names (stsPasskeyPolicy): the lowest precedence ' +
+            'applies, ties by name, and `default` where nothing names ' +
+            'one.\n\nA name no policy of this realm holds — written past ' +
+            'the console — names nothing and is logged (STS-AUTHN-0537). A ' +
+            'named passkey policy this attribute names cannot be deleted ' +
+            '(STS-AUTHN-0538).\n\nIt is WRITTEN ' +
+            'BY NOBODY: no protocol presents it, so it is editable and ' +
+            'starts empty.' },
     // -------------------------------------------------------------------
     // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564). The RESOURCE
     // application that declares an authorization_details type owns the
@@ -4917,6 +4941,8 @@ const EDITABLE = {
   // the lists are a named authentication policy's and this names it: `set`,
   // one value, for the same reason — nothing can observe it.
   appAuthnPolicy: 'set',
+  // #1235: the passkey policy, `appAuthnPolicy`'s reason.
+  appPasskeyPolicy: 'set',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -6136,6 +6162,13 @@ const ATTRIBUTE_CHOICES = {
     return ['default'].concat(require('./authn_policy').named()
       .map(function (one) { return one.name; }));
   },
+  // `default` and this realm's named passkey policies (#1235), read when
+  // asked, for the same reason.
+  appPasskeyPolicy: function () {
+    return ['default'].concat(require('./passkey_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
   },
@@ -6219,6 +6252,11 @@ function enrollmentProfileChoices(withDevice) {
   return withDevice ? ids.concat(['device']) : ids;
 }
 
+// THE ATTRIBUTES BY WHICH AN APPLICATION NAMES A POLICY (#1235, rule 3cx),
+// one per kind that an application selects: indexed by the kept listing and
+// asked by `applicationsNamingPolicy()`.
+const POLICY_REFERENCES = ['appAuthnPolicy', 'appPasskeyPolicy'];
+
 const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelTokenDeliveryMode',
   'oauthBackchannelAuthenticationRequestSigningAlg', 'gnapKeyProof',
@@ -6226,6 +6264,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
   'secretDestProvider', 'secretDestPayload', 'appAuthnPolicy',
+  // #1235: a policy reference names a policy the realm holds.
+  'appPasskeyPolicy',
   'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
   'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
   // #395: a misspelt mode would silently be the default, and a misspelt
@@ -18621,7 +18661,14 @@ function buildListing(backing) {
     // #493: the KDC finds the application a service ticket is for by SPN.
     byServicePrincipal: new Map(),
     byPermission: new Map(),
-    byPermissionBase: new Map()
+    byPermissionBase: new Map(),
+    // #1235: the applications naming each policy, by reference attribute
+    // and the name lower-case — what refuses a policy's delete and lists
+    // its applications, without a walk of the listing per question.
+    byPolicyReference: POLICY_REFERENCES.reduce(function (all, attribute) {
+      all[attribute] = new Map();
+      return all;
+    }, {})
   };
   // Each Map holds the applications in `list()`'s order, so the first is the
   // one the filter over `list()` found first, and the length is the count
@@ -18651,6 +18698,13 @@ function buildListing(backing) {
     if (base) {
       indexInto(listing.byPermissionBase, base, item);
     }
+    POLICY_REFERENCES.forEach(function (attribute) {
+      const named = String(valuesOf(fields[attribute])[0] || '').trim()
+        .toLowerCase();
+      if (named) {
+        indexInto(listing.byPolicyReference[attribute], named, item);
+      }
+    });
   });
   items.forEach(deepFreeze);
   log.debug("Leaving buildListing(). " + items.length + " application(s).");
@@ -18727,25 +18781,52 @@ function list() {
   return rows;
 }
 
-// THE APPLICATIONS NAMING AN AUTHENTICATION POLICY (#1148): what refuses its
-// delete and what Directory > Policies draws beside it. Compared lower-case,
-// as `authn_policy.ts` names a policy.
+// ---------------------------------------------------------------------------
+// THE APPLICATIONS NAMING A POLICY (#1148 for the authentication policy,
+// generalised by #1235, rule 3cx): what refuses a named policy's delete and
+// what Directory > Policies lists beside it. Every attribute by which an
+// application names a policy of some kind is a row of POLICY_REFERENCES, and
+// the kept listing indexes it (`byPolicyReference`), so a question costs the
+// applications that name the policy rather than a walk of every one.
+// Compared lower-case, as every kind names a policy.
+//
+// A KIND ADOPTING A REFERENCE adds its attribute here, a declaration above,
+// an EDITABLE row, an ATTRIBUTE_CHOICES source and a CHOICES_CHECKED_HERE
+// entry — `appPasskeyPolicy`'s five lines.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the applications whose policy-reference attribute names a policy,
+ * in the ambient realm, in `list()`'s order.
+ *
+ * @param attribute - the reference attribute, one of POLICY_REFERENCES
+ * @param name - the policy's name
+ * @returns the applications' identifiers
+ */
+function applicationsNamingPolicy(attribute, name) {
+  log.debug("Entering applicationsNamingPolicy(). " + attribute);
+  const wanted = String(name == null ? '' : name).trim().toLowerCase();
+  if (!wanted || POLICY_REFERENCES.indexOf(attribute) < 0) {
+    log.debug("Leaving applicationsNamingPolicy(). Not a question.");
+    return [];
+  }
+  const out = lookedUp('byPolicyReference', wanted, attribute)
+    .map(function (row) {
+      return row.identifier;
+    });
+  log.debug("Leaving applicationsNamingPolicy(). " + out.length + ".");
+  return out;
+}
+
 /**
  * Lists the applications whose `appAuthnPolicy` names an authentication
- * policy, in the ambient realm.
+ * policy, in the ambient realm (#1148).
  *
  * @param name - the policy's name
  * @returns the applications' identifiers
  */
 function applicationsNamingAuthnPolicy(name) {
   log.debug("Entering applicationsNamingAuthnPolicy().");
-  const wanted = String(name == null ? '' : name).trim().toLowerCase();
-  const out = !wanted ? [] : list().filter(function (row) {
-    const held = [].concat(((row && row.fields) || {}).appAuthnPolicy || [])[0];
-    return String(held || '').trim().toLowerCase() === wanted;
-  }).map(function (row) {
-    return row.identifier;
-  });
+  const out = applicationsNamingPolicy('appAuthnPolicy', name);
   log.debug("Leaving applicationsNamingAuthnPolicy(). " + out.length + ".");
   return out;
 }
@@ -21707,6 +21788,8 @@ module.exports = {
   deleteApplication: deleteApplication,
   list: list,
   applicationsNamingAuthnPolicy: applicationsNamingAuthnPolicy,
+  applicationsNamingPolicy: applicationsNamingPolicy,
+  POLICY_REFERENCES: POLICY_REFERENCES,
   // The clock `list()` is kept by (#625).
   listingVersion: listingVersion,
   ownerValues: ownerValues,

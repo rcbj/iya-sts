@@ -5344,6 +5344,25 @@ class AdminActions {
       return result;
     }
 
+    // A GROUP NAMES ITS POLICY OF A KIND (#1235, rule 3cx): the group page's
+    // picker and `POST /admin-api/groups/set-policy`, both reaching the
+    // directory's one writer, which checks the attribute is a declared
+    // reference and the value `default` or a named policy of the realm.
+    if (action === 'set-policy') {
+      const result = groupWriter.setGroupPolicy(
+        String(body.group || '').trim(), String(body.attribute || '').trim(),
+        String(body.policy || '').trim(),
+        { origin: 'console', channel: 'console',
+          actor: String(body.actor || '') });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). set-policy refused.");
+        return this.refusedBy('STS-ADMIN-0907', result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). set-policy " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     // A GROUP'S OWNERS (#603): one added or taken off at a time, written at
     // once — the group page's Owners tab, and its two operations. Who may
     // be an owner and every refusal are ldap_server.js's.

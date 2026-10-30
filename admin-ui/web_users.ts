@@ -3745,7 +3745,10 @@ class UsersPage {
     const gridRow = function (row) {
       return {
         attribute: row.name,
-        type: row.multi ? 'array' : 'string',
+        // A policy reference (#1235) is one value from a closed set: a radio
+        // per policy, the application grid's `enum`.
+        type: row.choices ? 'enum' : row.multi ? 'array' : 'string',
+        choices: row.choices,
         what: row.label + ' — ' + row.schema + '.' +
               (row.note
                 ? t.text('consoleUsers.personFieldsSection.takes',
@@ -3798,7 +3801,13 @@ class UsersPage {
         (editor.mail
           ? '<p><code>' + kit.esc(editor.mail) + '</code></p>'
           : kit.note(t.html('consoleUsers.mfaSection.none')));
-    const panels = groups.map(function (group) {
+    // The Policies tab (#1235) only where some kind a person selects has
+    // declared its reference: an empty tab would offer nothing to set.
+    const panels = groups.filter(function (group) {
+      return group.id !== 'policies' || editor.attributes.some(function (row) {
+        return row.editable && row.group === 'policies';
+      });
+    }).map(function (group) {
       const mine = editor.attributes.filter(function (row) {
         return row.editable && row.group === group.id;
       });

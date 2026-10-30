@@ -1735,6 +1735,10 @@
     "en": "2c8a385006302f63",
     "text": "「此應用程式的人員登入時所依據的驗證原則」：`default`（或空白），或本領域某個具名驗證原則的名稱（目錄 > 原則）。具名原則包含允許的第一因素機制（password、password-mfa、webauthn、spnego、wallet、federation；一個都不列則全部允許）與允許的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一個都不列則維持領域的設定不變）。`default` 允許領域驗證原則所允許的每一種機制。\n\n在兩種模式下，於每次以瀏覽器登入該應用程式時「強制執行」：工作階段所依據的機制不為該原則所允許的人，會被送回以原則允許的機制重新登入。只列出一種第一因素機制時，它也是登入的去處（`spnego` 至 /authn/spnego，`wallet` 至 /authn/wallet，`federation` 至 appFederationRelationship）。第二因素只會「縮小」領域的原則：領域已關閉的第二因素在此仍然關閉。\n\n本領域沒有任何原則使用的名稱——繞過主控台寫入——在該原則存在之前「不允許任何」機制（STS-AUTHN-0536）。\n\n它「無人寫入」：沒有任何協定提供它，因此可以編輯，且初始為空白。"
   },
+  "applications.schema.attributes.appPasskeyPolicy.what": {
+    "en": "7bc62e3e8f1d7a2a",
+    "text": "登入此應用程式所遵循的通行金鑰原則：`default`（或空白），或此領域的一個具名通行金鑰原則的名稱（Directory > Policies）。它依優先順序與此人每個群組所指定的通行金鑰原則（stsPasskeyPolicy）競爭：優先順序最低者生效，相同時依名稱，沒有任何指定時為 `default`。\n\n此領域中不存在的原則名稱（在主控台之外寫入）不指定任何原則，並會被記錄（STS-AUTHN-0537）。此屬性所指定的具名通行金鑰原則不能被刪除（STS-AUTHN-0538）。\n\n它不由任何人寫入：沒有通訊協定提供它，因此可編輯，初始為空白。"
+  },
   "applications.schema.attributes.appFgaPolicy.what": {
     "en": "feebbd1d5f494bab",
     "text": "此應用程式所擁有的細粒度授權原則在 ou=policies 中的項目名稱；一旦 appFgaEnforced 為 TRUE，該原則將決定此應用程式所宣告類型的每一項授權詳細資料。"

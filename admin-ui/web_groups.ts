@@ -569,7 +569,9 @@ class GroupsPage {
             '<button type="submit">' +
             t.html('consoleGroups.detail.setMail') + '</button>' +
             '</div></form>' +
-            kit.note(t.html('consoleGroups.detail.mailNote'))
+            kit.note(t.html('consoleGroups.detail.mailNote')) +
+            GroupsPage.policyPickers(t, group, json.policyReferences,
+              kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {}))
           : '') +
 
         '<h2>' + t.html('consoleGroups.detail.attributesHeading') + '</h2>' +
@@ -944,6 +946,53 @@ class GroupsPage {
    *   without one, and its words are then the default translator's
    * @returns the table as HTML
    */
+  // THE POLICIES THE GROUP NAMES (#1235, rule 3cx): one picker per policy
+  // kind a group selects — `default` and the realm's named policies of the
+  // kind — each its own form, `set-policy`, which the directory checks. A
+  // kind's named policy the group names competes for each member on
+  // precedence. Nothing is drawn while no kind declares a group reference.
+  /**
+   * Draws a group's policy pickers.
+   *
+   * @param t - the page's translator
+   * @param group - the group's entry
+   * @param references - the answer's `policyReferences`
+   * @param back - the list to return to
+   * @returns the section as HTML, or ''
+   */
+  static policyPickers(t, group, references, back) {
+    const rows = Array.isArray(references) ? references : [];
+    if (!rows.length) {
+      return '';
+    }
+    return '<h2 id="group-policies">' +
+      t.html('consoleGroups.detail.policiesHeading') + '</h2>' +
+      kit.note(t.html('consoleGroups.detail.policiesNote')) +
+      rows.map(function (one, n) {
+        const id = 'grouppolicy' + n;
+        const held = String(one.value || '');
+        const choices = [''].concat(one.choices || [])
+          .concat(held && (one.choices || []).indexOf(held) < 0
+            ? [held] : []);
+        return '<form method="post" action="/admin/groups">' +
+          '<input type="hidden" name="action" value="set-policy">' +
+          '<input type="hidden" name="group" value="' + kit.esc(group.dn) +
+          '"><input type="hidden" name="attribute" value="' +
+          kit.esc(one.attribute) + '"><input type="hidden" name="back" ' +
+          'value="' + kit.esc(back) + '"><div class="formrow"><label for="' +
+          id + '">' + kit.esc(one.noun) + ' (<code>' +
+          kit.esc(one.attribute) + '</code>)</label><select id="' + id +
+          '" name="policy">' + choices.map(function (value) {
+            return '<option value="' + kit.esc(value) + '"' +
+              (value === held ? ' selected' : '') + '>' +
+              (value ? kit.esc(value)
+                     : t.html('consoleGroups.detail.policyNone')) +
+              '</option>';
+          }).join('') + '</select><button type="submit">' +
+          t.html('consoleGroups.detail.setPolicy') + '</button></div></form>';
+      }).join('');
+  }
+
   static attributeTable(entry, t?) {
     t = t || kit.context().t;
     const rows = Object.keys(entry.attributes).map(function (name) {

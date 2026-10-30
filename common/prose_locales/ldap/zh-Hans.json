@@ -1735,6 +1735,10 @@
     "en": "2c8a385006302f63",
     "text": "此应用的人员登录时所依据的身份验证策略：`default`（或为空），或本领域某个命名身份验证策略的名称（目录 > 策略）。命名策略包含允许的第一因素机制（password、password-mfa、webauthn、spnego、wallet、federation；一个都不列则全部允许）和允许的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一个都不列则保持领域的设置不变）。`default` 允许领域身份验证策略所允许的每一种机制。\n\n在两种模式下，每次通过浏览器登录该应用时都会强制执行：会话所依据的机制不被该策略允许的人，会被送回去用策略允许的机制重新登录。只列出一种第一因素机制时，它也是登录的去处（`spnego` 去 /authn/spnego，`wallet` 去 /authn/wallet，`federation` 去 appFederationRelationship）。第二因素只会收窄领域的策略：领域已关闭的第二因素在这里仍然关闭。\n\n本领域没有任何策略使用的名称——绕过控制台写入——在该策略存在之前不允许任何机制（STS-AUTHN-0536）。\n\n它无人写入：没有任何协议提供它，因此它可编辑，且初始为空。"
   },
+  "applications.schema.attributes.appPasskeyPolicy.what": {
+    "en": "7bc62e3e8f1d7a2a",
+    "text": "登录此应用所遵循的通行密钥策略：`default`（或为空），或此领域的一个命名通行密钥策略的名称（Directory > Policies）。它按优先级与此人每个组所指定的通行密钥策略（stsPasskeyPolicy）竞争：优先级最低者生效，相同时按名称，没有任何指定时为 `default`。\n\n此领域中不存在的策略名称（在控制台之外写入）不指定任何策略，并会被记录（STS-AUTHN-0537）。此属性所指定的命名通行密钥策略不能被删除（STS-AUTHN-0538）。\n\n它不由任何人写入：没有协议提供它，因此可编辑，初始为空。"
+  },
   "applications.schema.attributes.appFgaPolicy.what": {
     "en": "feebbd1d5f494bab",
     "text": "此应用所拥有的细粒度授权策略在 ou=policies 中的条目名称；一旦 appFgaEnforced 为 TRUE，该策略将决定此应用所声明类型的每一项授权详情。"

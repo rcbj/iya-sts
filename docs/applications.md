@@ -1162,42 +1162,25 @@ name and what the grant is.
 
 ### The passkey policy that applies to it
 
-An application's Configuration tab, *Every protocol*, ends with a
-**Passkey policy** card (#609). It is read-only, and it lists every named
-passkey policy of the realm whose applications list names this application,
-by its identifier or by one of its client_ids, matched in any case as a
-sign-in is. For each it shows:
+An application names its passkey policy in **`appPasskeyPolicy`**, a field of
+its Configuration tab, *Every protocol*: `default`, or a named passkey policy
+of the realm (Directory → Policies). Nothing else is accepted.
 
-- its precedence;
-- the value that named the application;
-- any groups it selects as well;
-- whether it is the one that applies.
+The tab ends with a read-only **Passkey policy** card. It says which policy a
+sign-in to the application gets before the person is known, with its
+precedence and a link to it on Directory → Policies. Where the application
+names a policy the realm does not hold (written by hand with an LDAP client),
+the card warns that the `default` passkey policy applies instead.
 
-The one that applies is the lowest precedence among them. Where none names the
-application, the card says the `default` passkey policy applies. Each name
-links to that policy on Directory → Policies.
-
-A sign-in names the application by one of its names: an OAuth or OpenID
-Connect sign-in by its client_id, SAML by its entity ID. Where policies name
-the application by different names, a sign-in gets the policy that names the
-name it used, and the card says so for each name that gets a different one.
-
-**A policy selecting by group can still win for a given person.** Where a
-named policy lists one of the person's groups and has a lower precedence,
-it applies to them instead; the card says how many named policies select by
-group.
-
-Nothing is stored on the application. Which applications a passkey policy
-covers is the policy's `stsPasskeySelectApplication`, edited on
-Directory → Policies (see the
-[passkey policy](authentication.md#the-passkey-policy)). Several policies may
-name one application; precedence decides between them.
+**A policy one of the person's groups names can still win for that person.**
+Where a group the person is in names a policy with a lower precedence, it
+applies to them instead. The card says how many named passkey policies are
+named by a group. See
+[the passkey policy](authentication.md#the-passkey-policy).
 
 The API answer is `page.passkeyPolicies` on
-`GET /admin-api/applications?application=<id>`: `policies` (each `name`,
-`dn`, `precedence`, `selectApplications`, `selectGroups`, `matched`,
-`applies` and `link`), `applies`, `appliesBy` (the policy per name),
-`groupPolicies`, `names` and `link`.
+`GET /admin-api/applications?application=<id>`: `named`, `missing`,
+`applies`, `precedence`, `groupPolicies` and `link`.
 
 ## Development and product mode
 

@@ -2395,16 +2395,16 @@ class ApplicationsPage {
   }
 
   // ---------------------------------------------------------------------------
-  // THE PASSKEY POLICY CARD (#609, rcbj's decision 2): on Configuration →
-  // Every protocol, READ-ONLY. Every named passkey policy whose applications
-  // list names this application (its identifier or a client_id), with its
-  // precedence, the one that applies marked — the lowest precedence naming
-  // it, else `default` — each linked to its profile on Directory → Policies,
-  // and a note that a policy selecting by group can still win for a given
-  // person. Nothing here is a control: the relation is the policies'
-  // `stsPasskeySelectApplication`, edited on the Policies page (decision 1).
-  // Drawn from the answer's `page.passkeyPolicies`; an answer from before it
-  // draws nothing.
+  // THE PASSKEY POLICY CARD (#609, rcbj's decision 2; reshaped by #1235): on
+  // Configuration → Every protocol, READ-ONLY, beside the field that is the
+  // control — `appPasskeyPolicy`, the policy this application names (rcbj on
+  // #1234: the application names its policy; the policy no longer lists its
+  // applications). It says which policy a sign-in for the application gets
+  // before any person is known — the one it names, or `default` — with a
+  // warning where the name is one the realm does not hold, a link to the
+  // policy on Directory → Policies, and a note that a policy selecting by
+  // group can still win for a given person. Drawn from the answer's
+  // `page.passkeyPolicies`; an answer from before it draws nothing.
   // ---------------------------------------------------------------------------
   /**
    * Draws the read-only Passkey policy card of an application's Every
@@ -2416,61 +2416,23 @@ class ApplicationsPage {
    */
   static applicationPasskeyPolicyCard(row, t) {
     const pk = row && row.page ? row.page.passkeyPolicies : null;
-    if (!pk || !Array.isArray(pk.policies)) {
+    if (!pk || typeof pk.applies !== 'string') {
       return '';
     }
-    const policies = pk.policies;
-    const defaultLink = String(pk.link || '/admin/policies#passkey');
-    const lead = policies.length
-      ? t.html('consoleApplications.passkey.lead',
-               { n: String(policies.length) })
-      : t.html('consoleApplications.passkey.none');
-    const table = !policies.length ? '' :
-      '<table class="pk-policies"><tr><th>' +
-      t.html('consoleApplications.passkey.policy') + '</th><th>' +
-      t.html('consoleApplications.passkey.precedence') + '</th><th>' +
-      t.html('consoleApplications.passkey.namedAs') + '</th><th>' +
-      t.html('consoleApplications.passkey.groups') + '</th><th>' +
-      t.html('consoleApplications.passkey.applies') + '</th></tr>' +
-      policies.map(function (one) {
-        return '<tr' + (one.applies ? ' class="pk-applies"' : '') +
-          '><td><a href="' + kit.esc(one.link || defaultLink) + '">' +
-          kit.esc(one.name) + '</a></td><td>' +
-          kit.esc(String(one.precedence)) + '</td><td>' +
-          kit.codeList([].concat(one.matched || [])) + '</td><td>' +
-          ((one.selectGroups || []).length
-            ? kit.codeList([].concat(one.selectGroups))
-            : '<span class="state-none">—</span>') + '</td><td>' +
-          (one.applies
-            ? '<strong>' + t.html('consoleApplications.passkey.appliesYes') +
-              '</strong>'
-            : '<span class="state-none">' +
-              t.html('consoleApplications.passkey.appliesNo') + '</span>') +
-          '</td></tr>';
-      }).join('') + '</table>';
-    const verdict = policies.length
-      ? t.html('consoleApplications.passkey.winner',
-               { name: String(pk.applies) })
-      : t.html('consoleApplications.passkey.default');
-    // WHERE THE NAME DECIDES (#609): a sign-in names the application by one
-    // of its names — an OAuth client by its client_id — so a name whose
-    // sign-in gets another policy than the one marked is said, one line
-    // each.
-    const byName = pk.appliesBy || {};
-    const differs = Object.keys(byName).filter(function (name) {
-      return byName[name] !== pk.applies;
-    }).map(function (name) {
-      return '<li>' + t.html('consoleApplications.passkey.byName',
-                             { value: name, name: String(byName[name]) }) +
-        '</li>';
-    }).join('');
+    const link = String(pk.link || '/admin/policies#passkey');
+    const verdict = pk.missing
+      ? kit.warn(t.html('consoleApplications.passkey.missing',
+                        { name: String(pk.named) }))
+      : '<p>' + (pk.applies !== 'default'
+        ? t.html('consoleApplications.passkey.winner',
+                 { name: String(pk.applies),
+                   precedence: String(pk.precedence) })
+        : t.html('consoleApplications.passkey.default')) + ' <a href="' +
+        kit.esc(link) + '">' + t.html('consoleApplications.passkey.open') +
+        '</a></p>';
     return '<div class="pk-card" id="cfg-every-passkey">' +
       '<h3>' + t.html('consoleApplications.passkey.heading') + '</h3>' +
-      kit.note(lead) + table +
-      '<p>' + verdict + ' <a href="' + kit.esc(policies.length
-        ? String(policies[0].link || defaultLink) : defaultLink) + '">' +
-      t.html('consoleApplications.passkey.open') + '</a></p>' +
-      (differs ? '<ul>' + differs + '</ul>' : '') +
+      kit.note(t.html('consoleApplications.passkey.lead')) + verdict +
       kit.note(t.html('consoleApplications.passkey.groupNote',
                       { n: String(pk.groupPolicies || 0) })) +
       '</div>';

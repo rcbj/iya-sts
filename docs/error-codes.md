@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5036** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5041** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 414
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 416
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 147
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 149
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 255
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 256
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -1617,6 +1617,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0534` | A named authentication policy was not deleted: an application of this realm still names it (appAuthnPolicy), and would then allow no mechanism (#1148). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0535` | This realm holds no named authentication policy of that name (#1148): a delete, or an application's appAuthnPolicy, named one that does not exist. | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0536` | An application names an authentication policy (appAuthnPolicy) that this realm does not hold — written past the console, or the policy was deleted by hand — so it allows no mechanism until the policy exists or the reference changes (#1148). | none (logged; the sign-in is refused as for a mechanism the application does not allow) |
+| `STS-AUTHN-0537` | An application (appPasskeyPolicy) or a group (stsPasskeyPolicy) names a passkey policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default passkey policy, where nothing else names one) until the policy exists or the reference changes (#1235). | none (logged; the sign-in goes on under the default profile) |
+| `STS-AUTHN-0538` | A named passkey policy was not deleted: an application (appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm still names it (#1235). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 
@@ -3182,7 +3184,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0103` | A person's attribute edit (#228) named an attribute the editor does not change: a credential, a binary value, the username or the address (which have doors of their own), or one outside the person schema. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0104` | A person's attribute edit (#228) named the attribute the entry's own DN is built from, which would leave the DN and the entry disagreeing. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0105` | A person's attribute edit (#228) was not set, add or remove, or was an add to an attribute that holds one value. | HTTP 400 (API) or a 303 with error= |
-| `STS-LDAP-0106` | A person's attribute edit (#228), or a create from the field grid, carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0106` | A person's attribute edit (#228), or a create from the field grid, carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove; or, for a policy reference a kind declared (#1235), named neither `default` nor a named policy of the realm. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0107` | A person's attribute edit (#228) added a value the attribute already holds. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
@@ -3250,6 +3252,8 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0191` | The node-ldapjs in use does not support the saslMechanisms and bindDnFromHandler server options, so a SASL EXTERNAL bind cannot be decoded and its connection is closed (#1047). | none — logged at startup |
 | `STS-LDAP-0192` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is not stored in userCertificate on any person entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
 | `STS-LDAP-0193` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is stored in userCertificate on more than one entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0194` | A group's policy reference was not set: the attribute is not one by which a group names a policy of a kind that has declared one (stsPasskeyPolicy, ...) (#1235). | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0195` | A group's policy reference was not set: the value names neither `default` nor a named policy of that kind this realm holds (#1235). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-ATTR
 
@@ -5210,6 +5214,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0904` | A message-signing certificate action named an application the registry does not hold (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0905` | A message-signing certificate action named a person with no entry in this realm, and none is created (#521). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0906` | Storing, removing or listing a certificate on an application's entry was refused: the registry holds no application by that identifier, and none is created (#1227). | HTTP 400 (API) or a refusal on the application's page |
+| `STS-ADMIN-0907` | Setting or clearing the policy a group names of one kind was refused by the directory (#1235); the refusal carries the directory's own code. | HTTP 400 (API) or a refusal on the group's page |
 
 ## STS-API
 

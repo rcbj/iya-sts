@@ -99,6 +99,8 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
+// The policy references a group may make (#1235, rule 3cx): a leaf.
+import PolicySelection = require('../common/policy_selection');
 import InstanceSlot = require('../common/instance_slot');
 // The credential store, for the ways-in list the new-person form offers.
 import credentials = require('../common/credentials');
@@ -2610,6 +2612,11 @@ class AdminViews {
       (out as any).selectors = module.SELECTORS.map(function (one) {
         return one.key;
       });
+      // WHAT NAMES A PROFILE (#1235, rule 3cx): the attribute on an
+      // application, a group and/or a person by which one names its profile
+      // of this kind, so the console says which; `{}` for a kind selected
+      // by its own lists alone.
+      (out as any).references = Object.assign({}, module.REFERENCES || {});
       (out as any).named = module.list().filter(function (one) {
         return one.name !== module.DEFAULT_PROFILE;
       }).map(function (one) {
@@ -2618,6 +2625,11 @@ class AdminViews {
           selectApplications: one.selectApplications || [],
           selectGroups: one.selectGroups || [],
           precedence: one.precedence,
+          // The applications, groups and people naming it (#1235),
+          // read-only here: each is edited on its own page.
+          namedBy: typeof module.namedBy === 'function'
+            ? module.namedBy(one.name)
+            : { applications: [], groups: [], people: [] },
           rules: module.describe(one),
           fields: module.FIELDS.map(function (field) {
             return { key: field.key, attribute: field.attribute,
@@ -2785,6 +2797,9 @@ class AdminViews {
       const profiles = kind.module.list();
       out.kinds.push({ id: kind.id, label: kind.label,
                        container: kind.container, governs: kind.governs,
+                       // Drawn as Default / Named policies / New policy
+                       // sub-tabs (#609; declared on the kind, #1235).
+                       tabbed: kind.tabbed === true,
                        profiles: profiles.length,
                        actions: [policyKinds.saveAction(kind),
                                  policyKinds.resetAction(kind)]
@@ -8825,7 +8840,12 @@ class AdminViews {
     catalogue.forEach(function (row) {
       claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
     });
-    const rows = personEditor.editableAttributes().map(function (row) {
+    // A POLICY REFERENCE (#1235) is not offered here: it is named on the
+    // person's own page, where `personEditor.update()` checks it against the
+    // realm's policies, and a create does not pass through that check.
+    const rows = personEditor.editableAttributes().filter(function (row) {
+      return row.group !== 'policies';
+    }).map(function (row) {
       return { name: row.name, label: row.label, schema: row.schema,
                multi: row.multi, must: row.must, note: row.note,
                group: row.group, example: row.example, simple: row.simple };
@@ -10677,6 +10697,10 @@ class AdminViews {
       json: Object.assign({ found: true }, info, {
         canWrite: !!groupWriter,
         group: pagedGroup,
+        // THE POLICY THE GROUP NAMES OF EACH KIND THAT A GROUP SELECTS
+        // (#1235, rule 3cx): one picker each, `default` and the realm's
+        // named policies; `set-policy` writes it.
+        policyReferences: this.groupPolicyReferences(group),
         // Closed to its owners, and why (#607).
         ownership: this.ownershipOf('group', group.dn),
         membersPaging: this.pagingJson(memberPage.paging),
@@ -10686,6 +10710,26 @@ class AdminViews {
                        write: config.value('admin.writeGroup') }
       })
     };
+  }
+
+  /**
+   * The policy references a group's page draws (#1235): each kind's
+   * declared group attribute, its choices and the value the group holds.
+   *
+   * @param group - the group's entry
+   * @returns `[{ attribute, noun, choices, value }]`
+   */
+  groupPolicyReferences(group) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.groupPolicyReferences().");
+    const held = (group && group.attributes) || {};
+    const out = PolicySelection.referencesOn('group').map(function (one) {
+      const value = PolicySelection.valuesOf(held, one.attribute)[0] || '';
+      return { attribute: one.attribute, noun: one.noun,
+               choices: one.choices, value: PolicySelection.fold(value) };
+    });
+    log.debug("Leaving AdminViews.groupPolicyReferences(). " + out.length);
+    return out;
   }
 
   // `?group=` means the drill-down — and the NO-DIRECTORY branch comes first,
@@ -11079,48 +11123,38 @@ class AdminViews {
     return out;
   }
 
-  // #609: the named passkey policies whose applications list names this
-  // application — by its identifier or a client_id, as a sign-in names it —
-  // in precedence order with the one that applies marked, for the Every
-  // protocol sub-tab's read-only card. Nothing is stored on the entry: the
-  // relation is the policies' `stsPasskeySelectApplication`. A view must
-  // still draw, so a policy that cannot be asked answers none.
+  // #609, reshaped by #1235: the passkey policy this application names
+  // (`appPasskeyPolicy`, its picker among the Every protocol fields), whether
+  // the realm holds it, what a sign-in for it gets before any person is known,
+  // and how many named policies select by group and could still win — for the
+  // Every protocol sub-tab's read-only card. A view must still draw, so a
+  // policy that cannot be asked answers `default`.
   /**
-   * The named passkey policies that name an application, and which applies.
+   * The passkey policy an application names, and which applies.
    *
    * @param row - the application's registry row
-   * @returns `passkeyPolicy.forApplication()`'s answer, with `names` (what
-   *   the application was matched by) and `link` (the Policies page's tab)
+   * @returns `passkeyPolicy.forApplication()`'s answer, with `link` (the
+   *   Policies page's place for the policy that applies)
    */
   applicationPasskeyPolicies(row) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationPasskeyPolicies().");
     const fields = (row && row.fields) || {};
-    const names = [String((row && row.identifier) || '')]
-      .concat([].concat(fields.oauthClientId || []).map(String))
-      .filter(function (one, n, all) {
-        return one !== '' && all.indexOf(one) === n;
-      });
+    const reference = [].concat(fields.appPasskeyPolicy || [])[0] || '';
     let out;
     try {
-      out = require('../common/passkey_policy').forApplication(names);
+      out = require('../common/passkey_policy').forApplication(reference);
     } catch (e) {
       log.debug("Caught in AdminViews.applicationPasskeyPolicies(): " +
                 ((e && e.message) || e));
-      out = { policies: [], applies: 'default', appliesBy: {},
-              groupPolicies: 0 };
+      out = { named: 'default', missing: false, applies: 'default',
+              precedence: 0, groupPolicies: 0 };
     }
     log.debug("Leaving AdminViews.applicationPasskeyPolicies(). " +
-              out.policies.length + " policy(ies).");
-    // Each policy's own place on Directory > Policies, the named profile's
-    // heading on the Passkey policy tab's Named policies sub-tab.
-    const policies = out.policies.map(function (one) {
-      return Object.assign({}, one, {
-        link: '/admin/policies#passkey-profile-' + one.name });
-    });
-    return Object.assign({ names: names,
-                           link: '/admin/policies#passkey' }, out,
-                         { policies: policies });
+              out.applies);
+    return Object.assign({}, out, {
+      link: out.applies === 'default' ? '/admin/policies#passkey'
+        : '/admin/policies#passkey-profile-' + out.applies });
   }
 
   // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5): `fga_policies.ts`'s

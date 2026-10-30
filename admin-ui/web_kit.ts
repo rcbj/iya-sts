@@ -2035,9 +2035,8 @@ class WebKit {
    * Draws a list field's search: the box, Find, and the page of results.
    *
    * @param attribute - the list's attribute
-   * @param kind - `applications`, `groups`, `parties` (people or
-   *   applications, one value) or `policy-applications` (a named passkey
-   *   profile's applications, #609), what the search finds
+   * @param kind - `applications`, `groups` or `parties` (people or
+   *   applications, one value), what the search finds
    * @param found - the last search's results for this list, or nothing
    * @param redraw - the route the grid's round trips post to
    * @param t - optional; the translator (#539), the default when left out
@@ -2055,12 +2054,8 @@ class WebKit {
       : parties && which === 'people' ? 'person' : 'application';
     // THE WORDS ARE MESSAGES (#539): the noun and the kind are `select`
     // parameters, so a translation says each case whole.
-    // A named passkey profile's applications (#609) are the realm's
-    // applications too, said without "this application itself".
     const searched = kind === 'groups' ? 'groups'
-      : parties ? 'parties'
-        : kind === 'policy-applications' ? 'policyApplications'
-          : 'applications';
+      : parties ? 'parties' : 'applications';
     const action = WebKit.esc(redraw + '#fgc-' + attribute);
     const button = function (name, value, label, tipText, cls?, off?) {
       return '<button type="submit" class="secondary ' + (cls || '') +

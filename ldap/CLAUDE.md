@@ -4108,3 +4108,43 @@ and how a presented one finds it:
   Entries it seeded before stay, and sign nobody in unless the certificate is
   stored on them.
 
+
+## A GROUP OR A PERSON NAMES ITS POLICY (#1235, 2026-10-30; `common/CLAUDE.md` 3cx)
+
+rcbj on #1234: what a named policy covers names it, and the policy lists
+nothing. This file holds the directory's half; the ranking and the recipe a
+policy kind follows are `common/policy_selection.ts`'s (3cx).
+
+* **A group names its policy of each kind in one attribute on its own
+  entry**: `stsPasswordPolicy`, `stsAuthnPolicy`, `stsPasskeyPolicy`,
+  `stsLocalePolicy`, `stsAttributePolicy`, `stsPostLoginPolicy`
+  (`GROUP_POLICY_REFERENCES`). **All six are in the group index from the
+  day the first kind adopted one** (`policies` on each indexed group, and
+  `byPolicy`, attribute → policy → group keys), so a kind adopting its
+  reference changes nothing here. `personGroupReferences(key, attribute)`
+  rides `groupsOfUser()` — the person's groups and the policy each names,
+  no walk — and `groupsNamingPolicy(attribute, name)` is one map read. A
+  kind hands both to its policy module in its `setDirectory()` hooks, as
+  the passkey policy's do.
+* **`setGroupPolicy()` is the one door that writes one**: the attribute must
+  be one a kind declared (`PolicySelection.declareReference('group', ...)`,
+  STS-LDAP-0194) and the value empty, `default` or a named policy the realm
+  holds (STS-LDAP-0195). It is the group writer's sixth member (the console
+  slot is validated whole), reached from the group page's pickers and
+  `POST /admin-api/groups/set-policy`. The directory is schemaless, so no
+  schema row was owed; an `ldapmodify` can still write anything, and the
+  kind decides what a dangling name means.
+* **A person names theirs on the person editor's Policies tab**: an
+  attribute a kind declared with `declareReference('person', ...)` joins the
+  editor's universe by the declaration alone (the directory is schemaless,
+  and the schema's and the catalogue's lists do not hold a kind's own
+  attribute), and is drawn there as one value from `default` and the
+  realm's named policies, and
+  `update()` refuses another (STS-LDAP-0106). The create form leaves it
+  out: a create does not pass through that check. The names chosen are
+  `stsServiceAccountPolicy` and `stsAttributePolicy` (#1240, #1241).
+* **Who names a policy, for a delete's refusal and the Named policies
+  list**: `peopleNamingPolicyAsync(attribute, name, limit)` reads the
+  HOLDERS of the attribute (the store's asked-names index in a window,
+  `passkeyScanAsync()` with a row shape of its own), at most
+  `POLICY_HOLDER_READ`, and says when it stopped first; never the realm.

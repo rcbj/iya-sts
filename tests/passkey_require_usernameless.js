@@ -176,10 +176,14 @@ function childMain() {
          '4b. while it holds an ordinary passkey-only application');
     const named = policy({ allowUsernameless: true,
                            requireUsernameless: true }, 'console-strict',
-                         { selectApplications: 'sts-admin-console',
-                           precedence: 5 });
-    note(named && named.ok === true, '4c. a named profile selecting the ' +
-         'console saved', JSON.stringify(named && named.errors));
+                         { precedence: 5 });
+    // The console names it (`appPasskeyPolicy`, #1235).
+    const pointed = applications.updateApplication('sts-admin-console',
+      { attribute: 'appPasskeyPolicy', mode: 'set',
+        value: 'console-strict' });
+    note(named && named.ok === true && pointed.ok === true, '4c. a named ' +
+         'profile the console names saved',
+         JSON.stringify([named && named.errors, pointed.errors]));
     note(authn.usernamelessRequired(recordFor('sts-admin-console')) === true &&
          authn.usernamelessRequired(recordFor('sts-user-portal')) === false,
          '4d. a named profile selecting the console holds the console, and ' +
@@ -188,6 +192,8 @@ function childMain() {
       { allowedMechanisms: ['webauthn', 'password'] });
     note(authn.usernamelessRequired(mixedRecord) === false,
          '4e. and not while the console allows anything beside webauthn');
+    applications.updateApplication('sts-admin-console',
+      { attribute: 'appPasskeyPolicy', mode: 'set', value: 'default' });
     passkeyPolicy.reset('console-strict');
     passkeyPolicy.reset('default');
     note(authn.usernamelessRequired(recordFor('pru-passkey')) === false,

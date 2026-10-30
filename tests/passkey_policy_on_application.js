@@ -6,38 +6,40 @@
 // File: tests/passkey_policy_on_application.js
 //
 // ===========================================================================
-// AN APPLICATION'S PASSKEY POLICY, SHOWN ON IT; THE POLICY PAGE'S SEARCH AND
-// SUB-TABS (#609).
+// AN APPLICATION AND A GROUP NAME THEIR PASSKEY POLICY; THE POLICY PAGE'S
+// SUB-TABS (#609, reshaped by #1235).
 //
-// rcbj's decisions: nothing is stored on the application — the relation is a
-// named passkey policy's `stsPasskeySelectApplication` — and the
-// application's Configuration → Every protocol sub-tab shows it READ-ONLY;
-// the Passkey policy tab of Directory → Policies gets three sub-tabs, and a
-// named policy's applications box the field search (#459) that stores an
-// application's identifier. What is held:
+// #609 drew, on an application's Configuration → Every protocol sub-tab, the
+// named passkey policies whose `stsPasskeySelectApplication` named it. rcbj
+// reversed the direction on #1234 (2026-10-30): the APPLICATION names its
+// policy in `appPasskeyPolicy` and a GROUP in `stsPasskeyPolicy`, as an
+// application names its authentication policy (#1148), and a named policy
+// keeps only its rows and its precedence. What is held:
 //
-//   A. THE CARD'S DATA (`passkeyPolicy.forApplication()`, and the
-//      application read's `page.passkeyPolicies`): several policies naming
-//      one application, by its identifier and by a client_id in another
-//      case, in precedence order with the lowest marked as applying; one
-//      naming another application left out; `default` where none names it;
-//      the count of policies selecting by group; selection itself unchanged.
-//   B. THE CARD: drawn read-only on the Every protocol sub-tab, each policy
-//      linked to its heading on the Policies page, the winner marked, the
-//      group note; nothing when the answer has no member.
+//   A. THE REFERENCES: `appPasskeyPolicy` takes `default` or a named profile
+//      of the realm and refuses any other (STS-REG-0203); its choices are
+//      those; a group's `stsPasskeyPolicy` likewise through the group page's
+//      act (STS-LDAP-0195), and an attribute no kind declared is refused
+//      (STS-LDAP-0194). A sign-in for the application — by its identifier or
+//      a client_id — gets the profile it names; the profile a member's group
+//      names wins on a lower precedence; a name the realm does not hold
+//      selects nothing. The registration offer follows.
+//   B. THE CARD'S DATA (`passkeyPolicy.forApplication()`, the application
+//      read's `page.passkeyPolicies`) and THE CARD: the profile named, what
+//      applies, the group note, a warning for a missing name, no control.
 //   C. THE SUB-TABS: Default, Named policies and New policy on the Passkey
-//      policy tab, each named policy's heading the card's link target, what
-//      it selects said above its form; the locale policy not tabbed.
-//   D. THE SEARCH: the cell and its box under each named form's
-//      applications box and the New policy form's, keyed per form; a press
-//      on the page read as a field search; the address it asks; Add putting
-//      the IDENTIFIER in the box once; a redraw keeping the form's typed
-//      values with the results under the box.
+//      policy tab; each named profile's heading the card's link target, the
+//      applications and groups naming it said above its form, and no
+//      application or group box any more; the locale policy not tabbed; the
+//      group page's picker.
+//   D. THE DELETE: a profile an application or a group names is not deleted
+//      (STS-AUTHN-0538); once nothing names it, it is.
 //   E. A REFUSED CREATE (#841): the New policy form posts `newProfile`, and
-//      a validation failure is drawn again in place. The typed fields stay
-//      on that form, the refusal with them, and a typed name that matches a
-//      stored profile does not overlay that profile. A refused save of the
-//      default profile is not that redraw.
+//      a validation failure is drawn again in place, under the form's own
+//      key (`passkey-new`). The typed fields stay on that form, the refusal
+//      with them, and a typed name that matches a stored profile does not
+//      overlay that profile. A refused save of the default profile is not
+//      that redraw.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -46,6 +48,8 @@ const ROOT = require('path').join(__dirname, '..');
 
 const ldap = require('../ldap/ldap_server');
 const passkeyPolicy = require('../common/passkey_policy');
+const applications = require('../common/applications');
+const errorCodes = require('../common/error_codes');
 const webauthnPolicy = require('../authn/webauthn_policy');
 const adminActions = require('../admin-core/admin_actions');
 const adminViews = require('../admin-core/admin_views');
@@ -64,17 +68,81 @@ const OTHER = TAG + '-other';
 const LONE = TAG + '-lone';
 
 /**
- * Saves a named passkey policy with the defaults and these selectors.
+ * Saves a named passkey policy with the defaults and these values.
  *
  * @param name - the profile's name
- * @param selectors - `selectApplications`, `selectGroups`, `precedence`
+ * @param values - `precedence`, and any row
  * @returns the save's answer
  */
-function named(name, selectors) {
+function named(name, values) {
   log.debug('Entering named().');
   log.debug('Leaving named().');
   return passkeyPolicy.save(name, Object.assign({}, passkeyPolicy.DEFAULTS,
-                                                selectors));
+                                                values));
+}
+
+/**
+ * Sets an application's `appPasskeyPolicy` through the console's act.
+ *
+ * @param identifier - the application
+ * @param value - the profile's name
+ * @returns the act's answer
+ */
+function point(identifier, value) {
+  log.debug('Entering point().');
+  log.debug('Leaving point().');
+  return adminActions.applicationsAction({ action: 'set',
+    application: identifier, attribute: 'appPasskeyPolicy', value: value },
+  [], {});
+}
+
+/**
+ * Sets a group's policy reference through the group page's act.
+ *
+ * @param group - the group's cn
+ * @param value - the profile's name
+ * @param attribute - optional; `stsPasskeyPolicy` when left out
+ * @returns the act's answer
+ */
+function pointGroup(group, value, attribute) {
+  log.debug('Entering pointGroup().');
+  log.debug('Leaving pointGroup().');
+  return adminActions.groupsAction({ action: 'set-policy', group: group,
+    attribute: attribute || 'stsPasskeyPolicy', policy: value });
+}
+
+// The directory as installed, kept so `hideGone()` can be undone.
+let installed = null;
+
+/**
+ * Makes the passkey register stop answering one profile, as a delete made
+ * past the console leaves a reference to it.
+ *
+ * @param name - the profile to hide
+ */
+function hideGone(name) {
+  log.debug('Entering hideGone().');
+  installed = passkeyPolicy.directoryInstalled();
+  passkeyPolicy.setDirectory(Object.assign({}, installed, {
+    allPasskeyPolicies: function () {
+      return installed.allPasskeyPolicies().filter(function (one) {
+        return String(one.name).toLowerCase() !== name;
+      });
+    }
+  }));
+  log.debug('Leaving hideGone().');
+}
+
+/**
+ * Puts the passkey register back as it was installed.
+ */
+function unhide() {
+  log.debug('Entering unhide().');
+  if (installed) {
+    passkeyPolicy.setDirectory(installed);
+    installed = null;
+  }
+  log.debug('Leaving unhide().');
 }
 
 /**
@@ -101,61 +169,83 @@ function readOf(identifier) {
   return adminViews.applicationDetailJson(request(), identifier).json;
 }
 
+function references(t, names, people) {
+  log.debug('Entering references().');
+  const good = point(APP, names.strict);
+  const ghost = point(OTHER, TAG + '-ghost');
+  t.check(good.ok && !ghost.ok &&
+          errorCodes.codeOf(ghost) === 'STS-REG-0203' &&
+          [].concat(applications.get(APP).fields.appPasskeyPolicy).join() ===
+            names.strict,
+          'A1. appPasskeyPolicy takes a named profile of the realm and ' +
+          'refuses one it does not hold (STS-REG-0203)',
+          JSON.stringify([good.errors, ghost.errors]));
+  const row = applications.applicationFields().filter(function (one) {
+    return one.attribute === 'appPasskeyPolicy';
+  })[0];
+  t.check(!!row && row.choices[0] === 'default' &&
+          row.choices.indexOf(names.strict) > 0 &&
+          row.choices.indexOf(names.group) > 0,
+          'A2. its choices are default and the realm\'s named profiles',
+          JSON.stringify(row && row.choices));
+  const grouped = pointGroup(names.groupName, names.group);
+  const badValue = pointGroup(names.groupName, TAG + '-ghost');
+  const badAttribute = pointGroup(names.groupName, names.group,
+                                  'stsNoSuchPolicy');
+  t.check(grouped.ok && grouped.changed === true &&
+          !badValue.ok && errorCodes.codeOf(badValue) === 'STS-LDAP-0195' &&
+          !badAttribute.ok &&
+          errorCodes.codeOf(badAttribute) === 'STS-LDAP-0194',
+          'A3. a group names a profile in stsPasskeyPolicy; a name the realm ' +
+          'does not hold and an undeclared attribute are refused',
+          JSON.stringify([grouped, badValue.errors, badAttribute.errors]));
+  t.check(passkeyPolicy.selectionFor('', APP) === names.strict &&
+          passkeyPolicy.selectionFor('', CLIENT) === names.strict &&
+          passkeyPolicy.selectionFor('', LONE) === 'default',
+          'A4. a sign-in naming the application by its identifier or its ' +
+          'client_id gets the profile it names; one naming none, default');
+  t.check(passkeyPolicy.selectionFor(people.member, APP) === names.group &&
+          passkeyPolicy.selectionFor(people.member, LONE) === names.group &&
+          passkeyPolicy.selectionFor(people.outsider, APP) === names.strict,
+          'A5. the profile a member\'s group names wins on a lower ' +
+          'precedence; for anybody else the application\'s applies');
+  // A PROFILE GONE FROM UNDER ITS REFERENCE, as a delete by hand leaves
+  // it: `other` names a profile the directory then stops answering.
+  named(names.gone, { precedence: 1 });
+  point(OTHER, names.gone);
+  hideGone(names.gone);
+  t.check(passkeyPolicy.selectionFor('', OTHER) === 'default' &&
+          passkeyPolicy.selectionFor(people.member, OTHER) === names.group,
+          'A6. a name the realm does not hold selects nothing ' +
+          '(STS-AUTHN-0537): default, or what else names one');
+  const offer = webauthnPolicy.registrationOffer({ application: APP });
+  t.check(offer.profile === names.strict &&
+          offer.mode === 'classical-only' && offer.from === 'profile' &&
+          JSON.stringify(offer.algorithms) === '["ES256","RS256"]',
+          'A7. the profile the application names supplies its ordered ' +
+          'classical-only registration list', JSON.stringify(offer));
+  log.debug('Leaving references().');
+}
+
 function data(t, names) {
   log.debug('Entering data().');
   const json = readOf(APP);
   const pk = json && json.page ? json.page.passkeyPolicies : null;
-  const order = pk ? pk.policies.map(function (one) {
-    return one.name;
-  }) : [];
-  t.check(!!pk && JSON.stringify(order) ===
-            JSON.stringify([names.strict, names.client]),
-          'A1. both policies naming the application are listed, lowest ' +
-          'precedence first — one by its identifier, one by a client_id in ' +
-          'another case — and the one naming another application is not',
+  t.check(!!pk && pk.named === names.strict && pk.applies === names.strict &&
+          pk.precedence === 50 && pk.missing === false &&
+          pk.groupPolicies === 1 &&
+          pk.link === '/admin/policies#passkey-profile-' + names.strict,
+          'B1. the read says the profile named, what applies, its ' +
+          'precedence, the profiles a group names, and links to it',
           JSON.stringify(pk));
-  t.check(!!pk && pk.applies === names.strict &&
-          pk.policies[0].applies === true &&
-          pk.policies[1].applies === false &&
-          pk.policies[0].precedence === 5 &&
-          pk.policies[1].precedence === 40,
-          'A2. the lowest precedence naming it is marked as the one that ' +
-          'applies', JSON.stringify(pk && pk.policies));
-  t.check(!!pk && JSON.stringify(pk.policies[1].matched) ===
-            JSON.stringify([CLIENT.toUpperCase()]) &&
-          JSON.stringify(pk.policies[0].matched) === JSON.stringify([APP]) &&
-          pk.names.indexOf(APP) >= 0 && pk.names.indexOf(CLIENT) >= 0,
-          'A3. each says the value that named it, and the answer what the ' +
-          'application was matched by', JSON.stringify(pk && pk.names));
-  t.check(!!pk && pk.policies[0].link ===
-            '/admin/policies#passkey-profile-' + names.strict &&
-          pk.link === '/admin/policies#passkey',
-          'A4. each links to its profile on the Policies page',
-          JSON.stringify(pk && pk.policies.map(function (one) {
-            return one.link;
-          })));
-  t.check(!!pk && pk.groupPolicies >= 1 &&
-          pk.policies[1].selectGroups.length === 1,
-          'A5. the policies selecting by group are counted, and a policy\'s ' +
-          'own groups carried', JSON.stringify(pk && pk.groupPolicies));
   const lone = readOf(LONE).page.passkeyPolicies;
-  t.check(lone.policies.length === 0 && lone.applies === 'default',
-          'A6. an application no policy names gets default',
-          JSON.stringify(lone));
-  t.check(passkeyPolicy.selectionFor('', APP) === names.strict &&
-          passkeyPolicy.selectionFor('', CLIENT) === names.client &&
-          passkeyPolicy.selectionFor('', OTHER) === names.other &&
-          !!pk && pk.appliesBy[APP] === names.strict &&
-          pk.appliesBy[CLIENT] === names.client,
-          'A7. selection is as it was, and the answer says per name what a ' +
-          'sign-in naming the application by it gets — an OAuth sign-in ' +
-          'names the client_id', JSON.stringify(pk && pk.appliesBy));
-  log.debug('Leaving data().');
-  return json;
-}
-
-function card(t, json, names) {
-  log.debug('Entering card().');
+  const gone = readOf(OTHER).page.passkeyPolicies;
+  t.check(lone.applies === 'default' && lone.missing === false &&
+          gone.missing === true && gone.applies === 'default' &&
+          gone.named === names.gone,
+          'B2. an application naming none gets default; one naming a ' +
+          'profile the realm does not hold says so',
+          JSON.stringify([lone, gone]));
   const page = require(ROOT + '/admin-ui/web_applications');
   const kit = require(ROOT + '/admin-ui/web_kit');
   const ctx = kit.context();
@@ -163,29 +253,28 @@ function card(t, json, names) {
   t.check(/id="cfg-every-passkey"/.test(html) &&
           html.indexOf('href="/admin/policies#passkey-profile-' +
                        names.strict + '"') >= 0 &&
-          html.indexOf('href="/admin/policies#passkey-profile-' +
-                       names.client + '"') >= 0 &&
-          /class="pk-applies"/.test(html) &&
-          !/<form|<input|<button/.test(html) &&
-          html.indexOf('<code>' + CLIENT + '</code> gets <strong>' +
-                       names.client + '</strong>') >= 0,
-          'B1. the card lists both, links each, marks the winner, says what ' +
-          'a sign-in naming the client_id gets, and holds no control',
-          html.slice(0, 600));
-  t.check(/select by group/.test(html) && /<strong>default<\/strong>/
-    .test(page.applicationPasskeyPolicyCard(readOf(LONE), ctx.t)),
-          'B2. it says a group policy can still win, and names default ' +
-          'where nothing names the application');
-  t.check(page.applicationPasskeyPolicyCard({ page: {} }, ctx.t) === '',
-          'B3. an answer without the member draws nothing');
+          html.indexOf('<strong>' + names.strict + '</strong>') >= 0 &&
+          /appPasskeyPolicy/.test(html) && /groups name/.test(html) &&
+          !/<form|<input|<button/.test(html),
+          'B3. the card says the profile it names, links it, notes the ' +
+          'profiles groups name, and holds no control', html.slice(0, 600));
+  const missing = page.applicationPasskeyPolicyCard(readOf(OTHER), ctx.t);
+  t.check(/<strong>default<\/strong>/.test(page.applicationPasskeyPolicyCard(
+    readOf(LONE), ctx.t)) && missing.indexOf(names.gone) >= 0 &&
+          /does not hold/.test(missing) &&
+          page.applicationPasskeyPolicyCard({ page: {} }, ctx.t) === '',
+          'B4. default where none is named, a warning for a missing name, ' +
+          'and nothing for an answer without the member');
   const section = page.applicationFieldsSection(ctx, json, '');
   const every = section.indexOf('id="cfg-every"');
   const oauth = section.indexOf('id="cfg-oauth"');
   const at = section.indexOf('id="cfg-every-passkey"');
-  t.check(every >= 0 && at > every && (oauth < 0 || at < oauth),
-          'B4. it is drawn on the Every protocol sub-tab',
-          JSON.stringify({ every: every, at: at, oauth: oauth }));
-  log.debug('Leaving card().');
+  t.check(every >= 0 && at > every && (oauth < 0 || at < oauth) &&
+          section.indexOf('field.appPasskeyPolicy') > every,
+          'B5. the card and the field that is its control are on the Every ' +
+          'protocol sub-tab', JSON.stringify({ every: every, at: at }));
+  log.debug('Leaving data().');
+  return json;
 }
 
 function subTabs(t, names) {
@@ -208,118 +297,88 @@ function subTabs(t, names) {
                            at('id="passkey-sub-new"'));
   t.check(named.indexOf('id="passkey-profile-' + names.strict + '"') >= 0 &&
           named.indexOf('<code>' + APP + '</code>') >= 0 &&
-          named.indexOf('name="profile" value="' + names.client + '"') >= 0,
-          'C2. each named policy is on Named policies, its heading the ' +
-          'card\'s link target, what it selects said, and its form');
-  const added = html.slice(at('id="passkey-sub-new"'));
-  t.check(/name="profile" pattern=/.test(added.slice(0, added.indexOf(
-    '</form>'))) && html.slice(at('id="passkey-sub-default"'),
-                                at('id="passkey-sub-named"'))
-    .indexOf('name="profile" value="default"') >= 0,
-          'C3. the New policy form is on its own sub-tab and the default ' +
-          'profile\'s on Default');
+          named.indexOf('appPasskeyPolicy') >= 0 &&
+          named.indexOf('<code>' + names.groupName + '</code>') >= 0 &&
+          named.indexOf('stsPasskeyPolicy') >= 0 &&
+          named.indexOf('name="profile" value="' + names.group + '"') >= 0,
+          'C2. each named profile is on Named policies, its heading the ' +
+          'card\'s link target, the applications and groups naming it ' +
+          'said, and its form');
+  t.check(named.indexOf('name="selectApplications"') < 0 &&
+          named.indexOf('name="selectGroups"') < 0 &&
+          at('fgc-passkey-apps') < 0,
+          'C3. no application or group box and no search any more');
+  const passkey = view.passkey || {};
+  t.check(JSON.stringify(passkey.selectors) === '["precedence"]' &&
+          passkey.references.application === 'appPasskeyPolicy' &&
+          passkey.references.group === 'stsPasskeyPolicy',
+          'C4. the view says the kind ranks by precedence and what names it',
+          JSON.stringify([passkey.selectors, passkey.references]));
   t.check(at('id="locale-sub-default"') < 0 && at('id="locale-named"') > 0,
-          'C4. the locale policy keeps its named profiles under its default');
+          'C5. the locale policy keeps its named profiles under its default');
+  const groups = require(ROOT + '/admin-ui/web_groups');
+  const detail = adminViews.groupDetailJson(request(),
+                                            ldap.groupDnFor(names.groupName));
+  const refs = detail.json.policyReferences || [];
+  const mine = refs.filter(function (one) {
+    return one.attribute === 'stsPasskeyPolicy';
+  })[0];
+  const picker = groups.policyPickers(kit.context().t, detail.json.group,
+                                      refs, '/admin/groups');
+  t.check(!!mine && mine.value === names.group &&
+          mine.choices.indexOf(names.strict) >= 0 &&
+          /name="action" value="set-policy"/.test(picker) &&
+          picker.indexOf('value="' + names.group + '" selected') >= 0,
+          'C6. the group page offers a picker for the passkey policy, the ' +
+          'profile the group names selected', JSON.stringify(mine));
   log.debug('Leaving subTabs().');
   return { html: html, view: view };
 }
 
-function search(t, drawn, names) {
-  log.debug('Entering search().');
-  const policies = require(ROOT + '/admin-ui/web_policies');
-  const answers = require(ROOT + '/admin-ui/web_answers');
-  const kit = require(ROOT + '/admin-ui/web_kit');
-  const html = drawn.html;
-  const strictKey = 'passkey-apps.' + names.strict;
-  t.check(html.indexOf('id="fgc-' + strictKey + '"') >= 0 &&
-          html.indexOf('id="fgc-passkey-apps"') >= 0 &&
-          html.indexOf('formaction="/admin/policies#fgc-' + strictKey +
-                       '"') >= 0 &&
-          /class="default-submit"/.test(html) &&
-          html.indexOf('id="fgc-locale-apps') < 0,
-          'D1. each named passkey form and the New policy form has its own ' +
-          'search under its applications box, and a default Save first; ' +
-          'the locale policy has none');
-  t.check(answers.isFieldSearch('/admin/policies',
-                                { fgsearch: strictKey }) &&
-          answers.isFieldSearch('/admin/policies',
-                                { fgadd: 'passkey-apps|x' }) &&
-          !answers.isFieldSearch('/admin/policies',
-                                 { action: 'save-passkey-policy' }),
-          'D2. a Find or an Add on the page is a field search; a Save is not');
-  const asked = answers.fieldSearchOf({ fgadd: strictKey + '|' + OTHER,
-                                        ['fgpage.' + strictKey]: '2',
-                                        ['fgfind.' + strictKey]: TAG });
-  t.check(asked.attribute === strictKey && asked.add === OTHER &&
-          asked.page === 2 && asked.query === TAG,
-          'D3. the press is read with its key, its query and its value',
-          JSON.stringify(asked));
-  const box = answers.withListedValue(APP + ', ' + CLIENT, OTHER);
-  t.check(box === APP + ', ' + CLIENT + ', ' + OTHER &&
-          answers.withListedValue(box, OTHER.toUpperCase()) === box &&
-          JSON.stringify(answers.listedValues(' a ,, b\nc ')) ===
-            '["a","b","c"]',
-          'D4. Add appends the identifier to the box, once, in any case',
-          box);
-  const where = answers.fieldSearchPath('policy-applications',
-                                        { query: TAG, page: 1 },
-                                        answers.listedValues(box));
-  t.check(/^\/admin-api\/applications\?/.test(where) && /per=5/.test(where) &&
-          where.indexOf('exclude=' + encodeURIComponent(OTHER)) > 0,
-          'D5. it asks the Applications list, five a page, leaving out what ' +
-          'the box names', where);
-  const listed = adminViews.applicationsJson(Object.assign(request(), {
-    query: { q: TAG, per: '5', page: '1',
-             exclude: answers.listedValues(box) } }));
-  const found = answers.fieldSearchFound('policy-applications',
-                                         { query: TAG, page: 1 }, listed);
-  t.check(!found.failed && found.rows.length === 1 &&
-          found.rows[0].value === LONE,
-          'D6. the results are applications by IDENTIFIER, the ones held ' +
-          'left out', JSON.stringify(found));
-  const draft = { action: 'save-passkey-policy', profile: names.strict,
-                  selectApplications: box, selectGroups: 'typed-group',
-                  precedence: '7' };
-  const view = Object.assign({}, drawn.view, { state: {
-    policyDrafts: { [strictKey]: draft }, finds: { [strictKey]: found } } });
-  const again = policies.body(kit.context(), view);
-  const cell = again.slice(again.indexOf('id="fgc-' + strictKey + '"'));
-  const formOf = again.slice(again.indexOf('id="passkey-profile-' +
-                                           names.strict + '"'));
-  t.check(/^id="fgc-[^"]*" class="fg-cell fg-search fg-search-open"/
-    .test(cell) &&
-          cell.indexOf('value="' + strictKey + '|' + LONE + '"') >= 0 &&
-          formOf.indexOf('value="' + box + '"') >= 0 &&
-          formOf.indexOf('value="typed-group"') >= 0 &&
-          /name="precedence" min="1" max="1000" value="7"/.test(formOf),
-          'D7. a redraw keeps what the form held — the added identifier in ' +
-          'the box — with the results and their Add under it',
-          cell.slice(0, 400));
-  log.debug('Leaving search().');
+function deletes(t, names) {
+  log.debug('Entering deletes().');
+  const byApp = passkeyPolicy.reset(names.strict);
+  const byGroup = passkeyPolicy.reset(names.group);
+  t.check(!byApp.ok && errorCodes.codeOf(byApp) === 'STS-AUTHN-0538' &&
+          String(byApp.errors).indexOf(APP) >= 0 &&
+          !byGroup.ok && errorCodes.codeOf(byGroup) === 'STS-AUTHN-0538' &&
+          String(byGroup.errors).indexOf(names.groupName) >= 0,
+          'D1. a profile an application or a group names is not deleted, ' +
+          'and the refusal names it', JSON.stringify([byApp.errors,
+                                                      byGroup.errors]));
+  point(APP, 'default');
+  pointGroup(names.groupName, '');
+  const gone = passkeyPolicy.reset(names.strict);
+  const gone2 = passkeyPolicy.reset(names.group);
+  t.check(gone.ok && gone.removed === true && gone2.ok &&
+          gone2.removed === true,
+          'D2. once nothing names it, it is deleted',
+          JSON.stringify([gone, gone2]));
+  log.debug('Leaving deletes().');
 }
 
 // A refused New policy save (#841). The form posts `newProfile`, so the
-// draft is the form's (`passkey-apps`) even when the typed name is a stored
+// draft is the form's (`passkey-new`) even when the typed name is a stored
 // profile's.
 function refusedNew(t, drawn, names) {
   log.debug('Entering refusedNew().');
   const policies = require(ROOT + '/admin-ui/web_policies');
   const answers = require(ROOT + '/admin-ui/web_answers');
   const kit = require(ROOT + '/admin-ui/web_kit');
-  const why = 'A named profile with no application and no group selects ' +
-    'nothing.';
+  // No character the page escapes, so the drawn refusal reads as sent.
+  const why = 'The precedence of a named policy is a whole number from 1 ' +
+    'to 1000, and 0 is not.';
   const fields = {
-    action: 'save-passkey-policy', newProfile: '1', profile: names.strict,
-    selectApplications: APP + '-typed', selectGroups: 'typed-group',
+    action: 'save-passkey-policy', newProfile: '1', profile: names.group,
     precedence: '9', minPinLength: '12', allowUsernameless: 'TRUE',
     backupEligibility: 'disallow' };
   const again = answers.redraw('/admin/policies', 'save-passkey-policy',
                                fields, { ok: false, errors: [why] },
                                drawn.view);
   const kept = again && again.json && again.json.state;
-  const draft = kept && kept.policyDrafts && kept.policyDrafts['passkey-apps'];
+  const draft = kept && kept.policyDrafts && kept.policyDrafts['passkey-new'];
   const said = kept && kept.policySaveErrors &&
-    kept.policySaveErrors['passkey-apps'];
+    kept.policySaveErrors['passkey-new'];
   t.check(!!again && again.banner === '' && draft === fields &&
           said && said[0] === why,
           'E1. a refused create is drawn again, the posted fields under ' +
@@ -332,28 +391,25 @@ function refusedNew(t, drawn, names) {
   const bare = answers.redraw('/admin/policies', 'save-passkey-policy',
                               { newProfile: '1', profile: 'kept-name' },
                               { ok: false }, drawn.view);
-  t.check(bare && bare.json.state.policySaveErrors['passkey-apps'][0] ===
+  t.check(bare && bare.json.state.policySaveErrors['passkey-new'][0] ===
           'Refused.',
           'E3. a refusal that names no error still says it was refused');
   const html = policies.body(kit.context(), again.json);
   const at = html.indexOf('id="passkey-sub-new"');
   const form = html.slice(at, html.indexOf('</form>', at));
   t.check(form.indexOf('name="newProfile" value="1"') >= 0 &&
-          form.indexOf('value="' + names.strict + '"') >= 0 &&
-          form.indexOf('value="' + APP + '-typed"') >= 0 &&
-          form.indexOf('value="typed-group"') >= 0 &&
+          form.indexOf('value="' + names.group + '"') >= 0 &&
           /name="precedence" min="1" max="1000" value="9"/.test(form) &&
           /name="minPinLength"[^>]*value="12"/.test(form) &&
           /name="allowUsernameless"[^>]*value="TRUE" checked/.test(form) &&
           /value="disallow" selected/.test(form) &&
           form.indexOf(why) >= 0,
-          'E4. the New policy form still holds the name, the selectors, ' +
+          'E4. the New policy form still holds the name, the precedence, ' +
           'the PIN length, the ticked box, the chosen enum and the refusal');
-  const namedAt = html.indexOf('id="passkey-profile-' + names.strict + '"');
+  const namedAt = html.indexOf('id="passkey-profile-' + names.group + '"');
   const namedForm = html.slice(namedAt, html.indexOf('</form>', namedAt));
-  t.check(namedForm.indexOf(APP + '-typed') < 0 &&
-          namedForm.indexOf('value="12"') < 0 &&
-          namedForm.indexOf('value="typed-group"') < 0,
+  t.check(namedForm.indexOf('value="12"') < 0 &&
+          !/name="precedence" min="1" max="1000" value="9"/.test(namedForm),
           'E5. a typed name that matches a stored profile does not overlay ' +
           'that profile\'s form');
   log.debug('Leaving refusedNew().');
@@ -361,10 +417,13 @@ function refusedNew(t, drawn, names) {
 
 function run(t) {
   log.debug('Entering run().');
-  const names = { strict: TAG + '-strict', client: TAG + '-byclient',
-                  other: TAG + '-elsewhere' };
-  const group = TAG + '-group';
-  ldap.createGroup(group);
+  const names = { strict: TAG + '-strict', group: TAG + '-bygroup',
+                  gone: TAG + '-gone', groupName: TAG + '-group' };
+  const people = { member: TAG + '-member', outsider: TAG + '-outsider' };
+  ldap.createUser(people.member, { invent: false });
+  ldap.createUser(people.outsider, { invent: false });
+  ldap.createGroup(names.groupName);
+  ldap.addGroupMember(names.groupName, people.member);
   const created = adminActions.applicationsAction({
     action: 'create', identifier: APP, 'field.oauthClientId': CLIENT
   }, ['oauth2']);
@@ -375,51 +434,39 @@ function run(t) {
           JSON.stringify(created && created.errors));
   try {
     const saves = [
-      named(names.strict, { selectApplications: APP, precedence: 5,
+      named(names.strict, { precedence: 50,
         registrationAlgorithms: 'ES256,RS256',
         registrationMode: 'classical-only' }),
-      named(names.client, { selectApplications: CLIENT.toUpperCase(),
-                            selectGroups: group, precedence: 40 }),
-      named(names.other, { selectApplications: OTHER, precedence: 1 })
+      named(names.group, { precedence: 10 })
     ];
     t.check(saves.every(function (one) {
       return one.ok;
-    }), 'three named policies are saved', JSON.stringify(saves.map(
-      function (one) {
-        return one.errors;
-      })));
-    const offer = webauthnPolicy.registrationOffer({ application: APP });
-    t.check(offer.profile === names.strict &&
-            offer.mode === 'classical-only' && offer.from === 'profile' &&
-            JSON.stringify(offer.algorithms) === '["ES256","RS256"]',
-            'A0. the selected application profile supplies its ordered ' +
-            'classical-only registration list',
-            JSON.stringify(offer));
-    const conflict = named(TAG + '-conflict', {
-      registrationAlgorithms: 'ES256',
-      registrationMode: 'classical-only',
-      postQuantumRequired: 'registration-and-sign-in'
-    });
-    t.check(!conflict.ok,
-            'A0b. classical-only cannot coexist with a profile that requires ' +
-            'a post-quantum registration', JSON.stringify(conflict.errors));
-    const json = data(t, names);
-    card(t, json, names);
+    }), 'two named profiles are saved, each with a precedence and nothing ' +
+    'that selects', JSON.stringify(saves.map(function (one) {
+      return one.errors;
+    })));
+    references(t, names, people);
+    data(t, names);
     const drawn = subTabs(t, names);
-    search(t, drawn, names);
     refusedNew(t, drawn, names);
+    deletes(t, names);
   } finally {
+    unhide();
+    point(APP, 'default');
+    point(OTHER, 'default');
+    pointGroup(names.groupName, '');
     passkeyPolicy.reset(names.strict);
-    passkeyPolicy.reset(names.client);
-    passkeyPolicy.reset(names.other);
+    passkeyPolicy.reset(names.group);
+    passkeyPolicy.reset(names.gone);
   }
   log.debug('Leaving run().');
 }
 
 module.exports = {
   name: 'passkey policy on application',
-  describe: 'An application\'s passkey policies shown read-only on its ' +
-            'Every protocol sub-tab, and the Passkey policy tab\'s sub-tabs ' +
-            'and application search (#609)',
+  describe: 'An application and a group name their passkey policy ' +
+            '(appPasskeyPolicy, stsPasskeyPolicy, #1235), shown read-only on ' +
+            'the application\'s Every protocol sub-tab, and the Passkey ' +
+            'policy tab\'s sub-tabs (#609)',
   run: run
 };
