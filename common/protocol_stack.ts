@@ -445,6 +445,11 @@ class ProtocolStack {
                'InetOrgPerson');
     this.build('common/oidc_rp', require('./oidc_rp'), 'OidcRelyingParty');
     this.build('common/access_gate', require('./access_gate'), 'AccessGate');
+    // #564: the fine-grained authorization gate at issuance — a leaf, its
+    // slot filled by `xacml/fga_pep.ts` at 23c. Until then it REFUSES an
+    // enforcing application's details (it is not `access_gate`'s "empty
+    // means allow"; `fga_gate.ts` argues it).
+    this.build('common/fga_gate', require('./fga_gate'), 'FgaGate');
     this.build('ssf/ssf_streams', require('../ssf/ssf_streams'), 'SsfStreams');
     this.build('ssf/ssf_http', require('../ssf/ssf_http'), 'SsfHttp');
     this.build('ssf/ssf_receivers', require('../ssf/ssf_receivers'),
@@ -1925,6 +1930,12 @@ class ProtocolStack {
     // earlier (the seeds) gets it when FGA is first enabled on it.
     this.build('xacml/fga_policies', require('../xacml/fga_policies'),
                'FgaPolicies');
+    // #564, P3: the embedded fine-grained authorization PEP, over the
+    // lifecycle built on the line above, the mapping and the surface (read
+    // lazily, inside a decision). Its wire step fills
+    // `common/fga_gate.ts`'s decider slot (rule 3e): this line is what arms
+    // fine-grained authorization at issuance.
+    this.build('xacml/fga_pep', require('../xacml/fga_pep'), 'FgaPep');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');

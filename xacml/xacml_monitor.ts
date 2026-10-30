@@ -48,7 +48,7 @@
 // side, and the page says which is which.
 //
 // ---------------------------------------------------------------------------
-// THREE THINGS ASK THE PDP IN THIS PROCESS, AND ONLY TWO OF THEM ENFORCE.
+// FIVE THINGS ASK THE PDP IN THIS PROCESS, AND THREE OF THEM ENFORCE.
 //
 // The catalogue below is the whole list and it is DATA rather than prose,
 // because `/admin/xacml/monitor` renders it and `GET
@@ -66,6 +66,10 @@
 //                service mints anything, through `common/issuance_gate.js`.
 //   `access`     `xacml_access_pep.ts`. Every surface `common/access_gate.ts`
 //                lists asks it through that gate.
+//   `fga`        `fga_pep.ts` (#564). An RFC 9396 detail of an application
+//                that enforces fine-grained authorization, asked through
+//                `common/fga_gate.ts` at the authorization, PAR and token
+//                endpoints, against that application's own policy.
 //   `pdp`        `POST /xacml/pdp` — **NOT A PEP AND NOT COUNTED AS ONE.**
 //                Somebody else's PEP asked this service a question and enforced
 //                the answer in their own process. This service saw the
@@ -366,6 +370,30 @@ class XacmlMonitor {
         module: 'xacml/xacml_access_pep.ts',
         guards: 'The admin console, the user portal, /scim/v2, the SPIRE ' +
                 'Server API, and /admin-api in product mode.',
+        enforces: true,
+        bias: function () {
+          log.debug("Entering bias().");
+          log.debug("Leaving bias().");
+          return 'deny-biased (fixed)';
+        },
+        obligations: false },
+
+      // THE FINE-GRAINED AUTHORIZATION PEP (#564): an RFC 9396 detail of an
+      // application that enforces FGA, decided by that application's own
+      // policy at the authorization, PAR and token endpoints. It ENFORCES —
+      // the detail is granted or refused in this process — so it carries
+      // allowed and refused like the two PEPs above. Only decisions the PDP
+      // reached are counted; a policy that cannot be resolved is audited
+      // (`fga.decision`) and not counted, as no engine decided anything.
+      { id: 'fga',
+        label: 'The fine-grained authorization PEP',
+        kind: 'embedded',
+        where: 'common/fga_gate.ts, from the authorization, PAR and token ' +
+               'endpoints',
+        module: 'xacml/fga_pep.ts',
+        guards: 'Every RFC 9396 authorization detail whose type belongs to ' +
+                'an application that enforces fine-grained authorization, ' +
+                'decided against that application\'s own policy.',
         enforces: true,
         bias: function () {
           log.debug("Entering bias().");

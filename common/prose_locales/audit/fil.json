@@ -883,6 +883,10 @@
     "en": "9a9264e25acb9778",
     "text": "Napagpasyahan ang isang AuthZEN access evaluation"
   },
+  "audit.actions.fga.decision.label": {
+    "en": "c2696096c0749879",
+    "text": "Isang desisyon ng fine-grained authorization ang ginawa sa pag-isyu"
+  },
   "audit.actions.admin.authzen.attribute.set.label": {
     "en": "c5eff2fc8ecdf500",
     "text": "Idinagdag o pinalitan ang isang row ng katalogo ng attribute ng AuthZEN"

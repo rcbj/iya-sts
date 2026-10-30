@@ -1024,6 +1024,11 @@ const ACTIONS = [
   // AUTHZEN (#563): one row per evaluation, a batch's each with the batch id.
   { action: 'authzen.decision', category: 'authorization',
     label: 'An AuthZEN access evaluation was decided' },
+  // FINE-GRAINED AUTHORIZATION (#564): one row per authorization detail an
+  // enforcing application's policy decided at issuance — facts and digests,
+  // never the detail's values (`xacml/fga_pep.ts`).
+  { action: 'fga.decision', category: 'authorization',
+    label: 'A fine-grained authorization decision was made at issuance' },
   { action: 'admin.authzen.attribute.set', category: 'admin',
     label: 'An AuthZEN attribute catalogue row was added or replaced' },
   { action: 'admin.authzen.attribute.removed', category: 'admin',

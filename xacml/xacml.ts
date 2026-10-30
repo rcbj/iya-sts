@@ -668,13 +668,47 @@ class XacmlSurface {
                obligations: [], advice: [], policyIdentifiers: [] },
                'STS-XACML-0012');
     }
+    const answer = this.decidePolicy(policy, request, {
+      repository: store.repository(),
+      resolve: !(options && options.resolve === false)
+    });
+    log.debug('Leaving XacmlSurface.decide(). ' + answer.decision);
+    return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DECISION AGAINST A GIVEN, PARSED POLICY (#564). `decide()` above is
+  // this with the realm's root and the root's PolicyIdReference map; an
+  // application's fine-grained policy is decided with THAT policy alone
+  // (`xacml/fga_pep.ts`, and AuthZEN in P4), never the root and never the
+  // map — its PolicyId is chosen by whoever named the application, and the
+  // store leaves owned policies out of the map for that reason
+  // (`xacml_store.ts`'s `repository()`). One function, so the two cannot
+  // come to differ about `returnPolicyIdList`, the PIP or what an
+  // Indeterminate through a fault is marked with.
+  // ---------------------------------------------------------------------------
+  /**
+   * Decides a parsed request against a given parsed policy.
+   *
+   * @param policy - the policy or policy set, as `parseDocument()` answers it
+   * @param request - the request, in the shapes of `xacml_model.js`
+   * @param options - `repository` (the PolicyIdReference map, or null for
+   *   none) and `resolve` (false decides on the request's own attributes,
+   *   with no PIP)
+   * @returns the PDP's response; an Indeterminate reached through a
+   *   processing or syntax error is marked STS-XACML-0013
+   */
+  decidePolicy(policy: any, request: any,
+               options?: { repository?: any; resolve?: boolean }): any {
+    const { log, config, errorCodes, model, pdp, pip } = this.deps;
+    log.debug('Entering XacmlSurface.decidePolicy().');
+    const opts = options || {};
     if (config.value('xacml.returnPolicyIdList') === true) {
       request.returnPolicyIdList = true;
     }
     const answer = pdp.evaluate(policy, request, {
-      repository: store.repository(),
-      resolver: options && options.resolve === false ? null
-        : pip.resolverFor(request)
+      repository: opts.repository || null,
+      resolver: opts.resolve === false ? null : pip.resolverFor(request)
     });
     // AN INDETERMINATE THE ENGINE REACHED THROUGH A PROCESSING OR SYNTAX ERROR
     // is a fault somebody has to fix, where a missing attribute is an answer
@@ -685,7 +719,7 @@ class XacmlSurface {
          answer.status.code === model.STATUS.SYNTAX_ERROR)) {
       errorCodes.mark(answer, 'STS-XACML-0013');
     }
-    log.debug('Leaving XacmlSurface.decide(). ' + answer.decision);
+    log.debug('Leaving XacmlSurface.decidePolicy(). ' + answer.decision);
     return answer;
   }
 
@@ -2751,6 +2785,9 @@ export = {
   // The connection's client certificate, read once for every surface that
   // admits a caller by one (#563, `authzen/authzen_caller.ts`).
   callerIdentity: slot.forward('callerIdentity'),
+  // A decision against a given policy alone (#564): an application's
+  // fine-grained policy is never the root.
+  decidePolicy: slot.forward('decidePolicy'),
   description: slot.forward('description'),
   // What a remote PEP's pull is sent, and what it is not (#564).
   pepPull: slot.forward('pepPull'),
