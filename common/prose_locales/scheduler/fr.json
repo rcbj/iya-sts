@@ -108,8 +108,8 @@
     "text": "GNAP : autorisations expirées"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Finalise chaque autorisation GNAP dont la durée de vie de l’interaction ou de l’autorisation (gnap.grantLifetimeS) est terminée et qu’aucune requête n’a touchée depuis, en enregistrant pourquoi (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Finalise chaque autorisation GNAP dont l’interaction ou la durée de vie de l’autorisation (gnap.grantLifetimeS) a pris fin et qu’aucune requête n’a touchée depuis, en consignant pourquoi (#432), et supprime chaque enregistrement d’instance inutilisé pendant la même durée (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",

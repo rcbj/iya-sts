@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "Section 3.5: ang client na nagpadala ng key nito by value ay binibigyan ng instance_id na maipapadala nito by reference sa susunod."
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "Tanggapin ang mga hindi nakarehistrong instance ng isang nakarehistrong client"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "Mga seksyon 2.3 at 2.3.3: ang isang key na walang application na nagrerehistro ay tinatanggap bilang instance ng nakarehistrong GNAP client na pinangangalanan ng class_id nito, kapag ang client na iyon ay may nakarehistrong gnapFinishUri — ganito pinapa-sign in ng isang browser application, na gumagawa ng isang key bawat browser, ang mga tao. Hindi kailanman nilalaktawan ng ganitong instance ang approval page. Naka-off: tinatanggihan ang hindi nakarehistrong key sa product mode (#1216)."
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "Panatilihing maipagpapatuloy ang mga naaprubahang grant"

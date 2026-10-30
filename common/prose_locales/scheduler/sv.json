@@ -108,8 +108,8 @@
     "text": "GNAP: utgångna beviljanden"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Slutför varje GNAP-beviljande vars interaktions- eller beviljandelivslängd (gnap.grantLifetimeS) har tagit slut och som ingen begäran har rört sedan dess, och registrerar varför (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Avslutar varje GNAP-behörighet vars interaktion eller behörighetens livslängd (gnap.grantLifetimeS) har löpt ut och som ingen begäran har rört sedan dess, och registrerar varför (#432), och tar bort varje instanspost som inte har använts lika länge (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",

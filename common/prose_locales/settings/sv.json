@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "Avsnitt 3.5: en klient som skickade sin nyckel som värde får ett instance_id som den kan skicka som referens nästa gång."
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "Godta oregistrerade instanser av en registrerad klient"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "Avsnitt 2.3 och 2.3.3: en nyckel som ingen applikation registrerar godtas som en instans av den registrerade GNAP-klient som dess class_id anger, när den klienten har ett registrerat gnapFinishUri — så loggar en webbläsarapplikation, som skapar en nyckel per webbläsare, in personer. En sådan instans hoppar aldrig över godkännandesidan. Av: en oregistrerad nyckel nekas i produktläge (#1216)."
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "Låt godkända behörigheter kunna fortsättas"

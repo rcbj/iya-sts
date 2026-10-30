@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "Sección 3.5: a un cliente que envió su clave por valor se le entrega un instance_id que puede enviar por referencia la próxima vez."
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "Aceptar instancias no registradas de un cliente registrado"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "Secciones 2.3 y 2.3.3: una clave que ninguna aplicación registra se acepta como instancia del cliente GNAP registrado que nombra su class_id, cuando ese cliente indica un gnapFinishUri registrado; así es como una aplicación de navegador, que crea una clave por navegador, permite iniciar sesión a las personas. Una instancia así nunca se salta la página de aprobación. Desactivado: una clave no registrada se rechaza en modo producto (#1216)."
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "Mantener continuables las concesiones aprobadas"

@@ -100,6 +100,8 @@
   "gnap.revokeOnModify|description": "Section 5.3: \"The AS MAY revoke previously issued access tokens after a modification has occurred\" — unless they were issued durable.",
   "gnap.instanceIds|label": "Issue instance identifiers",
   "gnap.instanceIds|description": "Section 3.5: a client that sent its key by value is handed an instance_id it can send by reference next time.",
+  "gnap.unregisteredInstances|label": "Accept unregistered instances of a registered client",
+  "gnap.unregisteredInstances|description": "Sections 2.3 and 2.3.3: a key no application registers is accepted as an instance of the registered GNAP client its class_id names, when that client lists a registered gnapFinishUri — how a browser application, which makes a key per browser, signs people in. Such an instance never skips the approval page. Off: an unregistered key is refused in product (#1216).",
   "gnap.continueAfterApproval|label": "Keep approved grants continuable",
   "gnap.continueAfterApproval|description": "Whether an approved grant's response carries a continue member, so the client can modify (section 5.3) or revoke (section 5.4) it later.",
   "gnap.consentRequired|label": "Ask the resource owner",

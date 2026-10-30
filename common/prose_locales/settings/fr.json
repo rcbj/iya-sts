@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "Section 3.5 : un client qui a envoyé sa clé par valeur reçoit un instance_id qu’il peut envoyer par référence la fois suivante."
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "Accepter les instances non enregistrées d’un client enregistré"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "Sections 2.3 et 2.3.3 : une clé qu’aucune application n’enregistre est acceptée comme instance du client GNAP enregistré que nomme son class_id, lorsque ce client indique un gnapFinishUri enregistré — c’est ainsi qu’une application de navigateur, qui crée une clé par navigateur, connecte les personnes. Une telle instance ne passe jamais outre la page d’approbation. Désactivé : une clé non enregistrée est refusée en mode produit (#1216)."
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "Garder les autorisations approuvées poursuivables"

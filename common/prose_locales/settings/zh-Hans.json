@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "第 3.5 节：按值发送密钥的客户端会获得一个 instance_id，下次可以按引用发送。"
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "接受已注册客户端的未注册实例"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "第 2.3 和 2.3.3 节：任何应用都未注册的密钥，若其 class_id 指明的已注册 GNAP 客户端列有已注册的 gnapFinishUri，则被接受为该客户端的实例——浏览器应用（每个浏览器生成一个密钥）就是这样让用户登录的。此类实例从不跳过批准页面。关闭时：在产品模式下拒绝未注册的密钥（#1216）。"
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "保持已批准授权可继续"

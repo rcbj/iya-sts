@@ -108,8 +108,8 @@
     "text": "GNAP：過期授與"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "將互動或授與存留期（gnap.grantLifetimeS）已結束、且此後沒有任何請求觸及的每個 GNAP 授與終結，並記錄原因（#432）。"
+    "en": "7e87c3407b68cee0",
+    "text": "將互動或授權有效期（gnap.grantLifetimeS）已結束、且此後沒有任何請求觸及的每個 GNAP 授權終結，並記錄原因（#432）；同時刪除在同樣時長內未被使用的每筆執行個體記錄（#1221）。"
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",
