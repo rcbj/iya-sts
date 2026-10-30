@@ -234,6 +234,7 @@ the diagram and a walk through each layer.
 | Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |
 | XACML 3.0 and ALFA — a PDP, a policy repository, and the PEPs that decide this service's own issuance | `/xacml/*`, `/admin/xacml` | [xacml](xacml.md) |
 | AuthZEN Authorization API 1.0 — access evaluations over the same XACML engine, mapped through a per-realm attribute catalogue | `/access/v1/*` | [authzen](authzen.md) |
+| Application-scoped fine-grained authorization — a policy each application owns for the details of its own `authorization_details` types, created with it and retired with it; not yet enforced | `/admin/xacml` | [fga](fga.md) |
 | GNAP (RFC 9635) with RFC 9767 resource server connections | `/gnap/*`, `/admin/gnap` | [gnap](gnap.md) |
 | ACME, EST and SCEP certificate enrollment | `/enroll/acme`, `/.well-known/est`, `/enroll/scep` | [acme](acme.md), [est](est.md), [scep](scep.md) |
 

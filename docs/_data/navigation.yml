@@ -97,6 +97,7 @@
   items:
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
     - { title: AuthZEN, url: /authzen.html }
+    - { title: Fine-grained authorization, url: /fga.html }
     - { title: Delegation and impersonation, url: /delegation.html }
     - { title: Remote PEP, url: /remote-pep.html }
     - { title: "Configuring XACML and ALFA", url: /configure-xacml.html }
