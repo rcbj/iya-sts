@@ -603,7 +603,7 @@ const DOCUMENTS = [
   // The PDP's metadata (AuthZEN 1.0 section 9), public by the specification.
   // The default realm's identifier is the host's base, and the document names
   // only what answers there: the searches at their default paths (#1175),
-  // and no capabilities.
+  // and the access request profile's capability (#1180).
   { family: "AuthZEN", spec: "AuthZEN Authorization API 1.0 section 9",
     path: "/.well-known/authzen-configuration",
     type: JSON_TYPE, json: true, badCredential: "ignored",
@@ -626,9 +626,22 @@ const DOCUMENTS = [
           bad.push(key + " is " + d[key]);
         }
       });
-      if (d.capabilities !== undefined) {
-        bad.push("capabilities is advertised, and no capability is " +
-                 "implemented end to end");
+      // ONE CAPABILITY BY DEFAULT SINCE #1180: the Access Request and
+      // Approval Profile, on unless authzen.accessRequests is off, with its
+      // endpoint named. Token issuance (#1181) is off by default, so it is
+      // not advertised here.
+      const caps = d.capabilities === undefined ? [] : d.capabilities;
+      const request = "urn:openid:authzen:capability:access-request";
+      if (!Array.isArray(caps) || caps.some(function (one) {
+        return one !== request;
+      })) {
+        bad.push("capabilities is " + JSON.stringify(d.capabilities) +
+                 "; by default only " + request + " is implemented");
+      }
+      if (caps.indexOf(request) >= 0 && d.access_request_endpoint !==
+          base + "/access/v1/access-requests") {
+        bad.push("the access-request capability is advertised and " +
+                 "access_request_endpoint is " + d.access_request_endpoint);
       }
       log.debug("Leaving must().");
       return bad;
