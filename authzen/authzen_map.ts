@@ -134,6 +134,9 @@ interface Trusted {
   realm: string;
   caller: string;
   application: string;
+  // Whether the application's own fine-grained policy decides (#564, P4):
+  // the request then also carries the FGA application and stage `access`.
+  fga?: boolean;
 }
 
 // What `outcome()` answers.
@@ -468,18 +471,26 @@ class AuthzenMap {
    *
    * @param evaluation - the evaluation `read()` answered
    * @param trusted - the realm, the caller and the application, from the
-   *   caller's authentication
+   *   caller's authentication; `fga` when the application's own
+   *   fine-grained policy decides (#564)
    * @returns the request, in `xacml_model.js`'s shape
    */
   static request(evaluation: Evaluation, trusted: Trusted): any {
     log.debug("Entering AuthzenMap.request().");
-    const built = new xacmlRequest.AuthorizationRequest({})
+    const builder = new xacmlRequest.AuthorizationRequest({})
       .authzen({ subject: evaluation.subject, action: evaluation.action,
                  resource: evaluation.resource, realm: trusted.realm,
                  caller: trusted.caller, application: trusted.application,
                  supplied: evaluation.supplied,
-                 attributes: evaluation.attributes })
-      .build();
+                 attributes: evaluation.attributes });
+    // THE QUESTION STAYS AUTHZEN'S (#564, P4): an application's policy reads
+    // it as the root would, and gains only the two facts that say which
+    // application's policy is asking and at what stage — written by the
+    // builder (rule 3br), never by a row.
+    if (trusted.fga) {
+      builder.fgaAccess({ application: trusted.application });
+    }
+    const built = builder.build();
     log.debug("Leaving AuthzenMap.request().");
     return built;
   }

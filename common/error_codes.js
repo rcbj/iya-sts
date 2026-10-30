@@ -21205,8 +21205,10 @@ const CODES = [
     spec: 'HTTP 400, an error message' },
   { code: 'STS-AUTHZEN-0028',
     summary: 'The PDP could not evaluate an AuthZEN request: the root policy ' +
-      'does not load, or evaluation met a processing or syntax error. ' +
-      'Answered as an error, never as an ordinary denial.',
+      'does not load, or evaluation met a processing or syntax error — ' +
+      'against the root, or against the fine-grained policy of an ' +
+      'application that enforces it (#564). Answered as an error, never as ' +
+      'an ordinary denial.',
     spec: 'HTTP 500, an error message (a batch item\'s context.error)' },
   { code: 'STS-AUTHZEN-0029',
     summary: 'An AuthZEN Permit was answered false because the decision ' +
@@ -21257,6 +21259,14 @@ const CODES = [
     summary: 'An AuthZEN access evaluations request reached a realm where ' +
       'authzen.batchEnabled is off.',
     spec: 'HTTP 501, an error message' },
+  { code: 'STS-AUTHZEN-0040',
+    summary: 'An AuthZEN evaluation about an application that enforces ' +
+      'fine-grained authorization could not be decided: the application\'s ' +
+      'policy cannot be used, or whether it enforces could not be read. ' +
+      'The audit row\'s code says why (STS-FGA-0003 to 0007, 0009, or ' +
+      '0015). Answered as an error, never as a denial, and never decided ' +
+      'against the realm root instead (#564).',
+    spec: 'HTTP 500, an error message (a batch item\'s context.error)' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
@@ -21273,35 +21283,40 @@ const CODES = [
     summary: 'An application has no fine-grained policy: its appFgaPolicy ' +
       'is empty.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint) where the application ' +
-      'enforces FGA; none otherwise' },
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
   { code: 'STS-FGA-0004',
     summary: 'An application\'s appFgaPolicy names a policy entry that is ' +
       'not in this realm\'s ou=policies.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint) where the application ' +
-      'enforces FGA; none otherwise' },
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
   { code: 'STS-FGA-0005',
     summary: 'An application\'s appFgaPolicy names a policy entry that does ' +
       'not belong to it: the entry\'s xacmlApplication is absent or names ' +
       'another application, or the entry is marked orphaned.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint) where the application ' +
-      'enforces FGA; none otherwise' },
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
   { code: 'STS-FGA-0006',
     summary: 'An application\'s fine-grained policy is disabled ' +
       '(xacmlEnabled FALSE). An enforced application with a disabled policy ' +
       'refuses; switching enforcement on is refused until the policy is ' +
       'enabled.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint) where the application ' +
-      'enforces FGA; none otherwise' },
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
   { code: 'STS-FGA-0007',
     summary: 'An application\'s fine-grained policy does not parse or does ' +
       'not type-check.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint) where the application ' +
-      'enforces FGA; none otherwise' },
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0040, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
   { code: 'STS-FGA-0008',
     summary: 'An application\'s default fine-grained policy could not be ' +
       'written: there is no directory, ou=policies is at xacml.maxPolicies, ' +
@@ -21312,7 +21327,8 @@ const CODES = [
   { code: 'STS-FGA-0009',
     summary: 'A fine-grained authorization act named an application this ' +
       'realm\'s registry does not hold.',
-    spec: 'the caller\'s refusal' },
+    spec: 'the caller\'s refusal; an AuthZEN error (STS-AUTHZEN-0040, ' +
+      'HTTP 500) when the application went between the two reads' },
   { code: 'STS-FGA-0010',
     summary: 'The application lifecycle hook (create or delete) failed or ' +
       'threw. The application create or delete itself stands; the policy ' +
@@ -21348,7 +21364,8 @@ const CODES = [
       'answered nothing. The detail is refused; this is a fault, never a ' +
       'Permit.',
     spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint)' },
+      'redirected at the authorization endpoint); an AuthZEN error ' +
+      '(STS-AUTHZEN-0040, HTTP 500) for an access question that threw' },
   { code: 'STS-FGA-0016',
     summary: 'An authorization detail\'s type belongs to an application ' +
       'that enforces fine-grained authorization, and no FGA decider is ' +
