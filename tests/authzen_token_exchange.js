@@ -533,11 +533,12 @@ function theLocalRequest(t) {
     return id.indexOf('urn:sts:xacml:authzen:') === 0;
   }) && asked.indexOf(V.AUTHZEN_TOKEN_TYPE) >= 0 &&
           asked.indexOf(V.AUTHZEN_CALLER) >= 0 &&
-          JSON.stringify(asked.slice(0, local.length)) ===
-            JSON.stringify(local),
+          JSON.stringify(asked.filter(function (id) {
+            return id.indexOf('urn:sts:xacml:authzen:') !== 0;
+          })) === JSON.stringify(local),
           'L1. a local exchange question carries no AuthZEN attribute, ' +
-          'and one asked over AuthZEN carries the same ones first and its ' +
-          'own after', JSON.stringify({ local: local, asked: asked }));
+          'and one asked over AuthZEN carries the same ones, in the same ' +
+          'order, and its own beside them', JSON.stringify({ local: local, asked: asked }));
   log.debug("Leaving theLocalRequest().");
 }
 

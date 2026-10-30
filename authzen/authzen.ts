@@ -518,7 +518,10 @@ class AuthzenSurface {
     self.deps.loadMonitor().record('authzen',
       { decision: answer.xacmlDecision || (answer.decision ? 'Permit'
                                                            : 'Deny') });
-    const out: ItemResult = { status: 200, decision: answer.decision };
+    // The code goes with the result for the caller's record, never into the
+    // answer (`common/error_codes.js`: recorded, never sent).
+    const out: ItemResult = { status: 200, decision: answer.decision,
+                              code: answer.code || undefined };
     // `context.issuance` (the Token Issuance Profile's envelope) is the
     // answer's, not an explanation, so it is sent whatever
     // `authzen.returnReasons` says; the reasons are sent only when asked.
