@@ -1039,6 +1039,13 @@ const JOBS = [
   // application's policy, and the orphan — in a realm of its own.
   // `local: true`: the policies and the API are ours.
   { file: 'sts_fga.js',                  browser: false },
+  // USER-MANAGED ACCESS 2.0 OVER HTTP (#1168 phase 7, #1196): both PAT
+  // grants, registration, need_info, the claims interaction, the RPT and
+  // its PCT, introspection with a PAT, request_submitted answered on the
+  // portal, upgrade, revocation, an application as owner, the negatives and
+  // uma.enabled off — the job as resource server and client, in a realm of
+  // its own. `local: true`: UMA is ours.
+  { file: 'sts_uma.js',                  browser: false },
   { file: 'sts_xacml_remote_pep.js',     browser: false,
     docker: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
