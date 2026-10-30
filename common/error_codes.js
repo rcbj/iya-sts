@@ -20017,6 +20017,15 @@ const CODES = [
       'registered, or one listing no registered gnapFinishUri (#1216). With ' +
       'no class_id, the refusal is STS-GNAP-0082.',
     spec: 'HTTP 401 GNAP invalid_client (RFC 9635 sections 2.3 and 2.3.3)' },
+  { code: 'STS-GNAP-0907',
+    summary: 'A GNAP grant made by an unregistered instance of its ' +
+      'application (#1216) was refused at use — its continuation, or ' +
+      'introspected inactive — because gnap.unregisteredInstances has been ' +
+      'turned off since (#1219). Such a grant is never refused for the key ' +
+      'missing from the entry, where it never was (that is STS-GNAP-0731 for ' +
+      'every other grant).',
+    spec: 'RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 ' +
+      '(active: false)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +

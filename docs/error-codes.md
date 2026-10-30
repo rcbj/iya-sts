@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5034** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5035** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 51
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 357
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 358
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
@@ -4441,6 +4441,7 @@ Raised from: gnap/.
 | `STS-GNAP-0904` | A GNAP access token request's access named no resource server — no registered reference, no location at or under a registered resource server's gnapResourceServerUri, no type a registered resource server declares, and not this service's own Shared Signals transmitter — so the token would have been for nobody in particular and the request was refused, in every mode. The default audience (the demonstration resource server) went with it (#593). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 | `STS-GNAP-0905` | A GNAP grant's interact.acr named only phr, or only phrh, and the session still had not earned that class after the one interaction. A list that also names some other token is not this refusal (#738). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
 | `STS-GNAP-0906` | In product mode, a GNAP client instance proved a key no application entry registers, and the class_id its request sent does not name an application such a key may be an instance of: no GNAP client of that identifier in the realm, a resource server, one nobody registered, or one listing no registered gnapFinishUri (#1216). With no class_id, the refusal is STS-GNAP-0082. | HTTP 401 GNAP invalid_client (RFC 9635 sections 2.3 and 2.3.3) |
+| `STS-GNAP-0907` | A GNAP grant made by an unregistered instance of its application (#1216) was refused at use — its continuation, or introspected inactive — because gnap.unregisteredInstances has been turned off since (#1219). Such a grant is never refused for the key missing from the entry, where it never was (that is STS-GNAP-0731 for every other grant). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
 
 ## STS-DEVICE
 
