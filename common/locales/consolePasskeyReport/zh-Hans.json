@@ -56,7 +56,7 @@
   "noModels": "此处未统计到任何验证器型号。",
   "profileName": "配置文件",
   "selectGroups": "选择的组",
-  "selectApplications": "选择的应用",
+  "namedByApplications": "由应用指定（appPasskeyPolicy）",
   "precedence": "优先级",
   "countThisProfile": "统计其人群",
   "profilesNote": "每个通行密钥配置文件的要求：<code>postQuantumRequired</code> 在登录时（<code>sign-in</code>），或在注册时也（<code>registration-and-sign-in</code>）拒绝传统通行密钥。统计某个配置文件的人群，即可看出它会拒绝谁。",

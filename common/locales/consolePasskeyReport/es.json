@@ -56,7 +56,7 @@
   "noModels": "Aquí no se cuenta ningún modelo de autenticador.",
   "profileName": "Perfil",
   "selectGroups": "Selecciona grupos",
-  "selectApplications": "Selecciona aplicaciones",
+  "namedByApplications": "Nombrado por aplicaciones (appPasskeyPolicy)",
   "precedence": "Precedencia",
   "countThisProfile": "contar su población",
   "profilesNote": "Lo que pide cada perfil de llaves de acceso: <code>postQuantumRequired</code> rechaza una llave de acceso clásica al iniciar sesión (<code>sign-in</code>), o también al registrarla (<code>registration-and-sign-in</code>). Cuente la población de un perfil para ver a quién rechazaría.",

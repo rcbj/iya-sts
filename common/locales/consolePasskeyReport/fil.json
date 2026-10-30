@@ -56,7 +56,7 @@
   "noModels": "Walang modelo ng authenticator na binilang dito.",
   "profileName": "Profile",
   "selectGroups": "Pinipiling grupo",
-  "selectApplications": "Pinipiling application",
+  "namedByApplications": "Pinangalanan ng mga application (appPasskeyPolicy)",
   "precedence": "Precedence",
   "countThisProfile": "bilangin ang populasyon nito",
   "profilesNote": "Ang hinihingi ng bawat passkey profile: tinatanggihan ng <code>postQuantumRequired</code> ang classical na passkey sa sign-in (<code>sign-in</code>), o pati sa pag-register (<code>registration-and-sign-in</code>). Bilangin ang populasyon ng isang profile para makita kung sino ang tatanggihan nito.",

@@ -158,6 +158,8 @@ import countryCodes = require('../common/country_codes');
 // The realm's custom attributes and its required ones (#396). A library that
 // requires this module only lazily, so the require here closes no cycle.
 import attributePolicy = require('../common/attribute_policy');
+// The person references the policy kinds declare (#1235, rule 3cx): a leaf.
+import PolicySelection = require('../common/policy_selection');
 
 // One editable attribute, as the page draws it and the API publishes it.
 interface EditableRow {
@@ -175,6 +177,9 @@ interface EditableRow {
   simple: boolean;
   // A realm's own attribute, from the attribute policy's register (#396).
   custom: boolean;
+  // A POLICY REFERENCE (#1235): `default` and the realm's named policies of
+  // the kind that declared it, the only values a write may set.
+  choices?: string[];
 }
 
 // One attribute of the universe that is NOT editable, with the door to use.
@@ -340,6 +345,16 @@ const FIELD_GROUPS = [
     attributes: ['schacDateOfBirth', 'placeOfBirthCountry',
                  'placeOfBirthRegion', 'placeOfBirthLocality',
                  'schacCountryOfCitizenship', 'x500UniqueIdentifier'] },
+  // THE POLICIES A PERSON NAMES (#1235, rule 3cx): one attribute per policy
+  // kind that a person selects, each declared by its kind
+  // (`PolicySelection.declarePersonReference()`). `groupOf()` never answers
+  // it: a declared reference is put here by name when the universe is built.
+  { id: 'policies', label: 'Policies',
+    what: 'The named policy of each kind that this person names: `default`, ' +
+          'or one of this realm\'s named policies of that kind (Directory > ' +
+          'Policies). It competes on precedence with the policies that ' +
+          'select one of the person\'s groups.',
+    attributes: [] as string[] },
   // A REALM'S OWN ATTRIBUTES (#396), drawn after the schema's groups.
   // `groupOf()` never answers it: a custom row is put here by name when the
   // universe is built.
@@ -574,17 +589,23 @@ class PersonEditor {
       const custom = flags.custom;
       const format = custom ? (SYNTAX_FORMATS[custom.syntax] || '')
                             : (FORMATS[key] || '');
+      // A POLICY REFERENCE (#1235): one value, from a closed set.
+      const reference = PolicySelection.personReferenceOf(name);
       editable.push({ name: name, label: label, schema: schema,
-                      multi: custom ? custom.multi
-                                    : SINGLE_VALUED.indexOf(key) < 0,
+                      multi: reference ? false
+                        : custom ? custom.multi
+                          : SINGLE_VALUED.indexOf(key) < 0,
                       must: !!flags.must, format: format,
                       note: format ? FORMAT_HINTS[format] : '',
-                      group: custom ? 'custom' : groupOf(name),
+                      group: reference ? 'policies'
+                        : custom ? 'custom' : groupOf(name),
                       example: custom
                         ? (SYNTAX_EXAMPLES[custom.syntax] || '')
                         : (FIELD_EXAMPLES[key] || ''),
-                      simple: SIMPLE_FIELDS.indexOf(key) >= 0,
-                      custom: !!custom });
+                      simple: reference ? true
+                        : SIMPLE_FIELDS.indexOf(key) >= 0,
+                      custom: !!custom,
+                      choices: reference ? reference.choices : undefined });
       log.debug("Leaving consider(). Editable.");
     };
     schemaRows().forEach(function (row) {
@@ -962,6 +983,17 @@ class PersonEditor {
       log.debug("Leaving PersonEditor.update(). No value.");
       return this.refused('STS-LDAP-0106', 'Name the value to ' + mode +
                           '.');
+    }
+    // A POLICY REFERENCE NAMES A POLICY THE REALM HOLDS (#1235), the
+    // application's CHOICES_CHECKED_HERE rule: one that does not would be
+    // a reference the kind has to treat as missing.
+    if (row.choices && value !== '' &&
+        row.choices.indexOf(value.trim().toLowerCase()) < 0) {
+      log.debug("Leaving PersonEditor.update(). Not a policy here.");
+      return this.refused('STS-LDAP-0106', 'The value for ' + row.name +
+                          ' is "default" or a named policy of this realm (' +
+                          row.choices.join(', ') + '); "' +
+                          value.slice(0, 80) + '" is neither.');
     }
     const before = (person.attributes[lower] || []).map(String);
     // A HOT PATH, run once per held value: no Entering/Leaving pair here,

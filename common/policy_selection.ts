@@ -37,7 +37,17 @@
 // directory, requires nothing of this service but the logger, and cannot join
 // a require cycle. Who REFERENCES a policy is the registers' own question
 // (`applications.js`' `applicationsNamingPolicy()`, the directory's
-// `peopleNamingPolicy()`), asked by the kind, lazily.
+// `peopleNamingPolicyAsync()`), asked by the kind, lazily.
+//
+// ITS ONE PIECE OF STATE is the register of PERSON references
+// (`declarePersonReference()`): a kind a person selects declares its
+// attribute here when its module loads, and `ldap/person_editor.ts` reads
+// the register when it builds a person's fields, so the person page draws
+// one picker per such kind (a closed set: `default` and the realm's named
+// policies, checked at the write) without the editor requiring any kind's
+// module. The application side needs no register here: an application's
+// fields are declared in `applications.js`, which checks a reference with
+// its own closed sets (CHOICES_CHECKED_HERE).
 //
 // IT IS SELECTION, NOT AUTHORIZATION (#535's decision): it chooses which rows
 // apply; what the rows then allow or refuse is the kind's, and where that is
@@ -104,6 +114,21 @@ interface Ranked {
   precedence: number;
   missing: Array<{ by: string; name: string }>;
 }
+
+/**
+ * A person reference a kind declared: its attribute, what the kind calls a
+ * policy, and where its choices come from.
+ */
+interface PersonReference {
+  attribute: string;
+  noun: string;
+  choices: () => string[];
+}
+
+/**
+ * The person references declared so far (`declarePersonReference()`).
+ */
+const PERSON_REFERENCES: PersonReference[] = [];
 
 /**
  * The name of the policy every realm has.
@@ -402,6 +427,85 @@ export = class PolicySelection {
     log.debug("Leaving PolicySelection.checkSelectors(). " + problems.length +
               " problem(s).");
     return { groups: groups, precedence: precedence, problems: problems };
+  }
+
+  /**
+   * Declares a person reference (#1235): the single-valued attribute on a
+   * person's entry by which they name their policy of a kind. Called once,
+   * when the kind's module loads; a second declaration of the attribute
+   * replaces the first.
+   *
+   * @param attribute - the person attribute (`stsServiceAccountPolicy`)
+   * @param noun - what the kind calls a policy (`service-account policy`)
+   * @param choices - answers the realm's named policies' names, read when
+   *   asked, so a policy saved a moment ago is a choice at once
+   */
+  static declarePersonReference(attribute: string, noun: string,
+                                choices: () => string[]): void {
+    log.debug("Entering PolicySelection.declarePersonReference(). " +
+              attribute);
+    const key = String(attribute || '').toLowerCase();
+    for (let n = PERSON_REFERENCES.length - 1; n >= 0; n--) {
+      if (PERSON_REFERENCES[n].attribute.toLowerCase() === key) {
+        PERSON_REFERENCES.splice(n, 1);
+      }
+    }
+    PERSON_REFERENCES.push({ attribute: String(attribute), noun: noun,
+                             choices: choices });
+    log.debug("Leaving PolicySelection.declarePersonReference().");
+  }
+
+  /**
+   * Withdraws a person reference — for a test that declared one.
+   *
+   * @param attribute - the person attribute
+   */
+  static withdrawPersonReference(attribute: string): void {
+    log.debug("Entering PolicySelection.withdrawPersonReference().");
+    const key = String(attribute || '').toLowerCase();
+    for (let n = PERSON_REFERENCES.length - 1; n >= 0; n--) {
+      if (PERSON_REFERENCES[n].attribute.toLowerCase() === key) {
+        PERSON_REFERENCES.splice(n, 1);
+      }
+    }
+    log.debug("Leaving PolicySelection.withdrawPersonReference().");
+  }
+
+  /**
+   * The person reference an attribute is, with its choices now: `default`
+   * first, then the realm's named policies. A source that cannot be read
+   * offers `default` alone.
+   *
+   * @param attribute - an attribute name, in any case
+   * @returns `{ attribute, noun, choices }`, or null for an attribute no
+   *   kind declared
+   */
+  static personReferenceOf(attribute: string):
+      { attribute: string; noun: string; choices: string[] } | null {
+    log.debug("Entering PolicySelection.personReferenceOf().");
+    const key = String(attribute || '').toLowerCase();
+    const found = PERSON_REFERENCES.filter(function (one) {
+      return one.attribute.toLowerCase() === key;
+    })[0];
+    if (!found) {
+      log.debug("Leaving PolicySelection.personReferenceOf(). None.");
+      return null;
+    }
+    let names: string[] = [];
+    try {
+      names = (found.choices() || []).map(PolicySelection.fold);
+    } catch (e) {
+      log.debug("Caught in PolicySelection.personReferenceOf(): " +
+                ((e && e.message) || e));
+      names = [];
+    }
+    const choices = [DEFAULT_NAME].concat(names.filter(function (one, n, all) {
+      return !!one && one !== DEFAULT_NAME && all.indexOf(one) === n;
+    }));
+    log.debug("Leaving PolicySelection.personReferenceOf(). " +
+              choices.length + " choice(s).");
+    return { attribute: found.attribute, noun: found.noun,
+             choices: choices };
   }
 
   /**

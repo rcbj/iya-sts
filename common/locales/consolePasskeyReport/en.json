@@ -56,7 +56,7 @@
   "noModels": "No authenticator model is counted here.",
   "profileName": "Profile",
   "selectGroups": "Selects groups",
-  "selectApplications": "Selects applications",
+  "namedByApplications": "Named by applications (appPasskeyPolicy)",
   "precedence": "Precedence",
   "countThisProfile": "count its population",
   "profilesNote": "What each passkey profile asks: <code>postQuantumRequired</code> refuses a classical passkey at sign-in (<code>sign-in</code>), or at registration as well (<code>registration-and-sign-in</code>). Count a profile's population to see whom it would refuse.",

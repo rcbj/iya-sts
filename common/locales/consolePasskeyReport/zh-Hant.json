@@ -56,7 +56,7 @@
   "noModels": "此處未統計到任何驗證器型號。",
   "profileName": "設定檔",
   "selectGroups": "選取的群組",
-  "selectApplications": "選取的應用程式",
+  "namedByApplications": "由應用程式指定（appPasskeyPolicy）",
   "precedence": "優先順序",
   "countThisProfile": "統計其族群",
   "profilesNote": "每個密碼金鑰設定檔的要求：<code>postQuantumRequired</code> 在登入時（<code>sign-in</code>），或在註冊時也（<code>registration-and-sign-in</code>）拒絕傳統密碼金鑰。統計某個設定檔的族群，即可看出它會拒絕誰。",

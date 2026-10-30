@@ -2184,6 +2184,79 @@ function passkeyRowOf(stored) {
            values: (stored.attributes.stswebauthncredential || []).slice(0) };
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE NAMING A POLICY (#1235, rule 3cx): what refuses a named policy's
+// delete, and what its Named policies entry lists, for a kind a person
+// selects by a reference attribute on their own entry
+// (`stsServiceAccountPolicy`, `stsAttributePolicy`). `passkeyScanAsync()`'s
+// walk over the HOLDERS of that attribute — the store's asked-names index in
+// a window, so a question costs the people naming some policy of the kind and
+// never the realm; the realm's own Map outside one — reading at most
+// `POLICY_HOLDER_READ` holders and saying so where it stopped first. A kind
+// hands it to its policy module in its `setDirectory()` hooks.
+// ---------------------------------------------------------------------------
+const POLICY_HOLDER_READ = 10000;
+
+// One holder as the walk hands it over: the name and the reference's value.
+// Called once per holder read: no Entering/Leaving pair, the hot-path
+// exception the code style allows, stated as it requires.
+function policyHolderRowOf(attribute) {
+  return function (stored) {
+    return { id: String(usernameOfEntry(stored) || ''),
+             value: String((stored.attributes[attribute] || [])[0] || '')
+               .trim().toLowerCase() };
+  };
+}
+
+/**
+ * Lists the people of the ambient realm whose reference attribute names a
+ * policy.
+ *
+ * @param attribute - the person's reference attribute
+ * @param name - the policy's name, matched trimmed and in any case
+ * @param limit - the most names to answer (50 when left out)
+ * @returns a promise of `{ people, complete }`: `complete` false where more
+ *   might name it than were answered or read
+ */
+async function peopleNamingPolicyAsync(attribute, name, limit) {
+  log.debug('Entering peopleNamingPolicyAsync(). ' + attribute);
+  const held = String(attribute || '').toLowerCase();
+  const wanted = String(name == null ? '' : name).trim().toLowerCase();
+  if (!held || !wanted) {
+    log.debug('Leaving peopleNamingPolicyAsync(). Not a question.');
+    return { people: [], complete: true };
+  }
+  const most = Math.max(1, Math.floor(Number(limit) || 50));
+  const people = [];
+  let after = '';
+  let read = 0;
+  let complete = false;
+  while (people.length < most && read < POLICY_HOLDER_READ) {
+    const page = await passkeyScanAsync({
+      attribute: held, after: after,
+      readLimit: Math.min(PASSKEY_SCAN_PAGE, POLICY_HOLDER_READ - read),
+      wanted: most - people.length,
+      rowOf: policyHolderRowOf(held),
+      accept: function (row) {
+        if (row.value !== wanted) {
+          return false;
+        }
+        people.push(row.id);
+        return true;
+      }
+    });
+    read += page.read;
+    after = page.next;
+    if (page.done || !page.read) {
+      complete = true;
+      break;
+    }
+  }
+  log.debug('Leaving peopleNamingPolicyAsync(). ' + people.length +
+            (complete ? '.' : ', perhaps more.'));
+  return { people: people, complete: complete };
+}
+
 /**
  * The people of the ambient realm after a cursor, in key order — the holders
  * of `stsWebauthnCredential`, or every person — handed one at a time to
@@ -2205,6 +2278,9 @@ async function passkeyScanAsync(ask) {
   const wanted = Math.max(1, Number(a.wanted) || 1);
   const accept = typeof a.accept === 'function' ? a.accept
     : function () { return false; };
+  // What `accept()` is handed (#1235): the passkey report's row, or the
+  // caller's own shape of the entry.
+  const rowOf = typeof a.rowOf === 'function' ? a.rowOf : passkeyRowOf;
   const base = normalizeDn(usersDn());
   const suffix = ',' + base;
   let after = String(a.after || '');
@@ -2212,7 +2288,7 @@ async function passkeyScanAsync(ask) {
   let yes = 0;
   const take = function (stored) {
     read += 1;
-    const row = passkeyRowOf(stored);
+    const row = rowOf(stored);
     if (row.id && accept(row)) {
       yes += 1;
     }
@@ -29041,6 +29117,7 @@ module.exports = {
   // The passkey report's two questions (#942), for its in-process test;
   // the report itself reaches them through its slot.
   passkeyScanAsync: passkeyScanAsync,
+  peopleNamingPolicyAsync: peopleNamingPolicyAsync,
   passkeyPopulationAsync: passkeyPopulationAsync,
   // A started post-login activity's walk of its groups' people after a
   // key cursor (#1111, #1123), reached lazily from the job's body; the

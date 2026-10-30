@@ -56,7 +56,7 @@
   "noModels": "Ingen autentiserarmodell räknas här.",
   "profileName": "Profil",
   "selectGroups": "Väljer grupper",
-  "selectApplications": "Väljer applikationer",
+  "namedByApplications": "Namngiven av applikationer (appPasskeyPolicy)",
   "precedence": "Företräde",
   "countThisProfile": "räkna dess population",
   "profilesNote": "Vad varje nyckelprofil kräver: <code>postQuantumRequired</code> nekar en klassisk nyckel vid inloggning (<code>sign-in</code>), eller även vid registrering (<code>registration-and-sign-in</code>). Räkna en profils population för att se vem den skulle neka.",

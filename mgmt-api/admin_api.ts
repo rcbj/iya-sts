@@ -14816,23 +14816,18 @@ class AdminApi {
                      'recorded on a different worker is on the list.\n\n' +
                      '**The ?application= ' +
                      'reply\'s ' +
-                     '`page.passkeyPolicies`** (#609) is what the console ' +
-                     'draws as the read-only Passkey policy card of the ' +
-                     'Every protocol sub-tab: every named passkey policy of ' +
-                     'this realm whose `stsPasskeySelectApplication` names ' +
-                     'the application — by its identifier or a client_id, ' +
-                     'trimmed and in any case, as a sign-in is matched — ' +
-                     'in precedence order, each with `name`, `dn`, ' +
-                     '`precedence`, `matched` (the values that named it), ' +
-                     '`selectGroups`, `applies` and `link`; `applies` (the ' +
-                     'lowest precedence naming it by any of its names, else ' +
-                     '`default`); `appliesBy` (for each name, the policy a ' +
-                     'sign-in naming the application by it gets before any ' +
-                     'person is known — an OAuth sign-in names the ' +
-                     'client_id); and `groupPolicies`, how many named ' +
-                     'policies select by group and could still win for a ' +
-                     'given person. Nothing about it is stored on the ' +
-                     'application.\n\n**The ?application= reply\'s ' +
+                     '`page.passkeyPolicies`** (#609, #1235) is what the ' +
+                     'console draws as the read-only Passkey policy card of ' +
+                     'the Every protocol sub-tab: the passkey policy the ' +
+                     'application names in `appPasskeyPolicy` (`named`; ' +
+                     '`default` for none), `missing` (true where the realm ' +
+                     'holds no policy of that name, so the default ' +
+                     'applies), `applies` and its `precedence` (what a ' +
+                     'sign-in for the application gets before any person ' +
+                     'is known), `groupPolicies` (how many named policies ' +
+                     'select by group and could still win for a given ' +
+                     'person, on a lower precedence) and `link`.' +
+                     '\n\n**The ?application= reply\'s ' +
                      '`credentials.stored`** (#1227) is what the entry ' +
                      'stores in `userCertificate`, each certificate\'s ' +
                      'SHA-256, subject, issuer, serial and validity, in ' +
@@ -24601,6 +24596,19 @@ class AdminApi {
                      '`clientsPage` and `clientsPer` (`paging`), apart from ' +
                      'the profiles. `clear-passkey-client` and ' +
                      '`clear-passkey-clients` clear them.' +
+                     '\n\n**A kind with NAMED profiles (#535, #1235)** ' +
+                     'carries `selectors` (the selector fields its save ' +
+                     'takes), `references` (the attribute by which an ' +
+                     '`application` and/or a `person` names one of its ' +
+                     'profiles: `appPasskeyPolicy` for the passkey policy) ' +
+                     'and `named`, each profile with its `selectGroups`, ' +
+                     '`precedence` and `namedBy` — the `applications` and ' +
+                     '`people` whose reference names it. Of the profile an ' +
+                     'application names, the profile a person names and ' +
+                     'every profile selecting one of the person\'s groups, ' +
+                     'the lowest `precedence` applies (ties by name), else ' +
+                     '`default`; a profile something still names cannot be ' +
+                     'deleted.' +
                      '\n\nIt is NOT the XACML policy repository, which ' +
                      'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',

@@ -14376,7 +14376,9 @@ const CODES = [
       'grid, carried a value that is too ' +
       'long, holds a control character, does not have its ' +
       'attribute\'s shape (a country code, a date, a language range, ' +
-      'an http(s) URL, a DN), or was empty for an add or a remove.',
+      'an http(s) URL, a DN), or was empty for an add or a remove; or, ' +
+      'for a policy reference a kind declared (#1235), named neither ' +
+      '`default` nor a named policy of the realm.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-LDAP-0107',
     summary: 'A person\'s attribute edit (#228) added a value the attribute ' +

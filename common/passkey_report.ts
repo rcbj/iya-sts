@@ -74,11 +74,12 @@
 // profile selects people by its groups, `stsPasskeySelectGroup`), the report
 // is counted from the population's own members — read asynchronously, at
 // most `POPULATION_LIMIT` of them, and said when the population is larger.
-// A profile's APPLICATIONS select sign-ins, not people: anybody may sign in
-// to an application, so an application's population is the whole realm and
-// `application=` answers the realm's counts with which profile governs that
-// application's sign-ins (`passkeyPolicy.forApplication()`), and how many
-// group-selected profiles could still win for a person.
+// An APPLICATION selects sign-ins, not people — it names its profile in
+// `appPasskeyPolicy` since #1235 — and anybody may sign in to it, so an
+// application's population is the whole realm and `application=` answers
+// the realm's counts with which profile governs that application's sign-ins
+// (`passkeyPolicy.forApplication()`), and how many group-selected profiles
+// could still win for a person.
 //
 // **THE LISTS BEHIND THE COUNTS ARE PAGED BY A KEY CURSOR.** A filtered list
 // (post-quantum only, one algorithm, one model) has no index of its own, so a
@@ -1173,13 +1174,18 @@ class PasskeyReport {
     log.debug("Entering PasskeyReport.profiles().");
     let rows: Json[] = [];
     try {
-      rows = (this.deps.passkeyPolicy().list() || []).map(function (p: Json) {
-        return { name: String(p.name || ''),
+      const policy = this.deps.passkeyPolicy();
+      rows = (policy.list() || []).map(function (p: Json) {
+        const name = String(p.name || '');
+        // The applications naming it (#1235): the listing's index, never a
+        // walk of the applications.
+        const by = name !== 'default' && typeof policy.namedBy === 'function'
+          ? policy.namedBy(name) : { applications: [] };
+        return { name: name,
                  postQuantumRequired: String(p.postQuantumRequired || 'off'),
                  precedence: Number(p.precedence || 0),
                  selectGroups: (p.selectGroups || []).map(String),
-                 selectApplications: (p.selectApplications || [])
-                   .map(String) };
+                 namedByApplications: (by.applications || []).map(String) };
       });
     } catch (e) {
       log.debug("Caught in PasskeyReport.profiles(): " +
@@ -1190,20 +1196,17 @@ class PasskeyReport {
     return rows;
   }
 
-  // Which profile governs an application's sign-ins (#609's answer).
+  // Which profile governs an application's sign-ins (#609's answer, the
+  // profile its `appPasskeyPolicy` names since #1235).
   private applicationFacts(row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering PasskeyReport.applicationFacts().");
     const fields = (row && row.fields) || {};
-    const names = [String((row && row.identifier) || '')]
-      .concat([].concat(fields.oauthClientId || []).map(String))
-      .filter(function (one, n, all) {
-        return one !== '' && all.indexOf(one) === n;
-      });
-    let answer: Json = { policies: [], applies: 'default', appliesBy: {},
-                         groupPolicies: 0 };
+    const reference = [].concat(fields.appPasskeyPolicy || [])[0] || '';
+    let answer: Json = { named: 'default', missing: false,
+                         applies: 'default', groupPolicies: 0 };
     try {
-      answer = this.deps.passkeyPolicy().forApplication(names);
+      answer = this.deps.passkeyPolicy().forApplication(reference);
     } catch (e) {
       log.debug("Caught in PasskeyReport.applicationFacts(): " +
                 ((e && e.message) || e));
@@ -1211,13 +1214,9 @@ class PasskeyReport {
     }
     log.debug("Leaving PasskeyReport.applicationFacts().");
     return { identifier: String((row && row.identifier) || ''),
-             names: names, applies: answer.applies,
-             appliesBy: answer.appliesBy || {},
-             groupPolicies: Number(answer.groupPolicies || 0),
-             policies: (answer.policies || []).map(function (p: Json) {
-               return { name: p.name, precedence: p.precedence,
-                        applies: !!p.applies };
-             }) };
+             named: String(answer.named || 'default'),
+             missing: !!answer.missing, applies: answer.applies,
+             groupPolicies: Number(answer.groupPolicies || 0) };
   }
 
   // A population's members, read and counted (a group or a profile).

@@ -64,6 +64,11 @@ interface PolicyModule {
   // A kind whose profiles may be NAMED and selected (#535, the passkey
   // policy): the selectors each named profile carries.
   SELECTORS?: ReadonlyArray<Record<string, any>>;
+  // The attributes by which an application and/or a person NAME a profile
+  // of this kind (#1235, rule 3cx), and who names one — the applications
+  // and people, for the Named policies sub-tab and a delete's refusal.
+  REFERENCES?: Readonly<{ application?: string; person?: string }>;
+  namedBy?(name: string): { applications: string[]; people: string[] };
   // Population registration algorithms and mode (#940), on the passkey
   // policy. A kind without them leaves those members off the policies read.
   registrationAlgorithms?(profile?: Record<string, any> | null): string[];
@@ -103,6 +108,10 @@ interface PolicyKind {
   secretFields?: string[];
   // Acts beside save and reset (#396), answered by the module's `act()`.
   extraActions?: ExtraAction[];
+  // Drawn as Default / Named policies / New policy sub-tabs (#609; a
+  // declaration since #1235, so a kind adopting named policies says so in
+  // its own row).
+  tabbed?: boolean;
 }
 
 const KINDS: PolicyKind[] = [];
@@ -518,6 +527,7 @@ PolicyKinds.register({
   governs: 'how passkeys behave — whether a sign-in may name no username, ' +
            'and what a security key is asked to store',
   module: passkeyPolicy as unknown as PolicyModule,
+  tabbed: true,
   auditAction: 'admin.passkey-policy.change',
   appliesTo: 'the NEXT sign-in and the NEXT passkey enrolled in this realm; ' +
              'a passkey already enrolled keeps what its authenticator stored',
