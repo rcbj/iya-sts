@@ -1029,6 +1029,7 @@ var config = {
     maxEvaluations: 64,           // Evaluations one batch may carry
     maxBodyBytes: 262144,         // Largest batch request (bytes)
     signedMetadata: true,         // Sign the AuthZEN metadata
+    obligationsProfile: true,     // Hand obligations to a PEP that declares them
     returnReasons: false          // Return the reasons for a decision
   },
 

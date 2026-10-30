@@ -6947,6 +6947,14 @@
     "en": "f21d61faadc593c0",
     "text": "Kapag naka-on, may dalang signed_metadata ang /.well-known/authzen-configuration (AuthZEN 1.0 seksyon 9.1): isang JWT ng parehong mga miyembro, iss ang identifier ng PDP, na pinirmahan gamit ang susi ng realm gaya ng metadata ng RFC 8414 (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader), at mabe-verify gamit ang JWKS ng realm. Ang PEP na sumusuporta rito ay naniniwala sa mga pinirmahang halaga kaysa sa mga karaniwan."
   },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "Ibigay ang mga obligasyon sa PEP na nagdedeklara ng mga ito"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "Ang Obligations Profile ng AuthZEN (isang draft). Kapag naka-on, ibinibigay sa PEP ang isang XACML obligation sa context.obligations — at ang Permit na may dala nito ay sumasagot ng true — KUNG ang context.supported_obligations lamang ng request ay naglilista ng bawat uri ng obligasyon sa sagot; ina-advertise ng metadata ang supported_obligations. Kung wala ang deklarasyong iyon, o kapag naka-off ito, ang Permit na may obligasyong hindi kayang gampanan ng serbisyong ito mismo ay sumasagot ng false, dahil magbibigay ng access ang PEP na hindi kailanman narinig ang profile."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Ibalik ang mga dahilan ng isang decision"

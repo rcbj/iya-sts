@@ -6947,6 +6947,14 @@
     "en": "f21d61faadc593c0",
     "text": "开启时，/.well-known/authzen-configuration 携带 signed_metadata（AuthZEN 1.0 第 9.1 节）：一个包含相同成员的 JWT，iss 为 PDP 标识符，像 RFC 8414 的元数据一样用领域的密钥签名（oauth2.signedMetadataAlgorithm、oauth2.signedMetadataCertificateHeader），并可用领域的 JWKS 验证。支持它的 PEP 以签名的值优先于普通值。"
   },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "向声明了义务的 PEP 交付义务"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "AuthZEN 的 Obligations Profile（草案）。开启时，仅当请求的 context.supported_obligations 列出答复中的每种义务类型时，才在 context.obligations 中把 XACML 义务交给 PEP——携带义务的 Permit 才应答 true；元数据公布 supported_obligations。没有该声明或关闭此项时，携带本服务自身无法履行的义务的 Permit 应答 false，因为从未听说过该配置文件的 PEP 否则会授予访问。"
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "返回决策的原因"

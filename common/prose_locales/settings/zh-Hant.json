@@ -6947,6 +6947,14 @@
     "en": "f21d61faadc593c0",
     "text": "開啟時，/.well-known/authzen-configuration 攜帶 signed_metadata（AuthZEN 1.0 第 9.1 節）：一個包含相同成員的 JWT，iss 為 PDP 識別碼，如同 RFC 8414 的中繼資料一樣以領域的金鑰簽署（oauth2.signedMetadataAlgorithm、oauth2.signedMetadataCertificateHeader），並可用領域的 JWKS 驗證。支援它的 PEP 以簽署的值優先於一般值。"
   },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "向宣告了義務的 PEP 交付義務"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "AuthZEN 的 Obligations Profile（草案）。開啟時，僅當請求的 context.supported_obligations 列出答覆中的每種義務類型時，才在 context.obligations 中把 XACML 義務交給 PEP——攜帶義務的 Permit 才回應 true；中繼資料公布 supported_obligations。沒有該宣告或關閉此項時，攜帶本服務本身無法履行之義務的 Permit 回應 false，因為從未聽過該設定檔的 PEP 否則會授予存取。"
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "傳回決策的原因"

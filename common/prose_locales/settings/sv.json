@@ -6947,6 +6947,14 @@
     "en": "f21d61faadc593c0",
     "text": "När det är på bär /.well-known/authzen-configuration signed_metadata (AuthZEN 1.0 avsnitt 9.1): en JWT av samma medlemmar, iss PDP-identifieraren, signerad med sfärens nyckel som RFC 8414-metadatan är (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader) och verifierbar med sfärens JWKS. En PEP som stöder den tror på de signerade värdena framför de vanliga."
   },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "Lämna över skyldigheter till en PEP som deklarerar dem"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "AuthZEN:s Obligations Profile (ett utkast). När det är på lämnas en XACML-skyldighet över till PEP:en i context.obligations — och en Permit som bär en svarar true — ENDAST när begärans context.supported_obligations räknar upp varje skyldighetstyp i svaret; metadatan annonserar supported_obligations. Utan den deklarationen, eller med detta av, svarar en Permit med en skyldighet som tjänsten inte själv kan utföra false, eftersom en PEP som aldrig hört talas om profilen annars skulle ge åtkomst."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Returnera skälen för ett beslut"

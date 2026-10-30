@@ -13344,6 +13344,20 @@ const SETTINGS = [
                  'oauth2.signedMetadataCertificateHeader), and verifiable ' +
                  'with the realm\'s JWKS. A PEP that supports it believes ' +
                  'the signed values over the plain ones.' },
+  { key: 'authzen.obligationsProfile', group: 'AuthZEN',
+    label: 'Hand obligations to a PEP that declares them',
+    env: 'STS_AUTHZEN_OBLIGATIONS_PROFILE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'The AuthZEN Obligations Profile (a draft). When on, an ' +
+                 'XACML obligation is handed to the PEP in ' +
+                 'context.obligations — and a Permit carrying one answers ' +
+                 'true — ONLY when the request\'s ' +
+                 'context.supported_obligations lists every obligation type ' +
+                 'in the answer; the metadata advertises ' +
+                 'supported_obligations. Without that declaration, or with ' +
+                 'this off, a Permit with an obligation this service cannot ' +
+                 'carry out itself answers false, as a PEP that never heard ' +
+                 'of the profile would otherwise grant.' },
   { key: 'authzen.returnReasons', group: 'AuthZEN',
     label: 'Return the reasons for a decision',
     env: 'STS_AUTHZEN_RETURN_REASONS', type: 'bool', dflt: false,

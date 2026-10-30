@@ -96,8 +96,8 @@
     "text": "full para sa mandatoryong feature set: ang policy language, ang pitong decision value kasama ang tatlong extended Indeterminate, target matching, mga condition, mga variable, ang labindalawang combining algorithm, mga obligation at advice, mga policy reference, at ang standard function library sa lahat ng labimpitong datatype. Sinusuri laban sa OASIS conformance suite — 454 sa 455 na mandatoryong case ang pumapasa, at ang nag-iisang exception ay nakatala kasama ang argumento nito sa xacml/conformance/MANIFEST.js. HINDI saklaw: AttributeSelector at ang mga XPath function (Indeterminate ang policy na gumagamit ng isa sa halip na tahimik na walang laman), ang Multiple Decision at Hierarchical Resource profile, at administrative delegation."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "b304681de092d077",
-    "text": "partial: ang Access Evaluation API (seksyon 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng katalogo ng attribute bawat realm, kasama ang X-Request-ID at ang hamon ng seksyon 11.3, ang Access Evaluations API (seksyon 7) kasama ang tatlong semantika nito, at ang metadata ng PDP (seksyon 9) sa dalawang anyo nito, kasama ang signed_metadata. Kulang: ang tatlong Search API at bawat profile (Obligations, Access Request and Approval, ang mga OAuth), na pawang mga draft pa."
+    "en": "84df34d7cb483e0a",
+    "text": "partial: ang Access Evaluation API (seksyon 6), na pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng katalogo ng attribute bawat realm, kasama ang X-Request-ID at ang hamon ng seksyon 11.3, ang Access Evaluations API (seksyon 7) kasama ang tatlong semantika nito, at ang metadata ng PDP (seksyon 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang draft ng Obligations Profile para sa PEP na nagdedeklara ng mga uri. Kulang: ang tatlong Search API, at ang mga profile na Access Request and Approval at OAuth, na mga draft pa."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

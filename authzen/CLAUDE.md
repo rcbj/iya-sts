@@ -136,10 +136,9 @@ Indeterminate over a missing attribute are an ordinary `false`. **An
 Indeterminate over a FAULT** (`STS-XACML-0012`, a root policy that will not
 load; `STS-XACML-0013`, a processing or syntax error) **is an error, never a
 denial**: a PEP told `false` about a broken policy enforces its bias over
-somebody else's outage. A Permit with an undischargeable obligation is `false`
-until the Obligations Profile is implemented end to end — there is no way yet
-to hand one to the PEP and know it was done. `urn:sts:xacml:obligation:log`
-is the one discharged.
+somebody else's outage. A Permit with an obligation is `false` unless
+the PEP declared it carries the obligation out (the Obligations Profile,
+below). `urn:sts:xacml:obligation:log` is the one discharged here.
 
 Reasons and advice go in the response's `context` only when
 `authzen.returnReasons` is on (#1161), and never decide anything: section 5.5
@@ -210,6 +209,31 @@ per fetch from the very object it is served beside, and switched by
 than failing the document: the plain members are the metadata.
 While the API is off the document answers 501 rather than advertising an
 endpoint that does not.
+
+## The Obligations Profile (#1177)
+
+**Handed only to a PEP that declares every type** (rcbj, 2026-10-30). The
+profile sends a Permit with obligations as `decision: true` and trusts the PEP
+to treat what it cannot carry out as a deny; a PEP that never heard of the
+profile would grant instead. So `context.supported_obligations` — reserved
+in the catalogue as `context.application` is — is the declaration, and
+`outcome()` hands the converted obligations only when it names every type the
+answer carries. Otherwise the old rule stands: a Permit carrying anything but
+the log obligation is `false` (`0029`).
+
+* **The conversion is one rule** (`obligationsOf()`):
+  `urn:sts:xacml:authzen:obligation:<type>` is the registered type
+  (`step-up`, `notification`, `session_termination`), anything else but
+  `urn:sts:xacml:obligation:log` is `custom` with its XACML id kept, and an
+  assignment is a property named by its attribute id's last segment, an
+  array where the type says so. A registered type without a property it
+  requires hands nothing and the Permit is `false` (`0041`).
+* **A denial's obligations are handed too**, beside `false` (the profile's
+  section 2), under the same declaration.
+* `authzen.obligationsProfile` off is the pre-#1177 behaviour, and the
+  metadata then leaves out `supported_obligations`.
+* **Not implemented:** the profile's per-result obligations in search
+  responses (its section 4.3), until search exists (#1175).
 
 ## The batch (#1164)
 

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4847** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4848** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 40
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 41
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4740,6 +4740,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0038` | An AuthZEN access evaluations request carried more items than the realm's authzen.maxEvaluations; the whole batch was refused before any item was decided. | HTTP 400, an error message |
 | `STS-AUTHZEN-0039` | An AuthZEN access evaluations request reached a realm where authzen.batchEnabled is off. | HTTP 501, an error message |
 | `STS-AUTHZEN-0040` | The AuthZEN metadata document could not be signed for its signed_metadata, which was left out; the plain document was served. | — |
+| `STS-AUTHZEN-0041` | An AuthZEN answer carried an XACML obligation that cannot be handed as an Obligations Profile obligation (a registered type without a property it requires), so none was handed and a Permit answered false. | decision: false |
 
 ## STS-ADMIN
 
