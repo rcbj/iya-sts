@@ -60,6 +60,12 @@
 // reconciliation (allowed + refused + unenforced = decisions) is about
 // decisions the engine made.
 //
+// AND SINCE P4 THE ACCESS-TIME QUESTION, `decideAccess()`: an AuthZEN
+// evaluation about an application that enforces FGA, decided against that
+// application's policy by the same first step and the same `decidePolicy()`
+// — AuthZEN's request, AuthZEN's result rules, AuthZEN's audit row and
+// monitor row (the method's comment argues each).
+//
 // Not by mode: nothing here differs between development and product.
 // ===========================================================================
 
@@ -91,6 +97,28 @@ interface FgaAnswer {
   version?: string;
   decision?: string;
   digest?: string;
+}
+
+// The application's policy, as both questions' first step finds it.
+interface PolicyFound {
+  ok: boolean;
+  code: string;
+  why: string;
+  policy: string;
+  parsed?: any;
+  policyId?: string;
+  version?: string;
+}
+
+// What `decideAccess()` answers AuthZEN.
+interface AccessAnswer {
+  ok: boolean;
+  code: string;
+  why: string;
+  policy: string;
+  answer?: any;
+  policyId?: string;
+  version?: string;
 }
 
 interface FgaPepDeps {
@@ -307,29 +335,49 @@ class FgaPep {
     return answer;
   }
 
-  // The three steps of the header, each failure under its own code.
-  private evaluate(asked: FgaQuestion, digest: string,
-                   definitionDigest: string): FgaAnswer {
-    const { log, errorCodes, policies, map } = this.deps;
-    log.debug("Entering FgaPep.evaluate().");
-    const application = String(asked.application || '');
+  // STEP 1, SHARED BY BOTH QUESTIONS: the application's policy, parsed, or
+  // the resolve failure under its own code (0003–0007, 0009). Logged here,
+  // once, whichever question asked.
+  private policyOf(application: string): PolicyFound {
+    const { log, errorCodes, policies } = this.deps;
+    log.debug("Entering FgaPep.policyOf(). " + application);
     const resolved = policies.resolve(application);
     if (!resolved || !resolved.ok) {
       const code = String(errorCodes.codeOf(resolved) || 'STS-FGA-0015');
       log.warn(errorCodes.tag(code) + 'fga_pep: "' + application +
                '" enforces fine-grained authorization and its policy cannot ' +
                'be used: ' + ((resolved && resolved.why) || 'no answer') +
-               ' The detail is refused.');
-      log.debug("Leaving FgaPep.evaluate(). Not resolved: " + code);
-      return { outcome: 'failure', code: code, digest: digest,
-               policy: (resolved && resolved.row && resolved.row.name) || '',
+               ' The question is refused.');
+      log.debug("Leaving FgaPep.policyOf(). Not resolved: " + code);
+      return { ok: false, code: code,
+               policy: String((resolved && resolved.row &&
+                               resolved.row.name) || ''),
                why: 'The fine-grained authorization policy of "' +
                     application + '" cannot be used (' + code + ').' };
     }
     const row = resolved.row || {};
-    const known = { policy: String(resolved.policy || row.name || ''),
-                    policyId: String(row.id || ''),
-                    version: String(row.version || ''), digest: digest };
+    log.debug("Leaving FgaPep.policyOf().");
+    return { ok: true, code: '', why: '', parsed: resolved.parsed,
+             policy: String(resolved.policy || row.name || ''),
+             policyId: String(row.id || ''),
+             version: String(row.version || '') };
+  }
+
+  // The three steps of the header, each failure under its own code.
+  private evaluate(asked: FgaQuestion, digest: string,
+                   definitionDigest: string): FgaAnswer {
+    const { log, errorCodes, map } = this.deps;
+    log.debug("Entering FgaPep.evaluate().");
+    const application = String(asked.application || '');
+    const found = this.policyOf(application);
+    if (!found.ok) {
+      log.debug("Leaving FgaPep.evaluate(). Not resolved: " + found.code);
+      return { outcome: 'failure', code: found.code, digest: digest,
+               policy: found.policy, why: found.why };
+    }
+    const resolved = { parsed: found.parsed };
+    const known = { policy: found.policy, policyId: found.policyId || '',
+                    version: found.version || '', digest: digest };
     const subject = asked.subject || {};
     const built = map.request(asked.detail, asked.definition, {
       realm: asked.realm, protocol: 'oauth2',
@@ -384,6 +432,79 @@ class FgaPep {
       application + '" permits it.' }, known);
   }
 
+  // -------------------------------------------------------------------------
+  // THE ACCESS-TIME QUESTION (#564, P4; rcbj's decision 4): an AuthZEN
+  // evaluation whose application enforces fine-grained authorization is
+  // decided against THAT application's policy instead of the realm root.
+  // The same first step as an issuance question (`policyOf()`), and the
+  // same `decidePolicy()` with NO PolicyIdReference map — so the two
+  // questions cannot come to differ about which policy is the application's
+  // or how it is evaluated. What differs is everything AuthZEN already owns:
+  //
+  //   * the REQUEST is AuthZEN's (`authzen_map.ts` and the builder's
+  //     `fgaAccess()`), built by the caller and passed in; a detail is not
+  //     involved, so `fga_map.ts` is not either;
+  //   * the RESULT is the PDP's answer, unenforced: AuthZEN reads it through
+  //     its own decision 8 (`outcome()`), which already tells a fault from a
+  //     denial by STS-XACML-0013, the mark `decidePolicy()` puts on it;
+  //   * the AUDIT ROW and the MONITOR COUNT are AuthZEN's `authzen.decision`
+  //     and `authzen` row: the PEP that enforces this answer is the caller's,
+  //     in its own process, so counting it here on `fga` — a row that
+  //     counts enforcements — would claim an enforcement nobody here made,
+  //     and counting it on both would count one decision twice.
+  //
+  // It never throws: a throw is a failure under STS-FGA-0015, as at
+  // issuance.
+  // -------------------------------------------------------------------------
+  /**
+   * Decides an AuthZEN request against an application's own fine-grained
+   * policy alone.
+   *
+   * @param application - the application the caller is asking about
+   * @param request - AuthZEN's request, in `xacml_model.js`'s shape, with
+   *   `fgaAccess()`'s two facts
+   * @param options - `resolve`: false decides with no PIP (AuthZEN's
+   *   `resolveSubjectTypes` line)
+   * @returns `{ ok: true, answer, policy, policyId, version }`, the answer
+   *   the PDP's (an Indeterminate through a fault marked STS-XACML-0013); or
+   *   `{ ok: false, code, why, policy }` — the resolve failure's code, or
+   *   STS-FGA-0015 for a throw
+   */
+  decideAccess(application: string, request: any,
+               options?: { resolve?: boolean }): AccessAnswer {
+    const { log, errorCodes } = this.deps;
+    const named = String(application || '');
+    log.debug("Entering FgaPep.decideAccess(). application=" + named);
+    try {
+      const found = this.policyOf(named);
+      if (!found.ok) {
+        log.debug("Leaving FgaPep.decideAccess(). Not resolved: " +
+                  found.code);
+        return { ok: false, code: found.code, why: found.why,
+                 policy: found.policy };
+      }
+      const answer = this.deps.loadXacml().decidePolicy(found.parsed,
+        request, { repository: null,
+                   resolve: !(options && options.resolve === false) });
+      log.debug("Leaving FgaPep.decideAccess(). " +
+                String((answer && answer.decision) || ''));
+      return { ok: true, code: '', why: '', answer: answer,
+               policy: found.policy, policyId: found.policyId,
+               version: found.version };
+    } catch (e) {
+      log.debug("Caught in FgaPep.decideAccess(): " +
+                ((e && e.message) || e));
+      // A FAULT, AND NEVER A DECISION: the caller answers an error.
+      log.error(errorCodes.tag('STS-FGA-0015') + 'fga_pep: deciding an ' +
+                'access question about "' + named + '" threw: ' +
+                ((e && e.stack) || e));
+      log.debug("Leaving FgaPep.decideAccess(). Threw.");
+      return { ok: false, code: 'STS-FGA-0015', policy: '',
+               why: 'The fine-grained authorization decision could not be ' +
+                    'made: ' + ((e && e.message) || e) };
+    }
+  }
+
   /**
    * Fills `common/fga_gate.ts`'s decider slot with this instance.
    */
@@ -429,5 +550,6 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   canonical: FgaPep.canonical,
   decide: slot.forward('decide'),
+  decideAccess: slot.forward('decideAccess'),
   detailDigest: slot.forward('detailDigest')
 };
