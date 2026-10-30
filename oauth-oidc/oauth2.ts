@@ -11670,6 +11670,41 @@ class OAuth2Server {
           return fail('invalid_authorization_details', raised);
         }
         q.authorization_details = JSON.stringify(detailsAllowed.lowered);
+        // THE LOWERED DETAILS ARE A NEW QUESTION (#564, P4's fix of a P3
+        // leftover). The fine-grained check above decided the details the
+        // client SENT; what this pass grants from here on is the lowered
+        // set, which no policy has seen — and a policy may refuse a lower
+        // value (a minimum, an exact amount, a count it reads as a tier).
+        // Where this pass MINTS AN ACCESS TOKEN (`token` in the response
+        // type: the implicit and hybrid flows, minted on the spot in
+        // issueAuthorizationResponse(), never through tokenSet()) nothing
+        // later would ask, so it is asked here, stage `authorize`, with the
+        // same refusals as the check above. A bare `code` is not asked
+        // twice: the token endpoint asks about the code's — lowered —
+        // details when it is redeemed (tokenSet()).
+        if (String(q.response_type || '').split(/\s+/)
+              .indexOf('token') >= 0) {
+          const lowered = richAuthorization.fineGrainedRefusal(
+            detailsAllowed.lowered, {
+              stage: 'authorize', clientId: q.client_id,
+              subject: { id: String((session.user || {}).username || ''),
+                         kind: 'user' },
+              grantType: String(q.response_type || '').split(/\s+/)
+                .indexOf('code') >= 0 ? 'authorization_code' : 'implicit' });
+          if (lowered) {
+            const denied = lowered.outcome === 'deny';
+            log.debug("Leaving the authorization endpoint. Fine-grained " +
+                      "authorization " + (denied ? "refused" : "could not " +
+                      "decide") + " a lowered detail of " + lowered.type +
+                      ".");
+            errorCodes.mark(res, String(errorCodes.codeOf(lowered) ||
+                                        'STS-FGA-0015'));
+            log.debug("Leaving OAuth2Server.authorizeRequest().");
+            // error-code: none — marked above with the refusal's own code
+            return fail(denied ? 'access_denied' : 'server_error',
+                        lowered.description);
+          }
+        }
       }
       if (decision.outstanding.length || detailsOutstanding) {
         // prompt=none FORBIDS ANY UI, and OIDC Core section 3.1.2.6 gives this
@@ -18838,8 +18873,10 @@ class OAuth2Server {
     // `invalid_authorization_details` (400), a fault `server_error` (500,
     // this endpoint's own answer to one, STS-OAUTH-0420's). NOBODY HAS
     // SIGNED IN YET, so the subject is unknown and only the client is a
-    // fact; a policy that reads the person refuses here and is asked again
-    // at the authorization endpoint once there is one.
+    // fact — the request carries NO subject-id and no subject kind (not
+    // '', which a policy would read as somebody; `xacml_request.js`'s
+    // `fga()`, #564 P4); a policy that reads the person refuses here and is
+    // asked again at the authorization endpoint once there is one.
     const fgaRefused = richAuthorization.fineGrainedRefusal(details.details, {
       stage: 'par', clientId: clientId, subject: {},
       grantType: pushedTypes.indexOf('code') >= 0 ? 'authorization_code'
