@@ -361,11 +361,11 @@ mirrors name the tab too.
   uses, so the two cannot disagree about which policy is the application's.
   Resource servers reach FGA only here, because FGA is decided only in this
   service (decision 4); the policies are withheld from the pull. **The
-  remote PEP's edge PDP (#1179) does NOT forward**: it decides every
-  evaluation against the root it pulled, so about an enforcing application
-  it answers the root's answer (*The edge PDP*, below). Forwarding, or an
-  embedded FGA PDP there, is future work this design does not rule out.
-  What stays AuthZEN's, and why:
+  remote PEP's edge PDP (#1179) FORWARDS such an evaluation here** (P7,
+  rcbj's decision of 2026-10-30): it arrives as an ordinary evaluation from
+  the PEP, and nothing in this branch knows it was forwarded (*The edge
+  PDP*, below). An embedded FGA PDP there is still future work this design
+  does not rule out. What stays AuthZEN's, and why:
   * **The request** is AuthZEN's mapping unchanged, plus the two facts the
     policy needs to know what it is asked — `urn:sts:xacml:fga:application`
     and `urn:sts:xacml:fga:stage = access` — written by the builder's
@@ -433,13 +433,29 @@ or the two drift with both suites green.
   `GET /xacml/pep/authzen-callers`. What still differs there is mutual TLS
   only, no revocation check of an outside authority, and a log line instead
   of an audit row; `xacml-pep/CLAUDE.md` states each.
-* **It knows nothing of fine-grained authorization (#564).** An
-  application's policy is withheld from `GET /xacml/pep/policies`, and
-  neither the catalogue nor the caller pull says which applications enforce,
-  so an evaluation there about an enforcing application is decided against
-  the pulled ROOT — a different answer from this service's, documented in
-  `docs/remote-pep.md`'s table. Forwarding such an evaluation here, or an
-  embedded FGA PDP, is a ticket of its own; nothing here rules either out.
+* **It FORWARDS an evaluation about an application that enforces
+  fine-grained authorization to this service (#564, P7; rcbj's decision of
+  2026-10-30, extending decision 4).** An application's policy is withheld
+  from `GET /xacml/pep/policies`, so the edge cannot decide it; the
+  catalogue pull names the enforcing applications instead
+  (`fgaApplications`, inside the catalogue's token so a switch flip is
+  pulled — `xacml/CLAUDE.md`), and the edge sends such an evaluation, as one
+  single evaluation with `context.application` set, to the realm's `POST
+  /access/v1/evaluation` with its own client certificate. **Here it is an
+  ordinary evaluation from an ordinary caller — the PEP** — admitted by the
+  door and the scope like any other, which is the prerequisite operators
+  owe: the PEP's entry holds AUTHZEN_PEPS with the application in its
+  `stsAuthzenApplication`. Two consequences of that, accepted rather than
+  engineered away: a policy sees the PEP as `urn:sts:xacml:authzen:caller`
+  (the caller the edge admitted is the edge's to know; a name it asserted
+  would be a fact a policy could not trust), and `supplied` names
+  `context.application` though the original caller may not have sent it.
+  **Every failure here is an error there, never false** — this branch's
+  `0046` included (`xacml-pep/CLAUDE.md` has the status mapping). Until the
+  edge's next poll an application just switched on is still decided there
+  from the root: the same convergence as the caller list, stated in
+  `docs/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
+  forwarding rules it out no more than it did.
 
 ### The callers the edge PDP admits (#1189)
 

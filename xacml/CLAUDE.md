@@ -205,7 +205,9 @@ ownership is not a setting that can be pointed elsewhere but a fact written
 with the policy. It is named in `withheld` like the two above. The filter is
 `XacmlSurface.pepPull()`, the route's body as a method so a test can hold it
 without the mutual-TLS gate. See *Application-scoped fine-grained
-authorization* below.
+authorization* below. What the container is sent instead is the list of
+applications that enforce, on the AuthZEN catalogue pull, so its edge PDP
+forwards their evaluations here (P7, *`GET /xacml/pep/authzen-catalogue`*).
 
 ## ALFA
 
@@ -1140,11 +1142,26 @@ settings that change the mapping or the answer, behind `pepAccess()` and
 * **`GET /xacml`'s endpoint list does not name it**, because that document is
   one of the existing endpoints rcbj said stay unchanged; `/admin/sts-metadata`
   and `/admin/xacml`'s protocol-endpoint table do.
+* **`fgaApplications`: THE APPLICATIONS THAT ENFORCE FINE-GRAINED
+  AUTHORIZATION (#564, P7).** The edge FORWARDS an evaluation about one of
+  them to this realm's `/access/v1/evaluation` (rcbj's decision of
+  2026-10-30; `authzen/CLAUDE.md`), so it has to know which. The list is
+  `applications.applicationsEnforcingFga()`, sorted, an ADDITIVE member —
+  identifiers only, never a policy, so `/xacml/pep/policies`' withholding is
+  untouched — and **inside the catalogue's digest**, so switching
+  `appFgaEnforced` moves the token and the edge pulls again on its poll.
+  Here rather than on the policy pull because it changes what the AuthZEN
+  answer IS, which is this pull's subject, and because the policies' token
+  is what heartbeats compare. **A registry that cannot be read refuses the
+  whole catalogue** (500, `STS-FGA-0108`) rather than sending an empty
+  list: an empty list would have the edge decide every enforcing
+  application from the root, and a refusal keeps it on the list it holds.
 
 `tests/authzen_evaluation.js` K holds it in process: the gate (no certificate,
 and an AUTHZEN_PEPS caller that is not a remote PEP, both 403), the rows and
 settings, the ETag and 304, a token that moves with a row and a setting, and
-`/xacml/pep/policies`' token that does not.
+`/xacml/pep/policies`' token that does not; and (K10–K12) `fgaApplications`
+through a switch flip, which moves this token and not the policies'.
 
 ## `GET /xacml/pep/authzen-callers` — who the edge PDP admits (#1189)
 
