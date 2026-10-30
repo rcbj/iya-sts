@@ -473,7 +473,13 @@ class AuthorizationDetails {
       maxLifetimeS: definition.maxLifetimeS, acr: definition.acr,
       derivableFrom: definition.derivableFrom,
       introspectionClaims: definition.introspectionClaims,
-      limits: definition.limits, validateLimits: definition.validateLimits
+      limits: definition.limits, validateLimits: definition.validateLimits,
+      // FINE-GRAINED AUTHORIZATION'S MAPPING (#564): the type's rows, the
+      // members it leaves out, and the definition object `xacml/fga_map.ts`
+      // digests — carried so the issuance PEP can hand this entry to
+      // `fga_map.request()` as it stands.
+      xacml: definition.xacml, notForPolicy: definition.notForPolicy,
+      source: definition.source
     };
   }
 
