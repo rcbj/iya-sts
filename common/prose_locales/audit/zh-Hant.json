@@ -903,6 +903,10 @@
     "en": "bacc42f309e8f6f8",
     "text": "設定了 AuthZEN 呼叫方的應用程式範圍"
   },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "已授予遠端 PEP 對實施細粒度授權之應用程式的 AuthZEN 存取權"
+  },
   "audit.actions.admin.authzen.callbacks.set.label": {
     "en": "e8439c3ddb41d93f",
     "text": "已設定 AuthZEN 呼叫端的存取請求回呼 URL"

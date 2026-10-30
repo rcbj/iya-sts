@@ -13053,7 +13053,44 @@ const SETTINGS = [
                  'and for the same reason: this directory is in memory in ' +
                  'the default persistence mode, and a caller that can create ' +
                  'entries without bound can exhaust it. Reaching the limit ' +
-                 'refuses the CREATE and logs; it never evicts.' },
+                 'refuses the CREATE and logs; it never evicts. An ' +
+                 'application\'s own fine-grained authorization policy ' +
+                 'does not count here: xacml.maxApplicationPolicies bounds ' +
+                 'those.' },
+
+  // AN APPLICATION'S OWN POLICIES HAVE A BOUND OF THEIR OWN (#1210, rcbj,
+  // 2026-10-30). Until then they counted against xacml.maxPolicies (200)
+  // while applications.max admits 500 applications, so a realm with many
+  // applications filled ou=policies with theirs and locked administrators
+  // out of writing their own. The two kinds of entry are written by
+  // different people for different reasons, so each has its own ceiling.
+  //
+  // **THE DEFAULT IS THE LITERAL 500, applications.max's default, AND NOT
+  // A READ OF applications.max.** A row's default is a literal everywhere
+  // it is shown — env/defaults.js (generated from this column), the
+  // console's settings block, docs/configuration.md — and a default
+  // computed from another row would be the first of its kind, showing a
+  // value none of those could state. And the two count different things:
+  // applications.max counts every entry under ou=applications, most of
+  // which (a SAML entityID, a WS-Trust AppliesTo, a Kerberos SPN, this
+  // service's own seeded ones) never declare an access type and never get
+  // a policy. An operator who raises applications.max raises this beside
+  // it when those applications will enforce fine-grained authorization;
+  // the refusal (STS-FGA-0024) names both settings.
+  { key: 'xacml.maxApplicationPolicies', group: 'XACML',
+    label: 'Application policies the repository may hold',
+    env: 'STS_XACML_MAX_APPLICATION_POLICIES', type: 'int', dflt: 500,
+    min: 0, max: 1000000, runtime: true,
+    description: 'How many applications\' own fine-grained authorization ' +
+                 'policies (entries under ou=policies carrying ' +
+                 'xacmlApplication, orphaned ones included) the ' +
+                 'repository may hold. They do not count against ' +
+                 'xacml.maxPolicies, which bounds the policies ' +
+                 'administrators write. The default is applications.max\'s ' +
+                 'default, so every application the registry admits by ' +
+                 'default can hold one; raise this beside applications.max. ' +
+                 'Reaching the limit refuses the CREATE and logs; it never ' +
+                 'evicts.' },
 
   { key: 'xacml.returnPolicyIdList', group: 'XACML',
     label: 'Always return the applicable policy identifiers',

@@ -924,5 +924,17 @@
   "fga.saveNotFor": "Save the list",
   "fga.boxXacml": "XACML mapping",
   "fga.helpXacml": "A JSON array of rows: path, attributeId, and optionally category, dataType, multiplicity and description.",
-  "fga.boxNotFor": "Not for the policy"
+  "fga.boxNotFor": "Not for the policy",
+  "fga.tileApplicationPolicies": "Applications' own policies in this realm",
+  "fga.pepsHeading": "Remote PEPs",
+  "fga.pepsUnknown": "Which remote PEPs may forward this application's evaluations could not be read.",
+  "fga.pepsNote": "A remote PEP's edge PDP forwards each AuthZEN evaluation about an application that enforces fine-grained authorization to this service, as an AuthZEN caller: its entry needs membership of <code>{authzenGroup}</code> and this application in its scope. Enforce grants both, where missing, to every member of <code>{group}</code> (the REMOTE_PEPS holders); Stop enforcing removes neither. A member added since is granted by the button below.",
+  "fga.colPep": "Remote PEP",
+  "fga.colKind": "Kind",
+  "fga.colPepMember": "Holds AUTHZEN_PEPS",
+  "fga.colPepScoped": "This application in its scope",
+  "fga.pepsNone": "No person, service account or application in this realm holds REMOTE_PEPS.",
+  "fga.pepsUnlocated": "Members of the group that name no entry, and so cannot be granted: {n}.",
+  "fga.pepsRegrant": "Grant the remote PEPs again",
+  "fga.pepsRegrantTip": "Enforce again: every holder of REMOTE_PEPS without the AuthZEN group or this application in its scope is granted both. Nothing else changes."
 }

@@ -924,5 +924,17 @@
   "fga.saveNotFor": "Guardar la lista",
   "fga.boxXacml": "Asignación XACML",
   "fga.helpXacml": "Un array JSON de filas: path, attributeId y, opcionalmente, category, dataType, multiplicity y description.",
-  "fga.boxNotFor": "Fuera de la política"
+  "fga.boxNotFor": "Fuera de la política",
+  "fga.tileApplicationPolicies": "Políticas propias de aplicaciones en este reino",
+  "fga.pepsHeading": "PEP remotos",
+  "fga.pepsUnknown": "No se pudo leer qué PEP remotos pueden reenviar las evaluaciones de esta aplicación.",
+  "fga.pepsNote": "El PDP perimetral de un PEP remoto reenvía a este servicio cada evaluación AuthZEN sobre una aplicación que aplica autorización detallada, como un llamante AuthZEN: su entrada necesita pertenecer a <code>{authzenGroup}</code> y tener esta aplicación en su ámbito. Aplicar concede ambas cosas, donde falten, a cada miembro de <code>{group}</code> (los titulares de REMOTE_PEPS); Dejar de aplicar no quita ninguna. Un miembro añadido después se concede con el botón de abajo.",
+  "fga.colPep": "PEP remoto",
+  "fga.colKind": "Tipo",
+  "fga.colPepMember": "Tiene AUTHZEN_PEPS",
+  "fga.colPepScoped": "Esta aplicación en su ámbito",
+  "fga.pepsNone": "Ninguna persona, cuenta de servicio o aplicación de este reino tiene REMOTE_PEPS.",
+  "fga.pepsUnlocated": "Miembros del grupo que no nombran ninguna entrada y por eso no se pueden conceder: {n}.",
+  "fga.pepsRegrant": "Conceder de nuevo a los PEP remotos",
+  "fga.pepsRegrantTip": "Aplicar de nuevo: cada titular de REMOTE_PEPS sin el grupo AuthZEN o sin esta aplicación en su ámbito recibe ambas cosas. Nada más cambia."
 }

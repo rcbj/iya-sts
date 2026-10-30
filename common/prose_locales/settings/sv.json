@@ -6784,8 +6784,16 @@
     "text": "Policyer som repositoryt får rymma"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "Hur många poster som får finnas under ou=policies. Samma slags gräns som ou=federations och ou=applications har, och av samma skäl: den här katalogen ligger i minnet i standardläget för persistens, och en anropare som kan skapa poster utan gräns kan uttömma den. Att nå gränsen vägrar SKAPANDET och loggar; den tar aldrig bort något."
+    "en": "bb4fc97c445e9e60",
+    "text": "Hur många poster som får finnas under ou=policies. Samma slags gräns som ou=federations och ou=applications har, och av samma skäl: den här katalogen ligger i minnet i standardläget för persistens, och en anropare som kan skapa poster utan gräns kan uttömma den. Att nå gränsen vägrar SKAPANDET och loggar; den tar aldrig bort något. En applikations egen policy för finkornig auktorisering räknas inte här: xacml.maxApplicationPolicies begränsar dem."
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "Applikationspolicyer som arkivet får innehålla"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "Hur många applikationers egna policyer för finkornig auktorisering (poster under ou=policies med xacmlApplication, föräldralösa inräknade) arkivet får innehålla. De räknas inte mot xacml.maxPolicies, som begränsar de policyer administratörer skriver. Standardvärdet är standardvärdet för applications.max, så varje applikation som registret tar emot som standard kan ha en; höj det tillsammans med applications.max. Att nå gränsen vägrar SKAPANDET och loggar; den tar aldrig bort något."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",

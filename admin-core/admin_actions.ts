@@ -6320,8 +6320,10 @@ class AdminActions {
     const actor = String(body.actor || '');
     const confirmed = body.confirm === true || body.confirm === 'true' ||
                       body.confirm === 'on';
+    // `via` IS `api`: since #446 the console is a client of `/admin-api`,
+    // and this is the one door both arrive through.
     const result = action === 'fga-enable'
-      ? fga.enable(identifier, { actor: actor })
+      ? fga.enable(identifier, { actor: actor, via: 'api' })
       : (action === 'fga-disable'
         ? fga.disable(identifier, { actor: actor })
         : (action === 'fga-create-policy'
@@ -6341,7 +6343,8 @@ class AdminActions {
       message = 'Fine-grained authorization is enforced on "' + identifier +
         '": every authorization detail of its types, and every AuthZEN ' +
         'evaluation about it, is decided by its policy "' + policy +
-        '" from the next request.';
+        '" from the next request.' + AdminActions.pepGrantSentence(
+          result.peps);
     } else if (action === 'fga-disable') {
       message = 'Fine-grained authorization is no longer enforced on "' +
         identifier + '". Its policy is kept as it is.';
@@ -6363,7 +6366,45 @@ class AdminActions {
                                                      : !!result.enforced,
              created: result.created === undefined ? undefined
                                                    : !!result.created,
+             // WHAT THE ENABLE GRANTED THE REALM'S REMOTE PEPS (#1210):
+             // `granted`, `held` and `failed`, each holder by name.
+             peps: result.peps === undefined ? undefined : result.peps,
              message: message };
+  }
+
+  // THE GRANT IN ONE SENTENCE (#1210), English as every message here is:
+  // who was granted, who already held it, and who could not be, with why.
+  static pepGrantSentence(peps: any): string {
+    helpers.log.debug("Entering AdminActions.pepGrantSentence().");
+    if (!peps) {
+      helpers.log.debug("Leaving AdminActions.pepGrantSentence(). " +
+                        "No grant.");
+      return '';
+    }
+    const names = function (list: any[]): string {
+      return (list || []).map(function (one: any) {
+        return String(one.name || one.dn || '?');
+      }).join(', ');
+    };
+    const parts: string[] = [];
+    if ((peps.granted || []).length) {
+      parts.push('Granted the remote PEP(s) ' + names(peps.granted) +
+                 ' membership of ' + String(peps.authzenGroup || '') +
+                 ' and this application in their AuthZEN scope.');
+    }
+    if ((peps.held || []).length) {
+      parts.push('Already held: ' + names(peps.held) + '.');
+    }
+    (peps.failed || []).forEach(function (one: any) {
+      parts.push('Not granted: ' + String(one.name || '?') + ' (' +
+                 String(one.code || '') + ') — ' + String(one.why || ''));
+    });
+    if (!parts.length) {
+      parts.push('No remote PEP holds REMOTE_PEPS in this realm (group "' +
+                 String(peps.group || '') + '"), so none was granted.');
+    }
+    helpers.log.debug("Leaving AdminActions.pepGrantSentence().");
+    return ' ' + parts.join(' ');
   }
 
   /**

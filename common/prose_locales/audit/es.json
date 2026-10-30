@@ -903,6 +903,10 @@
     "en": "bacc42f309e8f6f8",
     "text": "Se estableció el ámbito de aplicaciones de un llamante de AuthZEN"
   },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "Se concedió a un PEP remoto acceso AuthZEN a una aplicación que aplica autorización detallada"
+  },
   "audit.actions.admin.authzen.callbacks.set.label": {
     "en": "e8439c3ddb41d93f",
     "text": "Se definieron las URL de callback de las solicitudes de acceso de un llamador AuthZEN"

@@ -94,6 +94,20 @@ interface FgaResult {
   enforced?: boolean;
   created?: boolean;
   changed?: boolean;
+  // enable() only (#1210): what the grant to the realm's remote PEPs did.
+  peps?: PepGrant;
+}
+
+// WHAT ENABLING GRANTED THE REALM'S REMOTE PEPS (#1210), as
+// `authzen/authzen_admin.ts`'s `grantRemotePeps()` answers it: each holder
+// of REMOTE_PEPS `granted` (something was written), `held` (it had both
+// already) or `failed` (with why and the code).
+interface PepGrant {
+  group: string;
+  authzenGroup: string;
+  granted: Array<Record<string, any>>;
+  held: Array<Record<string, any>>;
+  failed: Array<Record<string, any>>;
 }
 
 // Who is acting, for the audit rows.
@@ -103,6 +117,9 @@ interface ActOptions {
   policy?: string;
   // reset() only: the administrator confirmed the rewrite (#564, P5).
   confirm?: boolean;
+  // enable() only (#1210): the door, `console` or `api`, for the grant's
+  // audit rows.
+  via?: string;
 }
 
 // One declared type, as the console's Fine-grained authorization tab and
@@ -127,6 +144,7 @@ interface OwnedRow {
 
 interface FgaDeps {
   log: { debug(message: string): void; warn(message: string): void };
+  config: { value(key: string): any };
   errorCodes: {
     tag(code: string): string;
     mark<T>(target: T, code: string): T;
@@ -157,6 +175,14 @@ interface FgaDeps {
   // The mapping's coverage question (#564, P3): what a type leaves neither
   // mapped nor deliberately out.
   map: { uncovered(definition: any): string[] };
+  // The AuthZEN tab's library (#1210), LAZILY: the grant to the realm's
+  // remote PEPs and the view of what they hold. It reaches the directory
+  // through the slot `ldap/ldap_server.js` fills, which a require from
+  // here could not, and it is built by the composition root after 23c.
+  loadAuthzenAdmin(): {
+    grantRemotePeps(application: string, who: object): PepGrant;
+    remotePepsOf(application: string): Record<string, any>;
+  };
   sha256Hex(text: string): string;
   now(): Date;
 }
@@ -195,6 +221,7 @@ class FgaPolicies {
     log.debug("Leaving FgaPolicies.defaultDeps().");
     return {
       log: log,
+      config: require('../common/config'),
       errorCodes: require('../common/error_codes'),
       audit: require('../common/audit'),
       store: require('./xacml_store'),
@@ -202,6 +229,11 @@ class FgaPolicies {
       xml: require('./xacml_xml'),
       applications: require('../common/applications'),
       map: require('./fga_map'),
+      loadAuthzenAdmin: function (): any {
+        log.debug("Entering loadAuthzenAdmin().");
+        log.debug("Leaving loadAuthzenAdmin().");
+        return require('../authzen/authzen_admin');
+      },
       sha256Hex: function (text: string): string {
         return crypto.digest('sha256', text, 'hex');
       },
@@ -314,6 +346,26 @@ class FgaPolicies {
       log.debug("Leaving FgaPolicies.ensure(). It has one: " + own.name);
       return { ok: true, policy: own.name, created: false };
     }
+    // THE APPLICATIONS' OWN CEILING (#1210), asked before anything is
+    // built so the refusal names it: the directory's write door refuses
+    // past it too (logged under the same code), and that is the bound
+    // that holds for every door, but its refusal reaches here only as
+    // "the directory refused the entry".
+    const ceiling = Number(this.deps.config.value(
+      'xacml.maxApplicationPolicies'));
+    const held = store.fgaPolicies().length;
+    if (held >= ceiling) {
+      log.debug("Leaving FgaPolicies.ensure(). Application policies full.");
+      return this.refused('STS-FGA-0024', 'not-written',
+                          'The fine-grained policy of "' + id + '" was not ' +
+                          'created: ou=policies already holds ' + held +
+                          ' applications\' own policies, the maximum ' +
+                          '(xacml.maxApplicationPolicies = ' + ceiling +
+                          '; applications.max is ' +
+                          String(this.deps.config.value('applications.max')) +
+                          '). Raise it, or remove orphaned policies on ' +
+                          'XACML → Policies.');
+    }
     const name = this.freeName(id);
     if (!name) {
       log.debug("Leaving FgaPolicies.ensure(). No free name.");
@@ -414,9 +466,39 @@ class FgaPolicies {
                           (set.errors || []).join(' ') ||
                           'The application would not take the switch.');
     }
+    // THE REALM'S REMOTE PEPS ARE GRANTED WHAT FORWARDING NEEDS (#1210),
+    // on EVERY enable, so enabling an application that already enforces
+    // grants a holder that joined the group since. Their failures are
+    // answered and never fail the switch, which is already on.
+    const peps = this.grantPeps(id, options);
     log.debug("Leaving FgaPolicies.enable().");
     return { ok: true, policy: ensured.policy, enforced: true,
-             changed: !!set.changed };
+             changed: !!set.changed, peps: peps };
+  }
+
+  // The grant, through the AuthZEN tab's library (`authzen_admin.ts`
+  // argues it). A library that throws is one answer with every holder
+  // unknown, logged under STS-FGA-0025, rather than a failed enable.
+  private grantPeps(identifier: string, options?: ActOptions): PepGrant {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering FgaPolicies.grantPeps().");
+    try {
+      const out = this.deps.loadAuthzenAdmin().grantRemotePeps(identifier,
+        { actor: (options && options.actor) || '',
+          via: (options && options.via) || 'console' });
+      log.debug("Leaving FgaPolicies.grantPeps().");
+      return out;
+    } catch (e) {
+      const why = String((e && e.message) || e);
+      log.debug("Caught in FgaPolicies.grantPeps(): " + why);
+      log.warn(errorCodes.tag('STS-FGA-0025') + 'fga: enabling fine-' +
+               'grained authorization on "' + identifier + '" could not ' +
+               'grant the realm\'s remote PEPs: ' + why);
+      log.debug("Leaving FgaPolicies.grantPeps(). It threw.");
+      return { group: '', authzenGroup: '', granted: [], held: [],
+               failed: [{ name: '', kind: 'unknown', dn: '', why: why,
+                          code: 'STS-FGA-0025' }] };
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -840,10 +922,34 @@ class FgaPolicies {
       failure: resolved.ok ? '' : String(resolved.failure || ''),
       code: resolved.ok ? '' : errorCodes.codeOf(resolved),
       why: resolved.ok ? '' : String(resolved.why || ''),
-      types: types, unreadable: unreadable, template: TEMPLATE
+      types: types, unreadable: unreadable, template: TEMPLATE,
+      peps: this.pepsOf(id),
+      // THE APPLICATIONS' OWN CEILING (#1210), for the tab's figures.
+      applicationPolicies: {
+        count: store.fgaPolicies().length,
+        max: Number(this.deps.config.value('xacml.maxApplicationPolicies'))
+      }
     };
     log.debug("Leaving FgaPolicies.state(). " + types.length + " type(s).");
     return out;
+  }
+
+  // WHAT THE REALM'S REMOTE PEPS HOLD of what forwarding this
+  // application's evaluations needs (#1210), for the tab; null when the
+  // AuthZEN library cannot say, which the tab draws as unknown.
+  private pepsOf(identifier: string): Record<string, any> | null {
+    const { log } = this.deps;
+    log.debug("Entering FgaPolicies.pepsOf().");
+    try {
+      const out = this.deps.loadAuthzenAdmin().remotePepsOf(identifier);
+      log.debug("Leaving FgaPolicies.pepsOf().");
+      return out;
+    } catch (e) {
+      log.debug("Caught in FgaPolicies.pepsOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving FgaPolicies.pepsOf(). Unknown.");
+      return null;
+    }
   }
 
   /**
