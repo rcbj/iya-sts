@@ -679,9 +679,12 @@ class ServiceAccounts {
     // THE ACCOUNT'S OWN POLICY decides whether an owner is required
     // (#1240): the reference the caller is about to write (`policy`, a
     // create's), else the one already on the entry.
+    // Read off the entry whether or not it is one yet: a person being made
+    // one by a create already carries the reference the create wrote.
+    const onEntry = selfDn ? this.read(selfDn) : null;
     const reference = body.policy !== undefined && body.policy !== null
       ? String(body.policy)
-      : (selfDn ? this.policyReference(selfDn) : '');
+      : (onEntry ? firstOf(onEntry.values, 'stsServiceAccountPolicy') : '');
     if (!owners.length &&
         this.deps.requiresOwner(reference, String(selfDn || ''))) {
       log.debug("Leaving ServiceAccounts.check(). No owner.");
