@@ -1734,6 +1734,8 @@
   "authzen.maxEvaluations|description": "The most items one POST /access/v1/evaluations may carry. Over it the whole batch is refused 400 before any item is decided: every item is a full decision on this service's thread, and an unbounded list is a way to spend it.",
   "authzen.maxBodyBytes|label": "Largest batch request (bytes)",
   "authzen.maxBodyBytes|description": "The largest body POST /access/v1/evaluations accepts. Over it the whole batch is refused 400 before it is read. The service's own body limit (5 MB) is the ceiling.",
+  "authzen.signedMetadata|label": "Sign the AuthZEN metadata",
+  "authzen.signedMetadata|description": "When on, /.well-known/authzen-configuration carries signed_metadata (AuthZEN 1.0 section 9.1): a JWT of the same members, iss the PDP identifier, signed with the realm's key as RFC 8414's metadata is (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader), and verifiable with the realm's JWKS. A PEP that supports it believes the signed values over the plain ones.",
   "authzen.returnReasons|label": "Return the reasons for a decision",
   "authzen.returnReasons|description": "When on, a decision carries a context with the XACML decision, why, any advice, and the obligations that made a Permit false. Off by default: a reason tells a caller something about the policy, and decision alone is the answer either way.",
   "ssf.enabled|label": "SSF enabled",

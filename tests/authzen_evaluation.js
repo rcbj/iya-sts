@@ -506,12 +506,12 @@ async function childBody() {
   t.check(advertised.every(function (key) {
     return ['access_evaluation_endpoint',
             'access_evaluations_endpoint'].indexOf(key) >= 0;
-  }) && !doc.capabilities && !doc.signed_metadata &&
+  }) && !doc.capabilities &&
           Object.keys(doc).every(function (key) {
             return key.indexOf('search') < 0;
           }),
-          'W3. nothing unimplemented is advertised: no search endpoint, no ' +
-          'capabilities, no signed_metadata', JSON.stringify(doc));
+          'W3. nothing unimplemented is advertised: no search endpoint and ' +
+          'no capabilities', JSON.stringify(doc));
   for (let i = 0; i < advertised.length; i += 1) {
     const at = String(doc[advertised[i]]).replace(/^https?:\/\/[^/]+/, '');
     const answered = await request(port, 'POST', at, null, {});
@@ -519,6 +519,33 @@ async function childBody() {
             'W4. ' + advertised[i] + ' is a registered route (' + at + ')',
             brief(answered));
   }
+  let signedClaims = null;
+  try {
+    signedClaims = inRealm(function () {
+      return helpers.verifyOwnJws(String(doc.signed_metadata || ''));
+    });
+  } catch (e) {
+    log.debug("Caught in childBody(): " + ((e && e.message) || e));
+    signedClaims = null;
+  }
+  t.check(!!signedClaims && signedClaims.iss === own &&
+          signedClaims.policy_decision_point === own &&
+          signedClaims.access_evaluation_endpoint ===
+            doc.access_evaluation_endpoint &&
+          signedClaims.signed_metadata === undefined,
+          'W7. signed_metadata verifies with the realm\'s key, iss is the ' +
+          'PDP identifier, and its claims are the plain members (#1178)',
+          JSON.stringify(signedClaims));
+  inRealm(function () {
+    config.setOverride('authzen.signedMetadata', false);
+  });
+  r = await request(port, 'GET', '/.well-known/authzen-configuration' +
+                    PREFIX, null);
+  inRealm(function () {
+    config.setOverride('authzen.signedMetadata', true);
+  });
+  t.check(r.json && r.json.signed_metadata === undefined,
+          'W8. authzen.signedMetadata off leaves it out', brief(r));
   r = await request(port, 'GET',
                     '/.well-known/authzen-configuration/realm/nowhere', null);
   t.check(r.status === 404, 'W5. a path naming no realm is a 404', brief(r));

@@ -557,8 +557,9 @@ async function theMetadata() {
                 PREFIX,
       "answered " + r.status + " " + r.text);
   });
-  check("nothing unimplemented is advertised", function () {
-    assert.ok(!doc.capabilities && !doc.signed_metadata &&
+  check("nothing unimplemented is advertised, and signed_metadata is a JWT",
+        function () {
+    assert.ok(!doc.capabilities && typeof doc.signed_metadata === "string" &&
               Object.keys(doc).every(function (key) {
                 return key.indexOf("search") < 0;
               }), JSON.stringify(doc));

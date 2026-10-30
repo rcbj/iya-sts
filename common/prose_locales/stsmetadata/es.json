@@ -96,8 +96,8 @@
     "text": "full para el conjunto de funcionalidades obligatorias: el lenguaje de políticas, los siete valores de decisión incluidos los tres Indeterminate extendidos, la coincidencia de objetivos, las condiciones, las variables, los doce algoritmos de combinación, las obligaciones y los consejos, las referencias a políticas y la biblioteca estándar de funciones sobre los diecisiete tipos de datos. Verificado con la suite de conformidad de OASIS — se superan 454 de los 455 casos obligatorios, y la única excepción se registra con su argumento en xacml/conformance/MANIFEST.js. NO cubierto: AttributeSelector y las funciones XPath (una política que use una es Indeterminate en lugar de quedar vacía en silencio), los perfiles Multiple Decision y Hierarchical Resource, y la delegación administrativa."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "96dbb5058267c713",
-    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en sus dos formas. Falta: las tres Search APIs, signed_metadata y todos los perfiles (Obligations, Access Request and Approval, los de OAuth), todos aún borradores."
+    "en": "b304681de092d077",
+    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en sus dos formas, signed_metadata incluido. Falta: las tres Search APIs y todos los perfiles (Obligations, Access Request and Approval, los de OAuth), todos aún borradores."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -768,8 +768,8 @@
     "text": "POST con valores predeterminados de nivel superior subject, action, resource y context y un arreglo evaluations cuyos elementos los sustituyen; se obtiene evaluations, una decisión por elemento en el orden de la solicitud. options.evaluations_semantic es execute_all (el predeterminado), deny_on_first_deny o permit_on_first_permit. El fallo de un elemento es false con context.error y nunca queda oculto por el 200; un lote por encima de authzen.maxEvaluations o authzen.maxBodyBytes es un 400 antes de decidir nada. Cada elemento es su propia fila de auditoría, con el id del lote."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "411b951f2d32a644",
-    "text": "El documento de la sección 9: policy_decision_point (la base de este dominio, que coincide con la URL desde la que se obtiene) y solo los endpoints que responden aquí — ningún endpoint de búsqueda ni capabilities hasta que alguno esté implementado de extremo a extremo, y sin signed_metadata. Público; responde 501 mientras la API está desactivada."
+    "en": "64cb62bbdb06b873",
+    "text": "El documento de la sección 9: policy_decision_point (la base de este dominio, que coincide con la URL desde la que se obtiene) y solo los endpoints que responden aquí — ningún endpoint de búsqueda ni capabilities hasta que alguno esté implementado de extremo a extremo — y signed_metadata, un JWT con los mismos miembros con iss el identificador del PDP, verificable con el JWKS del dominio (authzen.signedMetadata). Público; responde 501 mientras la API está desactivada."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

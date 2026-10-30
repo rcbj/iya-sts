@@ -96,8 +96,8 @@
     "text": "full för den obligatoriska funktionsuppsättningen: policyspråket, de sju beslutsvärdena inklusive de tre utökade Indeterminate, målmatchning, villkor, variabler, de tolv kombinationsalgoritmerna, obligations och advice, policyreferenser, och standardfunktionsbiblioteket över alla sjutton datatyper. Hållen mot OASIS konformitetssvit — 454 av de 455 obligatoriska fallen godkänns, och det enda undantaget är dokumenterat med sitt argument i xacml/conformance/MANIFEST.js. INTE täckt: AttributeSelector och XPath-funktionerna (en policy som använder en av dem är Indeterminate snarare än tyst tom), profilerna Multiple Decision och Hierarchical Resource, och administrativ delegering."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "96dbb5058267c713",
-    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda dess former. Saknas: de tre Search APIs, signed_metadata och alla profiler (Obligations, Access Request and Approval, OAuth-profilerna), alla fortfarande utkast."
+    "en": "b304681de092d077",
+    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda dess former, signed_metadata inräknad. Saknas: de tre Search APIs och alla profiler (Obligations, Access Request and Approval, OAuth-profilerna), alla fortfarande utkast."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -768,8 +768,8 @@
     "text": "POST med standardvärden på toppnivå för subject, action, resource och context och en evaluations-array vars poster ersätter dem; svaret är evaluations, ett beslut per post i begärans ordning. options.evaluations_semantic är execute_all (standard), deny_on_first_deny eller permit_on_first_permit. En posts fel är false med context.error och döljs aldrig av 200; en batch över authzen.maxEvaluations eller authzen.maxBodyBytes är en 400 innan något avgörs. Varje post är sin egen granskningsrad, med batchens id."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "411b951f2d32a644",
-    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som stämmer med den URL det hämtas under) och bara de slutpunkter som svarar här — ingen sökslutpunkt och inga capabilities förrän någon är implementerad hela vägen, och ingen signed_metadata. Offentligt; svarar 501 medan API:t är avstängt."
+    "en": "64cb62bbdb06b873",
+    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som stämmer med den URL det hämtas under) och bara de slutpunkter som svarar här — ingen sökslutpunkt och inga capabilities förrän någon är implementerad hela vägen — och signed_metadata, en JWT av samma medlemmar med iss PDP-identifieraren, verifierbar med sfärens JWKS (authzen.signedMetadata). Offentligt; svarar 501 medan API:t är avstängt."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

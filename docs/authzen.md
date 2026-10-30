@@ -349,7 +349,10 @@ so a realm's document is at `/.well-known/authzen-configuration/realm/<id>`:
 
 It lists only what answers in that realm: the batch endpoint only while
 `authzen.batchEnabled` is on. There are no search endpoints, no
-`capabilities` and no `signed_metadata`. While the API is off in the realm the
+`capabilities`. It carries `signed_metadata`: a JWT of the same members, with
+`iss` the PDP identifier, signed with the realm's key the way the OAuth
+metadata is and verifiable with the realm's JWKS (`/oauth2/jwks`).
+`authzen.signedMetadata` turns it off. While the API is off in the realm the
 document answers 501.
 
 ### Who may call it
@@ -433,6 +436,7 @@ live source; this table is a copy.
 | `authzen.batchEnabled` | `STS_AUTHZEN_BATCH_ENABLED` | `true` | `POST /access/v1/evaluations` answers, and the metadata names it |
 | `authzen.maxEvaluations` | `STS_AUTHZEN_MAX_EVALUATIONS` | `64` | The most items one batch may carry (1–1000) |
 | `authzen.maxBodyBytes` | `STS_AUTHZEN_MAX_BODY_BYTES` | `262144` | The largest batch request body |
+| `authzen.signedMetadata` | `STS_AUTHZEN_SIGNED_METADATA` | `true` | The metadata carries `signed_metadata` |
 | `authzen.returnReasons` | `STS_AUTHZEN_RETURN_REASONS` | `false` | Add the XACML decision, the reason and any advice to the response's `context` |
 | `roles.authzenPepGroup` | `STS_ROLES_AUTHZEN_PEP_GROUP` | `authzen-peps` | The group whose members hold `AUTHZEN_PEPS` |
 
@@ -456,7 +460,6 @@ metadata.
 | The three Search APIs (subject, resource, action) | #1175 |
 | Searches as `/report` sources, run with the permissions of the person signed in | #1176 |
 | The Obligations Profile | #1177 |
-| `signed_metadata` | #1178 |
 | An AuthZEN endpoint on the remote PEP container | #1179 |
 | The Access Request and Approval Profile (design) | #1180 |
 | The OAuth token issuance and token exchange binding (design) | #1181 |
