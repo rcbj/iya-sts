@@ -557,6 +557,94 @@ function thePublishedExample(t) {
   log.debug("Leaving thePublishedExample().");
 }
 
+// THE OBLIGATIONS PROFILE (#1177): the conversion of an XACML obligation and
+// the rule that only a PEP declaring every type is handed any.
+function theObligations(t) {
+  log.debug("Entering theObligations().");
+  t.log.info('=== O. the Obligations Profile ===');
+  const surface = require('../xacml/xacml');
+  const assignment = function (id, value) {
+    log.debug("Entering assignment().");
+    log.debug("Leaving assignment().");
+    return { attributeId: id, type: model.TYPE.STRING, value: value };
+  };
+  const stepUp = { id: map.OBLIGATION_PREFIX + 'step-up', assignments: [
+    assignment(map.OBLIGATION_PREFIX + 'step-up:acr_value', 'phr'),
+    assignment('amr_values', 'hwk')] };
+  const other = { id: 'urn:example:obligation:watermark',
+                  assignments: [assignment('urn:example:text', 'secret')] };
+  const logged = { id: 'urn:sts:xacml:obligation:log', assignments: [] };
+  const permit = function (obligations) {
+    log.debug("Entering permit().");
+    log.debug("Leaving permit().");
+    return { decision: model.DECISION.PERMIT, status: {}, advice: [],
+             obligations: obligations };
+  };
+  const converted = map.obligationsOf(permit([stepUp, other, logged]));
+  t.check(converted.handed.length === 2 &&
+          converted.handed[0].type === 'step-up' &&
+          converted.handed[0].properties.acr_value === 'phr' &&
+          Array.isArray(converted.handed[0].properties.amr_values) &&
+          converted.handed[1].type === 'custom' &&
+          converted.handed[1].properties.xacml_obligation ===
+            'urn:example:obligation:watermark' &&
+          converted.handed[1].properties.text === 'secret' &&
+          converted.handed[0].id !== converted.handed[1].id,
+          'O1. a prefixed obligation is its registered type, any other is ' +
+          'custom, a property is its attribute id\'s last segment, and the ' +
+          'log obligation is discharged here and not handed',
+          JSON.stringify(converted));
+  const decide = function (answer, supported) {
+    log.debug("Entering decide().");
+    log.debug("Leaving decide().");
+    return map.outcome(answer, surface.enforce(answer, 'deny-biased'), '',
+                       supported);
+  };
+  let o = decide(permit([stepUp]), null);
+  t.check(o.decision === false && o.obligations.length === 0,
+          'O2. a PEP that declared nothing is handed nothing, and the ' +
+          'Permit stays false', JSON.stringify(o));
+  o = decide(permit([stepUp]), ['notification']);
+  t.check(o.decision === false && o.obligations.length === 0,
+          'O3. nor is one that declared other types');
+  o = decide(permit([stepUp]), ['step-up']);
+  t.check(o.decision === true && o.obligations.length === 1 &&
+          o.obligations[0].type === 'step-up',
+          'O4. one that declared every type is handed them, and the Permit ' +
+          'is true', JSON.stringify(o));
+  o = decide({ decision: model.DECISION.DENY, status: {}, advice: [],
+               obligations: [{ id: map.OBLIGATION_PREFIX + 'notification',
+                 assignments: [assignment('to', 'soc@example.com'),
+                               assignment('body', 'denied')] }] },
+             ['notification']);
+  t.check(o.decision === false && o.obligations.length === 1 &&
+          Array.isArray(o.obligations[0].properties.to),
+          'O5. a Deny\'s obligations are handed beside false',
+          JSON.stringify(o));
+  o = decide(permit([{ id: map.OBLIGATION_PREFIX + 'step-up',
+                       assignments: [] }]), ['step-up']);
+  t.check(o.decision === false && o.obligations.length === 0 &&
+          o.obligationProblems.length === 1,
+          'O6. a registered type without a property it requires hands ' +
+          'nothing, and the Permit is false', JSON.stringify(o));
+  t.equal(catalogue.parse({ object: 'context',
+                            property: 'supported_obligations',
+                            attributeId: 'urn:example:x' }).code,
+          'STS-AUTHZEN-0011',
+          'O7. context.supported_obligations is the adapter\'s, not a ' +
+          'catalogue property');
+  t.equal(codeOf(request({ context: { supported_obligations: 'step-up' } })),
+          'STS-AUTHZEN-0003', 'O8. supported_obligations is an array');
+  const declared = map.read(request({ context: {
+    supported_obligations: ['step-up'] } }), rows());
+  t.check(declared.evaluation &&
+          declared.evaluation.supportedObligations.join() === 'step-up' &&
+          declared.evaluation.supplied
+            .indexOf('context.supported_obligations') >= 0,
+          'O9. and is read as the declaration', JSON.stringify(declared));
+  log.debug("Leaving theObligations().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   theCatalogue(t);
@@ -566,6 +654,7 @@ async function run(t) {
   thePip(t);
   theDecision(t);
   thePublishedExample(t);
+  theObligations(t);
   log.debug("Leaving run().");
 }
 

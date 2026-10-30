@@ -93,6 +93,15 @@ const POLICY = [
   '            deny',
   '            target clause act == "delete"',
   '        }',
+  '        rule approve {',
+  '            permit',
+  '            target clause act == "approve"',
+  '            on permit {',
+  '                obligation "urn:sts:xacml:authzen:obligation:step-up" {',
+  '                    "acr_value" = "phr"',
+  '                }',
+  '            }',
+  '        }',
   '        rule explode {',
   '            permit',
   '            target clause act == "explode"',
@@ -484,6 +493,27 @@ async function childBody() {
   });
 
   // -------------------------------------------------------------------------
+  // B2. THE OBLIGATIONS PROFILE (#1177)
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', URL, pepCred,
+                    asked({ action: { name: 'approve' } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          !r.json.context,
+          'G1. a Permit with a step-up obligation, asked by a PEP that ' +
+          'declared none, is false', brief(r));
+  r = await request(port, 'POST', URL, pepCred,
+    asked({ action: { name: 'approve' },
+            context: { application: 'todo-app',
+                       supported_obligations: ['step-up'] } }));
+  const handed = (r.json && r.json.context &&
+                  r.json.context.obligations) || [];
+  t.check(r.status === 200 && r.json.decision === true &&
+          handed.length === 1 && handed[0].type === 'step-up' &&
+          handed[0].properties.acr_value === 'phr',
+          'G2. declared, it is true with the step-up in context.obligations',
+          brief(r));
+
+  // -------------------------------------------------------------------------
   // W. THE METADATA (#1163)
   // -------------------------------------------------------------------------
   const fromRoot = await request(port, 'GET',
@@ -503,6 +533,10 @@ async function childBody() {
   const advertised = Object.keys(doc).filter(function (key) {
     return /_endpoint$/.test(key);
   });
+  t.check(Array.isArray(doc.supported_obligations) &&
+          doc.supported_obligations.indexOf('step-up') >= 0,
+          'W0. the metadata advertises supported_obligations (#1177)',
+          JSON.stringify(doc));
   t.check(advertised.every(function (key) {
     return ['access_evaluation_endpoint',
             'access_evaluations_endpoint'].indexOf(key) >= 0;

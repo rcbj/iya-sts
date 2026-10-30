@@ -156,8 +156,11 @@ const RESERVED_IDS = Object.freeze([
   model.ATTRIBUTE.CURRENT_DATE, model.ATTRIBUTE.CURRENT_DATETIME
 ]);
 
-// The context members the adapter reads itself (the header).
-const RESERVED_CONTEXT = Object.freeze(['application']);
+// The context members the adapter reads itself (the header):
+// `application`, and since #1177 the Obligations Profile's
+// `supported_obligations`, the PEP's declaration of what it can carry out.
+const RESERVED_CONTEXT = Object.freeze(['application',
+                                        'supported_obligations']);
 
 // The subject categories, where a bare name would be read as a directory
 // attribute of the subject.
@@ -291,9 +294,9 @@ class AuthzenCatalogue {
                 "member.");
       return { code: 'STS-AUTHZEN-0011',
                problem: 'context.' + segments[0] + ' is read by the adapter ' +
-                        'to choose the caller\'s application, and the ' +
-                        'application a policy sees is the trusted ' +
-                        'urn:sts:xacml:authzen:application' };
+                        'itself (the caller\'s application, or the ' +
+                        'obligations the PEP can carry out), never sent to ' +
+                        'the policy as a property' };
     }
     const attributeId = text('attributeId');
     if (!attributeId || attributeId.length > MAX_ID_LENGTH ||

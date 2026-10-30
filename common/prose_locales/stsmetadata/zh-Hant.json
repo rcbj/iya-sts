@@ -96,8 +96,8 @@
     "text": "full——就必要功能集而言：原則語言、七種決策值（包括三種延伸的 Indeterminate）、目標比對、條件、變數、十二種組合演算法、義務與建議、原則參照，以及涵蓋全部十七種資料類型的標準函式庫。依 OASIS 一致性測試套件檢驗——455 個必要案例中通過 454 個，唯一的例外連同其論證記錄於 xacml/conformance/MANIFEST.js。「未」涵蓋：AttributeSelector 與 XPath 函式（使用它們的原則會是 Indeterminate，而不是默默為空）、Multiple Decision 與 Hierarchical Resource 設定檔，以及管理委派。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "b304681de092d077",
-    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；Access Evaluations API（第 7 節）及其三種語意；以及兩種形式的 PDP 中繼資料（第 9 節），包括 signed_metadata。缺少：三個 Search API 以及所有設定檔（Obligations、Access Request and Approval、OAuth 相關），皆仍為草案。"
+    "en": "84df34d7cb483e0a",
+    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；Access Evaluations API（第 7 節）及其三種語意；兩種形式的 PDP 中繼資料（第 9 節），包括 signed_metadata；以及面向宣告了類型之 PEP 的 Obligations Profile 草案。缺少：三個 Search API，以及 Access Request and Approval 與 OAuth 設定檔，皆仍為草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

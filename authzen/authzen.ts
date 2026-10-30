@@ -348,13 +348,18 @@ class AuthzenSurface {
       { resolve: self.resolves(evaluation.subject.type) });
     const faultCode = String(errorCodes.codeOf(answer) || '');
     const enforcement = xacml.enforce(answer, 'deny-biased');
-    const outcome = map.outcome(answer, enforcement, faultCode);
+    // THE OBLIGATIONS PROFILE (#1177), while `authzen.obligationsProfile`
+    // is on: the PEP's declaration decides what is handed (`outcome()`).
+    const profile = config.value('authzen.obligationsProfile') !== false;
+    const outcome = map.outcome(answer, enforcement, faultCode,
+      profile ? evaluation.supportedObligations : null);
     // COUNTED AS A DECISION AND NOT AN ENFORCEMENT, the PDP endpoint's
     // reason: the caller enforced it, in its own process.
     self.deps.loadMonitor().record('authzen', { decision: answer.decision });
     const recorded = outcome.fault
       ? (faultCode || 'STS-AUTHZEN-0028')
-      : (outcome.undischargeable.length ? 'STS-AUTHZEN-0029' : '');
+      : (outcome.obligationProblems.length ? 'STS-AUTHZEN-0041'
+        : (outcome.undischargeable.length ? 'STS-AUTHZEN-0029' : ''));
     // WHAT THE ROW CARRIES: who asked, about which application, the two
     // types and the action, the request id, the decision — and NO property
     // value and no credential (decision 9).
@@ -372,7 +377,13 @@ class AuthzenSurface {
         (outcome.discharged.length ? '; discharged ' +
           outcome.discharged.join(', ') : '') +
         (outcome.undischargeable.length ? '; refused for the obligation ' +
-          outcome.undischargeable.join(', ') : '') + '.'
+          outcome.undischargeable.join(', ') : '') +
+        (outcome.obligations.length ? '; handed the obligation type(s) ' +
+          outcome.obligations.map(function (one: any) {
+            return one.type;
+          }).join(', ') : '') +
+        (outcome.obligationProblems.length ? '; ' +
+          outcome.obligationProblems.join('; ') : '') + '.'
     });
     if (outcome.fault) {
       log.error(errorCodes.tag('STS-AUTHZEN-0028') + 'authzen: the PDP ' +
@@ -384,6 +395,12 @@ class AuthzenSurface {
     const out: ItemResult = { status: 200, decision: outcome.decision };
     if (config.value('authzen.returnReasons') === true) {
       out.context = map.reasons(outcome);
+    }
+    // `context.obligations` (#1177): the reserved key the profile names, in
+    // the same context as any reasons.
+    if (outcome.obligations.length) {
+      out.context = Object.assign(out.context || {},
+                                  { obligations: outcome.obligations });
     }
     log.debug("Leaving AuthzenSurface.evaluateOne(). " + outcome.decision);
     return out;
@@ -450,6 +467,10 @@ class AuthzenSurface {
     };
     if (self.batchEnabled()) {
       out.access_evaluations_endpoint = base + EVALUATIONS_PATH;
+    }
+    // The Obligations Profile's member (its section 6), while it is on.
+    if (self.deps.config.value('authzen.obligationsProfile') !== false) {
+      out.supported_obligations = map.supportedObligationTypes();
     }
     const signed = self.signedMetadata(out);
     if (signed) {

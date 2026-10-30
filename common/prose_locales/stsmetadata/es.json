@@ -96,8 +96,8 @@
     "text": "full para el conjunto de funcionalidades obligatorias: el lenguaje de políticas, los siete valores de decisión incluidos los tres Indeterminate extendidos, la coincidencia de objetivos, las condiciones, las variables, los doce algoritmos de combinación, las obligaciones y los consejos, las referencias a políticas y la biblioteca estándar de funciones sobre los diecisiete tipos de datos. Verificado con la suite de conformidad de OASIS — se superan 454 de los 455 casos obligatorios, y la única excepción se registra con su argumento en xacml/conformance/MANIFEST.js. NO cubierto: AttributeSelector y las funciones XPath (una política que use una es Indeterminate en lugar de quedar vacía en silencio), los perfiles Multiple Decision y Hierarchical Resource, y la delegación administrativa."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "b304681de092d077",
-    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en sus dos formas, signed_metadata incluido. Falta: las tres Search APIs y todos los perfiles (Obligations, Access Request and Approval, los de OAuth), todos aún borradores."
+    "en": "84df34d7cb483e0a",
+    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en sus dos formas, signed_metadata incluido, y el borrador del Obligations Profile para un PEP que declara los tipos. Falta: las tres Search APIs y los perfiles Access Request and Approval y de OAuth, aún borradores."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

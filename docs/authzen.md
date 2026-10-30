@@ -108,7 +108,7 @@ Refused:
 * anything in `urn:sts:xacml:` (roles, the realm, the protocol, the caller,
   the application, and every other trusted fact);
 * `subject-id`, `resource-id`, `action-id`, and the current date and time;
-* `context.application`;
+* `context.application` and `context.supported_obligations`;
 * in a subject category, a bare directory attribute name such as
   `employeeType`. Use an identifier of your own, such as
   `urn:example:department`.
@@ -140,14 +140,63 @@ as an ordinary denial:
 | XACML result | `decision` |
 |---|---|
 | Permit | `true` |
-| Permit with an obligation this service cannot carry out | `false` |
+| Permit with an obligation the PEP has not declared it can carry out (see *Obligations*) | `false` |
 | Deny | `false` |
 | NotApplicable | `false` |
 | Indeterminate because an attribute was missing | `false` |
 | Indeterminate because of a fault (a root policy that will not load, a processing error) | an error (500), never `false` |
 
 `urn:sts:xacml:obligation:log` is the one obligation this service carries out;
-it is recorded in the audit log. With `authzen.returnReasons` on, the response
+it is recorded in the audit log.
+
+### Obligations
+
+This service implements the AuthZEN **Obligations Profile** (a draft). Any
+other XACML obligation is converted into the profile's form and handed to the
+PEP in `context.obligations`, but **only when the request declares, in
+`context.supported_obligations`, every obligation type the answer carries.** A
+PEP that does not know the profile would read `decision: true` and grant
+access without carrying the obligation out, so without the declaration the
+answer stays `false`.
+
+| XACML obligation id | AuthZEN `type` |
+|---|---|
+| `urn:sts:xacml:authzen:obligation:step-up` | `step-up` (requires `acr_value`; `amr_values` is an array) |
+| `urn:sts:xacml:authzen:obligation:notification` | `notification` (requires `to`, an array, and `body`) |
+| `urn:sts:xacml:authzen:obligation:session_termination` | `session_termination` (requires `subject`) |
+| `urn:sts:xacml:obligation:log` | not handed: this service carries it out |
+| anything else | `custom`, with the XACML id as `xacml_obligation` |
+
+Each attribute assignment becomes a property named by the last segment of its
+attribute id (`…:acr_value` and `acr_value` both become `acr_value`). A
+registered type missing a property it requires is not handed, and a Permit
+carrying it answers `false`. In ALFA:
+
+```
+rule approve {
+    permit
+    target clause act == "approve"
+    on permit {
+        obligation "urn:sts:xacml:authzen:obligation:step-up" {
+            "acr_value" = "phr"
+        }
+    }
+}
+```
+
+A PEP that sends `"context": { "supported_obligations": ["step-up"] }` gets:
+
+```json
+{ "decision": true,
+  "context": { "obligations": [
+    { "id": "obligation-1", "type": "step-up",
+      "properties": { "acr_value": "phr" } } ] } }
+```
+
+The metadata lists the types as `supported_obligations`.
+`authzen.obligationsProfile` turns the profile off.
+
+With `authzen.returnReasons` on, the response
 carries a `context` with the XACML decision, the reason and any advice. It is
 explanatory only: `decision` is the answer.
 
@@ -437,6 +486,7 @@ live source; this table is a copy.
 | `authzen.maxEvaluations` | `STS_AUTHZEN_MAX_EVALUATIONS` | `64` | The most items one batch may carry (1–1000) |
 | `authzen.maxBodyBytes` | `STS_AUTHZEN_MAX_BODY_BYTES` | `262144` | The largest batch request body |
 | `authzen.signedMetadata` | `STS_AUTHZEN_SIGNED_METADATA` | `true` | The metadata carries `signed_metadata` |
+| `authzen.obligationsProfile` | `STS_AUTHZEN_OBLIGATIONS_PROFILE` | `true` | Hand obligations to a PEP that declares every type (see *Obligations*) |
 | `authzen.returnReasons` | `STS_AUTHZEN_RETURN_REASONS` | `false` | Add the XACML decision, the reason and any advice to the response's `context` |
 | `roles.authzenPepGroup` | `STS_ROLES_AUTHZEN_PEP_GROUP` | `authzen-peps` | The group whose members hold `AUTHZEN_PEPS` |
 
@@ -459,7 +509,6 @@ metadata.
 |---|---|
 | The three Search APIs (subject, resource, action) | #1175 |
 | Searches as `/report` sources, run with the permissions of the person signed in | #1176 |
-| The Obligations Profile | #1177 |
 | An AuthZEN endpoint on the remote PEP container | #1179 |
 | The Access Request and Approval Profile (design) | #1180 |
 | The OAuth token issuance and token exchange binding (design) | #1181 |

@@ -649,9 +649,10 @@ const SPECS: Spec[] = [
               'per-realm attribute catalogue, with X-Request-ID and the ' +
               'section 11.3 challenge, the Access Evaluations API (section ' +
               '7) with its three semantics, and the PDP metadata (section ' +
-              '9) at both its forms, signed_metadata included. Missing: the ' +
-              'three Search APIs, and every profile (Obligations, Access ' +
-              'Request and Approval, the OAuth ones), all still drafts.' },
+              '9) at both its forms, signed_metadata included, and the ' +
+              'Obligations Profile draft for a PEP that declares the types. ' +
+              'Missing: the three Search APIs, and the Access Request and ' +
+              'Approval and OAuth profiles, still drafts.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +

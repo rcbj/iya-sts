@@ -96,8 +96,8 @@
     "text": "full：覆盖强制功能集：策略语言、七种决策值（包括三种扩展的 Indeterminate）、目标匹配、条件、变量、十二种组合算法、义务和建议、策略引用，以及覆盖全部十七种数据类型的标准函数库。按 OASIS 一致性测试套件验证——455 个强制用例中通过 454 个，唯一的例外连同其论证记录在 xacml/conformance/MANIFEST.js 中。未覆盖：AttributeSelector 和 XPath 函数（使用它们的策略结果为 Indeterminate，而不是悄无声息地为空）、Multiple Decision 和 Hierarchical Resource 配置文件，以及管理委托。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "b304681de092d077",
-    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；Access Evaluations API（第 7 节）及其三种语义；以及两种形式的 PDP 元数据（第 9 节），包括 signed_metadata。缺少：三个 Search API 以及所有配置文件（Obligations、Access Request and Approval、OAuth 相关），它们都仍是草案。"
+    "en": "84df34d7cb483e0a",
+    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；Access Evaluations API（第 7 节）及其三种语义；两种形式的 PDP 元数据（第 9 节），包括 signed_metadata；以及面向声明了类型的 PEP 的 Obligations Profile 草案。缺少：三个 Search API，以及 Access Request and Approval 和 OAuth 配置文件，它们仍是草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

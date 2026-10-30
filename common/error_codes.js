@@ -21242,6 +21242,12 @@ const CODES = [
     summary: 'The AuthZEN metadata document could not be signed for its ' +
       'signed_metadata, which was left out; the plain document was served.',
     spec: '' },
+  { code: 'STS-AUTHZEN-0041',
+    summary: 'An AuthZEN answer carried an XACML obligation that cannot be ' +
+      'handed as an Obligations Profile obligation (a registered type ' +
+      'without a property it requires), so none was handed and a Permit ' +
+      'answered false.',
+    spec: 'decision: false' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

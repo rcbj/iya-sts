@@ -6947,6 +6947,14 @@
     "en": "f21d61faadc593c0",
     "text": "Activado, /.well-known/authzen-configuration lleva signed_metadata (AuthZEN 1.0, sección 9.1): un JWT con los mismos miembros, iss el identificador del PDP, firmado con la clave del dominio como los metadatos de RFC 8414 (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader) y verificable con el JWKS del dominio. Un PEP que lo admite cree los valores firmados antes que los simples."
   },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "Entregar obligaciones a un PEP que las declara"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "El Obligations Profile de AuthZEN (un borrador). Activado, una obligación XACML se entrega al PEP en context.obligations — y un Permit que la lleva responde true — SOLO cuando context.supported_obligations de la solicitud enumera cada tipo de obligación de la respuesta; los metadatos anuncian supported_obligations. Sin esa declaración, o con esto desactivado, un Permit con una obligación que este servicio no puede cumplir por sí mismo responde false, ya que un PEP que nunca oyó del perfil concedería el acceso."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Devolver los motivos de una decisión"
