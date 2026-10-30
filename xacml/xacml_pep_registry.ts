@@ -173,7 +173,8 @@ interface PepResult {
 // The parts of the policy repository the sync token reads.
 interface PolicyRepository {
   root(): { name: string } | null;
-  all(): Array<{ name: string; document: string; enabled: boolean }>;
+  all(): Array<{ name: string; document: string; enabled: boolean;
+                 application?: string | null }>;
 }
 
 interface PepRegistryDeps {
@@ -504,6 +505,7 @@ class PepRegistry {
   /**
    * Returns the digest of what a PEP pulling now would be sent: the enabled
    * policies by name and the root's name, sorted so order does not matter.
+   * A policy an application owns is never sent and is not in it.
    * @returns the token, base64url without padding
    */
   syncToken(): string {
@@ -515,8 +517,13 @@ class PepRegistry {
     // A token that changed when nothing had would make every PEP re-pull on
     // every heartbeat and would look exactly like a PEP that cannot hold a
     // copy.
+    //
+    // A POLICY AN APPLICATION OWNS IS LEFT OUT (#564), because the pull
+    // withholds it (`xacml.ts`): every application created writes one, and
+    // were it counted here every client registered in the realm would make
+    // every remote PEP re-pull a repository whose sent bytes had not moved.
     const parts = store.all().filter(function (row) {
-      return row.enabled;
+      return row.enabled && !row.application;
     }).map(function (row) {
       return row.name + ' ' + row.document;
     }).sort();

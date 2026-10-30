@@ -526,7 +526,8 @@ class XacmlPage {
           ? t.html('consoleXacml.policies.disable')
           : t.html('consoleXacml.policies.enable')) +
         '</button></form> ' +
-        (row.isRoot ? '' : '<form method="post" ' +
+        // An application's own policy (#564) is never offered as the root.
+        (row.isRoot || row.application ? '' : '<form method="post" ' +
           'action="/admin/xacml/policies" style="display:inline">' +
           self.hidden('action', 'set-root') + self.hidden('name', row.name) +
           '<button type="submit">' + t.html('consoleXacml.policies.makeRoot') +

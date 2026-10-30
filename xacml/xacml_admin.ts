@@ -362,11 +362,16 @@ class XacmlAdmin {
     log.debug('Entering XacmlAdmin.policiesJson().');
     const root = store.root();
     const rows = store.all().map(function (row) {
+      // `application` and `orphanedAt` (#564): a policy an application owns
+      // is drawn without the make-root control, which the action refuses
+      // anyway (STS-FGA-0002).
       const view = { name: row.name, policyId: row.id, kind: row.kind,
                      version: row.version, enabled: row.enabled,
                      isRoot: !!(root && root.name === row.name),
                      combiningAlgId: row.combiningAlgId,
-                     description: row.description, problems: [] };
+                     description: row.description,
+                     application: row.application || null,
+                     orphanedAt: row.orphanedAt || null, problems: [] };
       try {
         view.problems = validate.problemsIn(store.parseDocument(row.document));
       } catch (error) {
@@ -845,6 +850,19 @@ class XacmlAdmin {
                    'until another policy is made the root.' : '') };
     }
 
+    // AN APPLICATION'S POLICY IS NEVER THE ROOT (#564), and that is refused
+    // HERE, before the incumbent is demoted below: `store.write()` refuses it
+    // too (STS-FGA-0001), but by then the old root would already have lost
+    // its flag and the repository would be left deciding nothing.
+    if (action === 'set-root' && existing.application) {
+      log.debug('Leaving XacmlAdmin.policyAction(). An application\'s ' +
+                'policy as the root.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + name + '" is the fine-grained authorization ' +
+                    'policy of the application "' + existing.application +
+                    '" and cannot be the root of this repository. The root ' +
+                    'is unchanged.' }, 'STS-FGA-0002');
+    }
     const enabled = action === 'disable' ? false
       : (action === 'enable' ? true : existing.enabled);
     // SET-ROOT CLEARS THE OTHER ONE FIRST. `store.write()` refuses a second

@@ -1874,6 +1874,10 @@ class XacmlSurface {
           enabled: row.enabled,
           isRoot: !!(root && root.name === row.name),
           description: row.description,
+          // #564: the application that owns it, and since when it has been
+          // orphaned; null for an ordinary policy.
+          application: row.application || null,
+          orphanedAt: row.orphanedAt || null,
           document: row.document };
         // A policy that does not load is reported HERE rather than only when a
         // decision meets it, because the moment somebody is looking at the list
@@ -2154,13 +2158,27 @@ class XacmlSurface {
       // of their own has made THAT one internal, and a stored flag would still
       // be on the old one. Reading the settings is reading the same answer
       // `xacml_access_pep.ts` and `xacml_role_pep.ts` read.
+      //
+      // **AND EVERY POLICY AN APPLICATION OWNS (#564), BY ITS FLAG**, which
+      // is the opposite choice for the opposite reason: ownership is not a
+      // setting that can be pointed elsewhere, it is a fact the entry
+      // carries (`xacmlApplication`), written with the policy. Such a policy
+      // decides the authorization details of its application's types, which
+      // only this service is asked about (rcbj's decision 4: fine-grained
+      // authorization is decided here, at the AuthZEN endpoint); a remote PEP
+      // that loaded it beside the root would hold a document it is never
+      // asked to evaluate, and a PolicySet root there could reference it by
+      // a PolicyId an application's administrator chose. Named, as the two
+      // above are. An embedded FGA PDP in the remote PEP is future work and
+      // would be a pull of its own, not this one.
       // =======================================================================
       const internal = [config.value('xacml.accessPolicy') || 'access-control',
                         config.value('xacml.issuancePolicy') || 'role-issuance']
         .map(function (one) { return String(one).toLowerCase(); });
       const withheld = [];
       const rows = store.all().filter(function (row) {
-        if (internal.indexOf(String(row.name).toLowerCase()) >= 0) {
+        if (internal.indexOf(String(row.name).toLowerCase()) >= 0 ||
+            row.application) {
           withheld.push(row.name);
           return false;
         }
@@ -2197,7 +2215,10 @@ class XacmlSurface {
                  'process can supply. Enforced elsewhere they would answer ' +
                  'NotApplicable to everything, which a deny-biased PEP turns ' +
                  'into a refusal of everything. They are readable at GET ' +
-                 '/xacml/policies.' +
+                 '/xacml/policies. So is every policy an application owns ' +
+                 '(xacmlApplication): it decides that application\'s ' +
+                 'authorization details, which only this service is asked ' +
+                 'about.' +
                  (withheld.length
                    ? ' Withheld here: ' + withheld.join(', ') + '.'
                    : '')
