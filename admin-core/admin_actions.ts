@@ -8967,32 +8967,44 @@ class AdminActions {
                  dn: result.profile.dn, appliesTo: kind.appliesTo }) };
     }
 
-    const result = module.reset(profileName);
-    if (!result.ok) {
-      log.debug("Leaving AdminActions.policiesAction(). reset refused.");
-      return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
-                          { ok: false, errors: result.errors });
-    }
-    if (result.removed) {
-      auditLog.audit({
-        action: kind.auditAction, actor: actor,
-        target: before.dn, channel: 'http',
-        summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
-                 kind.fallsBackTo,
-        detail: { via: ctx.via || '', kind: kind.id,
-                  before: valuesOf(before), after: valuesOf(result.profile) }
-      });
-    }
+    // A RESET MAY ANSWER A PROMISE (#1241): the attribute policy asks who
+    // names a named profile before removing it, and the people are a holder
+    // question asked asynchronously. Every other kind answers at once, and
+    // so does this, for them.
+    const finish = (result) => {
+      log.debug("Entering AdminActions.policiesAction() finish().");
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.policiesAction() finish(). reset " +
+                  "refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
+                            { ok: false, errors: result.errors });
+      }
+      if (result.removed) {
+        auditLog.audit({
+          action: kind.auditAction, actor: actor,
+          target: before.dn, channel: 'http',
+          summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
+                   kind.fallsBackTo,
+          detail: { via: ctx.via || '', kind: kind.id,
+                    before: valuesOf(before),
+                    after: valuesOf(result.profile) }
+        });
+      }
+      log.debug("Leaving AdminActions.policiesAction() finish(). reset.");
+      return { ok: true, kind: kind.id, removed: result.removed,
+               profile: result.profile,
+               rules: module.describe(result.profile),
+               message: result.removed
+                 ? fill(MESSAGES.removed, {
+                   fallsBackTo: kind.fallsBackTo,
+                   rules: module.describe(result.profile).join(', ') })
+                 : fill(MESSAGES.nothingStored,
+                        { fallsBackTo: kind.fallsBackTo }) };
+    };
+    const answered = module.reset(profileName);
     log.debug("Leaving AdminActions.policiesAction(). reset.");
-    return { ok: true, kind: kind.id, removed: result.removed,
-             profile: result.profile,
-             rules: module.describe(result.profile),
-             message: result.removed
-               ? fill(MESSAGES.removed, {
-                 fallsBackTo: kind.fallsBackTo,
-                 rules: module.describe(result.profile).join(', ') })
-               : fill(MESSAGES.nothingStored,
-                      { fallsBackTo: kind.fallsBackTo }) };
+    return answered && typeof (answered as any).then === 'function'
+      ? (answered as Promise<any>).then(finish) : finish(answered);
   }
 
   // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5041** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5043** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 149
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 151
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -3254,6 +3254,8 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0193` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is stored in userCertificate on more than one entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
 | `STS-LDAP-0194` | A group's policy reference was not set: the attribute is not one by which a group names a policy of a kind that has declared one (stsPasskeyPolicy, ...) (#1235). | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0195` | A group's policy reference was not set: the value names neither `default` nor a named policy of that kind this realm holds (#1235). | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0196` | A person or one of their groups names an attribute policy this realm does not hold: the reference selects nothing, and the profile the rest name, or `default`, is applied (#1241). | none (a log line; the create or edit goes on) |
+| `STS-LDAP-0197` | A named attribute policy was not deleted: a person or a group still names it through stsAttributePolicy (#1241). | HTTP 400 (console and API) |
 
 ## STS-ATTR
 

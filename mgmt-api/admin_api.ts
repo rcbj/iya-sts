@@ -24689,7 +24689,19 @@ class AdminApi {
                           description: 'The policies register.' },
         handler: function (req, res) {
           log.debug("Entering the management API policies endpoint.");
-          self.sendJson(res, 200, adminViews.policiesView(req.query));
+          // ASYNCHRONOUS (#1241): the people naming a named profile are a
+          // holder question, asked without a synchronous walk.
+          adminViews.policiesViewAsync(req.query).then(function (view) {
+            log.debug("Entering the policies endpoint's answer.");
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the policies endpoint's answer.");
+          }, function (e) {
+            log.debug("Caught in the management API policies endpoint: " +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-API-0060');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The policies could not be read.'] });
+          });
           log.debug("Leaving the management API policies endpoint.");
         } },
 
@@ -24702,14 +24714,28 @@ class AdminApi {
           // the users action passes. `callerNameOf` reads the gate's
           // verified subject, and '' stays '' when development's open API
           // has no token.
-          const result =
+          // A RESET MAY ANSWER A PROMISE (#1241: who names a named
+          // attribute profile is asked asynchronously).
+          const answer = function (result) {
+            log.debug("Entering the policies action endpoint's answer.");
+            if (!result.ok) {
+              errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                   'STS-API-0060');
+            }
+            self.sendJson(res, result.ok ? 200 : 400, result);
+            log.debug("Leaving the policies action endpoint's answer.");
+          };
+          Promise.resolve(
             adminActions.policiesAction(self.withAction(req, body),
                                         { via: 'api',
-                                          actor: self.callerNameOf(res) });
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0060');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
+                                          actor: self.callerNameOf(res) }))
+            .then(answer, function (e) {
+              log.debug("Caught in the management API policies action " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0060');
+              self.sendJson(res, 500, { ok: false, errors: [
+                'The policy action failed.'] });
+            });
           log.debug("Leaving the management API policies action endpoint.");
         },
         actions: this.policyKindActions() },

@@ -2828,6 +2828,40 @@ class AdminViews {
     return out;
   }
 
+  /**
+   * Builds Directory → Policies as `policiesView()` does, and then fills in
+   * the PEOPLE naming each named profile of a kind whose module offers
+   * `namedByAsync()` (#1241: the attribute policy, whose people name a
+   * profile from their own entry). Who holds a reference attribute is a
+   * holder question asked asynchronously — rcbj's rule, no synchronous walk
+   * on a request — so it cannot be part of the synchronous view.
+   *
+   * @param query - the request's query
+   * @returns a promise of the page's JSON
+   */
+  async policiesViewAsync(query) {
+    const { log, policyKinds } = this.deps;
+    log.debug("Entering AdminViews.policiesViewAsync().");
+    const out = this.policiesView(query);
+    for (const kind of policyKinds.list()) {
+      const module = kind.module;
+      const member = out[kind.id];
+      if (typeof module.namedByAsync !== 'function' || !member ||
+          !Array.isArray(member.named)) {
+        continue;
+      }
+      for (const row of member.named) {
+        const found = await module.namedByAsync(row.name);
+        row.namedBy = Object.assign({}, row.namedBy || {},
+                                    { people: found.people || [],
+                                      peopleComplete:
+                                        found.complete !== false });
+      }
+    }
+    log.debug("Leaving AdminViews.policiesViewAsync().");
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // THE DRY RUN. Asked through the SAME call the nine issuance sites make, so a
   // preview that agreed with the enforcement only by coincidence is impossible
@@ -16166,6 +16200,7 @@ export = {
   rolesRegister: slot.forward('rolesRegister'),
   rolesView: slot.forward('rolesView'),
   policiesView: slot.forward('policiesView'),
+  policiesViewAsync: slot.forward('policiesViewAsync'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   rolesPreview: slot.forward('rolesPreview'),
   claimsPreviewUser: slot.forward('claimsPreviewUser'),

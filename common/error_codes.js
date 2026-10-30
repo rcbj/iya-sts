@@ -14795,6 +14795,15 @@ const CODES = [
       'neither `default` nor a named policy of that kind this realm holds ' +
       '(#1235).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0196',
+    summary: 'A person or one of their groups names an attribute policy ' +
+      'this realm does not hold: the reference selects nothing, and the ' +
+      'profile the rest name, or `default`, is applied (#1241).',
+    spec: 'none (a log line; the create or edit goes on)' },
+  { code: 'STS-LDAP-0197',
+    summary: 'A named attribute policy was not deleted: a person or a ' +
+      'group still names it through stsAttributePolicy (#1241).',
+    spec: 'HTTP 400 (console and API)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

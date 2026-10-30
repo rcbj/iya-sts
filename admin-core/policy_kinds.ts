@@ -57,9 +57,14 @@ interface PolicyModule {
   list(): Record<string, any>[];
   save(name: unknown, body?: Record<string, any> | null):
     { ok: boolean; errors?: string[]; profile?: Record<string, any> };
+  // A promise where the kind must ask who names a named profile before it
+  // removes it (#1241: the people naming an attribute profile, a holder
+  // question asked asynchronously).
   reset(name: unknown):
     { ok: boolean; errors?: string[]; removed?: boolean;
-      profile?: Record<string, any> };
+      profile?: Record<string, any> } |
+    Promise<{ ok: boolean; errors?: string[]; removed?: boolean;
+              profile?: Record<string, any> }>;
   describe(profile?: Record<string, any> | null): string[];
   // A kind whose profiles may be NAMED and selected (#535, the passkey
   // policy): the selectors each named profile carries.
@@ -71,6 +76,12 @@ interface PolicyModule {
                           person?: string }>;
   namedBy?(name: string): { applications: string[]; groups?: string[];
                             people: string[] };
+  // The same with the PEOPLE (#1241), a holder question asked
+  // asynchronously; `policiesViewAsync()` fills them in.
+  namedByAsync?(name: string): Promise<{ applications: string[];
+                                         groups?: string[];
+                                         people: string[];
+                                         complete?: boolean }>;
   // Population registration algorithms and mode (#940), on the passkey
   // policy. A kind without them leaves those members off the policies read.
   registrationAlgorithms?(profile?: Record<string, any> | null): string[];
@@ -615,6 +626,9 @@ PolicyKinds.register({
   governs: 'the attributes every person in this realm must hold, and the ' +
            'custom attributes a person here may be given',
   module: attributePolicy as unknown as PolicyModule,
+  // Default / Named policies / New policy, and the realm's custom
+  // attributes beside them (#1241).
+  tabbed: true,
   auditAction: 'admin.attribute-policy.change',
   appliesTo: 'the NEXT person created and the NEXT edit in this realm; a ' +
              'person who already lacks an attribute it requires keeps every ' +

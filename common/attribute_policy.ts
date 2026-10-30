@@ -83,6 +83,45 @@
 //   own profile requires it: a definition gone from under its values would
 //   leave data no door offers again.
 //
+// ---------------------------------------------------------------------------
+// NAMED POLICIES, NAMED BY THE PERSON AND BY THEIR GROUPS (#1241, part of
+// #1234; rule 3cx).
+//
+// Beside `cn=default` a realm may keep NAMED profiles, `cn=<name>` in
+// `ou=attributePolicies`: each a `requiredAttributes` list and a precedence
+// (`stsAttributePolicyPrecedence`, 1 to 1000). They are THE REALM'S OWN,
+// never inherited; `default` still is. What a named profile covers names it:
+// `stsAttributePolicy` on the person's own entry, and the same attribute on
+// a group (`common/policy_selection.ts`). The candidates are the person's
+// reference and each of their groups' references; the lowest precedence
+// wins, ties by name, else `default`.
+//
+// * AT A CREATE the person's reference is the one the write sets, and the
+//   groups are those already listing the DN the person will have (a
+//   dangling member of a group becomes a member the moment the entry exists)
+//   plus any group the same write adds — `subject.groups`. No door adds a
+//   group in the same write as a person today (SCIM's `groups` is read-only,
+//   RFC 7643 section 4.1.2), so the parameter is the door's to use when one
+//   does.
+// * AT AN EDIT the person's reference is the one the entry will hold AFTER
+//   the edit, and the groups are the ones they are in: the person is held
+//   to the policy they are moving to. Naming a weaker policy is itself a
+//   checked write (the person editor's closed set, STS-LDAP-0106).
+// * A REFERENCE TO A NAME THE REALM DOES NOT HOLD selects nothing: the
+//   candidates left decide, and `default` where none is left. Logged under
+//   STS-LDAP-0196. It does not fail closed — the policy is a floor on what a
+//   person holds, `default` is the floor everyone else is held to, and a
+//   create refused for a dangling group reference would refuse a person for
+//   something no one at the door can see.
+// * A NAMED PROFILE SOMETHING NAMES IS NOT DELETED (STS-LDAP-0197): the
+//   groups from the group index, the people from the holders of
+//   `stsAttributePolicy` — asked ASYNCHRONOUSLY (`namedByAsync()`), so the
+//   delete of a named profile answers a promise.
+//
+// The custom attribute register stays realm-wide and is no part of a
+// profile: every profile may require a custom attribute, and one is not
+// removed while ANY of the realm's own profiles requires it.
+//
 // IT IS A LIBRARY (rule 3): it registers no route. It requires `helpers`,
 // `realms`, `mode`, `error_codes`, the instance slot and server prose, and
 // reaches the directory through a slot `ldap/ldap_server.js` fills. The
@@ -98,6 +137,8 @@ import InstanceSlot = require('./instance_slot');
 // The sentences `describe()` makes are filled from SENTENCES below, so the
 // server can translate them into a console reader's language (#543).
 import serverProse = require('./server_prose');
+// Which named profile applies (#1241, rule 3cx): a leaf of static methods.
+import PolicySelection = require('./policy_selection');
 
 const { log } = helpers;
 
@@ -137,8 +178,32 @@ interface DirectoryHooks {
   knownName(name: string): string;
   // How many people in this realm hold a value of the attribute.
   holders(name: string): number;
-  // How many people in this realm lack a value of any of the attributes.
-  missing(names: string[]): number;
+  // How many people in this realm lack a value of any of the attributes —
+  // or, given a function, of any of the attributes it answers for each
+  // person (#1241): `(username, reference)`, the person's own
+  // `stsAttributePolicy`, to the lower-cased names their profile requires.
+  missing(names: string[] |
+          ((username: string, reference: string) => string[])): number;
+  // THE NAMED PROFILES' HOOKS (#1241, rule 3cx), optional so a process
+  // with no group index (the bulk import) installs the nine above alone:
+  // the person's groups with the policy each names, the groups naming a
+  // policy, the policy each of some groups names, and the people naming one.
+  personGroupReferences?(key: string, attribute: string):
+    Array<{ cn?: string; dn?: string; value?: string }>;
+  groupsNamingPolicy?(attribute: string, name: string): string[];
+  groupReferences?(groups: string[], attribute: string):
+    Array<{ cn?: string; dn?: string; value?: string }>;
+  peopleNamingPolicyAsync?(attribute: string, name: string, limit?: number):
+    Promise<{ people: string[]; complete: boolean }>;
+}
+
+// Whose profile is asked for (#1241): the person, the entry as it will be
+// written (their own reference is read from it), and any group the same
+// write adds. Every member optional; none at all is `default`.
+interface Subject {
+  uid?: string;
+  attributes?: Record<string, unknown>;
+  groups?: string[];
 }
 
 // An attribute a person may be given a value for, as the person editor
@@ -163,6 +228,8 @@ interface AttributeProfile {
   requiredAttributes: string;
   // The whole list in force: the three always required, then the profile's.
   required: string[];
+  // 0 for `default`, which is never ranked (#1241).
+  precedence: number;
   [field: string]: any;
 }
 
@@ -171,6 +238,18 @@ interface PolicyResult {
   errors?: string[];
   removed?: boolean;
   profile?: AttributeProfile;
+}
+
+// What a refusal names besides its sentence (#1241): the profile applied.
+interface CreateRefusal {
+  missing: string[];
+  policy: string;
+  message: string;
+}
+interface EditRefusal {
+  removed: string[];
+  policy: string;
+  message: string;
 }
 
 interface AttributePolicyDeps {
@@ -230,6 +309,34 @@ const SYNTAXES = Object.freeze([
  */
 const MAX_DEFINITIONS = 100;
 
+/**
+ * What the kind calls one profile, in a refusal (#1241).
+ */
+const NOUN = 'attribute policy';
+
+/**
+ * How `common/policy_selection.ts` ranks a named profile (#1241).
+ */
+const SELECTION = Object.freeze({
+  precedenceAttribute: 'stsAttributePolicyPrecedence',
+  defaultPrecedence: PolicySelection.DEFAULT_PRECEDENCE });
+
+/**
+ * The attributes that NAME an attribute profile (#1241, rule 3cx): on the
+ * person's own entry and on a group, one spelling for both.
+ */
+const REFERENCES = Object.freeze({ group: 'stsAttributePolicy',
+                                   person: 'stsAttributePolicy' });
+
+/**
+ * A named profile's one selector: its precedence. What it covers names it.
+ */
+const SELECTORS = [
+  { key: 'precedence', attribute: 'stsAttributePolicyPrecedence',
+    what: 'Which named attribute policy applies where the person and their ' +
+          'groups name several: the lowest, from 1 to 1000.' }
+];
+
 // An RFC 4512 section 1.4 `descr`: a letter, then letters, digits and
 // hyphens. At most 64 here.
 const DESCR = /^[A-Za-z][A-Za-z0-9-]{0,63}$/;
@@ -256,7 +363,11 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   defined: 'The custom attribute {{name}} is defined in this realm at ' +
     '{{dn}}. It may now be set on a person and required by this policy.',
   undefined: 'The custom attribute {{name}} is no longer defined in this ' +
-    'realm.'
+    'realm.',
+  // #1241: said of a named profile only.
+  named: 'it applies to a person who names it, or who is in a group that ' +
+    'names it, where no other policy they name has a lower precedence ' +
+    'than {{precedence}}'
 });
 
 /**
@@ -304,7 +415,7 @@ const SCHEMA = {
     { name: 'stsAttributePolicy',
       what: 'This service\'s class for an attribute policy: the attributes ' +
             'every person in a realm must hold. Named by the PROFILE ' +
-            '(`cn=default`).' },
+            '(`cn=default`, or a named profile of the realm\'s own).' },
     { name: 'stsAttributeDefinition',
       what: 'This service\'s class for a custom attribute of a realm, in ' +
             'ou=attributeDefinitions, named by the attribute (`cn=<name>`).' }
@@ -322,7 +433,16 @@ const SCHEMA = {
             'email, uri or dn. Its values are checked against it.' },
     { name: 'stsAttributeSingleValued',
       what: 'TRUE where a custom attribute holds one value, FALSE where it ' +
-            'holds several.' }
+            'holds several.' },
+    { name: 'stsAttributePolicyPrecedence',
+      what: SELECTORS[0].what }
+  ],
+  // THE REFERENCE (#1241): on a person's entry and on a group's, the
+  // profile it names. The directory is schemaless; listed for the reader.
+  personAttributes: [
+    { name: 'stsAttributePolicy',
+      what: 'On a person or a group: the attribute policy it names, ' +
+            '`default` or a named profile of the realm. One value.' }
   ]
 };
 
@@ -372,6 +492,18 @@ class AttributePolicy {
    * The most custom attributes one realm may define.
    */
   static readonly MAX_DEFINITIONS = MAX_DEFINITIONS;
+  /**
+   * How a named profile ranks (#1241).
+   */
+  static readonly SELECTION = SELECTION;
+  /**
+   * The attributes naming a profile, on a person and on a group (#1241).
+   */
+  static readonly REFERENCES = REFERENCES;
+  /**
+   * A named profile's selector: its precedence (#1241).
+   */
+  static readonly SELECTORS = SELECTORS;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -410,7 +542,13 @@ class AttributePolicy {
         // LAZILY, for the reason in the header: `ldap/person_editor.ts`
         // requires this module at load.
         const editor = require('../ldap/person_editor');
-        const rows = editor.editableAttributes().map(function (row) {
+        // NEVER AN `sts` NAME (#1241): the editor's universe holds the
+        // policy references the kinds declare on a person
+        // (`stsAttributePolicy` among them), and a reference is not a fact
+        // about the person a profile could require.
+        const rows = editor.editableAttributes().filter(function (row) {
+          return !/^sts/i.test(row.name);
+        }).map(function (row) {
           return { name: row.name, label: row.label, schema: row.schema,
                    custom: !!row.custom };
         });
@@ -638,13 +776,21 @@ class AttributePolicy {
    * attribute since removed, or one only the default realm defines — is
    * named in `problems` and is not required here.
    *
-   * @param name - the profile name; only `default` exists
+   * A NAMED profile (#1241) is the realm's own entry only, never the
+   * default realm's; one the realm does not hold reads as `default`.
+   *
+   * @param name - the profile name; `default` when omitted
    * @returns the profile's values, where they came from, and any problems
    */
   read(name?: string): AttributeProfile {
     const { log } = this.deps;
     log.debug('Entering AttributePolicy.read(). name=' + name);
-    const found = this.entryFor(DEFAULT_PROFILE);
+    const asked = PolicySelection.fold(name) || DEFAULT_PROFILE;
+    const own = asked !== DEFAULT_PROFILE && this.haveDirectory()
+      ? this.entryIn(asked) : null;
+    const profileName = own ? asked : DEFAULT_PROFILE;
+    const found: { entry: any; from: AttributeProfile['from'] } = own
+      ? { entry: own, from: 'realm' } : this.entryFor(DEFAULT_PROFILE);
     const entry = found.entry;
     const at = entry ? (entry.attributes || {}) : {};
     const offered = this.offeredNames();
@@ -678,7 +824,10 @@ class AttributePolicy {
       }
     });
     const out: AttributeProfile = {
-      name: DEFAULT_PROFILE,
+      name: profileName,
+      // 0 for `default`, which is never ranked (#1241).
+      precedence: profileName === DEFAULT_PROFILE ? 0
+        : PolicySelection.precedenceOf(at, SELECTION),
       stored: found.from === 'realm',
       inherited: found.from === 'default-realm',
       from: found.from,
@@ -697,29 +846,153 @@ class AttributePolicy {
   }
 
   /**
-   * Lists the profiles: `default` is the only one.
+   * Lists the profiles: `default`, then this realm's named profiles in
+   * precedence order (#1241).
    *
    * @returns the profiles
    */
   list(): AttributeProfile[] {
     const { log } = this.deps;
     log.debug('Entering AttributePolicy.list().');
-    log.debug('Leaving AttributePolicy.list().');
-    return [this.read(DEFAULT_PROFILE)];
+    const named = this.namedEntries().map((one) => {
+      return this.read(one.name);
+    }).sort(PolicySelection.compare);
+    log.debug('Leaving AttributePolicy.list(). ' + (named.length + 1) +
+              ' profile(s).');
+    return [this.read(DEFAULT_PROFILE)].concat(named);
+  }
+
+  // The realm's own entries, as the directory hook answers them; [] with
+  // no directory.
+  private entries(): Array<{ name?: string; dn: string;
+                             attributes?: Record<string, unknown> }> {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.entries().");
+    const out = this.directory
+      ? (this.directory.allAttributePolicies() || []) : [];
+    log.debug("Leaving AttributePolicy.entries(). " + out.length);
+    return out;
+  }
+
+  // The realm's own NAMED profiles (#1241): every entry but `default`.
+  private namedEntries() {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.namedEntries().");
+    const out = PolicySelection.named(this.entries(), SELECTION);
+    log.debug("Leaving AttributePolicy.namedEntries(). " + out.length);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHICH PROFILE APPLIES TO A PERSON (#1241, rule 3cx).
+  // -------------------------------------------------------------------------
+  // The subject a refusal is asked about where the caller named none: the
+  // entry as written, its own uid.
+  private subjectOf(attributes: Record<string, unknown> | undefined,
+                    subject?: Subject | null): Subject {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.subjectOf().");
+    const out: Subject = Object.assign({}, subject || {});
+    if (out.attributes === undefined) {
+      out.attributes = attributes || {};
+    }
+    if (out.uid === undefined) {
+      out.uid = PolicySelection.valuesOf(out.attributes, 'uid')[0] || '';
+    }
+    log.debug("Leaving AttributePolicy.subjectOf().");
+    return out;
+  }
+
+  /**
+   * Chooses the profile that applies to a person: of the profiles their own
+   * `stsAttributePolicy` and each of their groups' name, the lowest
+   * precedence (ties by name), else `default`. A reference to a profile the
+   * realm does not hold selects nothing and is logged (STS-LDAP-0196).
+   *
+   * @param subject - `uid` (their groups are read by it), `attributes` (the
+   *   entry as it is or will be; their own reference is read from it) and
+   *   `groups` (any the same write adds, by cn or DN)
+   * @returns `{ name, by, holder, precedence, missing }`
+   */
+  selectionFor(subject?: Subject | null) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AttributePolicy.selectionFor().");
+    const s = subject || {};
+    const none = { name: DEFAULT_PROFILE, by: DEFAULT_PROFILE, holder: '',
+                   precedence: 0, missing: [] as Array<{ by: string;
+                     holder: string; name: string }> };
+    if (!this.haveDirectory()) {
+      log.debug("Leaving AttributePolicy.selectionFor(). No directory.");
+      return none;
+    }
+    const entries = this.entries();
+    const uid = String(s.uid || '').trim();
+    const own = PolicySelection.valuesOf(s.attributes,
+                                         REFERENCES.person)[0] || '';
+    // NOTHING NAMED, NOTHING TO ASK: a realm with no named profile and a
+    // person naming none answers `default` without reading their groups.
+    if (!PolicySelection.named(entries, SELECTION).length &&
+        !PolicySelection.fold(own)) {
+      log.debug("Leaving AttributePolicy.selectionFor(). None named.");
+      return none;
+    }
+    const references: Array<{ by: string; holder?: string;
+                              value: unknown }> = [
+      { by: 'person', holder: uid, value: own }
+    ];
+    const held = this.directory.personGroupReferences;
+    const groups = uid && typeof held === 'function'
+      ? (held.call(this.directory, uid, REFERENCES.group) || []) : [];
+    const addedHook = this.directory.groupReferences;
+    const added = (s.groups || []).length && typeof addedHook === 'function'
+      ? (addedHook.call(this.directory, s.groups, REFERENCES.group) || [])
+      : [];
+    const ranked = PolicySelection.rank(entries, SELECTION, references
+      .concat(PolicySelection.groupReferences(groups.concat(added))));
+    ranked.missing.forEach(function (one) {
+      // A REFERENCE NO PROFILE ANSWERS selects nothing: the person is held
+      // to what the rest of their references name, or to `default` — the
+      // floor every other person here is held to. See the header.
+      log.warn(errorCodes.tag('STS-LDAP-0196') + 'attribute policy: the ' +
+               one.by + ' "' + one.holder + '" names the attribute policy "' +
+               one.name + '", which this realm does not hold; it selects ' +
+               'nothing, and ' + (ranked.name === DEFAULT_PROFILE
+                 ? '`default`' : '"' + ranked.name + '"') + ' applies.');
+    });
+    log.debug("Leaving AttributePolicy.selectionFor(). " + ranked.name +
+              " by " + ranked.by);
+    return ranked;
+  }
+
+  /**
+   * Reads the profile that applies to a person (`selectionFor()`).
+   *
+   * @param subject - as `selectionFor()` takes it; none is `default`
+   * @returns the profile
+   */
+  profileFor(subject?: Subject | null): AttributeProfile {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.profileFor().");
+    const out = this.read(subject ? this.selectionFor(subject).name
+                                  : DEFAULT_PROFILE);
+    log.debug("Leaving AttributePolicy.profileFor(). " + out.name);
+    return out;
   }
 
   /**
    * Returns every attribute a person in this realm must hold, in its
-   * canonical spelling: `uid`, `cn` and `sn`, then the profile's.
+   * canonical spelling: `uid`, `cn` and `sn`, then the profile's — the
+   * profile that applies to the subject (#1241), `default` without one.
    *
+   * @param subject - whose profile; as `selectionFor()` takes it
    * @returns the names
    */
-  required(): string[] {
+  required(subject?: Subject | null): string[] {
     const { log } = this.deps;
     log.debug("Entering AttributePolicy.required().");
     let out: string[];
     try {
-      out = this.read(DEFAULT_PROFILE).required;
+      out = this.profileFor(subject).required;
     } catch (e) {
       // A policy that cannot be read still requires what the schema does.
       log.debug("Caught in AttributePolicy.required(): " +
@@ -766,17 +1039,22 @@ class AttributePolicy {
 
   /**
    * Lists the required attributes a person's attributes hold no value of,
-   * whether or not the policy is enforced.
+   * whether or not the policy is enforced — against the profile that
+   * applies to them (#1241).
    *
    * @param attributes - the attributes, any case of name, a value or a list
+   * @param subject - whose profile; by default the entry itself: its uid
+   *   and its own reference
    * @returns the missing names, in the policy's order
    */
-  missingFrom(attributes: Record<string, unknown>): string[] {
+  missingFrom(attributes: Record<string, unknown>,
+              subject?: Subject | null): string[] {
     const { log } = this.deps;
     log.debug("Entering AttributePolicy.missingFrom().");
-    const out = this.required().filter((name) => {
-      return !this.holds(attributes || {}, name);
-    });
+    const out = this.required(this.subjectOf(attributes, subject))
+      .filter((name) => {
+        return !this.holds(attributes || {}, name);
+      });
     log.debug("Leaving AttributePolicy.missingFrom(). " + out.length);
     return out;
   }
@@ -784,81 +1062,115 @@ class AttributePolicy {
   /**
    * Lists the required attributes an edit would take away: held before and
    * not after. A required attribute the person already lacked is not one.
+   * Asked of the profile that applies to the person as the edit leaves them
+   * (#1241).
    *
    * @param before - the attributes before the edit
    * @param after - the attributes after it
+   * @param subject - whose profile; by default the entry as it will be
    * @returns the names
    */
   removedBy(before: Record<string, unknown>,
-            after: Record<string, unknown>): string[] {
+            after: Record<string, unknown>,
+            subject?: Subject | null): string[] {
     const { log } = this.deps;
     log.debug("Entering AttributePolicy.removedBy().");
-    const out = this.required().filter((name) => {
-      return this.holds(before || {}, name) && !this.holds(after || {}, name);
-    });
+    const out = this.required(this.subjectOf(after, subject))
+      .filter((name) => {
+        return this.holds(before || {}, name) &&
+               !this.holds(after || {}, name);
+      });
     log.debug("Leaving AttributePolicy.removedBy(). " + out.length);
     return out;
   }
 
+  // Who a refusal says requires it (#1241): the realm's policy, or the
+  // named one that applies.
+  private whose(profile: AttributeProfile): string {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.whose().");
+    log.debug("Leaving AttributePolicy.whose().");
+    return profile.name === DEFAULT_PROFILE
+      ? 'This realm\'s attribute policy requires every person'
+      : 'The attribute policy "' + profile.name + '", which applies to ' +
+        'this person, requires them';
+  }
+
   /**
-   * The refusal of a create, where the policy is enforced and something it
-   * requires is missing: the names and a sentence. Null otherwise.
+   * The refusal of a create, where the policy is enforced and something the
+   * profile that applies requires is missing: the names, the profile and a
+   * sentence. Null otherwise.
+   *
+   * WHOSE PROFILE (#1241): the person the write creates — the reference the
+   * write sets on them, the groups already listing the DN they will have,
+   * and `subject.groups`, any the same write adds.
    *
    * @param attributes - the attributes the person would be created with
-   * @returns `{ missing, message }`, or null
+   * @param subject - whose profile; by default the entry itself
+   * @returns `{ missing, policy, message }`, or null
    */
-  createRefusal(attributes: Record<string, unknown>):
-      { missing: string[]; message: string } | null {
+  createRefusal(attributes: Record<string, unknown>,
+                subject?: Subject | null): CreateRefusal | null {
     const { log } = this.deps;
     log.debug("Entering AttributePolicy.createRefusal().");
     if (!this.enforced()) {
       log.debug("Leaving AttributePolicy.createRefusal(). Not enforced.");
       return null;
     }
-    const missing = this.missingFrom(attributes);
+    const profile = this.profileFor(this.subjectOf(attributes, subject));
+    const missing = profile.required.filter((name) => {
+      return !this.holds(attributes || {}, name);
+    });
     if (!missing.length) {
       log.debug("Leaving AttributePolicy.createRefusal(). Complete.");
       return null;
     }
     log.debug("Leaving AttributePolicy.createRefusal(). " + missing.length +
-              " missing.");
-    return { missing: missing,
-             message: 'This realm\'s attribute policy requires every person ' +
-                      'to hold ' + this.required().join(', ') + ', and ' +
-                      'this one would have no value of ' +
-                      missing.join(', ') + '. Directory > Policies > ' +
-                      'Attribute policy sets the list.' };
+              " missing under " + profile.name + ".");
+    return { missing: missing, policy: profile.name,
+             message: this.whose(profile) + ' to hold ' +
+                      profile.required.join(', ') + ', and this one would ' +
+                      'have no value of ' + missing.join(', ') + '. ' +
+                      'Directory > Policies > Attribute policy sets the ' +
+                      'list.' };
   }
 
   /**
    * The refusal of an edit, where the policy is enforced and the edit would
-   * take a required value away. Null otherwise.
+   * take away a value the profile that applies requires. Null otherwise.
+   *
+   * WHOSE PROFILE (#1241): the person's as the edit leaves them — their own
+   * reference after it, and the groups they are in.
    *
    * @param before - the attributes before the edit
    * @param after - the attributes after it
-   * @returns `{ removed, message }`, or null
+   * @param subject - whose profile; by default the entry as it will be
+   * @returns `{ removed, policy, message }`, or null
    */
   editRefusal(before: Record<string, unknown>,
-              after: Record<string, unknown>):
-      { removed: string[]; message: string } | null {
+              after: Record<string, unknown>,
+              subject?: Subject | null): EditRefusal | null {
     const { log } = this.deps;
     log.debug("Entering AttributePolicy.editRefusal().");
     if (!this.enforced()) {
       log.debug("Leaving AttributePolicy.editRefusal(). Not enforced.");
       return null;
     }
-    const removed = this.removedBy(before, after);
+    const profile = this.profileFor(this.subjectOf(after, subject));
+    const removed = profile.required.filter((name) => {
+      return this.holds(before || {}, name) && !this.holds(after || {}, name);
+    });
     if (!removed.length) {
       log.debug("Leaving AttributePolicy.editRefusal(). Nothing taken.");
       return null;
     }
     log.debug("Leaving AttributePolicy.editRefusal(). " + removed.length +
-              " taken away.");
-    return { removed: removed,
-             message: 'This realm\'s attribute policy requires every person ' +
-                      'to hold ' + removed.join(', ') + ', so the edit may ' +
-                      'not leave ' + (removed.length === 1 ? 'it' : 'them') +
-                      ' without a value. Set another value instead.' };
+              " taken away under " + profile.name + ".");
+    return { removed: removed, policy: profile.name,
+             message: this.whose(profile) + ' to hold ' +
+                      removed.join(', ') + ', so the edit may not leave ' +
+                      (removed.length === 1 ? 'it' : 'them') + ' without a ' +
+                      'value. Set another value instead.' };
   }
 
   /**
@@ -906,11 +1218,21 @@ class AttributePolicy {
   }
 
   /**
-   * Counts the people in this realm who lack a value of a required
-   * attribute — those created before the policy said so, or in development
-   * mode.
+   * Counts the people in this realm who lack a value of an attribute their
+   * own profile requires — those created before the policy said so, or in
+   * development mode.
    *
-   * @returns the count, or null where there is no directory to ask
+   * EACH AGAINST THEIR OWN PROFILE (#1241), in the ONE walk the count was
+   * already: the directory hands each person's username and own reference
+   * to the judge below, which reads their groups' references off the group
+   * index (`personGroupReferences()`, no walk) and ranks. The required list
+   * of each profile is read once, and the answer for each distinct set of
+   * references is kept for the count, so the added cost is an index lookup
+   * per person. A realm with no named profile hands the directory `default`'s
+   * list, as before; and where no group names one, no group is read.
+   *
+   * @returns the count, or null where there is no directory to ask, or the
+   *   directory does not walk (a directory in the store)
    */
   peopleMissing(): number | null {
     const { log } = this.deps;
@@ -921,7 +1243,8 @@ class AttributePolicy {
     }
     let out: number | null = null;
     try {
-      out = Number(this.directory.missing(this.required())) || 0;
+      const raw = this.directory.missing(this.missingJudge());
+      out = raw === null || raw === undefined ? null : (Number(raw) || 0);
     } catch (e) {
       log.debug("Caught in AttributePolicy.peopleMissing(): " +
                 ((e && e.message) || e));
@@ -929,6 +1252,74 @@ class AttributePolicy {
     }
     log.debug("Leaving AttributePolicy.peopleMissing(). " + out);
     return out;
+  }
+
+  // What `peopleMissing()` hands the directory (#1241): `default`'s list
+  // where nothing is named, else a function from a person to the lower-cased
+  // names their profile requires.
+  private missingJudge(): string[] |
+      ((username: string, reference: string) => string[]) {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.missingJudge().");
+    const lower = function (names: string[]): string[] {
+      log.debug("Entering missingJudge() lower().");
+      log.debug("Leaving missingJudge() lower().");
+      return names.map(function (one) {
+        return one.toLowerCase();
+      });
+    };
+    const entries = this.entries();
+    const named = PolicySelection.named(entries, SELECTION);
+    if (!named.length) {
+      log.debug("Leaving AttributePolicy.missingJudge(). default alone.");
+      return lower(this.required());
+    }
+    // A GROUP IS READ ONLY WHERE A GROUP NAMES ONE OF THESE.
+    const naming = this.directory.groupsNamingPolicy;
+    const groupsName = typeof naming === 'function' &&
+      named.some((one) => {
+        return (naming.call(this.directory, REFERENCES.group, one.name) ||
+                []).length > 0;
+      });
+    const lists: Record<string, string[]> = {};
+    const listOf = (name: string): string[] => {
+      log.debug("Entering missingJudge() listOf(). " + name);
+      if (!lists[name]) {
+        lists[name] = lower(this.read(name).required);
+      }
+      log.debug("Leaving missingJudge() listOf().");
+      return lists[name];
+    };
+    const answers = new Map<string, string[]>();
+    const held = this.directory.personGroupReferences;
+    const directory = this.directory;
+    // ONCE PER PERSON on the count's walk: no Entering/Leaving pair, the
+    // hot-path exception, stated as the style requires. A reference that
+    // names nothing the realm holds is not logged here either — a line per
+    // person would drown the log; the count is the answer.
+    const judge = function (username: string, reference: string): string[] {
+      const groups = groupsName && typeof held === 'function'
+        ? (held.call(directory, username, REFERENCES.group) || []) : [];
+      const references: Array<{ by: string; holder?: string;
+                                value: unknown }> = [
+        { by: 'person', holder: username, value: reference }
+      ];
+      PolicySelection.groupReferences(groups).forEach(function (one) {
+        references.push(one);
+      });
+      const key = references.map(function (one) {
+        return PolicySelection.fold(one.value);
+      }).join('|');
+      let found = answers.get(key);
+      if (!found) {
+        found = listOf(PolicySelection.rank(entries, SELECTION,
+                                            references).name);
+        answers.set(key, found);
+      }
+      return found;
+    };
+    log.debug("Leaving AttributePolicy.missingJudge(). By person.");
+    return judge;
   }
 
   /**
@@ -953,6 +1344,11 @@ class AttributePolicy {
                                    }).join(', ') })
         : SENTENCES.noCustom
     ];
+    // A NAMED PROFILE says whom it reaches (#1241).
+    if (rules.name !== DEFAULT_PROFILE) {
+      out.splice(1, 0, fill(SENTENCES.named,
+                            { precedence: String(rules.precedence) }));
+    }
     log.debug("Leaving AttributePolicy.describe().");
     return out;
   }
@@ -963,16 +1359,14 @@ class AttributePolicy {
   private checkProfileName(name: unknown): string | null {
     const { log } = this.deps;
     log.debug("Entering AttributePolicy.checkProfileName().");
-    const text = String(name || DEFAULT_PROFILE).trim().toLowerCase();
-    if (text !== DEFAULT_PROFILE) {
-      log.debug("Leaving AttributePolicy.checkProfileName(). Not default.");
-      return 'The attribute policy has one profile, "' + DEFAULT_PROFILE +
-             '": it applies to every person in the realm, so there is ' +
-             'nothing a second one could be chosen by. "' +
-             text.slice(0, 64) + '" is not it.';
-    }
-    log.debug("Leaving AttributePolicy.checkProfileName().");
-    return null;
+    // `default`, or a name a cn may be (#1241: named profiles).
+    const out = PolicySelection.nameProblem(
+      name === undefined || name === null || name === '' ? DEFAULT_PROFILE
+                                                         : name,
+      NOUN, true);
+    log.debug("Leaving AttributePolicy.checkProfileName(). " +
+              (out ? 'Refused.' : 'A name.'));
+    return out;
   }
 
   /**
@@ -1036,8 +1430,10 @@ class AttributePolicy {
   /**
    * Saves the profile of this realm, replacing it whole.
    *
-   * @param name - the profile name: `default`
-   * @param given - `requiredAttributes` and an optional `description`
+   * @param name - the profile name: `default`, or a named profile's
+   *   (#1241), created by its first save
+   * @param given - `requiredAttributes`, an optional `description`, and a
+   *   named profile's `precedence` (1 to 1000, 100 when omitted)
    * @returns `ok` and the profile now in force, or `ok: false` with `errors`
    */
   save(name: unknown, given?: Record<string, any> | null): PolicyResult {
@@ -1049,7 +1445,16 @@ class AttributePolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-LDAP-0165');
     }
+    const which = PolicySelection.fold(name) || DEFAULT_PROFILE;
     const checked = this.validate(given);
+    // A NAMED PROFILE'S PRECEDENCE (#1241), refused with the rows.
+    const selectors = which === DEFAULT_PROFILE ? null
+      : PolicySelection.checkPrecedence(given || {}, SELECTION);
+    if (selectors) {
+      selectors.problems.forEach(function (one) {
+        checked.problems.push(one);
+      });
+    }
     if (checked.problems.length) {
       log.debug('Leaving AttributePolicy.save(). The values were refused.');
       return errorCodes.mark({ ok: false, errors: checked.problems },
@@ -1078,8 +1483,11 @@ class AttributePolicy {
     if (!checked.values.length) {
       delete attributes.stsAttributeRequired;
     }
-    const written = this.directory.writeAttributePolicy(DEFAULT_PROFILE,
-                                                        attributes);
+    if (selectors) {
+      attributes[SELECTION.precedenceAttribute] =
+        String(selectors.precedence);
+    }
+    const written = this.directory.writeAttributePolicy(which, attributes);
     if (!written) {
       log.debug('Leaving AttributePolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,
@@ -1087,18 +1495,26 @@ class AttributePolicy {
                         'at its maximum number of entries.'] },
                              'STS-LDAP-0168');
     }
-    log.debug('Leaving AttributePolicy.save(). Stored.');
-    return { ok: true, profile: this.read(DEFAULT_PROFILE) };
+    log.debug('Leaving AttributePolicy.save(). Stored ' + which + '.');
+    return { ok: true, profile: this.read(which) };
   }
 
   /**
-   * Deletes this realm's profile, after which it follows the default
-   * realm's, or the built-in default.
+   * Deletes this realm's `default` profile, after which it follows the
+   * default realm's, or the built-in default; or deletes a NAMED profile
+   * (#1241), which is refused while a person or a group names it
+   * (STS-LDAP-0197).
    *
-   * @param name - the profile name: `default`
-   * @returns `ok`, whether an entry was removed, and the profile now in force
+   * The people naming a profile are the holders of `stsAttributePolicy`,
+   * asked asynchronously (rcbj's rule: no synchronous walk on a request),
+   * so the delete of a named profile answers a PROMISE; `default`'s answers
+   * at once.
+   *
+   * @param name - the profile name
+   * @returns `ok`, whether an entry was removed, and the profile now in
+   *   force — or a promise of it, for a named profile
    */
-  reset(name: unknown): PolicyResult {
+  reset(name: unknown): PolicyResult | Promise<PolicyResult> {
     const { log, errorCodes } = this.deps;
     log.debug('Entering AttributePolicy.reset(). name=' + name);
     const refused = this.checkProfileName(name);
@@ -1107,15 +1523,85 @@ class AttributePolicy {
       return errorCodes.mark({ ok: false, errors: [refused] },
                              'STS-LDAP-0165');
     }
+    const which = PolicySelection.fold(name) || DEFAULT_PROFILE;
     if (!this.haveDirectory()) {
       log.debug('Leaving AttributePolicy.reset(). No directory.');
-      return { ok: true, removed: false, profile: this.read(DEFAULT_PROFILE) };
+      return { ok: true, removed: false, profile: this.read(which) };
     }
-    const removed = !!this.directory.deleteAttributePolicy(DEFAULT_PROFILE);
-    log.debug('Leaving AttributePolicy.reset(). ' +
-              (removed ? 'Removed.' : 'Nothing stored.'));
-    return { ok: true, removed: removed,
-             profile: this.read(DEFAULT_PROFILE) };
+    if (which === DEFAULT_PROFILE) {
+      const removed = !!this.directory.deleteAttributePolicy(DEFAULT_PROFILE);
+      log.debug('Leaving AttributePolicy.reset(). ' +
+                (removed ? 'Removed.' : 'Nothing stored.'));
+      return { ok: true, removed: removed,
+               profile: this.read(DEFAULT_PROFILE) };
+    }
+    log.debug('Leaving AttributePolicy.reset(). Asking who names ' + which +
+              '.');
+    return this.namedByAsync(which).then((holders) => {
+      log.debug('Entering AttributePolicy.reset() after namedByAsync().');
+      // NOT WHILE A PERSON OR A GROUP NAMES IT (#1241, rule 3cx): they
+      // would be left naming a profile the realm does not hold.
+      const held = PolicySelection.deleteProblem(NOUN, which, holders);
+      if (held) {
+        log.debug('Leaving AttributePolicy.reset() after namedByAsync(). ' +
+                  'Still named.');
+        return errorCodes.mark({ ok: false, errors: [held] },
+                               'STS-LDAP-0197') as PolicyResult;
+      }
+      const removed = !!this.directory.deleteAttributePolicy(which);
+      log.debug('Leaving AttributePolicy.reset() after namedByAsync(). ' +
+                (removed ? 'Removed.' : 'Nothing stored.'));
+      return { ok: true, removed: removed, profile: this.read(which) };
+    });
+  }
+
+  /**
+   * What names a named profile, as far as it can be told without a walk:
+   * the groups (the directory's group index). Nobody names an attribute
+   * profile from an application. The people are `namedByAsync()`'s.
+   *
+   * @param name - the profile's name
+   * @returns `{ applications, groups, people }`; `people` empty here
+   */
+  namedBy(name: unknown): { applications: string[]; groups: string[];
+                            people: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.namedBy().");
+    const hook = this.haveDirectory() ? this.directory.groupsNamingPolicy
+      : null;
+    const groups = typeof hook === 'function'
+      ? (hook.call(this.directory, REFERENCES.group,
+                   PolicySelection.fold(name)) || []) : [];
+    log.debug("Leaving AttributePolicy.namedBy(). " + groups.length +
+              " group(s).");
+    return { applications: [], groups: groups, people: [] };
+  }
+
+  /**
+   * What names a named profile (#1241): the groups, and the people whose
+   * own `stsAttributePolicy` names it — the holders of that attribute,
+   * asked of the directory asynchronously, at most fifty names.
+   *
+   * @param name - the profile's name
+   * @returns a promise of `{ applications, groups, people, complete }`
+   */
+  async namedByAsync(name: unknown): Promise<{
+      applications: string[]; groups: string[]; people: string[];
+      complete: boolean }> {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.namedByAsync().");
+    const out = Object.assign({ complete: true }, this.namedBy(name));
+    const hook = this.haveDirectory()
+      ? this.directory.peopleNamingPolicyAsync : null;
+    if (typeof hook === 'function') {
+      const found = await hook.call(this.directory, REFERENCES.person,
+                                    PolicySelection.fold(name));
+      out.people = (found && found.people) || [];
+      out.complete = !found || found.complete !== false;
+    }
+    log.debug("Leaving AttributePolicy.namedByAsync(). " +
+              out.people.length + " person(s).");
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -1330,13 +1816,23 @@ class AttributePolicy {
                errors: ['This realm defines no custom attribute called "' +
                         wanted.slice(0, 64) + '".'] }, 'STS-LDAP-0174');
     }
-    const profile = this.read(DEFAULT_PROFILE);
-    if (profile.stored && profile.required.map(function (one) {
-      return one.toLowerCase();
-    }).indexOf(found.name.toLowerCase()) >= 0) {
+    // NOT WHILE ANY OF THE REALM'S OWN PROFILES REQUIRES IT — `default`
+    // where it is stored here, and every named one (#1241).
+    const requiring = this.list().filter(function (profile) {
+      return profile.stored && profile.required.map(function (one) {
+        return one.toLowerCase();
+      }).indexOf(found.name.toLowerCase()) >= 0;
+    }).map(function (profile) {
+      return profile.name;
+    });
+    if (requiring.length) {
       log.debug("Leaving AttributePolicy.undefine(). Required.");
       return errorCodes.mark({ ok: false,
-               errors: ['This realm\'s attribute policy requires ' +
+               errors: ['This realm\'s attribute ' +
+                        (requiring.length === 1 ? 'policy "' +
+                          requiring[0] + '" requires '
+                          : 'policies ' + requiring.join(', ') +
+                            ' require ') +
                         found.name + '. Take it off the required list ' +
                         'first.'] }, 'STS-LDAP-0173');
     }
@@ -1397,6 +1893,23 @@ const slot = new InstanceSlot<AttributePolicy>(
 
 slot.buildNowUnlessDeferred();
 
+// A PERSON AND A GROUP NAME THEIR ATTRIBUTE PROFILE (#1241, rule 3cx):
+// declared, so the person page and the group page draw the picker and their
+// writers check it, offering `default` and the realm's named profiles as
+// they stand when asked.
+const referenceChoices = function referenceChoices(): string[] {
+  log.debug("Entering attribute policy reference choices.");
+  const names = slot.get().list().map(function (one) {
+    return String(one.name);
+  });
+  log.debug("Leaving attribute policy reference choices.");
+  return names;
+};
+PolicySelection.declareReference('group', REFERENCES.group, NOUN,
+                                 referenceChoices);
+PolicySelection.declareReference('person', REFERENCES.person, NOUN,
+                                 referenceChoices);
+
 /**
  * The attribute policy (#396): the attributes every person in a realm must
  * hold, and the realm's custom attributes. The sixth policy on Directory >
@@ -1424,10 +1937,17 @@ export = {
   ALWAYS_REQUIRED: AttributePolicy.ALWAYS_REQUIRED,
   SYNTAXES: AttributePolicy.SYNTAXES,
   MAX_DEFINITIONS: AttributePolicy.MAX_DEFINITIONS,
+  SELECTION: AttributePolicy.SELECTION,
+  REFERENCES: AttributePolicy.REFERENCES,
+  SELECTORS: AttributePolicy.SELECTORS,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),
   list: slot.forward('list'),
+  selectionFor: slot.forward('selectionFor'),
+  profileFor: slot.forward('profileFor'),
+  namedBy: slot.forward('namedBy'),
+  namedByAsync: slot.forward('namedByAsync'),
   catalogue: slot.forward('catalogue'),
   required: slot.forward('required'),
   enforced: slot.forward('enforced'),

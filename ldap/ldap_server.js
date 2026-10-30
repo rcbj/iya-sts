@@ -10833,7 +10833,29 @@ if (typeof attributePolicy.setDirectory === 'function') {
       return CANONICAL_NAMES[lower] || '';
     },
     holders: peopleHolding,
-    missing: peopleMissing
+    missing: peopleMissing,
+    // NAMED PROFILES (#1241, rule 3cx): a person's groups' references and
+    // the groups naming a profile from the group index, the references of
+    // groups a write adds, and the people naming a profile from the
+    // holders of `stsAttributePolicy`.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy,
+    groupReferences: function groupReferences(groups, attribute) {
+      log.debug('Entering groupReferences().');
+      const held = String(attribute || '').toLowerCase();
+      const index = groupIndexNow();
+      const out = (groups || []).map(function (group) {
+        const wanted = String(group == null ? '' : group).trim();
+        const dn = DN_SHAPED.test(wanted) ? wanted : groupDnFor(wanted);
+        const indexed = index.byDn.get(normalizeDn(dn));
+        return { cn: indexed ? String(indexed.cn) : wanted, dn: dn,
+                 value: String(((indexed && indexed.policies) || {})[held] ||
+                               '') };
+      });
+      log.debug('Leaving groupReferences(). ' + out.length + '.');
+      return out;
+    },
+    peopleNamingPolicyAsync: peopleNamingPolicyAsync
   });
 } else {
   log.warn('ldap: common/attribute_policy.ts offers no setDirectory(), so ' +
@@ -23432,7 +23454,8 @@ function peopleHolding(name) {
 
 /**
  * Counts the people in the ambient realm who lack a value of any of the
- * attributes: those the attribute policy would not let be created now (#396).
+ * attributes: those the attribute policy would not let be created now (#396)
+ * — each against their own profile where a function is given (#1241).
  *
  * **A WALK OF THE REALM'S PEOPLE**, said here: there is no index of what an
  * entry LACKS. So it is asked only when a reader asks for it (the policies
@@ -23440,7 +23463,9 @@ function peopleHolding(name) {
  * store, which may hold millions — it is not asked at all: it answers null,
  * and the page gives the LDAP filter that finds them instead.
  *
- * @param names - the required attributes
+ * @param names - the required attributes, or a function from a person's
+ *   username and own `stsAttributePolicy` to the lower-cased names their
+ *   profile requires
  * @returns the count, or null in a windowed process
  */
 function peopleMissing(names) {
@@ -23449,12 +23474,23 @@ function peopleMissing(names) {
     log.debug('Leaving peopleMissing(). Windowed: not walked.');
     return null;
   }
-  const lowered = (names || []).map(function (one) {
+  // EACH PERSON AGAINST THEIR OWN PROFILE (#1241): a function answers the
+  // lower-cased names one person's profile requires, from their username
+  // and their own `stsAttributePolicy`; a list is every person's.
+  const judge = typeof names === 'function' ? names : null;
+  const lowered = judge ? [] : (names || []).map(function (one) {
     return String(one).toLowerCase();
   });
   let n = 0;
   eachEntryInRealm(function (stored) {
-    if (isPersonEntry(stored) && lowered.some(function (lower) {
+    if (!isPersonEntry(stored)) {
+      return;
+    }
+    const wanted = judge
+      ? judge(String(usernameOfEntry(stored) || ''),
+              String((stored.attributes.stsattributepolicy || [])[0] || ''))
+      : lowered;
+    if (wanted.some(function (lower) {
       return !holdsValue(stored, lower);
     })) {
       n += 1;

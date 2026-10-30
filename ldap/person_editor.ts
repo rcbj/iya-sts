@@ -230,10 +230,15 @@ interface PersonEditorDeps {
   // makes of an edit.
   customRows: () => Array<{ name: string; label: string; syntax: string;
                             multi: boolean; description: string }>;
+  // WHOSE PROFILE (#1241): `subject.attributes` is the person's entry (as
+  // the edit leaves it), from which the attribute policy reads their uid and
+  // their own `stsAttributePolicy`, and their groups by the uid.
   editRefusal: (before: Record<string, unknown>,
-                after: Record<string, unknown>) =>
+                after: Record<string, unknown>,
+                subject?: { attributes?: Record<string, unknown> }) =>
     { removed: string[]; message: string } | null;
-  requiredNames: () => string[];
+  requiredNames: (subject?: { attributes?: Record<string, unknown> }) =>
+    string[];
   alpha3: (code: string) => string;
   audit: (row: Record<string, unknown>) => void;
 }
@@ -521,15 +526,15 @@ class PersonEditor {
         helpers.log.debug("Leaving customRows().");
         return attributePolicy.definitions();
       },
-      editRefusal: function editRefusal(before, after) {
+      editRefusal: function editRefusal(before, after, subject) {
         helpers.log.debug("Entering editRefusal().");
         helpers.log.debug("Leaving editRefusal().");
-        return attributePolicy.editRefusal(before, after);
+        return attributePolicy.editRefusal(before, after, subject);
       },
-      requiredNames: function requiredNames() {
+      requiredNames: function requiredNames(subject) {
         helpers.log.debug("Entering requiredNames().");
         helpers.log.debug("Leaving requiredNames().");
-        return attributePolicy.required();
+        return attributePolicy.required(subject);
       },
       // LAZILY: `common/audit.js` is a leaf, but it is the audit log's to be
       // loaded where the service loads it.
@@ -714,12 +719,14 @@ class PersonEditor {
     }
     const universe = this.universe();
     // WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), marked per row so
-    // the page can say which boxes an edit may not empty.
+    // the page can say which boxes an edit may not empty — of THIS person,
+    // under the profile they and their groups name (#1241).
     let required: string[] = [];
     try {
-      required = this.deps.requiredNames().map(function (one) {
-        return one.toLowerCase();
-      });
+      required = this.deps.requiredNames({ attributes: person.attributes })
+        .map(function (one) {
+          return one.toLowerCase();
+        });
     } catch (e) {
       log.debug("Caught in PersonEditor.editorFor(): " +
                 ((e && e.message) || e));
@@ -889,6 +896,17 @@ class PersonEditor {
                         '.' };
       }
       const value = String(checked.value);
+      // A POLICY REFERENCE SET AT A CREATE (#1241) names a policy the realm
+      // holds, as `update()` asks of an edit: the attribute policy reads a
+      // newcomer's own reference from what the create writes.
+      const notHeld = row.choices
+        ? PolicySelection.referenceProblem(value, row.choices, row.name)
+        : null;
+      if (notHeld) {
+        log.debug("Leaving PersonEditor.checkCreateValues(). Not a policy " +
+                  "here.");
+        return { error: notHeld };
+      }
       if (value !== '' && !out.some(function (held) {
         return held.toLowerCase() === value.toLowerCase();
       })) {
@@ -1035,9 +1053,15 @@ class PersonEditor {
                           'instead.');
     }
     // AND WHAT THE REALM'S ATTRIBUTE POLICY REQUIRES (#396), in product
-    // mode: only a value taken AWAY, never one the person already lacked.
+    // mode: only a value taken AWAY, never one the person already lacked —
+    // under the profile that applies to the person as this edit leaves them
+    // (#1241), so a change of their own `stsAttributePolicy` is asked of
+    // the profile it names.
+    const leaves: Record<string, unknown> =
+      Object.assign({}, person.attributes, { [lower]: after });
     const policy = this.deps.editRefusal({ [lower]: before },
-                                         { [lower]: after });
+                                         { [lower]: after },
+                                         { attributes: leaves });
     if (policy) {
       log.debug("Leaving PersonEditor.update(). Required by the policy.");
       return this.refused('STS-LDAP-0164', policy.message);
