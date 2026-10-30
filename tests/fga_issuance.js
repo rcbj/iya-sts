@@ -474,8 +474,10 @@ function childMain() {
       '    }',
       '}']).join('\n');
     const fgaRows = function () {
-      return audit.list().filter(function (row) {
-        return row.action === 'fga.decision';
+      return inRealm(function () {
+        return audit.list().filter(function (row) {
+          return row.action === 'fga.decision';
+        });
       });
     };
 

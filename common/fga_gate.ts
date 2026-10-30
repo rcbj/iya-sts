@@ -201,6 +201,7 @@ class FgaGate {
   private failure(code: string, why: string): FgaAnswer {
     const { log, errorCodes } = this.deps;
     log.debug("Entering FgaGate.failure(). " + code);
+    // error-code: none — tagged with the caller's code, STS-FGA-0015 or 0016
     log.error(errorCodes.tag(code) + 'fga_gate: ' + why);
     log.debug("Leaving FgaGate.failure().");
     return { outcome: 'failure', code: code, why: why };
