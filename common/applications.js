@@ -4543,7 +4543,29 @@ const SCHEMA = {
             'realm holds — written past the console — allows NO mechanism ' +
             'until the policy exists (STS-AUTHN-0536).\n\nIt is WRITTEN ' +
             'BY NOBODY: no protocol presents it, so it is editable and ' +
-            'starts empty.' }
+            'starts empty.' },
+    // -------------------------------------------------------------------
+    // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564). The RESOURCE
+    // application that declares an authorization_details type owns the
+    // policy that decides details of that type (rcbj's decision 1). The
+    // policy is an entry in ou=policies carrying xacmlApplication; these
+    // are the application's half. BOTH ARE DERIVED in this registry's
+    // sense and in no EDITABLE row: `xacml/fga_policies.ts` writes them,
+    // through `setFgaState()` below, because switching enforcement on
+    // creates the policy first and an ordinary field write would skip
+    // that. An LDIF export leaves them out and an import refuses them, so
+    // an imported application gets a policy of its own.
+    { name: 'appFgaPolicy', kind: 'single',
+      from: 'this registry, when the application is created',
+      what: 'The entry name in ou=policies of the fine-grained ' +
+            'authorization policy this application owns, which decides ' +
+            'each authorization detail of the types it declares once ' +
+            'appFgaEnforced is TRUE.' },
+    { name: 'appFgaEnforced', kind: 'single',
+      from: 'this registry, when fine-grained authorization is switched',
+      what: 'TRUE when this application\'s fine-grained policy is ' +
+            'enforced. Absent or FALSE means it is not, which is the ' +
+            'default.' }
   ]
 };
 
@@ -14879,6 +14901,9 @@ function createApplication(detail) {
             (asked.protocols.length ?
              ', declared for ' + asked.protocols.join(', ') : '') +
             '. ' + count() + ' application(s) in the directory.');
+  // ITS DEFAULT FINE-GRAINED POLICY (#564, decision 2), after the entry and
+  // its audit row exist, so the policy's own row follows the create's.
+  fgaHook('created', identifier, info.actor || '');
   log.debug("Leaving createApplication(). Created.");
   log.debug("Leaving createApplication().");
   return { ok: true, application: viewAfterWrite(identifier, record) };
@@ -17522,6 +17547,9 @@ function deleteApplication(identifier, options) {
         'here.'] },
                            'STS-REG-0021');
   }
+  // Read BEFORE the entry goes: the retirement below needs the reference.
+  const fgaPolicy = String(valuesOf(loaded.record.fields.appFgaPolicy)[0] ||
+                           '');
   const gone = backing.deleteApplication(String(identifier));
   if (!gone) {
     log.debug("Leaving deleteApplication().");
@@ -17541,6 +17569,10 @@ function deleteApplication(identifier, options) {
   log.info('applications: "' + identifier + '" was deleted. ' + count() + ' ' +
       'left.');
   endGnapGrants(String(identifier), false, opts.actor || '');
+  // ITS FINE-GRAINED POLICY IS RETIRED, NOT DELETED (#564, decision 3):
+  // disabled and marked orphaned, kept for audit until an administrator
+  // removes it.
+  fgaHook('deleted', String(identifier), opts.actor || '', fgaPolicy);
   log.debug("Leaving deleteApplication(). Gone.");
   log.debug("Leaving deleteApplication().");
   return { ok: true,
@@ -20841,6 +20873,209 @@ function seedInternalApplications(options) {
   return made;
 }
 
+// ---------------------------------------------------------------------------
+// APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564): THE APPLICATION'S
+// HALF, AND THE LIFECYCLE SLOT.
+//
+// Every application CREATED gets a default fine-grained policy and every
+// application DELETED has its policy retired — disabled, kept, marked
+// orphaned (rcbj's decisions 2 and 3). The policy and its lifecycle are
+// `xacml/fga_policies.ts`'s; this module only says WHEN, through a slot that
+// module fills at 23c (`setFgaLifecycle()`), and keeps the two attributes
+// on the entry (`fgaStateOf()`, `setFgaState()`).
+//
+// **A SLOT AND NOT A REQUIRE, AND RULE 3e'S TEST ANSWERS YES BOTH WAYS
+// ROUND.** A require from here to `xacml/fga_policies` at load would close a
+// cycle — that module requires this one, to read and write the two
+// attributes — and would load the XACML store and templates into whatever
+// first requires this module, which is nearly everything and long before
+// 23c: their `InstanceSlot`s would build default instances there and the
+// composition root's install would then be refused. It would also put the
+// XACML family into the parent project's Kerberos COPY closure, which
+// reaches this module through `kerberos/krb5_delegation.ts`
+// (`kerberos/CLAUDE.md`). A LAZY require at the write, as
+// `authzenAttributeProblem()` takes, avoids the cycle and the early build
+// but not the closure: a create or delete in those in-process jobs would
+// then reach for a file their image does not carry. The slot adds no
+// require at all. The other way round is the natural direction and is
+// what `fga_policies.ts` does.
+//
+// **WHAT IS CALLED, AND WHAT IS NOT.** `createApplication()` — the console,
+// `/admin-api` and an LDIF import, which creates through it — and
+// `deleteApplication()`, which every deletion goes through. NOT a
+// development-mode sighting (`seen()`), an RFC 7591 registration, or this
+// service's own seeded applications: each of those files an entry nobody
+// with the console created, the first two at an unauthenticated caller's
+// request, and a policy written per entry there would let such a caller
+// fill `ou=policies` to `xacml.maxPolicies` and lock administrators out of
+// writing policies at all. Every one of them gets its policy the first time
+// fine-grained authorization is enabled on it — decision 2's own fallback —
+// and so does an application created before the slot was filled.
+//
+// VALIDATED WHOLE: `created` without `deleted` would make policies that are
+// never retired, which is the half of decision 3 an audit depends on.
+// Nothing a hook does may fail the create or the delete it follows — the
+// application is already written or gone — so a throw is logged under
+// STS-FGA-0010 and the act stands.
+// ---------------------------------------------------------------------------
+let fgaLifecycle = null;
+
+/**
+ * Installs the fine-grained authorization lifecycle hooks; filled by
+ * `xacml/fga_policies.ts` when it is wired at 23c.
+ *
+ * @param hooks - `created(identifier, actor)` and `deleted(identifier,
+ *   actor, policy)` — `policy` the deleted entry's appFgaPolicy, read
+ *   before the entry went — both or neither; null removes them
+ */
+function setFgaLifecycle(hooks) {
+  log.debug("Entering setFgaLifecycle().");
+  const whole = !!hooks && typeof hooks.created === 'function' &&
+                typeof hooks.deleted === 'function';
+  if (hooks && !whole) {
+    log.warn(errorCodes.tag('STS-FGA-0011') +
+             'applications: the fine-grained authorization lifecycle slot ' +
+             'was offered without both created and deleted, and was not ' +
+             'installed. Applications created now get their policy when ' +
+             'fine-grained authorization is first enabled on them.');
+  }
+  fgaLifecycle = whole ? hooks : null;
+  log.debug("Leaving setFgaLifecycle(). " +
+            (fgaLifecycle ? "Installed." : "Not installed."));
+}
+
+/**
+ * Returns the installed lifecycle hooks, so that a test which replaces them
+ * can put back what was there.
+ *
+ * @returns the hooks, or null
+ */
+function fgaLifecycleInstalled() {
+  log.debug("Entering fgaLifecycleInstalled().");
+  log.debug("Leaving fgaLifecycleInstalled().");
+  return fgaLifecycle;
+}
+
+// Calls one hook, and never lets it fail the act it follows.
+function fgaHook(which, identifier, actor, policy) {
+  log.debug("Entering fgaHook(). " + which + " " + identifier);
+  if (!fgaLifecycle) {
+    log.debug("Leaving fgaHook(). No lifecycle installed.");
+    return;
+  }
+  try {
+    const answer = fgaLifecycle[which](String(identifier), actor || '',
+                                       policy || '');
+    if (answer && answer.ok === false) {
+      log.warn(errorCodes.tag('STS-FGA-0010') +
+               'applications: "' + identifier + '" was ' + which + ', and ' +
+               'its fine-grained authorization policy was not ' +
+               (which === 'created' ? 'created' : 'retired') + ': ' +
+               (answer.why || (answer.errors || []).join(' ') ||
+                'no reason given') + '.');
+    }
+  } catch (e) {
+    log.debug("Caught in fgaHook(): " + ((e && e.message) || e));
+    // Logged and not rethrown: the application is already written or
+    // already gone, and a 500 for an act that happened would be a lie.
+    log.warn(errorCodes.tag('STS-FGA-0010') +
+             'applications: the fine-grained authorization ' + which +
+             ' hook threw for "' + identifier + '": ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving fgaHook().");
+}
+
+/**
+ * Reads an application's fine-grained authorization attributes.
+ *
+ * @param identifier - the application's identifier
+ * @returns `{ known, policy, enforced }`: whether the registry holds it, its
+ *   appFgaPolicy ('' when none) and whether appFgaEnforced is TRUE
+ */
+function fgaStateOf(identifier) {
+  log.debug("Entering fgaStateOf(). identifier=" + identifier);
+  const loaded = load(String(identifier));
+  if (!loaded.known) {
+    log.debug("Leaving fgaStateOf(). Unknown.");
+    return { known: false, policy: '', enforced: false };
+  }
+  const fields = loaded.record.fields;
+  const policy = String(valuesOf(fields.appFgaPolicy)[0] || '');
+  const enforced = String(valuesOf(fields.appFgaEnforced)[0] || '')
+    .toUpperCase() === 'TRUE';
+  log.debug("Leaving fgaStateOf(). policy=" + policy + " enforced=" +
+            enforced);
+  return { known: true, policy: policy, enforced: enforced };
+}
+
+/**
+ * Writes an application's fine-grained authorization attributes; the one
+ * door `xacml/fga_policies.ts` writes them through. Audited as an
+ * `application.update` naming the attributes.
+ *
+ * @param identifier - the application's identifier
+ * @param change - `policy` (an entry name, '' to clear) and/or `enforced`
+ *   (a boolean); a member left out is left as it is
+ * @param options - `actor`
+ * @returns `ok` and whether anything changed, or `ok: false` with `errors`
+ */
+function setFgaState(identifier, change, options) {
+  log.debug("Entering setFgaState(). identifier=" + identifier);
+  const asked = change || {};
+  const opts = options || {};
+  const loaded = load(String(identifier));
+  if (!loaded.known) {
+    log.debug("Leaving setFgaState(). Unknown.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+      'called "' + identifier + '" in this realm.'] }, 'STS-FGA-0009');
+  }
+  const record = loaded.record;
+  const touched = [];
+  if (asked.policy !== undefined) {
+    const policy = String(asked.policy || '');
+    if (String(valuesOf(record.fields.appFgaPolicy)[0] || '') !== policy) {
+      if (policy) {
+        record.fields.appFgaPolicy = policy;
+      } else {
+        delete record.fields.appFgaPolicy;
+      }
+      touched.push('appFgaPolicy');
+    }
+  }
+  if (asked.enforced !== undefined) {
+    const enforced = asked.enforced ? 'TRUE' : 'FALSE';
+    if (String(valuesOf(record.fields.appFgaEnforced)[0] || 'FALSE')
+          .toUpperCase() !== enforced) {
+      record.fields.appFgaEnforced = enforced;
+      touched.push('appFgaEnforced');
+    }
+  }
+  if (!touched.length) {
+    log.debug("Leaving setFgaState(). Nothing changed.");
+    return { ok: true, changed: false };
+  }
+  if (!save(record, { actor: opts.actor || '' })) {
+    log.debug("Leaving setFgaState(). The directory refused it.");
+    return errorCodes.mark({ ok: false, errors: ['The directory would not ' +
+      'write ' + touched.join(' and ') + ' on "' + identifier + '".'] },
+      'STS-FGA-0012');
+  }
+  audit.audit({
+    action: 'application.update', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": fine-grained ' +
+             'authorization ' + (touched.indexOf('appFgaEnforced') >= 0
+               ? (asked.enforced ? 'enforced' : 'not enforced')
+               : 'policy ' + (asked.policy ? 'set to "' + asked.policy + '"'
+                                           : 'cleared')),
+    detail: { identifier: String(identifier), attributes: touched,
+              mode: 'fga' }
+  });
+  log.debug("Leaving setFgaState(). " + touched.join(', '));
+  return { ok: true, changed: true };
+}
+
 // THE CONSOLE'S PROSE (#543 phase 2b). The `/admin-api` routes whose
 // answers carry this module's tables: the directory's own page
 // (`/admin-api/ldap/applications`: KINDS and SCHEMA), the Applications list
@@ -20894,6 +21129,12 @@ module.exports = {
   // #543 phase 2b: the routes whose answers carry this module's prose, and
   // the prose by key.
   PROSE_ROUTES: PROSE_ROUTES,
+  // #564: the fine-grained authorization lifecycle slot and the two
+  // attributes' reader and writer.
+  setFgaLifecycle: setFgaLifecycle,
+  fgaLifecycleInstalled: fgaLifecycleInstalled,
+  fgaStateOf: fgaStateOf,
+  setFgaState: setFgaState,
   prose: prose,
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,

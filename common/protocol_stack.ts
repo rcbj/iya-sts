@@ -1918,6 +1918,13 @@ class ProtocolStack {
     // reach lazily when a verified event arrives. Built with its siblings.
     this.build('xacml/xacml_signal_pep',
                require('../xacml/xacml_signal_pep'), 'XacmlSignalPep');
+    // Application-scoped fine-grained authorization (#564): a library over
+    // the store and the templates built above, whose wire step fills
+    // `common/applications.js`'s `setFgaLifecycle()` slot (rule 3e) — so an
+    // application created from here on gets its policy, and one created
+    // earlier (the seeds) gets it when FGA is first enabled on it.
+    this.build('xacml/fga_policies', require('../xacml/fga_policies'),
+               'FgaPolicies');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');
