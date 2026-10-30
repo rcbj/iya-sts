@@ -8448,8 +8448,21 @@ section's first design.**
   are `page.fga` on the application read and `applicationPolicies` on
   `GET /admin-api/xacml/policies` (`../mgmt-api/CLAUDE.md`).
 
+* **Remote PEPs (#1210), `#fga-peps`, last on the tab**, from
+  `page.fga.peps` (`ApplicationsPage.applicationFgaPeps()`): each holder of
+  REMOTE_PEPS with its kind and two yes/no columns — holds AUTHZEN_PEPS,
+  this application in its scope — linked to the AuthZEN tab, the groups
+  named in the note, and the members that name no entry counted. **While
+  the application is enforced it offers *Grant the remote PEPs again***, a
+  second form onto `fga-enable`: the switch then offers only Stop
+  enforcing, and re-enabling is the only grant for a holder added since.
+  What the enable granted is in its answer's message, drawn in the strip as
+  any act's. A tile counts applications' own policies against
+  `xacml.maxApplicationPolicies`, and `/admin/ldap/policies` draws the two
+  kinds' counts and ceilings apart.
+
 `tests/fga_console.js` holds the views, the acts, the refusals at a field
-and the three drawings. The browser half (pressing the tab and the
+and the three drawings; `tests/fga_pep_grant.js` the remote PEPs part. The browser half (pressing the tab and the
 sub-tabs) is a protocol job's, and none is written yet: P6's
 `tests/protocol/sts_fga.js`, or `sts_admin_console.js`'s application
 sections, would cover it.

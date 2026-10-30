@@ -2936,7 +2936,22 @@ const SCHEMAS = {
       count: { type: 'integer' },
       matched: { type: 'integer' },
       shown: { type: 'integer' },
-      max: { type: 'integer', description: 'The cap, xacml.maxPolicies.' },
+      max: { type: 'integer',
+             description: 'The cap on administrators\' own policies, ' +
+                          'xacml.maxPolicies.' },
+      ownCount: { type: 'integer',
+                  description: 'How many entries are administrators\' own ' +
+                               'policies: those without xacmlApplication, ' +
+                               'which count against `max`.' },
+      applicationCount: { type: 'integer',
+                          description: 'How many entries are ' +
+                                       'applications\' own fine-grained ' +
+                                       'policies (xacmlApplication, ' +
+                                       'orphans included).' },
+      applicationMax: { type: 'integer',
+                        description: 'The cap on applications\' own ' +
+                                     'policies, ' +
+                                     'xacml.maxApplicationPolicies.' },
       filter: openObject('What was asked for; null where nothing was.', {}),
       sourceOfTruth: { type: 'string' },
       schema: openObject('The object classes and the attributes, read out of ' +

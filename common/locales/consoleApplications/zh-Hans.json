@@ -924,5 +924,17 @@
   "fga.saveNotFor": "保存列表",
   "fga.boxXacml": "XACML 映射",
   "fga.helpXacml": "由行组成的 JSON 数组：path、attributeId，以及可选的 category、dataType、multiplicity 和 description。",
-  "fga.boxNotFor": "不提供给策略"
+  "fga.boxNotFor": "不提供给策略",
+  "fga.tileApplicationPolicies": "此领域中应用自有的策略",
+  "fga.pepsHeading": "远程 PEP",
+  "fga.pepsUnknown": "无法读取哪些远程 PEP 可以转发此应用的评估。",
+  "fga.pepsNote": "远程 PEP 的边缘 PDP 会把关于实施细粒度授权的应用的每个 AuthZEN 评估，作为 AuthZEN 调用方转发给本服务：其条目需要是 <code>{authzenGroup}</code> 的成员，并在其范围中包含此应用。“实施”会在缺少时把两者授予 <code>{group}</code> 的每个成员（REMOTE_PEPS 的持有者）；“停止实施”不会移除任何一项。之后加入的成员通过下面的按钮授予。",
+  "fga.colPep": "远程 PEP",
+  "fga.colKind": "类型",
+  "fga.colPepMember": "持有 AUTHZEN_PEPS",
+  "fga.colPepScoped": "此应用在其范围中",
+  "fga.pepsNone": "此领域中没有任何人员、服务账户或应用持有 REMOTE_PEPS。",
+  "fga.pepsUnlocated": "组中未指向任何条目、因而无法授予的成员：{n}。",
+  "fga.pepsRegrant": "再次授予远程 PEP",
+  "fga.pepsRegrantTip": "再次实施：每个缺少 AuthZEN 组或范围中缺少此应用的 REMOTE_PEPS 持有者都会被授予两者。其他一切不变。"
 }

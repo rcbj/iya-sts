@@ -16231,7 +16231,17 @@ class AdminApi {
                          'while its policy is disabled (`STS-FGA-0006`) or ' +
                          'does not parse (`STS-FGA-0007`), and for an ' +
                          'application this realm does not hold ' +
-                         '(`STS-FGA-0009`). `failure` names which.',
+                         '(`STS-FGA-0009`). `failure` names which. ' +
+                         'Every enable, including one of an application ' +
+                         'that already enforces, also grants each holder ' +
+                         'of REMOTE_PEPS in the realm (the members of ' +
+                         '`roles.remotePepGroup`) membership of ' +
+                         '`roles.authzenPepGroup` and the application in ' +
+                         'its AuthZEN scope, where either is missing, so ' +
+                         'a remote PEP\'s edge PDP may forward evaluations ' +
+                         'about it. A holder that cannot be granted is ' +
+                         'listed with why (`STS-FGA-0025`) and does not ' +
+                         'fail the enable. Disabling removes nothing.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -16240,8 +16250,13 @@ class AdminApi {
               examples: [{ application: 'payments-api' }],
               additionalProperties: false
             },
-            responseDescription: 'The `policy` it is decided by, and ' +
-                                 '`enforced: true`.' },
+            responseDescription: 'The `policy` it is decided by, ' +
+                                 '`enforced: true`, and `peps`: the ' +
+                                 'remote PEPs `granted` (with `member` ' +
+                                 'and `scope` saying what was added), ' +
+                                 'those that `held` both already, and ' +
+                                 'those `failed`, each with `why` and ' +
+                                 '`code`.' },
           { action: 'fga-disable', operationId: 'disableApplicationFga',
             summary: 'Stop enforcing an application\'s fine-grained ' +
                      'authorization policy',
@@ -16270,8 +16285,10 @@ class AdminApi {
                          'it was created — and names it in ' +
                          '`appFgaPolicy`. An application that has one is ' +
                          'answered with it, `created: false`. Refused ' +
-                         '(`STS-FGA-0008`) when `ou=policies` is full ' +
-                         '(`xacml.maxPolicies`).',
+                         '(`STS-FGA-0024`) when `ou=policies` already ' +
+                         'holds `xacml.maxApplicationPolicies` ' +
+                         'applications\' own policies, and ' +
+                         '(`STS-FGA-0008`) when it cannot be written.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

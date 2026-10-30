@@ -6784,8 +6784,16 @@
     "text": "Políticas que puede contener el repositorio"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "Cuántas entradas pueden existir bajo ou=policies. El mismo tipo de límite que tienen ou=federations y ou=applications, y por la misma razón: este directorio está en memoria en el modo de persistencia predeterminado, y un llamante que pueda crear entradas sin límite puede agotarlo. Alcanzar el límite rechaza la CREACIÓN y lo registra; nunca desaloja nada."
+    "en": "bb4fc97c445e9e60",
+    "text": "Cuántas entradas pueden existir bajo ou=policies. El mismo tipo de límite que tienen ou=federations y ou=applications, y por la misma razón: este directorio está en memoria en el modo de persistencia predeterminado, y un llamante que pueda crear entradas sin límite puede agotarlo. Alcanzar el límite rechaza la CREACIÓN y lo registra; nunca desaloja nada. La política de autorización detallada propia de una aplicación no cuenta aquí: xacml.maxApplicationPolicies acota esas."
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "Políticas de aplicaciones que el repositorio puede contener"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "Cuántas políticas de autorización detallada propias de aplicaciones (entradas bajo ou=policies que llevan xacmlApplication, incluidas las huérfanas) puede contener el repositorio. No cuentan contra xacml.maxPolicies, que acota las políticas que escriben los administradores. El valor predeterminado es el valor predeterminado de applications.max, de modo que cada aplicación que el registro admite por defecto puede tener una; súbalo junto con applications.max. Alcanzar el límite rechaza la CREACIÓN y lo registra; nunca desaloja nada."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",

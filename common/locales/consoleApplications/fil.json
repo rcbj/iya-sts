@@ -924,5 +924,17 @@
   "fga.saveNotFor": "I-save ang listahan",
   "fga.boxXacml": "XACML mapping",
   "fga.helpXacml": "Isang JSON array ng mga row: path, attributeId, at kung gusto, category, dataType, multiplicity at description.",
-  "fga.boxNotFor": "Hindi para sa policy"
+  "fga.boxNotFor": "Hindi para sa policy",
+  "fga.tileApplicationPolicies": "Sariling policy ng mga application sa realm na ito",
+  "fga.pepsHeading": "Mga remote PEP",
+  "fga.pepsUnknown": "Hindi mabasa kung aling mga remote PEP ang maaaring magpasa ng mga evaluation ng application na ito.",
+  "fga.pepsNote": "Ipinapasa ng edge PDP ng isang remote PEP sa serbisyong ito ang bawat AuthZEN evaluation tungkol sa isang application na nagpapatupad ng fine-grained authorization, bilang isang AuthZEN caller: kailangan ng entry nito ang membership sa <code>{authzenGroup}</code> at ang application na ito sa scope nito. Ibinibigay ng Enforce ang dalawa, kung kulang, sa bawat miyembro ng <code>{group}</code> (ang mga may hawak ng REMOTE_PEPS); walang inaalis ang Stop enforcing. Ang miyembrong idinagdag pagkatapos ay binibigyan ng button sa ibaba.",
+  "fga.colPep": "Remote PEP",
+  "fga.colKind": "Uri",
+  "fga.colPepMember": "May hawak na AUTHZEN_PEPS",
+  "fga.colPepScoped": "Ang application na ito sa scope nito",
+  "fga.pepsNone": "Walang tao, service account o application sa realm na ito ang may hawak ng REMOTE_PEPS.",
+  "fga.pepsUnlocated": "Mga miyembro ng grupo na walang pinapangalanang entry, kaya hindi mabibigyan: {n}.",
+  "fga.pepsRegrant": "Bigyan muli ang mga remote PEP",
+  "fga.pepsRegrantTip": "Ipatupad muli: bawat may hawak ng REMOTE_PEPS na wala sa AuthZEN group o walang application na ito sa scope ay binibigyan ng dalawa. Wala nang ibang nagbabago."
 }

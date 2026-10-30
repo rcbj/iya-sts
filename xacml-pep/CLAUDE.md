@@ -640,7 +640,10 @@ not applying.
 * **WHAT THE OPERATOR OWES**, in `docs/remote-pep.md`: the PEP's own entry
   (the one its certificate is stored on, already holding REMOTE_PEPS) holds
   AUTHZEN_PEPS and has every enforcing application its callers ask about in
-  its scope; and the realm's door admits a certificate. Nothing here
+  its scope; and the realm's door admits a certificate. **Since #1210 the
+  service writes the first two itself** when an application is enforced,
+  for every member of `remote-peps` (`authzen/CLAUDE.md`); a PEP added to
+  the group afterwards still owes them until the next enable. Nothing here
   checks that ahead of time: the service's answer is the check, and the
   `502`'s message says what to grant.
 * **NOT A PROTOCOL JOB.** No protocol job configures this container's edge

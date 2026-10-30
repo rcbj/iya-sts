@@ -28,6 +28,10 @@
 //      it is listed in notForPolicy. Since P7 the remote PEP's AuthZEN
 //      catalogue names the application once it enforces (`fgaApplications`,
 //      what the edge PDP forwards by), and its token moves with the switch.
+//      Since #1210 the enable also GRANTS the realm's REMOTE_PEPS holder
+//      membership of authzen-peps and the application in its scope (read
+//      back through the AuthZEN tab's operation), and a second enable of
+//      the enforcing application finds it held.
 //   4. THE DEFAULT POLICY DECIDES: client_credentials with the detail is
 //      issued; the token response, the access token and introspection (by
 //      the resource application, the type's owner) carry the details.
@@ -619,6 +623,33 @@ async function theTypeAndTheSwitch() {
                         "enabled FGA once every member is covered");
   check("enabling is accepted once covered", function () {
     assert.ok(on.enforced === true, JSON.stringify(on));
+  });
+  // THE GRANT (#1210): the remote PEP this file put in remote-peps is
+  // given what forwarding needs, and the AuthZEN tab reads it back.
+  const granted = ((on.peps || {}).granted || []).filter(function (one) {
+    return one.name === REMOTE_PEP;
+  })[0];
+  check("enabling granted the REMOTE_PEPS holder membership of " +
+        "authzen-peps and the application in its scope", function () {
+    assert.ok(granted && granted.member === true && granted.scope === true,
+      JSON.stringify(on.peps));
+  });
+  const looked = (await mustRead("/xacml/authzen?caller=" +
+    encodeURIComponent(REMOTE_PEP), "the remote PEP as an AuthZEN caller"))
+    .looked || {};
+  check("the AuthZEN tab reads the remote PEP in the group with the " +
+        "application in its scope", function () {
+    assert.ok(looked.member === true &&
+              (looked.applications || []).indexOf(DOCS) >= 0,
+      JSON.stringify(looked));
+  });
+  const twice = await must("/applications/fga-enable", { application: DOCS },
+                           "enabled FGA again on the enforcing application");
+  check("a second enable re-runs the grant and finds the holder held",
+        function () {
+    assert.ok(((twice.peps || {}).held || []).some(function (one) {
+      return one.name === REMOTE_PEP;
+    }), JSON.stringify(twice.peps));
   });
   const after = await catalogueFga();
   check("FGA on: the catalogue names it, so the edge PDP forwards its " +

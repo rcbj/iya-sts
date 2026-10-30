@@ -1171,6 +1171,17 @@ function maxPolicies() {
   return config.value('xacml.maxPolicies');
 }
 
+// AN APPLICATION'S OWN POLICIES HAVE A CEILING OF THEIR OWN (#1210): an
+// entry under ou=policies carrying `xacmlApplication` counts against this
+// and not against xacml.maxPolicies, so a realm full of applications
+// enforcing fine-grained authorization never locks administrators out of
+// writing their own policies. `common/config.js` argues the default.
+function maxApplicationPolicies() {
+  log.debug("Entering maxApplicationPolicies().");
+  log.debug("Leaving maxApplicationPolicies().");
+  return config.value('xacml.maxApplicationPolicies');
+}
+
 function maxRoles() {
   log.debug("Entering maxRoles().");
   log.debug("Leaving maxRoles().");
@@ -10274,7 +10285,8 @@ personEditor.setDirectory({
 // #1180, `stsAuthzenCallbackUri`, the access request callback URLs
 // registered for the caller — the two attributes it writes, which no other
 // door here offers (an `sts*` name is refused by the person editor, SCIM,
-// federation and attribute sources).
+// federation and attribute sources) — and, since #1210, adds a member to a
+// group.
 authzenAdmin.setDirectory({
   locate: function locate(key) {
     log.debug('Entering the AuthZEN locate(). key=' + key);
@@ -10307,6 +10319,15 @@ authzenAdmin.setDirectory({
     return (name === authzenAdmin.PERSON_SCOPE ||
             name === authzenAdmin.PERSON_CALLBACK) &&
            writePersonAttribute(dn, name, values);
+  },
+  // A MEMBER INTO A GROUP (#1210): enabling fine-grained authorization on
+  // an application puts each holder of REMOTE_PEPS into the group granting
+  // AUTHZEN_PEPS. The console's own door, so it is idempotent and audited
+  // (`group.add-member`) exactly as an administrator's add is.
+  addMember: function addMember(group, member, options) {
+    log.debug('Entering the AuthZEN addMember(). group=' + group);
+    log.debug('Leaving the AuthZEN addMember().');
+    return addGroupMember(group, member, options);
   }
 });
 
@@ -10603,7 +10624,8 @@ if (typeof xacmlStore.setDirectory === 'function') {
   // and STATICALLY VALIDATED like any other — a seed that stopped
   // typechecking is refused at startup and says so, rather than becoming the
   // one policy in the repository nobody ever checked.
-  if (typeof xacmlStore.seed === 'function' && policyCount() === 0) {
+  if (typeof xacmlStore.seed === 'function' &&
+      policyCount(false) + policyCount(true) === 0) {
     xacmlStore.seed();
   }
 } else {
@@ -22349,16 +22371,42 @@ function policyEntry(name) {
   return direct || null;
 }
 
-function policyCount() {
-  log.debug("Entering policyCount().");
+// WHETHER AN ENTRY'S ATTRIBUTES MAKE IT AN APPLICATION'S OWN POLICY: a
+// `xacmlApplication` value, in any case — a stored entry's names are lower
+// case and the attributes a writer hands writePolicy() are camel case.
+// An orphan still carries it, so it still counts as an application's
+// (#1210): it is kept for audit until an administrator removes it, and
+// counting it against the administrators' ceiling would let a deleted
+// application's leftovers lock them out.
+function isApplicationPolicy(attributes) {
+  log.debug("Entering isApplicationPolicy().");
+  const found = Object.keys(attributes || {}).some(function (name) {
+    if (name.toLowerCase() !== 'xacmlapplication') {
+      return false;
+    }
+    const value = attributes[name];
+    const values = Array.isArray(value) ? value : [value];
+    return values.some(function (one) {
+      return one !== undefined && one !== null && String(one) !== '';
+    });
+  });
+  log.debug("Leaving isApplicationPolicy(). " + found);
+  return found;
+}
+
+// THE TWO COUNTS, each against its own ceiling (#1210): `application`
+// true counts applications' own policies, false every other entry.
+function policyCount(application) {
+  log.debug("Entering policyCount(). application=" + !!application);
   let n = 0;
   eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, policiesDn()) &&
-        normalizeDn(stored.dn) !== normalizeDn(policiesDn())) {
+        normalizeDn(stored.dn) !== normalizeDn(policiesDn()) &&
+        isApplicationPolicy(stored.attributes) === !!application) {
       n++;
     }
   });
-  log.debug("Leaving policyCount().");
+  log.debug("Leaving policyCount(). " + n);
   return n;
 }
 
@@ -22390,7 +22438,19 @@ function writePolicy(name, attributes) {
   log.debug('Entering writePolicy(). name=' + name);
   const existing = policyEntry(name);
   const dn = existing ? existing.dn : policyDn(name);
-  if (!existing && policyCount() >= maxPolicies()) {
+  // EACH KIND AGAINST ITS OWN CEILING (#1210). Only a CREATE is bounded,
+  // as before: a rewrite of an entry that is already here adds nothing.
+  const forApplication = isApplicationPolicy(attributes);
+  if (!existing && forApplication &&
+      policyCount(true) >= maxApplicationPolicies()) {
+    log.warn(errorCodes.tag('STS-FGA-0024') +
+             'ldap: not creating ' + dn + '; ou=policies holds its maximum ' +
+             'of ' + maxApplicationPolicies() + ' application policy/' +
+             'policies (xacml.maxApplicationPolicies).');
+    log.debug('Leaving writePolicy(). Application policies are full.');
+    return false;
+  }
+  if (!existing && !forApplication && policyCount(false) >= maxPolicies()) {
     log.warn(errorCodes.tag('STS-LDAP-0037') +
              'ldap: not creating ' + dn + '; ou=policies holds its maximum ' +
              'of ' + maxPolicies() + ' entry/entries (xacml.maxPolicies).');
@@ -28025,6 +28085,16 @@ function ldapPoliciesView(req) {
     matched: filtered.length,
     shown: paged.shown.length,
     max: maxPolicies(),
+    // THE TWO KINDS AND THEIR TWO CEILINGS (#1210): `count` is every entry,
+    // as it always was; `max` bounds the administrators' own, which are
+    // `ownCount`, and `applicationMax` bounds applications' own.
+    ownCount: all.filter(function (row) {
+      return !isApplicationPolicy(row.attributes);
+    }).length,
+    applicationCount: all.filter(function (row) {
+      return isApplicationPolicy(row.attributes);
+    }).length,
+    applicationMax: maxApplicationPolicies(),
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,

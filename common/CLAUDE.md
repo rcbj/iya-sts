@@ -963,8 +963,10 @@ module keeps two attributes and says WHEN.
   entry went. Not `seen()`, `register()` or `seedInternalApplication()`:
   each files an entry no administrator created, the first two at a possibly
   unauthenticated caller's request, and a policy per entry there would let
-  such a caller fill `ou=policies` to `xacml.maxPolicies`. They get their
-  policy at first enable. A hook's failure or throw is logged
+  such a caller fill `ou=policies` to its applications' ceiling
+  (`xacml.maxApplicationPolicies` since #1210, `xacml/CLAUDE.md`) and stop
+  administrators' own applications getting one. They get their policy at
+  first enable. A hook's failure or throw is logged
   (`STS-FGA-0010`) and never fails the create or delete it follows.
 
 **`setFgaLifecycle()` is a rule 3e slot, and the test answers yes both ways

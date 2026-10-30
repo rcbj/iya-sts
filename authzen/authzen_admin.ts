@@ -85,6 +85,10 @@ const ACTIONS = Object.freeze(['set-attribute', 'remove-attribute',
                                'revoke-access-request',
                                'cancel-access-request']);
 
+// The most holders of REMOTE_PEPS one enable grants (#1210), for
+// MAX_MEMBERS' reason: the answer and the tab list each of them.
+const MAX_PEP_GRANT = 200;
+
 // What the directory slot carries.
 interface DirectoryHooks {
   // An entry by name or DN: `{ dn, person, attributes }`, or null.
@@ -93,6 +97,9 @@ interface DirectoryHooks {
   members(group: string): string[];
   // A person's attribute, replaced whole.
   write(dn: string, name: string, values: string[]): boolean;
+  // A member added to a group (#1210): the directory's own door,
+  // `addGroupMember()`, idempotent and audited as `group.add-member`.
+  addMember(group: string, member: string, options: object): any;
 }
 
 let directory: DirectoryHooks | null = null;
@@ -369,9 +376,24 @@ class AuthzenAdmin {
    *   or `application`
    */
   edgeCandidates(max: number): any {
-    const { log, config, applications } = this.deps;
+    const { log, config } = this.deps;
     log.debug("Entering AuthzenAdmin.edgeCandidates().");
     const group = String(config.value('roles.authzenPepGroup') || '');
+    const read = this.locateMembers(group, max);
+    log.debug("Leaving AuthzenAdmin.edgeCandidates(). " +
+              read.candidates.length + " of " + read.total + ".");
+    return { group: group, total: read.total, candidates: read.candidates,
+             unlocated: read.unlocated.length };
+  }
+
+  // A GROUP'S MEMBERS, LOCATED: each a person's, a service account's or an
+  // application's entry, or left in `unlocated` (a DN left behind by a
+  // deletion, a nested group, a name nothing holds). What
+  // `edgeCandidates()` reads for `roles.authzenPepGroup` and
+  // `grantRemotePeps()` for `roles.remotePepGroup` (#1210).
+  private locateMembers(group: string, max: number): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering AuthzenAdmin.locateMembers(). group=" + group);
     const members = directory && group ? directory.members(group) : [];
     // The applications by DN, read once rather than once per member: a
     // member is a person's, a service account's or an application's DN,
@@ -388,7 +410,7 @@ class AuthzenAdmin {
                 ((e && e.message) || e));
     }
     const candidates: any[] = [];
-    let unlocated = 0;
+    const unlocated: string[] = [];
     members.slice(0, Math.max(0, max)).forEach(function (member: string) {
       const entry = directory ? directory.locate(String(member)) : null;
       const app = entry ? byDn.get(String(entry.dn).toLowerCase()) : null;
@@ -403,13 +425,286 @@ class AuthzenAdmin {
                           name: String(entry.name || entry.dn),
                           attributes: entry.attributes || {} });
       } else {
-        unlocated++;
+        unlocated.push(String(member));
       }
     });
-    log.debug("Leaving AuthzenAdmin.edgeCandidates(). " + candidates.length +
+    log.debug("Leaving AuthzenAdmin.locateMembers(). " + candidates.length +
               " of " + members.length + ".");
-    return { group: group, total: members.length, candidates: candidates,
+    return { total: members.length, candidates: candidates,
              unlocated: unlocated };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENABLING FINE-GRAINED AUTHORIZATION GRANTS THE REALM'S REMOTE PEPS
+  // (#1210, rcbj's decision of 2026-10-30).
+  //
+  // A remote PEP's edge PDP forwards an evaluation about an application
+  // that enforces fine-grained authorization to `/access/v1` (#564, P7),
+  // where the PEP is an AuthZEN caller like any other: its entry must hold
+  // AUTHZEN_PEPS (membership of `roles.authzenPepGroup`) and have the
+  // application in its scope. Without both, every forwarded evaluation is
+  // a 502 at the edge. So `fga_policies.ts`'s `enable()` calls this, and
+  // every holder of REMOTE_PEPS in the realm — the members of
+  // `roles.remotePepGroup`, located as `edgeCandidates()` locates the
+  // AuthZEN group's, so a person, a service account and an application are
+  // each one — is put in the AuthZEN group if it is not there, and has the
+  // application added to its scope (`stsAuthzenApplication` on a person or
+  // service account, `appAuthzenApplication` on an application) if it is
+  // absent.
+  //
+  // **THIS DELIBERATELY MAKES THE REMOTE_PEPS GROUP A SOURCE OF AUTHZEN
+  // PERMISSION, AT THE MOMENT OF THE ENABLE.** The rule beside it still
+  // holds: a registration in `ou=peps` is not a permission, and nothing
+  // here reads `ou=peps`. What grants is an administrator's act — enabling
+  // the application — over a group an administrator filled, and what it
+  // writes is ordinary state the AuthZEN tab shows and can take back.
+  //
+  // * **Through the directory's own doors.** The membership through
+  //   `addGroupMember()` (audited there as `group.add-member`), a person's
+  //   scope through the same write `set-scope` uses, an application's
+  //   through the registry's `updateApplication()`. And one
+  //   `admin.authzen.pep.granted` row per entry changed, naming both.
+  // * **One holder failing fails nothing else.** Each is answered as
+  //   `granted`, `held` (it had both) or `failed` with why and
+  //   STS-FGA-0025, and the enable succeeds whatever they say.
+  // * **Nothing is ever taken away here.** Disabling removes nothing: a
+  //   value an administrator set by hand is indistinguishable from one an
+  //   enable added, so removing could revoke a grant somebody chose.
+  // * **Not retroactive.** A holder added to the group after the enable is
+  //   granted by the next enable (which re-runs this on an application
+  //   that already enforces), or by hand on the AuthZEN tab.
+  // * **Not by mode.** The same in development and product.
+  // ---------------------------------------------------------------------------
+  /**
+   * Grants every holder of REMOTE_PEPS in the realm what forwarding an
+   * application's AuthZEN evaluations needs: membership of
+   * `roles.authzenPepGroup`, and the application in its scope.
+   *
+   * @param application - the application's identifier
+   * @param who - `{ actor, via }`, for the audit rows
+   * @returns `{ group, authzenGroup, total, truncated, granted, held,
+   *   failed }`; each holder is `{ name, kind, dn }`, a granted one with
+   *   `member` and `scope` saying what was added, a failed one with `why`
+   *   and `code`
+   */
+  grantRemotePeps(application: string, who?: any): any {
+    const self = this;
+    const { log, config } = this.deps;
+    const id = String(application || '');
+    const by = who || {};
+    log.debug("Entering AuthzenAdmin.grantRemotePeps(). " + id);
+    const group = String(config.value('roles.remotePepGroup') || '').trim();
+    const authzenGroup = String(config.value('roles.authzenPepGroup') || '')
+      .trim();
+    const read = self.locateMembers(group, MAX_PEP_GRANT);
+    const out: any = { group: group, authzenGroup: authzenGroup,
+                       total: read.total,
+                       truncated: read.total > MAX_PEP_GRANT,
+                       granted: [], held: [], failed: [] };
+    const fail = function (holder: any, why: string): void {
+      log.debug("Entering fail().");
+      out.failed.push(Object.assign({}, holder,
+                                    { why: why, code: 'STS-FGA-0025' }));
+      self.auditGrant(id, holder, by, why);
+      log.debug("Leaving fail().");
+    };
+    read.unlocated.forEach(function (member: string) {
+      fail({ name: member, kind: 'unknown', dn: member },
+           'The member "' + member.slice(0, 200) + '" of ' + group +
+           ' names no person, service account or application in this ' +
+           'realm, so there is no entry to carry the scope.');
+    });
+    const authzenMembers = directory && authzenGroup
+      ? directory.members(authzenGroup).map(function (one: string) {
+        return String(one).toLowerCase();
+      }) : [];
+    read.candidates.forEach(function (candidate: any) {
+      const holder = { name: candidate.name, kind: candidate.kind,
+                       dn: candidate.dn };
+      if (!authzenGroup) {
+        fail(holder, 'roles.authzenPepGroup is empty, so no group grants ' +
+                     'AUTHZEN_PEPS in this realm.');
+        return;
+      }
+      const state = self.pepState(id, candidate, authzenMembers);
+      if (state.member && state.scoped) {
+        out.held.push(holder);
+        return;
+      }
+      if (!state.scoped && state.scope.length >= MAX_SCOPE) {
+        fail(holder, 'Its scope already names ' + state.scope.length +
+                     ' applications, the most a caller may be scoped to (' +
+                     MAX_SCOPE + ').');
+        return;
+      }
+      let addedMember = false;
+      if (!state.member) {
+        let added: any = null;
+        try {
+          added = directory ? directory.addMember(authzenGroup, candidate.dn,
+            { actor: String(by.actor || ''), protocol: 'AuthZEN',
+              channel: by.via === 'api' ? 'api' : 'console' }) : null;
+        } catch (e) {
+          log.debug("Caught in AuthzenAdmin.grantRemotePeps(): " +
+                    ((e && e.message) || e));
+          added = { ok: false, errors: [String((e && e.message) || e)] };
+        }
+        if (!added || !added.ok) {
+          fail(holder, 'It could not be added to ' + authzenGroup + ': ' +
+                       ((added && (added.errors || []).join(' ')) ||
+                        'no directory is loaded.'));
+          return;
+        }
+        addedMember = !!added.changed;
+      }
+      if (!state.scoped) {
+        const why = self.addScope(id, candidate, state.scope);
+        if (why) {
+          fail(holder, why + (addedMember
+            ? ' It was added to ' + authzenGroup + ', which is kept.' : ''));
+          return;
+        }
+      }
+      const granted = Object.assign({}, holder,
+                                    { member: addedMember,
+                                      scope: !state.scoped });
+      out.granted.push(granted);
+      self.auditGrant(id, granted, by, '');
+    });
+    log.debug("Leaving AuthzenAdmin.grantRemotePeps(). " +
+              out.granted.length + " granted, " + out.held.length +
+              " held, " + out.failed.length + " failed.");
+    return out;
+  }
+
+  // Whether one located holder is in the AuthZEN group and has the
+  // application in its scope, with its scope as it stands.
+  private pepState(application: string, candidate: any,
+                   authzenMembers: string[]): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering AuthzenAdmin.pepState(). " + candidate.dn);
+    const member = authzenMembers
+      .indexOf(String(candidate.dn).toLowerCase()) >= 0 ||
+      this.memberByName(authzenMembers, candidate);
+    let scope: string[] = [];
+    let own = false;
+    if (candidate.kind === 'application') {
+      const full = applications.get(candidate.name);
+      scope = AuthzenAdmin.valuesOf(full && full.fields, APPLICATION_SCOPE);
+      // AN APPLICATION IS ALWAYS SCOPED TO ITSELF (`authzen_caller.ts`'s
+      // `scopeOf()` adds its own identifiers), so nothing is written for
+      // a remote PEP that is the enforcing application.
+      own = candidate.name === application;
+    } else {
+      scope = AuthzenAdmin.valuesOf(candidate.attributes, PERSON_SCOPE);
+    }
+    log.debug("Leaving AuthzenAdmin.pepState().");
+    return { member: member, scope: scope,
+             scoped: own || scope.indexOf(application) >= 0 };
+  }
+
+  // The application added to one holder's scope: '' when written, else why.
+  private addScope(application: string, candidate: any,
+                   scope: string[]): string {
+    const { log, applications } = this.deps;
+    log.debug("Entering AuthzenAdmin.addScope(). " + candidate.dn);
+    if (candidate.kind === 'application') {
+      const added = applications.updateApplication(candidate.name, {
+        mode: 'add', attribute: APPLICATION_SCOPE, value: application });
+      log.debug("Leaving AuthzenAdmin.addScope(). " + !!added.ok);
+      return added.ok ? '' : 'The application ' + candidate.name +
+        ' would not take ' + APPLICATION_SCOPE + ': ' +
+        ((added.errors || []).join(' ') || 'refused') + '.';
+    }
+    const written = !!directory &&
+      directory.write(candidate.dn, PERSON_SCOPE, scope.concat([application]));
+    log.debug("Leaving AuthzenAdmin.addScope(). " + written);
+    return written ? '' : PERSON_SCOPE + ' could not be written onto ' +
+      candidate.dn + '.';
+  }
+
+  // One audit row per holder: what was granted, or why it was not.
+  private auditGrant(application: string, holder: any, who: any,
+                     why: string): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering AuthzenAdmin.auditGrant(). " + holder.dn);
+    const via = String(who.via || 'console');
+    if (why) {
+      audit.audit({ action: 'admin.authzen.pep.granted', category: 'admin',
+                    errorCode: 'STS-FGA-0025', outcome: 'failure',
+                    actor: String(who.actor || ''), protocol: 'AuthZEN',
+                    target: String(holder.dn || holder.name),
+                    // THE SENTENCE IS THE SUMMARY AND THE FACTS THE
+                    // DETAIL: an audit row's `detail` is an object, and a
+                    // string there is dropped.
+                    summary: 'Enabling fine-grained authorization on "' +
+                             application + '" did not grant the remote ' +
+                             'PEP ' + holder.name + ': ' + why + ' (via ' +
+                             via + ').',
+                    detail: { application: application,
+                              holder: String(holder.name),
+                              kind: String(holder.kind), via: via } });
+      log.debug("Leaving AuthzenAdmin.auditGrant(). A failure.");
+      return;
+    }
+    const what: string[] = [];
+    if (holder.member) {
+      what.push('membership of ' +
+                String(this.deps.config.value('roles.authzenPepGroup')));
+    }
+    if (holder.scope) {
+      what.push('"' + application + '" in its ' +
+                (holder.kind === 'application' ? APPLICATION_SCOPE
+                                               : PERSON_SCOPE));
+    }
+    audit.audit({ action: 'admin.authzen.pep.granted', category: 'admin',
+                  actor: String(who.actor || ''), protocol: 'AuthZEN',
+                  target: String(holder.dn),
+                  summary: 'Enabling fine-grained authorization on "' +
+                           application + '" granted the remote PEP ' +
+                           holder.name + ' ' + what.join(' and ') +
+                           ', so its edge PDP may forward evaluations ' +
+                           'about it (via ' + via + ').',
+                  detail: { application: application,
+                            holder: String(holder.name),
+                            kind: String(holder.kind),
+                            member: !!holder.member, scope: !!holder.scope,
+                            via: via } });
+    log.debug("Leaving AuthzenAdmin.auditGrant().");
+  }
+
+  /**
+   * What every holder of REMOTE_PEPS in the realm holds of what
+   * forwarding an application's AuthZEN evaluations needs, for the
+   * application's Fine-grained authorization tab (#1210).
+   *
+   * @param application - the application's identifier
+   * @returns `{ group, authzenGroup, total, truncated, unlocated,
+   *   holders }`; each holder `{ name, kind, dn, member, scoped }`
+   */
+  remotePepsOf(application: string): any {
+    const self = this;
+    const { log, config } = this.deps;
+    const id = String(application || '');
+    log.debug("Entering AuthzenAdmin.remotePepsOf(). " + id);
+    const group = String(config.value('roles.remotePepGroup') || '').trim();
+    const authzenGroup = String(config.value('roles.authzenPepGroup') || '')
+      .trim();
+    const read = self.locateMembers(group, MAX_PEP_GRANT);
+    const authzenMembers = directory && authzenGroup
+      ? directory.members(authzenGroup).map(function (one: string) {
+        return String(one).toLowerCase();
+      }) : [];
+    const holders = read.candidates.map(function (candidate: any) {
+      const state = self.pepState(id, candidate, authzenMembers);
+      return { name: candidate.name, kind: candidate.kind,
+               dn: candidate.dn, member: !!authzenGroup && state.member,
+               scoped: state.scoped };
+    });
+    log.debug("Leaving AuthzenAdmin.remotePepsOf(). " + holders.length);
+    return { group: group, authzenGroup: authzenGroup, total: read.total,
+             truncated: read.total > MAX_PEP_GRANT,
+             unlocated: read.unlocated.length, holders: holders };
   }
 
   /**
@@ -748,13 +1043,15 @@ export = {
   /**
    * Fills the directory's slot; `ldap_server.js` calls it when it loads.
    *
-   * @param hooks - `locate`, `members` and `write`, all three or none
+   * @param hooks - `locate`, `members`, `write` and `addMember` (#1210),
+   *   all four or none
    */
   setDirectory: function (hooks: DirectoryHooks | null): void {
     log.debug("Entering setDirectory().");
     const whole = !!hooks && typeof hooks.locate === 'function' &&
                   typeof hooks.members === 'function' &&
-                  typeof hooks.write === 'function';
+                  typeof hooks.write === 'function' &&
+                  typeof hooks.addMember === 'function';
     // VALIDATED WHOLE (rule 3e): a directory offering a read and no write
     // would leave the tab able to show a scope and unable to set one.
     directory = whole ? hooks : null;
@@ -767,5 +1064,7 @@ export = {
   view: slot.forward('view'),
   act: slot.forward('act'),
   callerOf: slot.forward('callerOf'),
-  edgeCandidates: slot.forward('edgeCandidates')
+  edgeCandidates: slot.forward('edgeCandidates'),
+  grantRemotePeps: slot.forward('grantRemotePeps'),
+  remotePepsOf: slot.forward('remotePepsOf')
 };

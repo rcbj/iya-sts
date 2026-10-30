@@ -6784,8 +6784,16 @@
     "text": "策略库可容纳的策略数"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "ou=policies 下可以存放多少个条目。与 ou=federations 和 ou=applications 具有同类限制，原因也相同：在默认持久化模式下此目录位于内存中，能够无限制创建条目的调用方可以耗尽它。达到上限会拒绝创建并记录日志；它从不驱逐条目。"
+    "en": "bb4fc97c445e9e60",
+    "text": "ou=policies 下可以存放多少个条目。与 ou=federations 和 ou=applications 具有同类限制，原因也相同：在默认持久化模式下此目录位于内存中，能够无限制创建条目的调用方可以耗尽它。达到上限会拒绝创建并记录日志；它从不驱逐条目。应用自有的细粒度授权策略不计入此处：由 xacml.maxApplicationPolicies 限制。"
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "存储库可容纳的应用策略数"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "存储库可容纳多少个应用自有的细粒度授权策略（ou=policies 下带有 xacmlApplication 的条目，包括孤立的条目）。它们不计入 xacml.maxPolicies，后者限制管理员编写的策略。默认值即 applications.max 的默认值，因此注册表默认接纳的每个应用都可以拥有一个；请与 applications.max 一起调高。达到上限会拒绝创建并记录日志；它从不驱逐条目。"
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",

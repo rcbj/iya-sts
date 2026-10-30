@@ -14149,8 +14149,10 @@ const CODES = [
       'federation relationship was not created.',
     spec: '' },
   { code: 'STS-LDAP-0037',
-    summary: 'ou=policies holds its maximum (xacml.maxPolicies), so an XACML ' +
-      'policy was not created.',
+    summary: 'ou=policies holds its maximum of administrators\' own ' +
+      'policies (xacml.maxPolicies), so an XACML policy was not created. ' +
+      'Applications\' own policies count against ' +
+      'xacml.maxApplicationPolicies instead (STS-FGA-0024).',
     spec: '' },
   { code: 'STS-LDAP-0038',
     summary: 'ou=roles holds its maximum (roles.maxRoles), so a role was not ' +
@@ -21724,8 +21726,9 @@ const CODES = [
       'none otherwise' },
   { code: 'STS-FGA-0008',
     summary: 'An application\'s default fine-grained policy could not be ' +
-      'written: there is no directory, ou=policies is at xacml.maxPolicies, ' +
-      'or the document was refused. The application stays without one ' +
+      'written: there is no directory, no entry name is free, the ' +
+      'directory refused the entry, or the document was refused. The ' +
+      'application stays without one ' +
       'until FGA is next enabled on it.',
     spec: 'the caller\'s refusal, or none when an application create ' +
       'triggered it (the create still succeeds)' },
@@ -21822,6 +21825,25 @@ const CODES = [
       'multiplicity, or a reserved identifier).',
     spec: 'the caller\'s refusal (errors and field on a console or ' +
       '/admin-api reply)' },
+  { code: 'STS-FGA-0024',
+    summary: 'An application\'s fine-grained policy was not created: ' +
+      'ou=policies already holds xacml.maxApplicationPolicies applications\' ' +
+      'own policies (orphans included). The application stays without one ' +
+      'until there is room and FGA is next enabled on it, or the policy is ' +
+      'created from its tab. Raise the setting beside applications.max, or ' +
+      'remove orphaned policies.',
+    spec: 'the caller\'s refusal, or none when an application create ' +
+      'triggered it (the create still succeeds)' },
+  { code: 'STS-FGA-0025',
+    summary: 'Enabling fine-grained authorization on an application could ' +
+      'not grant one holder of REMOTE_PEPS what forwarding needs: ' +
+      'membership of roles.authzenPepGroup and the application in its ' +
+      'AuthZEN scope. The member names no person, service account or ' +
+      'application, the group is not configured or does not exist, the ' +
+      'scope is full, or the directory refused the write. The enable ' +
+      'still succeeds; the other holders are granted.',
+    spec: 'none: the enable succeeds, and the holder is listed under ' +
+      'peps.failed on its answer and on the Fine-grained authorization tab' },
   { code: 'STS-FGA-0100',
     summary: 'A fine-grained authorization question was asked with a ' +
       'type definition that is not usable (it carries a problem, or names ' +

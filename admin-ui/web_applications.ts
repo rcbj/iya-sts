@@ -4174,6 +4174,14 @@ class ApplicationsPage {
                t.text('consoleApplications.fga.tilePolicy')) +
       kit.tile(coveredCount + ' / ' + types.length,
                t.text('consoleApplications.fga.tileCovered')) +
+      // THE APPLICATIONS' OWN CEILING (#1210): every application's policy
+      // in this realm against `xacml.maxApplicationPolicies`, apart from
+      // the administrators' own `xacml.maxPolicies`.
+      (fga.applicationPolicies
+        ? kit.tile(fga.applicationPolicies.count + ' / ' +
+                   fga.applicationPolicies.max,
+                   t.text('consoleApplications.fga.tileApplicationPolicies'))
+        : '') +
       '</div>';
     const what = kit.note('<p>' + t.html('consoleApplications.fga.p1') +
       '</p><p>' + t.html('consoleApplications.fga.p2') + '</p>',
@@ -4271,7 +4279,70 @@ class ApplicationsPage {
           t.html('consoleApplications.fga.noTypes') + '</span></p>');
     return '<h2 id="fga">' + t.html('consoleApplications.fga.heading') +
       '</h2>' + tiles + what + fault + switchPart + policyPart +
-      coveragePart;
+      coveragePart + ApplicationsPage.applicationFgaPeps(ctx, fga.peps,
+        // RE-ENABLING IS THE RE-GRANT (#1210): on an enforcing application
+        // the switch offers only Stop enforcing, so a holder that joined
+        // the group since is granted by this second door onto the same
+        // `fga-enable`, which is idempotent for everything else.
+        ctx.write && fga.enforced
+          ? form('fga-enable', t.html('consoleApplications.fga.pepsRegrant'),
+                 t.text('consoleApplications.fga.pepsRegrantTip'))
+          : '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REALM'S REMOTE PEPS (#1210): each holder of REMOTE_PEPS, and whether
+  // it holds what forwarding this application's AuthZEN evaluations needs —
+  // membership of the AuthZEN group and the application in its scope.
+  // Enforce grants both where missing and its answer, drawn as the notice,
+  // names who was granted, who held it and who could not be; Stop
+  // enforcing removes neither. Each holder links to the AuthZEN tab, where
+  // a scope is set or narrowed by hand.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the remote PEPs part of the Fine-grained authorization tab.
+   *
+   * @param ctx - the console context (`t`)
+   * @param peps - `page.fga.peps`, or null when it could not be read
+   * @param regrant - the re-grant form, or '' where it is not offered
+   * @returns the part's HTML
+   */
+  static applicationFgaPeps(ctx, peps, regrant) {
+    const t = ctx.t;
+    const heading = '<h3 id="fga-peps">' +
+      t.html('consoleApplications.fga.pepsHeading') + '</h3>';
+    if (!peps) {
+      return heading + '<p><span class="state-none">' +
+        t.html('consoleApplications.fga.pepsUnknown') + '</span></p>';
+    }
+    const yes = function (held) {
+      return held
+        ? '<span class="state-valid">' +
+          t.html('consoleApplications.fga.yes') + '</span>'
+        : '<span class="state-revoked">' +
+          t.html('consoleApplications.fga.no') + '</span>';
+    };
+    const rows = (peps.holders || []).map(function (one) {
+      return '<tr><td><a href="/admin/xacml/authzen">' +
+        kit.esc(one.name) + '</a></td><td>' + kit.esc(one.kind) +
+        '</td><td>' + yes(one.member) + '</td><td>' + yes(one.scoped) +
+        '</td></tr>';
+    }).join('');
+    return heading + kit.note(t.html('consoleApplications.fga.pepsNote',
+      { group: peps.group || '—', authzenGroup: peps.authzenGroup || '—' })) +
+      (rows
+        ? '<table><tr><th>' + t.html('consoleApplications.fga.colPep') +
+          '</th><th>' + t.html('consoleApplications.fga.colKind') +
+          '</th><th>' + t.html('consoleApplications.fga.colPepMember') +
+          '</th><th>' + t.html('consoleApplications.fga.colPepScoped') +
+          '</th></tr>' + rows + '</table>'
+        : '<p><span class="state-none">' +
+          t.html('consoleApplications.fga.pepsNone') + '</span></p>') +
+      (peps.unlocated
+        ? '<p>' + t.html('consoleApplications.fga.pepsUnlocated',
+                         { n: peps.unlocated }) + '</p>'
+        : '') +
+      (regrant && rows ? '<div class="formrow">' + regrant + '</div>' : '');
   }
 
   // ---------------------------------------------------------------------------

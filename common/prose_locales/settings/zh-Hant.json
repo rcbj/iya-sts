@@ -6784,8 +6784,16 @@
     "text": "存放庫可容納的原則數"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "ou=policies 下可存在多少項目。與 ou=federations 及 ou=applications 所帶的限制相同，理由也相同：在預設持久化模式下此目錄位於記憶體中，能無限制建立項目的呼叫者可以耗盡它。達到上限時會拒絕「建立」並記錄；絕不會逐出。"
+    "en": "bb4fc97c445e9e60",
+    "text": "ou=policies 下可存在多少項目。與 ou=federations 及 ou=applications 所帶的限制相同，理由也相同：在預設持久化模式下此目錄位於記憶體中，能無限制建立項目的呼叫者可以耗盡它。達到上限時會拒絕「建立」並記錄；絕不會逐出。應用程式自有的細粒度授權原則不計入此處：由 xacml.maxApplicationPolicies 限制。"
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "存放庫可容納的應用程式原則數"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "存放庫可容納多少個應用程式自有的細粒度授權原則（ou=policies 下帶有 xacmlApplication 的項目，包括孤立的項目）。它們不計入 xacml.maxPolicies，後者限制管理員撰寫的原則。預設值即 applications.max 的預設值，因此登錄預設接納的每個應用程式都可以擁有一個；請與 applications.max 一起調高。達到上限時會拒絕「建立」並記錄；絕不會逐出。"
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",

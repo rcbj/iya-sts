@@ -1037,6 +1037,12 @@ const ACTIONS = [
     label: 'An AuthZEN attribute catalogue row was removed' },
   { action: 'admin.authzen.scope.set', category: 'admin',
     label: 'An AuthZEN caller\'s application scope was set' },
+  // ENABLING FGA GRANTS THE REALM'S REMOTE PEPS (#1210): one row per
+  // holder of REMOTE_PEPS changed, and one per holder that could not be
+  // (STS-FGA-0025, `authzen/authzen_admin.ts`).
+  { action: 'admin.authzen.pep.granted', category: 'admin',
+    label: 'A remote PEP was granted AuthZEN access to an application ' +
+           'enforcing fine-grained authorization' },
   // THE ACCESS REQUEST AND APPROVAL PROFILE (#1180): one row per transition
   // of a task, and per refusal of an approver.
   { action: 'admin.authzen.callbacks.set', category: 'admin',
