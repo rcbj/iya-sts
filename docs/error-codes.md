@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5042** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5044** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 416
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 418
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
@@ -1309,7 +1309,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0104` | A stored TOTP shared secret could not be decoded from base32, so the code could not be checked. | HTTP 200 one-time code page with the reason |
 | `STS-AUTHN-0105` | A presented one-time code matched no time step in the allowed window: wrong, or expired. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; action result at enrolment |
 | `STS-AUTHN-0106` | A presented one-time code was already used (RFC 6238 section 5.2): its time step is at or below the last one accepted. | HTTP 200 one-time code page with the reason |
-| `STS-AUTHN-0107` | A password policy save or reset named a profile other than 'default'. | action result with the reason |
+| `STS-AUTHN-0107` | A password policy save or reset named a profile that is neither 'default' nor a name of lower-case letters, digits and hyphens (at most 64) (#1236; before it, any name but 'default'). | action result with the reason |
 | `STS-AUTHN-0108` | A password policy save was refused because a field is missing, out of range, unreadable, or inconsistent with another. | action result with the reason |
 | `STS-AUTHN-0109` | A password policy save was refused because this process has no embedded directory to keep ou=passwordPolicies in. | action result with the reason |
 | `STS-AUTHN-0110` | The directory refused to store the password policy profile (it is at its maximum number of entries). | action result with the reason |
@@ -1619,6 +1619,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0536` | An application names an authentication policy (appAuthnPolicy) that this realm does not hold — written past the console, or the policy was deleted by hand — so it allows no mechanism until the policy exists or the reference changes (#1148). | none (logged; the sign-in is refused as for a mechanism the application does not allow) |
 | `STS-AUTHN-0537` | An application (appPasskeyPolicy) or a group (stsPasskeyPolicy) names a passkey policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default passkey policy, where nothing else names one) until the policy exists or the reference changes (#1235). | none (logged; the sign-in goes on under the default profile) |
 | `STS-AUTHN-0538` | A named passkey policy was not deleted: an application (appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm still names it (#1235). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0539` | An application (appPasswordPolicy) or a group (stsPasswordPolicy) names a password policy that this realm does not hold — written past the console, or the policy was deleted by hand — so the DEFAULT password policy applies to every password that reference reaches, whatever else is named, until the policy exists or the reference changes (#1236). Logged once per reference per process. | none (logged; the password is held to the default profile) |
+| `STS-AUTHN-0540` | A named password policy was not deleted: an application (appPasswordPolicy) or a group (stsPasswordPolicy) of this realm still names it (#1236). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 

@@ -428,7 +428,11 @@ PolicyKinds.register({
   auditAction: 'admin.password-policy.change',
   appliesTo: 'the NEXT password set in this realm and to nothing already ' +
              'stored',
-  fallsBackTo: 'the built-in defaults'
+  fallsBackTo: 'the built-in defaults',
+  // NAMED PASSWORD POLICIES (#1236): an application (`appPasswordPolicy`)
+  // and a group (`stsPasswordPolicy`) name theirs, so the kind is drawn as
+  // Default / Named policies / New policy.
+  tabbed: true
 });
 
 PolicyKinds.register({

@@ -69,7 +69,7 @@ class PoliciesPage {
     const panels = view.kinds.map(function (kind) {
       let html;
       if (kind.id === 'password') {
-        html = PoliciesPage.passwordPolicySection(view, t);
+        html = PoliciesPage.passwordPolicySection(view, t, view.state);
       } else if (kind.id === 'authn') {
         html = PoliciesPage.authnPolicySection(view, t);
       } else if (kind.id === 'attributes') {
@@ -874,27 +874,19 @@ class PoliciesPage {
    *
    * @param view - the policies view from adminViews.policiesView()
    * @param t - the page's translator (#539)
+   * @param state - optional; the page's state: a New policy form's draft
+   *   and refusal (#841)
    * @returns the section as HTML
    */
-  static passwordPolicySection(view, t) {
+  static passwordPolicySection(view, t, state?) {
     const kind = view.kinds.filter(function (k) {
       return k.id === 'password';
     })[0];
     const pw = view.password;
     const profile = pw.profile;
-    const out =
-      '<h2 id="password">' + t.html('consolePolicies.password.heading') +
-      '</h2>' +
-      kit.note(t.html('consolePolicies.password.lead',
-        { dn: profile.dn || ('cn=default,ou=passwordPolicies,…') })) +
-
-      (view.enforced
-        ? '<div class="ok">' + kit.esc(view.enforcement) + '</div>'
-        : kit.warn(kit.esc(view.enforcement) +
-          t.html('consolePolicies.password.switch') +
-          '<a href="/admin/config">' +
-          t.html('consolePolicies.configuration') + '</a>.')) +
-
+    // THE DEFAULT PROFILE'S OWN PART: its problems, where it is stored, its
+    // form and its rules as a person reads them.
+    const defaultPart =
       PoliciesPage.policyProblems(profile, t) +
 
       kit.note(profile.stored
@@ -912,7 +904,45 @@ class PoliciesPage {
       t.html('consolePolicies.password.rules2')) +
       '<ul>' + pw.rules.map(function (rule) {
         return '<li>' + kit.esc(rule) + '</li>';
-      }).join('') + '</ul>' +
+      }).join('') + '</ul>';
+    // NAMED PASSWORD POLICIES (#1236): Default / Named policies / New
+    // policy, the passkey policy's sub-tabs, where the kind declares them;
+    // the doors, the history, the generator and the schema are reference
+    // for all three, so they stay under them.
+    const body = PoliciesPage.isTabbedKind(kind, pw)
+      ? (function () {
+        const named = PoliciesPage.namedProfileParts(kind, pw, t,
+                                                     state || {});
+        return kit.subTabbedPanels(kind.label, [
+          { id: 'password-sub-default',
+            label: t.text('consolePolicies.sub.default'),
+            html: defaultPart },
+          { id: 'password-sub-named',
+            label: t.text('consolePolicies.sub.named'),
+            html: '<h3 id="password-named">' +
+              t.html('consolePolicies.named.heading') + '</h3>' +
+              named.list },
+          { id: 'password-sub-new',
+            label: t.text('consolePolicies.sub.new'),
+            html: '<h3>' + t.html('consolePolicies.named.addHeading') +
+              '</h3>' + named.add }
+        ]);
+      })()
+      : defaultPart;
+    const out =
+      '<h2 id="password">' + t.html('consolePolicies.password.heading') +
+      '</h2>' +
+      kit.note(t.html('consolePolicies.password.lead',
+        { dn: profile.dn || ('cn=default,ou=passwordPolicies,…') })) +
+
+      (view.enforced
+        ? '<div class="ok">' + kit.esc(view.enforcement) + '</div>'
+        : kit.warn(kit.esc(view.enforcement) +
+          t.html('consolePolicies.password.switch') +
+          '<a href="/admin/config">' +
+          t.html('consolePolicies.configuration') + '</a>.')) +
+
+      body +
 
       '<h3 id="doors">' + t.html('consolePolicies.password.doorsHeading') +
       '</h3>' +

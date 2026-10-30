@@ -342,7 +342,11 @@ class ServiceAccountRotation {
     try {
       const rotation = this.deps.policy().rotation();
       const passwordPolicy = this.deps.passwordPolicy();
-      const profile = Object.assign({}, passwordPolicy.read(),
+      // THE ACCOUNT'S OWN PASSWORD PROFILE (#1236): the one its groups
+      // name, else `default` — the profile the commit below is checked
+      // against, so a rotated password is never refused by it.
+      const profile = Object.assign({},
+                                    passwordPolicy.profileFor(facts.username),
                                     { generatedLength:
                                         rotation.generatedLength });
       let password = '';

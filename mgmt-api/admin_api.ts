@@ -1548,10 +1548,17 @@ class AdminApi {
     log.debug("Entering AdminApi.policyKindActions().");
     const PROSE = {
       password: {
-        save: 'Writes `cn=default,ou=passwordPolicies` in this realm\'s ' +
-              'directory, REPLACING what is there. Two rules relate fields: ' +
-              '`generatedLength` must be at least `minLength`, and at least ' +
-              'twice `minSymbols` plus two. **A change applies to the NEXT ' +
+        save: 'Writes `cn=<profile>,ou=passwordPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there: `default`, or a named ' +
+              'policy, created by its first save (#1236). Two rules relate ' +
+              'fields: `generatedLength` must be at least `minLength`, and ' +
+              'at least twice `minSymbols` plus two. An application ' +
+              '(`appPasswordPolicy`) and a group (`stsPasswordPolicy`) name ' +
+              'a named policy; of those naming one for a person the lowest ' +
+              '`precedence` applies (ties by name), else `default`, and a ' +
+              'reference to a policy the realm does not hold makes it ' +
+              '`default` (STS-AUTHN-0539). A named policy still named is ' +
+              'not removed (STS-AUTHN-0540). **A change applies to the NEXT ' +
               'password set in this realm and to nothing already stored**, ' +
               'which is a hash and cannot be re-checked.',
         example: { minLength: 14 }
@@ -1867,9 +1874,12 @@ class AdminApi {
         description: prose.save + '\n\n**Every field is required** and one ' +
                      'left out is refused by name rather than reset to a ' +
                      'default, because a save that quietly loosened a rule ' +
-                     'nobody mentioned is the mistake nobody sees. The only ' +
-                     'profile is `default`: nothing assigns a profile to a ' +
-                     'person, so another name is refused rather than stored.',
+                     'nobody mentioned is the mistake nobody sees.' +
+                     // A kind with named profiles takes another name
+                     // (#1236: said only of the kinds without them).
+                     (named ? '' : ' The only profile is `default`: ' +
+                       'nothing assigns a profile to a person, so another ' +
+                       'name is refused rather than stored.'),
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
