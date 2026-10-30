@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4995** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5013** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
-* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 37
+* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 55
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4894,6 +4894,24 @@ Raised from: uma/.
 | `STS-UMA-0118` | A UMA permission request named a resource_id this resource server did not register (#1168). | HTTP 400 invalid_resource_id |
 | `STS-UMA-0119` | A UMA permission request named a scope the resource was not registered with (#1168). | HTTP 400 invalid_scope |
 | `STS-UMA-0120` | A path under /.well-known/uma2-configuration names no realm of this service (#1168). | HTTP 404 |
+| `STS-UMA-0200` | The uma-ticket grant was asked where it is not offered: no UMA family in the process, or uma.enabled off in the realm; or the slot was given something that is not a whole handler (#1193). | unsupported_grant_type (HTTP 400) |
+| `STS-UMA-0201` | The uma-ticket grant named no ticket, or a ticket that is unknown, expired, rotated or ended (#1193). | invalid_request or invalid_grant (HTTP 400) |
+| `STS-UMA-0202` | A UMA permission ticket was presented again after it was spent, on this node or another (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0203` | A UMA permission ticket was presented by a client other than the one that presented it first (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0204` | An RPT presented for upgrade is unknown, expired, or not this client's, this requesting party's or this resource server's (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0205` | A scope of the uma-ticket grant names no scope of any resource in the ticket (the Grant specification, section 3.3.4) (#1193). | invalid_scope (HTTP 400) |
+| `STS-UMA-0206` | A persisted claims token presented with the uma-ticket grant is unknown, expired or another client's (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0208` | A UMA permission could not be decided: a policy that does not evaluate, a throw, or the grant's handler failing. Nobody decided, so it is never request_denied (#1193). | server_error (HTTP 500) |
+| `STS-UMA-0209` | A UMA policy needs an attribute about the requesting party that is not known yet: the request is answered need_info with the attribute in required_claims (#1193). | need_info (HTTP 403) |
+| `STS-UMA-0210` | A UMA permission was refused by a policy (Deny, NotApplicable, or a missing attribute not about the requesting party); the request is request_denied when nothing, or (uma.partialRpt off) not everything, was granted (#1193). | request_denied (HTTP 403) |
+| `STS-UMA-0211` | The realm's UMA authorization policy (uma.authorizationPolicy) is disabled; a disabled entry does not fall back to the built-in template (#1193). | server_error (HTTP 500) |
+| `STS-UMA-0212` | A UMA policy needs an attribute that is not about the requesting party, so no claim can supply it; the permission is refused (#1193). | request_denied (HTTP 403) where nothing else is granted |
+| `STS-UMA-0213` | A resource owner's UMA document does not parse when a permission is decided with it (#1193). | server_error (HTTP 500) |
+| `STS-UMA-0214` | A UMA policy permitted with an obligation the UMA PEP cannot discharge, so the permission is refused (#1193). | request_denied (HTTP 403) where nothing else is granted |
+| `STS-UMA-0215` | A resource in a UMA ticket or RPT is gone, or no longer the ticket's owner's, so its permission is refused (#1193). | request_denied (HTTP 403) where nothing else is granted |
+| `STS-UMA-0216` | A UMA permission needs the owner's approval (the share asks each time) and was not issued (#1193). | request_submitted (HTTP 403), or request_denied |
+| `STS-UMA-0217` | The issuance policy refused the RPT as an access token (issue-access-token), the fourth layer of every UMA permission (#1193). | request_denied (HTTP 403) |
+| `STS-UMA-0218` | A persisted claims token was presented for revocation by a client other than the one it was issued to (#1193). | invalid_grant (HTTP 400) at /oauth2/revoke |
 | `STS-UMA-0300` | A share named a resource that is not one of the owner's registered resources (#1192). | HTTP 400 on the account API |
 | `STS-UMA-0301` | A share named no scope, or a scope the resource was not registered with (#1192). | HTTP 400 on the account API |
 | `STS-UMA-0302` | A share named no kind of recipient, a person this realm does not hold, or the owner themselves (#1192). | HTTP 400 on the account API |

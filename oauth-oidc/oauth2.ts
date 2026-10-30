@@ -117,6 +117,10 @@ import cellPlacement = require('../common/cell_placement');
 import cellSessions = require('../common/cell_sessions');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+// THE UMA 2.0 GRANT'S SLOT (#1168, #1193): a LEAF, filled by
+// `uma/uma_grant.ts` at 23d-ii — `common/uma_gate.ts` argues why it is a
+// slot both ways round. Empty, the grant is not offered.
+import umaGate = require('../common/uma_gate');
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('./dpop');
 // FAPI 2.0 HTTP Signatures at the resource servers (#178): only its key
@@ -2104,7 +2108,10 @@ class OAuth2Server {
           ? ['urn:openid:params:grant-type:ciba'] : [])
         // RFC 8628 section 3.4 (#150), where oauth2.deviceAuthorization is on.
         .concat(deviceAuthorization.enabled()
-          ? [deviceAuthorization.GRANT_TYPE] : []),
+          ? [deviceAuthorization.GRANT_TYPE] : [])
+        // UMA 2.0's grant (#1168), CONDITIONAL for CIBA's reason: only while
+        // the UMA family filled its slot and uma.enabled is on in the realm.
+        .concat(umaGate.offered() ? [umaGate.GRANT_TYPE] : []),
       // RFC 7521 section 4.1 and OpenID Connect Core section 9's spelling of
       // the same thing: what a client_assertion_type may say. It is published
       // for the GRANT as well as for client authentication, because the one
@@ -4203,6 +4210,13 @@ class OAuth2Server {
       ? richAuthorization.maxLifetimeFor(opts.authorization_details) : null;
     if (typeCap !== null && payload.exp - payload.iat > typeCap) {
       payload.exp = payload.iat + typeCap;
+    }
+    // A GRANT'S OWN CAP (#1168): UMA's RPT lives no longer than
+    // `uma.rptLifetimeS`. Only ever shortens, as the two caps above do.
+    const grantCap = Number(opts.lifetimeCapS);
+    if (Number.isFinite(grantCap) && grantCap > 0 &&
+        payload.exp - payload.iat > grantCap) {
+      payload.exp = payload.iat + grantCap;
     }
     // OID4VCI section 6.2: when the authorization was expressed as
     // authorization_details, the token response grants credential_identifiers
@@ -16216,6 +16230,42 @@ class OAuth2Server {
       return respond(refreshed);
     }
 
+    // ---------------------------------------------------------------------
+    // USER-MANAGED ACCESS 2.0 (#1168, #1193): the `uma-ticket` grant, handed
+    // to the UMA family through its slot with the two things only this
+    // endpoint holds — `issue()`, the one funnel, so the issuance gate and
+    // every rule of an access token apply to the RPT, and the person a
+    // username names. Its refusals are the Grant specification's errors
+    // (need_info, request_submitted, request_denied) beside RFC 6749's, with
+    // their members (ticket, required_claims, redirect_user, interval).
+    // ---------------------------------------------------------------------
+    if (grant === umaGate.GRANT_TYPE) {
+      const umaAnswer = await umaGate.grant({
+        req: req, body: body, client: client, base: base, dpopJkt: dpopJkt,
+        issue: function (o: Json): Promise<Json> {
+          return issue(o);
+        },
+        person: function (username: string): Json {
+          return self.provisionedPerson(username);
+        }
+      });
+      if (umaAnswer && umaAnswer.body) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). An RPT issued.");
+        return respond(umaAnswer.body);
+      }
+      errorCodes.mark(res, String((umaAnswer && umaAnswer.code) ||
+                                  'STS-UMA-0208'));
+      log.debug("Leaving OAuth2Server.tokenGrant(). The UMA grant refused.");
+      res.status(Number((umaAnswer && umaAnswer.status) || 500))
+         .type('application/json').set('Cache-Control', 'no-store')
+         .send(JSON.stringify(Object.assign({
+           error: String((umaAnswer && umaAnswer.error) || 'server_error'),
+           error_description: oauth21.sanitizeDescription(
+             String((umaAnswer && umaAnswer.description) || ''))
+         }, (umaAnswer && umaAnswer.extra) || {})));
+      return undefined;
+    }
+
     if (grant === 'client_credentials') {
       // No user is involved, so no refresh token and no ID token.
       //
@@ -19350,6 +19400,24 @@ class OAuth2Server {
       return self.oauthError(res, 400, several.error, several.description);
     }
 
+    // UMA 2.0'S RPT INTROSPECTION (#1168; Federated Authorization section
+    // 5): a protection API token as Bearer authenticates the RESOURCE
+    // SERVER, and the answer is about its RPTs alone. Any request without
+    // one goes on below exactly as it always did.
+    const umaAnswer = umaGate.introspect({
+      req: req, res: res, token: String(body.token || ''),
+      introspectionOf: function (token: string): Json {
+        return self.introspectionOf(token);
+      } });
+    if (umaAnswer !== undefined) {
+      if (umaAnswer) {
+        res.status(200).type('application/json')
+           .send(JSON.stringify(umaAnswer));
+      }
+      log.debug("Leaving OAuth2Server.introspectRequest(). A UMA PAT.");
+      return undefined;
+    }
+
     // Whether the caller PROVED who it is, which is what section 5's "intended
     // for the resource server" rule is then asked of. False for a development
     // JSON request, which authenticates nobody and so cannot be compared.
@@ -20299,6 +20367,29 @@ class OAuth2Server {
                   "refused.");
         return undefined;
       }
+    }
+
+    // A UMA PERSISTED CLAIMS TOKEN (#1168), which is no JWT either: a
+    // handle stored by digest, ended here whatever the hint says (the hint
+    // is advisory, section 2.1). Another client's is refused as a device
+    // secret from outside Native SSO is.
+    const pctAnswer = umaGate.revokePct(token, String(caller.clientId || ''),
+                                        !!caller.identified);
+    if (pctAnswer && pctAnswer.found) {
+      if (!pctAnswer.ok) {
+        errorCodes.mark(res, 'STS-UMA-0218');
+        log.debug("Leaving OAuth2Server.revokeRequest(). Another client's " +
+                  "PCT.");
+        return self.oauthError(res, 400, 'invalid_grant',
+          'RFC 7009 section 2.1: this persisted claims token was issued to ' +
+          'another client. Nothing was revoked.');
+      }
+      audit.record({ action: 'uma.pct.revoke', protocol: 'UMA 2.0',
+                     actor: String(caller.clientId || ''),
+                     summary: 'A UMA persisted claims token was revoked.' });
+      res.status(200).end();
+      log.debug("Leaving OAuth2Server.revokeRequest(). A PCT.");
+      return undefined;
     }
 
     // A NATIVE SSO DEVICE SECRET (#130), which is no JWT: revoked by

@@ -1142,6 +1142,14 @@ const ACTIONS = [
     label: 'A UMA resource server was issued a permission ticket' },
   // A resource owner's acts on their own policy (#1192): the share's id and
   // resource, never a recipient's claim value or a resource's name.
+  // THE GRANT (#1193): one row per question a permission was put to, and
+  // one per grant's outcome; a PCT's revocation.
+  { action: 'uma.decision', category: 'authorization',
+    label: 'A UMA permission was decided by one of its policies' },
+  { action: 'uma.grant', category: 'protocol',
+    label: 'A UMA uma-ticket grant was answered' },
+  { action: 'uma.pct.revoke', category: 'protocol',
+    label: 'A UMA persisted claims token was revoked' },
   { action: 'uma.share.add', category: 'admin',
     label: 'A resource owner shared a resource through UMA' },
   { action: 'uma.share.remove', category: 'admin',

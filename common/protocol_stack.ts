@@ -450,6 +450,9 @@ class ProtocolStack {
     // enforcing application's details (it is not `access_gate`'s "empty
     // means allow"; `fga_gate.ts` argues it).
     this.build('common/fga_gate', require('./fga_gate'), 'FgaGate');
+    // #1168: the UMA 2.0 grant's slot — a leaf, filled by
+    // `uma/uma_grant.ts` at 23d-ii; empty, the grant is not offered.
+    this.build('common/uma_gate', require('./uma_gate'), 'UmaGate');
     this.build('ssf/ssf_streams', require('../ssf/ssf_streams'), 'SsfStreams');
     this.build('ssf/ssf_http', require('../ssf/ssf_http'), 'SsfHttp');
     this.build('ssf/ssf_receivers', require('../ssf/ssf_receivers'),
@@ -2055,6 +2058,11 @@ class ProtocolStack {
     // and the templates, which the portal reaches lazily.
     this.build('uma/uma_owner_policy', require('../uma/uma_owner_policy'),
                'UmaOwnerPolicy');
+    // #1193: the PEP (the realm's and the owner's layers, and the resource
+    // server's FGA policy) and the grant, whose wire step fills
+    // `common/uma_gate.ts`: this line is what offers the uma-ticket grant.
+    this.build('uma/uma_pep', require('../uma/uma_pep'), 'UmaPep');
+    this.build('uma/uma_grant', require('../uma/uma_grant'), 'UmaGrant');
     this.build('uma/uma', require('../uma/uma'), 'UmaSurface');
     this.register(app, require('../uma/uma'), 'uma/uma');
 

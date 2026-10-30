@@ -22011,6 +22011,89 @@ const CODES = [
     summary: 'A path under /.well-known/uma2-configuration names no realm ' +
       'of this service (#1168).',
     spec: 'HTTP 404' },
+  // The uma-ticket grant (#1193).
+  { code: 'STS-UMA-0200',
+    summary: 'The uma-ticket grant was asked where it is not offered: no UMA ' +
+      'family in the process, or uma.enabled off in the realm; or the slot ' +
+      'was given something that is not a whole handler (#1193).',
+    spec: 'unsupported_grant_type (HTTP 400)' },
+  { code: 'STS-UMA-0201',
+    summary: 'The uma-ticket grant named no ticket, or a ticket that is ' +
+      'unknown, expired, rotated or ended (#1193).',
+    spec: 'invalid_request or invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0202',
+    summary: 'A UMA permission ticket was presented again after it was ' +
+      'spent, on this node or another (#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0203',
+    summary: 'A UMA permission ticket was presented by a client other than ' +
+      'the one that presented it first (#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0204',
+    summary: 'An RPT presented for upgrade is unknown, expired, or not this ' +
+      'client\'s, this requesting party\'s or this resource server\'s ' +
+      '(#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0205',
+    summary: 'A scope of the uma-ticket grant names no scope of any ' +
+      'resource in the ticket (the Grant specification, section 3.3.4) ' +
+      '(#1193).',
+    spec: 'invalid_scope (HTTP 400)' },
+  { code: 'STS-UMA-0206',
+    summary: 'A persisted claims token presented with the uma-ticket grant ' +
+      'is unknown, expired or another client\'s (#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0208',
+    summary: 'A UMA permission could not be decided: a policy that does not ' +
+      'evaluate, a throw, or the grant\'s handler failing. Nobody decided, ' +
+      'so it is never request_denied (#1193).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-UMA-0209',
+    summary: 'A UMA policy needs an attribute about the requesting party ' +
+      'that is not known yet: the request is answered need_info with the ' +
+      'attribute in required_claims (#1193).',
+    spec: 'need_info (HTTP 403)' },
+  { code: 'STS-UMA-0210',
+    summary: 'A UMA permission was refused by a policy (Deny, NotApplicable, ' +
+      'or a missing attribute not about the requesting party); the request ' +
+      'is request_denied when nothing, or (uma.partialRpt off) not ' +
+      'everything, was granted (#1193).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0211',
+    summary: 'The realm\'s UMA authorization policy (uma.authorizationPolicy) ' +
+      'is disabled; a disabled entry does not fall back to the built-in ' +
+      'template (#1193).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-UMA-0212',
+    summary: 'A UMA policy needs an attribute that is not about the ' +
+      'requesting party, so no claim can supply it; the permission is ' +
+      'refused (#1193).',
+    spec: 'request_denied (HTTP 403) where nothing else is granted' },
+  { code: 'STS-UMA-0213',
+    summary: 'A resource owner\'s UMA document does not parse when a ' +
+      'permission is decided with it (#1193).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-UMA-0214',
+    summary: 'A UMA policy permitted with an obligation the UMA PEP cannot ' +
+      'discharge, so the permission is refused (#1193).',
+    spec: 'request_denied (HTTP 403) where nothing else is granted' },
+  { code: 'STS-UMA-0215',
+    summary: 'A resource in a UMA ticket or RPT is gone, or no longer the ' +
+      'ticket\'s owner\'s, so its permission is refused (#1193).',
+    spec: 'request_denied (HTTP 403) where nothing else is granted' },
+  { code: 'STS-UMA-0216',
+    summary: 'A UMA permission needs the owner\'s approval (the share asks ' +
+      'each time) and was not issued (#1193).',
+    spec: 'request_submitted (HTTP 403), or request_denied' },
+  { code: 'STS-UMA-0217',
+    summary: 'The issuance policy refused the RPT as an access token ' +
+      '(issue-access-token), the fourth layer of every UMA permission ' +
+      '(#1193).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0218',
+    summary: 'A persisted claims token was presented for revocation by a ' +
+      'client other than the one it was issued to (#1193).',
+    spec: 'invalid_grant (HTTP 400) at /oauth2/revoke' },
   // The resource owner's document and the portal's Sharing section (#1192).
   { code: 'STS-UMA-0300',
     summary: 'A share named a resource that is not one of the owner\'s ' +

@@ -961,14 +961,19 @@ const SPECS: Spec[] = [
     where: 'Kantara Initiative',
     url: 'https://docs.kantarainitiative.org/uma/wg/' +
          'rec-oauth-uma-grant-2.0.html',
-    coverage: 'partial: the uma2-configuration discovery document (section ' +
-              '2) with its UMA members over the RFC 8414 document, and the ' +
-              'permission ticket a resource server obtains (Federated ' +
-              'Authorization section 4). Missing until later phases of ' +
-              '#1168: the urn:ietf:params:oauth:grant-type:uma-ticket ' +
-              'grant at the token endpoint, need_info, request_submitted, ' +
-              'request_denied, the RPT, the PCT, claims interaction and ' +
-              'claim_token; uma_profiles_supported is empty.' },
+    coverage: 'partial: discovery (section 2); the ' +
+              'urn:ietf:params:oauth:grant-type:uma-ticket grant (section ' +
+              '3.3) with the ticket spent once across the cluster and bound ' +
+              'to the first client that presents it, section 3.3.4\'s ' +
+              'requested scopes, a PCT presented, need_info with a rotated ' +
+              'ticket and required_claims, request_denied, a partial RPT ' +
+              '(uma.partialRpt), RPT upgrade, and every permission decided ' +
+              'by the realm\'s policy, the resource owner\'s own XACML ' +
+              'document, the resource server\'s fine-grained policy and the ' +
+              'issuance gate; the PCT revocable at /oauth2/revoke. Missing ' +
+              'until #1168\'s phase 5: the claims interaction endpoint, a ' +
+              'pushed claim_token and request_submitted. ' +
+              'uma_profiles_supported is empty.' },
   { id: 'uma2-fedauthz',
     name: 'Federated Authorization for User-Managed Access (UMA) 2.0',
     where: 'Kantara Initiative',
@@ -983,9 +988,10 @@ const SPECS: Spec[] = [
               'user_access_policy_uri; and the permission endpoint ' +
               '(section 4) issuing one ticket for one or several ' +
               'permissions, with invalid_resource_id and invalid_scope. ' +
-              'Missing until later phases: RPT introspection with ' +
-              'permissions (section 5). A scope description document a ' +
-              'scope URI names is never fetched: a scope is a string.' },
+              'RPT introspection (section 5) with the PAT as Bearer at ' +
+              '/oauth2/introspect: permissions and no scope, for that ' +
+              'resource server\'s RPTs alone. A scope description document ' +
+              'a scope URI names is never fetched: a scope is a string.' },
   { id: 'rfc9421', name: 'RFC 9421 — HTTP Message Signatures',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9421',

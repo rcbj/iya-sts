@@ -28,7 +28,7 @@ put to the XACML engine, and this page says which policies answer it.
 | 1 (#1190) | The contract: the facts, the two policy templates, the stores, the settings, the error codes | built |
 | 2 (#1191) | The protection API: the PAT, resource registration, the permission endpoint, discovery | built |
 | 3 (#1192) | The resource owner's own policy, and the portal's *Sharing* section | built |
-| 4 (#1193) | The `uma-ticket` grant: the layers, `need_info`, the RPT, the PCT, upgrade, introspection, revocation | |
+| 4 (#1193) | The `uma-ticket` grant: the layers, `need_info`, the RPT, the PCT, upgrade, introspection, revocation | built |
 | 5 (#1194) | Claims interaction, `claim_token`, `request_submitted` and the owner's approval | |
 | 6 (#1195) | The console, `/admin-api` and the monitor | |
 | 7 (#1196) | Protocol tests with Keycloak as the independent peer | |
@@ -92,6 +92,53 @@ policy as ALFA; saving it ends every token issued over your resources.
 Your policy is kept in a store of its own, never in the realm's policy
 repository, and is only ever asked about your own resources. It is deleted
 with your account.
+
+## The grant
+
+A client presents the ticket a resource server handed it at the token
+endpoint:
+
+```
+POST /oauth2/token
+grant_type=urn:ietf:params:oauth:grant-type:uma-ticket&ticket=...
+```
+
+with its own client authentication, and optionally:
+
+* `pct`, a persisted claims token from an earlier answer;
+* `rpt`, an RPT to upgrade;
+* `scope`, further scopes of the ticket's resources (section 3.3.4).
+
+The client must declare the grant type (`oauthGrantType`). A ticket is
+spent once, and only the client that first presented it may present it
+again. The answer is one of:
+
+| Answer | When |
+|---|---|
+| 200 with `access_token` (the RPT) | Every permission asked was granted, or some were and `uma.partialRpt` is on. `upgraded: true` where an RPT was upgraded; the old one is revoked. |
+| 403 `need_info` | A policy needs something about the requesting party that is not known yet. Carries a new `ticket` and `required_claims`. |
+| 403 `request_denied` | Nothing was granted, or not everything with `uma.partialRpt` off, or the issuance policy refused the RPT. |
+| 400 `invalid_grant`, `invalid_scope` | The ticket, PCT or RPT cannot be used here, or a scope names nothing in the ticket. |
+| 500 `server_error` | A policy could not be evaluated. Nobody decided, so it is never `request_denied`. |
+
+**The RPT** is an RFC 9068 access token: `aud` is the resource server,
+`permissions` lists each resource and its granted scopes, and there is no
+`scope` claim. Where a resource's `type` is an `authorization_details` type
+the resource server declares, the same permissions are also written as
+`authorization_details`. It lives no longer than `uma.rptLifetimeS`, and has
+no refresh token unless `uma.rptRefreshToken` is on.
+
+**Introspection.** A resource server introspects an RPT at
+`/oauth2/introspect` with its PAT as `Authorization: Bearer`. The answer adds
+`permissions` and has no `scope`; an RPT issued for another resource server
+is `active: false`.
+
+**Revocation.** Removing a share, deleting a resource, narrowing its scopes,
+an owner's ALFA edit, and the owner's account being disabled or deleted each
+revoke the RPTs that carried what changed, so introspection answers
+`active: false`. A PCT is revoked at `/oauth2/revoke`. **An RPT is what the
+owner allowed when it was issued**: a resource server that needs the current
+answer asks [AuthZEN](authzen.md)'s `/access/v1/evaluation`.
 
 ## How a permission is decided
 

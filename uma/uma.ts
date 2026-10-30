@@ -174,7 +174,8 @@ class UmaSurface {
       store: umaStore,
       pat: umaPat,
       capabilities: function (): Capabilities {
-        return { grant: false, claims: false };
+        return { grant: require('../common/uma_gate').installed() === true,
+                 claims: false };
       },
       loadOauth2: function (): Json {
         log.debug("Entering loadOauth2().");
@@ -778,7 +779,37 @@ class UmaSurface {
       return false;
     }
     directory.addAccountObserver(function (event: Json): void {
-      if (!event || String(event.kind).indexOf('deleted') !== 0) {
+      if (!event) {
+        return;
+      }
+      // AN OWNER DISABLED (#1193): a lock set where there was none revokes
+      // every RPT over their resources; the resources and the document stay,
+      // for the day the account is enabled again.
+      const lockOf = function (attrs: Json): string {
+        return String([].concat((attrs || {}).pwdaccountlockedtime ||
+                                [])[0] || '');
+      };
+      if (String(event.kind) === 'updated' && !lockOf(event.before) &&
+          lockOf(event.after)) {
+        const locked = String([].concat((event.after || {}).entryuuid ||
+                                        [])[0] || '');
+        if (locked) {
+          try {
+            realms.run(realms.get(String(event.realm || '')) ||
+                       realms.get(realms.DEFAULT_ID), function () {
+              const store = self.deps.store;
+              store.revokeRpts(store.rptsBy('owner', 'urn:uuid:' + locked),
+                               'the owner\'s account was disabled');
+            });
+          } catch (e) {
+            log.error(errorCodes.tag('STS-UMA-0311') + 'uma: ' + event.dn +
+                      ' was disabled and the RPTs over their resources ' +
+                      'could not be revoked: ' + ((e && e.message) || e));
+          }
+        }
+        return;
+      }
+      if (String(event.kind).indexOf('deleted') !== 0) {
         return;
       }
       const before = event.before || {};

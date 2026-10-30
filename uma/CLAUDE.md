@@ -177,6 +177,48 @@ and `hosted_applications.js` gives the family its two prefixes.
   when UMA is off in the realm. A column that changed with a setting would
   be a second thing the static NAV table cannot say.
 
+## Phase 4 (#1193): the grant
+
+| File | What it is |
+|---|---|
+| `../common/uma_gate.ts` | The leaf slot `oauth2.ts` hands the grant, a PAT introspection and a PCT revocation through. Empty, the grant is NOT OFFERED — neither the issuance gate's "allow" nor FGA's "refuse": nobody asked for UMA in that process. |
+| `uma_pep.ts` | One permission through the three policy layers, each answer read deny-biased, one `uma.decision` audit row per question, counted on the monitor's `uma` row (FGA's layer on `fga`). |
+| `uma_grant.ts` | The grant (protocol first, then the PEP, then the RPT through the endpoint's own `issue()`), introspection with a PAT, the PCT's revocation. Its wire step fills the slot. |
+
+`oauth2.ts` carries four small hooks: the grant in `grant_types_supported`
+while `umaGate.offered()`, the token endpoint's branch (beside CIBA's and the
+device grant's), a `lifetimeCapS` that only shortens an access token, and the
+two doors at introspection and revocation. `common/applications.js`'s
+`FLOW_GRANT_TYPES` takes the grant so a client can declare it, which the
+realm policy's `uma-client-grant-type` gate requires.
+
+### Decisions made here, and why
+
+* **The fourth layer is the funnel, not a fourth PEP question.** The RPT is
+  minted through `issue()`, so `checkIssuance()` (`issue-access-token`), the
+  client's role, the device, risk and transfer rules and the sender
+  constraint all apply unchanged; its `IssuanceRefused` is caught and
+  answered `request_denied` (0217) rather than RFC 6749's `access_denied`,
+  because the Grant specification's client is waiting for UMA's errors.
+* **The permissions ride as `assertionClaims`**, the layer of claims a
+  grant adds under the protocol's own, so `tokenSet()` gains no UMA branch;
+  and `authorization_details` rides the same way rather than through
+  `opts.authorization_details`, which would put the details to the
+  resource server's FGA policy a second time at stage `token`.
+* **The owner's layer reads a BOUNDED PIP**: only the directory attributes
+  in `uma.requestingPartyAttributes`, never a role — what a person's own
+  rule may read about a stranger is the realm's to say. It is decided with
+  `xacml_pdp.js`'s `evaluate()` and that resolver, rather than
+  `decidePolicy()`, which would hand it the unbounded one.
+* **A permission whose owner asks each time is not issued here**; phase 5
+  queues it. Until a claims module is installed it is logged (0216) and
+  left out, never issued undecided.
+* **The disabled owner**: the account observer revokes every RPT over an
+  owner's resources when `pwdAccountLockedTime` appears; the resources and
+  the document stay for the day the account is enabled.
+* **A PCT ends with a sign-out of everything** — `logout/`'s `uma` family,
+  GNAP grants' rule — and at `/oauth2/revoke` whatever the hint says.
+
 ## What is deliberately not here
 
 * `uma_profiles_supported` is empty until a profile is implemented end to

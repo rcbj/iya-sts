@@ -429,12 +429,22 @@ async function childBody() {
           !!doc.introspection_endpoint,
           'W1. the document carries the UMA members over the realm\'s RFC ' +
           '8414 metadata, no-store', brief(r));
-  t.check(!doc.claims_interaction_endpoint &&
-          (doc.grant_types_supported || []).indexOf(
-            'urn:ietf:params:oauth:grant-type:uma-ticket') < 0,
-          'W2. nothing unimplemented is advertised: no claims interaction ' +
-          'endpoint and no uma-ticket grant yet',
-          JSON.stringify(doc.grant_types_supported));
+  const umaGate = require(ROOT + '/common/uma_gate');
+  const claimsOn = (function () {
+    try {
+      return !!require(ROOT + '/uma/uma_claims');
+    } catch (e) {
+      log.debug("Caught in childBody(): " + e.message);
+      return false;
+    }
+  })();
+  t.check(!!doc.claims_interaction_endpoint === claimsOn &&
+          ((doc.grant_types_supported || []).indexOf(
+            'urn:ietf:params:oauth:grant-type:uma-ticket') >= 0) ===
+            umaGate.installed(),
+          'W2. nothing unimplemented is advertised: the uma-ticket grant ' +
+          'and the claims interaction endpoint each only where it is ' +
+          'performed', JSON.stringify(doc.grant_types_supported));
   const registered = [];
   app._router.stack.forEach(function (layer) {
     if (layer.route && layer.route.path) {

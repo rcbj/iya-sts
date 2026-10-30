@@ -105,7 +105,8 @@ function childMain() {
     const realm = realms.create({ id: 'ft-' + stamp, name: 'ft',
       overrides: { 'oauth2.jwtBearerGrant': true,
                    'oauth2.saml2BearerGrant': true, 'oauth2.ciba': true,
-                   'oauth2.deviceAuthorization': true } }).realm;
+                   'oauth2.deviceAuthorization': true,
+                   'uma.enabled': true } }).realm;
 
     // --- A. The fields -------------------------------------------------
     const rows = applications.applicationFields();

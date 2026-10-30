@@ -5989,7 +5989,10 @@ const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
   'urn:ietf:params:oauth:grant-type:jwt-bearer',
   'urn:ietf:params:oauth:grant-type:saml2-bearer',
   'urn:openid:params:grant-type:ciba',
-  'urn:ietf:params:oauth:grant-type:device_code'];
+  'urn:ietf:params:oauth:grant-type:device_code',
+  // UMA 2.0 (#1168): a client that presents permission tickets declares it,
+  // and the realm's uma-authorization policy refuses one that does not.
+  'urn:ietf:params:oauth:grant-type:uma-ticket'];
 
 /**
  * A response_type value with its words sorted, the order every member of
