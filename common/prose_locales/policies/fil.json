@@ -572,12 +572,12 @@
     "text": "Para saan ang profile, para sa susunod na tao."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "9c184b4ac272a663",
-    "text": "Sa isang NAMED na authentication policy (#1148): isang first-factor mechanism na pinapayagan ng mga application na nagpapangalan sa policy na ito (appAuthnPolicy) — password, password-mfa, webauthn, spnego, wallet o federation, tig-isang value. Kapag wala, pinapayagan ang bawat isang pinapayagan ng realm."
+    "en": "66db848b0bb1c58f",
+    "text": "Sa isang NAMED authentication policy (#1148, #1237): isang first-factor mechanism na pinapayagan ng sign-in na sakop nito — kapag pinangalanan ito ng application (appAuthnPolicy) o ng isa sa mga group ng tao (stsAuthnPolicy) at ang precedence nito ang pinakamababa sa mga pinangalanan — password, password-mfa, webauthn, spnego, wallet o federation, isang value bawat isa. Kapag wala, pinapayagan ang lahat ng pinapayagan ng realm."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "b59799bd06b5022d",
-    "text": "Sa isang NAMED na authentication policy (#1148): isang second factor na pinapayagan ng mga application na nagpapangalan sa policy na ito — password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, tig-isang value. Kapag wala, nananatili ang authentication policy ng realm."
+    "en": "7c8e4d8b4cce7c08",
+    "text": "Sa isang NAMED authentication policy (#1148, #1237): isang second factor na pinapayagan ng sign-in na sakop nito — kapag pinangalanan ito ng application (appAuthnPolicy) o ng isa sa mga group ng tao (stsAuthnPolicy) at ang precedence nito ang pinakamababa sa mga pinangalanan — password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, isang value bawat isa. Kapag wala, nananatili ang authentication policy ng realm."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",

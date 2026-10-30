@@ -572,12 +572,12 @@
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "9c184b4ac272a663",
-    "text": "En una política de autenticación CON NOMBRE (#1148): un mecanismo de primer factor que permiten las aplicaciones que nombran esta política (appAuthnPolicy) — password, password-mfa, webauthn, spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
+    "en": "66db848b0bb1c58f",
+    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un mecanismo de primer factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, password-mfa, webauthn, spnego, wallet o federation, un valor cada uno. Si no hay ninguno, se permiten todos los que permite el dominio."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "b59799bd06b5022d",
-    "text": "En una política de autenticación CON NOMBRE (#1148): un segundo factor que permiten las aplicaciones que nombran esta política — password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Si no hay ninguno, la política de autenticación del dominio queda como está."
+    "en": "7c8e4d8b4cce7c08",
+    "text": "En una política de autenticación CON NOMBRE (#1148, #1237): un segundo factor que permite un inicio de sesión al que se aplica — cuando la aplicación (appAuthnPolicy) o uno de los grupos de la persona (stsAuthnPolicy) la indica y su precedencia es la menor de las indicadas —: password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Si no hay ninguno, la política de autenticación del dominio queda como está."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",

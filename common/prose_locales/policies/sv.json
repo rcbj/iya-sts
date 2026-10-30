@@ -572,12 +572,12 @@
     "text": "Vad profilen är till för, för nästa person."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "9c184b4ac272a663",
-    "text": "På en NAMNGIVEN autentiseringspolicy (#1148): en mekanism för första faktor som applikationerna som namnger den här policyn (appAuthnPolicy) tillåter — password, password-mfa, webauthn, spnego, wallet eller federation, ett värde var. Anges ingen tillåts varje mekanism som sfären tillåter."
+    "en": "66db848b0bb1c58f",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en förstafaktormekanism som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, password-mfa, webauthn, spnego, wallet eller federation, ett värde var. Ingen tillåter alla som sfären tillåter."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "b59799bd06b5022d",
-    "text": "På en NAMNGIVEN autentiseringspolicy (#1148): en andra faktor som applikationerna som namnger den här policyn tillåter — password, securityKey, totp, recoveryCode, emailCode, emailLink eller wallet, ett värde var. Anges ingen lämnas sfärens autentiseringspolicy som den är."
+    "en": "7c8e4d8b4cce7c08",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en andra faktor som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, securityKey, totp, recoveryCode, emailCode, emailLink eller wallet, ett värde var. Ingen lämnar sfärens autentiseringspolicy som den är."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",

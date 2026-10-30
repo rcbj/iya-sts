@@ -572,12 +572,12 @@
     "text": "此配置文件的用途，留给下一个人看。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "9c184b4ac272a663",
-    "text": "在命名身份验证策略上（#1148）：指定此策略的应用（appAuthnPolicy）所允许的一种第一因素机制——password、password-mfa、webauthn、spnego、wallet 或 federation，每个值一种。一个都不列则允许领域所允许的每一种。"
+    "en": "66db848b0bb1c58f",
+    "text": "用于命名身份验证策略（#1148、#1237）：它所适用的登录允许的一种第一因素机制——在应用（appAuthnPolicy）或此人的某个组（stsAuthnPolicy）指定了它，且其优先级是所指定者中最低时适用——password、password-mfa、webauthn、spnego、wallet 或 federation，每个值一项。一项都没有时，允许本领域允许的全部机制。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "b59799bd06b5022d",
-    "text": "在命名身份验证策略上（#1148）：指定此策略的应用所允许的一种第二因素——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每个值一种。一个都不列则保持领域的身份验证策略不变。"
+    "en": "7c8e4d8b4cce7c08",
+    "text": "用于命名身份验证策略（#1148、#1237）：它所适用的登录允许的一种第二因素——在应用（appAuthnPolicy）或此人的某个组（stsAuthnPolicy）指定了它，且其优先级是所指定者中最低时适用——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每个值一项。一项都没有时，本领域的身份验证策略保持不变。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
