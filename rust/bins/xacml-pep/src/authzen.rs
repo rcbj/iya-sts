@@ -20,14 +20,18 @@
 //! the catalogue), and `X-Request-ID` echoed by the same rule. A denial is
 //! a 200 with `decision: false`; an error is never one.
 //!
-//! **WHO MAY ASK is the one thing decided differently, because the service
-//! decides it against its directory and this container has none.** The
-//! door is mutual TLS only, on the HTTPS listener: a certificate that
-//! verifies against `PEP_AUTHZEN_CLIENT_CA`, found by its SHA-256 in
-//! `PEP_AUTHZEN_CALLERS`, which also names the caller and its application
-//! scope — the stand-in for an entry holding AUTHZEN_PEPS and
-//! `stsAuthzenApplication`. No bearer door, no revocation check, no audit
-//! row (a log line instead): `xacml-pep/CLAUDE.md` states each.
+//! **WHO MAY ASK is the SERVICE'S ANSWER, pulled** (#1189, rcbj's
+//! decision): the door is mutual TLS only, on the HTTPS listener — a
+//! certificate that verifies against `PEP_AUTHZEN_CLIENT_CA` — and the
+//! caller is the one the pulled list (`GET /xacml/pep/authzen-callers`)
+//! names by that certificate's SHA-256: the name a policy sees, its
+//! application scope and the endpoints the service's access-control policy
+//! admits it to, so the outcome of AUTHZEN_PEPS and `stsAuthzenApplication`
+//! rather than a second copy of them. `PEP_AUTHZEN_CALLERS`, when set,
+//! NARROWS it (a pulled caller must be on it too) and decides alone only
+//! until the first pull. No bearer door, no revocation check of an outside
+//! authority, no audit row (a log line instead): `xacml-pep/CLAUDE.md`
+//! states each.
 
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -41,7 +45,7 @@ use crate::enforce::Enforcer;
 use crate::listener::Transport;
 use crate::options::{AuthzenCaller, Bias, Options};
 use crate::service::Pep;
-use crate::sync::Catalogue;
+use crate::sync::{Callers, Catalogue};
 
 pub const EVALUATION_PATH: &str = "/access/v1/evaluation";
 pub const EVALUATIONS_PATH: &str = "/access/v1/evaluations";
@@ -141,16 +145,31 @@ pub fn request_id(sent: Option<&str>) -> Option<String> {
     ok.then(|| sent.to_string())
 }
 
+/// The name `PulledCaller.endpoints` gives an endpoint path.
+pub fn endpoint_name(path: &str) -> &'static str {
+    if path == EVALUATIONS_PATH {
+        "evaluations"
+    } else {
+        "evaluation"
+    }
+}
+
 /// WHO IS ASKING, by the one door: a certificate presented on the HTTPS
 /// listener, verified against `PEP_AUTHZEN_CLIENT_CA`, found by its SHA-256
-/// in `PEP_AUTHZEN_CALLERS`. Each refusal is the service's status for the
-/// same situation — 401 for a caller that is nobody, 403 for one that may
-/// not ask — and, the door being certificates alone, carries no
-/// `WWW-Authenticate` (there is no HTTP scheme to name).
+/// on the caller list pulled from the service (#1189) and admitted there to
+/// `endpoint` — narrowed, when `PEP_AUTHZEN_CALLERS` is set, to the
+/// certificates it names. Before the first pull the local list decides
+/// alone when it is set, and nothing is answered (503) when it is not.
+/// Each refusal is the service's status for the same situation — 401 for a
+/// caller that is nobody, 403 for one that may not ask — and, the door
+/// being certificates alone, carries no `WWW-Authenticate` (there is no
+/// HTTP scheme to name).
 pub fn admit(
     options: &Options,
     asks_for_certificates: bool,
     transport: &Transport,
+    callers: &Callers,
+    endpoint: &str,
 ) -> Result<Caller, Reply> {
     if !asks_for_certificates {
         return Err(Reply::error(
@@ -185,22 +204,90 @@ pub fn admit(
             ),
         ));
     }
-    let found: Option<&AuthzenCaller> = options
+    let local: Option<&AuthzenCaller> = options
         .authzen_callers
         .iter()
         .find(|c| c.sha256 == peer.sha256);
-    let Some(found) = found else {
+    if !callers.loaded {
+        if !options.authzen_callers_configured {
+            return Err(Reply::error(
+                503,
+                "STS-XPEP-0050",
+                "This edge PDP has not yet pulled from its PDP the callers \
+                 the service admits to its AuthZEN API, and has no \
+                 PEP_AUTHZEN_CALLERS to decide meanwhile.",
+            ));
+        }
+        // BEFORE THE FIRST PULL, THE LOCAL LIST ALONE (#1179's door), so an
+        // edge an operator configured keeps answering while its PDP is
+        // unreachable or older than #1189.
+        let Some(found) = local else {
+            return Err(Reply::error(
+                403,
+                "STS-XPEP-0037",
+                "The client certificate verified, and it is not one this \
+                 edge PDP admits: PEP_AUTHZEN_CALLERS names the certificates \
+                 that may ask, by the SHA-256 of each.",
+            ));
+        };
+        return Ok(Caller {
+            name: found.name.clone(),
+            applications: found.applications.clone(),
+        });
+    }
+    if callers.door != "mtls" {
+        return Err(Reply::error(
+            401,
+            "STS-XPEP-0052",
+            &format!(
+                "The service's realm authenticates its AuthZEN callers by \
+                 {} (authzen.callerAuthentication), which a certificate \
+                 alone does not meet and this edge PDP cannot check, so it \
+                 admits nobody.",
+                if callers.door.is_empty() {
+                    "an unnamed door"
+                } else {
+                    callers.door.as_str()
+                }
+            ),
+        ));
+    }
+    let Some(pulled) = callers
+        .callers
+        .iter()
+        .find(|c| c.sha256.contains(&peer.sha256))
+    else {
         return Err(Reply::error(
             403,
-            "STS-XPEP-0037",
-            "The client certificate verified, and it is not one this edge \
-             PDP admits: PEP_AUTHZEN_CALLERS names the certificates that may \
-             ask, by the SHA-256 of each.",
+            "STS-XPEP-0051",
+            "The client certificate verified, and it is not one the service \
+             admits to its AuthZEN API: no caller on the list this edge PDP \
+             pulled presents it.",
         ));
     };
+    if !pulled.endpoints.iter().any(|e| e == endpoint) {
+        return Err(Reply::error(
+            403,
+            "STS-XPEP-0053",
+            &format!(
+                "The service's access-control policy does not admit this \
+                 caller to /access/v1/{}.",
+                endpoint
+            ),
+        ));
+    }
+    if options.authzen_callers_configured && local.is_none() {
+        return Err(Reply::error(
+            403,
+            "STS-XPEP-0054",
+            "The client certificate is one the service admits, and this \
+             edge PDP's PEP_AUTHZEN_CALLERS, which narrows who may ask \
+             here, does not name it.",
+        ));
+    }
     Ok(Caller {
-        name: found.name.clone(),
-        applications: found.applications.clone(),
+        name: pulled.name.clone(),
+        applications: pulled.applications.clone(),
     })
 }
 
@@ -389,10 +476,17 @@ impl Pep {
                 ),
             );
         }
+        let callers = self.sync.callers();
         let caller = match admit(
             &self.options,
             self.listener.asks_for_client_certificates(),
             transport,
+            &callers,
+            endpoint_name(if batch {
+                EVALUATIONS_PATH
+            } else {
+                EVALUATION_PATH
+            }),
         ) {
             Ok(caller) => caller,
             Err(refused) => return refused,
@@ -773,6 +867,7 @@ mod tests {
     fn options_with(callers: Vec<AuthzenCaller>) -> Options {
         let mut options = Options::from_env("0.0.0");
         options.authzen_callers = callers;
+        options.authzen_callers_configured = false;
         options
     }
 
@@ -792,37 +887,151 @@ mod tests {
         }
     }
 
-    /// The door: no client CA admits nobody; plain HTTP or no certificate
-    /// is 401; one that did not verify is 401; one not on the list is 403;
-    /// one on it is the caller it names, with its scope.
+    fn pulled(door: &str, fp: &str, endpoints: &[&str]) -> Callers {
+        Callers {
+            loaded: true,
+            door: door.into(),
+            callers: std::sync::Arc::new(vec![crate::sync::PulledCaller {
+                name: "uid=azpep,ou=users,dc=example".into(),
+                sha256: vec![fp.to_string()],
+                applications: vec!["todo-app".into()],
+                endpoints: endpoints.iter().map(|e| e.to_string()).collect(),
+            }]),
+            ..Callers::default()
+        }
+    }
+
+    fn code(r: Result<Caller, Reply>) -> Option<(u16, String)> {
+        r.err().map(|e| {
+            let message = e.body["error"]["message"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            (e.status, message)
+        })
+    }
+
+    /// The door before the pull, and the transport: no client CA admits
+    /// nobody; plain HTTP or no certificate is 401; one that did not verify
+    /// is 401; with no list pulled and none configured, 503; with only the
+    /// local list, #1179's door — on it is the caller it names, off it 403.
     #[test]
     fn admits_by_certificate_alone() {
         let fp = "ab".repeat(32);
-        let options = options_with(vec![AuthzenCaller {
+        let none = Callers::default();
+        let mut options = options_with(vec![AuthzenCaller {
             name: "cn=pep-a".into(),
             sha256: fp.clone(),
             applications: vec!["todo-app".into()],
         }]);
+        options.authzen_callers_configured = true;
+        let e = "evaluation";
         let status = |r: Result<Caller, Reply>| r.err().map(|e| e.status);
-        assert_eq!(status(admit(&options, false, &peer(&fp, true))), Some(401));
         assert_eq!(
-            status(admit(&options, true, &Transport::default())),
+            status(admit(&options, false, &peer(&fp, true), &none, e)),
+            Some(401)
+        );
+        assert_eq!(
+            status(admit(&options, true, &Transport::default(), &none, e)),
             Some(401)
         );
         let mut plain = peer(&fp, true);
         plain.https = false;
-        assert_eq!(status(admit(&options, true, &plain)), Some(401));
-        assert_eq!(status(admit(&options, true, &peer(&fp, false))), Some(401));
+        assert_eq!(status(admit(&options, true, &plain, &none, e)), Some(401));
+        assert_eq!(
+            status(admit(&options, true, &peer(&fp, false), &none, e)),
+            Some(401)
+        );
         let other = "cd".repeat(32);
         assert_eq!(
-            status(admit(&options, true, &peer(&other, true))),
+            status(admit(&options, true, &peer(&other, true), &none, e)),
             Some(403)
         );
-        let caller = admit(&options, true, &peer(&fp, true)).unwrap();
+        let caller = admit(&options, true, &peer(&fp, true), &none, e).unwrap();
         assert_eq!(caller.name, "cn=pep-a");
-        let refused = admit(&options, true, &Transport::default()).unwrap_err();
+        let refused =
+            admit(&options, true, &Transport::default(), &none, e).unwrap_err();
         assert!(refused.body["error"]["message"].is_string());
         assert!(refused.body.get("code").is_none(), "a code is never sent");
+        let bare = options_with(Vec::new());
+        assert_eq!(
+            status(admit(&bare, true, &peer(&fp, true), &none, e)),
+            Some(503),
+            "nothing pulled and nothing configured answers nothing"
+        );
+    }
+
+    /// The door once the list is pulled (#1189): the pulled caller's name
+    /// and scope, whatever the local list says of it; a certificate the
+    /// list does not name 403; an endpoint the policy does not admit the
+    /// caller to 403; a realm whose door is a token 401; and a local list,
+    /// when set, narrowing the pulled one.
+    #[test]
+    fn admits_by_the_pulled_list() {
+        let fp = "ab".repeat(32);
+        let other = "cd".repeat(32);
+        let both = ["evaluation", "evaluations"];
+        let list = pulled("mtls", &fp, &both);
+        let open = options_with(Vec::new());
+        let caller =
+            admit(&open, true, &peer(&fp, true), &list, "evaluation").unwrap();
+        assert_eq!(caller.name, "uid=azpep,ou=users,dc=example");
+        assert_eq!(caller.applications, ["todo-app"]);
+        assert_eq!(
+            code(admit(&open, true, &peer(&other, true), &list, "evaluation"))
+                .map(|c| c.0),
+            Some(403)
+        );
+        let single = pulled("mtls", &fp, &["evaluation"]);
+        assert!(
+            admit(&open, true, &peer(&fp, true), &single, "evaluation").is_ok()
+        );
+        let batch =
+            code(admit(&open, true, &peer(&fp, true), &single, "evaluations"))
+                .unwrap();
+        assert_eq!(batch.0, 403);
+        assert!(batch.1.contains("/access/v1/evaluations"));
+        let token = code(admit(
+            &open,
+            true,
+            &peer(&fp, true),
+            &pulled("bearer", &fp, &both),
+            "evaluation",
+        ))
+        .unwrap();
+        assert_eq!(token.0, 401);
+        assert!(token.1.contains("bearer"));
+        // THE NARROWING: a local entry for another certificate leaves this
+        // one out; one for this certificate lets the PULLED caller through,
+        // under the pulled name and scope.
+        let mut narrow = options_with(vec![AuthzenCaller {
+            name: "local-name".into(),
+            sha256: other.clone(),
+            applications: vec!["wiki".into()],
+        }]);
+        narrow.authzen_callers_configured = true;
+        assert_eq!(
+            code(admit(&narrow, true, &peer(&fp, true), &list, "evaluation"))
+                .map(|c| c.0),
+            Some(403)
+        );
+        narrow.authzen_callers[0].sha256 = fp.clone();
+        let through =
+            admit(&narrow, true, &peer(&fp, true), &list, "evaluation")
+                .unwrap();
+        assert_eq!(through.name, "uid=azpep,ou=users,dc=example");
+        assert_eq!(through.applications, ["todo-app"]);
+        // SET AND EMPTY NARROWS TO NOBODY: a configured list that admits
+        // nobody is not read as "not set".
+        let mut empty = options_with(Vec::new());
+        empty.authzen_callers_configured = true;
+        assert_eq!(
+            code(admit(&empty, true, &peer(&fp, true), &list, "evaluation"))
+                .map(|c| c.0),
+            Some(403)
+        );
+        assert_eq!(endpoint_name(EVALUATIONS_PATH), "evaluations");
+        assert_eq!(endpoint_name(EVALUATION_PATH), "evaluation");
     }
 
     /// The scope, as `applicationOf()` answers it.
