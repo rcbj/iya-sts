@@ -579,7 +579,10 @@
     "en": "b59799bd06b5022d",
     "text": "Sa isang NAMED na authentication policy (#1148): isang second factor na pinapayagan ng mga application na nagpapangalan sa policy na ito — password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, tig-isang value. Kapag wala, nananatili ang authentication policy ng realm."
   },
-  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": "Sa isang NAMED authentication policy (#1237): kung alin ang nalalapat kapag marami ang pinangalanan para sa iisang sign-in — ng application (appAuthnPolicy) at ng mga group ng tao (stsAuthnPolicy) — ang pinakamababa, mula 1 hanggang 1000, at sa pangalan ang pagpapasya kapag pantay. 100 kapag wala.",
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "Sa isang NAMED authentication policy (#1237): kung alin ang nalalapat kapag marami ang pinangalanan para sa iisang sign-in — ng application (appAuthnPolicy) at ng mga group ng tao (stsAuthnPolicy) — ang pinakamababa, mula 1 hanggang 1000, at sa pangalan ang pagpapasya kapag pantay. 100 kapag wala."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Kung aling pangalawang factor sa email ang pinili ng taong ito: `code` o `link`. Kapag wala: wala. Itinatakda sa /portal/mfa, binubura sa /admin/mfa at pagkatapos ng sobrang daming sunud-sunod na pagkabigo."

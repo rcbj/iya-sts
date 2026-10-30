@@ -579,7 +579,10 @@
     "en": "b59799bd06b5022d",
     "text": "På en NAMNGIVEN autentiseringspolicy (#1148): en andra faktor som applikationerna som namnger den här policyn tillåter — password, securityKey, totp, recoveryCode, emailCode, emailLink eller wallet, ett värde var. Anges ingen lämnas sfärens autentiseringspolicy som den är."
   },
-  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": "På en NAMNGIVEN autentiseringspolicy (#1237): vilken som gäller när flera namnges för samma inloggning — av applikationen (appAuthnPolicy) och av personens grupper (stsAuthnPolicy) — den lägsta, från 1 till 1000, lika avgörs av namnet. 100 när den saknas.",
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1237): vilken som gäller när flera namnges för samma inloggning — av applikationen (appAuthnPolicy) och av personens grupper (stsAuthnPolicy) — den lägsta, från 1 till 1000, lika avgörs av namnet. 100 när den saknas."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Vilken andra faktor via e-post den här personen har valt: `code` eller `link`. Saknas: ingen. Sätts på /portal/mfa, rensas på /admin/mfa och efter för många misslyckanden i följd."

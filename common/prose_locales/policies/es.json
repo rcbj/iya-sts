@@ -579,7 +579,10 @@
     "en": "b59799bd06b5022d",
     "text": "En una política de autenticación CON NOMBRE (#1148): un segundo factor que permiten las aplicaciones que nombran esta política — password, securityKey, totp, recoveryCode, emailCode, emailLink o wallet, un valor cada uno. Si no hay ninguno, la política de autenticación del dominio queda como está."
   },
-  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": "En una política de autenticación CON NOMBRE (#1237): cuál se aplica cuando se indican varias para un mismo inicio de sesión — por la aplicación (appAuthnPolicy) y por los grupos de la persona (stsAuthnPolicy) —: la menor, de 1 a 1000, con los empates resueltos por nombre. 100 si falta.",
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "En una política de autenticación CON NOMBRE (#1237): cuál se aplica cuando se indican varias para un mismo inicio de sesión — por la aplicación (appAuthnPolicy) y por los grupos de la persona (stsAuthnPolicy) —: la menor, de 1 a 1000, con los empates resueltos por nombre. 100 si falta."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Qué segundo factor por correo eligió esta persona: `code` o `link`. Ausente: ninguno. Se establece en /portal/mfa y se borra en /admin/mfa y tras demasiados fallos consecutivos."

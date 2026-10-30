@@ -579,7 +579,10 @@
     "en": "b59799bd06b5022d",
     "text": "Sur une politique d’authentification NOMMÉE (#1148) : un second facteur qu’autorisent les applications qui nomment cette politique — password, securityKey, totp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Si aucun n’est indiqué, la politique d’authentification du domaine reste telle quelle."
   },
-  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": "Sur une politique d’authentification NOMMÉE (#1237) : laquelle s’applique lorsque plusieurs sont nommées pour une même connexion — par l’application (appAuthnPolicy) et par les groupes de la personne (stsAuthnPolicy) — la plus faible, de 1 à 1000, les égalités départagées par le nom. 100 en son absence.",
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "Sur une politique d’authentification NOMMÉE (#1237) : laquelle s’applique lorsque plusieurs sont nommées pour une même connexion — par l’application (appAuthnPolicy) et par les groupes de la personne (stsAuthnPolicy) — la plus faible, de 1 à 1000, les égalités départagées par le nom. 100 en son absence."
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "Le second facteur par e-mail que cette personne a choisi : `code` ou `link`. Absent : aucun. Défini sur /portal/mfa, effacé sur /admin/mfa et après un trop grand nombre d’échecs consécutifs."

@@ -579,7 +579,10 @@
     "en": "b59799bd06b5022d",
     "text": "在「具名」驗證原則上（#1148）：指名此原則的應用程式所允許的一種第二因素——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每個值一種。一個都不列則維持領域的驗證原則不變。"
   },
-  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": "用於具名驗證原則（#1237）：一次登入由應用程式（appAuthnPolicy）與此人的群組（stsAuthnPolicy）指定了多個原則時，哪一個適用——數值最低者，取值 1 到 1000，相同時依名稱決定。未設定時為 100。",
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "用於具名驗證原則（#1237）：一次登入由應用程式（appAuthnPolicy）與此人的群組（stsAuthnPolicy）指定了多個原則時，哪一個適用——數值最低者，取值 1 到 1000，相同時依名稱決定。未設定時為 100。"
+  },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
     "text": "此人選擇使用哪種以電子郵件寄送的第二因素：`code` 或 `link`。不存在：無。在 /portal/mfa 上設定，在 /admin/mfa 上或連續失敗過多次後清除。"
