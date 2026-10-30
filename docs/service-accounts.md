@@ -147,7 +147,8 @@ has passed. **Rotate now** on the account's page, or
 1. It takes a per-account claim, so the job and a rotation started by hand
    never rotate the same account at once.
 2. It draws a password with the password policy's generator, at the policy's
-   length.
+   length — the account's own password policy, which is the named one a
+   group of the account names, else `default`.
 3. It **pushes** that password to the destination as a new version. If the
    push fails, **nothing changes**: the failure is counted and the next run
    tries again.

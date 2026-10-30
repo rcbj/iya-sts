@@ -646,7 +646,12 @@ defaults are in force. **It is enforced in product mode only**, at every door
 that sets a password: the console, `/admin-api`, `/portal/password`,
 `/portal/activate` and an LDAP add or modify of `userPassword`, which is hashed
 on the way in. Development mode applies no rule and records the history anyway.
-[LDAP](ldap.md#the-password-policy-is-a-directory-entry) has more.
+[LDAP](ldap.md#the-password-policy-is-a-directory-entry) has more. The tab is
+three sub-tabs, **Default**, **Named policies** and **New policy**: a named
+password policy has every rule and a precedence, and applies to the members
+of a group naming it (`stsPasswordPolicy`) and to a password chosen while
+signing in to an application naming it (`appPasswordPolicy`) — see
+[Authentication](authentication.md#different-password-rules-for-different-applications-or-groups).
 
 **The authentication policy** (#64) is a separate policy on the same page:
 

@@ -8339,8 +8339,11 @@ tab, and a service account's section of the person page —
 * **Sub-tabs are a declaration** (`tabbed: true` on the kind's row in
   `admin-core/policy_kinds.ts`, carried as `kind.tabbed` on the view):
   `<kind>-sub-default`, `<kind>-sub-named`, `<kind>-sub-new`, the schema
-  under all three. Only the passkey policy declares it today; the locale and
-  post-login policies' named profiles are drawn as they were.
+  under all three. The passkey policy declares it, and the password policy
+  since #1236 — whose own section (`passwordPolicySection()`) wraps its
+  default part in the same three sub-tabs and keeps the doors, the history,
+  the generator and the schema under them, as reference for all three. The
+  locale and post-login policies' named profiles are drawn as they were.
 * **`PoliciesPage.namedProfileParts()` draws what the kind declares**
   (`member.selectors`, `member.references`): a box per list selector a kind
   still keeps (the post-login policy's groups; the locale policy's
