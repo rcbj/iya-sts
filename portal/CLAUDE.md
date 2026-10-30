@@ -94,6 +94,23 @@ behind. `tests/protocol/sts_portal_sessions.js` asserts, for the first four
 (Overview, Applications, Password, Security keys), that its own entry is marked
 `aria-current="page"`.
 
+**THE COLUMN BEHAVES AS THE CONSOLE'S SIDEBAR SINCE #1229** (rcbj: "update
+the menu in the User Portal (/portal) to behave the same way as the Admin
+Console. Ideally, code is reused"). Each `NAV` section is a `<details>` of one
+named group (`PortalShell.NAV_GROUP`, `data-section` its `key`), collapsed
+until the reader opens it, one open at a time; the runtime's `openSection` is
+`null` until the first page is drawn, which opens the section holding it
+(`PortalShell.sectionKeyOf()`, by `navPathFor()`, so a page under a listed
+one counts as that page's), and after that is what the reader opened or `''`
+when they closed it — held in the runtime, never in storage. The section
+holding the page is marked `current` (it was `open` until #1229, a class that
+now means something else), open or not. The markup, the toggle rule and the
+heading's CSS are `common/web_nav_sections.ts`'s, the console's code moved
+there rather than copied; `admin-ui/CLAUDE.md` (#750) argues the behaviour,
+and `tests/portal_nav_sections.js` holds the portal's half of it. The column
+still does not scroll on its own (`web_portal_kit.ts`'s stylesheet note), so
+there is no `revealActiveNav()` here.
+
 **A `GET` AND A `POST` SHARE `/portal/password`.** The form has to live
 somewhere now that it is not on the overview, and a form and the handler that
 answers it on two addresses is a distinction nobody could state a reason for.

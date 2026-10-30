@@ -21,11 +21,15 @@
 // name the `portal` catalog's entries (#539); the English beside them is the
 // catalog's English.
 //
-// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires nothing,
-// logs nothing, and is bundled for a browser by `build-typescript.sh`. The
+// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires only
+// `common/web_nav_sections.ts` (the navigation's rules, shared with the
+// console since #1229), logs nothing, and is bundled for a browser by
+// `build-typescript.sh`. The
 // server reads `NAV` and `STYLE` from it — the console's `web_database.ts`
 // arrangement — and never the other way round.
 // ---------------------------------------------------------------------------
+
+import WebNavSections = require('../common/web_nav_sections');
 
 type Json = any;
 
@@ -217,15 +221,14 @@ const STYLE =
   '.main{flex:1 1 28rem;min-width:0}' +
   '.doclink{margin:0 0 12px;font-size:.92em}' +
   'nav ul{list-style:none;margin:0;padding:0}' +
-  '.navsec{margin:0 0 14px}.navsec:last-child{margin-bottom:0}' +
-  '.navhead{margin:0 0 5px;font-size:.7em;text-transform:uppercase;' +
-  'letter-spacing:.06em;color:#6a6a78;font-weight:700}' +
-  // The rule down the left marking the section the current page is in, so a
-  // reader who arrived on a deep link can see where they are without reading
-  // every label. Same device as the console's, one colour over.
-  '.navsec.open{border-left:3px solid ' +
-  '#2c5cc5;margin-left:-14px;padding-left:11px}.navsec.open ' +
-  '.navhead{color:#2c5cc5}nav a,nav .here{display:block;padding:4px 7px;' +
+  // THE SECTIONS ARE THE CONSOLE'S SINCE #1229: a `<summary>` heading that
+  // opens and closes its section, one open at a time, and the rule down the
+  // left marking the section the current page is in, open or closed, so a
+  // reader who arrived on a deep link can see where they are without opening
+  // every section. The rules are `common/web_nav_sections.ts`'s, which argues
+  // them, in the portal's blue; the card's left padding is 14px.
+  WebNavSections.css('#2c5cc5', '#6a6a78', 14) +
+  'nav a,nav .here{display:block;padding:4px 7px;' +
   'border-radius:5px;text-decoration:none;color:#2c5cc5;font-size:.9em}nav ' +
   'a:hover{background:#eef2fb}nav .here{font-weight:700;color:#fff;' +
   'background:#2c5cc5}.who{color:#666;font-size:.85em;margin:3px 0 0}' +
@@ -259,10 +262,7 @@ const STYLE =
   // rather than stacked: four headings down the page before any content would
   // be a phone showing nothing but navigation.
   '@media (max-width:52rem){.side{position:static;flex:1 1 100%}' +
-  '.navsec{display:inline-block;vertical-align:top;min-width:10rem;' +
-  'margin-right:1.2em}' +
-  '.navsec.open{margin-left:0;padding-left:0;border-left:0;' +
-  'border-top:3px solid #2c5cc5;padding-top:6px}}' +
+  WebNavSections.narrowCss('#2c5cc5', '10rem') + '}' +
   // The version line at the foot of every page. Quiet and small: it is
   // provenance rather than content, and this is the surface a person visits to
   // change their own password, not one they came to read a build number off.

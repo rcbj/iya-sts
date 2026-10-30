@@ -169,10 +169,12 @@ every future token and assertion, and create people in the directory.
 The navigation is a grouped list down the left, and every section of it is
 **collapsed until you open it**. Click (or press Enter or Space on) a section's
 heading to open it; opening one closes whichever was open, so only one is open
-at a time. The section you opened stays open as you move between console pages
-in that tab, until you close it or open another; a reload or a new tab starts
-with everything collapsed. The section holding the page you are on is marked
-by a rule down its left even while it is collapsed. Its five sections:
+at a time. Loading a page (a reload or a new tab) opens the section that holds
+it; after that the section you opened stays open as you move between console
+pages in that tab, until you close it or open another. The section holding the
+page you are on is marked by a rule down its left even while it is collapsed.
+The [user portal](user-facing-pages.md#the-user-portal)'s column works the same
+way. Its five sections:
 
 * **Overview** — `/admin`, the one page whose job is to point at the others.
   It is a section of one on purpose: it cannot sit under a heading naming a

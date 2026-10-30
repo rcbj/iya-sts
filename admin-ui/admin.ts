@@ -439,6 +439,7 @@ import mode = require('../common/mode');
 // this console does the most of it.
 import version = require('../common/version');
 import ShellDocument = require('../common/shell_document');
+import WebNavSections = require('../common/web_nav_sections');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 // What this service writes down, and whether it is working. A PLAIN REQUIRE in
@@ -3779,33 +3780,11 @@ class AdminConsole {
       'select{flex:1 1 auto;min-width:0;font-size:1em;padding:3px ' +
       '4px;border:1px solid ' +
       '#c9c9d4;border-radius:5px;background:#fff;color:#222}.realmpick ' +
-      'button{flex:0 0 auto;padding:3px 9px;font-size:.92em}.navsec{margin:0 ' +
-      '0 4px}.navsec:last-child{margin-bottom:4px}' +
-      // The section heading, a `<summary>` since #750: it opens and closes the
-      // section, and nothing else. Not a link and it must not look like one —
-      // there is no page behind a section, which is the same reason it is not
-      // a crumb — so it keeps the small capitals and gains only a triangle
-      // and a pointer. `list-style:none` and the WebKit pseudo-element take
-      // the browser's own marker off, so the triangle is drawn once, here,
-      // and turns when the section opens. The padding is what makes a
-      // heading this small an easy thing to hit.
-      '.navhead{display:block;cursor:pointer;list-style:none;margin:0;' +
-      'padding:4px 0;font-size:.7em;text-transform:uppercase;' +
-      'letter-spacing:.06em;color:#8a8a99;font-weight:700}' +
-      '.navhead::-webkit-details-marker{display:none}' +
-      '.navhead::before{content:"\\25B8";display:inline-block;width:1.1em;' +
-      'transition:transform .15s}.navsec[open]>.navhead::before{transform:' +
-      'rotate(90deg)}.navsec[open]>.navhead{margin-bottom:4px}' +
-      '.navsec[open]{margin-bottom:10px}.navhead:hover{color:#12107c}' +
-      '.navhead:focus-visible{outline:2px solid #12107c;outline-offset:2px;' +
-      'border-radius:3px}' +
-      // The section the current page is in, open or closed. A rule down its
-      // left rather than a background, so that the mark reads as "you are in
-      // here" and not as a second selected item beside the selected one —
-      // and, on a closed section, as the way back to the page you are on.
-      '.navsec.current{border-left:3px solid ' +
-      '#12107c;margin-left:-14px;padding-left:11px}.navsec.current>' +
-      '.navhead{color:#12107c}' +
+      'button{flex:0 0 auto;padding:3px 9px;font-size:.92em}' +
+      // The sections and their headings, a `<summary>` each since #750: the
+      // rules are the portal's too since #1229, in each one's colours, and
+      // `common/web_nav_sections.ts` argues them.
+      WebNavSections.css('#12107c', '#8a8a99', 14) +
       // A GROUP INSIDE A SECTION. It is an <li>, so `nav li` has already given
       // it the item metrics; what these rules do is take the item LOOK back off
       // it (it is a heading with a list under it, not a thing to click) and
@@ -4360,9 +4339,7 @@ class AdminConsole {
       '@media (max-width:56rem){.side{position:static;flex:1 1 100%;' +
       'max-height:none;display:block}nav{overflow-y:visible}' +
       '.side>nav{overflow-y:visible;direction:ltr}' +
-      '.navsec{display:inline-block;vertical-align:top;min-width:11rem;' +
-      'margin-right:1.2em}.navsec.current{margin-left:0;padding-left:0;' +
-      'border-left:0;border-top:3px solid #12107c;padding-top:6px}}' +
+      WebNavSections.narrowCss('#12107c', '11rem') + '}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's CONDITIONAL FIELDS, and the reason this is
       // CSS and not a script.
