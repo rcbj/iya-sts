@@ -704,6 +704,32 @@ required is not refused anything for it; `GET /admin-api/policies?missing=count`
 counts them, and the tab gives the LDAP filter that finds them. A service
 account and the bootstrap administrator are exempt.
 
+**Named attribute policies** (#1241) let one realm require different things
+of different people. The tab has four sub-tabs: **Default**, **Named
+policies**, **New policy** and **Custom attributes**. A named policy is a
+required list and a precedence from 1 to 1000. It belongs to the realm and is
+never inherited. Two kinds of entry name one through `stsAttributePolicy`:
+
+* **a person**, on the **Policies** tab of their page, or at a create (the
+  console, `POST /admin-api/users/create` with `attributes`);
+* **a group**, on the group's page or with
+  `POST /admin-api/groups/set-policy`.
+
+When the person and their groups name several policies, the one with the
+lowest precedence applies, with ties broken by name. When they name none,
+`default` applies.
+
+**When a person is created**, the policy is chosen from the reference the
+create writes and any group that already lists the new DN. **When a person is
+edited**, it is chosen from their reference as the edit leaves it and the
+groups they are in.
+
+A reference to a policy the realm does not hold selects nothing: the rest
+decide, and the service logs it as STS-LDAP-0196. A named policy that a person
+or group still names cannot be removed (STS-LDAP-0197). Its entry on **Named
+policies** lists who names it. The count of people who lack a required
+attribute holds each person to their own policy.
+
 **Custom attributes** are defined on the same tab: a name, a label, a syntax
 (`string`, `integer`, `boolean`, `date`, `email`, `uri` or `dn`) and whether it
 holds one value or several. A custom attribute can then be set on a person's
@@ -711,7 +737,8 @@ page and at `/admin/users/new`, is checked against its syntax, and may be
 required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
-removed while anybody holds a value of it or the policy requires it.
+removed while anybody holds a value of it or any of the realm's policies
+requires it.
 `/admin/users/new` and a person's Attributes tab outline every required field
 in red and mark it *required*.
 

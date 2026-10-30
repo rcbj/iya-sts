@@ -6393,6 +6393,13 @@ generic field rows.
   sends `false` for an unticked box only where the member is a boolean, and
   this one is a list, so without the hidden field the save would be refused as
   one that forgot its field.
+* **FOUR SUB-TABS SINCE #1241**: Default, Named policies, New policy (the
+  passkey arrangement, `kit.subTabbedPanels()`) and Custom attributes, the
+  register every profile may require and none owns. A named profile's form
+  is the same checkbox table with a precedence; its entry lists the people
+  and groups naming it (the people from `GET /admin-api/policies`, the
+  asynchronous view); the New policy form keeps a refused create's fields
+  (#841's `attributes-new` draft).
 * **THE CUSTOM ATTRIBUTES ARE ON THE SAME TAB**: a table with a Remove form
   per row, and a form that defines one (name, label, syntax, one value or
   several, description). Both post `/admin/policies` with the kind's own act

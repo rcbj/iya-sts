@@ -13760,6 +13760,38 @@ suite SWEPT rather than the policy weakened for it.
   from the default realm while a realm has none, else the built-in default.
   One field, `requiredAttributes` (`stsAttributeRequired`, multi-valued),
   default `givenName, sn, mail`.
+* **NAMED PROFILES, NAMED BY THE PERSON AND THEIR GROUPS (#1241, rule 3cx).**
+  `cn=<name>` beside `default`, the realm's own (never inherited), each a
+  required list and `stsAttributePolicyPrecedence`. `stsAttributePolicy` on
+  the person's entry and on a group names one (`REFERENCES`, declared for
+  both holders); `selectionFor(subject)` ranks the person's reference and
+  each group's, lowest precedence first, else `default`. **The subject** is
+  `{ uid, attributes, groups }`: the entry as written (the own reference is
+  read from it) and any group the write adds. **At a create** that is the
+  reference the write sets plus the groups already listing the DN the
+  person will have (a dangling member becomes a member when the entry
+  exists); no door adds a group in the same write today, so `groups` is for
+  the door that will. **At an edit** it is the person as the edit leaves
+  them, so changing one's own reference is asked of the profile it names.
+  Every refusal (`createRefusal()`, `editRefusal()`, `missingFrom()`,
+  `removedBy()`, `required()`) takes the subject as an optional last
+  argument and defaults it from the attributes handed in, which is why most
+  doors needed no change; the person editor and SCIM pass theirs. **A
+  dangling reference selects nothing and is logged (STS-LDAP-0196)**; it
+  does not fail closed, because this policy is a floor and `default` is the
+  floor everyone else is held to. `bulk_import.js` reads `default`: a record
+  carries neither the reference nor a group.
+* **The delete of a named profile answers a PROMISE.** It is refused while a
+  person or group names it (STS-LDAP-0197): the groups from the group index,
+  the people from `peopleNamingPolicyAsync()`, a holder question that may
+  not be asked synchronously on a request (rcbj's rule). `policiesAction()`
+  takes a thenable from `reset()` for that reason, `POST
+  /admin-api/policies/:action` awaits it, and `GET /admin-api/policies` is
+  `policiesViewAsync()`, which fills each named profile's people through the
+  kind's `namedByAsync()`; the synchronous `policiesView()` (and `namedBy()`)
+  name no people. `stsattributepolicy` is NOT among the store's asked
+  attribute names (`persistence/directory_queries.js`), so in a windowed
+  process that holder question is answered by the unindexed path.
 * **`uid`, `cn` and `sn` are always required** and are not in the field: the
   username, and `person`'s MUST list (RFC 4519 3.12). A create that names no
   `cn` is given `givenName sn` (`deriveCommonName()`), at the console, the
@@ -13794,18 +13826,28 @@ suite SWEPT rather than the policy weakened for it.
   and never binary: `inetorgperson.ts` keeps a fixed list so nothing appears
   on a page by accident, and a custom attribute is an administrator's act only
   while a credential cannot be stored as one. Removal is refused while anybody
-  holds a value (0172) or the realm's own profile requires it (0173).
+  holds a value (0172) or any of the realm's own profiles requires it (0173).
+  `catalogue()` never offers an `sts` name: the person editor's universe
+  holds the declared policy references, which are not facts a profile could
+  require.
 * **The count of people who lack one is a walk**, so it is asked only on
   request (`GET /admin-api/policies?missing=count`), and not at all where the
   directory is in the store; the view always gives the LDAP filter that finds
-  them (`missingFilter`).
+  them (`missingFilter`, the `default` profile's). **Each person is judged
+  against their own profile (#1241) in that same walk**: the directory hands
+  `missingJudge()`'s function each person's username and own reference, the
+  groups' references come off the group index, each distinct set of
+  references is ranked once and each profile's list read once. With no named
+  profile the directory is handed `default`'s list as before, and where no
+  group names one no group is read.
 * **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
   publishing `required` and the custom attributes as a per-realm extension;
   custom attributes as token, UserInfo and SAML claims and on the portal; and
   a sign-in step that collects a missing value instead of refusing a
   federated newcomer.
 
-`tests/attribute_policy.js` holds it in process.
+`tests/attribute_policy.js` holds it in process, and
+`tests/attribute_policy_named.js` the named profiles (#1241).
 
 ## 3cp. `phishing_resistance.ts`: WHAT EARNS OPENID CONNECT EAP's `phr` AND `phrh` (#723, 2026-10-19)
 

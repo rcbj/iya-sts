@@ -327,6 +327,12 @@ api policies/save-attributes-policy '{"profile":"default","requiredAttributes":[
 
 Development mode stores and shows the policy but does not enforce it.
 
+A person can be held to a **named** attribute policy instead. SCIM maps no
+attribute to `stsAttributePolicy`, so the policy for a SCIM create comes
+from a group that already lists the new person. A replace or a PATCH is
+checked against the policy that the person's own reference and their groups
+select. See the [console](admin-console.md#policies--adminpolicies).
+
 ---
 
 # The outbound client

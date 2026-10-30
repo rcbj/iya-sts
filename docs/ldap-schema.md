@@ -197,9 +197,9 @@ The console groups are created on first grant, and the bootstrap `admin` holds b
 The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remotePepGroup` and `roles.xacmlUserGroup`. The directory also treats `groupOfUniqueNames`, `posixGroup` and `groupOfURLs` entries as groups, and reads `uniqueMember` and `memberUid` as well as `member`.
 
 A group may name the policy its members are held to, one attribute per kind
-of policy: today `stsPasskeyPolicy`, a [named passkey
+of policy: `stsPasskeyPolicy`, a [named passkey
 policy](passkeys.md#different-rules-for-different-applications-or-groups) or
-`default`. It is set on the group's page or with
+`default`, and `stsAttributePolicy`, a named attribute policy (below). It is set on the group's page or with
 `POST /admin-api/groups/set-policy`, which accepts only a policy the realm
 holds; it competes on precedence with the policy the application names.
 
@@ -340,6 +340,14 @@ the defaults apply until an administrator saves one. See `common/password_policy
 `stsAttributeRequired` (one value per attribute every person must hold, besides
 `uid`, `cn` and `sn`) and an optional `description`. Absent, the default
 realm's applies, then the built-in default (`givenName`, `sn`, `mail`).
+
+A realm's **named** attribute policies (#1241) are `cn=<name>` beside it, with
+the same attributes and `stsAttributePolicyPrecedence` (1 to 1000). They
+belong to the realm and are never inherited. A person names one with
+`stsAttributePolicy` on their own entry under `ou=users`, and a group names one
+with the same attribute on its own entry. The value is `default` or the
+policy's name, and only one value is allowed. Of the policies the person and
+their groups name, the one with the lowest precedence applies.
 
 `cn=<name>,ou=attributeDefinitions` is one of the realm's custom attributes:
 `objectClass: top, stsAttributeDefinition`, `stsAttributeLabel`,
