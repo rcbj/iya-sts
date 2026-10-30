@@ -2683,3 +2683,50 @@ the page's search is this operation's and nothing console-only (rule 7).
 running started activity also asks its people at sign-in**, so the start,
 pause, resume and end descriptions say both, and `activityEnabled` is the
 POLICY's own answer, no longer whether a start does anything.
+
+## An application's fine-grained authorization: seven acts and two reads (#564 P5, 2026-10-30)
+
+**Seven new actions on `POST /admin-api/applications/{action}`, and no new
+route**, because each mirrors a form on the application's page, which this
+route's `mirrors` already names (`POST /admin/applications`) — so the
+console resolves them, `closed_sets` registers them and the scope is the
+route's, `admin:write`, with Admin Write on the console:
+
+| Action | operationId | What it calls |
+|---|---|---|
+| `fga-enable` | `enableApplicationFga` | `fga_policies.enable()` |
+| `fga-disable` | `disableApplicationFga` | `fga_policies.disable()` |
+| `fga-create-policy` | `createApplicationFgaPolicy` | `fga_policies.ensure()` |
+| `fga-reset-policy` | `resetApplicationFgaPolicy` | `fga_policies.reset()`, with `confirm` |
+| `set-access-type-row` | `setApplicationAccessTypeRow` | the type's value, one `xacml` row added or replaced |
+| `remove-access-type-row` | `removeApplicationAccessTypeRow` | one row taken off |
+| `set-not-for-policy` | `setApplicationAccessTypeNotForPolicy` | the `notForPolicy` list replaced |
+
+`set-access-type` also takes `xacml` and `notForPolicy`, for a type written
+whole. The reads are `page.fga` on `GET /admin-api/applications?application=`
+and `applicationPolicies` on `GET /admin-api/xacml/policies`;
+`POST /admin-api/xacml/delete` refuses the policy an application still names
+(STS-FGA-0022).
+
+* **The handler's refusal is the better one, twice, so neither is an
+  `enum` or `required`.** `fga-reset-policy`'s `confirm` is published as the
+  listeners mapping's (`true`, `'true'`, `'on'`) and NOT required: an
+  unticked box posts nothing, and STS-FGA-0020 says what the reset would do
+  where the validator could only say a member is missing. The row's
+  `category`, `dataType` and `multiplicity` are plain strings: the grammar
+  takes a short name OR its XACML URI, and its refusal (STS-FGA-0023) names
+  the `field`, which the console draws under the box.
+* **The three mapping acts rewrite the type's ONE value through
+  `updateApplication()`**, the door `set-access-type` takes, after the
+  grammar's own `FgaMap.parseRow()` has read the row — so the reserved
+  identifiers are held at both, and an enforcing application's coverage
+  (STS-FGA-0019) keeps its own code through `refusedBy()`.
+* **The four FGA acts reach `xacml/fga_policies.ts` lazily** from
+  `admin-core/admin_actions.ts` (built at 23c, this file's actions at 18),
+  and keep its codes: `errorCodes.codeOf()` on its refusal, `errors: [why]`
+  for the console's strip, `failure` for a caller.
+* **The examples name `payments-api`**, `set-access-type`'s, so the replay
+  in `sts_admin_api_operations.js` meets the same application it declares a
+  type on.
+
+`tests/fga_console.js` holds the operations' presence and the acts.

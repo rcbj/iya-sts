@@ -7780,7 +7780,8 @@ configuration grid split by protocol.
   `#signals`, `#cfg-<group>`). The panel holding that fragment is the one
   shown.
 * **The tabs are**: Overview, Configuration, Credentials, Browser origins,
-  Access types, **Scope claims** (2026-10-09: the catalogue attributes each of
+  Access types, **Fine-grained authorization** (#564 P5, below), **Scope
+  claims** (2026-10-09: the catalogue attributes each of
   its own permissions carries on the access tokens addressed to it, one form
   per permission — `common/CLAUDE.md` 3cj), Shared Signals, Software
   statements, Return addresses, Permissions, Roles, SP metadata, Directory
@@ -8389,6 +8390,64 @@ tab, and a service account's section of the person page —
   edited here.
 * `tests/flow_type_choices.js` holds the sets, the writes, every panel, the
   marks, the cut, the labels and the counters.
+
+## AN APPLICATION'S FINE-GRAINED AUTHORIZATION, AND ITS TYPES' XACML MAPPING (#564 P5, 2026-10-30)
+
+**Each piece copies an analogue, as rcbj's standing rule asks of a new
+section's first design.**
+
+* **A tab of its own, `tab-fga`, after Access types**, drawn on EVERY
+  application (not `forFamilies()`): every application created gets a
+  policy, and an AuthZEN evaluation about any of them is decided by it once
+  enforced. Its shape is the **AuthZEN tab on `/admin/xacml`**
+  (`XacmlPage.authzenBody()`), the other per-application authorization
+  question decided through XACML: tiles (Enforced, Its policy, Types
+  covered), a folded *What this is*, then each part under its own heading
+  with its form — `#fga-switch` (Enforce / Stop enforcing), `#fga-policy`
+  (entry, PolicyId, version, state, the editor link and *Every
+  application's policy*, Create the default policy when it has none, Reset
+  behind a checkbox when it has its own), `#fga-coverage` (each type,
+  covered or the uncovered paths, linked to its mapping sub-tab). A policy
+  that cannot be used is warned with the view's own code and sentence
+  (English, as every refusal); "no policy" is not warned about, since the
+  Create button is its answer. **The reset's confirmation is a checkbox**,
+  `/admin/listeners`' mapping arrangement — no script, and the server
+  refuses an unticked one (STS-FGA-0020), so the API is held the same way.
+* **The mapping is under Access types, a sub-tab per declared type**
+  (`kit.subTabbedPanels()`, `atmap-<n>`), the SAML family sub-sub-tabs'
+  arrangement; each sub-tab is the AuthZEN catalogue's shape — the rows as
+  a table with a Remove each, a form that adds a row or replaces the one for
+  its path (selects for the category, data type and multiplicity, from
+  `page.fga.choices`, the grammar's own sets), and the `notForPolicy` list
+  as a textarea. The declare form gains `xacml` (JSON) and `notForPolicy`
+  boxes for a type written whole.
+* **A refusal is drawn at its field.** The action answers `field` (read off
+  the grammar's sentence by `mappingFieldOf()`), and `WebAnswers.redraw()`
+  keeps the form as typed in `state.fgaMapping` with the refusal; the
+  sub-tab draws it under that box, or under the table for a refused Remove
+  (whose subject is a row). Enable's refusals are sentences naming the
+  uncovered paths, so they come back to `#fga` in the strip as any act's
+  do, with the coverage table showing the same paths below the button.
+* **XACML → Policies lists the owned policies apart**, under *Applications'
+  own policies* (`#fga-policies`, `XacmlPage.applicationPoliciesSection()`),
+  grouped by application with a link to its `#tab-fga`; Enable and Disable
+  as the repository's rows have; **never Make root**; **Remove only for a
+  policy no application names** (an orphan, or one no reference reaches),
+  since the server refuses the live one (STS-FGA-0022). The repository's
+  own table no longer lists them.
+* **Rule 7**: every form posts to `/admin/applications` or
+  `/admin/xacml/policies`, whose operations are
+  `/admin-api/applications/{fga-enable, fga-disable, fga-create-policy,
+  fga-reset-policy, set-access-type-row, remove-access-type-row,
+  set-not-for-policy}` and the existing `/admin-api/xacml/delete`; the reads
+  are `page.fga` on the application read and `applicationPolicies` on
+  `GET /admin-api/xacml/policies` (`../mgmt-api/CLAUDE.md`).
+
+`tests/fga_console.js` holds the views, the acts, the refusals at a field
+and the three drawings. The browser half (pressing the tab and the
+sub-tabs) is a protocol job's, and none is written yet: P6's
+`tests/protocol/sts_fga.js`, or `sts_admin_console.js`'s application
+sections, would cover it.
 
 ## TOKENS, METRICS, THE DASHBOARD AND VC STATUS SCALE WITH THE STORE (2026-10-22, #820)
 

@@ -2734,3 +2734,37 @@ directory's half:
 
 `tests/fga_authzen.js` holds it end to end; `tests/xacml_request.js` F7 and
 F8 hold the builder.
+
+### The console and `/admin-api` (P5)
+
+**Four more methods on `fga_policies.ts`, so the console decides nothing.**
+`reset()` rewrites the application's OWN policy from `fga-default` under
+the same entry name — following the reference as `ensure()` does, so an
+orphan or somebody else's policy is never rewritten (STS-FGA-0021: create
+one instead) — and keeps its enabled flag, because "reset the document" and
+"turn it back on" are two decisions. It needs `confirm` (STS-FGA-0020): on
+an enforcing application it widens what is allowed at once. `holderOf(row)`
+is the one test for "may this policy be removed": the application that
+names it in `appFgaPolicy`, or ''. **The orphan mark is not that test** — a
+policy left by an application deleted through LDAP carries no mark and is
+still named by nobody. `ownedPolicies()` groups `store.fgaPolicies()` by
+owner with `known`, `enforced` and each policy's `referenced`; `state(id)`
+is the application tab's view (the switch, the reference, the policy with
+its editor link, `usable` with the resolve's `code` and `why`, each type's
+`uncovered()`).
+
+* **`xacml_admin.ts`'s `delete` refuses a policy an application still
+  names** (STS-FGA-0022), before removing anything: the application would
+  be left naming nothing, and an enforcing one would refuse every detail
+  (0004). The orphan, decision 3's, is removed through the same `delete`.
+  `policiesJson()` carries `applicationPolicies` (`ownedPolicies()`), and the
+  Policies tab draws the owned rows there instead of in the repository's
+  table. Both reach `fga_policies.ts` through a lazy `loadFga()` dep: it is
+  built by the composition root at 23c, and a require at load would run
+  its slot's build ahead of that.
+* **What the console and API act through** is `admin-ui/CLAUDE.md`'s and
+  `mgmt-api/CLAUDE.md`'s; the audit rows are the ones P1 writes
+  (`xacml.policy.write` for create and reset, the entry's modify for the
+  switch, `xacml.policy.delete` naming the orphan's application).
+
+`tests/fga_console.js` holds it.
