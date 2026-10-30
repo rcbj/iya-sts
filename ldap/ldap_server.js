@@ -23629,7 +23629,10 @@ function resolveServiceAccountOwner(value) {
 //     service, refused in product as pwdHistory is;
 //   * a service account names an owner while the realm's policy requires one;
 //   * the owner is a person or a group, and the destination and the secret's
-//     name come together.
+//     name come together;
+//   * `stsServiceAccountPolicy` (#1240) is held by a service account only,
+//     and names `default` or a named profile of this realm — whose
+//     `requireOwner` is then the one asked above.
 //
 // Answers null or the ldapjs error, recorded by the caller.
 const SERVICE_ACCOUNT_MAINTAINED = ['stspasswordrotatedat',
@@ -23654,6 +23657,16 @@ function serviceAccountWriteRefusal(working, touched) {
       maintained.join(', ') + ' are maintained by this service\'s password ' +
       'rotation and cannot be written'));
   }
+  // THE NAMED POLICY (#1240): only a service account names one, and only
+  // one the realm holds. Asked before the flag's own check, so a person who
+  // is not one is refused it too.
+  const reference = serviceAccountPolicy.writeRefusal(working);
+  if (reference) {
+    log.debug('Leaving serviceAccountWriteRefusal(). The policy reference.');
+    return coded(reference.code === 'STS-SVCACCT-0048' ? 'STS-SVCACCT-0048'
+                   : 'STS-SVCACCT-0050',
+                 new ldap.ConstraintViolationError(reference.message));
+  }
   if (!serviceAccounts.isServiceAccount(working)) {
     log.debug('Leaving serviceAccountWriteRefusal(). Not a service account.');
     return null;
@@ -23670,7 +23683,9 @@ function serviceAccountWriteRefusal(working, touched) {
   }).filter(function (one) {
     return !!one;
   });
-  if (!owners.length && serviceAccountPolicy.requiresOwner()) {
+  if (!owners.length && serviceAccountPolicy.requiresOwner(
+    serviceAccountPolicy.profileForReference(
+      first('stsserviceaccountpolicy'), first('uid')))) {
     log.debug('Leaving serviceAccountWriteRefusal(). No owner.');
     return coded('STS-SVCACCT-0023', new ldap.ConstraintViolationError(
       'this realm\'s service-account policy requires stsServiceAccountOwner ' +

@@ -775,7 +775,9 @@ function childMain() {
       // profile; web_answers.ts reads it and the API does not take it.
       '/admin-api/policies/save-passkey-policy': ['newProfile'],
       // And the locale policy's, tabbed since #1238.
-      '/admin-api/policies/save-locale-policy': ['newProfile']
+      '/admin-api/policies/save-locale-policy': ['newProfile'],
+      // And the New service-account policy (#1240), for the same reason.
+      '/admin-api/policies/save-serviceAccount-policy': ['newProfile']
     };
     // AND A FIELD'S SEARCH (#459, #461): its box, its page and its people
     // / applications toggle are read by the runtime's round trip and never

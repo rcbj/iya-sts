@@ -728,8 +728,8 @@
     "text": "vad ett tjänstekonto får göra — den andra faktorn, webbläsaren, lösenordsdörrarna — och hur dess lösenord roteras"
   },
   "kinds.serviceAccount.appliesTo": {
-    "en": "7529888c07b7db03",
-    "text": "varje tjänstekonto i den här sfären från nästa gång det loggar in, binder eller roteras"
+    "en": "34a64ba365919802",
+    "text": "varje tjänstekonto den styr — de som namnger den, och för `default` de som inte namnger någon — från nästa gång det loggar in, binder eller roteras"
   },
   "kinds.serviceAccount.fallsBackTo": {
     "en": "c56187f00ea11347",
@@ -876,8 +876,8 @@
     "text": "En misslyckad rotation försöks igen vid jobbets nästa körning. Efter så här många i följd rapporteras kontot under Övervakning → Tjänstekonton och loggas som ett larm (STS-SVCACCT-0042)."
   },
   "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
-    "en": "0ff4e4aa3597259f",
-    "text": "Den här tjänstens klass för en tjänstekontopolicy: vad ett tjänstekonto i den här sfären får göra och hur dess lösenord roteras. Posten namnges efter PROFILEN (`cn=default`)."
+    "en": "5ef697454678b011",
+    "text": "Den här tjänstens klass för en tjänstekontopolicy: vad ett tjänstekonto i den här sfären får göra och hur dess lösenord roteras. Posten namnges efter PROFILEN: `cn=default`, eller en namngiven profil som ett tjänstekonto namnger i sitt stsServiceAccountPolicy."
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
@@ -939,6 +939,10 @@
     "en": "604c6f36ecb4ac58",
     "text": "En misslyckad rotation försöks igen vid jobbets nästa körning. Efter så här många i följd rapporteras kontot under Övervakning → Tjänstekonton och loggas som ett larm (STS-SVCACCT-0042)."
   },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Vilken namngiven tjänstekontopolicy som vinner där flera namnges: den lägsta, från 1 till 1000. Ett tjänstekonto namnger en enda policy, så i dag avgör den ingenting."
+  },
   "serviceAccount.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Vad profilen är till för, för nästa person."
@@ -998,6 +1002,10 @@
   "serviceAccount.DOORS.allowPasswordGrant.what": {
     "en": "7fe8d96fec703361",
     "text": "grant_type=password vid tokenslutpunkten (RFC 6749 avsnitt 4.3), där sfären över huvud taget tillåter beviljandetypen."
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Vilken namngiven tjänstekontopolicy som vinner där flera namnges: den lägsta, från 1 till 1000. Ett tjänstekonto namnger en enda policy, så i dag avgör den ingenting."
   },
   "serviceAccount.sentences.exempt": {
     "en": "b26ecbca5a57dc48",

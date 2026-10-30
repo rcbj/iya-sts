@@ -118,7 +118,19 @@ interface DeclaredReference {
   attribute: string;
   noun: string;
   choices: () => string[];
+  // Who may hold it (#1240): the holder's attributes in, a coded refusal
+  // out; absent, every holder of the kind may.
+  holderRefusal?: HolderRefusal;
 }
+
+/**
+ * Refuses a reference on one holder (#1240): the service-account policy is
+ * held by a service account only. Handed the holder's attributes (lower-cased
+ * names, arrays) and the value written; answers `{ code, message }` or null.
+ */
+type HolderRefusal = (attributes: Record<string, unknown>,
+                      value: string) => { code: string; message: string } |
+                                        null;
 
 /**
  * The references declared so far (`declareReference()`).
@@ -434,9 +446,12 @@ export = class PolicySelection {
    * @param noun - what the kind calls a policy (`passkey policy`)
    * @param choices - answers the realm's named policies' names, read when
    *   asked, so a policy saved a moment ago is a choice at once
+   * @param holderRefusal - who may hold it (#1240), asked by the person
+   *   editor before a write; omitted, any holder may
    */
   static declareReference(holder: string, attribute: string, noun: string,
-                          choices: () => string[]): void {
+                          choices: () => string[],
+                          holderRefusal?: HolderRefusal): void {
     log.debug("Entering PolicySelection.declareReference(). " + holder +
               " " + attribute);
     if (HOLDERS.indexOf(holder) < 0) {
@@ -446,7 +461,8 @@ export = class PolicySelection {
     }
     PolicySelection.withdrawReference(holder, attribute);
     DECLARED.push({ holder: holder, attribute: String(attribute),
-                    noun: noun, choices: choices });
+                    noun: noun, choices: choices,
+                    holderRefusal: holderRefusal });
     log.debug("Leaving PolicySelection.declareReference().");
   }
 
@@ -475,11 +491,12 @@ export = class PolicySelection {
    *
    * @param holder - `person` or `group`
    * @param attribute - an attribute name, in any case
-   * @returns `{ attribute, noun, choices }`, or null for an attribute no
-   *   kind declared on that holder
+   * @returns `{ attribute, noun, choices, holderRefusal }`, or null for an
+   *   attribute no kind declared on that holder
    */
   static referenceOf(holder: string, attribute: string):
-      { attribute: string; noun: string; choices: string[] } | null {
+      { attribute: string; noun: string; choices: string[];
+        holderRefusal?: HolderRefusal } | null {
     log.debug("Entering PolicySelection.referenceOf().");
     const key = String(attribute || '').toLowerCase();
     const found = DECLARED.filter(function (one) {
@@ -503,7 +520,7 @@ export = class PolicySelection {
     log.debug("Leaving PolicySelection.referenceOf(). " + choices.length +
               " choice(s).");
     return { attribute: found.attribute, noun: found.noun,
-             choices: choices };
+             choices: choices, holderRefusal: found.holderRefusal };
   }
 
   /**
@@ -514,7 +531,8 @@ export = class PolicySelection {
    * @returns `[{ attribute, noun, choices }]`, in declaration order
    */
   static referencesOn(holder: string):
-      Array<{ attribute: string; noun: string; choices: string[] }> {
+      Array<{ attribute: string; noun: string; choices: string[];
+              holderRefusal?: HolderRefusal }> {
     log.debug("Entering PolicySelection.referencesOn(). " + holder);
     const out = DECLARED.filter(function (one) {
       return one.holder === holder;

@@ -3852,8 +3852,10 @@ class AdminActions {
     }
     const done = result as any;
     let signedOut = null;
+    // ITS OWN PROFILE (#1240), the one the account names.
     if (wanted && done.changed &&
-        !serviceAccountPolicy.allowsDoor('browser')) {
+        !serviceAccountPolicy.allowsDoor('browser',
+          serviceAccountPolicy.profileFor(done.username || who))) {
       signedOut = this.signOutEverywhere(who, ctx,
                                          'becoming a service account');
     }
@@ -4984,9 +4986,28 @@ class AdminActions {
       // exists, so a refused owner or destination leaves nobody behind as an
       // ordinary person.
       const asServiceAccount = this.truthy(body.serviceAccount);
+      // THE NAMED SERVICE-ACCOUNT POLICY A CREATE NAMES (#1240), a field
+      // like any other on the form: held only by a service account, naming
+      // one the realm holds, and the policy whose `requireOwner` the
+      // precheck below asks.
+      const typedReference = typed.stsServiceAccountPolicy;
+      const policyReference = Array.isArray(typedReference)
+        ? typedReference[0] : typedReference;
+      const referenceRefused = this.deps.serviceAccountPolicy.writeRefusal({
+        stsServiceAccount: asServiceAccount ? 'TRUE' : '',
+        stsServiceAccountPolicy: policyReference === undefined ? ''
+          : String(policyReference) });
+      if (referenceRefused) {
+        log.debug("Leaving AdminActions.usersAction(). The service-account " +
+                  "policy reference was refused before the create.");
+        return this.refusedBy(referenceRefused.code,
+          { ok: false, errors: [referenceRefused.message] });
+      }
       if (asServiceAccount) {
         const { serviceAccounts } = this.deps;
-        const precheck = serviceAccounts.check(body, '');
+        const precheck = serviceAccounts.check(
+          Object.assign({}, body, { policy: policyReference === undefined
+            ? '' : String(policyReference) }), '');
         if (precheck.ok !== true) {
           log.debug("Leaving AdminActions.usersAction(). The service " +
                     "account was refused before the create.");

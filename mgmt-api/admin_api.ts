@@ -1581,7 +1581,16 @@ class AdminApi {
               'password policy\'s `minLength`, and `rotationEnabled` is ' +
               'refused while the realm has no push destination. The seven ' +
               '`allow*` door fields say which password doors a service ' +
-              'account may use.',
+              'account may use. **A NAMED profile (#1240)** — `profile` of ' +
+              'lower-case letters, digits and hyphens, with `precedence` — ' +
+              'is this realm\'s own and governs every service account ' +
+              'whose `stsServiceAccountPolicy` names it (set on the ' +
+              'person\'s Policies tab or by `POST ' +
+              '/admin-api/users/set-attribute`; only a service account may ' +
+              'hold it, STS-SVCACCT-0048). A reference the realm does not ' +
+              'hold gets `default` and is logged (STS-SVCACCT-0047), and a ' +
+              'named profile an account still names is not deleted ' +
+              '(STS-SVCACCT-0049).',
         example: { rotationEnabled: false, allowBrowserSignIn: false }
       },
       // #527: the fourth kind.
@@ -24652,7 +24661,10 @@ class AdminApi {
                      'takes), `references` (the attribute by which an ' +
                      '`application`, a `group` and/or a `person` names one ' +
                      'of its profiles: `appPasskeyPolicy` and ' +
-                     '`stsPasskeyPolicy` for the passkey policy) ' +
+                     '`stsPasskeyPolicy` for the passkey policy; ' +
+                     '`stsServiceAccountPolicy`, on a service account ' +
+                     'and nobody else, for the service-account policy ' +
+                     '(#1240)) ' +
                      'and `named`, each profile with its `precedence` and ' +
                      '`namedBy` — the `applications`, `groups` and ' +
                      '`people` whose reference names it. Of the profile an ' +

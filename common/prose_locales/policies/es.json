@@ -728,8 +728,8 @@
     "text": "lo que puede hacer una cuenta de servicio (el segundo factor, el navegador, las puertas de contraseña) y cómo rota su contraseña"
   },
   "kinds.serviceAccount.appliesTo": {
-    "en": "7529888c07b7db03",
-    "text": "cada cuenta de servicio de este dominio a partir de la próxima vez que inicie sesión, haga un bind o se rote"
+    "en": "34a64ba365919802",
+    "text": "cada cuenta de servicio que rige —las que la nombran y, para `default`, las que no nombran ninguna— a partir de la próxima vez que inicie sesión, haga un bind o se rote"
   },
   "kinds.serviceAccount.fallsBackTo": {
     "en": "c56187f00ea11347",
@@ -876,8 +876,8 @@
     "text": "Una rotación fallida se reintenta en la siguiente ejecución del trabajo. Tras esta cantidad seguidas, la cuenta se informa en Supervisión → Cuentas de servicio y se registra como alarma (STS-SVCACCT-0042)."
   },
   "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
-    "en": "0ff4e4aa3597259f",
-    "text": "La clase de este servicio para una política de cuentas de servicio: lo que puede hacer una cuenta de servicio de este dominio y cómo rota su contraseña. La entrada lleva el nombre del PERFIL (`cn=default`)."
+    "en": "5ef697454678b011",
+    "text": "La clase de este servicio para una política de cuentas de servicio: lo que puede hacer una cuenta de servicio de este dominio y cómo rota su contraseña. La entrada lleva el nombre del PERFIL: `cn=default`, o un perfil con nombre que una cuenta de servicio nombra en su stsServiceAccountPolicy."
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
@@ -939,6 +939,10 @@
     "en": "604c6f36ecb4ac58",
     "text": "Una rotación fallida se reintenta en la siguiente ejecución del trabajo. Tras esta cantidad seguidas, la cuenta se informa en Supervisión → Cuentas de servicio y se registra como alarma (STS-SVCACCT-0042)."
   },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Qué política de cuentas de servicio con nombre prevalece cuando se nombran varias: la más baja, de 1 a 1000. Una cuenta de servicio nombra una sola política, así que hoy no decide nada."
+  },
   "serviceAccount.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
@@ -998,6 +1002,10 @@
   "serviceAccount.DOORS.allowPasswordGrant.what": {
     "en": "7fe8d96fec703361",
     "text": "grant_type=password en el endpoint de token (RFC 6749 sección 4.3), cuando el dominio permite esa concesión."
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Qué política de cuentas de servicio con nombre prevalece cuando se nombran varias: la más baja, de 1 a 1000. Una cuenta de servicio nombra una sola política, así que hoy no decide nada."
   },
   "serviceAccount.sentences.exempt": {
     "en": "b26ecbca5a57dc48",

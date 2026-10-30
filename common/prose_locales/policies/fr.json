@@ -728,8 +728,8 @@
     "text": "ce qu’un compte de service peut faire — le second facteur, le navigateur, les portes à mot de passe — et la rotation de son mot de passe"
   },
   "kinds.serviceAccount.appliesTo": {
-    "en": "7529888c07b7db03",
-    "text": "à chaque compte de service de ce domaine, à partir de sa prochaine connexion, de son prochain bind ou de sa prochaine rotation"
+    "en": "34a64ba365919802",
+    "text": "à chaque compte de service qu’elle régit — ceux qui la nomment et, pour `default`, ceux qui n’en nomment aucune —, à partir de sa prochaine connexion, de son prochain bind ou de sa prochaine rotation"
   },
   "kinds.serviceAccount.fallsBackTo": {
     "en": "c56187f00ea11347",
@@ -876,8 +876,8 @@
     "text": "Une rotation échouée est réessayée à la prochaine exécution de la tâche. Après ce nombre d’échecs consécutifs, le compte est signalé sur Supervision → Comptes de service et journalisé comme une alarme (STS-SVCACCT-0042)."
   },
   "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
-    "en": "0ff4e4aa3597259f",
-    "text": "La classe de ce service pour une politique des comptes de service : ce qu’un compte de service de ce domaine peut faire et comment son mot de passe tourne. L’entrée est nommée par le PROFIL (`cn=default`)."
+    "en": "5ef697454678b011",
+    "text": "La classe de ce service pour une politique des comptes de service : ce qu’un compte de service de ce domaine peut faire et comment son mot de passe tourne. L’entrée est nommée par le PROFIL : `cn=default`, ou un profil nommé qu’un compte de service nomme dans son stsServiceAccountPolicy."
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
@@ -939,6 +939,10 @@
     "en": "604c6f36ecb4ac58",
     "text": "Une rotation échouée est réessayée à la prochaine exécution de la tâche. Après ce nombre d’échecs consécutifs, le compte est signalé sur Supervision → Comptes de service et journalisé comme une alarme (STS-SVCACCT-0042)."
   },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Quelle politique des comptes de service nommée l’emporte lorsque plusieurs sont nommées : la plus basse, de 1 à 1000. Un compte de service ne nomme qu’une politique, donc aujourd’hui elle ne décide rien."
+  },
   "serviceAccount.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "À quoi sert le profil, pour la personne suivante."
@@ -998,6 +1002,10 @@
   "serviceAccount.DOORS.allowPasswordGrant.what": {
     "en": "7fe8d96fec703361",
     "text": "grant_type=password au point de terminaison de jeton (RFC 6749 section 4.3), là où le domaine autorise cet octroi."
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Quelle politique des comptes de service nommée l’emporte lorsque plusieurs sont nommées : la plus basse, de 1 à 1000. Un compte de service ne nomme qu’une politique, donc aujourd’hui elle ne décide rien."
   },
   "serviceAccount.sentences.exempt": {
     "en": "b26ecbca5a57dc48",

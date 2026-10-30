@@ -46,6 +46,7 @@ The person can never set the flag on their own entry, whatever
 | `stsPasswordRotatedAt` | When the password was last rotated. |
 | `stsPreviousPassword`, `stsPreviousPasswordExpires` | The previous password's hash and when it stops being accepted. The hash is never returned by any read. |
 | `stsRotationFailures`, `stsRotationLastError`, `stsRotationLastAttempt` | The rotation's state, kept on the entry so that any node can carry on from it. |
+| `stsServiceAccountPolicy` | The [named service-account policy](#named-policies) that governs the account, or absent for `default`. Only a service account may hold it, and it is cleared with the flag. |
 
 **Users** lists service accounts with a tag. The filter
 `?kind=service` (or `?kind=person`) shows only service accounts (or only
@@ -115,10 +116,11 @@ destinations whose name, identifier, DN or provider contains the text, and
 
 ## The policy
 
-Each realm has one profile, `cn=default,ou=serviceAccountPolicies`. A realm
-without its own profile inherits the default realm's profile, and if that
-does not exist either, the built-in defaults below apply. **Every default is
-the more secure choice.**
+Each realm has a `default` profile, `cn=default,ou=serviceAccountPolicies`,
+and may hold [named profiles](#named-policies) beside it. A realm without its
+own `default` inherits the default realm's, and if that does not exist
+either, the built-in defaults below apply. **Every default is the more secure
+choice.**
 
 | Field | Default | What it does |
 |---|---|---|
@@ -136,18 +138,47 @@ The policy applies **in both modes**, as the authentication policy does. In
 development mode, which checks no password, a closed door still refuses the
 account.
 
+### Named policies
+
+Some accounts need different rules from the rest, for example a deployment
+pipeline that rotates every week while every other account rotates monthly.
+For that, create a **named policy** on **Directory → Policies →
+Service-account policy → New policy**, or with
+`POST /admin-api/policies/save-serviceAccount-policy` naming `profile`.
+A name is lower-case letters, digits and hyphens. A named policy has every
+field in the table above and a `precedence` from 1 to 1000. It belongs to
+the realm it was made in and is never inherited by another realm.
+
+**The account names its policy.** Set `stsServiceAccountPolicy` on the
+account's **Policies** tab, with
+`POST /admin-api/users/set-attribute`, or over LDAP. The value is `default`
+or a named policy the realm holds; anything else is refused. Only a service
+account may hold it (STS-SVCACCT-0048), and making the account an ordinary
+person again clears it.
+
+Every rule follows the account's own policy: the doors, the browser, the
+second-factor exemption, whether an owner is required, and the rotation's
+interval, overlap, length and alarm threshold. An account that names nothing
+follows `default`. An account that names a policy the realm does not hold
+also follows `default`, and STS-SVCACCT-0047 is logged. This can only
+happen to an entry restored or copied from elsewhere, because every write is
+checked and a named policy an account still names cannot be deleted
+(STS-SVCACCT-0049). The **Named policies** tab lists the accounts that name
+each one.
+
 ## Rotation
 
 The `service-accounts.rotate` scheduler job runs hourly on one node. It
-rotates every service account that names a destination and whose interval
-has passed. **Rotate now** on the account's page, or
+rotates every service account that names a destination, whose own policy
+turns rotation on, and whose interval under that policy has passed. The job
+is off in a realm where no policy, `default` or named, turns rotation on. **Rotate now** on the account's page, or
 `POST /admin-api/users/rotate-password`, queues the same work as
 `service-accounts.rotate-now`. Each rotation goes through these steps:
 
 1. It takes a per-account claim, so the job and a rotation started by hand
    never rotate the same account at once.
-2. It draws a password with the password policy's generator, at the policy's
-   length.
+2. It draws a password with the password policy's generator, at the length
+   the account's service-account policy sets.
 3. It **pushes** that password to the destination as a new version. If the
    push fails, **nothing changes**: the failure is counted and the next run
    tries again.

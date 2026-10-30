@@ -4143,6 +4143,13 @@ policy kind follows are `common/policy_selection.ts`'s (3cx).
   `update()` refuses another (STS-LDAP-0106). The create form leaves it
   out: a create does not pass through that check. The names chosen are
   `stsServiceAccountPolicy` and `stsAttributePolicy` (#1240, #1241).
+  **A kind may also say WHO may hold it** (#1240): the declaration's
+  optional `holderRefusal`, handed the person's attributes, which
+  `update()` asks after the value is held and answers under the kind's own
+  code — the service-account policy's refuses a person who is not a
+  service account (STS-SVCACCT-0048). The LDAP door's half of that kind is
+  `serviceAccountWriteRefusal()`, because `stsServiceAccountPolicy` is one
+  of the service-account attributes (`common/CLAUDE.md` 3cd).
 * **Who names a policy, for a delete's refusal and the Named policies
   list**: `peopleNamingPolicyAsync(attribute, name, limit)` reads the
   HOLDERS of the attribute (the store's asked-names index in a window,

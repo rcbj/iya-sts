@@ -14617,7 +14617,9 @@ class AdminViews {
       log.debug("Leaving AdminViews.serviceAccountJson(). A person.");
       return null;
     }
-    const profile = serviceAccountPolicy.read();
+    // THE ACCOUNT'S OWN PROFILE (#1240): the one it names, else `default`.
+    const profile = serviceAccountPolicy.profileForReference(facts.policy,
+                                                             facts.username);
     const rotation = serviceAccountPolicy.rotation(profile);
     const rotatedMs = facts.rotatedAt
       ? Date.parse(facts.rotatedAt.replace(
@@ -14653,7 +14655,9 @@ class AdminViews {
         allowBrowserSignIn: profile.allowBrowserSignIn === true,
         doors: serviceAccountPolicy.allowedDoors(profile),
         requiresOwner: profile.requireOwner === true,
-        from: profile.from
+        from: profile.from,
+        // Which profile governs it (#1240): `default` or a named one.
+        name: profile.name
       }
     };
   }
@@ -15012,7 +15016,10 @@ class AdminViews {
       // an account may name, and their own DN, which a search may not offer
       // (an account cannot own itself).
       serviceAccountRules: {
-        requiresOwner: this.deps.serviceAccountPolicy.requiresOwner(),
+        // The person's own profile (#1240): the one they name, else
+        // `default` — which is also what a person not yet one is held to.
+        requiresOwner: this.deps.serviceAccountPolicy.requiresOwner(
+          this.deps.serviceAccountPolicy.profileFor(key)),
         maxOwners: this.deps.serviceAccounts.MAX_OWNERS,
         dn: String((view.directory && view.directory.json &&
                     view.directory.json.dn) || '')

@@ -20354,8 +20354,9 @@ const CODES = [
     spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
-    summary: 'A service-account policy profile other than `default` was ' +
-      'named; there is one profile per realm, and nothing assigns a second.',
+    summary: 'A service-account policy profile was named with something ' +
+      'that is neither `default` nor a name of lower-case letters, digits ' +
+      'and hyphens (#1240).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-SVCACCT-0002',
     summary: 'A service-account policy save was refused: a field was missing ' +
@@ -20485,6 +20486,25 @@ const CODES = [
       'satisfied the password policy, so the rotation stopped before pushing ' +
       'anything.',
     spec: 'none — a warning in the log and an audit row' },
+  { code: 'STS-SVCACCT-0047',
+    summary: 'A service account names, in stsServiceAccountPolicy, a ' +
+      'service-account policy the realm does not hold; `default` governs it ' +
+      'until the policy exists or the reference changes (#1240).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-SVCACCT-0048',
+    summary: 'stsServiceAccountPolicy was written on a person who is not a ' +
+      'service account; only a service account names a service-account ' +
+      'policy (#1240).',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0049',
+    summary: 'A named service-account policy was not deleted because a ' +
+      'service account still names it in stsServiceAccountPolicy (#1240).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0050',
+    summary: 'stsServiceAccountPolicy was written, over LDAP or at a ' +
+      'create, naming neither `default` nor a service-account policy of ' +
+      'this realm (#1240).',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

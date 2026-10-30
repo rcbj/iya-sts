@@ -12273,6 +12273,30 @@ is the operator's page; each file's header argues its part.
   door (STS-SVCACCT-0013).
 * **ITS STATE IS ON THE ENTRY** — rotated-at, the previous hash and its
   expiry, failures — because any node may run the job next (#49).
+* **NAMED PROFILES, NAMED BY THE ACCOUNT (#1240, rule 3cx).** Beside
+  `default` (still inherited from the default realm) a realm holds named
+  profiles of its own, each the whole field set and
+  `stsServiceAccountPrecedence`. A service account names one in
+  `stsServiceAccountPolicy`, the kind's only reference: no application or
+  group is governed by this policy. The attribute is in
+  `service_accounts.ts`'s `ATTRIBUTES`, so it is read with the account (one
+  entry), never self-writable, and cleared with the flag; only a service
+  account holds it (STS-SVCACCT-0048) — the person editor asks the
+  `holderRefusal` the declaration carries (the one addition #1240 made to
+  `policy_selection.ts`), an LDAP add or modify and a create ask
+  `writeRefusal()`. **A reference the realm does not hold gets `default`
+  and is logged (STS-SVCACCT-0047), not refused**: every built-in default
+  here is the more secure one, refusing every door would stop a program and
+  stopping its rotation is weaker, and the reference cannot dangle through
+  this service (checked at every write; a named profile is not deleted
+  while named, STS-SVCACCT-0049). **Every reader resolves the account's
+  own profile** — `credentials.serviceAccountRefusesDoor()` (every door and
+  the browser), `mfaRequirementFor()`, `rotatesThroughDestination()`,
+  `service_accounts.check()` and the LDAP door's `requireOwner`, the
+  console's sign-out on becoming one, and the rotation job, which resolves
+  each reference once per run and is off only where no profile of the
+  realm rotates. **Who names a profile is the service-account index**
+  (`service_accounts.names()`), not a walk: only a service account can.
 
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 
