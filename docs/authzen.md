@@ -10,7 +10,10 @@ subject, an action, a resource and a context — and gets back `decision: true`
 or `false`. The answer comes from the same XACML 3.0 engine and the same
 policy repository as everything on the [XACML](xacml.md) page: an AuthZEN
 request is turned into an XACML request, decided against the realm's root
-policy, and turned back.
+policy, and turned back. An evaluation about an application that enforces
+[fine-grained authorization](fga.md) is decided against that application's
+own policy instead; see
+[Applications with their own policy](#applications-with-their-own-policy).
 
 AuthZEN is an addition. The XACML endpoints (`/xacml`, `/xacml/pdp`,
 `/xacml/policies`, `/xacml/pep/*`, `/xacml/pip`) and the
@@ -47,7 +50,7 @@ evaluated gets an error status and a body of the form
 | 400 | the request is not valid: a missing member, a value that breaks the rules below, an undeclared property, or several applications in scope and none named |
 | 401 | the caller did not authenticate; `WWW-Authenticate: Bearer realm="<issuer>"` when tokens are accepted |
 | 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named |
-| 500 | the policy could not be evaluated (for example the root policy does not load) — never reported as `false` |
+| 500 | the policy could not be evaluated (for example the root policy does not load, or the application enforces fine-grained authorization and its policy is disabled or missing) — never reported as `false` |
 | 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
 
 ### Several evaluations at once
@@ -226,6 +229,44 @@ looked up:
 A member that AuthZEN 1.0 does not define, at the top level or inside
 `subject`, `action` or `resource`, is also refused with 400.
 
+### Applications with their own policy
+
+An application whose `appFgaEnforced` is on owns the policy that decides
+access to it (see [Fine-grained authorization](fga.md)). An evaluation whose
+application — `context.application`, or the caller's only one — is such an
+application is decided against **that policy alone**: not the root, and not
+a policy the root references. Every other application is decided against the
+root, as above. Nothing about the request changes for the caller, and the
+metadata document is the same.
+
+The request the policy sees is the one in the tables above, with two more
+facts:
+
+| Attribute | Category | Value |
+|---|---|---|
+| `urn:sts:xacml:fga:application` | resource | the application whose policy decides |
+| `urn:sts:xacml:fga:stage` | environment | `access` |
+
+For example, a caller scoped to `https://docs.example/api` sends
+
+```json
+{"subject":  {"type": "user", "id": "alice"},
+ "action":   {"name": "delete"},
+ "resource": {"type": "document", "id": "doc-1"},
+ "context":  {"application": "https://docs.example/api"}}
+```
+
+If that application enforces fine-grained authorization and its policy denies
+`delete` at stage `access`, the answer is `{"decision": false}`, whatever the
+root policy says. If its policy is disabled or does not parse, the answer is
+`500` (`STS-AUTHZEN-0040`), and in a batch that item's `context.error`. A
+caller still reaches only applications in its scope: naming one outside it is
+`403`.
+
+The audit row of such an evaluation names the application's policy, its
+`PolicyId` and version. The decision is counted on the AuthZEN row of
+**XACML → Monitor**, like every AuthZEN decision.
+
 ## How a decision comes back
 
 | XACML result | `decision` |
@@ -236,6 +277,7 @@ A member that AuthZEN 1.0 does not define, at the top level or inside
 | NotApplicable | `false` |
 | Indeterminate because an attribute was missing | `false` |
 | Indeterminate because of a fault (a root policy that will not load, a processing error) | an error, never `false` |
+| No usable policy for an application that enforces fine-grained authorization | an error (`500`), never `false`, and never the root policy instead |
 
 `urn:sts:xacml:obligation:log` is the one obligation this service carries out;
 it is recorded in the audit log.
