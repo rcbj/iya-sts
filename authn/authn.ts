@@ -14042,7 +14042,11 @@ class Authn {
   //
   // `application` is the pending sign-in's, for the locale policy's default
   // (`PageLocale.shellAttributes()`): the screen is drawn for the
-  // application that sent the person here, as it always was.
+  // application that sent the person here, as it always was. `person` is
+  // who it is drawn for where the route already knows (#1238): a step after
+  // the first factor, a forced password change, a sign-in locked to one
+  // person. Their groups may name the locale profile; before anybody is
+  // known the application alone chooses it.
   // ===========================================================================
   /**
    * Sends the sign-in surface's shell document.
@@ -14050,16 +14054,18 @@ class Authn {
    * @param req - the request
    * @param res - the response
    * @param application - the application the sign-in is for, or ''
+   * @param person - the person it is drawn for, where known, or ''
    * @returns nothing
    */
-  signInShell(req, res, application: string): void {
+  signInShell(req, res, application: string, person?: string): void {
     const { log, app } = this.deps;
     log.debug("Entering Authn.signInShell().");
     const html = ShellDocument.document({
       title: 'Sign in — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
                    Array<[string, string]>)
-        .concat(PageLocale.shellAttributes(req, application || '')),
+        .concat(PageLocale.shellAttributes(req, application || '',
+                                           person || '')),
       stylesheets: ['/web/card.css'],
       script: SIGNIN_SCRIPT_PATH,
       open: '<div class="card">',
@@ -19315,7 +19321,8 @@ class Authn {
                             encodeURIComponent(record.id));
       }
       // THE SHELL (#571): the browser asks `/authn-api` for the partners.
-      this.signInShell(req, res, String(record.application || ''));
+      this.signInShell(req, res, String(record.application || ''),
+                       String(record.lockedUsername || ''));
       log.debug("Leaving the federation chooser. Offered " + usable +
                 " partner(s) for " + record.id + ".");
     });
@@ -19340,7 +19347,8 @@ class Authn {
           'There is no sign-in waiting under that id, or it has expired. ' +
           'Start the request again from the application that sent you here.');
       }
-      this.signInShell(req, res, String(record.application || ''));
+      this.signInShell(req, res, String(record.application || ''),
+                       String(record.lockedUsername || ''));
       log.debug("Leaving the account picker.");
     });
 
@@ -19366,7 +19374,8 @@ class Authn {
       }
       // THE SHELL (#571): the browser asks `/authn-api` for the view, which
       // carries the configuration's problems (`screenProblem()`).
-      this.signInShell(req, res, String(record.application || ''));
+      this.signInShell(req, res, String(record.application || ''),
+                       String(record.lockedUsername || ''));
       log.debug("Leaving the authentication screen. The shell for " +
                 record.id + ".");
     });
@@ -19391,7 +19400,8 @@ class Authn {
       // THE SHELL (#571): the browser asks `/authn-api` for the step.
       return this.signInShell(req, res,
                               String((step.authn &&
-                                      step.authn.application) || ''));
+                                      step.authn.application) || ''),
+                              String(step.username || ''));
     });
 
     // THE LANGUAGE CHOOSER (#539). A POST, from a real form on every
@@ -19486,7 +19496,8 @@ class Authn {
         }
         log.debug('Leaving the ' + page + ' step\'s shell.');
         return self.signInShell(req, res, String((found.step.authn &&
-          found.step.authn.application) || ''));
+          found.step.authn.application) || ''),
+          String(found.step.username || ''));
       });
     });
 

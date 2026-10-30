@@ -576,8 +576,10 @@ class SpnegoAuthn {
    * @param record - the pending sign-in, or null
    * @param view - the page's view
    * @param own - a signed-in person's own language, or null
+   * @param person - that person, whose groups may name the locale profile
+   *   (#1238), or '' where nobody is known yet
    */
-  sendShell(req, res, record, view, own?) {
+  sendShell(req, res, record, view, own?, person?) {
     const { log, authn } = this.deps;
     log.debug('Entering SpnegoAuthn.sendShell(). ' + view.kind);
     const state = Object.assign({ view: view },
@@ -590,7 +592,7 @@ class SpnegoAuthn {
                     ['data-sts-state', JSON.stringify(state)]] as
                    Array<[string, string]>)
         .concat(PageLocale.shellAttributes(req, record
-          ? String(record.application || '') : '')),
+          ? String(record.application || '') : '', String(person || ''))),
       stylesheets: ['/web/card.css'],
       script: authn.SIGNIN_SCRIPT_PATH,
       open: '<div class="card wide">',
@@ -845,7 +847,7 @@ class SpnegoAuthn {
       mechanism: spnego.mechName(verdict.selected),
       bare: !!verdict.rawKerberos, mic: !!verdict.micVerified,
       checks: verdict.checks || null
-    }, authn.preferredLanguageOf(username));
+    }, authn.preferredLanguageOf(username), username);
     log.debug('Leaving SpnegoAuthn.handleSignIn(). Signed in with nothing to ' +
               'return to.');
   }

@@ -4013,7 +4013,8 @@ class FederationSp {
         FederationPages.send(res, 200, self.signedInView(record,
           Object.assign({}, mapped, { username: username }), result,
           session), { application: result.application || '',
-                      own: self.deps.authn.preferredLanguageOf(username) });
+                      own: self.deps.authn.preferredLanguageOf(username),
+                      person: username });
         return;
       }
       // In the person's language (#539): the application they were signing

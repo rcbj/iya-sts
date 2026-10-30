@@ -4618,6 +4618,32 @@ const SCHEMA = {
             '(STS-AUTHN-0538).\n\nIt is WRITTEN ' +
             'BY NOBODY: no protocol presents it, so it is editable and ' +
             'starts empty.' },
+    // ---------------------------------------------------------------------
+    // THE LOCALE POLICY THIS APPLICATION NAMES (#1238, rcbj on #1234). It
+    // replaced the named locale policy's own list of applications
+    // (`stsLocaleSelectApplication`, #539) and its one-profile-per-
+    // application refusal (STS-I18N-0007, retired); no migration is owed. A
+    // group names one in `stsLocalePolicy`. `appPasskeyPolicy`'s
+    // arrangement: one value, CHECKED AT THE WRITE, in POLICY_REFERENCES.
+    // ---------------------------------------------------------------------
+    { name: 'appLocalePolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE LOCALE POLICY A PAGE OR A MAIL FOR THIS APPLICATION FALLS ' +
+            'BACK TO: `default` (or empty), or the name of a named locale ' +
+            'policy of this realm (Directory > Policies). It decides the ' +
+            'language a page is drawn in when the request, the person and ' +
+            'the browser name none a catalog answers, and the ' +
+            'preferredLanguage a person this application causes to be ' +
+            'created is given. Where the person is known it competes on ' +
+            'precedence with the locale policy each of the person\'s groups ' +
+            'names (stsLocalePolicy): the lowest precedence applies, ties ' +
+            'by name, and `default` where nothing names one.\n\nA name no ' +
+            'policy of this realm holds — written past the console — names ' +
+            'nothing and is logged (STS-I18N-0013): `default` applies, as ' +
+            'a language is all it decides. A named locale policy this ' +
+            'attribute names cannot be deleted (STS-I18N-0014).\n\nIt is ' +
+            'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
+            'and starts empty.' },
     // -------------------------------------------------------------------
     // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564). The RESOURCE
     // application that declares an authorization_details type owns the
@@ -4943,6 +4969,8 @@ const EDITABLE = {
   appAuthnPolicy: 'set',
   // #1235: the passkey policy, `appAuthnPolicy`'s reason.
   appPasskeyPolicy: 'set',
+  // #1238: the locale policy, the same reason.
+  appLocalePolicy: 'set',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -6169,6 +6197,12 @@ const ATTRIBUTE_CHOICES = {
       .map(function (one) { return String(one.name); })
       .filter(function (one) { return one !== 'default'; }));
   },
+  // `default` and this realm's named locale policies (#1238), the same way.
+  appLocalePolicy: function () {
+    return ['default'].concat(require('./locale_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
   },
@@ -6255,7 +6289,8 @@ function enrollmentProfileChoices(withDevice) {
 // THE ATTRIBUTES BY WHICH AN APPLICATION NAMES A POLICY (#1235, rule 3cx),
 // one per kind that an application selects: indexed by the kept listing and
 // asked by `applicationsNamingPolicy()`.
-const POLICY_REFERENCES = ['appAuthnPolicy', 'appPasskeyPolicy'];
+const POLICY_REFERENCES = ['appAuthnPolicy', 'appPasskeyPolicy',
+  'appLocalePolicy'];
 
 const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelTokenDeliveryMode',
@@ -6266,6 +6301,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'secretDestProvider', 'secretDestPayload', 'appAuthnPolicy',
   // #1235: a policy reference names a policy the realm holds.
   'appPasskeyPolicy',
+  // #1238: the same, for the locale policy.
+  'appLocalePolicy',
   'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
   'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
   // #395: a misspelt mode would silently be the default, and a misspelt

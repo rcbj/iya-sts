@@ -586,7 +586,8 @@ PolicyKinds.register({
 
 // #539: the fifth kind, rcbj's "a policy default per realm that automatically
 // populates user locale parameter", with named profiles "assign[ed] ... to
-// application objects".
+// application objects" — named since #1238 by an application
+// (`appLocalePolicy`) or a group (`stsLocalePolicy`), ranked by precedence.
 PolicyKinds.register({
   id: 'locale',
   label: 'Locale policy',
@@ -595,6 +596,7 @@ PolicyKinds.register({
            'written in when a person names none, and the preferredLanguage ' +
            'a new person is given',
   module: localePolicy as unknown as PolicyModule,
+  tabbed: true,
   auditAction: 'admin.locale-policy.change',
   appliesTo: 'the NEXT page drawn and the NEXT person created in this ' +
              'realm; a person created before keeps the preferredLanguage ' +

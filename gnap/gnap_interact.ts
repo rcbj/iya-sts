@@ -294,10 +294,13 @@ class GnapInteract {
   //
   // `application` is the client instance's application entry, for the
   // locale policy's default (`PageLocale.shellAttributes()`), as the pages
-  // were drawn for it; `own` a signed-in person's own language.
+  // were drawn for it; `own` a signed-in person's own language; `person`
+  // that person where the route holds their session (#1238), whose groups
+  // may name the locale profile.
   // -------------------------------------------------------------------------
   private sendShell(res: Res, status: number, view: Json,
-                    application: string, own?: Json): void {
+                    application: string, own?: Json,
+                    person?: string): void {
     const { log } = this.deps;
     log.debug("Entering GnapInteract.sendShell(). " +
               (view ? String(view.kind) : 'fetched'));
@@ -310,7 +313,8 @@ class GnapInteract {
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
                     ['data-sts-authn', authnAt],
                     ['data-sts-state', state]] as Array<[string, string]>)
-        .concat(PageLocale.shellAttributes(req, application || '')),
+        .concat(PageLocale.shellAttributes(req, application || '',
+                                           person || '')),
       stylesheets: ['/web/card.css'],
       script: SCRIPT_PATH,
       open: '<div class="card gnap">',
@@ -966,7 +970,8 @@ class GnapInteract {
             // so its view travels in the shell (#578).
             return self.sendShell(res, 200, { kind: 'sent' },
               String(grant.client.identifier || ''),
-              authn.preferredLanguageOf(String(session.user.username || '')));
+              authn.preferredLanguageOf(String(session.user.username || '')),
+              String(session.user.username || ''));
           });
       }).catch(function (e) {
         log.debug("Caught in GnapInteract.beforeApproval(): " +
@@ -1485,7 +1490,8 @@ class GnapInteract {
           // THE PAGE (#578): the shell, which draws it from `GET
           // /gnap-api/approve/{id}` in the person's language.
           self.sendShell(res, 200, null,
-                         String(grant.client.identifier || ''));
+                         String(grant.client.identifier || ''), null,
+                         String(session.user.username || ''));
           log.debug("Leaving GET /gnap/approve. The shell.");
           return undefined;
         });
