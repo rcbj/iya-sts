@@ -47,8 +47,8 @@ through [AuthZEN](authzen.md); see
   [What happens at access time](#what-happens-at-access-time).
 * **Deleting an application keeps its policy.** The policy is disabled and
   marked `xacmlOrphanedAt` with the time of the deletion. It stays in
-  `ou=policies` for audit until an administrator deletes it on
-  **XACML → Policies**. If an application with the same identifier is created
+  `ou=policies` for audit until an administrator removes it on
+  **XACML → Policies** (see [The console and the API](#the-console-and-the-api)). If an application with the same identifier is created
   again, it gets a new policy; it never inherits the orphan.
 * **Never the root.** An application's policy is never the repository's root,
   is never reached by a `PolicyIdReference` from the root, and is never
@@ -292,6 +292,104 @@ and gets `{"decision": false}`, even if the realm's root policy would permit
 it. The same request with `"action":{"name":"read"}` gets
 `{"decision": true}`.
 
+## The console and the API
+
+Everything below is a form in the admin console and an operation of the
+[management API](management-api.md). A form posts to the operation named
+beside it, so a script can do each step the way the console does. Every
+write needs Admin Write, or `admin:write` on the API token.
+
+1. **Declare the type.** On **Applications → (the resource application) →
+   Access types**, declare the type with its JSON Schema
+   (`POST /admin-api/applications/set-access-type`). Close the schema with
+   `"additionalProperties": false`; an open schema can never be covered.
+2. **Map its members.** Under **XACML mapping** on the same tab there is a
+   sub-tab for each declared type. Map each member the policy needs (see
+   [Mapping a type's members](#mapping-a-types-members)), and list the members
+   it should never see under **Not for the policy**.
+3. **Check the coverage.** The application's **Fine-grained authorization**
+   tab lists each declared type with **covered**, or **not covered:**
+   followed by the member paths still to map or list.
+4. **Write the policy.** **Its policy** on the same tab names the policy,
+   with a link into the **XACML → Editor**. Narrow its rule there. An
+   application with no policy of its own gets one from **Create the default
+   policy** (`POST /admin-api/applications/fga-create-policy`).
+5. **Enforce it.** Press **Enforce**
+   (`POST /admin-api/applications/fga-enable`). The refusal names what to
+   fix: an uncovered type with its paths (`STS-FGA-0018`), or a policy that
+   is disabled (`STS-FGA-0006`) or does not parse (`STS-FGA-0007`).
+   **Stop enforcing** (`fga-disable`) switches it off and keeps the policy.
+
+| Console | Operation | What it does |
+|---|---|---|
+| Access types → XACML mapping → **Save the row** | `POST /admin-api/applications/set-access-type-row` | Adds the row for a member path, or replaces the one already mapping it |
+| Access types → XACML mapping → **Remove** | `POST /admin-api/applications/remove-access-type-row` | Takes one row off |
+| Access types → XACML mapping → **Save the list** | `POST /admin-api/applications/set-not-for-policy` | Replaces the list of paths the policy never sees |
+| Access types → **Save the type** | `POST /admin-api/applications/set-access-type` | Writes the whole definition, `xacml` and `notForPolicy` included |
+| Fine-grained authorization → **Enforce** / **Stop enforcing** | `fga-enable` / `fga-disable` | Sets or clears `appFgaEnforced` |
+| Fine-grained authorization → **Create the default policy** | `fga-create-policy` | Writes the `fga-default` policy for an application that has none |
+| Fine-grained authorization → **Reset to the default policy** | `fga-reset-policy` | Rewrites the policy from `fga-default`; needs `confirm` |
+| XACML → Policies → **Applications' own policies** → **Remove** | `POST /admin-api/xacml/delete` | Deletes a policy no application names |
+
+`GET /admin-api/applications?application=<id>` returns what the two tabs
+draw: `page.accessTypes` (each type with its `xacml` rows and `notForPolicy`)
+and `page.fga`. `page.fga` holds `enforced`, `reference` (the
+`appFgaPolicy` value), `policy` (its entry name, `policyId`, `version`,
+`enabled`, whether it is the application's `own`, and the `editor` link),
+`usable` with the `code` and `why` when it cannot be used, and `types`, each
+with `covered`, `uncovered`, `rows` and `notForPolicy`.
+
+**Reset to the default policy** replaces every rule in the policy with the
+one rule of `fga-default`, which permits every detail. Tick **Replace every
+rule in this policy** first; the API needs `"confirm": true`. Without it the
+reset is refused (`STS-FGA-0020`) and nothing changes. The policy keeps its
+entry name and whether it is enabled. An application with no policy of its
+own is refused (`STS-FGA-0021`); create one instead.
+
+**Removing an orphan.** **XACML → Policies** lists every application's
+policy under **Applications' own policies**, grouped by application, each
+linked into the editor. **Make root** is never offered for them. A policy
+whose application was deleted is marked *orphaned since* the deletion, and
+one no application names any more is marked *no application names it*; both
+have **Remove**. The policy an application still names has no Remove, and
+`POST /admin-api/xacml/delete` refuses it (`STS-FGA-0022`). Reset it from
+the application's tab instead. `GET /admin-api/xacml/policies` returns the
+same grouping as `applicationPolicies`, each policy with `referenced` and
+`orphanedAt`.
+
+### Mapping a type's members
+
+A row maps one member of a detail of the type to an XACML attribute the
+policy can test:
+
+| Field | What it is |
+|---|---|
+| Member path | The member's name, or a dotted path to a nested member (`instructedAmount.amount`) |
+| Attribute id | The attribute the policy tests, for example `urn:example:payment:amount` |
+| Category | `resource` (the default), `action`, `environment`, `access-subject` or another of the listed names, or its URI |
+| Data type | `string` (the default) or another of the listed XACML data types |
+| Multiplicity | `single`, or `bag` for an array |
+
+The type itself and the five common data fields (`locations`, `actions`,
+`datatypes`, `identifier`, `privileges`) are always mapped and cannot be
+rows. A row on the same path replaces the one already there.
+
+A row is checked before it is saved, and a refusal is shown under the field
+it is about (`STS-FGA-0023`). These are refused:
+
+* an attribute id this service writes itself: anything under
+  `urn:sts:xacml:`, `subject-id`, `resource-id`, `action-id` and the
+  current-time attributes;
+* a bare directory attribute name, such as `departmentNumber`, in a subject
+  category, which would read as the person's own attribute;
+* a category, data type or multiplicity that is not one of the listed ones;
+* a path that names the type or a common data field.
+
+While the application enforces fine-grained authorization, a change that
+would leave a member uncovered is refused too (`STS-FGA-0019`), with the
+paths named. Taking a row off, for example, is refused until the member is
+listed in **Not for the policy**.
+
 ## Which applications get a policy when
 
 | How the application appeared | Its policy |
@@ -316,9 +414,11 @@ application `https://rs.example/api` it is
 keep two similar identifiers apart, for example
 `fga-https-rs-example-api-1715052a2eea`.
 
-Edit it in the **Editor** like any other policy. Saving, enabling or
+Edit it in the **Editor** like any other policy; the application's
+**Fine-grained authorization** tab links to it. Saving, enabling or
 disabling it keeps its owner. **Make root** is not offered for it, and the
-management API's `setXacmlRootPolicy` refuses it.
+management API's `setXacmlRootPolicy` refuses it. **Reset to the default
+policy** on that tab writes this document over it again.
 
 ## Development and product mode
 
@@ -335,7 +435,12 @@ there is room. Raise `xacml.maxPolicies` in a realm with many applications.
 ## In the running service
 
 * `GET /admin-api/xacml/policies` and `GET /xacml/policies` list every policy
-  with `application` (its owner, or `null`) and `orphanedAt`.
+  with `application` (its owner, or `null`) and `orphanedAt`;
+  `GET /admin-api/xacml/policies` also groups them by application in
+  `applicationPolicies`.
+* An application's **Fine-grained authorization** tab and
+  `GET /admin-api/applications?application=<id>`'s `page.fga` show the
+  switch, the policy and each declared type's coverage.
 * `GET /admin-api/ldap/applications` and `/admin/ldap/directory` show
   `appFgaPolicy` and `appFgaEnforced` on an application entry.
 * `GET /xacml/pep/policies` names withheld policies in `withheld`.

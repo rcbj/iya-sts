@@ -192,6 +192,10 @@ decides; it is validated the same way.
   deleting it, **Make root** makes it the one the PDP starts from (the old
   root stops being root), and **Delete** removes it. Deleting the root leaves
   the repository deciding nothing until another policy is made root.
+  Applications' own fine-grained authorization policies are listed apart,
+  under **Applications' own policies**, grouped by application; only one no
+  application names any more can be removed there
+  ([Fine-grained authorization](fga.md#the-console-and-the-api)).
 
 **API** (the PAP actions take `name`, the directory entry):
 ```bash
