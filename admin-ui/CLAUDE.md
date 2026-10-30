@@ -8342,8 +8342,9 @@ tab, and a service account's section of the person page —
   under all three. The passkey policy declares it, and the password policy
   since #1236 — whose own section (`passwordPolicySection()`) wraps its
   default part in the same three sub-tabs and keeps the doors, the history,
-  the generator and the schema under them, as reference for all three. The
-  locale and post-login policies' named profiles are drawn as they were.
+  the generator and the schema under them, as reference for all three —
+  and the locale policy since #1238. The post-login policy's named profiles
+  are drawn as they were.
 * **`PoliciesPage.namedProfileParts()` draws what the kind declares**
   (`member.selectors`, `member.references`): a box per list selector a kind
   still keeps (the post-login policy's groups; the locale policy's

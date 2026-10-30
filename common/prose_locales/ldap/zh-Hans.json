@@ -1743,6 +1743,10 @@
     "en": "2fbcb920f26d8f11",
     "text": "此应用的页面或邮件所回退使用的语言策略：`default`（或为空），或此领域的一个命名语言策略的名称（Directory > Policies）。当请求、此人和浏览器都没有指定目录能提供的语言时，它决定页面使用的语言，也决定因此应用而创建的人员所获得的 preferredLanguage。已知此人时，它按优先级与此人每个组所指定的语言策略（stsLocalePolicy）竞争：优先级最低者生效，相同时按名称，没有任何指定时为 `default`。\n\n此领域中不存在的策略名称（在控制台之外写入）不指定任何策略，并会被记录（STS-I18N-0013）：适用 `default`，因为它只决定语言。此属性所指定的命名语言策略不能被删除（STS-I18N-0014）。\n\n它不由任何人写入：没有协议提供它，因此可编辑，初始为空。"
   },
+  "applications.schema.attributes.appPasswordPolicy.what": {
+    "en": "f575ca404198f854",
+    "text": "在登录此应用时设置的密码所遵循的密码策略：`default`（或为空），或此领域的一个命名密码策略的名称（Directory > Policies）。它按优先级与此人每个组所指定的密码策略（stsPasswordPolicy）竞争：优先级最低者生效，相同时按名称，没有任何指定时为 `default`。手头没有应用的入口（门户、控制台、LDAP）只对各组的策略排序。\n\n此领域中不存在的策略名称（在控制台之外写入）会使默认密码策略生效，无论其他处指定了什么，并会被记录（STS-AUTHN-0539）。此属性所指定的命名密码策略不能被删除（STS-AUTHN-0540）。\n\n它不由任何人写入：没有协议提供它，因此可编辑，初始为空。"
+  },
   "applications.schema.attributes.appFgaPolicy.what": {
     "en": "feebbd1d5f494bab",
     "text": "此应用所拥有的细粒度授权策略在 ou=policies 中的条目名称；一旦 appFgaEnforced 为 TRUE，该策略将决定此应用所声明类型的每一项授权详情。"
