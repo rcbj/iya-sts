@@ -654,8 +654,40 @@ const SPECS: Spec[] = [
               'and the three Search APIs (section 8) over this service\'s ' +
               'own people, applications, APIs, delegation relationships and ' +
               'policy actions, paged and not transitive. Missing: ' +
-              'per-result obligations in a search, and the Access Request ' +
-              'and Approval and OAuth profiles, still drafts.' },
+              'per-result obligations in a search, and the OAuth profile, ' +
+              'still a draft.' },
+  { id: 'authzen-arap',
+    name: 'AuthZEN Access Request and Approval Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-approval-profile-1_0.html',
+    coverage: 'partial: the requestable denial (context.access_request, ' +
+              'evaluation_id, evaluated_at, reason) where the realm\'s ' +
+              'policy marks a Deny with the access-request advice, bound by ' +
+              'value with a binding_token this realm signs (the inline ' +
+              'claims); the submission with Idempotency-Key, 201 or 202 and ' +
+              'a Task Handle; the task status endpoint with Retry-After; ' +
+              'cancellation by POST or DELETE; the six statuses; the ' +
+              'reevaluate completion mode, approval.id resolved in trusted ' +
+              'state and the approval reaching the policy as trusted facts; ' +
+              'next_action and the five reasons; every problem type; the ' +
+              'metadata member, jwks_uri and capability. Missing: ' +
+              'evaluation_id as a binding by reference, approval.state, the ' +
+              'hashed binding form, machine-readable forms (form_url, ' +
+              'request_schema_url), display, and the BULK, ACTOR and ' +
+              'CATALOG companions.' },
+  { id: 'authzen-arap-callback',
+    name: 'AuthZEN Access Request Callback Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-callback-profile-1_0.html',
+    coverage: 'partial: a submission\'s callback (endpoint, state, ' +
+              'events), the endpoint held to the URLs an administrator ' +
+              'registered for the requesting PEP, a notification-only ' +
+              'callback for each requested terminal event, authenticated ' +
+              'by a short JWT this realm signs, under the outbound policy. ' +
+              'Missing: the partial event (BULK) and deployment-level event ' +
+              'subscriptions; a failed delivery is not retried.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -3729,12 +3761,38 @@ const ENDPOINTS: EndpointEntry[] = [
           'exactly as an evaluation is, and only the permitted ones are ' +
           'results; paged by page.next_token, bounded by ' +
           'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/access-requests', group: 'AuthZEN',
+    name: 'Submit an access request',
+    specs: ['authzen-arap', 'authzen-arap-callback'],
+    what: 'POST a denied evaluation\'s subject, resource, action and ' +
+          'context with the denial it received (its binding_token and ' +
+          'expires_at, echoed unchanged); get 202 and a Task Handle, or 201 ' +
+          'with the result when it is decided at once (emergency access ' +
+          'the policy allows). Only a Deny the realm\'s policy marked with ' +
+          'the advice urn:sts:xacml:advice:access-request is requestable. ' +
+          'The same caller door and AUTHZEN_PEPS as an evaluation; ' +
+          'Idempotency-Key honoured per caller; a callback only to a URL ' +
+          'registered for the caller. Every refusal is problem+json.' },
+  { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
+    name: 'An access request\'s task status', specs: ['authzen-arap'],
+    what: 'GET the task: its status (pending, approved, denied, expired, ' +
+          'cancelled, failed), Retry-After while pending, and once approved ' +
+          'the reevaluate result with the approval the PEP carries on its ' +
+          'next evaluation as context.approval. A task is visible to the ' +
+          'caller that submitted it alone; to anybody else it is ' +
+          'unknown_task.' },
+  { path: '/access/v1/access-requests/:id/cancel', group: 'AuthZEN',
+    name: 'Cancel an access request', specs: ['authzen-arap'],
+    what: 'POST, or DELETE, to cancel a pending task of the caller\'s; a ' +
+          'finished one answers 409 invalid_task_state.' },
   { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
     name: 'PDP metadata', specs: ['authzen10'],
     what: 'The section 9 document: policy_decision_point (this realm\'s ' +
           'base, matching the URL it is fetched under) and only the ' +
           'endpoints that answer here (the batch and the three searches ' +
-          'while each is on), no capabilities, supported_obligations, and ' +
+          'while each is on, and access_request_endpoint with jwks_uri and ' +
+          'the access-request capability while authzen.accessRequests is ' +
+          'on), supported_obligations, and ' +
           'signed_metadata, a JWT of the same members with iss the PDP ' +
           'identifier, verifiable with the realm\'s JWKS ' +
           '(authzen.signedMetadata). Public; answers 501 while the API is ' +
@@ -6359,14 +6417,18 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#563). What the AuthZEN tab of /admin/xacml draws: ' +
           'whether /access/v1 answers in the realm, how its callers ' +
           'authenticate, the AuthZEN settings, the attribute catalogue on ' +
-          'sts-authzen-api, and the members of roles.authzenPepGroup with ' +
-          'the applications each may ask about.' },
+          'sts-authzen-api, the members of roles.authzenPepGroup with ' +
+          'the applications each may ask about and their registered ' +
+          'callback URLs, and the realm\'s access requests (#1180).' },
   { path: '/admin-api/xacml/authzen/:action', group: 'Management API',
     name: 'Change the AuthZEN catalogue or a caller\'s scope',
     specs: ['openapi'],
-    what: 'NON-SPEC (#563). set-attribute, remove-attribute and ' +
-          'set-scope: the tab\'s three acts, each audited. A catalogue row ' +
-          'onto a reserved identifier is refused here as at every write.' },
+    what: 'NON-SPEC (#563). set-attribute, remove-attribute, set-scope ' +
+          'and set-callbacks, and the four acts on an access request ' +
+          '(#1180) — approve, deny, revoke and cancel, the first three ' +
+          'asked of the access-control policy as the portal asks them: ' +
+          'the tab\'s acts, each audited. A catalogue row onto a reserved ' +
+          'identifier is refused here as at every write.' },
   { path: '/admin-api/passkey-report', group: 'Management API',
     name: 'Who holds which passkey algorithm', specs: ['openapi', 'webauthn'],
     what: 'NON-SPEC (#942). What Monitoring → Passkeys draws: the realm\'s ' +
@@ -9913,7 +9975,7 @@ const PROTOCOLS: Protocol[] = [
           'authenticated elsewhere and asked whether they may. Held to the ' +
           'OASIS conformance suite rather than to a test written here.' },
   { name: 'AuthZEN', groups: ['AuthZEN'],
-    specs: ['authzen10'],
+    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback'],
     what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
           'Enforcement Point asks one question per access and is told true ' +
           'or false, decided against the realm\'s root policy. An ADAPTER: ' +

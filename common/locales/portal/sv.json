@@ -52,6 +52,8 @@
   "nav.devices.heading": "Dina enheter",
   "nav.ciba.label": "Inloggningsbegäranden",
   "nav.ciba.heading": "Inloggningsbegäranden",
+  "nav.access-requests.label": "Åtkomstbegäranden",
+  "nav.access-requests.heading": "Åtkomstbegäranden som väntar på dig",
   "nav.device.label": "Logga in en enhet",
   "nav.device.heading": "Logga in en enhet",
   "nav.claim-sources.label": "Anspråkskällor",

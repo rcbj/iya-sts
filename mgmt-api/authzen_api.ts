@@ -7,8 +7,8 @@
 //
 // ---------------------------------------------------------------------------
 // THE /admin-api/xacml/authzen OPERATIONS (#563, phase 3, #1162), mirroring
-// the AuthZEN tab of /admin/xacml (rule 7): what the tab draws, and its three
-// acts, each `authzen/authzen_admin.ts`'s `act()` — the console's own, since
+// the AuthZEN tab of /admin/xacml (rule 7): what the tab draws, and its acts
+// (three, and since #1180 the callbacks and the four access request acts), each `authzen/authzen_admin.ts`'s `act()` — the console's own, since
 // the static console sends its forms here. The tab's settings are the
 // configuration resource's, as every settings block's are.
 //
@@ -150,12 +150,16 @@ class AuthzenApi {
                      'the AuthZEN settings, the attribute catalogue on the ' +
                      'sts-authzen-api object with the vocabulary a row may ' +
                      'use, and the members of roles.authzenPepGroup with ' +
-                     'the applications each may ask about. `?caller=<name ' +
-                     'or DN>` looks one caller up, in the group or not.',
+                     'the applications each may ask about and the access ' +
+                     'request callback URLs registered for it, and the ' +
+                     'realm\'s AuthZEN access requests (#1180). ' +
+                     '`?caller=<name or DN>` looks one caller up, in the ' +
+                     'group or not.',
         mirrors: 'GET /admin/xacml',
         responseDescription: '`enabled`, `callerAuthentication`, ' +
                              '`settings`, `catalogue` (`rows`, `problems`, ' +
-                             'and the choices), `callers`, `looked`.',
+                             'and the choices), `callers`, `looked`, ' +
+                             '`accessRequests`.',
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API AuthZEN endpoint.");
           self.sendJson(res, 200, loadAdmin().view(req.query || {}));
@@ -169,9 +173,15 @@ class AuthzenApi {
                                      { action: String(req.params.action ||
                                                       '') });
           let result: Json;
+          // WHO ACTED is the caller the gate verified (#1180): an access
+          // request is decided as that person, with the roles the gate
+          // found, so the access-control policy is asked about them.
+          const verified = req.adminApiCaller || {};
           try {
-            result = loadAdmin().act(body, { via: 'api',
-                                             actor: String(body.actor || '') });
+            result = loadAdmin().act(body, {
+              via: 'api',
+              actor: String(verified.name || body.actor || ''),
+              roles: Array.isArray(verified.roles) ? verified.roles : [] });
           } catch (e) {
             log.error(errorCodes.tag('STS-AUTHZEN-0034') + 'authzen: an ' +
                       '/admin-api action failed: ' + ((e && e.message) || e));
@@ -251,7 +261,118 @@ class AuthzenApi {
                            applications: ['todo-app'] }],
               additionalProperties: false
             },
-            responseDescription: 'The caller and its scope as it now is.' }
+            responseDescription: 'The caller and its scope as it now is.' },
+          { action: 'set-callbacks', operationId: 'setAuthzenCallbacks',
+            summary: 'Set the access request callback URLs of an AuthZEN ' +
+                     'caller',
+            description: 'Replaces the callback URLs registered for a ' +
+              'caller (#1180): stsAuthzenCallbackUri on a person\'s or ' +
+              'service account\'s entry, appAuthzenCallbackUri on an ' +
+              'application. An access request\'s callback.endpoint must ' +
+              'be one of them exactly; this service never dials a callback ' +
+              'URL taken from a request alone. https only, at most eight. ' +
+              'Empty clears them. Audited.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                caller: { type: 'string', minLength: 1, maxLength: 1024,
+                          description: 'A username, an application ' +
+                                       'identifier, or a DN.' },
+                callbacks: {
+                  description: 'The URLs, as a list or as one string ' +
+                               'separated by commas or spaces.',
+                  oneOf: [{ type: 'string', maxLength: 16384 },
+                          { type: 'array', maxItems: 8,
+                            items: { type: 'string', maxLength: 2048 } }] }
+              },
+              required: ['caller'],
+              examples: [{ caller: 'todo-pep', callbacks:
+                ['https://pep.example.com/callbacks/access-requests'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The caller and its callbacks as they now ' +
+                                 'are.' },
+          { action: 'approve-access-request',
+            operationId: 'approveAuthzenAccessRequest',
+            summary: 'Approve an AuthZEN access request',
+            description: 'Approves a pending access request (#1180) as the ' +
+              'caller, after the access-control policy (action ' +
+              'approve-access-request on resource authzen-access-request) ' +
+              'permitted it — refused, among others, for the request\'s ' +
+              'own subject. The approval is handed to the PEP, whose next ' +
+              'evaluation the realm\'s policy decides afresh. Audited.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                request: { type: 'string', minLength: 1, maxLength: 128,
+                           description: 'The access request\'s id ' +
+                                        '(arq_...).' }
+              },
+              required: ['request'],
+              examples: [{ request: 'arq_EXAMPLE' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The access request as it now is.' },
+          { action: 'deny-access-request',
+            operationId: 'denyAuthzenAccessRequest',
+            summary: 'Deny an AuthZEN access request',
+            description: 'Denies a pending access request (#1180) as the ' +
+              'caller, asked of the access-control policy as an approval ' +
+              'is. Audited.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                request: { type: 'string', minLength: 1, maxLength: 128,
+                           description: 'The access request\'s id ' +
+                                        '(arq_...).' }
+              },
+              required: ['request'],
+              examples: [{ request: 'arq_EXAMPLE' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The access request as it now is.' },
+          { action: 'revoke-access-request',
+            operationId: 'revokeAuthzenAccessRequest',
+            summary: 'Revoke an AuthZEN access request\'s approval',
+            description: 'Revokes the approval of an approved access ' +
+              'request (#1180), asked of the access-control policy as an ' +
+              'approval is: a re-evaluation carrying it is not approved ' +
+              'from then on (approval_expired). Audited.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                request: { type: 'string', minLength: 1, maxLength: 128,
+                           description: 'The access request\'s id ' +
+                                        '(arq_...).' }
+              },
+              required: ['request'],
+              examples: [{ request: 'arq_EXAMPLE' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The access request as it now is.' },
+          { action: 'cancel-access-request',
+            operationId: 'cancelAuthzenAccessRequest',
+            summary: 'Cancel an AuthZEN access request',
+            description: 'Cancels a pending access request (#1180) as an ' +
+              'administrator; its callback, if it asked for one, is sent. ' +
+              'Audited.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                request: { type: 'string', minLength: 1, maxLength: 128,
+                           description: 'The access request\'s id ' +
+                                        '(arq_...).' }
+              },
+              required: ['request'],
+              examples: [{ request: 'arq_EXAMPLE' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The access request as it now is.' }
         ] }
     ];
     log.debug("Leaving AuthzenApi.buildRoutes().");

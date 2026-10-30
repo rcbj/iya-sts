@@ -160,7 +160,11 @@ const RESERVED_IDS = Object.freeze([
 // `application`, and since #1177 the Obligations Profile's
 // `supported_obligations`, the PEP's declaration of what it can carry out.
 const RESERVED_CONTEXT = Object.freeze(['application',
-                                        'supported_obligations']);
+                                        'supported_obligations',
+                                        // The Access Request and Approval
+                                        // Profile's (#1180), verified by the
+                                        // adapter and never a property.
+                                        'approval']);
 
 // THE CONTEXT MEMBERS THE TOKEN-EXCHANGE BINDING'S FIXED RULES READ (#1181;
 // rcbj, 2026-10-30: the built-in conversion rules are fixed, "like the five
@@ -309,8 +313,9 @@ class AuthzenCatalogue {
                 "member.");
       return { code: 'STS-AUTHZEN-0011',
                problem: 'context.' + segments[0] + ' is read by the adapter ' +
-                        'itself (the caller\'s application, or the ' +
-                        'obligations the PEP can carry out), never sent to ' +
+                        'itself (the caller\'s application, the ' +
+                        'obligations the PEP can carry out, or an access ' +
+                        'request\'s approval), never sent to ' +
                         'the policy as a property' };
     }
     if (object === 'context' && BINDING_CONTEXT.indexOf(segments[0]) >= 0) {

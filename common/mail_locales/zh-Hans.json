@@ -55,6 +55,16 @@
       "text": "应用程序 {{client}} 请求代表账户 {{username}} 获得访问权限：{{rights}}。\n\n在您批准之前，不会允许任何访问。如需批准或拒绝，请在 {{expiresMinutes}} 分钟内登录并打开此页面：\n\n{{link}}\n\n如果您不认识此请求，请在该页面拒绝，或忽略此邮件：它会自行过期。\n",
       "html": "<p>应用程序 <strong>{{client}}</strong> 请求代表账户 <strong>{{username}}</strong> 获得访问权限：{{rights}}。</p><p>在您批准之前，不会允许任何访问。请在 {{expiresMinutes}} 分钟内<a href=\"{{link}}\">批准或拒绝</a>。</p><p>如果您不认识此请求，请在该页面拒绝，或忽略此邮件：它会自行过期。</p>"
     },
+    "authzen-access-request": {
+      "subject": "{{service}}：一项访问请求正在等待您的批准",
+      "text": "一项访问请求将您（{{username}}）列为其审批人之一：{{subject}} 请求通过 {{requester}} 在应用程序 {{application}} 中对 {{resource}} 执行 {{action}}。\n\n在审批人批准之前，不允许任何操作。如需批准或拒绝，请登录并在 {{expiresMinutes}} 分钟内打开此页面：\n\n{{link}}\n\n如果您不认识此请求，请在该页面拒绝它，或忽略此邮件：它会自行过期。\n",
+      "html": "<p>一项访问请求将您（<strong>{{username}}</strong>）列为其审批人之一：<strong>{{subject}}</strong> 请求通过 {{requester}} 在应用程序 <strong>{{application}}</strong> 中对 <strong>{{resource}}</strong> 执行 <strong>{{action}}</strong>。</p><p>在审批人批准之前，不允许任何操作。请在 {{expiresMinutes}} 分钟内<a href=\"{{link}}\">批准或拒绝</a>。</p><p>如果您不认识此请求，请在该页面拒绝它，或忽略此邮件：它会自行过期。</p>"
+    },
+    "authzen-emergency-access": {
+      "subject": "{{service}}：已授予紧急访问权限，请您审核",
+      "text": "一项将您（{{username}}）列为审批人之一的请求已被立即授予紧急访问权限，未经审批人批准：{{subject}} 可以在短时间内通过 {{requester}} 在应用程序 {{application}} 中对 {{resource}} 执行 {{action}}。\n\n给出的理由：{{justification}}\n\n策略允许对此进行紧急访问。请审核，如不合理请撤销：\n\n{{link}}\n",
+      "html": "<p>一项将您（<strong>{{username}}</strong>）列为审批人之一的请求已被立即授予紧急访问权限，未经审批人批准：<strong>{{subject}}</strong> 可以在短时间内通过 {{requester}} 在应用程序 <strong>{{application}}</strong> 中对 <strong>{{resource}}</strong> 执行 <strong>{{action}}</strong>。</p><p>给出的理由：{{justification}}</p><p>策略允许对此进行紧急访问。请<a href=\"{{link}}\">审核</a>，如不合理请撤销。</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}}：{{username}} 的 {{act}}",
       "text": "本服务（而非某个人）于 {{when}} 对账户 {{username}} 执行了操作：{{act}}。\n\n{{why}}\n\n您收到此邮件，是因为您在此领域中拥有 Admin Write 权限。\n",

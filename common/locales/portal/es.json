@@ -52,6 +52,8 @@
   "nav.devices.heading": "Sus dispositivos",
   "nav.ciba.label": "Solicitudes de inicio de sesión",
   "nav.ciba.heading": "Solicitudes de inicio de sesión",
+  "nav.access-requests.label": "Solicitudes de acceso",
+  "nav.access-requests.heading": "Solicitudes de acceso que le esperan",
   "nav.device.label": "Iniciar sesión en un dispositivo",
   "nav.device.heading": "Iniciar sesión en un dispositivo",
   "nav.claim-sources.label": "Fuentes de claims",

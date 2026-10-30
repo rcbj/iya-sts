@@ -144,6 +144,10 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_ciba');
   },
+  // #1180: /portal/access-requests, beside the sign-in requests.
+  function () {
+    return require('../portal/portal_access_requests');
+  },
   function () {
     return require('../portal/portal_device');
   },

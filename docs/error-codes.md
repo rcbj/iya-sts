@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4893** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4920** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 54
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 64
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 91
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4784,6 +4784,33 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0113` | An AuthZEN scope tuple's scope is a gated permission no role of its subject authorizes (#302); answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0114` | An AuthZEN token-exchange subject gate named a subject token with no lifetime left (context.subject_token.exp), so any token_lifetime would be 0, a denial; answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0115` | A granted_scope wider than the subject token's scope was built for an AuthZEN token-exchange answer and was not sent: the no-broadening rule held at the last moment, which is a defect (#1181). | none — logged; the envelope is sent without it |
+| `STS-AUTHZEN-0070` | An AuthZEN access request, task status or cancellation reached a realm where authzen.accessRequests (the Access Request and Approval Profile, #1180) is off. | HTTP 501, application/problem+json |
+| `STS-AUTHZEN-0071` | An AuthZEN access request was not a JSON object with subject, resource and action objects, carried a member the profile does not define at its top level, or was a bulk submission (items), which is not implemented. | HTTP 400, application/problem+json (about:blank) |
+| `STS-AUTHZEN-0072` | An AuthZEN access request carried no denial, or a denial with neither binding_token nor evaluation_id, so it is not based on a requestable denial. | HTTP 400, urn:openid:authzen:access-request:error:not_requestable |
+| `STS-AUTHZEN-0073` | An AuthZEN access request's denial carried no binding_token (this PDP keeps no record to resolve an evaluation_id against), or one that did not verify as this realm's, for this endpoint. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
+| `STS-AUTHZEN-0074` | An AuthZEN access request did not match the denial its binding_token names: another caller, a different subject, resource, action or authorization-relevant context member, or a denial.expires_at not echoed unchanged. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
+| `STS-AUTHZEN-0075` | An AuthZEN access request arrived after its requestable denial expired (the earlier of the binding_token's exp and denial.expires_at, with 30 seconds of skew). | HTTP 410, urn:openid:authzen:access-request:error:expired_denial |
+| `STS-AUTHZEN-0076` | An AuthZEN access request reused an Idempotency-Key, or a binding_token, already used by the same caller for a request whose body differs. | HTTP 409, urn:openid:authzen:access-request:error:duplicate_request |
+| `STS-AUTHZEN-0077` | An AuthZEN access request named an application the caller is no longer scoped to. | HTTP 403, application/problem+json |
+| `STS-AUTHZEN-0078` | An AuthZEN access request was refused because the realm already holds authzen.accessRequestMaxPending pending requests. | HTTP 503, application/problem+json |
+| `STS-AUTHZEN-0079` | An AuthZEN access request's callback was not an object with an https endpoint registered for the caller (appAuthzenCallbackUri or stsAuthzenCallbackUri); a callback URL is never taken from a request alone. | HTTP 400, application/problem+json |
+| `STS-AUTHZEN-0080` | An AuthZEN access request task was asked about, or cancelled, by a caller it is not the requester of, or does not exist: the two are one answer, so a leaked task handle tells nobody anything. | HTTP 404, urn:openid:authzen:access-request:error:unknown_task |
+| `STS-AUTHZEN-0081` | An AuthZEN access request task was asked about after its retention ended. | HTTP 410, urn:openid:authzen:access-request:error:task_expired |
+| `STS-AUTHZEN-0082` | An AuthZEN access request task already in a terminal status was asked to be cancelled. | HTTP 409, urn:openid:authzen:access-request:error:invalid_task_state |
+| `STS-AUTHZEN-0083` | An AuthZEN access request asked for emergency access where the denying policy's advice does not allow it, or without a context.business_justification. | HTTP 400, application/problem+json |
+| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, or one issued to another caller; it was not used and the evaluation was decided as not approved. | context.reason approval_unverifiable, next_action none |
+| `STS-AUTHZEN-0085` | An AuthZEN evaluation presented a context.approval that was revoked or past its approved_until; it was not used. | context.reason approval_expired |
+| `STS-AUTHZEN-0086` | An AuthZEN evaluation presented a context.approval for another tuple or application than the one it approved; it was not used. | context.reason out_of_scope |
+| `STS-AUTHZEN-0087` | A requestable AuthZEN denial's binding_token could not be signed, so the denial was answered as an ordinary false with no access_request. | none — logged; decision: false |
+| `STS-AUTHZEN-0088` | The access-control policy (action approve-access-request on resource authzen-access-request) refused a person the approval, denial or revocation of an AuthZEN access request. | none — the portal's or console's refusal, audited |
+| `STS-AUTHZEN-0089` | An approval, denial or cancellation named no pending AuthZEN access request of the realm. | none — the portal's or console's refusal |
+| `STS-AUTHZEN-0090` | An AuthZEN access request decision was not approve, deny or revoke, or the portal's or console's form was incomplete. | none — the portal's or console's refusal |
+| `STS-AUTHZEN-0091` | An AuthZEN access request's callback could not be delivered (the outbound policy refused the URL, or the endpoint did not answer 2xx); the task status endpoint remains the record, and nothing is retried. | none — logged and audited |
+| `STS-AUTHZEN-0092` | The authzen.access-requests scheduler job failed while expiring or removing access requests. | none — logged; the job's run is failed |
+| `STS-AUTHZEN-0093` | The approvers of an AuthZEN access request could not be mailed; the request waits in the portal all the same. | none — logged |
+| `STS-AUTHZEN-0094` | The AuthZEN tab's set-callbacks act was refused: a URL that is not https, more than eight, or a caller who is nobody in the realm. | none — the console's refusal |
+| `STS-AUTHZEN-0095` | An AuthZEN access request approval was asked to be revoked where there is no live approval with that id. | none — the portal's or console's refusal |
+| `STS-AUTHZEN-0096` | An AuthZEN access request's requested_access was not an object, or its requested_until not an RFC 3339 instant in the future. | HTTP 400, application/problem+json |
 
 ## STS-ADMIN
 

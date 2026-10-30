@@ -14,6 +14,12 @@
 //   POST /access/v1/evaluations   a batch of evaluations (section 7) — #1164
 //   POST /access/v1/search/{subject,resource,action}
 //                                 the three searches (section 8) — #1175
+//   POST /access/v1/access-requests
+//   GET  /access/v1/access-requests/:id
+//   POST|DELETE /access/v1/access-requests/:id/cancel
+//                                 the Access Request and Approval Profile's
+//                                 submission, task status and cancellation
+//                                 (`authzen_access_request.ts`) — #1180
 //
 // per realm, under the realm's prefix. Deliberately thin, as `xacml/xacml.ts`
 // is: it reads a request, asks `authzen_caller.ts` who is asking and whether
@@ -49,6 +55,7 @@ import map = require('./authzen_map');
 import callers = require('./authzen_caller');
 import search = require('./authzen_search');
 import exchange = require('./authzen_exchange');
+import accessRequests = require('./authzen_access_request');
 
 const { log } = helpers;
 
@@ -60,6 +67,7 @@ type Handler = (req: Req, res: Res, next?: () => void) => unknown;
 interface RouteTable {
   get(path: string, ...handlers: Handler[]): unknown;
   post(path: string, ...handlers: Handler[]): unknown;
+  delete(path: string, ...handlers: Handler[]): unknown;
 }
 
 // The identifier of the API's own resource object, which carries the
@@ -110,6 +118,9 @@ interface SurfaceDeps {
   // The authorization server's published-document signer, for
   // `signed_metadata` (#1178): required when a document is signed.
   loadOauth2(): any;
+  // The Access Request and Approval Profile (#1180): the instance the root
+  // built, through its facades.
+  accessRequests: any;
 }
 
 /**
@@ -163,7 +174,8 @@ class AuthzenSurface {
         log.debug("Entering loadOauth2().");
         log.debug("Leaving loadOauth2().");
         return require('../oauth-oidc/oauth2');
-      }
+      },
+      accessRequests: accessRequests
     };
   }
 
@@ -325,12 +337,16 @@ class AuthzenSurface {
    * @param plan - the token-exchange binding's plan of the request (#1181),
    *   or none: the item is then planned alone
    * @param index - the item's place in that plan
+   * @param req - the request, for the base a requestable denial's endpoint
+   *   and binding name (#1180); without it no denial is requestable
    * @returns the item's result
    */
   evaluateOne(body: unknown, caller: any, rows: any[], batchId: string,
-              where: string, plan?: any, index?: number): ItemResult {
+              where: string, plan?: any, index?: number,
+              req?: Req): ItemResult {
     const self = this;
-    const { log, config, audit, errorCodes, realms } = this.deps;
+    const { log, config, audit, errorCodes } = this.deps;
+    const ar = this.deps.accessRequests;
     log.debug("Entering AuthzenSurface.evaluateOne().");
     const failed = function (status: number, code: string,
                              message: string): ItemResult {
@@ -369,14 +385,39 @@ class AuthzenSurface {
       log.debug("Leaving AuthzenSurface.evaluateOne(). " + scoped.code);
       return failed(scoped.status, scoped.code, scoped.message);
     }
+    // A PRESENTED APPROVAL (#1180) IS VERIFIED BEFORE ANYTHING IS DECIDED,
+    // and reaches the request only as trusted facts once it is: an
+    // approval never turns a denial into a Permit by itself — the root
+    // policy decides, reading those facts or not.
+    const verdict = evaluation.approval
+      ? (ar.enabled()
+        ? ar.verify(evaluation.approval, body, caller.name,
+                    scoped.application)
+        : { ok: false, reason: 'approval_unverifiable' })
+      : null;
     const decided = self.decideEvaluation(evaluation, caller.name,
-                                          scoped.application);
+                                          scoped.application,
+                                          accessRequests.factsOf(verdict));
     const outcome = decided.outcome;
     const faultCode = decided.faultCode;
+    const approvalCodes: any = { approval_unverifiable: 'STS-AUTHZEN-0084',
+                                 approval_expired: 'STS-AUTHZEN-0085',
+                                 out_of_scope: 'STS-AUTHZEN-0086' };
     const recorded = outcome.fault
       ? (faultCode || 'STS-AUTHZEN-0028')
       : (outcome.obligationProblems.length ? 'STS-AUTHZEN-0041'
-        : (outcome.undischargeable.length ? 'STS-AUTHZEN-0029' : ''));
+        : (outcome.undischargeable.length ? 'STS-AUTHZEN-0029'
+          : (verdict && !verdict.ok ? approvalCodes[verdict.reason] : '')));
+    // A REQUESTABLE DENIAL (#1180): a Deny whose answer carries the
+    // access-request advice, while the profile is on. Built before the
+    // audit row so the row can say so.
+    const xacmlDenied = outcome.xacmlDecision === 'Deny' ||
+                        outcome.xacmlDecision === 'NotApplicable';
+    const denial = !outcome.fault && !outcome.decision && xacmlDenied && req
+      ? ar.requestableDenial(req, body,
+                             accessRequests.termsOf(outcome.advice),
+                             caller.name, scoped.application)
+      : null;
     // WHAT THE ROW CARRIES: who asked, about which application, the two
     // types and the action, the request id, the decision — and NO property
     // value and no credential (decision 9).
@@ -400,7 +441,12 @@ class AuthzenSurface {
             return one.type;
           }).join(', ') : '') +
         (outcome.obligationProblems.length ? '; ' +
-          outcome.obligationProblems.join('; ') : '') + '.'
+          outcome.obligationProblems.join('; ') : '') +
+        (verdict ? '; an approval was presented and ' + (verdict.ok
+          ? 'verified (' + verdict.task.id + ')'
+          : 'not used: ' + verdict.reason) : '') +
+        (denial ? '; the denial is requestable (' + denial.evaluation_id +
+          ')' : '') + '.'
     });
     if (outcome.fault) {
       log.error(errorCodes.tag('STS-AUTHZEN-0028') + 'authzen: the PDP ' +
@@ -418,6 +464,15 @@ class AuthzenSurface {
     if (outcome.obligations.length) {
       out.context = Object.assign(out.context || {},
                                   { obligations: outcome.obligations });
+    }
+    // The profile's Decision Context members (#1180): a requestable
+    // denial's, and a re-evaluation's next step or approval.
+    if (denial) {
+      out.context = Object.assign(out.context || {}, denial);
+    }
+    if (verdict) {
+      out.context = Object.assign(out.context || {},
+        accessRequests.reevaluation(verdict, outcome.decision, denial));
     }
     log.debug("Leaving AuthzenSurface.evaluateOne(). " + outcome.decision);
     return out;
@@ -548,17 +603,20 @@ class AuthzenSurface {
    * @param evaluation - the evaluation `authzen_map.ts` read
    * @param callerName - the trusted caller
    * @param application - the trusted application
+   * @param approval - a verified approval's trusted facts (#1180), or null
    * @returns `{ outcome, faultCode }`
    */
   decideEvaluation(evaluation: any, callerName: string,
-                   application: string): { outcome: any; faultCode: string } {
+                   application: string,
+                   approval?: any): { outcome: any; faultCode: string } {
     const self = this;
     const { log, config, errorCodes, realms } = this.deps;
     log.debug("Entering AuthzenSurface.decideEvaluation().");
     const request = map.request(evaluation, {
       realm: String(realms.currentId() || ''),
       caller: callerName,
-      application: application
+      application: application,
+      approval: approval || null
     });
     const xacml = self.deps.loadXacml();
     const answer = xacml.decide(request,
@@ -754,7 +812,9 @@ class AuthzenSurface {
    * answered in. It names ONLY what answers here: the single endpoint, and
    * the batch one while `authzen.batchEnabled` is on, the three searches
    * while `authzen.searchEnabled` is on (#1175), the token issuance
-   * capability while `authzen.tokenExchange` is on (#1181) — and, while
+   * capability while `authzen.tokenExchange` is on (#1181), the access
+   * request endpoint, `jwks_uri` and the access-request capability while
+   * `authzen.accessRequests` is on (#1180) — and, while
    * `authzen.signedMetadata` is on, `signed_metadata` (#1178).
    *
    * @param req - the request
@@ -784,13 +844,26 @@ class AuthzenSurface {
     if (self.deps.config.value('authzen.obligationsProfile') !== false) {
       out.supported_obligations = map.supportedObligationTypes();
     }
-    // THE TOKEN ISSUANCE CAPABILITY (#1181), while the token-exchange
-    // binding answers: the binding registers no URN of its own and has the
-    // PDP advertise the profile's. It is a commitment to decide every
-    // registered gate action — this PDP answers one of another grant false,
-    // which is a decision — never a statement about the policy.
+    // THE CAPABILITIES, each only while its profile answers. The token
+    // issuance capability (#1181): the binding registers no URN of its own
+    // and has the PDP advertise the profile's. It is a commitment to decide
+    // every registered gate action — this PDP answers one of another grant
+    // false, which is a decision — never a statement about the policy.
+    const capabilities: string[] = [];
     if (self.deps.exchange.enabled()) {
-      out.capabilities = [exchange.CAPABILITY];
+      capabilities.push(exchange.CAPABILITY);
+    }
+    // The Access Request and Approval Profile's members (#1180): the
+    // endpoint, the realm's JWKS that verifies a binding_token, and the
+    // capability.
+    const requests = self.deps.accessRequests.metadata(req);
+    if (requests) {
+      out.access_request_endpoint = requests.access_request_endpoint;
+      out.jwks_uri = requests.jwks_uri;
+      capabilities.push(requests.capability);
+    }
+    if (capabilities.length) {
+      out.capabilities = capabilities;
     }
     const signed = self.signedMetadata(out);
     if (signed) {
@@ -978,7 +1051,7 @@ class AuthzenSurface {
     if (!items.length) {
       const single = AuthzenSurface.merged(body, {});
       const one = self.evaluateOne(single, caller, rows, id, where,
-                                   self.planOf([single]), 0);
+                                   self.planOf([single]), 0, req);
       if (one.error) {
         errorCodes.mark(res, one.code);
         // error-code: none — marked on the line above with the item's code.
@@ -1014,7 +1087,7 @@ class AuthzenSurface {
             error: { status: 400, message: 'An evaluation is a JSON ' +
                                            'object.' } }
         : self.evaluateOne(request, caller, rows,
-                           batchId + '#' + i, where, plan, i);
+                           batchId + '#' + i, where, plan, i, req);
       // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
       // never hidden by the batch's 200 (section 7.2). It is still false,
       // which is the fail-closed reading of an item nobody could decide.
@@ -1066,7 +1139,8 @@ class AuthzenSurface {
       const body = AuthzenSurface.bodyOf(req);
       const result = self.evaluateOne(body === undefined ? null : body,
                                       caller, self.rows(), id,
-                                      'POST ' + EVALUATION_PATH);
+                                      'POST ' + EVALUATION_PATH, undefined,
+                                      undefined, req);
       if (result.error) {
         errorCodes.mark(res, result.code);
         callers.send(res, result.status, result.error.message);
@@ -1152,6 +1226,72 @@ class AuthzenSurface {
     });
 
     // -----------------------------------------------------------------------
+    // THE ACCESS REQUEST AND APPROVAL PROFILE (#1180): the submission, the
+    // task status and the cancellation, behind the same door as every
+    // other AuthZEN endpoint (the profile: these are protected APIs, and
+    // the caller is authenticated before anything is read). Every refusal
+    // is RFC 9457 problem+json, the profile's error responses.
+    // -----------------------------------------------------------------------
+    const REQUESTS = accessRequests.REQUESTS_PATH;
+    const ar = self.deps.accessRequests;
+    const requestsOpen = function (req: Req, res: Res, where: string): any {
+      log.debug('Entering requestsOpen(). ' + where);
+      self.requestId(req, res);
+      if (self.offCheck(res)) {
+        log.debug('Leaving requestsOpen(). Off.');
+        return null;
+      }
+      if (!ar.enabled()) {
+        ar.problem(res, 501, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
+                   'and Approval Profile is turned off in this realm ' +
+                   '(authzen.accessRequests).');
+        log.debug('Leaving requestsOpen(). The profile is off.');
+        return null;
+      }
+      const caller = self.admit(req, res);
+      log.debug('Leaving requestsOpen(). ' + (caller ? 'Admitted.'
+                                                     : 'Not admitted.'));
+      return caller;
+    };
+    app.post(REQUESTS, function (req, res) {
+      log.debug('Entering POST ' + REQUESTS + '.');
+      const caller = requestsOpen(req, res, 'POST ' + REQUESTS);
+      if (!caller) {
+        log.debug('Leaving POST ' + REQUESTS + '. Refused.');
+        return;
+      }
+      ar.submit(req, res, caller, AuthzenSurface.bodyOf(req),
+                function (who: any, application: string): any {
+                  return self.deps.caller.applicationOf(who, application);
+                });
+      log.debug('Leaving POST ' + REQUESTS + '.');
+    });
+    app.get(REQUESTS + '/:id', function (req, res) {
+      log.debug('Entering GET ' + REQUESTS + '/:id.');
+      const caller = requestsOpen(req, res, 'GET ' + REQUESTS + '/:id');
+      if (!caller) {
+        log.debug('Leaving GET ' + REQUESTS + '/:id. Refused.');
+        return;
+      }
+      ar.status(res, caller, String(req.params.id || ''));
+      log.debug('Leaving GET ' + REQUESTS + '/:id.');
+    });
+    // POST, AND DELETE AS ITS EQUIVALENT (the profile's cancellation).
+    const cancelled = function (req: Req, res: Res): void {
+      log.debug('Entering ' + req.method + ' ' + REQUESTS + '/:id/cancel.');
+      const caller = requestsOpen(req, res, 'cancel');
+      if (!caller) {
+        log.debug('Leaving the cancellation. Refused.');
+        return;
+      }
+      ar.cancel(res, caller, String(req.params.id || ''),
+                AuthzenSurface.bodyOf(req));
+      log.debug('Leaving the cancellation.');
+    };
+    app.post(REQUESTS + '/:id/cancel', cancelled);
+    app.delete(REQUESTS + '/:id/cancel', cancelled);
+
+    // -----------------------------------------------------------------------
     // GET /.well-known/authzen-configuration — the metadata (section 9).
     //
     // SECTION 9.2 INSERTS the well-known segment between the host and the
@@ -1220,5 +1360,6 @@ export = {
   EVALUATION_PATH: EVALUATION_PATH,
   EVALUATIONS_PATH: EVALUATIONS_PATH,
   METADATA_PATH: METADATA_PATH,
+  REQUESTS_PATH: accessRequests.REQUESTS_PATH,
   SEMANTICS: SEMANTICS
 };
