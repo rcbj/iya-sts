@@ -6784,8 +6784,16 @@
     "text": "Mga policy na maaaring hawakan ng repository"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "Ilang entry ang maaaring nasa ilalim ng ou=policies. Ang parehong uri ng limitasyon na dala ng ou=federations at ou=applications, at sa parehong dahilan: nasa memory ang directory na ito sa default na persistence mode, at mauubos ito ng caller na kayang gumawa ng mga entry nang walang hangganan. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict."
+    "en": "bb4fc97c445e9e60",
+    "text": "Ilang entry ang maaaring nasa ilalim ng ou=policies. Ang parehong uri ng limitasyon na dala ng ou=federations at ou=applications, at sa parehong dahilan: nasa memory ang directory na ito sa default na persistence mode, at mauubos ito ng caller na kayang gumawa ng mga entry nang walang hangganan. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict. Hindi binibilang dito ang sariling fine-grained authorization policy ng isang application: xacml.maxApplicationPolicies ang naglilimita sa mga iyon."
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "Mga policy ng application na maaaring hawakan ng repository"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "Ilang sariling fine-grained authorization policy ng mga application (mga entry sa ilalim ng ou=policies na may xacmlApplication, kasama ang mga orphaned) ang maaaring hawakan ng repository. Hindi sila binibilang laban sa xacml.maxPolicies, na naglilimita sa mga policy na isinusulat ng mga administrator. Ang default ay ang default ng applications.max, kaya bawat application na tinatanggap ng registry bilang default ay maaaring magkaroon ng isa; itaas ito kasabay ng applications.max. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",

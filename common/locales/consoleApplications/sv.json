@@ -924,5 +924,17 @@
   "fga.saveNotFor": "Spara listan",
   "fga.boxXacml": "XACML-mappning",
   "fga.helpXacml": "En JSON-array med rader: path, attributeId och valfritt category, dataType, multiplicity och description.",
-  "fga.boxNotFor": "Inte för policyn"
+  "fga.boxNotFor": "Inte för policyn",
+  "fga.tileApplicationPolicies": "Applikationers egna policyer i den här sfären",
+  "fga.pepsHeading": "Fjärr-PEP:er",
+  "fga.pepsUnknown": "Det gick inte att läsa vilka fjärr-PEP:er som får vidarebefordra den här applikationens utvärderingar.",
+  "fga.pepsNote": "En fjärr-PEP:s edge-PDP vidarebefordrar varje AuthZEN-utvärdering om en applikation som tillämpar finkornig auktorisering till den här tjänsten, som en AuthZEN-anropare: dess post behöver medlemskap i <code>{authzenGroup}</code> och den här applikationen i sitt omfång. Tillämpa beviljar båda, där de saknas, till varje medlem i <code>{group}</code> (innehavarna av REMOTE_PEPS); Sluta tillämpa tar inte bort något av dem. En medlem som lagts till sedan beviljas med knappen nedan.",
+  "fga.colPep": "Fjärr-PEP",
+  "fga.colKind": "Typ",
+  "fga.colPepMember": "Innehar AUTHZEN_PEPS",
+  "fga.colPepScoped": "Den här applikationen i dess omfång",
+  "fga.pepsNone": "Ingen person, inget tjänstekonto och ingen applikation i den här sfären innehar REMOTE_PEPS.",
+  "fga.pepsUnlocated": "Medlemmar i gruppen som inte namnger någon post och därför inte kan beviljas: {n}.",
+  "fga.pepsRegrant": "Bevilja fjärr-PEP:erna igen",
+  "fga.pepsRegrantTip": "Tillämpa igen: varje innehavare av REMOTE_PEPS utan AuthZEN-gruppen eller utan den här applikationen i sitt omfång beviljas båda. Inget annat ändras."
 }

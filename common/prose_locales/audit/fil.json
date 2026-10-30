@@ -903,6 +903,10 @@
     "en": "bacc42f309e8f6f8",
     "text": "Itinakda ang saklaw ng application ng isang tumatawag sa AuthZEN"
   },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "Binigyan ang isang remote PEP ng AuthZEN access sa isang application na nagpapatupad ng fine-grained authorization"
+  },
   "audit.actions.admin.authzen.callbacks.set.label": {
     "en": "e8439c3ddb41d93f",
     "text": "Itinakda ang mga callback URL ng access request ng isang AuthZEN caller"

@@ -563,6 +563,12 @@ function continuesToRoute(req) {
 // twice for one request.
 const PREFLIGHT_DECIDED = Symbol('cors.preflightDecided');
 
+// The methods a preflight on a GNAP grant endpoint allows: the cors package's
+// default (GET,HEAD,PUT,PATCH,POST,DELETE) and OPTIONS, the method of GNAP
+// discovery itself (#1214).
+const GNAP_PREFLIGHT_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST',
+                                'DELETE', 'OPTIONS'];
+
 /**
  * Builds the middleware that answers every OPTIONS request.
  *
@@ -586,8 +592,16 @@ function preflight() {
     const decision = decide(req, { preflight: true });
     const onward = continuesToRoute(req);
     if (decision.allowed) {
-      cors({ origin: decision.origin, preflightContinue: onward,
-             exposedHeaders: EXPOSED_HEADERS })(req, res, next);
+      // On a GNAP grant endpoint the request being preflighted IS an OPTIONS
+      // (RFC 9635 section 9), and a browser sends it only when OPTIONS is in
+      // Access-Control-Allow-Methods, which the cors package's default list
+      // leaves out (#1214). Every other path keeps that default.
+      const options = { origin: decision.origin, preflightContinue: onward,
+                        exposedHeaders: EXPOSED_HEADERS };
+      if (onward) {
+        options.methods = GNAP_PREFLIGHT_METHODS;
+      }
+      cors(options)(req, res, next);
       return;
     }
     if (decision.code) {

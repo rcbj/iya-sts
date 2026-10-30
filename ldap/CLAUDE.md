@@ -3928,6 +3928,20 @@ every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
 the observer, the view and the page. `tests/protocol/sts_person_attributes.js`
 covers the API over HTTP in a realm of its own.
 
+**THE AUTHZEN SLOT, `authzenAdmin.setDirectory()`, is the same shape** —
+`locate`, `members`, `write` (the two `sts*` attributes only) — and since
+#1210 a fourth, `addMember`, which is `addGroupMember()` itself: enabling
+fine-grained authorization on an application puts each REMOTE_PEPS holder
+into the AuthZEN group through the console's own idempotent, audited door
+(`authzen/CLAUDE.md`).
+
+**`ou=policies` HAS TWO CEILINGS SINCE #1210.** `writePolicy()` counts an
+entry carrying `xacmlApplication` (`isApplicationPolicy()`, either case of
+the name) against `xacml.maxApplicationPolicies` and every other against
+`xacml.maxPolicies`, each only at a create; `policyCount(application)`
+counts one kind, and the store's seed asks for both being zero
+(`xacml/CLAUDE.md`).
+
 ## CELLS: A BIND AS A PERSON HOMED IN ANOTHER CELL (#98, 2026-09-28)
 
 **The password is verified in the person's home cell and only the verdict comes

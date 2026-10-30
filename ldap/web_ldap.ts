@@ -775,15 +775,33 @@ class LdapPage {
         kit.esc(row.what) + '</td></tr>';
     }).join('');
 
+    // THE TWO KINDS, EACH AGAINST ITS OWN CEILING (#1210): the
+    // administrators' own policies against `xacml.maxPolicies`, and
+    // applications' own fine-grained policies against
+    // `xacml.maxApplicationPolicies`. An answer from before either count
+    // was carried draws every entry against the one ceiling, as it did.
+    const split = typeof json.ownCount === 'number';
     const inner = '<p class="sub">' +
       t.html('consoleLdap.policies.intro',
-             { count: json.count, max: json.max,
+             { count: split ? json.ownCount : json.count, max: json.max,
                container: json.container }) +
+      (split
+        ? ' ' + t.html('consoleLdap.policies.applicationIntro',
+                       { count: json.applicationCount,
+                         max: json.applicationMax })
+        : '') +
       '</p><div ' +
       'class="tiles">' +
-      kit.tile(json.count, t.text('consoleLdap.policies.tileEntries')) +
+      kit.tile(split ? json.ownCount : json.count,
+               t.text('consoleLdap.policies.tileEntries')) +
       kit.tile(json.enabledCount, t.text('consoleLdap.common.tileEnabled')) +
       kit.tile(json.max, t.text('consoleLdap.common.tileMaxHeld')) +
+      (split
+        ? kit.tile(json.applicationCount,
+                   t.text('consoleLdap.policies.tileApplication')) +
+          kit.tile(json.applicationMax,
+                   t.text('consoleLdap.policies.tileApplicationMax'))
+        : '') +
       '</div>' +
       kit.warn(t.html('consoleLdap.policies.warn') +
       ' <a href="/admin/xacml">XACML</a> ' +

@@ -924,5 +924,17 @@
   "fga.saveNotFor": "Enregistrer la liste",
   "fga.boxXacml": "Correspondance XACML",
   "fga.helpXacml": "Un tableau JSON de lignes : path, attributeId et, en option, category, dataType, multiplicity et description.",
-  "fga.boxNotFor": "Hors politique"
+  "fga.boxNotFor": "Hors politique",
+  "fga.tileApplicationPolicies": "Politiques propres aux applications dans ce domaine",
+  "fga.pepsHeading": "PEP distants",
+  "fga.pepsUnknown": "Impossible de lire quels PEP distants peuvent transmettre les évaluations de cette application.",
+  "fga.pepsNote": "Le PDP de périphérie d’un PEP distant transmet à ce service chaque évaluation AuthZEN portant sur une application qui applique l’autorisation fine, en tant qu’appelant AuthZEN : son entrée doit être membre de <code>{authzenGroup}</code> et avoir cette application dans sa portée. Appliquer accorde les deux, là où ils manquent, à chaque membre de <code>{group}</code> (les détenteurs de REMOTE_PEPS) ; Ne plus appliquer ne retire ni l’un ni l’autre. Un membre ajouté depuis reçoit l’accord par le bouton ci-dessous.",
+  "fga.colPep": "PEP distant",
+  "fga.colKind": "Type",
+  "fga.colPepMember": "Détient AUTHZEN_PEPS",
+  "fga.colPepScoped": "Cette application dans sa portée",
+  "fga.pepsNone": "Aucune personne, aucun compte de service ni aucune application de ce domaine ne détient REMOTE_PEPS.",
+  "fga.pepsUnlocated": "Membres du groupe qui ne désignent aucune entrée et ne peuvent donc pas recevoir l’accord : {n}.",
+  "fga.pepsRegrant": "Accorder de nouveau aux PEP distants",
+  "fga.pepsRegrantTip": "Appliquer de nouveau : chaque détenteur de REMOTE_PEPS sans le groupe AuthZEN ou sans cette application dans sa portée reçoit les deux. Rien d’autre ne change."
 }

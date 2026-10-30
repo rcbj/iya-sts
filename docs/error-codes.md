@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5031** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5033** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
-* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
@@ -3139,7 +3139,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0034` | A search filter could not be evaluated against an entry (for example an extensible match), so the entry was treated as not matching. | none; the entry is simply not returned |
 | `STS-LDAP-0035` | ou=applications holds its maximum (applications.max), so an application sighting was not recorded. | — |
 | `STS-LDAP-0036` | ou=federations holds its maximum (federation.max), so a federation relationship was not created. | — |
-| `STS-LDAP-0037` | ou=policies holds its maximum (xacml.maxPolicies), so an XACML policy was not created. | — |
+| `STS-LDAP-0037` | ou=policies holds its maximum of administrators' own policies (xacml.maxPolicies), so an XACML policy was not created. Applications' own policies count against xacml.maxApplicationPolicies instead (STS-FGA-0024). | — |
 | `STS-LDAP-0038` | ou=roles holds its maximum (roles.maxRoles), so a role was not created. | — |
 | `STS-LDAP-0039` | ou=peps holds its maximum (xacml.maxPeps), so a remote PEP registration was not created. | — |
 | `STS-LDAP-0040` | A credential or consent could not be written because the named identity has no entry in this realm. | — |
@@ -4835,7 +4835,7 @@ Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacm
 | `STS-FGA-0005` | An application's appFgaPolicy names a policy entry that does not belong to it: the entry's xacmlApplication is absent or names another application, or the entry is marked orphaned. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
 | `STS-FGA-0006` | An application's fine-grained policy is disabled (xacmlEnabled FALSE). An enforced application with a disabled policy refuses; switching enforcement on is refused until the policy is enabled. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
 | `STS-FGA-0007` | An application's fine-grained policy does not parse or does not type-check. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
-| `STS-FGA-0008` | An application's default fine-grained policy could not be written: there is no directory, ou=policies is at xacml.maxPolicies, or the document was refused. The application stays without one until FGA is next enabled on it. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
+| `STS-FGA-0008` | An application's default fine-grained policy could not be written: there is no directory, no entry name is free, the directory refused the entry, or the document was refused. The application stays without one until FGA is next enabled on it. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
 | `STS-FGA-0009` | A fine-grained authorization act named an application this realm's registry does not hold. | the caller's refusal; an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) when the application went between the two reads |
 | `STS-FGA-0010` | The application lifecycle hook (create or delete) failed or threw. The application create or delete itself stands; the policy was not created or not retired. | none — logged; the create or delete succeeds |
 | `STS-FGA-0011` | The FGA lifecycle slot offered to common/applications.js was incomplete (it needs both created and deleted) and was not installed. | none — logged at load |
@@ -4851,6 +4851,8 @@ Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacm
 | `STS-FGA-0021` | Resetting an application's fine-grained policy was refused: the application has no policy of its own (appFgaPolicy is empty, names a missing entry, or names one that is not its own). Create the default policy instead. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-FGA-0022` | Deleting a policy from the XACML repository was refused: it is the fine-grained policy an application still names in appFgaPolicy. Only a policy no application names (an orphan of a deleted application) may be removed. | the caller's refusal (why on a console or /admin-api reply) |
 | `STS-FGA-0023` | A mapping row or a notForPolicy entry could not be changed on an access type from the console or /admin-api: the row to remove is not on the type, or the row offered does not read (a bad path, attribute identifier, category, data type or multiplicity, or a reserved identifier). | the caller's refusal (errors and field on a console or /admin-api reply) |
+| `STS-FGA-0024` | An application's fine-grained policy was not created: ou=policies already holds xacml.maxApplicationPolicies applications' own policies (orphans included). The application stays without one until there is room and FGA is next enabled on it, or the policy is created from its tab. Raise the setting beside applications.max, or remove orphaned policies. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
+| `STS-FGA-0025` | Enabling fine-grained authorization on an application could not grant one holder of REMOTE_PEPS what forwarding needs: membership of roles.authzenPepGroup and the application in its AuthZEN scope. The member names no person, service account or application, the group is not configured or does not exist, the scope is full, or the directory refused the write. The enable still succeeds; the other holders are granted. | none: the enable succeeds, and the holder is listed under peps.failed on its answer and on the Fine-grained authorization tab |
 | `STS-FGA-0100` | A fine-grained authorization question was asked with a type definition that is not usable (it carries a problem, or names no type), so no request could be built for the detail. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0101` | A fine-grained authorization question was asked about a detail that is not a JSON object of the definition's type. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0102` | A fine-grained authorization question was asked without the trusted facts the adapter must supply: the owning application, or a stage that is one of authorize, token, refresh, exchange, par or access. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |

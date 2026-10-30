@@ -1385,7 +1385,22 @@ async function rateLimit(t, base, ca) {
   const gaps = times.slice(1).map(function (at, i) {
     return at - times[i];
   });
-  t.check(times.length >= 5 && Math.min.apply(null, gaps) >= 200 &&
+  // THE TIMES ARE ARRIVALS AT THE PROVIDER, NOT SENDS, so one request whose
+  // connection was slow arrives late and the next looks early: [374, 94,
+  // 252, …] in the single-node and cluster runs of 2026-10-30, with the
+  // sender's slots 250 ms apart throughout. So the rule is asked of every
+  // pair rather than every neighbour — k requests on cover at least
+  // k × 250 ms less 200 ms of arrival jitter — which an unthrottled client
+  // (a few ms apart) still fails by a wide margin.
+  let paced = true;
+  times.forEach(function (from, i) {
+    times.slice(i + 1).forEach(function (to, k) {
+      if (to - from < (k + 1) * 250 - 200) {
+        paced = false;
+      }
+    });
+  });
+  t.check(times.length >= 5 && paced &&
           !!userNamed('alice' + RUN),
           'S3. at 4 a second every request — discovery, the listing, the ' +
           'deliveries — waits for its slot (250 ms apart), and is sent',

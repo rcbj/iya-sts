@@ -903,6 +903,10 @@
     "en": "bacc42f309e8f6f8",
     "text": "La portée applicative d'un appelant AuthZEN a été définie"
   },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "Un PEP distant a reçu un accès AuthZEN à une application qui applique l’autorisation fine"
+  },
   "audit.actions.admin.authzen.callbacks.set.label": {
     "en": "e8439c3ddb41d93f",
     "text": "Les URL de rappel (callback) des demandes d’accès d’un appelant AuthZEN ont été définies"

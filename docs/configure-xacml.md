@@ -217,7 +217,8 @@ disable/enable pair is what `sts_xacml_editor.js` drives.
 | Setting | Default | Why you would change it |
 |---|---|---|
 | `xacml.enabled` | `true` | Off makes every `/xacml` endpoint answer 501. The repository is untouched. |
-| `xacml.maxPolicies` | `200` | How many policies `ou=policies` may hold. |
+| `xacml.maxPolicies` | `200` | How many of the policies administrators write `ou=policies` may hold. |
+| `xacml.maxApplicationPolicies` | `500` | How many applications' own [fine-grained authorization](fga.md) policies it may hold, apart from those. |
 | `xacml.returnPolicyIdList` | `false` | Returns the list of applicable policies even when a request does not ask. |
 
 ---

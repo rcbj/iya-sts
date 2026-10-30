@@ -903,6 +903,10 @@
     "en": "bacc42f309e8f6f8",
     "text": "En AuthZEN-anropares applikationsomfång angavs"
   },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "En fjärr-PEP beviljades AuthZEN-åtkomst till en applikation som tillämpar finkornig auktorisering"
+  },
   "audit.actions.admin.authzen.callbacks.set.label": {
     "en": "e8439c3ddb41d93f",
     "text": "Callback-URL:erna för en AuthZEN-anropares åtkomstbegäran angavs"

@@ -34,7 +34,11 @@ const log = require('bunyan').createLogger({ name: 'fga_policies',
 //   6. resolve()'s precise failures;
 //   7. delete retires it — disabled, orphaned, kept — and a re-created
 //      application of the same identifier gets a NEW policy;
-//   8. per-realm isolation: none of it reaches the default realm.
+//   8. per-realm isolation: none of it reaches the default realm;
+//   9. the applications' own ceiling (#1210): xacml.maxApplicationPolicies,
+//      default 500 as applications.max's, refuses ensure() (STS-FGA-0024)
+//      and the directory's write door, while an application's policy no
+//      longer counts against xacml.maxPolicies and the other way round.
 //
 // In process, in a THROWAWAY REALM for `xacml/CLAUDE.md`'s reason: a new
 // realm's `ou=policies` is empty, so "the only enabled policy" is reachable
@@ -106,6 +110,7 @@ function run(t) {
                        peps, surface, pap, errorCodes, APP, policyNames });
       section4to6(t, { applications, store, fga, errorCodes, APP });
       section7(t, { applications, store, fga, APP, policyNames });
+      section9(t, { applications, store, fga, errorCodes, policyNames });
       log.debug("Leaving realmBody().");
     });
     // ---------------------------------------------------------------------
@@ -332,6 +337,83 @@ function section7(t, k) {
           '7d. and the orphan stays an orphan');
   t.equal(fga.resolve(APP).policy, now, '7e. resolve() follows the new one');
   log.debug("Leaving section7().");
+}
+
+// Section 9: the applications' own ceiling (#1210).
+function section9(t, k) {
+  log.debug("Entering section9().");
+  const { applications, store, fga, errorCodes, policyNames } = k;
+  const config = require('../common/config');
+  t.log.info('=== 9. applications\' own policies have their own ceiling ===');
+  t.equal(Number(config.value('xacml.maxApplicationPolicies')),
+          Number(config.value('applications.max')),
+          '9a. by default it is applications.max\'s value (500)',
+          config.value('xacml.maxApplicationPolicies'));
+  const owned = store.fgaPolicies().length;
+  const ordinary = store.all().length - owned;
+  t.check(owned >= 2 && ordinary >= 1,
+          'precondition: the realm holds applications\' policies and an ' +
+          'ordinary one', owned + ' and ' + ordinary);
+  const hooks = applications.fgaLifecycleInstalled();
+  applications.setFgaLifecycle(null);
+  try {
+    applications.createApplication({ identifier: 'fga-cap-app',
+                                     protocols: ['oauth2'] });
+  } finally {
+    applications.setFgaLifecycle(hooks);
+  }
+  try {
+    // THE APPLICATIONS' CEILING AT WHAT THEY HOLD, and the administrators'
+    // far above: only the first may refuse.
+    config.setOverride('xacml.maxApplicationPolicies', String(owned));
+    config.setOverride('xacml.maxPolicies', '1000');
+    const refused = fga.ensure('fga-cap-app', { actor: 'test' });
+    t.check(errorCodes.codeOf(refused) === 'STS-FGA-0024' &&
+            refused.failure === 'not-written' &&
+            /xacml\.maxApplicationPolicies/.test(refused.why) &&
+            /applications\.max/.test(refused.why),
+            '9b. ensure() past it is refused with STS-FGA-0024, naming both ' +
+            'settings', errorCodes.codeOf(refused) + ' ' + refused.why);
+    t.equal(store.fgaPolicies().length, owned,
+            '9c. and nothing was written');
+    const direct = store.directoryInstalled().writePolicy('fga-cap-direct', {
+      objectClass: ['top', 'xacmlPolicy'], xacmlPolicyId: 'urn:x:cap',
+      xacmlPolicyDocument: store.SEED_DOCUMENT, xacmlEnabled: 'TRUE',
+      xacmlApplication: 'fga-cap-app' });
+    t.equal(direct, false,
+            '9d. the directory\'s write door refuses one too, so no door ' +
+            'past ensure() gets round it');
+    const ordinaryOk = store.write('fga-cap-ordinary', store.SEED_DOCUMENT,
+                                   { enabled: false });
+    t.check(ordinaryOk.ok,
+            '9e. an administrator\'s policy is not refused by the ' +
+            'applications\' ceiling', ordinaryOk.why);
+    // THE ADMINISTRATORS' CEILING AT WHAT THEY HOLD, which every
+    // application's policy beside them would exceed were they counted.
+    config.setOverride('xacml.maxPolicies', String(ordinary + 1));
+    config.setOverride('xacml.maxApplicationPolicies', String(owned + 1));
+    const full = store.write('fga-cap-ordinary-2', store.SEED_DOCUMENT,
+                             { enabled: false });
+    t.equal(errorCodes.codeOf(full), 'STS-XACML-0027',
+            '9f. at xacml.maxPolicies an administrator\'s policy is ' +
+            'refused');
+    const ensured = fga.ensure('fga-cap-app', { actor: 'test' });
+    t.check(ensured.ok && ensured.created,
+            '9g. while an application\'s policy is still created: ' +
+            'ou=policies holds ' + (owned + ordinary + 1) + ' entries, ' +
+            'above xacml.maxPolicies, and only applications\' own count ' +
+            'against their ceiling', ensured.why);
+    policyNames.push(ensured.policy);
+    const figures = fga.state('fga-cap-app').applicationPolicies || {};
+    t.check(figures.count === owned + 1 && figures.max === owned + 1,
+            '9h. the tab\'s figures read the applications\' ceiling',
+            JSON.stringify(figures));
+  } finally {
+    config.clearOverride('xacml.maxApplicationPolicies');
+    config.clearOverride('xacml.maxPolicies');
+    store.remove('fga-cap-ordinary');
+  }
+  log.debug("Leaving section9().");
 }
 
 module.exports = {

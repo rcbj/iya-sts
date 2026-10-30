@@ -826,12 +826,17 @@ async function theTokenExchangeBinding() {
     });
     const doc = await get(base + "/.well-known/authzen-configuration" +
                           PREFIX);
+    // BESIDE THE ACCESS REQUEST CAPABILITY (#1180), which is on by default:
+    // the binding adds token issuance and advertises nothing else.
     check("the token issuance capability is advertised while the binding " +
           "is on", function () {
-      assert.ok(doc.status === 200 && doc.body &&
-                JSON.stringify(doc.body.capabilities) ===
-                  JSON.stringify(["urn:openid:authzen:capability:" +
-                                  "token-issuance"]), doc.text);
+      const known = ["urn:openid:authzen:capability:token-issuance",
+                     "urn:openid:authzen:capability:access-request"];
+      const caps = (doc.body && doc.body.capabilities) || [];
+      assert.ok(doc.status === 200 && caps.indexOf(known[0]) >= 0 &&
+                caps.every(function (one) {
+                  return known.indexOf(one) >= 0;
+                }), doc.text);
     });
   } finally {
     await postJson(api("/config/reset"), { key: "authzen.tokenExchange" });

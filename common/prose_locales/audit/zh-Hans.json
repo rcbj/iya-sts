@@ -903,6 +903,10 @@
     "en": "bacc42f309e8f6f8",
     "text": "设置了 AuthZEN 调用方的应用范围"
   },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "已授予远程 PEP 对实施细粒度授权的应用的 AuthZEN 访问权限"
+  },
   "audit.actions.admin.authzen.callbacks.set.label": {
     "en": "e8439c3ddb41d93f",
     "text": "已设置 AuthZEN 调用方的访问请求回调 URL"

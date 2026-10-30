@@ -2724,11 +2724,38 @@ exclusion without an edit; that is why it lives in the store.
   carries `enforced`, since only an enforced application's failure refuses.
 * **Not by mode.** Nothing here differs between development and product.
 
-**`xacml.maxPolicies` (200) bounds these too**, and `applications.max` is
-500. An application created past the cap is still created, without a policy
-(STS-FGA-0008, logged under STS-FGA-0010 by the hook), and gets one at
-enable once there is room. Whether owned policies should have a bound of
-their own is open.
+**Owned policies have a ceiling of their own (#1210, rcbj, 2026-10-30):
+`xacml.maxApplicationPolicies`, default 500 — `applications.max`'s default,
+a literal and not a `derived` row (`common/config.js` argues it).** An entry
+carrying `xacmlApplication`, orphans included, counts against it and NOT
+against `xacml.maxPolicies` (200), which bounds administrators' own; each
+kind is bounded only at a CREATE. Both doors hold it: the directory's
+`writePolicy()` (`isApplicationPolicy()`, `policyCount(application)`,
+STS-FGA-0024 logged) for every caller, and `ensure()` first, so its refusal
+says which ceiling and names both settings rather than reaching it as "the
+directory refused the entry". Orphans count because they are kept for audit
+until an administrator removes them, and counting them against the
+administrators' ceiling would let a deleted application's leftovers lock
+administrators out. An application created past the cap is still created,
+without a policy (STS-FGA-0024, logged under STS-FGA-0010 by the hook), and
+gets one at enable once there is room. `/admin/ldap/policies` answers both
+counts and both ceilings (`ownCount`/`max`, `applicationCount`/
+`applicationMax`), and `state()` the applications' figure for the tab.
+
+### Enabling grants the realm's remote PEPs (#1210)
+
+**`enable()` ends with `grantRemotePeps()`** (`authzen/authzen_admin.ts`,
+reached lazily through `loadAuthzenAdmin()`, which owns the directory slot
+and both scope attributes), on EVERY enable, so an enable of an enforcing
+application re-runs it for a holder that joined `remote-peps` since. Its
+answer is `peps` on the result (`granted`, `held`, `failed`); a library that
+throws is one `failed` row logged under STS-FGA-0025, never a failed enable.
+`state()` carries `peps` (`remotePepsOf()`) for the tab. `authzen/CLAUDE.md`
+has the design; what it changes in this family's own rules is one sentence:
+**the REMOTE_PEPS group is now a source of AuthZEN permission, at the moment
+an administrator enables an application** — rcbj's decision of 2026-10-30.
+The older rule beside it is untouched: a registration in `ou=peps` is not a
+permission, and nothing here reads `ou=peps`.
 
 `tests/fga_policies.js` holds all of it in a throwaway realm.
 

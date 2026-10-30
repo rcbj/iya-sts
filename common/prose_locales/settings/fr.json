@@ -6784,8 +6784,16 @@
     "text": "Politiques que le dépôt peut contenir"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "Le nombre d’entrées pouvant figurer sous ou=policies. Le même type de limite que portent ou=federations et ou=applications, et pour la même raison : cet annuaire est en mémoire dans le mode de persistance par défaut, et un appelant capable de créer des entrées sans limite peut l’épuiser. Atteindre la limite refuse la CRÉATION et journalise ; cela n’évince jamais rien."
+    "en": "bb4fc97c445e9e60",
+    "text": "Le nombre d’entrées pouvant figurer sous ou=policies. Le même type de limite que portent ou=federations et ou=applications, et pour la même raison : cet annuaire est en mémoire dans le mode de persistance par défaut, et un appelant capable de créer des entrées sans limite peut l’épuiser. Atteindre la limite refuse la CRÉATION et journalise ; cela n’évince jamais rien. La politique d’autorisation fine propre à une application n’est pas comptée ici : xacml.maxApplicationPolicies borne celles-ci."
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "Politiques d’applications que le dépôt peut contenir"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "Le nombre de politiques d’autorisation fine propres aux applications (entrées sous ou=policies portant xacmlApplication, orphelines comprises) que le dépôt peut contenir. Elles ne comptent pas dans xacml.maxPolicies, qui borne les politiques écrites par les administrateurs. La valeur par défaut est celle de applications.max, de sorte que chaque application admise par défaut par le registre peut en détenir une ; augmentez-la en même temps que applications.max. Atteindre la limite refuse la CRÉATION et journalise ; cela n’évince jamais rien."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
