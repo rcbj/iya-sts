@@ -1905,10 +1905,18 @@ const referenceChoices = function referenceChoices(): string[] {
   log.debug("Leaving attribute policy reference choices.");
   return names;
 };
-PolicySelection.declareReference('group', REFERENCES.group, NOUN,
-                                 referenceChoices);
-PolicySelection.declareReference('person', REFERENCES.person, NOUN,
-                                 referenceChoices);
+// A function, so a test that declared the same attribute for a probe of
+// its own can put this kind's declaration back (`tests/policy_selection.js`
+// does, sharing one process with every other in-process test).
+const declareReferences = function declareReferences(): void {
+  log.debug("Entering declareReferences().");
+  PolicySelection.declareReference('group', REFERENCES.group, NOUN,
+                                   referenceChoices);
+  PolicySelection.declareReference('person', REFERENCES.person, NOUN,
+                                   referenceChoices);
+  log.debug("Leaving declareReferences().");
+};
+declareReferences();
 
 /**
  * The attribute policy (#396): the attributes every person in a realm must
@@ -1940,6 +1948,10 @@ export = {
   SELECTION: AttributePolicy.SELECTION,
   REFERENCES: AttributePolicy.REFERENCES,
   SELECTORS: AttributePolicy.SELECTORS,
+  /**
+   * Declares the person and group references again (for a test).
+   */
+  declareReferences: declareReferences,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),

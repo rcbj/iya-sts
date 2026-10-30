@@ -19,8 +19,8 @@
 //   A. The built-in default: uid, cn and sn always, givenName and mail; the
 //      catalogue offers every attribute a person may be given, and neither
 //      userPassword, memberOf nor an sts attribute.
-//   B. A save replaces the list; a name nobody may be given, a profile that
-//      is not `default` and a save without the field are refused under
+//   B. A save replaces the list; a name nobody may be given, a profile name
+//      a cn cannot be and a save without the field are refused under
 //      their codes; a console form that ticks nothing saves an empty list;
 //      a reset goes back to the built-in default.
 //   C. Custom attributes: defined with a label, a syntax and a cardinality;
@@ -211,15 +211,17 @@ function checks(t, product, dev, tag) {
       { requiredAttributes: 'givenName, userPassword' });
     const member = attributePolicy.save('default',
       { requiredAttributes: ['memberOf'] });
-    const other = attributePolicy.save('strict',
+    // A NAME NO PROFILE MAY HAVE (#1241: named profiles exist since, so a
+    // second name is no longer refused; one a cn cannot be is).
+    const other = attributePolicy.save('Not A Name!',
       { requiredAttributes: ['mail'] });
     const none = attributePolicy.save('default', {});
     t.check(!password.ok && codeOf(password) === 'STS-LDAP-0166' &&
             !member.ok && codeOf(member) === 'STS-LDAP-0166' &&
             !other.ok && codeOf(other) === 'STS-LDAP-0165' &&
             !none.ok && codeOf(none) === 'STS-LDAP-0166',
-            'B. userPassword, memberOf, another profile and a save with no ' +
-            'list are refused under their codes',
+            'B. userPassword, memberOf, a name no profile may have and a ' +
+            'save with no list are refused under their codes',
             JSON.stringify([password.errors, member.errors, other.errors,
                             none.errors]));
     const ticked = attributePolicy.save('default', { form: 'console' });

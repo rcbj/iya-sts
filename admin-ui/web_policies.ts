@@ -73,7 +73,7 @@ class PoliciesPage {
       } else if (kind.id === 'authn') {
         html = PoliciesPage.authnPolicySection(view, t);
       } else if (kind.id === 'attributes') {
-        html = PoliciesPage.attributePolicySection(view, t);
+        html = PoliciesPage.attributePolicySection(view, t, view.state);
       } else {
         html = PoliciesPage.genericPolicySection(view, kind, t, view.state);
       }
@@ -333,7 +333,7 @@ class PoliciesPage {
    * @param t - the page's translator (#539)
    * @returns the section as HTML
    */
-  static attributePolicySection(view, t) {
+  static attributePolicySection(view, t, state?) {
     const kind = view.kinds.filter(function (k) {
       return k.id === 'attributes';
     })[0];
@@ -341,46 +341,69 @@ class PoliciesPage {
     const profile = ap.profile;
     const saveAction = kind.actions[0];
     const resetAction = kind.actions[1];
-    const listed = String(profile.requiredAttributes || '').split(',')
-      .map(function (one) {
-        return one.trim().toLowerCase();
-      }).filter(Boolean);
-    const rows = ap.catalogue.map(function (row) {
-      const id = 'ap-req-' + row.name;
-      const ticked = row.locked || listed.indexOf(row.name.toLowerCase()) >= 0;
-      return '<tr><td><input type="checkbox" id="' + kit.esc(id) + '" ' +
-        'name="requiredAttributes" value="' + kit.esc(row.name) + '"' +
-        (ticked ? ' checked' : '') + (row.locked ? ' disabled' : '') +
-        '></td><td><label for="' + kit.esc(id) + '"><code>' +
-        kit.esc(row.name) + '</code></label></td><td>' + kit.esc(row.label) +
-        '</td><td>' + (row.custom
-          ? t.html('consolePolicies.attributes.custom')
-          : kit.esc(row.schema)) + '</td><td>' + (row.locked
-          ? t.html('consolePolicies.attributes.always')
-          : row.required ? t.html('consolePolicies.yes')
-            : '<span class="state-none">' + t.html('consolePolicies.no') +
-              '</span>') + '</td></tr>';
-    }).join('');
+    const listOf = function (value) {
+      return (Array.isArray(value) ? value : String(value || '').split(','))
+        .map(function (one) {
+          return String(one).trim().toLowerCase();
+        }).filter(Boolean);
+    };
+    // THE CHECKBOX TABLE, one per profile (#1241): every attribute a person
+    // here may be given, ticked where `listed` names it. `inForce` is drawn
+    // for the default profile only, which is what `catalogue` reports.
+    const requiredTable = function (listed, prefix, inForce) {
+      const rows = ap.catalogue.map(function (row) {
+        const id = prefix + 'req-' + row.name;
+        const ticked = row.locked ||
+          listed.indexOf(row.name.toLowerCase()) >= 0;
+        return '<tr><td><input type="checkbox" id="' + kit.esc(id) + '" ' +
+          'name="requiredAttributes" value="' + kit.esc(row.name) + '"' +
+          (ticked ? ' checked' : '') + (row.locked ? ' disabled' : '') +
+          '></td><td><label for="' + kit.esc(id) + '"><code>' +
+          kit.esc(row.name) + '</code></label></td><td>' +
+          kit.esc(row.label) + '</td><td>' + (row.custom
+            ? t.html('consolePolicies.attributes.custom')
+            : kit.esc(row.schema)) + '</td>' + (inForce
+            ? '<td>' + (row.locked
+              ? t.html('consolePolicies.attributes.always')
+              : row.required ? t.html('consolePolicies.yes')
+                : '<span class="state-none">' + t.html('consolePolicies.no') +
+                  '</span>') + '</td>'
+            : '') + '</tr>';
+      }).join('');
+      return '<input type="hidden" name="requiredAttributes" value="">' +
+        kit.wideTable(t.text('consolePolicies.attributes.tableLabel'),
+          '<table><tr><th>' + t.html('consolePolicies.attributes.required') +
+          '</th><th>' + t.html('consolePolicies.field.attribute') +
+          '</th><th>' + t.html('consolePolicies.attributes.label') +
+          '</th><th>' + t.html('consolePolicies.attributes.definedBy') +
+          '</th>' + (inForce ? '<th>' +
+            t.html('consolePolicies.attributes.inForce') + '</th>' : '') +
+          '</tr>' + rows + '</table>');
+    };
+    const descriptionRow = function (id, value) {
+      return '<div class="formrow"><label for="' + kit.esc(id) + '">' +
+        t.html('consolePolicies.form.description') + '</label> ' +
+        '<input type="text" id="' + kit.esc(id) + '" name="description" ' +
+        'size="60" maxlength="1024" value="' + kit.esc(value || '') +
+        '" placeholder="' +
+        kit.esc(t.text('consolePolicies.form.descriptionPlaceholder')) +
+        '"></div>';
+    };
+    const precedenceRow = function (id, value) {
+      return '<div class="formrow"><label for="' + kit.esc(id) + '">' +
+        t.html('consolePolicies.named.precedence') + '</label> ' +
+        '<input type="number" id="' + kit.esc(id) + '" name="precedence" ' +
+        'min="1" max="1000" value="' + kit.esc(value || 100) + '"> ' +
+        '<span class="sub">' + t.html('consolePolicies.named.lowestApplies') +
+        '</span></div>';
+    };
     const saveForm = '<form method="post" action="/admin/policies">' +
       '<input type="hidden" name="action" value="' + kit.esc(saveAction) +
       '">' +
       '<input type="hidden" name="profile" value="' + kit.esc(profile.name) +
       '">' +
-      '<input type="hidden" name="requiredAttributes" value="">' +
-      kit.wideTable(t.text('consolePolicies.attributes.tableLabel'),
-        '<table><tr><th>' + t.html('consolePolicies.attributes.required') +
-        '</th><th>' + t.html('consolePolicies.field.attribute') + '</th><th>' +
-        t.html('consolePolicies.attributes.label') + '</th><th>' +
-        t.html('consolePolicies.attributes.definedBy') + '</th><th>' +
-        t.html('consolePolicies.attributes.inForce') + '</th></tr>' + rows +
-        '</table>') +
-      '<div class="formrow"><label for="ap-description">' +
-      t.html('consolePolicies.form.description') + '</label> ' +
-      '<input type="text" id="ap-description" name="description" size="60" ' +
-      'maxlength="1024" value="' + kit.esc(profile.description) +
-      '" placeholder="' +
-      kit.esc(t.text('consolePolicies.form.descriptionPlaceholder')) +
-      '"></div>' +
+      requiredTable(listOf(profile.requiredAttributes), 'ap-', true) +
+      descriptionRow('ap-description', profile.description) +
       '<p><button>' + t.html('consolePolicies.saveProfile') +
       '</button></p></form>' +
       (profile.stored
@@ -460,8 +483,83 @@ class PoliciesPage {
       'maxlength="1024" size="60"></td></tr></table>' +
       '<p><button>' + t.html('consolePolicies.attributes.define') +
       '</button></p></form>';
-    return '<h2 id="attributes">' +
-      t.html('consolePolicies.attributes.heading') + '</h2>' +
+    // THE NAMED PROFILES (#1241): each with its precedence, what names it
+    // (read-only; a person and a group each name theirs on their own page),
+    // its form, its Remove and its sentences. The people come from the
+    // API's asynchronous view; the synchronous one names none.
+    const listed = function (values) {
+      return values && values.length ? kit.codeList(values)
+        : '<span class="state-none">—</span>';
+    };
+    const named = (ap.named || []).map(function (one) {
+      const prefix = 'ap-' + one.name + '-';
+      const by = one.namedBy || {};
+      const value = (one.fields || []).filter(function (field) {
+        return field.key === 'requiredAttributes';
+      })[0];
+      return '<h4 id="attributes-profile-' + kit.esc(one.name) + '">' +
+        kit.esc(one.name) + t.html('consolePolicies.named.precedenceOf',
+                                   { n: String(one.precedence) }) +
+        '</h4><p class="sub">' +
+        t.html('consolePolicies.named.namedByPeople',
+               { attribute: 'stsAttributePolicy' }) + ': ' +
+        listed(by.people) + ' · ' +
+        t.html('consolePolicies.named.namedByGroups',
+               { attribute: 'stsAttributePolicy' }) + ': ' +
+        listed(by.groups) + '</p>' +
+        '<form method="post" action="/admin/policies">' +
+        '<input type="hidden" name="action" value="' + kit.esc(saveAction) +
+        '"><input type="hidden" name="profile" value="' +
+        kit.esc(one.name) + '">' +
+        precedenceRow(prefix + 'precedence', one.precedence) +
+        requiredTable(listOf(value ? value.value : ''), prefix, false) +
+        descriptionRow(prefix + 'description', one.description) +
+        '<p><button>' + t.html('consolePolicies.saveProfile') +
+        '</button></p></form>' +
+        '<form method="post" action="/admin/policies" class="inline">' +
+        '<input type="hidden" name="action" value="' +
+        kit.esc(resetAction) + '"><input type="hidden" name="profile" ' +
+        'value="' + kit.esc(one.name) + '"><button class="secondary">' +
+        t.html('consolePolicies.named.remove') + '</button></form>' +
+        '<ul>' + (one.rules || []).map(function (rule) {
+          return '<li>' + kit.esc(rule) + '</li>';
+        }).join('') + '</ul>';
+    }).join('');
+    // THE NEW POLICY FORM, with a refused create's own fields kept (#841).
+    const draftKey = PoliciesPage.draftKeyOf(kind.id);
+    const draft = ((state && state.policyDrafts) || {})[draftKey] || null;
+    const refused = ((state && state.policySaveErrors) || {})[draftKey];
+    const posted = function (key) {
+      const held = draft ? draft[key] : undefined;
+      return Array.isArray(held) ? held : held === undefined ? undefined
+        : String(held);
+    };
+    const firstOf = function (key) {
+      const held = posted(key);
+      return Array.isArray(held) ? String(held[0] || '') : (held || '');
+    };
+    const addForm = (refused && refused.length
+        ? kit.warn(refused.map(function (one) {
+          return kit.esc(one);
+        }).join(' '), 'That was refused')
+        : '') +
+      '<form method="post" action="/admin/policies">' +
+      '<input type="hidden" name="action" value="' + kit.esc(saveAction) +
+      '"><input type="hidden" name="newProfile" value="1">' +
+      '<p><label for="ap-new-profile">' + t.html('consolePolicies.named.name') +
+      '</label> <input type="text" id="ap-new-profile" name="profile" ' +
+      'pattern="[a-z0-9][a-z0-9-]{0,63}" required value="' +
+      kit.esc(firstOf('profile')) + '" placeholder="contractors"></p>' +
+      precedenceRow('ap-new-precedence', firstOf('precedence') || 100) +
+      requiredTable(draft ? listOf(posted('requiredAttributes'))
+                          : listOf(profile.requiredAttributes),
+                    'ap-new-', false) +
+      descriptionRow('ap-new-description', firstOf('description')) +
+      '<p><button>' + t.html('consolePolicies.named.add') +
+      '</button></p></form>';
+    // FOUR SUB-TABS (#1241), the passkey policy's three and the realm's
+    // custom attributes, which every profile may require and none owns.
+    return '<h2 id="attributes">' + kit.esc(kind.label) + '</h2>' +
       kit.note(t.html('consolePolicies.attributes.lead')) +
       (ap.enforced
         ? '<div class="ok">' +
@@ -469,25 +567,45 @@ class PoliciesPage {
         : kit.warn(t.html('consolePolicies.attributes.notEnforced') +
           '<a href="/admin/config">' +
           t.html('consolePolicies.configuration') + '</a>.')) +
-      PoliciesPage.policyProblems(profile, t) +
-      kit.note(profile.from === 'realm'
-        ? t.html('consolePolicies.attributes.fromRealm', { dn: profile.dn })
-        : profile.from === 'default-realm'
-          ? t.html('consolePolicies.attributes.fromDefaultRealm',
-                   { dn: profile.dn })
-          : t.html('consolePolicies.attributes.builtIn')) +
-      saveForm +
-      '<ul>' + ap.rules.map(function (rule) {
-        return '<li>' + kit.esc(rule) + '</li>';
-      }).join('') + '</ul>' +
-      kit.note(missing) +
-      '<h3 id="attributes-custom">' +
-      t.html('consolePolicies.attributes.customHeading') + '</h3>' +
-      kit.note(t.html('consolePolicies.attributes.customLead',
-                      { max: String(ap.maxCustom) })) +
-      custom +
-      '<h4>' + t.html('consolePolicies.attributes.defineHeading') + '</h4>' +
-      defineForm +
+      kit.subTabbedPanels(kind.label, [
+        { id: 'attributes-sub-default',
+          label: t.text('consolePolicies.sub.default'),
+          html: '<h3>' + t.html('consolePolicies.attributes.heading') +
+            '</h3>' +
+            PoliciesPage.policyProblems(profile, t) +
+            kit.note(profile.from === 'realm'
+              ? t.html('consolePolicies.attributes.fromRealm',
+                       { dn: profile.dn })
+              : profile.from === 'default-realm'
+                ? t.html('consolePolicies.attributes.fromDefaultRealm',
+                         { dn: profile.dn })
+                : t.html('consolePolicies.attributes.builtIn')) +
+            saveForm +
+            '<ul>' + ap.rules.map(function (rule) {
+              return '<li>' + kit.esc(rule) + '</li>';
+            }).join('') + '</ul>' +
+            kit.note(missing) },
+        { id: 'attributes-sub-named',
+          label: t.text('consolePolicies.sub.named'),
+          html: '<h3 id="attributes-named">' +
+            t.html('consolePolicies.named.heading') + '</h3>' +
+            kit.note(t.html('consolePolicies.attributes.namedLead')) +
+            (named || '<p>' + t.html('consolePolicies.named.none') +
+                      '</p>') },
+        { id: 'attributes-sub-new',
+          label: t.text('consolePolicies.sub.new'),
+          html: '<h3>' + t.html('consolePolicies.named.addHeading') +
+            '</h3>' + addForm },
+        { id: 'attributes-sub-custom',
+          label: t.text('consolePolicies.attributes.customHeading'),
+          html: '<h3 id="attributes-custom">' +
+            t.html('consolePolicies.attributes.customHeading') + '</h3>' +
+            kit.note(t.html('consolePolicies.attributes.customLead',
+                            { max: String(ap.maxCustom) })) +
+            custom +
+            '<h4>' + t.html('consolePolicies.attributes.defineHeading') +
+            '</h4>' + defineForm }
+      ]) +
       '<h3 id="attributes-schema">' + t.html('consolePolicies.schema') +
       '</h3>' +
       PoliciesPage.policySchemaTables(ap.schema, t);

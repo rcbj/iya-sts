@@ -322,7 +322,10 @@ async function doors(t) {
             'index, and only for a reference attribute');
   } finally {
     PolicySelection.withdrawReference('person', 'employeeType');
-    PolicySelection.withdrawReference('group', 'stsAttributePolicy');
+    // THE ATTRIBUTE POLICY'S OWN DECLARATION PUT BACK (#1241): the probe
+    // above borrowed its group attribute, and this file shares one process
+    // with every other in-process test.
+    require('../common/attribute_policy').declareReferences();
   }
   log.debug('Leaving doors().');
 }
