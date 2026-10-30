@@ -107,7 +107,9 @@ never in the service's environment (see the next section).
 
 **In the compose stack (`docker compose up`), the secret is kept in OpenBao**,
 at `secret/sts-admin` in the field `adminApiClientSecret`. The seeder
-generates it on the run that initialises the store. To choose the value
+generates it on the run that initialises the store: 48 random bytes,
+base64url-encoded (64 characters), the same length as every other client
+secret this service generates. To choose the value
 yourself, set `ADMIN_API_CLIENT_SECRET` in the host's environment before that
 first `up`. Compose passes it to the **seeder**, which stores it. It does not
 pass it to the service.
