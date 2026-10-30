@@ -1720,6 +1720,17 @@ schema:
   does not name — no schema, or no `"additionalProperties": false` — can never
   be covered, so close it.
 
+**When the declaring application enforces fine-grained authorization**
+(`appFgaEnforced`), each detail of its types is granted only when the
+application's own policy says Permit: asked at `/oauth2/authorize` after
+sign-in and before the consent screen (a refusal is `access_denied`, sent to
+the `redirect_uri`), at `/oauth2/par` and at `/oauth2/token` for every grant,
+a refresh included (`invalid_authorization_details`). A policy that cannot be
+used is `server_error`, never a grant, and a token exchange may ask only for
+details its `subject_token` already carries. Applications that do not
+enforce it are unaffected. See [what happens at
+issuance](fga.md#what-happens-at-issuance).
+
 `derivableFrom` is GNAP's (RFC 9767 derivation), and GNAP ignores `xacml` and
 `notForPolicy`. `interaction`,
 `consentActions` and `acr` are recorded and enforced by a later phase of #432.
