@@ -40,9 +40,9 @@ decides locally, and an AuthZEN PEP asks this service per request.
 The [remote PEP](remote-pep.md#an-authzen-edge-pdp) container answers the same
 access evaluations itself, as an **edge PDP** over the policy and the attribute
 catalogue it pulls from the realm — so a PEP in its network can ask a PDP
-nearby, and gets the answer the service would give — except about an
+nearby, and gets the answer the service would give. An evaluation about an
 application that enforces fine-grained authorization, whose policy the edge
-PDP is never sent (see
+PDP is never sent, it forwards to this service (see
 [Applications with their own policy](#applications-with-their-own-policy)).
 **It admits the callers
 this realm admits**, pulled from the service: who holds `AUTHZEN_PEPS` as the
@@ -188,12 +188,20 @@ The audit row of such an evaluation names the application's policy, its
 `PolicyId` and version. The decision is counted on the AuthZEN row of
 **XACML → Monitor**, like every AuthZEN decision.
 
-**The remote PEP's edge PDP does not know about these policies.** They are
-withheld from `GET /xacml/pep/policies`, and the edge PDP decides every
-evaluation against the root policy it pulled, so an evaluation sent to the
-edge PDP about an application that enforces fine-grained authorization is
-answered by the root, not by the application's policy. Send those
-evaluations to this service.
+**The remote PEP's edge PDP forwards these evaluations here.** Application
+policies are withheld from `GET /xacml/pep/policies`, so the edge PDP never
+holds one. Instead the AuthZEN catalogue it pulls names the applications that
+enforce fine-grained authorization (`fgaApplications`), and an evaluation
+the edge PDP is asked about one of them is sent, as one single evaluation
+naming the application in `context.application`, to this realm's
+`POST /access/v1/evaluation` over mutual TLS with the PEP's own certificate.
+This service decides it against the application's policy, as above, and the
+edge passes the answer back. An error here — the `500` for a policy that
+cannot be used, a refusal of the PEP, no answer — is an error there, never
+`false`. So the PEP's directory entry must hold `AUTHZEN_PEPS` and have the
+application in its scope, and a policy here sees the **PEP** as the caller.
+[The remote PEP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded)
+has the details.
 
 ## The conversion back, XACML to AuthZEN
 

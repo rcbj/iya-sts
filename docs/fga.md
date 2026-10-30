@@ -60,7 +60,10 @@ through [AuthZEN](authzen.md); see
   service's own two policies. The sync token ignores them, so creating an
   application does not make the remote PEPs pull again. Fine-grained
   authorization is decided only by this service: a resource server asks it
-  through the AuthZEN endpoint, directly or through a remote PEP.
+  through the AuthZEN endpoint, directly or through a remote PEP's edge PDP,
+  which forwards the question here. What a remote PEP is sent instead is the
+  list of applications that enforce (`fgaApplications` on its AuthZEN
+  catalogue pull), so it knows which questions to forward.
 
 ## What happens at issuance
 
@@ -195,21 +198,33 @@ application that enforces fine-grained authorization the same policy answers
 it:
 
 ```
-resource server ──► remote PEP ──► POST /access/v1/evaluation ──► the application's policy
-resource server ───────────────►  (AuthZEN)
+resource server ──► remote PEP (edge PDP) ──forwarded──► POST /access/v1/evaluation ──► the application's policy
+resource server ─────────────────────────────────────►  (AuthZEN)
 ```
 
-The resource server, or a [remote PEP](remote-pep.md) in front of it, sends
-an [AuthZEN](authzen.md) access evaluation naming the application in
-`context.application`. When that application has `appFgaEnforced` on, the
-evaluation is decided against the application's own policy alone, never the
-realm's root policy and never a policy the root references. Every other
-application is decided against the root, as before. **Ask this service, not
-a remote PEP's [edge PDP](remote-pep.md#an-authzen-edge-pdp)**: the edge PDP
-answers AuthZEN from the policies it pulls, which never include an
-application's own policy, so about an application that enforces fine-grained
-authorization it answers from the root. It does not forward such an
-evaluation here.
+The resource server sends an [AuthZEN](authzen.md) access evaluation naming
+the application in `context.application`, to this service or to a remote
+PEP's [edge PDP](remote-pep.md#an-authzen-edge-pdp) in its network. When that
+application has `appFgaEnforced` on, the evaluation is decided against the
+application's own policy alone, never the realm's root policy and never a
+policy the root references. Every other application is decided against the
+root, as before.
+
+**Through a remote PEP**, the path is longer and the answer the same. The
+edge PDP admits the resource server and resolves the application as it does
+for any evaluation; it finds the application on the list of applications
+that enforce fine-grained authorization, which it pulls with its AuthZEN
+catalogue; and instead of deciding from the root policy it holds, it
+**forwards** the evaluation to this realm's `POST /access/v1/evaluation`,
+over mutual TLS with its own certificate. This service decides it against the
+application's policy and the edge PDP returns that answer. An error here
+(a policy that cannot be used is `500`), a refusal of the PEP or no answer
+is an error at the edge PDP, never `false`. For this to work, the remote
+PEP's own directory entry must hold `AUTHZEN_PEPS` and have the application
+in its scope — the requirements below, applied to the PEP; a policy then
+sees the PEP as `urn:sts:xacml:authzen:caller`. A switch of enforcement
+reaches the edge PDP at its next poll. See
+[The remote PEP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded).
 
 **What the caller needs** is what every AuthZEN caller needs:
 
