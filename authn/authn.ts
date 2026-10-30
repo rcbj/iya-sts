@@ -7954,14 +7954,12 @@ class Authn {
     // the policy's other rules (the console's alarm) answer every asking.
     // The second factors (#475) are the same kind of question, asked here on
     // the same terms: only of an application that allows only some.
-    // THE PERSON IS KNOWN HERE (#1237): a policy one of their groups names
-    // is asked about even where no application is named.
-    if (extra.gated === true && mechanismEvent &&
-        (extra.application || username) &&
-        (this.declaredMechanismsFor(String(extra.application || ''), username)
+    // THE PERSON IS KNOWN HERE (#1237), so the policy one of their groups
+    // names competes with the application's.
+    if (extra.gated === true && mechanismEvent && extra.application &&
+        (this.declaredMechanismsFor(String(extra.application), username)
           .allowed.length ||
-         this.mfaAllowedFor(String(extra.application || ''), username)
-           .length)) {
+         this.mfaAllowedFor(String(extra.application), username).length)) {
       // A DOOR THAT ASKED THE POLICY ITSELF (`gated: true`) asked it before
       // the authentication was complete — the password screen before its
       // second factor — so it could not ask about the MECHANISM, which needs
@@ -7970,7 +7968,7 @@ class Authn {
       // here, with the role question waived (it was asked) and no risk or
       // device facts (asked too): only the mechanism rule can deny it.
       const mechanismAnswer = gate.check({
-        application: String(extra.application || ''),
+        application: String(extra.application),
         kind: gate.ISSUANCE.SESSION,
         subject: { kind: 'user', name: username,
                    authenticated: extra.authenticated !== false },
@@ -10358,13 +10356,13 @@ class Authn {
               (applicationId || '(none)'));
     const name = String(applicationId || '').trim();
     const person = String(username || '').trim();
-    if (!name && !person) {
-      log.debug("Leaving Authn.mfaAllowedFor(). No application or person.");
+    if (!name) {
+      log.debug("Leaving Authn.mfaAllowedFor(). No application.");
       return [];
     }
     let allowed: string[] = [];
     try {
-      const entry = name ? applications.get(name) : null;
+      const entry = applications.get(name);
       allowed = mfaLib.allowedOf(entry ? entry.fields : null, person);
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0016') +

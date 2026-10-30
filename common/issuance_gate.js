@@ -468,10 +468,11 @@ function deviceBoundFactOf(asked) {
 // policy it names, `appAuthnPolicy`, since #1148; its own `appAuthnMechanism`
 // until then — or, since #1237, the policy one of the PERSON'S GROUPS names
 // where its precedence is lower) and those the person's authentication
-// satisfies, or null when there is nothing to compare — neither an
-// application nor a person, a policy that allows every mechanism, or an
-// issuance that is not a browser sign-in (rcbj: browser-based
-// authentication only).
+// satisfies, or null when there is nothing to compare — no application, a
+// policy that allows every mechanism, or an issuance that is not a browser
+// sign-in (rcbj: browser-based authentication only). A sign-in naming no
+// application is not asked here, as before: the issuance it is for — an
+// authorization code, an assertion — names one, and is asked then.
 //
 // A BROWSER ISSUANCE is one of four: a session started at a sign-in door,
 // which names the event it is about to record (`authenticationEvent`); and
@@ -541,7 +542,7 @@ function mechanismFactsOf(asked) {
   const person = personOf(asked);
   const event = asked.authenticationEvent || null;
   const session = asked.session || null;
-  if ((!name && !person) || asked.browser === false ||
+  if (!name || asked.browser === false ||
       BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
       (!event && !session) ||
       (String(asked.kind) === ISSUANCE.SESSION && !event)) {
@@ -551,7 +552,7 @@ function mechanismFactsOf(asked) {
   let allowed = [];
   const mechanisms = require('./authn_mechanisms');
   try {
-    const entry = name ? require('./applications').get(name) : null;
+    const entry = require('./applications').get(name);
     allowed = mechanisms.allowedOf(entry ? entry.fields : null, person);
   } catch (e) {
     log.debug('Caught in mechanismFactsOf(): ' + ((e && e.message) || e));
@@ -596,7 +597,7 @@ function mfaFactsOf(asked) {
   const person = personOf(asked);
   const event = asked.authenticationEvent || null;
   const session = asked.session || null;
-  if ((!name && !person) || asked.browser === false ||
+  if (!name || asked.browser === false ||
       BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
       (!event && !session) ||
       (String(asked.kind) === ISSUANCE.SESSION && !event)) {
@@ -612,7 +613,7 @@ function mfaFactsOf(asked) {
   }
   let allowed = [];
   try {
-    const entry = name ? require('./applications').get(name) : null;
+    const entry = require('./applications').get(name);
     allowed = factors.allowedOf(entry ? entry.fields : null, person);
   } catch (e) {
     log.debug('Caught in mfaFactsOf(): ' + ((e && e.message) || e));
