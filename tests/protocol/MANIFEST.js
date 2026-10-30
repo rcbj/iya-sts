@@ -609,7 +609,7 @@ const JOBS = [
   // passkey invited to register a post-quantum one is held at
   // /authn/post-login with no session, Skip starts the held session and the
   // code reaches the client, and the next sign-in is not asked; a named
-  // profile chosen by group. `local: true`: this repository's own /authn
+  // profile a group names (#1239), not deleted while named. `local: true`: this repository's own /authn
   // and /admin-api.
   { file: 'sts_post_login_activity.js', browser: false },
   // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list

@@ -15,7 +15,8 @@
 //      /authn/post-login — no session — with Register and Skip offered.
 //   2. Skip starts the held session: the code reaches the client.
 //   3. While it is put off, the next sign-in is not asked.
-//   4. A named profile chosen by group is saved and read back, and reset.
+//   4. A named profile a group names (#1239) is read back with the group,
+//      is not deleted while named, and is reset once the group lets go.
 //
 // The ML-DSA registration, the required case and the doors that cannot ask
 // are `tests/post_login.js`'s, in process, with a software authenticator.
@@ -293,21 +294,45 @@ async function test() {
     assert.strictEqual(answer.next, "redirect", JSON.stringify(answer.json));
   });
 
-  log.info("=== 4. a named profile chosen by group ===");
+  log.info("=== 4. a named profile a group names (#1239) ===");
+  await ok(realmApi + "/groups/create", { group: GROUP },
+           "created the group");
   await ok(realmApi + "/policies/save-postLogin-policy", {
-    profile: "pilot", selectGroups: [GROUP], precedence: 10,
+    profile: "pilot", precedence: 10,
     enabled: false, activity: "pqc-passkey-migration", snoozeDays: 7,
     graceDays: 30, noPasskey: "require",
     method: "upgrade", attestation: "post-quantum",
     noPasskeyFallback: "classical" },
     "saved a named profile");
+  await ok(realmApi + "/groups/set-policy", { group: GROUP,
+    attribute: "stsPostLoginPolicy", policy: "pilot" },
+    "named it from the group");
   const named = await send(realmApi + "/policies");
-  check("the named profile is read back with its group and precedence",
-    function () {
-      const json = JSON.stringify(named.body.postLogin || {});
-      assert.ok(json.indexOf(GROUP) >= 0 && /"precedence":10/.test(json),
-                json.slice(0, 800));
+  check("the named profile is read back with its precedence, and the group " +
+    "naming it", function () {
+      const member = named.body.postLogin || {};
+      const row = (member.named || []).filter(function (one) {
+        return one.name === "pilot";
+      })[0] || {};
+      assert.ok(row.precedence === 10 &&
+                ((row.namedBy || {}).groups || []).indexOf(GROUP) >= 0 &&
+                (member.references || {}).group === "stsPostLoginPolicy" &&
+                (member.references || {}).application ===
+                  "appPostLoginPolicy",
+                JSON.stringify(member).slice(0, 800));
     });
+  const refused = await send(realmApi + "/policies/reset-postLogin-policy", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile: "pilot" }) });
+  check("a profile a group names is not deleted (STS-AUTHN-0540)",
+    function () {
+      assert.ok(refused.status === 400 ||
+                (refused.body && refused.body.ok === false),
+                refused.status + " " + String(refused.raw).slice(0, 400));
+    });
+  await ok(realmApi + "/groups/set-policy", { group: GROUP,
+    attribute: "stsPostLoginPolicy", policy: "" },
+    "cleared the group's reference");
   await ok(realmApi + "/policies/reset-postLogin-policy",
            { profile: "pilot" }, "removed the named profile");
   await ok(realmApi + "/policies/reset-postLogin-policy",
