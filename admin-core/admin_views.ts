@@ -11136,6 +11136,14 @@ class AdminViews {
     try {
       out = require('../xacml/fga_policies')
         .state(String((row && row.identifier) || ''));
+      // The mapping forms' closed sets, read off the grammar that holds
+      // them (`xacml_attribute_rows.ts`), as the AuthZEN tab's are.
+      const grammar = require('../xacml/xacml_attribute_rows');
+      out.choices = {
+        categories: Object.keys(grammar.CATEGORY_NAMES),
+        dataTypes: Object.keys(grammar.TYPE_NAMES),
+        multiplicities: grammar.MULTIPLICITIES.slice(0)
+      };
     } catch (e) {
       log.debug("Caught in AdminViews.applicationFgaState(): " +
                 ((e && e.message) || e));

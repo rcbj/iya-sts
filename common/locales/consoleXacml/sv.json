@@ -286,5 +286,18 @@
   "authzen.noScope": "inget – den får inte fråga om något",
   "authzen.noCallers": "Gruppen har inga medlemmar, så ingen får anropa AuthZEN-API:t.",
   "authzen.scopeHeading": "Ange en anropares programomfång",
-  "authzen.setScope": "Ange omfång"
+  "authzen.setScope": "Ange omfång",
+  "fga.heading": "Programmens egna policyer",
+  "fga.label": "Vad det här avsnittet är",
+  "fga.p1": "Varje program äger en policy för finkornig auktorisering som avgör RFC 9396-detaljerna av dess egna typer. Den är aldrig roten, skickas aldrig till fjärr-PEP:er och redigeras i redigeraren som vilken annan policy som helst.",
+  "fga.p2": "Policyn för ett borttaget program behålls, avstängd och märkt som föräldralös, tills den tas bort här. Den policy ett program fortfarande namnger kan inte tas bort; återställ den från programmets flik Finkornig auktorisering.",
+  "fga.thApplication": "Program",
+  "fga.thVersion": "Version",
+  "fga.enforced": "tillämpas",
+  "fga.deleted": "borttaget",
+  "fga.orphaned": "föräldralös sedan {when}",
+  "fga.unreferenced": "inget program namnger den",
+  "fga.remove": "Ta bort",
+  "fga.removeTip": "Radera policyn. Inget program namnger den, så ingenting avgör med den.",
+  "fga.none": "Inget program äger en policy i den här sfären."
 }

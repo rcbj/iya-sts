@@ -292,6 +292,7 @@ const EXACT: Record<string, string> = {
   'tab-roles': 'admin-console.html#roles--adminroles',
   'tab-entry': 'ldap.html',
   'tab-access-types': 'gnap.html#access-types-and-the-issuance-policy',
+  'tab-fga': 'fga.html#the-console-and-the-api',
   'tab-addresses': 'applications.html#the-console-page-and-the-api',
   'tab-permissions': 'delegation.html',
   'utab-overview': 'admin-console.html#users--adminusers',
@@ -327,7 +328,9 @@ const PREFIXES: Record<string, string> = {
   'cert-scep-': 'scep.html',
   'cert-spiffe-': 'spiffe.html',
   'tab-custom-': 'listeners.html',
-  'passkey-sub-': 'authentication.html#the-passkey-policy'
+  'passkey-sub-': 'authentication.html#the-passkey-policy',
+  // An access type's XACML mapping sub-tab (#564, P5), one per type.
+  'atmap-': 'fga.html#mapping-a-types-members'
 };
 
 const PORTAL: Record<string, string> = {

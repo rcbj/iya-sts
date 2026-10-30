@@ -708,6 +708,21 @@ class WebAnswers {
       out.state = { draft: fields, error: errors };
       return { json: out, banner: '' };
     }
+    // A REFUSED MAPPING ROW (#564, P5): the Access types tab's XACML
+    // mapping forms come back as typed, with the refusal under the box the
+    // answer's `field` names, rather than as a sentence at the top of a
+    // page the reader has scrolled away from.
+    if (page === '/admin/applications' && !ok &&
+        ['set-access-type-row', 'remove-access-type-row',
+         'set-not-for-policy'].indexOf(action) >= 0) {
+      const out = WebAnswers.copy(json);
+      out.state = Object.assign({}, out.state || {}, {
+        fgaMapping: { type: WebAnswers.one(fields, 'type'), action: action,
+                      field: String((answer && answer.field) || ''),
+                      errors: errors.length ? errors : ['Refused.'],
+                      draft: fields } });
+      return { json: out, banner: '' };
+    }
     // AN OWNER OR THE DESTINATION SAVED AT ONCE (#602): the page drawn
     // again in place — the search results kept, so a second owner is one
     // more press — with the account as the answer now holds it and the

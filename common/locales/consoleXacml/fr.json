@@ -286,5 +286,18 @@
   "authzen.noScope": "aucune — il ne peut interroger sur rien",
   "authzen.noCallers": "Le groupe n’a aucun membre : personne ne peut donc appeler l’API AuthZEN.",
   "authzen.scopeHeading": "Définir la portée d’applications d’un appelant",
-  "authzen.setScope": "Définir la portée"
+  "authzen.setScope": "Définir la portée",
+  "fga.heading": "Politiques propres aux applications",
+  "fga.label": "De quoi il s’agit",
+  "fga.p1": "Chaque application possède une politique d’autorisation fine qui décide les détails RFC 9396 de ses propres types. Elle n’est jamais la racine, n’est jamais envoyée aux PEP distants et se modifie dans l’éditeur comme toute autre politique.",
+  "fga.p2": "La politique d’une application supprimée est conservée, désactivée et marquée orpheline, jusqu’à ce qu’elle soit retirée ici. La politique qu’une application nomme encore ne peut pas être retirée ; rétablissez-la depuis l’onglet Autorisation fine de l’application.",
+  "fga.thApplication": "Application",
+  "fga.thVersion": "Version",
+  "fga.enforced": "appliquée",
+  "fga.deleted": "supprimée",
+  "fga.orphaned": "orpheline depuis {when}",
+  "fga.unreferenced": "aucune application ne la nomme",
+  "fga.remove": "Retirer",
+  "fga.removeTip": "Supprime cette politique. Aucune application ne la nomme, donc rien ne décide avec elle.",
+  "fga.none": "Aucune application ne possède de politique dans ce domaine."
 }

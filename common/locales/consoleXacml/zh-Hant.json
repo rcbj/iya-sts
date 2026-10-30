@@ -286,5 +286,18 @@
   "authzen.noScope": "無——不能詢問任何內容",
   "authzen.noCallers": "該群組沒有成員，因此沒有人可以呼叫 AuthZEN API。",
   "authzen.scopeHeading": "設定呼叫端的應用程式範圍",
-  "authzen.setScope": "設定範圍"
+  "authzen.setScope": "設定範圍",
+  "fga.heading": "各應用程式自己的原則",
+  "fga.label": "此區段是什麼",
+  "fga.p1": "每個應用程式都擁有一個細粒度授權原則，用於決定其自身類型的 RFC 9396 詳細資料。它從不作為根原則，從不傳送給遠端 PEP，並像其他原則一樣在編輯器中編輯。",
+  "fga.p2": "已刪除應用程式的原則會被保留、停用並標示為孤立，直到在此處移除。應用程式仍在引用的原則無法移除；請從該應用程式的「細粒度授權」索引標籤重設它。",
+  "fga.thApplication": "應用程式",
+  "fga.thVersion": "版本",
+  "fga.enforced": "已強制執行",
+  "fga.deleted": "已刪除",
+  "fga.orphaned": "自 {when} 起孤立",
+  "fga.unreferenced": "沒有應用程式引用它",
+  "fga.remove": "移除",
+  "fga.removeTip": "刪除此原則。沒有應用程式引用它，因此沒有任何決定使用它。",
+  "fga.none": "此領域中沒有應用程式擁有原則。"
 }
