@@ -359,15 +359,19 @@ async function childBody() {
   // A. THE AUDIT ROW, AND THE MONITOR
   // -------------------------------------------------------------------------
   const named = authzenRows().filter(function (row) {
-    const text = JSON.stringify(row);
+    // The row's own text, not its JSON: a quote inside it is escaped there.
+    const text = String(row.summary || '') + ' ' +
+                 String(typeof row.detail === 'string' ? row.detail : '');
     return text.indexOf('"' + docsPolicy + '"') >= 0 &&
-           text.indexOf('urn:test:fgazen-docs') >= 0 &&
+           text.indexOf('PolicyId urn:test:fgazen-docs') >= 0 &&
+           /, version [^,)]+\)/.test(text) &&
            /fine-grained authorization policy/.test(text);
   });
   t.check(named.length >= 2,
           'A1. the authzen.decision row names the fine-grained policy, ' +
           'its PolicyId and version', named.length + ' row(s): ' +
-          JSON.stringify(named[0] || null).slice(0, 400));
+          JSON.stringify(named[0] || authzenRows().slice(-1)[0] || null)
+            .slice(0, 600));
   const rootRow = authzenRows().filter(function (row) {
     return /fgaz-plain/.test(JSON.stringify(row));
   })[0];
