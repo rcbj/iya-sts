@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4867** of them, in **50** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4873** of them, in **50** subsystems.
 
 ## Where a code appears
 
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 39
-* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 21
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 27
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4751,25 +4751,31 @@ Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacm
 |---|---|---|
 | `STS-FGA-0001` | A policy that belongs to an application (it carries xacmlApplication) was written as the repository root and refused: an application's fine-grained policy decides that application's details and never the realm's root question. | the write is refused |
 | `STS-FGA-0002` | The console or /admin-api asked to make an application's fine-grained policy the repository root, and was refused before the current root was demoted. | the caller's refusal (why on a console or /admin-api reply) |
-| `STS-FGA-0003` | An application has no fine-grained policy: its appFgaPolicy is empty. | none here — a later phase refuses the issuance |
-| `STS-FGA-0004` | An application's appFgaPolicy names a policy entry that is not in this realm's ou=policies. | none here — a later phase refuses the issuance |
-| `STS-FGA-0005` | An application's appFgaPolicy names a policy entry that does not belong to it: the entry's xacmlApplication is absent or names another application, or the entry is marked orphaned. | none here — a later phase refuses the issuance |
-| `STS-FGA-0006` | An application's fine-grained policy is disabled (xacmlEnabled FALSE). An enforced application with a disabled policy refuses; switching enforcement on is refused until the policy is enabled. | none here — a later phase refuses the issuance |
-| `STS-FGA-0007` | An application's fine-grained policy does not parse or does not type-check. | none here — a later phase refuses the issuance |
+| `STS-FGA-0003` | An application has no fine-grained policy: its appFgaPolicy is empty. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) where the application enforces FGA; none otherwise |
+| `STS-FGA-0004` | An application's appFgaPolicy names a policy entry that is not in this realm's ou=policies. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) where the application enforces FGA; none otherwise |
+| `STS-FGA-0005` | An application's appFgaPolicy names a policy entry that does not belong to it: the entry's xacmlApplication is absent or names another application, or the entry is marked orphaned. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) where the application enforces FGA; none otherwise |
+| `STS-FGA-0006` | An application's fine-grained policy is disabled (xacmlEnabled FALSE). An enforced application with a disabled policy refuses; switching enforcement on is refused until the policy is enabled. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) where the application enforces FGA; none otherwise |
+| `STS-FGA-0007` | An application's fine-grained policy does not parse or does not type-check. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) where the application enforces FGA; none otherwise |
 | `STS-FGA-0008` | An application's default fine-grained policy could not be written: there is no directory, ou=policies is at xacml.maxPolicies, or the document was refused. The application stays without one until FGA is next enabled on it. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
 | `STS-FGA-0009` | A fine-grained authorization act named an application this realm's registry does not hold. | the caller's refusal |
 | `STS-FGA-0010` | The application lifecycle hook (create or delete) failed or threw. The application create or delete itself stands; the policy was not created or not retired. | none — logged; the create or delete succeeds |
 | `STS-FGA-0011` | The FGA lifecycle slot offered to common/applications.js was incomplete (it needs both created and deleted) and was not installed. | none — logged at load |
 | `STS-FGA-0012` | An application's appFgaPolicy or appFgaEnforced could not be written to its entry: the directory refused the write. | the caller's refusal |
 | `STS-FGA-0013` | A deleted application's fine-grained policy could not be disabled and marked orphaned; it is left as it was. | none — logged; the delete succeeds |
-| `STS-FGA-0100` | A fine-grained authorization question was asked with a type definition that is not usable (it carries a problem, or names no type), so no request could be built for the detail. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
-| `STS-FGA-0101` | A fine-grained authorization question was asked about a detail that is not a JSON object of the definition's type. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
-| `STS-FGA-0102` | A fine-grained authorization question was asked without the trusted facts the adapter must supply: the owning application, or a stage that is one of authorize, token, refresh, exchange, par or access. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
-| `STS-FGA-0103` | An authorization detail carried a member its type neither maps (xacml) nor lists in notForPolicy, so it could not reach the owning application's policy and was never read as an attribute. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
-| `STS-FGA-0104` | A member of an authorization detail that a type's xacml row maps was null, or a bag held a null. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
-| `STS-FGA-0105` | A member of an authorization detail had a JSON type its xacml row's datatype does not take, or a string outside that datatype's lexical space. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
-| `STS-FGA-0106` | A member of an authorization detail was an array where its xacml row sends a single value, or carried more than 256 values. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
-| `STS-FGA-0107` | A member of an authorization detail was an object where its xacml row sends values (a nested object reaches a request only through rows for its own members), or was nested too deeply. | access_denied at the authorization endpoint, invalid_authorization_details at the token endpoint |
+| `STS-FGA-0014` | An application that enforces fine-grained authorization refused an authorization detail of one of its types: its policy decided Deny, NotApplicable, or Indeterminate over a missing attribute, or Permit with an obligation this service cannot discharge. Only a Permit with nothing undischargeable grants a detail. | access_denied at the authorization endpoint (redirected), invalid_authorization_details at the PAR and token endpoints (HTTP 400) |
+| `STS-FGA-0015` | A fine-grained authorization decision could not be made: the application's policy reached Indeterminate through a processing or syntax error, or the embedded FGA PEP threw or answered nothing. The detail is refused; this is a fault, never a Permit. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) |
+| `STS-FGA-0016` | An authorization detail's type belongs to an application that enforces fine-grained authorization, and no FGA decider is installed in this process (the XACML family is not loaded), so the detail is refused rather than issued undecided. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) |
+| `STS-FGA-0017` | A token exchange asked for an authorization detail whose type's application enforces fine-grained authorization, and the subject_token does not cover it: it is not a token this service issued with authorization_details, or none of its details of that type covers the requested one (RFC 9396 section 6's subset rule). | invalid_authorization_details (HTTP 400) |
+| `STS-FGA-0018` | Switching fine-grained authorization on for an application was refused: a type it declares has member paths that are neither mapped (xacml) nor listed in notForPolicy, or its schema is open. | the caller's refusal, naming the uncovered paths |
+| `STS-FGA-0019` | An oauthAuthorizationDetailsType value written to an application that enforces fine-grained authorization was refused: the definition would leave member paths neither mapped nor listed in notForPolicy, which enforcement could not decide. | the caller's refusal, naming the uncovered paths |
+| `STS-FGA-0100` | A fine-grained authorization question was asked with a type definition that is not usable (it carries a problem, or names no type), so no request could be built for the detail. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0101` | A fine-grained authorization question was asked about a detail that is not a JSON object of the definition's type. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0102` | A fine-grained authorization question was asked without the trusted facts the adapter must supply: the owning application, or a stage that is one of authorize, token, refresh, exchange, par or access. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0103` | An authorization detail carried a member its type neither maps (xacml) nor lists in notForPolicy, so it could not reach the owning application's policy and was never read as an attribute. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0104` | A member of an authorization detail that a type's xacml row maps was null, or a bag held a null. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0105` | A member of an authorization detail had a JSON type its xacml row's datatype does not take, or a string outside that datatype's lexical space. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0106` | A member of an authorization detail was an array where its xacml row sends a single value, or carried more than 256 values. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0107` | A member of an authorization detail was an object where its xacml row sends values (a nested object reaches a request only through rows for its own members), or was nested too deeply. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 
 ## STS-ADMIN
 
