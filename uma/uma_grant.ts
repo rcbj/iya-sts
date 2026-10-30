@@ -661,6 +661,38 @@ class UmaGrant {
   }
 
   /**
+   * An RPT's permissions for the resource server it was issued for, when
+   * that resource server introspected it with its own client credentials
+   * (#1196, rcbj 2026-10-30). Keycloak's resource server
+   * (keycloak-authz-client) introspects an RPT that way rather than with its
+   * PAT; the answer is the PAT door's, for the same resource server alone.
+   *
+   * @param answer - the introspection answer, active
+   * @param clientId - the client that authenticated
+   * @returns the permissions, or null for any other token or caller
+   */
+  permissionsFor(answer: Json, clientId: string): Json {
+    const { log, store, applications, nowSec } = this.deps;
+    log.debug("Entering UmaGrant.permissionsFor().");
+    const row = answer && answer.active === true && answer.jti
+      ? store.rpt(String(answer.jti)) : null;
+    const registered = row && clientId
+      ? applications.forClientId(String(clientId)) : null;
+    if (!row || !registered ||
+        String(registered.identifier || '') !== String(row.resourceServer) ||
+        (Number(row.exp) > 0 && Number(row.exp) <= nowSec())) {
+      log.debug("Leaving UmaGrant.permissionsFor(). Not its RPT.");
+      return null;
+    }
+    log.debug("Leaving UmaGrant.permissionsFor().");
+    return (row.permissions || []).map(function (p: Json) {
+      return { resource_id: p.resource_id,
+               resource_scopes: (p.resource_scopes || []).slice(),
+               exp: Number(row.exp) || undefined };
+    });
+  }
+
+  /**
    * An introspection presented with a PAT, or undefined for any other.
    *
    * @param ctx - `req`, `res`, `token` and the endpoint's `introspectionOf`
@@ -743,6 +775,9 @@ class UmaGrant {
       revokePct: function (token: string, clientId: string,
                            identified: boolean): Json {
         return self.revokePct(token, clientId, identified);
+      },
+      permissionsFor: function (answer: Json, clientId: string): Json {
+        return self.permissionsFor(answer, clientId);
       }
     });
     log.debug("Leaving UmaGrant.installHandler().");

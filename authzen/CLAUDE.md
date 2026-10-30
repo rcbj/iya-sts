@@ -464,6 +464,18 @@ mirrors name the tab too.
 
 * **The realm's ROOT policy** (decision 7), through the XACML surface's own
   `decide()`; `protocol = authzen` tells the question apart.
+* **A REGISTERED UMA 2.0 RESOURCE is decided by UMA (#1196, rcbj
+  2026-10-30).** `decideEvaluation()` hands an evaluation whose resource
+  type is `uma_resource` to `decideUma()` before anything else: the UMA PEP's
+  own `decide()` as a dry run at stage `assess`, the client's grant taken as
+  declared (nobody is asking for a token), the subject a person by username
+  or subject, the action's name the scope. The application must be the
+  resource server the resource is registered with, and the scope one it was
+  registered with, or the answer is false. #1168's design point 11 sends a
+  resource server here for the CURRENT answer, and until this the root
+  decided it, knowing nothing of the owner's document — so an owner's
+  revocation changed an RPT and not this answer. The monitor counts it on
+  the `authzen` row; the UMA PEP's dry run records nothing of its own.
 * **AMENDED 2026-10-30 BY #564's P4 (rcbj's decision 4 on #564): an
   application that ENFORCES fine-grained authorization is decided against
   ITS OWN policy instead.** Once `applicationOf()` has chosen the

@@ -31,7 +31,7 @@ put to the XACML engine, and this page says which policies answer it.
 | 4 (#1193) | The `uma-ticket` grant: the layers, `need_info`, the RPT, the PCT, upgrade, introspection, revocation | built |
 | 5 (#1194) | Claims interaction, `claim_token`, `request_submitted` and the owner's approval | built |
 | 6 (#1195) | The console, `/admin-api` and the monitor | built |
-| 7 (#1196) | Protocol tests with Keycloak as the independent peer | |
+| 7 (#1196) | Protocol tests, with Keycloak's UMA library as the independent peer | built |
 
 ## The protection API
 
@@ -131,7 +131,9 @@ no refresh token unless `uma.rptRefreshToken` is on.
 **Introspection.** A resource server introspects an RPT at
 `/oauth2/introspect` with its PAT as `Authorization: Bearer`. The answer adds
 `permissions` and has no `scope`; an RPT issued for another resource server
-is `active: false`.
+is `active: false`. A resource server that introspects with its own **client
+credentials** instead, as Keycloak's UMA library does, is answered the same
+way for the RPTs issued for it; any other client sees no `permissions`.
 
 **Revocation.** Removing a share, deleting a resource, narrowing its scopes,
 an owner's ALFA edit, and the owner's account being disabled or deleted each
@@ -139,6 +141,24 @@ revoke the RPTs that carried what changed, so introspection answers
 `active: false`. A PCT is revoked at `/oauth2/revoke`. **An RPT is what the
 owner allowed when it was issued**: a resource server that needs the current
 answer asks [AuthZEN](authzen.md)'s `/access/v1/evaluation`.
+
+**The current answer, from AuthZEN.** An evaluation whose resource is
+`{"type": "uma_resource", "id": "<the resource's _id>"}`, whose action's name
+is one of its scopes, whose subject is a person and whose application is the
+resource server it was registered with is decided by UMA: the realm's
+`uma-authorization` policy and the owner's own document, as they are now. An
+owner removing a share is therefore `false` there at once. Anything that does
+not name a resource of that resource server, or a scope it was registered
+with, is `false`.
+
+```json
+{
+  "subject":  { "type": "user", "id": "alice" },
+  "action":   { "name": "view" },
+  "resource": { "type": "uma_resource", "id": "RIFyAJWiPlr7_86oUnho-A" },
+  "context":  { "application": "photos-api" }
+}
+```
 
 ## When the requesting party is not known yet
 

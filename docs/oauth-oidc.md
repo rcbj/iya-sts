@@ -1832,7 +1832,9 @@ encrypted) JWT addressed to the resource server that asked. A JWT request must
 authenticate in every mode, because its `aud` has to name the caller. An
 authenticated caller learns only about tokens meant for it; any other token is
 reported as `{"active": false}`. The answer includes `cnf`, `acr`, `auth_time`
-and `authorization_details`.
+and `authorization_details`. `token_type_hint` is a hint: an unknown value,
+such as Keycloak's `requesting_party_token`, is ignored (RFC 7662 section
+2.1).
 
 #### Introspection as a JWT (RFC 9701)
 

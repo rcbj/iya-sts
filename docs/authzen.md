@@ -208,6 +208,16 @@ application in its scope, and a policy here sees the **PEP** as the caller.
 [The remote PEP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded)
 has the details.
 
+### UMA 2.0 resources
+
+An evaluation whose resource type is `uma_resource` names a resource
+registered through [UMA 2.0](uma.md)'s protection API, by its `_id`. It is
+decided by UMA, not the root or an FGA policy: the realm's
+`uma-authorization` policy and the resource owner's own document, as they
+are at that moment, for the person the subject names and the scope the
+action names. The application must be the resource server the resource is
+registered with. [UMA 2.0](uma.md#the-grant) has an example.
+
 ## The conversion back, XACML to AuthZEN
 
 Only an explicit Permit allows access. A failure to decide is never reported

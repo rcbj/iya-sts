@@ -106,6 +106,11 @@
 #                        makes a runtime of only the modules it uses — the
 #                        runner gets that, the jars and the licences, and
 #                        no JDK or Maven.
+#   keycloak-authz-client 26.0.12  Apache-2.0. Keycloak's UMA 2.0 client
+#                        and resource-server LIBRARY, the independent peer
+#                        of tests/protocol/sts_uma.js (#1196): a thin command
+#                        line over it, tests/tools/keycloak-uma-driver, built
+#                        in the `uma-java` stage exactly as jscep's is.
 #
 # NOTHING OF THEIRS IS VENDORED: each is fetched from its publisher at build
 # time, each archive is held to a sha256 here, and a GitHub archive of a
@@ -187,6 +192,14 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o sscep.tgz \
 FROM maven:3.9.16-eclipse-temurin-21-noble AS enroll-java
 COPY tests/tools/jscep-driver /usr/src/jscep-driver
 RUN /usr/src/jscep-driver/build.sh /usr/src/jscep-driver /out/jscep
+
+# KEYCLOAK'S UMA 2.0 CLIENT, THROUGH ITS DRIVER (#1196): see the header and
+# tests/tools/keycloak-uma-driver/build.sh — jscep's arrangement, a stage of
+# its own so that neither rebuilds the other.
+FROM maven:3.9.16-eclipse-temurin-21-noble AS uma-java
+COPY tests/tools/keycloak-uma-driver /usr/src/keycloak-uma-driver
+RUN /usr/src/keycloak-uma-driver/build.sh /usr/src/keycloak-uma-driver \
+      /out/keycloak-uma
 
 # THE SECOND SCIM HARNESS, COMPILED IN A STAGE OF ITS OWN (#206).
 # scim2/test-suite is Go, and a Go toolchain in the runner image would be
@@ -561,6 +574,11 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/${CERTMONGER_DEB} \
 COPY --from=enroll-java /out/jscep /opt/enroll-clients/jscep
 RUN ln -s /opt/enroll-clients/jscep/jscep-driver /usr/local/bin/jscep-driver \
  && (jscep-driver 2>&1 | head -1)
+# Keycloak's UMA client (#1196): its driver, runtime and licences.
+COPY --from=uma-java /out/keycloak-uma /opt/uma-clients/keycloak
+RUN ln -s /opt/uma-clients/keycloak/keycloak-uma-driver \
+      /usr/local/bin/keycloak-uma-driver \
+ && (keycloak-uma-driver 2>&1 | head -1)
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing

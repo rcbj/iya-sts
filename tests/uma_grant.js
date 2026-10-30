@@ -409,6 +409,33 @@ async function childBody() {
   r = await introspect('not-a-pat', rpt);
   t.check(r.status === 401, 'N3. a PAT that does not verify is 401',
           brief(r));
+  // KEYCLOAK'S WAY (#1196, rcbj 2026-10-30): keycloak-authz-client
+  // introspects an RPT with its client credentials and the hint
+  // `requesting_party_token`. The hint is ignored (RFC 7662 section 2.1),
+  // and the resource server the RPT was issued for is answered its
+  // permissions as the PAT door answers them; another client is not.
+  const asClient = async function (id) {
+    log.debug("Entering asClient().");
+    const out = await request(port, 'POST', PREFIX + '/oauth2/introspect',
+      'token=' + encodeURIComponent(rpt) +
+      '&token_type_hint=requesting_party_token',
+      { 'content-type': 'application/x-www-form-urlencoded',
+        authorization: basic(id) });
+    log.debug("Leaving asClient().");
+    return out;
+  };
+  r = await asClient('ug-rs');
+  t.check(r.status === 200 && r.json.active === true &&
+          Array.isArray(r.json.permissions) &&
+          r.json.permissions[0].resource_id === photo &&
+          r.json.scope === undefined,
+          'N6. the RPT\'s resource server, introspecting with its client ' +
+          'credentials and Keycloak\'s hint, is answered the permissions',
+          brief(r));
+  r = await asClient('ug-rs2');
+  t.check(r.status === 200 && r.json.permissions === undefined,
+          'N7. another client\'s credentials are answered no permissions',
+          brief(r));
 
   // --- U. upgrade ------------------------------------------------------------
   r = await ask('ug-client', { ticket: await ticketFor(pat,
@@ -430,10 +457,47 @@ async function childBody() {
           'U2. an RPT of another resource server cannot be upgraded with ' +
           'this ticket', brief(r));
 
+  // --- Z. AuthZEN at access time (#1196, rcbj 2026-10-30) ------------------
+  // A resource server asking /access/v1/evaluation about a registered UMA
+  // resource gets UMA's CURRENT answer; the decision itself is asked here,
+  // through the surface's own decideEvaluation(), since the door's mutual
+  // TLS is the protocol job's.
+  const authzen = require(ROOT + '/authzen/authzen');
+  const az = new authzen.AuthzenSurface(authzen.AuthzenSurface.defaultDeps());
+  const accessOf = function (who, scope, id) {
+    log.debug("Entering accessOf().");
+    const decided = inRealm(function () {
+      return az.decideEvaluation({
+        subject: { type: 'user', id: who }, action: { name: scope },
+        resource: { type: 'uma_resource', id: id || photo }, context: {} },
+        'caller', 'ug-rs');
+    });
+    log.debug("Leaving accessOf().");
+    return decided.outcome || {};
+  };
+  t.check(accessOf('ug-bob', 'view').decision === true &&
+          accessOf('ug-cat', 'view').decision === false &&
+          accessOf('ug-bob', 'no-such-scope').decision === false,
+          'Z1. AuthZEN about a UMA resource answers the owner\'s share: the ' +
+          'party true, a stranger and a scope it lacks false',
+          JSON.stringify([accessOf('ug-bob', 'view'),
+                          accessOf('ug-cat', 'view')]));
+  const elsewhere = inRealm(function () {
+    return az.decideEvaluation({ subject: { type: 'user', id: 'ug-bob' },
+      action: { name: 'view' }, resource: { type: 'uma_resource',
+      id: photo }, context: {} }, 'caller', 'ug-rs2').outcome;
+  });
+  t.check(elsewhere.decision === false,
+          'Z2. asked by another resource server, false',
+          JSON.stringify(elsewhere));
+
   // --- N4. the owner withdraws: the RPT ends --------------------------------
   inRealm(function () {
     owner.unshare('ug-rs', share.share.id);
   });
+  t.check(accessOf('ug-bob', 'view').decision === false,
+          'Z3. after the owner withdraws, AuthZEN answers false at once',
+          JSON.stringify(accessOf('ug-bob', 'view')));
   r = await introspect(pat, otherRpt);
   t.check(r.status === 200 && r.json.active === false,
           'N4. a resource owner revokes a share: the RPT that carried it is ' +
