@@ -378,7 +378,10 @@ carry a person's groups is the `groups.*` settings on [LDAP](ldap.md).
 
 ## The password policy
 
-A realm's password policy is the entry `cn=default,ou=passwordPolicies,<base>`.
+A realm's password policy is the entry `cn=default,ou=passwordPolicies,<base>`,
+or for a member of a group naming one in `stsPasswordPolicy`, that [named
+password
+policy](authentication.md#different-password-rules-for-different-applications-or-groups).
 It is enforced on an LDAP write of `userPassword` in product mode, and a
 refusal is 19 `constraintViolation`. Taken from the in-process test
 `tests/password_policy.js`, which saves the profile below and then sets a

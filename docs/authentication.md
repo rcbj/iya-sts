@@ -152,7 +152,9 @@ cluster (`security.rateLimit*`).
   *Directory → Policies* (`/admin/policies`): minimum length (12), symbols (1),
   an uppercase letter, a digit, and none of the last five passwords. It is
   enforced in product mode wherever a password is set, and it shapes every
-  password the service generates.
+  password the service generates. See
+  [Different password rules for different applications or
+  groups](#different-password-rules-for-different-applications-or-groups).
 * **Forced change.** `pwdReset: TRUE` on an entry (from
   [draft-behera-ldap-password-policy](https://datatracker.ietf.org/doc/html/draft-behera-ldap-password-policy))
   means the password must be changed before it is used. The sign-in screen
@@ -185,6 +187,48 @@ cluster (`security.rateLimit*`).
   a password or enrols a security key or an authenticator app.
 * A person changes their own password at `/portal/password`; an operator sets
   one with `POST /admin-api/users/set-password`.
+
+
+### Different password rules for different applications or groups
+
+Besides `default`, a realm can hold **named password policies**, each with
+every rule `default` has and a **precedence** from 1 to 1000. Add one on
+*Directory → Policies → Password policy → New policy*, or with
+`POST /admin-api/policies/save-password-policy` naming a `profile` other
+than `default`:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  https://sts.example.com/admin-api/policies/save-password-policy \
+  -d '{"profile":"admins","precedence":10,"minLength":20,"history":10,
+       "minSymbols":1,"requireUppercase":true,"requireDigit":true,
+       "generatedLength":32}'
+```
+
+A policy applies to the people something names it for:
+
+- a **group**, in its `stsPasswordPolicy` (the group's page, or
+  `POST /admin-api/groups/set-policy` with `"attribute":"stsPasswordPolicy"`),
+  holds every member to it;
+- an **application**, in its `appPasswordPolicy` (a field of the
+  application's *Every protocol* settings, or
+  `POST /admin-api/applications/set`), holds to it a password chosen while
+  signing in to that application — the forced change after a reset.
+
+Of the policies named for a person, the **lowest precedence** applies, ties
+by name; where nothing names one, `default` does. A door with no application
+in hand — the portal's password page, activation, a reset link, the console,
+`/admin-api` and an LDAP write — ranks the person's groups' policies alone,
+and the rules a page shows before a password is typed are the ones that will
+be applied. The same policy decides the length of a password the service
+generates for the person and how their password is hashed.
+
+Each reference accepts only `default` or a policy the realm holds, and a
+named policy that a group or an application still names cannot be removed
+(`STS-AUTHN-0540`). If a reference names a policy the realm does not hold —
+written past the console — the person is held to `default`, whatever else is
+named, and the service logs `STS-AUTHN-0539`. Named policies belong to their
+realm and are not inherited by other realms.
 
 ### WebAuthn
 

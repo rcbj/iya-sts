@@ -8995,8 +8995,45 @@ reads, and `pwdInHistory` keeps the draft's meaning: PREVIOUS passwords, with th
 current one refused beside them. The draft defines no composition rule, so those
 are `stsPwd*` and nobody mistakes them for the draft's.
 
-**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and `crypto.js`,
-and its directory arrives through a slot
+**NAMED POLICIES, AND WHAT NAMES ONE (#1236, 2026-10-30).** The container
+now holds named policies beside `cn=default` — every row, plus
+`stsPasswordPrecedence` — on rule 3cx's recipe: an application names one in
+`appPasswordPolicy`, a group in `stsPasswordPolicy`, a person none of their
+own. `profileFor(username, application)` was written in 2026-09 with a
+username it ignored precisely so that this day would change its body and no
+caller, and that is how it went: every door already handed the person in,
+so `setPassword()`/`preparePassword()` (the console, `/admin-api`, the
+portal's password page, activation, a reset link, an LDAP add or modify and
+the LDAP off-loop prehash), `generatePassword()`, `passwordRules()` and the
+sign-in upgrade's `rehashSpecFor()` resolve the person's groups' policy with
+no edit. Two readers gained an argument: the sign-in's forced change hands
+`step.authn.application` in as `opts.application`, the one door that holds
+an application; and service-account rotation draws from the account's own
+profile (`profileFor(facts.username)`) so its commit cannot be refused by
+it. **A reader with no person in hand reads `default`** — the
+service-account policy's save check of its rotated length against the
+password minimum is one, and is right to be: it is a property of the realm,
+not of an account. SCIM writes no password (`changePassword: false`).
+
+**A REFERENCE TO A POLICY THE REALM DOES NOT HOLD FAILS CLOSED TO `default`,
+THE WHOLE ANSWER** (STS-AUTHN-0539, logged once per reference per process —
+the sign-in upgrade asks at every verified password, and a per-event log of
+one misconfiguration is the flood the log rules forbid). The ticket's
+default rule, kept after weighing the case against it: the passkey policy
+reads such a reference as no candidate and lets the rest of the ranking
+stand, which for a password would hand a person whatever lax policy another
+group names exactly when the reference meant to override it is broken; and
+`default` is the one policy an operator has stated for everybody. The cost
+is that a broken GROUP reference displaces an application's stricter
+policy too; the answer must not depend on WHICH reference broke, and only a
+write past the console can make one (both doors check, and a named policy
+still named is not deleted, STS-AUTHN-0540). The ranking is skipped
+outright where the realm holds no named policy, so the common case costs
+no group lookup. Named policies are the realm's own; neither they nor
+`default` are inherited (this kind never inherited).
+
+**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js`, `crypto.js` and
+`policy_selection.ts`, and its directory arrives through a slot
 `ldap_server.js` fills — `roles.js`'s arrangement exactly. **`FIELDS` is one
 table read five ways**: the schema, the console's form, the management API's
 request schema, the validation and the parse. Three decisions in it:
@@ -9068,7 +9105,8 @@ SAME kvno (`kerberos/krb5_person_keys.ts`). A failure is logged
 plaintext exists only at a sign-in. `tests/password_argon2id.js` holds it.
 
 **From the root `CLAUDE.md`'s `common/` row:** the profile is drawn at
-*Directory → Policies* (`/admin/policies`), ENFORCED IN PRODUCT MODE at every
+*Directory → Policies* (`/admin/policies`, Default / Named policies / New
+policy since #1236), ENFORCED IN PRODUCT MODE at every
 door that sets a password, and is the generator every made-up password is
 drawn from, which is now the default credential for a new user on the console
 and on `/admin-api`.
@@ -14235,7 +14273,8 @@ Directory → Policies gets named policies, and
   reference and `default` are no candidate. A name the realm does not hold
   is no candidate either and comes back in `missing`: what it MEANS is the
   kind's (the authentication policy fails closed, #1148; the passkey policy
-  logs it and reads on, its default being the realm's baseline).
+  logs it and reads on, its default being the realm's baseline; the
+  password policy answers `default` whatever else ranked, #1236, 3ac).
 * **CHECKED AT THE WRITE, AND NOT DELETED WHILE NAMED.** Each holder has one
   door: an application's field through `applications.js`'
   CHOICES_CHECKED_HERE (STS-REG-0203), a group's through the directory's
