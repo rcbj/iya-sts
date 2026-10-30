@@ -21453,209 +21453,6 @@ const CODES = [
       'not be read for the caller list a remote PEP pulled, and was left ' +
       'out (#1189).',
     spec: 'none — logged; the pull is answered' },
-  // ===== FGA ===============================================================
-  { code: 'STS-FGA-0001',
-    summary: 'A policy that belongs to an application (it carries ' +
-      'xacmlApplication) was written as the repository root and refused: ' +
-      'an application\'s fine-grained policy decides that application\'s ' +
-      'details and never the realm\'s root question.',
-    spec: 'the write is refused' },
-  { code: 'STS-FGA-0002',
-    summary: 'The console or /admin-api asked to make an application\'s ' +
-      'fine-grained policy the repository root, and was refused before the ' +
-      'current root was demoted.',
-    spec: 'the caller\'s refusal (why on a console or /admin-api reply)' },
-  { code: 'STS-FGA-0003',
-    summary: 'An application has no fine-grained policy: its appFgaPolicy ' +
-      'is empty.',
-    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
-      'none otherwise' },
-  { code: 'STS-FGA-0004',
-    summary: 'An application\'s appFgaPolicy names a policy entry that is ' +
-      'not in this realm\'s ou=policies.',
-    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
-      'none otherwise' },
-  { code: 'STS-FGA-0005',
-    summary: 'An application\'s appFgaPolicy names a policy entry that does ' +
-      'not belong to it: the entry\'s xacmlApplication is absent or names ' +
-      'another application, or the entry is marked orphaned.',
-    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
-      'none otherwise' },
-  { code: 'STS-FGA-0006',
-    summary: 'An application\'s fine-grained policy is disabled ' +
-      '(xacmlEnabled FALSE). An enforced application with a disabled policy ' +
-      'refuses; switching enforcement on is refused until the policy is ' +
-      'enabled.',
-    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
-      'none otherwise' },
-  { code: 'STS-FGA-0007',
-    summary: 'An application\'s fine-grained policy does not parse or does ' +
-      'not type-check.',
-    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint), and an AuthZEN error ' +
-      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
-      'none otherwise' },
-  { code: 'STS-FGA-0008',
-    summary: 'An application\'s default fine-grained policy could not be ' +
-      'written: there is no directory, ou=policies is at xacml.maxPolicies, ' +
-      'or the document was refused. The application stays without one ' +
-      'until FGA is next enabled on it.',
-    spec: 'the caller\'s refusal, or none when an application create ' +
-      'triggered it (the create still succeeds)' },
-  { code: 'STS-FGA-0009',
-    summary: 'A fine-grained authorization act named an application this ' +
-      'realm\'s registry does not hold.',
-    spec: 'the caller\'s refusal; an AuthZEN error (STS-AUTHZEN-0046, ' +
-      'HTTP 500) when the application went between the two reads' },
-  { code: 'STS-FGA-0010',
-    summary: 'The application lifecycle hook (create or delete) failed or ' +
-      'threw. The application create or delete itself stands; the policy ' +
-      'was not created or not retired.',
-    spec: 'none — logged; the create or delete succeeds' },
-  { code: 'STS-FGA-0011',
-    summary: 'The FGA lifecycle slot offered to common/applications.js was ' +
-      'incomplete (it needs both created and deleted) and was not ' +
-      'installed.',
-    spec: 'none — logged at load' },
-  { code: 'STS-FGA-0012',
-    summary: 'An application\'s appFgaPolicy or appFgaEnforced could not be ' +
-      'written to its entry: the directory refused the write.',
-    spec: 'the caller\'s refusal' },
-  { code: 'STS-FGA-0013',
-    summary: 'A deleted application\'s fine-grained policy could not be ' +
-      'disabled and marked orphaned; it is left as it was.',
-    spec: 'none — logged; the delete succeeds' },
-  { code: 'STS-FGA-0014',
-    summary: 'An application that enforces fine-grained authorization ' +
-      'refused an authorization detail of one of its types: its policy ' +
-      'decided Deny, NotApplicable, or Indeterminate over a missing ' +
-      'attribute, or Permit with an obligation this service cannot ' +
-      'discharge. Only a Permit with nothing undischargeable grants a ' +
-      'detail.',
-    spec: 'access_denied at the authorization endpoint (redirected), ' +
-      'invalid_authorization_details at the PAR and token endpoints ' +
-      '(HTTP 400)' },
-  { code: 'STS-FGA-0015',
-    summary: 'A fine-grained authorization decision could not be made: ' +
-      'the application\'s policy reached Indeterminate through a ' +
-      'processing or syntax error, or the embedded FGA PEP threw or ' +
-      'answered nothing. The detail is refused; this is a fault, never a ' +
-      'Permit.',
-    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint); an AuthZEN error ' +
-      '(STS-AUTHZEN-0046, HTTP 500) for an access question that threw' },
-  { code: 'STS-FGA-0016',
-    summary: 'An authorization detail\'s type belongs to an application ' +
-      'that enforces fine-grained authorization, and no FGA decider is ' +
-      'installed in this process (the XACML family is not loaded), so the ' +
-      'detail is refused rather than issued undecided.',
-    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
-      'redirected at the authorization endpoint)' },
-  { code: 'STS-FGA-0017',
-    summary: 'A token exchange asked for an authorization detail whose ' +
-      'type\'s application enforces fine-grained authorization, and the ' +
-      'subject_token does not cover it: it is not a token this service ' +
-      'issued with authorization_details, or none of its details of that ' +
-      'type covers the requested one (RFC 9396 section 6\'s subset rule).',
-    spec: 'invalid_authorization_details (HTTP 400)' },
-  { code: 'STS-FGA-0018',
-    summary: 'Switching fine-grained authorization on for an application ' +
-      'was refused: a type it declares has member paths that are neither ' +
-      'mapped (xacml) nor listed in notForPolicy, or its schema is open.',
-    spec: 'the caller\'s refusal, naming the uncovered paths' },
-  { code: 'STS-FGA-0019',
-    summary: 'An oauthAuthorizationDetailsType value written to an ' +
-      'application that enforces fine-grained authorization was refused: ' +
-      'the definition would leave member paths neither mapped nor listed ' +
-      'in notForPolicy, which enforcement could not decide.',
-    spec: 'the caller\'s refusal, naming the uncovered paths' },
-  { code: 'STS-FGA-0020',
-    summary: 'Resetting an application\'s fine-grained policy to the ' +
-      'fga-default template was refused because it was not confirmed: the ' +
-      'reset replaces every rule an administrator wrote, so it needs ' +
-      'confirm.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
-  { code: 'STS-FGA-0021',
-    summary: 'Resetting an application\'s fine-grained policy was refused: ' +
-      'the application has no policy of its own (appFgaPolicy is empty, ' +
-      'names a missing entry, or names one that is not its own). Create ' +
-      'the default policy instead.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
-  { code: 'STS-FGA-0022',
-    summary: 'Deleting a policy from the XACML repository was refused: it ' +
-      'is the fine-grained policy an application still names in ' +
-      'appFgaPolicy. Only a policy no application names (an orphan of a ' +
-      'deleted application) may be removed.',
-    spec: 'the caller\'s refusal (why on a console or /admin-api reply)' },
-  { code: 'STS-FGA-0023',
-    summary: 'A mapping row or a notForPolicy entry could not be changed ' +
-      'on an access type from the console or /admin-api: the row to ' +
-      'remove is not on the type, or the row offered does not read ' +
-      '(a bad path, attribute identifier, category, data type or ' +
-      'multiplicity, or a reserved identifier).',
-    spec: 'the caller\'s refusal (errors and field on a console or ' +
-      '/admin-api reply)' },
-  { code: 'STS-FGA-0100',
-    summary: 'A fine-grained authorization question was asked with a ' +
-      'type definition that is not usable (it carries a problem, or names ' +
-      'no type), so no request could be built for the detail.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0101',
-    summary: 'A fine-grained authorization question was asked about a ' +
-      'detail that is not a JSON object of the definition\'s type.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0102',
-    summary: 'A fine-grained authorization question was asked without ' +
-      'the trusted facts the adapter must supply: the owning application, ' +
-      'or a stage that is one of authorize, token, refresh, exchange, par ' +
-      'or access.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0103',
-    summary: 'An authorization detail carried a member its type neither ' +
-      'maps (xacml) nor lists in notForPolicy, so it could not reach the ' +
-      'owning application\'s policy and was never read as an attribute.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0104',
-    summary: 'A member of an authorization detail that a type\'s xacml ' +
-      'row maps was null, or a bag held a null.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0105',
-    summary: 'A member of an authorization detail had a JSON type its ' +
-      'xacml row\'s datatype does not take, or a string outside that ' +
-      'datatype\'s lexical space.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0106',
-    summary: 'A member of an authorization detail was an array where its ' +
-      'xacml row sends a single value, or carried more than 256 values.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0107',
-    summary: 'A member of an authorization detail was an object where its ' +
-      'xacml row sends values (a nested object reaches a request only ' +
-      'through rows for its own members), or was nested too deeply.',
-    spec: 'access_denied at the authorization endpoint, ' +
-      'invalid_authorization_details at the PAR and token endpoints' },
-  { code: 'STS-FGA-0108',
-    summary: 'Which applications enforce fine-grained authorization could ' +
-      'not be read when a remote PEP pulled the AuthZEN catalogue (GET ' +
-      '/xacml/pep/authzen-catalogue), so the catalogue was not sent: one ' +
-      'naming no enforcing application would have the edge PDP decide ' +
-      'their evaluations from the root (#564).',
-    spec: 'HTTP 500 server_error; the edge keeps the catalogue it holds' },
   { code: 'STS-AUTHZEN-0070',
     summary: 'An AuthZEN access request, task status or cancellation reached ' +
       'a realm where authzen.accessRequests (the Access Request and ' +
@@ -21875,6 +21672,209 @@ const CODES = [
       'no-broadening rule held at the last moment, which is a defect ' +
       '(#1181).',
     spec: 'none — logged; the envelope is sent without it' },
+  // ===== FGA ===============================================================
+  { code: 'STS-FGA-0001',
+    summary: 'A policy that belongs to an application (it carries ' +
+      'xacmlApplication) was written as the repository root and refused: ' +
+      'an application\'s fine-grained policy decides that application\'s ' +
+      'details and never the realm\'s root question.',
+    spec: 'the write is refused' },
+  { code: 'STS-FGA-0002',
+    summary: 'The console or /admin-api asked to make an application\'s ' +
+      'fine-grained policy the repository root, and was refused before the ' +
+      'current root was demoted.',
+    spec: 'the caller\'s refusal (why on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0003',
+    summary: 'An application has no fine-grained policy: its appFgaPolicy ' +
+      'is empty.',
+    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
+  { code: 'STS-FGA-0004',
+    summary: 'An application\'s appFgaPolicy names a policy entry that is ' +
+      'not in this realm\'s ou=policies.',
+    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
+  { code: 'STS-FGA-0005',
+    summary: 'An application\'s appFgaPolicy names a policy entry that does ' +
+      'not belong to it: the entry\'s xacmlApplication is absent or names ' +
+      'another application, or the entry is marked orphaned.',
+    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
+  { code: 'STS-FGA-0006',
+    summary: 'An application\'s fine-grained policy is disabled ' +
+      '(xacmlEnabled FALSE). An enforced application with a disabled policy ' +
+      'refuses; switching enforcement on is refused until the policy is ' +
+      'enabled.',
+    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
+  { code: 'STS-FGA-0007',
+    summary: 'An application\'s fine-grained policy does not parse or does ' +
+      'not type-check.',
+    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
+      'redirected at the authorization endpoint), and an AuthZEN error ' +
+      '(STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; ' +
+      'none otherwise' },
+  { code: 'STS-FGA-0008',
+    summary: 'An application\'s default fine-grained policy could not be ' +
+      'written: there is no directory, ou=policies is at xacml.maxPolicies, ' +
+      'or the document was refused. The application stays without one ' +
+      'until FGA is next enabled on it.',
+    spec: 'the caller\'s refusal, or none when an application create ' +
+      'triggered it (the create still succeeds)' },
+  { code: 'STS-FGA-0009',
+    summary: 'A fine-grained authorization act named an application this ' +
+      'realm\'s registry does not hold.',
+    spec: 'the caller\'s refusal; an AuthZEN error (STS-AUTHZEN-0046, ' +
+      'HTTP 500) when the application went between the two reads' },
+  { code: 'STS-FGA-0010',
+    summary: 'The application lifecycle hook (create or delete) failed or ' +
+      'threw. The application create or delete itself stands; the policy ' +
+      'was not created or not retired.',
+    spec: 'none — logged; the create or delete succeeds' },
+  { code: 'STS-FGA-0011',
+    summary: 'The FGA lifecycle slot offered to common/applications.js was ' +
+      'incomplete (it needs both created and deleted) and was not ' +
+      'installed.',
+    spec: 'none — logged at load' },
+  { code: 'STS-FGA-0012',
+    summary: 'An application\'s appFgaPolicy or appFgaEnforced could not be ' +
+      'written to its entry: the directory refused the write.',
+    spec: 'the caller\'s refusal' },
+  { code: 'STS-FGA-0013',
+    summary: 'A deleted application\'s fine-grained policy could not be ' +
+      'disabled and marked orphaned; it is left as it was.',
+    spec: 'none — logged; the delete succeeds' },
+  { code: 'STS-FGA-0014',
+    summary: 'An application that enforces fine-grained authorization ' +
+      'refused an authorization detail of one of its types: its policy ' +
+      'decided Deny, NotApplicable, or Indeterminate over a missing ' +
+      'attribute, or Permit with an obligation this service cannot ' +
+      'discharge. Only a Permit with nothing undischargeable grants a ' +
+      'detail.',
+    spec: 'access_denied at the authorization endpoint (redirected), ' +
+      'invalid_authorization_details at the PAR and token endpoints ' +
+      '(HTTP 400)' },
+  { code: 'STS-FGA-0015',
+    summary: 'A fine-grained authorization decision could not be made: ' +
+      'the application\'s policy reached Indeterminate through a ' +
+      'processing or syntax error, or the embedded FGA PEP threw or ' +
+      'answered nothing. The detail is refused; this is a fault, never a ' +
+      'Permit.',
+    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
+      'redirected at the authorization endpoint); an AuthZEN error ' +
+      '(STS-AUTHZEN-0046, HTTP 500) for an access question that threw' },
+  { code: 'STS-FGA-0016',
+    summary: 'An authorization detail\'s type belongs to an application ' +
+      'that enforces fine-grained authorization, and no FGA decider is ' +
+      'installed in this process (the XACML family is not loaded), so the ' +
+      'detail is refused rather than issued undecided.',
+    spec: 'server_error (HTTP 500 at the token and PAR endpoints, ' +
+      'redirected at the authorization endpoint)' },
+  { code: 'STS-FGA-0017',
+    summary: 'A token exchange asked for an authorization detail whose ' +
+      'type\'s application enforces fine-grained authorization, and the ' +
+      'subject_token does not cover it: it is not a token this service ' +
+      'issued with authorization_details, or none of its details of that ' +
+      'type covers the requested one (RFC 9396 section 6\'s subset rule).',
+    spec: 'invalid_authorization_details (HTTP 400)' },
+  { code: 'STS-FGA-0018',
+    summary: 'Switching fine-grained authorization on for an application ' +
+      'was refused: a type it declares has member paths that are neither ' +
+      'mapped (xacml) nor listed in notForPolicy, or its schema is open.',
+    spec: 'the caller\'s refusal, naming the uncovered paths' },
+  { code: 'STS-FGA-0019',
+    summary: 'An oauthAuthorizationDetailsType value written to an ' +
+      'application that enforces fine-grained authorization was refused: ' +
+      'the definition would leave member paths neither mapped nor listed ' +
+      'in notForPolicy, which enforcement could not decide.',
+    spec: 'the caller\'s refusal, naming the uncovered paths' },
+  { code: 'STS-FGA-0020',
+    summary: 'Resetting an application\'s fine-grained policy to the ' +
+      'fga-default template was refused because it was not confirmed: the ' +
+      'reset replaces every rule an administrator wrote, so it needs ' +
+      'confirm.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0021',
+    summary: 'Resetting an application\'s fine-grained policy was refused: ' +
+      'the application has no policy of its own (appFgaPolicy is empty, ' +
+      'names a missing entry, or names one that is not its own). Create ' +
+      'the default policy instead.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0022',
+    summary: 'Deleting a policy from the XACML repository was refused: it ' +
+      'is the fine-grained policy an application still names in ' +
+      'appFgaPolicy. Only a policy no application names (an orphan of a ' +
+      'deleted application) may be removed.',
+    spec: 'the caller\'s refusal (why on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0023',
+    summary: 'A mapping row or a notForPolicy entry could not be changed ' +
+      'on an access type from the console or /admin-api: the row to ' +
+      'remove is not on the type, or the row offered does not read ' +
+      '(a bad path, attribute identifier, category, data type or ' +
+      'multiplicity, or a reserved identifier).',
+    spec: 'the caller\'s refusal (errors and field on a console or ' +
+      '/admin-api reply)' },
+  { code: 'STS-FGA-0100',
+    summary: 'A fine-grained authorization question was asked with a ' +
+      'type definition that is not usable (it carries a problem, or names ' +
+      'no type), so no request could be built for the detail.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0101',
+    summary: 'A fine-grained authorization question was asked about a ' +
+      'detail that is not a JSON object of the definition\'s type.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0102',
+    summary: 'A fine-grained authorization question was asked without ' +
+      'the trusted facts the adapter must supply: the owning application, ' +
+      'or a stage that is one of authorize, token, refresh, exchange, par ' +
+      'or access.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0103',
+    summary: 'An authorization detail carried a member its type neither ' +
+      'maps (xacml) nor lists in notForPolicy, so it could not reach the ' +
+      'owning application\'s policy and was never read as an attribute.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0104',
+    summary: 'A member of an authorization detail that a type\'s xacml ' +
+      'row maps was null, or a bag held a null.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0105',
+    summary: 'A member of an authorization detail had a JSON type its ' +
+      'xacml row\'s datatype does not take, or a string outside that ' +
+      'datatype\'s lexical space.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0106',
+    summary: 'A member of an authorization detail was an array where its ' +
+      'xacml row sends a single value, or carried more than 256 values.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0107',
+    summary: 'A member of an authorization detail was an object where its ' +
+      'xacml row sends values (a nested object reaches a request only ' +
+      'through rows for its own members), or was nested too deeply.',
+    spec: 'access_denied at the authorization endpoint, ' +
+      'invalid_authorization_details at the PAR and token endpoints' },
+  { code: 'STS-FGA-0108',
+    summary: 'Which applications enforce fine-grained authorization could ' +
+      'not be read when a remote PEP pulled the AuthZEN catalogue (GET ' +
+      '/xacml/pep/authzen-catalogue), so the catalogue was not sent: one ' +
+      'naming no enforcing application would have the edge PDP decide ' +
+      'their evaluations from the root (#564).',
+    spec: 'HTTP 500 server_error; the edge keeps the catalogue it holds' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
