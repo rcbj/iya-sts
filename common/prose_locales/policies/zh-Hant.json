@@ -1776,8 +1776,8 @@
     "text": "登入後詢問"
   },
   "postLogin.FIELDS.enabled.what": {
-    "en": "4c8090556412a140",
-    "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」其群組的成員。"
+    "en": "594af708f511f0b5",
+    "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」它被選取的對象：指定它的群組的成員，以及登入指定它的應用程式。"
   },
   "postLogin.FIELDS.activity.label": {
     "en": "38da1505ca837328",
@@ -1844,12 +1844,12 @@
     "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
   },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
-    "en": "7ac360a6d70b525c",
-    "text": "本服務用於登入後活動設定檔的類別：某人登入後被要求做的事。以「設定檔」命名（`cn=default`，或依群組選取的具名設定檔）。"
+    "en": "b1a01fe693170513",
+    "text": "本服務用於登入後活動設定檔的類別：某人登入後被要求做的事。以「設定檔」命名（`cn=default`，或由應用程式或群組指定的具名設定檔）。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
-    "en": "4c8090556412a140",
-    "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」其群組的成員。"
+    "en": "594af708f511f0b5",
+    "text": "預設關閉。開啟時，此設定檔所涵蓋、且應完成下方活動的每個人，都會在登入後、被送回應用程式之前被要求完成該活動。關閉此項的具名設定檔會「排除」它被選取的對象：指定它的群組的成員，以及登入指定它的應用程式。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
     "en": "93b1483272fe7b46",
@@ -1879,13 +1879,9 @@
     "en": "4fa78beae92d0ce5",
     "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
   },
-  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
-    "en": "5fdad032c7e1e1e7",
-    "text": "具名登入後設定檔適用於其成員的群組（cn 或 DN）。"
-  },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
-    "en": "dbc9cfe2efed4348",
-    "text": "多個具名登入後設定檔涵蓋同一人時由哪一個生效：最低者，範圍 1 至 1000。"
+    "en": "2b5b2ba409912c7d",
+    "text": "為同一次登入指定了多個具名登入後設定檔時（由應用程式和此人的群組指定）由哪一個生效：最低者，範圍 1 至 1000。"
   },
   "postLogin.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1895,13 +1891,9 @@
     "en": "b56a731743cd58be",
     "text": "已停用（#1135）：沒有密碼金鑰的人註冊密碼金鑰時所用的角色。密碼金鑰沒有角色；沒有任何地方讀取它。"
   },
-  "postLogin.SELECTORS.selectGroups.what": {
-    "en": "5fdad032c7e1e1e7",
-    "text": "具名登入後設定檔適用於其成員的群組（cn 或 DN）。"
-  },
   "postLogin.SELECTORS.precedence.what": {
-    "en": "dbc9cfe2efed4348",
-    "text": "多個具名登入後設定檔涵蓋同一人時由哪一個生效：最低者，範圍 1 至 1000。"
+    "en": "2b5b2ba409912c7d",
+    "text": "為同一次登入指定了多個具名登入後設定檔時（由應用程式和此人的群組指定）由哪一個生效：最低者，範圍 1 至 1000。"
   },
   "postLogin.sentences.off": {
     "en": "f22422aec6b67033",
@@ -1960,12 +1952,8 @@
     "text": "沒有密碼金鑰的人會被要求註冊一個後量子密碼金鑰，且在寬限期結束前可以略過"
   },
   "postLogin.sentences.appliesTo": {
-    "en": "ce39627aa02b361d",
-    "text": "適用於 {{list}} 的成員，優先順序為 {{precedence}}"
-  },
-  "postLogin.sentences.param.noGroup": {
-    "en": "4a00d86d0ff8747a",
-    "text": "無群組"
+    "en": "f195acc04e68d15e",
+    "text": "適用於應用程式或群組指定它之處（appPostLoginPolicy、stsPostLoginPolicy），優先順序為 {{precedence}}"
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",

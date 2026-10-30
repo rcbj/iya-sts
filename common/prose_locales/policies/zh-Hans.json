@@ -1776,8 +1776,8 @@
     "text": "登录后询问"
   },
   "postLogin.FIELDS.enabled.what": {
-    "en": "4c8090556412a140",
-    "text": "默认关闭。开启时，此配置文件所覆盖、且应完成下方活动的每个人，都会在登录后、被送回应用之前被要求完成该活动。关闭此项的命名配置文件会“排除”其群组的成员。"
+    "en": "594af708f511f0b5",
+    "text": "默认关闭。开启时，此配置文件所覆盖、且应完成下方活动的每个人，都会在登录后、被送回应用之前被要求完成该活动。关闭此项的命名配置文件会“排除”它被选中的对象：指定它的群组的成员，以及登录到指定它的应用。"
   },
   "postLogin.FIELDS.activity.label": {
     "en": "38da1505ca837328",
@@ -1844,12 +1844,12 @@
     "text": "none：仅限 ML-DSA。classical：ML-DSA 注册在设备上失败后，提供使用经典算法重试（在通行密钥策略允许时）——经典通行密钥总比密码好，其持有人之后会像其他人一样被要求迁移。"
   },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
-    "en": "7ac360a6d70b525c",
-    "text": "本服务用于登录后活动配置文件的类：某人登录后被要求做的事。以“配置文件”命名（`cn=default`，或按群组选择的命名配置文件）。"
+    "en": "b1a01fe693170513",
+    "text": "本服务用于登录后活动配置文件的类：某人登录后被要求做的事。以“配置文件”命名（`cn=default`，或由应用或群组指定的命名配置文件）。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
-    "en": "4c8090556412a140",
-    "text": "默认关闭。开启时，此配置文件所覆盖、且应完成下方活动的每个人，都会在登录后、被送回应用之前被要求完成该活动。关闭此项的命名配置文件会“排除”其群组的成员。"
+    "en": "594af708f511f0b5",
+    "text": "默认关闭。开启时，此配置文件所覆盖、且应完成下方活动的每个人，都会在登录后、被送回应用之前被要求完成该活动。关闭此项的命名配置文件会“排除”它被选中的对象：指定它的群组的成员，以及登录到指定它的应用。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
     "en": "93b1483272fe7b46",
@@ -1879,13 +1879,9 @@
     "en": "4fa78beae92d0ce5",
     "text": "none：仅限 ML-DSA。classical：ML-DSA 注册在设备上失败后，提供使用经典算法重试（在通行密钥策略允许时）——经典通行密钥总比密码好，其持有人之后会像其他人一样被要求迁移。"
   },
-  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
-    "en": "5fdad032c7e1e1e7",
-    "text": "命名登录后配置文件适用于其成员的群组（cn 或 DN）。"
-  },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
-    "en": "dbc9cfe2efed4348",
-    "text": "多个命名登录后配置文件覆盖同一人时哪一个生效：最低者，取值 1 到 1000。"
+    "en": "2b5b2ba409912c7d",
+    "text": "为同一次登录指定了多个命名登录后配置文件时（由应用和此人的群组指定）哪一个生效：最低者，取值 1 到 1000。"
   },
   "postLogin.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1895,13 +1891,9 @@
     "en": "b56a731743cd58be",
     "text": "已停用（#1135）：没有通行密钥的人注册通行密钥时所用的角色。通行密钥没有角色；没有任何地方读取它。"
   },
-  "postLogin.SELECTORS.selectGroups.what": {
-    "en": "5fdad032c7e1e1e7",
-    "text": "命名登录后配置文件适用于其成员的群组（cn 或 DN）。"
-  },
   "postLogin.SELECTORS.precedence.what": {
-    "en": "dbc9cfe2efed4348",
-    "text": "多个命名登录后配置文件覆盖同一人时哪一个生效：最低者，取值 1 到 1000。"
+    "en": "2b5b2ba409912c7d",
+    "text": "为同一次登录指定了多个命名登录后配置文件时（由应用和此人的群组指定）哪一个生效：最低者，取值 1 到 1000。"
   },
   "postLogin.sentences.off": {
     "en": "f22422aec6b67033",
@@ -1960,12 +1952,8 @@
     "text": "没有通行密钥的人会被要求注册一个后量子通行密钥，并且在宽限期结束前可以跳过"
   },
   "postLogin.sentences.appliesTo": {
-    "en": "ce39627aa02b361d",
-    "text": "适用于 {{list}} 的成员，优先级为 {{precedence}}"
-  },
-  "postLogin.sentences.param.noGroup": {
-    "en": "4a00d86d0ff8747a",
-    "text": "无群组"
+    "en": "f195acc04e68d15e",
+    "text": "适用于应用或群组指定它之处（appPostLoginPolicy、stsPostLoginPolicy），优先级为 {{precedence}}"
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
