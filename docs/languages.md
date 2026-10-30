@@ -130,22 +130,52 @@ with a tab of its own. Set it there, or with
 The `default` profile applies everywhere in the realm. A realm with no
 `default` of its own follows the default realm's.
 
-### Profiles per application
+### Named profiles, for applications and groups
 
-A realm may keep **named profiles**. Each has the two fields above and a list
-of the applications it applies to (`selectApplications`: identifiers or
-`client_id`s). An application can be on **one** named profile at most, and a
-save that would put it on a second is refused (`STS-I18N-0007`). A named
-profile applies:
+A realm may keep **named profiles**. Each has the two fields above and a
+**precedence**, a whole number from 1 to 1000 (100 if you leave it out). A
+named profile lists nothing. Whatever it covers names it instead:
 
-- to the pages drawn for one of its applications: its sign-in screen and
-  consent, and the portal and the console, which are applications too
-  (`sts-user-portal`, `sts-admin-console`);
-- to a person that application caused to be created: a person provisioned by
-  its SCIM client, or created by signing in to it.
+- **an application**, in its `appLocalePolicy` field (the application's
+  page, or `POST /admin-api/applications/set`);
+- **a group**, in its `stsLocalePolicy` (the group's page, or
+  `POST /admin-api/groups/set-policy`).
 
-A person created from the console or `/admin-api` gets the `default` profile's
-language. Named profiles belong to their realm and are not inherited.
+Each reference is `default` or the name of a named profile of the realm.
+Anything else is refused when it is written. The page draws the three
+sub-tabs every ranked policy has: **Default**, **Named policies** (each
+profile with the applications and groups naming it) and **New policy**.
+
+When a page or a mail needs the fallback language, the candidates are the
+profile the application names and the profile each of the person's groups
+names. **The lowest precedence wins**, ties go by name, and `default` applies
+when nothing names a profile. The person counts wherever the page knows who
+it is drawn for: a sign-in step after the first factor, consent, sign-out, the
+portal and the console, and mail to a person. A page drawn before anybody is
+known, such as the first sign-in screen, is chosen by its application alone.
+
+For example, name `support-fr` (precedence 10, `fr-CA`) on the group
+`support`, and `mobile` (precedence 50, `sv`) on the application
+`mobile-app`. A member of `support` signing in to `mobile-app` falls back to
+`fr-CA` once known; anybody else falls back to `sv`.
+
+The same choice decides the language a **new person** is given: the profile
+the application that caused the creation names (a person provisioned by its
+SCIM client, or created by signing in to it), or one a group that already
+lists the new entry names. A person created from the console or `/admin-api`
+names no application.
+
+A reference to a profile the realm does not hold, written past the console,
+selects nothing and is logged (`STS-I18N-0013`). The policy only chooses a
+fallback language, so it does not refuse anything over this: `default`
+applies wherever nothing else names a profile. A named profile that an
+application or a group still names cannot be deleted (`STS-I18N-0014`).
+Named profiles belong to their realm and are not inherited.
+
+Before #1238 a named profile listed its applications (`selectApplications`)
+and an application could be on one at most (`STS-I18N-0007`, now retired).
+Those lists are not read any more and are not migrated: name each profile
+from its applications again.
 
 ### Replaces `mail.defaultLanguage`
 

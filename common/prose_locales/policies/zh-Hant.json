@@ -1588,24 +1588,24 @@
     "text": "為新人員設定此語言"
   },
   "locale.FIELDS.populatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "預設開啟。在此領域中建立、沒有 preferredLanguage（RFC 2798 第 2.7 節）的人員項目，會獲得上方的預設語言作為其值——無論是由主控台、管理 API、SCIM、聯合或自助註冊，還是大量載入所建立。若促成建立的應用程式屬於某具名設定檔的應用程式，則套用該具名設定檔。現有項目絕不會被改寫。"
+    "en": "aac6446069dd5f66",
+    "text": "預設開啟。在此領域中建立、沒有 preferredLanguage（RFC 2798 第 2.7 節）的人員項目，會獲得上方的預設語言作為其值——無論是由主控台、管理 API、SCIM、聯合或自助註冊，還是大量載入所建立。若促成建立的應用程式或此人的某個群組指定了某具名設定檔，則套用該具名設定檔。現有項目絕不會被改寫。"
   },
   "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
-    "en": "2c86d88e73ffc794",
-    "text": "本服務用於語言原則的類別：領域頁面回退使用、並賦予新人員的語言。以「設定檔」命名（`cn=default`，或依應用程式選擇的具名設定檔）。"
+    "en": "796100ae10a7611a",
+    "text": "本服務用於語言原則的類別：領域頁面回退使用、並賦予新人員的語言。以「設定檔」命名（`cn=default`，或由應用程式或群組指定的具名設定檔）。"
   },
   "locale.SCHEMA.attributes.stsLocaleDefault.what": {
     "en": "7b103155bd0c34db",
     "text": "BCP 47 語言標籤（RFC 5646），例如 en、fr-CA 或 zh-TW。當請求、該人的 preferredLanguage、語言選擇器與瀏覽器都未指名任何目錄能提供的語言時，頁面以此語言繪製；即使沒有目錄提供，日期與數字仍依此格式化。寄給項目未指名語言之人的郵件以此語言撰寫。取代設定 mail.defaultLanguage。"
   },
   "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "預設開啟。在此領域中建立、沒有 preferredLanguage（RFC 2798 第 2.7 節）的人員項目，會獲得上方的預設語言作為其值——無論是由主控台、管理 API、SCIM、聯合或自助註冊，還是大量載入所建立。若促成建立的應用程式屬於某具名設定檔的應用程式，則套用該具名設定檔。現有項目絕不會被改寫。"
+    "en": "aac6446069dd5f66",
+    "text": "預設開啟。在此領域中建立、沒有 preferredLanguage（RFC 2798 第 2.7 節）的人員項目，會獲得上方的預設語言作為其值——無論是由主控台、管理 API、SCIM、聯合或自助註冊，還是大量載入所建立。若促成建立的應用程式或此人的某個群組指定了某具名設定檔，則套用該具名設定檔。現有項目絕不會被改寫。"
   },
-  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "具名語言原則所適用的應用程式（識別碼或 client_id）。一個應用程式最多屬於一個具名設定檔。"
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "多個具名語言原則被指定給同一頁面時由哪一個生效：最低者，範圍 1 至 1000。"
   },
   "locale.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1615,9 +1615,9 @@
     "en": "839242d6ed29c817",
     "text": "建立此人項目時語言原則賦予的 preferredLanguage。只要 preferredLanguage 仍等於它，它就是「原則」的選擇，頁面會將其排在瀏覽器語言之後；一旦有人設定了其他值，它就是該人自己的選擇。只由本服務寫入。"
   },
-  "locale.SELECTORS.selectApplications.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "具名語言原則所適用的應用程式（識別碼或 client_id）。一個應用程式最多屬於一個具名設定檔。"
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "多個具名語言原則被指定給同一頁面時由哪一個生效：最低者，範圍 1 至 1000。"
   },
   "locale.sentences.drawnIn": {
     "en": "def5bb364db8e407",
@@ -1638,14 +1638,6 @@
   "locale.sentences.mail": {
     "en": "ab1ab635d8ef149d",
     "text": "寄給項目未指名語言之人的郵件以 {{tag}} 撰寫"
-  },
-  "locale.sentences.appliesTo": {
-    "en": "098d842668109368",
-    "text": "適用於 {{list}}"
-  },
-  "locale.sentences.param.noApplication": {
-    "en": "cb8bd4fa96dda063",
-    "text": "沒有應用程式"
   },
   "kinds.attributes.label": {
     "en": "6619889d4a9f485d",

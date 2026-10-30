@@ -13218,11 +13218,31 @@ reasons for the shape:
   - `safeReturn()` turns anything that is not a local path into `/`.
 * **The locale policy is `passkey_policy.ts`'s pattern** with two rows,
   `defaultLocale` (`en`) and `populatePreferredLanguage` (on).
-  - Named profiles are chosen by APPLICATION alone (rcbj). An application is
-    on one named profile at most, refused with `STS-I18N-0007`, so nothing is
-    ranked and there is no precedence.
-  - Selection is an argument (`forApplication()`), not #535's ambient
-    `select()`, because every caller already holds its application.
+  - **Named profiles are NAMED BY WHAT THEY COVER since #1238** (rule
+    3cx): an application in `appLocalePolicy`, a group in
+    `stsLocalePolicy`; a profile carries `stsLocalePrecedence` and lists
+    nothing. #539's `stsLocaleSelectApplication` and its
+    one-profile-per-application refusal went, `STS-I18N-0007` is a retired
+    row, and no migration is owed. Nobody names one from their own entry:
+    a person's own language is `preferredLanguage`, which outranks every
+    profile.
+  - Selection is an argument (`forApplication(application, person)`,
+    `defaultLocaleFor()`, `populationFor()`), not #535's ambient
+    `select()`, because every caller already holds its application — and
+    passes the PERSON where it holds one: `PageLocale.translatorFor()`
+    (so every `forPage()` given a `username`, the portal's and the
+    console's locale answers), `PageLocale.shellAttributes(req,
+    application, person)` for a static surface's shell (the sign-in steps,
+    a locked sign-in, consent, sign-out, GNAP, federation, SPNEGO), mail
+    to a person, and a person's creation (`fillPreferredLanguage()`, the
+    new DN). A page drawn before anybody is known is chosen by its
+    application alone.
+  - **A reference to a profile the realm does not hold selects nothing**
+    and is logged (`STS-I18N-0013`); `default` applies where nothing else
+    names one. **It does not fail closed**, where the authentication
+    policy does: this policy decides only a fallback language, and
+    refusing a page over it would guard nothing. A named profile anything
+    names is not deleted (`STS-I18N-0014`).
   - It replaced `mail.defaultLanguage` (`REPLACED_SETTINGS`), so pages and
     mail share one default.
 * **Population happens in `putEntry()`** (`fillPreferredLanguage()`), the one

@@ -1588,24 +1588,24 @@
     "text": "Attribuer cette langue à une nouvelle personne"
   },
   "locale.FIELDS.populatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création fait partie de ses applications. Les entrées existantes ne sont jamais réécrites."
+    "en": "aac6446069dd5f66",
+    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création le nomme, ou l’un des groupes de la personne. Les entrées existantes ne sont jamais réécrites."
   },
   "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
-    "en": "2c86d88e73ffc794",
-    "text": "La classe de ce service pour une politique de langue : la langue de repli des pages d’un domaine, qu’il attribue aussi à une nouvelle personne. Nommée par le PROFIL (`cn=default`, ou un profil nommé choisi par application)."
+    "en": "796100ae10a7611a",
+    "text": "La classe de ce service pour une politique de langue : la langue de repli des pages d’un domaine, qu’il attribue aussi à une nouvelle personne. Nommée par le PROFIL (`cn=default`, ou un profil nommé que nomme une application ou un groupe)."
   },
   "locale.SCHEMA.attributes.stsLocaleDefault.what": {
     "en": "7b103155bd0c34db",
     "text": "Une étiquette de langue BCP 47 (RFC 5646), comme en, fr-CA ou zh-TW. Les pages sont affichées dans cette langue lorsque la requête, la preferredLanguage de la personne, le sélecteur de langue et le navigateur ne nomment rien à quoi un catalogue réponde ; les dates et les nombres sont formatés pour elle même là où aucun catalogue ne le fait. Le courrier adressé à une personne dont l’entrée ne nomme aucune langue est rédigé dans cette langue. Remplace le paramètre mail.defaultLanguage."
   },
   "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création fait partie de ses applications. Les entrées existantes ne sont jamais réécrites."
+    "en": "aac6446069dd5f66",
+    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création le nomme, ou l’un des groupes de la personne. Les entrées existantes ne sont jamais réécrites."
   },
-  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique de langue nommée. Une application figure dans un profil nommé au plus."
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Quelle politique de langue nommée l’emporte lorsque plusieurs sont nommées pour une page : la plus basse, de 1 à 1000."
   },
   "locale.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1615,9 +1615,9 @@
     "en": "839242d6ed29c817",
     "text": "La preferredLanguage que la politique de langue a attribuée à cette personne lors de la création de son entrée. Tant que preferredLanguage lui est encore égale, c’est le choix de la POLITIQUE, et une page la classe après la langue du navigateur ; dès que quelqu’un en définit une autre, c’est celle de la personne. Écrit uniquement par ce service."
   },
-  "locale.SELECTORS.selectApplications.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique de langue nommée. Une application figure dans un profil nommé au plus."
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Quelle politique de langue nommée l’emporte lorsque plusieurs sont nommées pour une page : la plus basse, de 1 à 1000."
   },
   "locale.sentences.drawnIn": {
     "en": "def5bb364db8e407",
@@ -1638,14 +1638,6 @@
   "locale.sentences.mail": {
     "en": "ab1ab635d8ef149d",
     "text": "le courrier adressé à une personne dont l’entrée ne nomme aucune langue est rédigé en {{tag}}"
-  },
-  "locale.sentences.appliesTo": {
-    "en": "098d842668109368",
-    "text": "s’applique à {{list}}"
-  },
-  "locale.sentences.param.noApplication": {
-    "en": "cb8bd4fa96dda063",
-    "text": "aucune application"
   },
   "kinds.attributes.label": {
     "en": "6619889d4a9f485d",

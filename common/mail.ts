@@ -1470,8 +1470,12 @@ class Mail {
     }
     // The recipient's own language, then the realm's locale policy (#539),
     // which replaced `mail.defaultLanguage`: one default for pages and mail.
+    // The policy for the RECIPIENT (#1238): their groups may name a locale
+    // profile; a group recipient (#989) is nobody's. A mail is not sent for
+    // an application, so none is named.
     const languages = MailTemplates.languageOrder(who.language,
-      String(localePolicy.defaultLocaleFor('') || 'en'));
+      String(localePolicy.defaultLocaleFor('', group ? '' : username) ||
+             'en'));
     const chosen = this.templateFor(spec.id, languages);
     // #539: a value a caller gave as a message (`{ i18n }`) or an instant
     // (`{ date }`) becomes words HERE, in the language the template was

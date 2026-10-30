@@ -18208,7 +18208,8 @@ const CODES = [
   { code: 'STS-I18N-0004',
     summary: 'A locale policy save was refused: a field was missing, the ' +
       'default language was not a BCP 47 tag, a yes-or-no field was ' +
-      'neither, or a named profile named no application or too many (#539).',
+      'neither, or a named profile\'s precedence was not a whole number ' +
+      'from 1 to 1000 (#539, #1238).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-I18N-0005',
     summary: 'A locale policy could not be saved: this process has no ' +
@@ -18221,8 +18222,10 @@ const CODES = [
   { code: 'STS-I18N-0007',
     summary: 'A named locale policy save was refused: an application it ' +
       'names is already on another named locale profile, and an ' +
-      'application is on one at most (#539).',
-    spec: 'HTTP 400 (management API)' },
+      'application is on one at most (#539). Retired by #1238: an ' +
+      'application names its locale profile in appLocalePolicy, one value, ' +
+      'so it cannot be on two.',
+    spec: '', retired: true },
   { code: 'STS-I18N-0008',
     summary: 'The language chooser was posted a value that is not a BCP 47 ' +
       'tag a catalog answers, or a malformed form; nothing was set (#539).',
@@ -18250,6 +18253,19 @@ const CODES = [
       '<catalog>.json; nothing is read from disk by a requested name ' +
       '(#570).',
     spec: 'HTTP 404' },
+  { code: 'STS-I18N-0013',
+    summary: 'An application (appLocalePolicy) or a group (stsLocalePolicy) ' +
+      'names a locale policy that this realm does not hold — written past ' +
+      'the console, or the policy deleted by hand. The reference selects ' +
+      'nothing and `default` applies where nothing else names a profile: ' +
+      'the locale policy decides only a fallback language, so it does not ' +
+      'fail closed (#1238).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-I18N-0014',
+    summary: 'A named locale policy was not deleted: an application ' +
+      '(appLocalePolicy) or a group (stsLocalePolicy) of this realm still ' +
+      'names it (#1238).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

@@ -4521,14 +4521,17 @@ class Logout {
   // drawn by `ShellDocument`. SCRIPT IS REQUIRED (rcbj on #569): the
   // `<noscript>` says so and nothing else is drawn.
   // ---------------------------------------------------------------------------
-  private shell(req?, res?) {
+  // `person` is who is signing out, where the endpoint already knows
+  // (#1238): their groups may name the locale profile the page falls back
+  // to. A shell drawn before that is known is the application-less default.
+  private shell(req?, res?, person?) {
     const { log, app } = this.deps;
     log.debug("Entering Logout.shell().");
     const html = ShellDocument.document({
       title: 'Sign out',
       attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
                    Array<[string, string]>)
-        .concat(PageLocale.shellAttributes(req, '')),
+        .concat(PageLocale.shellAttributes(req, '', String(person || ''))),
       stylesheets: [SIGNOUT_STYLE_PATH],
       script: SIGNOUT_SCRIPT_PATH,
       open: '',
@@ -4669,7 +4672,7 @@ class Logout {
         log.debug("Leaving the logout endpoint. Answered JSON.");
         return;
       }
-      this.shell(req, res);
+      this.shell(req, res, subject.username);
       log.debug("Leaving the logout endpoint. The shell.");
     });
 

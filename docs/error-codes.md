@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5041** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5042** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 51
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 14
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 358
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
@@ -4070,15 +4070,17 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 | `STS-I18N-0001` | A catalog file under common/locales or a built-in mail translation under common/mail_locales could not be read or parsed (or catalogs.json itself, in which case every page is drawn in English); the messages it held fall back along their chain to English (#539). | none — an error in the log |
 | `STS-I18N-0002` | A page asked for a message no catalog has, or one whose text is malformed; the key itself, or the text as written, was drawn. tests/i18n_catalogs.js is what keeps this from shipping (#539). | none — a warning in the log |
 | `STS-I18N-0003` | A locale policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#539). | HTTP 400 (management API) |
-| `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile named no application or too many (#539). | HTTP 400 (management API) |
+| `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile's precedence was not a whole number from 1 to 1000 (#539, #1238). | HTTP 400 (management API) |
 | `STS-I18N-0005` | A locale policy could not be saved: this process has no embedded directory, so there is no ou=localePolicies (#539). | HTTP 400 (management API) |
 | `STS-I18N-0006` | A locale policy could not be saved: the directory is at its maximum number of entries (#539). | HTTP 400 (management API) |
-| `STS-I18N-0007` | A named locale policy save was refused: an application it names is already on another named locale profile, and an application is on one at most (#539). | HTTP 400 (management API) |
+| `STS-I18N-0007` *(retired)* | A named locale policy save was refused: an application it names is already on another named locale profile, and an application is on one at most (#539). Retired by #1238: an application names its locale profile in appLocalePolicy, one value, so it cannot be on two. | — |
 | `STS-I18N-0008` | The language chooser was posted a value that is not a BCP 47 tag a catalog answers, or a malformed form; nothing was set (#539). | HTTP 400 |
 | `STS-I18N-0009` | The language chooser set its cookie but could not write the signed-in person's preferredLanguage; the person editor refused or could not be asked. Their entry still names the old language, which outranks the cookie (#539). | none — a warning in the log |
 | `STS-I18N-0010` | POST /admin-api/console/language was called by a caller that is not a person — an application's token — which has no preferredLanguage of its own to set (#539 phase 5). | HTTP 400 (management API) |
 | `STS-I18N-0011` | A prose catalog under common/prose_locales — the translations of the sentences the server writes into a console view, such as a setting's description — could not be read or parsed; that prose falls back along its chain to English (#543). | none — an error in the log |
 | `STS-I18N-0012` | GET /web/locales/<namespace>/<catalog>.json named a namespace or a catalog this service does not have, or a file name that is not <catalog>.json; nothing is read from disk by a requested name (#570). | HTTP 404 |
+| `STS-I18N-0013` | An application (appLocalePolicy) or a group (stsLocalePolicy) names a locale policy that this realm does not hold — written past the console, or the policy deleted by hand. The reference selects nothing and `default` applies where nothing else names a profile: the locale policy decides only a fallback language, so it does not fail closed (#1238). | none — a warning in the log |
+| `STS-I18N-0014` | A named locale policy was not deleted: an application (appLocalePolicy) or a group (stsLocalePolicy) of this realm still names it (#1238). | HTTP 400 (management API) |
 
 ## STS-GNAP
 

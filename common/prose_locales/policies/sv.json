@@ -1588,24 +1588,24 @@
     "text": "Ge en ny person det här språket"
   },
   "locale.FIELDS.populatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "PÅSLAGEN SOM STANDARD. En personpost som skapas i den här sfären utan preferredLanguage (RFC 2798 avsnitt 2.7) får standardspråket ovan som ett sådant — oavsett om den skapas av konsolen, hanterings-API:t, SCIM, en federerad registrering eller självregistrering, eller en massinläsning. En namngiven profil gäller där applikationen som orsakade skapandet är en av dess applikationer. Befintliga poster skrivs aldrig om."
+    "en": "aac6446069dd5f66",
+    "text": "PÅSLAGEN SOM STANDARD. En personpost som skapas i den här sfären utan preferredLanguage (RFC 2798 avsnitt 2.7) får standardspråket ovan som ett sådant — oavsett om den skapas av konsolen, hanterings-API:t, SCIM, en federerad registrering eller självregistrering, eller en massinläsning. En namngiven profil gäller där applikationen som orsakade skapandet namnger den, eller en av personens grupper gör det. Befintliga poster skrivs aldrig om."
   },
   "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
-    "en": "2c86d88e73ffc794",
-    "text": "Den här tjänstens klass för en språkpolicy: språket som en sfärs sidor faller tillbaka på och som ges till en ny person. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som väljs efter applikation)."
+    "en": "796100ae10a7611a",
+    "text": "Den här tjänstens klass för en språkpolicy: språket som en sfärs sidor faller tillbaka på och som ges till en ny person. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som en applikation eller en grupp namnger)."
   },
   "locale.SCHEMA.attributes.stsLocaleDefault.what": {
     "en": "7b103155bd0c34db",
     "text": "En BCP 47-språktagg (RFC 5646), till exempel en, fr-CA eller zh-TW. Sidor ritas på den när begäran, personens preferredLanguage, språkväljaren och webbläsaren inte anger något som en katalog besvarar; datum och tal formateras för den även där ingen katalog gör det. E-post till en person vars post inte anger något språk skrivs på den. Ersätter inställningen mail.defaultLanguage."
   },
   "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "PÅSLAGEN SOM STANDARD. En personpost som skapas i den här sfären utan preferredLanguage (RFC 2798 avsnitt 2.7) får standardspråket ovan som ett sådant — oavsett om den skapas av konsolen, hanterings-API:t, SCIM, en federerad registrering eller självregistrering, eller en massinläsning. En namngiven profil gäller där applikationen som orsakade skapandet är en av dess applikationer. Befintliga poster skrivs aldrig om."
+    "en": "aac6446069dd5f66",
+    "text": "PÅSLAGEN SOM STANDARD. En personpost som skapas i den här sfären utan preferredLanguage (RFC 2798 avsnitt 2.7) får standardspråket ovan som ett sådant — oavsett om den skapas av konsolen, hanterings-API:t, SCIM, en federerad registrering eller självregistrering, eller en massinläsning. En namngiven profil gäller där applikationen som orsakade skapandet namnger den, eller en av personens grupper gör det. Befintliga poster skrivs aldrig om."
   },
-  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Applikationerna (identifierare eller client_id) som en namngiven språkpolicy gäller för. En applikation finns på högst en namngiven profil."
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Vilken namngiven språkpolicy som vinner där flera namnges för en sida: den lägsta, från 1 till 1000."
   },
   "locale.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1615,9 +1615,9 @@
     "en": "839242d6ed29c817",
     "text": "Det preferredLanguage som språkpolicyn gav den här personen när hens post skapades. Så länge preferredLanguage fortfarande är lika med det är det POLICYNS val och en sida rangordnar det under webbläsarens språk; så snart någon sätter ett annat är det personens. Skrivs endast av den här tjänsten."
   },
-  "locale.SELECTORS.selectApplications.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Applikationerna (identifierare eller client_id) som en namngiven språkpolicy gäller för. En applikation finns på högst en namngiven profil."
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Vilken namngiven språkpolicy som vinner där flera namnges för en sida: den lägsta, från 1 till 1000."
   },
   "locale.sentences.drawnIn": {
     "en": "def5bb364db8e407",
@@ -1638,14 +1638,6 @@
   "locale.sentences.mail": {
     "en": "ab1ab635d8ef149d",
     "text": "e-post till en person vars post inte anger något språk skrivs på {{tag}}"
-  },
-  "locale.sentences.appliesTo": {
-    "en": "098d842668109368",
-    "text": "gäller för {{list}}"
-  },
-  "locale.sentences.param.noApplication": {
-    "en": "cb8bd4fa96dda063",
-    "text": "ingen applikation"
   },
   "kinds.attributes.label": {
     "en": "6619889d4a9f485d",

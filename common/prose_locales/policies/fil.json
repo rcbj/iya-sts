@@ -1588,24 +1588,24 @@
     "text": "Ibigay ang wikang ito sa bagong tao"
   },
   "locale.FIELDS.populatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "NAKA-ON BILANG DEFAULT. Ang person entry na ginawa sa realm na ito nang walang preferredLanguage (RFC 2798 section 2.7) ay binibigyan ng default na wika sa itaas bilang preferredLanguage — ng console, ng management API, ng SCIM, ng federated o self-service na sign-up, o ng bulk load. Nalalapat ang isang named profile kapag ang application na nagdulot ng paggawa ay isa sa mga application nito. Hindi kailanman isinusulat muli ang mga kasalukuyang entry."
+    "en": "aac6446069dd5f66",
+    "text": "NAKA-ON BILANG DEFAULT. Ang person entry na ginawa sa realm na ito nang walang preferredLanguage (RFC 2798 section 2.7) ay binibigyan ng default na wika sa itaas bilang preferredLanguage — ng console, ng management API, ng SCIM, ng federated o self-service na sign-up, o ng bulk load. Nalalapat ang isang named profile kapag pinapangalanan ito ng application na nagdulot ng paggawa, o ng isa sa mga group ng tao. Hindi kailanman isinusulat muli ang mga kasalukuyang entry."
   },
   "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
-    "en": "2c86d88e73ffc794",
-    "text": "Ang class ng serbisyong ito para sa locale policy: ang wikang binabalikan ng mga page ng realm at ibinibigay sa bagong tao. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinipili ayon sa application)."
+    "en": "796100ae10a7611a",
+    "text": "Ang class ng serbisyong ito para sa locale policy: ang wikang binabalikan ng mga page ng realm at ibinibigay sa bagong tao. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinapangalanan ng isang application o isang group)."
   },
   "locale.SCHEMA.attributes.stsLocaleDefault.what": {
     "en": "7b103155bd0c34db",
     "text": "Isang BCP 47 language tag (RFC 5646), gaya ng en, fr-CA o zh-TW. Iginuguhit ang mga page dito kapag ang request, ang preferredLanguage ng tao, ang language chooser at ang browser ay walang pinangalanang sinasagot ng isang catalog; ipino-format para dito ang mga petsa at numero kahit walang catalog na sumasagot. Isinusulat dito ang mail sa taong walang pinangalanang wika ang entry. Pinapalitan ang setting na mail.defaultLanguage."
   },
   "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "NAKA-ON BILANG DEFAULT. Ang person entry na ginawa sa realm na ito nang walang preferredLanguage (RFC 2798 section 2.7) ay binibigyan ng default na wika sa itaas bilang preferredLanguage — ng console, ng management API, ng SCIM, ng federated o self-service na sign-up, o ng bulk load. Nalalapat ang isang named profile kapag ang application na nagdulot ng paggawa ay isa sa mga application nito. Hindi kailanman isinusulat muli ang mga kasalukuyang entry."
+    "en": "aac6446069dd5f66",
+    "text": "NAKA-ON BILANG DEFAULT. Ang person entry na ginawa sa realm na ito nang walang preferredLanguage (RFC 2798 section 2.7) ay binibigyan ng default na wika sa itaas bilang preferredLanguage — ng console, ng management API, ng SCIM, ng federated o self-service na sign-up, o ng bulk load. Nalalapat ang isang named profile kapag pinapangalanan ito ng application na nagdulot ng paggawa, o ng isa sa mga group ng tao. Hindi kailanman isinusulat muli ang mga kasalukuyang entry."
   },
-  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Ang mga application (identifier o client_id) na sakop ng isang named locale policy. Ang isang application ay nasa iisang named profile lang, sa pinakamarami."
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Kung aling named locale policy ang mananaig kapag ilan ang pinapangalanan para sa isang page: ang pinakamababa, mula 1 hanggang 1000."
   },
   "locale.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1615,9 +1615,9 @@
     "en": "839242d6ed29c817",
     "text": "Ang preferredLanguage na ibinigay ng locale policy sa taong ito noong ginawa ang entry niya. Habang katumbas pa rin nito ang preferredLanguage, pinili ito ng POLICY at mas mababa ang ranggo nito sa page kaysa sa wika ng browser; kapag may nagtakda ng iba, sa tao na ito. Isinusulat lang ng serbisyong ito."
   },
-  "locale.SELECTORS.selectApplications.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Ang mga application (identifier o client_id) na sakop ng isang named locale policy. Ang isang application ay nasa iisang named profile lang, sa pinakamarami."
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Kung aling named locale policy ang mananaig kapag ilan ang pinapangalanan para sa isang page: ang pinakamababa, mula 1 hanggang 1000."
   },
   "locale.sentences.drawnIn": {
     "en": "def5bb364db8e407",
@@ -1638,14 +1638,6 @@
   "locale.sentences.mail": {
     "en": "ab1ab635d8ef149d",
     "text": "ang mail sa taong walang pinangalanang wika ang entry ay isinusulat sa {{tag}}"
-  },
-  "locale.sentences.appliesTo": {
-    "en": "098d842668109368",
-    "text": "nalalapat sa {{list}}"
-  },
-  "locale.sentences.param.noApplication": {
-    "en": "cb8bd4fa96dda063",
-    "text": "walang application"
   },
   "kinds.attributes.label": {
     "en": "6619889d4a9f485d",

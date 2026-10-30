@@ -927,7 +927,8 @@ class EmailFactor {
         const step = /^[A-Za-z0-9_-]{1,128}$/.test(id)
           ? authn.mfaStepFor(id) : null;
         authn.signInShell(req, res, String((step && step.authn &&
-                                            step.authn.application) || ''));
+                                            step.authn.application) || ''),
+                          String((step && step.username) || ''));
         log.debug('Leaving GET ' + path + '.');
       });
     });

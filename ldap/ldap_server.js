@@ -4928,8 +4928,9 @@ async function entriesByUuidsAsync(uuids) {
 // `preferredLanguage` of its own: an update never adds one, so a person or a
 // client that removes theirs keeps it removed. The language is the locale
 // policy's for `opts.application` — the application that caused the create,
-// where the door knows it — or the realm's default profile's, and none where
-// that profile's `populatePreferredLanguage` is off.
+// where the door knows it — and the groups already listing the new DN
+// (#1238), or the realm's default profile's, and none where that profile's
+// `populatePreferredLanguage` is off.
 function fillPreferredLanguage(stored, opts) {
   log.debug("Entering fillPreferredLanguage().");
   if (entries.get(normalizeDn(stored.dn)) || !isPersonEntry(stored) ||
@@ -4939,7 +4940,10 @@ function fillPreferredLanguage(stored, opts) {
   }
   let tag = '';
   try {
-    tag = localePolicy.populationFor(String(opts.application || ''));
+    // THE PERSON TOO (#1238): a group that already lists the DN being
+    // created may name a profile; one added later never rewrites the value.
+    tag = localePolicy.populationFor(String(opts.application || ''),
+                                     stored.dn);
   } catch (e) {
     // A policy that cannot be read gives nobody a language rather than
     // refusing the create: the entry is still made, and a page drawn for it
@@ -5396,7 +5400,8 @@ function seed() {
       'fall back to and give a new person. cn=default applies everywhere; ' +
       'while it is absent a realm other than the default one follows the ' +
       'DEFAULT REALM\'s, and the built-in defaults apply where neither ' +
-      'exists. A named profile applies to the applications it lists. ' +
+      'exists. A named profile applies where an application ' +
+      '(appLocalePolicy) or a group (stsLocalePolicy) names it. ' +
       'common/locale_policy.ts holds the schema; GET /admin/policies ' +
       'publishes it.'
   }, { origin: 'seed' });
@@ -10791,6 +10796,10 @@ if (typeof localePolicy.setDirectory === 'function') {
     allLocalePolicies: allLocalePolicies,
     writeLocalePolicy: writeLocalePolicy,
     deleteLocalePolicy: deleteLocalePolicy,
+    // WHAT NAMES A PROFILE (#1238): a person's groups' references, and the
+    // groups naming one, from the group index (rule 3cx).
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy,
     // A PERSON'S OWN preferredLanguage (RFC 2798 section 2.7), which ranks
     // above the language chooser and the browser when a page is drawn for
     // them (#539). One attribute of one person, never anything else.

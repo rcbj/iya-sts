@@ -1677,7 +1677,8 @@ class AdminApi {
                    registrationMode: 'realm', lanes: 'realm',
                    clientRules: '' }
       },
-      // #539: the fifth kind, with named profiles chosen by application.
+      // #539: the fifth kind, with named profiles an application or a
+      // group names (#1238).
       locale: {
         save: 'Writes `cn=<profile>,ou=localePolicies` in this realm\'s ' +
               'directory, REPLACING what is there; a realm with no ' +
@@ -1687,8 +1688,12 @@ class AdminApi {
               'mail to a person who names none is written in. ' +
               '`populatePreferredLanguage` (on) gives a person created ' +
               'without a `preferredLanguage` that tag. A named profile ' +
-              'applies to the applications in `selectApplications`, and an ' +
-              'application is on one named profile at most.',
+              'carries a `precedence` (1 to 1000, 100 when left out) and ' +
+              'lists nothing: an application names it in ' +
+              '`appLocalePolicy` and a group in `stsLocalePolicy`, and of ' +
+              'those naming one for a page the lowest precedence applies, ' +
+              'else `default`. A named profile something names is not ' +
+              'deleted (STS-I18N-0014).',
         example: { defaultLocale: 'fr-CA', populatePreferredLanguage: true }
       },
       // #396: the sixth kind, with two acts of its own for the realm's
@@ -1776,8 +1781,8 @@ class AdminApi {
                        description: 'What the profile is for, for the next ' +
                                     'person. Optional.' }
       };
-      // Each selector the kind declares, and no other (#539: the locale
-      // policy selects by application alone).
+      // Each selector the kind declares, and no other (#1235: a precedence;
+      // what a profile covers names it).
       const selects = function (key: string): boolean {
         log.debug("Entering selects().");
         log.debug("Leaving selects().");
