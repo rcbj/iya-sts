@@ -220,6 +220,7 @@
   "audit.actions.xacml.decision.label": "The PDP reached a decision",
   "audit.actions.xacml.enforcement.label": "The embedded PEP enforced a decision",
   "audit.actions.authzen.decision.label": "An AuthZEN access evaluation was decided",
+  "audit.actions.authzen.search.label": "An AuthZEN search was answered",
   "audit.actions.admin.authzen.attribute.set.label": "An AuthZEN attribute catalogue row was added or replaced",
   "audit.actions.admin.authzen.attribute.removed.label": "An AuthZEN attribute catalogue row was removed",
   "audit.actions.admin.authzen.scope.set.label": "An AuthZEN caller's application scope was set",

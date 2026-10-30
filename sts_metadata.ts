@@ -650,9 +650,12 @@ const SPECS: Spec[] = [
               'section 11.3 challenge, the Access Evaluations API (section ' +
               '7) with its three semantics, and the PDP metadata (section ' +
               '9) at both its forms, signed_metadata included, and the ' +
-              'Obligations Profile draft for a PEP that declares the types. ' +
-              'Missing: the three Search APIs, and the Access Request and ' +
-              'Approval and OAuth profiles, still drafts.' },
+              'Obligations Profile draft for a PEP that declares the types, ' +
+              'and the three Search APIs (section 8) over this service\'s ' +
+              'own people, applications, APIs, delegation relationships and ' +
+              'policy actions, paged and not transitive. Missing: ' +
+              'per-result obligations in a search, and the Access Request ' +
+              'and Approval and OAuth profiles, still drafts.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -3668,12 +3671,41 @@ const ENDPOINTS: EndpointEntry[] = [
           '200; a batch over authzen.maxEvaluations or ' +
           'authzen.maxBodyBytes is a 400 before anything is decided. ' +
           'Every item is its own audit row, carrying the batch id.' },
+  { path: '/access/v1/search/subject', group: 'AuthZEN',
+    name: 'Subject Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the subjects of a type that may do an action on a resource: the ' +
+          'realm\'s directory people, for a type in ' +
+          'authzen.resolveSubjectTypes. Every candidate is decided by the ' +
+          'realm\'s root policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/search/resource', group: 'AuthZEN',
+    name: 'Resource Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the resources of a type a subject may do an action on: ' +
+          'application, api or delegation, from the application directory. ' +
+          'Every candidate is decided by the realm\'s root policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/search/action', group: 'AuthZEN',
+    name: 'Action Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the actions a subject may do on a resource: the names the root ' +
+          'policy compares action-id with, and an application\'s or API\'s ' +
+          'own permissions. Every candidate is decided by the realm\'s root ' +
+          'policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
   { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
     name: 'PDP metadata', specs: ['authzen10'],
     what: 'The section 9 document: policy_decision_point (this realm\'s ' +
           'base, matching the URL it is fetched under) and only the ' +
-          'endpoints that answer here — no search endpoint and no ' +
-          'capabilities until one is implemented end to end — and ' +
+          'endpoints that answer here (the batch and the three searches ' +
+          'while each is on), no capabilities, supported_obligations, and ' +
           'signed_metadata, a JWT of the same members with iss the PDP ' +
           'identifier, verifiable with the realm\'s JWKS ' +
           '(authzen.signedMetadata). Public; answers 501 while the API is ' +

@@ -21248,6 +21248,24 @@ const CODES = [
       'without a property it requires), so none was handed and a Permit ' +
       'answered false.',
     spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0042',
+    summary: 'An AuthZEN search carried a page that is not an object of ' +
+      'token (a string), limit (a non-negative integer) and properties (an ' +
+      'object).',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0043',
+    summary: 'An AuthZEN search continued with a page.token this search did ' +
+      'not issue, or after an entity or the limit changed (section 8.2).',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-AUTHZEN-0044',
+    summary: 'An AuthZEN search reached a realm where authzen.searchEnabled ' +
+      'is off.',
+    spec: 'HTTP 501, an error message' },
+  { code: 'STS-AUTHZEN-0045',
+    summary: 'An AuthZEN search named more candidates than ' +
+      'authzen.searchMaxCandidates; only the first were decided and the ' +
+      'answer said it was incomplete.',
+    spec: 'context.incomplete' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

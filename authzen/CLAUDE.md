@@ -260,6 +260,37 @@ same audit row and monitor count per item — with section 7's additions:
 * `authzen.batchEnabled` off answers 501 (`0039`) and takes the endpoint out
   of the metadata; the single endpoint is unaffected.
 
+## The searches (#1175)
+
+**XACML has no reverse query, so a search is a loop of evaluations**
+(`authzen_search.ts`): the candidates this service can NAME for the
+searched kind, each decided by `decideEvaluation()` — the one place a
+question meets the policy, shared with the evaluation and the batch — and
+the permitted ones answered. A result is therefore a real Permit, section
+8.1's SHOULD kept as a MUST; search is not transitive.
+
+**Candidates are this service's own objects** (rcbj, 2026-10-30: start with
+the application directory — applications, APIs, the delegation relationships
+between them): directory people for a resolved subject type; `application`,
+`api` (resource-server kinds) and `delegation`
+(`appAllowedToDelegateTo`, as `<source>|<target>`) resources; and as
+actions, every literal the repository's policies compare action-id with
+(a static walk of the model) plus an application's own `oauthPermission`
+names. A type with no source answers empty results, never a 400.
+
+* **Bounded, and said so**: `authzen.searchMaxCandidates` caps the decisions;
+  past it, or with a candidate the PDP could not decide, `context.incomplete`
+  says the answer is partial (`0045`, `0028` on the one audit row per
+  search).
+* **Paging is offset-based** over the whole permitted list, decided per call
+  (bounded above). `next_token` is `<offset>.<fingerprint>`, the fingerprint a
+  digest of the request without its token, so a continued request that
+  changed an entity or the limit is refused (`0043`) — section 8.2's SHOULD
+  kept. Not snapshot-consistent, which section 8.2 allows.
+* **`runSearch()` takes its caller and application from its own caller**, so
+  the reports application (#1176) can search as the signed-in person.
+* Not implemented: per-result obligations (the Obligations Profile's 4.3).
+
 ## The console and the API (#1162)
 
 **One tab, AuthZEN, on `/admin/xacml`**, after the XACML tabs it is decided

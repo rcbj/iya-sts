@@ -381,6 +381,38 @@ override them, member by member:
 * Each item is its own audit row, carrying the batch's `X-Request-ID` (or an
   id this service makes up) and the item's position.
 
+### Searching
+
+The three AuthZEN Search APIs (section 8) answer which subjects, resources or
+actions the realm's policy permits. XACML has no reverse query, so a search
+takes the **candidates this service can name**, asks the realm's root policy
+about each one exactly as an evaluation would, and answers the permitted
+ones. Every result is therefore a real Permit.
+
+| Endpoint | Request | Candidates |
+|---|---|---|
+| `POST /access/v1/search/subject` | `subject.type` (no id), `action`, `resource` | the realm's directory people, for a type in `authzen.resolveSubjectTypes`; none for any other type |
+| `POST /access/v1/search/resource` | `subject`, `action`, `resource.type` (no id) | `application`: every application; `api`: the APIs (resource-server applications); `delegation`: every delegation relationship an application declares, as `<source>\|<target>`; none for any other type |
+| `POST /access/v1/search/action` | `subject`, `resource` (no `action`) | every action name the realm's policies compare `action-id` with, and, for an `application` or `api` resource, the permissions it defines |
+
+An id sent where the search names only a type is ignored, as the
+specification says. The answer is:
+
+```json
+{ "page": { "next_token": "1.4f0c2b9d8e7a6c51", "count": 1, "total": 3 },
+  "results": [ { "type": "user", "id": "alice" } ] }
+```
+
+* `page.limit` (default `authzen.searchPageSize`) sets the page size;
+  `page.token`, set to the previous `next_token`, continues. An empty
+  `next_token` ends the result set. A continued request must repeat every
+  entity and the limit unchanged, or it is refused with 400.
+* At most `authzen.searchMaxCandidates` candidates are decided per search.
+  Past that, or when a candidate could not be decided, the answer says so
+  in `context.incomplete`.
+* Searches are not transitive: a candidate is decided as named.
+* Each search is one `authzen.search` audit row.
+
 ### Metadata
 
 `GET /.well-known/authzen-configuration` is the PDP's metadata (AuthZEN 1.0
@@ -392,13 +424,17 @@ so a realm's document is at `/.well-known/authzen-configuration/realm/<id>`:
 {
   "policy_decision_point": "https://sts.example.com/realm/acme",
   "access_evaluation_endpoint": "https://sts.example.com/realm/acme/access/v1/evaluation",
-  "access_evaluations_endpoint": "https://sts.example.com/realm/acme/access/v1/evaluations"
+  "access_evaluations_endpoint": "https://sts.example.com/realm/acme/access/v1/evaluations",
+  "search_subject_endpoint": "https://sts.example.com/realm/acme/access/v1/search/subject",
+  "search_resource_endpoint": "https://sts.example.com/realm/acme/access/v1/search/resource",
+  "search_action_endpoint": "https://sts.example.com/realm/acme/access/v1/search/action",
+  "supported_obligations": ["step-up", "notification", "session_termination", "custom"]
 }
 ```
 
-It lists only what answers in that realm: the batch endpoint only while
-`authzen.batchEnabled` is on. There are no search endpoints, no
-`capabilities`. It carries `signed_metadata`: a JWT of the same members, with
+It lists only what answers in that realm: the batch endpoint while
+`authzen.batchEnabled` is on and the three searches while
+`authzen.searchEnabled` is on. There are no `capabilities`. It carries `signed_metadata`: a JWT of the same members, with
 `iss` the PDP identifier, signed with the realm's key the way the OAuth
 metadata is and verifiable with the realm's JWKS (`/oauth2/jwks`).
 `authzen.signedMetadata` turns it off. While the API is off in the realm the
@@ -487,6 +523,9 @@ live source; this table is a copy.
 | `authzen.maxBodyBytes` | `STS_AUTHZEN_MAX_BODY_BYTES` | `262144` | The largest batch request body |
 | `authzen.signedMetadata` | `STS_AUTHZEN_SIGNED_METADATA` | `true` | The metadata carries `signed_metadata` |
 | `authzen.obligationsProfile` | `STS_AUTHZEN_OBLIGATIONS_PROFILE` | `true` | Hand obligations to a PEP that declares every type (see *Obligations*) |
+| `authzen.searchEnabled` | `STS_AUTHZEN_SEARCH_ENABLED` | `true` | The three searches answer, and the metadata names them |
+| `authzen.searchMaxCandidates` | `STS_AUTHZEN_SEARCH_MAX_CANDIDATES` | `1000` | The most candidates one search decides |
+| `authzen.searchPageSize` | `STS_AUTHZEN_SEARCH_PAGE_SIZE` | `50` | Results per page when the request names no `page.limit` |
 | `authzen.returnReasons` | `STS_AUTHZEN_RETURN_REASONS` | `false` | Add the XACML decision, the reason and any advice to the response's `context` |
 | `roles.authzenPepGroup` | `STS_ROLES_AUTHZEN_PEP_GROUP` | `authzen-peps` | The group whose members hold `AUTHZEN_PEPS` |
 
@@ -507,7 +546,6 @@ metadata.
 
 | | Ticket |
 |---|---|
-| The three Search APIs (subject, resource, action) | #1175 |
 | Searches as `/report` sources, run with the permissions of the person signed in | #1176 |
 | An AuthZEN endpoint on the remote PEP container | #1179 |
 | The Access Request and Approval Profile (design) | #1180 |
