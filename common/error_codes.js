@@ -416,6 +416,19 @@ const SUBSYSTEMS = [
           'caller\'s authentication (mutual TLS, an OAuth access token, or ' +
           'both) and its application scope, and the batch endpoint\'s ' +
           'bounds.' },
+  // FGA (#564): application-scoped fine-grained authorization. Its own
+  // subsystem rather than XACML's or REG's, because a code here is about the
+  // relationship between an application and the policy it owns — the policy
+  // created with it, the switch that enforces it, the policy retired with it —
+  // and an operator holding one wants xacml/CLAUDE.md's FGA section, not the
+  // engine's or the registry's.
+  { id: 'FGA', label: 'Fine-grained authorization',
+    where: 'xacml/fga_policies.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, ' +
+      'and the lifecycle slot in common/applications.js',
+    what: 'Application-scoped fine-grained authorization: the policy each ' +
+          'application owns in ou=policies (created with it, retired ' +
+          'with it), the appFgaEnforced switch, and the refusals that keep ' +
+          'such a policy out of the repository root.' },
   { id: 'ADMIN', label: 'Admin console',
     where: 'admin-ui/ (except pki_admin.js), admin-core/',
     what: 'The console at /admin, its gate, and the actions behind its ' +
@@ -21238,6 +21251,70 @@ const CODES = [
     summary: 'An AuthZEN access evaluations request reached a realm where ' +
       'authzen.batchEnabled is off.',
     spec: 'HTTP 501, an error message' },
+  // ===== FGA ===============================================================
+  { code: 'STS-FGA-0001',
+    summary: 'A policy that belongs to an application (it carries ' +
+      'xacmlApplication) was written as the repository root and refused: ' +
+      'an application\'s fine-grained policy decides that application\'s ' +
+      'details and never the realm\'s root question.',
+    spec: 'the write is refused' },
+  { code: 'STS-FGA-0002',
+    summary: 'The console or /admin-api asked to make an application\'s ' +
+      'fine-grained policy the repository root, and was refused before the ' +
+      'current root was demoted.',
+    spec: 'the caller\'s refusal (why on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0003',
+    summary: 'An application has no fine-grained policy: its appFgaPolicy ' +
+      'is empty.',
+    spec: 'none here — a later phase refuses the issuance' },
+  { code: 'STS-FGA-0004',
+    summary: 'An application\'s appFgaPolicy names a policy entry that is ' +
+      'not in this realm\'s ou=policies.',
+    spec: 'none here — a later phase refuses the issuance' },
+  { code: 'STS-FGA-0005',
+    summary: 'An application\'s appFgaPolicy names a policy entry that does ' +
+      'not belong to it: the entry\'s xacmlApplication is absent or names ' +
+      'another application, or the entry is marked orphaned.',
+    spec: 'none here — a later phase refuses the issuance' },
+  { code: 'STS-FGA-0006',
+    summary: 'An application\'s fine-grained policy is disabled ' +
+      '(xacmlEnabled FALSE). An enforced application with a disabled policy ' +
+      'refuses; switching enforcement on is refused until the policy is ' +
+      'enabled.',
+    spec: 'none here — a later phase refuses the issuance' },
+  { code: 'STS-FGA-0007',
+    summary: 'An application\'s fine-grained policy does not parse or does ' +
+      'not type-check.',
+    spec: 'none here — a later phase refuses the issuance' },
+  { code: 'STS-FGA-0008',
+    summary: 'An application\'s default fine-grained policy could not be ' +
+      'written: there is no directory, ou=policies is at xacml.maxPolicies, ' +
+      'or the document was refused. The application stays without one ' +
+      'until FGA is next enabled on it.',
+    spec: 'the caller\'s refusal, or none when an application create ' +
+      'triggered it (the create still succeeds)' },
+  { code: 'STS-FGA-0009',
+    summary: 'A fine-grained authorization act named an application this ' +
+      'realm\'s registry does not hold.',
+    spec: 'the caller\'s refusal' },
+  { code: 'STS-FGA-0010',
+    summary: 'The application lifecycle hook (create or delete) failed or ' +
+      'threw. The application create or delete itself stands; the policy ' +
+      'was not created or not retired.',
+    spec: 'none — logged; the create or delete succeeds' },
+  { code: 'STS-FGA-0011',
+    summary: 'The FGA lifecycle slot offered to common/applications.js was ' +
+      'incomplete (it needs both created and deleted) and was not ' +
+      'installed.',
+    spec: 'none — logged at load' },
+  { code: 'STS-FGA-0012',
+    summary: 'An application\'s appFgaPolicy or appFgaEnforced could not be ' +
+      'written to its entry: the directory refused the write.',
+    spec: 'the caller\'s refusal' },
+  { code: 'STS-FGA-0013',
+    summary: 'A deleted application\'s fine-grained policy could not be ' +
+      'disabled and marked orphaned; it is left as it was.',
+    spec: 'none — logged; the delete succeeds' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
