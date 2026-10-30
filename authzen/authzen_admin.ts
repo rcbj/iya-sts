@@ -634,10 +634,16 @@ class AuthzenAdmin {
                     errorCode: 'STS-FGA-0025', outcome: 'failure',
                     actor: String(who.actor || ''), protocol: 'AuthZEN',
                     target: String(holder.dn || holder.name),
-                    detail: 'Enabling fine-grained authorization on "' +
-                            application + '" did not grant the remote PEP ' +
-                            holder.name + ': ' + why + ' (via ' + via +
-                            ').' });
+                    // THE SENTENCE IS THE SUMMARY AND THE FACTS THE
+                    // DETAIL: an audit row's `detail` is an object, and a
+                    // string there is dropped.
+                    summary: 'Enabling fine-grained authorization on "' +
+                             application + '" did not grant the remote ' +
+                             'PEP ' + holder.name + ': ' + why + ' (via ' +
+                             via + ').',
+                    detail: { application: application,
+                              holder: String(holder.name),
+                              kind: String(holder.kind), via: via } });
       log.debug("Leaving AuthzenAdmin.auditGrant(). A failure.");
       return;
     }
@@ -654,11 +660,16 @@ class AuthzenAdmin {
     audit.audit({ action: 'admin.authzen.pep.granted', category: 'admin',
                   actor: String(who.actor || ''), protocol: 'AuthZEN',
                   target: String(holder.dn),
-                  detail: 'Enabling fine-grained authorization on "' +
-                          application + '" granted the remote PEP ' +
-                          holder.name + ' ' + what.join(' and ') +
-                          ', so its edge PDP may forward evaluations about ' +
-                          'it (via ' + via + ').' });
+                  summary: 'Enabling fine-grained authorization on "' +
+                           application + '" granted the remote PEP ' +
+                           holder.name + ' ' + what.join(' and ') +
+                           ', so its edge PDP may forward evaluations ' +
+                           'about it (via ' + via + ').',
+                  detail: { application: application,
+                            holder: String(holder.name),
+                            kind: String(holder.kind),
+                            member: !!holder.member, scope: !!holder.scope,
+                            via: via } });
     log.debug("Leaving AuthzenAdmin.auditGrant().");
   }
 

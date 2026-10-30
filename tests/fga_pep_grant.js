@@ -243,7 +243,10 @@ function sectionE(t, k) {
           (read.refused || {}).applications.indexOf(APP) < 0,
           'E10. the refused holder kept the membership it was given and ' +
           'has no scope', JSON.stringify(read.refused));
-  const caller = require('../authzen/authzen_caller');
+  // The class itself, over its real dependencies: the module exports no
+  // instance, and scopeOf() is what a request's scope check calls.
+  const Caller = require('../authzen/authzen_caller').AuthzenCaller;
+  const caller = new Caller(Caller.defaultDeps());
   const scope = k.inRealm(function () {
     return caller.scopeOf({ kind: 'entry',
                             name: read.person ? read.person.dn : '',
@@ -262,7 +265,9 @@ function sectionA(t, k) {
   const rows = k.inRealm(function () {
     return k.audit.list().filter(function (event) {
       return event.action === 'admin.authzen.pep.granted' &&
-             /fgag-/.test(String(event.target || ''));
+             // THE HOLDER'S OWN RDN, since the realm's suffix carries the
+             // prefix too: the seeded cn=remote-pep-1 is left out.
+             /^(uid|cn)=fgag-/.test(String(event.target || ''));
     });
   });
   const ok = rows.filter(function (row) {
@@ -275,7 +280,9 @@ function sectionA(t, k) {
     return /granted the remote PEP/.test(JSON.stringify(row)) &&
            JSON.stringify(row).indexOf(APP) >= 0;
   }), 'A1. one admin.authzen.pep.granted row per holder changed, naming ' +
-     'the application', JSON.stringify(ok).slice(0, 600));
+     'the application', ok.length + ' row(s): ' + ok.map(function (row) {
+       return row.target;
+     }).join(' | '));
   t.equal(bad.length, 2,
           'A2. and one carrying STS-FGA-0025 per holder that was not');
   log.debug("Leaving sectionA().");
@@ -326,10 +333,15 @@ function sectionL(t, k) {
           'L2. the tab\'s view lists it without either, beside the groups ' +
           'and the dangling member', JSON.stringify(view));
   const again = k.act('fga-enable');
-  t.check(again.ok && namesOf(again.peps.granted).join() === 'fgag-later' &&
+  // The holder whose write was refused in E is granted now too: the
+  // directory takes its write this time, and re-enabling is the retry.
+  t.check(again.ok &&
+          namesOf(again.peps.granted).join() ===
+            ['fgag-later', 'fgag-refused'].join() &&
           later().member === true &&
           later().applications.indexOf(APP) >= 0,
-          'L3. re-enabling grants it, and only it',
+          'L3. re-enabling grants it, and retries the holder that failed ' +
+          'in E, and nobody else',
           JSON.stringify(again.peps));
   t.check(namesOf(again.peps.held).indexOf('fgag-person') >= 0,
           'L4. those granted before are held now');
@@ -338,7 +350,7 @@ function sectionL(t, k) {
     k.ldap.addGroupMember(k.remoteGroup, 'fgag-later-2', { actor: 'test' });
   });
   const enforcing = k.act('fga-enable');
-  t.check(enforcing.ok && enforcing.changed === false &&
+  t.check(enforcing.ok && enforcing.enforced === true &&
           namesOf(enforcing.peps.granted).join() === 'fgag-later-2',
           'L5. enable on an application that already enforces re-runs the ' +
           'grant', JSON.stringify(enforcing.peps));
