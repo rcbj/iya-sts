@@ -6939,6 +6939,14 @@
     "en": "f87dab881941fc82",
     "text": "Ang pinakamalaking body na tinatanggap ng POST /access/v1/evaluations. Kapag lumampas, tinatanggihan ng 400 ang buong batch bago ito basahin. Ang sariling limitasyon ng body ng serbisyo (5 MB) ang kisame."
   },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "Pirmahan ang metadata ng AuthZEN"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "Kapag naka-on, may dalang signed_metadata ang /.well-known/authzen-configuration (AuthZEN 1.0 seksyon 9.1): isang JWT ng parehong mga miyembro, iss ang identifier ng PDP, na pinirmahan gamit ang susi ng realm gaya ng metadata ng RFC 8414 (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader), at mabe-verify gamit ang JWKS ng realm. Ang PEP na sumusuporta rito ay naniniwala sa mga pinirmahang halaga kaysa sa mga karaniwan."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Ibalik ang mga dahilan ng isang decision"

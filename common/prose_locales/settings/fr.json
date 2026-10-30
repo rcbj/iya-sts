@@ -6939,6 +6939,14 @@
     "en": "f87dab881941fc82",
     "text": "Le plus grand corps qu'accepte POST /access/v1/evaluations. Au-delà, tout le lot est refusé avec 400 avant d'être lu. La limite de corps propre au service (5 Mo) est le plafond."
   },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "Signer les métadonnées AuthZEN"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "Activé, /.well-known/authzen-configuration porte signed_metadata (AuthZEN 1.0, section 9.1) : un JWT des mêmes membres, iss l'identifiant du PDP, signé avec la clé du domaine comme le sont les métadonnées RFC 8414 (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader), et vérifiable avec le JWKS du domaine. Un PEP qui le prend en charge croit les valeurs signées plutôt que les valeurs simples."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Renvoyer les raisons d’une décision"

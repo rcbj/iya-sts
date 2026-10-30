@@ -21238,6 +21238,10 @@ const CODES = [
     summary: 'An AuthZEN access evaluations request reached a realm where ' +
       'authzen.batchEnabled is off.',
     spec: 'HTTP 501, an error message' },
+  { code: 'STS-AUTHZEN-0040',
+    summary: 'The AuthZEN metadata document could not be signed for its ' +
+      'signed_metadata, which was left out; the plain document was served.',
+    spec: '' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

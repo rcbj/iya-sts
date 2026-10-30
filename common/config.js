@@ -13332,6 +13332,18 @@ const SETTINGS = [
                  'Over it the whole batch is refused 400 before it is ' +
                  'read. The service\'s own body limit (5 MB) is the ' +
                  'ceiling.' },
+  { key: 'authzen.signedMetadata', group: 'AuthZEN',
+    label: 'Sign the AuthZEN metadata',
+    env: 'STS_AUTHZEN_SIGNED_METADATA', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When on, /.well-known/authzen-configuration carries ' +
+                 'signed_metadata (AuthZEN 1.0 section 9.1): a JWT of the ' +
+                 'same members, iss the PDP identifier, signed with the ' +
+                 'realm\'s key as RFC 8414\'s metadata is ' +
+                 '(oauth2.signedMetadataAlgorithm, ' +
+                 'oauth2.signedMetadataCertificateHeader), and verifiable ' +
+                 'with the realm\'s JWKS. A PEP that supports it believes ' +
+                 'the signed values over the plain ones.' },
   { key: 'authzen.returnReasons', group: 'AuthZEN',
     label: 'Return the reasons for a decision',
     env: 'STS_AUTHZEN_RETURN_REASONS', type: 'bool', dflt: false,

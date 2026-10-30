@@ -6939,6 +6939,14 @@
     "en": "f87dab881941fc82",
     "text": "POST /access/v1/evaluations 接受的最大请求体。超过时，整批在读取之前以 400 拒绝。服务自身的请求体上限（5 MB）是上限。"
   },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "签名 AuthZEN 元数据"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "开启时，/.well-known/authzen-configuration 携带 signed_metadata（AuthZEN 1.0 第 9.1 节）：一个包含相同成员的 JWT，iss 为 PDP 标识符，像 RFC 8414 的元数据一样用领域的密钥签名（oauth2.signedMetadataAlgorithm、oauth2.signedMetadataCertificateHeader），并可用领域的 JWKS 验证。支持它的 PEP 以签名的值优先于普通值。"
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "返回决策的原因"

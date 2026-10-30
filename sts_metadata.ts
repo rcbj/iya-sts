@@ -649,8 +649,8 @@ const SPECS: Spec[] = [
               'per-realm attribute catalogue, with X-Request-ID and the ' +
               'section 11.3 challenge, the Access Evaluations API (section ' +
               '7) with its three semantics, and the PDP metadata (section ' +
-              '9) at both its forms. Missing: the three Search APIs, ' +
-              'signed_metadata, and every profile (Obligations, Access ' +
+              '9) at both its forms, signed_metadata included. Missing: the ' +
+              'three Search APIs, and every profile (Obligations, Access ' +
               'Request and Approval, the OAuth ones), all still drafts.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
@@ -3672,8 +3672,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'The section 9 document: policy_decision_point (this realm\'s ' +
           'base, matching the URL it is fetched under) and only the ' +
           'endpoints that answer here — no search endpoint and no ' +
-          'capabilities until one is implemented end to end, and no ' +
-          'signed_metadata. Public; answers 501 while the API is off.' },
+          'capabilities until one is implemented end to end — and ' +
+          'signed_metadata, a JWT of the same members with iss the PDP ' +
+          'identifier, verifiable with the realm\'s JWKS ' +
+          '(authzen.signedMetadata). Public; answers 501 while the API is ' +
+          'off.' },
   { path: '/.well-known/authzen-configuration/*', group: 'AuthZEN',
     name: 'PDP metadata (identifier with a path)', specs: ['authzen10'],
     what: 'The same document at section 9.2\'s inserted form, where the ' +

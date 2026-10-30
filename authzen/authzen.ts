@@ -98,6 +98,9 @@ interface SurfaceDeps {
   caller: any;
   loadXacml(): any;
   loadMonitor(): any;
+  // The authorization server's published-document signer, for
+  // `signed_metadata` (#1178): required when a document is signed.
+  loadOauth2(): any;
 }
 
 /**
@@ -143,6 +146,11 @@ class AuthzenSurface {
         log.debug("Entering loadMonitor().");
         log.debug("Leaving loadMonitor().");
         return require('../xacml/xacml_monitor');
+      },
+      loadOauth2: function (): any {
+        log.debug("Entering loadOauth2().");
+        log.debug("Leaving loadOauth2().");
+        return require('../oauth-oidc/oauth2');
       }
     };
   }
@@ -422,8 +430,8 @@ class AuthzenSurface {
    * The PDP's metadata document (section 9), for the realm the request is
    * answered in. It names ONLY what answers here: the single endpoint, and
    * the batch one while `authzen.batchEnabled` is on — no search endpoint
-   * and no `capabilities` until one is implemented end to end, and no
-   * `signed_metadata` (section 9.1 lets a PDP omit it).
+   * and no `capabilities` until one is implemented end to end — and, while
+   * `authzen.signedMetadata` is on, `signed_metadata` (#1178).
    *
    * @param req - the request
    * @returns the document
@@ -443,8 +451,54 @@ class AuthzenSurface {
     if (self.batchEnabled()) {
       out.access_evaluations_endpoint = base + EVALUATIONS_PATH;
     }
+    const signed = self.signedMetadata(out);
+    if (signed) {
+      out.signed_metadata = signed;
+    }
     log.debug("Leaving AuthzenSurface.metadata().");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `signed_metadata` (section 9.1, #1178): a JWT whose claims are the
+  // document's own members and whose `iss` is the PDP identifier, signed by
+  // the realm the way RFC 8414's document is — `oauth2.ts`'s
+  // `signPublishedDocument()`, the one signer of a published document here,
+  // under the `oauth-signed-metadata` use case, so `oauth2.signedMetadata*`'s
+  // algorithm and certificate header apply and the realm's JWKS verifies it.
+  // A PEP that supports it takes ITS values over the plain ones, so it is
+  // signed from the very object it is answered beside, and the two cannot
+  // disagree. Signed per fetch: the document is fetched once per PEP start,
+  // and a cache would be a store of its own to make per realm.
+  // ---------------------------------------------------------------------------
+  /**
+   * Signs the metadata document as its own `signed_metadata`, while
+   * `authzen.signedMetadata` is on.
+   *
+   * @param document - the document's members
+   * @returns the JWT, or '' when it is off or the signing failed
+   */
+  signedMetadata(document: any): string {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.signedMetadata().");
+    if (config.value('authzen.signedMetadata') === false) {
+      log.debug("Leaving AuthzenSurface.signedMetadata(). Off.");
+      return '';
+    }
+    try {
+      const signed = String(this.deps.loadOauth2().signPublishedDocument(
+        Object.assign({}, document, { sub: document.policy_decision_point }),
+        document.policy_decision_point, 3600, 'oauth-signed-metadata') || '');
+      log.debug("Leaving AuthzenSurface.signedMetadata().");
+      return signed;
+    } catch (e) {
+      // Left out rather than failing the document: the plain members are
+      // the metadata, and signed_metadata is OPTIONAL.
+      log.error(errorCodes.tag('STS-AUTHZEN-0040') + 'authzen: the ' +
+                'metadata could not be signed: ' + ((e && e.message) || e));
+      log.debug("Leaving AuthzenSurface.signedMetadata(). Not signed.");
+      return '';
+    }
   }
 
   // Answers the metadata in the realm the request is in, or 501 while the

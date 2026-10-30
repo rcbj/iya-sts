@@ -201,7 +201,13 @@ is advertised under (#472), so it matches the URL a PEP built — section
 9.2.3 has the PEP refuse a document whose identifier does not. **It names
 only what answers**: the single endpoint, and the batch one while it is on;
 no search endpoint and no `capabilities` until one is implemented end to
-end, and no `signed_metadata` (a follow-up may sign it with the realm's key).
+end. **`signed_metadata` since #1178**: the same members, `iss` the PDP
+identifier, signed by `oauth2.ts`'s `signPublishedDocument()` under the
+`oauth-signed-metadata` use case (the one signer of a published document; so
+`oauth2.signedMetadata*` choose its algorithm and certificate header), signed
+per fetch from the very object it is served beside, and switched by
+`authzen.signedMetadata`. A failure to sign leaves it out (`0040`) rather
+than failing the document: the plain members are the metadata.
 While the API is off the document answers 501 rather than advertising an
 endpoint that does not.
 

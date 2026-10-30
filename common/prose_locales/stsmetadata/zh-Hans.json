@@ -96,8 +96,8 @@
     "text": "full：覆盖强制功能集：策略语言、七种决策值（包括三种扩展的 Indeterminate）、目标匹配、条件、变量、十二种组合算法、义务和建议、策略引用，以及覆盖全部十七种数据类型的标准函数库。按 OASIS 一致性测试套件验证——455 个强制用例中通过 454 个，唯一的例外连同其论证记录在 xacml/conformance/MANIFEST.js 中。未覆盖：AttributeSelector 和 XPath 函数（使用它们的策略结果为 Indeterminate，而不是悄无声息地为空）、Multiple Decision 和 Hierarchical Resource 配置文件，以及管理委托。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "96dbb5058267c713",
-    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；Access Evaluations API（第 7 节）及其三种语义；以及两种形式的 PDP 元数据（第 9 节）。缺少：三个 Search API、signed_metadata 以及所有配置文件（Obligations、Access Request and Approval、OAuth 相关），它们都仍是草案。"
+    "en": "b304681de092d077",
+    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；Access Evaluations API（第 7 节）及其三种语义；以及两种形式的 PDP 元数据（第 9 节），包括 signed_metadata。缺少：三个 Search API 以及所有配置文件（Obligations、Access Request and Approval、OAuth 相关），它们都仍是草案。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -768,8 +768,8 @@
     "text": "POST 顶层的 subject、action、resource 和 context 默认值，以及其条目覆盖这些默认值的 evaluations 数组；返回 evaluations，按请求顺序每个条目一个决定。options.evaluations_semantic 为 execute_all（默认）、deny_on_first_deny 或 permit_on_first_permit。条目的失败为带 context.error 的 false，绝不会被 200 掩盖；超过 authzen.maxEvaluations 或 authzen.maxBodyBytes 的批次在作出任何决定之前即为 400。每个条目都是单独的审计行，带有批次 id。"
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "411b951f2d32a644",
-    "text": "第 9 节的文档：policy_decision_point（本领域的基址，与获取它的 URL 一致），以及仅在此处应答的端点——在某项功能端到端实现之前没有搜索端点、没有 capabilities，也没有 signed_metadata。公开；API 关闭时应答 501。"
+    "en": "64cb62bbdb06b873",
+    "text": "第 9 节的文档：policy_decision_point（本领域的基址，与获取它的 URL 一致），以及仅在此处应答的端点——在某项功能端到端实现之前没有搜索端点、没有 capabilities——以及 signed_metadata，一个包含相同成员、iss 为 PDP 标识符、可用领域 JWKS 验证的 JWT（authzen.signedMetadata）。公开；API 关闭时应答 501。"
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",

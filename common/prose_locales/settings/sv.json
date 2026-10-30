@@ -6939,6 +6939,14 @@
     "en": "f87dab881941fc82",
     "text": "Den största kropp POST /access/v1/evaluations tar emot. Över den avvisas hela batchen med 400 innan den läses. Tjänstens egen kroppsgräns (5 MB) är taket."
   },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "Signera AuthZEN-metadatan"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "När det är på bär /.well-known/authzen-configuration signed_metadata (AuthZEN 1.0 avsnitt 9.1): en JWT av samma medlemmar, iss PDP-identifieraren, signerad med sfärens nyckel som RFC 8414-metadatan är (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader) och verifierbar med sfärens JWKS. En PEP som stöder den tror på de signerade värdena framför de vanliga."
+  },
   "authzen.returnReasons|label": {
     "en": "02f02c9b852dcfca",
     "text": "Returnera skälen för ett beslut"
