@@ -728,8 +728,8 @@
     "text": "服务账户可以做什么——第二因素、浏览器、密码入口——以及其密码如何轮换"
   },
   "kinds.serviceAccount.appliesTo": {
-    "en": "7529888c07b7db03",
-    "text": "此领域中的每个服务账户，自其下次登录、绑定或轮换时起"
+    "en": "34a64ba365919802",
+    "text": "它所管辖的每个服务账户——指定它的账户，以及对 `default` 而言未指定任何策略的账户——自其下次登录、绑定或轮换时起"
   },
   "kinds.serviceAccount.fallsBackTo": {
     "en": "c56187f00ea11347",
@@ -876,8 +876,8 @@
     "text": "失败的轮换会在作业下次运行时重试。连续失败达到此次数后，该账户会在“监控 → 服务账户”上报告，并记录为告警（STS-SVCACCT-0042）。"
   },
   "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
-    "en": "0ff4e4aa3597259f",
-    "text": "本服务用于服务账户策略的类：此领域中的服务账户可以做什么，以及其密码如何轮换。该条目以配置文件命名（`cn=default`）。"
+    "en": "5ef697454678b011",
+    "text": "本服务用于服务账户策略的类：此领域中的服务账户可以做什么，以及其密码如何轮换。该条目以配置文件命名：`cn=default`，或服务账户在其 stsServiceAccountPolicy 中指定的命名配置文件。"
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
@@ -939,6 +939,10 @@
     "en": "604c6f36ecb4ac58",
     "text": "失败的轮换会在作业下次运行时重试。连续失败达到此次数后，该账户会在“监控 → 服务账户”上报告，并记录为告警（STS-SVCACCT-0042）。"
   },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "多个命名服务账户策略被指定时哪一个生效：最低者，取值 1 到 1000。一个服务账户只指定一个策略，因此目前它不决定任何事。"
+  },
   "serviceAccount.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "此配置文件的用途，留给下一个人看。"
@@ -998,6 +1002,10 @@
   "serviceAccount.DOORS.allowPasswordGrant.what": {
     "en": "7fe8d96fec703361",
     "text": "在令牌端点使用 grant_type=password（RFC 6749 第 4.3 节），前提是此领域允许该授权类型。"
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "多个命名服务账户策略被指定时哪一个生效：最低者，取值 1 到 1000。一个服务账户只指定一个策略，因此目前它不决定任何事。"
   },
   "serviceAccount.sentences.exempt": {
     "en": "b26ecbca5a57dc48",

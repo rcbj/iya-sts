@@ -728,8 +728,8 @@
     "text": "kung ano ang puwedeng gawin ng service account — ang pangalawang factor, ang browser, ang mga password door — at kung paano nagro-rotate ang password nito"
   },
   "kinds.serviceAccount.appliesTo": {
-    "en": "7529888c07b7db03",
-    "text": "bawat service account sa realm na ito simula sa susunod na pagkakataong mag-sign in, mag-bind o ma-rotate ito"
+    "en": "34a64ba365919802",
+    "text": "bawat service account na pinamamahalaan nito — ang mga nagpapangalan dito, at para sa `default`, ang mga walang pinapangalanan — simula sa susunod na pagkakataong mag-sign in, mag-bind o ma-rotate ito"
   },
   "kinds.serviceAccount.fallsBackTo": {
     "en": "c56187f00ea11347",
@@ -876,8 +876,8 @@
     "text": "Inuulit ang bigong rotation sa susunod na takbo ng job. Pagkatapos ng ganito karaming sunud-sunod, iniuulat ang account sa Monitoring → Service accounts at nilo-log bilang alarm (STS-SVCACCT-0042)."
   },
   "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
-    "en": "0ff4e4aa3597259f",
-    "text": "Ang class ng serbisyong ito para sa service-account policy: kung ano ang puwedeng gawin ng service account sa realm na ito at kung paano nagro-rotate ang password nito. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
+    "en": "5ef697454678b011",
+    "text": "Ang class ng serbisyong ito para sa service-account policy: kung ano ang puwedeng gawin ng service account sa realm na ito at kung paano nagro-rotate ang password nito. Ang entry ay pinangangalanan ayon sa PROFILE: `cn=default`, o isang named profile na pinapangalanan ng service account sa stsServiceAccountPolicy nito."
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
@@ -939,6 +939,10 @@
     "en": "604c6f36ecb4ac58",
     "text": "Inuulit ang bigong rotation sa susunod na takbo ng job. Pagkatapos ng ganito karaming sunud-sunod, iniuulat ang account sa Monitoring → Service accounts at nilo-log bilang alarm (STS-SVCACCT-0042)."
   },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Kung aling named service-account policy ang mananaig kapag ilan ang pinangalanan: ang pinakamababa, mula 1 hanggang 1000. Iisang policy lang ang pinapangalanan ng isang service account, kaya sa ngayon ay wala itong pinagpapasyahan."
+  },
   "serviceAccount.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para saan ang profile, para sa susunod na tao."
@@ -998,6 +1002,10 @@
   "serviceAccount.DOORS.allowPasswordGrant.what": {
     "en": "7fe8d96fec703361",
     "text": "grant_type=password sa token endpoint (RFC 6749 section 4.3), kung saan pinapayagan ng realm ang grant."
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Kung aling named service-account policy ang mananaig kapag ilan ang pinangalanan: ang pinakamababa, mula 1 hanggang 1000. Iisang policy lang ang pinapangalanan ng isang service account, kaya sa ngayon ay wala itong pinagpapasyahan."
   },
   "serviceAccount.sentences.exempt": {
     "en": "b26ecbca5a57dc48",
