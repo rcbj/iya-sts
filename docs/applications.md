@@ -1021,7 +1021,8 @@ the origin).
 
 **`appAuthnPolicy`** names the [named authentication
 policy](authentication.md#named-authentication-policies) an application's
-people sign in under. It is a choice on the application's Configuration tab
+people sign in under, unless one of a person's groups names a policy of
+lower precedence (`stsAuthnPolicy`), which then applies to that person. It is a choice on the application's Configuration tab
 (*Every protocol*): `default` (or empty), the realm's authentication policy
 as it is, or one of the realm's named policies. The policy's **first-factor
 list** is the list of mechanisms the application's people may sign in to it

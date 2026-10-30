@@ -1245,7 +1245,11 @@ The seventeen sources are `users`, `groups`, `applications`, `federation`,
 authentication policy an application names (`appAuthnPolicy`, #1148; its
 own `appAuthnMechanism` and `appMfaMechanism` until then). An application
 on `default`, or whose policy lists none, inherits the realm policy and
-adds no row; a policy that does not exist adds none. `authActivity` is the four
+adds no row; a policy that does not exist adds none. Since #1237 it also
+has a row per value listed by the policy each group names (`stsAuthnPolicy`,
+found per named policy through the group index, never a walk of the
+groups), with the `group` and `policy` columns saying where a row came
+from. `authActivity` is the four
 attempt actions still in the audit ring (`authentication`,
 `authentication.refused`, `session.refuse`, `session.refused`). `mechanism` is
 `detail.method`, or `detail.amr` when the row has no method. A session id, an

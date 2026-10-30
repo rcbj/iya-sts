@@ -199,9 +199,11 @@ The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remo
 A group may name the policy its members are held to, one attribute per kind
 of policy: today `stsPasskeyPolicy`, a [named passkey
 policy](passkeys.md#different-rules-for-different-applications-or-groups) or
-`default`, and `stsLocalePolicy`, a [named locale
+`default`, `stsLocalePolicy`, a [named locale
 policy](languages.md#named-profiles-for-applications-and-groups) or
-`default`. It is set on the group's page or with
+`default`, and `stsAuthnPolicy`, a [named authentication
+policy](authentication.md#named-authentication-policies) or `default`. It is
+set on the group's page or with
 `POST /admin-api/groups/set-policy`, which accepts only a policy the realm
 holds; it competes on precedence with the policy the application names.
 
