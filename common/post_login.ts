@@ -67,10 +67,11 @@
 // RULES are the selected profile's either way (method, snoozeDays,
 // graceDays, noPasskey, noPasskeyRole, attestation, noPasskeyFallback);
 // a started activity overrides only `enabled`. EXCLUSION STILL HOLDS: the
-// selected profile is the matching named profile of lowest precedence, so
+// selected profile is the named profile of lowest precedence among those
+// the application signed in to and the person's groups name (#1239), so
 // when it is a NAMED profile with `enabled` off the person is excluded
 // from every started activity too — the policy's one way to exclude a
-// group. `default` off excludes nobody: off is its built-in state, and a
+// group, or a sign-in to an application. `default` off excludes nobody: off is its built-in state, and a
 // started activity that `default` could veto would ask nobody in every
 // realm that never saved a policy. Paused or ended, the activity asks
 // nobody; a person the policy itself enables is still asked. Membership
@@ -461,8 +462,9 @@ class PostLogin {
    * Never throws: a question that cannot be answered asks nothing.
    *
    * @param username - the person
-   * @param application - the application signed in to, for the passkey
-   *   policy's selection
+   * @param application - the application signed in to, for the post-login
+   *   and passkey policies' selections; omitted outside a sign-in (the
+   *   started activities' walk), where the groups alone select
    * @returns what is due, or null
    */
   dueFor(username: string, application?: string): Due | null {
@@ -481,16 +483,23 @@ class PostLogin {
         log.debug("Leaving PostLogin.dueFor(). Off in this realm.");
         return null;
       }
-      // The person's groups, asked of the directory at most once for both
-      // the profile's selection and a started activity's groups.
-      let held: { cn?: string; dn?: string }[] | null = null;
-      const groupsOf = function (): { cn?: string; dn?: string }[] {
+      // The person's groups — each with the post-login profile it names
+      // (#1239) — asked of the directory at most once for both the
+      // profile's selection and a started activity's groups.
+      let held: { cn?: string; dn?: string; value?: string }[] | null = null;
+      const groupsOf = function ():
+          { cn?: string; dn?: string; value?: string }[] {
         if (held === null) {
           held = postLoginPolicy.personGroups(username) || [];
         }
-        return held as { cn?: string; dn?: string }[];
+        return held as { cn?: string; dn?: string; value?: string }[];
       };
-      const selected = postLoginPolicy.forPerson(username, groupsOf);
+      // THE APPLICATION IS A CANDIDATE TOO (#1239): the profile it names
+      // ranks with the groups' where the sign-in names one. The started
+      // activities' walk and the report ask without one, and select by the
+      // groups alone (`post_login_policy.ts`'s header argues it).
+      const selected = postLoginPolicy.forPerson(username, groupsOf,
+                                                 application || '');
       let rules = selected;
       let askedBy = '';
       if (selected.enabled === true) {

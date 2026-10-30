@@ -10858,7 +10858,7 @@ if (typeof attributePolicy.setDirectory === 'function') {
            'policy cannot be edited.');
 }
 // THE POST-LOGIN ACTIVITY POLICY'S CONTAINER (#1096), guarded the same way,
-// with the passkey policy's group hook (#535) for its group selection.
+// with the passkey policy's group hooks (#535, #1235) for its selection.
 if (typeof postLoginPolicy.setDirectory === 'function') {
   postLoginPolicy.setDirectory({
     allPostLoginPolicies: allPostLoginPolicies,
@@ -10871,7 +10871,11 @@ if (typeof postLoginPolicy.setDirectory === 'function') {
       return (found.groups || []).map(function (group) {
         return { cn: String(group.cn || ''), dn: String(group.dn || '') };
       });
-    }
+    },
+    // THE POLICY EACH OF THE PERSON'S GROUPS NAMES, AND THE GROUPS NAMING
+    // ONE (#1239): `stsPostLoginPolicy` on the group, from the group index.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy
   });
 } else {
   log.warn('ldap: common/post_login_policy.ts offers no setDirectory(), so ' +

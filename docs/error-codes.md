@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5049** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5051** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 419
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 421
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
@@ -1622,6 +1622,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0539` | An application (appPasswordPolicy) or a group (stsPasswordPolicy) names a password policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference names nothing: the valid references that remain still rank, and the default password policy applies where none remains, until the policy exists or the reference changes (#1236). Logged once per reference per process. | none (logged; the password is held to the remaining ranking) |
 | `STS-AUTHN-0540` | A named password policy was not deleted: an application (appPasswordPolicy) or a group (stsPasswordPolicy) of this realm still names it (#1236). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0541` | A named authentication policy was not saved: its precedence is not a whole number from 1 to 1000 (#1237). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0542` | An application (appPostLoginPolicy) or a group (stsPostLoginPolicy) names a post-login activity policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default post-login policy, where nothing else names one) until the policy exists or the reference changes (#1239). | none (logged; the sign-in goes on under the profile the other references select) |
+| `STS-AUTHN-0543` | A named post-login activity policy was not deleted: an application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of this realm still names it (#1239). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 
