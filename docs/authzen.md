@@ -4,17 +4,262 @@ title: AuthZEN
 
 # AuthZEN Authorization API 1.0
 
-This service answers [AuthZEN Authorization API 1.0](https://openid.net/specs/authorization-api-1_0.html)
-access evaluations. A Policy Enforcement Point (PEP) sends one question — a
-subject, an action, a resource and a context — and gets back `decision: true`
-or `false`. The answer comes from the same XACML 3.0 engine and the same
-policy repository as everything on the [XACML](xacml.md) page: an AuthZEN
-request is turned into an XACML request, decided against the realm's root
-policy, and turned back.
+[AuthZEN Authorization API 1.0](https://openid.net/specs/authorization-api-1_0.html)
+is the OpenID Foundation's standard for asking a Policy Decision Point (PDP)
+one question per access. A Policy Enforcement Point (PEP) sends a subject, an
+action, a resource and a context, and gets back `decision: true` or `false`.
+
+This service answers those questions. **It does not have a second policy
+language for them.** Every authorization decision this service makes, for an
+AuthZEN caller, for an internal application, or for its own console and
+APIs, is written in [XACML 3.0](xacml.md) (or in ALFA, which is stored as
+XACML). An AuthZEN request is **converted** into an XACML request by rules
+this page defines, decided by the realm's root policy, and the XACML result is
+converted back.
+
+```
+   a PEP                       iya-sts (one trust realm)
+
+  POST /access/v1/evaluation
+  { subject, action,     ──▶  1. who is asking, and may they ask?
+    resource, context }       2. convert AuthZEN → XACML
+                                 (fixed rules + the realm's catalogue)
+                              3. the realm's ROOT XACML policy decides
+  { "decision": true }  ◀──   4. convert XACML → AuthZEN, fail-closed
+```
 
 AuthZEN is an addition. The XACML endpoints (`/xacml`, `/xacml/pdp`,
 `/xacml/policies`, `/xacml/pep/*`, `/xacml/pip`) and the
-[remote PEP](remote-pep.md) container are unchanged.
+[remote PEP](remote-pep.md) container are unchanged. The difference between
+the two is where the decision is made: a remote PEP pulls the policies and
+decides locally, and an AuthZEN PEP asks this service per request.
+
+## The conversion, AuthZEN to XACML
+
+The conversion is the contract between a PEP and the policies a realm writes.
+It has three parts, applied in this order.
+
+### 1. Fixed rules
+
+These five members always become the same XACML attributes, in every realm:
+
+| AuthZEN member | XACML category | XACML attribute |
+|---|---|---|
+| `subject.id` | access-subject | `urn:oasis:names:tc:xacml:1.0:subject:subject-id` |
+| `subject.type` | access-subject | `urn:sts:xacml:authzen:subject-type` |
+| `action.name` | action | `urn:oasis:names:tc:xacml:1.0:action:action-id` |
+| `resource.id` | resource | `urn:oasis:names:tc:xacml:1.0:resource:resource-id` |
+| `resource.type` | resource | `urn:sts:xacml:authzen:resource-type` |
+
+All values are strings.
+
+### 2. Trusted facts
+
+This service adds these attributes to every AuthZEN request. **They come from
+the caller's authentication and this service's own records, never from the
+request body**, so a policy can rely on them:
+
+| Attribute (environment category) | Value |
+|---|---|
+| `urn:sts:xacml:protocol` | `authzen`, so a policy can tell an AuthZEN question apart from this service's own |
+| `urn:sts:xacml:realm` | the trust realm |
+| `urn:sts:xacml:authzen:caller` | the authenticated caller: the directory entry's DN, or the OAuth client's id |
+| `urn:sts:xacml:authzen:application` | the application the question is scoped to (chosen with `context.application`, checked against the caller's scope) |
+| `urn:sts:xacml:authzen:supplied` | a bag naming every member the caller sent, by path: `subject.properties.department`, `context.source_ip` |
+
+**Subjects that are directory people.** For a `subject.type` listed in
+`authzen.resolveSubjectTypes` (default `user`), `subject.id` names a person in
+the realm's directory. The policy can then read that person's roles
+(`urn:sts:xacml:role`) and directory attributes (by their LDAP names, such as
+`employeeType` or `mail`) through the Policy Information Point. The caller
+cannot supply or override them. For any other type the directory is not
+consulted, so an id that happens to match a person's name is not that
+person.
+
+### 3. The realm's conversion rules: the attribute catalogue
+
+Every other member — `subject.properties.*`, `action.properties.*`,
+`resource.properties.*` and `context.*` — reaches the policy **only through a
+conversion rule the realm declares**. A member with no rule is refused with
+400, in every mode, so a property name never takes on a meaning by accident.
+
+Each rule is one row of the realm's attribute catalogue:
+
+| Member | Meaning | Default |
+|---|---|---|
+| `object` | `subject`, `resource`, `action` or `context` | required |
+| `property` | the member's name, or a dotted path into a nested object (`owner.country`) | required |
+| `attributeId` | the XACML attribute it is sent as | required |
+| `category` | `access-subject`, `resource`, `action`, `environment` (or another XACML category, or its URI) | the object's own |
+| `dataType` | `string`, `boolean`, `integer`, `double`, `date`, `dateTime`, `time`, `anyURI`, `dayTimeDuration`, `yearMonthDuration`, `hexBinary`, `base64Binary`, `rfc822Name`, `x500Name`, `dnsName`, `ipAddress`, or the type's URI | `string` |
+| `multiplicity` | `single` (one value) or `bag` (a JSON array) | `single` |
+| `description` | free text for administrators | — |
+
+Rows are kept on the realm's `sts-authzen-api` application (one value of
+`authzenAttribute` each) and edited on **Protocols → XACML → AuthZEN** or
+through `/admin-api/xacml/authzen` (below). A row for the same `object` and
+`property` replaces the previous one.
+
+**Reserved identifiers.** A rule may not convert a caller's value into an
+identifier this service fills in itself. A value the caller sends would hide
+the one this service would have supplied, and the policy would believe it.
+Refused:
+
+* anything in `urn:sts:xacml:` (roles, the realm, the protocol, the caller,
+  the application, and every other trusted fact);
+* `subject-id`, `resource-id`, `action-id`, and the current date and time;
+* `context.application`;
+* in a subject category, a bare directory attribute name such as
+  `employeeType`. Use an identifier of your own, such as
+  `urn:example:department`.
+
+### Value conversion
+
+The rule's datatype decides; the JSON value is never quietly converted into
+something else:
+
+| Sent | Result |
+|---|---|
+| a member no rule declares | 400, in every mode |
+| `null` | 400; leave the member out, or send a value |
+| a string | parsed at the rule's datatype; 400 if it does not parse |
+| a number | accepted by an `integer` rule (whole numbers only) or a `double` rule |
+| `true` / `false` | accepted by a `boolean` rule |
+| an array | accepted by a `bag` rule only; each element follows the rules above |
+| an object | accepted only through rules for its members (`owner.country`) |
+| `""` or `[]` | sent as an empty value or an empty bag, and listed in `urn:sts:xacml:authzen:supplied` |
+
+A member that AuthZEN 1.0 does not define, at the top level or inside
+`subject`, `action` or `resource`, is also refused with 400.
+
+## The conversion back, XACML to AuthZEN
+
+Only an explicit Permit allows access. A failure to decide is never reported
+as an ordinary denial:
+
+| XACML result | `decision` |
+|---|---|
+| Permit | `true` |
+| Permit with an obligation this service cannot carry out | `false` |
+| Deny | `false` |
+| NotApplicable | `false` |
+| Indeterminate because an attribute was missing | `false` |
+| Indeterminate because of a fault (a root policy that will not load, a processing error) | an error (500), never `false` |
+
+`urn:sts:xacml:obligation:log` is the one obligation this service carries out;
+it is recorded in the audit log. With `authzen.returnReasons` on, the response
+carries a `context` with the XACML decision, the reason and any advice. It is
+explanatory only: `decision` is the answer.
+
+## A worked example
+
+A realm declares one rule:
+
+```json
+{"object":"resource","property":"classification",
+ "attributeId":"urn:example:classification"}
+```
+
+A PEP, authenticated as `cn=docs-pep,ou=users,dc=acme,dc=example` and scoped
+to `engineering-portal`, sends:
+
+```json
+{
+  "subject":  { "type": "user", "id": "alice" },
+  "action":   { "name": "read" },
+  "resource": { "type": "document", "id": "doc-1",
+                "properties": { "classification": "internal" } },
+  "context":  { "application": "engineering-portal" }
+}
+```
+
+The XACML request the policy sees (shown in the XACML JSON Profile's shape):
+
+| Category | Attribute | Value |
+|---|---|---|
+| access-subject | `…:subject:subject-id` | `alice` |
+| access-subject | `urn:sts:xacml:authzen:subject-type` | `user` |
+| action | `…:action:action-id` | `read` |
+| resource | `…:resource:resource-id` | `doc-1` |
+| resource | `urn:sts:xacml:authzen:resource-type` | `document` |
+| resource | `urn:example:classification` | `internal` |
+| environment | `urn:sts:xacml:protocol` | `authzen` |
+| environment | `urn:sts:xacml:realm` | `acme` |
+| environment | `urn:sts:xacml:authzen:caller` | `cn=docs-pep,ou=users,dc=acme,dc=example` |
+| environment | `urn:sts:xacml:authzen:application` | `engineering-portal` |
+| environment | `urn:sts:xacml:authzen:supplied` | `subject.type`, `subject.id`, `action.name`, `resource.type`, `resource.id`, `context.application`, `resource.properties.classification` |
+
+Because `user` is a resolved subject type, the policy can also read alice's
+`employeeType`, `mail` and roles from the directory. A root policy that decides
+it, in ALFA:
+
+```
+namespace docs {
+    attribute act { category = actionCat
+        id = "urn:oasis:names:tc:xacml:1.0:action:action-id" type = string }
+    attribute protocol { category = environmentCat
+        id = "urn:sts:xacml:protocol" type = string }
+    attribute app { category = environmentCat
+        id = "urn:sts:xacml:authzen:application" type = string }
+    attribute classification { category = resourceCat
+        id = "urn:example:classification" type = string }
+    attribute staff { category = subjectCat id = "employeeType" type = string }
+
+    policy engineeringDocuments {
+        id = "urn:example:engineering-documents"
+        apply firstApplicable
+        target clause protocol == "authzen"
+        target clause app == "engineering-portal"
+        rule staffReadInternal {
+            permit
+            target clause act == "read"
+            target clause classification == "internal"
+            target clause staff == "staff"
+        }
+    }
+}
+```
+
+The answer is `{ "decision": true }` if alice's entry says `staff`, and
+`false` otherwise.
+
+## Guidelines for conversion rules and policies
+
+1. **Write the decision in XACML, and only there.** A PEP sends facts; the
+   realm's policy decides. Do not encode a decision in a conversion rule or in
+   the PEP.
+2. **Target AuthZEN questions explicitly.** Start an AuthZEN policy, or a
+   policy set's branch, with `urn:sts:xacml:protocol == "authzen"`, and narrow
+   it by `urn:sts:xacml:authzen:application`. The root policy also decides this
+   service's other questions, and an AuthZEN rule should not match them.
+3. **Use your own namespace for converted attributes.** Name them
+   `urn:<your organisation>:<application>:<property>`, for example
+   `urn:example:todo:owner-id`. Never use `urn:sts:xacml:`; it is refused.
+4. **Declare the datatype the policy compares with.** A rule's datatype
+   should match the policy's attribute declaration. A mismatch is a property
+   the policy never sees, which looks like a denial.
+5. **Use `bag` only for genuinely multi-valued members**, and compare them
+   with bag functions (`stringIsIn`, `stringAtLeastOneMemberOf`). Use
+   `single` everywhere else, so an array is refused rather than decided on.
+6. **Nested objects: one rule per leaf** (`owner.country`, `owner.city`).
+   Objects are never flattened into strings.
+7. **Let the directory speak for people.** For a resolved subject type, read
+   roles and attributes from the directory through the PIP. Do not declare
+   subject properties for facts the directory already holds; a caller's copy
+   is not trusted.
+8. **Trust only the trusted facts.** A policy that needs to know who asked, or
+   for which application, reads `urn:sts:xacml:authzen:caller` and
+   `urn:sts:xacml:authzen:application`, never a property the PEP could set.
+9. **Tell "not sent" from "sent empty" with `supplied`.** An attribute sent
+   with an empty value and one not sent both look empty to most functions;
+   `urn:sts:xacml:authzen:supplied` says which.
+10. **Make the policy total for its application.** Deny explicitly where a
+    denial is the intent; NotApplicable also answers `false`, but is harder to
+    read in the decision log.
+11. **Internal applications follow the same rules.** This service's own
+    applications, the reports application among them, ask their questions
+    through the same conversion and the same XACML policies. A report runs
+    with the permissions of the person signed in to it (#1176).
 
 ## Calling it
 
@@ -145,101 +390,6 @@ caller has exactly one, that one is used. The application a policy sees is
 `urn:sts:xacml:authzen:application`, never the value as the caller sent it.
 The remote PEP register (`ou=peps`) is not consulted.
 
-### Subjects that are directory people
-
-For a `subject.type` listed in `authzen.resolveSubjectTypes` (default `user`),
-`subject.id` names a person in the realm's directory. The policy then reads
-that person's roles and directory attributes through the Policy Information
-Point, and the caller cannot supply them. For any other type the directory is
-not consulted.
-
-## How a request becomes an XACML request
-
-| AuthZEN member | XACML category | XACML attribute |
-|---|---|---|
-| `subject.id` | access-subject | `urn:oasis:names:tc:xacml:1.0:subject:subject-id` |
-| `subject.type` | access-subject | `urn:sts:xacml:authzen:subject-type` |
-| `action.name` | action | `urn:oasis:names:tc:xacml:1.0:action:action-id` |
-| `resource.id` | resource | `urn:oasis:names:tc:xacml:1.0:resource:resource-id` |
-| `resource.type` | resource | `urn:sts:xacml:authzen:resource-type` |
-| `subject.properties.*`, `action.properties.*`, `resource.properties.*`, `context.*` | the catalogue row's | the catalogue row's |
-| `context.application` | — | chooses the caller's application (see below) |
-
-This service adds these facts to every AuthZEN request. They come from the
-caller's authentication, never from the request body:
-
-| Attribute (environment category) | Value |
-|---|---|
-| `urn:sts:xacml:protocol` | `authzen`, so a policy can tell an AuthZEN question apart |
-| `urn:sts:xacml:realm` | the trust realm |
-| `urn:sts:xacml:authzen:caller` | the authenticated PEP |
-| `urn:sts:xacml:authzen:application` | the application the question is scoped to |
-| `urn:sts:xacml:authzen:supplied` | every member the caller sent, by path, such as `subject.properties.department` or `context.source_ip` |
-
-### The attribute catalogue
-
-A property reaches the policy only if the realm's **attribute catalogue**
-declares it. Each row names:
-
-| Member | Meaning | Default |
-|---|---|---|
-| `object` | `subject`, `resource`, `action` or `context` | required |
-| `property` | the member's name, or a dotted path into a nested object (`owner.country`) | required |
-| `attributeId` | the XACML attribute it is sent as | required |
-| `category` | `access-subject`, `resource`, `action`, `environment` (or another XACML category, or its URI) | the object's own |
-| `dataType` | `string`, `boolean`, `integer`, `double`, `date`, `dateTime`, `time`, `anyURI`, `dayTimeDuration`, `yearMonthDuration`, `hexBinary`, `base64Binary`, `rfc822Name`, `x500Name`, `dnsName`, `ipAddress`, or the type's URI | `string` |
-| `multiplicity` | `single` (one value) or `bag` (a JSON array) | `single` |
-| `description` | free text for administrators | — |
-
-Each row is one value of `authzenAttribute` on the realm's `sts-authzen-api`
-application, for example:
-
-```json
-{"object":"resource","property":"classification","attributeId":"urn:example:classification"}
-```
-
-A row is refused when it would map onto an identifier this service fills in
-itself, because a value the caller sends hides the one this service would have
-looked up:
-
-* anything in `urn:sts:xacml:` — roles, the realm, the protocol, the caller,
-  the application, and every other fact this service supplies;
-* `subject-id`, `resource-id`, `action-id`, and the current date and time;
-* `context.application`;
-* in a subject category, a bare directory attribute name such as
-  `employeeType`. Use an identifier of your own, such as
-  `urn:example:department`.
-
-### Value rules
-
-| Sent | Result |
-|---|---|
-| a property no catalogue row declares | 400, in every mode |
-| `null` | 400; leave the member out, or send a value |
-| a string | parsed at the row's datatype; 400 if it does not parse |
-| a number | accepted by an `integer` row (whole numbers only) or a `double` row |
-| `true` / `false` | accepted by a `boolean` row |
-| an array | accepted by a `bag` row only; each element follows the rules above |
-| an object | accepted only through rows for its members (`owner.country`) |
-| `""` or `[]` | sent as an empty value or an empty bag, and listed in `urn:sts:xacml:authzen:supplied` |
-
-A member that AuthZEN 1.0 does not define, at the top level or inside
-`subject`, `action` or `resource`, is also refused with 400.
-
-## How a decision comes back
-
-| XACML result | `decision` |
-|---|---|
-| Permit | `true` |
-| Permit with an obligation this service cannot carry out | `false` |
-| Deny | `false` |
-| NotApplicable | `false` |
-| Indeterminate because an attribute was missing | `false` |
-| Indeterminate because of a fault (a root policy that will not load, a processing error) | an error, never `false` |
-
-`urn:sts:xacml:obligation:log` is the one obligation this service carries out;
-it is recorded in the audit log.
-
 ## The console and the management API
 
 **Protocols → XACML → AuthZEN** (`/admin/xacml`, the AuthZEN tab) shows whether
@@ -295,6 +445,21 @@ live source; this table is a copy.
 * `/admin/xacml/monitor` counts AuthZEN decisions on its own row. It counts
   decisions, not enforcements: the PEP enforces the answer in its own process.
 * `/admin/sts-metadata` lists the endpoint.
+
+## What is not built yet
+
+Each of these has a ticket. Until it is built, it is not advertised in the
+metadata.
+
+| | Ticket |
+|---|---|
+| The three Search APIs (subject, resource, action) | #1175 |
+| Searches as `/report` sources, run with the permissions of the person signed in | #1176 |
+| The Obligations Profile | #1177 |
+| `signed_metadata` | #1178 |
+| An AuthZEN endpoint on the remote PEP container | #1179 |
+| The Access Request and Approval Profile (design) | #1180 |
+| The OAuth token issuance and token exchange binding (design) | #1181 |
 
 ## Related
 
