@@ -4058,6 +4058,18 @@ this directory's:
 * **`peopleMissing()` IS A WALK**, said at the function: no index records
   what an entry LACKS. It answers null in a windowed process, where the
   directory is in the store, and the page gives the RFC 4515 filter instead.
+  Since #1241 it may be handed a function instead of a list: each person's
+  username and own `stsAttributePolicy` in, the names their profile requires
+  out, in the same one walk.
+* **NAMED PROFILES (#1241)**: the slot carries four optional hooks beside
+  the nine — `personGroupReferences`, `groupsNamingPolicy`,
+  `peopleNamingPolicyAsync` and `groupReferences` (the references of groups
+  named by cn or DN, off the group index, for a group a write adds). Optional
+  so the bulk import's read-only slot installs without them. Every door
+  above asks the profile of the person it writes; the person editor hands the
+  policy the whole entry as the edit leaves it, and `checkCreateValues()`
+  holds a policy reference set at a create to its closed set (STS-LDAP-0106),
+  as `update()` does an edit.
 
 ## `userCertificate`: WHAT AN OUTSIDE CERTIFICATE IS STORED IN, AND HOW IT IS FOUND (#1061, 2026-10-27)
 
