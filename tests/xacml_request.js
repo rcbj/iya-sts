@@ -30,6 +30,9 @@
 //      detail` as the action-id at every issuance stage, takes the caller's
 //      action at `access`, and every FGA identifier is in `urn:sts:xacml:`
 //      and spelt by the Rust builder too (E2 reads every one it declares).
+//      With no subject id the subject's attributes are left out (F7), and
+//      `fgaAccess()` adds the application and stage `access` to an AuthZEN
+//      question decided by an application's policy (F8, P4).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -307,6 +310,36 @@ function theFgaQuestion(t) {
           }),
           'F6. every FGA identifier is in urn:sts:xacml:fga:, and the ' +
           'issuance stages are stages', strangers.join(', '));
+  // NOBODY IS NOT A SUBJECT CALLED '' (#564, P4): the PAR endpoint asks
+  // before anybody signed in, and the subject's attributes are left out.
+  const nobody = new xacmlRequest.AuthorizationRequest({})
+    .fga(Object.assign({}, facts, { stage: 'par', subject: {} })).build();
+  t.check(valuesOf(nobody, S, model.ATTRIBUTE.SUBJECT_ID).length === 0 &&
+          !(categoryOf(nobody, S) || { attributes: [] }).attributes
+            .some(function (one) {
+              return one.attributeId === model.ATTRIBUTE.SUBJECT_ID ||
+                     one.attributeId === V.SUBJECT_KIND;
+            }) &&
+          valuesOf(nobody, S, V.CLIENT_ID).join() === 'docs-client',
+          'F7. with no subject id there is no subject-id and no subject ' +
+          'kind at all, never \'\'; the client stays', JSON.stringify(nobody));
+  // AN AUTHZEN QUESTION ROUTED TO AN APPLICATION'S POLICY (#564, P4):
+  // AuthZEN's request as it always was, plus the application and the stage.
+  const routed = new xacmlRequest.AuthorizationRequest({})
+    .authzen({ subject: { type: 'user', id: 'alice' },
+               action: { name: 'read' },
+               resource: { type: 'document', id: 'doc-1' },
+               realm: 'acme', caller: 'pep-1', application: 'docs' })
+    .fgaAccess({ application: 'docs', stage: 'token' }).build();
+  t.check(valuesOf(routed, E, V.PROTOCOL).join() === 'authzen' &&
+          valuesOf(routed, E, V.AUTHZEN_APPLICATION).join() === 'docs' &&
+          valuesOf(routed, R, V.FGA_APPLICATION).join() === 'docs' &&
+          valuesOf(routed, E, V.FGA_STAGE).join() === 'access' &&
+          valuesOf(routed, A, model.ATTRIBUTE.ACTION_ID).join() === 'read' &&
+          valuesOf(routed, S, model.ATTRIBUTE.SUBJECT_ID).join() === 'alice',
+          'F8. fgaAccess() adds the application and stage access (whatever ' +
+          'stage is given) to AuthZEN\'s question and changes nothing of it',
+          JSON.stringify(routed));
   log.debug("Leaving theFgaQuestion().");
 }
 

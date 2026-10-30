@@ -1191,7 +1191,9 @@ class AuthorizationRequest {
 
   // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564). `facts`:
   //   realm, protocol      trusted; the protocol `oauth2` unless named
-  //   subject { id, kind } the principal and principal_type
+  //   subject { id, kind } the principal and principal_type; BOTH left out
+  //                        when there is no id (the PAR endpoint, before
+  //                        anybody signed in — #564's P4)
   //   clientId             the OAuth client the detail came through
   //   application          the identifier of the application that owns
   //                        the detail's type
@@ -1226,7 +1228,19 @@ class AuthorizationRequest {
     const subject = given.subject || {};
     const stage = String(given.stage || '');
     const issuance = FGA_ISSUANCE_STAGES.indexOf(stage) >= 0;
-    this.principal(subject.id, subject.kind);
+    // NOBODY IS NOT A SUBJECT CALLED ''. `principal()` writes '' for an
+    // absent name, which is how several PEPs say "nobody" to a policy that
+    // expects it; a fine-grained policy is written by an application's
+    // administrator, who would read `subject-id == ""` as a person with an
+    // empty name — or, worse, a rule comparing it to a list would simply not
+    // match and fall through. So with no id there is NO subject-id and no
+    // subject kind at all: an empty bag, which a policy tests as absence
+    // (a designator with MustBePresent, or `stringBagSize(...) == 0`). The
+    // client is still a fact, and stays.
+    if (subject.id !== undefined && subject.id !== null &&
+        String(subject.id) !== '') {
+      this.principal(subject.id, subject.kind);
+    }
     this.client(given.clientId);
     const action = issuance ? FGA_GRANT_ACTION : String(given.action || '');
     if (action) {
@@ -1252,6 +1266,29 @@ class AuthorizationRequest {
                        row.dataType);
       });
     log.debug("Leaving AuthorizationRequest.fga().");
+    return this;
+  }
+
+  // AN AUTHZEN QUESTION DECIDED BY AN APPLICATION'S FINE-GRAINED POLICY
+  // (#564, P4). Chained after `authzen()`, which has written the question
+  // as AuthZEN always does — subject, action, resource, the catalogue's rows
+  // and AuthZEN's trusted facts, `protocol = authzen` among them — and adds
+  // the two facts an FGA policy reads to know what it is being asked:
+  //   application   the identifier of the application whose policy decides
+  //                 (resource, `urn:sts:xacml:fga:application`, as `fga()`
+  //                 writes it, so one target matches both questions)
+  //   stage         always `access`, whatever is given: this is the
+  //                 per-request question, never an issuance one
+  // Nothing else: the subject, action and resource are AuthZEN's, already
+  // written, and writing them again would make a bag of two.
+  fgaAccess(facts) {
+    log.debug("Entering AuthorizationRequest.fgaAccess().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    this.resource(V.FGA_APPLICATION,
+                  given.application ? [String(given.application)] : []);
+    this.environment(V.FGA_STAGE, ['access']);
+    log.debug("Leaving AuthorizationRequest.fgaAccess().");
     return this;
   }
 
