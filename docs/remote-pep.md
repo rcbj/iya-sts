@@ -743,11 +743,15 @@ change anything here:
   decisions under both biases — and the AuthZEN mapping against
   `xacml-pep/authzen_cases.json`, which **`tests/authzen_map.js`** holds the
   service's mapping to as well, and the caller list's grammar and the
-  admission by it. None of it makes an HTTP request.
+  admission by it, and the forward of a fine-grained authorization
+  evaluation — the only part that makes an HTTP request, to a mock service
+  on a loopback port.
 - **`tests/authzen_evaluation.js`** holds the service's side of the two
-  AuthZEN pulls in process: the catalogue (K) and the callers (P), whose
-  names it checks against what the certificate door names over a real
-  handshake.
+  AuthZEN pulls in process: the catalogue (K, with `fgaApplications` through
+  a switch of enforcement) and the callers (P), whose names it checks
+  against what the certificate door names over a real handshake.
+  **`tests/protocol/sts_fga.js`** holds `fgaApplications` against a running
+  service. No job drives the container's edge PDP itself over the network.
 - **`tests/protocol/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the service's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is
