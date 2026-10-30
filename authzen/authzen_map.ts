@@ -51,6 +51,13 @@
 //   * ABSENT AND EMPTY STAY DISTINGUISHABLE: `supplied` names every member
 //     sent, so `""` sent and nothing sent are two different requests.
 //
+// **THE RULES ARE `xacml/xacml_attribute_rows.ts`'s SINCE #564** — the walk,
+// the conversion and the bounds — because an access type's `xacml` rows
+// (fine-grained authorization, `xacml/fga_map.ts`) convert a detail's
+// members by them too, and one copy cannot drift from another. What is
+// AuthZEN's here is the request's shape, the undeclared-property sentence
+// and the codes, which are what they were before the move.
+//
 // ---------------------------------------------------------------------------
 // THE RESULT (decision 8), FAIL-CLOSED. `true` only on a Permit carrying
 // nothing this PDP cannot discharge — `xacml.ts`'s `enforce()`, deny-biased,
@@ -75,6 +82,7 @@ import model = require('../xacml/xacml_model');
 import datatypes = require('../xacml/xacml_datatypes');
 import xacmlRequest = require('../xacml/xacml_request');
 import catalogue = require('./authzen_catalogue');
+import rowsGrammar = require('../xacml/xacml_attribute_rows');
 
 const { log } = helpers;
 
@@ -151,11 +159,16 @@ const MEMBERS = Object.freeze({
 // value goes into the request and the audit row.
 const MAX_TEXT = 1024;
 
-// The longest a string property's value may be.
-const MAX_VALUE = 8192;
-
-// The most values a bag may carry.
-const MAX_BAG = 256;
+// The value rules' kinds (`xacml/xacml_attribute_rows.ts`, which owns the
+// rules since #564) and the code each has always had here. The bounds —
+// MAX_VALUE characters a string, MAX_BAG values a bag — moved with them.
+const VALUE_CODES = Object.freeze({
+  null: 'STS-AUTHZEN-0005',
+  type: 'STS-AUTHZEN-0006',
+  array: 'STS-AUTHZEN-0007',
+  object: 'STS-AUTHZEN-0008',
+  depth: 'STS-AUTHZEN-0008'
+});
 
 /**
  * Builds a refusal of an evaluation request.
@@ -347,7 +360,8 @@ class AuthzenMap {
 
   /**
    * Walks one object's members against the catalogue, mapping each declared
-   * one and refusing the rest.
+   * one and refusing the rest — through the shared walk
+   * (`xacml/xacml_attribute_rows.ts`, #564), with AuthZEN's codes.
    *
    * @param object - subject, action, resource or context
    * @param value - the members at this level
@@ -363,62 +377,35 @@ class AuthzenMap {
               rows: CatalogueRow[], out: MappedAttribute[],
               supplied: string[], depth: number): ReadResult | null {
     log.debug("Entering AuthzenMap.walk(). " + object + " " + prefix);
-    const keys = Object.keys(value);
-    for (let i = 0; i < keys.length; i += 1) {
-      const key = keys[i];
-      const path = prefix ? prefix + '.' + key : key;
-      const named = shown + path;
-      const member = value[key];
-      const row = rows.filter(function (one: CatalogueRow) {
-        return one.object === object && one.property === path;
-      })[0];
-      const branch = !row && rows.some(function (one: CatalogueRow) {
-        return one.object === object &&
-               one.property.indexOf(path + '.') === 0;
-      });
-      if (!row && !(branch && isObject(member))) {
-        log.debug("Leaving AuthzenMap.walk(). Undeclared: " + named);
-        return refused('STS-AUTHZEN-0004',
-          named.slice(0, 200) + ' is not in this realm\'s AuthZEN attribute ' +
-          'catalogue, and an undeclared property is refused in every mode. ' +
-          'An administrator declares it on the sts-authzen-api ' +
-          'application.');
-      }
-      if (member === null) {
-        log.debug("Leaving AuthzenMap.walk(). Null: " + named);
-        return refused('STS-AUTHZEN-0005',
-          named.slice(0, 200) + ' is null, which is neither an empty value ' +
-          'nor an absent one. Leave the member out, or send a value.');
-      }
-      supplied.push(named);
-      if (!row) {
-        if (depth + 1 > 8) {
-          log.debug("Leaving AuthzenMap.walk(). Too deep.");
-          return refused('STS-AUTHZEN-0008', named.slice(0, 200) +
-                         ' is nested too deeply.');
-        }
-        const deeper = AuthzenMap.walk(object, member, path, shown, rows, out,
-                                       supplied, depth + 1);
-        if (deeper) {
-          log.debug("Leaving AuthzenMap.walk(). Refused below.");
-          return deeper;
-        }
-        continue;
-      }
-      const values = AuthzenMap.valuesOf(row, member, named);
-      if (values.refusal) {
-        log.debug("Leaving AuthzenMap.walk(). " + values.refusal.code);
-        return { refusal: values.refusal };
-      }
-      out.push({ category: row.category, attributeId: row.attributeId,
-                 dataType: row.dataType, values: values.lexical });
+    const own = rows.filter(function (one: CatalogueRow) {
+      return one.object === object;
+    }).map(function (one: CatalogueRow) {
+      return { path: one.property, attributeId: one.attributeId,
+               category: one.category, dataType: one.dataType,
+               multiplicity: one.multiplicity };
+    });
+    const problem = rowsGrammar.walk(value, prefix, shown, own, out, supplied,
+                                     depth);
+    if (!problem) {
+      log.debug("Leaving AuthzenMap.walk().");
+      return null;
     }
-    log.debug("Leaving AuthzenMap.walk().");
-    return null;
+    if (problem.kind === 'undeclared') {
+      log.debug("Leaving AuthzenMap.walk(). Undeclared: " + problem.named);
+      return refused('STS-AUTHZEN-0004',
+        problem.named + ' is not in this realm\'s AuthZEN attribute ' +
+        'catalogue, and an undeclared property is refused in every mode. ' +
+        'An administrator declares it on the sts-authzen-api ' +
+        'application.');
+    }
+    log.debug("Leaving AuthzenMap.walk(). " + problem.kind);
+    return refused(VALUE_CODES[problem.kind] || 'STS-AUTHZEN-0006',
+                   problem.message);
   }
 
   /**
-   * Converts one member's JSON value to the lexical values its row sends.
+   * Converts one member's JSON value to the lexical values its row sends —
+   * the shared value rules, with AuthZEN's codes.
    *
    * @param row - the catalogue row
    * @param member - the JSON value
@@ -428,70 +415,19 @@ class AuthzenMap {
   static valuesOf(row: CatalogueRow, member: unknown, named: string):
       { lexical?: string[]; refusal?: Refusal } {
     log.debug("Entering AuthzenMap.valuesOf(). " + named);
-    const shown = named.slice(0, 200);
-    if (isObject(member)) {
-      log.debug("Leaving AuthzenMap.valuesOf(). An object.");
-      return refused('STS-AUTHZEN-0008',
-        shown + ' is an object, and its row sends one ' +
-        (row.multiplicity === 'bag' ? 'bag of values' : 'value') +
-        '. A nested object reaches a request only through rows for its ' +
-        'own members (' + shown + '.<member>).');
+    const read = rowsGrammar.valuesOf(row, member, named);
+    if (read.problem) {
+      log.debug("Leaving AuthzenMap.valuesOf(). " + read.problem.kind);
+      return refused(VALUE_CODES[read.problem.kind] || 'STS-AUTHZEN-0006',
+                     read.problem.message);
     }
-    if (Array.isArray(member) && row.multiplicity !== 'bag') {
-      log.debug("Leaving AuthzenMap.valuesOf(). An array for one value.");
-      return refused('STS-AUTHZEN-0007',
-        shown + ' is an array, and its row sends a single value. A row ' +
-        'whose multiplicity is bag takes an array.');
-    }
-    const list = Array.isArray(member) ? member : [member];
-    if (list.length > MAX_BAG) {
-      log.debug("Leaving AuthzenMap.valuesOf(). Too many values.");
-      return refused('STS-AUTHZEN-0007',
-        shown + ' carries more than ' + MAX_BAG + ' values.');
-    }
-    const lexical: string[] = [];
-    for (let i = 0; i < list.length; i += 1) {
-      const one = list[i];
-      if (one === null) {
-        log.debug("Leaving AuthzenMap.valuesOf(). A null element.");
-        return refused('STS-AUTHZEN-0005',
-          shown + ' holds a null, which is not a value.');
-      }
-      if (isObject(one) || Array.isArray(one)) {
-        log.debug("Leaving AuthzenMap.valuesOf(). A nested element.");
-        return refused('STS-AUTHZEN-0008',
-          shown + ' holds an object or an array; a bag is of scalars.');
-      }
-      const text = AuthzenMap.lexicalOf(row.dataType, one);
-      if (text === null) {
-        log.debug("Leaving AuthzenMap.valuesOf(). The wrong JSON type.");
-        return refused('STS-AUTHZEN-0006',
-          shown + ' is a JSON ' + typeof one + ', and its row sends ' +
-          AuthzenMap.typeName(row.dataType) + '. ' +
-          AuthzenMap.typeAdvice(row.dataType));
-      }
-      try {
-        datatypes.parseValue(row.dataType, text);
-      } catch (e) {
-        log.debug("Caught in AuthzenMap.valuesOf(): " +
-                  ((e && e.message) || e));
-        log.debug("Leaving AuthzenMap.valuesOf(). Does not parse.");
-        return refused('STS-AUTHZEN-0006',
-          shown + ' is not a valid ' + AuthzenMap.typeName(row.dataType) +
-          ': ' + String((e && e.message) || e).slice(0, 200));
-      }
-      lexical.push(text);
-    }
-    log.debug("Leaving AuthzenMap.valuesOf(). " + lexical.length +
-              " value(s).");
-    return { lexical: lexical };
+    log.debug("Leaving AuthzenMap.valuesOf().");
+    return { lexical: read.lexical };
   }
 
   /**
-   * The lexical form of one JSON scalar at a datatype, or null when that
-   * JSON type may not reach it. A string reaches every type (parsed after);
-   * a boolean only a boolean; a number only an integer — and then only a
-   * whole one — or a double.
+   * The lexical form of one JSON scalar at a datatype, or null (the shared
+   * rule).
    *
    * @param type - the row's datatype URI
    * @param value - the JSON scalar
@@ -499,24 +435,8 @@ class AuthzenMap {
    */
   static lexicalOf(type: string, value: unknown): string | null {
     log.debug("Entering AuthzenMap.lexicalOf().");
-    if (typeof value === 'string') {
-      log.debug("Leaving AuthzenMap.lexicalOf(). A string.");
-      return value.length > MAX_VALUE ? null : value;
-    }
-    if (typeof value === 'boolean') {
-      log.debug("Leaving AuthzenMap.lexicalOf(). A boolean.");
-      return type === model.TYPE.BOOLEAN ? String(value) : null;
-    }
-    if (typeof value === 'number' && isFinite(value)) {
-      if (type === model.TYPE.INTEGER) {
-        log.debug("Leaving AuthzenMap.lexicalOf(). An integer?");
-        return Number.isSafeInteger(value) ? String(value) : null;
-      }
-      log.debug("Leaving AuthzenMap.lexicalOf(). A number.");
-      return type === model.TYPE.DOUBLE ? String(value) : null;
-    }
-    log.debug("Leaving AuthzenMap.lexicalOf(). Nothing.");
-    return null;
+    log.debug("Leaving AuthzenMap.lexicalOf().");
+    return rowsGrammar.lexicalOf(type, value);
   }
 
   /**
@@ -527,12 +447,8 @@ class AuthzenMap {
    */
   static typeName(type: string): string {
     log.debug("Entering AuthzenMap.typeName().");
-    const names = catalogue.TYPE_NAMES;
-    const found = Object.keys(names).filter(function (key: string) {
-      return names[key] === type;
-    })[0];
     log.debug("Leaving AuthzenMap.typeName().");
-    return found || type;
+    return rowsGrammar.typeName(type);
   }
 
   /**
@@ -543,18 +459,8 @@ class AuthzenMap {
    */
   static typeAdvice(type: string): string {
     log.debug("Entering AuthzenMap.typeAdvice().");
-    let out = 'Send a string in its lexical form.';
-    if (type === model.TYPE.BOOLEAN) {
-      out = 'Send true or false.';
-    } else if (type === model.TYPE.INTEGER) {
-      out = 'Send a whole number; a fraction is refused.';
-    } else if (type === model.TYPE.DOUBLE) {
-      out = 'Send a number.';
-    } else if (type === model.TYPE.STRING) {
-      out = 'Send a string; a number or a boolean is not quietly one.';
-    }
     log.debug("Leaving AuthzenMap.typeAdvice().");
-    return out;
+    return rowsGrammar.typeAdvice(type);
   }
 
   /**
