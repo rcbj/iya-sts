@@ -777,7 +777,9 @@ function childMain() {
       // And the locale policy's, tabbed since #1238.
       '/admin-api/policies/save-locale-policy': ['newProfile'],
       // And the New password policy (#1236), for the same reason.
-      '/admin-api/policies/save-password-policy': ['newProfile']
+      '/admin-api/policies/save-password-policy': ['newProfile'],
+      // And the New service-account policy (#1240), for the same reason.
+      '/admin-api/policies/save-serviceAccount-policy': ['newProfile']
     };
     // AND A FIELD'S SEARCH (#459, #461): its box, its page and its people
     // / applications toggle are read by the runtime's round trip and never
