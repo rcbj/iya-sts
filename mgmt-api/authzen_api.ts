@@ -8,8 +8,9 @@
 // ---------------------------------------------------------------------------
 // THE /admin-api/xacml/authzen OPERATIONS (#563, phase 3, #1162), mirroring
 // the AuthZEN tab of /admin/xacml (rule 7): what the tab draws, and its acts
-// (three, and since #1180 the callbacks and the four access request acts), each `authzen/authzen_admin.ts`'s `act()` — the console's own, since
-// the static console sends its forms here. The tab's settings are the
+// (three, and since #1180 the callbacks and the four access request acts),
+// each `authzen/authzen_admin.ts`'s `act()` — the console's own, since the
+// static console sends its forms here. The tab's settings are the
 // configuration resource's, as every settings block's are.
 //
 // It registers no route: `mgmt-api/admin_api.ts` spreads `ROUTES` into its
