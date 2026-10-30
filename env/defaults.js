@@ -1044,6 +1044,25 @@ var config = {
     accessRequestMaxPending: 10000     // Pending access requests a realm holds
   },
 
+  // --- UMA -------------------------------------------------------------
+  uma: {
+    enabled: false,                                 // User-Managed Access enabled
+    authorizationPolicy: "uma-authorization",       // The realm's UMA authorization policy
+    ticketLifetimeS: 300,                           // Permission ticket lifetime (seconds)
+    rptLifetimeS: 600,                              // RPT lifetime (seconds)
+    rptRefreshToken: false,                         // Issue a refresh token with an RPT
+    pctLifetimeS: 2592000,                          // Persisted claims token lifetime (seconds)
+    partialRpt: true,                               // Issue an RPT for the permissions granted when some are refused
+    ownerAlfaEditing: false,                        // Let a resource owner edit their document as ALFA
+    requestingPartyAttributes: "uid,mail,memberOf", // Directory attributes the owner's layer may read
+    pendingLifetimeS: 86400,                        // How long an owner's approval is waited for (seconds)
+    maxPendingPerOwner: 50,                         // Pending approvals one owner may hold
+    maxOwnerPolicyBytes: 262144,                    // Largest owner document (bytes)
+    maxOwnerRules: 500,                             // Most rules in an owner document
+    maxResourcesPerOwner: 1000,                     // Resources one owner may have registered
+    maxResourceScopes: 64                           // Most scopes on one resource
+  },
+
   // --- SSF -------------------------------------------------------------
   ssf: {
     enabled: true,                                                                                                                                        // SSF enabled

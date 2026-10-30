@@ -2400,6 +2400,15 @@ this row is the one that changes how token exchanges are decided.
 |---|---|---|---|---|
 | `authzen.tokenExchange` | `STS_AUTHZEN_TOKEN_EXCHANGE` | `false` | yes | The AuthZEN Binding for OAuth 2.0 Token Exchange (a draft), with this service as the PDP another authorization server asks. When on, the binding's gate tuples (`audience`, `issue:<type>:token_exchange`) and scope tuples (`protected_resource`) are decided by fixed conversion rules from the same delegation settings and issuance policy as a local RFC 8693 exchange; the subject gate may carry `context.issuance`, which only narrows; and the metadata advertises the token issuance capability. Off, those tuples are ordinary questions for the root policy. |
 
+### User-Managed Access
+
+The UMA settings are listed in full on
+[User-Managed Access](uma.md#configuration); this row is the switch.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `uma.enabled` | `STS_UMA_ENABLED` | `false` | yes | When on, the UMA 2.0 protection API answers under `/uma`, the token endpoint performs and advertises the `urn:ietf:params:oauth:grant-type:uma-ticket` grant, and `/.well-known/uma2-configuration` is served. Off by default: a new way in is something a realm turns on. |
+
 ### SPIFFE
 
 **There is no setting that opens the SPIRE Server API.** Its TCP port is bound

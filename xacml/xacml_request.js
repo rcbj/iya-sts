@@ -81,6 +81,11 @@ const VOCABULARY = Object.freeze({
   // environment: a setting's value, the setting's key after this prefix
   // (`urn:sts:xacml:setting:oauth2.consentRequired`), typed as it is.
   SETTING_PREFIX: 'urn:sts:xacml:setting:',
+  // THE AUTHENTICATION CONTEXT CLASS a session met, where a question
+  // carries one (#1168): `xacml_templates.ts`'s AUTHN_ATTRIBUTE.ACR is the
+  // same identifier, which the UMA facts spell from here so the Rust
+  // builder can mirror it.
+  ACR: 'urn:sts:xacml:acr',
   // environment: which moment a scope is judged at (#305): `request` (an
   // endpoint still talking to the client, which refuses), `mint` (the
   // backstop every grant mints through, which narrows) or `consent`.
@@ -372,6 +377,54 @@ const VOCABULARY = Object.freeze({
   FGA_DETAIL_DATATYPE: 'urn:sts:xacml:fga:detail:datatype',
   FGA_DETAIL_IDENTIFIER: 'urn:sts:xacml:fga:detail:identifier',
   FGA_DETAIL_PRIVILEGE: 'urn:sts:xacml:fga:detail:privilege',
+  // THE FACTS OF A USER-MANAGED ACCESS QUESTION (#1168, phase 1): one
+  // registered resource and one of its scopes, asked of up to three
+  // policies in turn — the realm's `uma-authorization`, the resource
+  // OWNER's own document, and the resource server's fine-grained policy
+  // (#564) — by `uma/`'s PEP alone, through `uma()` below. Nothing here
+  // decides: UMA 2.0 is a grant that names WHO is asked and WHAT about,
+  // and every answer is the PDP's. Spelt the same in the Rust builder
+  // (`tests/xacml_request.js` E2).
+  //
+  // resource, TRUSTED — from the registration and the protection API
+  // token (PAT) that made it, never from the client: the resource's
+  // `type`, the resource server (the application declared for `uma`),
+  // the owner's subject and the owner's kind (`user`, `application`), and
+  // whether the resource server is declared for the protocol.
+  UMA_RESOURCE_TYPE: 'urn:sts:xacml:uma:resource-type',
+  UMA_RESOURCE_SERVER: 'urn:sts:xacml:uma:resource-server',
+  UMA_RESOURCE_SERVER_DECLARED:
+    'urn:sts:xacml:uma:resource-server-declared',
+  UMA_OWNER: 'urn:sts:xacml:uma:owner',
+  UMA_OWNER_KIND: 'urn:sts:xacml:uma:owner-kind',
+  // action: the scope being asked about, on every layer, beside the
+  // action-id (the scope itself on the owner's layer; the forced issuance
+  // action elsewhere — see `uma()`).
+  UMA_SCOPE: 'urn:sts:xacml:uma:scope',
+  // access-subject: HOW THE REQUESTING PARTY BECAME KNOWN. Booleans saying
+  // whether anybody is known at all and whether they are the owner; the
+  // source of what is known (`session`, `claim_token`, `pct`); the issuer
+  // of a pushed claim token, and whether that issuer is one the realm
+  // declared (true where no token was pushed); whether the client
+  // registered the UMA grant type.
+  UMA_REQUESTING_PARTY_KNOWN: 'urn:sts:xacml:uma:requesting-party-known',
+  UMA_REQUESTING_PARTY_IS_OWNER:
+    'urn:sts:xacml:uma:requesting-party-is-owner',
+  UMA_CLAIM_SOURCE: 'urn:sts:xacml:uma:claim-source',
+  UMA_CLAIM_ISSUER: 'urn:sts:xacml:uma:claim-issuer',
+  UMA_CLAIM_ISSUER_DECLARED: 'urn:sts:xacml:uma:claim-issuer-declared',
+  UMA_CLIENT_GRANT_DECLARED: 'urn:sts:xacml:uma:client-grant-declared',
+  // access-subject: EACH GATHERED CLAIM, after this prefix under its own
+  // name (`urn:sts:xacml:uma:claim:email`) — only from a VERIFIED token or
+  // the sign-on session, never a value a client merely asserted.
+  UMA_CLAIM_PREFIX: 'urn:sts:xacml:uma:claim:',
+  // environment: WHICH LAYER is asking (`realm`, `owner`, `fga`), at which
+  // STAGE (`assess`, `upgrade`, `approval`), how old the permission ticket
+  // is in seconds, and whether an RPT was presented for upgrade.
+  UMA_LAYER: 'urn:sts:xacml:uma:layer',
+  UMA_STAGE: 'urn:sts:xacml:uma:stage',
+  UMA_TICKET_AGE: 'urn:sts:xacml:uma:ticket-age',
+  UMA_RPT_PRESENTED: 'urn:sts:xacml:uma:rpt-presented',
   // THE FACTS OF A PASSKEY QUESTION (#536): a passkey being registered
   // (`register-passkey`) or signing somebody in (`use-passkey`), gathered by
   // `common/passkey_policy.ts`. Nothing here decides; the built-in issuance
@@ -513,6 +566,21 @@ const FGA_STAGES = Object.freeze(['authorize', 'token', 'refresh',
 const FGA_ISSUANCE_STAGES = Object.freeze(['authorize', 'token', 'refresh',
                                            'exchange', 'par']);
 const FGA_GRANT_ACTION = 'grant-authorization-detail';
+
+// THE THREE LAYERS A USER-MANAGED ACCESS QUESTION IS ASKED OF (#1168), as
+// `urn:sts:xacml:uma:layer` carries them, and the STAGES it is asked at. The
+// action-id is FORCED by the layer: `issue-uma-permission` for the realm's
+// own policy, the SCOPE itself for the resource owner's document (which is
+// only ever asked about UMA permissions over that owner's own resources, so
+// a rule there reads `action-id == "read"` as a person would write it), and
+// `grant-uma-permission` for the resource server's fine-grained policy
+// (#564), whose issuance questions already force their action.
+const UMA_LAYERS = Object.freeze(['realm', 'owner', 'fga']);
+const UMA_STAGES = Object.freeze(['assess', 'upgrade', 'approval']);
+const UMA_PERMISSION_ACTION = 'issue-uma-permission';
+const UMA_FGA_ACTION = 'grant-uma-permission';
+const UMA_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:uma-ticket';
+const UMA_CLAIM_SOURCES = Object.freeze(['session', 'claim_token', 'pct']);
 
 class AuthorizationRequest {
   // `options`:
@@ -1353,6 +1421,132 @@ class AuthorizationRequest {
     return this;
   }
 
+  // THE FACTS OF A USER-MANAGED ACCESS QUESTION (#1168): one resource, one
+  // scope, one layer. `facts`:
+  //   realm                trusted
+  //   layer                one of UMA_LAYERS; anything else is `realm`
+  //   stage                one of UMA_STAGES; anything else is `assess`
+  //   resource { id, type, resourceServer, resourceServerDeclared, owner,
+  //              ownerKind }
+  //                        the registration's facts, from the store and the
+  //                        PAT that made it — never the client's
+  //   scope                the one scope being asked about
+  //   requestingParty { id, kind, known, isOwner, claimSource, claimIssuer,
+  //                     claimIssuerDeclared, acr }
+  //                        who is asking, once anybody is known. With no id
+  //                        there is NO subject-id and no subject kind at all
+  //                        (`fga()`'s rule): the built-in rule that requires
+  //                        one then reaches a missing attribute, which the
+  //                        PEP answers as `need_info`
+  //   clientId, clientGrantDeclared
+  //                        the OAuth client presenting the ticket, and
+  //                        whether it registered the UMA grant type
+  //   claims { name: [values] }
+  //                        the gathered claims, each VERIFIED, under
+  //                        UMA_CLAIM_PREFIX
+  //   ticketAgeS, rptPresented
+  //   mode, settings { key: value }
+  //                        as every issuance question carries them
+  // The action-id is forced by the layer (UMA_LAYERS above), so no caller can
+  // ask the realm's or the resource server's policy as anything else; the
+  // scope is `urn:sts:xacml:uma:scope` on every layer as well. A fact not
+  // known is left out rather than sent as '', so no rule reads an absent one
+  // as a value; the booleans are always sent, false for anything but true.
+  uma(facts) {
+    log.debug("Entering AuthorizationRequest.uma().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value === undefined || value === null || value === ''
+        ? [] : [String(value)];
+    };
+    const yes = function (value) {
+      log.debug("Entering yes().");
+      log.debug("Leaving yes().");
+      return [value === true ? 'true' : 'false'];
+    };
+    const layer = UMA_LAYERS.indexOf(String(given.layer)) >= 0
+      ? String(given.layer) : 'realm';
+    const stage = UMA_STAGES.indexOf(String(given.stage)) >= 0
+      ? String(given.stage) : 'assess';
+    const resource = given.resource || {};
+    const party = given.requestingParty || {};
+    const scope = String(given.scope || '');
+    // NOBODY IS NOT A SUBJECT CALLED '' — `fga()` argues it. The attribute is
+    // absent until somebody is known, which is what lets a MustBePresent
+    // designator on subject-id turn into the missing-attribute status the
+    // PEP reads as "ask the requesting party for claims".
+    if (party.id !== undefined && party.id !== null &&
+        String(party.id) !== '') {
+      this.principal(party.id, party.kind);
+    }
+    this.client(given.clientId);
+    this.subject(V.UMA_REQUESTING_PARTY_KNOWN, yes(party.known),
+                 model.TYPE.BOOLEAN);
+    this.subject(V.UMA_REQUESTING_PARTY_IS_OWNER, yes(party.isOwner),
+                 model.TYPE.BOOLEAN);
+    this.subject(V.UMA_CLAIM_SOURCE,
+                 UMA_CLAIM_SOURCES.indexOf(String(party.claimSource)) >= 0
+                   ? [String(party.claimSource)] : []);
+    this.subject(V.UMA_CLAIM_ISSUER, one(party.claimIssuer));
+    this.subject(V.UMA_CLAIM_ISSUER_DECLARED,
+                 yes(party.claimIssuerDeclared !== false),
+                 model.TYPE.BOOLEAN);
+    this.subject(V.UMA_CLIENT_GRANT_DECLARED,
+                 yes(given.clientGrantDeclared), model.TYPE.BOOLEAN);
+    this.subject(V.ACR, one(party.acr));
+    const self = this;
+    const claims = given.claims && typeof given.claims === 'object'
+      ? given.claims : {};
+    Object.keys(claims).sort().forEach(function (name) {
+      const values = Array.isArray(claims[name]) ? claims[name]
+        : [claims[name]];
+      self.subject(V.UMA_CLAIM_PREFIX + name,
+                   values.filter(function (value) {
+                     return value !== undefined && value !== null;
+                   }).map(String));
+    });
+    const action = layer === 'owner' ? scope
+      : (layer === 'fga' ? UMA_FGA_ACTION : UMA_PERMISSION_ACTION);
+    if (action) {
+      this.requestedAction(action);
+    }
+    this.action(V.UMA_SCOPE, one(scope));
+    this.target(String(resource.id || ''));
+    this.resource(V.UMA_RESOURCE_TYPE, one(resource.type));
+    this.resource(V.UMA_RESOURCE_SERVER, one(resource.resourceServer));
+    this.resource(V.UMA_RESOURCE_SERVER_DECLARED,
+                  yes(resource.resourceServerDeclared), model.TYPE.BOOLEAN);
+    this.resource(V.UMA_OWNER, one(resource.owner));
+    this.resource(V.UMA_OWNER_KIND,
+                  SUBJECT_KINDS.indexOf(String(resource.ownerKind)) >= 0
+                    ? [String(resource.ownerKind)] : []);
+    this.protocol('uma');
+    this.grantType(UMA_GRANT_TYPE);
+    this.environment(V.REALM, one(given.realm));
+    this.environment(V.UMA_LAYER, [layer]);
+    this.environment(V.UMA_STAGE, [stage]);
+    const age = Number(given.ticketAgeS);
+    this.environment(V.UMA_TICKET_AGE,
+                     Number.isFinite(age) && age >= 0
+                       ? [String(Math.floor(age))] : [],
+                     model.TYPE.INTEGER);
+    this.environment(V.UMA_RPT_PRESENTED, yes(given.rptPresented),
+                     model.TYPE.BOOLEAN);
+    if (given.mode) {
+      this.mode(given.mode);
+    }
+    const settings = given.settings && typeof given.settings === 'object'
+      ? given.settings : {};
+    Object.keys(settings).sort().forEach(function (key) {
+      self.setting(key, settings[key]);
+    });
+    log.debug("Leaving AuthorizationRequest.uma(). layer=" + layer);
+    return this;
+  }
+
   // The request, in the engine's shape (`xacml_model.js`).
   build() {
     log.debug("Entering AuthorizationRequest.build().");
@@ -1376,5 +1570,11 @@ module.exports = {
   SUBJECT_KINDS: SUBJECT_KINDS,
   FGA_STAGES: FGA_STAGES,
   FGA_ISSUANCE_STAGES: FGA_ISSUANCE_STAGES,
-  FGA_GRANT_ACTION: FGA_GRANT_ACTION
+  FGA_GRANT_ACTION: FGA_GRANT_ACTION,
+  UMA_LAYERS: UMA_LAYERS,
+  UMA_STAGES: UMA_STAGES,
+  UMA_PERMISSION_ACTION: UMA_PERMISSION_ACTION,
+  UMA_FGA_ACTION: UMA_FGA_ACTION,
+  UMA_GRANT_TYPE: UMA_GRANT_TYPE,
+  UMA_CLAIM_SOURCES: UMA_CLAIM_SOURCES
 };

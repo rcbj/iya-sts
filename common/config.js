@@ -13475,6 +13475,163 @@ const SETTINGS = [
                  'it a submission is refused 503 until some are decided or ' +
                  'expire.' },
 
+  // --- User-Managed Access 2.0 (#1168) -------------------------------------
+  //
+  // UMA 2.0 (`uma/`): the protection API, the permission ticket grant, the
+  // resource owner's own policy and the portal's Sharing section. Per
+  // realm, every one of them; the group is homed on /admin/uma. OFF BY
+  // DEFAULT: a new way in is something a realm turns on (CIBA's rule).
+  { key: 'uma.enabled', group: 'UMA', label: 'User-Managed Access enabled',
+    env: 'STS_UMA_ENABLED', type: 'bool', dflt: false, runtime: true,
+    description: 'When on, the UMA 2.0 protection API answers under /uma, ' +
+                 'the token endpoint performs the ' +
+                 'urn:ietf:params:oauth:grant-type:uma-ticket grant and ' +
+                 'advertises it, and /.well-known/uma2-configuration ' +
+                 'describes them. Off, the routes stay REGISTERED and ' +
+                 'answer 501, as XACML\'s do, the grant is ' +
+                 'unsupported_grant_type, and the discovery document is ' +
+                 'not served. Nothing a resource owner shared is forgotten ' +
+                 'by switching it off.' },
+  { key: 'uma.authorizationPolicy', group: 'UMA',
+    label: 'The realm\'s UMA authorization policy',
+    env: 'STS_UMA_AUTHORIZATION_POLICY', type: 'string',
+    dflt: 'uma-authorization', runtime: true,
+    description: 'The name of the ou=policies entry that decides the ' +
+                 'REALM\'s layer of every UMA permission: which resource ' +
+                 'servers, clients and claim issuers may take part, and ' +
+                 'that a requesting party must be known. With no entry of ' +
+                 'that name the built-in uma-authorization template ' +
+                 'decides; an entry overrides it, and a DISABLED entry ' +
+                 'does not fall back (the issuance policy\'s rule). The ' +
+                 'resource owner\'s own document and the resource ' +
+                 'server\'s fine-grained policy are asked after it, and ' +
+                 'every layer must Permit.' },
+  { key: 'uma.ticketLifetimeS', group: 'UMA',
+    label: 'Permission ticket lifetime (seconds)',
+    env: 'STS_UMA_TICKET_LIFETIME_S', type: 'int', dflt: 300, min: 10,
+    max: 86400, runtime: true,
+    description: 'How long a permission ticket (Federated Authorization ' +
+                 'section 4) may be presented at the token endpoint. Every ' +
+                 'need_info, request_submitted and request_denied answer ' +
+                 'ROTATES the ticket, so a client that keeps asking never ' +
+                 'presents one older than this; a ticket is spent once ' +
+                 'across the cluster.' },
+  { key: 'uma.rptLifetimeS', group: 'UMA',
+    label: 'RPT lifetime (seconds)',
+    env: 'STS_UMA_RPT_LIFETIME_S', type: 'int', dflt: 600, min: 30,
+    max: 86400, runtime: true,
+    description: 'How long a requesting party token lives. SHORT ON ' +
+                 'PURPOSE: an RPT\'s permission is what the owner allowed ' +
+                 'when it was issued, and a short life bounds how long a ' +
+                 'withdrawn share is still honoured by a resource server ' +
+                 'that does not introspect. A client wanting longer ' +
+                 'presents its ticket again or upgrades its RPT, which ' +
+                 're-decides every permission.' },
+  { key: 'uma.rptRefreshToken', group: 'UMA',
+    label: 'Issue a refresh token with an RPT',
+    env: 'STS_UMA_RPT_REFRESH_TOKEN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether the uma-ticket grant answers with a refresh ' +
+                 'token beside the RPT. OFF BY DEFAULT (rcbj\'s decision 4 ' +
+                 'on #1168): the Grant specification forbids an ' +
+                 'authorization assessment at refresh, this service ' +
+                 're-decides every refresh, and an RPT that cannot be ' +
+                 're-decided had better be short-lived instead. On, the ' +
+                 'refresh re-runs every layer, as an upgrade does, and a ' +
+                 'permission that no longer passes is dropped.' },
+  { key: 'uma.pctLifetimeS', group: 'UMA',
+    label: 'Persisted claims token lifetime (seconds)',
+    env: 'STS_UMA_PCT_LIFETIME_S', type: 'int', dflt: 2592000, min: 60,
+    max: 31536000, runtime: true,
+    description: 'How long a persisted claims token (PCT) keeps the claims ' +
+                 'gathered about a requesting party for one client. A PCT ' +
+                 'is a handle stored by digest, bound to the client and ' +
+                 'the requesting party, revocable at /oauth2/revoke with ' +
+                 'token_type_hint=pct, and ended by a sign-out of ' +
+                 'everything.' },
+  { key: 'uma.partialRpt', group: 'UMA',
+    label: 'Issue an RPT for the permissions granted when some are refused',
+    env: 'STS_UMA_PARTIAL_RPT', type: 'bool', dflt: true, runtime: true,
+    description: 'When on (rcbj\'s decision 3 on #1168), a ticket asking ' +
+                 'several permissions of which some are granted and others ' +
+                 'refused is answered with an RPT carrying the granted ' +
+                 'subset — the Grant specification\'s partial-RPT option — ' +
+                 'and request_denied only when none is. Off, any refused ' +
+                 'permission refuses the whole request. need_info is ' +
+                 'preferred over either whenever a question is ' +
+                 'Indeterminate over the requesting party.' },
+  { key: 'uma.ownerAlfaEditing', group: 'UMA',
+    label: 'Let a resource owner edit their document as ALFA',
+    env: 'STS_UMA_OWNER_ALFA_EDITING', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'When on, /portal/shared lets a resource owner edit their ' +
+                 'whole UMA document as ALFA, beside the share form. OFF BY ' +
+                 'DEFAULT (rcbj\'s decision 2 on #1168): a rule the form ' +
+                 'did not write is then drawn read-only as a custom rule. ' +
+                 'An owner\'s document is only ever asked about the ' +
+                 'owner\'s own resources, so the worst a hand-written rule ' +
+                 'can do is share what its author owns.' },
+  { key: 'uma.requestingPartyAttributes', group: 'UMA',
+    label: 'Directory attributes the owner\'s layer may read',
+    env: 'STS_UMA_REQUESTING_PARTY_ATTRIBUTES', type: 'csv',
+    dflt: 'uid,mail,memberOf', runtime: true,
+    description: 'The attributes of a requesting party\'s directory entry ' +
+                 'the Policy Information Point answers for the resource ' +
+                 'OWNER\'s layer, comma-separated: what a person\'s own ' +
+                 'rule may read about a stranger. The realm\'s layer reads ' +
+                 'the directory as every issuance question does. Empty ' +
+                 'means an owner\'s rule may read nothing but what was ' +
+                 'gathered as claims.' },
+  { key: 'uma.pendingLifetimeS', group: 'UMA',
+    label: 'How long an owner\'s approval is waited for (seconds)',
+    env: 'STS_UMA_PENDING_LIFETIME_S', type: 'int', dflt: 86400, min: 60,
+    max: 2592000, runtime: true,
+    description: 'How long a request_submitted request waits on ' +
+                 '/portal/shared for the owner\'s answer. Unanswered past ' +
+                 'it, the client\'s next poll is request_denied. The ' +
+                 'owner is told by mail where the channel is configured ' +
+                 'and they have not declined notifications.' },
+  { key: 'uma.maxPendingPerOwner', group: 'UMA',
+    label: 'Pending approvals one owner may hold',
+    env: 'STS_UMA_MAX_PENDING_PER_OWNER', type: 'int', dflt: 50, min: 1,
+    max: 10000, runtime: true,
+    description: 'The most requests waiting for one owner\'s answer at a ' +
+                 'time. Past it a further request_submitted is answered ' +
+                 'request_denied rather than queued: an unbounded queue is ' +
+                 'a way for a stranger to fill a person\'s portal.' },
+  { key: 'uma.maxOwnerPolicyBytes', group: 'UMA',
+    label: 'Largest owner document (bytes)',
+    env: 'STS_UMA_MAX_OWNER_POLICY_BYTES', type: 'int', dflt: 262144,
+    min: 4096, max: 4194304, runtime: true,
+    description: 'The largest XACML document a resource owner\'s policy ' +
+                 'may be, in bytes. A share that would take it past the ' +
+                 'bound is refused and the document left as it was.' },
+  { key: 'uma.maxOwnerRules', group: 'UMA',
+    label: 'Most rules in an owner document',
+    env: 'STS_UMA_MAX_OWNER_RULES', type: 'int', dflt: 500, min: 1,
+    max: 10000, runtime: true,
+    description: 'The most Rules a resource owner\'s document may hold: ' +
+                 'its own owner-self rule, one per share, and one per ' +
+                 'approval given. A share that would take it past the ' +
+                 'bound is refused.' },
+  { key: 'uma.maxResourcesPerOwner', group: 'UMA',
+    label: 'Resources one owner may have registered',
+    env: 'STS_UMA_MAX_RESOURCES_PER_OWNER', type: 'int', dflt: 1000,
+    min: 1, max: 100000, runtime: true,
+    description: 'The most resources registered on one owner\'s behalf, ' +
+                 'across every resource server. A registration past it is ' +
+                 'refused: a resource server with a protection API token ' +
+                 'could otherwise register without bound in somebody\'s ' +
+                 'name.' },
+  { key: 'uma.maxResourceScopes', group: 'UMA',
+    label: 'Most scopes on one resource',
+    env: 'STS_UMA_MAX_RESOURCE_SCOPES', type: 'int', dflt: 64, min: 1,
+    max: 1024, runtime: true,
+    description: 'The most resource_scopes one registered resource may ' +
+                 'carry. A scope is a string and is never dialled: a scope ' +
+                 'description document the specification allows a scope ' +
+                 'to name is not fetched.' },
+
   // --- Shared Signals Framework (SSF) --------------------------------------
   //
   // The seventeenth protocol family, and the first one here that TALKS BACK:

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4958** of them, in **50** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4961** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -90,6 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
+* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 3
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4859,6 +4860,18 @@ Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacm
 | `STS-FGA-0106` | A member of an authorization detail was an array where its xacml row sends a single value, or carried more than 256 values. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0107` | A member of an authorization detail was an object where its xacml row sends values (a nested object reaches a request only through rows for its own members), or was nested too deeply. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0108` | Which applications enforce fine-grained authorization could not be read when a remote PEP pulled the AuthZEN catalogue (GET /xacml/pep/authzen-catalogue), so the catalogue was not sent: one naming no enforcing application would have the edge PDP decide their evaluations from the root (#564). | HTTP 500 server_error; the edge keeps the catalogue it holds |
+
+## STS-UMA
+
+**User-Managed Access 2.0.** UMA 2.0: the protection API a resource server registers resources and asks permission tickets through (the PAT), the uma-ticket grant that decides each permission through the realm's policy, the resource owner's own XACML document and the resource server's fine-grained policy, the permission ticket and PCT stores, claims gathering, the owner's approval of an "ask me" share, and the Sharing section of the portal.
+
+Raised from: uma/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-UMA-0001` | Whether a UMA permission ticket or PCT was already spent could not be asked of the cluster claim store, so the value was refused rather than accepted twice (#1168). | invalid_grant (HTTP 400) at the token endpoint; the value is not consumed |
+| `STS-UMA-0002` | A resource owner's UMA document was not written: it is larger than uma.maxOwnerPolicyBytes, or names no owner (#1168). | the caller's refusal (HTTP 400 on the account API); the document is left as it was |
+| `STS-UMA-0003` | A resource owner's UMA document was not written: it holds more rules than uma.maxOwnerRules (#1168). | the caller's refusal (HTTP 400 on the account API); the document is left as it was |
 
 ## STS-ADMIN
 

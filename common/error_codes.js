@@ -435,6 +435,24 @@ const SUBSYSTEMS = [
           'authorization detail mapped onto an XACML request through its ' +
           'type\'s xacml rows and asked of the owning application\'s ' +
           'policy.' },
+  // UMA (#1168): User-Managed Access 2.0, its own subsystem rather than
+  // OAUTH's or XACML's, because a code here is about the protection API
+  // (the PAT, a registration, a permission ticket), the uma-ticket grant's
+  // own errors (need_info, request_submitted, request_denied), the
+  // resource owner's document and the portal's Sharing section; the
+  // engine's faults keep their XACML codes and the token's RFC 6749 errors
+  // their OAUTH ones. The stores' codes start at 0001, the protection API's
+  // at 0100, the grant's at 0200, the owner's document and the portal's at
+  // 0300, claims interaction and approval at 0400, the console's at 0500.
+  { id: 'UMA', label: 'User-Managed Access 2.0',
+    where: 'uma/',
+    what: 'UMA 2.0: the protection API a resource server registers ' +
+          'resources and asks permission tickets through (the PAT), the ' +
+          'uma-ticket grant that decides each permission through the ' +
+          'realm\'s policy, the resource owner\'s own XACML document and ' +
+          'the resource server\'s fine-grained policy, the permission ' +
+          'ticket and PCT stores, claims gathering, the owner\'s approval ' +
+          'of an "ask me" share, and the Sharing section of the portal.' },
   { id: 'ADMIN', label: 'Admin console',
     where: 'admin-ui/ (except pki_admin.js), admin-core/',
     what: 'The console at /admin, its gate, and the actions behind its ' +
@@ -21875,6 +21893,23 @@ const CODES = [
       'naming no enforcing application would have the edge PDP decide ' +
       'their evaluations from the root (#564).',
     spec: 'HTTP 500 server_error; the edge keeps the catalogue it holds' },
+  // ===== UMA ===============================================================
+  { code: 'STS-UMA-0001',
+    summary: 'Whether a UMA permission ticket or PCT was already spent ' +
+      'could not be asked of the cluster claim store, so the value was ' +
+      'refused rather than accepted twice (#1168).',
+    spec: 'invalid_grant (HTTP 400) at the token endpoint; the value ' +
+      'is not consumed' },
+  { code: 'STS-UMA-0002',
+    summary: 'A resource owner\'s UMA document was not written: it is ' +
+      'larger than uma.maxOwnerPolicyBytes, or names no owner (#1168).',
+    spec: 'the caller\'s refusal (HTTP 400 on the account API); the ' +
+      'document is left as it was' },
+  { code: 'STS-UMA-0003',
+    summary: 'A resource owner\'s UMA document was not written: it holds ' +
+      'more rules than uma.maxOwnerRules (#1168).',
+    spec: 'the caller\'s refusal (HTTP 400 on the account API); the ' +
+      'document is left as it was' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
