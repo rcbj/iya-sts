@@ -11319,6 +11319,52 @@ function authorizationDetailsAttributeProblem(attribute, value) {
   return null;
 }
 
+// FINE-GRAINED AUTHORIZATION'S COVERAGE AT THE WRITE (#564, P3): a type
+// definition written to an application whose `appFgaEnforced` is TRUE must
+// leave no member path uncovered (`xacml/fga_map.ts`'s `uncovered()`).
+// `fga_map.ts` is required LAZILY and only for an enforcing application —
+// the arrangement `authorizationDetailsTypeOf()` takes for the mapping
+// grammar — so nothing reaches for it unless an administrator switched
+// enforcement on, which none of the parent project's in-process Kerberos
+// jobs (whose COPY closure reaches this module) ever does; and it is a pure
+// library that registers nothing and fills no slot, so loading it here
+// moves nothing. The lifecycle's slot (`setFgaLifecycle()`) is not the
+// door for this: the question is about a definition, not a policy.
+/**
+ * Refuses a type definition that would be uncovered on an application that
+ * enforces fine-grained authorization.
+ *
+ * @param fields - the application entry's fields as they stand
+ * @param value - the definition being written
+ * @returns the sentence naming the uncovered paths, or ''
+ */
+function fgaCoverageProblem(fields, value) {
+  log.debug("Entering fgaCoverageProblem().");
+  const enforced = String(valuesOf((fields || {}).appFgaEnforced)[0] || '')
+    .toUpperCase() === 'TRUE';
+  if (!enforced) {
+    log.debug("Leaving fgaCoverageProblem(). Not enforced.");
+    return '';
+  }
+  const definition = authorizationDetailsTypeOf(value);
+  if (definition.problem) {
+    // Refused by the STS-REG-0112 check above, which runs first.
+    log.debug("Leaving fgaCoverageProblem(). Not a definition.");
+    return '';
+  }
+  const paths = require('../xacml/fga_map').uncovered(definition);
+  log.debug("Leaving fgaCoverageProblem(). " + paths.length + " uncovered.");
+  return paths.length
+    ? 'oauthAuthorizationDetailsType: this application enforces ' +
+      'fine-grained authorization, and the type "' + definition.type +
+      '" would leave ' + paths.join(', ') + ' neither mapped (xacml) nor ' +
+      'listed in notForPolicy, so every detail carrying one would be ' +
+      'refused. Map each, list it in notForPolicy, or close the schema ' +
+      '(additionalProperties: false) where "*" is shown — or switch ' +
+      'enforcement off first.'
+    : '';
+}
+
 // AN AUTHZEN CATALOGUE ROW (#563), checked by the catalogue's own grammar —
 // the one place a row is read, so the write and every request read it alike.
 // A clear is never refused; the identifier list of `appAuthzenApplication`
@@ -15434,6 +15480,22 @@ function updateApplication(identifier, change) {
                 "details value.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
+    }
+  }
+  // FINE-GRAINED AUTHORIZATION'S COVERAGE (#564, P3), on an ADD or a SET of
+  // a type definition to an application that ENFORCES it: enabling was
+  // refused while a declared type was uncovered (`fga_policies.ts`'s
+  // `enable()`, STS-FGA-0018), and this is the same rule at the other door
+  // — a definition written afterwards that left a member neither mapped nor
+  // in notForPolicy would make every detail of it refused (STS-FGA-0103).
+  if ((mode === 'set' || mode === 'add') && value &&
+      attribute === 'oauthAuthorizationDetailsType') {
+    const problem = fgaCoverageProblem(loaded.record.fields, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). An uncovered type on an " +
+                "application that enforces fine-grained authorization.");
+      return errorCodes.mark({ ok: false, errors: [problem] },
+                             'STS-FGA-0019');
     }
   }
   // #290's eleven, on a SET that carries a value: the registration's own

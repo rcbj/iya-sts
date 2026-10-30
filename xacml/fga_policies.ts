@@ -123,11 +123,16 @@ interface FgaDeps {
   };
   xml: { writePolicy(policy: any): string };
   applications: {
+    get(identifier: string): any;
+    authorizationDetailsTypeOf(value: unknown): any;
     fgaStateOf(identifier: string): { known: boolean; policy: string;
                                       enforced: boolean };
     setFgaState(identifier: string, change: object, options: object): any;
     setFgaLifecycle(hooks: object | null): void;
   };
+  // The mapping's coverage question (#564, P3): what a type leaves neither
+  // mapped nor deliberately out.
+  map: { uncovered(definition: any): string[] };
   sha256Hex(text: string): string;
   now(): Date;
 }
@@ -172,6 +177,7 @@ class FgaPolicies {
       templates: require('./xacml_templates'),
       xml: require('./xacml_xml'),
       applications: require('../common/applications'),
+      map: require('./fga_map'),
       sha256Hex: function (text: string): string {
         return crypto.digest('sha256', text, 'hex');
       },
@@ -348,6 +354,24 @@ class FgaPolicies {
     const { log, applications } = this.deps;
     const id = String(identifier);
     log.debug("Entering FgaPolicies.enable(). identifier=" + id);
+    const gaps = this.uncoveredTypes(id);
+    if (gaps.length) {
+      log.debug("Leaving FgaPolicies.enable(). Uncovered types.");
+      return this.refused('STS-FGA-0018', 'uncovered-type',
+                          'Fine-grained authorization cannot be enforced ' +
+                          'on "' + id + '" while a type it declares has ' +
+                          'members that are neither mapped (xacml) nor ' +
+                          'listed in notForPolicy: ' + gaps.map(
+                            function (one) {
+                              return one.type + ' (' +
+                                     one.paths.join(', ') + ')';
+                            }).join('; ') + '. A detail carrying such a ' +
+                          'member could never reach the policy, so every ' +
+                          'one would be refused. Map each, list it in ' +
+                          'notForPolicy, or close the schema ' +
+                          '(additionalProperties: false) where "*" is ' +
+                          'shown.');
+    }
     const ensured = this.ensure(id, options);
     if (!ensured.ok) {
       log.debug("Leaving FgaPolicies.enable(). Not ensured.");
@@ -369,6 +393,46 @@ class FgaPolicies {
     log.debug("Leaving FgaPolicies.enable().");
     return { ok: true, policy: ensured.policy, enforced: true,
              changed: !!set.changed };
+  }
+
+  // -------------------------------------------------------------------------
+  // COVERAGE (#564, P3): the types an application declares whose
+  // `fga_map.uncovered()` is not empty. Asked before enforcement is
+  // switched on — a detail with an uncovered member is refused at every
+  // issuance (STS-FGA-0103), so an enforced application with such a type
+  // would refuse all of them, and the moment to say so is while somebody is
+  // switching it on. A value the registry cannot read is skipped here: the
+  // write doors refuse one (STS-REG-0112), and `declaredTypes()` ignores it.
+  // -------------------------------------------------------------------------
+  /**
+   * Lists the types an application declares that fine-grained
+   * authorization could not cover, with the uncovered member paths.
+   *
+   * @param identifier - the application's identifier
+   * @returns `[{ type, paths }]`, empty when every type is covered
+   */
+  uncoveredTypes(identifier: string): Array<{ type: string;
+                                              paths: string[] }> {
+    const { log, applications, map } = this.deps;
+    log.debug("Entering FgaPolicies.uncoveredTypes().");
+    const entry = applications.get(String(identifier));
+    const fields = (entry && entry.fields) || {};
+    const raw = fields.oauthAuthorizationDetailsType;
+    const values = raw === undefined || raw === null ? []
+      : (Array.isArray(raw) ? raw : [raw]);
+    const out: Array<{ type: string; paths: string[] }> = [];
+    values.forEach(function (value: unknown) {
+      const definition = applications.authorizationDetailsTypeOf(value);
+      if (!definition || definition.problem) {
+        return;
+      }
+      const paths = map.uncovered(definition);
+      if (paths.length) {
+        out.push({ type: String(definition.type), paths: paths });
+      }
+    });
+    log.debug("Leaving FgaPolicies.uncoveredTypes(). " + out.length);
+    return out;
   }
 
   /**
@@ -585,6 +649,7 @@ export = {
   nameFor: slot.forward('nameFor'),
   ensure: slot.forward('ensure'),
   enable: slot.forward('enable'),
+  uncoveredTypes: slot.forward('uncoveredTypes'),
   disable: slot.forward('disable'),
   retire: slot.forward('retire'),
   resolve: slot.forward('resolve')
