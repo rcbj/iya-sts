@@ -99,6 +99,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/geolocation': 'risk-scoring.html',
   '/admin/gnap': 'gnap.html',
   '/admin/gnap/monitor': 'gnap.html',
+  '/admin/uma': 'uma.html',
   '/admin/grants':
     'oauth-oidc.html#grant-management-grant-management-for-oauth-20',
   '/admin/groups': 'admin-console.html#groups--admingroups',
@@ -212,6 +213,7 @@ const EXACT: Record<string, string> = {
     'admin-console.html#verifier-request-tab--adminvcvc-tab-verifier-request',
   'xacml-tab-settings': 'configure-xacml.html',
   'xacml-tab-peps': 'remote-pep.html',
+  'xacml-tab-authzen': 'authzen.html',
   'ssf-tab-caep': 'caep-events.html',
   'ssf-tab-risc': 'signals-received.html',
   'kerberos-tab-settings': 'configure-kerberos.html',
@@ -291,6 +293,7 @@ const EXACT: Record<string, string> = {
   'tab-roles': 'admin-console.html#roles--adminroles',
   'tab-entry': 'ldap.html',
   'tab-access-types': 'gnap.html#access-types-and-the-issuance-policy',
+  'tab-fga': 'fga.html#the-console-and-the-api',
   'tab-addresses': 'applications.html#the-console-page-and-the-api',
   'tab-permissions': 'delegation.html',
   'utab-overview': 'admin-console.html#users--adminusers',
@@ -307,6 +310,7 @@ const EXACT: Record<string, string> = {
   'ucred-kerberos': 'kerberos.html',
   'utab-federation': 'federation.html',
   'utab-gnap': 'gnap.html',
+  'utab-uma': 'uma.html#the-console',
   'utab-entry': 'admin-console.html#the-persons-directory-entry',
   'utab-signout': 'signing-out.html',
   'gtab-group': 'admin-console.html#groups--admingroups',
@@ -326,7 +330,9 @@ const PREFIXES: Record<string, string> = {
   'cert-scep-': 'scep.html',
   'cert-spiffe-': 'spiffe.html',
   'tab-custom-': 'listeners.html',
-  'passkey-sub-': 'authentication.html#the-passkey-policy'
+  'passkey-sub-': 'authentication.html#the-passkey-policy',
+  // An access type's XACML mapping sub-tab (#564, P5), one per type.
+  'atmap-': 'fga.html#mapping-a-types-members'
 };
 
 const PORTAL: Record<string, string> = {
@@ -337,6 +343,7 @@ const PORTAL: Record<string, string> = {
     'risk-scoring.html#what-people-say-about-their-own-sign-ins',
   '/portal/consents': 'oauth-oidc.html#consent',
   '/portal/gnap': 'gnap.html#what-a-person-sees-portalgnap',
+  '/portal/access-requests': 'authzen.html#access-requests-and-approvals',
   '/portal/email': 'mail.html',
   '/portal/owned/roles': 'admin-console.html#roles--adminroles',
   '/portal/owned/groups': 'admin-console.html#groups--admingroups',
@@ -344,6 +351,8 @@ const PORTAL: Record<string, string> = {
   '/portal/owned/applications': 'applications.html',
   '/portal/password': 'authentication.html#passwords',
   '/portal/keys': 'passkeys.html',
+  '/portal/shared': 'uma.html#sharing-on-the-portal',
+  '/portal/shared-with-me': 'uma.html#sharing-on-the-portal',
   '/portal/mfa': 'authentication.html',
   '/portal/signing-key': 'jwt-assertions.html',
   '/portal/certificates': 'pki.html',

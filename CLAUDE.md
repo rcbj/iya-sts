@@ -91,6 +91,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `mgmt-api/` | `/admin-api`, every console control reachable by a machine. `mgmt-api/CLAUDE.md`. |
 | `tests/` | **The only test directory.** `tests/CLAUDE.md`. |
 | `xacml/` | XACML 3.0 and ALFA, the embedded PEPs, the PDP. `xacml/CLAUDE.md`. |
+| `authzen/` | AuthZEN Authorization API 1.0, an adapter over the XACML engine (#563). `authzen/CLAUDE.md`. |
 | `gnap/` | GNAP (RFC 9635, RFC 9767). `gnap/CLAUDE.md`. |
 | `attribute-sources/` | Operators' SQL databases a realm reads attributes from. `attribute-sources/CLAUDE.md`. |
 | `risk/` | Risk scoring and its datasets; it decides nothing. `risk/CLAUDE.md`. |
@@ -156,6 +157,7 @@ surfaces below are the exceptions, each argued where it lives.
 | the SPIFFE Broker API | an X509-SVID naming a configured broker | `spiffe/CLAUDE.md` |
 | `/xacml/pep/*`, `POST /xacml/pip` | a client certificate holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | a client certificate holding `XACML_USER` | `xacml/CLAUDE.md` |
+| `/access/v1/*` | by `authzen.callerAuthentication`, mutual TLS by default: a caller holding `AUTHZEN_PEPS`, scoped to the application it asks about | `authzen/CLAUDE.md` |
 | `/account-api` | this realm's DPoP-bound `account:manage` token; the person is always its subject | `account-api/CLAUDE.md` |
 | `/report-api` | this realm's `report:use` or `report:admin` token (DPoP-bound from `sts-report`), its subject holding REPORT_USE or REPORT_ADMIN now, and the access-control policy per definition and job (#1030) | `report/CLAUDE.md` |
 | `/admin-api` | an access token audienced to it, with the scope the operation needs | `mgmt-api/CLAUDE.md` |
@@ -312,6 +314,9 @@ holds is the table above; what each module is for is that directory's
    | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver`, `setRevocationObserver` (#239, filled by `oauth-oidc/oauth_grant_signals.ts`), `setStatusMarker` (#820, filled by `oauth-oidc/access_token_status.ts`) | `common/CLAUDE.md` |
    | `common/helpers.js` | `setSubjectResolver` (a person's `sub` from their entry's `entryUUID`, and back), filled by `ldap/ldap_server.js` (2026-09-14) | `ldap/CLAUDE.md` |
 | `common/passkey_report.ts` | `setDirectory` (the holder scan, a group population, the people count), filled by `ldap/ldap_server.js` (#942) | `common/CLAUDE.md` (3cs) |
+| `common/applications.js` | `setFgaLifecycle` (an application's fine-grained policy created and retired with it), filled by `xacml/fga_policies.ts` at 23c (#564) | `common/CLAUDE.md` |
+| `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
+| `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
    it carries** — `common/protocol_stack.ts` fills it, because the owner is first
@@ -554,7 +559,8 @@ preference; this table says what the constraint is and the named file says why.
 | 23b-vii | `common/cell_sessions` | After `ssf/ssf` and the grant signals, for a reader (#98); `app.js` loads it for its middleware at #2. | `common/cell_sessions.ts` |
 | 23b-ii-b | `common/service_account_rotation` | Beside the two rotations above (#221 P4), for a reader: a library, scheduler jobs, no route, everything reached lazily. | `common/CLAUDE.md` (3cd) |
 | 23b-iii | `kerberos/krb5_krbtgt_rotation` | After `ldap/ldap_server` (21), whose directory slot the krbtgt key is written through (#169). A library: scheduler jobs, no route. | `kerberos/CLAUDE.md` |
-| 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require, two `register()` calls — `xacml_admin`, then `xacml`. **This REQUIRE arms every issuance site** (a load-time effect): before it, `issuance_gate.js` answers "allowed". | `xacml/CLAUDE.md` |
+| 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require, two `register()` calls — `xacml_admin`, then `xacml`. **This REQUIRE arms every issuance site** (a load-time effect): before it, `issuance_gate.js` answers "allowed". `xacml/fga_policies` is built here too, filling `applications.setFgaLifecycle()` (#564), and then `xacml/fga_pep`, filling `common/fga_gate.ts`'s decider: before it an enforcing application's every detail is refused (#564 P3). | `xacml/CLAUDE.md` |
+| 23c-ii | `authzen/authzen_access_request`, then `authzen/authzen` | The library first (#1180), whose install registers its scheduler job; then the surface after `xacml/xacml` (23c), whose surface's `decide()`, `enforce()` and `callerIdentity()` it calls lazily; requires no route module. `/access/v1/*` collides with nothing. | `authzen/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |
 | 23e–g | `acme/acme`, `est/est`, `scep/scep` | After `admin-ui/admin` (18), whose shell each `_admin.ts` draws with, and after `ldap/ldap_server` (21), whose slot `common/cert_enrollment.ts` reads entries through. Each one require, then two `register()` calls (the family, then its `_admin`). No constraint between the three. | `acme/CLAUDE.md`, `est/CLAUDE.md`, `scep/CLAUDE.md` |
 | 23g-ii | `oidfed/oidfed_admin` | After the console (18), whose shell it draws `/admin/oidfed` with; the family itself is 14b. | `oidfed/CLAUDE.md` |
@@ -679,6 +685,8 @@ in every file, including the ones in the source comments. This is the index.
 | 3cs | `passkey_report.ts` (#942): who holds which passkey algorithm, kept rather than counted | `common/CLAUDE.md` |
 | 3ct | `post_login_policy.ts`, `post_login.ts` (#1096, #1100–#1105): post-login activities, the session held, the PQC migration's upgrade ceremony (#939's, which replaced the portal's Upgrade button); `post_login_activities.ts` (#1111, #1123): a post-login activity started for the realm or the union of groups chosen by search, and its reminder mail; their progress a `/report` source (#1110) | `common/CLAUDE.md`, `authn/CLAUDE.md`, `report/CLAUDE.md` |
 | 3cw | `opaque_access_token.ts` (#501): opaque OAuth access tokens, off by default | `oauth-oidc/CLAUDE.md` |
+| 3cy | `fga_map.ts`, `xacml_attribute_rows.ts` (#564): an RFC 9396 detail as its owning application's XACML request; the row grammar and value rules shared with AuthZEN | `xacml/CLAUDE.md`, `authzen/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
+| 3cz | `fga_gate.ts`, `fga_pep.ts` (#564 P3, P4): fine-grained authorization at the authorization, PAR and token endpoints, the token exchange's bound, and AuthZEN deciding against an enforcing application's own policy | `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md`, `authzen/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -1110,7 +1118,7 @@ the file the row names.
 | Enforce anything by default, **in development mode** — product mode implies RFC 9700 mode | `oauth-oidc/CLAUDE.md`, `common/mode.js` |
 | Federate with anybody it was not CONFIGURED to federate with — the one refusal by default | `federation/CLAUDE.md` |
 | Poll a partner about a person while the session lasts; ~~consume a federated sign-out~~ reversed 2026-09-23 (#167); ~~decrypt a partner's encrypted assertion~~ reversed 2026-09-23 (#168) | `federation/CLAUDE.md` |
-| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — nineteen argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
+| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
 | ~~Ask anybody's permission before it issues something~~ — reversed 2026-09-01 (`/oauth2/consent`) | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer, unless it is this service's own or listed in `appCorsOrigin` | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |

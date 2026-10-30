@@ -39,6 +39,7 @@
 import kit = require('./web_portal_kit');
 import DocLinks = require('../common/web_doc_links');
 import WebAccounts = require('../common/web_accounts');
+import WebNavSections = require('../common/web_nav_sections');
 
 type Json = any;
 
@@ -68,6 +69,15 @@ class PortalShell {
    * again in place when another tab changes them.
    */
   static readonly ACCOUNTS_ID = 'sts-account-switch';
+  /**
+   * The `name` every section of the column shares, which makes them one
+   * exclusive group: opening one closes the other (#1229).
+   */
+  static readonly NAV_GROUP = 'sts-portal-nav';
+  /**
+   * Selects the column's open sections, for the runtime's `toggle`.
+   */
+  static readonly OPEN_SECTIONS = '.side details.navsec[open]';
 
   /**
    * The parameters of a page's query that a redraw of it keeps.
@@ -129,31 +139,37 @@ class PortalShell {
     })[0] || active;
   }
 
+  // THE COLUMN IS THE CONSOLE'S SINCE #1229 (rcbj: "behave the same way as
+  // the Admin Console"): each section a `<details>` of one named group,
+  // collapsed until the reader opens it, one open at a time, the section
+  // holding the page marked `current` open or not. The markup and the rule
+  // are `common/web_nav_sections.ts`'s, shared with `admin-ui/web_shell.ts`;
+  // what is drawn open is the runtime's choice (`openSection`), and a caller
+  // that names none draws every section closed.
   /**
    * The navigation column.
    *
    * @param active - the page's path
    * @param t - the translator
+   * @param openSection - optional; the key of the one section drawn open
    * @returns the column's HTML
    */
-  static navBar(active: string, t: Json): string {
+  static navBar(active: string, t: Json, openSection?: string | null): string {
     // Composed keys, built first, for `headingFor()`'s reason.
     const label = function (item: Json): string {
       const key = 'portal.nav.' + kit.navSlug(item.path) + '.label';
       return t.html(key);
     };
+    const holding = PortalShell.sectionKeyOf(active);
     return '<nav aria-label="' + kit.esc(t.text('portal.shell.navAria')) +
       '">' + kit.NAV.map(function (section: Json): string {
-        const parent = PortalShell.navPathFor(active);
-        const here = section.items.some(function (item: Json): boolean {
-          return item.path === parent;
-        });
-        const what = 'portal.section.' + section.key + '.what';
-        const title = 'portal.section.' + section.key + '.title';
-        return '<div class="navsec' + (here ? ' open' : '') + '">' +
-          '<p class="navhead" title="' + kit.esc(t.text(what)) + '">' +
-          t.html(title) + '</p><ul>' +
-          section.items.map(function (item: Json): string {
+        return WebNavSections.section({
+          group: PortalShell.NAV_GROUP, key: section.key,
+          current: section.key === holding,
+          open: openSection === section.key,
+          what: t.text('portal.section.' + section.key + '.what'),
+          title: t.html('portal.section.' + section.key + '.title'),
+          items: section.items.map(function (item: Json): string {
             // A SPAN AND NOT A LINK for the page that is open, and
             // `aria-current` for a screen reader.
             if (item.path === active) {
@@ -162,8 +178,27 @@ class PortalShell {
             }
             return '<li><a href="' + kit.esc(item.path) + '">' + label(item) +
               '</a></li>';
-          }).join('') + '</ul></div>';
+          }).join('') });
       }).join('') + '</nav>';
+  }
+
+  // The section a page lives in, as `navBar()` keys it: the one listing the
+  // page, or the page it is under (`navPathFor()`). A fresh load has nothing
+  // the reader opened, and this is the section the column shows open.
+  /**
+   * The section that holds a page, by its `data-section` key.
+   *
+   * @param active - the page's path
+   * @returns that section's key, or '' when the page is in none
+   */
+  static sectionKeyOf(active: string): string {
+    const parent = PortalShell.navPathFor(active);
+    const found = kit.NAV.filter(function (section: Json): boolean {
+      return section.items.some(function (item: Json): boolean {
+        return item.path === parent;
+      });
+    })[0];
+    return found ? String(found.key) : '';
   }
 
   /**
@@ -249,7 +284,8 @@ class PortalShell {
    *
    * @param me - `GET /account-api/me`'s answer
    * @param page - `active` (the page's path), `query`, `message`, `error`,
-   *   `cards` (the body), `prefix` (the realm's) and `t`
+   *   `cards` (the body), `prefix` (the realm's), `t` and `openSection`
+   *   (the one section drawn open)
    * @returns the page's HTML
    */
   static frame(me: Json, page: Json): string {
@@ -272,7 +308,8 @@ class PortalShell {
       PortalShell.accountMenu(page.accounts, page.subject, t) +
       PortalShell.chooser(t, me && me.locale, returnTo) + '</div></header>' +
       '<div class="shell"><div class="side"><div class="card">' +
-      PortalShell.navBar(page.active, t) + '</div></div><div class="main">' +
+      PortalShell.navBar(page.active, t, page.openSection) +
+      '</div></div><div class="main">' +
       // Above the flash, so a message does not push the link down (#895).
       DocLinks.portalHtml(DocLinks.forPortalPage(page.active), t) +
       (page.error ? '<div class="err">' + kit.esc(page.error) + '</div>' : '') +

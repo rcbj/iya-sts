@@ -1028,6 +1028,24 @@ const JOBS = [
     timeoutMs: 1500000 },
   { file: 'sts_xacml_editor.js',         browser: true },
   { file: 'sts_xacml_endpoints.js',      browser: false },
+  // THE AUTHZEN API OVER HTTP (#563, #1165): the interop Todo scenario in
+  // ALFA, the doors, the batch and the metadata, in a realm of its own.
+  // `local: true`: the API is ours.
+  { file: 'sts_authzen.js',              browser: false },
+  // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION OVER HTTP (#564 P6): the
+  // default policy (never root, withheld from the pull), the switch and its
+  // coverage refusal, the token and authorization endpoints, the exchange
+  // bound, a refresh after the policy changes, AuthZEN against the
+  // application's policy, and the orphan — in a realm of its own.
+  // `local: true`: the policies and the API are ours.
+  { file: 'sts_fga.js',                  browser: false },
+  // USER-MANAGED ACCESS 2.0 OVER HTTP (#1168 phase 7, #1196): both PAT
+  // grants, registration, need_info, the claims interaction, the RPT and
+  // its PCT, introspection with a PAT, request_submitted answered on the
+  // portal, upgrade, revocation, an application as owner, the negatives and
+  // uma.enabled off — the job as resource server and client, in a realm of
+  // its own. `local: true`: UMA is ours.
+  { file: 'sts_uma.js',                  browser: false },
   { file: 'sts_xacml_remote_pep.js',     browser: false,
     docker: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK

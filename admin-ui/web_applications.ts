@@ -1357,7 +1357,14 @@ class ApplicationsPage {
               t.html('consoleApplications.a2.enrollHeading') +
               '</h3>' + ApplicationsPage.applicationEnrollmentPanel(ctx,
                 row, carryBack,
-                                                            'credentials')) },
+                                                            'credentials')) +
+            // STORED CERTIFICATES (#1227), on EVERY application and not
+            // forFamilies(): a certificate stored on the entry authenticates
+            // the application at every door that reads a client certificate
+            // as an identity, whatever it is declared for.
+            ApplicationsPage.applicationStoredCertificatesSection(
+              (json.page.credentials || {}).stored, row.identifier,
+              carryBack, !!ctx.write, t) },
         { id: 'tab-origins',
           label: t.text('consoleApplications.a2.tabOrigins'),
           html: ApplicationsPage.applicationCorsSection(row, carryBack, t) },
@@ -1368,7 +1375,17 @@ class ApplicationsPage {
           label: t.text('consoleApplications.a2.tabAccessTypes'),
           html: forFamilies(OAUTH.concat(['gnap']),
             ApplicationsPage.applicationAccessTypesSection(row, carryBack,
-              t)) },
+              t) +
+            // EACH TYPE'S XACML MAPPING (#564, P5), a sub-tab per type.
+            ApplicationsPage.applicationAccessTypeMappingSection(ctx, row,
+              carryBack)) },
+        // FINE-GRAINED AUTHORIZATION (#564, P5): the policy this application
+        // owns and its switch. On EVERY application, not forFamilies():
+        // every application created gets a policy, and an AuthZEN
+        // evaluation about any of them is decided by it once enforced.
+        { id: 'tab-fga', label: t.text('consoleApplications.fga.tab'),
+          html: ApplicationsPage.applicationFgaSection(ctx, row,
+            carryBack) },
         // THE CLAIMS ITS OWN SCOPES CARRY (2026-10-09): per permission it
         // exposes as a resource server, the catalogue attributes an access
         // token addressed to it carries when that permission is granted.
@@ -2800,6 +2817,82 @@ class ApplicationsPage {
   }
 
   // ---------------------------------------------------------------------------
+  // STORED CERTIFICATES ON THE APPLICATION'S OWN PAGE (#1227).
+  //
+  // The person's Stored certificates block (#1061, `web_users.ts`) for an
+  // application: what its entry stores in `userCertificate` — a certificate
+  // from an outside certificate authority authenticates the application only
+  // while it is stored here, byte for byte, and on no other entry — with a
+  // Remove each and a PEM box that stores one. `credentials.stored` of
+  // `GET /admin-api/applications?application=`, and `POST /admin-api/
+  // applications/add-certificate` and `remove-certificate`, are the same
+  // three (rule 7). Admin Write for either. No script: plain forms.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's Stored certificates subsection: what its entry
+   * stores in `userCertificate`, a Remove form each, and the form that
+   * stores one.
+   *
+   * @param state - `credentials.stored`, from
+   *   `applicationStoredCertificatesOf()`
+   * @param id - the application's identifier
+   * @param carryBack - the hidden `back` field every form carries
+   * @param write - whether the reader holds Admin Write
+   * @param t - the page's translator (#539)
+   * @returns the subsection as HTML
+   */
+  static applicationStoredCertificatesSection(state, id, carryBack, write,
+                                              t) {
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + name + '" value="' +
+             kit.esc(value) + '">';
+    };
+    const view = state && state.ok ? state : { certificates: [] };
+    const rows = view.certificates.length
+      ? '<table><tr><th>' + t.html('consoleApplications.a2.storedThSubject') +
+        '</th><th>' + t.html('consoleApplications.a2.storedThIssuer') +
+        '</th><th>' + t.html('consoleApplications.a2.storedThValidity') +
+        '</th><th>SHA-256</th><th></th></tr>' +
+        view.certificates.map(function (one) {
+          return '<tr><td><code>' + kit.esc(one.subject || '—') +
+            '</code></td><td><code>' + kit.esc(one.issuer || '—') +
+            '</code></td><td>' + kit.esc(one.notBefore || '—') + ' – ' +
+            kit.esc(one.notAfter || '—') +
+            (one.expired
+              ? ' <strong>' + t.html('consoleApplications.a2.storedExpired') +
+                '</strong>' : '') +
+            '</td><td><code>' + kit.esc(one.sha256) + '</code></td><td>' +
+            (write
+              ? '<form method="post" action="/admin/applications">' +
+                carryBack + hidden('action', 'remove-certificate') +
+                hidden('application', id) + hidden('sha256', one.sha256) +
+                '<button class="danger" type="submit"' +
+                kit.tip(t.text('consoleApplications.a2.storedRemoveTip')) +
+                '>' + t.html('consoleApplications.a2.remove') +
+                '</button></form>'
+              : '') + '</td></tr>';
+        }).join('') + '</table>'
+      : '<p class="sub">' + t.html('consoleApplications.a2.storedNone') +
+        '</p>';
+    const addForm = write
+      ? '<form method="post" action="/admin/applications">' + carryBack +
+        hidden('action', 'add-certificate') + hidden('application', id) +
+        '<div class="formrow"><label' +
+        kit.tip(t.text('consoleApplications.a2.storedAddTip')) + '>' +
+        t.html('consoleApplications.a2.storedAddLabel') + '<br>' +
+        '<textarea name="certificate" rows="6" cols="66" ' +
+        'spellcheck="false"></textarea></label></div>' +
+        '<div class="formrow"><button type="submit" title="' +
+        kit.esc(t.text('consoleApplications.a2.storedAddTitle')) + '">' +
+        t.html('consoleApplications.a2.storedAdd') + '</button></div></form>'
+      : kit.note(t.html('consoleApplications.a2.storedNeedsWrite'));
+    return '<h3 id="credentials-stored">' +
+      t.html('consoleApplications.a2.storedHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.a2.storedLead')) +
+      rows + addForm;
+  }
+
+  // ---------------------------------------------------------------------------
   // MESSAGE-SIGNING CERTIFICATES ON THE APPLICATION'S OWN PAGE (#521).
   //
   // What the application signs a WS-Trust request with, issued by an
@@ -3911,10 +4004,428 @@ class ApplicationsPage {
           t.html('consoleApplications.a3.onePerLine'), 2) +
       box('acr', t.html('consoleApplications.a3.factAcr'),
           t.html('consoleApplications.a3.helpAcr')) +
+      // THE FINE-GRAINED MAPPING (#564, P5), whole: the rows as JSON and
+      // the paths left out. The sub-tabs below change them a row at a time.
+      box('xacml', t.html('consoleApplications.fga.boxXacml'),
+          t.html('consoleApplications.fga.helpXacml'), 4) +
+      box('notForPolicy', t.html('consoleApplications.fga.boxNotFor'),
+          t.html('consoleApplications.a3.onePerLine'), 2) +
       '<div class="formrow"><button type="submit">' +
       t.html('consoleApplications.a3.saveType') + '</button>' +
       '</div></form>' +
       kit.note(t.html('consoleApplications.a3.accessRefusedNote'));
+  }
+
+  // -------------------------------------------------------------------------
+  // A TYPE'S XACML MAPPING (#564, P5), under the Access types tab: one
+  // sub-tab per declared type (`kit.subTabbedPanels()`, the SAML family
+  // sub-sub-tabs' arrangement), each the AuthZEN tab's catalogue shape on
+  // `/admin/xacml` — the rows as a table with a Remove each, a form that
+  // adds a row or replaces the one for its path, and the `notForPolicy`
+  // list. Every form posts to `/admin/applications` (`set-access-type-row`,
+  // `remove-access-type-row`, `set-not-for-policy`), which rewrites the
+  // type's one value through `updateApplication()`, the door
+  // `set-access-type` takes; `/admin-api/applications/{action}` takes the
+  // same three (rule 7).
+  //
+  // **A REFUSAL IS DRAWN AT ITS FIELD.** The answer names the member the
+  // grammar refused (`field`), and `WebAnswers.redraw()` keeps it with the
+  // form as typed in `state.fgaMapping`; the sentence goes under that box,
+  // in English with every refusal (#539).
+  // -------------------------------------------------------------------------
+  /**
+   * Draws the XACML mapping of each access type an application declares:
+   * its rows, its `notForPolicy` list and the forms that change them.
+   *
+   * @param ctx - the console context (`t`, `write`)
+   * @param row - the application's view, with its `page`
+   * @param carryBack - the hidden field that returns to the list's view
+   * @returns the markup, or '' when it declares no readable type
+   */
+  static applicationAccessTypeMappingSection(ctx, row, carryBack) {
+    const t = ctx.t;
+    const fga = row.page.fga || {};
+    const types = (row.page.accessTypes || []).filter(function (d) {
+      return !d.problem;
+    });
+    if (!types.length) {
+      return '';
+    }
+    const choices = fga.choices || { categories: [], dataTypes: [],
+                                     multiplicities: [] };
+    const given = (row.state || {}).fgaMapping || null;
+    const id = String(row.identifier || '');
+    const tail = function (uri) {
+      return String(uri || '').replace(/^.*[#:]/, '');
+    };
+    const coverageOf = function (type) {
+      return (fga.types || []).filter(function (one) {
+        return one.type === type;
+      })[0] || null;
+    };
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + kit.esc(name) + '" value="' +
+        kit.esc(value) + '">';
+    };
+    const panels = types.map(function (d, n) {
+      const anchor = 'atmap-' + n;
+      const mine = given && given.type === d.type ? given : null;
+      const draft = (mine && mine.draft) || {};
+      // The refusal under the box it is about, on the form that was sent:
+      // `field` names the member, `action` the form.
+      const at = function (field, action) {
+        return mine && mine.field === field && mine.action === action
+          ? '<div class="warn">' + (mine.errors || []).map(function (one) {
+            return kit.esc(one);
+          }).join('<br>') + '</div>'
+          : '';
+      };
+      const value = function (field) {
+        const v = draft[field];
+        return kit.esc(Array.isArray(v) ? v[v.length - 1]
+          : (v === undefined || v === null ? '' : v));
+      };
+      const formOpen = function (action) {
+        return '<form method="post" action="/admin/applications#' + anchor +
+          '"' + (action === 'remove-access-type-row' ? ' class="inline"'
+                                                     : '') + '>' +
+          carryBack + hidden('action', action) + hidden('application', id) +
+          hidden('type', d.type);
+      };
+      const coverage = coverageOf(d.type);
+      const covered = coverage
+        ? (coverage.covered
+          ? '<span class="state-valid">' +
+            t.html('consoleApplications.fga.covered') + '</span>'
+          : '<span class="state-revoked">' +
+            t.html('consoleApplications.fga.uncovered') + '</span> ' +
+            kit.codeList(coverage.uncovered))
+        : '';
+      const rows = (d.xacml || []).map(function (one) {
+        return '<tr><td><code>' + kit.esc(one.path) + '</code>' +
+          (one.description ? '<div class="sub">' +
+            kit.esc(one.description) + '</div>' : '') + '</td><td><code>' +
+          kit.esc(one.attributeId) + '</code></td><td>' +
+          kit.esc(tail(one.category)) + '</td><td>' +
+          kit.esc(tail(one.dataType)) + '</td><td>' +
+          kit.esc(one.multiplicity) + '</td><td>' + (ctx.write
+            ? formOpen('remove-access-type-row') +
+              hidden('path', one.path) + '<button type="submit" ' +
+              'class="secondary"' +
+              kit.tip(t.text('consoleApplications.fga.removeRowTip')) + '>' +
+              t.html('consoleApplications.a3.remove') + '</button></form>'
+            : '') + '</td></tr>';
+      }).join('') || '<tr><td colspan="6"><span class="state-none">' +
+        t.html('consoleApplications.fga.noRows') + '</span></td></tr>';
+      const select = function (name, values, blank) {
+        const chosen = value(name);
+        return '<select name="' + name + '" id="' + anchor + '-' + name +
+          '">' + (blank !== null ? '<option value="">' + kit.esc(blank) +
+            '</option>' : '') +
+          values.map(function (one) {
+            return '<option value="' + kit.esc(one) + '"' +
+              (chosen === kit.esc(one) ? ' selected' : '') + '>' +
+              kit.esc(one) + '</option>';
+          }).join('') + '</select>';
+      };
+      const box = function (name, label, control) {
+        return '<tr><td><label for="' + anchor + '-' + name + '">' + label +
+          '</label></td><td>' + control +
+          at(name, 'set-access-type-row') + '</td></tr>';
+      };
+      const text = function (name, size) {
+        return '<input type="text" name="' + name + '" id="' + anchor + '-' +
+          name + '" size="' + size + '" value="' + value(name) + '">';
+      };
+      const add = ctx.write
+        ? '<h4>' + t.html('consoleApplications.fga.addRowHeading') + '</h4>' +
+          formOpen('set-access-type-row') + '<table>' +
+          box('path', t.html('consoleApplications.fga.path'),
+              text('path', 30)) +
+          box('attributeId', t.html('consoleApplications.fga.attributeId'),
+              text('attributeId', 50)) +
+          box('category', t.html('consoleApplications.fga.category'),
+              select('category', choices.categories,
+                     t.text('consoleApplications.fga.categoryDefault'))) +
+          box('dataType', t.html('consoleApplications.fga.dataType'),
+              select('dataType', choices.dataTypes,
+                     t.text('consoleApplications.fga.dataTypeDefault'))) +
+          box('multiplicity', t.html('consoleApplications.fga.multiplicity'),
+              select('multiplicity', choices.multiplicities, null)) +
+          box('description', t.html('consoleApplications.fga.description'),
+              text('description', 50)) +
+          '</table>' + at('', 'set-access-type-row') +
+          '<p class="sub">' + t.html('consoleApplications.fga.reserved') +
+          '</p><div class="formrow"><button type="submit"' +
+          kit.tip(t.text('consoleApplications.fga.saveRowTip')) + '>' +
+          t.html('consoleApplications.fga.saveRow') + '</button></div>' +
+          '</form>'
+        : '';
+      const listed = draft.notForPolicy !== undefined &&
+                     mine && mine.action === 'set-not-for-policy'
+        ? value('notForPolicy')
+        : kit.esc((d.notForPolicy || []).join('\n'));
+      const notFor = '<h4>' + t.html('consoleApplications.fga.notForHeading') +
+        '</h4>' + kit.note(t.html('consoleApplications.fga.notForNote')) +
+        (ctx.write
+          ? formOpen('set-not-for-policy') + '<div class="formrow">' +
+            '<textarea name="notForPolicy" id="' + anchor + '-notForPolicy" ' +
+            'rows="3" cols="48">' + listed + '</textarea></div>' +
+            at('notForPolicy', 'set-not-for-policy') +
+            at('', 'set-not-for-policy') +
+            '<div class="formrow"><button type="submit">' +
+            t.html('consoleApplications.fga.saveNotFor') + '</button></div>' +
+            '</form>'
+          : ((d.notForPolicy || []).length ? kit.codeList(d.notForPolicy)
+            : '<span class="state-none">' +
+              t.html('consoleApplications.a3.noneLower') + '</span>'));
+      return {
+        id: anchor, label: d.type,
+        html: '<p>' + t.html('consoleApplications.fga.coverageOf',
+                             { type: d.type }) + ' ' + covered + '</p>' +
+          '<table><thead><tr><th>' + t.html('consoleApplications.fga.path') +
+          '</th><th>' + t.html('consoleApplications.fga.attributeId') +
+          '</th><th>' + t.html('consoleApplications.fga.category') +
+          '</th><th>' + t.html('consoleApplications.fga.dataType') +
+          '</th><th>' + t.html('consoleApplications.fga.multiplicity') +
+          '</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
+          // A refused Remove is about a row, not a box: under the table.
+          at('path', 'remove-access-type-row') +
+          at('', 'remove-access-type-row') + add + notFor
+      };
+    });
+    return '<h3 id="access-mapping">' +
+      t.html('consoleApplications.fga.mappingHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.fga.mappingIntro'),
+               t.text('consoleApplications.fga.mappingLabel')) +
+      kit.subTabbedPanels(t.text('consoleApplications.fga.mappingHeading'),
+                          panels);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5), beside Access types:
+  // the policy this application owns for the details of its types, and the
+  // switch that enforces it. The AuthZEN tab on `/admin/xacml` is the
+  // shape — tiles, what it is, then each part with its form — because it is
+  // the other per-application authorization question this service decides
+  // through XACML, and a reader moving between the two finds the same
+  // furniture. Drawn from `page.fga`, `fga_policies.ts`'s `state()`.
+  //
+  // Four acts, each posting to `/admin/applications` and mirrored at
+  // `/admin-api/applications/{action}`: `fga-enable` / `fga-disable` (the
+  // switch), `fga-create-policy` (when it has none) and `fga-reset-policy`
+  // (with a confirmation checkbox, `listeners_admin.ts`'s arrangement).
+  // Enable's refusals — an uncovered type with its paths (STS-FGA-0018), a
+  // disabled or unparseable policy — come back to this tab (`#fga`), and
+  // the coverage table below the switch shows the same paths before the
+  // button is pressed.
+  // -------------------------------------------------------------------------
+  /**
+   * Draws an application's Fine-grained authorization tab.
+   *
+   * @param ctx - the console context (`t`, `write`)
+   * @param row - the application's view, with its `page`
+   * @param carryBack - the hidden field that returns to the list's view
+   * @returns the tab's HTML
+   */
+  static applicationFgaSection(ctx, row, carryBack) {
+    const t = ctx.t;
+    const fga = row.page.fga;
+    if (!fga || !fga.known) {
+      return '<h2 id="fga">' + t.html('consoleApplications.fga.heading') +
+        '</h2>' + kit.warn(t.html('consoleApplications.fga.unreadable'));
+    }
+    const id = String(row.identifier || '');
+    const form = function (action, button, tip, extra?) {
+      return '<form method="post" action="/admin/applications#fga" ' +
+        'class="inline">' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' + kit.esc(id) +
+        '">' + (extra || '') + '<button type="submit"' + kit.tip(tip) + '>' +
+        button + '</button></form>';
+    };
+    const policy = fga.policy;
+    const types = fga.types || [];
+    const coveredCount = types.filter(function (one) {
+      return one.covered;
+    }).length;
+    const tiles = '<div class="tiles">' +
+      kit.tile(fga.enforced ? t.text('consoleApplications.fga.yes')
+                            : t.text('consoleApplications.fga.no'),
+               t.text('consoleApplications.fga.tileEnforced')) +
+      kit.tile(policy ? policy.name : '—',
+               t.text('consoleApplications.fga.tilePolicy')) +
+      kit.tile(coveredCount + ' / ' + types.length,
+               t.text('consoleApplications.fga.tileCovered')) +
+      // THE APPLICATIONS' OWN CEILING (#1210): every application's policy
+      // in this realm against `xacml.maxApplicationPolicies`, apart from
+      // the administrators' own `xacml.maxPolicies`.
+      (fga.applicationPolicies
+        ? kit.tile(fga.applicationPolicies.count + ' / ' +
+                   fga.applicationPolicies.max,
+                   t.text('consoleApplications.fga.tileApplicationPolicies'))
+        : '') +
+      '</div>';
+    const what = kit.note('<p>' + t.html('consoleApplications.fga.p1') +
+      '</p><p>' + t.html('consoleApplications.fga.p2') + '</p>',
+      t.text('consoleApplications.fga.label'));
+    // WHY IT CANNOT BE DECIDED WITH, in the view's own sentence (English,
+    // as every refusal is), with its code. "No policy" is not a fault —
+    // the Create button below is its answer — so it is not warned about.
+    const fault = !fga.usable && fga.failure !== 'no-policy'
+      ? kit.warn('<code>' + kit.esc(fga.code) + '</code> ' +
+                 kit.esc(fga.why) + (fga.enforced
+                   ? ' ' + t.html('consoleApplications.fga.faultEnforced')
+                   : ''),
+                 t.text('consoleApplications.fga.faultLabel'))
+      : '';
+    const switchPart = '<h3 id="fga-switch">' +
+      t.html('consoleApplications.fga.switchHeading') + '</h3><p>' +
+      (fga.enforced ? t.html('consoleApplications.fga.isEnforced')
+                    : t.html('consoleApplications.fga.notEnforced')) +
+      '</p>' + (ctx.write
+        ? '<div class="formrow">' + (fga.enforced
+          ? form('fga-disable', t.html('consoleApplications.fga.disable'),
+                 t.text('consoleApplications.fga.disableTip'))
+          : form('fga-enable', t.html('consoleApplications.fga.enable'),
+                 t.text('consoleApplications.fga.enableTip'))) + '</div>'
+        : '');
+    const own = policy && policy.own;
+    const policyRows = policy
+      ? '<table><tr><th>' + t.html('consoleApplications.fga.colEntry') +
+        '</th><th>PolicyId</th><th>' +
+        t.html('consoleApplications.fga.colVersion') + '</th><th>' +
+        t.html('consoleApplications.fga.colState') + '</th></tr><tr><td>' +
+        '<a href="' + kit.esc(policy.editor) + '"><code>' +
+        kit.esc(policy.name) + '</code></a>' + (own ? ''
+          : ' <span class="state-revoked">' +
+            t.html('consoleApplications.fga.notOwn') + '</span>') +
+        '</td><td><code>' + kit.esc(policy.policyId || '') +
+        '</code></td><td>' + kit.esc(policy.version || '') + '</td><td>' +
+        (policy.enabled ? t.html('consoleApplications.fga.enabled')
+          : '<em>' + t.html('consoleApplications.fga.disabled') + '</em>') +
+        '</td></tr></table><p><a href="' + kit.esc(policy.editor) + '">' +
+        t.html('consoleApplications.fga.openEditor') + '</a> &middot; ' +
+        '<a href="/admin/xacml/policies#fga-policies">' +
+        t.html('consoleApplications.fga.openPolicies') + '</a></p>'
+      : '<p><span class="state-none">' +
+        t.html('consoleApplications.fga.noPolicy') + '</span></p>';
+    const create = ctx.write && !own
+      ? '<div class="formrow">' + form('fga-create-policy',
+          t.html('consoleApplications.fga.create'),
+          t.text('consoleApplications.fga.createTip')) + '</div>'
+      : '';
+    const reset = ctx.write && own
+      ? '<h4>' + t.html('consoleApplications.fga.resetHeading') + '</h4>' +
+        kit.note(t.html('consoleApplications.fga.resetNote')) +
+        '<form method="post" action="/admin/applications#fga">' + carryBack +
+        '<input type="hidden" name="action" value="fga-reset-policy">' +
+        '<input type="hidden" name="application" value="' + kit.esc(id) +
+        '"><div class="formrow"><label><input type="checkbox" ' +
+        'name="confirm" value="true"> ' +
+        t.html('consoleApplications.fga.resetConfirm') + '</label></div>' +
+        '<div class="formrow"><button type="submit" class="secondary"' +
+        kit.tip(t.text('consoleApplications.fga.resetTip')) + '>' +
+        t.html('consoleApplications.fga.reset') + '</button></div></form>'
+      : '';
+    const policyPart = '<h3 id="fga-policy">' +
+      t.html('consoleApplications.fga.policyHeading') + '</h3>' + policyRows +
+      create + reset;
+    const typeRows = types.map(function (one, n) {
+      return '<tr><td><a href="#atmap-' + n + '"><code>' +
+        kit.esc(one.type) + '</code></a></td><td>' + (one.covered
+          ? '<span class="state-valid">' +
+            t.html('consoleApplications.fga.covered') + '</span>'
+          : '<span class="state-revoked">' +
+            t.html('consoleApplications.fga.uncovered') + '</span> ' +
+            kit.codeList(one.uncovered)) + '</td><td class="num">' +
+        one.rows + '</td><td>' + (one.notForPolicy.length
+          ? kit.codeList(one.notForPolicy)
+          : '<span class="state-none">' +
+            t.html('consoleApplications.a3.noneLower') + '</span>') +
+        '</td></tr>';
+    }).join('') + (fga.unreadable || []).map(function (one) {
+      return '<tr><td colspan="4"><span class="state-revoked">unusable' +
+        '</span> <code>' + kit.esc(one.stored) + '</code> &mdash; ' +
+        kit.esc(one.problem) + '</td></tr>';
+    }).join('');
+    const coveragePart = '<h3 id="fga-coverage">' +
+      t.html('consoleApplications.fga.coverageHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.fga.coverageNote')) +
+      (typeRows
+        ? '<table><tr><th>' + t.html('consoleApplications.a3.colType') +
+          '</th><th>' + t.html('consoleApplications.fga.colCoverage') +
+          '</th><th>' + t.html('consoleApplications.fga.colRows') +
+          '</th><th>' + t.html('consoleApplications.fga.colNotFor') +
+          '</th></tr>' + typeRows + '</table>'
+        : '<p><span class="state-none">' +
+          t.html('consoleApplications.fga.noTypes') + '</span></p>');
+    return '<h2 id="fga">' + t.html('consoleApplications.fga.heading') +
+      '</h2>' + tiles + what + fault + switchPart + policyPart +
+      coveragePart + ApplicationsPage.applicationFgaPeps(ctx, fga.peps,
+        // RE-ENABLING IS THE RE-GRANT (#1210): on an enforcing application
+        // the switch offers only Stop enforcing, so a holder that joined
+        // the group since is granted by this second door onto the same
+        // `fga-enable`, which is idempotent for everything else.
+        ctx.write && fga.enforced
+          ? form('fga-enable', t.html('consoleApplications.fga.pepsRegrant'),
+                 t.text('consoleApplications.fga.pepsRegrantTip'))
+          : '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REALM'S REMOTE PEPS (#1210): each holder of REMOTE_PEPS, and whether
+  // it holds what forwarding this application's AuthZEN evaluations needs —
+  // membership of the AuthZEN group and the application in its scope.
+  // Enforce grants both where missing and its answer, drawn as the notice,
+  // names who was granted, who held it and who could not be; Stop
+  // enforcing removes neither. Each holder links to the AuthZEN tab, where
+  // a scope is set or narrowed by hand.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the remote PEPs part of the Fine-grained authorization tab.
+   *
+   * @param ctx - the console context (`t`)
+   * @param peps - `page.fga.peps`, or null when it could not be read
+   * @param regrant - the re-grant form, or '' where it is not offered
+   * @returns the part's HTML
+   */
+  static applicationFgaPeps(ctx, peps, regrant) {
+    const t = ctx.t;
+    const heading = '<h3 id="fga-peps">' +
+      t.html('consoleApplications.fga.pepsHeading') + '</h3>';
+    if (!peps) {
+      return heading + '<p><span class="state-none">' +
+        t.html('consoleApplications.fga.pepsUnknown') + '</span></p>';
+    }
+    const yes = function (held) {
+      return held
+        ? '<span class="state-valid">' +
+          t.html('consoleApplications.fga.yes') + '</span>'
+        : '<span class="state-revoked">' +
+          t.html('consoleApplications.fga.no') + '</span>';
+    };
+    const rows = (peps.holders || []).map(function (one) {
+      return '<tr><td><a href="/admin/xacml/authzen">' +
+        kit.esc(one.name) + '</a></td><td>' + kit.esc(one.kind) +
+        '</td><td>' + yes(one.member) + '</td><td>' + yes(one.scoped) +
+        '</td></tr>';
+    }).join('');
+    return heading + kit.note(t.html('consoleApplications.fga.pepsNote',
+      { group: peps.group || '—', authzenGroup: peps.authzenGroup || '—' })) +
+      (rows
+        ? '<table><tr><th>' + t.html('consoleApplications.fga.colPep') +
+          '</th><th>' + t.html('consoleApplications.fga.colKind') +
+          '</th><th>' + t.html('consoleApplications.fga.colPepMember') +
+          '</th><th>' + t.html('consoleApplications.fga.colPepScoped') +
+          '</th></tr>' + rows + '</table>'
+        : '<p><span class="state-none">' +
+          t.html('consoleApplications.fga.pepsNone') + '</span></p>') +
+      (peps.unlocated
+        ? '<p>' + t.html('consoleApplications.fga.pepsUnlocated',
+                         { n: peps.unlocated }) + '</p>'
+        : '') +
+      (regrant && rows ? '<div class="formrow">' + regrant + '</div>' : '');
   }
 
   // ---------------------------------------------------------------------------

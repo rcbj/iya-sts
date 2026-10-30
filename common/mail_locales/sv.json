@@ -1,5 +1,10 @@
 {
   "templates": {
+    "uma-approval": {
+      "subject": "{{service}}: någon ber om att nå en resurs du delar",
+      "text": "{{requester}} ber, genom {{client}}, om att nå din resurs {{resource}} ({{scopes}}). Du bad om att bli tillfrågad varje gång.\n\nIngenting tillåts förrän du godkänner det. För att godkänna eller avslå, logga in och öppna den här sidan inom {{expiresMinutes}} minuter:\n\n{{link}}\n\nOm du inte känner igen förfrågan, avslå den där eller ignorera det här meddelandet: den upphör av sig själv.\n",
+      "html": "<p><strong>{{requester}}</strong> ber, genom <strong>{{client}}</strong>, om att nå din resurs <strong>{{resource}}</strong> ({{scopes}}). Du bad om att bli tillfrågad varje gång.</p><p>Ingenting tillåts förrän du godkänner det. <a href=\"{{link}}\">Godkänn eller avslå</a> inom {{expiresMinutes}} minuter.</p><p>Om du inte känner igen förfrågan, avslå den där eller ignorera det här meddelandet: den upphör av sig själv.</p>"
+    },
     "password-reset": {
       "subject": "Återställ ditt lösenord för {{service}}",
       "text": "Någon — {{requestedBy}} — bad om att lösenordet för kontot {{username}} skulle återställas.\n\nÖppna den här länken inom {{expiresMinutes}} minuter för att välja ett nytt lösenord:\n\n{{link}}\n\nDen fungerar en gång. Om det inte var du som bad om det kan du strunta i det här meddelandet: ingenting ändras förrän länken används.\n",
@@ -54,6 +59,16 @@
       "subject": "{{service}}: ett program ber om åtkomst",
       "text": "Programmet {{client}} ber om åtkomst för kontot {{username}}: {{rights}}.\n\nIngenting tillåts förrän du godkänner det. Logga in och öppna den här sidan inom {{expiresMinutes}} minuter för att godkänna eller neka:\n\n{{link}}\n\nOm du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.\n",
       "html": "<p>Programmet <strong>{{client}}</strong> ber om åtkomst för kontot <strong>{{username}}</strong>: {{rights}}.</p><p>Ingenting tillåts förrän du godkänner det. <a href=\"{{link}}\">Godkänn eller neka</a> inom {{expiresMinutes}} minuter.</p><p>Om du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.</p>"
+    },
+    "authzen-access-request": {
+      "subject": "{{service}}: en åtkomstbegäran väntar på ditt godkännande",
+      "text": "En åtkomstbegäran anger dig, {{username}}, som en av sina godkännare: {{subject}} begär att få {{action}} {{resource}} i programmet {{application}}, via {{requester}}.\n\nIngenting tillåts förrän en godkännare har godkänt den. Logga in och öppna den här sidan inom {{expiresMinutes}} minuter för att godkänna eller neka den:\n\n{{link}}\n\nOm du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.\n",
+      "html": "<p>En åtkomstbegäran anger dig, <strong>{{username}}</strong>, som en av sina godkännare: <strong>{{subject}}</strong> begär att få <strong>{{action}}</strong> <strong>{{resource}}</strong> i programmet <strong>{{application}}</strong>, via {{requester}}.</p><p>Ingenting tillåts förrän en godkännare har godkänt den. <a href=\"{{link}}\">Godkänn eller neka den</a> inom {{expiresMinutes}} minuter.</p><p>Om du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.</p>"
+    },
+    "authzen-emergency-access": {
+      "subject": "{{service}}: nödåtkomst har beviljats och behöver granskas",
+      "text": "Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, {{username}}, som en av sina godkännare: {{subject}} får {{action}} {{resource}} i programmet {{application}}, via {{requester}}, under en kort tid.\n\nDen angivna motiveringen: {{justification}}\n\nPolicyn tillåter nödåtkomst till detta. Granska den och återkalla den om den inte var befogad:\n\n{{link}}\n",
+      "html": "<p>Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, <strong>{{username}}</strong>, som en av sina godkännare: <strong>{{subject}}</strong> får <strong>{{action}}</strong> <strong>{{resource}}</strong> i programmet <strong>{{application}}</strong>, via {{requester}}, under en kort tid.</p><p>Den angivna motiveringen: {{justification}}</p><p>Policyn tillåter nödåtkomst till detta. <a href=\"{{link}}\">Granska den</a> och återkalla den om den inte var befogad.</p>"
     },
     "administrator-alert": {
       "subject": "{{service}}: {{act}} för {{username}}",

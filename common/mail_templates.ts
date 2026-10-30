@@ -274,6 +274,88 @@ const BUILT_IN: TemplateSpec[] = [
           '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
           'request, deny it there or ignore this message: it runs out by ' +
           'itself.</p>' },
+  // -------------------------------------------------------------------------
+  // #1180: AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS. A
+  // NOTIFICATION, for `access-request`'s reason: the request waits on
+  // /portal/access-requests whether or not this is sent, nothing is
+  // approved by mail, and the link is the portal page, never anything the
+  // requester named. The requester is the PEP's trusted name, the subject,
+  // action and resource the denied tuple's — data, never wording.
+  // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // #1194: A UMA 2.0 REQUEST WAITING FOR ITS RESOURCE OWNER. A NOTIFICATION,
+  // for `access-request`'s reason: the request waits on /portal/shared
+  // whether or not this is sent, nothing is approved by mail, and the link
+  // is the portal page. The requester is a username and the client its
+  // registered identifier; the resource is the owner's own name for it.
+  // -------------------------------------------------------------------------
+  { id: 'uma-approval', category: 'notification',
+    title: 'Somebody asks to reach a resource you share',
+    values: ['username', 'requester', 'client', 'resource', 'scopes',
+             'expiresMinutes'],
+    links: ['link'],
+    subject: '{{service}}: somebody asks to reach a resource you share',
+    text: '{{requester}} asks, through {{client}}, to reach your resource ' +
+          '{{resource}} ({{scopes}}). You asked to be asked each time.\n\n' +
+          'Nothing is allowed until you approve it. To approve or refuse ' +
+          'it, sign in and open this page within {{expiresMinutes}} ' +
+          'minutes:\n\n{{link}}\n\nIf you do not recognise the request, ' +
+          'refuse it there or ignore this message: it runs out by itself.\n',
+    html: '<p><strong>{{requester}}</strong> asks, through ' +
+          '<strong>{{client}}</strong>, to reach your resource ' +
+          '<strong>{{resource}}</strong> ({{scopes}}). You asked to be asked ' +
+          'each time.</p><p>Nothing is allowed until you approve it. ' +
+          '<a href="{{link}}">Approve or refuse it</a> within ' +
+          '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
+          'request, refuse it there or ignore this message: it runs out by ' +
+          'itself.</p>' },
+  { id: 'authzen-access-request', category: 'notification',
+    title: 'An access request waits for your approval',
+    values: ['username', 'requester', 'subject', 'action', 'resource',
+             'application', 'expiresMinutes'],
+    links: ['link'],
+    subject: '{{service}}: an access request waits for your approval',
+    text: 'An access request names you, {{username}}, as one of its ' +
+          'approvers: {{subject}} asks to {{action}} {{resource}} in the ' +
+          'application {{application}}, through {{requester}}.\n\nNothing ' +
+          'is allowed until an approver approves it. To approve or deny it, ' +
+          'sign in and open this page within {{expiresMinutes}} ' +
+          'minutes:\n\n{{link}}\n\nIf you do not recognise the request, ' +
+          'deny it there or ignore this message: it runs out by itself.\n',
+    html: '<p>An access request names you, <strong>{{username}}</strong>, ' +
+          'as one of its approvers: <strong>{{subject}}</strong> asks to ' +
+          '<strong>{{action}}</strong> <strong>{{resource}}</strong> in ' +
+          'the application <strong>{{application}}</strong>, through ' +
+          '{{requester}}.</p><p>Nothing is allowed until an approver ' +
+          'approves it. <a href="{{link}}">Approve or deny it</a> within ' +
+          '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
+          'request, deny it there or ignore this message: it runs out by ' +
+          'itself.</p>' },
+  // AND AN EMERGENCY ACCESS ALREADY GRANTED (#1180), for the review after
+  // use the profile asks for. SECURITY, so nobody can decline it: an
+  // approver must hear that access was given in their name's place.
+  { id: 'authzen-emergency-access', category: 'security',
+    title: 'Emergency access was granted and needs your review',
+    values: ['username', 'requester', 'subject', 'action', 'resource',
+             'application', 'justification'],
+    links: ['link'],
+    subject: '{{service}}: emergency access was granted, for your review',
+    text: 'Emergency access was granted at once, without an approver, to a ' +
+          'request that names you, {{username}}, as one of its approvers: ' +
+          '{{subject}} may {{action}} {{resource}} in the application ' +
+          '{{application}}, through {{requester}}, for a short time.\n\n' +
+          'The justification given: {{justification}}\n\nThe policy ' +
+          'allows emergency access to this. Review it, and revoke it if it ' +
+          'was not warranted:\n\n{{link}}\n',
+    html: '<p>Emergency access was granted at once, without an approver, ' +
+          'to a request that names you, <strong>{{username}}</strong>, as ' +
+          'one of its approvers: <strong>{{subject}}</strong> may ' +
+          '<strong>{{action}}</strong> <strong>{{resource}}</strong> in ' +
+          'the application <strong>{{application}}</strong>, through ' +
+          '{{requester}}, for a short time.</p><p>The justification given: ' +
+          '{{justification}}</p><p>The policy allows emergency access to ' +
+          'this. <a href="{{link}}">Review it</a>, and revoke it if it was ' +
+          'not warranted.</p>' },
   { id: 'administrator-alert', category: 'security',
     title: 'An act of the service, for administrators',
     values: ['username', 'when', 'act', 'why'],

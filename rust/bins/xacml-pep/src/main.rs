@@ -12,6 +12,9 @@
 //! or curl in it): it asks `GET /healthcheck` on `PEP_PORT` and exits 0 on
 //! a 200.
 
+mod authzen;
+mod authzen_catalogue;
+mod authzen_map;
 mod enforce;
 mod listener;
 mod options;
@@ -34,7 +37,7 @@ use sts_core::log::{self, tag};
 use sts_core::version;
 use tokio::net::TcpListener;
 
-use crate::listener::HttpsListener;
+use crate::listener::{peer_of, HttpsListener, Transport};
 use crate::options::Options;
 use crate::pdp_client::PdpClient;
 use crate::pip::RemotePip;
@@ -134,7 +137,7 @@ async fn serve_http(pep: Arc<Pep>, port: u16) {
         };
         let pep = pep.clone();
         tokio::spawn(async move {
-            let service = tower_service(pep);
+            let service = tower_service(pep, Transport::default());
             let served = Builder::new(TokioExecutor::new())
                 .serve_connection(TokioIo::new(stream), service)
                 .await;
@@ -145,11 +148,20 @@ async fn serve_http(pep: Arc<Pep>, port: u16) {
     }
 }
 
-fn tower_service(pep: Arc<Pep>) -> TowerToHyperService<axum::routing::Router> {
-    let router = axum::Router::new().fallback(move |request| {
-        let pep = pep.clone();
-        async move { pep.handle(request).await }
-    });
+/// The one handler, with what is known about the connection — the
+/// transport, and on HTTPS the caller's certificate (#1179) — put on every
+/// request it carries.
+fn tower_service(
+    pep: Arc<Pep>,
+    transport: Transport,
+) -> TowerToHyperService<axum::routing::Router> {
+    let router = axum::Router::new().fallback(
+        move |mut request: axum::http::Request<axum::body::Body>| {
+            let pep = pep.clone();
+            request.extensions_mut().insert(transport.clone());
+            async move { pep.handle(request).await }
+        },
+    );
     TowerToHyperService::new(router)
 }
 
@@ -184,8 +196,15 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
                 tracing::debug!("TLS handshake failed: {}", error);
                 return;
             }
+            let transport = Transport {
+                https: true,
+                peer: peer_of(tls.ssl()),
+            };
             let served = Builder::new(TokioExecutor::new())
-                .serve_connection(TokioIo::new(tls), tower_service(pep))
+                .serve_connection(
+                    TokioIo::new(tls),
+                    tower_service(pep, transport),
+                )
                 .await;
             if let Err(error) = served {
                 tracing::debug!("connection ended: {}", error);
@@ -258,6 +277,7 @@ async fn start(options: Options, info: version::VersionInfo) {
         &options.https_key_path,
         options.https_port,
         options.https_reload_interval_ms,
+        options.authzen_client_ca.as_deref(),
     ));
     let pep = Arc::new(Pep::new(
         options.clone(),
@@ -327,6 +347,33 @@ async fn start(options: Options, info: version::VersionInfo) {
                 tokio::time::sleep(watcher.interval()).await;
             }
         });
+    }
+    if options.authzen_enabled {
+        tracing::info!(
+            "xacml-pep: the AuthZEN edge PDP answers POST {} and {} on the \
+             HTTPS listener, to the callers pulled from the PDP ({}) \
+             presenting a certificate that verifies against \
+             PEP_AUTHZEN_CLIENT_CA{}.",
+            authzen::EVALUATION_PATH,
+            authzen::EVALUATIONS_PATH,
+            if options.authzen_callers_configured {
+                format!(
+                    "narrowed to the {} certificate(s) of \
+                     PEP_AUTHZEN_CALLERS, which decides alone until the \
+                     first pull",
+                    options.authzen_callers.len()
+                )
+            } else {
+                "PEP_AUTHZEN_CALLERS is not set; nothing is answered until \
+                 the first pull"
+                    .to_string()
+            },
+            if https.asks_for_client_certificates() {
+                ""
+            } else {
+                " — which is not set, so nobody is admitted"
+            }
+        );
     }
     install_fault_handler();
     serve_http(pep, options.port).await;

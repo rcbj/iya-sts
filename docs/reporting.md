@@ -865,6 +865,57 @@ How long ML-DSA ceremonies take, against classical ones, by client:
 }
 ```
 
+### The AuthZEN search sources
+
+`authzenSubjects`, `authzenResources` and `authzenActions` are the three
+AuthZEN Search APIs ([AuthZEN](authzen.md#searching)) as sources. Nothing is
+kept: each run is **one search**, decided now by the realm's root XACML policy,
+**as the report's owner**. The owner is the search's caller and `sts-report`
+the application, so the answer is what the policy permits that person.
+A scheduled run asks again as the owner, with the permissions the owner has
+at that time.
+
+Every source has the same five string fields. The ones a search is asked with
+are **required**: each must be an `eq` filter of the top-level `and`, or the
+whole filter. A query missing one is refused as `invalid_query`
+(`STS-REPORT-0054`). The search's answer fills the remaining field, one row
+per permitted result.
+
+| Source | Required filters | One row per |
+|---|---|---|
+| `authzenSubjects` | `subjectType`, `action`, `resourceType`, `resourceId` | permitted `subjectId` |
+| `authzenResources` | `subjectType`, `subjectId`, `action`, `resourceType` | permitted `resourceId` |
+| `authzenActions` | `subjectType`, `subjectId`, `resourceType`, `resourceId` | permitted `action` |
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `subjectType` | string | `user` for a directory person, or a declared type. | yes | yes | no |
+| `subjectId` | string | The subject's id. | yes | yes | no |
+| `action` | string | The action name. | yes | yes | yes |
+| `resourceType` | string | `application`, `api` or `delegation`, or a declared type. | yes | yes | no |
+| `resourceId` | string | The resource's id. | yes | yes | no |
+
+The candidates are those the search endpoints use, at most
+`authzen.searchMaxCandidates`. Past that the rows are the ones decided and
+the log says the search was incomplete. With `authzen.searchEnabled` off, or
+for an owner who is a person of another realm, a run fails with
+`STS-REPORT-0055`.
+
+The applications Alice may audit:
+
+```json
+{
+  "source": "authzenResources",
+  "select": ["resourceId"],
+  "where": { "op": "and", "args": [
+    { "op": "eq", "field": "subjectType", "value": "user" },
+    { "op": "eq", "field": "subjectId", "value": "alice" },
+    { "op": "eq", "field": "action", "value": "audit" },
+    { "op": "eq", "field": "resourceType", "value": "application" } ] },
+  "limit": 500
+}
+```
+
 ## The query document
 
 The keys are `source`, `select`, `where`, `orderBy`, `limit`, `format`,

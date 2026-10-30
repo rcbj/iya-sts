@@ -439,6 +439,7 @@ import mode = require('../common/mode');
 // this console does the most of it.
 import version = require('../common/version');
 import ShellDocument = require('../common/shell_document');
+import WebNavSections = require('../common/web_nav_sections');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 // What this service writes down, and whether it is working. A PLAIN REQUIRE in
@@ -1161,6 +1162,19 @@ const SECTIONS = [
                '<strong>A key proof is verified in every mode</strong> ' +
                '&mdash; what is mode-gated is whether a proved key nobody ' +
                'registered is admitted.' },
+      // UMA 2.0 (#1168 phase 6, #1195): GNAP's sibling, a flat item too —
+      // the resource servers, resources, tickets, RPTs, the requests waiting
+      // for an owner, an owner's document, the what-if and the uma.*
+      // settings, all on one page. Drawn by uma/web_uma.ts.
+      { path: '/admin/uma', label: 'UMA 2.0',
+        blurb: 'User-Managed Access 2.0: resource servers register a ' +
+               'resource owner\'s resources, and a requesting party\'s ' +
+               'client trades a permission ticket for an RPT the realm\'s ' +
+               'policy and the owner\'s own document decide. The resource ' +
+               'servers and their resources, the live tickets and RPTs, ' +
+               'what waits for an owner, an application owner\'s document, ' +
+               'a what-if over every layer, and the <code>uma.*</code> ' +
+               'settings.' },
       { path: '/admin/totp', label: 'TOTP MFA',
         blurb: 'An authenticator app as a second factor &mdash; RFC 6238 ' +
                'over RFC 4226 &mdash; and the eight parameters the ' +
@@ -2829,8 +2843,8 @@ type RouteApp = typeof app;
 
 const APPLICATION_TAB_IDS = ['tab-overview', 'tab-authentications',
   'tab-config', 'tab-credentials', 'tab-origins', 'tab-access-types',
-  'tab-scope-claims', 'tab-signals', 'tab-statements', 'tab-addresses',
-  'tab-permissions', 'tab-roles', 'tab-owners', 'tab-metadata', 'tab-entry',
+  'tab-fga', 'tab-scope-claims', 'tab-signals', 'tab-statements',
+  'tab-addresses', 'tab-permissions', 'tab-roles', 'tab-owners', 'tab-metadata', 'tab-entry',
   'cfg-saml2', 'cfg-saml11',
   'tab-import-export', 'tab-remove'];
 
@@ -3766,33 +3780,11 @@ class AdminConsole {
       'select{flex:1 1 auto;min-width:0;font-size:1em;padding:3px ' +
       '4px;border:1px solid ' +
       '#c9c9d4;border-radius:5px;background:#fff;color:#222}.realmpick ' +
-      'button{flex:0 0 auto;padding:3px 9px;font-size:.92em}.navsec{margin:0 ' +
-      '0 4px}.navsec:last-child{margin-bottom:4px}' +
-      // The section heading, a `<summary>` since #750: it opens and closes the
-      // section, and nothing else. Not a link and it must not look like one —
-      // there is no page behind a section, which is the same reason it is not
-      // a crumb — so it keeps the small capitals and gains only a triangle
-      // and a pointer. `list-style:none` and the WebKit pseudo-element take
-      // the browser's own marker off, so the triangle is drawn once, here,
-      // and turns when the section opens. The padding is what makes a
-      // heading this small an easy thing to hit.
-      '.navhead{display:block;cursor:pointer;list-style:none;margin:0;' +
-      'padding:4px 0;font-size:.7em;text-transform:uppercase;' +
-      'letter-spacing:.06em;color:#8a8a99;font-weight:700}' +
-      '.navhead::-webkit-details-marker{display:none}' +
-      '.navhead::before{content:"\\25B8";display:inline-block;width:1.1em;' +
-      'transition:transform .15s}.navsec[open]>.navhead::before{transform:' +
-      'rotate(90deg)}.navsec[open]>.navhead{margin-bottom:4px}' +
-      '.navsec[open]{margin-bottom:10px}.navhead:hover{color:#12107c}' +
-      '.navhead:focus-visible{outline:2px solid #12107c;outline-offset:2px;' +
-      'border-radius:3px}' +
-      // The section the current page is in, open or closed. A rule down its
-      // left rather than a background, so that the mark reads as "you are in
-      // here" and not as a second selected item beside the selected one —
-      // and, on a closed section, as the way back to the page you are on.
-      '.navsec.current{border-left:3px solid ' +
-      '#12107c;margin-left:-14px;padding-left:11px}.navsec.current>' +
-      '.navhead{color:#12107c}' +
+      'button{flex:0 0 auto;padding:3px 9px;font-size:.92em}' +
+      // The sections and their headings, a `<summary>` each since #750: the
+      // rules are the portal's too since #1229, in each one's colours, and
+      // `common/web_nav_sections.ts` argues them.
+      WebNavSections.css('#12107c', '#8a8a99', 14) +
       // A GROUP INSIDE A SECTION. It is an <li>, so `nav li` has already given
       // it the item metrics; what these rules do is take the item LOOK back off
       // it (it is a heading with a list under it, not a thing to click) and
@@ -4347,9 +4339,7 @@ class AdminConsole {
       '@media (max-width:56rem){.side{position:static;flex:1 1 100%;' +
       'max-height:none;display:block}nav{overflow-y:visible}' +
       '.side>nav{overflow-y:visible;direction:ltr}' +
-      '.navsec{display:inline-block;vertical-align:top;min-width:11rem;' +
-      'margin-right:1.2em}.navsec.current{margin-left:0;padding-left:0;' +
-      'border-left:0;border-top:3px solid #12107c;padding-top:6px}}' +
+      WebNavSections.narrowCss('#12107c', '11rem') + '}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's CONDITIONAL FIELDS, and the reason this is
       // CSS and not a script.
@@ -4587,7 +4577,8 @@ class AdminConsole {
        'vc-tab-claims', 'vc-tab-oid4vp',
        'vc-tab-verifier-request', 'xacml-tab-metadata',
        'xacml-tab-settings', 'xacml-tab-policies', 'xacml-tab-editor',
-       'xacml-tab-peps', 'xacml-tab-decide', 'ssf-tab-metadata',
+       'xacml-tab-peps', 'xacml-tab-decide', 'xacml-tab-authzen',
+       'ssf-tab-metadata',
        'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
        'kerberos-tab-metadata', 'kerberos-tab-settings',
        'kerberos-tab-claims', 'kerberos-tab-principals',
@@ -8934,6 +8925,10 @@ const SETTING_HOMES = [
   { group: 'Federation', pages: ['/admin/federation'] },
   { group: 'OpenID Federation', pages: ['/admin/oidfed'] },
   { group: 'XACML', pages: ['/admin/xacml'] },
+  // AuthZEN (#563): decided by the XACML engine, so homed beside it.
+  { group: 'AuthZEN', pages: ['/admin/xacml'] },
+  // UMA 2.0 (#1168): its own page since phase 6 (#1195).
+  { group: 'UMA', pages: ['/admin/uma'] },
   // THE CERTIFICATE AUTHORITY'S FOUR SETTINGS, on the page that builds one.
   // They are DEFAULTS FOR A FORM rather than a policy — what a hierarchy was
   // built with is stored on the hierarchy — so the page that takes each of

@@ -71,6 +71,22 @@
     "en": "6965ae9cced8a957",
     "text": "Ett eget policyförråd (ou=policies) och ett eget register över fjärr-PEP:er (ou=peps), båda i sfärens katalog. En ny sfärs förråd börjar TOMT och faller aldrig tillbaka på standardsfärens, vilket skulle koppla ihop två sfärer: de två policyer som den här tjänsten fattar beslut om sitt eget utfärdande och sin egen åtkomst med är inbyggda och ANROPAS, så de beslutar i varje sfär, och en förrådspost i en sfär åsidosätter dem endast där. En fjärr-PEP hör till den sfär den är registrerad i, och dess HTTPS-lyssnarcertifikat utfärdas av den sfärens pep-tls Issuing CA."
   },
+  "realms.support.authzen.family": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "realms.support.authzen.note": {
+    "en": "8477ecf26c38a2a6",
+    "text": "Sfären är AuthZENs hyresgäst: en anropare slås upp i sfärens egen katalog, så en annan sfärs anropare är ingen här, och en fråga avgörs mot sfärens egen rotpolicy. Attributkatalogen är sfärens sts-authzen-api-objekt, och varje authzen.*-inställning är sfärens."
+  },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "Sfären är UMA:s hyresgäst: dess resursservrar är sfärens applikationer deklarerade för uma, dess skydds-API-token är sfärens egen åtkomsttoken, dess sex lager — de registrerade resurserna, ägarnas dokument, biljetterna, PCT:erna, RPT:erna och de väntande godkännandena — är sfärens, dess policy på sfärsnivå är sfärens uma-authorization-post eller den inbyggda mallen, och varje uma.*-inställning är sfärens."
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "Federation"

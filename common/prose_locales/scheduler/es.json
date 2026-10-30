@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "Termina cada sesión de inicio de sesión cuya vida útil o tiempo de inactividad haya vencido y, en cada dominio, como mucho el valor de authn.sessionShedPerSweep de ese dominio en sesiones sobrantes propias de un mismo sujeto."
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "Vencimiento de solicitudes de acceso AuthZEN"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "Pasa a expired toda solicitud de acceso AuthZEN (#1180) pendiente cuyo expires_at haya pasado — escribiendo su fila de auditoría y enviando su callback — y elimina una terminada un día después de que terminó, o cuando se agotó su aprobación si eso es posterior. Una lectura aplica el plazo por sí misma, así que esto es el registro y la limpieza, nunca lo que decide."
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "Expulsión de entradas de caché caducadas"
@@ -100,8 +108,8 @@
     "text": "GNAP: concesiones caducadas"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Finaliza cada concesión GNAP cuya vida útil de interacción o de concesión (gnap.grantLifetimeS) haya terminado y que ninguna solicitud haya tocado desde entonces, registrando el motivo (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Finaliza cada concesión GNAP cuya interacción o vigencia de la concesión (gnap.grantLifetimeS) ha terminado y que ninguna solicitud ha tocado desde entonces, registrando el motivo (#432), y elimina cada registro de instancia sin usar durante ese mismo tiempo (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",
@@ -582,6 +590,14 @@
   "sched.jobs.tls.ticket-key-rotate.describe": {
     "en": "d685d1a2ff40e09e",
     "text": "Reemplaza la clave de tickets de sesión que comparten las escuchas TLS de todos los nodos en un clúster activo-activo, para que un ticket emitido por un nodo se reanude en otro. La clave que reemplaza se elimina, lo que limita durante cuánto tiempo pueden recuperarse a partir de un ticket los secretos de una sesión reanudada."
+  },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "Caducidad UMA"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Elimina cada ticket de permiso, token de claims persistido, registro de RPT y aprobación pendiente del propietario de User-Managed Access que haya superado su vida (#1168). Una lectura aplica el plazo por sí misma, así que esto es la limpieza, nunca lo que decide."
   },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",

@@ -807,6 +807,78 @@
     "en": "00642c75836a2377",
     "text": "远程 PEP 同步令牌，它是变化检测器而不是安全机制"
   },
+  "crypto.families.authzen.signs": {
+    "en": "ab66b57e4b31b350",
+    "text": "无。决策是一个 JSON 布尔值，不带签名；元数据文档不签名（不生成 signed_metadata）。"
+  },
+  "crypto.families.authzen.verifies": {
+    "en": "6d407b4bb19e8a28",
+    "text": "调用方的凭据，由其所属的层验证：客户端证书由 TLS 层和客户端信任库验证（参见 TLS / mutual TLS），访问令牌由本领域自己的 JWS 验证（参见 OAuth2 / OIDC），在 mtls+bearer 下还会将令牌的 RFC 8705 x5t#S256 与出示的证书比对。"
+  },
+  "crypto.families.authzen.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.authzen.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.authzen.hashes": {
+    "en": "c88ad2cce036fcf4",
+    "text": "出示证书的 SHA-256 指纹，在 mtls+bearer 下与令牌的 cnf 比对。"
+  },
+  "crypto.families.authzen.keys": {
+    "en": "1eb2c695a5178870",
+    "text": "没有自己的密钥。与其他地方一样，由领域的签名密钥验证它接受的令牌。"
+  },
+  "crypto.families.authzen.whatItDoesNot": {
+    "en": "11e5f968c5b7cf60",
+    "text": "它不签名任何决策：决策依赖于传输层，XACML 的决策也是如此。"
+  },
+  "crypto.families.authzen.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "此处不签名、不加密也不解密任何内容"
+  },
+  "crypto.families.authzen.algorithms.1.what": {
+    "en": "349171490df64541",
+    "text": "与绑定令牌比对的证书指纹（RFC 8705）"
+  },
+  "crypto.families.uma-2-0.signs": {
+    "en": "c22ee886c8b04abd",
+    "text": "自身不签署任何内容。请求方令牌（RPT）是领域通过唯一的签名入口签署的 RFC 9068 访问令牌（见 OAuth2 / OIDC）；许可票据和持久化声明令牌是随机句柄，而不是签名。"
+  },
+  "crypto.families.uma-2-0.verifies": {
+    "en": "b4864c9dcb80100e",
+    "text": "保护 API 令牌（PAT），即一种访问令牌，通过本领域自己的 JWS 验证（见 OAuth2 / OIDC），在其携带时连同其 DPoP 证明或 RFC 8705 证书绑定一起验证；推送的 claim_token，即来自本领域或已声明断言签发方的 ID Token，以同样方式验证。"
+  },
+  "crypto.families.uma-2-0.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.uma-2-0.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.uma-2-0.hashes": {
+    "en": "d0596b4d7e7d1faa",
+    "text": "许可票据和持久化声明令牌以其 SHA-256 存储，因此存储中不保存任何可用的句柄。"
+  },
+  "crypto.families.uma-2-0.keys": {
+    "en": "5ee5db5c94943e3d",
+    "text": "没有自己的密钥。领域的签名密钥签署 RPT 并验证 PAT，与其他地方相同。"
+  },
+  "crypto.families.uma-2-0.whatItDoesNot": {
+    "en": "68ffcefb9ff39fa2",
+    "text": "它不签署任何决定和许可：许可是 RPT 的一项声明，RPT 的签名是 OAuth 的签名。"
+  },
+  "crypto.families.uma-2-0.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "此处不签名、不加密也不解密任何内容"
+  },
+  "crypto.families.uma-2-0.algorithms.1.what": {
+    "en": "2a781ca079088054",
+    "text": "票据或 PCT 存储所用的摘要"
+  },
   "crypto.families.oauth2-oidc.signs": {
     "en": "ba9dd042c619d87e",
     "text": "每个访问令牌和刷新令牌，以及 ID 令牌，用领域的 RSA 密钥以 RS256 签名。注册了 `id_token_signed_response_alg` 的客户端会改为得到该算法，其 ID 令牌和后端通道 Logout Token 均如此（第 2.4 节：与 ID 令牌使用相同的密钥），算法取自共享 JWS 表——所有曲线、两种 Edwards 曲线，以及后量子和复合算法。已签名的 UserInfo 响应同理，另外还有 HMAC 系列（用该客户端自己的 `client_secret` 签名，因此不需要发布的密钥）和 `none`。**还有 RFC 9701 JWT 内省响应**（2026-09-13），类型为 `token-introspection+jwt`，使用 RS256 或资源服务器注册的 `introspection_signed_response_alg`——同一张表加上 HMAC 系列，绝不使用 `none`。**还有资源响应**（#178）：标记为 `fapi-2-response` 的 RFC 9421 HTTP 消息签名，使用 `oauth2.httpSignatureResponseAlg` 所指定的领域密钥（默认 ES256；提供 ML-DSA），覆盖响应以及通过 `;req` 覆盖其所应答的请求。"

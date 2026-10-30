@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4807** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5036** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -83,12 +83,15 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 51
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 356
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 358
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 254
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
+* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 255
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -96,7 +99,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 52
+* [Reporting (`STS-REPORT`)](#sts-report) — 54
 
 ## STS-HTTP
 
@@ -3136,7 +3139,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0034` | A search filter could not be evaluated against an entry (for example an extensible match), so the entry was treated as not matching. | none; the entry is simply not returned |
 | `STS-LDAP-0035` | ou=applications holds its maximum (applications.max), so an application sighting was not recorded. | — |
 | `STS-LDAP-0036` | ou=federations holds its maximum (federation.max), so a federation relationship was not created. | — |
-| `STS-LDAP-0037` | ou=policies holds its maximum (xacml.maxPolicies), so an XACML policy was not created. | — |
+| `STS-LDAP-0037` | ou=policies holds its maximum of administrators' own policies (xacml.maxPolicies), so an XACML policy was not created. Applications' own policies count against xacml.maxApplicationPolicies instead (STS-FGA-0024). | — |
 | `STS-LDAP-0038` | ou=roles holds its maximum (roles.maxRoles), so a role was not created. | — |
 | `STS-LDAP-0039` | ou=peps holds its maximum (xacml.maxPeps), so a remote PEP registration was not created. | — |
 | `STS-LDAP-0040` | A credential or consent could not be written because the named identity has no entry in this realm. | — |
@@ -4437,6 +4440,8 @@ Raised from: gnap/.
 | `STS-GNAP-0903` | Product mode: a GNAP access right named a location that is no registered resource server — none of this service's own, no registered application by audience, permission base URI, client_id or identifier, and not at or under a registered GNAP resource server's gnapResourceServerUri — so the request was refused rather than the right dropped (#505). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 | `STS-GNAP-0904` | A GNAP access token request's access named no resource server — no registered reference, no location at or under a registered resource server's gnapResourceServerUri, no type a registered resource server declares, and not this service's own Shared Signals transmitter — so the token would have been for nobody in particular and the request was refused, in every mode. The default audience (the demonstration resource server) went with it (#593). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 | `STS-GNAP-0905` | A GNAP grant's interact.acr named only phr, or only phrh, and the session still had not earned that class after the one interaction. A list that also names some other token is not this refusal (#738). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
+| `STS-GNAP-0906` | In product mode, a GNAP client instance proved a key no application entry registers, and the class_id its request sent does not name an application such a key may be an instance of: no GNAP client of that identifier in the realm, a resource server, one nobody registered, or one listing no registered gnapFinishUri (#1216). With no class_id, the refusal is STS-GNAP-0082. | HTTP 401 GNAP invalid_client (RFC 9635 sections 2.3 and 2.3.3) |
+| `STS-GNAP-0907` | A GNAP grant made by an unregistered instance of its application (#1216) was refused at use — its continuation, or introspected inactive — because gnap.unregisteredInstances has been turned off since (#1219). Such a grant is never refused for the key missing from the entry, where it never was (that is STS-GNAP-0731 for every other grant). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
 
 ## STS-DEVICE
 
@@ -4690,6 +4695,257 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0032` | The certificate the HTTPS listener is serving is expired or not yet valid, so clients that check will refuse the handshake. | — |
 | `STS-XPEP-0033` | The remote XACML PEP met an uncaught exception after it had started, and contained it rather than exiting (#355): it carries on enforcing the policy it last pulled. The line carries the stack; a distinct fault is logged at occurrences 1, 2, 3 and each power of ten. | none — logged; the PEP carries on |
 | `STS-XPEP-0034` *(retired)* | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
+| `STS-XPEP-0035` | An AuthZEN request reached the remote PEP's edge PDP with no client certificate: over plain HTTP, or on the HTTPS listener without presenting one (#1179). Its callers authenticate by mutual TLS only. | HTTP 401, an error message |
+| `STS-XPEP-0036` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP did not verify against PEP_AUTHZEN_CLIENT_CA (#1179). | HTTP 401, an error message |
+| `STS-XPEP-0037` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP verified, and its SHA-256 is not in PEP_AUTHZEN_CALLERS, the container's stand-in for the service's AUTHZEN_PEPS role (#1179). | HTTP 403, an error message |
+| `STS-XPEP-0038` | PEP_AUTHZEN_CALLERS is not a JSON array, or an entry of it is not a name, a 64-digit SHA-256 and at most 64 applications, and was left out; the remote PEP's edge PDP admits nobody it cannot read (#1179). | none — logged at start |
+| `STS-XPEP-0039` | The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, unreadable or holding no certificate), so its HTTPS listener asks no caller for a certificate and its AuthZEN edge PDP admits nobody (#1179). | HTTP 401 from the AuthZEN endpoints; logged at start |
+| `STS-XPEP-0040` | The remote PEP could not reach the PDP to pull the AuthZEN catalogue (GET /xacml/pep/authzen-catalogue). The catalogue already held is kept (#1179). | none — logged; the PEP carries on |
+| `STS-XPEP-0041` | The PDP refused the remote PEP's AuthZEN catalogue pull, or answered with something that is not a catalogue (a PDP older than #1179 answers 404). The catalogue already held is kept. | none — logged; the PEP carries on |
+| `STS-XPEP-0042` | Rows of a pulled AuthZEN catalogue were refused by the remote PEP's own catalogue grammar and left out, so those properties are undeclared at its edge PDP (#1179). | none — logged; the rest is loaded |
+| `STS-XPEP-0043` | An AuthZEN request reached the remote PEP's edge PDP before it had pulled both the policies and the AuthZEN catalogue, so it cannot map a request as the service does (#1179). | HTTP 503, an error message |
+| `STS-XPEP-0044` | An AuthZEN request reached a remote PEP whose edge PDP is turned off (PEP_AUTHZEN=false) (#1179). | HTTP 501, an error message |
+| `STS-XPEP-0045` | The remote PEP's AuthZEN metadata was asked for with no PDP identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path and was ignored (#1179). | HTTP 404 from GET /.well-known/authzen-configuration; logged at start |
+| `STS-XPEP-0046` | A single AuthZEN evaluation sent to the remote PEP's edge PDP was larger than PEP_MAX_BODY_BYTES and was refused unread (#1179). | HTTP 413, an error message |
+| `STS-XPEP-0047` | The remote PEP could not reach the PDP to pull the AuthZEN callers (GET /xacml/pep/authzen-callers). The caller list already held is kept (#1189). | none — logged; the PEP carries on |
+| `STS-XPEP-0048` | The PDP refused the remote PEP's AuthZEN caller pull, or answered with something that is not a caller list (a PDP older than #1189 answers 404). The caller list already held is kept, and before the first one PEP_AUTHZEN_CALLERS alone decides. | none — logged; the PEP carries on |
+| `STS-XPEP-0049` | Entries of a pulled AuthZEN caller list were not a name, 64-digit SHA-256 digests, at most 64 applications and the endpoints admitted to, and were left out: the remote PEP's edge PDP admits nobody it cannot read (#1189). | none — logged; the pull is kept |
+| `STS-XPEP-0050` | An AuthZEN request reached the remote PEP's edge PDP before it had pulled the callers from the PDP, and no PEP_AUTHZEN_CALLERS is configured to decide meanwhile (#1189). | HTTP 503, an error message |
+| `STS-XPEP-0051` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP verified, and its SHA-256 is not one the pulled caller list names: the service would not admit it (#1189). | HTTP 403, an error message |
+| `STS-XPEP-0052` | The realm the remote PEP pulled its AuthZEN callers from authenticates them by a token (authzen.callerAuthentication bearer or mtls+bearer), which the edge PDP cannot check, so it admits nobody (#1189). | HTTP 401, an error message |
+| `STS-XPEP-0053` | A caller on the remote PEP's pulled AuthZEN caller list asked an endpoint the service's access-control policy does not admit it to (#1189). | HTTP 403, an error message |
+| `STS-XPEP-0054` | A caller on the remote PEP's pulled AuthZEN caller list is not on PEP_AUTHZEN_CALLERS, which, when it is set, narrows the pulled list to the certificates it names (#1189). | HTTP 403, an error message |
+| `STS-XPEP-0055` | The remote PEP's edge PDP could not forward an AuthZEN evaluation about an application that enforces fine-grained authorization to the service: the service could not be reached, or did not answer within PEP_AUTHZEN_FORWARD_TIMEOUT_MS (#564). The evaluation is an error, never false. | HTTP 502 (504 on a timeout), or a batch item's context.error |
+| `STS-XPEP-0056` | The service refused the remote PEP itself when its edge PDP forwarded an AuthZEN evaluation about an application that enforces fine-grained authorization (401 or 403): the PEP's directory entry must hold AUTHZEN_PEPS and have the application in its stsAuthzenApplication scope (#564). | HTTP 502, or a batch item's context.error |
+| `STS-XPEP-0057` | The service answered an error to an AuthZEN evaluation the remote PEP's edge PDP forwarded (an application that enforces fine-grained authorization): its status and message are passed to the caller, never turned into false (#564). | the service's own status and message, or a batch item's context.error |
+| `STS-XPEP-0058` | The service answered 200 to an AuthZEN evaluation the remote PEP's edge PDP forwarded, with something that is not an AuthZEN decision (no boolean decision) (#564). | HTTP 502, or a batch item's context.error |
+| `STS-XPEP-0059` | The AuthZEN catalogue the remote PEP pulled carried an fgaApplications member that is not an array of application identifiers. The catalogue is refused whole and the one held is kept: which evaluations must be forwarded cannot be told (#564). | none; the edge keeps what it holds |
+
+## STS-AUTHZEN
+
+**AuthZEN Authorization API.** AuthZEN Authorization API 1.0 over the XACML engine: a remote PEP's access evaluation requests and their JSON, the per-realm attribute catalogue that maps them onto XACML attributes, the caller's authentication (mutual TLS, an OAuth access token, or both) and its application scope, and the batch endpoint's bounds.
+
+Raised from: authzen/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-AUTHZEN-0001` | An AuthZEN access evaluation request was not a JSON object. | HTTP 400, an error message |
+| `STS-AUTHZEN-0002` | An AuthZEN access evaluation request had no subject, action or resource, or one of subject.type, subject.id, action.name, resource.type or resource.id was missing or empty (AuthZEN 1.0 section 5 requires all five). | HTTP 400, an error message |
+| `STS-AUTHZEN-0003` | A member of an AuthZEN request had the wrong JSON type, or was too long: subject, action, resource, context or properties not an object, an id, type or name not a string, or context.application not a non-empty string. | HTTP 400, an error message |
+| `STS-AUTHZEN-0004` | An AuthZEN request carried a property or context member this realm's attribute catalogue does not declare; an undeclared property is refused in every mode. | HTTP 400, an error message |
+| `STS-AUTHZEN-0005` | An AuthZEN request carried null for a property, or inside a bag; null is neither an empty value nor an absent one. | HTTP 400, an error message |
+| `STS-AUTHZEN-0006` | An AuthZEN property's value did not fit its catalogue row's datatype: a JSON type that may not reach it (a number for a string, a fraction for an integer), or a string that does not parse at it. | HTTP 400, an error message |
+| `STS-AUTHZEN-0007` | An AuthZEN property sent an array for a catalogue row whose multiplicity is single, or a bag with too many values. | HTTP 400, an error message |
+| `STS-AUTHZEN-0008` | An AuthZEN property sent an object where its catalogue row takes a value, an object or array inside a bag, or objects nested too deeply. | HTTP 400, an error message |
+| `STS-AUTHZEN-0009` | An AuthZEN request, or its subject, action or resource, carried a member AuthZEN 1.0 does not define. | HTTP 400, an error message |
+| `STS-AUTHZEN-0010` | An AuthZEN attribute catalogue row was refused: not a JSON object, an unknown member, or an object, property path, attributeId, category, dataType or multiplicity that is not one the catalogue takes. | the write is refused |
+| `STS-AUTHZEN-0011` | An AuthZEN attribute catalogue row was refused because it maps onto a reserved identifier — this service's own urn:sts:xacml: namespace, XACML's subject-id, resource-id or action-id, a current-time attribute, or context.application. A request-supplied attribute suppresses the PIP, so such a row would let a caller forge a trusted fact. | the write is refused |
+| `STS-AUTHZEN-0012` | An AuthZEN attribute catalogue row was refused because it sends a subject property under a bare directory attribute name, which the PIP reads off the subject's directory entry; for a subject this realm resolves the directory is authoritative. | the write is refused |
+| `STS-AUTHZEN-0013` | An AuthZEN request reached a realm where authzen.enabled, or xacml.enabled whose engine it decides with, is off. | HTTP 501, an error message |
+| `STS-AUTHZEN-0014` | An AuthZEN request reached a realm that has no sts-authzen-api application, the API's resource object; an operator who removes it turns the API off. | HTTP 501, an error message |
+| `STS-AUTHZEN-0015` | An AuthZEN caller presented no client certificate, where authzen.callerAuthentication is mtls or mtls+bearer. | HTTP 401, an error message |
+| `STS-AUTHZEN-0016` | An AuthZEN caller's client certificate did not verify against this service's client truststore. | HTTP 401, an error message |
+| `STS-AUTHZEN-0017` | An AuthZEN caller's client certificate verified and names no entry in this realm: an outside authority's certificate stored on no entry or on several, or one whose name resolves to nobody. | HTTP 401, an error message |
+| `STS-AUTHZEN-0018` | An AuthZEN caller presented no access token, where authzen.callerAuthentication is bearer or mtls+bearer. | HTTP 401 with WWW-Authenticate: Bearer, an error message |
+| `STS-AUTHZEN-0019` | An AuthZEN caller's access token was refused: it does not verify, has expired, is not an access token, was issued by another authorization server, was revoked, or failed its certificate, DPoP or sender constraint. | HTTP 401 invalid_token, an error message |
+| `STS-AUTHZEN-0020` | An AuthZEN caller's access token is not audienced to this realm's /access/v1. | HTTP 401 invalid_token, an error message |
+| `STS-AUTHZEN-0021` | An AuthZEN caller's access token does not carry authzen:evaluate, or its client no longer holds a delegated permission grant of it on sts-authzen-api. | HTTP 403 insufficient_scope, an error message |
+| `STS-AUTHZEN-0022` | An AuthZEN caller's access token was issued to a person; an AuthZEN caller is the client itself, on client_credentials. | HTTP 403, an error message |
+| `STS-AUTHZEN-0023` | Under authzen.callerAuthentication mtls+bearer, the AuthZEN caller's access token is not bound (RFC 8705) to the client certificate presented, so the two credentials do not name one party. | HTTP 401 invalid_token, an error message |
+| `STS-AUTHZEN-0024` | The access-control policy refused an AuthZEN caller: on resource authzen-api it does not hold AUTHZEN_PEPS (roles.authzenPepGroup), or the policy narrows it. | HTTP 403, an error message |
+| `STS-AUTHZEN-0025` | An AuthZEN request named a context.application its caller is not scoped to (stsAuthzenApplication or appAuthzenApplication). | HTTP 403, an error message |
+| `STS-AUTHZEN-0026` | An AuthZEN caller is scoped to no application, so it may ask about none. | HTTP 403, an error message |
+| `STS-AUTHZEN-0027` | An AuthZEN caller is scoped to several applications and the request named none in context.application. | HTTP 400, an error message |
+| `STS-AUTHZEN-0028` | The PDP could not evaluate an AuthZEN request: the root policy does not load, or evaluation met a processing or syntax error — against the root, or against the fine-grained policy of an application that enforces it (#564). Answered as an error, never as an ordinary denial. | HTTP 500, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0029` | An AuthZEN Permit was answered false because the decision carried an obligation this PDP cannot discharge, until the Obligations Profile is implemented end to end. | decision: false |
+| `STS-AUTHZEN-0030` | An AuthZEN console or /admin-api act named an action the AuthZEN tab does not have. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-AUTHZEN-0031` | An AuthZEN remove-attribute named an object and property the catalogue has no row for. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-AUTHZEN-0032` | An AuthZEN set-scope named more than 64 applications, or one longer than 256 characters or holding a control character. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-AUTHZEN-0033` | An AuthZEN set-scope named no person, service account or application in this realm, or the scope could not be written onto the entry. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-AUTHZEN-0034` | An /admin-api/xacml/authzen action threw rather than answering. | HTTP 500, ok false |
+| `STS-AUTHZEN-0035` | A request for /.well-known/authzen-configuration/<path> named no PDP: the path after the segment is not realm/<id> of a realm that exists, asked at the host root. | HTTP 404 (Express's own) |
+| `STS-AUTHZEN-0036` | An AuthZEN access evaluations request named an options.evaluations_semantic other than execute_all, deny_on_first_deny or permit_on_first_permit. | HTTP 400, an error message |
+| `STS-AUTHZEN-0037` | An AuthZEN access evaluations request was larger than the realm's authzen.maxBodyBytes; the whole batch was refused unread. | HTTP 400, an error message |
+| `STS-AUTHZEN-0038` | An AuthZEN access evaluations request carried more items than the realm's authzen.maxEvaluations; the whole batch was refused before any item was decided. | HTTP 400, an error message |
+| `STS-AUTHZEN-0039` | An AuthZEN access evaluations request reached a realm where authzen.batchEnabled is off. | HTTP 501, an error message |
+| `STS-AUTHZEN-0040` | The AuthZEN metadata document could not be signed for its signed_metadata, which was left out; the plain document was served. | — |
+| `STS-AUTHZEN-0041` | An AuthZEN answer carried an XACML obligation that cannot be handed as an Obligations Profile obligation (a registered type without a property it requires), so none was handed and a Permit answered false. | decision: false |
+| `STS-AUTHZEN-0042` | An AuthZEN search carried a page that is not an object of token (a string), limit (a non-negative integer) and properties (an object). | HTTP 400, an error message |
+| `STS-AUTHZEN-0043` | An AuthZEN search continued with a page.token this search did not issue, or after an entity or the limit changed (section 8.2). | HTTP 400, an error message |
+| `STS-AUTHZEN-0044` | An AuthZEN search reached a realm where authzen.searchEnabled is off. | HTTP 501, an error message |
+| `STS-AUTHZEN-0045` | An AuthZEN search named more candidates than authzen.searchMaxCandidates; only the first were decided and the answer said it was incomplete. | context.incomplete |
+| `STS-AUTHZEN-0046` | An AuthZEN evaluation about an application that enforces fine-grained authorization could not be decided: the application's policy cannot be used, or whether it enforces could not be read. The audit row's code says why (STS-FGA-0003 to 0007, 0009, or 0015). Answered as an error, never as a denial, and never decided against the realm root instead (#564). | HTTP 500, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0060` | The AuthZEN catalogue a remote PEP pulled from GET /xacml/pep/authzen-catalogue left out values of authzenAttribute on sts-authzen-api that are not catalogue rows; the edge PDP maps those properties as undeclared, as the service does (#1179). | none — logged; the pull is answered |
+| `STS-AUTHZEN-0061` | The AuthZEN caller list a remote PEP pulled from GET /xacml/pep/authzen-callers was cut: the AuthZEN group has more members than are read, or a member more certificates (#1189). A caller past the cut is refused at the edge and still answered here. | none — logged; the pull is answered |
+| `STS-AUTHZEN-0062` | A certificate held by a member of the AuthZEN group could not be read for the caller list a remote PEP pulled, and was left out (#1189). | none — logged; the pull is answered |
+| `STS-AUTHZEN-0070` | An AuthZEN access request, task status or cancellation reached a realm where authzen.accessRequests (the Access Request and Approval Profile, #1180) is off. | HTTP 501, application/problem+json |
+| `STS-AUTHZEN-0071` | An AuthZEN access request was not a JSON object with subject, resource and action objects, carried a member the profile does not define at its top level, or was a bulk submission (items), which is not implemented. | HTTP 400, application/problem+json (about:blank) |
+| `STS-AUTHZEN-0072` | An AuthZEN access request carried no denial, or a denial with neither binding_token nor evaluation_id, so it is not based on a requestable denial. | HTTP 400, urn:openid:authzen:access-request:error:not_requestable |
+| `STS-AUTHZEN-0073` | An AuthZEN access request's denial carried no binding_token (this PDP keeps no record to resolve an evaluation_id against), or one that did not verify as this realm's, for this endpoint. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
+| `STS-AUTHZEN-0074` | An AuthZEN access request did not match the denial its binding_token names: another caller, a different subject, resource, action or authorization-relevant context member, or a denial.expires_at not echoed unchanged. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
+| `STS-AUTHZEN-0075` | An AuthZEN access request arrived after its requestable denial expired (the earlier of the binding_token's exp and denial.expires_at, with 30 seconds of skew). | HTTP 410, urn:openid:authzen:access-request:error:expired_denial |
+| `STS-AUTHZEN-0076` | An AuthZEN access request reused an Idempotency-Key, or a binding_token, already used by the same caller for a request whose body differs. | HTTP 409, urn:openid:authzen:access-request:error:duplicate_request |
+| `STS-AUTHZEN-0077` | An AuthZEN access request named an application the caller is no longer scoped to. | HTTP 403, application/problem+json |
+| `STS-AUTHZEN-0078` | An AuthZEN access request was refused because the realm already holds authzen.accessRequestMaxPending pending requests. | HTTP 503, application/problem+json |
+| `STS-AUTHZEN-0079` | An AuthZEN access request's callback was not an object with an https endpoint registered for the caller (appAuthzenCallbackUri or stsAuthzenCallbackUri); a callback URL is never taken from a request alone. | HTTP 400, application/problem+json |
+| `STS-AUTHZEN-0080` | An AuthZEN access request task was asked about, or cancelled, by a caller it is not the requester of, or does not exist: the two are one answer, so a leaked task handle tells nobody anything. | HTTP 404, urn:openid:authzen:access-request:error:unknown_task |
+| `STS-AUTHZEN-0081` | An AuthZEN access request task was asked about after its retention ended. | HTTP 410, urn:openid:authzen:access-request:error:task_expired |
+| `STS-AUTHZEN-0082` | An AuthZEN access request task already in a terminal status was asked to be cancelled. | HTTP 409, urn:openid:authzen:access-request:error:invalid_task_state |
+| `STS-AUTHZEN-0083` | An AuthZEN access request asked for emergency access where the denying policy's advice does not allow it, or without a context.business_justification. | HTTP 400, application/problem+json |
+| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, or one issued to another caller; it was not used and the evaluation was decided as not approved. | context.reason approval_unverifiable, next_action none |
+| `STS-AUTHZEN-0085` | An AuthZEN evaluation presented a context.approval that was revoked or past its approved_until; it was not used. | context.reason approval_expired |
+| `STS-AUTHZEN-0086` | An AuthZEN evaluation presented a context.approval for another tuple or application than the one it approved; it was not used. | context.reason out_of_scope |
+| `STS-AUTHZEN-0087` | A requestable AuthZEN denial's binding_token could not be signed, so the denial was answered as an ordinary false with no access_request. | none — logged; decision: false |
+| `STS-AUTHZEN-0088` | The access-control policy (action approve-access-request on resource authzen-access-request) refused a person the approval, denial or revocation of an AuthZEN access request. | none — the portal's or console's refusal, audited |
+| `STS-AUTHZEN-0089` | An approval, denial or cancellation named no pending AuthZEN access request of the realm. | none — the portal's or console's refusal |
+| `STS-AUTHZEN-0090` | An AuthZEN access request decision was not approve, deny or revoke, or the portal's or console's form was incomplete. | none — the portal's or console's refusal |
+| `STS-AUTHZEN-0091` | An AuthZEN access request's callback could not be delivered (the outbound policy refused the URL, or the endpoint did not answer 2xx); the task status endpoint remains the record, and nothing is retried. | none — logged and audited |
+| `STS-AUTHZEN-0092` | The authzen.access-requests scheduler job failed while expiring or removing access requests. | none — logged; the job's run is failed |
+| `STS-AUTHZEN-0093` | The approvers of an AuthZEN access request could not be mailed; the request waits in the portal all the same. | none — logged |
+| `STS-AUTHZEN-0094` | The AuthZEN tab's set-callbacks act was refused: a URL that is not https, more than eight, or a caller who is nobody in the realm. | none — the console's refusal |
+| `STS-AUTHZEN-0095` | An AuthZEN access request approval was asked to be revoked where there is no live approval with that id. | none — the portal's or console's refusal |
+| `STS-AUTHZEN-0096` | An AuthZEN access request's requested_access was not an object, or its requested_until not an RFC 3339 instant in the future. | HTTP 400, application/problem+json |
+| `STS-AUTHZEN-0100` | An AuthZEN token-exchange binding tuple (#1181) carried a context member its fixed rules read in the wrong JSON type, an unusable subject_token claim, an act chain nested too deep, or a may_act without sub. | HTTP 400, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0101` | An AuthZEN request that is not one of the token-exchange binding's gate or scope tuples, or that arrived while authzen.tokenExchange is off, carried a context member only the binding's fixed rules read (#1181). | HTTP 400, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0102` | An AuthZEN token-exchange binding tuple named a subject.type other than the Token Issuance Profile's user, client or workload (#1181). | HTTP 400, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0103` | An AuthZEN gate tuple named a grant other than token_exchange (issue:<type>:<grant>); this PDP decides the token-exchange gate only, and answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0104` | An AuthZEN token-exchange gate named a token type that is not a registered short name; answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0105` | An AuthZEN scope tuple (resource.type protected_resource) arrived with no token-exchange gate in its request, and was answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0106` | An AuthZEN scope tuple named a subject other than the exchange subject (or, for a Txn-Token, the requesting party), and was answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0107` | An AuthZEN token-exchange request named a third subject for the same target and token type, beside the subject gate and the requesting party gate; answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0108` | The issuance policy refused, enforced, a token exchange asked over AuthZEN, on a fact about the subject or the target (or about the pair); the subject gate was answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0109` | The issuance policy refused, enforced, a token exchange asked over AuthZEN, on a fact about the requesting party (or about the pair); the requesting party gate was answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0110` | The issuance policy would have refused a token exchange asked over AuthZEN, but not enforced in development mode; the gate was answered true, as the local token endpoint would issue it, and the row says what product would answer (#1181). | decision: true |
+| `STS-AUTHZEN-0111` | An AuthZEN scope tuple's scope was refused or dropped by the issuance policy at the exchange stage (exchange-widens-scope, exchange-permission-not-delegated); answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0112` | An AuthZEN scope tuple's scope is not declared by the client (oauthAllowedScope, the scope policy's mint stage); answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0113` | An AuthZEN scope tuple's scope is a gated permission no role of its subject authorizes (#302); answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0114` | An AuthZEN token-exchange subject gate named a subject token with no lifetime left (context.subject_token.exp), so any token_lifetime would be 0, a denial; answered false (#1181). | decision: false |
+| `STS-AUTHZEN-0115` | A granted_scope wider than the subject token's scope was built for an AuthZEN token-exchange answer and was not sent: the no-broadening rule held at the last moment, which is a defect (#1181). | none — logged; the envelope is sent without it |
+
+## STS-FGA
+
+**Fine-grained authorization.** Application-scoped fine-grained authorization: the policy each application owns in ou=policies (created with it, retired with it), the appFgaEnforced switch, the refusals that keep such a policy out of the repository root, and an RFC 9396 authorization detail mapped onto an XACML request through its type's xacml rows and asked of the owning application's policy.
+
+Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, and the lifecycle slot in common/applications.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-FGA-0001` | A policy that belongs to an application (it carries xacmlApplication) was written as the repository root and refused: an application's fine-grained policy decides that application's details and never the realm's root question. | the write is refused |
+| `STS-FGA-0002` | The console or /admin-api asked to make an application's fine-grained policy the repository root, and was refused before the current root was demoted. | the caller's refusal (why on a console or /admin-api reply) |
+| `STS-FGA-0003` | An application has no fine-grained policy: its appFgaPolicy is empty. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0004` | An application's appFgaPolicy names a policy entry that is not in this realm's ou=policies. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0005` | An application's appFgaPolicy names a policy entry that does not belong to it: the entry's xacmlApplication is absent or names another application, or the entry is marked orphaned. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0006` | An application's fine-grained policy is disabled (xacmlEnabled FALSE). An enforced application with a disabled policy refuses; switching enforcement on is refused until the policy is enabled. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0007` | An application's fine-grained policy does not parse or does not type-check. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0008` | An application's default fine-grained policy could not be written: there is no directory, no entry name is free, the directory refused the entry, or the document was refused. The application stays without one until FGA is next enabled on it. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
+| `STS-FGA-0009` | A fine-grained authorization act named an application this realm's registry does not hold. | the caller's refusal; an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) when the application went between the two reads |
+| `STS-FGA-0010` | The application lifecycle hook (create or delete) failed or threw. The application create or delete itself stands; the policy was not created or not retired. | none — logged; the create or delete succeeds |
+| `STS-FGA-0011` | The FGA lifecycle slot offered to common/applications.js was incomplete (it needs both created and deleted) and was not installed. | none — logged at load |
+| `STS-FGA-0012` | An application's appFgaPolicy or appFgaEnforced could not be written to its entry: the directory refused the write. | the caller's refusal |
+| `STS-FGA-0013` | A deleted application's fine-grained policy could not be disabled and marked orphaned; it is left as it was. | none — logged; the delete succeeds |
+| `STS-FGA-0014` | An application that enforces fine-grained authorization refused an authorization detail of one of its types: its policy decided Deny, NotApplicable, or Indeterminate over a missing attribute, or Permit with an obligation this service cannot discharge. Only a Permit with nothing undischargeable grants a detail. | access_denied at the authorization endpoint (redirected), invalid_authorization_details at the PAR and token endpoints (HTTP 400) |
+| `STS-FGA-0015` | A fine-grained authorization decision could not be made: the application's policy reached Indeterminate through a processing or syntax error, or the embedded FGA PEP threw or answered nothing. The detail is refused; this is a fault, never a Permit. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint); an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) for an access question that threw |
+| `STS-FGA-0016` | An authorization detail's type belongs to an application that enforces fine-grained authorization, and no FGA decider is installed in this process (the XACML family is not loaded), so the detail is refused rather than issued undecided. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) |
+| `STS-FGA-0017` | A token exchange asked for an authorization detail whose type's application enforces fine-grained authorization, and the subject_token does not cover it: it is not a token this service issued with authorization_details, or none of its details of that type covers the requested one (RFC 9396 section 6's subset rule). | invalid_authorization_details (HTTP 400) |
+| `STS-FGA-0018` | Switching fine-grained authorization on for an application was refused: a type it declares has member paths that are neither mapped (xacml) nor listed in notForPolicy, or its schema is open. | the caller's refusal, naming the uncovered paths |
+| `STS-FGA-0019` | An oauthAuthorizationDetailsType value written to an application that enforces fine-grained authorization was refused: the definition would leave member paths neither mapped nor listed in notForPolicy, which enforcement could not decide. | the caller's refusal, naming the uncovered paths |
+| `STS-FGA-0020` | Resetting an application's fine-grained policy to the fga-default template was refused because it was not confirmed: the reset replaces every rule an administrator wrote, so it needs confirm. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-FGA-0021` | Resetting an application's fine-grained policy was refused: the application has no policy of its own (appFgaPolicy is empty, names a missing entry, or names one that is not its own). Create the default policy instead. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-FGA-0022` | Deleting a policy from the XACML repository was refused: it is the fine-grained policy an application still names in appFgaPolicy. Only a policy no application names (an orphan of a deleted application) may be removed. | the caller's refusal (why on a console or /admin-api reply) |
+| `STS-FGA-0023` | A mapping row or a notForPolicy entry could not be changed on an access type from the console or /admin-api: the row to remove is not on the type, or the row offered does not read (a bad path, attribute identifier, category, data type or multiplicity, or a reserved identifier). | the caller's refusal (errors and field on a console or /admin-api reply) |
+| `STS-FGA-0024` | An application's fine-grained policy was not created: ou=policies already holds xacml.maxApplicationPolicies applications' own policies (orphans included). The application stays without one until there is room and FGA is next enabled on it, or the policy is created from its tab. Raise the setting beside applications.max, or remove orphaned policies. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
+| `STS-FGA-0025` | Enabling fine-grained authorization on an application could not grant one holder of REMOTE_PEPS what forwarding needs: membership of roles.authzenPepGroup and the application in its AuthZEN scope. The member names no person, service account or application, the group is not configured or does not exist, the scope is full, or the directory refused the write. The enable still succeeds; the other holders are granted. | none: the enable succeeds, and the holder is listed under peps.failed on its answer and on the Fine-grained authorization tab |
+| `STS-FGA-0100` | A fine-grained authorization question was asked with a type definition that is not usable (it carries a problem, or names no type), so no request could be built for the detail. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0101` | A fine-grained authorization question was asked about a detail that is not a JSON object of the definition's type. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0102` | A fine-grained authorization question was asked without the trusted facts the adapter must supply: the owning application, or a stage that is one of authorize, token, refresh, exchange, par or access. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0103` | An authorization detail carried a member its type neither maps (xacml) nor lists in notForPolicy, so it could not reach the owning application's policy and was never read as an attribute. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0104` | A member of an authorization detail that a type's xacml row maps was null, or a bag held a null. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0105` | A member of an authorization detail had a JSON type its xacml row's datatype does not take, or a string outside that datatype's lexical space. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0106` | A member of an authorization detail was an array where its xacml row sends a single value, or carried more than 256 values. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0107` | A member of an authorization detail was an object where its xacml row sends values (a nested object reaches a request only through rows for its own members), or was nested too deeply. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0108` | Which applications enforce fine-grained authorization could not be read when a remote PEP pulled the AuthZEN catalogue (GET /xacml/pep/authzen-catalogue), so the catalogue was not sent: one naming no enforcing application would have the edge PDP decide their evaluations from the root (#564). | HTTP 500 server_error; the edge keeps the catalogue it holds |
+
+## STS-UMA
+
+**User-Managed Access 2.0.** UMA 2.0: the protection API a resource server registers resources and asks permission tickets through (the PAT), the uma-ticket grant that decides each permission through the realm's policy, the resource owner's own XACML document and the resource server's fine-grained policy, the permission ticket and PCT stores, claims gathering, the owner's approval of an "ask me" share, and the Sharing section of the portal.
+
+Raised from: uma/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-UMA-0001` | Whether a UMA permission ticket or PCT was already spent could not be asked of the cluster claim store, so the value was refused rather than accepted twice (#1168). | invalid_grant (HTTP 400) at the token endpoint; the value is not consumed |
+| `STS-UMA-0002` | A resource owner's UMA document was not written: it is larger than uma.maxOwnerPolicyBytes, or names no owner (#1168). | the caller's refusal (HTTP 400 on the account API); the document is left as it was |
+| `STS-UMA-0003` | A resource owner's UMA document was not written: it holds more rules than uma.maxOwnerRules (#1168). | the caller's refusal (HTTP 400 on the account API); the document is left as it was |
+| `STS-UMA-0004` | The uma.sweep scheduler job failed while removing expired permission tickets, PCTs, RPT records and pending approvals; a read still applies every deadline itself (#1168). | none — the run is recorded as failed |
+| `STS-UMA-0100` | A UMA protection API request carried no protection API token (PAT): no Authorization: Bearer or DPoP header (#1168). | HTTP 401, WWW-Authenticate: Bearer realm="<issuer>" |
+| `STS-UMA-0101` | The PAT presented at the UMA protection API does not verify: not this realm's signature, expired, not an access token, or another issuer's (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0102` | The PAT presented at the UMA protection API is not audienced to this realm's /uma (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0103` | The PAT presented at the UMA protection API does not carry uma_protection, or its client no longer holds a delegated permission grant of urn:sts:uma-protection-api:uma_protection on sts-uma-protection-api (#1168). | HTTP 403 insufficient_scope, WWW-Authenticate: Bearer scope="uma_protection" |
+| `STS-UMA-0104` | The client the PAT was issued to is not an application declared for the protocol uma, so it is no resource server here (#1168). | HTTP 403 invalid_token |
+| `STS-UMA-0105` | The PAT was issued to the client as ITSELF (client_credentials) while its application does not carry umaOwnsResources TRUE, so there is no resource owner for what it would register (#1168, rcbj's decision 5). | HTTP 403 invalid_token |
+| `STS-UMA-0106` | The PAT presented at the UMA protection API has been revoked (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0107` | The PAT's sender constraint was not met: a DPoP-bound token sent as Bearer or with a refused proof, or an RFC 8705 certificate-bound token without its certificate (#1168). | HTTP 401 invalid_token |
+| `STS-UMA-0108` | A UMA request reached a realm where uma.enabled is off: the routes stay registered and answer 501 (#1168). | HTTP 501 |
+| `STS-UMA-0109` | A UMA request reached a realm that has no sts-uma-protection-api object, the protection API's resource object, so the API is off there (#1168). | HTTP 501 |
+| `STS-UMA-0110` | A UMA resource registration body is not a JSON object; a member the resource description does not have is not stored (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0111` | A UMA resource registration carries no resource_scopes, or one that is not a non-empty array of scope strings (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0112` | A UMA resource registration carries more resource_scopes than uma.maxResourceScopes (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0113` | A UMA resource description member (name, type, description, icon_uri) is not a string, is too long, or icon_uri is not an https URL (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0114` | A UMA resource registration request named a resource this resource server did not register for this owner (#1168). | HTTP 404 not_found |
+| `STS-UMA-0115` | A UMA protection API request used a method the endpoint does not support (#1168). | HTTP 405 unsupported_method_type |
+| `STS-UMA-0116` | A UMA resource registration would take the owner past uma.maxResourcesPerOwner (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0117` | A UMA permission request body is not an object or an array of objects each with resource_id and resource_scopes (#1168). | HTTP 400 invalid_request |
+| `STS-UMA-0118` | A UMA permission request named a resource_id this resource server did not register (#1168). | HTTP 400 invalid_resource_id |
+| `STS-UMA-0119` | A UMA permission request named a scope the resource was not registered with (#1168). | HTTP 400 invalid_scope |
+| `STS-UMA-0120` | A path under /.well-known/uma2-configuration names no realm of this service (#1168). | HTTP 404 |
+| `STS-UMA-0200` | The uma-ticket grant was asked where it is not offered: no UMA family in the process, or uma.enabled off in the realm; or the slot was given something that is not a whole handler (#1193). | unsupported_grant_type (HTTP 400) |
+| `STS-UMA-0201` | The uma-ticket grant named no ticket, or a ticket that is unknown, expired, rotated or ended (#1193). | invalid_request or invalid_grant (HTTP 400) |
+| `STS-UMA-0202` | A UMA permission ticket was presented again after it was spent, on this node or another (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0203` | A UMA permission ticket was presented by a client other than the one that presented it first (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0204` | An RPT presented for upgrade is unknown, expired, or not this client's, this requesting party's or this resource server's (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0205` | A scope of the uma-ticket grant names no scope of any resource in the ticket (the Grant specification, section 3.3.4) (#1193). | invalid_scope (HTTP 400) |
+| `STS-UMA-0206` | A persisted claims token presented with the uma-ticket grant is unknown, expired or another client's (#1193). | invalid_grant (HTTP 400) |
+| `STS-UMA-0208` | A UMA permission could not be decided: a policy that does not evaluate, a throw, or the grant's handler failing. Nobody decided, so it is never request_denied (#1193). | server_error (HTTP 500) |
+| `STS-UMA-0209` | A UMA policy needs an attribute about the requesting party that is not known yet: the request is answered need_info with the attribute in required_claims (#1193). | need_info (HTTP 403) |
+| `STS-UMA-0210` | A UMA permission was refused by a policy (Deny, NotApplicable, or a missing attribute not about the requesting party); the request is request_denied when nothing, or (uma.partialRpt off) not everything, was granted (#1193). | request_denied (HTTP 403) |
+| `STS-UMA-0211` | The realm's UMA authorization policy (uma.authorizationPolicy) is disabled; a disabled entry does not fall back to the built-in template (#1193). | server_error (HTTP 500) |
+| `STS-UMA-0212` | A UMA policy needs an attribute that is not about the requesting party, so no claim can supply it; the permission is refused (#1193). | request_denied (HTTP 403) where nothing else is granted |
+| `STS-UMA-0213` | A resource owner's UMA document does not parse when a permission is decided with it (#1193). | server_error (HTTP 500) |
+| `STS-UMA-0214` | A UMA policy permitted with an obligation the UMA PEP cannot discharge, so the permission is refused (#1193). | request_denied (HTTP 403) where nothing else is granted |
+| `STS-UMA-0215` | A resource in a UMA ticket or RPT is gone, or no longer the ticket's owner's, so its permission is refused (#1193). | request_denied (HTTP 403) where nothing else is granted |
+| `STS-UMA-0216` | A UMA permission needs the owner's approval (the share asks each time) and was not issued (#1193). | request_submitted (HTTP 403), or request_denied |
+| `STS-UMA-0217` | The issuance policy refused the RPT as an access token (issue-access-token), the fourth layer of every UMA permission (#1193). | request_denied (HTTP 403) |
+| `STS-UMA-0218` | A persisted claims token was presented for revocation by a client other than the one it was issued to (#1193). | invalid_grant (HTTP 400) at /oauth2/revoke |
+| `STS-UMA-0300` | A share named a resource that is not one of the owner's registered resources (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0301` | A share named no scope, or a scope the resource was not registered with (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0302` | A share named no kind of recipient, a person this realm does not hold, or the owner themselves (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0303` | A share with a group named a group this realm does not hold (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0304` | A share by claim named a malformed claim name or value (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0305` | A share's expiry was not a date in the future, or its authentication level was not one printable word (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0306` | A resource owner asked to edit their UMA document as ALFA while uma.ownerAlfaEditing is off (#1192). | HTTP 403 on the account API |
+| `STS-UMA-0307` | A resource owner's ALFA did not parse or validate, or a share was asked of a document that is a policy set (#1192). | HTTP 400 on the account API; the document is left as it was |
+| `STS-UMA-0308` | A share to remove is not one of the owner's (#1192). | HTTP 400 on the account API |
+| `STS-UMA-0309` | A resource owner's stored UMA document does not parse. Nothing was decided with it, and the portal says it could not be read (#1192). | HTTP 500 on the account API; server_error at the token endpoint (phase 4) |
+| `STS-UMA-0310` | The portal's Sharing section was asked for by a person whose subject could not be read (#1192). | HTTP 500 on the account API |
+| `STS-UMA-0311` | A person was deleted from the directory and what UMA held for them — their document, resources and RPTs — could not be forgotten (#1192). | none — logged; the delete stands |
+| `STS-UMA-0400` | The UMA claims interaction endpoint was asked for by a client it does not know, or with a claims_redirect_uri the client did not register (oauthClaimsRedirectUri); the person is told and not redirected (#1194). | HTTP 400, a page; no redirect |
+| `STS-UMA-0401` | The UMA claims interaction endpoint was asked for where uma.enabled is off (#1194). | HTTP 501, a page |
+| `STS-UMA-0402` | A UMA request needing its owner's approval was not queued: the owner already has uma.maxPendingPerOwner requests waiting (#1194). | request_denied (HTTP 403) |
+| `STS-UMA-0403` | The resource owner refused a UMA request that waited for their approval (#1194). | request_denied (HTTP 403) |
+| `STS-UMA-0404` | A UMA request that waited for its owner's approval was not answered within uma.pendingLifetimeS (#1194). | request_denied (HTTP 403) |
+| `STS-UMA-0405` | A UMA request waits for its resource owner's approval (an "ask me each time" share): request_submitted with a rotated ticket (#1194). | request_submitted (HTTP 403) |
+| `STS-UMA-0406` | A pushed claim_token named nobody: not the ID Token format, not an ID Token of this realm or a declared assertion issuer, not audienced to the client, or naming nobody of this realm. The policy answers need_info (#1194). | none — the request goes on with nobody known |
+| `STS-UMA-0407` | The UMA claims interaction endpoint was given a ticket that is unknown, expired or ended (#1194). | a redirect to the claims_redirect_uri with authorization_state=not_authorized |
+| `STS-UMA-0408` | A resource owner answered a UMA request that is not waiting for them (#1194). | HTTP 400 on the account API |
+| `STS-UMA-0409` | The UMA claims interaction endpoint was given a ticket that another client presented (#1194). | a redirect to the claims_redirect_uri with authorization_state=not_authorized |
+| `STS-UMA-0500` | An /admin-api UMA action threw (#1195). | HTTP 500 on the management API |
+| `STS-UMA-0501` | A UMA console action was not one of the nine (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0502` | A UMA console action named an application this realm does not hold (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0503` | A UMA console action's write to an application entry was refused by the application register (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0504` | A UMA console action named a resource that is not registered (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0505` | A UMA console action named an RPT that is not live (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0506` | A UMA owner action named an application that does not own resources (umaOwnsResources) (#1195). | HTTP 400 on the management API |
+| `STS-UMA-0507` | A UMA owner action on an application's document was refused without a code of its own (#1195). | HTTP 400 on the management API |
 
 ## STS-ADMIN
 
@@ -4944,15 +5200,16 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0890` | The token register could not be read from the store for Monitoring → Tokens; the list drawn is what the answering process holds, and the answer says so (`coverage.unread`) (#820). | logged; the page answers |
 | `STS-ADMIN-0895` | The token holders that are clients could not be read from the store's `client` index for the user counts (Monitoring → Metrics, the dashboard); the clients counted are the holders this process holds (#820). | logged; the page answers |
 | `STS-ADMIN-0896` | Setting or clearing a group's mail address was refused by the directory; the refusal carries the directory's own code. | HTTP 400 |
-| `STS-ADMIN-0897` | Storing a certificate on a person's entry was refused: what was given is not one PEM or base64 DER X.509 certificate (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0897` | Storing a certificate on a person's or an application's entry was refused: what was given is not one PEM or base64 DER X.509 certificate (#1061, #1227). | HTTP 400 (API) or a refusal on the person's or the application's page |
 | `STS-ADMIN-0898` | Storing or removing a certificate was refused: the person named has no entry in this realm, and none is created (#1061). | HTTP 400 (API) or a refusal on the person's page |
-| `STS-ADMIN-0899` | Storing a certificate on a person's entry was refused: the same certificate is already stored on another entry of the realm, and a certificate stored on two entries names nobody (#1061). | HTTP 400 (API) or a refusal on the person's page |
-| `STS-ADMIN-0900` | Removing a stored certificate was refused: the person's entry stores no certificate with that SHA-256 (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0899` | Storing a certificate on a person's or an application's entry was refused: the same certificate is already stored on another entry of the realm, and a certificate stored on two entries names nobody (#1061, #1227). | HTTP 400 (API) or a refusal on the person's or the application's page |
+| `STS-ADMIN-0900` | Removing a stored certificate was refused: the person's or the application's entry stores no certificate with that SHA-256 (#1061, #1227). | HTTP 400 (API) or a refusal on the person's or the application's page |
 | `STS-ADMIN-0901` | Issuing a person or an application a message-signing certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority) (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0902` | A message-signing certificate's file password was too short, too long, or not the same twice (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0903` | Revoking a person's or an application's message-signing certificate was refused with no more specific code (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0904` | A message-signing certificate action named an application the registry does not hold (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0905` | A message-signing certificate action named a person with no entry in this realm, and none is created (#521). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0906` | Storing, removing or listing a certificate on an application's entry was refused: the registry holds no application by that identifier, and none is created (#1227). | HTTP 400 (API) or a refusal on the application's page |
 
 ## STS-API
 
@@ -5519,6 +5776,8 @@ Raised from: report/.
 | `STS-REPORT-0051` | A stored report has a piece that is missing or will not open under the keys this process holds, its piece marker cannot be read, or its download did not match its digest: refused as gone before the answer began, or the response was cut part-way rather than completed (#1045). | result_expired (HTTP 410) before the answer; otherwise none (the connection is closed) |
 | `STS-REPORT-0052` | A report build file was left in the staging directory: one that could not be removed when its job ended, or a leftover the report.build-cleanup job removed (or could not) because no live process held it (#1045). | none (a warning) |
 | `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
+| `STS-REPORT-0054` | A query on an AuthZEN search source (authzenSubjects, authzenResources, authzenActions) does not give every input the search is asked with as an eq filter of the top-level "and", so it was refused rather than run (#1176). | invalid_query (the job fails) |
+| `STS-REPORT-0055` | An AuthZEN search source could not be asked: the search APIs are off in the realm (authzen.searchEnabled), or the report's owner is not a person of the realm it runs in, and a search runs as its owner (#1176). | unavailable or forbidden (the job fails) |
 
 ## Adding a code
 

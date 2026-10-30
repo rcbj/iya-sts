@@ -38,6 +38,11 @@
 //      a person may decline: sign in, and the post-login activity asks you
 //      to register a post-quantum passkey. The one link is the portal's path;
 //      it carries no credential (`common/post_login_activities.ts`).
+//   7. **AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS** (#1180), a
+//      notification a person may decline, waiting on
+//      /portal/access-requests — and, for an emergency access the policy
+//      allowed and granted at once, a security notice nobody may decline,
+//      asking for the review after use (`authzen/authzen_access_request.ts`).
 //
 // A LIBRARY (rule 3). Its requires of the credential store and the account
 // signals are LAZY, at the moment of use: `ssf/account_signals.ts` calls
@@ -926,6 +931,114 @@ class MailUses {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // 8. A UMA 2.0 REQUEST WAITING FOR ITS RESOURCE OWNER (#1194): an "ask me
+  // each time" share was matched, and the request waits on /portal/shared.
+  // Never throws, for `accessRequested()`'s reason.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells a resource owner that a UMA request waits for their approval.
+   *
+   * @param username - the owner
+   * @param facts - `requester`, `client`, `resource`, `scopes`,
+   *   `expiresMinutes`, `dedupKey`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  umaApprovalRequested(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.umaApprovalRequested(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.umaApprovalRequested(). Nobody, or no " +
+                  "transport.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'uma-approval',
+        values: { username: username, requester: String(f.requester || ''),
+                  client: String(f.client || ''),
+                  resource: String(f.resource || ''),
+                  scopes: String(f.scopes || ''),
+                  expiresMinutes: String(f.expiresMinutes || '') },
+        links: { link: '/portal/shared' },
+        dedupKey: String(f.dedupKey || ('uma-approval:' + username)),
+        via: 'a UMA request', actor: String(f.client || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.umaApprovalRequested(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0180') + 'mail: the UMA approval ' +
+               'notice for ' + username + ' in the "' + realms.currentId() +
+               '" realm could not be queued: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.umaApprovalRequested().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // 7. AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS (#1180): to the
+  // address on the approver's own entry, never one a request names; the
+  // link is the portal page, which signs nobody in. The dedup key names the
+  // task and the approver, so a request mailed again inside
+  // `mail.dedupWindowS` is queued once. Never throws.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells an approver an AuthZEN access request waits for them, or — for
+   * an emergency access already granted — asks for their review.
+   *
+   * @param username - the approver
+   * @param facts - `requester`, `subject`, `action`, `resource`,
+   *   `application` (data, from the denied tuple), `emergency`,
+   *   `justification`, `expiresMinutes`, `dedupKey`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  authzenAccessRequested(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.authzenAccessRequested(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.authzenAccessRequested(). Nobody, or " +
+                  "no transport.");
+        return out;
+      }
+      const values: Json = { username: username,
+                             requester: String(f.requester || ''),
+                             subject: String(f.subject || ''),
+                             action: String(f.action || ''),
+                             resource: String(f.resource || ''),
+                             application: String(f.application || '') };
+      if (f.emergency) {
+        values.justification = String(f.justification || '');
+      } else {
+        values.expiresMinutes = String(f.expiresMinutes || '');
+      }
+      out = mail.send({
+        username: username,
+        template: f.emergency ? 'authzen-emergency-access'
+                              : 'authzen-access-request',
+        values: values,
+        links: { link: '/portal/access-requests' },
+        dedupKey: String(f.dedupKey || ('authzen-access-request:' +
+                                        username)),
+        via: 'an AuthZEN access request', actor: String(f.requester || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.authzenAccessRequested(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHZEN-0093') + 'mail: the AuthZEN ' +
+               'access request notice for ' + username + ' in the "' +
+               realms.currentId() + '" realm could not be queued: ' +
+               ((e && e.message) || e));
+      out = { ok: false, skipped: 'threw' };
+    }
+    log.debug("Leaving MailUses.authzenAccessRequested().");
+    return out;
+  }
+
   // An account was disabled (`common/account_state.ts`), by `by`.
   /**
    * Sends the account-disabled notice.
@@ -1036,5 +1149,6 @@ export = {
   sessionsEnded: slot.forward('sessionsEnded'),
   addressChanged: slot.forward('addressChanged'),
   accessRequested: slot.forward('accessRequested'),
+  authzenAccessRequested: slot.forward('authzenAccessRequested'),
   postLoginReminder: slot.forward('postLoginReminder')
 };

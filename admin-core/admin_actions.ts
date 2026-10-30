@@ -598,13 +598,18 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'revoke-tls-client-certificate',
                              'issue-signing-certificate',
                              'revoke-signing-certificate',
+                             'add-certificate', 'remove-certificate',
                              'revoke-registration', 'refresh-metadata',
                              'load-resource-metadata', 'generate-did-key',
                              'sign-domain-linkage', 'set-custom-claim',
                              'remove-custom-claim', 'set-claim-attributes',
                              'set-claim-selections',
                              'inherit-claim-attributes', 'set-access-type',
-                             'remove-access-type', 'set-permission-claims',
+                             'remove-access-type', 'set-access-type-row',
+                             'remove-access-type-row', 'set-not-for-policy',
+                             'fga-enable', 'fga-disable',
+                             'fga-create-policy', 'fga-reset-policy',
+                             'set-permission-claims',
                              'clear-permission-claims', 'export-ldif',
                              'import-ldif', 'forget', 'add-owner',
                              'remove-owner'];
@@ -2522,6 +2527,19 @@ class AdminActions {
   //
   // Each says so over Shared Signals, as an issued certificate does: a CAEP
   // credential-change of type x509.
+  //
+  // AN APPLICATION'S HALF (#1227, 2026-10-30). The directory and every door
+  // already took a certificate stored on an APPLICATION's entry as that
+  // application (`ldap_server.js`'s `changeStoredCertificate('application',
+  // …)`, `{ stored: true }`), but the only door that wrote one was the
+  // person's. `POST /admin-api/applications/add-certificate` and
+  // `remove-certificate`, the Stored certificates block of the application
+  // page's Credentials tab, and `credentials.stored` on
+  // `GET /admin-api/applications?application=` are the same acts here, with
+  // the same refusals (0897, 0899, 0900) — an application the registry does
+  // not hold is STS-ADMIN-0906, since 0898 says person — and the CAEP
+  // credential-change goes under the APPLICATION's subject (#221 P5), which
+  // `accountSignals` reads off `application` and mails nobody about.
   // ---------------------------------------------------------------------------
   /**
    * The certificates stored on a person's entry in `userCertificate`, each
@@ -2539,24 +2557,61 @@ class AdminActions {
       return this.refused('STS-ADMIN-0518', { ok: false,
         errors: ['Name the person in `user`.'] });
     }
+    log.debug("Leaving AdminActions.storedCertificatesOf().");
+    return this.storedCertificatesFor('person', name);
+  }
+
+  /**
+   * The certificates stored on an application's entry in `userCertificate`
+   * (#1227), in `storedCertificatesOf()`'s shape with `application` for
+   * `user`.
+   *
+   * @param identifier - the application, as the registry holds it
+   * @returns `{ ok: true, application, dn, certificates }`, or a refusal
+   */
+  applicationStoredCertificatesOf(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.applicationStoredCertificatesOf().");
+    const name = String(identifier || '').trim();
+    if (!name) {
+      log.debug("Leaving AdminActions.applicationStoredCertificatesOf(). " +
+                "Nothing named.");
+      return this.refused('STS-ADMIN-0529', { ok: false,
+        errors: ['Name the application in `application`.'] });
+    }
+    log.debug("Leaving AdminActions.applicationStoredCertificatesOf().");
+    return this.storedCertificatesFor('application', name);
+  }
+
+  // The two lists above, read off the entry of either kind.
+  private storedCertificatesFor(kind, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.storedCertificatesFor(). " + kind);
+    const application = kind === 'application';
     const held = require('../ldap/ldap_server')
-      .storedCertificatesOf('person', name);
+      .storedCertificatesOf(kind, name);
     if (!held) {
-      log.debug("Leaving AdminActions.storedCertificatesOf(). No entry.");
-      return this.refused('STS-ADMIN-0898', { ok: false,
-        errors: ['There is no person called "' + name + '" here.'] });
+      log.debug("Leaving AdminActions.storedCertificatesFor(). No entry.");
+      return this.refused(application ? 'STS-ADMIN-0906' : 'STS-ADMIN-0898',
+        { ok: false,
+          errors: ['There is no ' + (application ? 'application' : 'person') +
+                   ' called "' + name + '" here.'] });
     }
     const self = this;
     const rows = held.certificates.map(function (one) {
       return self.describeStoredCertificate(one.der, one.sha256);
     });
-    log.debug("Leaving AdminActions.storedCertificatesOf(). " + rows.length +
-              ".");
-    return { ok: true, user: name, dn: held.dn, certificates: rows,
-             rule: 'A certificate from an outside certificate authority ' +
-                   'signs this person in only while it is stored here, ' +
-                   'byte for byte, and on no other entry of the realm. A ' +
-                   'renewed certificate is stored again.' };
+    log.debug("Leaving AdminActions.storedCertificatesFor(). " +
+              rows.length + ".");
+    return Object.assign(application ? { ok: true, application: name }
+                                     : { ok: true, user: name },
+      { dn: held.dn, certificates: rows,
+        rule: 'A certificate from an outside certificate authority ' +
+              (application ? 'authenticates this application'
+                           : 'signs this person in') +
+              ' only while it is stored here, byte for byte, and on no ' +
+              'other entry of the realm. A renewed certificate is stored ' +
+              'again.' });
   }
 
   // One stored certificate, described from its DER.
@@ -2615,21 +2670,33 @@ class AdminActions {
     return der;
   }
 
-  private storedCertificateAction(action, body, ctx) {
+  // Stores a certificate on a person's entry, or on an application's
+  // (#1227) when `kind` is 'application' and `id` its identifier as the
+  // registry holds it; a person is read off `body.user`.
+  private storedCertificateAction(action, body, ctx, kind?, id?) {
     const { log, auditLog, accountSignals } = this.deps;
     log.debug("Entering AdminActions.storedCertificateAction(). " + action);
-    const who = String(body.user || body.username || '').trim();
+    const application = kind === 'application';
+    const noun = application ? 'application' : 'person';
+    const who = application ? String(id || '').trim()
+                            : String(body.user || body.username || '').trim();
     if (!who) {
       log.debug("Leaving AdminActions.storedCertificateAction(). Nobody.");
-      return this.refused('STS-ADMIN-0518', { ok: false,
-        errors: ['Name the person in `user`.'] });
+      return application
+        ? this.refused('STS-ADMIN-0529', { ok: false,
+            errors: ['Name the application in `application`.'] })
+        : this.refused('STS-ADMIN-0518', { ok: false,
+            errors: ['Name the person in `user`.'] });
     }
+    // The refusal for an entry that is not there, by kind: 0898 names a
+    // person, so an application has a code of its own (#1227).
+    const noEntry = application ? 'STS-ADMIN-0906' : 'STS-ADMIN-0898';
     const ldap = require('../ldap/ldap_server');
-    const before = ldap.storedCertificatesOf('person', who);
+    const before = ldap.storedCertificatesOf(noun, who);
     if (!before) {
       log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
-      return this.refused('STS-ADMIN-0898', { ok: false,
-        errors: ['There is no person called "' + who + '" here, and ' +
+      return this.refused(noEntry, { ok: false,
+        errors: ['There is no ' + noun + ' called "' + who + '" here, and ' +
                  'storing a certificate creates nobody.'] });
     }
     let der: any = null;
@@ -2673,18 +2740,22 @@ class AdminActions {
                   "held.");
         return this.refused('STS-ADMIN-0900', { ok: false,
           errors: ['The entry of "' + who + '" stores no certificate with ' +
-                   'the SHA-256 "' + sha256 + '". GET ' +
-                   '/admin-api/users/certificates lists what it stores.'] });
+                   'the SHA-256 "' + sha256 + '". ' + (application
+                     ? 'GET /admin-api/applications?application= lists ' +
+                       'what it stores, under credentials.stored.'
+                     : 'GET /admin-api/users/certificates lists what it ' +
+                       'stores.')] });
       }
     }
-    const done = ldap.changeStoredCertificate('person', who,
+    const done = ldap.changeStoredCertificate(noun, who,
       action === 'add-certificate' ? { add: der } : { remove: sha256 });
     if (!done || !done.ok) {
       log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
-      return this.refused('STS-ADMIN-0898', { ok: false,
-        errors: ['There is no person called "' + who + '" here.'] });
+      return this.refused(noEntry, { ok: false,
+        errors: ['There is no ' + noun + ' called "' + who + '" here.'] });
     }
     const verb = action === 'add-certificate' ? 'stored' : 'removed';
+    const label = application ? 'the application ' + who : who;
     auditLog.record({
       category: 'authentication',
       action: action === 'add-certificate' ? 'certificate.stored'
@@ -2692,24 +2763,36 @@ class AdminActions {
       actor: ctx.actor, target: who, outcome: 'success',
       summary: 'a certificate (SHA-256 ' + sha256 + ') was ' + verb +
                (action === 'add-certificate' ? ' on ' : ' from ') +
-               'the entry of ' + who,
-      detail: { username: who, dn: done.dn, sha256: sha256, via: ctx.via,
-                changed: done.changed }
+               'the entry of ' + label,
+      detail: Object.assign(application ? { application: who }
+                                        : { username: who },
+        { dn: done.dn, sha256: sha256, via: ctx.via,
+          changed: done.changed })
     });
     if (done.changed) {
-      accountSignals.certificateChanged({
-        username: who, initiatingEntity: 'admin', via: ctx.via,
-        pem: '-----BEGIN CERTIFICATE-----\n' +
-          Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n')
-            .replace(/\n$/, '') + '\n-----END CERTIFICATE-----\n',
-        changeType: action === 'add-certificate' ? 'create' : 'delete',
-        friendlyName: 'stored certificate',
-        reasonAdmin: 'A certificate was ' + verb + ' for ' + who + '.',
-        reasonUser: action === 'add-certificate'
-          ? 'A certificate was stored on your account; it signs you in.'
-          : 'A certificate stored on your account was removed.' });
+      // UNDER THE APPLICATION'S OWN SUBJECT for an application (#221 P5):
+      // `application` in place of `username` is what makes the event about
+      // it, and what tells `accountSignals` there is nobody to mail.
+      accountSignals.certificateChanged(Object.assign(
+        application ? { application: who } : { username: who },
+        { initiatingEntity: 'admin', via: ctx.via,
+          pem: '-----BEGIN CERTIFICATE-----\n' +
+            Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n')
+              .replace(/\n$/, '') + '\n-----END CERTIFICATE-----\n',
+          changeType: action === 'add-certificate' ? 'create' : 'delete',
+          friendlyName: 'stored certificate',
+          reasonAdmin: 'A certificate was ' + verb + ' for ' + label + '.',
+          reasonUser: application
+            ? (action === 'add-certificate'
+              ? 'A certificate was stored on this application; it ' +
+                'authenticates the application.'
+              : 'A certificate stored on this application was removed.')
+            : (action === 'add-certificate'
+              ? 'A certificate was stored on your account; it signs you in.'
+              : 'A certificate stored on your account was removed.') }));
     }
-    const after = this.storedCertificatesOf(who);
+    const after = application ? this.applicationStoredCertificatesOf(who)
+                              : this.storedCertificatesOf(who);
     log.debug("Leaving AdminActions.storedCertificateAction(). " + verb +
               ".");
     return Object.assign({}, after, {
@@ -5948,8 +6031,11 @@ class AdminActions {
     // `requiredMembers` is the body's name for the definition's `required`:
     // a body member called `required` would collide with the JSON Schema
     // keyword the management API's request schema is written in.
+    // `notForPolicy` (#564, P5): the member paths a fine-grained policy
+    // deliberately never sees, one per line like the others.
     ['locations', 'actions', 'datatypes', 'privileges', 'requiredMembers',
-     'consentActions', 'derivableFrom', 'introspectionClaims']
+     'consentActions', 'derivableFrom', 'introspectionClaims',
+     'notForPolicy']
       .forEach(function (name: string): void {
         const values = list(name);
         if (values && values.length) {
@@ -5981,6 +6067,13 @@ class AdminActions {
     const limits = json('limits');
     if (limits !== undefined) {
       out.limits = limits;
+    }
+    // THE MAPPING'S ROWS (#564, P5): a JSON array, or its text from the
+    // declare form. Written whole here; the tab's per-row forms are
+    // `set-access-type-row` and `remove-access-type-row`.
+    const xacml = json('xacml');
+    if (xacml !== undefined) {
+      out.xacml = xacml;
     }
     log.debug("Leaving AdminActions.accessTypeDefinitionFrom().");
     return out;
@@ -6064,6 +6157,337 @@ class AdminActions {
                       'definition from the next request.' };
   }
 
+  // -------------------------------------------------------------------------
+  // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5), from the Access types
+  // tab's XACML mapping sub-tabs: `set-access-type-row` adds the row for a
+  // member path or replaces the one already there, `remove-access-type-row`
+  // takes it off, and `set-not-for-policy` replaces the list of paths the
+  // policy deliberately never sees. AuthZEN's catalogue (`set-attribute`,
+  // `remove-attribute` on `authzen_admin.ts`) is the model: a row keyed by
+  // what it maps, replaced rather than doubled.
+  //
+  // **THE SAME DOOR AS `set-access-type`.** Each rewrites the one
+  // `oauthAuthorizationDetailsType` value of the type through
+  // `updateApplication()`, which holds the grammar (`STS-REG-0112`, the
+  // reserved identifiers among it) and, on an application that enforces
+  // fine-grained authorization, the coverage (`STS-FGA-0019`): a remove that
+  // would leave a member uncovered there is refused with the paths named.
+  //
+  // **A ROW IS READ BEFORE IT IS WRITTEN**, by `fga_map.ts`'s `parseRow()`
+  // — the grammar's own reader, not a copy — so a refusal can say which
+  // FIELD of the form was wrong (`field`), and the console draws the
+  // sentence beside that box rather than at the top of the page.
+  // -------------------------------------------------------------------------
+  /**
+   * The field of the row form a mapping problem is about, read off the
+   * grammar's sentence (`row.attributeId: …`, `xacml[2].category must…`).
+   *
+   * @param problem - the grammar's sentence
+   * @returns `path`, `attributeId`, `category`, `dataType`,
+   *   `multiplicity`, `notForPolicy`, or ''
+   */
+  private mappingFieldOf(problem: string): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.mappingFieldOf().");
+    const text = String(problem || '');
+    const row = /(?:^row|\])\.(path|attributeId|category|dataType|multiplicity|description)\b/
+      .exec(text);
+    const field = row ? row[1]
+      : (/notForPolicy/.test(text) ? 'notForPolicy' : '');
+    log.debug("Leaving AdminActions.mappingFieldOf(). " + (field || '-'));
+    return field;
+  }
+
+  // The type's definition as an object to change: the stored JSON, or a
+  // bare type name as `{ type }`. A value that is neither cannot be held,
+  // since every write door refuses one; it is read as its name.
+  private definitionObjectOf(stored: string): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.definitionObjectOf().");
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(String(stored));
+    } catch (e) {
+      log.debug("Caught in AdminActions.definitionObjectOf(): " +
+                ((e && e.message) || e));
+      // A bare type name, which the grammar allows and JSON does not.
+      parsed = null;
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      log.debug("Leaving AdminActions.definitionObjectOf(). An object.");
+      return parsed;
+    }
+    log.debug("Leaving AdminActions.definitionObjectOf(). A name.");
+    return { type: typeof parsed === 'string' ? parsed : String(stored) };
+  }
+
+  // Replaces the values `mine` with `value` on the entry, putting them back
+  // when the new one is refused — `set-access-type`'s order, so a refused
+  // write never leaves the type undeclared.
+  private replaceAccessTypeValue(identifier: string, mine: string[],
+                                 value: string): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.replaceAccessTypeValue().");
+    for (let j = 0; j < mine.length; j++) {
+      applications.updateApplication(identifier, {
+        mode: 'remove', attribute: 'oauthAuthorizationDetailsType',
+        value: mine[j] });
+    }
+    const added = applications.updateApplication(identifier, {
+      mode: 'add', attribute: 'oauthAuthorizationDetailsType', value: value });
+    if (!added.ok) {
+      mine.forEach(function (old: string): void {
+        applications.updateApplication(identifier, {
+          mode: 'add', attribute: 'oauthAuthorizationDetailsType',
+          value: old });
+      });
+      log.debug("Leaving AdminActions.replaceAccessTypeValue(). Refused.");
+      return added;
+    }
+    log.debug("Leaving AdminActions.replaceAccessTypeValue().");
+    return added;
+  }
+
+  // The `set-access-type-row`, `remove-access-type-row` and
+  // `set-not-for-policy` actions (see the switch).
+  private accessTypeMappingAction(action: string, identifier: string,
+                                  body: any): any {
+    const self = this;
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.accessTypeMappingAction(). " + action);
+    // Lazy, as every reach from here into a family's library is: `fga_map`
+    // is pure and loads nothing, but this file may be required at 18.
+    const fgaMap = require('../xacml/fga_map');
+    const entry = applications.get(identifier);
+    if (!entry) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). No entry.");
+      return this.refused('STS-REG-0295', { ok: false,
+        errors: ['There is no application called "' + identifier + '".'] });
+    }
+    const type = String(body.type || '').trim();
+    const held = [].concat((entry.fields || {}).oauthAuthorizationDetailsType ||
+                           []).map(String);
+    const mine = held.filter(function (value: string): boolean {
+      return applications.authorizationDetailsTypeOf(value).type === type;
+    });
+    if (!mine.length) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). Not held.");
+      return this.refused('STS-REG-0295', { ok: false, type: type,
+        errors: ['The application "' + identifier + '" declares no ' +
+                 'access type "' + type.slice(0, 120) + '".'] });
+    }
+    const definition = this.definitionObjectOf(mine[0]);
+    const rows = Array.isArray(definition.xacml) ? definition.xacml : [];
+    const text = function (name: string): string {
+      log.debug("Entering text().");
+      log.debug("Leaving text().");
+      return body[name] === undefined || body[name] === null ? ''
+        : String(body[name]).trim();
+    };
+    let said = '';
+    if (action === 'set-access-type-row') {
+      const row: any = { path: text('path'), attributeId: text('attributeId') };
+      ['category', 'dataType', 'multiplicity', 'description']
+        .forEach(function (name: string): void {
+          if (text(name)) {
+            row[name] = text(name);
+          }
+        });
+      const checked = fgaMap.FgaMap.parseRow(row, 'row');
+      if (!checked.row) {
+        log.debug("Leaving AdminActions.accessTypeMappingAction(). The " +
+                  "row does not read.");
+        return this.refused('STS-FGA-0023', { ok: false, type: type,
+          field: this.mappingFieldOf(checked.problem),
+          errors: ['The row was not saved: ' + checked.problem + '.'] });
+      }
+      const path = checked.row.path;
+      row.path = path;
+      const kept = rows.filter(function (one: any): boolean {
+        return !(one && String(one.path || '').trim() === path);
+      });
+      said = (kept.length < rows.length ? 'Replaced' : 'Added') +
+        ' the row mapping ' + path + ' to ' + checked.row.attributeId;
+      definition.xacml = kept.concat([row]);
+    } else if (action === 'remove-access-type-row') {
+      const path = text('path');
+      const kept = rows.filter(function (one: any): boolean {
+        return !(one && String(one.path || '').trim() === path);
+      });
+      if (kept.length === rows.length) {
+        log.debug("Leaving AdminActions.accessTypeMappingAction(). No " +
+                  "such row.");
+        return this.refused('STS-FGA-0023', { ok: false, type: type,
+          field: 'path',
+          errors: ['The access type "' + type + '" of "' + identifier +
+                   '" has no row mapping "' + path.slice(0, 120) + '".'] });
+      }
+      said = 'Took off the row mapping ' + path;
+      if (kept.length) {
+        definition.xacml = kept;
+      } else {
+        delete definition.xacml;
+      }
+    } else {
+      const given = body.notForPolicy;
+      const list = (Array.isArray(given) ? given
+        : (given === undefined || given === null ? []
+          : String(given).split(/[\r\n,]+/)))
+        .map(function (one: any): string { return String(one).trim(); })
+        .filter(function (one: string, n: number, all: string[]): boolean {
+          return !!one && all.indexOf(one) === n;
+        });
+      said = list.length
+        ? 'notForPolicy is now ' + list.join(', ')
+        : 'notForPolicy is now empty';
+      if (list.length) {
+        definition.notForPolicy = list;
+      } else {
+        delete definition.notForPolicy;
+      }
+    }
+    const value = JSON.stringify(definition);
+    const parsed = applications.authorizationDetailsTypeOf(value);
+    if (parsed.problem) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). The " +
+                "definition does not read: " + parsed.problem);
+      return this.refused('STS-FGA-0023', { ok: false, type: type,
+        field: this.mappingFieldOf(parsed.problem),
+        errors: ['The mapping was not saved: ' + parsed.problem + '.'] });
+    }
+    const written = this.replaceAccessTypeValue(identifier, mine, value);
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). Write " +
+                "refused.");
+      // The coverage refusal (STS-FGA-0019) keeps its own code; its
+      // sentence names the paths, and the field is the one the act was
+      // about.
+      written.type = type;
+      written.field = action === 'set-not-for-policy' ? 'notForPolicy'
+                                                     : 'path';
+      return self.refusedBy('STS-FGA-0023', written);
+    }
+    log.debug("Leaving AdminActions.accessTypeMappingAction(). Saved.");
+    return { ok: true, application: identifier, type: type,
+             definition: definition,
+             message: said + ' on the access type "' + type + '" of "' +
+                      identifier + '". A fine-grained policy reads its ' +
+                      'details through this mapping from the next ' +
+                      'request.' };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FINE-GRAINED AUTHORIZATION TAB'S FOUR ACTS (#564, P5): the switch
+  // (`fga-enable`, `fga-disable`), *Create the default policy*
+  // (`fga-create-policy`) and *Reset to the default policy*
+  // (`fga-reset-policy`). Each is one call into `xacml/fga_policies.ts`,
+  // which owns the policy and its lifecycle and holds every refusal —
+  // enable's uncovered types (STS-FGA-0018, naming the paths), a disabled
+  // or unparseable policy (0006, 0007), an unconfirmed reset (0020) — so
+  // this layer only turns its `why` into the console's `errors` and keeps
+  // its code. The audit rows are `fga_policies.ts`'s and the registry's
+  // (`xacml.policy.write`, the entry's modify), as they are for the
+  // lifecycle P1 wrote.
+  //
+  // Lazy for the reason `xacml_admin.ts` gives: the module is built by the
+  // composition root at 23c, after this file's 18.
+  // -------------------------------------------------------------------------
+  private fgaAction(action: string, identifier: string, body: any): any {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.fgaAction(). " + action);
+    const fga = require('../xacml/fga_policies');
+    const actor = String(body.actor || '');
+    const confirmed = body.confirm === true || body.confirm === 'true' ||
+                      body.confirm === 'on';
+    // `via` IS `api`: since #446 the console is a client of `/admin-api`,
+    // and this is the one door both arrive through.
+    const result = action === 'fga-enable'
+      ? fga.enable(identifier, { actor: actor, via: 'api' })
+      : (action === 'fga-disable'
+        ? fga.disable(identifier, { actor: actor })
+        : (action === 'fga-create-policy'
+          ? fga.ensure(identifier, { actor: actor })
+          : fga.reset(identifier, { actor: actor, confirm: confirmed })));
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.fgaAction(). Refused: " +
+                result.failure);
+      return this.refused(errorCodes.codeOf(result) || 'STS-FGA-0012', {
+        ok: false, application: identifier,
+        failure: String(result.failure || ''),
+        errors: [String(result.why || 'Refused.')] });
+    }
+    const policy = String(result.policy || '');
+    let message;
+    if (action === 'fga-enable') {
+      message = 'Fine-grained authorization is enforced on "' + identifier +
+        '": every authorization detail of its types, and every AuthZEN ' +
+        'evaluation about it, is decided by its policy "' + policy +
+        '" from the next request.' + AdminActions.pepGrantSentence(
+          result.peps);
+    } else if (action === 'fga-disable') {
+      message = 'Fine-grained authorization is no longer enforced on "' +
+        identifier + '". Its policy is kept as it is.';
+    } else if (action === 'fga-create-policy') {
+      message = result.created
+        ? 'Created "' + policy + '", the fine-grained authorization ' +
+          'policy of "' + identifier + '", from the fga-default template.'
+        : '"' + identifier + '" already has its policy "' + policy + '".';
+    } else {
+      message = 'The policy "' + policy + '" of "' + identifier + '" was ' +
+        'reset to the fga-default template: one rule permitting every ' +
+        'detail.' + (result.enforced
+          ? ' It is enforced, so every detail of its types is permitted ' +
+            'until that rule is narrowed.' : '');
+    }
+    log.debug("Leaving AdminActions.fgaAction().");
+    return { ok: true, application: identifier, policy: policy,
+             enforced: result.enforced === undefined ? undefined
+                                                     : !!result.enforced,
+             created: result.created === undefined ? undefined
+                                                   : !!result.created,
+             // WHAT THE ENABLE GRANTED THE REALM'S REMOTE PEPS (#1210):
+             // `granted`, `held` and `failed`, each holder by name.
+             peps: result.peps === undefined ? undefined : result.peps,
+             message: message };
+  }
+
+  // THE GRANT IN ONE SENTENCE (#1210), English as every message here is:
+  // who was granted, who already held it, and who could not be, with why.
+  static pepGrantSentence(peps: any): string {
+    helpers.log.debug("Entering AdminActions.pepGrantSentence().");
+    if (!peps) {
+      helpers.log.debug("Leaving AdminActions.pepGrantSentence(). " +
+                        "No grant.");
+      return '';
+    }
+    const names = function (list: any[]): string {
+      helpers.log.debug("Entering names().");
+      helpers.log.debug("Leaving names().");
+      return (list || []).map(function (one: any) {
+        return String(one.name || one.dn || '?');
+      }).join(', ');
+    };
+    const parts: string[] = [];
+    if ((peps.granted || []).length) {
+      parts.push('Granted the remote PEP(s) ' + names(peps.granted) +
+                 ' membership of ' + String(peps.authzenGroup || '') +
+                 ' and this application in their AuthZEN scope.');
+    }
+    if ((peps.held || []).length) {
+      parts.push('Already held: ' + names(peps.held) + '.');
+    }
+    (peps.failed || []).forEach(function (one: any) {
+      parts.push('Not granted: ' + String(one.name || '?') + ' (' +
+                 String(one.code || '') + ') — ' + String(one.why || ''));
+    });
+    if (!parts.length) {
+      parts.push('No remote PEP holds REMOTE_PEPS in this realm (group "' +
+                 String(peps.group || '') + '"), so none was granted.');
+    }
+    helpers.log.debug("Leaving AdminActions.pepGrantSentence().");
+    return ' ' + parts.join(' ');
+  }
+
   /**
    * Performs a `/admin/applications` action: create, edit attributes, confirm
    * or discard an observed address, manage secrets, software statements and TLS
@@ -6095,12 +6519,16 @@ class AdminActions {
                       'revoke-tls-client-certificate',
                       'issue-signing-certificate',
                       'revoke-signing-certificate',
+                      'add-certificate', 'remove-certificate',
                       'revoke-registration', 'generate-did-key',
                       'sign-domain-linkage', 'set-custom-claim',
                       'remove-custom-claim', 'set-claim-attributes',
                       'set-claim-selections',
                       'inherit-claim-attributes', 'set-access-type',
-                      'remove-access-type', 'set-permission-claims',
+                      'remove-access-type', 'set-access-type-row',
+                      'remove-access-type-row', 'set-not-for-policy',
+                      'fga-enable', 'fga-disable', 'fga-create-policy',
+                      'fga-reset-policy', 'set-permission-claims',
                       'clear-permission-claims', 'export-ldif', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
@@ -6748,6 +7176,26 @@ class AdminActions {
       return result;
     }
 
+    // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5): the Access types tab's
+    // XACML mapping sub-tabs, through the same door.
+    if (action === 'set-access-type-row' ||
+        action === 'remove-access-type-row' ||
+        action === 'set-not-for-policy') {
+      const result = this.accessTypeMappingAction(action, identifier, body);
+      log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
+    }
+
+    // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5).
+    if (action === 'fga-enable' || action === 'fga-disable' ||
+        action === 'fga-create-policy' || action === 'fga-reset-policy') {
+      const result = this.fgaAction(action, identifier, body);
+      log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
+    }
+
     if (action === 'generate-did-key') {
       const entry = applications.get(identifier);
       if (!entry) {
@@ -7212,6 +7660,29 @@ class AdminActions {
                 "message-signing certificate.");
       return this.signingCertificateAction(action, 'application',
         String(target.identifier), body);
+    }
+
+    // A STORED CERTIFICATE ON THE APPLICATION'S ENTRY (#1227): the person's
+    // `add-certificate` and `remove-certificate` (#1061), on the entry a
+    // certificate from an outside authority is to authenticate as. The
+    // registry is asked first, so an identifier it does not hold is
+    // STS-ADMIN-0906 and the entry is never created.
+    if (action === 'add-certificate' || action === 'remove-certificate') {
+      const target = applications.get(identifier);
+      if (!target) {
+        log.debug("Leaving AdminActions.applicationsAction(). No such " +
+                  "application.");
+        return this.refused('STS-ADMIN-0906', { ok: false, errors: ['There ' +
+            'is no application called "' + identifier + '" here, and ' +
+            'storing a certificate creates nothing.'] });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). A stored " +
+                "certificate.");
+      const asked = context || {};
+      return this.storedCertificateAction(action, body,
+        { actor: String(asked.actor || body.actor || ''),
+          via: String(asked.via || 'console') },
+        'application', String(target.identifier));
     }
 
     if (action === 'revoke-registration') {
@@ -11282,6 +11753,8 @@ export = {
   USERS_ACTIONS: USERS_ACTIONS,
   usersAction: slot.forward('usersAction'),
   storedCertificatesOf: slot.forward('storedCertificatesOf'),
+  applicationStoredCertificatesOf:
+    slot.forward('applicationStoredCertificatesOf'),
   signingCertificatesOf: slot.forward('signingCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,

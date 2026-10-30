@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "Une instance de client GNAP, ou un serveur de ressources GNAP, ou les deux : une partie qui prouve la possession d’une clé auprès de /gnap (RFC 9635) ou de l’API destinée aux serveurs de ressources (RFC 9767). Sa clé est gnapKey (un objet de clé publique) ou gnapKeyReference avec un gnapSymmetricKey scellé ; ses URI de fin sont des adresses de retour comme les autres ; un serveur de ressources porte les emplacements pour lesquels il répond et, une fois qu’il a enregistré un ensemble de ressources, la clé racine de macaron avec laquelle il vérifie."
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "Un serveur de ressources User-Managed Access 2.0 : un client OAuth qui obtient un jeton d’API de protection pour /uma, enregistre les ressources qu’il détient pour un propriétaire de ressources, demande des tickets de permission pour elles et est l’audience des jetons de partie requérante émis pour elles. Déclarer la famille est ce qui l’admet ; umaOwnsResources permet à l’application elle-même d’être propriétaire."
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "Les URI de redirection enregistrés lors d’un enregistrement, et tout redirect_uri que ce service a ACCEPTÉ pour l’application à côté. Ce ne sont pas la même affirmation et le registre ne les fusionne pas silencieusement — voir appRedirectUriObserved."
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "Où /uma/claims peut renvoyer la partie requérante vers ce client après avoir recueilli les claims (UMA 2.0 Grant section 3.3.2, claims_redirect_uri). Comparé à l’identique ; un claims_redirect_uri absent de cette liste est signalé à la personne et n’est jamais la cible d’une redirection."
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -706,6 +718,18 @@
   "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
     "en": "5a0acf9625882942",
     "text": "RFC 9396 section 10 `authorization_details_types` : les SEULS types authorization_details que ce client peut utiliser, un par valeur. VIDE SIGNIFIE tout type que ce serveur d’autorisation prend en charge."
+  },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "UNE LIGNE DU CATALOGUE D’ATTRIBUTS AUTHZEN (#563), sur l’objet de ressource sts-authzen-api : un objet JSON {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}. `object` vaut subject, resource, action ou context ; `property` est le nom du membre, ou un chemin pointé dans un objet imbriqué ; `attributeId` l’attribut XACML sous lequel il est envoyé ; `category` (par défaut celle de l’objet lui-même), `dataType` (par défaut string) et `multiplicity` (single ou bag). Une propriété qu’aucune ligne ne nomme est refusée dans tous les modes, et une ligne ne peut nommer ni les identifiants urn:sts:xacml: propres à ce service, ni subject-id, resource-id ou action-id, ni un nom d’attribut d’annuaire nu dans une catégorie de sujet."
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "PORTÉE D’APPLICATIONS AUTHZEN (#563) : les applications que ce client, appelant /access/v1 avec son propre jeton client_credentials, peut nommer dans context.application — un identifiant par valeur. L’identifiant propre du client est toujours dans la portée. Défini par un administrateur, jamais par l’appelant."
+  },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "RAPPEL (CALLBACK) D’UNE DEMANDE D’ACCÈS AUTHZEN (#1180) : une URL https que ce client, en tant que PEP AuthZEN, peut nommer comme callback.endpoint d’une demande d’accès — une par valeur, comparée exactement. Une demande qui en nomme une autre est refusée ; ce service n’appelle jamais une URL de rappel tirée d’une seule demande. Défini par un administrateur, jamais par l’appelant."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
@@ -1711,6 +1735,18 @@
     "en": "2c8a385006302f63",
     "text": "LA POLITIQUE D’AUTHENTIFICATION SOUS LAQUELLE SE CONNECTENT LES PERSONNES DE CETTE APPLICATION : `default` (ou vide), ou le nom d’une politique d’authentification nommée de ce domaine (Annuaire > Politiques). Une politique nommée contient les mécanismes de premier facteur autorisés (password, password-mfa, webauthn, spnego, wallet, federation ; si aucun n’est indiqué, tous sont autorisés) et les seconds facteurs autorisés (password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet ; si aucun n’est indiqué, ceux du domaine restent tels quels). `default` autorise tous les mécanismes qu’autorise la politique d’authentification du domaine.\n\nAPPLIQUÉE à chaque connexion par navigateur à l’application, dans les deux modes : une personne dont la session repose sur un mécanisme que la politique n’autorise pas est renvoyée se connecter de nouveau avec un mécanisme qu’elle autorise. Un seul mécanisme de premier facteur indiqué est aussi l’endroit où va la connexion (`spnego` vers /authn/spnego, `wallet` vers /authn/wallet, `federation` vers appFederationRelationship). Les seconds facteurs ne font que RESTREINDRE la politique du domaine : un second facteur qu’elle a désactivé reste désactivé ici.\n\nUn nom qu’aucune politique de ce domaine ne porte — écrit en contournant la console — n’autorise AUCUN mécanisme tant que la politique n’existe pas (STS-AUTHN-0536).\n\nIl n’est ÉCRIT PAR PERSONNE : aucun protocole ne le présente, il est donc modifiable et commence vide."
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "Le nom de l’entrée dans ou=policies de la politique d’autorisation fine que possède cette application, qui décide chaque détail d’autorisation des types qu’elle déclare dès que appFgaEnforced vaut TRUE."
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "TRUE lorsque la politique fine de cette application est appliquée. Absent ou FALSE signifie qu’elle ne l’est pas, ce qui est la valeur par défaut."
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "TRUE lorsque ce serveur de ressources UMA 2.0 peut enregistrer des ressources DONT IL EST LUI-MÊME PROPRIÉTAIRE, au moyen d’un jeton d’API de protection obtenu par client_credentials. Absent ou FALSE, la valeur par défaut, signifie qu’un PAT doit être celui d’une personne (le flux de code) et que cette personne possède ce qu’il enregistre."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, ainsi que les attributs standard owner et description."
@@ -1850,6 +1886,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "La propre <Description> du document, lorsqu’il en a une."
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "L’identifiant de l’application qui POSSÈDE cette politique, laquelle décide les détails des types authorization_details de cette application. Une telle politique n’est jamais la racine, n’est jamais atteinte par une PolicyIdReference depuis la racine et n’est jamais envoyée à un PEP distant."
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "Le moment où l’application propriétaire a été supprimée. La politique est conservée, désactivée, pour l’audit, jusqu’à ce qu’un administrateur la supprime."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

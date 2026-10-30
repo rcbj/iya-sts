@@ -169,10 +169,12 @@ every future token and assertion, and create people in the directory.
 The navigation is a grouped list down the left, and every section of it is
 **collapsed until you open it**. Click (or press Enter or Space on) a section's
 heading to open it; opening one closes whichever was open, so only one is open
-at a time. The section you opened stays open as you move between console pages
-in that tab, until you close it or open another; a reload or a new tab starts
-with everything collapsed. The section holding the page you are on is marked
-by a rule down its left even while it is collapsed. Its five sections:
+at a time. Loading a page (a reload or a new tab) opens the section that holds
+it; after that the section you opened stays open as you move between console
+pages in that tab, until you close it or open another. The section holding the
+page you are on is marked by a rule down its left even while it is collapsed.
+The [user portal](user-facing-pages.md#the-user-portal)'s column works the same
+way. Its five sections:
 
 * **Overview** — `/admin`, the one page whose job is to point at the others.
   It is a section of one on purpose: it cannot sit under a heading naming a
@@ -590,7 +592,10 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   (`STS-ADMIN-0899`), as is anything that is not one X.509 certificate
   (`STS-ADMIN-0897`). `POST /admin-api/users/add-certificate` and
   `remove-certificate`, and `GET /admin-api/users/certificates`, are the same
-  acts; each sends a CAEP `credential-change` of type `x509`.
+  acts; each sends a CAEP `credential-change` of type `x509`. An
+  application's are the **Stored certificates** block of the **Credentials**
+  section of its page, through `/admin-api/applications/add-certificate` and
+  `remove-certificate` ([Applications](applications.md#the-console-page-and-the-api)).
 * **Message-signing certificates** lists the certificates the realm's
   Message Signing Issuing CA issued the person — what they sign a WS-Trust
   request with — with **Revoke** per valid row, and a form (a label, the key
@@ -922,7 +927,11 @@ sightings. An application's **Authentication attempts** tab lists the audit
 log's attempts that name it: credentials accepted and refused, sessions
 refused, and a person's existing session presented to it for single sign-on
 (method *existing session*), which asks for no credential and was on neither
-tab before. [Applications](applications.md) documents the page,
+tab before. Its **Fine-grained authorization** tab holds the XACML policy
+the application owns for the details of its access types, with the switch
+that enforces it, and its **Access types** tab maps each type's members to
+XACML attributes; [Fine-grained authorization](fga.md#the-console-and-the-api)
+walks through both. [Applications](applications.md) documents the page,
 `/admin/applications/new`, the schema and CORS.
 
 ## Monitoring

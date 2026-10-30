@@ -67,6 +67,7 @@ import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
 import WebAccounts = require('../common/web_accounts');
 import DocLinks = require('../common/web_doc_links');
+import WebNavSections = require('../common/web_nav_sections');
 import WebAnnouncements = require('../common/web_announcements');
 
 type Json = any;
@@ -125,6 +126,11 @@ class PortalRuntime extends SpaClient {
   // WHETHER A FORM ON THE PAGE DRAWN HAS BEEN TYPED IN (#561): a switch asks
   // first while one has.
   private dirty: boolean;
+  // THE NAVIGATION SECTION THE READER HAS OPEN (#1229, the console's #750):
+  // null until the first page is drawn, which opens the section holding
+  // it; then the key they opened, or '' when they closed it. Held here and
+  // not in storage, so a new load derives it from the page again.
+  private openSection: string | null;
 
   /**
    * Makes the runtime.
@@ -140,6 +146,7 @@ class PortalRuntime extends SpaClient {
       accountKey: ACCOUNT_KEY
     });
     this.dirty = false;
+    this.openSection = null;
     this.ownerToken = '';
     this.ownerExpiresAt = 0;
     this.ownerScopes = [];
@@ -730,11 +737,14 @@ class PortalRuntime extends SpaClient {
         ctx.version));
       return;
     }
+    this.openSection = WebNavSections.initial(this.openSection,
+      PortalShell.sectionKeyOf(v.page.path));
     this.put(PortalShell.headingFor(v.page.path, this.t),
       PortalShell.frame(this.me, { active: v.page.path, query: v.query,
         message: flash.message || '', error: flash.error || '',
         cards: body, prefix: this.prefix, t: this.t,
-        accounts: this.accounts, subject: this.subject }));
+        accounts: this.accounts, subject: this.subject,
+        openSection: this.openSection }));
   }
 
   /**
@@ -1468,6 +1478,21 @@ class PortalRuntime extends SpaClient {
     }
   }
 
+  // A NAVIGATION SECTION OPENED OR CLOSED (#1229): the console's rule
+  // (`common/web_nav_sections.ts`'s `toggled()`). Opening one records it and
+  // closes any other; closing the one recorded forgets it; a `toggle` from
+  // anything but a section of the column changes nothing.
+  /**
+   * Records the navigation section opened, and closes the others.
+   *
+   * @param target - the element a `toggle` event was fired at
+   * @returns nothing
+   */
+  onNavToggle(target: Json): void {
+    this.openSection = WebNavSections.toggled(this.env.document,
+      PortalShell.OPEN_SECTIONS, target, this.openSection);
+  }
+
   /**
    * Starts the portal: wires the document and draws the first page.
    *
@@ -1481,6 +1506,11 @@ class PortalRuntime extends SpaClient {
     this.env.document.addEventListener('submit', function (event: Json) {
       self.onSubmit(event);
     });
+    // A NAVIGATION SECTION OPENED OR CLOSED (#1229): `toggle` does not
+    // bubble, so it is caught on the way down.
+    this.env.document.addEventListener('toggle', function (event: Json) {
+      self.onNavToggle(event && event.target);
+    }, true);
     // A FORM TYPED IN (#561): a switch asks before it is lost.
     const typed = function (event: Json) {
       if (event && event.target && event.target.form) {

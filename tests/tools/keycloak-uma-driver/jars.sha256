@@ -1,0 +1,13 @@
+e599d5318e97aa48f42136a2927e6dfa4e8881dff0e6c8e3109ddbbff51d7b7d  commons-codec-1.11.jar
+ce4088809c7512228cb34b54686223dec45532b97366a36830f82926b58a4c6c  commons-logging-jboss-logging-2.0.0.Final.jar
+c8bc7e1c51a6d4ce72f40d2ebbabf1c4b68bfe76e732104b04381b493478e9d6  httpclient-4.5.14.jar
+6c9b3dd142a09dc468e23ad39aad6f75a0f2b85125104469f026e52a474e464f  httpcore-4.4.16.jar
+53ca085f4a150f703f49e1aabd935bd03b43e1ea3d55d135438292af22cef56b  jackson-annotations-2.21.jar
+12e8655b100267b44d0f14d01b1f5082a5105e616174dc4307be1a761e92407b  jackson-core-2.21.2.jar
+8c982f01f148d805f0aaac2339011244757e0df7c6ff8951f2fa3f433b8ed849  jackson-databind-2.21.2.jar
+e581bbf3fc5622d16b57366dd41e10fc56921fb202879de2ef487f87dd9b30e7  jackson-datatype-jdk8-2.21.2.jar
+a083d57cd1c4a28fefcc6bd071740779eb7fc1c22a3c1b40451b5477c443f02f  jackson-datatype-jsr310-2.21.2.jar
+f423e07bffce73bf2b6cc872f30981c06fe9cfd5a86a0b4f5fbdd11cfe0148e0  jboss-logging-3.6.2.Final.jar
+4860d831cb637986ae5b71f3bf010e8d91c68c720c8b11b7da13e6adc511e1e3  keycloak-authz-client-26.0.12.jar
+2d6e28bdeabbd0f5c26f6fd80cb87cd31fc0a50a711d23e7bdf851021e49d73c  keycloak-client-common-synced-26.0.12.jar
+1e333f5bd206245e7a4d0a3dd5f2bab1820fc3b950b77e96008fcdb7b77d9150  microprofile-openapi-api-4.1.1.jar

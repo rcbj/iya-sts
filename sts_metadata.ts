@@ -641,6 +641,53 @@ const SPECS: Spec[] = [
               'policy using one is Indeterminate rather than silently ' +
               'empty), the Multiple Decision and Hierarchical Resource ' +
               'profiles, and administrative delegation.' },
+  { id: 'authzen10', name: 'AuthZEN Authorization API 1.0',
+    where: 'OpenID Foundation',
+    url: 'https://openid.net/specs/authorization-api-1_0.html',
+    coverage: 'partial: the Access Evaluation API (section 6), decided by ' +
+              'the XACML engine against the realm\'s root policy through a ' +
+              'per-realm attribute catalogue, with X-Request-ID and the ' +
+              'section 11.3 challenge, the Access Evaluations API (section ' +
+              '7) with its three semantics, and the PDP metadata (section ' +
+              '9) at both its forms, signed_metadata included, and the ' +
+              'Obligations Profile draft for a PEP that declares the types, ' +
+              'and the three Search APIs (section 8) over this service\'s ' +
+              'own people, applications, APIs, delegation relationships and ' +
+              'policy actions, paged and not transitive. Missing: ' +
+              'per-result obligations in a search, and the OAuth profile, ' +
+              'still a draft.' },
+  { id: 'authzen-arap',
+    name: 'AuthZEN Access Request and Approval Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-approval-profile-1_0.html',
+    coverage: 'partial: the requestable denial (context.access_request, ' +
+              'evaluation_id, evaluated_at, reason) where the realm\'s ' +
+              'policy marks a Deny with the access-request advice, bound by ' +
+              'value with a binding_token this realm signs (the inline ' +
+              'claims); the submission with Idempotency-Key, 201 or 202 and ' +
+              'a Task Handle; the task status endpoint with Retry-After; ' +
+              'cancellation by POST or DELETE; the six statuses; the ' +
+              'reevaluate completion mode, approval.id resolved in trusted ' +
+              'state and the approval reaching the policy as trusted facts; ' +
+              'next_action and the five reasons; every problem type; the ' +
+              'metadata member, jwks_uri and capability. Missing: ' +
+              'evaluation_id as a binding by reference, approval.state, the ' +
+              'hashed binding form, machine-readable forms (form_url, ' +
+              'request_schema_url), display, and the BULK, ACTOR and ' +
+              'CATALOG companions.' },
+  { id: 'authzen-arap-callback',
+    name: 'AuthZEN Access Request Callback Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-callback-profile-1_0.html',
+    coverage: 'partial: a submission\'s callback (endpoint, state, ' +
+              'events), the endpoint held to the URLs an administrator ' +
+              'registered for the requesting PEP, a notification-only ' +
+              'callback for each requested terminal event, authenticated ' +
+              'by a short JWT this realm signs, under the outbound policy. ' +
+              'Missing: the partial event (BULK) and deployment-level event ' +
+              'subscriptions; a failed delivery is not retried.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -905,6 +952,51 @@ const SPECS: Spec[] = [
               'that hears session-revoked for the tokens audienced to it. ' +
               'Macaroon and zcap tokens have no such mechanism; introspection ' +
               'is their path.' },
+  // --- User-Managed Access 2.0 (#1168): two Kantara Recommendations.
+  //     "UMA 2.0 Core" is the 1.0 document's name, and resource
+  //     registration is a section of Federated Authorization, not a
+  //     specification of its own (the ticket's third link is a 404).
+  { id: 'uma2-grant',
+    name: 'User-Managed Access (UMA) 2.0 Grant for OAuth 2.0 Authorization',
+    where: 'Kantara Initiative',
+    url: 'https://docs.kantarainitiative.org/uma/wg/' +
+         'rec-oauth-uma-grant-2.0.html',
+    coverage: 'partial: discovery (section 2); the ' +
+              'urn:ietf:params:oauth:grant-type:uma-ticket grant (section ' +
+              '3.3) with the ticket spent once across the cluster and bound ' +
+              'to the first client that presents it, section 3.3.4\'s ' +
+              'requested scopes, a PCT presented, need_info with a rotated ' +
+              'ticket and required_claims, request_denied, a partial RPT ' +
+              '(uma.partialRpt), RPT upgrade, and every permission decided ' +
+              'by the realm\'s policy, the resource owner\'s own XACML ' +
+              'document, the resource server\'s fine-grained policy and the ' +
+              'issuance gate; the PCT issued when claims were gathered and ' +
+              'revocable at /oauth2/revoke; the claims interaction endpoint ' +
+              '(section 3.3.2) through this service\'s one sign-in; a pushed ' +
+              'claim_token in the ID Token format, from this realm or a ' +
+              'declared assertion issuer; and request_submitted, the owner ' +
+              'answering on the portal, an approval written as a rule of ' +
+              'their own policy. Missing: SAML as a claim_token_format, and ' +
+              'a step-up to an acr a share requires at the interaction ' +
+              '(the share then refuses). uma_profiles_supported is empty.' },
+  { id: 'uma2-fedauthz',
+    name: 'Federated Authorization for User-Managed Access (UMA) 2.0',
+    where: 'Kantara Initiative',
+    url: 'https://docs.kantarainitiative.org/uma/wg/' +
+         'rec-federated-authz-2.0.html',
+    coverage: 'partial: the protection API access token (section 2) as an ' +
+              'ordinary access token audienced to /uma carrying ' +
+              'uma_protection, by the code flow (the owner a person) or ' +
+              'client_credentials (the owner the application, where it ' +
+              'carries umaOwnsResources); resource registration (section ' +
+              '3) — create, read, update, delete and list, with ' +
+              'user_access_policy_uri; and the permission endpoint ' +
+              '(section 4) issuing one ticket for one or several ' +
+              'permissions, with invalid_resource_id and invalid_scope. ' +
+              'RPT introspection (section 5) with the PAT as Bearer at ' +
+              '/oauth2/introspect: permissions and no scope, for that ' +
+              'resource server\'s RPTs alone. A scope description document ' +
+              'a scope URI names is never fetched: a scope is a string.' },
   { id: 'rfc9421', name: 'RFC 9421 — HTTP Message Signatures',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9421',
@@ -3587,6 +3679,39 @@ const ENDPOINTS: EndpointEntry[] = [
           'with a ' +
           'flag, because a PEP that loaded one would enforce a policy this ' +
           'service does not.' },
+  { path: '/xacml/pep/authzen-catalogue', group: 'XACML',
+    name: 'The AuthZEN catalogue, for a remote PEP to LOAD',
+    specs: ['xacml30', 'authzen10'],
+    what: 'The realm\'s AuthZEN attribute catalogue — the rows of ' +
+          'authzenAttribute on sts-authzen-api, read as POST ' +
+          '/access/v1/evaluation reads them — and the AuthZEN settings that ' +
+          'change the mapping or the answer, plus a sync token of its own; ' +
+          '?since=<token> answers 304. Pulled beside the policies by the ' +
+          'xacml-pep container, whose edge PDP answers AuthZEN with exactly ' +
+          'these rows, so one request is mapped one way in both places. ' +
+          'Requires REMOTE_PEPS, as the policy pull does. Additive: ' +
+          '/xacml/pep/policies is unchanged. fgaApplications names the ' +
+          'applications that enforce fine-grained authorization, inside ' +
+          'the sync token: the edge PDP forwards an evaluation about one ' +
+          'of them to this realm\'s POST /access/v1/evaluation rather than ' +
+          'decide it (#564).' },
+  { path: '/xacml/pep/authzen-callers', group: 'XACML',
+    name: 'The AuthZEN callers, for a remote PEP to ADMIT',
+    specs: ['xacml30', 'authzen10'],
+    what: 'Who this realm admits to its AuthZEN API now, for the xacml-pep ' +
+          'container\'s edge PDP to admit by: each caller the ' +
+          'access-control policy admits to /access/v1/* (AUTHZEN_PEPS, as ' +
+          'the policy decides it), named as a policy sees it in ' +
+          'urn:sts:xacml:authzen:caller, with the SHA-256 of the DER of ' +
+          'every certificate this service would resolve to that name, its ' +
+          'application scope and the endpoints it is admitted to, plus a ' +
+          'sync token of its own; ?since=<token> answers 304. The token ' +
+          'moves with a member, a certificate, a scope or the policy\'s ' +
+          'answer, and the edge converges on its poll. Requires ' +
+          'REMOTE_PEPS, as the policy pull does, so anybody holding that ' +
+          'role can read who may ask the PDP (rcbj on #1189). Additive: ' +
+          '/xacml/pep/policies and /xacml/pep/authzen-catalogue are ' +
+          'unchanged.' },
   { path: '/xacml/pep/heartbeat', group: 'XACML',
     name: 'What a remote PEP has enforced', specs: ['xacml30'],
     what: 'Its cumulative counters and the sync token it holds — which is ' +
@@ -3630,6 +3755,103 @@ const ENDPOINTS: EndpointEntry[] = [
           'endpoint here whose role does not follow its path, because what ' +
           'comes back is a person\'s own data rather than a rule anybody may ' +
           'check.' },
+  // --- AuthZEN (#563). authzen/CLAUDE.md argues the adapter.
+  { path: '/access/v1/evaluation', group: 'AuthZEN',
+    name: 'An access evaluation',
+    specs: ['authzen10'],
+    what: 'POST an AuthZEN subject, action, resource and context; get ' +
+          'decision true or false. Decided by the XACML engine against the ' +
+          'realm\'s ROOT policy, with protocol = authzen in the request. A ' +
+          'property reaches the policy only through the realm\'s attribute ' +
+          'catalogue, and an undeclared one is a 400 in every mode. The ' +
+          'CALLER authenticates by authzen.callerAuthentication — a client ' +
+          'certificate by default, an access token carrying ' +
+          'authzen:evaluate, or both — and must hold AUTHZEN_PEPS and be ' +
+          'scoped to the application it asks about. A denial is 200 false; ' +
+          'a fault the PDP reached is a 500, never false.' },
+  { path: '/access/v1/evaluations', group: 'AuthZEN',
+    name: 'A batch of access evaluations',
+    specs: ['authzen10'],
+    what: 'POST top-level subject, action, resource and context defaults ' +
+          'and an evaluations array whose items override them; get ' +
+          'evaluations, one decision per item in request order. ' +
+          'options.evaluations_semantic is execute_all (the default), ' +
+          'deny_on_first_deny or permit_on_first_permit. An item\'s ' +
+          'failure is false with context.error and never hidden by the ' +
+          '200; a batch over authzen.maxEvaluations or ' +
+          'authzen.maxBodyBytes is a 400 before anything is decided. ' +
+          'Every item is its own audit row, carrying the batch id.' },
+  { path: '/access/v1/search/subject', group: 'AuthZEN',
+    name: 'Subject Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the subjects of a type that may do an action on a resource: the ' +
+          'realm\'s directory people, for a type in ' +
+          'authzen.resolveSubjectTypes. Every candidate is decided by the ' +
+          'realm\'s root policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/search/resource', group: 'AuthZEN',
+    name: 'Resource Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the resources of a type a subject may do an action on: ' +
+          'application, api or delegation, from the application directory. ' +
+          'Every candidate is decided by the realm\'s root policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/search/action', group: 'AuthZEN',
+    name: 'Action Search', specs: ['authzen10'],
+    what: 'POST the section 8 request; get results and a page. Answers ' +
+          'the actions a subject may do on a resource: the names the root ' +
+          'policy compares action-id with, and an application\'s or API\'s ' +
+          'own permissions. Every candidate is decided by the realm\'s root ' +
+          'policy ' +
+          'exactly as an evaluation is, and only the permitted ones are ' +
+          'results; paged by page.next_token, bounded by ' +
+          'authzen.searchMaxCandidates, and said incomplete past it.' },
+  { path: '/access/v1/access-requests', group: 'AuthZEN',
+    name: 'Submit an access request',
+    specs: ['authzen-arap', 'authzen-arap-callback'],
+    what: 'POST a denied evaluation\'s subject, resource, action and ' +
+          'context with the denial it received (its binding_token and ' +
+          'expires_at, echoed unchanged); get 202 and a Task Handle, or 201 ' +
+          'with the result when it is decided at once (emergency access ' +
+          'the policy allows). Only a Deny the realm\'s policy marked with ' +
+          'the advice urn:sts:xacml:advice:access-request is requestable. ' +
+          'The same caller door and AUTHZEN_PEPS as an evaluation; ' +
+          'Idempotency-Key honoured per caller; a callback only to a URL ' +
+          'registered for the caller. Every refusal is problem+json.' },
+  { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
+    name: 'An access request\'s task status', specs: ['authzen-arap'],
+    what: 'GET the task: its status (pending, approved, denied, expired, ' +
+          'cancelled, failed), Retry-After while pending, and once approved ' +
+          'the reevaluate result with the approval the PEP carries on its ' +
+          'next evaluation as context.approval. A task is visible to the ' +
+          'caller that submitted it alone; to anybody else it is ' +
+          'unknown_task.' },
+  { path: '/access/v1/access-requests/:id/cancel', group: 'AuthZEN',
+    name: 'Cancel an access request', specs: ['authzen-arap'],
+    what: 'POST, or DELETE, to cancel a pending task of the caller\'s; a ' +
+          'finished one answers 409 invalid_task_state.' },
+  { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
+    name: 'PDP metadata', specs: ['authzen10'],
+    what: 'The section 9 document: policy_decision_point (this realm\'s ' +
+          'base, matching the URL it is fetched under) and only the ' +
+          'endpoints that answer here (the batch and the three searches ' +
+          'while each is on, and access_request_endpoint with jwks_uri and ' +
+          'the access-request capability while authzen.accessRequests is ' +
+          'on), supported_obligations, and ' +
+          'signed_metadata, a JWT of the same members with iss the PDP ' +
+          'identifier, verifiable with the realm\'s JWKS ' +
+          '(authzen.signedMetadata). Public; answers 501 while the API is ' +
+          'off.' },
+  { path: '/.well-known/authzen-configuration/*', group: 'AuthZEN',
+    name: 'PDP metadata (identifier with a path)', specs: ['authzen10'],
+    what: 'The same document at section 9.2\'s inserted form, where the ' +
+          'PDP identifier is a realm\'s: /realm/<id> after the segment, ' +
+          'answered inside that realm. Any other path names no PDP and is ' +
+          'a 404.' },
   // --- GNAP (2026-09-12). gnap/CLAUDE.md argues the module split.
   { path: '/gnap', group: 'GNAP', name: 'The grant endpoint',
     specs: ['rfc9635', 'rfc9421', 'rfc9530', 'rfc9493'],
@@ -3804,6 +4026,95 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'The two controls on /admin/gnap as one action resource: ' +
           'revoke-grant (the grant and every token under it, with the CAEP ' +
           'event a client\'s own DELETE would send) and delete-resource-set.' },
+  // --- User-Managed Access 2.0 (#1168). uma/CLAUDE.md argues the family.
+  { path: '/uma/rreg', group: 'UMA 2.0',
+    name: 'Resource registration: create, list',
+    specs: ['uma2-fedauthz'],
+    what: 'Federated Authorization section 3. POST a resource description ' +
+          '(resource_scopes required; name, type, description, icon_uri ' +
+          'optional; a scope is a string and is never dialled) with a ' +
+          'protection API token (PAT) as Bearer or DPoP: 201 with _id, ' +
+          'user_access_policy_uri (the owner\'s /portal/shared) and a ' +
+          'Location. GET lists the _ids this PAT\'s owner and resource ' +
+          'server registered. THE PAT\'S SUBJECT IS THE OWNER of ' +
+          'everything registered with it — a person on the code flow, the ' +
+          'application itself on client_credentials where it carries ' +
+          'umaOwnsResources — and nothing a resource server sends names ' +
+          'an owner. The PAT is checked in every mode. Bounded by ' +
+          'uma.maxResourcesPerOwner and uma.maxResourceScopes; 501 while ' +
+          'uma.enabled is off.' },
+  { path: '/uma/rreg/:id', group: 'UMA 2.0',
+    name: 'Resource registration: read, update, delete',
+    specs: ['uma2-fedauthz'],
+    what: 'GET the resource description; PUT a new one (200 with _id); ' +
+          'DELETE it (204). A resource another owner or another resource ' +
+          'server registered is not_found (404) here, and nothing says ' +
+          'which. unsupported_method_type (405) for any other method.' },
+  { path: '/uma/perm', group: 'UMA 2.0',
+    name: 'The permission endpoint',
+    specs: ['uma2-fedauthz', 'uma2-grant'],
+    what: 'Federated Authorization section 4. POST one object or an array ' +
+          'of {resource_id, resource_scopes} with the PAT: 201 with one ' +
+          'permission ticket for all of them, to hand the client in the ' +
+          'WWW-Authenticate challenge of the Grant specification\'s ' +
+          'section 3.2. Well-formedness is not policy: an unregistered ' +
+          'resource is invalid_resource_id and an unregistered scope ' +
+          'invalid_scope, both 400, before any question is asked. The ' +
+          'ticket lives uma.ticketLifetimeS and is spent once across the ' +
+          'cluster.' },
+  { path: '/uma/claims', group: 'UMA 2.0',
+    name: 'The claims interaction endpoint', specs: ['uma2-grant'],
+    what: 'The Grant specification\'s section 3.3.2: a client told ' +
+          'need_info sends the requesting party here with client_id, ' +
+          'ticket, claims_redirect_uri and state. They sign in through ' +
+          'this service\'s one sign-in, are recorded as the ticket\'s ' +
+          'requesting party, and go back with ' +
+          'authorization_state=claims_submitted and a new ticket. The ' +
+          'claims_redirect_uri must be one the client registered ' +
+          '(oauthClaimsRedirectUri), matched exactly; any other is told to ' +
+          'the person and never redirected to.' },
+  { path: '/.well-known/uma2-configuration', group: 'UMA 2.0',
+    name: 'UMA discovery', specs: ['uma2-grant'],
+    what: 'The Grant specification\'s section 2 document: RFC 8414\'s ' +
+          'members for this realm\'s authorization server plus ' +
+          'permission_endpoint, resource_registration_endpoint, ' +
+          'introspection_endpoint, claims_interaction_endpoint and ' +
+          'uma_profiles_supported (empty: no profile is implemented end to ' +
+          'end), and the UMA grant in grant_types_supported only while it ' +
+          'is performed. Cache-Control: no-store, as every document that ' +
+          'carries a key. Answered 501 while uma.enabled is off: a document ' +
+          'advertising endpoints that do not answer would be a lie.' },
+  { path: '/.well-known/uma2-configuration/*', group: 'UMA 2.0',
+    name: 'UMA discovery (inserted-path form)', specs: ['uma2-grant'],
+    what: 'The same document at RFC 8414\'s inserted form, where the ' +
+          'issuer is a realm\'s: /realm/<id> after the segment, answered ' +
+          'inside that realm. Any other path names no realm and is a 404.' },
+  { path: '/uma', group: 'UMA 2.0',
+    name: 'The UMA description page', specs: ['uma2-grant', 'uma2-fedauthz'],
+    what: 'This service\'s own page saying what UMA 2.0 is here: the ' +
+          'endpoints, the resource servers declared in this realm, the ' +
+          'four layers a permission is decided by, and the settings. A ' +
+          'static surface\'s shell (#584); ?format=json, or an Accept ' +
+          'preferring JSON, answers the same as data.' },
+  { path: '/uma/description.js', group: 'UMA 2.0',
+    name: 'The description page\'s script', specs: [],
+    what: 'The description pages\' one bundle, on this family\'s path.' },
+  { path: '/admin-api/uma', group: 'UMA 2.0',
+    name: 'The UMA console page over JSON', specs: ['uma2-grant',
+                                                    'uma2-fedauthz'],
+    what: 'What GET /admin/uma draws, out of the same view function (#1195): ' +
+          'the resource servers, resources, live tickets and RPTs, waiting ' +
+          'requests, an owner and the dry-run what-if.' },
+  { path: '/admin-api/uma/monitor', group: 'UMA 2.0',
+    name: 'The UMA PEP\'s counts over JSON', specs: ['uma2-grant'],
+    what: 'The uma row of the XACML monitor and, per resource server, what ' +
+          'it holds now.' },
+  { path: '/admin-api/uma/:action', group: 'UMA 2.0',
+    name: 'The UMA console\'s nine acts', specs: ['uma2-grant',
+                                                  'uma2-fedauthz'],
+    what: 'Enable or disable a resource server, let it own resources, ' +
+          'delete a resource, revoke an RPT, and share, unshare, approve or ' +
+          'refuse on an application\'s own document.' },
   { path: '/pki/crl/:scope/:ca', group: 'PKI',
     name: 'The certificate revocation list of one authority',
     specs: ['rfc5280'],
@@ -6239,6 +6550,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'remove-destination and test-push (a canary version written to a ' +
           'test secret): the console\'s four acts, each audited. The write ' +
           'credential is taken and never returned.' },
+  { path: '/admin-api/xacml/authzen', group: 'Management API',
+    name: 'The AuthZEN API\'s catalogue and callers', specs: ['openapi'],
+    what: 'NON-SPEC (#563). What the AuthZEN tab of /admin/xacml draws: ' +
+          'whether /access/v1 answers in the realm, how its callers ' +
+          'authenticate, the AuthZEN settings, the attribute catalogue on ' +
+          'sts-authzen-api, the members of roles.authzenPepGroup with ' +
+          'the applications each may ask about and their registered ' +
+          'callback URLs, and the realm\'s access requests (#1180).' },
+  { path: '/admin-api/xacml/authzen/:action', group: 'Management API',
+    name: 'Change the AuthZEN catalogue or a caller\'s scope',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#563). set-attribute, remove-attribute, set-scope ' +
+          'and set-callbacks, and the four acts on an access request ' +
+          '(#1180) — approve, deny, revoke and cancel, the first three ' +
+          'asked of the access-control policy as the portal asks them: ' +
+          'the tab\'s acts, each audited. A catalogue row onto a reserved ' +
+          'identifier is refused here as at every write.' },
   { path: '/admin-api/passkey-report', group: 'Management API',
     name: 'Who holds which passkey algorithm', specs: ['openapi', 'webauthn'],
     what: 'NON-SPEC (#942). What Monitoring → Passkeys draws: the realm\'s ' +
@@ -9784,6 +10112,29 @@ const PROTOCOLS: Protocol[] = [
           'and this one is handed a subject that has already been ' +
           'authenticated elsewhere and asked whether they may. Held to the ' +
           'OASIS conformance suite rather than to a test written here.' },
+  { name: 'AuthZEN', groups: ['AuthZEN'],
+    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback'],
+    what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
+          'Enforcement Point asks one question per access and is told true ' +
+          'or false, decided against the realm\'s root policy. An ADAPTER: ' +
+          'the request is mapped onto an XACML request through a per-realm ' +
+          'attribute catalogue and the one request builder, and the answer ' +
+          'is mapped back fail-closed. The XACML endpoints and the remote ' +
+          'PEP container are untouched by it.' },
+  { name: 'UMA 2.0', groups: ['UMA 2.0'],
+    specs: ['uma2-grant', 'uma2-fedauthz'],
+    what: 'User-Managed Access 2.0, a GRANT and not a decision engine: a ' +
+          'resource server registers the resources it holds for a ' +
+          'resource owner through the protection API and asks a ' +
+          'permission ticket when a client arrives; the client presents ' +
+          'the ticket at the token endpoint; and each permission — one ' +
+          'resource, one scope — is issued only when the realm\'s ' +
+          'uma-authorization policy, the OWNER\'S OWN XACML DOCUMENT ' +
+          '(authored by a form on the portal), the resource server\'s ' +
+          'fine-grained policy where it enforces one, and the issuance ' +
+          'gate all say Permit. The one thing UMA adds that nothing else ' +
+          'here has is a policy a person writes; absence of one is never ' +
+          'consent. Off until a realm turns it on (uma.enabled).' },
   { name: 'Federation', groups: ['Federation'],
     specs: ['saml2-profiles', 'saml11-profiles', 'ws-federation', 'oidc',
             'rfc6749'],

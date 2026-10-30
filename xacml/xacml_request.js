@@ -81,6 +81,11 @@ const VOCABULARY = Object.freeze({
   // environment: a setting's value, the setting's key after this prefix
   // (`urn:sts:xacml:setting:oauth2.consentRequired`), typed as it is.
   SETTING_PREFIX: 'urn:sts:xacml:setting:',
+  // THE AUTHENTICATION CONTEXT CLASS a session met, where a question
+  // carries one (#1168): `xacml_templates.ts`'s AUTHN_ATTRIBUTE.ACR is the
+  // same identifier, which the UMA facts spell from here so the Rust
+  // builder can mirror it.
+  ACR: 'urn:sts:xacml:acr',
   // environment: which moment a scope is judged at (#305): `request` (an
   // endpoint still talking to the client, which refuses), `mint` (the
   // backstop every grant mints through, which narrows) or `consent`.
@@ -306,6 +311,126 @@ const VOCABULARY = Object.freeze({
   GNAP_DEVICE_COMPLIANCE: 'urn:sts:xacml:gnap:device-compliance',
   GNAP_DEVICE_ATTESTATION: 'urn:sts:xacml:gnap:device-attestation',
   GNAP_DEVICE_OWNER_MATCHES: 'urn:sts:xacml:gnap:device-owner-matches',
+  // THE FACTS OF AN AUTHZEN QUESTION (#563), written by `authzen/` and
+  // nothing else. AuthZEN's subject and resource each carry a TYPE beside
+  // the id, and XACML has no identifier for either. access-subject:
+  AUTHZEN_SUBJECT_TYPE: 'urn:sts:xacml:authzen:subject-type',
+  // resource:
+  AUTHZEN_RESOURCE_TYPE: 'urn:sts:xacml:authzen:resource-type',
+  // environment, TRUSTED — from the caller's authentication and its entry,
+  // never from the request body: who asked (a directory entry's DN or a
+  // client_id), and the application the question is scoped to.
+  AUTHZEN_CALLER: 'urn:sts:xacml:authzen:caller',
+  AUTHZEN_APPLICATION: 'urn:sts:xacml:authzen:application',
+  // environment, TRUSTED: every member the caller SENT, by its path
+  // (`subject.properties.department`, `context.source_ip`), so a policy can
+  // tell a property that was absent from one sent with an empty value.
+  AUTHZEN_SUPPLIED: 'urn:sts:xacml:authzen:supplied',
+  // THE FACTS OF A TOKEN-EXCHANGE QUESTION ASKED OVER AUTHZEN (#1181, the
+  // OAuth 2.0 Token Exchange Binding), written by `exchange()` beside the
+  // exchange vocabulary ONLY when `authzen/authzen_exchange.ts` asks, so a
+  // local RFC 8693, WS-Trust or Kerberos question is the request it always
+  // was. action: the token type short name of the gate action
+  // (`issue:<type>:token_exchange`), as the binding registers it —
+  // `access_token`, `id_jag`, `txn_token`.
+  AUTHZEN_TOKEN_TYPE: 'urn:sts:xacml:authzen:token-type',
+  // environment: `context.subject_token_type` and `context.actor_token_type`,
+  // verbatim (RFC 8693 token type URIs), and how many entries deep the
+  // subject token's `act` chain already is (an integer; 0 for none).
+  AUTHZEN_SUBJECT_TOKEN_TYPE: 'urn:sts:xacml:authzen:subject-token-type',
+  AUTHZEN_ACTOR_TOKEN_TYPE: 'urn:sts:xacml:authzen:actor-token-type',
+  AUTHZEN_ACT_DEPTH: 'urn:sts:xacml:authzen:act-depth',
+  // environment, TRUSTED, and only after `authzen/authzen_access_request.ts`
+  // VERIFIED a presented `context.approval` against its store (#1180): the
+  // approval's id, until when it holds (a dateTime) and who approved it. A
+  // policy that requires an approval reads these; the values a PEP sent
+  // beside the id never reach a request.
+  AUTHZEN_APPROVAL_ID: 'urn:sts:xacml:authzen:approval-id',
+  AUTHZEN_APPROVED_UNTIL: 'urn:sts:xacml:authzen:approved-until',
+  AUTHZEN_APPROVER: 'urn:sts:xacml:authzen:approver',
+  // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564): one RFC 9396
+  // authorization detail, asked of the policy of the RESOURCE application
+  // that declares its type. Written by `xacml/fga_map.ts` alone, through
+  // `fga()` below. resource, TRUSTED — from the registry, never from the
+  // detail: the application that owns the type (its identifier), the
+  // detail's type, and a SHA-256 of the type's canonical definition, so a
+  // policy can be pinned to the definition it was written against.
+  FGA_APPLICATION: 'urn:sts:xacml:fga:application',
+  FGA_DETAIL_TYPE: 'urn:sts:xacml:fga:detail-type',
+  FGA_DEFINITION_DIGEST: 'urn:sts:xacml:fga:definition-digest',
+  // environment, TRUSTED: the moment the question is asked at — FGA_STAGES
+  // below — and every member path of the detail that reached the request
+  // (`actions`, `amount.currency`), so a policy can tell a member sent
+  // empty from one not sent. A member the type lists in `notForPolicy` is
+  // in neither.
+  FGA_STAGE: 'urn:sts:xacml:fga:stage',
+  FGA_SUPPLIED: 'urn:sts:xacml:fga:supplied',
+  // THE DETAIL'S COMMON DATA FIELDS (RFC 9396 section 2.2), each mapped by
+  // a BUILT-IN row whenever the detail carries it, so a policy may test
+  // them with no declaration: `actions` and `privileges` (action, string
+  // bags), `locations` and `datatypes` (resource, string bags) and
+  // `identifier` (resource, one string). Strings rather than anyURI for
+  // `locations`, as GNAP's right-location is, so one `string-is-in` reads
+  // both protocols. A type's own `xacml` rows cover its other members.
+  FGA_DETAIL_ACTION: 'urn:sts:xacml:fga:detail:action',
+  FGA_DETAIL_LOCATION: 'urn:sts:xacml:fga:detail:location',
+  FGA_DETAIL_DATATYPE: 'urn:sts:xacml:fga:detail:datatype',
+  FGA_DETAIL_IDENTIFIER: 'urn:sts:xacml:fga:detail:identifier',
+  FGA_DETAIL_PRIVILEGE: 'urn:sts:xacml:fga:detail:privilege',
+  // THE FACTS OF A USER-MANAGED ACCESS QUESTION (#1168, phase 1): one
+  // registered resource and one of its scopes, asked of up to three
+  // policies in turn — the realm's `uma-authorization`, the resource
+  // OWNER's own document, and the resource server's fine-grained policy
+  // (#564) — by `uma/`'s PEP alone, through `uma()` below. Nothing here
+  // decides: UMA 2.0 is a grant that names WHO is asked and WHAT about,
+  // and every answer is the PDP's. Spelt the same in the Rust builder
+  // (`tests/xacml_request.js` E2).
+  //
+  // resource, TRUSTED — from the registration and the protection API
+  // token (PAT) that made it, never from the client: the resource's
+  // `type`, the resource server (the application declared for `uma`),
+  // the owner's subject and the owner's kind (`user`, `application`), and
+  // whether the resource server is declared for the protocol.
+  UMA_RESOURCE_TYPE: 'urn:sts:xacml:uma:resource-type',
+  UMA_RESOURCE_SERVER: 'urn:sts:xacml:uma:resource-server',
+  UMA_RESOURCE_SERVER_DECLARED:
+    'urn:sts:xacml:uma:resource-server-declared',
+  UMA_OWNER: 'urn:sts:xacml:uma:owner',
+  UMA_OWNER_KIND: 'urn:sts:xacml:uma:owner-kind',
+  // action: the scope being asked about, on every layer, beside the
+  // action-id (the scope itself on the owner's layer; the forced issuance
+  // action elsewhere — see `uma()`).
+  UMA_SCOPE: 'urn:sts:xacml:uma:scope',
+  // access-subject: HOW THE REQUESTING PARTY BECAME KNOWN. Booleans saying
+  // whether anybody is known at all and whether they are the owner; the
+  // source of what is known (`session`, `claim_token`, `pct`); the issuer
+  // of a pushed claim token, and whether that issuer is one the realm
+  // declared (true where no token was pushed); whether the client
+  // registered the UMA grant type.
+  UMA_REQUESTING_PARTY_KNOWN: 'urn:sts:xacml:uma:requesting-party-known',
+  UMA_REQUESTING_PARTY_IS_OWNER:
+    'urn:sts:xacml:uma:requesting-party-is-owner',
+  UMA_CLAIM_SOURCE: 'urn:sts:xacml:uma:claim-source',
+  UMA_CLAIM_ISSUER: 'urn:sts:xacml:uma:claim-issuer',
+  UMA_CLAIM_ISSUER_DECLARED: 'urn:sts:xacml:uma:claim-issuer-declared',
+  // access-subject: the DNs of the groups the requesting party is a DIRECT
+  // member of, normalised, computed by the UMA endpoint from the directory
+  // (#1192). A fact rather than `memberOf`, which nothing here maintains —
+  // `ldap_server.js` says so — so a share with a group reads what the
+  // group lists, as the console's rosters do.
+  UMA_REQUESTING_PARTY_GROUP: 'urn:sts:xacml:uma:requesting-party-group',
+  UMA_CLIENT_GRANT_DECLARED: 'urn:sts:xacml:uma:client-grant-declared',
+  // access-subject: EACH GATHERED CLAIM, after this prefix under its own
+  // name (`urn:sts:xacml:uma:claim:email`) — only from a VERIFIED token or
+  // the sign-on session, never a value a client merely asserted.
+  UMA_CLAIM_PREFIX: 'urn:sts:xacml:uma:claim:',
+  // environment: WHICH LAYER is asking (`realm`, `owner`, `fga`), at which
+  // STAGE (`assess`, `upgrade`, `approval`), how old the permission ticket
+  // is in seconds, and whether an RPT was presented for upgrade.
+  UMA_LAYER: 'urn:sts:xacml:uma:layer',
+  UMA_STAGE: 'urn:sts:xacml:uma:stage',
+  UMA_TICKET_AGE: 'urn:sts:xacml:uma:ticket-age',
+  UMA_RPT_PRESENTED: 'urn:sts:xacml:uma:rpt-presented',
   // THE FACTS OF A PASSKEY QUESTION (#536): a passkey being registered
   // (`register-passkey`) or signing somebody in (`use-passkey`), gathered by
   // `common/passkey_policy.ts`. Nothing here decides; the built-in issuance
@@ -435,6 +560,33 @@ const VOCABULARY = Object.freeze({
 // The principal types a request may name. Anything else is a person, which
 // is what a request that never said meant.
 const SUBJECT_KINDS = Object.freeze(['user', 'application']);
+
+// THE STAGES A FINE-GRAINED AUTHORIZATION QUESTION IS ASKED AT (#564), as
+// `urn:sts:xacml:fga:stage` carries them: the authorization endpoint, the
+// token endpoint (a code or a direct grant), a refresh, a token exchange,
+// the PAR endpoint — the five ISSUANCE stages, whose action-id is
+// FGA_GRANT_ACTION — and `access`, AuthZEN's per-request question, whose
+// action is the one the resource server asks about.
+const FGA_STAGES = Object.freeze(['authorize', 'token', 'refresh',
+                                  'exchange', 'par', 'access']);
+const FGA_ISSUANCE_STAGES = Object.freeze(['authorize', 'token', 'refresh',
+                                           'exchange', 'par']);
+const FGA_GRANT_ACTION = 'grant-authorization-detail';
+
+// THE THREE LAYERS A USER-MANAGED ACCESS QUESTION IS ASKED OF (#1168), as
+// `urn:sts:xacml:uma:layer` carries them, and the STAGES it is asked at. The
+// action-id is FORCED by the layer: `issue-uma-permission` for the realm's
+// own policy, the SCOPE itself for the resource owner's document (which is
+// only ever asked about UMA permissions over that owner's own resources, so
+// a rule there reads `action-id == "read"` as a person would write it), and
+// `grant-uma-permission` for the resource server's fine-grained policy
+// (#564), whose issuance questions already force their action.
+const UMA_LAYERS = Object.freeze(['realm', 'owner', 'fga']);
+const UMA_STAGES = Object.freeze(['assess', 'upgrade', 'approval']);
+const UMA_PERMISSION_ACTION = 'issue-uma-permission';
+const UMA_FGA_ACTION = 'grant-uma-permission';
+const UMA_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:uma-ticket';
+const UMA_CLAIM_SOURCES = Object.freeze(['session', 'claim_token', 'pct']);
 
 class AuthorizationRequest {
   // `options`:
@@ -759,6 +911,36 @@ class AuthorizationRequest {
       this.attribute(I, V.EXCHANGE_ACTOR_SELF_REALM, list(actor.selfRealms));
       this.resource(V.EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION,
                     one(target.foreignTgtDelegation));
+    }
+    // #1181: ONLY for a question asked over AuthZEN's token-exchange
+    // binding (`authzen/authzen_exchange.ts`), so every local question is
+    // the request it always was, attribute for attribute. `authzen`:
+    //   caller, application   trusted, from the authenticated caller
+    //   subjectType, actorType the two gate tuples' subject.type
+    //   tokenType             the gate action's token type short name
+    //   subjectTokenType, actorTokenType, actDepth
+    //                         the binding's context, read by its fixed rules
+    //   supplied, attributes  as `authzen()` takes them: the paths sent, and
+    //                         the realm catalogue's rows for anything else
+    const asked = given.authzen || null;
+    if (asked) {
+      this.subject(V.AUTHZEN_SUBJECT_TYPE, one(asked.subjectType));
+      this.attribute(I, V.AUTHZEN_SUBJECT_TYPE, one(asked.actorType));
+      this.action(V.AUTHZEN_TOKEN_TYPE, one(asked.tokenType));
+      this.environment(V.AUTHZEN_CALLER, one(asked.caller));
+      this.environment(V.AUTHZEN_APPLICATION, one(asked.application));
+      this.environment(V.AUTHZEN_SUBJECT_TOKEN_TYPE,
+                       one(asked.subjectTokenType));
+      this.environment(V.AUTHZEN_ACTOR_TOKEN_TYPE, one(asked.actorTokenType));
+      this.environment(V.AUTHZEN_ACT_DEPTH, [Number(asked.actDepth) || 0],
+                       model.TYPE.INTEGER);
+      this.environment(V.AUTHZEN_SUPPLIED, list(asked.supplied));
+      const self = this;
+      (Array.isArray(asked.attributes) ? asked.attributes : [])
+        .forEach(function (row) {
+          self.attribute(row.category, row.attributeId, row.values,
+                         row.dataType);
+        });
     }
     return this;
   }
@@ -1086,6 +1268,294 @@ class AuthorizationRequest {
     return this;
   }
 
+  // THE FACTS OF AN AUTHZEN QUESTION (#563). `facts`:
+  //   subject { type, id }, action { name }, resource { type, id }
+  //                       the four AuthZEN requires, already validated
+  //   realm, caller, application
+  //                       trusted, from the authenticated caller
+  //   supplied            the paths of every member the caller sent
+  //   approval            a VERIFIED approval (#1180), { approvalId,
+  //                       approvedUntil, approver }, or null
+  //   attributes          [{ category, attributeId, dataType, values }],
+  //                       each a catalogue row's, the values lexical
+  // The subject's id is XACML's own subject-id, the action's name its
+  // action-id and the resource's id its resource-id; everything else in the
+  // body reaches the request only through the catalogue
+  // (`authzen/authzen_map.ts`). An unknown application is left out rather
+  // than sent as '', so no rule reads an absent one as a value.
+  authzen(facts) {
+    log.debug("Entering AuthorizationRequest.authzen().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    const subject = given.subject || {};
+    const action = given.action || {};
+    const resource = given.resource || {};
+    this.principal(subject.id);
+    this.subject(V.AUTHZEN_SUBJECT_TYPE, one(subject.type));
+    this.requestedAction(action.name);
+    this.target(resource.id);
+    this.resource(V.AUTHZEN_RESOURCE_TYPE, one(resource.type));
+    this.protocol('authzen');
+    this.environment(V.REALM, one(given.realm));
+    this.environment(V.AUTHZEN_CALLER, one(given.caller));
+    this.environment(V.AUTHZEN_APPLICATION, one(given.application));
+    this.environment(V.AUTHZEN_SUPPLIED,
+                     (Array.isArray(given.supplied) ? given.supplied : [])
+                       .map(String));
+    const approval = given.approval || null;
+    if (approval && approval.approvalId) {
+      this.environment(V.AUTHZEN_APPROVAL_ID, one(approval.approvalId));
+      this.environment(V.AUTHZEN_APPROVED_UNTIL, one(approval.approvedUntil),
+                       model.TYPE.DATETIME);
+      this.environment(V.AUTHZEN_APPROVER, one(approval.approver));
+    }
+    const self = this;
+    (Array.isArray(given.attributes) ? given.attributes : [])
+      .forEach(function (row) {
+        self.attribute(row.category, row.attributeId, row.values,
+                       row.dataType);
+      });
+    log.debug("Leaving AuthorizationRequest.authzen().");
+    return this;
+  }
+
+  // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564). `facts`:
+  //   realm, protocol      trusted; the protocol `oauth2` unless named
+  //   subject { id, kind } the principal and principal_type; BOTH left out
+  //                        when there is no id (the PAR endpoint, before
+  //                        anybody signed in — #564's P4)
+  //   clientId             the OAuth client the detail came through
+  //   application          the identifier of the application that owns
+  //                        the detail's type
+  //   detailType, definitionDigest
+  //   stage                one of FGA_STAGES
+  //   action               the action-id; at an ISSUANCE stage it is
+  //                        always FGA_GRANT_ACTION, whatever is given, so
+  //                        no caller can ask an issuance question as
+  //                        anything else
+  //   resourceId           the resource-id; the detail's type unless given
+  //                        (AuthZEN's resource.id at `access`)
+  //   grantType            the OAuth grant, where there is one
+  //   supplied             every member path that reached the request
+  //   attributes           [{ category, attributeId, dataType, values }] —
+  //                        the built-in common-field rows' and the type's
+  //                        `xacml` rows', the values lexical
+  // Everything but `attributes` and `supplied` is the adapter's own
+  // knowledge (`xacml/fga_map.ts`), never the detail's; the rows cannot name
+  // any of it, because every identifier above is in `urn:sts:xacml:` or is
+  // XACML's own, and the row grammar refuses both
+  // (`xacml_attribute_rows.ts`). A fact not known is left out rather than
+  // sent as '', so no rule reads an absent one as a value.
+  fga(facts) {
+    log.debug("Entering AuthorizationRequest.fga().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    const subject = given.subject || {};
+    const stage = String(given.stage || '');
+    const issuance = FGA_ISSUANCE_STAGES.indexOf(stage) >= 0;
+    // NOBODY IS NOT A SUBJECT CALLED ''. `principal()` writes '' for an
+    // absent name, which is how several PEPs say "nobody" to a policy that
+    // expects it; a fine-grained policy is written by an application's
+    // administrator, who would read `subject-id == ""` as a person with an
+    // empty name — or, worse, a rule comparing it to a list would simply not
+    // match and fall through. So with no id there is NO subject-id and no
+    // subject kind at all: an empty bag, which a policy tests as absence
+    // (a designator with MustBePresent, or `stringBagSize(...) == 0`). The
+    // client is still a fact, and stays.
+    if (subject.id !== undefined && subject.id !== null &&
+        String(subject.id) !== '') {
+      this.principal(subject.id, subject.kind);
+    }
+    this.client(given.clientId);
+    const action = issuance ? FGA_GRANT_ACTION : String(given.action || '');
+    if (action) {
+      this.requestedAction(action);
+    }
+    this.target(given.resourceId || given.detailType || '');
+    this.resource(V.FGA_APPLICATION, one(given.application));
+    this.resource(V.FGA_DETAIL_TYPE, one(given.detailType));
+    this.resource(V.FGA_DEFINITION_DIGEST, one(given.definitionDigest));
+    this.protocol(given.protocol || 'oauth2');
+    this.environment(V.REALM, one(given.realm));
+    this.environment(V.FGA_STAGE, one(stage));
+    if (given.grantType) {
+      this.grantType(given.grantType);
+    }
+    this.environment(V.FGA_SUPPLIED,
+                     (Array.isArray(given.supplied) ? given.supplied : [])
+                       .map(String));
+    const self = this;
+    (Array.isArray(given.attributes) ? given.attributes : [])
+      .forEach(function (row) {
+        self.attribute(row.category, row.attributeId, row.values,
+                       row.dataType);
+      });
+    log.debug("Leaving AuthorizationRequest.fga().");
+    return this;
+  }
+
+  // AN AUTHZEN QUESTION DECIDED BY AN APPLICATION'S FINE-GRAINED POLICY
+  // (#564, P4). Chained after `authzen()`, which has written the question
+  // as AuthZEN always does — subject, action, resource, the catalogue's rows
+  // and AuthZEN's trusted facts, `protocol = authzen` among them — and adds
+  // the two facts an FGA policy reads to know what it is being asked:
+  //   application   the identifier of the application whose policy decides
+  //                 (resource, `urn:sts:xacml:fga:application`, as `fga()`
+  //                 writes it, so one target matches both questions)
+  //   stage         always `access`, whatever is given: this is the
+  //                 per-request question, never an issuance one
+  // Nothing else: the subject, action and resource are AuthZEN's, already
+  // written, and writing them again would make a bag of two.
+  fgaAccess(facts) {
+    log.debug("Entering AuthorizationRequest.fgaAccess().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    this.resource(V.FGA_APPLICATION,
+                  given.application ? [String(given.application)] : []);
+    this.environment(V.FGA_STAGE, ['access']);
+    log.debug("Leaving AuthorizationRequest.fgaAccess().");
+    return this;
+  }
+
+  // THE FACTS OF A USER-MANAGED ACCESS QUESTION (#1168): one resource, one
+  // scope, one layer. `facts`:
+  //   realm                trusted
+  //   layer                one of UMA_LAYERS; anything else is `realm`
+  //   stage                one of UMA_STAGES; anything else is `assess`
+  //   resource { id, type, resourceServer, resourceServerDeclared, owner,
+  //              ownerKind }
+  //                        the registration's facts, from the store and the
+  //                        PAT that made it — never the client's
+  //   scope                the one scope being asked about
+  //   requestingParty { id, kind, known, isOwner, claimSource, claimIssuer,
+  //                     claimIssuerDeclared, acr, groups }
+  //                        who is asking, once anybody is known. With no id
+  //                        there is NO subject-id and no subject kind at all
+  //                        (`fga()`'s rule): the built-in rule that requires
+  //                        one then reaches a missing attribute, which the
+  //                        PEP answers as `need_info`
+  //   clientId, clientGrantDeclared
+  //                        the OAuth client presenting the ticket, and
+  //                        whether it registered the UMA grant type
+  //   claims { name: [values] }
+  //                        the gathered claims, each VERIFIED, under
+  //                        UMA_CLAIM_PREFIX
+  //   ticketAgeS, rptPresented
+  //   mode, settings { key: value }
+  //                        as every issuance question carries them
+  // The action-id is forced by the layer (UMA_LAYERS above), so no caller can
+  // ask the realm's or the resource server's policy as anything else; the
+  // scope is `urn:sts:xacml:uma:scope` on every layer as well. A fact not
+  // known is left out rather than sent as '', so no rule reads an absent one
+  // as a value; the booleans are always sent, false for anything but true.
+  uma(facts) {
+    log.debug("Entering AuthorizationRequest.uma().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value === undefined || value === null || value === ''
+        ? [] : [String(value)];
+    };
+    const yes = function (value) {
+      log.debug("Entering yes().");
+      log.debug("Leaving yes().");
+      return [value === true ? 'true' : 'false'];
+    };
+    const layer = UMA_LAYERS.indexOf(String(given.layer)) >= 0
+      ? String(given.layer) : 'realm';
+    const stage = UMA_STAGES.indexOf(String(given.stage)) >= 0
+      ? String(given.stage) : 'assess';
+    const resource = given.resource || {};
+    const party = given.requestingParty || {};
+    const scope = String(given.scope || '');
+    // NOBODY IS NOT A SUBJECT CALLED '' — `fga()` argues it. The attribute is
+    // absent until somebody is known, which is what lets a MustBePresent
+    // designator on subject-id turn into the missing-attribute status the
+    // PEP reads as "ask the requesting party for claims".
+    if (party.id !== undefined && party.id !== null &&
+        String(party.id) !== '') {
+      this.principal(party.id, party.kind);
+    }
+    this.client(given.clientId);
+    this.subject(V.UMA_REQUESTING_PARTY_KNOWN, yes(party.known),
+                 model.TYPE.BOOLEAN);
+    this.subject(V.UMA_REQUESTING_PARTY_IS_OWNER, yes(party.isOwner),
+                 model.TYPE.BOOLEAN);
+    this.subject(V.UMA_CLAIM_SOURCE,
+                 UMA_CLAIM_SOURCES.indexOf(String(party.claimSource)) >= 0
+                   ? [String(party.claimSource)] : []);
+    this.subject(V.UMA_CLAIM_ISSUER, one(party.claimIssuer));
+    this.subject(V.UMA_CLAIM_ISSUER_DECLARED,
+                 yes(party.claimIssuerDeclared !== false),
+                 model.TYPE.BOOLEAN);
+    this.subject(V.UMA_CLIENT_GRANT_DECLARED,
+                 yes(given.clientGrantDeclared), model.TYPE.BOOLEAN);
+    this.subject(V.ACR, one(party.acr));
+    this.subject(V.UMA_REQUESTING_PARTY_GROUP,
+                 (Array.isArray(party.groups) ? party.groups : [])
+                   .map(String).filter(Boolean));
+    const self = this;
+    const claims = given.claims && typeof given.claims === 'object'
+      ? given.claims : {};
+    Object.keys(claims).sort().forEach(function (name) {
+      const values = Array.isArray(claims[name]) ? claims[name]
+        : [claims[name]];
+      self.subject(V.UMA_CLAIM_PREFIX + name,
+                   values.filter(function (value) {
+                     return value !== undefined && value !== null;
+                   }).map(String));
+    });
+    const action = layer === 'owner' ? scope
+      : (layer === 'fga' ? UMA_FGA_ACTION : UMA_PERMISSION_ACTION);
+    if (action) {
+      this.requestedAction(action);
+    }
+    this.action(V.UMA_SCOPE, one(scope));
+    this.target(String(resource.id || ''));
+    this.resource(V.UMA_RESOURCE_TYPE, one(resource.type));
+    this.resource(V.UMA_RESOURCE_SERVER, one(resource.resourceServer));
+    this.resource(V.UMA_RESOURCE_SERVER_DECLARED,
+                  yes(resource.resourceServerDeclared), model.TYPE.BOOLEAN);
+    this.resource(V.UMA_OWNER, one(resource.owner));
+    this.resource(V.UMA_OWNER_KIND,
+                  SUBJECT_KINDS.indexOf(String(resource.ownerKind)) >= 0
+                    ? [String(resource.ownerKind)] : []);
+    this.protocol('uma');
+    this.grantType(UMA_GRANT_TYPE);
+    this.environment(V.REALM, one(given.realm));
+    this.environment(V.UMA_LAYER, [layer]);
+    this.environment(V.UMA_STAGE, [stage]);
+    const age = Number(given.ticketAgeS);
+    this.environment(V.UMA_TICKET_AGE,
+                     Number.isFinite(age) && age >= 0
+                       ? [String(Math.floor(age))] : [],
+                     model.TYPE.INTEGER);
+    this.environment(V.UMA_RPT_PRESENTED, yes(given.rptPresented),
+                     model.TYPE.BOOLEAN);
+    if (given.mode) {
+      this.mode(given.mode);
+    }
+    const settings = given.settings && typeof given.settings === 'object'
+      ? given.settings : {};
+    Object.keys(settings).sort().forEach(function (key) {
+      self.setting(key, settings[key]);
+    });
+    log.debug("Leaving AuthorizationRequest.uma(). layer=" + layer);
+    return this;
+  }
+
   // The request, in the engine's shape (`xacml_model.js`).
   build() {
     log.debug("Entering AuthorizationRequest.build().");
@@ -1106,5 +1576,14 @@ class AuthorizationRequest {
 module.exports = {
   AuthorizationRequest: AuthorizationRequest,
   VOCABULARY: VOCABULARY,
-  SUBJECT_KINDS: SUBJECT_KINDS
+  SUBJECT_KINDS: SUBJECT_KINDS,
+  FGA_STAGES: FGA_STAGES,
+  FGA_ISSUANCE_STAGES: FGA_ISSUANCE_STAGES,
+  FGA_GRANT_ACTION: FGA_GRANT_ACTION,
+  UMA_LAYERS: UMA_LAYERS,
+  UMA_STAGES: UMA_STAGES,
+  UMA_PERMISSION_ACTION: UMA_PERMISSION_ACTION,
+  UMA_FGA_ACTION: UMA_FGA_ACTION,
+  UMA_GRANT_TYPE: UMA_GRANT_TYPE,
+  UMA_CLAIM_SOURCES: UMA_CLAIM_SOURCES
 };

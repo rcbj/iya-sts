@@ -807,6 +807,78 @@
     "en": "00642c75836a2377",
     "text": "Ang sync token ng remote PEP, na isang change detector sa halip na security mechanism"
   },
+  "crypto.families.authzen.signs": {
+    "en": "ab66b57e4b31b350",
+    "text": "Wala. Ang isang decision ay JSON boolean at walang dalang signature; hindi naka-sign ang metadata document (hindi binubuo ang signed_metadata)."
+  },
+  "crypto.families.authzen.verifies": {
+    "en": "6d407b4bb19e8a28",
+    "text": "Ang credential ng caller, ng layer na may-ari nito: ang client certificate ng TLS layer at ng client truststore (tingnan ang TLS / mutual TLS), ang access token ng sariling JWS verification ng realm na ito (tingnan ang OAuth2 / OIDC), at sa ilalim ng mtls+bearer ang RFC 8705 x5t#S256 ng token laban sa ipinakitang certificate."
+  },
+  "crypto.families.authzen.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.authzen.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.authzen.hashes": {
+    "en": "c88ad2cce036fcf4",
+    "text": "Ang SHA-256 thumbprint ng ipinakitang certificate, na ikinukumpara sa cnf ng token sa ilalim ng mtls+bearer."
+  },
+  "crypto.families.authzen.keys": {
+    "en": "1eb2c695a5178870",
+    "text": "Walang sarili. Ang mga signing key ng realm ang nagve-verify sa mga token na tinatanggap nito, gaya ng saanman."
+  },
+  "crypto.families.authzen.whatItDoesNot": {
+    "en": "11e5f968c5b7cf60",
+    "text": "Wala itong pinipirmahang decision: nakasalalay ang isang decision sa transport, gaya ng sa XACML."
+  },
+  "crypto.families.authzen.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "Walang sina-sign, ine-encrypt o dine-decrypt dito"
+  },
+  "crypto.families.authzen.algorithms.1.what": {
+    "en": "349171490df64541",
+    "text": "Ang certificate thumbprint na ikinukumpara sa isang bound token (RFC 8705)"
+  },
+  "crypto.families.uma-2-0.signs": {
+    "en": "c22ee886c8b04abd",
+    "text": "Wala sa sarili nito. Ang requesting party token (RPT) ay isang RFC 9068 access token na pinipirmahan ng realm sa pamamagitan ng iisang funnel (tingnan ang OAuth2 / OIDC); ang permission ticket at ang persisted claims token ay mga random na handle, hindi mga signature."
+  },
+  "crypto.families.uma-2-0.verifies": {
+    "en": "b4864c9dcb80100e",
+    "text": "Ang protection API token (PAT), isang access token, sa pamamagitan ng sariling JWS verification ng realm na ito (tingnan ang OAuth2 / OIDC), kasama ang DPoP proof nito o RFC 8705 certificate binding kung mayroon; ang isang pushed claim_token, isang ID Token mula sa realm na ito o sa isang declared assertion issuer, sa parehong paraan."
+  },
+  "crypto.families.uma-2-0.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.uma-2-0.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.uma-2-0.hashes": {
+    "en": "d0596b4d7e7d1faa",
+    "text": "Ang SHA-256 kung saan iniimbak ang permission ticket at ang persisted claims token, para walang gumaganang handle na hawak ng store."
+  },
+  "crypto.families.uma-2-0.keys": {
+    "en": "5ee5db5c94943e3d",
+    "text": "Walang sarili. Ang mga signing key ng realm ang pumipirma sa RPT at nagve-verify sa PAT, gaya ng saanman."
+  },
+  "crypto.families.uma-2-0.whatItDoesNot": {
+    "en": "68ffcefb9ff39fa2",
+    "text": "Hindi ito pumipirma ng anumang decision o permission: ang permission ay isang claim ng RPT, at ang signature ng RPT ay sa OAuth."
+  },
+  "crypto.families.uma-2-0.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "Walang pinipirmahan, ine-encrypt o dine-decrypt dito"
+  },
+  "crypto.families.uma-2-0.algorithms.1.what": {
+    "en": "2a781ca079088054",
+    "text": "Ang digest kung saan iniimbak ang ticket o PCT"
+  },
   "crypto.families.oauth2-oidc.signs": {
     "en": "ba9dd042c619d87e",
     "text": "Bawat access token at refresh token, at ang ID Token, gamit ang RSA key ng realm bilang RS256. Ang client na nagre-register ng `id_token_signed_response_alg` ay nakakakuha ng algorithm na iyon sa halip, para sa ID Token nito at sa back-channel Logout Token nito (section 2.4: ang parehong mga key ng ID Token), mula sa shared JWS table — bawat curve, ang parehong Edwards curve, at ang mga post-quantum at composite. Ang pinirmahang UserInfo response sa parehong paraan, dagdag ang HMAC family (pinirmahan gamit ang sariling `client_secret` ng client na iyon, kaya hindi ito nangangailangan ng inilathalang key) at `none`. **AT ISANG RFC 9701 JWT INTROSPECTION RESPONSE** (2026-09-13), na may type na `token-introspection+jwt`, sa RS256 o sa `introspection_signed_response_alg` na ni-register ng resource server — ang parehong table at ang HMAC family, hindi kailanman `none`. **AT ISANG RESOURCE RESPONSE** (#178): isang RFC 9421 HTTP message signature na naka-tag na `fapi-2-response`, gamit ang realm key na pinangangalanan ng `oauth2.httpSignatureResponseAlg` (ES256 bilang default; inaalok ang ML-DSA), sa response at, sa pamamagitan ng `;req`, sa request na sinasagot nito."

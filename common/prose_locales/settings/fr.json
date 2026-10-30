@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "Section 3.5 : un client qui a envoyé sa clé par valeur reçoit un instance_id qu’il peut envoyer par référence la fois suivante."
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "Accepter les instances non enregistrées d’un client enregistré"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "Sections 2.3 et 2.3.3 : une clé qu’aucune application n’enregistre est acceptée comme instance du client GNAP enregistré que nomme son class_id, lorsque ce client indique un gnapFinishUri enregistré — c’est ainsi qu’une application de navigateur, qui crée une clé par navigateur, connecte les personnes. Une telle instance ne passe jamais outre la page d’approbation. Désactivé : une clé non enregistrée est refusée en mode produit (#1216)."
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "Garder les autorisations approuvées poursuivables"
@@ -1012,8 +1020,8 @@
     "text": "Algorithmes proposés"
   },
   "webauthn.algorithms|description": {
-    "en": "baa2f6e1bfd03f47",
-    "text": "`pubKeyCredParams`, par ordre de préférence — les algorithmes COSE dans lesquels ce service acceptera un identifiant. Les noms sont des graphies JOSE et sont associés à des identifiants COSE par la table propre de `authn/webauthn.js`, le module qui vérifie la signature : les post-quantiques de RFC 9964 `ML-DSA-44` (-48), `ML-DSA-65` (-49) et `ML-DSA-87` (-50) ; les entièrement spécifiés de RFC 9864 `ESP256` (-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) et `Ed448` (-53), dont la courbe est vérifiée par rapport à la clé ; `ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8) ; le `ES256K` de RFC 8812 (-47, secp256k1) ; et `PS256` (-37), `PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` (-258) et `RS512` (-259). Un identifiant dont l’algorithme ne figure pas dans cette liste est refusé (WebAuthn Level 3 section 7.1). Un nom hors de cette table est écarté avec un avertissement plutôt qu’envoyé, car proposer un algorithme que ce service ne peut pas vérifier produit un identifiant qui s’enrôle puis ne fonctionne jamais. **La valeur par défaut en demande sept, dans cet ordre : `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`** ; un authentificateur prend le premier qu’il prend en charge, l’ordre est donc une préférence, et tout autre algorithme peut être coché. Le `RS1` de SHA-1 (-65535) peut être nommé, mais n’est proposé et accepté que tant que `webauthn.insecureAlgorithms` est activé (développement uniquement) ; `webauthn.pqcOnly` restreint la liste à ML-DSA."
+    "en": "d5e0c4a5c20494f6",
+    "text": "`pubKeyCredParams`, par ordre de préférence — les algorithmes COSE dans lesquels ce service acceptera un identifiant. Les noms sont des graphies JOSE et sont associés à des identifiants COSE par la table propre de `authn/webauthn.js`, le module qui vérifie la signature : les post-quantiques de RFC 9964 `ML-DSA-44` (-48), `ML-DSA-65` (-49) et `ML-DSA-87` (-50) ; les entièrement spécifiés de RFC 9864 `ESP256` (-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) et `Ed448` (-53), dont la courbe est vérifiée par rapport à la clé ; `ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8) ; le `ES256K` de RFC 8812 (-47, secp256k1) ; et `PS256` (-37), `PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` (-258) et `RS512` (-259). Un identifiant dont l’algorithme ne figure pas dans cette liste est refusé (WebAuthn Level 3 section 7.1). Un nom hors de cette table est écarté avec un avertissement plutôt qu’envoyé, car proposer un algorithme que ce service ne peut pas vérifier produit un identifiant qui s’enrôle puis ne fonctionne jamais. **La valeur par défaut en demande six, dans cet ordre : `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `EdDSA`, `ES256`, `RS256`** ; un authentificateur prend le premier qu’il prend en charge, l’ordre est donc une préférence, et tout autre algorithme peut être coché. `ES384` n’est pas demandé par défaut, car certains navigateurs sous Windows sont incompatibles avec lui. Le `RS1` de SHA-1 (-65535) peut être nommé, mais n’est proposé et accepté que tant que `webauthn.insecureAlgorithms` est activé (développement uniquement) ; `webauthn.pqcOnly` restreint la liste à ML-DSA."
   },
   "webauthn.algorithms|csvValueNotes|ML-DSA-44": {
     "en": "0fed17862f33fa73",
@@ -6784,8 +6792,16 @@
     "text": "Politiques que le dépôt peut contenir"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "Le nombre d’entrées pouvant figurer sous ou=policies. Le même type de limite que portent ou=federations et ou=applications, et pour la même raison : cet annuaire est en mémoire dans le mode de persistance par défaut, et un appelant capable de créer des entrées sans limite peut l’épuiser. Atteindre la limite refuse la CRÉATION et journalise ; cela n’évince jamais rien."
+    "en": "bb4fc97c445e9e60",
+    "text": "Le nombre d’entrées pouvant figurer sous ou=policies. Le même type de limite que portent ou=federations et ou=applications, et pour la même raison : cet annuaire est en mémoire dans le mode de persistance par défaut, et un appelant capable de créer des entrées sans limite peut l’épuiser. Atteindre la limite refuse la CRÉATION et journalise ; cela n’évince jamais rien. La politique d’autorisation fine propre à une application n’est pas comptée ici : xacml.maxApplicationPolicies borne celles-ci."
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "Politiques d’applications que le dépôt peut contenir"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "Le nombre de politiques d’autorisation fine propres aux applications (entrées sous ou=policies portant xacmlApplication, orphelines comprises) que le dépôt peut contenir. Elles ne comptent pas dans xacml.maxPolicies, qui borne les politiques écrites par les administrateurs. La valeur par défaut est celle de applications.max, de sorte que chaque application admise par défaut par le registre peut en détenir une ; augmentez-la en même temps que applications.max. Atteindre la limite refuse la CRÉATION et journalise ; cela n’évince jamais rien."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6890,6 +6906,286 @@
   "xacml.pepNotifyTimeoutMs|description": {
     "en": "b02ca7d48b1cb3f5",
     "text": "Pendant combien de temps attendre qu’un PEP réponde à une notification. PLUS COURT QUE LES DIX SECONDES DE SSF À DESSEIN, et la raison est ce qui fait d’une notification une notification : un push perdu est un événement perdu, donc SSF attend ; une notification perdue coûte un intervalle d’interrogation de latence et rien d’autre, si bien qu’attendre est l’erreur coûteuse. Ce qui ATTEND réellement, c’est le formulaire de console de la personne qui vient d’enregistrer une politique."
+  },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "AuthZEN activé"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "Activé, l’AuthZEN Authorization API répond sous /access/v1. Désactivé, ses routes restent ENREGISTRÉES et répondent 501, comme celles de XACML : la fonctionnalité est désactivée, l’URL n’est pas erronée. Il décide avec le moteur XACML, il répond donc aussi 501 tant que xacml.enabled est désactivé. Un appelant a toujours besoin du rôle AUTHZEN_PEPS (roles.authzenPepGroup) et d’une portée d’application avant qu’on lui dise quoi que ce soit."
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "Comment un appelant AuthZEN s’authentifie"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls, la valeur par défaut : un certificat client que ce service VÉRIFIE d’après son magasin de confiance des clients, résolu en l’entrée d’annuaire qui le stocke (ou en la personne qu’il nomme, pour un certificat que ce service a émis). bearer : un jeton d’accès OAuth 2.0 issu de client_credentials, dont l’audience est le /access/v1 de ce domaine et portant authzen:evaluate ; l’appelant est le client. mtls+bearer : les deux, et le jeton doit être lié au certificat présenté (RFC 8705), de sorte que les deux nomment une seule partie. Vérifié dans tous les modes : AuthZEN laisse l’authentification du PEP au déploiement (section 11.2), et un point de terminaison de décision que n’importe qui peut piloter est un oracle de la politique."
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "Types de sujet qui nomment une personne de l’annuaire"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "Les valeurs de subject.type dont le subject.id est une personne de l’annuaire de ce domaine, séparées par des virgules. Pour celles-ci, le Policy Information Point fournit les rôles et les attributs d’annuaire du sujet, et ils font AUTORITÉ : un appelant ne peut pas les envoyer. Pour tout autre type, l’annuaire n’est pas consulté, de sorte qu’un id qui correspond par hasard au nom d’une personne n’est pas cette personne. Vide signifie que l’annuaire n’est jamais consulté."
+  },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "Évaluations par lot activées"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "Activé, POST /access/v1/evaluations répond à plusieurs évaluations d'accès dans une seule requête (section 7) et le document de métadonnées le nomme. Désactivé, la route répond 501 et les métadonnées l'omettent ; /access/v1/evaluation n'est pas concerné."
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "Évaluations qu'un lot peut porter"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "Le nombre maximal d'éléments qu'un POST /access/v1/evaluations peut porter. Au-delà, tout le lot est refusé avec 400 avant qu'aucun élément ne soit décidé : chaque élément est une décision complète sur le fil de ce service, et une liste sans limite est un moyen de l'épuiser."
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "Plus grande requête par lot (octets)"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "Le plus grand corps qu'accepte POST /access/v1/evaluations. Au-delà, tout le lot est refusé avec 400 avant d'être lu. La limite de corps propre au service (5 Mo) est le plafond."
+  },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "Signer les métadonnées AuthZEN"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "Activé, /.well-known/authzen-configuration porte signed_metadata (AuthZEN 1.0, section 9.1) : un JWT des mêmes membres, iss l'identifiant du PDP, signé avec la clé du domaine comme le sont les métadonnées RFC 8414 (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader), et vérifiable avec le JWKS du domaine. Un PEP qui le prend en charge croit les valeurs signées plutôt que les valeurs simples."
+  },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "Remettre les obligations à un PEP qui les déclare"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "L'Obligations Profile d'AuthZEN (un brouillon). Activé, une obligation XACML est remise au PEP dans context.obligations — et un Permit qui en porte une répond true — UNIQUEMENT quand context.supported_obligations de la requête énumère chaque type d'obligation de la réponse ; les métadonnées annoncent supported_obligations. Sans cette déclaration, ou si ceci est désactivé, un Permit portant une obligation que ce service ne peut pas exécuter lui-même répond false, car un PEP qui ne connaît pas le profil accorderait l'accès."
+  },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "Décider les échanges de jetons OAuth pour d'autres serveurs"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "L'AuthZEN Binding for OAuth 2.0 Token Exchange (un brouillon), ce service étant le PDP qu'interroge un autre serveur d'autorisation. Activé, un tuple dont resource.type est audience et dont l'action est issue:<type>:token_exchange est une porte, et un tuple dont resource.type est protected_resource une portée, décidés par des règles de conversion fixes avec les mêmes faits de délégation et la même politique d'émission qu'un échange RFC 8693 local ; la porte du sujet peut porter context.issuance, qui ne fait que restreindre ; et les métadonnées annoncent la capacité d'émission de jetons. Désactivé, ces tuples sont des questions ordinaires pour la politique racine."
+  },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "Search APIs activées"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "Activé, les trois recherches AuthZEN répondent sous /access/v1/search (sujet, ressource, action), et les métadonnées les nomment. Une recherche décide chaque candidat que ce service peut nommer selon la politique racine du domaine et répond par ceux qui sont permis : les sujets sont les personnes de l'annuaire du domaine, les ressources ses applications, API et relations de délégation, les actions les noms auxquels la politique compare action-id. Désactivé, les routes répondent 501."
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "Candidats décidés par une recherche"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "Le nombre maximal de candidats qu'une recherche décide. Chaque candidat est une décision complète sur le fil de ce service ; au-delà du plafond, les autres ne sont pas décidés et le context.incomplete de la réponse indique que le résultat est partiel."
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "Résultats par page de recherche"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "Combien de résultats une recherche renvoie dans une page lorsque la requête ne précise pas page.limit ; page.next_token permet de continuer."
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "Renvoyer les raisons d’une décision"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "Activé, une décision porte un context contenant la décision XACML, sa raison, tout advice et les obligations qui ont fait d’un Permit un false. Désactivé par défaut : une raison apprend à un appelant quelque chose sur la politique, et decision seul est la réponse dans les deux cas."
+  },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "Demandes d’accès et approbations"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "Le profil AuthZEN Access Request and Approval (un brouillon), avec son complément de rappel (callback). Lorsqu’il est activé, un Deny dont la réponse XACML porte l’advice urn:sts:xacml:advice:access-request répond false avec context.access_request ; un PEP le soumet à POST /access/v1/access-requests, un approbateur nommé par l’advice le décide dans le portail ou la console, et une approbation présentée à l’évaluation suivante parvient à la politique racine sous forme de faits de confiance. Les métadonnées nomment le point de terminaison et la capacité. Un refus sans l’advice n’est jamais demandable. Désactivé, les routes répondent 501 et aucun refus n’est demandable."
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "Durée pendant laquelle un refus demandable peut être soumis (secondes)"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "L’expires_at d’un refus demandable et la durée de vie de son binding_token : une soumission postérieure est refusée avec expired_denial et le PEP évalue de nouveau."
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "Durée pendant laquelle une demande d’accès attend un approbateur (secondes)"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "Une demande d’accès en attente au-delà de cette durée expire, par la tâche planifiée authzen.access-requests et à chaque lecture. Une demande terminée est conservée un jour de plus pour que le PEP puisse la lire."
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "Durée maximale d’une approbation (secondes)"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "Le plafond de l’approved_until d’une approbation. L’advice de la politique (max-approval-seconds) et le requested_until du demandeur peuvent chacun la raccourcir ; aucun ne la rallonge."
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "Durée de validité d’un accès d’urgence (secondes)"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "Une demande d’accès d’urgence — requested_access.emergency, là où l’advice de la politique l’autorise, avec un context.business_justification — est approuvée immédiatement pour cette durée au plus, et ses approbateurs reçoivent un courriel pour la réviser."
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "Retry-After sur une demande d’accès en attente (secondes)"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "Le Retry-After que le point de terminaison d’état de la tâche renvoie tant qu’une demande est en attente ; un PEP attend au moins cette durée avant de redemander."
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "Demandes d’accès en attente par domaine"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "Le nombre maximal de demandes d’accès qu’un domaine conserve en attente ; au-delà, une soumission est refusée avec 503 jusqu’à ce que certaines soient décidées ou expirent."
+  },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "User-Managed Access activé"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "Activé, l’API de protection UMA 2.0 répond sous /uma, le point de terminaison de jeton exécute le grant urn:ietf:params:oauth:grant-type:uma-ticket et l’annonce, et /.well-known/uma2-configuration les décrit. Désactivé, les routes restent ENREGISTRÉES et répondent 501, comme celles de XACML, le grant est unsupported_grant_type, et le document de découverte n’est pas servi. Rien de ce qu’un propriétaire de ressources a partagé n’est oublié en le désactivant."
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "La politique d’autorisation UMA du domaine"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "Le nom de l’entrée ou=policies qui décide la couche DOMAINE de chaque permission UMA : quels serveurs de ressources, clients et émetteurs de claims peuvent participer, et qu’une partie requérante doit être connue. Sans entrée de ce nom, le modèle intégré uma-authorization décide ; une entrée le remplace, et une entrée DÉSACTIVÉE ne se replie pas sur lui (la règle de la politique d’émission). Le document propre du propriétaire de ressources et la politique fine du serveur de ressources sont interrogés après elle, et chaque couche doit répondre Permit."
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "Durée de vie du ticket de permission (secondes)"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "Combien de temps un ticket de permission (Federated Authorization section 4) peut être présenté au point de terminaison de jeton. Chaque réponse need_info, request_submitted et request_denied FAIT TOURNER le ticket, si bien qu’un client qui continue de demander n’en présente jamais un plus ancien que cela ; un ticket n’est consommé qu’une fois dans tout le cluster."
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "Durée de vie du RPT (secondes)"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "Combien de temps vit un jeton de partie requérante. COURT EXPRÈS : la permission d’un RPT est ce que le propriétaire autorisait lors de son émission, et une vie courte borne la durée pendant laquelle un partage retiré est encore honoré par un serveur de ressources qui ne fait pas d’introspection. Un client qui veut plus présente à nouveau son ticket ou met à niveau son RPT, ce qui redécide chaque permission."
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "Émettre un jeton d’actualisation avec un RPT"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "Indique si le grant uma-ticket répond avec un jeton d’actualisation à côté du RPT. DÉSACTIVÉ PAR DÉFAUT (décision 4 de rcbj sur #1168) : la spécification Grant interdit une évaluation d’autorisation à l’actualisation, ce service redécide à chaque actualisation, et un RPT qui ne peut pas être redécidé ferait mieux d’avoir une vie courte. Activé, l’actualisation réexécute chaque couche, comme le fait une mise à niveau, et une permission qui ne passe plus est abandonnée."
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "Durée de vie du jeton de claims persisté (secondes)"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "Combien de temps un jeton de claims persisté (PCT) conserve les claims recueillis sur une partie requérante pour un client. Un PCT est un identifiant stocké par son empreinte, lié au client et à la partie requérante, révocable à /oauth2/revoke avec token_type_hint=pct, et terminé par une déconnexion de tout."
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "Émettre un RPT pour les permissions accordées lorsque certaines sont refusées"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "Activé (décision 3 de rcbj sur #1168), un ticket demandant plusieurs permissions, dont certaines sont accordées et d’autres refusées, reçoit en réponse un RPT portant le sous-ensemble accordé — l’option de RPT partiel de la spécification Grant — et request_denied seulement lorsqu’aucune ne l’est. Désactivé, toute permission refusée refuse la demande entière. need_info est préféré à l’un et l’autre dès qu’une question est Indeterminate au sujet de la partie requérante."
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "Permettre à un propriétaire de ressources de modifier son document en ALFA"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "Activé, /portal/shared permet à un propriétaire de ressources de modifier tout son document UMA en ALFA, à côté du formulaire de partage. DÉSACTIVÉ PAR DÉFAUT (décision 2 de rcbj sur #1168) : une règle que le formulaire n’a pas écrite est alors affichée en lecture seule comme règle personnalisée. Le document d’un propriétaire n’est jamais interrogé que sur les ressources du propriétaire lui-même, si bien que le pire qu’une règle écrite à la main puisse faire est de partager ce que possède son auteur."
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "Attributs d’annuaire que la couche du propriétaire peut lire"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "Les attributs de l’entrée d’annuaire d’une partie requérante que le Policy Information Point fournit pour la couche du PROPRIÉTAIRE de ressources, séparés par des virgules : ce que la règle propre d’une personne peut lire sur un inconnu. La couche domaine lit l’annuaire comme le fait chaque question d’émission. Vide signifie que la règle d’un propriétaire ne peut lire que ce qui a été recueilli comme claims."
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "Durée d’attente de l’approbation d’un propriétaire (secondes)"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "Combien de temps une demande request_submitted attend sur /portal/shared la réponse du propriétaire. Sans réponse au-delà, la prochaine interrogation du client reçoit request_denied. Le propriétaire est prévenu par courriel là où le canal est configuré et qu’il n’a pas refusé les notifications."
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "Approbations en attente par propriétaire"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "Le nombre maximal de demandes attendant en même temps la réponse d’un propriétaire. Au-delà, une nouvelle request_submitted reçoit request_denied au lieu d’être mise en file : une file sans limite est un moyen pour un inconnu de remplir le portail d’une personne."
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "Plus grand document de propriétaire (octets)"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "La taille maximale, en octets, du document XACML de la politique d’un propriétaire de ressources. Un partage qui la dépasserait est refusé et le document reste tel quel."
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "Nombre maximal de règles d’un document de propriétaire"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "Le nombre maximal de Rules que peut contenir le document d’un propriétaire de ressources : sa propre règle owner-self, une par partage et une par approbation donnée. Un partage qui le dépasserait est refusé."
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "Ressources enregistrées par propriétaire"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "Le nombre maximal de ressources enregistrées pour le compte d’un propriétaire, tous serveurs de ressources confondus. Un enregistrement au-delà est refusé : sinon, un serveur de ressources muni d’un jeton d’API de protection pourrait enregistrer sans limite au nom de quelqu’un."
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "Nombre maximal de portées par ressource"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "Le nombre maximal de resource_scopes que peut porter une ressource enregistrée. Une portée est une chaîne et n’est jamais contactée : un document de description de portée que la spécification permet à une portée de nommer n’est pas récupéré."
   },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
@@ -8022,6 +8318,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré XACML_USER, qu’exigent les trois endpoints XACML proprement dits — GET /xacml, POST /xacml/pdp et GET /xacml/policies. Un appelant présentant un certificat client que ce service a VÉRIFIÉ est quelqu’un qu’il peut nommer ; l’appartenance à ce groupe est ce qui en fait quelqu’un qu’il laisse entrer, et les deux sont séparés pour la même raison que pour roles.remotePepGroup ci-dessus : un certificat prouve une identité et un groupe accorde une permission. C’EST UN SECOND GROUPE ET NON LE MÊME : REMOTE_PEPS donne accès aux trois endpoints /xacml/pep, qui distribuent les documents avec lesquels ce service applique son propre contrôle d’accès, et un seul groupe accordant les deux ferait qu’admettre un appelant sur l’interface XACML proprement dite l’admettrait silencieusement sur ceux-là. Le définir à la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme ces trois endpoints à tout appelant ; c’est le moyen de retirer l’interface XACML sans désactiver xacml.enabled et perdre avec lui les PEP intégrés d’émission et d’accès."
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "Groupe accordant le rôle AUTHZEN_PEPS"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "Le groupe d’annuaire dont les membres détiennent le rôle intégré AUTHZEN_PEPS, qui est ce qu’exige l’AuthZEN Authorization API sous /access/v1. Un membre est une personne, un compte de service ou une application (pour un appelant qui s’authentifie avec son propre jeton d’accès). C’EST UN TROISIÈME GROUPE ET AUCUN DES DEUX AUTRES : AUTHZEN_PEPS demande des décisions et rien d’autre, alors que XACML_USER lit aussi le dépôt et que REMOTE_PEPS récupère les documents avec lesquels ce service applique son propre contrôle d’accès ainsi que les attributs d’une personne nommée. Le définir sur la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme /access/v1 à tout appelant."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

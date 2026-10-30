@@ -561,6 +561,25 @@ const PROTOCOLS = [
           'finish URIs are return addresses like any other; a resource ' +
           'server carries the locations it answers for and, once it has ' +
           'registered a resource set, the macaroon root key it verifies with.' },
+  // USER-MANAGED ACCESS 2.0 (#1168). A RESOURCE SERVER: the application
+  // whose protection API token (PAT) registers resources and asks permission
+  // tickets, and the audience of every RPT issued for them. It is an OAuth
+  // client too — the PAT is an ordinary access token its client_id obtains
+  // — so it carries no identifier of its own here: declaring the family is
+  // what makes an OAuth client a UMA resource server, and the realm's
+  // uma-authorization policy refuses a registration or a permission for one
+  // that is not declared. `umaOwnsResources` (its one family-scoped
+  // attribute) lets the APPLICATION be the resource owner, through a
+  // client_credentials PAT (rcbj's decision 5 on #1168).
+  { id: 'uma', label: 'UMA 2.0', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A User-Managed Access 2.0 resource server: an OAuth client that ' +
+          'obtains a protection API token for /uma, registers the ' +
+          'resources it holds for a resource owner, asks permission ' +
+          'tickets for them, and is the audience of the requesting party ' +
+          'tokens issued for them. Declaring the family is what admits it; ' +
+          'umaOwnsResources lets the application itself be an owner.' },
   // CERTIFICATE ENROLLMENT (rcbj, 2026-10-01): ACME, EST and SCEP, a family
   // each, so an application may be allowed one and not another. An
   // application is already an enrollment SUBJECT in all three
@@ -1177,6 +1196,16 @@ const SCHEMA = {
             'redirect_uri this service has ACCEPTED for the application ' +
             'beside them. The two are not the same claim and the registry ' +
             'does not merge them silently — see appRedirectUriObserved.' },
+    // UMA 2.0 (#1168, #1194): where the claims interaction endpoint returns
+    // the requesting party, the Grant specification's section 3.3.2. A list
+    // of its own, exact-match, and never an RFC 6749 redirect_uri unless it
+    // is listed here too.
+    { name: 'oauthClaimsRedirectUri', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'Where /uma/claims may send the requesting party back to this ' +
+            'client after gathering claims (UMA 2.0 Grant section 3.3.2, ' +
+            'claims_redirect_uri). Matched exactly; a claims_redirect_uri ' +
+            'not listed here is told to the person and never redirected to.' },
     { name: 'appRedirectUriObserved', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'A redirect_uri seen on an authorization request that this ' +
             'service answered. Kept apart from oauthRedirectUri because ' +
@@ -1933,6 +1962,64 @@ const SCHEMA = {
             'authorization_details types this client may use, one per ' +
             'value. EMPTY MEANS any type this authorization server ' +
             'supports.' },
+    // -------------------------------------------------------------------
+    // AUTHZEN (#563): TWO ATTRIBUTES, on DIFFERENT KINDS OF ENTRY, as RFC
+    // 9396's two are. The CATALOGUE is the API's — one row per value on the
+    // realm's `sts-authzen-api` resource object, read by `authzen/` on every
+    // request — and the APPLICATION SCOPE is a caller's: the applications an
+    // OAuth client calling `/access/v1` may ask about. A person or a service
+    // account carries the second as `stsAuthzenApplication` on its directory
+    // entry instead. Both are written by an administrator only: what a
+    // caller may ask about is never something the caller says.
+    { name: 'authzenAttribute', kind: 'multi',
+      from: 'the console (the AuthZEN page), the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is the vocabulary /access/v1 accepts, and that API is ' +
+        'an OAuth 2.0 resource; on an entry declared for no OAuth family it ' +
+        'would read like an API in service.',
+      what: 'ONE ROW OF THE AUTHZEN ATTRIBUTE CATALOGUE (#563), on the ' +
+            'sts-authzen-api resource object: a JSON object {"object", ' +
+            '"property", "attributeId", "category", "dataType", ' +
+            '"multiplicity", "description"}. `object` is subject, ' +
+            'resource, action or context; `property` the member\'s name, ' +
+            'or a dotted path into a nested object; `attributeId` the ' +
+            'XACML attribute it is sent as; `category` (default the ' +
+            'object\'s own), `dataType` (default string) and ' +
+            '`multiplicity` (single or bag). A property no row names is ' +
+            'refused in every mode, and a row may not name this service\'s ' +
+            'own urn:sts:xacml: identifiers, subject-id, resource-id or ' +
+            'action-id, nor a bare directory attribute name in a subject ' +
+            'category.' },
+    { name: 'appAuthzenApplication', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It scopes what this client may ask /access/v1 about with ' +
+        'an OAuth 2.0 access token, so on an entry declared for no OAuth ' +
+        'family it would read like a permission in force.',
+      what: 'AUTHZEN APPLICATION SCOPE (#563): the applications this ' +
+            'client, calling /access/v1 with its own client_credentials ' +
+            'token, may name in context.application — one identifier per ' +
+            'value. The client\'s own identifier is always in scope. Set ' +
+            'by an administrator, never by the caller.' },
+    // THE ACCESS REQUEST CALLBACK URLS (#1180): where this service may tell
+    // this client, as an AuthZEN PEP, that an access request it submitted
+    // finished — the CALLBACK companion's endpoint, held to these exactly,
+    // so a request names one of them or none. Written by an administrator
+    // (the AuthZEN tab's set-callbacks); `federation/CLAUDE.md` carries the
+    // URL-dialling argument.
+    { name: 'appAuthzenCallbackUri', kind: 'multi',
+      from: 'the console (the AuthZEN tab), the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is where /access/v1 tells this client an access request ' +
+        'finished, and that API is an OAuth 2.0 resource; on an entry ' +
+        'declared for no OAuth family it would read like a delivery in ' +
+        'service.',
+      what: 'AUTHZEN ACCESS REQUEST CALLBACK (#1180): an https URL this ' +
+            'client, as an AuthZEN PEP, may name as an access request\'s ' +
+            'callback.endpoint — one per value, matched exactly. A request ' +
+            'naming any other is refused; this service never dials a ' +
+            'callback URL taken from a request alone. Set by an ' +
+            'administrator, never by the caller.' },
     // -------------------------------------------------------------------
     // RFC 9470, STEP-UP AUTHENTICATION (2026-09-13). TWO ATTRIBUTES ON A
     // RESOURCE: what it requires of the authentication behind an access token
@@ -3561,6 +3648,8 @@ const SCHEMA = {
     // optional: writeApplication() REPLACES an entry from its record, and an
     // attribute the schema does not list would be erased by the next
     // sighting — which for a Kerberos service is the next ticket issued for it.
+    // (Since #1230 the store keeps an attribute the schema does not list;
+    // these stay rows because the pages and the record describe them.)
     { name: 'krb5ServiceKeys', kind: 'single',
       from: '/admin/kerberos/principals',
       secret: true,
@@ -4504,7 +4593,44 @@ const SCHEMA = {
             'realm holds — written past the console — allows NO mechanism ' +
             'until the policy exists (STS-AUTHN-0536).\n\nIt is WRITTEN ' +
             'BY NOBODY: no protocol presents it, so it is editable and ' +
-            'starts empty.' }
+            'starts empty.' },
+    // -------------------------------------------------------------------
+    // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564). The RESOURCE
+    // application that declares an authorization_details type owns the
+    // policy that decides details of that type (rcbj's decision 1). The
+    // policy is an entry in ou=policies carrying xacmlApplication; these
+    // are the application's half. BOTH ARE DERIVED in this registry's
+    // sense and in no EDITABLE row: `xacml/fga_policies.ts` writes them,
+    // through `setFgaState()` below, because switching enforcement on
+    // creates the policy first and an ordinary field write would skip
+    // that. An LDIF export leaves them out and an import refuses them, so
+    // an imported application gets a policy of its own.
+    { name: 'appFgaPolicy', kind: 'single',
+      from: 'this registry, when the application is created',
+      what: 'The entry name in ou=policies of the fine-grained ' +
+            'authorization policy this application owns, which decides ' +
+            'each authorization detail of the types it declares once ' +
+            'appFgaEnforced is TRUE.' },
+    { name: 'appFgaEnforced', kind: 'single',
+      from: 'this registry, when fine-grained authorization is switched',
+      what: 'TRUE when this application\'s fine-grained policy is ' +
+            'enforced. Absent or FALSE means it is not, which is the ' +
+            'default.' },
+    // -------------------------------------------------------------------
+    // USER-MANAGED ACCESS 2.0 (#1168). A resource server's one attribute:
+    // whether the APPLICATION may be a resource owner itself, through a
+    // client_credentials protection API token (rcbj's decision 5). Off, a
+    // PAT issued to the client as itself is refused at /uma, and every
+    // resource it registers belongs to the person whose code-flow PAT it
+    // presents. DECLARED, so editable, and family-scoped by its prefix.
+    // -------------------------------------------------------------------
+    { name: 'umaOwnsResources', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'TRUE when this UMA 2.0 resource server may register ' +
+            'resources it OWNS ITSELF, through a protection API token ' +
+            'obtained with client_credentials. Absent or FALSE, the ' +
+            'default, means a PAT must be a person\'s (the code flow) and ' +
+            'that person owns what it registers.' }
   ]
 };
 
@@ -4557,6 +4683,8 @@ const EDITABLE = {
   // having been deliberately withdrawn — which, on the one attribute here
   // that REFUSES people, is the failure worth designing against.
   appRequiredRole: 'multi',
+  // UMA 2.0 (#1168): whether the resource server may own resources itself.
+  umaOwnsResources: 'set',
   // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
   // rows and `common/delegation_policy.ts`.
   appAllowedToDelegateTo: 'multi',
@@ -4620,6 +4748,12 @@ const EDITABLE = {
   // a client uses several.
   oauthAuthorizationDetailsType: 'multi',
   oauthAuthorizationDetailsTypes: 'multi',
+  // AuthZEN's two (#563). Both accumulate: a catalogue has many rows, and a
+  // caller may be scoped to several applications.
+  authzenAttribute: 'multi',
+  appAuthzenApplication: 'multi',
+  // The access request callback URLs (#1180): a caller may register several.
+  appAuthzenCallbackUri: 'multi',
   // RFC 9470's two. Each holds one answer: the acr values are one ordered
   // list in one value, because a directory's multi-valued attribute has no
   // order and the order is the preference.
@@ -4935,6 +5069,8 @@ const EDITABLE = {
   gnapJweKey: 'set',
   gnapScopedSignals: 'set',
   oauthRedirectUri: 'multi',
+  // UMA 2.0 (#1194): the claims interaction endpoint's return addresses.
+  oauthClaimsRedirectUri: 'multi',
   oauthPostLogoutRedirectUri: 'multi',
   oauthFrontchannelLogoutUri: 'set',
   oauthFrontchannelLogoutSessionRequired: 'set',
@@ -5810,7 +5946,9 @@ const BOOLEAN_ATTRIBUTES = [
   // Who may start a sign-in (#426, #710).
   'saml2IdpInitiatedSso', 'saml2SpInitiatedSso', 'saml11IdpInitiatedSso',
   'saml11SpInitiatedSso', 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
-  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso'
+  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
+  // UMA 2.0 (#1168): whether the resource server may own resources itself.
+  'umaOwnsResources'
 ];
 
 /**
@@ -5867,7 +6005,10 @@ const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
   'urn:ietf:params:oauth:grant-type:jwt-bearer',
   'urn:ietf:params:oauth:grant-type:saml2-bearer',
   'urn:openid:params:grant-type:ciba',
-  'urn:ietf:params:oauth:grant-type:device_code'];
+  'urn:ietf:params:oauth:grant-type:device_code',
+  // UMA 2.0 (#1168): a client that presents permission tickets declares it,
+  // and the realm's uma-authorization policy refuses one that does not.
+  'urn:ietf:params:oauth:grant-type:uma-ticket'];
 
 /**
  * A response_type value with its words sorted, the order every member of
@@ -6684,6 +6825,10 @@ const FIELD_EXAMPLES = {
   oauthRequestUri: 'https://app.example.com/requests/signin.jwt',
   oauthAuthorizationDetailsType: 'payment_initiation',
   oauthAuthorizationDetailsTypes: 'payment_initiation',
+  authzenAttribute: '{"object":"resource","property":"classification",' +
+    '"attributeId":"urn:example:classification"}',
+  appAuthzenApplication: 'engineering-portal',
+  appAuthzenCallbackUri: 'https://pep.example.com/callbacks/access-requests',
   oauthStepUpAcrValues: 'mfa',
   oauthStepUpMaxAge: '600',
   oauthDefaultAcrValues: 'mfa 1',
@@ -6804,6 +6949,8 @@ const FIELD_EXAMPLES = {
   gnapOwnerLookupUri: 'https://rs.example.com/owners/{identifier}',
   gnapJweKey: '{"kty":"EC","crv":"P-256","use":"enc","x":"…","y":"…"}',
   oauthRedirectUri: 'https://app.example.com/callback',
+  // UMA 2.0 (#1194): the claims interaction's return address.
+  oauthClaimsRedirectUri: 'https://app.example.com/uma/claims-callback',
   oauthPostLogoutRedirectUri: 'https://app.example.com/signed-out',
   oauthFrontchannelLogoutUri: 'https://app.example.com/frontchannel-logout',
   oauthBackchannelLogoutUri: 'https://app.example.com/backchannel-logout',
@@ -6862,6 +7009,7 @@ const FIELD_FAMILY_PREFIXES = [
   ['spiffe', ['spiffe']],
   ['ssf', ['ssf']],
   ['gnap', ['gnap']],
+  ['uma', ['uma']],
   ['did', ['did']],
   ['acme', ['acme']],
   ['est', ['est']],
@@ -6892,6 +7040,7 @@ const FIELD_GROUPS = [
   { id: 'spiffe', label: 'SPIFFE', families: ['spiffe'] },
   { id: 'ssf', label: 'Shared Signals', families: ['ssf'] },
   { id: 'gnap', label: 'GNAP', families: ['gnap'] },
+  { id: 'uma', label: 'User-Managed Access', families: ['uma'] },
   { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] },
   { id: 'enroll', label: 'Certificate enrollment',
     families: ['acme', 'est', 'scep'] },
@@ -10655,6 +10804,23 @@ function gnapMtlsTrustProblem(attribute, value) {
 //                                  `limits` member must meet; a type that
 //                                  declares none refuses `limits` (phase 5
 //                                  uses it)
+//
+// AND, SINCE #564 (application-scoped fine-grained authorization), the two
+// members that say how a detail of the type reaches the owning application's
+// XACML policy — read by `xacml/fga_map.ts`'s `mappingOf()`, required
+// LAZILY and only for a definition that carries one of them, so a definition
+// without either reads exactly as before:
+//
+//   xacml                          rows of member path -> attributeId,
+//                                  category, dataType, single or bag:
+//                                  AuthZEN's catalogue grammar, its
+//                                  reserved-identifier refusal shared rather
+//                                  than copied (`xacml/xacml_attribute_rows
+//                                  .ts`), so a detail can never forge a
+//                                  trusted attribute
+//   notForPolicy                   member paths deliberately NOT mapped
+//
+// The five common data fields need neither: a built-in row maps each.
 // ---------------------------------------------------------------------------
 /**
  * The RFC 9396 authorization details types this service defines itself.
@@ -10670,7 +10836,8 @@ const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
                                                   'maxLifetimeS', 'acr',
                                                   'derivableFrom',
                                                   'introspectionClaims',
-                                                  'limits'];
+                                                  'limits', 'xacml',
+                                                  'notForPolicy'];
 
 // The three values `interaction` may take (#432 phase 4; enforced by phase
 // 6): `always` asks the resource owner whatever the client is, `never` lets a
@@ -10781,7 +10948,11 @@ function authorizationDetailsTypeOf(value) {
                 required: [], interaction: 'default', consentActions: [],
                 bearer: null, maxLifetimeS: null, acr: '',
                 derivableFrom: [], introspectionClaims: [], limits: null,
-                validateLimits: null };
+                validateLimits: null,
+                // FINE-GRAINED AUTHORIZATION (#564): the type's rows and
+                // the members it deliberately leaves out, and the
+                // definition object itself, which `fga_map.ts` digests.
+                xacml: [], notForPolicy: [], source: null };
   if (!text) {
     out.problem = 'the definition is empty';
     log.debug("Leaving authorizationDetailsTypeOf(). Empty.");
@@ -10886,6 +11057,21 @@ function authorizationDetailsTypeOf(value) {
     log.debug("Leaving authorizationDetailsTypeOf(). A catalogue member.");
     return out;
   }
+  if (definition.xacml !== undefined ||
+      definition.notForPolicy !== undefined) {
+    // Lazily: the mapping is a library over the XACML engine's model, and
+    // this module is required long before the XACML family — and only a
+    // definition that asks for it pays for loading it.
+    const mapping = require('../xacml/fga_map').mappingOf(definition);
+    if (mapping.problem) {
+      out.problem = mapping.problem;
+      log.debug("Leaving authorizationDetailsTypeOf(). The FGA mapping.");
+      return out;
+    }
+    out.xacml = mapping.xacml;
+    out.notForPolicy = mapping.notForPolicy;
+  }
+  out.source = definition;
   log.debug("Leaving authorizationDetailsTypeOf(). " + out.type + ".");
   return out;
 }
@@ -11212,6 +11398,80 @@ function authorizationDetailsAttributeProblem(attribute, value) {
   }
   log.debug("Leaving authorizationDetailsAttributeProblem(). Not asked.");
   return null;
+}
+
+// FINE-GRAINED AUTHORIZATION'S COVERAGE AT THE WRITE (#564, P3): a type
+// definition written to an application whose `appFgaEnforced` is TRUE must
+// leave no member path uncovered (`xacml/fga_map.ts`'s `uncovered()`).
+// `fga_map.ts` is required LAZILY and only for an enforcing application —
+// the arrangement `authorizationDetailsTypeOf()` takes for the mapping
+// grammar — so nothing reaches for it unless an administrator switched
+// enforcement on, which none of the parent project's in-process Kerberos
+// jobs (whose COPY closure reaches this module) ever does; and it is a pure
+// library that registers nothing and fills no slot, so loading it here
+// moves nothing. The lifecycle's slot (`setFgaLifecycle()`) is not the
+// door for this: the question is about a definition, not a policy.
+/**
+ * Refuses a type definition that would be uncovered on an application that
+ * enforces fine-grained authorization.
+ *
+ * @param fields - the application entry's fields as they stand
+ * @param value - the definition being written
+ * @returns the sentence naming the uncovered paths, or ''
+ */
+function fgaCoverageProblem(fields, value) {
+  log.debug("Entering fgaCoverageProblem().");
+  const enforced = String(valuesOf((fields || {}).appFgaEnforced)[0] || '')
+    .toUpperCase() === 'TRUE';
+  if (!enforced) {
+    log.debug("Leaving fgaCoverageProblem(). Not enforced.");
+    return '';
+  }
+  const definition = authorizationDetailsTypeOf(value);
+  if (definition.problem) {
+    // Refused by the STS-REG-0112 check above, which runs first.
+    log.debug("Leaving fgaCoverageProblem(). Not a definition.");
+    return '';
+  }
+  const paths = require('../xacml/fga_map').uncovered(definition);
+  log.debug("Leaving fgaCoverageProblem(). " + paths.length + " uncovered.");
+  return paths.length
+    ? 'oauthAuthorizationDetailsType: this application enforces ' +
+      'fine-grained authorization, and the type "' + definition.type +
+      '" would leave ' + paths.join(', ') + ' neither mapped (xacml) nor ' +
+      'listed in notForPolicy, so every detail carrying one would be ' +
+      'refused. Map each, list it in notForPolicy, or close the schema ' +
+      '(additionalProperties: false) where "*" is shown — or switch ' +
+      'enforcement off first.'
+    : '';
+}
+
+// AN AUTHZEN CATALOGUE ROW (#563), checked by the catalogue's own grammar —
+// the one place a row is read, so the write and every request read it alike.
+// A clear is never refused; the identifier list of `appAuthzenApplication`
+// is any non-empty value, as `appAllowedToDelegateTo`'s is.
+/**
+ * Checks an AuthZEN catalogue row written through the console or the API.
+ *
+ * @param attribute - the attribute's name
+ * @param value - the value written
+ * @returns the error code and message, or null
+ */
+function authzenAttributeProblem(attribute, value) {
+  log.debug("Entering authzenAttributeProblem(). attribute=" + attribute);
+  const text = String(value === undefined || value === null ? '' : value)
+    .trim();
+  if (attribute !== 'authzenAttribute' || !text) {
+    log.debug("Leaving authzenAttributeProblem(). Not asked.");
+    return null;
+  }
+  // Lazily: the catalogue is a library over the engine's model and this
+  // module is required long before the XACML family.
+  const parsed = require('../authzen/authzen_catalogue').parse(text);
+  log.debug("Leaving authzenAttributeProblem(). " +
+            (parsed.row ? 'A row.' : parsed.code));
+  return parsed.row ? null
+    : { code: parsed.code, message: attribute + ': ' + parsed.problem + '.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -11712,6 +11972,17 @@ function normaliseFields(value) {
       code = code || stepUpProblem.code;
       return;
     }
+    // AuthZEN's catalogue (#563), every value.
+    const authzenProblems = values.map(function (one) {
+      return authzenAttributeProblem(name, one);
+    }).filter(function (one) {
+      return !!one;
+    });
+    if (authzenProblems.length) {
+      authzenProblems.forEach(function (one) { errors.push(one.message); });
+      code = code || authzenProblems[0].code;
+      return;
+    }
     // RFC 9396's two, every value.
     const detailsProblems = values.map(function (one) {
       return authorizationDetailsAttributeProblem(name, one);
@@ -11758,7 +12029,9 @@ function normaliseFields(value) {
 // made of:
 //
 //   readApplication(identifier)   the entry, or null
-//   writeApplication(identifier, attributes)  create or update it
+//   writeApplication(identifier, attributes, { owned })  create or update
+//                                 it, replacing the owned attributes and
+//                                 keeping every other one (#1230)
 //   allApplications()             every entry, in tree order
 //   countApplications()           how many there are, for the cap message
 //
@@ -12054,6 +12327,47 @@ function attributesFor(record) {
   return attributes;
 }
 
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTES THIS REGISTRY OWNS ON AN ENTRY (#1230), handed to the store
+// with every write so that it can tell the two kinds of attribute on an
+// application's entry apart.
+//
+// `writeApplication()` REPLACES the attributes named here from the record,
+// which is what lets a value removed with ldapmodify stay removed (its
+// comment argues it). Everything ELSE on the entry was written by a door
+// that does not go through this module — a certificate stored by
+// `add-certificate` (#1061, #1227), an attribute an operator added with
+// ldapmodify — and the record never carried it, so a replace erased it at
+// the next sighting. The store keeps those now, and needs this list to know
+// which they are.
+//
+// LOWER-CASED BASE NAMES: LDAP attribute descriptions are case-insensitive
+// (RFC 4512 section 2.5) and an option (`;binary`, `;lang-en`) does not make
+// another attribute, so `userCertificate;binary` is owned exactly when
+// `userCertificate` is. `objectClass` is owned too: `attributesFor()` writes
+// it. Built once, because SCHEMA does not change while the process runs.
+// ---------------------------------------------------------------------------
+let ownedNames = null;
+
+/**
+ * Returns the attributes this registry writes onto an application's entry,
+ * as lower-cased base names (no LDAP options).
+ *
+ * @returns the names
+ */
+function ownedAttributeNames() {
+  log.debug("Entering ownedAttributeNames().");
+  if (!ownedNames) {
+    const names = ['objectclass'];
+    SCHEMA.attributes.forEach(function (row) {
+      names.push(String(row.name).split(';')[0].toLowerCase());
+    });
+    ownedNames = Object.freeze(Array.from(new Set(names)));
+  }
+  log.debug("Leaving ownedAttributeNames(). " + ownedNames.length + ".");
+  return ownedNames;
+}
+
 // Attribute names arrive from the directory in one of TWO spellings and every
 // lookup here has to survive both. The store lower-cases them, because
 // @ldapjs/attribute lower-cases a type on the way in; readApplication() then
@@ -12343,8 +12657,11 @@ function save(record, how) {
     log.debug("Leaving save().");
     return false;
   }
+  // WITH THE NAMES IT OWNS (#1230): the store replaces those and keeps
+  // whatever else is on the entry. See ownedAttributeNames().
   const written = !!backing.writeApplication(record.identifier,
-                                             attributesFor(record));
+                                             attributesFor(record),
+                                             { owned: ownedAttributeNames() });
   if (written && !(how && how.quiet)) {
     noteCredentialWrite(record, how);
   }
@@ -14794,6 +15111,9 @@ function createApplication(detail) {
             (asked.protocols.length ?
              ', declared for ' + asked.protocols.join(', ') : '') +
             '. ' + count() + ' application(s) in the directory.');
+  // ITS DEFAULT FINE-GRAINED POLICY (#564, decision 2), after the entry and
+  // its audit row exist, so the policy's own row follows the create's.
+  fgaHook('created', identifier, info.actor || '');
   log.debug("Leaving createApplication(). Created.");
   log.debug("Leaving createApplication().");
   return { ok: true, application: viewAfterWrite(identifier, record) };
@@ -15269,6 +15589,16 @@ function updateApplication(identifier, change) {
                              problem.code);
     }
   }
+  // AuthZEN's catalogue (#563), on an ADD or a SET that carries a value.
+  if ((mode === 'set' || mode === 'add') && value) {
+    const problem = authzenAttributeProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not an AuthZEN catalogue " +
+                "row.");
+      return errorCodes.mark({ ok: false, errors: [problem.message] },
+                             problem.code);
+    }
+  }
   // RFC 9396's two, on an ADD or a SET that carries a value.
   if ((mode === 'set' || mode === 'add') && value) {
     const problem = authorizationDetailsAttributeProblem(attribute, value);
@@ -15277,6 +15607,22 @@ function updateApplication(identifier, change) {
                 "details value.");
       return errorCodes.mark({ ok: false, errors: [problem.message] },
                              problem.code);
+    }
+  }
+  // FINE-GRAINED AUTHORIZATION'S COVERAGE (#564, P3), on an ADD or a SET of
+  // a type definition to an application that ENFORCES it: enabling was
+  // refused while a declared type was uncovered (`fga_policies.ts`'s
+  // `enable()`, STS-FGA-0018), and this is the same rule at the other door
+  // — a definition written afterwards that left a member neither mapped nor
+  // in notForPolicy would make every detail of it refused (STS-FGA-0103).
+  if ((mode === 'set' || mode === 'add') && value &&
+      attribute === 'oauthAuthorizationDetailsType') {
+    const problem = fgaCoverageProblem(loaded.record.fields, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). An uncovered type on an " +
+                "application that enforces fine-grained authorization.");
+      return errorCodes.mark({ ok: false, errors: [problem] },
+                             'STS-FGA-0019');
     }
   }
   // #290's eleven, on a SET that carries a value: the registration's own
@@ -17427,6 +17773,9 @@ function deleteApplication(identifier, options) {
         'here.'] },
                            'STS-REG-0021');
   }
+  // Read BEFORE the entry goes: the retirement below needs the reference.
+  const fgaPolicy = String(valuesOf(loaded.record.fields.appFgaPolicy)[0] ||
+                           '');
   const gone = backing.deleteApplication(String(identifier));
   if (!gone) {
     log.debug("Leaving deleteApplication().");
@@ -17446,6 +17795,10 @@ function deleteApplication(identifier, options) {
   log.info('applications: "' + identifier + '" was deleted. ' + count() + ' ' +
       'left.');
   endGnapGrants(String(identifier), false, opts.actor || '');
+  // ITS FINE-GRAINED POLICY IS RETIRED, NOT DELETED (#564, decision 3):
+  // disabled and marked orphaned, kept for audit until an administrator
+  // removes it.
+  fgaHook('deleted', String(identifier), opts.actor || '', fgaPolicy);
   log.debug("Leaving deleteApplication(). Gone.");
   log.debug("Leaving deleteApplication().");
   return { ok: true,
@@ -20203,7 +20556,29 @@ const API_PERMISSIONS = Object.freeze({
   'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
     permissions: Object.freeze([
       ['report:use', 'Reports as a user (REPORT_USE)'],
-      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) })
+      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) }),
+  // THE AUTHZEN AUTHORIZATION API (#563). AuthZEN defines no scope (section
+  // 11.2 leaves the PEP's authentication to the deployment), so the word is
+  // this service's. A client asks for it on client_credentials with
+  // `resource` naming the realm's /access/v1; AUTHZEN_PEPS is asked at the
+  // API, not at issuance.
+  'sts-authzen-api': Object.freeze({ base: 'urn:sts:authzen-api:',
+    permissions: Object.freeze([
+      ['authzen:evaluate', 'AuthZEN access evaluations at /access/v1 ' +
+                           '(AUTHZEN_PEPS)']]) }),
+  // THE UMA 2.0 PROTECTION API (#1168, rcbj's decision 4): Federated
+  // Authorization section 2's `uma_protection` scope, the one word the
+  // specification itself names. A resource server's client obtains a PAT
+  // carrying it — by the code flow, where the resource owner is the person
+  // consenting, or by client_credentials where the application owns
+  // resources (umaOwnsResources) — and holds a delegated permission grant
+  // of it on this object, written when UMA is switched on for it.
+  'sts-uma-protection-api': Object.freeze({
+    base: 'urn:sts:uma-protection-api:',
+    permissions: Object.freeze([
+      ['uma_protection', 'Register resources and ask permission tickets ' +
+                         'on the resource owner\'s behalf at /uma (UMA ' +
+                         '2.0 protection API)']]) })
 });
 
 // The delegated permission grants a seeded client holds, as
@@ -20291,6 +20666,18 @@ function apiResourceApplications(base) {
     row('sts-report-api', 'Reporting API',
         [helpers.rebaseTo(realmBase, 'report') + '/report-api'],
         'this service\'s own reports API at /report-api'),
+    // The AuthZEN Authorization API (#563): its audience, its one permission,
+    // and the realm's attribute catalogue as `authzenAttribute` values,
+    // which an administrator adds (none is seeded: no property means
+    // anything until somebody says what).
+    row('sts-authzen-api', 'AuthZEN API',
+        [helpers.rebaseTo(realmBase, 'authzen') + '/access/v1'],
+        'this service\'s own AuthZEN Authorization API at /access/v1'),
+    // The UMA 2.0 protection API (#1168): its audience, the realm's `/uma`,
+    // and its one permission, `uma_protection`.
+    row('sts-uma-protection-api', 'UMA protection API',
+        [helpers.rebaseTo(realmBase, 'uma') + '/uma'],
+        'this service\'s own UMA 2.0 protection API at /uma'),
     row('sts-resource', 'Default resource',
         [helpers.rebaseTo(realmBase, 'oauth-oidc') + '/resource'],
         'this service\'s default resource indicator (UserInfo, SCIM, ' +
@@ -20730,6 +21117,278 @@ function seedInternalApplications(options) {
   return made;
 }
 
+// ---------------------------------------------------------------------------
+// APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564): THE APPLICATION'S
+// HALF, AND THE LIFECYCLE SLOT.
+//
+// Every application CREATED gets a default fine-grained policy and every
+// application DELETED has its policy retired — disabled, kept, marked
+// orphaned (rcbj's decisions 2 and 3). The policy and its lifecycle are
+// `xacml/fga_policies.ts`'s; this module only says WHEN, through a slot that
+// module fills at 23c (`setFgaLifecycle()`), and keeps the two attributes
+// on the entry (`fgaStateOf()`, `setFgaState()`).
+//
+// **A SLOT AND NOT A REQUIRE, AND RULE 3e'S TEST ANSWERS YES BOTH WAYS
+// ROUND.** A require from here to `xacml/fga_policies` at load would close a
+// cycle — that module requires this one, to read and write the two
+// attributes — and would load the XACML store and templates into whatever
+// first requires this module, which is nearly everything and long before
+// 23c: their `InstanceSlot`s would build default instances there and the
+// composition root's install would then be refused. It would also put the
+// XACML family into the parent project's Kerberos COPY closure, which
+// reaches this module through `kerberos/krb5_delegation.ts`
+// (`kerberos/CLAUDE.md`). A LAZY require at the write, as
+// `authzenAttributeProblem()` takes, avoids the cycle and the early build
+// but not the closure: a create or delete in those in-process jobs would
+// then reach for a file their image does not carry. The slot adds no
+// require at all. The other way round is the natural direction and is
+// what `fga_policies.ts` does.
+//
+// **WHAT IS CALLED, AND WHAT IS NOT.** `createApplication()` — the console,
+// `/admin-api` and an LDIF import, which creates through it — and
+// `deleteApplication()`, which every deletion goes through. NOT a
+// development-mode sighting (`seen()`), an RFC 7591 registration, or this
+// service's own seeded applications: each of those files an entry nobody
+// with the console created, the first two at an unauthenticated caller's
+// request, and a policy written per entry there would let such a caller
+// fill `ou=policies` to `xacml.maxPolicies` and lock administrators out of
+// writing policies at all. Every one of them gets its policy the first time
+// fine-grained authorization is enabled on it — decision 2's own fallback —
+// and so does an application created before the slot was filled.
+//
+// VALIDATED WHOLE: `created` without `deleted` would make policies that are
+// never retired, which is the half of decision 3 an audit depends on.
+// Nothing a hook does may fail the create or the delete it follows — the
+// application is already written or gone — so a throw is logged under
+// STS-FGA-0010 and the act stands.
+// ---------------------------------------------------------------------------
+let fgaLifecycle = null;
+
+/**
+ * Installs the fine-grained authorization lifecycle hooks; filled by
+ * `xacml/fga_policies.ts` when it is wired at 23c.
+ *
+ * @param hooks - `created(identifier, actor)` and `deleted(identifier,
+ *   actor, policy)` — `policy` the deleted entry's appFgaPolicy, read
+ *   before the entry went — both or neither; null removes them
+ */
+function setFgaLifecycle(hooks) {
+  log.debug("Entering setFgaLifecycle().");
+  const whole = !!hooks && typeof hooks.created === 'function' &&
+                typeof hooks.deleted === 'function';
+  if (hooks && !whole) {
+    log.warn(errorCodes.tag('STS-FGA-0011') +
+             'applications: the fine-grained authorization lifecycle slot ' +
+             'was offered without both created and deleted, and was not ' +
+             'installed. Applications created now get their policy when ' +
+             'fine-grained authorization is first enabled on them.');
+  }
+  fgaLifecycle = whole ? hooks : null;
+  log.debug("Leaving setFgaLifecycle(). " +
+            (fgaLifecycle ? "Installed." : "Not installed."));
+}
+
+/**
+ * Returns the installed lifecycle hooks, so that a test which replaces them
+ * can put back what was there.
+ *
+ * @returns the hooks, or null
+ */
+function fgaLifecycleInstalled() {
+  log.debug("Entering fgaLifecycleInstalled().");
+  log.debug("Leaving fgaLifecycleInstalled().");
+  return fgaLifecycle;
+}
+
+// Calls one hook, and never lets it fail the act it follows.
+function fgaHook(which, identifier, actor, policy) {
+  log.debug("Entering fgaHook(). " + which + " " + identifier);
+  if (!fgaLifecycle) {
+    log.debug("Leaving fgaHook(). No lifecycle installed.");
+    return;
+  }
+  try {
+    const answer = fgaLifecycle[which](String(identifier), actor || '',
+                                       policy || '');
+    if (answer && answer.ok === false) {
+      log.warn(errorCodes.tag('STS-FGA-0010') +
+               'applications: "' + identifier + '" was ' + which + ', and ' +
+               'its fine-grained authorization policy was not ' +
+               (which === 'created' ? 'created' : 'retired') + ': ' +
+               (answer.why || (answer.errors || []).join(' ') ||
+                'no reason given') + '.');
+    }
+  } catch (e) {
+    log.debug("Caught in fgaHook(): " + ((e && e.message) || e));
+    // Logged and not rethrown: the application is already written or
+    // already gone, and a 500 for an act that happened would be a lie.
+    log.warn(errorCodes.tag('STS-FGA-0010') +
+             'applications: the fine-grained authorization ' + which +
+             ' hook threw for "' + identifier + '": ' +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving fgaHook().");
+}
+
+/**
+ * Reads an application's fine-grained authorization attributes.
+ *
+ * @param identifier - the application's identifier
+ * @returns `{ known, policy, enforced }`: whether the registry holds it, its
+ *   appFgaPolicy ('' when none) and whether appFgaEnforced is TRUE
+ */
+function fgaStateOf(identifier) {
+  log.debug("Entering fgaStateOf(). identifier=" + identifier);
+  const loaded = load(String(identifier));
+  if (!loaded.known) {
+    log.debug("Leaving fgaStateOf(). Unknown.");
+    return { known: false, policy: '', enforced: false };
+  }
+  const fields = loaded.record.fields;
+  const policy = String(valuesOf(fields.appFgaPolicy)[0] || '');
+  const enforced = String(valuesOf(fields.appFgaEnforced)[0] || '')
+    .toUpperCase() === 'TRUE';
+  log.debug("Leaving fgaStateOf(). policy=" + policy + " enforced=" +
+            enforced);
+  return { known: true, policy: policy, enforced: enforced };
+}
+
+// THE APPLICATIONS THAT ENFORCE FINE-GRAINED AUTHORIZATION (#564, P7), for
+// the AuthZEN catalogue a remote PEP pulls (`xacml/xacml.ts`'s
+// `authzenCatalogue()`): the edge PDP forwards an evaluation about one of
+// these to the service rather than deciding it from the root. Read off the
+// kept listing with no view built, as `ownerValues()` is, and SORTED, so the
+// catalogue's sync token moves when the set changes and only then. A store
+// that cannot be read THROWS rather than answering an empty list: an empty
+// list would tell the edge to decide every enforcing application from the
+// root, which is the restriction silently not applying.
+/**
+ * Lists the applications in the ambient realm whose `appFgaEnforced` is
+ * TRUE.
+ *
+ * @returns their identifiers, sorted
+ */
+// THE APPLICATIONS DECLARED FOR A PROTOCOL FAMILY (#1168): what the UMA
+// surface draws as the realm's resource servers, and what its discovery
+// says. Read off the kept listing with no view built, as
+// `applicationsEnforcingFga()` below is, and SORTED. A store that cannot be
+// read answers an empty list here rather than throwing: this is a listing
+// for a page and a document, never a decision — the policy decides a
+// resource server's standing from the declaration on ITS entry.
+/**
+ * Lists the applications in the ambient realm declared for a protocol
+ * family (`appAllowedProtocol`).
+ *
+ * @param family - the family id, as PROTOCOLS names it
+ * @returns their identifiers, sorted
+ */
+function applicationsDeclaredFor(family) {
+  log.debug("Entering applicationsDeclaredFor(). family=" + family);
+  const wanted = String(family || '').trim().toLowerCase();
+  const kept = listing();
+  if (!kept || !wanted) {
+    log.debug("Leaving applicationsDeclaredFor(). No store or no family.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    if (item.record.identifier &&
+        declaredFamiliesOf(item.record).indexOf(wanted) >= 0) {
+      out.push(String(item.record.identifier));
+    }
+  });
+  out.sort();
+  log.debug("Leaving applicationsDeclaredFor(). " + out.length + ".");
+  return out;
+}
+
+function applicationsEnforcingFga() {
+  log.debug("Entering applicationsEnforcingFga().");
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving applicationsEnforcingFga(). No store.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    const enforced = String(valuesOf(item.record.fields.appFgaEnforced)[0] ||
+                            '').toUpperCase() === 'TRUE';
+    if (enforced && item.record.identifier) {
+      out.push(String(item.record.identifier));
+    }
+  });
+  out.sort();
+  log.debug("Leaving applicationsEnforcingFga(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Writes an application's fine-grained authorization attributes; the one
+ * door `xacml/fga_policies.ts` writes them through. Audited as an
+ * `application.update` naming the attributes.
+ *
+ * @param identifier - the application's identifier
+ * @param change - `policy` (an entry name, '' to clear) and/or `enforced`
+ *   (a boolean); a member left out is left as it is
+ * @param options - `actor`
+ * @returns `ok` and whether anything changed, or `ok: false` with `errors`
+ */
+function setFgaState(identifier, change, options) {
+  log.debug("Entering setFgaState(). identifier=" + identifier);
+  const asked = change || {};
+  const opts = options || {};
+  const loaded = load(String(identifier));
+  if (!loaded.known) {
+    log.debug("Leaving setFgaState(). Unknown.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+      'called "' + identifier + '" in this realm.'] }, 'STS-FGA-0009');
+  }
+  const record = loaded.record;
+  const touched = [];
+  if (asked.policy !== undefined) {
+    const policy = String(asked.policy || '');
+    if (String(valuesOf(record.fields.appFgaPolicy)[0] || '') !== policy) {
+      if (policy) {
+        record.fields.appFgaPolicy = policy;
+      } else {
+        delete record.fields.appFgaPolicy;
+      }
+      touched.push('appFgaPolicy');
+    }
+  }
+  if (asked.enforced !== undefined) {
+    const enforced = asked.enforced ? 'TRUE' : 'FALSE';
+    if (String(valuesOf(record.fields.appFgaEnforced)[0] || 'FALSE')
+          .toUpperCase() !== enforced) {
+      record.fields.appFgaEnforced = enforced;
+      touched.push('appFgaEnforced');
+    }
+  }
+  if (!touched.length) {
+    log.debug("Leaving setFgaState(). Nothing changed.");
+    return { ok: true, changed: false };
+  }
+  if (!save(record, { actor: opts.actor || '' })) {
+    log.debug("Leaving setFgaState(). The directory refused it.");
+    return errorCodes.mark({ ok: false, errors: ['The directory would not ' +
+      'write ' + touched.join(' and ') + ' on "' + identifier + '".'] },
+      'STS-FGA-0012');
+  }
+  audit.audit({
+    action: 'application.update', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": fine-grained ' +
+             'authorization ' + (touched.indexOf('appFgaEnforced') >= 0
+               ? (asked.enforced ? 'enforced' : 'not enforced')
+               : 'policy ' + (asked.policy ? 'set to "' + asked.policy + '"'
+                                           : 'cleared')),
+    detail: { identifier: String(identifier), attributes: touched,
+              mode: 'fga' }
+  });
+  log.debug("Leaving setFgaState(). " + touched.join(', '));
+  return { ok: true, changed: true };
+}
+
 // THE CONSOLE'S PROSE (#543 phase 2b). The `/admin-api` routes whose
 // answers carry this module's tables: the directory's own page
 // (`/admin-api/ldap/applications`: KINDS and SCHEMA), the Applications list
@@ -20783,6 +21442,13 @@ module.exports = {
   // #543 phase 2b: the routes whose answers carry this module's prose, and
   // the prose by key.
   PROSE_ROUTES: PROSE_ROUTES,
+  // #564: the fine-grained authorization lifecycle slot and the two
+  // attributes' reader and writer.
+  setFgaLifecycle: setFgaLifecycle,
+  fgaLifecycleInstalled: fgaLifecycleInstalled,
+  fgaStateOf: fgaStateOf,
+  setFgaState: setFgaState,
+  applicationsEnforcingFga: applicationsEnforcingFga,
   prose: prose,
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
@@ -20955,6 +21621,8 @@ module.exports = {
   // The two conversions, exported because ldap_server.js seeds and reads
   // entries with them and this module owns the schema they encode.
   attributesFor: attributesFor,
+  // What the store replaces on a write and what it keeps (#1230).
+  ownedAttributeNames: ownedAttributeNames,
   nativeSsoOf: nativeSsoOf,
   httpSignaturesOf: httpSignaturesOf,
   didClaimWithPairwiseOf: didClaimWithPairwiseOf,
@@ -20989,6 +21657,7 @@ module.exports = {
   // editableAttributes() itself exists for. Both halves come off the SCHEMA
   // row's `families` member.
   declaredFamiliesOf: declaredFamiliesOf,
+  applicationsDeclaredFor: applicationsDeclaredFor,
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
   secretDestinationCredentialOf: secretDestinationCredentialOf,

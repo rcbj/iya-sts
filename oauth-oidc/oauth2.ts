@@ -117,6 +117,10 @@ import cellPlacement = require('../common/cell_placement');
 import cellSessions = require('../common/cell_sessions');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+// THE UMA 2.0 GRANT'S SLOT (#1168, #1193): a LEAF, filled by
+// `uma/uma_grant.ts` at 23d-ii — `common/uma_gate.ts` argues why it is a
+// slot both ways round. Empty, the grant is not offered.
+import umaGate = require('../common/uma_gate');
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('./dpop');
 // FAPI 2.0 HTTP Signatures at the resource servers (#178): only its key
@@ -1516,9 +1520,16 @@ const TOKEN_FORM = vz.looseObject({
 // RFC 7662 and RFC 7009. Both take one token and an optional hint about which
 // kind it is, and this service reads only the first — the hint is advisory in
 // both specifications and a wrong one must not change the answer.
+//
+// THE HINT IS ANY SHORT STRING HERE TOO (#1196, 2026-10-30), as revocation's
+// has been since #102. RFC 7662 section 2.1: a server that cannot locate the
+// token by the hint MUST search every type it supports, and MAY ignore the
+// hint — so a value outside the two this service issues is ignored, never a
+// malformed request. Keycloak's UMA client (keycloak-authz-client) sends
+// `requesting_party_token`, and was refused 400 until this was relaxed.
 const TOKEN_QUERY_FORM = vz.looseObject({
   token: vz.string().max(validation.CAP.TEXT).optional(),
-  token_type_hint: vt.opt(vt.oneOf(['access_token', 'refresh_token'])),
+  token_type_hint: vz.string().max(256).optional(),
   client_id: vt.opt(vt.identifier),
   client_secret: vz.string().max(1024).optional()
 });
@@ -1530,7 +1541,8 @@ const TOKEN_QUERY_FORM = vz.looseObject({
 // rather than refused as a malformed request, which is what sharing
 // introspection's form did. And `token` stays optional to the validator so
 // that its absence is answered by name (`STS-OAUTH-0608`) rather than as a
-// schema failure. Introspection keeps its own form, unchanged.
+// schema failure. Introspection kept its own form, and since #1196 takes the
+// hint the same way.
 // OPENID CONNECT CIBA CORE 1.0 SECTION 7.1 (#131): the Backchannel
 // Authentication Endpoint's form. A `request` carries every other member
 // signed instead (section 7.1.1).
@@ -2104,7 +2116,10 @@ class OAuth2Server {
           ? ['urn:openid:params:grant-type:ciba'] : [])
         // RFC 8628 section 3.4 (#150), where oauth2.deviceAuthorization is on.
         .concat(deviceAuthorization.enabled()
-          ? [deviceAuthorization.GRANT_TYPE] : []),
+          ? [deviceAuthorization.GRANT_TYPE] : [])
+        // UMA 2.0's grant (#1168), CONDITIONAL for CIBA's reason: only while
+        // the UMA family filled its slot and uma.enabled is on in the realm.
+        .concat(umaGate.offered() ? [umaGate.GRANT_TYPE] : []),
       // RFC 7521 section 4.1 and OpenID Connect Core section 9's spelling of
       // the same thing: what a client_assertion_type may say. It is published
       // for the GRANT as well as for client authentication, because the one
@@ -4204,6 +4219,13 @@ class OAuth2Server {
     if (typeCap !== null && payload.exp - payload.iat > typeCap) {
       payload.exp = payload.iat + typeCap;
     }
+    // A GRANT'S OWN CAP (#1168): UMA's RPT lives no longer than
+    // `uma.rptLifetimeS`. Only ever shortens, as the two caps above do.
+    const grantCap = Number(opts.lifetimeCapS);
+    if (Number.isFinite(grantCap) && grantCap > 0 &&
+        payload.exp - payload.iat > grantCap) {
+      payload.exp = payload.iat + grantCap;
+    }
     // OID4VCI section 6.2: when the authorization was expressed as
     // authorization_details, the token response grants credential_identifiers
     // and the Credential Request must use one of them. They ride in the access
@@ -5684,6 +5706,50 @@ class OAuth2Server {
           ' cannot be issued on this grant: the authentication it rests on (' +
           (acrFacts.acr || 'none') + ') does not meet it (RFC 9470).' },
         'STS-OAUTH-0937'));
+    }
+    // FINE-GRAINED AUTHORIZATION (#564, P3): each detail of a type whose
+    // application ENFORCES it, asked of that application's own policy —
+    // an extra conjunct after the issuance gate (`issue()`'s
+    // checkIssuance()) and the type questions (`parse()`), never instead.
+    // HERE, THE FUNNEL, FOR THE REASON THE THREE CHECKS ABOVE ARE HERE:
+    // every grant that yields details mints through this function — the
+    // code, the refresh (re-decided against the current policy and the
+    // current definition, so a policy change reaches the next refresh), the
+    // client credentials, password and both assertion grants, a token
+    // exchange, the device grant and CIBA (both poll and push) — and one
+    // check here is one that a grant added later cannot forget. What it
+    // decides is what the ACCESS TOKEN carries (`authorization_details`, a
+    // refresh's narrowed set); the refresh token's whole grant is decided
+    // detail by detail when a later request asks for it.
+    //
+    // THE COST, STATED: like the issuance gate's refusal in `issue()`, it
+    // comes after a code or a rotated refresh token was spent, so a refused
+    // refresh ends that grant — which is what "the policy no longer permits
+    // this detail" means. A DENIAL is `invalid_authorization_details` (400,
+    // rcbj's decision 5); a FAULT is `server_error` (500, the token
+    // endpoint's own answer to a fault, STS-OAUTH-0228's), carried out as
+    // the refusals above are.
+    const fgaRefused = richAuthorization.fineGrainedRefusal(
+      opts.authorization_details, {
+        stage: opts.grant === 'refresh_token' ? 'refresh'
+          : (opts.grant === 'token exchange' ? 'exchange' : 'token'),
+        clientId: opts.client_id,
+        subject: (function (): Json {
+          const who = self.issuanceSubjectOf(opts);
+          return { id: who.name, kind: who.kind };
+        })(),
+        grantType: String(opts.grant || '')
+      });
+    if (fgaRefused) {
+      const denied = fgaRefused.outcome === 'deny';
+      log.debug("Leaving OAuth2Server.tokenSet(). Fine-grained " +
+                "authorization " + (denied ? "refused" : "could not decide") +
+                " a detail of " + fgaRefused.type + ".");
+      throw new AccessTokenRefused(log, errorCodes.mark({
+        error: denied ? 'invalid_authorization_details' : 'server_error',
+        status: denied ? 400 : 500,
+        description: fgaRefused.description },
+        String(errorCodes.codeOf(fgaRefused) || 'STS-FGA-0015')));
     }
     const derived = !explicit.length && plan.derived.length > 0;
     // THE GRANT BOTH HALVES BELONG TO, NAMED BEFORE EITHER IS SIGNED (#239):
@@ -11517,6 +11583,45 @@ class OAuth2Server {
       // -------------------------------------------------------------------
       authn.notePresented(session, 'OAuth 2.0 / OIDC', req, q.client_id);
       // -------------------------------------------------------------------
+      // FINE-GRAINED AUTHORIZATION (#564, P3), BEFORE THE CONSENT BLOCK.
+      //
+      // Each detail of a type whose application enforces fine-grained
+      // authorization is asked of that application's policy HERE, stage
+      // `authorize`: above consent, so a detail the policy refuses is
+      // never drawn on the screen and nobody is asked to agree to what
+      // will not be issued; inside the session branch, because the
+      // subject is the PERSON and there is none until there is a session.
+      // A denial is `access_denied` (rcbj's decision 5), redirected to the
+      // client as RFC 6749 section 4.1.2.1's error response — `prompt=none`
+      // included, since the answer needs no interaction; a fault is
+      // `server_error`. Details that do not parse are left for
+      // issueAuthorizationResponse() to refuse, as the consent block
+      // leaves them. The token endpoint asks again when the code is
+      // redeemed.
+      // -------------------------------------------------------------------
+      const fgaDetails = self.parseAuthorizationDetails(
+        q.authorization_details, { clientId: q.client_id, req: req });
+      const fgaRefused = fgaDetails.details
+        ? richAuthorization.fineGrainedRefusal(fgaDetails.details, {
+            stage: 'authorize', clientId: q.client_id,
+            subject: { id: String((session.user || {}).username || ''),
+                       kind: 'user' },
+            grantType: String(q.response_type || '').split(/\s+/)
+              .indexOf('code') >= 0 ? 'authorization_code' : 'implicit' })
+        : null;
+      if (fgaRefused) {
+        const denied = fgaRefused.outcome === 'deny';
+        log.debug("Leaving the authorization endpoint. Fine-grained " +
+                  "authorization " + (denied ? "refused" : "could not " +
+                  "decide") + " a detail of " + fgaRefused.type + ".");
+        errorCodes.mark(res, String(errorCodes.codeOf(fgaRefused) ||
+                                    'STS-FGA-0015'));
+        log.debug("Leaving OAuth2Server.authorizeRequest().");
+        // error-code: none — marked above with the refusal's own code
+        return fail(denied ? 'access_denied' : 'server_error',
+                    fgaRefused.description);
+      }
+      // -------------------------------------------------------------------
       // CONSENT, AND IT IS THE LAST THING BETWEEN A SIGNED-IN PERSON AND AN
       // ISSUED CREDENTIAL.
       //
@@ -11587,6 +11692,41 @@ class OAuth2Server {
           return fail('invalid_authorization_details', raised);
         }
         q.authorization_details = JSON.stringify(detailsAllowed.lowered);
+        // THE LOWERED DETAILS ARE A NEW QUESTION (#564, P4's fix of a P3
+        // leftover). The fine-grained check above decided the details the
+        // client SENT; what this pass grants from here on is the lowered
+        // set, which no policy has seen — and a policy may refuse a lower
+        // value (a minimum, an exact amount, a count it reads as a tier).
+        // Where this pass MINTS AN ACCESS TOKEN (`token` in the response
+        // type: the implicit and hybrid flows, minted on the spot in
+        // issueAuthorizationResponse(), never through tokenSet()) nothing
+        // later would ask, so it is asked here, stage `authorize`, with the
+        // same refusals as the check above. A bare `code` is not asked
+        // twice: the token endpoint asks about the code's — lowered —
+        // details when it is redeemed (tokenSet()).
+        if (String(q.response_type || '').split(/\s+/)
+              .indexOf('token') >= 0) {
+          const lowered = richAuthorization.fineGrainedRefusal(
+            detailsAllowed.lowered, {
+              stage: 'authorize', clientId: q.client_id,
+              subject: { id: String((session.user || {}).username || ''),
+                         kind: 'user' },
+              grantType: String(q.response_type || '').split(/\s+/)
+                .indexOf('code') >= 0 ? 'authorization_code' : 'implicit' });
+          if (lowered) {
+            const denied = lowered.outcome === 'deny';
+            log.debug("Leaving the authorization endpoint. Fine-grained " +
+                      "authorization " + (denied ? "refused" : "could not " +
+                      "decide") + " a lowered detail of " + lowered.type +
+                      ".");
+            errorCodes.mark(res, String(errorCodes.codeOf(lowered) ||
+                                        'STS-FGA-0015'));
+            log.debug("Leaving OAuth2Server.authorizeRequest().");
+            // error-code: none — marked above with the refusal's own code
+            return fail(denied ? 'access_denied' : 'server_error',
+                        lowered.description);
+          }
+        }
       }
       if (decision.outstanding.length || detailsOutstanding) {
         // prompt=none FORBIDS ANY UI, and OIDC Core section 3.1.2.6 gives this
@@ -13664,8 +13804,10 @@ class OAuth2Server {
                   "refused the audience.");
         errorCodes.mark(res, errorCodes.codeOf(e.refusal) || 'STS-OAUTH-0244');
         log.debug("Leaving OAuth2Server.tokenEndpoint().");
-        return self.oauthError(res, 400, e.refusal.error,
-                               e.refusal.description);
+        // 400 for every refusal but a FAULT that says otherwise: fine-
+        // grained authorization's `server_error` is 500 (#564).
+        return self.oauthError(res, Number(e.refusal.status) || 400,
+                               e.refusal.error, e.refusal.description);
       }
       log.debug("Leaving the token endpoint's refusal wrapper. Rethrowing.");
       throw e;
@@ -16096,6 +16238,42 @@ class OAuth2Server {
       return respond(refreshed);
     }
 
+    // ---------------------------------------------------------------------
+    // USER-MANAGED ACCESS 2.0 (#1168, #1193): the `uma-ticket` grant, handed
+    // to the UMA family through its slot with the two things only this
+    // endpoint holds — `issue()`, the one funnel, so the issuance gate and
+    // every rule of an access token apply to the RPT, and the person a
+    // username names. Its refusals are the Grant specification's errors
+    // (need_info, request_submitted, request_denied) beside RFC 6749's, with
+    // their members (ticket, required_claims, redirect_user, interval).
+    // ---------------------------------------------------------------------
+    if (grant === umaGate.GRANT_TYPE) {
+      const umaAnswer = await umaGate.grant({
+        req: req, body: body, client: client, base: base, dpopJkt: dpopJkt,
+        issue: function (o: Json): Promise<Json> {
+          return issue(o);
+        },
+        person: function (username: string): Json {
+          return self.provisionedPerson(username);
+        }
+      });
+      if (umaAnswer && umaAnswer.body) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). An RPT issued.");
+        return respond(umaAnswer.body);
+      }
+      errorCodes.mark(res, String((umaAnswer && umaAnswer.code) ||
+                                  'STS-UMA-0208'));
+      log.debug("Leaving OAuth2Server.tokenGrant(). The UMA grant refused.");
+      res.status(Number((umaAnswer && umaAnswer.status) || 500))
+         .type('application/json').set('Cache-Control', 'no-store')
+         .send(JSON.stringify(Object.assign({
+           error: String((umaAnswer && umaAnswer.error) || 'server_error'),
+           error_description: oauth21.sanitizeDescription(
+             String((umaAnswer && umaAnswer.description) || ''))
+         }, (umaAnswer && umaAnswer.extra) || {})));
+      return undefined;
+    }
+
     if (grant === 'client_credentials') {
       // No user is involved, so no refresh token and no ID token.
       //
@@ -17783,6 +17961,29 @@ class OAuth2Server {
                    '(development; product refuses it, STS-OAUTH-0621).');
         }
       }
+      // THE EXCHANGE'S BOUND FOR FINE-GRAINED AUTHORIZATION (#564, rcbj's
+      // decision 6). A detail of a type whose application ENFORCES it may be
+      // carried only where the subject_token already carries it — covered
+      // by one of the subject_token's own details (RFC 9396 section 6) — so
+      // an exchange cannot mint for a person a detail they never
+      // authorized. Only a token this authorization server issued and
+      // verified carries details to cover anything: one from elsewhere, an
+      // assertion, or development's unverified read refuses. Types of
+      // applications that do not enforce are granted what is asked, as
+      // before. The policy itself is then asked in tokenSet(), stage
+      // `exchange`, as for every grant.
+      const exchangeBound = richAuthorization.exchangeBoundProblem(
+        requestedDetails, subject && subject.authorization_details,
+        ownSubject && subjectVerified && !subjectAssertion);
+      if (exchangeBound) {
+        errorCodes.mark(res, String(errorCodes.codeOf(exchangeBound) ||
+                                    'STS-FGA-0017'));
+        log.debug("Leaving OAuth2Server.tokenGrant(). The exchange asked " +
+                  "for a detail the subject_token does not cover.");
+        // error-code: none — marked above, STS-FGA-0017
+        return self.oauthError(res, 400, 'invalid_authorization_details',
+                               exchangeBound.description);
+      }
       const exchanged = await issue({
         jkt: dpopJkt,
         sub: subject.sub || 'urn:sts:exchanged',
@@ -18723,6 +18924,31 @@ class OAuth2Server {
       return refuse(400, plan.refusal.error, plan.refusal.description,
                     errorCodes.codeOf(plan.refusal) || 'STS-OAUTH-0244');
     }
+    // FINE-GRAINED AUTHORIZATION (#564, P3), stage `par`: asked at the push
+    // for the authorization endpoint's reason — a detail the owning
+    // application's policy refuses is never drawn — and answered in the
+    // token endpoint's style, as every refusal here is: a denial is
+    // `invalid_authorization_details` (400), a fault `server_error` (500,
+    // this endpoint's own answer to one, STS-OAUTH-0420's). NOBODY HAS
+    // SIGNED IN YET, so the subject is unknown and only the client is a
+    // fact — the request carries NO subject-id and no subject kind (not
+    // '', which a policy would read as somebody; `xacml_request.js`'s
+    // `fga()`, #564 P4); a policy that reads the person refuses here and is
+    // asked again at the authorization endpoint once there is one.
+    const fgaRefused = richAuthorization.fineGrainedRefusal(details.details, {
+      stage: 'par', clientId: clientId, subject: {},
+      grantType: pushedTypes.indexOf('code') >= 0 ? 'authorization_code'
+        : 'implicit' });
+    if (fgaRefused) {
+      const denied = fgaRefused.outcome === 'deny';
+      log.debug("Leaving OAuth2Server.parRequest(). Fine-grained " +
+                "authorization " + (denied ? "refused" : "could not decide") +
+                " a detail.");
+      return refuse(denied ? 400 : 500,
+                    denied ? 'invalid_authorization_details' : 'server_error',
+                    fgaRefused.description,
+                    String(errorCodes.codeOf(fgaRefused) || 'STS-FGA-0015'));
+    }
     const claimsProblem = self.parseClaimsRequest(q.claims);
     if (claimsProblem.error) {
       log.debug("Leaving OAuth2Server.parRequest(). The claims request.");
@@ -19182,6 +19408,24 @@ class OAuth2Server {
       return self.oauthError(res, 400, several.error, several.description);
     }
 
+    // UMA 2.0'S RPT INTROSPECTION (#1168; Federated Authorization section
+    // 5): a protection API token as Bearer authenticates the RESOURCE
+    // SERVER, and the answer is about its RPTs alone. Any request without
+    // one goes on below exactly as it always did.
+    const umaAnswer = umaGate.introspect({
+      req: req, res: res, token: String(body.token || ''),
+      introspectionOf: function (token: string): Json {
+        return self.introspectionOf(token);
+      } });
+    if (umaAnswer !== undefined) {
+      if (umaAnswer) {
+        res.status(200).type('application/json')
+           .send(JSON.stringify(umaAnswer));
+      }
+      log.debug("Leaving OAuth2Server.introspectRequest(). A UMA PAT.");
+      return undefined;
+    }
+
     // Whether the caller PROVED who it is, which is what section 5's "intended
     // for the resource server" rule is then asked of. False for a development
     // JSON request, which authenticates nobody and so cannot be compared.
@@ -19268,6 +19512,27 @@ class OAuth2Server {
             answer[name] = view.claims[name];
           }
         });
+      }
+    }
+    // AN RPT'S PERMISSIONS FOR ITS OWN RESOURCE SERVER (#1196, rcbj's
+    // decision of 2026-10-30): Keycloak's resource server introspects an RPT
+    // with its client credentials rather than its PAT, and is answered here
+    // exactly as the PAT door would answer it — the permissions, no scope.
+    // Any other caller or token is answered as before. In a realm whose
+    // introspection is open (development mode), nothing is authenticated
+    // here, so the ONE client the request names is taken as said — the
+    // stance this service takes on a development client's credentials
+    // everywhere; product mode authenticates it above.
+    const umaCaller = authenticated ? clientId
+      : (function (): string {
+          const named = self.presentedClientIds(req, body);
+          return named.length === 1 ? String(named[0]) : '';
+        })();
+    if (umaCaller && answer.active === true) {
+      const umaPermissions = umaGate.permissionsFor(answer, umaCaller);
+      if (umaPermissions) {
+        answer = Object.assign({}, answer, { permissions: umaPermissions });
+        delete answer.scope;
       }
     }
     if (!wantsJwt) {
@@ -20131,6 +20396,29 @@ class OAuth2Server {
                   "refused.");
         return undefined;
       }
+    }
+
+    // A UMA PERSISTED CLAIMS TOKEN (#1168), which is no JWT either: a
+    // handle stored by digest, ended here whatever the hint says (the hint
+    // is advisory, section 2.1). Another client's is refused as a device
+    // secret from outside Native SSO is.
+    const pctAnswer = umaGate.revokePct(token, String(caller.clientId || ''),
+                                        !!caller.identified);
+    if (pctAnswer && pctAnswer.found) {
+      if (!pctAnswer.ok) {
+        errorCodes.mark(res, 'STS-UMA-0218');
+        log.debug("Leaving OAuth2Server.revokeRequest(). Another client's " +
+                  "PCT.");
+        return self.oauthError(res, 400, 'invalid_grant',
+          'RFC 7009 section 2.1: this persisted claims token was issued to ' +
+          'another client. Nothing was revoked.');
+      }
+      audit.record({ action: 'uma.pct.revoke', protocol: 'UMA 2.0',
+                     actor: String(caller.clientId || ''),
+                     summary: 'A UMA persisted claims token was revoked.' });
+      res.status(200).end();
+      log.debug("Leaving OAuth2Server.revokeRequest(). A PCT.");
+      return undefined;
     }
 
     // A NATIVE SSO DEVICE SECRET (#130), which is no JWT: revoked by

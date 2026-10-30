@@ -33,6 +33,66 @@ pub mod vocabulary {
     pub const MODE: &str = "urn:sts:xacml:mode";
     pub const SETTING_PREFIX: &str = "urn:sts:xacml:setting:";
     pub const SCOPE_STAGE: &str = "urn:sts:xacml:scope-stage";
+    pub const REALM: &str = "urn:sts:xacml:realm";
+    // AuthZEN's facts (#563): written by the service's AuthZEN adapter
+    // alone; spelt here so a policy reading them matches either builder.
+    pub const AUTHZEN_SUBJECT_TYPE: &str =
+        "urn:sts:xacml:authzen:subject-type";
+    pub const AUTHZEN_RESOURCE_TYPE: &str =
+        "urn:sts:xacml:authzen:resource-type";
+    pub const AUTHZEN_CALLER: &str = "urn:sts:xacml:authzen:caller";
+    pub const AUTHZEN_APPLICATION: &str =
+        "urn:sts:xacml:authzen:application";
+    pub const AUTHZEN_SUPPLIED: &str = "urn:sts:xacml:authzen:supplied";
+    // Fine-grained authorization's facts (#564): written by the service's
+    // FGA adapter (`xacml/fga_map.ts`) alone; spelt here so a policy
+    // reading them matches either builder, and so an embedded FGA PDP in
+    // the remote PEP — future work — finds them already named.
+    pub const FGA_APPLICATION: &str = "urn:sts:xacml:fga:application";
+    pub const FGA_DETAIL_TYPE: &str = "urn:sts:xacml:fga:detail-type";
+    pub const FGA_DEFINITION_DIGEST: &str =
+        "urn:sts:xacml:fga:definition-digest";
+    pub const FGA_STAGE: &str = "urn:sts:xacml:fga:stage";
+    pub const FGA_SUPPLIED: &str = "urn:sts:xacml:fga:supplied";
+    pub const FGA_DETAIL_ACTION: &str = "urn:sts:xacml:fga:detail:action";
+    pub const FGA_DETAIL_LOCATION: &str =
+        "urn:sts:xacml:fga:detail:location";
+    pub const FGA_DETAIL_DATATYPE: &str =
+        "urn:sts:xacml:fga:detail:datatype";
+    pub const FGA_DETAIL_IDENTIFIER: &str =
+        "urn:sts:xacml:fga:detail:identifier";
+    pub const FGA_DETAIL_PRIVILEGE: &str =
+        "urn:sts:xacml:fga:detail:privilege";
+    // The facts of a User-Managed Access question (#1168), spelt as
+    // `xacml/xacml_request.js` spells them; the remote PEP builds none of
+    // these today, and a policy written against one spelling must match
+    // what both builders would send.
+    pub const ACR: &str = "urn:sts:xacml:acr";
+    pub const UMA_RESOURCE_TYPE: &str = "urn:sts:xacml:uma:resource-type";
+    pub const UMA_RESOURCE_SERVER: &str =
+        "urn:sts:xacml:uma:resource-server";
+    pub const UMA_RESOURCE_SERVER_DECLARED: &str =
+        "urn:sts:xacml:uma:resource-server-declared";
+    pub const UMA_OWNER: &str = "urn:sts:xacml:uma:owner";
+    pub const UMA_OWNER_KIND: &str = "urn:sts:xacml:uma:owner-kind";
+    pub const UMA_SCOPE: &str = "urn:sts:xacml:uma:scope";
+    pub const UMA_REQUESTING_PARTY_KNOWN: &str =
+        "urn:sts:xacml:uma:requesting-party-known";
+    pub const UMA_REQUESTING_PARTY_IS_OWNER: &str =
+        "urn:sts:xacml:uma:requesting-party-is-owner";
+    pub const UMA_CLAIM_SOURCE: &str = "urn:sts:xacml:uma:claim-source";
+    pub const UMA_CLAIM_ISSUER: &str = "urn:sts:xacml:uma:claim-issuer";
+    pub const UMA_CLAIM_ISSUER_DECLARED: &str =
+        "urn:sts:xacml:uma:claim-issuer-declared";
+    pub const UMA_REQUESTING_PARTY_GROUP: &str =
+        "urn:sts:xacml:uma:requesting-party-group";
+    pub const UMA_CLIENT_GRANT_DECLARED: &str =
+        "urn:sts:xacml:uma:client-grant-declared";
+    pub const UMA_CLAIM_PREFIX: &str = "urn:sts:xacml:uma:claim:";
+    pub const UMA_LAYER: &str = "urn:sts:xacml:uma:layer";
+    pub const UMA_STAGE: &str = "urn:sts:xacml:uma:stage";
+    pub const UMA_TICKET_AGE: &str = "urn:sts:xacml:uma:ticket-age";
+    pub const UMA_RPT_PRESENTED: &str = "urn:sts:xacml:uma:rpt-presented";
 }
 
 /// The principal types a request may name; anything else is a person.
@@ -60,6 +120,44 @@ impl From<String> for Fact {
 impl From<bool> for Fact {
     fn from(value: bool) -> Fact {
         Fact::Boolean(value)
+    }
+}
+
+/// One catalogue-mapped attribute of an AuthZEN question: a row's category,
+/// identifier and datatype, and the LEXICAL values the request carried.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuthzenAttribute {
+    pub category: String,
+    pub attribute_id: String,
+    pub data_type: String,
+    pub values: Vec<String>,
+}
+
+/// The facts of one AuthZEN question (#563), as `xacml_request.js`'s
+/// `authzen()` takes them: the five members AuthZEN requires, already
+/// validated; the realm, the caller and its application, TRUSTED, from the
+/// caller's authentication; every path the caller sent; and the catalogue's
+/// attributes.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AuthzenFacts {
+    pub subject_type: String,
+    pub subject_id: String,
+    pub action_name: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub realm: String,
+    pub caller: String,
+    pub application: String,
+    pub supplied: Vec<String>,
+    pub attributes: Vec<AuthzenAttribute>,
+}
+
+/// `one()` in `xacml_request.js`: an empty value is no value.
+fn one(value: &str) -> Vec<&str> {
+    if value.is_empty() {
+        Vec::new()
+    } else {
+        vec![value]
     }
 }
 
@@ -268,6 +366,47 @@ impl AuthorizationRequest {
             [name],
             None,
         )
+    }
+
+    /// THE FACTS OF AN AUTHZEN QUESTION (#563), in exactly the order and
+    /// spelling `xacml_request.js`'s `authzen()` writes them, so a policy
+    /// written against one builder's request matches the other's: the
+    /// subject's id is XACML's subject-id, the action's name its action-id
+    /// and the resource's id its resource-id; everything else reaches the
+    /// request only through the catalogue's rows. An empty realm, caller or
+    /// application is left out rather than sent as `""`.
+    pub fn authzen(&mut self, facts: &AuthzenFacts) -> &mut Self {
+        self.principal(&facts.subject_id, None);
+        self.subject(
+            vocabulary::AUTHZEN_SUBJECT_TYPE,
+            one(&facts.subject_type),
+        );
+        self.requested_action(&facts.action_name);
+        self.target(&facts.resource_id, None);
+        self.resource(
+            vocabulary::AUTHZEN_RESOURCE_TYPE,
+            one(&facts.resource_type),
+        );
+        self.protocol(Some("authzen"));
+        self.environment(vocabulary::REALM, one(&facts.realm));
+        self.environment(vocabulary::AUTHZEN_CALLER, one(&facts.caller));
+        self.environment(
+            vocabulary::AUTHZEN_APPLICATION,
+            one(&facts.application),
+        );
+        self.environment(
+            vocabulary::AUTHZEN_SUPPLIED,
+            facts.supplied.iter().map(String::as_str),
+        );
+        for row in &facts.attributes {
+            self.attribute(
+                &row.category,
+                &row.attribute_id,
+                row.values.iter().map(String::as_str),
+                Some(&row.data_type),
+            );
+        }
+        self
     }
 
     /// The request, in the engine's shape.

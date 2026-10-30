@@ -404,6 +404,44 @@ const BUILT_IN = [
       });
     } },
   // -------------------------------------------------------------------------
+  // AN AUTHZEN CALLER (#563, 2026-10-29), AND THE THIRD COMPUTED FROM A GROUP.
+  //
+  // XACML_USER's argument, made again for a third surface: a configured role
+  // is absent in every realm nobody configured, and a built-in one exists in
+  // all of them. **IT IS NOT XACML_USER AND NOT REMOTE_PEPS** (rcbj on #563,
+  // decision 2). `/access/v1` answers decisions and nothing else, where
+  // XACML_USER also reads the repository and REMOTE_PEPS pulls the documents
+  // this service enforces its own access with and a named person's
+  // attributes; one group granting this and either of those would admit an
+  // AuthZEN PEP to things a decision-only caller has no business reading.
+  //
+  // **A CALLER OF EITHER KIND.** A certificate's caller is a directory entry,
+  // whose groups `groupsFor()` reads; a caller with its own access token is
+  // an APPLICATION, whose groups the directory does not read for a role, so
+  // `authzen/authzen_caller.ts` passes them in the context (`groups`) — the
+  // groups whose `member` names the application's own entry.
+  // -------------------------------------------------------------------------
+  { name: 'AUTHZEN_PEPS',
+    what: 'An AuthZEN Policy Enforcement Point: whoever is a member of the ' +
+          'group named by `roles.authzenPepGroup` (default ' +
+          '"authzen-peps") — a person, a service account, or an ' +
+          'application calling with its own access token. It is what the ' +
+          'AuthZEN Authorization API under `/access/v1` requires, and ' +
+          'nothing else: it reads no policy and no person\'s attributes, ' +
+          'which is why it is neither XACML_USER nor REMOTE_PEPS.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      const wanted = authzenPepGroupName().toLowerCase();
+      if (!wanted) {
+        log.debug("Leaving holds().");
+        return false;
+      }
+      log.debug("Leaving holds().");
+      return (who.groups || []).some(function (one) {
+        return String(one).toLowerCase() === wanted;
+      });
+    } },
+  // -------------------------------------------------------------------------
   // THE NINTH AND TENTH: AN OWNER'S TWO ROLES (#607, 2026-10-13).
   //
   // rcbj: "A user that is an owner of these types of objects would be granted
@@ -492,6 +530,14 @@ function xacmlUserGroupName() {
   log.debug("Entering xacmlUserGroupName().");
   log.debug("Leaving xacmlUserGroupName().");
   return String(config.value('roles.xacmlUserGroup') || '').trim();
+}
+
+// The group that grants AUTHZEN_PEPS (#563), on the same terms: '' closes
+// /access/v1 to every caller.
+function authzenPepGroupName() {
+  log.debug("Entering authzenPepGroupName().");
+  log.debug("Leaving authzenPepGroupName().");
+  return String(config.value('roles.authzenPepGroup') || '').trim();
 }
 
 /**

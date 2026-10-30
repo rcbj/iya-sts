@@ -171,6 +171,8 @@ uploaded instead.
 | `stsBootstrapAdministrator`, `stsConsoleClaimedAt` | the bootstrap `admin`, and when it first claimed the console |
 | `stsNotDelegated` | sensitive and cannot be delegated (Kerberos's NOT_DELEGATED) (#108) |
 | `stsMayAct` | the one party this person named as a delegate. It becomes `may_act` in their access tokens |
+| `stsAuthzenApplication` | the applications this person or service account may ask the AuthZEN API about, one per value; set by an administrator only (#563) |
+| `stsAuthzenCallbackUri` | the https URLs this person or service account, as an AuthZEN PEP, may name as an access request's callback, one per value; set by an administrator only (#1180) |
 | `stsMailVerified` | the address they proved they receive mail at (#63) |
 | `stsMailVerifyToken`, `stsMailVerifyExpires`, `stsMailVerifyAddress` | a pending verification link. The token is **withheld** |
 
@@ -214,6 +216,8 @@ draws it with a description of every field.
 | OAuth client | `oauthClientId`, `oauthConfidential`, `oauthClientSecret` (**withheld**; one JSON record per secret, each with its own expiry, sealed at rest where keys persist), `oauthTokenEndpointAuthMethod`, `oauthTokenEndpointAuthSigningAlg`, `oauthJwks`, `oauthJwksUri`, `oauthRedirectUri`, `oauthGrantType`, `oauthResponseType`, `oauthScope`, `oauthAllowedScope`, `oauthAudience`, `oauthSubjectType`, `oauthSectorIdentifierUri` |
 | Logout | `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthFrontchannelLogoutSessionRequired`, `oauthBackchannelLogoutUri`, `oauthBackchannelLogoutSessionRequired`, `oauthRevokeRefreshOnLogout` |
 | Requests and responses | `oauthRequestUri`, `oauthRequestObjectSigningAlg`, `oauthRequestObjectEncryptionAlg`, `oauthRequestObjectEncryptionEnc`, `oauthRequireSignedRequestObject`, `oauthRequirePushedAuthorizationRequests`, `oauthHttpSignedRequests`, `oauthIntrospectionSignedResponseAlg`, `oauthIntrospectionEncryptedResponseAlg`, `oauthIntrospectionEncryptedResponseEnc`, `oauthIdTokenSignedResponseAlg`, `oauthIdTokenEncryptedResponseAlg`, `oauthIdTokenEncryptedResponseEnc`, `oauthUserinfoSignedResponseAlg`, `oauthUserinfoEncryptedResponseAlg`, `oauthUserinfoEncryptedResponseEnc`, `oauthAuthorizationSignedResponseAlg`, `oauthAuthorizationEncryptedResponseAlg`, `oauthAuthorizationEncryptedResponseEnc`, `oauthDefaultAcrValues`, `oauthDefaultMaxAge`, `oauthAuthorizationDetailsType`, `oauthAuthorizationDetailsTypes`, `oauthStepUpAcrValues`, `oauthStepUpMaxAge` |
+| AuthZEN (#563) | `authzenAttribute` (a catalogue row, on `sts-authzen-api`), `appAuthzenApplication` (an application caller's scope), `appAuthzenCallbackUri` (an application caller's access request callback URLs, #1180) |
+| Fine-grained authorization (#564) | `appFgaPolicy` (the entry name of the policy it owns in `ou=policies`), `appFgaEnforced` (`TRUE` when that policy is enforced) |
 | Resource server and consent | `oauthPermissionBaseUri`, `oauthPermission`, `oauthDelegatedPermission`, `oauthResourceMetadata`, `oauthResourceMetadataUrl`, `oauthGlobalConsent`, `oauthGlobalConsentWithdrawn` |
 | Token lifetimes | `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthTokenExchangeRefreshToken` |
 | Mutual TLS (RFC 8705) | `oauthTlsClientAuthSubjectDn`, `oauthTlsClientAuthSanDns`, `oauthTlsClientAuthSanUri`, `oauthTlsClientAuthSanIp`, `oauthTlsClientAuthSanEmail`, `oauthTlsClientCertificateBoundAccessTokens`, `oauthTlsClientCertificateThumbprint` |
@@ -299,7 +303,10 @@ ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS, ALL_UNAUTHENTICATED_APPLICATIO
 (`xacml/xacml_store.ts`). `objectClass: top, xacmlPolicy`, with
 `xacmlPolicyId`, `xacmlVersion`, `xacmlKind` (policy or policy set),
 `xacmlCombiningAlgId`, `xacmlPolicyDocument` (the XACML XML), `xacmlPolicy`,
-`xacmlEnabled`, `xacmlIsRoot` and `xacmlDetail`.
+`xacmlEnabled`, `xacmlIsRoot` and `xacmlDetail`. A policy an application owns
+also carries `xacmlApplication` (the application's identifier) and, once that
+application is deleted, `xacmlOrphanedAt`; see
+[fine-grained authorization](fga.md).
 
 `ou=peps` holds the remote PEPs (`xacml/xacml_pep_registry.ts`).
 `objectClass: top, xacmlPep`, with `xacmlPepIdentity`, `xacmlPepEnabled`,

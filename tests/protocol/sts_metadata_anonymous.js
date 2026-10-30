@@ -599,6 +599,54 @@ const DOCUMENTS = [
       return bad;
     } },
 
+  // -- AuthZEN (#563) -----------------------------------------------------
+  // The PDP's metadata (AuthZEN 1.0 section 9), public by the specification.
+  // The default realm's identifier is the host's base, and the document names
+  // only what answers there: the searches at their default paths (#1175),
+  // and the access request profile's capability (#1180).
+  { family: "AuthZEN", spec: "AuthZEN Authorization API 1.0 section 9",
+    path: "/.well-known/authzen-configuration",
+    type: JSON_TYPE, json: true, badCredential: "ignored",
+    must: function (d) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (d.policy_decision_point !== base) {
+        bad.push("policy_decision_point is " + d.policy_decision_point +
+                 " and the document was fetched from " + base + "; section " +
+                 "9.2.3 makes a PEP reject that");
+      }
+      if (d.access_evaluation_endpoint !== base + "/access/v1/evaluation") {
+        bad.push("access_evaluation_endpoint is " +
+                 d.access_evaluation_endpoint);
+      }
+      ["subject", "resource", "action"].forEach(function (kind) {
+        const key = "search_" + kind + "_endpoint";
+        if (d[key] !== undefined &&
+            d[key] !== base + "/access/v1/search/" + kind) {
+          bad.push(key + " is " + d[key]);
+        }
+      });
+      // ONE CAPABILITY BY DEFAULT SINCE #1180: the Access Request and
+      // Approval Profile, on unless authzen.accessRequests is off, with its
+      // endpoint named. Token issuance (#1181) is off by default, so it is
+      // not advertised here.
+      const caps = d.capabilities === undefined ? [] : d.capabilities;
+      const request = "urn:openid:authzen:capability:access-request";
+      if (!Array.isArray(caps) || caps.some(function (one) {
+        return one !== request;
+      })) {
+        bad.push("capabilities is " + JSON.stringify(d.capabilities) +
+                 "; by default only " + request + " is implemented");
+      }
+      if (caps.indexOf(request) >= 0 && d.access_request_endpoint !==
+          base + "/access/v1/access-requests") {
+        bad.push("the access-request capability is advertised and " +
+                 "access_request_endpoint is " + d.access_request_endpoint);
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+
   // -- The two SAML profiles, which are two implementations ----------------
   { family: "SAML 2.0", spec: "SAML 2.0 metadata", path: "/saml2/metadata",
     type: SAML_TYPE, json: false, badCredential: "ignored",
@@ -1019,6 +1067,15 @@ const CONTROLS = [
 // read, and it is in DOCUMENTS.
 // ---------------------------------------------------------------------------
 const NO_PUBLIC_METADATA = {
+  // NOT IN DOCUMENTS because the stack this job meets has it off:
+  // uma.enabled defaults to false, and while it is off the discovery
+  // document answers 501 like the rest of the family (uma/uma.ts). Its
+  // document is fetched and held by tests/protocol/sts_uma.js, which turns
+  // UMA on in a realm of its own.
+  "UMA 2.0":
+    "off by default (uma.enabled), and its discovery document, " +
+    "/.well-known/uma2-configuration, answers 501 until it is turned on; " +
+    "sts_uma.js reads it in a realm where it is on.",
   "Kerberos":
     "RFC 4120 has no metadata document. What a client needs — the realm, the " +
     "KDC's address — comes from its own krb5.conf, and the KDC is on raw " +

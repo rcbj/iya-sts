@@ -879,6 +879,70 @@
     "en": "d9fe267d0aae76d6",
     "text": "Ipinatupad ng embedded PEP ang isang desisyon"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "Napagpasyahan ang isang AuthZEN access evaluation"
+  },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "Nasagot ang isang AuthZEN search"
+  },
+  "audit.actions.fga.decision.label": {
+    "en": "c2696096c0749879",
+    "text": "Isang desisyon ng fine-grained authorization ang ginawa sa pag-isyu"
+  },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "Idinagdag o pinalitan ang isang row ng katalogo ng attribute ng AuthZEN"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "Inalis ang isang row ng katalogo ng attribute ng AuthZEN"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "Itinakda ang saklaw ng application ng isang tumatawag sa AuthZEN"
+  },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "Binigyan ang isang remote PEP ng AuthZEN access sa isang application na nagpapatupad ng fine-grained authorization"
+  },
+  "audit.actions.admin.authzen.callbacks.set.label": {
+    "en": "e8439c3ddb41d93f",
+    "text": "Itinakda ang mga callback URL ng access request ng isang AuthZEN caller"
+  },
+  "audit.actions.authzen.access-request.submitted.label": {
+    "en": "ce6c6f5f15939b8e",
+    "text": "May isinumiteng AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.approved.label": {
+    "en": "5148eda4f7a84802",
+    "text": "Naaprubahan ang isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.denied.label": {
+    "en": "22560158f5a3aaca",
+    "text": "Tinanggihan ang isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.expired.label": {
+    "en": "2ced214d20f8f301",
+    "text": "Nag-expire ang isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.cancelled.label": {
+    "en": "f00e80626f3daa82",
+    "text": "Kinansela ang isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.revoked.label": {
+    "en": "fdf6095a2de11ed6",
+    "text": "Binawi ang approval ng isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.approver-refused.label": {
+    "en": "fbeebe0256b7890e",
+    "text": "Tinanggihan ng policy ang isang tao sa pagpapasya ng isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.callback.label": {
+    "en": "432e877d55af1913",
+    "text": "Naipadala o nabigo ang callback ng isang AuthZEN access request"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Tumanggi ang issuance PEP na hayaan ang serbisyong ito na mag-mint ng isang bagay"
@@ -934,6 +998,74 @@
   "audit.actions.gnap.grant.forward.label": {
     "en": "9756220c110d11f1",
     "text": "Ang tao sa GNAP approval page ay hindi ang user na pinangalanan ng request, at ipinadala ang grant sa portal ng user na iyon (#432 phase 6)"
+  },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "Nag-register ang isang UMA resource server ng resource para sa isang owner"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "In-update ng isang UMA resource server ang isang naka-register na resource"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "Binura ng isang UMA resource server ang isang naka-register na resource"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "Na-issue-an ng permission ticket ang isang UMA resource server"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "Napagpasyahan ng isa sa mga policy nito ang isang UMA permission"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "Nasagot ang isang UMA uma-ticket grant"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "Na-revoke ang isang UMA persisted claims token"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "Inilagay sa pila ang isang UMA request para sa approval ng resource owner nito"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "In-approve o tinanggihan ng isang resource owner ang isang UMA request"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "Na-sign in ang isang requesting party sa UMA claims interaction endpoint"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "Nag-share ang isang resource owner ng resource sa pamamagitan ng UMA"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "Inalis ng isang resource owner ang isang UMA share"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "Isinulat muli ng isang resource owner ang kanyang UMA policy bilang ALFA"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "Ginawang UMA resource server ang isang application sa console"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "Hindi na UMA resource server ang isang application sa console, at na-revoke ang mga RPT nito"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "Binago sa console kung puwedeng mag-may-ari ng mga UMA resource ang isang application"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "Na-revoke sa console ang isang UMA RPT"
   },
   "audit.actions.gnap.grant.finalize.label": {
     "en": "fee9afbd448956f2",

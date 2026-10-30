@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "第 3.5 節：以值傳送金鑰的用戶端會獲得一個 instance_id，下次可以參照方式傳送。"
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "接受已註冊用戶端的未註冊執行個體"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "第 2.3 和 2.3.3 節：任何應用程式都未註冊的金鑰，若其 class_id 指明的已註冊 GNAP 用戶端列有已註冊的 gnapFinishUri，則被接受為該用戶端的執行個體——瀏覽器應用程式（每個瀏覽器產生一個金鑰）就是這樣讓使用者登入的。此類執行個體從不略過核准頁面。關閉時：在產品模式下拒絕未註冊的金鑰（#1216）。"
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "保持已核准授權可繼續"
@@ -1012,8 +1020,8 @@
     "text": "提供的演算法"
   },
   "webauthn.algorithms|description": {
-    "en": "baa2f6e1bfd03f47",
-    "text": "`pubKeyCredParams`，依偏好順序排列——本服務願意接受之認證所用的 COSE 演算法。名稱採用 JOSE 拼寫，並由 `authn/webauthn.js` 自己的表格對應到 COSE 識別碼，該模組也是驗證簽章的模組：RFC 9964 的後量子 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）與 `ML-DSA-87`（-50）；RFC 9864 完整指定的 `ESP256`（-9）、`ESP384`（-51）、`ESP512`（-52）、`Ed25519`（-19）與 `Ed448`（-53），其曲線會與金鑰比對檢查；`ES256`（-7）、`ES384`（-35）、`ES512`（-36）、`EdDSA`（-8）；RFC 8812 的 `ES256K`（-47，secp256k1）；以及 `PS256`（-37）、`PS384`（-38）、`PS512`（-39）、`RS256`（-257）、`RS384`（-258）與 `RS512`（-259）。演算法不在此清單上的認證會被拒絕（WebAuthn Level 3 第 7.1 節）。表格之外的名稱會被捨棄並發出警告，而不會被送出，因為提供本服務無法驗證的演算法，會產生一個能註冊卻永遠無法使用的認證。**預設依此順序要求七種演算法：`ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`**；驗證器會採用它支援的第一個，因此順序是一種偏好，其他任何演算法都可以勾選。SHA-1 的 `RS1`（-65535）可以指名，但只有在 `webauthn.insecureAlgorithms` 開啟時（僅限開發）才會提供與接受；`webauthn.pqcOnly` 會將清單縮小為 ML-DSA。"
+    "en": "d5e0c4a5c20494f6",
+    "text": "`pubKeyCredParams`，依偏好順序排列——本服務願意接受之認證所用的 COSE 演算法。名稱採用 JOSE 拼寫，並由 `authn/webauthn.js` 自己的表格對應到 COSE 識別碼，該模組也是驗證簽章的模組：RFC 9964 的後量子 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）與 `ML-DSA-87`（-50）；RFC 9864 完整指定的 `ESP256`（-9）、`ESP384`（-51）、`ESP512`（-52）、`Ed25519`（-19）與 `Ed448`（-53），其曲線會與金鑰比對檢查；`ES256`（-7）、`ES384`（-35）、`ES512`（-36）、`EdDSA`（-8）；RFC 8812 的 `ES256K`（-47，secp256k1）；以及 `PS256`（-37）、`PS384`（-38）、`PS512`（-39）、`RS256`（-257）、`RS384`（-258）與 `RS512`（-259）。演算法不在此清單上的認證會被拒絕（WebAuthn Level 3 第 7.1 節）。表格之外的名稱會被捨棄並發出警告，而不會被送出，因為提供本服務無法驗證的演算法，會產生一個能註冊卻永遠無法使用的認證。**預設依此順序要求六種演算法：`ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `EdDSA`, `ES256`, `RS256`**；驗證器會採用它支援的第一個，因此順序是一種偏好，其他任何演算法都可以勾選。預設不要求 `ES384`，因為 Windows 上的某些瀏覽器與它不相容。SHA-1 的 `RS1`（-65535）可以指名，但只有在 `webauthn.insecureAlgorithms` 開啟時（僅限開發）才會提供與接受；`webauthn.pqcOnly` 會將清單縮小為 ML-DSA。"
   },
   "webauthn.algorithms|csvValueNotes|ML-DSA-44": {
     "en": "0fed17862f33fa73",
@@ -6784,8 +6792,16 @@
     "text": "存放庫可容納的原則數"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "ou=policies 下可存在多少項目。與 ou=federations 及 ou=applications 所帶的限制相同，理由也相同：在預設持久化模式下此目錄位於記憶體中，能無限制建立項目的呼叫者可以耗盡它。達到上限時會拒絕「建立」並記錄；絕不會逐出。"
+    "en": "bb4fc97c445e9e60",
+    "text": "ou=policies 下可存在多少項目。與 ou=federations 及 ou=applications 所帶的限制相同，理由也相同：在預設持久化模式下此目錄位於記憶體中，能無限制建立項目的呼叫者可以耗盡它。達到上限時會拒絕「建立」並記錄；絕不會逐出。應用程式自有的細粒度授權原則不計入此處：由 xacml.maxApplicationPolicies 限制。"
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "存放庫可容納的應用程式原則數"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "存放庫可容納多少個應用程式自有的細粒度授權原則（ou=policies 下帶有 xacmlApplication 的項目，包括孤立的項目）。它們不計入 xacml.maxPolicies，後者限制管理員撰寫的原則。預設值即 applications.max 的預設值，因此登錄預設接納的每個應用程式都可以擁有一個；請與 applications.max 一起調高。達到上限時會拒絕「建立」並記錄；絕不會逐出。"
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6890,6 +6906,286 @@
   "xacml.pepNotifyTimeoutMs|description": {
     "en": "b02ca7d48b1cb3f5",
     "text": "等待 PEP 回應提示多久。「刻意比 SSF 的十秒短」，理由正是讓提示成為提示的那件事：遺失的推送是遺失的事件，因此 SSF 會等待；遺失的提示只花費一個輪詢間隔的延遲，別無其他代價，因此等待才是昂貴的錯誤。真正在等待它的，是剛儲存原則之人的主控台表單。"
+  },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "啟用 AuthZEN"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "開啟時，AuthZEN Authorization API 會在 /access/v1 下回應。關閉時，其路由仍保持「已註冊」並回應 501，與 XACML 的路由相同：功能已關閉，URL 並沒有錯。它以 XACML 引擎做決定，因此在 xacml.enabled 關閉時也會回應 501。呼叫端仍須持有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）與應用程式範圍，才會得到任何回覆。"
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "AuthZEN 呼叫端的驗證方式"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls，預設值：此服務依其用戶端信任庫「驗證」的用戶端憑證，解析為儲存該憑證的目錄項目（若為此服務簽發的憑證，則解析為其指名的人員）。bearer：來自 client_credentials 的 OAuth 2.0 存取權杖，對象為此領域的 /access/v1，並攜帶 authzen:evaluate；呼叫端即為該用戶端。mtls+bearer：兩者皆是，且權杖必須繫結到出示的憑證（RFC 8705），使兩者指名同一方。在每種模式下皆會檢查：AuthZEN 將 PEP 的驗證交由部署處理（第 11.2 節），而任何人都能驅動的決策端點，就是原則的神諭。"
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "指名目錄人員的主體類型"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "其 subject.id 為此領域目錄中人員的 subject.type 值，以逗號分隔。對於這些類型，原則資訊點會提供主體的角色與目錄屬性，而這些值具「權威性」：呼叫端無法傳送它們。對於其他任何類型，不會查詢目錄，因此恰好與某人名稱相符的 id 並不是那個人。空白表示從不查詢目錄。"
+  },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "啟用批次評估"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "開啟時，POST /access/v1/evaluations 在一個請求中回應多個存取評估（第 7 節），中繼資料文件也會列出它。關閉時該路由回應 501，中繼資料不列出它；/access/v1/evaluation 不受影響。"
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "一批可攜帶的評估數"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "一個 POST /access/v1/evaluations 可攜帶的最多項目數。超過時，在決定任何項目之前整批以 400 拒絕：每個項目都是在本服務執行緒上的一次完整決策，而無上限的清單是耗盡它的一種方式。"
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "最大批次請求（位元組）"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "POST /access/v1/evaluations 接受的最大請求本文。超過時，整批在讀取之前以 400 拒絕。服務本身的請求本文上限（5 MB）即為上限。"
+  },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "簽署 AuthZEN 中繼資料"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "開啟時，/.well-known/authzen-configuration 攜帶 signed_metadata（AuthZEN 1.0 第 9.1 節）：一個包含相同成員的 JWT，iss 為 PDP 識別碼，如同 RFC 8414 的中繼資料一樣以領域的金鑰簽署（oauth2.signedMetadataAlgorithm、oauth2.signedMetadataCertificateHeader），並可用領域的 JWKS 驗證。支援它的 PEP 以簽署的值優先於一般值。"
+  },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "向宣告了義務的 PEP 交付義務"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "AuthZEN 的 Obligations Profile（草案）。開啟時，僅當請求的 context.supported_obligations 列出答覆中的每種義務類型時，才在 context.obligations 中把 XACML 義務交給 PEP——攜帶義務的 Permit 才回應 true；中繼資料公布 supported_obligations。沒有該宣告或關閉此項時，攜帶本服務本身無法履行之義務的 Permit 回應 false，因為從未聽過該設定檔的 PEP 否則會授予存取。"
+  },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "為其他伺服器決定 OAuth 權杖交換"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "AuthZEN Binding for OAuth 2.0 Token Exchange（草案），本服務作為另一個授權伺服器所詢問的 PDP。開啟時，resource.type 為 audience 且動作為 issue:<type>:token_exchange 的元組是一道閘門，resource.type 為 protected_resource 的元組是一個範圍，兩者都依固定的轉換規則決定，所用的委派事實與簽發政策與決定本地 RFC 8693 交換時相同；主體閘門可攜帶 context.issuance，它只會收窄；中繼資料會宣告權杖簽發能力。關閉時，這些元組是交給根政策的一般問題。"
+  },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "啟用 Search APIs"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "開啟時，三種 AuthZEN 搜尋在 /access/v1/search 下回應（主體、資源、動作），中繼資料會列出它們。一次搜尋以領域的根原則對本服務能列出的每個候選作出決定，並回應被允許者：主體是領域目錄中的人員，資源是其應用程式、API 與委派關係，動作是原則用來與 action-id 比較的名稱。關閉時，這些路由回應 501。"
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "一次搜尋決定的候選數"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "一次搜尋最多決定的候選數。每個候選都是本服務執行緒上的一次完整決策；超過上限後，其餘候選不再決定，回應的 context.incomplete 表示結果不完整。"
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "每個搜尋頁的結果數"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "請求未指定 page.limit 時，一次搜尋在一頁中回應的結果數；以 page.next_token 繼續。"
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "傳回決策的原因"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "開啟時，決策會攜帶一個 context，內含 XACML 決策、原因、任何 advice，以及使 Permit 成為 false 的 obligations。預設為關閉：原因會讓呼叫端得知原則的某些資訊，而無論如何，單獨的 decision 就是答案。"
+  },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "存取請求與核准"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "AuthZEN 存取請求與核准設定檔（草案）及其回呼配套規範。開啟時，XACML 回應中攜帶 advice urn:sts:xacml:advice:access-request 的 Deny 會回應 false 並附帶 context.access_request；PEP 將其提交到 POST /access/v1/access-requests，由該 advice 指名的核准者在入口網站或主控台中作出決定，下一次評估時出示的核准會作為可信事實到達根原則。中繼資料會寫明該端點與該能力。不帶該 advice 的拒絕永遠不可請求。關閉時，這些路由回應 501，任何拒絕都不可請求。"
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "可請求的拒絕可被提交的時間長度（秒）"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "可請求的拒絕的 expires_at，以及其 binding_token 的存留期：在此之後的提交會以 expired_denial 被拒絕，PEP 需重新評估。"
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "存取請求等待核准者的時間長度（秒）"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "超過此時間的待處理存取請求會過期，由 authzen.access-requests 排程作業處理，並在每次讀取時判斷。已完成的請求會多保留一天，供 PEP 讀取。"
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "核准的最長有效時間（秒）"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "核准的 approved_until 的上限。原則的 advice（max-approval-seconds）與請求者的 requested_until 都可以縮短它，但都不能延長它。"
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "緊急存取的有效時間長度（秒）"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "緊急存取請求——requested_access.emergency，在原則的 advice 允許時，並附帶 context.business_justification——會立即獲核准，最長有效此時間，並向其核准者寄出郵件以供覆核。"
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "待處理存取請求的 Retry-After（秒）"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "請求待處理期間，工作狀態端點所回應的 Retry-After；PEP 至少等待這麼久才會再次查詢。"
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "一個領域可持有的待處理存取請求數"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "一個領域最多可同時持有的待處理存取請求數；超過後，提交會以 503 被拒絕，直到其中一些被決定或過期。"
+  },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "啟用 User-Managed Access"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "開啟時，UMA 2.0 保護 API 在 /uma 下回應，權杖端點執行並公告 urn:ietf:params:oauth:grant-type:uma-ticket 授權，/.well-known/uma2-configuration 描述它們。關閉時，路由仍保持「已註冊」並回應 501（與 XACML 的路由相同），該授權為 unsupported_grant_type，且不提供探索文件。關閉它不會遺忘資源擁有者分享過的任何內容。"
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "領域的 UMA 授權原則"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "決定每個 UMA 許可之「領域」層的 ou=policies 項目名稱：哪些資源伺服器、用戶端與宣告簽發者可以參與，以及請求方必須是已知的。沒有該名稱的項目時，由內建的 uma-authorization 範本決定；項目會覆寫它，而「已停用」的項目不會回退至範本（簽發原則的規則）。之後再詢問資源擁有者自己的文件與資源伺服器的細粒度原則，且每一層都必須為 Permit。"
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "許可票證有效期（秒）"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "許可票證（Federated Authorization 第 4 節）可在權杖端點出示的時間長度。每個 need_info、request_submitted 與 request_denied 回應都會「輪替」票證，因此持續詢問的用戶端所出示的票證絕不會比此更舊；票證在整個叢集中只能使用一次。"
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "RPT 有效期（秒）"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "請求方權杖的存活時間。刻意設得較短：RPT 的許可是簽發時擁有者所允許的內容，較短的有效期限制了不做內省的資源伺服器仍認可已撤回分享的時間長度。需要更長時間的用戶端可再次出示其票證或升級其 RPT，這會重新決定每項許可。"
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "隨 RPT 簽發重新整理權杖"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "uma-ticket 授權是否在 RPT 之外同時回應重新整理權杖。預設關閉（rcbj 在 #1168 上的決定 4）：Grant 規格禁止在重新整理時進行授權評估，而本服務在每次重新整理時都會重新決定，無法重新決定的 RPT 最好改為短期有效。開啟時，重新整理會像升級一樣重新執行每一層，不再通過的許可會被捨棄。"
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "持久化宣告權杖有效期（秒）"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "持久化宣告權杖（PCT）為某個用戶端保留所收集之請求方宣告的時間長度。PCT 是依摘要儲存的控制代碼，繫結至用戶端與請求方，可在 /oauth2/revoke 以 token_type_hint=pct 撤銷，並在登出全部時終止。"
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "部分許可遭拒時為已授予的許可簽發 RPT"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "開啟時（rcbj 在 #1168 上的決定 3），請求多項許可、其中部分獲授予而其他遭拒的票證，會以攜帶已授予子集的 RPT 回應——即 Grant 規格的部分 RPT 選項——只有在全部未獲授予時才回應 request_denied。關閉時，任何一項遭拒的許可都會拒絕整個請求。只要某個問題對請求方為 Indeterminate，就優先回應 need_info 而非以上兩者。"
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "允許資源擁有者以 ALFA 編輯其文件"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "開啟時，/portal/shared 允許資源擁有者在分享表單旁以 ALFA 編輯其整份 UMA 文件。預設關閉（rcbj 在 #1168 上的決定 2）：此時並非由表單撰寫的規則會以唯讀方式顯示為自訂規則。擁有者的文件只會被詢問擁有者自己的資源，因此手寫規則最壞也只能分享其作者所擁有的內容。"
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "擁有者層可讀取的目錄屬性"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "原則資訊點（Policy Information Point）為資源「擁有者」層所回應的請求方目錄項目屬性，以逗號分隔：即一個人自己的規則可讀取的關於陌生人的資訊。領域層讀取目錄的方式與每個簽發問題相同。空白表示擁有者的規則除了作為宣告收集的內容外不能讀取任何資訊。"
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "等待擁有者核准的時間（秒）"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "request_submitted 請求在 /portal/shared 上等待擁有者答覆的時間長度。超過後仍未答覆，用戶端的下一次輪詢將為 request_denied。在已設定郵件通道且擁有者未拒絕通知時，會以郵件告知擁有者。"
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "單一擁有者可有的待處理核准數"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "同時等待某位擁有者答覆的最多請求數。超過後，再有 request_submitted 將回應 request_denied 而非排入佇列：無上限的佇列會讓陌生人塞滿一個人的入口網站。"
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "擁有者文件大小上限（位元組）"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "資源擁有者原則的 XACML 文件最大可佔的位元組數。會使其超出上限的分享將被拒絕，文件維持原樣。"
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "擁有者文件中的規則數上限"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "資源擁有者的文件可容納的最多 Rule 數：它自己的 owner-self 規則、每個分享一條，以及每個已給予的核准一條。會使其超出上限的分享將被拒絕。"
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "單一擁有者可註冊的資源數"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "跨所有資源伺服器代表某位擁有者註冊的最多資源數。超過後的註冊將被拒絕：否則持有保護 API 權杖的資源伺服器可以無限制地以他人名義註冊。"
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "單一資源的範圍數上限"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "一個已註冊資源可攜帶的最多 resource_scopes 數。範圍是字串，絕不會被存取：規格允許範圍指向的範圍描述文件不會被擷取。"
   },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
@@ -8022,6 +8318,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "其成員擁有內建 XACML_USER 角色的目錄群組，這是三個 XACML 端點本身所要求的角色——GET /xacml、POST /xacml/pdp 與 GET /xacml/policies。出示經本服務驗證之用戶端憑證的呼叫方，是本服務能夠指明身分的一方；而該群組的成員資格才使其成為本服務允許進入的一方，兩者分開的理由與上方 roles.remotePepGroup 相同：憑證證明身分，群組授予權限。這是第二個群組，而非同一個：REMOTE_PEPS 可存取三個 /xacml/pep 端點，它們分發本服務用以執行自身存取控制的文件，若由一個群組同時授予兩者，那麼允許呼叫方存取XACML 介面本身就會悄悄地允許其存取那些端點。設為空字串表示沒有人擁有該角色，這會對每個呼叫方關閉這三個端點；這是在不關閉 xacml.enabled、從而不連帶失去內嵌簽發與存取 PEP 的情況下移除 XACML 介面的方法。"
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "授予 AUTHZEN_PEPS 角色的群組"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "其成員持有內建 AUTHZEN_PEPS 角色的目錄群組，這是 /access/v1 下的 AuthZEN Authorization API 所要求的。成員可以是人員、服務帳戶或應用程式（適用於以自己的存取權杖進行驗證的呼叫端）。「這是第三個群組，而不是另外兩個中的任何一個」：AUTHZEN_PEPS 只請求決策，別無其他；而 XACML_USER 還會讀取存放庫，REMOTE_PEPS 則會拉取此服務用來執行自身存取控制的文件，以及指名人員的屬性。將其設為空字串表示「沒有人」持有該角色，這會對每個呼叫端關閉 /access/v1。"
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

@@ -201,6 +201,10 @@ const ldapMatching = require('./ldap_matching');
 // by the console long before this one) and so is handed the two functions it
 // needs through its setDirectory(), filled below.
 const personEditor = require('./person_editor');
+// THE AUTHZEN TAB'S DIRECTORY (#563), the same arrangement: a library the
+// management API loads at 19, handed what it needs through setDirectory(),
+// filled below. It requires only the engine's model and the helpers.
+const authzenAdmin = require('../authzen/authzen_admin');
 // The revocation register, for the CRL container below. A LEAF (rule 3): it
 // registers no route, so requiring it here moves nothing.
 const pkiRevocation = require('../common/pki_revocation');
@@ -1165,6 +1169,17 @@ function maxPolicies() {
   log.debug("Entering maxPolicies().");
   log.debug("Leaving maxPolicies().");
   return config.value('xacml.maxPolicies');
+}
+
+// AN APPLICATION'S OWN POLICIES HAVE A CEILING OF THEIR OWN (#1210): an
+// entry under ou=policies carrying `xacmlApplication` counts against this
+// and not against xacml.maxPolicies, so a realm full of applications
+// enforcing fine-grained authorization never locks administrators out of
+// writing their own policies. `common/config.js` argues the default.
+function maxApplicationPolicies() {
+  log.debug("Entering maxApplicationPolicies().");
+  log.debug("Leaving maxApplicationPolicies().");
+  return config.value('xacml.maxApplicationPolicies');
 }
 
 function maxRoles() {
@@ -5630,6 +5645,32 @@ function seed() {
     log.warn(errorCodes.tag('STS-LDAP-0041') +
              'ldap: roles.xacmlUserGroup is "' + xacmlUserGroup + '", which ' +
              'carries DN syntax, so no group was seeded for it.');
+  }
+  // AND THE THIRD (#563): the group granting AUTHZEN_PEPS, which the AuthZEN
+  // Authorization API under /access/v1 requires. Seeded EMPTY in every mode:
+  // no demonstration identity rides along (#591), and a caller is admitted by
+  // being made a member — a person, a service account, or an application
+  // calling with its own token.
+  const authzenPepGroup = String(config.value('roles.authzenPepGroup') ||
+                                 '').trim();
+  if (authzenPepGroup && nameUsableInDn(authzenPepGroup)) {
+    putEntry(groupDnFor(authzenPepGroup), {
+      objectClass: ['top', 'groupOfNames'],
+      cn: authzenPepGroup,
+      description: 'Members hold the built-in AUTHZEN_PEPS role, which is ' +
+                   'what the AuthZEN Authorization API under /access/v1 ' +
+                   'requires. The group is named by roles.authzenPepGroup; ' +
+                   'emptying it closes /access/v1 to everybody, and adding ' +
+                   'a member — a person, a service account, or an ' +
+                   'application\'s entry — is how a caller is admitted. It ' +
+                   'is deliberately neither cn=xacml-users nor ' +
+                   'cn=remote-peps: an AuthZEN caller asks for decisions ' +
+                   'and reads no policy and no person\'s attributes.'
+    }, { origin: 'seed' });
+  } else if (authzenPepGroup) {
+    log.warn(errorCodes.tag('STS-LDAP-0041') +
+             'ldap: roles.authzenPepGroup is "' + authzenPepGroup + '", ' +
+             'which carries DN syntax, so no group was seeded for it.');
   }
   // This realm's own count. It reads `entries.size` through
   // realmEntryCount()'s walk either way now that the store is per realm, and
@@ -10238,6 +10279,58 @@ personEditor.setDirectory({
   write: writePersonAttribute
 });
 
+// AN AUTHZEN CALLER'S APPLICATION SCOPE (#563), the same shape as the editor
+// above: `authzen/authzen_admin.ts` lists the members of the group granting
+// AUTHZEN_PEPS and replaces a person's `stsAuthzenApplication` — and, since
+// #1180, `stsAuthzenCallbackUri`, the access request callback URLs
+// registered for the caller — the two attributes it writes, which no other
+// door here offers (an `sts*` name is refused by the person editor, SCIM,
+// federation and attribute sources) — and, since #1210, adds a member to a
+// group.
+authzenAdmin.setDirectory({
+  locate: function locate(key) {
+    log.debug('Entering the AuthZEN locate(). key=' + key);
+    const stored = locateEntry(String(key || '')).stored;
+    if (!stored) {
+      log.debug('Leaving the AuthZEN locate(). Nobody.');
+      return null;
+    }
+    const attributes = attributeSnapshot(stored);
+    log.debug('Leaving the AuthZEN locate(). ' + stored.dn);
+    return { dn: stored.dn, person: isPersonEntry(stored),
+             name: String(((stored.attributes.uid || [])[0]) ||
+                          ((stored.attributes.cn || [])[0]) || stored.dn),
+             serviceAccount:
+               (stored.attributes.stsserviceaccount || []).length > 0,
+             attributes: attributes };
+  },
+  members: function members(group) {
+    log.debug('Entering the AuthZEN members(). group=' + group);
+    const entry = readGroupEntry(groupDnFor(String(group || '')));
+    const out = entry ? entry.members.map(function (one) {
+      return String(one.dn || one.value || '');
+    }).filter(Boolean) : [];
+    log.debug('Leaving the AuthZEN members(). ' + out.length);
+    return out;
+  },
+  write: function write(dn, name, values) {
+    log.debug('Entering the AuthZEN write(). dn=' + dn);
+    log.debug('Leaving the AuthZEN write().');
+    return (name === authzenAdmin.PERSON_SCOPE ||
+            name === authzenAdmin.PERSON_CALLBACK) &&
+           writePersonAttribute(dn, name, values);
+  },
+  // A MEMBER INTO A GROUP (#1210): enabling fine-grained authorization on
+  // an application puts each holder of REMOTE_PEPS into the group granting
+  // AUTHZEN_PEPS. The console's own door, so it is idempotent and audited
+  // (`group.add-member`) exactly as an administrator's add is.
+  addMember: function addMember(group, member, options) {
+    log.debug('Entering the AuthZEN addMember(). group=' + group);
+    log.debug('Leaving the AuthZEN addMember().');
+    return addGroupMember(group, member, options);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // THE CRL CONTAINER (2026-09-11).
 //
@@ -10531,7 +10624,8 @@ if (typeof xacmlStore.setDirectory === 'function') {
   // and STATICALLY VALIDATED like any other — a seed that stopped
   // typechecking is refused at startup and says so, rather than becoming the
   // one policy in the repository nobody ever checked.
-  if (typeof xacmlStore.seed === 'function' && policyCount() === 0) {
+  if (typeof xacmlStore.seed === 'function' &&
+      policyCount(false) + policyCount(true) === 0) {
     xacmlStore.seed();
   }
 } else {
@@ -15507,7 +15601,8 @@ if (typeof consent.setDirectory === 'function') {
 // in its audit summary, its log line and its reply, and the value here is key
 // material. The two attributes are rows in `applications.js`'s SCHEMA, which is
 // what makes a later `writeApplication()` — which REPLACES an entry from its
-// record — carry them rather than erase them.
+// record — carry them rather than erase them. (Since #1230 it also keeps an
+// attribute the SCHEMA does not list; these stay rows for the pages.)
 // ---------------------------------------------------------------------------
 function firstValue(stored, lowerName) {
   log.debug("Entering firstValue().");
@@ -21984,21 +22079,72 @@ function allApplications() {
   return rows;
 }
 
-// Create or replace an application entry. REPLACE rather than merge, and that
-// is the one place this differs from `applyVcAttributes()`'s "fill only what is
-// absent" rule — deliberately, and for a reason particular to a registry: the
-// record being written was READ FROM THIS ENTRY a moment ago and then changed,
-// so it already contains whatever the entry had, an operator's own edits
-// included. Merging on top of that would make it impossible ever to REMOVE a
+// The attributes a registry write puts on an existing application entry
+// (#1230): the ones it was handed, and every attribute of the entry whose
+// base name (lower-cased, without `;binary` or another option) is not in
+// `owned` — see writeApplication(). The operational attributes are left to
+// putEntry(), which keeps the entry's own and sets the rest, so carrying them
+// here would change nothing. Copies, so the new entry shares no list with the
+// one it replaces.
+function withUnownedAttributes(existing, attributes, owned) {
+  log.debug('Entering withUnownedAttributes(). dn=' + existing.dn);
+  const ownedSet = new Set((owned || []).map(function (name) {
+    return String(name).split(';')[0].toLowerCase();
+  }));
+  const given = new Set(Object.keys(attributes || {}).map(function (name) {
+    return String(name).toLowerCase();
+  }));
+  const out = Object.assign({}, attributes || {});
+  const kept = [];
+  Object.keys(existing.attributes).forEach(function (name) {
+    const lower = String(name).toLowerCase();
+    if (ownedSet.has(lower.split(';')[0]) || given.has(lower) ||
+        OPERATIONAL.indexOf(lower) >= 0) {
+      return;
+    }
+    const values = existing.attributes[name] || [];
+    if (values.length) {
+      out[lower] = values.slice(0);
+      kept.push(lower);
+    }
+  });
+  log.debug('Leaving withUnownedAttributes(). Kept ' +
+            (kept.length ? kept.join(', ') : 'nothing') + '.');
+  return out;
+}
+
+// Create or replace an application entry. REPLACE rather than merge FOR THE
+// ATTRIBUTES THE REGISTRY OWNS, and that is the one place this differs from
+// `applyVcAttributes()`'s "fill only what is absent" rule — deliberately, and
+// for a reason particular to a registry: the record being written was READ
+// FROM THIS ENTRY a moment ago and then changed, so for every attribute the
+// registry models it already contains whatever the entry had, an operator's
+// own edits included. Merging those would make it impossible ever to REMOVE a
 // value — a redirect URI deleted with ldapmodify would come back on the next
 // authorization request, which is the opposite of the directory being the
 // source of truth.
 //
-// The operational attributes are the exception and are preserved:
+// **AND KEEP EVERY OTHER ATTRIBUTE ON THE ENTRY (#1230).** That argument holds
+// only for what the record CARRIES, which is what `applications.js`'s SCHEMA
+// lists. An application's entry also holds attributes written by doors that
+// never pass through the registry — a certificate stored by `add-certificate`
+// (`changeStoredCertificate()`, `userCertificate;binary`, #1061 and #1227), an
+// attribute an operator added with ldapmodify (`seeAlso`, say) — and the
+// record has never heard of them. Until #1230 every sighting erased them,
+// with no audit row: a Shared Signals receiver's stored certificate was gone
+// after its first `POST /ssf/stream`, and the next call it authenticated was
+// refused STS-SSF-0151. So `options.owned` names the attributes the registry
+// owns (lower-cased base names; `applications.ownedAttributeNames()`), an
+// existing attribute whose base name is NOT among them is carried onto the
+// new entry, and one that IS among them is replaced or removed exactly as
+// before. A caller that names nothing gets the registry's own list, so a
+// write can never again erase what it does not model.
+//
+// The operational attributes are preserved too, by putEntry():
 // createTimestamp belongs to the entry rather than to the record, and an entry
 // that reported being created afresh on every sign-in would make the audit log
 // unreadable.
-function writeApplication(identifier, attributes) {
+function writeApplication(identifier, attributes, options) {
   log.debug('Entering writeApplication(). identifier=' + identifier);
   const existing = applicationEntry(identifier);
   const dn = existing ? existing.dn : applicationDn(identifier);
@@ -22023,8 +22169,12 @@ function writeApplication(identifier, attributes) {
     log.debug('Leaving writeApplication(). The directory is full.');
     return false;
   }
+  const owned = (options && Array.isArray(options.owned))
+    ? options.owned : applications.ownedAttributeNames();
+  const written = existing
+    ? withUnownedAttributes(existing, attributes, owned) : attributes;
   const created = existing ? existing.createdAt : generalizedTime();
-  const stored = putEntry(dn, attributes,
+  const stored = putEntry(dn, written,
                           { origin: existing ? existing.origin :
                                     'application' });
   stored.createdAt = created;
@@ -22277,16 +22427,42 @@ function policyEntry(name) {
   return direct || null;
 }
 
-function policyCount() {
-  log.debug("Entering policyCount().");
+// WHETHER AN ENTRY'S ATTRIBUTES MAKE IT AN APPLICATION'S OWN POLICY: a
+// `xacmlApplication` value, in any case — a stored entry's names are lower
+// case and the attributes a writer hands writePolicy() are camel case.
+// An orphan still carries it, so it still counts as an application's
+// (#1210): it is kept for audit until an administrator removes it, and
+// counting it against the administrators' ceiling would let a deleted
+// application's leftovers lock them out.
+function isApplicationPolicy(attributes) {
+  log.debug("Entering isApplicationPolicy().");
+  const found = Object.keys(attributes || {}).some(function (name) {
+    if (name.toLowerCase() !== 'xacmlapplication') {
+      return false;
+    }
+    const value = attributes[name];
+    const values = Array.isArray(value) ? value : [value];
+    return values.some(function (one) {
+      return one !== undefined && one !== null && String(one) !== '';
+    });
+  });
+  log.debug("Leaving isApplicationPolicy(). " + found);
+  return found;
+}
+
+// THE TWO COUNTS, each against its own ceiling (#1210): `application`
+// true counts applications' own policies, false every other entry.
+function policyCount(application) {
+  log.debug("Entering policyCount(). application=" + !!application);
   let n = 0;
   eachResidentEntry(function (stored) {
     if (isUnder(stored.dn, policiesDn()) &&
-        normalizeDn(stored.dn) !== normalizeDn(policiesDn())) {
+        normalizeDn(stored.dn) !== normalizeDn(policiesDn()) &&
+        isApplicationPolicy(stored.attributes) === !!application) {
       n++;
     }
   });
-  log.debug("Leaving policyCount().");
+  log.debug("Leaving policyCount(). " + n);
   return n;
 }
 
@@ -22318,7 +22494,19 @@ function writePolicy(name, attributes) {
   log.debug('Entering writePolicy(). name=' + name);
   const existing = policyEntry(name);
   const dn = existing ? existing.dn : policyDn(name);
-  if (!existing && policyCount() >= maxPolicies()) {
+  // EACH KIND AGAINST ITS OWN CEILING (#1210). Only a CREATE is bounded,
+  // as before: a rewrite of an entry that is already here adds nothing.
+  const forApplication = isApplicationPolicy(attributes);
+  if (!existing && forApplication &&
+      policyCount(true) >= maxApplicationPolicies()) {
+    log.warn(errorCodes.tag('STS-FGA-0024') +
+             'ldap: not creating ' + dn + '; ou=policies holds its maximum ' +
+             'of ' + maxApplicationPolicies() + ' application policy/' +
+             'policies (xacml.maxApplicationPolicies).');
+    log.debug('Leaving writePolicy(). Application policies are full.');
+    return false;
+  }
+  if (!existing && !forApplication && policyCount(false) >= maxPolicies()) {
     log.warn(errorCodes.tag('STS-LDAP-0037') +
              'ldap: not creating ' + dn + '; ou=policies holds its maximum ' +
              'of ' + maxPolicies() + ' entry/entries (xacml.maxPolicies).');
@@ -27953,6 +28141,16 @@ function ldapPoliciesView(req) {
     matched: filtered.length,
     shown: paged.shown.length,
     max: maxPolicies(),
+    // THE TWO KINDS AND THEIR TWO CEILINGS (#1210): `count` is every entry,
+    // as it always was; `max` bounds the administrators' own, which are
+    // `ownCount`, and `applicationMax` bounds applications' own.
+    ownCount: all.filter(function (row) {
+      return !isApplicationPolicy(row.attributes);
+    }).length,
+    applicationCount: all.filter(function (row) {
+      return isApplicationPolicy(row.attributes);
+    }).length,
+    applicationMax: maxApplicationPolicies(),
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,

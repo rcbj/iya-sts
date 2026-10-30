@@ -116,6 +116,7 @@ var config = {
     durableTokens: false,                                                  // Mark access tokens durable
     revokeOnModify: true,                                                  // Revoke earlier tokens on modification
     instanceIds: true,                                                     // Issue instance identifiers
+    unregisteredInstances: true,                                           // Accept unregistered instances of a registered client
     continueAfterApproval: true,                                           // Keep approved grants continuable
     consentRequired: true,                                                 // Ask the resource owner
     rememberApprovals: true,                                               // Remember approvals
@@ -147,6 +148,7 @@ var config = {
     accessPolicy: "access-control",          // Access policy name
     enabled: true,                           // XACML enabled
     maxPolicies: 200,                        // Policies the repository may hold
+    maxApplicationPolicies: 500,             // Application policies the repository may hold
     returnPolicyIdList: false,               // Always return the applicable policy identifiers
     remotePeps: true,                        // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,             // A registering PEP must present a client certificate
@@ -242,38 +244,38 @@ var config = {
 
   // --- WebAuthn --------------------------------------------------------
   webauthn: {
-    enabled: true,                                                                                                                                     // Offer security keys (WebAuthn)
-    rpName: "IYA STS",                                                                                                                                 // Relying party name
-    rpId: "",                                                                                                                                          // RP ID override
-    allowedOrigins: "",                                                                                                                                // Allowed origins
-    algorithms: "ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256",                                                                               // Algorithms offered
-    insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
-    pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
-    pqcAlongsideClassical: false,                                                                                                                      // Post-quantum passkey alongside a classical one
-    postQuantumAllowCredentials: "narrow",                                                                                                             // Passkeys a sign-in names where a post-quantum one is required
-    clientLearning: false,                                                                                                                             // Learn which clients cannot make an ML-DSA passkey
-    clientLearningFailures: 3,                                                                                                                         // Failures before a client is no longer offered ML-DSA
-    clientLearningWindowHours: 168,                                                                                                                    // Window the failures are counted in
-    userVerification: "required",                                                                                                                      // User verification
-    attestation: "direct",                                                                                                                             // Attestation conveyance
-    attestationEnterpriseRpIds: "",                                                                                                                    // Enterprise attestation RP IDs
-    attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
-    attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
-    attestationEvidenceTsaUrl: "",                                                                                                                     // Passkey evidence timestamp authority URL
-    attestationEvidenceTsaTrustAnchors: "",                                                                                                            // Passkey evidence TSA trust anchors (PEM)
-    attestationEvidenceHashAlgorithm: "sha256",                                                                                                        // Passkey evidence hash-tree algorithm
-    passkeyHistoryDays: 400,                                                                                                                           // Passkey history kept (days)
-    attestationAllowedAaguids: "",                                                                                                                     // Allowed authenticator models (AAGUIDs)
-    attestationMinCertificationLevel: "none",                                                                                                          // Least FIDO certification level
-    attestationRequireFips: false,                                                                                                                     // Require a FIPS 140 certified model
-    attestationAllowSafetynet: false,                                                                                                                  // Trust android-safetynet attestation
-    attestationAndroidSoftwareKeys: false,                                                                                                             // Accept Android keys not enforced in the TEE
-    timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
-    authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
-    credProps: true,                                                                                                                                   // Ask for the credProps extension
-    primaryAllowed: true,                                                                                                                              // A passkey may sign in on its own
-    mfaAllowed: true,                                                                                                                                  // A passkey may be a SECOND factor
-    maxKeysPerPerson: 10                                                                                                                               // Keys per person
+    enabled: true,                                                 // Offer security keys (WebAuthn)
+    rpName: "IYA STS",                                             // Relying party name
+    rpId: "",                                                      // RP ID override
+    allowedOrigins: "",                                            // Allowed origins
+    algorithms: "ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256", // Algorithms offered
+    insecureAlgorithms: false,                                     // Use insecure algorithms (development only)
+    pqcOnly: false,                                                // Request post-quantum algorithms only
+    pqcAlongsideClassical: false,                                  // Post-quantum passkey alongside a classical one
+    postQuantumAllowCredentials: "narrow",                         // Passkeys a sign-in names where a post-quantum one is required
+    clientLearning: false,                                         // Learn which clients cannot make an ML-DSA passkey
+    clientLearningFailures: 3,                                     // Failures before a client is no longer offered ML-DSA
+    clientLearningWindowHours: 168,                                // Window the failures are counted in
+    userVerification: "required",                                  // User verification
+    attestation: "direct",                                         // Attestation conveyance
+    attestationEnterpriseRpIds: "",                                // Enterprise attestation RP IDs
+    attestationPolicy: "by-mode",                                  // Attestation policy
+    attestationTrustAnchors: "",                                   // Attestation trust anchors (PEM)
+    attestationEvidenceTsaUrl: "",                                 // Passkey evidence timestamp authority URL
+    attestationEvidenceTsaTrustAnchors: "",                        // Passkey evidence TSA trust anchors (PEM)
+    attestationEvidenceHashAlgorithm: "sha256",                    // Passkey evidence hash-tree algorithm
+    passkeyHistoryDays: 400,                                       // Passkey history kept (days)
+    attestationAllowedAaguids: "",                                 // Allowed authenticator models (AAGUIDs)
+    attestationMinCertificationLevel: "none",                      // Least FIDO certification level
+    attestationRequireFips: false,                                 // Require a FIPS 140 certified model
+    attestationAllowSafetynet: false,                              // Trust android-safetynet attestation
+    attestationAndroidSoftwareKeys: false,                         // Accept Android keys not enforced in the TEE
+    timeoutMs: 60000,                                              // Ceremony timeout (ms)
+    authenticatorAttachment: "any",                                // Authenticator attachment (CTAP)
+    credProps: true,                                               // Ask for the credProps extension
+    primaryAllowed: true,                                          // Allow a passkey as a FIRST factor (passwordless)
+    mfaAllowed: true,                                              // Allow a passkey as a SECOND factor
+    maxKeysPerPerson: 10                                           // Keys per person
   },
 
   // --- Key material ----------------------------------------------------
@@ -1020,6 +1022,49 @@ var config = {
     caFile: ""                  // CA certificates file
   },
 
+  // --- AuthZEN ---------------------------------------------------------
+  authzen: {
+    enabled: true,                     // AuthZEN enabled
+    callerAuthentication: "mtls",      // How an AuthZEN caller authenticates
+    resolveSubjectTypes: "user",       // Subject types that name a directory person
+    batchEnabled: true,                // Batch evaluations enabled
+    maxEvaluations: 64,                // Evaluations one batch may carry
+    maxBodyBytes: 262144,              // Largest batch request (bytes)
+    signedMetadata: true,              // Sign the AuthZEN metadata
+    obligationsProfile: true,          // Hand obligations to a PEP that declares them
+    tokenExchange: false,              // Decide OAuth token exchanges for other servers
+    searchEnabled: true,               // Search APIs enabled
+    searchMaxCandidates: 1000,         // Candidates one search decides
+    searchPageSize: 50,                // Results per search page
+    returnReasons: false,              // Return the reasons for a decision
+    accessRequests: true,              // Access requests and approvals
+    accessRequestDenialLifetimeS: 600, // How long a requestable denial may be submitted (seconds)
+    accessRequestLifetimeS: 604800,    // How long an access request waits for an approver (seconds)
+    accessRequestMaxApprovalS: 86400,  // The longest an approval holds (seconds)
+    accessRequestEmergencyS: 3600,     // How long emergency access holds (seconds)
+    accessRequestRetryAfterS: 30,      // Retry-After on a pending access request (seconds)
+    accessRequestMaxPending: 10000     // Pending access requests a realm holds
+  },
+
+  // --- UMA -------------------------------------------------------------
+  uma: {
+    enabled: false,                                 // User-Managed Access enabled
+    authorizationPolicy: "uma-authorization",       // The realm's UMA authorization policy
+    ticketLifetimeS: 300,                           // Permission ticket lifetime (seconds)
+    rptLifetimeS: 600,                              // RPT lifetime (seconds)
+    rptRefreshToken: false,                         // Issue a refresh token with an RPT
+    pctLifetimeS: 2592000,                          // Persisted claims token lifetime (seconds)
+    partialRpt: true,                               // Issue an RPT for the permissions granted when some are refused
+    ownerAlfaEditing: false,                        // Let a resource owner edit their document as ALFA
+    requestingPartyAttributes: "uid,mail,memberOf", // Directory attributes the owner's layer may read
+    pendingLifetimeS: 86400,                        // How long an owner's approval is waited for (seconds)
+    maxPendingPerOwner: 50,                         // Pending approvals one owner may hold
+    maxOwnerPolicyBytes: 262144,                    // Largest owner document (bytes)
+    maxOwnerRules: 500,                             // Most rules in an owner document
+    maxResourcesPerOwner: 1000,                     // Resources one owner may have registered
+    maxResourceScopes: 64                           // Most scopes on one resource
+  },
+
   // --- SSF -------------------------------------------------------------
   ssf: {
     enabled: true,                                                                                                                                        // SSF enabled
@@ -1176,12 +1221,13 @@ var config = {
 
   // --- Roles -----------------------------------------------------------
   roles: {
-    claim: true,                   // Carry a roles claim
-    claimName: "roles",            // Role claim name
-    enforceIssuance: true,         // Decide issuance on roles
-    maxRoles: 200,                 // Maximum roles
-    remotePepGroup: "remote-peps", // Group granting the REMOTE_PEPS role
-    xacmlUserGroup: "xacml-users"  // Group granting the XACML_USER role
+    claim: true,                     // Carry a roles claim
+    claimName: "roles",              // Role claim name
+    enforceIssuance: true,           // Decide issuance on roles
+    maxRoles: 200,                   // Maximum roles
+    remotePepGroup: "remote-peps",   // Group granting the REMOTE_PEPS role
+    xacmlUserGroup: "xacml-users",   // Group granting the XACML_USER role
+    authzenPepGroup: "authzen-peps"  // Group granting the AUTHZEN_PEPS role
   },
 
   // --- Audit log -------------------------------------------------------

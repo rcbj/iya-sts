@@ -106,7 +106,7 @@ Each parameter is sent as `p_<name>`; anything left out takes the template's
 default. `GET /admin-api/xacml/policies` lists the templates and their
 parameters under `templates`.
 
-**The seven templates:**
+**The eight templates:**
 
 | `template` | Console label | What it builds |
 |---|---|---|
@@ -117,6 +117,7 @@ parameters under `templates`.
 | `access-control` | Access control (this service's own) | the access policy, as an override |
 | `risk-response` | Risk response (this service's own) | what a change of a person's risk level leads to |
 | `signal-response` | Signal response (received CAEP and RISC events) | what a verified CAEP or RISC event leads to |
+| `fga-default` | Application fine-grained authorization (default) | one Permit rule with no Target, PolicyId derived from `p_application`; the policy every application is created with ([fine-grained authorization](fga.md)) |
 
 The [remote PEP's worked example](remote-pep.md#2-deploy-the-policy-at-the-pap)
 uses the `abac` template to protect one application.
@@ -191,6 +192,10 @@ decides; it is validated the same way.
   deleting it, **Make root** makes it the one the PDP starts from (the old
   root stops being root), and **Delete** removes it. Deleting the root leaves
   the repository deciding nothing until another policy is made root.
+  Applications' own fine-grained authorization policies are listed apart,
+  under **Applications' own policies**, grouped by application; only one no
+  application names any more can be removed there
+  ([Fine-grained authorization](fga.md#the-console-and-the-api)).
 
 **API** (the PAP actions take `name`, the directory entry):
 ```bash
@@ -212,7 +217,8 @@ disable/enable pair is what `sts_xacml_editor.js` drives.
 | Setting | Default | Why you would change it |
 |---|---|---|
 | `xacml.enabled` | `true` | Off makes every `/xacml` endpoint answer 501. The repository is untouched. |
-| `xacml.maxPolicies` | `200` | How many policies `ou=policies` may hold. |
+| `xacml.maxPolicies` | `200` | How many of the policies administrators write `ou=policies` may hold. |
+| `xacml.maxApplicationPolicies` | `500` | How many applications' own [fine-grained authorization](fga.md) policies it may hold, apart from those. |
 | `xacml.returnPolicyIdList` | `false` | Returns the list of applicable policies even when a request does not ask. |
 
 ---

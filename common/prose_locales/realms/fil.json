@@ -71,6 +71,22 @@
     "en": "6965ae9cced8a957",
     "text": "Sariling policy repository (ou=policies) at remote PEP register (ou=peps), parehong nasa directory ng realm. WALANG LAMAN sa simula ang repository ng bagong realm at hindi kailanman bumabalik sa sa default realm, na magdudugtong sa dalawang realm: built in at TINATAWAG ang dalawang policy na ginagamit ng serbisyong ito para pagpasyahan ang sarili nitong issuance at access, kaya nagpapasya sila sa bawat realm, at ang repository entry sa isang realm ay nag-o-override sa kanila roon lang. Pag-aari ng realm na pinag-register-an nito ang remote PEP, at in-iissue ng pep-tls Issuing CA ng realm na iyon ang HTTPS listener certificate nito."
   },
+  "realms.support.authzen.family": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "realms.support.authzen.note": {
+    "en": "8477ecf26c38a2a6",
+    "text": "Ang realm ang tenant ng AuthZEN: hinahanap ang isang caller sa sariling directory ng realm, kaya walang sinuman dito ang caller ng ibang realm, at pinagpapasyahan ang isang tanong laban sa sariling root policy ng realm. Ang attribute catalogue ay ang sts-authzen-api object ng realm, at pag-aari ng realm ang bawat authzen.* na setting."
+  },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "Ang realm ang tenant ng UMA: ang mga resource server nito ay ang mga application ng realm na naka-declare para sa uma, ang protection API token nito ay ang sariling access token ng realm, ang anim na store nito — ang mga naka-register na resource, ang mga dokumento ng mga owner, ang mga ticket, PCT, RPT at mga nakabinbing approval — ay sa realm, ang realm-layer policy nito ay ang uma-authorization entry ng realm o ang built-in template, at bawat uma.* setting ay sa realm."
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "Federation"

@@ -38,6 +38,7 @@ import WebXacmlDescription = require('../xacml/web_xacml_description');
 import WebSsfDescription = require('../ssf/web_ssf_description');
 import WebScimDescription = require('../scim/web_scim_description');
 import WebSpiffeDescription = require('../spiffe/web_spiffe_description');
+import WebUmaDescription = require('../uma/web_uma_description');
 
 type Json = any;
 
@@ -71,7 +72,11 @@ const PAGES = [
     title: WebScimDescription.title },
   { path: '/spiffe', kind: 'spiffe', namespace: 'describeSpiffe',
     embedded: true, operation: none, render: WebSpiffeDescription.render,
-    title: WebSpiffeDescription.title }
+    title: WebSpiffeDescription.title },
+  // USER-MANAGED ACCESS 2.0 (#1168): the seventh family's page.
+  { path: '/uma', kind: 'uma', namespace: 'describeUma',
+    embedded: true, operation: none, render: WebUmaDescription.render,
+    title: WebUmaDescription.title }
 ];
 
 /**

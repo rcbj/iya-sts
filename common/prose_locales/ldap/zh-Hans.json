@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "GNAP 客户端实例、GNAP 资源服务器，或两者兼是：向 /gnap（RFC 9635）或面向资源服务器的 API（RFC 9767）证明持有密钥的参与方。其密钥是 gnapKey（公钥对象）或带有封存 gnapSymmetricKey 的 gnapKeyReference；其完成 URI 与其他返回地址一样；资源服务器携带它负责应答的位置，并在注册了资源集之后携带它用于验证的 macaroon 根密钥。"
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "User-Managed Access 2.0 资源服务器：一个 OAuth 客户端，为 /uma 获取保护 API 令牌，为资源所有者注册其持有的资源，为这些资源请求许可票据，并作为为它们签发的请求方令牌的受众。声明该协议族即是接纳它的方式；umaOwnsResources 允许应用程序本身成为所有者。"
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "注册时登记的重定向 URI，以及本服务为该应用接受过的任何 redirect_uri。两者并不是同一种声明，注册表也不会悄悄合并它们——参见 appRedirectUriObserved。"
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "/uma/claims 在收集声明后可将请求方送回此客户端的位置（UMA 2.0 Grant 第 3.3.2 节，claims_redirect_uri）。精确匹配；未在此列出的 claims_redirect_uri 会告知本人，且绝不会重定向到该地址。"
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -706,6 +718,18 @@
   "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
     "en": "5a0acf9625882942",
     "text": "RFC 9396 第 10 节 `authorization_details_types`：此客户端唯一可以使用的 authorization_details 类型，每个值一种。为空表示此授权服务器支持的任何类型。"
+  },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "AuthZEN 属性目录中的一行（#563），位于 sts-authzen-api 资源对象上：一个 JSON 对象 {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}。`object` 为 subject、resource、action 或 context；`property` 为成员名称，或指向嵌套对象内部的点分路径；`attributeId` 为发送时使用的 XACML 属性；`category`（默认为该对象自己的类别）、`dataType`（默认为 string）和 `multiplicity`（single 或 bag）。任何行都未指明的属性在所有模式下均被拒绝；一行不得指明本服务自己的 urn:sts:xacml: 标识符、subject-id、resource-id 或 action-id，也不得在主体类别中指明裸目录属性名。"
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "AuthZEN 应用范围（#563）：此客户端使用自己的 client_credentials 令牌调用 /access/v1 时，可以在 context.application 中指明的应用——每个值一个标识符。客户端自己的标识符始终在范围内。由管理员设置，绝不由调用方设置。"
+  },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "AuthZEN 访问请求回调（#1180）：此客户端作为 AuthZEN PEP 可指定为访问请求 callback.endpoint 的 https URL——每个值一个，须完全匹配。指定其他任何 URL 的请求都会被拒绝；本服务绝不会仅凭请求中的 URL 就向其发起回调。由管理员设置，绝不由调用方设置。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
@@ -1711,6 +1735,18 @@
     "en": "2c8a385006302f63",
     "text": "此应用的人员登录时所依据的身份验证策略：`default`（或为空），或本领域某个命名身份验证策略的名称（目录 > 策略）。命名策略包含允许的第一因素机制（password、password-mfa、webauthn、spnego、wallet、federation；一个都不列则全部允许）和允许的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一个都不列则保持领域的设置不变）。`default` 允许领域身份验证策略所允许的每一种机制。\n\n在两种模式下，每次通过浏览器登录该应用时都会强制执行：会话所依据的机制不被该策略允许的人，会被送回去用策略允许的机制重新登录。只列出一种第一因素机制时，它也是登录的去处（`spnego` 去 /authn/spnego，`wallet` 去 /authn/wallet，`federation` 去 appFederationRelationship）。第二因素只会收窄领域的策略：领域已关闭的第二因素在这里仍然关闭。\n\n本领域没有任何策略使用的名称——绕过控制台写入——在该策略存在之前不允许任何机制（STS-AUTHN-0536）。\n\n它无人写入：没有任何协议提供它，因此它可编辑，且初始为空。"
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "此应用所拥有的细粒度授权策略在 ou=policies 中的条目名称；一旦 appFgaEnforced 为 TRUE，该策略将决定此应用所声明类型的每一项授权详情。"
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "当此应用的细粒度策略被强制执行时为 TRUE。缺失或为 FALSE 表示未强制执行，这是默认值。"
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "当此 UMA 2.0 资源服务器可通过以 client_credentials 获取的保护 API 令牌注册其自身拥有的资源时为 TRUE。缺失或 FALSE（默认值）表示 PAT 必须属于某个人（授权码流程），并由该人拥有其注册的内容。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及标准的 owner 和 description。"
@@ -1850,6 +1886,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "文档自己的 <Description>（如有）。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "拥有此策略的应用的标识符；该策略决定该应用的 authorization_details 类型的详情。此类策略永远不会成为根策略，永远不会被根策略通过 PolicyIdReference 引用，也永远不会发送给远程 PEP。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "所属应用被删除的时间。该策略会被保留并禁用以供审计，直到管理员将其删除。"
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

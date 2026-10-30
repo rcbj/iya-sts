@@ -1860,7 +1860,7 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.rpName` | `STS_WEBAUTHN_RP_NAME` | `IYA STS` |
 | `webauthn.rpId` | `STS_WEBAUTHN_RP_ID` | empty (the host) |
 | `webauthn.allowedOrigins` | `STS_WEBAUTHN_ALLOWED_ORIGINS` | empty (derived from the address) |
-| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`, in that order (#1150); every other algorithm may be ticked
+| `webauthn.algorithms` | `STS_WEBAUTHN_ALGORITHMS` | `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `EdDSA`, `ES256`, `RS256`, in that order (#1166); every other algorithm may be ticked — `ES384` is off by default because certain browsers on Windows are incompatible with it
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` |

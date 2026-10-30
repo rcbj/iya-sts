@@ -23,6 +23,14 @@
     "en": "d7b1a01d26f2cc80",
     "text": "Arkivet, för en fjärr-PEP att LADDA"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "AuthZEN-katalogen, för en fjärransluten PEP att LÄSA IN"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "AuthZEN-anroparna, som en fjärr-PEP SLÄPPER IN"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Vad en fjärr-PEP har tillämpat"
@@ -30,6 +38,46 @@
   "endpoints.route./xacml/pip.name": {
     "en": "b0b1791a44311248",
     "text": "Policy Information Point, över HTTP"
+  },
+  "endpoints.route./access/v1/evaluation.name": {
+    "en": "5cd6a5386c4d1353",
+    "text": "En åtkomstutvärdering"
+  },
+  "endpoints.route./access/v1/evaluations.name": {
+    "en": "71ce33d985a6eced",
+    "text": "En batch av åtkomstutvärderingar"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "Subjektsökning"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "Resurssökning"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "Åtgärdssökning"
+  },
+  "endpoints.route./access/v1/access-requests.name": {
+    "en": "4b0c4feb0af59f04",
+    "text": "Skicka in en åtkomstbegäran"
+  },
+  "endpoints.route./access/v1/access-requests/:id.name": {
+    "en": "c8bcbb33d07cfb8f",
+    "text": "En åtkomstbegärans uppgiftsstatus"
+  },
+  "endpoints.route./access/v1/access-requests/:id/cancel.name": {
+    "en": "90087f975ac5dec9",
+    "text": "Avbryt en åtkomstbegäran"
+  },
+  "endpoints.route./.well-known/authzen-configuration.name": {
+    "en": "2b5f43e5618bacac",
+    "text": "PDP-metadata"
+  },
+  "endpoints.route./.well-known/authzen-configuration/*.name": {
+    "en": "c2eadd486305d29d",
+    "text": "PDP-metadata (identifierare med en sökväg)"
   },
   "endpoints.route./gnap.name": {
     "en": "33b8b1fd38b28a51",
@@ -118,6 +166,50 @@
   "endpoints.route./admin-api/gnap/:action.name": {
     "en": "812de4df596c12ef",
     "text": "Återkalla en grant eller ta bort en resursuppsättning"
+  },
+  "endpoints.route./uma/rreg.name": {
+    "en": "b93e9a83c0d09d9a",
+    "text": "Resursregistrering: skapa, lista"
+  },
+  "endpoints.route./uma/rreg/:id.name": {
+    "en": "34337892864217b3",
+    "text": "Resursregistrering: läsa, uppdatera, ta bort"
+  },
+  "endpoints.route./uma/perm.name": {
+    "en": "8896272faf315717",
+    "text": "Behörighetsslutpunkten"
+  },
+  "endpoints.route./uma/claims.name": {
+    "en": "87870b4a58a75d4d",
+    "text": "Slutpunkten för anspråksinteraktion"
+  },
+  "endpoints.route./.well-known/uma2-configuration.name": {
+    "en": "1600a854e8ebe343",
+    "text": "UMA-upptäckt"
+  },
+  "endpoints.route./.well-known/uma2-configuration/*.name": {
+    "en": "146531da4c5d6ba9",
+    "text": "UMA-upptäckt (formen med infogad sökväg)"
+  },
+  "endpoints.route./uma.name": {
+    "en": "11e030203eddc757",
+    "text": "UMA:s beskrivningssida"
+  },
+  "endpoints.route./uma/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Beskrivningssidans skript"
+  },
+  "endpoints.route./admin-api/uma.name": {
+    "en": "a706278ce3603ad8",
+    "text": "Konsolens UMA-sida som JSON"
+  },
+  "endpoints.route./admin-api/uma/monitor.name": {
+    "en": "09df5f116b3c0624",
+    "text": "UMA-PEP:ens räknare som JSON"
+  },
+  "endpoints.route./admin-api/uma/:action.name": {
+    "en": "af591f6b600855e2",
+    "text": "UMA-konsolens nio åtgärder"
   },
   "endpoints.route./pki/crl/:scope/:ca.name": {
     "en": "8d20c59eb134e55e",
@@ -994,6 +1086,14 @@
   "endpoints.route./admin-api/secret-destinations/:action.name": {
     "en": "f8f3c83e76dc9f4c",
     "text": "Ändra destinationerna för push av hemligheter"
+  },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "AuthZEN-API:ts katalog och anropare"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "Ändra AuthZEN-katalogen eller en anropares omfång"
   },
   "endpoints.route./admin-api/passkey-report.name": {
     "en": "9c856324242bc19b",

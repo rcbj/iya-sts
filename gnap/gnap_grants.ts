@@ -682,8 +682,14 @@ class GnapGrants {
     const dynamic = store.instanceById(instanceId);
     if (dynamic) {
       const app = applications.get(dynamic.identifier);
+      // An instance handed out to an unregistered key (#1216) stops resolving
+      // when gnap.unregisteredInstances is turned off, as its key would.
+      const classInstance = !!dynamic.classInstance;
+      const off = classInstance &&
+                  this.deps.config.value('gnap.unregisteredInstances') === false;
       log.debug("Leaving GnapGrants.appByInstanceId().");
-      return app ? { app: app, key: dynamic.key, dynamic: true } : null;
+      return app && !off ? { app: app, key: dynamic.key, dynamic: true,
+                             classInstance: classInstance } : null;
     }
     const app = this.gnapApplications().filter((one) => {
       return this.field(one, 'gnapInstanceId') === instanceId;
@@ -693,7 +699,7 @@ class GnapGrants {
            { app: app,
                    key: this.field(app, 'gnapKey') ?
                         JSON.parse(this.field(app, 'gnapKey')) : null,
-                   dynamic: false } : null;
+                   dynamic: false, classInstance: false } : null;
   }
 
   // Resolve a key REFERENCE (section 7.1.1) against application entries: a
@@ -916,6 +922,9 @@ class GnapGrants {
     let descriptor;
     let app = null;
     let instanceId = null;
+    // An instance of a registered application whose key nobody registered
+    // (#1216): see classInstanceOf().
+    let classInstance = false;
     if (member.reference) {
       const found = this.appByInstanceId(member.reference);
       if (!found) {
@@ -934,6 +943,12 @@ class GnapGrants {
         return unregisteredInstance;
       }
       instanceId = member.reference;
+      classInstance = !!found.classInstance;
+      // A client using its identifier keeps it (#1221). A static
+      // gnapInstanceId has no record, and touching one is a no-op.
+      if (found.dynamic) {
+        this.deps.store.touchInstance(member.reference);
+      }
       if (found.key) {
         descriptor = keys.describe(found.key,
                                    this.referenceResolver);
@@ -992,6 +1007,22 @@ class GnapGrants {
     }
     if (!app) {
       app = this.appByKeyIdentity(descriptor.identity);
+    }
+    // A KEY NOBODY REGISTERED, NAMING A REGISTERED APPLICATION (#1216): an
+    // instance of it, in both modes, while gnap.unregisteredInstances is on.
+    if (!app && kind === KIND_CLIENT && member.classId) {
+      const claimed = this.classInstanceOf(member.classId);
+      if (claimed.app) {
+        app = claimed.app;
+        classInstance = true;
+      } else if (claimed.why && !mode.autoCreates()) {
+        log.debug("Leaving GnapGrants.identifyCaller(). class_id names no " +
+                  "application an unregistered key may be an instance of.");
+        return this.refusal('STS-GNAP-0906', 'this key is not registered ' +
+            'with this authorization server, and the class_id "' +
+            String(member.classId) + '" ' + claimed.why + ' (RFC 9635 ' +
+            'sections 2.3 and 2.3.3).', 'invalid_client', 401);
+      }
     }
     const unregisteredKey = app ? this.unregisteredCaller(app, kind) : null;
     if (unregisteredKey) {
@@ -1071,12 +1102,88 @@ class GnapGrants {
              display: this.displayOf(app, member),
              classId: this.field(app, 'gnapClassId') || member.classId || null,
              classIdDeclared: !this.field(app, 'gnapClassId') &&
-                              !!member.classId };
+                              !!member.classId,
+             classInstance: classInstance };
+  }
+
+  // -------------------------------------------------------------------------
+  // AN UNREGISTERED KEY AS AN INSTANCE OF A REGISTERED APPLICATION (#1216,
+  // rcbj 2026-10-30, the default).
+  //
+  // A browser application makes its own key in every browser, so a key an
+  // administrator must store in `gnapKey` first (single-valued) means one
+  // administrator visit per person. RFC 9635 separates a client's class from
+  // its instances and lets the AS accept a key it has not seen (section
+  // 2.3.3); OAuth's public clients are the same arrangement, a public
+  // client_id and the trust in the registered redirect URI and the person.
+  //
+  // So a proved key no entry holds, whose request's `class_id` is the
+  // identifier of a registered GNAP client listing a registered
+  // `gnapFinishUri`, is an instance of that application. **This is the one
+  // place `class_id` is read, and it SELECTS, it does not raise trust (#432
+  // phase 7, below)**: the instance is held to the application's registered
+  // rules and gets nothing they do not already guarantee —
+  //   * the finish URI is the boundary: product sends the interaction
+  //     reference and hash only to a registered one, so they reach the real
+  //     application, never whoever asked;
+  //   * the person always approves on the page: `gnapSkipInteraction` is not
+  //     honoured for it, and a remembered approval does not stand in for the
+  //     page (createGrant(), rememberedFor(); RFC 6749 section 10.2's rule
+  //     for clients that cannot be authenticated);
+  //   * the key is never written to the entry: the grant records it, as it
+  //     does for every grant, and every later proof is checked against that.
+  //
+  // `{ app }` when the claim selects one; `{ why }` when it names something
+  // an unregistered key may not be an instance of; `{}` when the setting is
+  // off, which leaves the unknown-key rule as it was.
+  // -------------------------------------------------------------------------
+  /**
+   * Finds the registered GNAP client application a request's `class_id` makes
+   * an unregistered key an instance of (#1216).
+   *
+   * @param classId - the request's `client.class_id`
+   * @returns `{ app }`, `{ why }`, or `{}` while `gnap.unregisteredInstances`
+   *   is off
+   */
+  classInstanceOf(classId: unknown): { app?: any; why?: string } {
+    const { log, config, mode, applications } = this.deps;
+    log.debug("Entering GnapGrants.classInstanceOf().");
+    if (config.value('gnap.unregisteredInstances') === false) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). Off.");
+      return {};
+    }
+    const app = applications.get(String(classId || ''));
+    const gnap = app && this.gnapApplications().some(function (one) {
+      return one.identifier === app.identifier;
+    });
+    if (!app || !gnap) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). No GNAP application.");
+      return { why: 'names no GNAP client application in this realm' };
+    }
+    const kinds = app.kinds || [];
+    if (kinds.indexOf(KIND_RS) >= 0 && kinds.indexOf(KIND_CLIENT) < 0) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). A resource server.");
+      return { why: 'names a GNAP resource server, not a client' };
+    }
+    if (!mode.issuesToUnregisteredApplications() &&
+        !String(app.registeredBy || '')) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). Not registered.");
+      return { why: 'names an application nobody registered' };
+    }
+    const finish = applications.returnAddressesOf(app, 'gnapFinishUri');
+    if (!(finish.registered || []).length) {
+      log.debug("Leaving GnapGrants.classInstanceOf(). No finish URI.");
+      return { why: 'names an application with no registered gnapFinishUri, ' +
+                    'the address that makes serving an unregistered key safe' };
+    }
+    log.debug("Leaving GnapGrants.classInstanceOf(). " + app.identifier + ".");
+    return { app: app };
   }
 
   // -------------------------------------------------------------------------
   // `class_id` AND `display` ARE SELF-DECLARED AND NEVER RAISE TRUST (#432
-  // phase 7, 2026-10-03).
+  // phase 7, 2026-10-03). (One reader SELECTS on `class_id` since #1216,
+  // classInstanceOf() above, and raises nothing.)
   //
   // Section 2.3: "the pre-registered values MUST take precedence" — so a
   // value an administrator put on the entry wins, and a value only the
@@ -2241,7 +2348,10 @@ class GnapGrants {
                 certSpki: caller.descriptor.proof.method === 'mtls'
                   ? this.deps.mtls.presentedKeyThumbprint(req) : '',
                 display: caller.display, classId: caller.classId,
-                classIdDeclared: caller.classIdDeclared },
+                classIdDeclared: caller.classIdDeclared,
+                // A key nobody registered, an instance of this application
+                // by its class_id (#1216): the page is never skipped for it.
+                classInstance: !!caller.classInstance },
       request: { tokens: asked.tokens, multiple: asked.multiple,
                  subject: asked.subject,
                  interact: asked.interact },
@@ -2291,9 +2401,15 @@ class GnapGrants {
     const response: Record<string, any> = {};
     if (config.value('gnap.instanceIds') !== false && !caller.instanceId &&
         caller.descriptor.format !== 'reference') {
-      const instanceId = store.handle(18);
+      // The same key at the same application gets the same identifier back,
+      // derived, so a repeat sign-in rewrites one record (#1221).
+      const instanceId = store.instanceIdFor(identifier,
+                                             caller.descriptor.identity);
       store.putInstance(instanceId, { identifier: identifier, key:
-                                      caller.descriptor.value });
+                                      caller.descriptor.value,
+                                      // Still an unregistered key (#1216)
+                                      // when it comes back by reference.
+                                      classInstance: !!caller.classInstance });
       response.instance_id = instanceId;
     }
     // WITHOUT INTERACTION. A registered client marked `gnapSkipInteraction`
@@ -2324,8 +2440,10 @@ class GnapGrants {
     // needs nobody, from any client, acting as itself; and a right that
     // needs an authentication level, or an interact.acr of only phr and
     // phrh (#738), cannot be issued with no session to meet it.
+    // An unregistered key acting as an instance of the application (#1216)
+    // is not the key the application was trusted with: it never skips.
     const trusted = this.field(app, 'gnapSkipInteraction') === 'TRUE' &&
-                    !caller.created;
+                    !caller.created && !caller.classInstance;
     const skip = this.skipVerdict(trusted, asked, resolved, requirement);
     if (skip.skip) {
       const forPerson = skip.forPerson;
@@ -2846,6 +2964,15 @@ class GnapGrants {
     }
     if (config.value('gnap.rememberApprovals') === false) {
       log.debug("Leaving GnapGrants.rememberedFor().");
+      return false;
+    }
+    // A KEY NOBODY REGISTERED (#1216) cannot be authenticated as the
+    // application, so what the person approved for the application before
+    // does not stand in for the page (RFC 6749 section 10.2's rule for
+    // clients that cannot be authenticated).
+    if (grant.client && grant.client.classInstance) {
+      log.debug("Leaving GnapGrants.rememberedFor(). An unregistered " +
+                "instance is asked every time.");
       return false;
     }
     const held = consent.consentsOf(username).filter(function (row) {
@@ -4019,8 +4146,13 @@ class GnapGrants {
         ended += 1;
       }
     });
-    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ".");
-    return { summary: ended + ' GNAP grant(s) finalized as expired' };
+    // And the instance records nobody has used for gnap.grantLifetimeS
+    // (#1221): the store only grew before.
+    const purged = store.purgeInstances();
+    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ", " + purged +
+              " instance record(s).");
+    return { summary: ended + ' GNAP grant(s) finalized as expired, ' +
+                      purged + ' unused instance record(s) deleted' };
   }
 
   /**
@@ -4040,7 +4172,8 @@ class GnapGrants {
       title: 'GNAP: expired grants',
       describe: 'Finalizes each GNAP grant whose interaction or grant ' +
                 'lifetime (gnap.grantLifetimeS) has ended and that no ' +
-                'request has touched since, recording why (#432).',
+                'request has touched since, recording why (#432), and ' +
+                'deletes each instance record unused for as long (#1221).',
       owner: 'gnap/gnap_grants.ts',
       kind: 'cluster', scope: 'realm', everyMs: function (): number {
         return 300000;

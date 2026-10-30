@@ -632,6 +632,9 @@ interface AdminApiDeps {
     typeof import('../attribute-sources/attribute_sources_api');
   // The secret push destinations' operations (#221 P3).
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
+  // The AuthZEN tab's operations (#563).
+  loadAuthzenApi(): typeof import('./authzen_api');
+  loadUmaApi(): typeof import('./uma_api');
   // Monitoring → Passkeys' operations (#942).
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // Directory → Post-login activities' operations (#1111).
@@ -750,6 +753,12 @@ class AdminApi {
       },
       loadSecretDestinationsApi: function () {
         return require('./secret_destinations_api');
+      },
+      loadUmaApi: function () {
+        return require('./uma_api');
+      },
+      loadAuthzenApi: function () {
+        return require('./authzen_api');
       },
       loadPasskeyReportApi: function () {
         return require('./passkey_report_api');
@@ -2963,7 +2972,8 @@ class AdminApi {
             pkiAdmin, certificateViews, passwordPolicy, loadAcmeApi, loadEstApi,
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
-            loadAttributeSourcesApi, loadSecretDestinationsApi,
+            loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
+            loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
@@ -6878,7 +6888,14 @@ class AdminApi {
                          'be revoked, which POST ' +
                          '/admin-api/gnap/revoke-grant does with `user`. ' +
                          '`gnapGrantsCells` says what a multi-cell ' +
-                         'service\'s list leaves out.' }
+                         'service\'s list leaves out.' },
+          { name: 'uma',
+            description: 'This person\'s UMA 2.0 (#1195): `resources` they ' +
+                         'own, the `shares` in their document, the ' +
+                         'permissions they hold in live RPTs (`held`, ' +
+                         'which POST /admin-api/uma/revoke-rpt revokes) and ' +
+                         'the requests waiting for them (`pending`). Null ' +
+                         'where UMA is not loaded.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -11898,8 +11915,9 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/config/:action', tag: 'Configuration',
-        mirrors: 'POST /admin/config and POST ' +
-                 '/admin/xacml#xacml-tab-settings',
+        mirrors: 'POST /admin/config, POST ' +
+                 '/admin/xacml#xacml-tab-settings and POST ' +
+                 '/admin/xacml#xacml-tab-authzen',
         handler: function (req, res) {
           log.debug("Entering the management API configuration action " +
                     "endpoint.");
@@ -14814,7 +14832,17 @@ class AdminApi {
                      'client_id); and `groupPolicies`, how many named ' +
                      'policies select by group and could still win for a ' +
                      'given person. Nothing about it is stored on the ' +
-                     'application.\n\n**This reply carries credentials** — ' +
+                     'application.\n\n**The ?application= reply\'s ' +
+                     '`credentials.stored`** (#1227) is what the entry ' +
+                     'stores in `userCertificate`, each certificate\'s ' +
+                     'SHA-256, subject, issuer, serial and validity, in ' +
+                     'the shape GET /admin-api/users/certificates lists a ' +
+                     'person\'s: an outside certificate authority\'s ' +
+                     'certificate authenticates the application only while ' +
+                     'it is stored there and on no other entry. POST ' +
+                     '/admin-api/applications/add-certificate and ' +
+                     '`remove-certificate` change it.\n\n' +
+                     '**This reply carries credentials** — ' +
                      '`oauthClientSecret` and `appRegistrationAccessToken`, ' +
                      'opened. They are sealed at rest wherever the process ' +
                      'holds a durable key-encryption key, but anyone who ' +
@@ -15008,7 +15036,10 @@ class AdminApi {
             authorizationServers: resourceMetadata.authorizationServersOf(req),
             // For `issue-software-statement`: the issuer a statement names is
             // the one published at the address this request arrived on.
-            base: baseUrlOf(req)
+            base: baseUrlOf(req),
+            // For `add-certificate` and `remove-certificate` (#1227): who
+            // the audit row names, as the person's twin names it.
+            via: 'api', actor: self.callerNameOf(res)
           });
           // `refresh-metadata` is asynchronous — it dials the service
           // provider's metadata URL — and every other action is not. See that
@@ -16015,7 +16046,16 @@ class AdminApi {
                          'strongly signed in (#432 phase 6). A definition ' +
                          'that ' +
                          'does not read is refused (`STS-REG-0294`) and the ' +
-                         'one declared stays.',
+                         'one declared stays.\n\n`xacml` (rows of `path`, ' +
+                         '`attributeId`, `category`, `dataType`, ' +
+                         '`multiplicity`) and `notForPolicy` are the ' +
+                         'type\'s fine-grained authorization mapping ' +
+                         '(#564), written whole here and a row at a time ' +
+                         'by `set-access-type-row`, `remove-access-type-row` ' +
+                         'and `set-not-for-policy`; on an application that ' +
+                         'enforces fine-grained authorization a definition ' +
+                         'leaving a member uncovered is refused ' +
+                         '(`STS-FGA-0019`).',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -16045,7 +16085,12 @@ class AdminApi {
                 introspectionClaims: { type: ['array', 'string'],
                                        items: { type: 'string' } },
                 schema: { type: ['object', 'string'] },
-                limits: { type: ['object', 'string'] }
+                limits: { type: ['object', 'string'] },
+                // #564: the fine-grained mapping, written whole.
+                xacml: { type: ['array', 'string'],
+                         items: { type: 'object' } },
+                notForPolicy: { type: ['array', 'string'],
+                                items: { type: 'string' } }
               },
               required: ['application', 'type'],
               examples: [{ application: 'payments-api',
@@ -16082,6 +16127,234 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The application and the type removed.' },
+
+          // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5): the Access
+          // types tab's XACML mapping sub-tabs. AuthZEN's catalogue acts
+          // are the model; each rewrites the type's one value through the
+          // door `set-access-type` uses.
+          { action: 'set-access-type-row',
+            operationId: 'setApplicationAccessTypeRow',
+            summary: 'Map one member of an access type to an XACML ' +
+                     'attribute',
+            description: 'Adds to `type`\'s `xacml` mapping the row for ' +
+                         '`path`, or replaces the row already mapping that ' +
+                         'path: the member of an RFC 9396 detail of the ' +
+                         'type that becomes the attribute `attributeId` ' +
+                         'when an application\'s fine-grained ' +
+                         'authorization policy decides it. `category` ' +
+                         '(resource by default), `dataType` (string by ' +
+                         'default) and `multiplicity` (single or bag) take ' +
+                         'AuthZEN\'s catalogue names or the XACML URIs. ' +
+                         'The row is read by the mapping\'s grammar before ' +
+                         'it is written, and refused (`STS-FGA-0023`, with ' +
+                         '`field` naming the member that was wrong) for a ' +
+                         'path that is not a member path or names `type` ' +
+                         'or a common data field, an identifier this ' +
+                         'service reserves for what it writes itself ' +
+                         '(`urn:sts:xacml:*`, subject-id, resource-id, ' +
+                         'action-id, the current-time attributes, or a ' +
+                         'bare directory name in a subject category), or a ' +
+                         'category, data type or multiplicity outside the ' +
+                         'set. On an application that enforces ' +
+                         'fine-grained authorization the write is also ' +
+                         'held to coverage (`STS-FGA-0019`).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                path: { type: 'string' },
+                attributeId: { type: 'string' },
+                category: { type: 'string' },
+                dataType: { type: 'string' },
+                multiplicity: { type: 'string' },
+                description: { type: 'string' }
+              },
+              required: ['application', 'type', 'path', 'attributeId'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           path: 'instructedAmount.amount',
+                           attributeId: 'urn:example:payment:amount',
+                           dataType: 'double' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in ' +
+                                 '`definition`.' },
+          { action: 'remove-access-type-row',
+            operationId: 'removeApplicationAccessTypeRow',
+            summary: 'Take one row off an access type\'s XACML mapping',
+            description: 'Removes the row mapping `path` from `type`\'s ' +
+                         '`xacml` member. Refused (`STS-FGA-0023`) for a ' +
+                         'path no row maps, and (`STS-FGA-0019`) on an ' +
+                         'application that enforces fine-grained ' +
+                         'authorization when the member would be left ' +
+                         'neither mapped nor in notForPolicy.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                path: { type: 'string' }
+              },
+              required: ['application', 'type', 'path'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           path: 'instructedAmount.amount' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in ' +
+                                 '`definition`.' },
+          { action: 'set-not-for-policy',
+            operationId: 'setApplicationAccessTypeNotForPolicy',
+            summary: 'Name the members of an access type its policy ' +
+                     'deliberately never sees',
+            description: 'Replaces `type`\'s `notForPolicy` list: member ' +
+                         'paths a fine-grained authorization policy is ' +
+                         'never given, listed so that the type still ' +
+                         'counts as covered. An array, or text with one ' +
+                         'path per line or comma; empty clears the list. ' +
+                         'Refused (`STS-FGA-0023`) for a path the grammar ' +
+                         'does not read, or one a row maps; and ' +
+                         '(`STS-FGA-0019`) on an application that enforces ' +
+                         'fine-grained authorization when a member would ' +
+                         'be left uncovered.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                notForPolicy: { type: ['array', 'string'],
+                                items: { type: 'string' } }
+              },
+              required: ['application', 'type'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           notForPolicy: ['remittanceInformation'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in ' +
+                                 '`definition`.' },
+
+          // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5): the switch, and
+          // the policy the application owns.
+          { action: 'fga-enable', operationId: 'enableApplicationFga',
+            summary: 'Enforce an application\'s fine-grained ' +
+                     'authorization policy',
+            description: 'Sets `appFgaEnforced`: from the next request every ' +
+                         'RFC 9396 authorization detail of a type this ' +
+                         'application declares is decided by its own ' +
+                         'policy, at the authorization, PAR and token ' +
+                         'endpoints, and so is every AuthZEN evaluation ' +
+                         'whose resource resolves to it. The policy is ' +
+                         'created from `fga-default` first if it has none. ' +
+                         'Refused while a declared type is not covered ' +
+                         '(`STS-FGA-0018`, naming each type and its ' +
+                         'uncovered member paths, `*` for an open schema), ' +
+                         'while its policy is disabled (`STS-FGA-0006`) or ' +
+                         'does not parse (`STS-FGA-0007`), and for an ' +
+                         'application this realm does not hold ' +
+                         '(`STS-FGA-0009`). `failure` names which. ' +
+                         'Every enable, including one of an application ' +
+                         'that already enforces, also grants each holder ' +
+                         'of REMOTE_PEPS in the realm (the members of ' +
+                         '`roles.remotePepGroup`) membership of ' +
+                         '`roles.authzenPepGroup` and the application in ' +
+                         'its AuthZEN scope, where either is missing, so ' +
+                         'a remote PEP\'s edge PDP may forward evaluations ' +
+                         'about it. A holder that cannot be granted is ' +
+                         'listed with why (`STS-FGA-0025`) and does not ' +
+                         'fail the enable. Disabling removes nothing.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'payments-api' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `policy` it is decided by, ' +
+                                 '`enforced: true`, and `peps`: the ' +
+                                 'remote PEPs `granted` (with `member` ' +
+                                 'and `scope` saying what was added), ' +
+                                 'those that `held` both already, and ' +
+                                 'those `failed`, each with `why` and ' +
+                                 '`code`.' },
+          { action: 'fga-disable', operationId: 'disableApplicationFga',
+            summary: 'Stop enforcing an application\'s fine-grained ' +
+                     'authorization policy',
+            description: 'Clears `appFgaEnforced`. The policy is kept ' +
+                         'exactly as it is, and AuthZEN evaluations about ' +
+                         'the application are decided by the realm\'s root ' +
+                         'policy again.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'payments-api' }],
+              additionalProperties: false
+            },
+            responseDescription: '`enforced: false`.' },
+          { action: 'fga-create-policy',
+            operationId: 'createApplicationFgaPolicy',
+            summary: 'Give an application its default fine-grained ' +
+                     'authorization policy',
+            description: 'Writes the `fga-default` policy (one rule ' +
+                         'permitting every detail) into `ou=policies` for ' +
+                         'an application that has none of its own — one ' +
+                         'registered by a client, seen in development ' +
+                         'mode, or whose policy could not be written when ' +
+                         'it was created — and names it in ' +
+                         '`appFgaPolicy`. An application that has one is ' +
+                         'answered with it, `created: false`. Refused ' +
+                         '(`STS-FGA-0024`) when `ou=policies` already ' +
+                         'holds `xacml.maxApplicationPolicies` ' +
+                         'applications\' own policies, and ' +
+                         '(`STS-FGA-0008`) when it cannot be written.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'payments-api' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `policy` and whether it was ' +
+                                 '`created`.' },
+          { action: 'fga-reset-policy',
+            operationId: 'resetApplicationFgaPolicy',
+            summary: 'Reset an application\'s fine-grained authorization ' +
+                     'policy to the default',
+            description: 'Rewrites the document of the application\'s own ' +
+                         'policy from `fga-default`, under the same entry ' +
+                         'name, replacing every rule in it with one that ' +
+                         'permits every detail; its enabled flag is kept. ' +
+                         'Needs `confirm` (`STS-FGA-0020` without it), and ' +
+                         'refused (`STS-FGA-0021`) for an application with ' +
+                         'no policy of its own — use `fga-create-policy`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                // `true` from a script, `true` or `on` from the console's
+                // checkbox, as the listeners mapping takes it.
+                confirm: { oneOf: [{ type: 'boolean' },
+                                   { type: 'string',
+                                     enum: ['true', 'false', 'on'] }],
+                           description: 'The rewrite is meant.' }
+              },
+              // NOT required here: an unticked box posts nothing, and
+              // the handler's refusal (STS-FGA-0020) says what the
+              // validator's could not — what the reset would do.
+              required: ['application'],
+              examples: [{ application: 'payments-api', confirm: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `policy` rewritten.' },
 
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
@@ -16238,6 +16511,83 @@ class AdminApi {
             },
             responseDescription: 'The revoked certificate, the reason, and ' +
                                  'the application as it now stands.' },
+
+          // THE CREDENTIALS SECTION'S STORED CERTIFICATES (#1227): the
+          // person's add-certificate and remove-certificate (#1061), on an
+          // application's entry.
+          { action: 'add-certificate',
+            operationId: 'addApplicationCertificate',
+            summary: 'Store a certificate on an application\'s entry, so ' +
+                     'an outside certificate authority\'s certificate ' +
+                     'authenticates it',
+            description: 'Stores one X.509 certificate in the ' +
+                         'application\'s `userCertificate` (RFC 4523; ' +
+                         'written as `userCertificate;binary`). A ' +
+                         'certificate from an outside certificate ' +
+                         'authority — one trusted through the Client ' +
+                         'Truststores — is an identity at a door that ' +
+                         'reads a client certificate as an application ' +
+                         '(a Shared Signals receiver\'s, for one) only ' +
+                         'while it is stored, byte for byte, on exactly ' +
+                         'one entry of the realm: never ' +
+                         'by its common name or subject (#1061, #1227). ' +
+                         'Refused when it is not one certificate ' +
+                         '(STS-ADMIN-0897), when it is already stored on ' +
+                         'another entry (STS-ADMIN-0899) or the registry ' +
+                         'holds no such application (STS-ADMIN-0906). A ' +
+                         'renewed certificate is stored again. Sends a ' +
+                         'CAEP credential-change (x509) under the ' +
+                         'application\'s own subject. RFC 8705\'s token ' +
+                         'endpoint does not read it: `tls_client_auth` ' +
+                         'keeps its own registered subject.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string',
+                               description: 'The application\'s ' +
+                                            'identifier, exactly as this ' +
+                                            'registry holds it.' },
+                certificate: { type: 'string',
+                               description: 'The leaf, as one PEM block ' +
+                                            'or base64 DER.' }
+              },
+              required: ['application', 'certificate'],
+              examples: [{ application: 'my-ssf-receiver',
+                           certificate: '-----BEGIN CERTIFICATE-----\n' +
+                                        'MIIC...\n-----END CERTIFICATE-----' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
+          { action: 'remove-certificate',
+            operationId: 'removeApplicationCertificate',
+            summary: 'Take a stored certificate off an application\'s entry',
+            description: 'Removes one certificate from the application\'s ' +
+                         '`userCertificate`, named by the SHA-256 of its ' +
+                         'DER (as `credentials.stored` of GET ' +
+                         '/admin-api/applications?application= lists it). ' +
+                         'From then on it authenticates nobody (#1227). ' +
+                         'Refused for a SHA-256 the entry does not store ' +
+                         '(STS-ADMIN-0900) and for an application the ' +
+                         'registry does not hold (STS-ADMIN-0906).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string',
+                               description: 'The application\'s ' +
+                                            'identifier, exactly as this ' +
+                                            'registry holds it.' },
+                sha256: { type: 'string',
+                          description: 'The SHA-256 of the certificate\'s ' +
+                                       'DER, hex.' }
+              },
+              required: ['application', 'sha256'],
+              examples: [{ application: 'my-ssf-receiver',
+                           sha256: '0'.repeat(64) }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
 
           // THE SOFTWARE STATEMENTS SECTION'S CONTROL (RFC 7591 section 2.3,
           // 2026-09-13).
@@ -17143,7 +17493,16 @@ class AdminApi {
             summary: 'Remove a policy from the repository',
             description: 'Deleting the ROOT leaves the repository deciding ' +
                          'nothing, and the reply says so rather than letting ' +
-                         'it be discovered by a Deny.',
+                         'it be discovered by a Deny.\n\nAN APPLICATION\'S ' +
+                         'FINE-GRAINED POLICY (#564) is deleted only when ' +
+                         'no application names it in appFgaPolicy — an ' +
+                         'orphan of a deleted application ' +
+                         '(`applicationPolicies` on GET ' +
+                         '/admin-api/xacml/policies marks which). The one ' +
+                         'an application still names is refused ' +
+                         '(`STS-FGA-0022`); reset it with POST ' +
+                         '/admin-api/applications/fga-reset-policy ' +
+                         'instead.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -25386,6 +25745,12 @@ class AdminApi {
       // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
       // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
       ...loadSecretDestinationsApi().ROUTES,
+      // THE AUTHZEN TAB (#563): the API's settings, its attribute catalogue
+      // and its callers' scopes, the console's own (`mgmt-api/authzen_api.ts`).
+      ...loadAuthzenApi().ROUTES,
+      // UMA 2.0 (#1195): Protocols -> UMA's view, counts and nine acts,
+      // the console's own (`mgmt-api/uma_api.ts`).
+      ...loadUmaApi().ROUTES,
       // MONITORING → PASSKEYS (#942): who holds which passkey algorithm,
       // its export and its Recount now (`mgmt-api/passkey_report_api.ts`).
       ...loadPasskeyReportApi().ROUTES,
@@ -27695,6 +28060,28 @@ const OWNER_OPERATIONS: OwnerOperation[] = [
       log.debug("Entering target().");
       log.debug("Leaving target().");
       return String(body.application || '');
+    } },
+  // AN APPLICATION'S UMA DOCUMENT (#1195): the owner tab of /admin/uma,
+  // read with `?owner=` and answered with that tab alone (the page's other
+  // lists are every resource server's), and its four owner-* acts. The
+  // object is the application, so `ownerApplicationActions` decides them.
+  { method: 'GET', kind: 'application', path: '/uma',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.owner || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      log.debug("Leaving project().");
+      return { owner: (answer && answer.owner) || null };
+    } },
+  { method: 'POST', kind: 'application',
+    pattern: /^\/uma\/(owner-[a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.owner || '');
     } },
   { method: 'POST', kind: 'service-account',
     pattern: /^\/users\/([a-z][a-z-]*)$/,

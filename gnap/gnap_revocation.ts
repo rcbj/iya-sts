@@ -536,6 +536,11 @@ class GnapRevocation {
       if (!grant.client || grant.client.identifier !== app.identifier) {
         return false;
       }
+      // An unregistered instance's key was never on the entry (#1216), so an
+      // edit of the entry's key fields says nothing about it (#1219).
+      if (grant.client.classInstance) {
+        return false;
+      }
       const held = this.grantKeyIdentities(grant);
       return held.length > 0 && !held.some(function (one) {
         return named.indexOf(one) >= 0;
@@ -732,12 +737,37 @@ class GnapRevocation {
       return null;
     }
     const owner = this.ownerProblem(grant.ro && grant.ro.username);
-    const problem = owner || (grant.client
-      ? this.clientProblem(grant.client.identifier, grant.client.key,
-                         this.grantKeyIdentities(grant)) : null);
+    const problem = owner || (grant.client ? this.grantClientProblem(grant)
+                                           : null);
     log.debug("Leaving GnapRevocation.grantProblem(). " +
               (problem ? problem.code : 'live'));
     return problem;
+  }
+
+  // AN UNREGISTERED INSTANCE'S KEY IS NEVER ON THE ENTRY (#1216), so the key
+  // comparison #432 makes at every use would read it as a removed key and
+  // refuse the grant's first continuation (#1219). Such a grant is held to
+  // its entry still existing, and to gnap.unregisteredInstances still being
+  // on, as its instance_id is; every other grant to the entry naming its key.
+  private grantClientProblem(grant: Json): Problem | null {
+    const { log, config } = this.deps;
+    log.debug("Entering GnapRevocation.grantClientProblem().");
+    const client = grant.client;
+    if (client.classInstance) {
+      if (config.value('gnap.unregisteredInstances') === false) {
+        log.debug("Leaving GnapRevocation.grantClientProblem(). " +
+                  "Unregistered instances are off.");
+        return { code: 'STS-GNAP-0907',
+                 why: 'the client is an unregistered instance of its ' +
+                      'application, and gnap.unregisteredInstances is off' };
+      }
+      log.debug("Leaving GnapRevocation.grantClientProblem(). An " +
+                "unregistered instance: the entry, not the key.");
+      return this.clientProblem(client.identifier);
+    }
+    log.debug("Leaving GnapRevocation.grantClientProblem().");
+    return this.clientProblem(client.identifier, client.key,
+                              this.grantKeyIdentities(grant));
   }
 
   /**
@@ -758,8 +788,7 @@ class GnapRevocation {
     const owner = this.ownerProblem(record.username ||
                                     (grant && grant.ro && grant.ro.username));
     const problem = owner || (grant && grant.client
-      ? this.clientProblem(grant.client.identifier, grant.client.key,
-                           this.grantKeyIdentities(grant))
+      ? this.grantClientProblem(grant)
       : this.clientProblem(record.instanceId));
     log.debug("Leaving GnapRevocation.tokenProblem(). " +
               (problem ? problem.code : 'live'));

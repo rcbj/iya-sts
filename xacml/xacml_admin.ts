@@ -151,6 +151,13 @@ interface AccessPep {
   accessPolicyState(): object;
 }
 
+// The applications' fine-grained policies (#564, P5): who names a policy,
+// and every owned one grouped by its application.
+interface FgaPolicyReader {
+  holderOf(row: { name: string; application?: string | null }): string;
+  ownedPolicies(): any[];
+}
+
 interface XacmlAdminDeps {
   log: typeof helpers.log;
   parseBody(req: Req): any;
@@ -178,6 +185,11 @@ interface XacmlAdminDeps {
   loadXacml(): XacmlRoutes;
   loadRolePep(): RolePep;
   loadAccessPep(): AccessPep;
+  // LAZY TOO (#564, P5): `fga_policies.ts` is built by the composition
+  // root at 23c, beside this family, and asked only when a page is drawn
+  // or a policy deleted — a require at load would run its slot's build
+  // here, ahead of where `protocol_stack.ts` installs it.
+  loadFga(): FgaPolicyReader;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +319,9 @@ class XacmlAdmin {
       },
       loadAccessPep: function (): AccessPep {
         return require('./xacml_access_pep');
+      },
+      loadFga: function (): FgaPolicyReader {
+        return require('./fga_policies');
       }
     };
   }
@@ -338,8 +353,10 @@ class XacmlAdmin {
       // a path that table does not carry — which is right for the pages that
       // file generates and wrong for one drawn here. It cost a 500 on this page
       // and nothing else, because it is the only caller outside that table.
+      // XACML's own group: AuthZEN's, homed on this page too (#563), is
+      // drawn on its own tab from GET /admin-api/xacml/authzen.
       settings: admin.configSettingsJson
-        ? admin.configSettingsJson('/admin/xacml') : null
+        ? admin.configSettingsJson('/admin/xacml', ['XACML']) : null
     };
     log.debug('Leaving XacmlAdmin.overviewJson().');
     return json;
@@ -360,11 +377,16 @@ class XacmlAdmin {
     log.debug('Entering XacmlAdmin.policiesJson().');
     const root = store.root();
     const rows = store.all().map(function (row) {
+      // `application` and `orphanedAt` (#564): a policy an application owns
+      // is drawn without the make-root control, which the action refuses
+      // anyway (STS-FGA-0002).
       const view = { name: row.name, policyId: row.id, kind: row.kind,
                      version: row.version, enabled: row.enabled,
                      isRoot: !!(root && root.name === row.name),
                      combiningAlgId: row.combiningAlgId,
-                     description: row.description, problems: [] };
+                     description: row.description,
+                     application: row.application || null,
+                     orphanedAt: row.orphanedAt || null, problems: [] };
       try {
         view.problems = validate.problemsIn(store.parseDocument(row.document));
       } catch (error) {
@@ -376,7 +398,14 @@ class XacmlAdmin {
     });
     log.debug('Leaving XacmlAdmin.policiesJson(). ' + rows.length +
               ' policy(ies).');
+    // THE APPLICATIONS' OWN POLICIES, GROUPED (#564, P5): the same rows,
+    // by owner, each marked with whether its application still names it —
+    // which is what decides whether the tab offers Remove (an orphan, or a
+    // policy no application names) or a link to the application's page.
+    // `policies` keeps every row, owned ones included, for a caller that
+    // reads the repository whole.
     return { root: root ? root.name : null, policies: rows,
+             applicationPolicies: this.deps.loadFga().ownedPolicies(),
              templates: templates.catalogue(),
              serviceOwn: self.serviceOwnPolicies() };
   }
@@ -832,10 +861,42 @@ class XacmlAdmin {
                              'STS-XACML-0033');
     }
 
+    // AN APPLICATION'S LIVE POLICY IS NOT DELETED HERE (#564, P5): the
+    // application would be left naming an entry that is not there, and an
+    // enforcing one would refuse every detail (STS-FGA-0004). Decision 3
+    // gives an administrator the ORPHAN to remove — a policy whose
+    // application was deleted, or that no application names any more —
+    // and that is what `holderOf()` tells apart. A live one is reset from
+    // its application's page instead.
+    if (action === 'delete' && existing.application) {
+      const holder = this.deps.loadFga().holderOf(existing);
+      if (holder) {
+        log.debug('Leaving XacmlAdmin.policyAction(). An application\'s ' +
+                  'live policy.');
+        return errorCodes.mark({ ok: false,
+                 why: '"' + name + '" is the fine-grained authorization ' +
+                      'policy the application "' + holder + '" names ' +
+                      '(appFgaPolicy), so it is not deleted. Reset it from ' +
+                      'that application\'s Fine-grained authorization tab, ' +
+                      'or delete the application, which keeps it as an ' +
+                      'orphan this page can remove.' }, 'STS-FGA-0022');
+      }
+    }
     if (action === 'delete') {
       store.remove(name);
       audit.audit({ action: 'xacml.policy.delete', actor: '',
-                    protocol: 'XACML', detail: 'Deleted "' + name + '".' });
+                    protocol: 'XACML',
+                    detail: 'Deleted "' + name + '".' +
+                            (existing.application
+                              ? ' It was the fine-grained authorization ' +
+                                'policy of the application "' +
+                                existing.application + '", which no ' +
+                                'longer names it' +
+                                (existing.orphanedAt
+                                  ? ' (orphaned since ' +
+                                    existing.orphanedAt + ')'
+                                  : '') + '.'
+                              : '') });
       log.debug('Leaving XacmlAdmin.policyAction(). Deleted.');
       return { ok: true, what: 'Deleted "' + name + '".' +
                (existing.isRoot
@@ -843,6 +904,19 @@ class XacmlAdmin {
                    'until another policy is made the root.' : '') };
     }
 
+    // AN APPLICATION'S POLICY IS NEVER THE ROOT (#564), and that is refused
+    // HERE, before the incumbent is demoted below: `store.write()` refuses it
+    // too (STS-FGA-0001), but by then the old root would already have lost
+    // its flag and the repository would be left deciding nothing.
+    if (action === 'set-root' && existing.application) {
+      log.debug('Leaving XacmlAdmin.policyAction(). An application\'s ' +
+                'policy as the root.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + name + '" is the fine-grained authorization ' +
+                    'policy of the application "' + existing.application +
+                    '" and cannot be the root of this repository. The root ' +
+                    'is unchanged.' }, 'STS-FGA-0002');
+    }
     const enabled = action === 'disable' ? false
       : (action === 'enable' ? true : existing.enabled);
     // SET-ROOT CLEARS THE OTHER ONE FIRST. `store.write()` refuses a second

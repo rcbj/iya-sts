@@ -111,9 +111,10 @@ function childMain() {
          '1. a plain new group from the token is created, marked and joined',
          JSON.stringify(r) + ' mark=' + JSON.stringify(mark));
 
-    // 2. The four settings.
+    // 2. The five settings.
     const settingNames = ['admin.readGroup', 'admin.writeGroup',
-                          'roles.remotePepGroup', 'roles.xacmlUserGroup']
+                          'roles.remotePepGroup', 'roles.xacmlUserGroup',
+                          'roles.authzenPepGroup']
       .map(function (key) {
         return String(config.value(key) || '').trim();
       }).filter(Boolean);
@@ -126,9 +127,10 @@ function childMain() {
       return reasonOf(r, name) !== 'grants' || memberOf(name) ||
              (!before[name] && exists(name));
     });
-    note(settingNames.length === 4 && settingBad.length === 0 &&
+    note(settingNames.length === 5 && settingBad.length === 0 &&
          (r.joined || []).length === 0 && (r.created || []).length === 0,
-         '2. the console rosters and the REMOTE_PEPS / XACML_USER groups are ' +
+         '2. the console rosters and the REMOTE_PEPS / XACML_USER / ' +
+         'AUTHZEN_PEPS groups are ' +
          'refused "grants" and none is created or joined',
          JSON.stringify(settingNames) + ' bad=' + JSON.stringify(settingBad) +
          ' ' + JSON.stringify(r));

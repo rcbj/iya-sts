@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "GNAP 用戶端執行個體、GNAP 資源伺服器，或兩者皆是：向 /gnap（RFC 9635）或面向 RS 的 API（RFC 9767）證明持有金鑰的當事方。其金鑰為 gnapKey（公開金鑰物件），或搭配密封 gnapSymmetricKey 的 gnapKeyReference；其完成 URI 與其他任何返回位址一樣；資源伺服器攜帶其負責回應的位置，並在註冊資源集後攜帶其用來驗證的 macaroon 根金鑰。"
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "User-Managed Access 2.0 資源伺服器：一個 OAuth 用戶端，為 /uma 取得保護 API 權杖，為資源擁有者註冊其持有的資源，為這些資源請求許可票證，並作為為它們簽發之請求方權杖的對象。宣告該協定系列即是接納它的方式；umaOwnsResources 讓應用程式本身成為擁有者。"
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "來自註冊的已註冊重新導向 URI，以及本服務已為該應用程式「接受」的任何 redirect_uri。兩者並非相同的主張，登錄也不會悄悄地將它們合併——請參閱 appRedirectUriObserved。"
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "/uma/claims 在收集宣告後可將請求方送回此用戶端的位置（UMA 2.0 Grant 第 3.3.2 節，claims_redirect_uri）。完全比對；未列於此處的 claims_redirect_uri 會告知本人，且絕不會重新導向至該位址。"
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -706,6 +718,18 @@
   "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
     "en": "5a0acf9625882942",
     "text": "RFC 9396 第 10 節 `authorization_details_types`：此用戶端「唯一」可使用的 authorization_details 類型，每個值一種。空白「表示」此授權伺服器支援的任何類型。"
+  },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "「AuthZEN 屬性目錄的一列」（#563），位於 sts-authzen-api 資源物件上：一個 JSON 物件 {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}。`object` 為 subject、resource、action 或 context；`property` 為成員名稱，或指向巢狀物件內部的點分路徑；`attributeId` 為傳送時所用的 XACML 屬性；`category`（預設為該物件自己的類別）、`dataType`（預設為 string）與 `multiplicity`（single 或 bag）。沒有任何一列指名的屬性在每種模式下皆被拒絕；一列不得指名此服務自己的 urn:sts:xacml: 識別碼、subject-id、resource-id 或 action-id，也不得在主體類別中指名單純的目錄屬性名稱。"
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "「AuthZEN 應用程式範圍」（#563）：此用戶端以自己的 client_credentials 權杖呼叫 /access/v1 時，可在 context.application 中指名的應用程式——每個值一個識別碼。用戶端自己的識別碼一律在範圍內。由管理員設定，絕不由呼叫端設定。"
+  },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "AuthZEN 存取請求回呼（#1180）：此用戶端作為 AuthZEN PEP 可指定為存取請求 callback.endpoint 的 https URL——每個值一個，須完全相符。指定其他任何 URL 的請求都會被拒絕；本服務絕不會僅憑請求中的 URL 就向其發出回呼。由管理員設定，絕不由呼叫端設定。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
@@ -1711,6 +1735,18 @@
     "en": "2c8a385006302f63",
     "text": "「此應用程式的人員登入時所依據的驗證原則」：`default`（或空白），或本領域某個具名驗證原則的名稱（目錄 > 原則）。具名原則包含允許的第一因素機制（password、password-mfa、webauthn、spnego、wallet、federation；一個都不列則全部允許）與允許的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一個都不列則維持領域的設定不變）。`default` 允許領域驗證原則所允許的每一種機制。\n\n在兩種模式下，於每次以瀏覽器登入該應用程式時「強制執行」：工作階段所依據的機制不為該原則所允許的人，會被送回以原則允許的機制重新登入。只列出一種第一因素機制時，它也是登入的去處（`spnego` 至 /authn/spnego，`wallet` 至 /authn/wallet，`federation` 至 appFederationRelationship）。第二因素只會「縮小」領域的原則：領域已關閉的第二因素在此仍然關閉。\n\n本領域沒有任何原則使用的名稱——繞過主控台寫入——在該原則存在之前「不允許任何」機制（STS-AUTHN-0536）。\n\n它「無人寫入」：沒有任何協定提供它，因此可以編輯，且初始為空白。"
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "此應用程式所擁有的細粒度授權原則在 ou=policies 中的項目名稱；一旦 appFgaEnforced 為 TRUE，該原則將決定此應用程式所宣告類型的每一項授權詳細資料。"
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "當此應用程式的細粒度原則被強制執行時為 TRUE。缺少或為 FALSE 表示未強制執行，這是預設值。"
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "當此 UMA 2.0 資源伺服器可透過以 client_credentials 取得的保護 API 權杖，註冊其「自身擁有」的資源時為 TRUE。缺少或 FALSE（預設值）表示 PAT 必須屬於某個人（授權碼流程），並由該人擁有其所註冊的內容。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及標準的 owner 與 description。"
@@ -1850,6 +1886,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "文件自己的 <Description>（若有）。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "擁有此原則的應用程式的識別碼；該原則決定該應用程式的 authorization_details 類型的詳細資料。此類原則永遠不會成為根原則，永遠不會被根原則透過 PolicyIdReference 參照，也永遠不會傳送給遠端 PEP。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "所屬應用程式被刪除的時間。該原則會被保留並停用以供稽核，直到管理員將其移除。"
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

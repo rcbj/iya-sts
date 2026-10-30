@@ -367,6 +367,216 @@ class XacmlPage {
   }
 
   /**
+   * Draws the AuthZEN tab (#563) from `GET /admin-api/xacml/authzen`: the
+   * API's state and settings, its attribute catalogue with the form that
+   * adds a row, the callers in the AUTHZEN_PEPS group with their scopes and
+   * callback URLs, and the realm's access requests with their acts (#1180).
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the tab's view
+   * @returns the body as HTML
+   */
+  static authzenBody(ctx, json) {
+    const t = ctx.t;
+    const self = this;
+    const writable = ctx.write;
+    // Moved onto the tab by `WebPages.xacmlTabLinks()`, as the other tabs'
+    // forms are: `/admin/xacml#xacml-tab-authzen`, which the operations
+    // mirror.
+    const PAGE = '/admin/xacml/authzen';
+    const view = json || {};
+    const cat = view.catalogue || { rows: [], problems: [], objects: [],
+                                    categories: [], dataTypes: [],
+                                    multiplicities: [] };
+    const tail = function (uri) {
+      return String(uri || '').replace(/^.*[#:]/, '');
+    };
+    const tiles = '<div class="tiles">' +
+      kit.tile(view.enabled && view.xacmlEnabled && view.apiObject
+        ? t.text('consoleXacml.yes') : t.text('consoleXacml.no'),
+               t.text('consoleXacml.authzen.tile.answers')) +
+      kit.tile(view.callerAuthentication || 'mtls',
+               t.text('consoleXacml.authzen.tile.door')) +
+      kit.tile(cat.rows.length, t.text('consoleXacml.authzen.tile.rows')) +
+      kit.tile(view.callersTotal || 0,
+               t.text('consoleXacml.authzen.tile.callers')) +
+      '</div>';
+    const what = kit.note(
+      '<p>' + t.html('consoleXacml.authzen.p1') + '</p><p>' +
+      t.html('consoleXacml.authzen.p2') + '</p>',
+      t.text('consoleXacml.authzen.label'));
+    const missing = view.apiObject ? '' : kit.warn(
+      t.html('consoleXacml.authzen.noObject'),
+      t.text('consoleXacml.authzen.noObjectLabel'));
+    const problems = cat.problems.length ? kit.warn(
+      cat.problems.map(esc).join('<br>'),
+      t.text('consoleXacml.authzen.problemsLabel')) : '';
+    const rows = cat.rows.map(function (row) {
+      const remove = writable
+        ? '<form method="post" action="' + PAGE + '" style="display:inline">' +
+          self.hidden('action', 'remove-attribute') +
+          self.hidden('object', row.object) +
+          self.hidden('property', row.property) +
+          '<button type="submit">' +
+          t.html('consoleXacml.authzen.remove') + '</button></form>'
+        : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
+      return '<tr><td><code>' + esc(row.object + '.' + row.property) +
+        '</code>' + (row.description
+          ? '<div class="sub">' + esc(row.description) + '</div>' : '') +
+        '</td><td><code>' + esc(row.attributeId) + '</code></td><td>' +
+        esc(tail(row.category)) + '</td><td>' + esc(tail(row.dataType)) +
+        '</td><td>' + esc(row.multiplicity) + '</td><td>' + remove +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="6">' +
+      t.html('consoleXacml.authzen.noRows') + '</td></tr>';
+    const options = function (values, blank?) {
+      return (blank ? [{ value: '', label: blank }] : []).concat(
+        (values || []).map(function (one) {
+          return { value: one, label: one };
+        }));
+    };
+    const add = writable
+      ? '<h3>' + t.html('consoleXacml.authzen.addHeading') + '</h3>' +
+        '<form method="post" action="' + PAGE + '">' +
+        self.hidden('action', 'set-attribute') +
+        '<table><tr><td>' + t.html('consoleXacml.authzen.object') +
+        '</td><td>' + self.select('object', options(cat.objects), '') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.property') +
+        '</td><td>' + self.textField('property', '', 30) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.attributeId') +
+        '</td><td>' + self.textField('attributeId', '', 50) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.category') +
+        '</td><td>' + self.select('category', options(cat.categories,
+          t.text('consoleXacml.authzen.objectsOwn')), '') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.dataType') +
+        '</td><td>' + self.select('dataType', options(cat.dataTypes),
+                                  'string') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.multiplicity') +
+        '</td><td>' + self.select('multiplicity',
+                                  options(cat.multiplicities), 'single') +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.description') +
+        '</td><td>' + self.textField('description', '', 50) +
+        '</td></tr></table><p class="sub">' +
+        t.html('consoleXacml.authzen.reserved') + '</p>' +
+        '<button type="submit">' + t.html('consoleXacml.authzen.save') +
+        '</button></form>'
+      : '';
+    const callers = (view.callers || []).map(function (one) {
+      return '<tr><td><code>' + esc(one.name) + '</code><div class="sub">' +
+        esc(one.dn || '') + '</div></td><td>' + esc(one.kind) + '</td><td>' +
+        ((one.applications || []).length
+          ? (one.applications || []).map(function (app) {
+            return '<code>' + esc(app) + '</code>';
+          }).join(', ')
+          : '<em>' + t.html('consoleXacml.authzen.noScope') + '</em>') +
+        '</td><td>' + ((one.callbacks || []).map(function (url) {
+          return '<code>' + esc(url) + '</code>';
+        }).join('<br>') || '—') +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="4">' +
+      t.html('consoleXacml.authzen.noCallers') + '</td></tr>';
+    // THE CALLBACK URLS A CALLER MAY NAME (#1180): replaced whole.
+    const callbackForm = writable
+      ? '<h3>' + t.html('consoleXacml.authzen.callbacksHeading') + '</h3>' +
+        '<form method="post" action="' + PAGE + '">' +
+        self.hidden('action', 'set-callbacks') +
+        '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
+        '</td><td>' + self.textField('caller', '', 40) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.callbacks') +
+        '</td><td>' + self.textField('callbacks', '', 60) +
+        '</td></tr></table><p class="sub">' +
+        t.html('consoleXacml.authzen.callbacksNote') + '</p>' +
+        '<button type="submit">' +
+        t.html('consoleXacml.authzen.setCallbacks') + '</button></form>'
+      : '';
+    // THE ACCESS REQUESTS (#1180): every one of the realm's, newest first,
+    // with the acts an administrator may take — each asked of the
+    // access-control policy as an approver's is in the portal.
+    const ar = view.accessRequests || { enabled: false, rows: [] };
+    const actForm = function (action, id, label, danger) {
+      return '<form method="post" action="' + PAGE + '" ' +
+        'style="display:inline">' + self.hidden('action', action) +
+        self.hidden('request', id) + '<button type="submit"' +
+        (danger ? ' class="danger"' : '') + '>' + label +
+        '</button></form> ';
+    };
+    const code = function (value) {
+      return '<code>' + esc(String(value == null ? '' : value)) + '</code>';
+    };
+    const requestRows = (ar.rows || []).map(function (row) {
+      const subject = row.subject || {};
+      const resource = row.resource || {};
+      const acts = !writable ? '' : (row.status === 'pending'
+        ? actForm('approve-access-request', row.id,
+                  t.html('consoleXacml.authzen.approve'), false) +
+          actForm('deny-access-request', row.id,
+                  t.html('consoleXacml.authzen.deny'), true) +
+          actForm('cancel-access-request', row.id,
+                  t.html('consoleXacml.authzen.cancel'), true)
+        : (row.status === 'approved' && row.approval &&
+           !row.approval.revoked
+          ? actForm('revoke-access-request', row.id,
+                    t.html('consoleXacml.authzen.revoke'), true) : ''));
+      return '<tr><td>' + code(row.id) + '<div class="sub">' +
+        esc(t.date(Number(row.createdAt) * 1000)) + '</div></td><td>' +
+        code(subject.type) + ' ' + code(subject.id) + '<div class="sub">' +
+        code((row.action || {}).name) + ' ' + code(resource.type) + ' ' +
+        code(resource.id) + '</div></td><td>' + code(row.application) +
+        '<div class="sub">' + code(row.requester) + '</div></td><td>' +
+        t.html('consoleXacml.authzen.requestStatus',
+               { status: String(row.status) }) +
+        (row.emergency ? ' <strong>' +
+          t.html('consoleXacml.authzen.emergency') + '</strong>' : '') +
+        (row.approval ? '<div class="sub">' +
+          t.html(row.approval.revoked ? 'consoleXacml.authzen.revoked'
+                                      : 'consoleXacml.authzen.approvedUntil',
+                 { who: String(row.approval.approver || ''),
+                   when: t.date(Number(row.approval.approvedUntil) * 1000) }) +
+          '</div>' : '') + '</td><td>' + acts + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">' +
+      t.html('consoleXacml.authzen.noRequests') + '</td></tr>';
+    const requests = '<h2>' + t.html('consoleXacml.authzen.requestsHeading') +
+      '</h2><p class="sub">' + t.html('consoleXacml.authzen.requestsNote') +
+      (ar.enabled ? '' : ' ' + t.html('consoleXacml.authzen.requestsOff')) +
+      '</p><table><thead><tr><th>' +
+      t.html('consoleXacml.authzen.request') + '</th><th>' +
+      t.html('consoleXacml.authzen.asked') + '</th><th>' +
+      t.html('consoleXacml.authzen.applicationAndPep') + '</th><th>' +
+      t.html('consoleXacml.authzen.state') + '</th><th></th></tr></thead>' +
+      '<tbody>' + requestRows + '</tbody></table>';
+    const scope = writable
+      ? '<h3>' + t.html('consoleXacml.authzen.scopeHeading') + '</h3>' +
+        '<form method="post" action="' + PAGE + '">' +
+        self.hidden('action', 'set-scope') +
+        '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
+        '</td><td>' + self.textField('caller', '', 40) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.applications') +
+        '</td><td>' + self.textField('applications', '', 50) +
+        '</td></tr></table><button type="submit">' +
+        t.html('consoleXacml.authzen.setScope') + '</button></form>'
+      : '';
+    return tiles + missing + what +
+      (view.settings ? SettingsForms.forms(view.settings, PAGE, ['AuthZEN'],
+                                           t) : '') +
+      '<h2>' + t.html('consoleXacml.authzen.catalogueHeading') + '</h2>' +
+      problems + '<table><thead><tr><th>' +
+      t.html('consoleXacml.authzen.property') + '</th><th>' +
+      t.html('consoleXacml.authzen.attributeId') + '</th><th>' +
+      t.html('consoleXacml.authzen.category') + '</th><th>' +
+      t.html('consoleXacml.authzen.dataType') + '</th><th>' +
+      t.html('consoleXacml.authzen.multiplicity') + '</th><th></th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>' + add +
+      '<h2>' + t.html('consoleXacml.authzen.callersHeading') + '</h2>' +
+      '<p class="sub">' + t.html('consoleXacml.authzen.callersNote') +
+      '</p><table><thead><tr><th>' + t.html('consoleXacml.authzen.caller') +
+      '</th><th>' + t.html('consoleXacml.authzen.kind') + '</th><th>' +
+      t.html('consoleXacml.authzen.applications') + '</th><th>' +
+      t.html('consoleXacml.authzen.callbacks') + '</th></tr></thead>' +
+      '<tbody>' + callers + '</tbody></table>' + scope + callbackForm +
+      requests;
+  }
+
+  /**
    * Draws XACML policies from its view.
    *
    * @param ctx - the render context (`WebKit.context()`)
@@ -378,7 +588,14 @@ class XacmlPage {
     const self = this;
     const writable = ctx.write;
 
-    const rows = json.policies.map(function (row) {
+    // AN APPLICATION'S OWN POLICY IS LISTED WITH ITS APPLICATION (#564,
+    // P5), in the section below, not among the repository's: it is never
+    // the root, never pulled, and is removed only as an orphan, so a row
+    // beside the root's offering the same three buttons would invite the
+    // two the server refuses.
+    const rows = json.policies.filter(function (row) {
+      return !row.application;
+    }).map(function (row) {
       const problems = row.problems.length
         ? '<div class="sub" style="color:#b00">' +
           row.problems.map(esc).join('<br>') + '</div>'
@@ -391,7 +608,8 @@ class XacmlPage {
           ? t.html('consoleXacml.policies.disable')
           : t.html('consoleXacml.policies.enable')) +
         '</button></form> ' +
-        (row.isRoot ? '' : '<form method="post" ' +
+        // An application's own policy (#564) is never offered as the root.
+        (row.isRoot || row.application ? '' : '<form method="post" ' +
           'action="/admin/xacml/policies" style="display:inline">' +
           self.hidden('action', 'set-root') + self.hidden('name', row.name) +
           '<button type="submit">' + t.html('consoleXacml.policies.makeRoot') +
@@ -459,6 +677,7 @@ class XacmlPage {
       t.html('consoleXacml.th.actions') +
       '</th></tr>' + rows +
       '</table>' +
+      self.applicationPoliciesSection(json, writable, t) +
       self.renderServiceOwnPolicies(json.serviceOwn, writable, t) +
       (writable
         ? '<h2>' + t.html('consoleXacml.alfa.heading') + '</h2>' + kit.note(
@@ -485,6 +704,87 @@ class XacmlPage {
             t.text('consoleXacml.template.label')) + templateForms
         : '');
     return body;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE APPLICATIONS' OWN POLICIES (#564, P5), grouped by application —
+  // `applicationPolicies` on `GET /admin-api/xacml/policies`. Each policy
+  // links into the editor like any other; Enable and Disable are the
+  // repository's own actions; **Make root is never offered** (STS-FGA-0002
+  // refuses it anyway); and **Remove is offered only for a policy no
+  // application names** — an orphan of a deleted application, decision 3's
+  // "an administrator removes it" — because the one an application still
+  // names is refused (STS-FGA-0022) and is reset from the application's own
+  // Fine-grained authorization tab, which the application cell links to.
+  // -------------------------------------------------------------------------
+  /**
+   * Draws the policies applications own, grouped by application.
+   *
+   * @param json - `policiesJson()`'s answer
+   * @param writable - whether the reader may change them
+   * @param t - the page's translator (#539)
+   * @returns the section's HTML
+   */
+  static applicationPoliciesSection(json: Json, writable: boolean,
+                                    t: Json): string {
+    const self = this;
+    const groups = json.applicationPolicies || [];
+    const rows = groups.map(function (group) {
+      const who = group.known
+        ? '<a href="/admin/applications?application=' +
+          encodeURIComponent(group.application) + '#tab-fga"><code>' +
+          esc(group.application) + '</code></a>' + (group.enforced
+            ? ' <strong>' + t.html('consoleXacml.fga.enforced') + '</strong>'
+            : '')
+        : '<code>' + esc(group.application) + '</code> <em>' +
+          t.html('consoleXacml.fga.deleted') + '</em>';
+      return (group.policies || []).map(function (row, n) {
+        const marks = [];
+        if (row.orphanedAt) {
+          marks.push('<span class="state-revoked">' +
+            t.html('consoleXacml.fga.orphaned', { when: row.orphanedAt }) +
+            '</span>');
+        } else if (!row.referenced) {
+          marks.push('<span class="state-revoked">' +
+            t.html('consoleXacml.fga.unreferenced') + '</span>');
+        }
+        const actions = writable
+          ? '<form method="post" action="/admin/xacml/policies" ' +
+            'style="display:inline">' +
+            self.hidden('action', row.enabled ? 'disable' : 'enable') +
+            self.hidden('name', row.name) + '<button type="submit">' +
+            (row.enabled ? t.html('consoleXacml.policies.disable')
+                         : t.html('consoleXacml.policies.enable')) +
+            '</button></form> ' + (row.referenced ? ''
+              : '<form method="post" action="/admin/xacml/policies" ' +
+                'style="display:inline">' + self.hidden('action', 'delete') +
+                self.hidden('name', row.name) + '<button type="submit" ' +
+                'title="' + esc(t.text('consoleXacml.fga.removeTip')) + '">' +
+                t.html('consoleXacml.fga.remove') + '</button></form>')
+          : '<span class="sub">' + t.html('consoleXacml.readOnly') +
+            '</span>';
+        return '<tr><td>' + (n === 0 ? who : '') + '</td><td>' +
+          '<a href="/admin/xacml/editor?policy=' +
+          encodeURIComponent(row.name) + '"><code>' + esc(row.name) +
+          '</code></a>' + (marks.length ? '<div class="sub">' +
+            marks.join(' ') + '</div>' : '') + '</td><td><code>' +
+          esc(row.policyId || '') + '</code></td><td>' +
+          esc(row.version || '') + '</td><td>' + (row.enabled
+            ? t.html('consoleXacml.policies.enabled')
+            : '<em>' + t.html('consoleXacml.policies.disabled') + '</em>') +
+          '</td><td>' + actions + '</td></tr>';
+      }).join('');
+    }).join('') || '<tr><td colspan="6">' +
+      t.html('consoleXacml.fga.none') + '</td></tr>';
+    return '<h2 id="fga-policies">' + t.html('consoleXacml.fga.heading') +
+      '</h2>' + kit.note('<p>' + t.html('consoleXacml.fga.p1') + '</p><p>' +
+        t.html('consoleXacml.fga.p2') + '</p>',
+        t.text('consoleXacml.fga.label')) +
+      '<table><tr><th>' + t.html('consoleXacml.fga.thApplication') +
+      '</th><th>' + t.html('consoleXacml.th.name') + '</th><th>PolicyId' +
+      '</th><th>' + t.html('consoleXacml.fga.thVersion') + '</th><th>' +
+      t.html('consoleXacml.th.state') + '</th><th>' +
+      t.html('consoleXacml.th.actions') + '</th></tr>' + rows + '</table>';
   }
 
   /**

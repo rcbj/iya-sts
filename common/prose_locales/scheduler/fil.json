@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "Tinatapos ang bawat sign-on session na lumampas na sa lifetime o idle timeout nito, at, sa bawat realm, hanggang sa authn.sessionShedPerSweep ng realm na iyon sa sariling sobrang session ng iisang subject."
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "Pag-expire ng AuthZEN access request"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "Inililipat sa expired ang bawat pending na AuthZEN access request (#1180) na lampas na sa expires_at nito — isinusulat ang audit row nito at ipinapadala ang callback nito — at inaalis ang tapos na isa isang araw matapos itong matapos, o kapag naubos na ang approval nito kung mas huli iyon. Ang pagbasa mismo ang nagpapatupad ng deadline, kaya ito ang record at ang clean-up, hindi kailanman ang nagpapasya."
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "Pag-alis ng mga expired na cache entry"
@@ -100,8 +108,8 @@
     "text": "GNAP: mga expired na grant"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Tinatapos ang bawat GNAP grant na natapos na ang interaction o grant lifetime (gnap.grantLifetimeS) at hindi na nagalaw ng anumang request mula noon, at nire-record kung bakit (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Tinatapos ang bawat GNAP grant na tapos na ang interaction o ang grant lifetime (gnap.grantLifetimeS) at hindi na nagalaw ng anumang request mula noon, at itinatala kung bakit (#432), at binubura ang bawat instance record na hindi nagamit nang ganoon katagal (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",
@@ -582,6 +590,14 @@
   "sched.jobs.tls.ticket-key-rotate.describe": {
     "en": "d685d1a2ff40e09e",
     "text": "Pinapalitan ang session-ticket key na pinagsasaluhan ng mga TLS listener ng bawat node sa isang active-active cluster, kaya ang ticket na in-issue ng isang node ay maipagpapatuloy sa iba. Binubura ang key na pinalitan nito, na naglilimita kung gaano katagal mababawi mula sa ticket ang mga lihim ng ipinagpatuloy na session."
+  },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "UMA expiry"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Inaalis ang bawat User-Managed Access permission ticket, persisted claims token, RPT record at nakabinbing owner approval na lampas na sa buhay nito (#1168). Ang read mismo ang nag-a-apply ng deadline, kaya ito ang paglilinis, hindi kailanman ang nagpapasya."
   },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",

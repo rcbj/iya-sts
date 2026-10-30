@@ -116,6 +116,14 @@ one process keeps in memory.
 portal's tokens. A person signed in to the admin console is signed in to the
 portal through single sign-on, with no screen.
 
+**The navigation column works as the admin console's.** Each section is
+collapsed until you open it, by clicking (or pressing Enter or Space on) its
+heading, and opening one closes whichever was open. Loading a page opens the
+section that holds it; after that the section you opened, or closed, stays
+that way as you move between portal pages in that tab. The section holding
+the page you are on is marked by a rule down its left even while it is
+collapsed.
+
 **Switch user**, with [several accounts in one browser](multiple-accounts.md)
 on in the realm (the default), is a menu in the header beside Sign out: it lists
 the other accounts signed in to this browser — choosing one draws this tab
@@ -139,6 +147,7 @@ not drawn.
 | Who may act for you | `/portal/delegate` |
 | Connected claim sources | `/portal/claim-sources` |
 | Sign-in requests (CIBA) | `/portal/ciba` |
+| Access requests waiting for you as an approver (AuthZEN, #1180) | `/portal/access-requests` |
 | Your devices | `/portal/devices` |
 | Your self-issued IDs | `/portal/self-issued` |
 | Add a credential to your wallet, and the ones issued to you | `/portal/wallet` |
@@ -150,6 +159,7 @@ not drawn.
 | Your signing key | `/portal/signing-key` |
 | Sign in a device | `/portal/device` |
 | Resources I own: roles, groups, service accounts, applications | `/portal/owned/roles`, `/portal/owned/groups`, `/portal/owned/service-accounts`, `/portal/owned/applications` |
+| Sharing: what you share through User-Managed Access, and what others share with you ([User-Managed Access](uma.md#sharing-on-the-portal)) | `/portal/shared`, `/portal/shared-with-me` |
 
 **Resources I own** is a section of the portal's column with four pages. Each
 lists the roles, groups, service accounts or applications whose owners name

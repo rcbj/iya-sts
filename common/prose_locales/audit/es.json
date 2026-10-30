@@ -879,6 +879,70 @@
     "en": "d9fe267d0aae76d6",
     "text": "El PEP integrado aplicó una decisión"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "Se decidió una evaluación de acceso de AuthZEN"
+  },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "Se respondió una búsqueda de AuthZEN"
+  },
+  "audit.actions.fga.decision.label": {
+    "en": "c2696096c0749879",
+    "text": "Se tomó una decisión de autorización detallada en la emisión"
+  },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "Se añadió o reemplazó una fila del catálogo de atributos de AuthZEN"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "Se eliminó una fila del catálogo de atributos de AuthZEN"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "Se estableció el ámbito de aplicaciones de un llamante de AuthZEN"
+  },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "Se concedió a un PEP remoto acceso AuthZEN a una aplicación que aplica autorización detallada"
+  },
+  "audit.actions.admin.authzen.callbacks.set.label": {
+    "en": "e8439c3ddb41d93f",
+    "text": "Se definieron las URL de callback de las solicitudes de acceso de un llamador AuthZEN"
+  },
+  "audit.actions.authzen.access-request.submitted.label": {
+    "en": "ce6c6f5f15939b8e",
+    "text": "Se envió una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.approved.label": {
+    "en": "5148eda4f7a84802",
+    "text": "Se aprobó una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.denied.label": {
+    "en": "22560158f5a3aaca",
+    "text": "Se denegó una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.expired.label": {
+    "en": "2ced214d20f8f301",
+    "text": "Venció una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.cancelled.label": {
+    "en": "f00e80626f3daa82",
+    "text": "Se canceló una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.revoked.label": {
+    "en": "fdf6095a2de11ed6",
+    "text": "Se revocó la aprobación de una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.approver-refused.label": {
+    "en": "fbeebe0256b7890e",
+    "text": "La política le negó a una persona la decisión sobre una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.callback.label": {
+    "en": "432e877d55af1913",
+    "text": "Se envió, o falló, el callback de una solicitud de acceso AuthZEN"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "El PEP de emisión no permitió que este servicio acuñara algo"
@@ -934,6 +998,74 @@
   "audit.actions.gnap.grant.forward.label": {
     "en": "9756220c110d11f1",
     "text": "La persona en una página de aprobación GNAP no era el usuario que nombraba la solicitud, y la concesión se envió al portal de ese usuario (#432 fase 6)"
+  },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "Un servidor de recursos UMA registró un recurso en nombre de un propietario"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "Un servidor de recursos UMA actualizó un recurso registrado"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "Un servidor de recursos UMA eliminó un recurso registrado"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "Se emitió un ticket de permiso a un servidor de recursos UMA"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "Una de sus políticas decidió un permiso UMA"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "Se respondió una concesión uma-ticket de UMA"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "Se revocó un token de claims persistido (PCT) de UMA"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "Una solicitud UMA quedó en espera de la aprobación de su propietario del recurso"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "Un propietario del recurso aprobó o rechazó una solicitud UMA"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "Una parte solicitante inició sesión en el endpoint de interacción de claims de UMA"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "Un propietario del recurso compartió un recurso mediante UMA"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "Un propietario del recurso retiró un recurso compartido por UMA"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "Un propietario del recurso reescribió su política UMA como ALFA"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "Una aplicación pasó a ser servidor de recursos UMA en la consola"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "Una aplicación dejó de ser servidor de recursos UMA en la consola, y se revocaron sus RPT"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "Se cambió en la consola si una aplicación puede ser propietaria de recursos UMA"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "Se revocó un RPT de UMA en la consola"
   },
   "audit.actions.gnap.grant.finalize.label": {
     "en": "fee9afbd448956f2",

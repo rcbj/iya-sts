@@ -28,6 +28,7 @@ import ConsentsPages = require('./web_consents');
 import GnapPages = require('./web_gnap');
 import MailPages = require('./web_mail');
 import OwnedPages = require('./web_owned');
+import SharedPages = require('./web_shared');
 import PasswordPages = require('./web_password');
 import KeysPages = require('./web_keys');
 import MfaPages = require('./web_mfa');
@@ -40,6 +41,7 @@ import SelfIssuedPages = require('./web_self_issued');
 import WalletPages = require('./web_wallet');
 import DevicesPages = require('./web_devices');
 import CibaPages = require('./web_ciba');
+import AccessRequestPages = require('./web_access_requests');
 import DevicePages = require('./web_device');
 import ClaimSourcesPages = require('./web_claim_sources');
 import ConnectedAccountsPages = require('./web_connected_accounts');
@@ -60,6 +62,7 @@ const PAGES: PortalPage[] = [].concat(
   GnapPages.PAGES,
   MailPages.PAGES,
   OwnedPages.PAGES,
+  SharedPages.PAGES,
   PasswordPages.PAGES,
   KeysPages.PAGES,
   MfaPages.PAGES,
@@ -72,6 +75,7 @@ const PAGES: PortalPage[] = [].concat(
   WalletPages.PAGES,
   DevicesPages.PAGES,
   CibaPages.PAGES,
+  AccessRequestPages.PAGES,
   DevicePages.PAGES,
   ClaimSourcesPages.PAGES,
   ConnectedAccountsPages.PAGES,

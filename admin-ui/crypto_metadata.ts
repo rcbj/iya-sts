@@ -1860,6 +1860,69 @@ class CryptoMetadata {
              'than a security mechanism', ['SHA-256']]
           ];
         } },
+      // AUTHZEN (#563): the XACML row's position, and the caller's two
+      // credentials are verified by the layers that own them.
+      { name: 'AuthZEN',
+        signs: 'Nothing. A decision is a JSON boolean and carries no ' +
+               'signature; the metadata document is not signed ' +
+               '(signed_metadata is not produced).',
+        verifies: 'The caller\'s credential, by the layer that owns it: a ' +
+                  'client certificate by the TLS layer and the client ' +
+                  'truststore (see TLS / mutual TLS), an access token by ' +
+                  'this realm\'s own JWS verification (see OAuth2 / OIDC), ' +
+                  'and under mtls+bearer the token\'s RFC 8705 x5t#S256 ' +
+                  'against the certificate presented.',
+        encrypts: 'Nothing.',
+        decrypts: 'Nothing.',
+        keys: 'None of its own. The realm\'s signing keys verify the ' +
+              'tokens it accepts, as everywhere else.',
+        hashes: 'The SHA-256 thumbprint of the presented certificate, ' +
+                'compared with the token\'s cnf under mtls+bearer.',
+        whatItDoesNot: 'It signs no decision: a decision rests on the ' +
+                       'transport, as an XACML one does.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            ['Nothing is signed, encrypted or decrypted here', []],
+            ['The certificate thumbprint a bound token is compared with ' +
+             '(RFC 8705)', ['SHA-256']]
+          ];
+        } },
+      // USER-MANAGED ACCESS 2.0 (#1168): AuthZEN's position and AuthZEN's
+      // case — every token it accepts or issues is OAuth's, verified and
+      // signed by the layers that own them.
+      { name: 'UMA 2.0',
+        signs: 'Nothing of its own. A requesting party token is an RFC ' +
+               '9068 access token the realm signs through the one funnel ' +
+               '(see OAuth2 / OIDC); a permission ticket and a persisted ' +
+               'claims token are random handles, not signatures.',
+        verifies: 'The protection API token (PAT), an access token, by ' +
+                  'this realm\'s own JWS verification (see OAuth2 / OIDC), ' +
+                  'with its DPoP proof or RFC 8705 certificate binding ' +
+                  'where it carries one; a pushed claim_token, an ID ' +
+                  'Token from this realm or a declared assertion issuer, ' +
+                  'the same way.',
+        encrypts: 'Nothing.',
+        decrypts: 'Nothing.',
+        keys: 'None of its own. The realm\'s signing keys sign the RPT and ' +
+              'verify the PAT, as everywhere else.',
+        hashes: 'The SHA-256 under which a permission ticket and a ' +
+                'persisted claims token are stored, so the store holds no ' +
+                'working handle.',
+        whatItDoesNot: 'It signs no decision and no permission: a ' +
+                       'permission is a claim of the RPT, and the RPT\'s ' +
+                       'signature is OAuth\'s.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            ['Nothing is signed, encrypted or decrypted here', []],
+            ['The digest a ticket or PCT is stored under', ['SHA-256']]
+          ];
+        } },
       { name: 'OAuth2 / OIDC',
         signs: 'Every access token and refresh token, and the ID Token, with ' +
                'the realm\'s RSA key as RS256. A client that registers ' +

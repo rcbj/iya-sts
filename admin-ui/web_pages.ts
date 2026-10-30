@@ -54,6 +54,7 @@ import FederationPage = require('../federation/web_federation');
 import EstPage = require('../est/web_est');
 import GeolocationPage = require('./web_geolocation');
 import GnapPage = require('../gnap/web_gnap');
+import UmaPage = require('../uma/web_uma');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import GroupsPage = require('./web_groups');
 import KerberosPrincipalsPage =
@@ -284,6 +285,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                       'deliveries'],
   '/admin/claim-providers': ['providers', 'register', 'links'],
   '/admin/gnap': ['grants', 'resources', 'settings'],
+  // UMA 2.0 (#1195): GNAP's sibling, a tab per list.
+  '/admin/uma': ['servers', 'resources', 'tokens', 'pending', 'owner',
+                 'whatif', 'settings'],
   '/admin/totp': ['settings'],
   '/admin/backup-codes': ['settings'],
   '/admin/webauthn': ['settings'],
@@ -986,6 +990,8 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return TokensPage.setBody(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/uma', title: 'UMA 2.0', operation: '/admin-api/uma',
+    render: UmaPage.render },
   { path: '/admin/used-assertions', title: 'Used assertions',
     operation: '/admin-api/used-assertions',
     render: function (view: Json, ctx?: Json): string {
@@ -1058,14 +1064,17 @@ const PAGES: WebPage[] = [
       xacmlPolicies: '/admin-api/xacml/policies',
       xacmlEditor: '/admin-api/xacml/editor',
       xacmlPeps: '/admin-api/xacml/peps',
-      xacmlDecide: '/admin-api/xacml/decide'
+      xacmlDecide: '/admin-api/xacml/decide',
+      xacmlAuthzen: '/admin-api/xacml/authzen'
     },
     composeWhen: {
       xacmlEditor: ['policy'],
-      xacmlDecide: ['subject', 'action', 'resource']
+      xacmlDecide: ['subject', 'action', 'resource'],
+      xacmlAuthzen: ['caller']
     },
     composeAlways: [
-      'xacmlPolicies', 'xacmlEditor', 'xacmlPeps', 'xacmlDecide'
+      'xacmlPolicies', 'xacmlEditor', 'xacmlPeps', 'xacmlDecide',
+      'xacmlAuthzen'
     ],
     render: XacmlPage.render },
   { path: '/admin/xacml/monitor', title: 'XACML decisions',
@@ -1913,7 +1922,12 @@ class WebPages {
           html: XacmlPage.pepsBody(context, view.xacmlPeps) },
         { id: 'xacml-tab-decide',
           label: context.t.text('console.nav.xacml-decide'),
-          html: XacmlPage.decideBody(context, view.xacmlDecide) }
+          html: XacmlPage.decideBody(context, view.xacmlDecide) },
+        // AUTHZEN (#563): the API decided by this page's engine, on a tab of
+        // its own beside the PEPs that pull the repository.
+        { id: 'xacml-tab-authzen',
+          label: context.t.text('consoleXacml.authzen.tab'),
+          html: XacmlPage.authzenBody(context, view.xacmlAuthzen) }
       ];
       const rendered = panels.map(function (one) {
         return { id: one.id, label: one.label,
@@ -1979,10 +1993,13 @@ class WebPages {
       '/admin/xacml/editor': 'xacml-tab-editor',
       '/admin/xacml/peps': 'xacml-tab-peps',
       '/admin/xacml/decide': 'xacml-tab-decide',
+      // The AuthZEN tab's forms (#563) name it so, and are moved onto it.
+      '/admin/xacml/authzen': 'xacml-tab-authzen',
       '/admin/xacml': 'xacml-tab-settings'
     };
     const route = '/admin/xacml/policies|/admin/xacml/editor|' +
-      '/admin/xacml/peps|/admin/xacml/decide|/admin/xacml';
+      '/admin/xacml/peps|/admin/xacml/decide|/admin/xacml/authzen|' +
+      '/admin/xacml';
     html = html.replace(new RegExp('href="(' + route +
       ')(\\?[^"#]*)?(#[^"]*)?"', 'g'),
     function (_match: string, path: string, query: string,

@@ -56,6 +56,136 @@ pub struct Options {
     pub https_key_path: String,
     pub https_port: u16,
     pub https_reload_interval_ms: u64,
+    /// The AuthZEN edge PDP (#1179): on by default, reachable only over the
+    /// HTTPS listener by a caller presenting a certificate this container
+    /// verifies against `authzen_client_ca` and finds on the caller list it
+    /// pulled from the service (#1189) — narrowed, when
+    /// `authzen_callers_configured`, to `authzen_callers`.
+    pub authzen_enabled: bool,
+    pub authzen_client_ca: Option<Vec<u8>>,
+    pub authzen_callers: Vec<AuthzenCaller>,
+    /// `PEP_AUTHZEN_CALLERS` was SET (non-empty), whatever it held: the
+    /// operator asked for a narrowing, so a value that admits nobody
+    /// narrows to nobody rather than being read as "not set" (#1189).
+    pub authzen_callers_configured: bool,
+    /// The PDP identifier the metadata names, an `https` origin; empty means
+    /// "the origin the HTTPS request arrived at".
+    pub authzen_pdp_identifier: String,
+    /// How long the edge PDP waits for the service when it FORWARDS an
+    /// evaluation about an application that enforces fine-grained
+    /// authorization (#564): `PEP_AUTHZEN_FORWARD_TIMEOUT_MS`, apart from
+    /// `PEP_TIMEOUT_MS` because the caller is waiting on this one, and a
+    /// pull is not waited on by anybody. At least 1.
+    pub authzen_forward_timeout_ms: u64,
+}
+
+/// One caller `PEP_AUTHZEN_CALLERS` names: the certificate it presents, by
+/// the SHA-256 of its DER, under a name, scoped to applications. Since
+/// #1189 the list is an OPTIONAL NARROWING of the callers pulled from the
+/// service (a pulled caller must also be on it), and decides alone only
+/// until the first caller pull loads (`xacml-pep/CLAUDE.md`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuthzenCaller {
+    pub name: String,
+    pub sha256: String,
+    pub applications: Vec<String>,
+}
+
+/// A SHA-256 fingerprint as lower-case hex, colons and case ignored, or
+/// `None` when it is not 64 hex digits.
+pub fn fingerprint_of(text: &str) -> Option<String> {
+    let hex: String = text
+        .chars()
+        .filter(|c| *c != ':')
+        .collect::<String>()
+        .to_ascii_lowercase();
+    (hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then_some(hex)
+}
+
+/// `PEP_AUTHZEN_CALLERS`: a JSON array of `{ "name", "sha256",
+/// "applications" }`. A malformed entry is LEFT OUT and named, never
+/// guessed at, so a typo admits nobody rather than somebody; a value that
+/// is not a JSON array admits nobody at all. The bounds are the service's
+/// `set-scope` bounds: 64 applications of at most 256 characters.
+pub fn parse_callers(raw: &str) -> (Vec<AuthzenCaller>, Vec<String>) {
+    let mut callers = Vec::new();
+    let mut problems = Vec::new();
+    if raw.trim().is_empty() {
+        return (callers, problems);
+    }
+    let Ok(serde_json::Value::Array(entries)) =
+        serde_json::from_str::<serde_json::Value>(raw)
+    else {
+        problems.push(
+            "PEP_AUTHZEN_CALLERS is not a JSON array, so no caller is \
+             admitted"
+                .to_string(),
+        );
+        return (callers, problems);
+    };
+    for (i, entry) in entries.iter().enumerate() {
+        let name = entry["name"].as_str().unwrap_or("").trim().to_string();
+        let sha256 = entry["sha256"].as_str().and_then(fingerprint_of);
+        let applications: Option<Vec<String>> = match &entry["applications"] {
+            serde_json::Value::Null => Some(Vec::new()),
+            serde_json::Value::Array(list) => list
+                .iter()
+                .map(|one| {
+                    one.as_str()
+                        .filter(|s| {
+                            !s.is_empty()
+                                && s.chars().count() <= 256
+                                && !s.chars().any(char::is_control)
+                        })
+                        .map(str::to_string)
+                })
+                .collect::<Option<Vec<String>>>()
+                .filter(|list| list.len() <= 64),
+            _ => None,
+        };
+        match (name.is_empty(), sha256, applications) {
+            (false, Some(sha256), Some(applications)) => {
+                if callers.iter().any(|c: &AuthzenCaller| c.sha256 == sha256) {
+                    problems.push(format!(
+                        "entry {} names a certificate an earlier entry \
+                         names; the first is used",
+                        i
+                    ));
+                } else {
+                    callers.push(AuthzenCaller {
+                        name,
+                        sha256,
+                        applications,
+                    });
+                }
+            }
+            _ => problems.push(format!(
+                "entry {} is not {{ \"name\": a non-empty string, \
+                 \"sha256\": 64 hex digits, \"applications\": at most 64 \
+                 strings }} and is left out",
+                i
+            )),
+        }
+    }
+    (callers, problems)
+}
+
+/// `PEP_AUTHZEN_PDP_IDENTIFIER`: an `https` origin with no path, query or
+/// fragment, or `None`. A path is refused because this container serves
+/// `/access/v1/*` at its root, and section 9.2.3 has a PEP refuse a
+/// document whose identifier is not the base it built the URL from.
+pub fn pdp_identifier_of(raw: &str) -> Option<String> {
+    let text = raw.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(text).ok()?;
+    let clean = parsed.scheme() == "https"
+        && parsed.host_str().is_some()
+        && (parsed.path().is_empty() || parsed.path() == "/")
+        && parsed.query().is_none()
+        && parsed.fragment().is_none()
+        && parsed.username().is_empty()
+        && parsed.password().is_none();
+    clean.then(|| text.to_string())
 }
 
 /// `parseInt(raw, 10)`, falling back when it is not a number.
@@ -156,6 +286,121 @@ impl Options {
                 "PEP_HTTPS_RELOAD_INTERVAL_MS",
                 5000,
             ),
+            authzen_enabled: std::env::var("PEP_AUTHZEN").as_deref()
+                != Ok("false"),
+            authzen_client_ca: authzen_client_ca(),
+            authzen_callers: authzen_callers(),
+            authzen_callers_configured: !std::env::var("PEP_AUTHZEN_CALLERS")
+                .unwrap_or_default()
+                .trim()
+                .is_empty(),
+            authzen_pdp_identifier: authzen_pdp_identifier(),
+            authzen_forward_timeout_ms: int_from_env(
+                "PEP_AUTHZEN_FORWARD_TIMEOUT_MS",
+                5000u64,
+            )
+            .max(1),
         }
+    }
+}
+
+/// The client CA bundle, read once. Unset or unreadable, the edge PDP
+/// admits nobody, and says so.
+fn authzen_client_ca() -> Option<Vec<u8>> {
+    let path = std::env::var("PEP_AUTHZEN_CLIENT_CA")
+        .ok()
+        .filter(|p| !p.is_empty());
+    let Some(path) = path else {
+        tracing::warn!(
+            "{}xacml-pep: no PEP_AUTHZEN_CLIENT_CA, so the HTTPS listener \
+             asks no caller for a certificate and the AuthZEN endpoints \
+             admit nobody: they authenticate by mutual TLS only. Set it to \
+             the CA bundle the callers' certificates chain to.",
+            tag("STS-XPEP-0039")
+        );
+        return None;
+    };
+    match std::fs::read(&path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) => {
+            tracing::error!(
+                "{}xacml-pep: PEP_AUTHZEN_CLIENT_CA names {} and it could \
+                 not be read ({}), so the AuthZEN endpoints admit nobody.",
+                tag("STS-XPEP-0039"),
+                path,
+                error
+            );
+            None
+        }
+    }
+}
+
+fn authzen_callers() -> Vec<AuthzenCaller> {
+    let raw = std::env::var("PEP_AUTHZEN_CALLERS").unwrap_or_default();
+    let (callers, problems) = parse_callers(&raw);
+    for problem in &problems {
+        tracing::error!(
+            "{}xacml-pep: PEP_AUTHZEN_CALLERS: {}.",
+            tag("STS-XPEP-0038"),
+            problem
+        );
+    }
+    callers
+}
+
+fn authzen_pdp_identifier() -> String {
+    let raw = std::env::var("PEP_AUTHZEN_PDP_IDENTIFIER").unwrap_or_default();
+    if raw.trim().is_empty() {
+        return String::new();
+    }
+    match pdp_identifier_of(&raw) {
+        Some(identifier) => identifier,
+        None => {
+            tracing::error!(
+                "{}xacml-pep: PEP_AUTHZEN_PDP_IDENTIFIER is \"{}\", which is \
+                 not an https origin with no path; the metadata names the \
+                 origin each HTTPS request arrives at instead.",
+                tag("STS-XPEP-0045"),
+                raw
+            );
+            String::new()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn callers_are_read_strictly() {
+        let fp = "AB:".repeat(31) + "AB";
+        let raw = format!(
+            "[{{\"name\":\"pep-a\",\"sha256\":\"{}\",\
+             \"applications\":[\"todo-app\"]}},\
+             {{\"name\":\"\",\"sha256\":\"{}\"}},\
+             {{\"name\":\"pep-b\",\"sha256\":\"nothex\"}},\
+             {{\"name\":\"pep-c\",\"sha256\":\"{}\"}}]",
+            fp, fp, fp
+        );
+        let (callers, problems) = parse_callers(&raw);
+        assert_eq!(callers.len(), 1);
+        assert_eq!(callers[0].sha256, "ab".repeat(32));
+        assert_eq!(callers[0].applications, ["todo-app"]);
+        assert_eq!(problems.len(), 3);
+        let (none, refused) = parse_callers("{}");
+        assert!(none.is_empty() && refused.len() == 1);
+        assert!(parse_callers("").0.is_empty());
+    }
+
+    #[test]
+    fn the_identifier_is_an_https_origin() {
+        assert_eq!(
+            pdp_identifier_of("https://pdp.example:9444/").as_deref(),
+            Some("https://pdp.example:9444")
+        );
+        assert!(pdp_identifier_of("http://pdp.example").is_none());
+        assert!(pdp_identifier_of("https://pdp.example/realm/x").is_none());
+        assert!(pdp_identifier_of("not a url").is_none());
     }
 }

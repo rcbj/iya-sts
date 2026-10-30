@@ -95,6 +95,18 @@
     "en": "6803d7137bac3178",
     "text": "full para el conjunto de funcionalidades obligatorias: el lenguaje de políticas, los siete valores de decisión incluidos los tres Indeterminate extendidos, la coincidencia de objetivos, las condiciones, las variables, los doce algoritmos de combinación, las obligaciones y los consejos, las referencias a políticas y la biblioteca estándar de funciones sobre los diecisiete tipos de datos. Verificado con la suite de conformidad de OASIS — se superan 454 de los 455 casos obligatorios, y la única excepción se registra con su argumento en xacml/conformance/MANIFEST.js. NO cubierto: AttributeSelector y las funciones XPath (una política que use una es Indeterminate en lugar de quedar vacía en silencio), los perfiles Multiple Decision y Hierarchical Resource, y la delegación administrativa."
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "73b5afdb5c895b9d",
+    "text": "partial: la Access Evaluation API (sección 6), decidida por el motor XACML contra la política raíz del dominio mediante un catálogo de atributos por dominio, con X-Request-ID y el desafío de la sección 11.3, la Access Evaluations API (sección 7) con sus tres semánticas, y los metadatos del PDP (sección 9) en ambas formas, signed_metadata incluido, y el borrador Obligations Profile para un PEP que declara los tipos, y las tres Search APIs (sección 8) sobre las personas, aplicaciones, API, relaciones de delegación y acciones de política de este servicio, paginadas y no transitivas. Falta: obligaciones por resultado en una búsqueda, y el perfil OAuth, todavía un borrador."
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial: la denegación solicitable (context.access_request, evaluation_id, evaluated_at, reason) donde la política del dominio marca un Deny con el advice access-request, vinculada por valor con un binding_token que este dominio firma (los claims en línea); el envío con Idempotency-Key, 201 o 202 y un Task Handle; el endpoint de estado de la tarea con Retry-After; la cancelación por POST o DELETE; los seis estados; el modo de finalización reevaluate, approval.id resuelto en el estado de confianza y la aprobación llegando a la política como hechos de confianza; next_action y las cinco razones; cada tipo de problema; el miembro de metadatos, jwks_uri y la capacidad. Falta: evaluation_id como vinculación por referencia, approval.state, la forma de vinculación con hash, las formas legibles por máquina (form_url, request_schema_url), display, y los complementos BULK, ACTOR y CATALOG."
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial: el callback de un envío (endpoint, state, events), con el endpoint limitado a las URL que un administrador registró para el PEP solicitante, un callback de solo notificación para cada evento terminal solicitado, autenticado por un JWT corto que este dominio firma, bajo la política de salida. Falta: el evento partial (BULK) y las suscripciones a eventos a nivel de despliegue; una entrega fallida no se reintenta."
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full para la solicitud y la respuesta: los nombres abreviados de categoría, los nombres cortos de tipo de datos, la inferencia del tipo de datos a partir del tipo JSON (incluida la distinción entero/doble, que se lee del texto fuente porque JSON.parse ya la ha descartado), los arrays como bolsas, las obligaciones, los consejos y la PolicyIdentifierList. El perfil no define ninguna sintaxis de políticas, así que las políticas siguen siendo XML."
@@ -134,6 +146,14 @@
   "stsmetadata.specs.rfc9767.coverage": {
     "en": "c36892dc6db9d597",
     "text": "full: el documento de descubrimiento orientado al RS en /.well-known/gnap-as-rs, la introspección de tokens con el modelo de token de la sección 2.1, el registro de conjuntos de recursos, la derivación de tokens mediante existing_access_token, y cada formato del registro de formatos de token de la sección 5.2 — jwt-signed, jwt-encrypted, macaroon, biscuit y zcap — emitido y verificado. El servidor de recursos de la sección 6.3 que verifica un token por su cuenta ve una revocación (#432): los formatos JWT llevan un claim de estado de Token Status List, se publican los identificadores de revocación de los biscuits revocados (no estándar), y un servidor de recursos registrado puede tener un flujo de Shared Signals que recibe session-revoked para los tokens destinados a él. Los tokens macaroon y zcap no tienen tal mecanismo; la introspección es su camino."
+  },
+  "stsmetadata.specs.uma2-grant.coverage": {
+    "en": "de5c44fe6f4c8008",
+    "text": "partial: el descubrimiento (sección 2); la concesión urn:ietf:params:oauth:grant-type:uma-ticket (sección 3.3) con el ticket gastado una sola vez en todo el clúster y vinculado al primer cliente que lo presenta, los ámbitos solicitados de la sección 3.3.4, un PCT presentado, need_info con un ticket rotado y required_claims, request_denied, un RPT parcial (uma.partialRpt), la mejora del RPT, y cada permiso decidido por la política del dominio, el propio documento XACML del propietario del recurso, la política detallada del servidor de recursos y la puerta de emisión; el PCT emitido cuando se recopilaron claims y revocable en /oauth2/revoke; el endpoint de interacción de claims (sección 3.3.2) mediante el único inicio de sesión de este servicio; un claim_token enviado en el formato ID Token, de este dominio o de un emisor de aserciones declarado; y request_submitted, con el propietario respondiendo en el portal y una aprobación escrita como regla de su propia política. Falta: SAML como claim_token_format, y una elevación a un acr que un recurso compartido exige en la interacción (el recurso compartido entonces rechaza). uma_profiles_supported está vacío."
+  },
+  "stsmetadata.specs.uma2-fedauthz.coverage": {
+    "en": "6b8ea1097c24f058",
+    "text": "partial: el token de acceso de la API de protección (sección 2) como un token de acceso ordinario con audiencia /uma que lleva uma_protection, por el flujo de código (el propietario, una persona) o client_credentials (el propietario, la aplicación, cuando lleva umaOwnsResources); el registro de recursos (sección 3) — crear, leer, actualizar, eliminar y listar, con user_access_policy_uri; y el endpoint de permisos (sección 4), que emite un ticket para uno o varios permisos, con invalid_resource_id e invalid_scope. La introspección del RPT (sección 5) con el PAT como Bearer en /oauth2/introspect: permisos y ningún ámbito, solo para los RPT de ese servidor de recursos. Nunca se obtiene un documento de descripción de ámbito que nombre un URI de ámbito: un ámbito es una cadena."
   },
   "stsmetadata.specs.rfc9421.coverage": {
     "en": "3326ecc9e0fc4e59",
@@ -747,6 +767,14 @@
     "en": "f21e16beea449f7d",
     "text": "Cada política HABILITADA y cuál es la raíz, más un token de sincronización sobre exactamente esos bytes; ?since=<token> responde 304. LA OBTENCIÓN ES EL CONTRATO: un PEP remoto consulta esto en su propio intervalo y evalúa localmente con su propia copia del motor, porque un PEP que preguntara en cada solicitud sería /xacml/pdp con un salto de red delante de cada decisión de acceso. Requiere REMOTE_PEPS, un rol DISTINTO del XACML_USER que piden los cuatro endpoints anteriores, y un grupo distinto, porque este es el endpoint que publica los documentos con los que este servicio aplica su propio control de acceso. Una política DESHABILITADA se omite en lugar de enviarse con un indicador, porque un PEP que la cargara aplicaría una política que este servicio no aplica."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "bcec1fc31c824002",
+    "text": "El catálogo de atributos AuthZEN del dominio — las filas de authzenAttribute en sts-authzen-api, leídas como las lee POST /access/v1/evaluation — y los ajustes de AuthZEN que cambian la correspondencia o la respuesta, más un token de sincronización propio; ?since=<token> responde 304. Lo descarga junto a las políticas el contenedor xacml-pep, cuyo PDP perimetral responde a AuthZEN exactamente con estas filas, de modo que una solicitud se traduce de una sola manera en ambos lugares. Requiere REMOTE_PEPS, como la descarga de políticas. Aditivo: /xacml/pep/policies no cambia. fgaApplications nombra las aplicaciones que aplican la autorización de grano fino, y forma parte del token de sincronización: el PDP de borde reenvía una evaluación sobre una de ellas al POST /access/v1/evaluation de este dominio en lugar de decidirla (#564)."
+  },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "A quién admite ahora este dominio en su API AuthZEN, para que el PDP de borde del contenedor xacml-pep admita según ello: cada llamante que la política de control de acceso admite en /access/v1/* (AUTHZEN_PEPS, tal como lo decide la política), nombrado como lo ve una política en urn:sts:xacml:authzen:caller, con el SHA-256 del DER de cada certificado que este servicio resolvería a ese nombre, su ámbito de aplicaciones y los puntos de conexión a los que se le admite, más un token de sincronización propio; ?since=<token> responde 304. El token cambia con un miembro, un certificado, un ámbito o la respuesta de la política, y el borde converge en su sondeo. Requiere REMOTE_PEPS, como la obtención de las políticas, de modo que cualquiera que tenga ese rol puede leer quién puede preguntar al PDP (rcbj en #1189). Aditivo: /xacml/pep/policies y /xacml/pep/authzen-catalogue no cambian."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Sus contadores acumulados y el token de sincronización que tiene, que es lo que hace de \"actual\" una comparación que realiza este servicio en lugar de una afirmación que el PEP hace sobre sí mismo. Esas decisiones ocurrieron en otro proceso y este servicio no vio ninguna, que es todo el sentido de un PEP remoto. NO crea una fila: un latido de algo que nunca se registró se rechaza nombrando el endpoint de registro, porque una fila creada aquí no llevaría certificado, ni URL de notificación, ni fecha de registro."
@@ -754,6 +782,46 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML de entrada, XML de salida. Envíe por POST un <PIPRequest> que lleve la <Request> XACML que está decidiendo y un <AttributeDesignator> por cada atributo deseado; recibirá <Attributes> EN LA FORMA EN QUE LOS LLEVA UNA <Request>. EXISTE PORQUE UN PEP REMOTO TIENE EL MOTOR Y NO EL DIRECTORIO: el PIP de este servicio ES ou=users, así que una política que designa un atributo que la solicitud no llevaba se resuelve en una bolsa vacía en otro contenedor y en un valor real aquí; la misma política decidiendo de dos formas en dos puntos de aplicación, que es la divergencia que un repositorio compartido existe para evitar, reapareciendo una capa más abajo. XACML NO DEFINE NINGÚN PROTOCOLO PIP, así que esto inventa lo menos posible: ambas direcciones son el propio XML de XACML, leído y escrito por xacml_xml.js y no por nada nuevo, y la respuesta es un FRAGMENTO DE SOLICITUD que un PEP inserta en su propia solicitud, tras lo cual su motor encuentra los valores donde los busca un designador, sin traducción y sin ramificación. Responde a través del MISMO resolverFor() que se entrega al PDP integrado, así que los dos no pueden discrepar, y resuelve la entrada UNA VEZ por llamada para que un lote de designadores no pueda ver a dos personas distintas. TRES REGLAS: un designador no resuelto es un <Attribute> AUSENTE y nunca uno vacío ni un error, porque así es una solicitud que nunca lo llevó; MustBePresent se lee y NO se aplica, porque lo que significa una bolsa vacía lo determinan el designador y la función a la que se entrega, ambos en el motor del LLAMADOR; y solo se resuelve la categoría access-subject. Los cinco motivos por los que una bolsa puede estar vacía se devuelven en <Unresolved>, en el espacio de nombres PROPIO de este servicio, para que un PEP que solo lea el espacio de nombres del núcleo de XACML nunca lo vea. Requiere REMOTE_PEPS en lugar del XACML_USER que pide el resto de /xacml: el único endpoint de aquí cuyo rol no sigue a su ruta, porque lo que se devuelve son los datos propios de una persona y no una regla que cualquiera pueda comprobar."
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "Haga POST de un subject, action, resource y context de AuthZEN; obtenga decision true o false. Lo decide el motor XACML frente a la política RAÍZ del dominio, con protocol = authzen en la solicitud. Una propiedad llega a la política solo a través del catálogo de atributos del dominio, y una no declarada es un 400 en todos los modos. El LLAMANTE se autentica según authzen.callerAuthentication — un certificado de cliente de forma predeterminada, un token de acceso que lleva authzen:evaluate, o ambos — y debe tener AUTHZEN_PEPS y tener alcance sobre la aplicación por la que pregunta. Una denegación es 200 false; un fallo al que llegó el PDP es un 500, nunca false."
+  },
+  "stsmetadata.endpoints./access/v1/evaluations.what": {
+    "en": "8bc09fb8f18ab7e3",
+    "text": "POST con valores predeterminados de nivel superior subject, action, resource y context y un arreglo evaluations cuyos elementos los sustituyen; se obtiene evaluations, una decisión por elemento en el orden de la solicitud. options.evaluations_semantic es execute_all (el predeterminado), deny_on_first_deny o permit_on_first_permit. El fallo de un elemento es false con context.error y nunca queda oculto por el 200; un lote por encima de authzen.maxEvaluations o authzen.maxBodyBytes es un 400 antes de decidir nada. Cada elemento es su propia fila de auditoría, con el id del lote."
+  },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "Haga POST de la solicitud de la sección 8; obtenga results y una página. Responde los sujetos de un tipo que pueden realizar una acción sobre un recurso: las personas del directorio del dominio, para un tipo de authzen.resolveSubjectTypes. Cada candidato lo decide la política raíz del dominio exactamente como una evaluación, y solo los permitidos son resultados; paginado por page.next_token, acotado por authzen.searchMaxCandidates, y marcado como incompleto más allá de ese límite."
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "Haga POST de la solicitud de la sección 8; obtenga results y una página. Responde los recursos de un tipo sobre los que un sujeto puede realizar una acción: application, api o delegation, del directorio de aplicaciones. Cada candidato lo decide la política raíz del dominio exactamente como una evaluación, y solo los permitidos son resultados; paginado por page.next_token, acotado por authzen.searchMaxCandidates, y marcado como incompleto más allá de ese límite."
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "Haga POST de la solicitud de la sección 8; obtenga results y una página. Responde las acciones que un sujeto puede realizar sobre un recurso: los nombres con los que la política raíz compara action-id, y los permisos propios de una aplicación o API. Cada candidato lo decide la política raíz del dominio exactamente como una evaluación, y solo los permitidos son resultados; paginado por page.next_token, acotado por authzen.searchMaxCandidates, y marcado como incompleto más allá de ese límite."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "POST con el sujeto, el recurso, la acción y el contexto de una evaluación denegada junto con la denegación recibida (su binding_token y su expires_at, devueltos sin cambios); se obtiene 202 y un Task Handle, o 201 con el resultado cuando se decide de inmediato (acceso de emergencia que la política permite). Solo un Deny que la política del dominio marcó con el advice urn:sts:xacml:advice:access-request es solicitable. La misma puerta de llamadores y AUTHZEN_PEPS que una evaluación; Idempotency-Key respetado por llamador; un callback solo a una URL registrada para el llamador. Todo rechazo es problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "GET de la tarea: su estado (pending, approved, denied, expired, cancelled, failed), Retry-After mientras está pendiente y, una vez aprobada, el resultado reevaluate con la aprobación que el PEP lleva en su siguiente evaluación como context.approval. Una tarea solo es visible para el llamador que la envió; para cualquier otro es unknown_task."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "POST, o DELETE, para cancelar una tarea pendiente del llamador; una terminada responde 409 invalid_task_state."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "eb2dea870b873bc2",
+    "text": "El documento de la sección 9: policy_decision_point (la base de este dominio, que coincide con la URL bajo la que se obtiene) y solo los endpoints que responden aquí (el lote y las tres búsquedas mientras cada uno esté activado, y access_request_endpoint con jwks_uri y la capacidad access-request mientras authzen.accessRequests esté activado), supported_obligations, y signed_metadata, un JWT con los mismos miembros con iss el identificador del PDP, verificable con el JWKS del dominio (authzen.signedMetadata). Público; responde 501 mientras la API está desactivada."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "El mismo documento en la forma insertada de la sección 9.2, donde el identificador del PDP es el de un dominio: /realm/<id> tras el segmento, respondido dentro de ese dominio. Cualquier otra ruta no nombra ningún PDP y es un 404."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -842,6 +910,50 @@
   "stsmetadata.endpoints./admin-api/gnap/:action.what": {
     "en": "d80279b4f86d8ba8",
     "text": "Los dos controles de /admin/gnap como un único recurso de acción: revoke-grant (la concesión y cada token bajo ella, con el evento CAEP que enviaría el propio DELETE de un cliente) y delete-resource-set."
+  },
+  "stsmetadata.endpoints./uma/rreg.what": {
+    "en": "5b1209610fcc3969",
+    "text": "Federated Authorization sección 3. POST de una descripción de recurso (resource_scopes obligatorio; name, type, description, icon_uri opcionales; un ámbito es una cadena y nunca se contacta) con un token de la API de protección (PAT) como Bearer o DPoP: 201 con _id, user_access_policy_uri (el /portal/shared del propietario) y un Location. GET lista los _id que registraron el propietario y el servidor de recursos de este PAT. EL SUJETO DEL PAT ES EL PROPIETARIO de todo lo registrado con él — una persona en el flujo de código, la propia aplicación en client_credentials cuando lleva umaOwnsResources — y nada de lo que envía un servidor de recursos nombra a un propietario. El PAT se comprueba en todos los modos. Limitado por uma.maxResourcesPerOwner y uma.maxResourceScopes; 501 mientras uma.enabled esté desactivado."
+  },
+  "stsmetadata.endpoints./uma/rreg/:id.what": {
+    "en": "670e1795fbc003c3",
+    "text": "GET de la descripción del recurso; PUT de una nueva (200 con _id); DELETE de ella (204). Un recurso que registró otro propietario u otro servidor de recursos es not_found (404) aquí, y nada dice cuál. unsupported_method_type (405) para cualquier otro método."
+  },
+  "stsmetadata.endpoints./uma/perm.what": {
+    "en": "b9a235927c812cb9",
+    "text": "Federated Authorization sección 4. POST de un objeto o un array de {resource_id, resource_scopes} con el PAT: 201 con un ticket de permiso para todos ellos, para entregar al cliente en el desafío WWW-Authenticate de la sección 3.2 de la especificación Grant. La buena formación no es política: un recurso no registrado es invalid_resource_id y un ámbito no registrado invalid_scope, ambos 400, antes de hacer ninguna pregunta. El ticket vive uma.ticketLifetimeS y se gasta una sola vez en todo el clúster."
+  },
+  "stsmetadata.endpoints./uma/claims.what": {
+    "en": "d0075cc9de5f44f5",
+    "text": "La sección 3.3.2 de la especificación Grant: un cliente al que se respondió need_info envía aquí a la parte solicitante con client_id, ticket, claims_redirect_uri y state. Inicia sesión mediante el único inicio de sesión de este servicio, se registra como la parte solicitante del ticket y vuelve con authorization_state=claims_submitted y un ticket nuevo. El claims_redirect_uri debe ser uno que el cliente registró (oauthClaimsRedirectUri), comparado exactamente; cualquier otro se comunica a la persona y nunca se redirige a él."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration.what": {
+    "en": "9d41c4e007caa064",
+    "text": "El documento de la sección 2 de la especificación Grant: los miembros de RFC 8414 para el servidor de autorización de este dominio más permission_endpoint, resource_registration_endpoint, introspection_endpoint, claims_interaction_endpoint y uma_profiles_supported (vacío: no se implementa ningún perfil de extremo a extremo), y la concesión UMA en grant_types_supported solo mientras se realiza. Cache-Control: no-store, como todo documento que lleva una clave. Responde 501 mientras uma.enabled esté desactivado: un documento que anuncia endpoints que no responden sería una mentira."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration/*.what": {
+    "en": "2b88d2429a93782c",
+    "text": "El mismo documento en la forma insertada de RFC 8414, donde el emisor es el de un dominio: /realm/<id> tras el segmento, respondido dentro de ese dominio. Cualquier otra ruta no nombra ningún dominio y es un 404."
+  },
+  "stsmetadata.endpoints./uma.what": {
+    "en": "35251459226228a7",
+    "text": "La página propia de este servicio que dice qué es UMA 2.0 aquí: los endpoints, los servidores de recursos declarados en este dominio, las cuatro capas que deciden un permiso y los ajustes. El shell de una superficie estática (#584); ?format=json, o un Accept que prefiera JSON, responde lo mismo como datos."
+  },
+  "stsmetadata.endpoints./uma/description.js.what": {
+    "en": "5427ba067f3c0091",
+    "text": "El único paquete de las páginas de descripción, en la ruta de esta familia."
+  },
+  "stsmetadata.endpoints./admin-api/uma.what": {
+    "en": "6c3373c7363b58ee",
+    "text": "Lo que dibuja GET /admin/uma, a partir de la misma función de vista (#1195): los servidores de recursos, los recursos, los tickets y RPT vigentes, las solicitudes en espera, un propietario y la simulación hipotética."
+  },
+  "stsmetadata.endpoints./admin-api/uma/monitor.what": {
+    "en": "092fae243a21641a",
+    "text": "La fila uma del monitor XACML y, por servidor de recursos, lo que guarda ahora."
+  },
+  "stsmetadata.endpoints./admin-api/uma/:action.what": {
+    "en": "dffe8070a25174ec",
+    "text": "Activar o desactivar un servidor de recursos, permitirle ser propietario de recursos, eliminar un recurso, revocar un RPT, y compartir, dejar de compartir, aprobar o rechazar en el documento propio de una aplicación."
   },
   "stsmetadata.endpoints./pki/crl/:scope/:ca.what": {
     "en": "ed94a6a95a2f95e4",
@@ -1878,6 +1990,14 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "NO ESTÁNDAR (#221). add-destination, update-destination, remove-destination y test-push (una versión canario escrita en un secreto de prueba): los cuatro actos de la consola, cada uno auditado. La credencial de escritura se recibe y nunca se devuelve."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563). Lo que dibuja la pestaña AuthZEN de /admin/xacml: si /access/v1 responde en el dominio, cómo se autentican sus llamadores, los ajustes de AuthZEN, el catálogo de atributos en sts-authzen-api, los miembros de roles.authzenPepGroup con las aplicaciones sobre las que cada uno puede preguntar y sus URL de callback registradas, y las solicitudes de acceso del dominio (#1180)."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563). set-attribute, remove-attribute, set-scope y set-callbacks, y los cuatro actos sobre una solicitud de acceso (#1180) — approve, deny, revoke y cancel, los tres primeros consultados a la política de control de acceso como los consulta el portal: los actos de la pestaña, cada uno auditado. Una fila de catálogo hacia un identificador reservado se rechaza aquí como en cada escritura."
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
@@ -3578,6 +3698,14 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "Un Policy Decision Point, un repositorio de políticas que ES ou=policies en el directorio integrado, un Policy Information Point que lee atributos de la propia entrada del sujeto, y un Policy Enforcement Point integrado. LA ÚNICA FAMILIA DE AQUÍ QUE RESPONDE A UNA PREGUNTA SOBRE LA FRONTERA DE OTRO: todos los demás protocolos de este servicio autentican o aprovisionan a alguien, y a este se le entrega un sujeto que ya se autenticó en otro lugar y se le pregunta si puede. Se somete a la suite de conformidad de OASIS y no a una prueba escrita aquí."
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "La AuthZEN Authorization API sobre el motor XACML: un Policy Enforcement Point hace una pregunta por acceso y se le dice true o false, decidido frente a la política raíz del dominio. Un ADAPTADOR: la solicitud se traduce a una solicitud XACML mediante un catálogo de atributos por dominio y el único constructor de solicitudes, y la respuesta se traduce de vuelta en modo fail-closed. Los endpoints de XACML y el contenedor del PEP remoto no se ven afectados."
+  },
+  "stsmetadata.protocols.UMA 2.0.what": {
+    "en": "7c03af276f90480f",
+    "text": "User-Managed Access 2.0, una CONCESIÓN y no un motor de decisión: un servidor de recursos registra los recursos que guarda para un propietario del recurso mediante la API de protección y pide un ticket de permiso cuando llega un cliente; el cliente presenta el ticket en el endpoint de token; y cada permiso — un recurso, un ámbito — se emite solo cuando la política uma-authorization del dominio, el PROPIO DOCUMENTO XACML DEL PROPIETARIO (escrito con un formulario en el portal), la política detallada del servidor de recursos cuando aplica una, y la puerta de emisión dicen todos Permit. Lo único que UMA añade que nada más tiene aquí es una política que escribe una persona; la ausencia de una nunca es consentimiento. Desactivado hasta que un dominio lo active (uma.enabled)."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

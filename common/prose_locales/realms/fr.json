@@ -71,6 +71,22 @@
     "en": "6965ae9cced8a957",
     "text": "Son propre référentiel de politiques (ou=policies) et son propre registre de PEP distants (ou=peps), tous deux dans l’annuaire du domaine. Le référentiel d’un nouveau domaine commence VIDE et ne se rabat jamais sur celui du domaine par défaut, ce qui couplerait deux domaines : les deux politiques par lesquelles ce service décide de ses propres émissions et accès sont intégrées et APPELÉES, si bien qu’elles décident dans chaque domaine, et une entrée du référentiel d’un domaine ne les remplace que dans ce domaine. Un PEP distant appartient au domaine dans lequel il est enregistré, et le certificat de son écouteur HTTPS est émis par l’AC émettrice pep-tls de ce domaine."
   },
+  "realms.support.authzen.family": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "realms.support.authzen.note": {
+    "en": "8477ecf26c38a2a6",
+    "text": "Le domaine est le locataire d’AuthZEN : un appelant est recherché dans l’annuaire propre du domaine, de sorte que l’appelant d’un autre domaine n’est personne ici, et une question est décidée d’après la politique racine propre du domaine. Le catalogue d’attributs est l’objet sts-authzen-api du domaine, et chaque paramètre authzen.* appartient au domaine."
+  },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "Le domaine est le locataire d’UMA : ses serveurs de ressources sont les applications du domaine déclarées pour uma, son jeton d’API de protection est le propre jeton d’accès du domaine, ses six magasins — les ressources enregistrées, les documents des propriétaires, les tickets, les PCT, les RPT et les approbations en attente — sont ceux du domaine, sa politique de la couche domaine est l’entrée uma-authorization du domaine ou le modèle intégré, et chaque paramètre uma.* est celui du domaine."
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "Fédération"

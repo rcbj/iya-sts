@@ -366,6 +366,11 @@ const ROWS: Row[] = [
     why: 'policy and the decision point are the global tier\'s' },
   { prefix: '/xacml/pip', strategy: 'handler', handler: 'xacml/xacml.ts',
     why: 'a subject\'s attributes are answered at home' },
+  // AUTHZEN (#563): /xacml/pdp's case in AuthZEN's shape. The metadata is
+  // under the `/.well-known` row above.
+  { prefix: '/access/v1', strategy: 'local',
+    why: 'policy and the decision point are the global tier\'s, as for ' +
+         '/xacml/pdp' },
   // --- TLS ---
   { prefix: '/tls', strategy: 'local',
     why: 'the server certificate is global configuration' },
@@ -400,6 +405,23 @@ const ROWS: Row[] = [
          'names — read from the body — and served where it arrives when it ' +
          'names none' },
   // #432: the revoked biscuits' identifiers are a global-tier store.
+  // --- UMA 2.0 (#1168) --- every store is cell-tier (persistence/tiers.js):
+  // a registration, a ticket and an RPT record live where they were minted.
+  // The protection API is called with the resource server's PAT, so its
+  // requests go where that token was minted, and its registrations and
+  // tickets with them.
+  { prefix: '/uma', strategy: 'local',
+    why: 'the UMA description page, the same in every cell (#584)' },
+  { prefix: '/uma/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell' },
+  { prefix: '/uma/rreg', strategy: 'bearer',
+    why: 'a registration lives where the resource server\'s PAT was minted' },
+  { prefix: '/uma/perm', strategy: 'bearer',
+    why: 'a ticket is minted where the PAT was, beside the resources it ' +
+         'names' },
+  { prefix: '/uma/claims', strategy: 'affinity', browser: true,
+    why: 'the requesting party signs in; a ticket carries no cell tag, so ' +
+         'the browser is served where it is pinned' },
   { prefix: '/gnap/biscuit', strategy: 'local',
     why: 'the revoked-biscuit list is the global tier\'s' },
   { prefix: '/gnap/keys', strategy: 'local',

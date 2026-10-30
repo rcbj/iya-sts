@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "En GNAP-klientinstans, eller en GNAP-resursserver, eller båda: en part som bevisar innehav av en nyckel för /gnap (RFC 9635) eller för API:t för resursservrar (RFC 9767). Dess nyckel är gnapKey (ett publikt nyckelobjekt) eller gnapKeyReference med en förseglad gnapSymmetricKey; dess finish-URI:er är returadresser som alla andra; en resursserver bär de platser den svarar för och, när den har registrerat en resursuppsättning, den rotnyckel för macaroons som den verifierar med."
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "En User-Managed Access 2.0-resursserver: en OAuth-klient som skaffar en skydds-API-token för /uma, registrerar de resurser den håller för en resursägare, begär behörighetsbiljetter för dem och är målgrupp för de tokener för begärande part som utfärdas för dem. Att deklarera familjen är det som släpper in den; umaOwnsResources låter applikationen själv vara ägare."
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "Registrerade omdirigerings-URI:er från en registrering, och varje redirect_uri som den här tjänsten har GODTAGIT för applikationen bredvid dem. De två är inte samma påstående och registret slår inte ihop dem i tysthet — se appRedirectUriObserved."
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "Vart /uma/claims får skicka tillbaka den begärande parten till den här klienten efter att ha samlat in anspråk (UMA 2.0 Grant avsnitt 3.3.2, claims_redirect_uri). Matchas exakt; en claims_redirect_uri som inte listas här meddelas personen och omdirigeras aldrig till."
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -706,6 +718,18 @@
   "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
     "en": "5a0acf9625882942",
     "text": "RFC 9396 avsnitt 10 `authorization_details_types`: de ENDA authorization_details-typer som den här klienten får använda, en per värde. TOMT BETYDER varje typ som den här auktoriseringsservern stöder."
+  },
+  "applications.schema.attributes.authzenAttribute.what": {
+    "en": "4e06ca9ca045c8f6",
+    "text": "EN RAD I AUTHZENS ATTRIBUTKATALOG (#563), på resursobjektet sts-authzen-api: ett JSON-objekt {\"object\", \"property\", \"attributeId\", \"category\", \"dataType\", \"multiplicity\", \"description\"}. `object` är subject, resource, action eller context; `property` medlemmens namn, eller en punktad sökväg in i ett nästlat objekt; `attributeId` det XACML-attribut den skickas som; `category` (standard objektets egen), `dataType` (standard string) och `multiplicity` (single eller bag). En egenskap som ingen rad namnger nekas i alla lägen, och en rad får inte namnge den här tjänstens egna urn:sts:xacml:-identifierare, subject-id, resource-id eller action-id, och inte heller ett bart katalogattributnamn i en subjektkategori."
+  },
+  "applications.schema.attributes.appAuthzenApplication.what": {
+    "en": "6a97533f3574f71e",
+    "text": "AUTHZEN-APPLIKATIONSOMFÅNG (#563): de applikationer som den här klienten, när den anropar /access/v1 med sin egen client_credentials-token, får namnge i context.application — en identifierare per värde. Klientens egen identifierare ingår alltid i omfånget. Sätts av en administratör, aldrig av anroparen."
+  },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "CALLBACK FÖR AUTHZEN-ÅTKOMSTBEGÄRAN (#1180): en https-URL som den här klienten, som AuthZEN PEP, får ange som en åtkomstbegärans callback.endpoint — en per värde, matchad exakt. En begäran som anger någon annan avvisas; den här tjänsten anropar aldrig en callback-URL som enbart hämtats från en begäran. Sätts av en administratör, aldrig av anroparen."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
@@ -1711,6 +1735,18 @@
     "en": "2c8a385006302f63",
     "text": "AUTENTISERINGSPOLICYN SOM DEN HÄR APPLIKATIONENS PERSONER LOGGAR IN UNDER: `default` (eller tomt), eller namnet på en namngiven autentiseringspolicy i den här sfären (Katalog > Policyer). En namngiven policy innehåller de tillåtna mekanismerna för första faktor (password, password-mfa, webauthn, spnego, wallet, federation; anges ingen tillåts alla) och de tillåtna andra faktorerna (password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet; anges ingen lämnas sfärens som de är). `default` tillåter varje mekanism som sfärens autentiseringspolicy tillåter.\n\nUPPRÄTTHÅLLS vid varje webbläsarinloggning i applikationen, i båda lägena: en person vars session vilar på en mekanism som policyn inte tillåter skickas att logga in igen med en som den tillåter. En enda angiven mekanism för första faktor är också dit inloggningen går (`spnego` till /authn/spnego, `wallet` till /authn/wallet, `federation` till appFederationRelationship). De andra faktorerna kan bara SNÄVA IN sfärens policy: en som den har stängt av förblir avstängd här.\n\nEtt namn som ingen policy i den här sfären bär — skrivet förbi konsolen — tillåter INGEN mekanism förrän policyn finns (STS-AUTHN-0536).\n\nDET SKRIVS AV INGEN: inget protokoll presenterar det, så det är redigerbart och börjar tomt."
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "Postnamnet i ou=policies för den finkorniga auktoriseringspolicy som den här applikationen äger, som avgör varje auktoriseringsdetalj av de typer den deklarerar när appFgaEnforced är TRUE."
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "TRUE när den här applikationens finkorniga policy tillämpas. Saknas eller FALSE betyder att den inte gör det, vilket är standard."
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "TRUE när den här UMA 2.0-resursservern får registrera resurser den SJÄLV ÄGER, med en skydds-API-token som skaffats med client_credentials. Saknas eller FALSE, standardvärdet, betyder att en PAT måste tillhöra en person (kodflödet) och att den personen äger det den registrerar."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, samt standardattributen owner och description."
@@ -1850,6 +1886,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "Dokumentets egen <Description>, där det har en."
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "Identifieraren för den applikation som ÄGER den här policyn, som avgör detaljerna i den applikationens authorization_details-typer. En sådan policy är aldrig roten, nås aldrig av en PolicyIdReference från roten och skickas aldrig till en fjärr-PEP."
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "När den ägande applikationen togs bort. Policyn behålls, inaktiverad, för granskning tills en administratör tar bort den."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

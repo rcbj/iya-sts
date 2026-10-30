@@ -95,6 +95,18 @@
     "en": "6803d7137bac3178",
     "text": "full——就必要功能集而言：原則語言、七種決策值（包括三種延伸的 Indeterminate）、目標比對、條件、變數、十二種組合演算法、義務與建議、原則參照，以及涵蓋全部十七種資料類型的標準函式庫。依 OASIS 一致性測試套件檢驗——455 個必要案例中通過 454 個，唯一的例外連同其論證記錄於 xacml/conformance/MANIFEST.js。「未」涵蓋：AttributeSelector 與 XPath 函式（使用它們的原則會是 Indeterminate，而不是默默為空）、Multiple Decision 與 Hierarchical Resource 設定檔，以及管理委派。"
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "73b5afdb5c895b9d",
+    "text": "partial：存取評估 API（第 6 節），由 XACML 引擎依據領域根原則、透過每個領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；存取批次評估 API（第 7 節）及其三種語意；PDP 中繼資料（第 9 節）的兩種形式，包括 signed_metadata；供宣告類型之 PEP 使用的 Obligations Profile 草案；以及針對本服務自有的人員、應用程式、API、委派關係與原則動作的三個搜尋 API（第 8 節），分頁且不具傳遞性。尚缺：搜尋中逐結果的 obligations，以及仍為草案的 OAuth 設定檔。"
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial：可請求的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域原則以 access-request advice 標記的 Deny，依值繫結，使用本領域簽署的 binding_token（內嵌宣告）；帶 Idempotency-Key 的提交，201 或 202 以及 Task Handle；帶 Retry-After 的工作狀態端點；透過 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式，approval.id 在可信狀態中解析，核准作為可信事實到達原則；next_action 及五種 reason；每種 problem 類型；中繼資料成員、jwks_uri 與能力。尚缺：以參照方式繫結的 evaluation_id、approval.state、雜湊繫結形式、機器可讀形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial：提交的回呼（endpoint、state、events），endpoint 限於管理員為請求端 PEP 註冊的 URL，為每個請求的終態事件傳送僅通知的回呼，由本領域簽署的短 JWT 驗證，並受對外政策約束。尚缺：partial 事件（BULK）與部署層級的事件訂閱；傳遞失敗不會重試。"
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full——就請求與回應而言：簡寫類別名稱、簡短資料類型名稱、從 JSON 類型推斷資料類型（包括整數／雙精度的區別，這是從原始文字讀取的，因為 JSON.parse 已經把它丟棄了）、以陣列表示 bag、義務、建議與 PolicyIdentifierList。此設定檔未定義原則語法，因此原則仍為 XML。"
@@ -134,6 +146,14 @@
   "stsmetadata.specs.rfc9767.coverage": {
     "en": "c36892dc6db9d597",
     "text": "full：位於 /.well-known/gnap-as-rs、面向 RS 的探索文件，採用第 2.1 節權杖模型的權杖內省、資源集註冊、透過 existing_access_token 的權杖衍生，以及第 5.2 節權杖格式登錄中的每種格式——jwt-signed、jwt-encrypted、macaroon、biscuit 與 zcap——皆可鑄造與驗證。第 6.3 節中自行檢查權杖的資源伺服器能察覺撤銷（#432）：JWT 格式攜帶 Token Status List 狀態宣告，已撤銷 biscuit 的撤銷識別碼會被公布（非標準），已註冊的資源伺服器可擁有一個 Shared Signals 串流，接收針對以它為對象之權杖的 session-revoked。Macaroon 與 zcap 權杖沒有這樣的機制；內省是它們的途徑。"
+  },
+  "stsmetadata.specs.uma2-grant.coverage": {
+    "en": "de5c44fe6f4c8008",
+    "text": "partial：探索（第 2 節）；urn:ietf:params:oauth:grant-type:uma-ticket 授權（第 3.3 節），票證在整個叢集中只使用一次並繫結至第一個出示它的用戶端，第 3.3.4 節的請求範圍，出示 PCT，帶輪替票證與 required_claims 的 need_info，request_denied，部分 RPT（uma.partialRpt），RPT 升級，以及每項許可均由領域的原則、資源擁有者自己的 XACML 文件、資源伺服器的細粒度原則與簽發閘門共同決定；收集宣告時簽發、可在 /oauth2/revoke 撤銷的 PCT；透過本服務唯一登入實現的宣告互動端點（第 3.3.2 節）；以 ID Token 格式推送、來自本領域或已宣告之判斷提示簽發者的 claim_token；以及 request_submitted，擁有者在入口網站上答覆，核准作為其自身原則的一條規則寫入。尚缺：作為 claim_token_format 的 SAML，以及在互動時提升至分享所要求的 acr（此時分享會拒絕）。uma_profiles_supported 為空。"
+  },
+  "stsmetadata.specs.uma2-fedauthz.coverage": {
+    "en": "6b8ea1097c24f058",
+    "text": "partial：保護 API 存取權杖（第 2 節），作為對象為 /uma、攜帶 uma_protection 的一般存取權杖，透過授權碼流程（擁有者為某個人）或 client_credentials（擁有者為應用程式，前提是其攜帶 umaOwnsResources）取得；資源註冊（第 3 節）——建立、讀取、更新、刪除與列出，含 user_access_policy_uri；以及許可端點（第 4 節），為一項或多項許可簽發一張票證，含 invalid_resource_id 與 invalid_scope。RPT 內省（第 5 節），在 /oauth2/introspect 以 PAT 作為 Bearer：回傳許可且不回傳範圍，僅限該資源伺服器的 RPT。範圍 URI 指向的範圍描述文件絕不會被擷取：範圍就是字串。"
   },
   "stsmetadata.specs.rfc9421.coverage": {
     "en": "3326ecc9e0fc4e59",
@@ -747,6 +767,14 @@
     "en": "f21e16beea449f7d",
     "text": "每一項「已啟用」的原則以及哪一項是根原則，外加一個正好涵蓋這些位元組的同步權杖；?since=<token> 會回應 304。拉取就是契約——遠端 PEP 依自己的間隔輪詢此端點，並以自己的引擎複本在本機評估，因為每個請求都詢問的 PEP 就等於在每個存取決策前多一道網路跳轉的 /xacml/pdp。需要 REMOTE_PEPS——這是與上方四個端點所需的 XACML_USER「不同」的角色，也是不同的群組，因為這個端點發布的是本服務用來強制執行自身存取的文件。「已停用」的原則會被略去，而不是附帶旗標傳送，因為載入它的 PEP 會強制執行一項本服務並未執行的原則。"
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "bcec1fc31c824002",
+    "text": "該領域的 AuthZEN 屬性目錄——sts-authzen-api 上 authzenAttribute 的各列，依 POST /access/v1/evaluation 的讀取方式讀取——以及會改變對應或答覆的 AuthZEN 設定，外加其自己的同步權杖；?since=<token> 回覆 304。由 xacml-pep 容器與政策一同拉取，其邊緣 PDP 正是以這些列答覆 AuthZEN，因此同一請求在兩處以同一種方式對應。與政策拉取一樣需要 REMOTE_PEPS。這是新增的：/xacml/pep/policies 維持不變。fgaApplications 列出實施細粒度授權的應用程式，並計入同步權杖：邊緣 PDP 不自行判定關於其中某個應用程式的評估，而是將其轉送到此領域的 POST /access/v1/evaluation（#564）。"
+  },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "此領域現在准許誰存取其 AuthZEN API，供 xacml-pep 容器的邊緣 PDP 據此准入：存取控制原則准許存取 /access/v1/* 的每個呼叫方（AUTHZEN_PEPS，由原則決定），以原則在 urn:sts:xacml:authzen:caller 中看到的名稱命名，附上本服務會解析到該名稱的每個憑證的 DER 的 SHA-256、其應用程式範圍以及其被准許存取的端點，另有自己的同步權杖；?since=<token> 回應 304。成員、憑證、範圍或原則的答覆有所變更時權杖隨之改變，邊緣在下一次輪詢時趨於一致。需要 REMOTE_PEPS，與原則拉取相同，因此持有該角色的任何人都能讀到誰可以詢問 PDP（rcbj 於 #1189）。為新增內容：/xacml/pep/policies 與 /xacml/pep/authzen-catalogue 維持不變。"
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "它的累計計數器以及它持有的同步權杖——正是這一點讓「最新」成為本服務執行的比較，而不是 PEP 對自己的宣稱。那些決策發生在另一個程序中，本服務一個也沒看到，這正是遠端 PEP 的全部意義。它「不會」建立資料列：來自從未註冊者的心跳會被拒絕並指出註冊端點，因為在此建立的資料列不會有憑證、通知 URL 與註冊日期。"
@@ -754,6 +782,46 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML 進、XML 出。POST 一個 <PIPRequest>，攜帶你正在決策的 XACML <Request>，以及每個所需屬性一個 <AttributeDesignator>；取回的 <Attributes> 會「以 <Request> 攜帶它們的形狀」呈現。它之所以存在，是因為遠端 PEP 擁有引擎而沒有目錄：本服務的 PIP「就是」ou=users，因此一項指定了請求未攜帶之屬性的原則，在另一個容器中會解析為空袋，在這裡則解析為真實的值——同一項原則在兩個強制執行點做出兩種決策，這正是共用存放庫要防止的偏移在低一層重新出現。XACML 並未定義 PIP 協定，因此這裡盡可能少發明：兩個方向都是 XACML 自己的 XML，由 xacml_xml.js 讀寫，而非任何新元件，回應則是一個 PEP 拼接進自己請求的「請求片段」——之後其引擎就會在指定子（designator）尋找的地方找到這些值，無需轉換也無需分支。它透過交給內嵌 PDP 的「同一個」resolverFor() 回答，因此兩者不可能不一致，而且每次呼叫只解析項目「一次」，讓一批指定子不會看到兩個不同的人。三條規則：無法解析的指定子是「不存在」的 <Attribute>，絕不是空的或錯誤，因為那正是從未攜帶它的請求的樣子；MustBePresent 會被讀取但「不」套用，因為空袋的意義由指定子以及它被交付的函式決定，兩者都在「呼叫端」的引擎中；且只有 access-subject 類別會被解析。袋子可能為空的五個原因會在 <Unresolved> 中傳回，使用本服務「自己的」命名空間，讓只讀取 XACML 核心命名空間的 PEP 永遠看不到它。它需要 REMOTE_PEPS，而非 /xacml 其餘部分所需的 XACML_USER——這是此處唯一角色不依循其路徑的端點，因為傳回的是一個人自己的資料，而不是任何人都可以檢查的規則。"
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "POST 一個 AuthZEN subject、action、resource 與 context；取得 decision 為 true 或 false。由 XACML 引擎依領域的「根」原則做決定，請求中帶有 protocol = authzen。屬性只能透過領域的屬性目錄到達原則，未宣告的屬性在每種模式下皆為 400。「呼叫端」依 authzen.callerAuthentication 進行驗證——預設為用戶端憑證，或攜帶 authzen:evaluate 的存取權杖，或兩者皆是——且必須持有 AUTHZEN_PEPS，並具備其所詢問之應用程式的範圍。拒絕為 200 false；PDP 遇到的錯誤為 500，絕不是 false。"
+  },
+  "stsmetadata.endpoints./access/v1/evaluations.what": {
+    "en": "8bc09fb8f18ab7e3",
+    "text": "POST 頂層的 subject、action、resource 與 context 預設值，以及其項目覆寫這些預設值的 evaluations 陣列；回傳 evaluations，依請求順序每個項目一個決定。options.evaluations_semantic 為 execute_all（預設）、deny_on_first_deny 或 permit_on_first_permit。項目的失敗為帶 context.error 的 false，絕不會被 200 掩蓋；超過 authzen.maxEvaluations 或 authzen.maxBodyBytes 的批次在作出任何決定之前即為 400。每個項目都是單獨的稽核列，帶有批次 id。"
+  },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "POST 第 8 節的請求；取得 results 與一個分頁。回應某一類型中可對某資源執行某動作的主體：領域目錄中的人員，類型須在 authzen.resolveSubjectTypes 中。每個候選都由領域的根原則以與評估完全相同的方式決定，只有被允許者才是結果；以 page.next_token 分頁，受 authzen.searchMaxCandidates 限制，超過時標示為不完整。"
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "POST 第 8 節的請求；取得 results 與一個分頁。回應某主體可對其執行某動作的某一類型資源：來自應用程式目錄的 application、api 或 delegation。每個候選都由領域的根原則以與評估完全相同的方式決定，只有被允許者才是結果；以 page.next_token 分頁，受 authzen.searchMaxCandidates 限制，超過時標示為不完整。"
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "POST 第 8 節的請求；取得 results 與一個分頁。回應某主體可對某資源執行的動作：根原則用來與 action-id 比較的名稱，以及應用程式或 API 本身的權限。每個候選都由領域的根原則以與評估完全相同的方式決定，只有被允許者才是結果；以 page.next_token 分頁，受 authzen.searchMaxCandidates 限制，超過時標示為不完整。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "提交一個被拒絕的評估的主體、資源、動作與內容，並附上其收到的拒絕（其 binding_token 與 expires_at，原樣回傳）；得到 202 與 Task Handle，或在立即作出決定時（原則允許的緊急存取）得到 201 及結果。只有被領域原則以 advice urn:sts:xacml:advice:access-request 標記的 Deny 才可請求。與評估相同的呼叫端入口與 AUTHZEN_PEPS；依呼叫端遵守 Idempotency-Key；回呼僅發往為該呼叫端註冊的 URL。每次拒絕都是 problem+json。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "GET 工作：其狀態（pending、approved、denied、expired、cancelled、failed），待處理期間的 Retry-After，以及獲核准後的 reevaluate 結果，其中的核准由 PEP 在下一次評估中作為 context.approval 攜帶。工作只對提交它的呼叫端可見；對其他任何人，它都是 unknown_task。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "POST 或 DELETE，用於取消呼叫端的待處理工作；已完成的工作回應 409 invalid_task_state。"
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "eb2dea870b873bc2",
+    "text": "第 9 節的文件：policy_decision_point（本領域的基底，與取得它時所用的 URL 一致），以及僅在此處回應的端點（批次端點與三個搜尋端點，各自開啟時；以及在 authzen.accessRequests 開啟時的 access_request_endpoint，連同 jwks_uri 與 access-request 能力）、supported_obligations，以及 signed_metadata——一個包含相同成員的 JWT，iss 為 PDP 識別碼，可用領域的 JWKS 驗證（authzen.signedMetadata）。公開；API 關閉時回應 501。"
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "同一文件的第 9.2 節插入形式，其中 PDP 識別碼屬於某個領域：區段之後為 /realm/<id>，在該領域內回應。其他任何路徑都不指向 PDP，回傳 404。"
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -842,6 +910,50 @@
   "stsmetadata.endpoints./admin-api/gnap/:action.what": {
     "en": "d80279b4f86d8ba8",
     "text": "/admin/gnap 上的兩個控制項，合併為一個動作資源：revoke-grant（撤銷授權及其下每個權杖，並送出用戶端自己 DELETE 時會送出的 CAEP 事件）與 delete-resource-set。"
+  },
+  "stsmetadata.endpoints./uma/rreg.what": {
+    "en": "5b1209610fcc3969",
+    "text": "Federated Authorization 第 3 節。以保護 API 權杖（PAT）作為 Bearer 或 DPoP，POST 資源描述（resource_scopes 必填；name、type、description、icon_uri 選填；範圍是字串，絕不會被存取）：回傳 201，含 _id、user_access_policy_uri（擁有者的 /portal/shared）與 Location。GET 列出此 PAT 的擁有者與資源伺服器所註冊的 _id。PAT 的主體就是以它註冊之一切內容的擁有者——授權碼流程下為某個人，client_credentials 下且攜帶 umaOwnsResources 時為應用程式本身——資源伺服器傳送的任何內容都無法指定擁有者。PAT 在每種模式下都會被檢查。受 uma.maxResourcesPerOwner 與 uma.maxResourceScopes 限制；uma.enabled 關閉時為 501。"
+  },
+  "stsmetadata.endpoints./uma/rreg/:id.what": {
+    "en": "670e1795fbc003c3",
+    "text": "GET 資源描述；PUT 新的描述（200，含 _id）；DELETE 它（204）。由其他擁有者或其他資源伺服器註冊的資源在此處為 not_found（404），且不會說明是哪一種情況。任何其他方法為 unsupported_method_type（405）。"
+  },
+  "stsmetadata.endpoints./uma/perm.what": {
+    "en": "b9a235927c812cb9",
+    "text": "Federated Authorization 第 4 節。攜帶 PAT POST 一個 {resource_id, resource_scopes} 物件或陣列：回傳 201，含涵蓋全部許可的一張許可票證，用於在 Grant 規格第 3.2 節的 WWW-Authenticate 挑戰中交給用戶端。格式正確與否不是原則：未註冊的資源為 invalid_resource_id，未註冊的範圍為 invalid_scope，皆為 400，且在提出任何問題之前回傳。票證存活 uma.ticketLifetimeS，並在整個叢集中只使用一次。"
+  },
+  "stsmetadata.endpoints./uma/claims.what": {
+    "en": "d0075cc9de5f44f5",
+    "text": "Grant 規格第 3.3.2 節：收到 need_info 的用戶端將請求方連同 client_id、ticket、claims_redirect_uri 與 state 送到此處。請求方透過本服務唯一的登入進行登入，被記錄為該票證的請求方，然後帶著 authorization_state=claims_submitted 與一張新票證返回。claims_redirect_uri 必須是用戶端已註冊的位址（oauthClaimsRedirectUri），完全比對；其他任何位址都會告知本人，且絕不會重新導向至該位址。"
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration.what": {
+    "en": "9d41c4e007caa064",
+    "text": "Grant 規格第 2 節的文件：本領域授權伺服器的 RFC 8414 成員，加上 permission_endpoint、resource_registration_endpoint、introspection_endpoint、claims_interaction_endpoint 與 uma_profiles_supported（為空：沒有端對端實作的設定檔），且僅在執行 UMA 授權時才將其列入 grant_types_supported。Cache-Control: no-store，與每個攜帶金鑰的文件相同。uma.enabled 關閉時回應 501：公告不會回應之端點的文件將是謊言。"
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration/*.what": {
+    "en": "2b88d2429a93782c",
+    "text": "RFC 8414 插入形式下的同一份文件，此時簽發者是某個領域的：在該區段之後為 /realm/<id>，在該領域內回應。任何其他路徑都不指向任何領域，回傳 404。"
+  },
+  "stsmetadata.endpoints./uma.what": {
+    "en": "35251459226228a7",
+    "text": "本服務自己的頁面，說明 UMA 2.0 在這裡是什麼：端點、本領域中宣告的資源伺服器、決定一項許可的四個層，以及設定。靜態介面的外殼（#584）；?format=json 或偏好 JSON 的 Accept 會以資料形式回應相同內容。"
+  },
+  "stsmetadata.endpoints./uma/description.js.what": {
+    "en": "5427ba067f3c0091",
+    "text": "說明頁的唯一指令碼套件，位於本協定系列的路徑下。"
+  },
+  "stsmetadata.endpoints./admin-api/uma.what": {
+    "en": "6c3373c7363b58ee",
+    "text": "GET /admin/uma 所繪製的內容，出自同一個檢視函式（#1195）：資源伺服器、資源、有效的票證與 RPT、等待中的請求、某位擁有者，以及假設試算。"
+  },
+  "stsmetadata.endpoints./admin-api/uma/monitor.what": {
+    "en": "092fae243a21641a",
+    "text": "XACML 監視器中的 uma 列，以及每個資源伺服器目前持有的內容。"
+  },
+  "stsmetadata.endpoints./admin-api/uma/:action.what": {
+    "en": "dffe8070a25174ec",
+    "text": "啟用或停用資源伺服器、允許其擁有資源、刪除資源、撤銷 RPT，以及在應用程式自己的文件上分享、取消分享、核准或拒絕。"
   },
   "stsmetadata.endpoints./pki/crl/:scope/:ca.what": {
     "en": "ed94a6a95a2f95e4",
@@ -1878,6 +1990,14 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "非規格端點（#221）。add-destination、update-destination、remove-destination 與 test-push（將一個金絲雀版本寫入測試機密）：主控台的四個動作，每個都會被稽核。寫入認證資訊只收取，絕不傳回。"
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563)。/admin/xacml 的 AuthZEN 索引標籤所繪製的內容：/access/v1 是否在領域中回應、其呼叫端如何驗證、AuthZEN 設定、sts-authzen-api 上的屬性目錄、roles.authzenPepGroup 的成員及其各自可查詢的應用程式與已註冊的回呼 URL，以及領域的存取請求（#1180）。"
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563)。set-attribute、remove-attribute、set-scope 與 set-callbacks，以及針對存取請求的四個動作（#1180）——approve、deny、revoke 與 cancel，前三個與入口網站一樣交由存取控制原則裁決：即索引標籤的動作，均有稽核。指向保留識別碼的目錄列在此處與在每次寫入時一樣被拒絕。"
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
@@ -3578,6 +3698,14 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "一個 Policy Decision Point、一個「就是」內嵌目錄中 ou=policies 的原則存放庫、一個從主體自身項目讀取屬性的 Policy Information Point，以及一個內嵌的 Policy Enforcement Point。「此處唯一回答關於他人界限之問題的系列」：本服務上的其他每個協定都在驗證或佈建某人，而這一個則是接收一個已在別處通過驗證的主體，並被詢問其是否可以。以 OASIS 合規測試套件為準，而非以此處撰寫的測試為準。"
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "以 XACML 引擎實作的 AuthZEN Authorization API：原則執行點每次存取提出一個問題，並得到 true 或 false 的回覆，依領域的根原則做決定。這是一個「轉接器」：請求透過各領域的屬性目錄與唯一的請求建構器對應為 XACML 請求，而回覆則以 fail-closed 方式對應回來。XACML 端點與遠端 PEP 容器不受其影響。"
+  },
+  "stsmetadata.protocols.UMA 2.0.what": {
+    "en": "7c03af276f90480f",
+    "text": "User-Managed Access 2.0，是一種授權（GRANT）而非決策引擎：資源伺服器透過保護 API 為資源擁有者註冊其持有的資源，並在用戶端到來時請求許可票證；用戶端在權杖端點出示票證；每項許可——一個資源、一個範圍——只有在領域的 uma-authorization 原則、擁有者自己的 XACML 文件（透過入口網站上的表單撰寫）、資源伺服器的細粒度原則（若其強制執行）以及簽發閘門全部為 Permit 時才會簽發。UMA 帶來、而此處其他任何功能都沒有的唯一東西，是由個人撰寫的原則；沒有原則絕不等於同意。在領域開啟之前為關閉（uma.enabled）。"
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

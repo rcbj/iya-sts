@@ -1021,6 +1021,50 @@ const ACTIONS = [
     label: 'The PDP reached a decision' },
   { action: 'xacml.enforcement', category: 'authorization',
     label: 'The embedded PEP enforced a decision' },
+  // AUTHZEN (#563): one row per evaluation, a batch's each with the batch id.
+  { action: 'authzen.decision', category: 'authorization',
+    label: 'An AuthZEN access evaluation was decided' },
+  { action: 'authzen.search', category: 'authorization',
+    label: 'An AuthZEN search was answered' },
+  // FINE-GRAINED AUTHORIZATION (#564): one row per authorization detail an
+  // enforcing application's policy decided at issuance — facts and digests,
+  // never the detail's values (`xacml/fga_pep.ts`).
+  { action: 'fga.decision', category: 'authorization',
+    label: 'A fine-grained authorization decision was made at issuance' },
+  { action: 'admin.authzen.attribute.set', category: 'admin',
+    label: 'An AuthZEN attribute catalogue row was added or replaced' },
+  { action: 'admin.authzen.attribute.removed', category: 'admin',
+    label: 'An AuthZEN attribute catalogue row was removed' },
+  { action: 'admin.authzen.scope.set', category: 'admin',
+    label: 'An AuthZEN caller\'s application scope was set' },
+  // ENABLING FGA GRANTS THE REALM'S REMOTE PEPS (#1210): one row per
+  // holder of REMOTE_PEPS changed, and one per holder that could not be
+  // (STS-FGA-0025, `authzen/authzen_admin.ts`).
+  { action: 'admin.authzen.pep.granted', category: 'admin',
+    label: 'A remote PEP was granted AuthZEN access to an application ' +
+           'enforcing fine-grained authorization' },
+  // THE ACCESS REQUEST AND APPROVAL PROFILE (#1180): one row per transition
+  // of a task, and per refusal of an approver.
+  { action: 'admin.authzen.callbacks.set', category: 'admin',
+    label: 'An AuthZEN caller\'s access request callback URLs were set' },
+  { action: 'authzen.access-request.submitted', category: 'authorization',
+    label: 'An AuthZEN access request was submitted' },
+  { action: 'authzen.access-request.approved', category: 'authorization',
+    label: 'An AuthZEN access request was approved' },
+  { action: 'authzen.access-request.denied', category: 'authorization',
+    label: 'An AuthZEN access request was denied' },
+  { action: 'authzen.access-request.expired', category: 'authorization',
+    label: 'An AuthZEN access request expired' },
+  { action: 'authzen.access-request.cancelled', category: 'authorization',
+    label: 'An AuthZEN access request was cancelled' },
+  { action: 'authzen.access-request.revoked', category: 'authorization',
+    label: 'An AuthZEN access request\'s approval was revoked' },
+  { action: 'authzen.access-request.approver-refused',
+    category: 'authorization',
+    label: 'The policy refused a person the decision of an AuthZEN access ' +
+           'request' },
+  { action: 'authzen.access-request.callback', category: 'authorization',
+    label: 'An AuthZEN access request\'s callback was sent or failed' },
   // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
   //
   // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since
@@ -1090,6 +1134,53 @@ const ACTIONS = [
     label: 'The person at a GNAP approval page was not the user the ' +
            'request named, and the grant was sent to that user\'s portal ' +
            '(#432 phase 6)' },
+  // USER-MANAGED ACCESS 2.0 (#1168): the protection API's acts, each with
+  // the resource server, the owner and the resource's id — never a
+  // resource's name or description, which are the owner's data.
+  { action: 'uma.resource.register', category: 'protocol',
+    label: 'A UMA resource server registered a resource on an owner\'s ' +
+           'behalf' },
+  { action: 'uma.resource.update', category: 'protocol',
+    label: 'A UMA resource server updated a registered resource' },
+  { action: 'uma.resource.delete', category: 'protocol',
+    label: 'A UMA resource server deleted a registered resource' },
+  { action: 'uma.permission.ticket', category: 'protocol',
+    label: 'A UMA resource server was issued a permission ticket' },
+  // A resource owner's acts on their own policy (#1192): the share's id and
+  // resource, never a recipient's claim value or a resource's name.
+  // THE GRANT (#1193): one row per question a permission was put to, and
+  // one per grant's outcome; a PCT's revocation.
+  { action: 'uma.decision', category: 'authorization',
+    label: 'A UMA permission was decided by one of its policies' },
+  { action: 'uma.grant', category: 'protocol',
+    label: 'A UMA uma-ticket grant was answered' },
+  { action: 'uma.pct.revoke', category: 'protocol',
+    label: 'A UMA persisted claims token was revoked' },
+  { action: 'uma.approval.request', category: 'protocol',
+    label: 'A UMA request was queued for its resource owner\'s approval' },
+  { action: 'uma.approval.answer', category: 'admin',
+    label: 'A resource owner approved or refused a UMA request' },
+  { action: 'uma.claims.gathered', category: 'protocol',
+    label: 'A requesting party was signed in at the UMA claims interaction ' +
+           'endpoint' },
+  { action: 'uma.share.add', category: 'admin',
+    label: 'A resource owner shared a resource through UMA' },
+  { action: 'uma.share.remove', category: 'admin',
+    label: 'A resource owner removed a UMA share' },
+  { action: 'uma.policy.alfa', category: 'admin',
+    label: 'A resource owner rewrote their UMA policy as ALFA' },
+  // PROTOCOLS -> UMA'S ACTS (#1195). An application owner's document is
+  // changed under the three rows above; these are the administrator's own.
+  { action: 'uma.resource-server.enable', category: 'admin',
+    label: 'An application was made a UMA resource server on the console' },
+  { action: 'uma.resource-server.disable', category: 'admin',
+    label: 'An application stopped being a UMA resource server on the ' +
+           'console, and its RPTs were revoked' },
+  { action: 'uma.owns-resources.set', category: 'admin',
+    label: 'Whether an application may own UMA resources was changed on ' +
+           'the console' },
+  { action: 'uma.rpt.revoke', category: 'admin',
+    label: 'A UMA RPT was revoked on the console' },
   { action: 'gnap.grant.finalize', category: 'protocol',
     label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
            'rejected or expired' },

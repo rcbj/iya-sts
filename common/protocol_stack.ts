@@ -445,6 +445,14 @@ class ProtocolStack {
                'InetOrgPerson');
     this.build('common/oidc_rp', require('./oidc_rp'), 'OidcRelyingParty');
     this.build('common/access_gate', require('./access_gate'), 'AccessGate');
+    // #564: the fine-grained authorization gate at issuance — a leaf, its
+    // slot filled by `xacml/fga_pep.ts` at 23c. Until then it REFUSES an
+    // enforcing application's details (it is not `access_gate`'s "empty
+    // means allow"; `fga_gate.ts` argues it).
+    this.build('common/fga_gate', require('./fga_gate'), 'FgaGate');
+    // #1168: the UMA 2.0 grant's slot — a leaf, filled by
+    // `uma/uma_grant.ts` at 23d-ii; empty, the grant is not offered.
+    this.build('common/uma_gate', require('./uma_gate'), 'UmaGate');
     this.build('ssf/ssf_streams', require('../ssf/ssf_streams'), 'SsfStreams');
     this.build('ssf/ssf_http', require('../ssf/ssf_http'), 'SsfHttp');
     this.build('ssf/ssf_receivers', require('../ssf/ssf_receivers'),
@@ -478,6 +486,11 @@ class ProtocolStack {
     this.build('portal/portal_owned',
                require('../portal/portal_owned'),
                'PortalOwned');
+    // #1192: /portal/shared and /portal/shared-with-me, UMA's Sharing
+    // section. It reaches the UMA family (23d-ii) lazily.
+    this.build('portal/portal_shared',
+               require('../portal/portal_shared'),
+               'PortalShared');
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');
@@ -496,6 +509,12 @@ class ProtocolStack {
     // #131: /portal/ciba, where a person answers a backchannel sign-in.
     this.build('portal/portal_ciba', require('../portal/portal_ciba'),
                'PortalCiba');
+    // #1180: /portal/access-requests, where an approver decides an AuthZEN
+    // access request. It reaches the AuthZEN family (23c-ii) only when
+    // asked, so building it here loads none of it.
+    this.build('portal/portal_access_requests',
+               require('../portal/portal_access_requests'),
+               'PortalAccessRequests');
     // #150: /portal/device, where a person enters a device's user code.
     this.build('portal/portal_device', require('../portal/portal_device'),
                'PortalDevice');
@@ -1536,6 +1555,16 @@ class ProtocolStack {
     this.build('mgmt-api/secret_destinations_api',
                require('../mgmt-api/secret_destinations_api'),
                'SecretDestinationsApi');
+    // THE AUTHZEN TAB'S LIBRARY AND OPERATIONS (#563), spread by
+    // `mgmt-api/admin_api` into its table. Libraries: they register no
+    // route, and `ldap/ldap_server` (21) fills the library's directory slot.
+    this.build('authzen/authzen_admin', require('../authzen/authzen_admin'),
+               'AuthzenAdmin');
+    this.build('mgmt-api/authzen_api', require('../mgmt-api/authzen_api'),
+               'AuthzenApi');
+    // PROTOCOLS -> UMA'S OPERATIONS (#1195), spread by `mgmt-api/admin_api`
+    // as AuthZEN's are. It reaches `uma/uma_console` (23d-ii) lazily.
+    this.build('mgmt-api/uma_api', require('../mgmt-api/uma_api'), 'UmaApi');
     // MONITORING -> PASSKEYS' OPERATIONS (#942), spread by
     // `mgmt-api/admin_api` into its table as the destinations' are.
     this.build('mgmt-api/passkey_report_api',
@@ -1911,9 +1940,37 @@ class ProtocolStack {
     // reach lazily when a verified event arrives. Built with its siblings.
     this.build('xacml/xacml_signal_pep',
                require('../xacml/xacml_signal_pep'), 'XacmlSignalPep');
+    // Application-scoped fine-grained authorization (#564): a library over
+    // the store and the templates built above, whose wire step fills
+    // `common/applications.js`'s `setFgaLifecycle()` slot (rule 3e) — so an
+    // application created from here on gets its policy, and one created
+    // earlier (the seeds) gets it when FGA is first enabled on it.
+    this.build('xacml/fga_policies', require('../xacml/fga_policies'),
+               'FgaPolicies');
+    // #564, P3: the embedded fine-grained authorization PEP, over the
+    // lifecycle built on the line above, the mapping and the surface (read
+    // lazily, inside a decision). Its wire step fills
+    // `common/fga_gate.ts`'s decider slot (rule 3e): this line is what arms
+    // fine-grained authorization at issuance.
+    this.build('xacml/fga_pep', require('../xacml/fga_pep'), 'FgaPep');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');
+
+    // 23c-ii. AUTHZEN AUTHORIZATION API 1.0 (#563). After the XACML family,
+    // whose surface's `decide()`, `enforce()` and `callerIdentity()` it calls
+    // (lazily, inside a request, so the order is also a reader's); it
+    // requires no route module. `/access/v1/*` collides with nothing.
+    // The Access Request and Approval Profile (#1180): a library the surface
+    // requires, built first so its instance — and its scheduler job,
+    // registered when it is installed — is the root's.
+    this.build('authzen/authzen_access_request',
+               require('../authzen/authzen_access_request'),
+               'AccessRequests');
+    require('../authzen/authzen');
+    this.build('authzen/authzen', require('../authzen/authzen'),
+               'AuthzenSurface');
+    this.register(app, require('../authzen/authzen'), 'authzen/authzen');
 
     // GNAP (RFC 9635 + RFC 9767), 2026-09-12 — 23d. After `authn` (the resource
     // owner signs in through `beginAuthentication()`), after `oauth2` (the ID
@@ -1987,6 +2044,38 @@ class ProtocolStack {
     this.register(app, require('../gnap/gnap'), 'gnap/gnap');
     this.register(app, require('../gnap/gnap_interact'), 'gnap/gnap_interact');
     this.register(app, require('../gnap/gnap_admin'), 'gnap/gnap_admin');
+
+    // USER-MANAGED ACCESS 2.0 (#1168) — 23d-ii. After the console (18),
+    // `oauth2` (9), `authn` (8), `ldap_server` (21) and the armed XACML
+    // family (23c), all of which it reads; after `gnap` (23d) for a reader,
+    // since both are grants over the same engine. The store first (a
+    // library: six `realms.map()` stores, a cluster claim), then the PAT
+    // door (a library), then the surface, whose wire step registers the
+    // `uma.sweep` scheduler job. One require, and — as the phases land —
+    // the `register()` calls `uma`, `uma_claims`, `uma_admin`, GNAP's shape.
+    // `/uma/*` and `/.well-known/uma2-configuration` collide with nothing.
+    require('../uma/uma');
+    this.build('uma/uma_store', require('../uma/uma_store'), 'UmaStore');
+    this.build('uma/uma_pat', require('../uma/uma_pat'), 'UmaPat');
+    // #1192: a resource owner's own document — a library over the store
+    // and the templates, which the portal reaches lazily.
+    this.build('uma/uma_owner_policy', require('../uma/uma_owner_policy'),
+               'UmaOwnerPolicy');
+    // #1193: the PEP (the realm's and the owner's layers, and the resource
+    // server's FGA policy) and the grant, whose wire step fills
+    // `common/uma_gate.ts`: this line is what offers the uma-ticket grant.
+    this.build('uma/uma_pep', require('../uma/uma_pep'), 'UmaPep');
+    this.build('uma/uma_grant', require('../uma/uma_grant'), 'UmaGrant');
+    // #1194: claims interaction, claim tokens and the owner's approval;
+    // its wire step hands the grant this instance.
+    this.build('uma/uma_claims', require('../uma/uma_claims'), 'UmaClaims');
+    this.build('uma/uma', require('../uma/uma'), 'UmaSurface');
+    // #1195: Protocols -> UMA's view and acts, a library the management
+    // API reaches lazily; the page itself is the static console's.
+    this.build('uma/uma_console', require('../uma/uma_console'),
+               'UmaConsole');
+    this.register(app, require('../uma/uma'), 'uma/uma');
+    this.register(app, require('../uma/uma_claims'), 'uma/uma_claims');
 
     // CERTIFICATE ENROLLMENT (2026-09-13) — 23e, 23f, 23g. ACME (RFC 8555), EST
     // (RFC 7030) and SCEP (RFC 8894). After the console at 18, whose shell each

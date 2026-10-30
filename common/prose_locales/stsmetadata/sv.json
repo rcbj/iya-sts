@@ -95,6 +95,18 @@
     "en": "6803d7137bac3178",
     "text": "full för den obligatoriska funktionsuppsättningen: policyspråket, de sju beslutsvärdena inklusive de tre utökade Indeterminate, målmatchning, villkor, variabler, de tolv kombinationsalgoritmerna, obligations och advice, policyreferenser, och standardfunktionsbiblioteket över alla sjutton datatyper. Hållen mot OASIS konformitetssvit — 454 av de 455 obligatoriska fallen godkänns, och det enda undantaget är dokumenterat med sitt argument i xacml/conformance/MANIFEST.js. INTE täckt: AttributeSelector och XPath-funktionerna (en policy som använder en av dem är Indeterminate snarare än tyst tom), profilerna Multiple Decision och Hierarchical Resource, och administrativ delegering."
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "73b5afdb5c895b9d",
+    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda formerna, signed_metadata inkluderad, samt utkastet Obligations Profile för en PEP som deklarerar typerna, och de tre Search API:erna (avsnitt 8) över den här tjänstens egna personer, applikationer, API:er, delegeringsrelationer och policyåtgärder, sidindelade och inte transitiva. Saknas: obligations per resultat i en sökning, och OAuth-profilen, fortfarande ett utkast."
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial: det begärbara nekandet (context.access_request, evaluation_id, evaluated_at, reason) där sfärens policy markerar ett Deny med advice för åtkomstbegäran, bundet via värde med en binding_token som den här sfären signerar (de inbäddade anspråken); inskickningen med Idempotency-Key, 201 eller 202 och ett Task Handle; uppgiftsstatus-endpointen med Retry-After; avbrytande via POST eller DELETE; de sex statusarna; reevaluate-slutförandeläget, approval.id löst i betrott tillstånd och godkännandet som når policyn som betrodda fakta; next_action och de fem reasons; varje problemtyp; metadatamedlemmen, jwks_uri och capability. Saknas: evaluation_id som bindning via referens, approval.state, den hashade bindningsformen, maskinläsbara former (form_url, request_schema_url), display samt kompanjonerna BULK, ACTOR och CATALOG."
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial: en inskicknings callback (endpoint, state, events), där endpointen hålls till de URL:er en administratör registrerat för den begärande PEP:en, en callback enbart för notifiering för varje begärd slutlig händelse, autentiserad med en kort JWT som den här sfären signerar, under den utgående policyn. Saknas: händelsen partial (BULK) och prenumerationer på händelser på driftsättningsnivå; en misslyckad leverans görs inte om."
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full för förfrågan och svaret: förkortade kategorinamn, korta datatypnamn, härledning av datatyp från JSON-typen (inklusive skillnaden mellan heltal och flyttal, som läses från källtexten eftersom JSON.parse redan har kastat bort den), arrayer som bags, obligations, advice och PolicyIdentifierList. Profilen definierar ingen policysyntax, så policyer förblir XML."
@@ -134,6 +146,14 @@
   "stsmetadata.specs.rfc9767.coverage": {
     "en": "c36892dc6db9d597",
     "text": "full: det RS-riktade upptäcktsdokumentet på /.well-known/gnap-as-rs, tokenintrospektion med tokenmodellen i avsnitt 2.1, registrering av resursuppsättningar, tokenhärledning via existing_access_token, och varje format i registret över tokenformat i avsnitt 5.2 — jwt-signed, jwt-encrypted, macaroon, biscuit och zcap — skapade och verifierade. En resursserver enligt avsnitt 6.3 som kontrollerar en token på egen hand ser en återkallelse (#432): JWT-formaten bär ett statusanspråk från Token Status List, återkallade biscuits återkallelseidentifierare publiceras (icke-standard), och en registrerad resursserver kan äga en Shared Signals-ström som hör session-revoked för de tokener som har den som målgrupp. Macaroon- och zcap-tokener har ingen sådan mekanism; introspektion är deras väg."
+  },
+  "stsmetadata.specs.uma2-grant.coverage": {
+    "en": "de5c44fe6f4c8008",
+    "text": "partial: upptäckt (avsnitt 2); beviljandet urn:ietf:params:oauth:grant-type:uma-ticket (avsnitt 3.3) med biljetten förbrukad en gång i hela klustret och bunden till den första klient som visar upp den, avsnitt 3.3.4:s begärda omfång, en uppvisad PCT, need_info med en roterad biljett och required_claims, request_denied, en partiell RPT (uma.partialRpt), RPT-uppgradering, och varje behörighet avgjord av sfärens policy, resursägarens eget XACML-dokument, resursserverns finkorniga policy och utfärdandespärren; PCT:n utfärdad när anspråk samlats in och återkallningsbar vid /oauth2/revoke; slutpunkten för anspråksinteraktion (avsnitt 3.3.2) genom den här tjänstens enda inloggning; en inskickad claim_token i formatet ID Token, från den här sfären eller en deklarerad utfärdare av intyg; och request_submitted, där ägaren svarar i portalen och ett godkännande skrivs som en regel i dennes egen policy. Saknas: SAML som claim_token_format, och en förhöjning till en acr som en delning kräver vid interaktionen (delningen vägrar då). uma_profiles_supported är tom."
+  },
+  "stsmetadata.specs.uma2-fedauthz.coverage": {
+    "en": "6b8ea1097c24f058",
+    "text": "partial: skydds-API:ets åtkomsttoken (avsnitt 2) som en vanlig åtkomsttoken med målgrupp /uma som bär uma_protection, via kodflödet (ägaren en person) eller client_credentials (ägaren applikationen, där den bär umaOwnsResources); resursregistrering (avsnitt 3) — skapa, läsa, uppdatera, ta bort och lista, med user_access_policy_uri; och behörighetsslutpunkten (avsnitt 4) som utfärdar en biljett för en eller flera behörigheter, med invalid_resource_id och invalid_scope. RPT-introspektion (avsnitt 5) med PAT:en som Bearer vid /oauth2/introspect: behörigheter och inget omfång, enbart för den resursserverns RPT:er. Ett dokument med omfångsbeskrivning som en omfångs-URI namnger hämtas aldrig: ett omfång är en sträng."
   },
   "stsmetadata.specs.rfc9421.coverage": {
     "en": "3326ecc9e0fc4e59",
@@ -747,6 +767,14 @@
     "en": "f21e16beea449f7d",
     "text": "Varje AKTIVERAD policy och vilken som är roten, plus en synktoken över exakt de byten; ?since=<token> svarar 304. HÄMTNINGEN ÄR KONTRAKTET — en fjärr-PEP pollar detta med sitt eget intervall och utvärderar lokalt med sin egen kopia av motorn, eftersom en PEP som frågade per begäran vore /xacml/pdp med ett nätverkshopp framför varje åtkomstbeslut. Kräver REMOTE_PEPS — en ANNAN roll än den XACML_USER som de fyra slutpunkterna ovan vill ha, och en annan grupp, eftersom detta är slutpunkten som publicerar de dokument som den här tjänsten upprätthåller sin egen åtkomst med. En INAKTIVERAD policy utelämnas snarare än skickas med en flagga, eftersom en PEP som laddade den skulle upprätthålla en policy som den här tjänsten inte gör."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "bcec1fc31c824002",
+    "text": "Sfärens AuthZEN-attributkatalog — raderna i authzenAttribute på sts-authzen-api, lästa så som POST /access/v1/evaluation läser dem — och de AuthZEN-inställningar som ändrar mappningen eller svaret, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Hämtas bredvid policyerna av containern xacml-pep, vars kant-PDP besvarar AuthZEN med exakt dessa rader, så att en begäran mappas på ett och samma sätt på båda ställena. Kräver REMOTE_PEPS, liksom policyhämtningen. Ett tillägg: /xacml/pep/policies är oförändrad. fgaApplications namnger de applikationer som tillämpar finkornig auktorisering och ingår i synkroniseringstoken: edge-PDP:n vidarebefordrar en utvärdering som gäller en av dem till denna sfärs POST /access/v1/evaluation i stället för att avgöra den själv (#564)."
+  },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "Vilka denna sfär släpper in i sitt AuthZEN-API nu, så att edge-PDP:n i containern xacml-pep släpper in efter det: varje anropare som åtkomstpolicyn släpper in till /access/v1/* (AUTHZEN_PEPS, så som policyn avgör det), namngiven som en policy ser den i urn:sts:xacml:authzen:caller, med SHA-256 av DER för varje certifikat som denna tjänst skulle koppla till det namnet, dess applikationsomfång och de slutpunkter den släpps in till, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Token ändras med en medlem, ett certifikat, ett omfång eller policyns svar, och edge-noden når samma läge vid nästa avfrågning. Kräver REMOTE_PEPS, liksom policyhämtningen, så den som har den rollen kan läsa vem som får fråga PDP:n (rcbj på #1189). Tillägg: /xacml/pep/policies och /xacml/pep/authzen-catalogue är oförändrade."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Dess kumulativa räknare och den synktoken den innehar — vilket är det som gör \"aktuell\" till en jämförelse som den här tjänsten utför snarare än ett påstående som PEP:n gör om sig själv. De besluten fattades i en annan process och den här tjänsten såg inget av dem, vilket är hela poängen med en fjärr-PEP. Den skapar INTE någon rad: ett hjärtslag från något som aldrig registrerats nekas med en hänvisning till registreringsslutpunkten, eftersom en rad som skapades här inte skulle bära något certifikat, ingen notifierings-URL och inget registreringsdatum."
@@ -754,6 +782,46 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML in, XML ut. POSTa en <PIPRequest> som bär den XACML-<Request> du fattar beslut om och en <AttributeDesignator> per önskat attribut; få tillbaka <Attributes> I DEN FORM SOM EN <Request> BÄR DEM. DEN FINNS EFTERSOM EN FJÄRR-PEP HAR MOTORN MEN INTE KATALOGEN: den här tjänstens PIP ÄR ou=users, så en policy som pekar ut ett attribut som begäran inte bar löses upp till en tom påse i en annan container och till ett verkligt värde här — samma policy som beslutar på två sätt i två upprätthållandepunkter, vilket är den avvikelse som ett delat förråd finns för att förhindra, återuppdykande ett lager längre ner. XACML DEFINIERAR INGET PIP-PROTOKOLL, så detta hittar på så lite som möjligt: båda riktningarna är XACML:s egen XML, läst och skriven av xacml_xml.js snarare än av något nytt, och svaret är ett BEGÄRANSFRAGMENT som en PEP fogar in i sin egen begäran — varefter dess motor hittar värdena där en designator letar efter dem, utan översättning och utan förgrening. Den svarar via SAMMA resolverFor() som den inbäddade PDP:n får, så de två kan inte vara oense, och den löser upp posten EN GÅNG per anrop så att en grupp designatorer inte kan se två olika personer. TRE REGLER: en oupplöst designator är ett FRÅNVARANDE <Attribute> och aldrig ett tomt eller ett fel, eftersom det är så en begäran som aldrig bar det ser ut; MustBePresent läses men tillämpas INTE, eftersom vad en tom påse betyder avgörs av designatorn och den funktion den lämnas till, båda i ANROPARENS motor; och endast kategorin access-subject löses upp. De fem skälen till att en påse kan vara tom kommer tillbaka i <Unresolved>, i den här tjänstens EGEN namnrymd så att en PEP som bara läser XACML:s kärnnamnrymd aldrig ser det. Den kräver REMOTE_PEPS snarare än den XACML_USER som resten av /xacml vill ha — den enda slutpunkten här vars roll inte följer dess sökväg, eftersom det som kommer tillbaka är en persons egna data snarare än en regel som vem som helst får kontrollera."
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "POST:a ett AuthZEN-subject, action, resource och context; få decision true eller false. Avgörs av XACML-motorn mot sfärens ROT-policy, med protocol = authzen i begäran. En egenskap når policyn bara genom sfärens attributkatalog, och en odeklarerad ger 400 i alla lägen. ANROPAREN autentiserar sig enligt authzen.callerAuthentication — ett klientcertifikat som standard, en åtkomsttoken med authzen:evaluate, eller båda — och måste ha AUTHZEN_PEPS och ha omfång för applikationen den frågar om. Ett nekande är 200 false; ett fel som PDP:n nådde är 500, aldrig false."
+  },
+  "stsmetadata.endpoints./access/v1/evaluations.what": {
+    "en": "8bc09fb8f18ab7e3",
+    "text": "POST med standardvärden på toppnivå för subject, action, resource och context och en evaluations-array vars poster ersätter dem; svaret är evaluations, ett beslut per post i begärans ordning. options.evaluations_semantic är execute_all (standard), deny_on_first_deny eller permit_on_first_permit. En posts fel är false med context.error och döljs aldrig av 200; en batch över authzen.maxEvaluations eller authzen.maxBodyBytes är en 400 innan något avgörs. Varje post är sin egen granskningsrad, med batchens id."
+  },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "POST:a begäran i avsnitt 8; få results och en sida. Svarar med de subjekt av en typ som får utföra en åtgärd på en resurs: sfärens personer i katalogen, för en typ i authzen.resolveSubjectTypes. Varje kandidat avgörs av sfärens rotpolicy exakt som en utvärdering, och bara de tillåtna är resultat; sidindelat med page.next_token, begränsat av authzen.searchMaxCandidates, och angivet som ofullständigt bortom det."
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "POST:a begäran i avsnitt 8; få results och en sida. Svarar med de resurser av en typ som ett subjekt får utföra en åtgärd på: application, api eller delegation, från applikationskatalogen. Varje kandidat avgörs av sfärens rotpolicy exakt som en utvärdering, och bara de tillåtna är resultat; sidindelat med page.next_token, begränsat av authzen.searchMaxCandidates, och angivet som ofullständigt bortom det."
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "POST:a begäran i avsnitt 8; få results och en sida. Svarar med de åtgärder ett subjekt får utföra på en resurs: de namn som rotpolicyn jämför action-id med, och en applikations eller ett API:s egna behörigheter. Varje kandidat avgörs av sfärens rotpolicy exakt som en utvärdering, och bara de tillåtna är resultat; sidindelat med page.next_token, begränsat av authzen.searchMaxCandidates, och angivet som ofullständigt bortom det."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "POST:a en nekad utvärderings subject, resource, action och context med nekandet den fick (dess binding_token och expires_at, ekade oförändrade); få 202 och ett Task Handle, eller 201 med resultatet när det avgörs direkt (nödåtkomst som policyn tillåter). Endast ett Deny som sfärens policy markerat med advice urn:sts:xacml:advice:access-request är begärbart. Samma anropardörr och AUTHZEN_PEPS som en utvärdering; Idempotency-Key respekteras per anropare; en callback endast till en URL som registrerats för anroparen. Varje avvisning är problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "GET:a uppgiften: dess status (pending, approved, denied, expired, cancelled, failed), Retry-After medan den väntar, och när den godkänts reevaluate-resultatet med godkännandet som PEP:en bär med sig vid sin nästa utvärdering som context.approval. En uppgift är synlig endast för anroparen som skickade in den; för alla andra är den unknown_task."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "POST eller DELETE för att avbryta en väntande uppgift som tillhör anroparen; en avslutad svarar 409 invalid_task_state."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "eb2dea870b873bc2",
+    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som matchar URL:en det hämtas under) och endast de endpoints som svarar här (batchen och de tre sökningarna medan var och en är på, och access_request_endpoint med jwks_uri och capability för åtkomstbegäran medan authzen.accessRequests är på), supported_obligations, och signed_metadata, en JWT med samma medlemmar där iss är PDP-identifieraren, verifierbar med sfärens JWKS (authzen.signedMetadata). Publik; svarar 501 medan API:t är av."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "Samma dokument i avsnitt 9.2:s infogade form, där PDP-identifieraren är en sfärs: /realm/<id> efter segmentet, besvarat inne i den sfären. Varje annan sökväg namnger ingen PDP och ger 404."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -842,6 +910,50 @@
   "stsmetadata.endpoints./admin-api/gnap/:action.what": {
     "en": "d80279b4f86d8ba8",
     "text": "De två kontrollerna på /admin/gnap som en åtgärdsresurs: revoke-grant (beviljandet och varje token under det, med den CAEP-händelse som en klients egen DELETE skulle skicka) och delete-resource-set."
+  },
+  "stsmetadata.endpoints./uma/rreg.what": {
+    "en": "5b1209610fcc3969",
+    "text": "Federated Authorization avsnitt 3. POST av en resursbeskrivning (resource_scopes krävs; name, type, description, icon_uri valfria; ett omfång är en sträng och kontaktas aldrig) med en skydds-API-token (PAT) som Bearer eller DPoP: 201 med _id, user_access_policy_uri (ägarens /portal/shared) och en Location. GET listar de _id som den här PAT:ens ägare och resursserver registrerat. PAT:ENS SUBJEKT ÄR ÄGAREN till allt som registreras med den — en person i kodflödet, applikationen själv med client_credentials där den bär umaOwnsResources — och inget som en resursserver skickar namnger en ägare. PAT:en kontrolleras i alla lägen. Begränsas av uma.maxResourcesPerOwner och uma.maxResourceScopes; 501 medan uma.enabled är av."
+  },
+  "stsmetadata.endpoints./uma/rreg/:id.what": {
+    "en": "670e1795fbc003c3",
+    "text": "GET av resursbeskrivningen; PUT av en ny (200 med _id); DELETE av den (204). En resurs som en annan ägare eller en annan resursserver registrerat är not_found (404) här, och inget säger vilket. unsupported_method_type (405) för alla andra metoder."
+  },
+  "stsmetadata.endpoints./uma/perm.what": {
+    "en": "b9a235927c812cb9",
+    "text": "Federated Authorization avsnitt 4. POST av ett objekt eller en array av {resource_id, resource_scopes} med PAT:en: 201 med en behörighetsbiljett för dem alla, att lämna till klienten i WWW-Authenticate-utmaningen i Grant-specifikationens avsnitt 3.2. Välformadhet är inte policy: en oregistrerad resurs är invalid_resource_id och ett oregistrerat omfång invalid_scope, båda 400, innan någon fråga ställs. Biljetten lever uma.ticketLifetimeS och förbrukas en gång i hela klustret."
+  },
+  "stsmetadata.endpoints./uma/claims.what": {
+    "en": "d0075cc9de5f44f5",
+    "text": "Grant-specifikationens avsnitt 3.3.2: en klient som fått need_info skickar hit den begärande parten med client_id, ticket, claims_redirect_uri och state. Den loggar in genom den här tjänstens enda inloggning, registreras som biljettens begärande part och skickas tillbaka med authorization_state=claims_submitted och en ny biljett. claims_redirect_uri måste vara en som klienten registrerat (oauthClaimsRedirectUri), matchad exakt; varje annan meddelas personen och omdirigeras aldrig till."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration.what": {
+    "en": "9d41c4e007caa064",
+    "text": "Grant-specifikationens dokument i avsnitt 2: RFC 8414:s medlemmar för den här sfärens auktoriseringsserver plus permission_endpoint, resource_registration_endpoint, introspection_endpoint, claims_interaction_endpoint och uma_profiles_supported (tom: ingen profil är implementerad från början till slut), och UMA-beviljandet i grant_types_supported bara medan det utförs. Cache-Control: no-store, som varje dokument som bär en nyckel. Besvaras med 501 medan uma.enabled är av: ett dokument som annonserar slutpunkter som inte svarar vore en lögn."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration/*.what": {
+    "en": "2b88d2429a93782c",
+    "text": "Samma dokument i RFC 8414:s infogade form, där utfärdaren är en sfärs: /realm/<id> efter segmentet, besvarat inuti den sfären. Varje annan sökväg namnger ingen sfär och är en 404."
+  },
+  "stsmetadata.endpoints./uma.what": {
+    "en": "35251459226228a7",
+    "text": "Den här tjänstens egen sida som säger vad UMA 2.0 är här: slutpunkterna, de resursservrar som deklarerats i den här sfären, de fyra lager som avgör en behörighet, och inställningarna. Skalet för en statisk yta (#584); ?format=json, eller en Accept som föredrar JSON, svarar samma sak som data."
+  },
+  "stsmetadata.endpoints./uma/description.js.what": {
+    "en": "5427ba067f3c0091",
+    "text": "Beskrivningssidornas enda paket, på den här familjens sökväg."
+  },
+  "stsmetadata.endpoints./admin-api/uma.what": {
+    "en": "6c3373c7363b58ee",
+    "text": "Det som GET /admin/uma ritar, ur samma vyfunktion (#1195): resursservrarna, resurserna, levande biljetter och RPT:er, väntande begäranden, en ägare och vad-om-provkörningen."
+  },
+  "stsmetadata.endpoints./admin-api/uma/monitor.what": {
+    "en": "092fae243a21641a",
+    "text": "uma-raden i XACML-monitorn och, per resursserver, vad den håller just nu."
+  },
+  "stsmetadata.endpoints./admin-api/uma/:action.what": {
+    "en": "dffe8070a25174ec",
+    "text": "Aktivera eller avaktivera en resursserver, låta den äga resurser, ta bort en resurs, återkalla en RPT, och dela, sluta dela, godkänna eller vägra i en applikations eget dokument."
   },
   "stsmetadata.endpoints./pki/crl/:scope/:ca.what": {
     "en": "ed94a6a95a2f95e4",
@@ -1878,6 +1990,14 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "ICKE-SPEC (#221). add-destination, update-destination, remove-destination och test-push (en kanarieversion skriven till en testhemlighet): konsolens fyra handlingar, var och en granskad. Skrivbehörighetsuppgiften tas emot och returneras aldrig."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563). Vad AuthZEN-fliken i /admin/xacml ritar: om /access/v1 svarar i sfären, hur dess anropare autentiserar sig, AuthZEN-inställningarna, attributkatalogen på sts-authzen-api, medlemmarna i roles.authzenPepGroup med de applikationer var och en får fråga om och deras registrerade callback-URL:er, samt sfärens åtkomstbegäranden (#1180)."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563). set-attribute, remove-attribute, set-scope och set-callbacks, samt de fyra åtgärderna på en åtkomstbegäran (#1180) — approve, deny, revoke och cancel, de tre första frågade av åtkomstkontrollpolicyn på det sätt portalen frågar dem: flikens åtgärder, var och en granskad. En katalograd på en reserverad identifierare avvisas här som vid varje skrivning."
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
@@ -3578,6 +3698,14 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "En Policy Decision Point, ett policyförråd som ÄR ou=policies i den inbäddade katalogen, en Policy Information Point som läser attribut från subjektets egen post, och en inbäddad Policy Enforcement Point. DEN ENDA FAMILJEN HÄR SOM BESVARAR EN FRÅGA OM NÅGON ANNANS GRÄNS: varje annat protokoll i den här tjänsten autentiserar eller provisionerar någon, och det här får ett subjekt som redan har autentiserats någon annanstans och tillfrågas om de får. Hålls till OASIS konformitetssvit snarare än till ett test skrivet här."
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "AuthZEN Authorization API över XACML-motorn: en Policy Enforcement Point ställer en fråga per åtkomst och får veta true eller false, avgjort mot sfärens rotpolicy. En ADAPTER: begäran mappas till en XACML-begäran genom en attributkatalog per sfär och den enda begäransbyggaren, och svaret mappas tillbaka fail-closed. XACML-slutpunkterna och containern för den fjärranslutna PEP:en lämnas orörda av den."
+  },
+  "stsmetadata.protocols.UMA 2.0.what": {
+    "en": "7c03af276f90480f",
+    "text": "User-Managed Access 2.0, ett BEVILJANDE och inte en beslutsmotor: en resursserver registrerar de resurser den håller för en resursägare genom skydds-API:et och begär en behörighetsbiljett när en klient kommer; klienten visar upp biljetten vid tokenslutpunkten; och varje behörighet — en resurs, ett omfång — utfärdas bara när sfärens uma-authorization-policy, ÄGARENS EGET XACML-DOKUMENT (författat med ett formulär i portalen), resursserverns finkorniga policy där den tillämpar en, och utfärdandespärren alla säger Permit. Det enda UMA tillför som inget annat här har är en policy som en person skriver; frånvaron av en är aldrig samtycke. Av tills en sfär slår på det (uma.enabled)."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

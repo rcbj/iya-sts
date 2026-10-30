@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "Met fin à chaque session d’authentification unique dont la durée de vie ou le délai d’inactivité est dépassé et, dans chaque domaine, à au plus authn.sessionShedPerSweep sessions excédentaires propres à un même sujet, selon la valeur de ce domaine."
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "Expiration des demandes d’accès AuthZEN"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "Fait passer à expired toute demande d’accès AuthZEN (#1180) en attente dont l’expires_at est dépassé — en écrivant sa ligne d’audit et en envoyant son rappel (callback) — et supprime une demande terminée un jour après sa fin, ou une fois son approbation écoulée si c’est plus tard. Une lecture applique elle-même l’échéance ; il s’agit donc de l’enregistrement et du nettoyage, jamais de ce qui décide."
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "Éjection des entrées de cache expirées"
@@ -100,8 +108,8 @@
     "text": "GNAP : autorisations expirées"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Finalise chaque autorisation GNAP dont la durée de vie de l’interaction ou de l’autorisation (gnap.grantLifetimeS) est terminée et qu’aucune requête n’a touchée depuis, en enregistrant pourquoi (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Finalise chaque autorisation GNAP dont l’interaction ou la durée de vie de l’autorisation (gnap.grantLifetimeS) a pris fin et qu’aucune requête n’a touchée depuis, en consignant pourquoi (#432), et supprime chaque enregistrement d’instance inutilisé pendant la même durée (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",
@@ -582,6 +590,14 @@
   "sched.jobs.tls.ticket-key-rotate.describe": {
     "en": "d685d1a2ff40e09e",
     "text": "Remplace la clé de tickets de session que partagent les écouteurs TLS de chaque nœud dans un cluster actif-actif, afin qu’un ticket émis par un nœud reprenne sur un autre. La clé qu’elle remplace est supprimée, ce qui borne la durée pendant laquelle les secrets d’une session reprise peuvent être récupérés à partir d’un ticket."
+  },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "Expiration UMA"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Supprime chaque ticket de permission, jeton de claims persisté, enregistrement de RPT et approbation de propriétaire en attente de User-Managed Access ayant dépassé sa durée de vie (#1168). Une lecture applique elle-même l’échéance : ceci est donc le nettoyage, jamais ce qui décide."
   },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",

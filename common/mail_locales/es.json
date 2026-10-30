@@ -1,5 +1,10 @@
 {
   "templates": {
+    "uma-approval": {
+      "subject": "{{service}}: alguien pide acceder a un recurso que usted comparte",
+      "text": "{{requester}} pide, mediante {{client}}, acceder a su recurso {{resource}} ({{scopes}}). Usted pidió que se le preguntara cada vez.\n\nNada se permite hasta que usted lo apruebe. Para aprobarlo o rechazarlo, inicie sesión y abra esta página en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.\n",
+      "html": "<p><strong>{{requester}}</strong> pide, mediante <strong>{{client}}</strong>, acceder a su recurso <strong>{{resource}}</strong> ({{scopes}}). Usted pidió que se le preguntara cada vez.</p><p>Nada se permite hasta que usted lo apruebe. <a href=\"{{link}}\">Apruébelo o recházelo</a> en los próximos {{expiresMinutes}} minutos.</p><p>Si no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.</p>"
+    },
     "password-reset": {
       "subject": "Restablezca su contraseña de {{service}}",
       "text": "Alguien — {{requestedBy}} — pidió restablecer la contraseña de la cuenta {{username}}.\n\nPara elegir una contraseña nueva, abra este enlace en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSolo funciona una vez. Si no lo pidió usted, puede ignorar este mensaje: nada cambia hasta que se use el enlace.\n",
@@ -54,6 +59,16 @@
       "subject": "{{service}}: una aplicación pide acceso",
       "text": "La aplicación {{client}} pide acceso en nombre de la cuenta {{username}}: {{rights}}.\n\nNo se permite nada hasta que usted lo apruebe. Para aprobarlo o rechazarlo, inicie sesión y abra esta página en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.\n",
       "html": "<p>La aplicación <strong>{{client}}</strong> pide acceso en nombre de la cuenta <strong>{{username}}</strong>: {{rights}}.</p><p>No se permite nada hasta que usted lo apruebe. <a href=\"{{link}}\">Apruébelo o recháselo</a> en los próximos {{expiresMinutes}} minutos.</p><p>Si no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.</p>"
+    },
+    "authzen-access-request": {
+      "subject": "{{service}}: una solicitud de acceso espera su aprobación",
+      "text": "Una solicitud de acceso lo designa a usted, {{username}}, como uno de sus aprobadores: {{subject}} solicita {{action}} {{resource}} en la aplicación {{application}}, a través de {{requester}}.\n\nNada se permite hasta que un aprobador la apruebe. Para aprobarla o rechazarla, inicie sesión y abra esta página en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.\n",
+      "html": "<p>Una solicitud de acceso lo designa a usted, <strong>{{username}}</strong>, como uno de sus aprobadores: <strong>{{subject}}</strong> solicita <strong>{{action}}</strong> <strong>{{resource}}</strong> en la aplicación <strong>{{application}}</strong>, a través de {{requester}}.</p><p>Nada se permite hasta que un aprobador la apruebe. <a href=\"{{link}}\">Apruébela o recházela</a> en los próximos {{expiresMinutes}} minutos.</p><p>Si no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.</p>"
+    },
+    "authzen-emergency-access": {
+      "subject": "{{service}}: se concedió un acceso de emergencia, para su revisión",
+      "text": "Se concedió de inmediato, sin aprobador, un acceso de emergencia a una solicitud que lo designa a usted, {{username}}, como uno de sus aprobadores: {{subject}} puede {{action}} {{resource}} en la aplicación {{application}}, a través de {{requester}}, durante poco tiempo.\n\nLa justificación indicada: {{justification}}\n\nLa política permite el acceso de emergencia a esto. Revíselo y revóquelo si no estaba justificado:\n\n{{link}}\n",
+      "html": "<p>Se concedió de inmediato, sin aprobador, un acceso de emergencia a una solicitud que lo designa a usted, <strong>{{username}}</strong>, como uno de sus aprobadores: <strong>{{subject}}</strong> puede <strong>{{action}}</strong> <strong>{{resource}}</strong> en la aplicación <strong>{{application}}</strong>, a través de {{requester}}, durante poco tiempo.</p><p>La justificación indicada: {{justification}}</p><p>La política permite el acceso de emergencia a esto. <a href=\"{{link}}\">Revíselo</a> y revóquelo si no estaba justificado.</p>"
     },
     "administrator-alert": {
       "subject": "{{service}}: {{act}} para {{username}}",

@@ -1606,6 +1606,17 @@ const SETTINGS = [
     dflt: true, runtime: true,
     description: 'Section 3.5: a client that sent its key by value is handed ' +
                  'an instance_id it can send by reference next time.' },
+  { key: 'gnap.unregisteredInstances', group: 'GNAP', label: 'Accept ' +
+      'unregistered instances of a registered client',
+    path: 'gnap.unregisteredInstances', env: 'STS_GNAP_UNREGISTERED_INSTANCES',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Sections 2.3 and 2.3.3: a key no application registers is ' +
+                 'accepted as an instance of the registered GNAP client its ' +
+                 'class_id names, when that client lists a registered ' +
+                 'gnapFinishUri — how a browser application, which makes a ' +
+                 'key per browser, signs people in. Such an instance never ' +
+                 'skips the approval page. Off: an unregistered key is ' +
+                 'refused in product (#1216).' },
   { key: 'gnap.continueAfterApproval', group: 'GNAP', label: 'Keep approved ' +
       'grants continuable',
     path: 'gnap.continueAfterApproval', env: 'STS_GNAP_CONTINUE_AFTER_APPROVAL',
@@ -2767,14 +2778,18 @@ const SETTINGS = [
     // unticked, in the order they had. `webauthn.pqcOnly` still narrows the
     // request to the first three. Until then the default requested all
     // nineteen.
-    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,ES384,EdDSA,ES256,RS256',
+    // SIX SINCE 2026-10-29 (#1166, rcbj): ES384 is no longer requested by
+    // default — certain browsers on Windows are incompatible with it. It
+    // stays on the page, unticked, among the others in the order it had,
+    // and an administrator may still tick it.
+    dflt: 'ML-DSA-87,ML-DSA-65,ML-DSA-44,EdDSA,ES256,RS256',
     runtime: true,
     // Mirrors authn/webauthn_policy.ts's ALG_IDS, the verifier's COSE_ALGS
     // inverted.
-    // The default's seven first, in its order (#1150), then the rest in the
-    // order they had.
-    csvValues: ['ML-DSA-87', 'ML-DSA-65', 'ML-DSA-44', 'ES384', 'EdDSA',
-                'ES256', 'RS256', 'ESP256', 'Ed25519', 'ESP384', 'ESP512',
+    // The default's six first, in its order (#1150, #1166), then the rest
+    // in the order they had.
+    csvValues: ['ML-DSA-87', 'ML-DSA-65', 'ML-DSA-44', 'EdDSA', 'ES256',
+                'RS256', 'ESP256', 'Ed25519', 'ESP384', 'ES384', 'ESP512',
                 'ES512', 'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512',
                 'RS384', 'RS512', 'RS1'],
     // AN ORDERED CHOICE (2026-10-01, rcbj: "explicitly choose, by
@@ -2836,11 +2851,13 @@ const SETTINGS = [
                  '7.1). A name outside that table is dropped with a warning ' +
                  'rather than sent, because offering an algorithm this ' +
                  'service cannot verify produces a credential that enrols ' +
-                 'and then never works. **The default requests seven, in ' +
+                 'and then never works. **The default requests six, in ' +
                  'this order: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, ' +
-                 '`ES384`, `EdDSA`, `ES256`, `RS256`**; an authenticator ' +
-                 'takes the first it supports, so the order is a ' +
-                 'preference, and every other algorithm may be ticked. ' +
+                 '`EdDSA`, `ES256`, `RS256`**; an authenticator takes the ' +
+                 'first it supports, so the order is a preference, and ' +
+                 'every other algorithm may be ticked. `ES384` is not ' +
+                 'requested by default, because certain browsers on ' +
+                 'Windows are incompatible with it. ' +
                  'SHA-1\'s `RS1` ' +
                  '(-65535) may be named but is offered and accepted only ' +
                  'while `webauthn.insecureAlgorithms` is on (development ' +
@@ -13047,7 +13064,47 @@ const SETTINGS = [
                  'and for the same reason: this directory is in memory in ' +
                  'the default persistence mode, and a caller that can create ' +
                  'entries without bound can exhaust it. Reaching the limit ' +
-                 'refuses the CREATE and logs; it never evicts.' },
+                 'refuses the CREATE and logs; it never evicts. An ' +
+                 'application\'s own fine-grained authorization policy ' +
+                 'does not count here: xacml.maxApplicationPolicies bounds ' +
+                 'those.' },
+
+  // AN APPLICATION'S OWN POLICIES HAVE A BOUND OF THEIR OWN (#1210, rcbj,
+  // 2026-10-30). Until then they counted against xacml.maxPolicies (200)
+  // while applications.max admits 500 applications, so a realm with many
+  // applications filled ou=policies with theirs and locked administrators
+  // out of writing their own. The two kinds of entry are written by
+  // different people for different reasons, so each has its own ceiling.
+  //
+  // **THE DEFAULT IS THE LITERAL 500, applications.max's default, AND NOT
+  // A `derived` READ OF applications.max.** The four `derived` rows (this
+  // file's header) are derived because a literal would be WRONG for them —
+  // it would freeze the deployment's own address, scheme or Kerberos realm
+  // at whatever it was the day env/defaults.js was written. A literal is
+  // not wrong here, because the two settings count different things:
+  // applications.max counts every entry under ou=applications, most of
+  // which (a SAML entityID, a WS-Trust AppliesTo, a Kerberos SPN, this
+  // service's own seeded ones) never declare an access type and never get
+  // a policy. So this stays an ordinary row — in env/defaults.js, on the
+  // console, in docs/configuration.md as the value it is — rather than a
+  // fifth exemption from the refusal of a row with no value. An operator
+  // who raises applications.max raises this beside it when those
+  // applications will enforce fine-grained authorization; the refusal
+  // (STS-FGA-0024) names both settings and their values.
+  { key: 'xacml.maxApplicationPolicies', group: 'XACML',
+    label: 'Application policies the repository may hold',
+    env: 'STS_XACML_MAX_APPLICATION_POLICIES', type: 'int', dflt: 500,
+    min: 0, max: 1000000, runtime: true,
+    description: 'How many applications\' own fine-grained authorization ' +
+                 'policies (entries under ou=policies carrying ' +
+                 'xacmlApplication, orphaned ones included) the ' +
+                 'repository may hold. They do not count against ' +
+                 'xacml.maxPolicies, which bounds the policies ' +
+                 'administrators write. The default is applications.max\'s ' +
+                 'default, so every application the registry admits by ' +
+                 'default can hold one; raise this beside applications.max. ' +
+                 'Reaching the limit refuses the CREATE and logs; it never ' +
+                 'evicts.' },
 
   { key: 'xacml.returnPolicyIdList', group: 'XACML',
     label: 'Always return the applicable policy identifiers',
@@ -13256,6 +13313,375 @@ const SETTINGS = [
                  'interval of latency and nothing at all, so waiting is the ' +
                  'expensive mistake. What IS waiting on it is the console ' +
                  'form of whoever just saved a policy.' },
+
+  // --- AuthZEN (#563) -------------------------------------------------------
+  //
+  // AuthZEN Authorization API 1.0 over the XACML engine (`authzen/`). Per
+  // realm, every one of them: a realm is AuthZEN's tenant, and what one
+  // realm's PEPs may ask and how they authenticate is that realm's.
+  { key: 'authzen.enabled', group: 'AuthZEN', label: 'AuthZEN enabled',
+    env: 'STS_AUTHZEN_ENABLED', type: 'bool', dflt: true, runtime: true,
+    description: 'When on, the AuthZEN Authorization API answers under ' +
+                 '/access/v1. Off, its routes stay REGISTERED and answer ' +
+                 '501, as XACML\'s do: the feature is off, the URL is not ' +
+                 'wrong. It decides with the XACML engine, so it answers ' +
+                 '501 while xacml.enabled is off too. A caller still needs ' +
+                 'the AUTHZEN_PEPS role (roles.authzenPepGroup) and an ' +
+                 'application scope before it is told anything.' },
+  { key: 'authzen.callerAuthentication', group: 'AuthZEN',
+    label: 'How an AuthZEN caller authenticates',
+    env: 'STS_AUTHZEN_CALLER_AUTHENTICATION', type: 'enum',
+    enumValues: ['mtls', 'bearer', 'mtls+bearer'], dflt: 'mtls',
+    runtime: true,
+    description: 'mtls, the default: a client certificate this service ' +
+                 'VERIFIES against its client truststore, resolved to the ' +
+                 'directory entry that stores it (or the person it names, ' +
+                 'for one this service issued). bearer: an OAuth 2.0 access ' +
+                 'token from client_credentials, audienced to this realm\'s ' +
+                 '/access/v1 and carrying authzen:evaluate; the caller is ' +
+                 'the client. mtls+bearer: both, and the token must be ' +
+                 'bound to the certificate presented (RFC 8705), so the two ' +
+                 'name one party. Checked in every mode: AuthZEN leaves ' +
+                 'authenticating the PEP to the deployment (section 11.2), ' +
+                 'and a decision endpoint anybody can drive is an oracle ' +
+                 'for the policy.' },
+  { key: 'authzen.resolveSubjectTypes', group: 'AuthZEN',
+    label: 'Subject types that name a directory person',
+    env: 'STS_AUTHZEN_RESOLVE_SUBJECT_TYPES', type: 'csv', dflt: 'user',
+    runtime: true,
+    description: 'The subject.type values whose subject.id is a person in ' +
+                 'this realm\'s directory, comma-separated. For those the ' +
+                 'Policy Information Point answers the subject\'s roles and ' +
+                 'directory attributes, and they are AUTHORITATIVE: a ' +
+                 'caller cannot send them. For any other type the directory ' +
+                 'is not consulted, so an id that happens to match a ' +
+                 'person\'s name is not that person. Empty means the ' +
+                 'directory is never consulted.' },
+  { key: 'authzen.batchEnabled', group: 'AuthZEN',
+    label: 'Batch evaluations enabled',
+    env: 'STS_AUTHZEN_BATCH_ENABLED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When on, POST /access/v1/evaluations answers several ' +
+                 'access evaluations in one request (section 7), and the ' +
+                 'metadata document names it. Off, the route answers 501 ' +
+                 'and the metadata leaves it out; /access/v1/evaluation ' +
+                 'is unaffected.' },
+  { key: 'authzen.maxEvaluations', group: 'AuthZEN',
+    label: 'Evaluations one batch may carry',
+    env: 'STS_AUTHZEN_MAX_EVALUATIONS', type: 'int', dflt: 64, min: 1,
+    max: 1000, runtime: true,
+    description: 'The most items one POST /access/v1/evaluations may ' +
+                 'carry. Over it the whole batch is refused 400 before any ' +
+                 'item is decided: every item is a full decision on this ' +
+                 'service\'s thread, and an unbounded list is a way to ' +
+                 'spend it.' },
+  { key: 'authzen.maxBodyBytes', group: 'AuthZEN',
+    label: 'Largest batch request (bytes)',
+    env: 'STS_AUTHZEN_MAX_BODY_BYTES', type: 'int', dflt: 262144,
+    min: 1024, max: 5242880, runtime: true,
+    description: 'The largest body POST /access/v1/evaluations accepts. ' +
+                 'Over it the whole batch is refused 400 before it is ' +
+                 'read. The service\'s own body limit (5 MB) is the ' +
+                 'ceiling.' },
+  { key: 'authzen.signedMetadata', group: 'AuthZEN',
+    label: 'Sign the AuthZEN metadata',
+    env: 'STS_AUTHZEN_SIGNED_METADATA', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When on, /.well-known/authzen-configuration carries ' +
+                 'signed_metadata (AuthZEN 1.0 section 9.1): a JWT of the ' +
+                 'same members, iss the PDP identifier, signed with the ' +
+                 'realm\'s key as RFC 8414\'s metadata is ' +
+                 '(oauth2.signedMetadataAlgorithm, ' +
+                 'oauth2.signedMetadataCertificateHeader), and verifiable ' +
+                 'with the realm\'s JWKS. A PEP that supports it believes ' +
+                 'the signed values over the plain ones.' },
+  { key: 'authzen.obligationsProfile', group: 'AuthZEN',
+    label: 'Hand obligations to a PEP that declares them',
+    env: 'STS_AUTHZEN_OBLIGATIONS_PROFILE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'The AuthZEN Obligations Profile (a draft). When on, an ' +
+                 'XACML obligation is handed to the PEP in ' +
+                 'context.obligations — and a Permit carrying one answers ' +
+                 'true — ONLY when the request\'s ' +
+                 'context.supported_obligations lists every obligation type ' +
+                 'in the answer; the metadata advertises ' +
+                 'supported_obligations. Without that declaration, or with ' +
+                 'this off, a Permit with an obligation this service cannot ' +
+                 'carry out itself answers false, as a PEP that never heard ' +
+                 'of the profile would otherwise grant.' },
+  { key: 'authzen.tokenExchange', group: 'AuthZEN',
+    label: 'Decide OAuth token exchanges for other servers',
+    env: 'STS_AUTHZEN_TOKEN_EXCHANGE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Binding for OAuth 2.0 Token Exchange (a ' +
+                 'draft), with this service as the PDP another ' +
+                 'authorization server asks. When on, a tuple whose ' +
+                 'resource.type is audience and whose action is ' +
+                 'issue:<type>:token_exchange is a gate, and one whose ' +
+                 'resource.type is protected_resource a scope, decided by ' +
+                 'fixed conversion rules with the same delegation facts ' +
+                 'and issuance policy a local RFC 8693 exchange is decided ' +
+                 'with; the subject gate may carry context.issuance, which ' +
+                 'only narrows; and the metadata advertises the token ' +
+                 'issuance capability. Off, those tuples are ordinary ' +
+                 'questions for the root policy.' },
+  { key: 'authzen.searchEnabled', group: 'AuthZEN',
+    label: 'Search APIs enabled',
+    env: 'STS_AUTHZEN_SEARCH_ENABLED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'When on, the three AuthZEN searches answer under ' +
+                 '/access/v1/search (subject, resource, action), and the ' +
+                 'metadata names them. A search decides each candidate this ' +
+                 'service can name with the realm\'s root policy and answers ' +
+                 'the permitted ones: subjects are the realm\'s directory ' +
+                 'people, resources its applications, APIs and delegation ' +
+                 'relationships, actions the names the policy compares ' +
+                 'action-id with. Off, the routes answer 501.' },
+  { key: 'authzen.searchMaxCandidates', group: 'AuthZEN',
+    label: 'Candidates one search decides',
+    env: 'STS_AUTHZEN_SEARCH_MAX_CANDIDATES', type: 'int', dflt: 1000,
+    min: 1, max: 100000, runtime: true,
+    description: 'The most candidates one search decides. Every candidate ' +
+                 'is a full decision on this service\'s thread; past the ' +
+                 'cap the rest are not decided and the answer\'s ' +
+                 'context.incomplete says the result is partial.' },
+  { key: 'authzen.searchPageSize', group: 'AuthZEN',
+    label: 'Results per search page',
+    env: 'STS_AUTHZEN_SEARCH_PAGE_SIZE', type: 'int', dflt: 50, min: 1,
+    max: 1000, runtime: true,
+    description: 'How many results a search answers in one page when the ' +
+                 'request names no page.limit; page.next_token continues.' },
+  { key: 'authzen.returnReasons', group: 'AuthZEN',
+    label: 'Return the reasons for a decision',
+    env: 'STS_AUTHZEN_RETURN_REASONS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'When on, a decision carries a context with the XACML ' +
+                 'decision, why, any advice, and the obligations that made ' +
+                 'a Permit false. Off by default: a reason tells a caller ' +
+                 'something about the policy, and decision alone is the ' +
+                 'answer either way.' },
+  // THE ACCESS REQUEST AND APPROVAL PROFILE (#1180), a draft: a denial the
+  // policy marks requestable becomes a task an approver decides, and an
+  // approval reaches the next evaluation only as trusted facts the root
+  // policy reads. authzen/CLAUDE.md argues it.
+  { key: 'authzen.accessRequests', group: 'AuthZEN',
+    label: 'Access requests and approvals',
+    env: 'STS_AUTHZEN_ACCESS_REQUESTS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'The AuthZEN Access Request and Approval Profile (a ' +
+                 'draft), with its callback companion. When on, a Deny ' +
+                 'whose XACML answer carries the advice ' +
+                 'urn:sts:xacml:advice:access-request answers false with ' +
+                 'context.access_request; a PEP submits it to ' +
+                 'POST /access/v1/access-requests, an approver named by the ' +
+                 'advice decides it in the portal or the console, and an ' +
+                 'approval presented on the next evaluation reaches the ' +
+                 'root policy as trusted facts. The metadata names the ' +
+                 'endpoint and the capability. A denial without the advice ' +
+                 'is never requestable. Off, the routes answer 501 and no ' +
+                 'denial is requestable.' },
+  { key: 'authzen.accessRequestDenialLifetimeS', group: 'AuthZEN',
+    label: 'How long a requestable denial may be submitted (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_DENIAL_LIFETIME_S', type: 'int',
+    dflt: 600, min: 30, max: 86400, runtime: true,
+    description: 'The expires_at of a requestable denial and the lifetime ' +
+                 'of its binding_token: a submission after it is refused ' +
+                 'expired_denial and the PEP evaluates again.' },
+  { key: 'authzen.accessRequestLifetimeS', group: 'AuthZEN',
+    label: 'How long an access request waits for an approver (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_LIFETIME_S', type: 'int',
+    dflt: 604800, min: 60, max: 31536000, runtime: true,
+    description: 'A pending access request past this is expired, by the ' +
+                 'authzen.access-requests scheduler job and at every read. ' +
+                 'A finished one is kept a day longer for the PEP to read.' },
+  { key: 'authzen.accessRequestMaxApprovalS', group: 'AuthZEN',
+    label: 'The longest an approval holds (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_APPROVAL_S', type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'The ceiling of an approval\'s approved_until. The ' +
+                 'policy\'s advice (max-approval-seconds) and the ' +
+                 'requester\'s requested_until may each shorten it; ' +
+                 'neither lengthens it.' },
+  { key: 'authzen.accessRequestEmergencyS', group: 'AuthZEN',
+    label: 'How long emergency access holds (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_EMERGENCY_S', type: 'int',
+    dflt: 3600, min: 60, max: 86400, runtime: true,
+    description: 'An emergency access request — requested_access.emergency, ' +
+                 'where the policy\'s advice allows it, with a ' +
+                 'context.business_justification — is approved at once for ' +
+                 'at most this long, and its approvers are mailed to ' +
+                 'review it.' },
+  { key: 'authzen.accessRequestRetryAfterS', group: 'AuthZEN',
+    label: 'Retry-After on a pending access request (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S', type: 'int', dflt: 30,
+    min: 1, max: 3600, runtime: true,
+    description: 'The Retry-After the task status endpoint answers while a ' +
+                 'request is pending; a PEP waits at least this long ' +
+                 'before it asks again.' },
+  { key: 'authzen.accessRequestMaxPending', group: 'AuthZEN',
+    label: 'Pending access requests a realm holds',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING', type: 'int',
+    dflt: 10000, min: 1, max: 1000000, runtime: true,
+    description: 'The most access requests one realm holds pending; past ' +
+                 'it a submission is refused 503 until some are decided or ' +
+                 'expire.' },
+
+  // --- User-Managed Access 2.0 (#1168) -------------------------------------
+  //
+  // UMA 2.0 (`uma/`): the protection API, the permission ticket grant, the
+  // resource owner's own policy and the portal's Sharing section. Per
+  // realm, every one of them; the group is homed on /admin/uma. OFF BY
+  // DEFAULT: a new way in is something a realm turns on (CIBA's rule).
+  { key: 'uma.enabled', group: 'UMA', label: 'User-Managed Access enabled',
+    env: 'STS_UMA_ENABLED', type: 'bool', dflt: false, runtime: true,
+    description: 'When on, the UMA 2.0 protection API answers under /uma, ' +
+                 'the token endpoint performs the ' +
+                 'urn:ietf:params:oauth:grant-type:uma-ticket grant and ' +
+                 'advertises it, and /.well-known/uma2-configuration ' +
+                 'describes them. Off, the routes stay REGISTERED and ' +
+                 'answer 501, as XACML\'s do, the grant is ' +
+                 'unsupported_grant_type, and the discovery document is ' +
+                 'not served. Nothing a resource owner shared is forgotten ' +
+                 'by switching it off.' },
+  { key: 'uma.authorizationPolicy', group: 'UMA',
+    label: 'The realm\'s UMA authorization policy',
+    env: 'STS_UMA_AUTHORIZATION_POLICY', type: 'string',
+    dflt: 'uma-authorization', runtime: true,
+    description: 'The name of the ou=policies entry that decides the ' +
+                 'REALM\'s layer of every UMA permission: which resource ' +
+                 'servers, clients and claim issuers may take part, and ' +
+                 'that a requesting party must be known. With no entry of ' +
+                 'that name the built-in uma-authorization template ' +
+                 'decides; an entry overrides it, and a DISABLED entry ' +
+                 'does not fall back (the issuance policy\'s rule). The ' +
+                 'resource owner\'s own document and the resource ' +
+                 'server\'s fine-grained policy are asked after it, and ' +
+                 'every layer must Permit.' },
+  { key: 'uma.ticketLifetimeS', group: 'UMA',
+    label: 'Permission ticket lifetime (seconds)',
+    env: 'STS_UMA_TICKET_LIFETIME_S', type: 'int', dflt: 300, min: 10,
+    max: 86400, runtime: true,
+    description: 'How long a permission ticket (Federated Authorization ' +
+                 'section 4) may be presented at the token endpoint. Every ' +
+                 'need_info, request_submitted and request_denied answer ' +
+                 'ROTATES the ticket, so a client that keeps asking never ' +
+                 'presents one older than this; a ticket is spent once ' +
+                 'across the cluster.' },
+  { key: 'uma.rptLifetimeS', group: 'UMA',
+    label: 'RPT lifetime (seconds)',
+    env: 'STS_UMA_RPT_LIFETIME_S', type: 'int', dflt: 600, min: 30,
+    max: 86400, runtime: true,
+    description: 'How long a requesting party token lives. SHORT ON ' +
+                 'PURPOSE: an RPT\'s permission is what the owner allowed ' +
+                 'when it was issued, and a short life bounds how long a ' +
+                 'withdrawn share is still honoured by a resource server ' +
+                 'that does not introspect. A client wanting longer ' +
+                 'presents its ticket again or upgrades its RPT, which ' +
+                 're-decides every permission.' },
+  { key: 'uma.rptRefreshToken', group: 'UMA',
+    label: 'Issue a refresh token with an RPT',
+    env: 'STS_UMA_RPT_REFRESH_TOKEN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether the uma-ticket grant answers with a refresh ' +
+                 'token beside the RPT. OFF BY DEFAULT (rcbj\'s decision 4 ' +
+                 'on #1168): the Grant specification forbids an ' +
+                 'authorization assessment at refresh, this service ' +
+                 're-decides every refresh, and an RPT that cannot be ' +
+                 're-decided had better be short-lived instead. On, the ' +
+                 'refresh re-runs every layer, as an upgrade does, and a ' +
+                 'permission that no longer passes is dropped.' },
+  { key: 'uma.pctLifetimeS', group: 'UMA',
+    label: 'Persisted claims token lifetime (seconds)',
+    env: 'STS_UMA_PCT_LIFETIME_S', type: 'int', dflt: 2592000, min: 60,
+    max: 31536000, runtime: true,
+    description: 'How long a persisted claims token (PCT) keeps the claims ' +
+                 'gathered about a requesting party for one client. A PCT ' +
+                 'is a handle stored by digest, bound to the client and ' +
+                 'the requesting party, revocable at /oauth2/revoke with ' +
+                 'token_type_hint=pct, and ended by a sign-out of ' +
+                 'everything.' },
+  { key: 'uma.partialRpt', group: 'UMA',
+    label: 'Issue an RPT for the permissions granted when some are refused',
+    env: 'STS_UMA_PARTIAL_RPT', type: 'bool', dflt: true, runtime: true,
+    description: 'When on (rcbj\'s decision 3 on #1168), a ticket asking ' +
+                 'several permissions of which some are granted and others ' +
+                 'refused is answered with an RPT carrying the granted ' +
+                 'subset — the Grant specification\'s partial-RPT option — ' +
+                 'and request_denied only when none is. Off, any refused ' +
+                 'permission refuses the whole request. need_info is ' +
+                 'preferred over either whenever a question is ' +
+                 'Indeterminate over the requesting party.' },
+  { key: 'uma.ownerAlfaEditing', group: 'UMA',
+    label: 'Let a resource owner edit their document as ALFA',
+    env: 'STS_UMA_OWNER_ALFA_EDITING', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'When on, /portal/shared lets a resource owner edit their ' +
+                 'whole UMA document as ALFA, beside the share form. OFF BY ' +
+                 'DEFAULT (rcbj\'s decision 2 on #1168): a rule the form ' +
+                 'did not write is then drawn read-only as a custom rule. ' +
+                 'An owner\'s document is only ever asked about the ' +
+                 'owner\'s own resources, so the worst a hand-written rule ' +
+                 'can do is share what its author owns.' },
+  { key: 'uma.requestingPartyAttributes', group: 'UMA',
+    label: 'Directory attributes the owner\'s layer may read',
+    env: 'STS_UMA_REQUESTING_PARTY_ATTRIBUTES', type: 'csv',
+    dflt: 'uid,mail,memberOf', runtime: true,
+    description: 'The attributes of a requesting party\'s directory entry ' +
+                 'the Policy Information Point answers for the resource ' +
+                 'OWNER\'s layer, comma-separated: what a person\'s own ' +
+                 'rule may read about a stranger. The realm\'s layer reads ' +
+                 'the directory as every issuance question does. Empty ' +
+                 'means an owner\'s rule may read nothing but what was ' +
+                 'gathered as claims.' },
+  { key: 'uma.pendingLifetimeS', group: 'UMA',
+    label: 'How long an owner\'s approval is waited for (seconds)',
+    env: 'STS_UMA_PENDING_LIFETIME_S', type: 'int', dflt: 86400, min: 60,
+    max: 2592000, runtime: true,
+    description: 'How long a request_submitted request waits on ' +
+                 '/portal/shared for the owner\'s answer. Unanswered past ' +
+                 'it, the client\'s next poll is request_denied. The ' +
+                 'owner is told by mail where the channel is configured ' +
+                 'and they have not declined notifications.' },
+  { key: 'uma.maxPendingPerOwner', group: 'UMA',
+    label: 'Pending approvals one owner may hold',
+    env: 'STS_UMA_MAX_PENDING_PER_OWNER', type: 'int', dflt: 50, min: 1,
+    max: 10000, runtime: true,
+    description: 'The most requests waiting for one owner\'s answer at a ' +
+                 'time. Past it a further request_submitted is answered ' +
+                 'request_denied rather than queued: an unbounded queue is ' +
+                 'a way for a stranger to fill a person\'s portal.' },
+  { key: 'uma.maxOwnerPolicyBytes', group: 'UMA',
+    label: 'Largest owner document (bytes)',
+    env: 'STS_UMA_MAX_OWNER_POLICY_BYTES', type: 'int', dflt: 262144,
+    min: 4096, max: 4194304, runtime: true,
+    description: 'The largest XACML document a resource owner\'s policy ' +
+                 'may be, in bytes. A share that would take it past the ' +
+                 'bound is refused and the document left as it was.' },
+  { key: 'uma.maxOwnerRules', group: 'UMA',
+    label: 'Most rules in an owner document',
+    env: 'STS_UMA_MAX_OWNER_RULES', type: 'int', dflt: 500, min: 1,
+    max: 10000, runtime: true,
+    description: 'The most Rules a resource owner\'s document may hold: ' +
+                 'its own owner-self rule, one per share, and one per ' +
+                 'approval given. A share that would take it past the ' +
+                 'bound is refused.' },
+  { key: 'uma.maxResourcesPerOwner', group: 'UMA',
+    label: 'Resources one owner may have registered',
+    env: 'STS_UMA_MAX_RESOURCES_PER_OWNER', type: 'int', dflt: 1000,
+    min: 1, max: 100000, runtime: true,
+    description: 'The most resources registered on one owner\'s behalf, ' +
+                 'across every resource server. A registration past it is ' +
+                 'refused: a resource server with a protection API token ' +
+                 'could otherwise register without bound in somebody\'s ' +
+                 'name.' },
+  { key: 'uma.maxResourceScopes', group: 'UMA',
+    label: 'Most scopes on one resource',
+    env: 'STS_UMA_MAX_RESOURCE_SCOPES', type: 'int', dflt: 64, min: 1,
+    max: 1024, runtime: true,
+    description: 'The most resource_scopes one registered resource may ' +
+                 'carry. A scope is a string and is never dialled: a scope ' +
+                 'description document the specification allows a scope ' +
+                 'to name is not fetched.' },
 
   // --- Shared Signals Framework (SSF) --------------------------------------
   //
@@ -15193,6 +15619,22 @@ const SETTINGS = [
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
+  { key: 'roles.authzenPepGroup', group: 'Roles',
+    label: 'Group granting the AUTHZEN_PEPS role',
+    env: 'STS_ROLES_AUTHZEN_PEP_GROUP', type: 'string',
+    dflt: 'authzen-peps', runtime: true,
+    description: 'The directory group whose members hold the built-in ' +
+                 'AUTHZEN_PEPS role, which is what the AuthZEN ' +
+                 'Authorization API under /access/v1 requires. A member is ' +
+                 'a person, a service account, or an application (for a ' +
+                 'caller authenticating with its own access token). IT IS A ' +
+                 'THIRD GROUP AND NOT EITHER OF THE OTHER TWO: AUTHZEN_PEPS ' +
+                 'asks for decisions and nothing else, where XACML_USER ' +
+                 'also reads the repository and REMOTE_PEPS pulls the ' +
+                 'documents this service enforces its own access with and ' +
+                 'a named person\'s attributes. Setting it to the empty ' +
+                 'string means NOBODY holds the role, which closes ' +
+                 '/access/v1 to every caller.' },
 
   { key: 'xacml.signalResponsePolicy', group: 'XACML',
     label: 'The policy a received signal is answered with',

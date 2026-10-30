@@ -194,6 +194,17 @@ from `listen()`* is the rule this is an instance of.
    — deliberately, because the record being written was read from that entry a
    moment ago, so merging would make it impossible ever to REMOVE a value and a
    redirect URI deleted with `ldapmodify` would come back on the next request.
+   **That argument covers only the attributes the registry MODELS (#1230,
+   2026-10-30)**, so only those are replaced: `save()` passes
+   `applications.ownedAttributeNames()` (lower-cased base names, `;binary`
+   folded away) and `withUnownedAttributes()` carries every other attribute
+   of the existing entry onto the new one. Until then every sighting —
+   `POST /ssf/stream`'s receiver, a SAML SP's sign-in — erased a certificate
+   `add-certificate` had stored (`userCertificate;binary`), and an attribute
+   an operator added with `ldapmodify`, with no audit row; a Shared Signals
+   receiver authenticating by that certificate was then refused
+   STS-SSF-0151. The carried attributes are on the stored entry, so the
+   journal writes them with it. `tests/application_entry_unowned.js` holds it.
 
    **ONE ENTRY PER PERSON, AND IT IS ENFORCED AT FOUR DOORS RATHER THAN ASSUMED
    AT ONE.** Most of it was already true by accident: `identityOf()` normalises
@@ -3927,6 +3938,20 @@ this JavaScript module registers `/admin/ldap/*` when required.
 every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
 the observer, the view and the page. `tests/protocol/sts_person_attributes.js`
 covers the API over HTTP in a realm of its own.
+
+**THE AUTHZEN SLOT, `authzenAdmin.setDirectory()`, is the same shape** —
+`locate`, `members`, `write` (the two `sts*` attributes only) — and since
+#1210 a fourth, `addMember`, which is `addGroupMember()` itself: enabling
+fine-grained authorization on an application puts each REMOTE_PEPS holder
+into the AuthZEN group through the console's own idempotent, audited door
+(`authzen/CLAUDE.md`).
+
+**`ou=policies` HAS TWO CEILINGS SINCE #1210.** `writePolicy()` counts an
+entry carrying `xacmlApplication` (`isApplicationPolicy()`, either case of
+the name) against `xacml.maxApplicationPolicies` and every other against
+`xacml.maxPolicies`, each only at a create; `policyCount(application)`
+counts one kind, and the store's seed asks for both being zero
+(`xacml/CLAUDE.md`).
 
 ## CELLS: A BIND AS A PERSON HOMED IN ANOTHER CELL (#98, 2026-09-28)
 

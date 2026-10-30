@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "Section 3.5: ang client na nagpadala ng key nito by value ay binibigyan ng instance_id na maipapadala nito by reference sa susunod."
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "Tanggapin ang mga hindi nakarehistrong instance ng isang nakarehistrong client"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "Mga seksyon 2.3 at 2.3.3: ang isang key na walang application na nagrerehistro ay tinatanggap bilang instance ng nakarehistrong GNAP client na pinangangalanan ng class_id nito, kapag ang client na iyon ay may nakarehistrong gnapFinishUri — ganito pinapa-sign in ng isang browser application, na gumagawa ng isang key bawat browser, ang mga tao. Hindi kailanman nilalaktawan ng ganitong instance ang approval page. Naka-off: tinatanggihan ang hindi nakarehistrong key sa product mode (#1216)."
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "Panatilihing maipagpapatuloy ang mga naaprubahang grant"
@@ -1012,8 +1020,8 @@
     "text": "Mga iniaalok na algorithm"
   },
   "webauthn.algorithms|description": {
-    "en": "baa2f6e1bfd03f47",
-    "text": "Ang `pubKeyCredParams`, ayon sa pagkakasunod ng preference — ang mga COSE algorithm kung saan tatanggap ang serbisyong ito ng credential. Mga baybay ng JOSE ang mga pangalan at mina-map sa mga COSE identifier ng sariling table ng `authn/webauthn.js`, na siyang module na nagve-verify ng signature: ang post-quantum ng RFC 9964 na `ML-DSA-44` (-48), `ML-DSA-65` (-49) at `ML-DSA-87` (-50); ang fully specified ng RFC 9864 na `ESP256` (-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) at `Ed448` (-53), na ang curve ay sinusuri laban sa key; `ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8); ang `ES256K` ng RFC 8812 (-47, secp256k1); at `PS256` (-37), `PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` (-258) at `RS512` (-259). Tinatanggihan ang credential na ang algorithm ay wala sa listahang ito (WebAuthn Level 3 section 7.1). Ang pangalang wala sa table na iyon ay inaalis nang may warning sa halip na ipadala, dahil ang pag-aalok ng algorithm na hindi kayang i-verify ng serbisyong ito ay gumagawa ng credential na nag-e-enrol at saka hindi na kailanman gumagana. **Pito ang hinihiling ng default, sa ganitong pagkakasunod: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`**; kinukuha ng authenticator ang una nitong sinusuportahan, kaya preference ang pagkakasunod, at puwedeng i-tsek ang anumang ibang algorithm. Puwedeng pangalanan ang `RS1` ng SHA-1 (-65535) pero iniaalok at tinatanggap lang habang naka-on ang `webauthn.insecureAlgorithms` (development lang); pinapakitid ng `webauthn.pqcOnly` ang listahan sa ML-DSA."
+    "en": "d5e0c4a5c20494f6",
+    "text": "Ang `pubKeyCredParams`, ayon sa pagkakasunod ng preference — ang mga COSE algorithm kung saan tatanggap ang serbisyong ito ng credential. Mga baybay ng JOSE ang mga pangalan at mina-map sa mga COSE identifier ng sariling table ng `authn/webauthn.js`, na siyang module na nagve-verify ng signature: ang post-quantum ng RFC 9964 na `ML-DSA-44` (-48), `ML-DSA-65` (-49) at `ML-DSA-87` (-50); ang fully specified ng RFC 9864 na `ESP256` (-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) at `Ed448` (-53), na ang curve ay sinusuri laban sa key; `ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8); ang `ES256K` ng RFC 8812 (-47, secp256k1); at `PS256` (-37), `PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` (-258) at `RS512` (-259). Tinatanggihan ang credential na ang algorithm ay wala sa listahang ito (WebAuthn Level 3 section 7.1). Ang pangalang wala sa table na iyon ay inaalis nang may warning sa halip na ipadala, dahil ang pag-aalok ng algorithm na hindi kayang i-verify ng serbisyong ito ay gumagawa ng credential na nag-e-enrol at saka hindi na kailanman gumagana. **Anim ang hinihiling ng default, sa ganitong pagkakasunod: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `EdDSA`, `ES256`, `RS256`**; kinukuha ng authenticator ang una nitong sinusuportahan, kaya preference ang pagkakasunod, at puwedeng i-tsek ang anumang ibang algorithm. Hindi hinihiling ang `ES384` bilang default, dahil hindi ito tugma sa ilang browser sa Windows. Puwedeng pangalanan ang `RS1` ng SHA-1 (-65535) pero iniaalok at tinatanggap lang habang naka-on ang `webauthn.insecureAlgorithms` (development lang); pinapakitid ng `webauthn.pqcOnly` ang listahan sa ML-DSA."
   },
   "webauthn.algorithms|csvValueNotes|ML-DSA-44": {
     "en": "0fed17862f33fa73",
@@ -6784,8 +6792,16 @@
     "text": "Mga policy na maaaring hawakan ng repository"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "Ilang entry ang maaaring nasa ilalim ng ou=policies. Ang parehong uri ng limitasyon na dala ng ou=federations at ou=applications, at sa parehong dahilan: nasa memory ang directory na ito sa default na persistence mode, at mauubos ito ng caller na kayang gumawa ng mga entry nang walang hangganan. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict."
+    "en": "bb4fc97c445e9e60",
+    "text": "Ilang entry ang maaaring nasa ilalim ng ou=policies. Ang parehong uri ng limitasyon na dala ng ou=federations at ou=applications, at sa parehong dahilan: nasa memory ang directory na ito sa default na persistence mode, at mauubos ito ng caller na kayang gumawa ng mga entry nang walang hangganan. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict. Hindi binibilang dito ang sariling fine-grained authorization policy ng isang application: xacml.maxApplicationPolicies ang naglilimita sa mga iyon."
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "Mga policy ng application na maaaring hawakan ng repository"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "Ilang sariling fine-grained authorization policy ng mga application (mga entry sa ilalim ng ou=policies na may xacmlApplication, kasama ang mga orphaned) ang maaaring hawakan ng repository. Hindi sila binibilang laban sa xacml.maxPolicies, na naglilimita sa mga policy na isinusulat ng mga administrator. Ang default ay ang default ng applications.max, kaya bawat application na tinatanggap ng registry bilang default ay maaaring magkaroon ng isa; itaas ito kasabay ng applications.max. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6890,6 +6906,286 @@
   "xacml.pepNotifyTimeoutMs|description": {
     "en": "b02ca7d48b1cb3f5",
     "text": "Gaano katagal maghihintay na sagutin ng PEP ang isang nudge. SINADYANG MAS MAIKLI KAYSA SA SAMPUNG SEGUNDO NG SSF, at ang dahilan ay ang mismong gumagawang nudge sa isang nudge: ang nawalang push ay nawalang event, kaya naghihintay ang SSF; ang nawalang nudge ay nagkakahalaga ng isang polling interval ng latency at wala nang iba, kaya ang paghihintay ang mahal na pagkakamali. Ang TALAGANG naghihintay dito ay ang console form ng kung sinumang kakasave lang ng policy."
+  },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "Naka-enable ang AuthZEN"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "Kapag naka-on, sumasagot ang AuthZEN Authorization API sa ilalim ng /access/v1. Kapag naka-off, nananatiling NAKA-REGISTER ang mga route nito at sumasagot ng 501, gaya ng sa XACML: naka-off ang feature, hindi mali ang URL. Nagpapasya ito gamit ang XACML engine, kaya sumasagot din ito ng 501 habang naka-off ang xacml.enabled. Kailangan pa rin ng caller ang AUTHZEN_PEPS role (roles.authzenPepGroup) at isang application scope bago ito sabihan ng anuman."
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "Paano nag-a-authenticate ang isang AuthZEN caller"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls, ang default: isang client certificate na VINE-VERIFY ng serbisyong ito laban sa client truststore nito, na nire-resolve sa directory entry na nag-iimbak nito (o sa taong pinangangalanan nito, para sa isang inisyu ng serbisyong ito). bearer: isang OAuth 2.0 access token mula sa client_credentials, na ang audience ay ang /access/v1 ng realm na ito at may dalang authzen:evaluate; ang caller ay ang client. mtls+bearer: pareho, at dapat naka-bind ang token sa ipinakitang certificate (RFC 8705), kaya iisang party ang pinangangalanan ng dalawa. Sinusuri sa bawat mode: iniiwan ng AuthZEN sa deployment ang pag-authenticate sa PEP (section 11.2), at ang decision endpoint na kayang patakbuhin ng kahit sino ay isang oracle para sa policy."
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "Mga subject type na nagpapangalan sa isang tao sa directory"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "Ang mga value ng subject.type na ang subject.id ay isang tao sa directory ng realm na ito, pinaghihiwalay ng kuwit. Para sa mga iyon, sinasagot ng Policy Information Point ang mga role at directory attribute ng subject, at AUTHORITATIVE ang mga ito: hindi maipapadala ng caller ang mga ito. Para sa anumang ibang type, hindi kinokonsulta ang directory, kaya ang id na nagkataong tumugma sa pangalan ng isang tao ay hindi ang taong iyon. Ang walang laman ay nangangahulugang hindi kailanman kinokonsulta ang directory."
+  },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "Naka-on ang mga batch na pagsusuri"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "Kapag naka-on, sumasagot ang POST /access/v1/evaluations ng maraming pagsusuri ng access sa isang request (seksyon 7), at pinapangalanan ito ng dokumento ng metadata. Kapag naka-off, sumasagot ng 501 ang route at hindi ito isinasama ng metadata; hindi apektado ang /access/v1/evaluation."
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "Mga pagsusuring maaaring dalhin ng isang batch"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "Ang pinakamaraming item na maaaring dalhin ng isang POST /access/v1/evaluations. Kapag lumampas, tinatanggihan ng 400 ang buong batch bago mapagpasyahan ang anumang item: bawat item ay isang buong desisyon sa thread ng serbisyong ito, at ang listahang walang hangganan ay paraan para ubusin ito."
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "Pinakamalaking batch request (bytes)"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "Ang pinakamalaking body na tinatanggap ng POST /access/v1/evaluations. Kapag lumampas, tinatanggihan ng 400 ang buong batch bago ito basahin. Ang sariling limitasyon ng body ng serbisyo (5 MB) ang kisame."
+  },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "Pirmahan ang metadata ng AuthZEN"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "Kapag naka-on, may dalang signed_metadata ang /.well-known/authzen-configuration (AuthZEN 1.0 seksyon 9.1): isang JWT ng parehong mga miyembro, iss ang identifier ng PDP, na pinirmahan gamit ang susi ng realm gaya ng metadata ng RFC 8414 (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader), at mabe-verify gamit ang JWKS ng realm. Ang PEP na sumusuporta rito ay naniniwala sa mga pinirmahang halaga kaysa sa mga karaniwan."
+  },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "Ibigay ang mga obligasyon sa PEP na nagdedeklara ng mga ito"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "Ang Obligations Profile ng AuthZEN (isang draft). Kapag naka-on, ibinibigay sa PEP ang isang XACML obligation sa context.obligations — at ang Permit na may dala nito ay sumasagot ng true — KUNG ang context.supported_obligations lamang ng request ay naglilista ng bawat uri ng obligasyon sa sagot; ina-advertise ng metadata ang supported_obligations. Kung wala ang deklarasyong iyon, o kapag naka-off ito, ang Permit na may obligasyong hindi kayang gampanan ng serbisyong ito mismo ay sumasagot ng false, dahil magbibigay ng access ang PEP na hindi kailanman narinig ang profile."
+  },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "Magpasya sa mga OAuth token exchange para sa ibang server"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "Ang AuthZEN Binding for OAuth 2.0 Token Exchange (isang draft), kung saan ang serbisyong ito ang PDP na tinatanong ng ibang authorization server. Kapag naka-on, ang tuple na ang resource.type ay audience at ang action ay issue:<type>:token_exchange ay isang gate, at ang tuple na ang resource.type ay protected_resource ay isang scope, na pinagpapasyahan ng mga nakapirming tuntunin ng pag-convert gamit ang parehong mga katotohanan ng delegasyon at issuance policy na ginagamit sa isang lokal na RFC 8693 exchange; ang subject gate ay maaaring magdala ng context.issuance, na nagpapakitid lamang; at ina-advertise ng metadata ang token issuance capability. Kapag naka-off, ang mga tuple na iyon ay karaniwang tanong para sa root policy."
+  },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "Naka-on ang Search APIs"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "Kapag naka-on, sumasagot ang tatlong AuthZEN search sa ilalim ng /access/v1/search (subject, resource, action), at pinangangalanan sila ng metadata. Pinagpapasyahan ng isang search ang bawat kandidatong kayang pangalanan ng serbisyong ito gamit ang root policy ng realm at sinasagot ang mga pinahihintulutan: ang mga subject ay ang mga tao sa directory ng realm, ang mga resource ay ang mga application, API at ugnayang delegation nito, at ang mga action ay ang mga pangalang ikinukumpara ng policy sa action-id. Kapag naka-off, sumasagot ng 501 ang mga ruta."
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "Mga kandidatong pinagpapasyahan ng isang search"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "Ang pinakamaraming kandidatong pinagpapasyahan ng isang search. Bawat kandidato ay isang buong desisyon sa thread ng serbisyong ito; lampas sa limitasyon, hindi na pinagpapasyahan ang iba at sinasabi ng context.incomplete ng sagot na bahagya lamang ang resulta."
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "Mga resulta bawat pahina ng search"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "Ilang resulta ang isinasagot ng isang search sa isang pahina kapag walang page.limit ang request; ipinagpapatuloy ito ng page.next_token."
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "Ibalik ang mga dahilan ng isang decision"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "Kapag naka-on, may dalang context ang isang decision na may XACML decision, ang dahilan, anumang advice, at ang mga obligation na nagpa-false sa isang Permit. Naka-off bilang default: may sinasabi ang isang dahilan sa caller tungkol sa policy, at ang decision lamang ang sagot alinman dito."
+  },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "Mga access request at approval"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "Ang AuthZEN Access Request and Approval Profile (isang draft), kasama ang callback companion nito. Kapag naka-on, ang Deny na ang XACML na sagot ay may advice na urn:sts:xacml:advice:access-request ay sinasagot ng false na may context.access_request; isinusumite ito ng isang PEP sa POST /access/v1/access-requests, ang approver na pinangalanan ng advice ang nagpapasya nito sa portal o sa console, at ang approval na iprinisenta sa susunod na evaluation ay umaabot sa root policy bilang trusted facts. Pinangangalanan ng metadata ang endpoint at ang capability. Ang denial na walang advice ay hindi kailanman maaaring hilingin. Kapag naka-off, 501 ang sagot ng mga route at walang denial na maaaring hilingin."
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "Gaano katagal maaaring isumite ang requestable na denial (segundo)"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "Ang expires_at ng isang requestable na denial at ang lifetime ng binding_token nito: ang pagsumite pagkatapos nito ay tinatanggihan bilang expired_denial at muling nag-evaluate ang PEP."
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "Gaano katagal naghihintay ang access request sa approver (segundo)"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "Ang pending na access request na lampas dito ay expired, sa pamamagitan ng scheduler job na authzen.access-requests at sa bawat pagbasa. Ang tapos na isa ay itinatago nang isang araw pa para mabasa ng PEP."
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "Ang pinakamatagal na tumatagal ang isang approval (segundo)"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "Ang pinakamataas na limitasyon ng approved_until ng isang approval. Maaaring paikliin ito ng advice ng policy (max-approval-seconds) at ng requested_until ng humihiling; wala sa kanila ang nagpapahaba nito."
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "Gaano katagal tumatagal ang emergency access (segundo)"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "Ang emergency access request — requested_access.emergency, kung pinapayagan ng advice ng policy, na may context.business_justification — ay agad na inaaprubahan nang hindi hihigit sa tagal na ito, at ime-mail ang mga approver nito para suriin ito."
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "Retry-After sa pending na access request (segundo)"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "Ang Retry-After na isinasagot ng task status endpoint habang pending ang isang request; naghihintay ang isang PEP nang kahit ganito katagal bago ito magtanong muli."
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "Mga pending na access request na hawak ng isang realm"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "Ang pinakamaraming access request na hawak ng isang realm bilang pending; lampas dito, tinatanggihan ang pagsumite nang may 503 hanggang may mapagpasyahan o mag-expire."
+  },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "Naka-enable ang User-Managed Access"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "Kapag naka-on, sumasagot ang UMA 2.0 protection API sa ilalim ng /uma, ginagawa at ina-advertise ng token endpoint ang urn:ietf:params:oauth:grant-type:uma-ticket grant, at inilalarawan ang mga ito ng /.well-known/uma2-configuration. Kapag naka-off, nananatiling NAKA-REGISTER ang mga route at sumasagot ng 501, gaya ng sa XACML, ang grant ay unsupported_grant_type, at hindi sine-serve ang discovery document. Walang nakakalimutan sa anumang na-share ng isang resource owner kapag in-off ito."
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "Ang UMA authorization policy ng realm"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "Ang pangalan ng ou=policies entry na nagpapasya sa REALM layer ng bawat UMA permission: kung aling mga resource server, client at claim issuer ang puwedeng lumahok, at na dapat kilala ang requesting party. Kapag walang entry na may ganoong pangalan, ang built-in na uma-authorization template ang nagpapasya; ino-override ito ng isang entry, at hindi bumabalik dito ang isang DISABLED na entry (ang patakaran ng issuance policy). Tinatanong pagkatapos nito ang sariling dokumento ng resource owner at ang fine-grained policy ng resource server, at dapat mag-Permit ang bawat layer."
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "Buhay ng permission ticket (segundo)"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "Gaano katagal puwedeng i-present ang isang permission ticket (Federated Authorization section 4) sa token endpoint. Bawat sagot na need_info, request_submitted at request_denied ay NAGRO-ROTATE ng ticket, kaya ang client na patuloy na nagtatanong ay hindi kailanman nagpe-present ng mas luma rito; isang beses lang nagagamit ang ticket sa buong cluster."
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "Buhay ng RPT (segundo)"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "Gaano katagal nabubuhay ang isang requesting party token. SADYANG MAIKLI: ang permission ng isang RPT ay ang pinayagan ng owner nang i-issue ito, at nililimitahan ng maikling buhay kung gaano katagal pa iginagalang ang binawing share ng isang resource server na hindi nag-i-introspect. Ang client na gusto ng mas matagal ay muling nagpe-present ng ticket nito o nag-a-upgrade ng RPT nito, na muling nagpapasya sa bawat permission."
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "Mag-issue ng refresh token kasama ng RPT"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "Kung sumasagot ang uma-ticket grant ng refresh token kasama ng RPT. NAKA-OFF BILANG DEFAULT (desisyon 4 ni rcbj sa #1168): ipinagbabawal ng Grant specification ang authorization assessment sa refresh, muling nagpapasya ang serbisyong ito sa bawat refresh, at ang RPT na hindi na muling mapapasyahan ay mas mabuting maikli na lang ang buhay. Kapag naka-on, muling pinapatakbo ng refresh ang bawat layer, gaya ng upgrade, at tinatanggal ang permission na hindi na pumapasa."
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "Buhay ng persisted claims token (segundo)"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "Gaano katagal itinatago ng isang persisted claims token (PCT) ang mga claim na nakalap tungkol sa isang requesting party para sa isang client. Ang PCT ay isang handle na iniimbak ayon sa digest, naka-bind sa client at sa requesting party, nare-revoke sa /oauth2/revoke gamit ang token_type_hint=pct, at tinatapos ng sign-out sa lahat."
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "Mag-issue ng RPT para sa mga ibinigay na permission kapag may tinanggihan"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "Kapag naka-on (desisyon 3 ni rcbj sa #1168), ang ticket na humihingi ng ilang permission na ang ilan ay ibinigay at ang iba ay tinanggihan ay sinasagot ng RPT na may dalang ibinigay na subset — ang partial-RPT option ng Grant specification — at ng request_denied lang kapag wala ni isang ibinigay. Kapag naka-off, tinatanggihan ang buong request ng anumang tinanggihang permission. Mas pinipili ang need_info kaysa sa alinman kapag Indeterminate ang isang tanong tungkol sa requesting party."
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "Hayaang i-edit ng resource owner ang dokumento niya bilang ALFA"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "Kapag naka-on, pinapayagan ng /portal/shared ang isang resource owner na i-edit ang buo niyang UMA document bilang ALFA, katabi ng share form. NAKA-OFF BILANG DEFAULT (desisyon 2 ni rcbj sa #1168): ang rule na hindi isinulat ng form ay ipinapakita na read-only bilang custom rule. Ang dokumento ng isang owner ay tinatanong lang tungkol sa sariling mga resource ng owner, kaya ang pinakamasamang magagawa ng isang rule na sulat-kamay ay i-share ang pag-aari ng sumulat nito."
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "Mga directory attribute na mababasa ng layer ng owner"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "Ang mga attribute ng directory entry ng isang requesting party na sinasagot ng Policy Information Point para sa layer ng resource OWNER, pinaghihiwalay ng kuwit: ang mababasa ng sariling rule ng isang tao tungkol sa isang estranghero. Binabasa ng realm layer ang directory gaya ng bawat issuance question. Kapag walang laman, walang mababasa ang rule ng owner maliban sa nakalap bilang mga claim."
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "Gaano katagal hinihintay ang approval ng owner (segundo)"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "Gaano katagal naghihintay ang isang request_submitted na request sa /portal/shared para sa sagot ng owner. Kapag hindi nasagot lampas dito, request_denied ang susunod na poll ng client. Sinasabihan ang owner sa mail kung saan naka-configure ang channel at hindi siya tumanggi sa mga notification."
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "Mga nakabinbing approval ng isang owner"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "Ang pinakamaraming request na sabay-sabay na naghihintay ng sagot ng isang owner. Lampas dito, ang isa pang request_submitted ay sinasagot ng request_denied sa halip na ipila: ang walang hangganang pila ay paraan para mapuno ng isang estranghero ang portal ng isang tao."
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "Pinakamalaking owner document (bytes)"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "Ang pinakamalaking puwedeng sukat, sa bytes, ng XACML document ng policy ng isang resource owner. Tinatanggihan ang share na lalampas sa hangganan at iniiwan ang dokumento gaya ng dati."
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "Pinakamaraming rule sa isang owner document"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "Ang pinakamaraming Rule na puwedeng hawakan ng dokumento ng isang resource owner: ang sarili nitong owner-self rule, isa bawat share, at isa bawat ibinigay na approval. Tinatanggihan ang share na lalampas sa hangganan."
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "Mga resource na puwedeng naka-register sa isang owner"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "Ang pinakamaraming resource na naka-register para sa isang owner, sa lahat ng resource server. Tinatanggihan ang registration na lalampas dito: kung hindi, ang resource server na may protection API token ay makakapag-register nang walang hangganan sa pangalan ng iba."
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "Pinakamaraming scope sa isang resource"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "Ang pinakamaraming resource_scopes na puwedeng dalhin ng isang naka-register na resource. Ang scope ay isang string at hindi kailanman kinokontak: hindi kinukuha ang scope description document na pinapayagan ng specification na pangalanan ng isang scope."
   },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
@@ -8022,6 +8318,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Ang grupo sa directory na ang mga miyembro ay may hawak ng built-in na role na XACML_USER, na siyang hinihingi ng tatlong mismong XACML endpoint — GET /xacml, POST /xacml/pdp at GET /xacml/policies. Ang tumatawag na nagpapakita ng client certificate na BINERIPIKA ng serbisyong ito ay isang kaya nitong pangalanan; ang pagiging miyembro ng grupong ito ang nagpapasya kung papapasukin ito, at magkahiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: nagpapatunay ng pagkakakilanlan ang certificate at nagbibigay ng pahintulot ang grupo. IKALAWANG GRUPO ITO AT HINDI ANG PAREHO: naaabot ng REMOTE_PEPS ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access control, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo. Ang pagtatakda nito sa walang laman na string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa tatlong endpoint na iyon sa bawat tumatawag; iyon ang paraan ng pag-alis sa XACML surface nang hindi pinapatay ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "Group na nagbibigay ng AUTHZEN_PEPS role"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na AUTHZEN_PEPS role, na siyang kailangan ng AuthZEN Authorization API sa ilalim ng /access/v1. Ang isang miyembro ay isang tao, isang service account, o isang application (para sa caller na nag-a-authenticate gamit ang sarili nitong access token). ITO AY IKATLONG GROUP AT HINDI ALINMAN SA DALAWA PANG IBA: humihingi lamang ng mga decision ang AUTHZEN_PEPS at wala nang iba, samantalang binabasa rin ng XACML_USER ang repository at kinukuha ng REMOTE_PEPS ang mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access at ang mga attribute ng isang pinangalanang tao. Ang pagtakda nito sa empty string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa /access/v1 sa bawat caller."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

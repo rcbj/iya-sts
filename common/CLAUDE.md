@@ -941,6 +941,77 @@ Both acts are audited (`application.export`, `application.import`) with the
 attribute NAMES and never a value. `tests/application_ldif.js` and
 `tests/protocol/sts_application_ldif.js` hold it.
 
+## Fine-grained authorization: the application's half, and the `setFgaLifecycle()` slot (#564, 2026-10-29)
+
+Every application created gets a fine-grained authorization policy it owns
+in `ou=policies`, and every application deleted has that policy retired —
+disabled, marked orphaned, kept (rcbj's decisions 2 and 3 on #564). The
+policy and the lifecycle are `xacml/fga_policies.ts`'s and argued in
+`xacml/CLAUDE.md` (*Application-scoped fine-grained authorization*); this
+module keeps two attributes and says WHEN.
+
+* **`appFgaPolicy`** names the policy's entry and **`appFgaEnforced`** is
+  the switch (`TRUE`; absent or `FALSE` is off, the default). Both are
+  schema rows and in NO `EDITABLE` row: switching enforcement on creates the
+  policy first, and an ordinary field write through `update-fields` would
+  skip that. `fgaStateOf()` reads them and `setFgaState()` is the one door
+  that writes them, audited as `application.update`. Being derived, an LDIF
+  export leaves them out and an import refuses them (`STS-REG-0350`), so an
+  imported application gets a policy of its own.
+* **`createApplication()` calls the `created` hook and `deleteApplication()`
+  the `deleted` one**, the second with the `appFgaPolicy` read before the
+  entry went. Not `seen()`, `register()` or `seedInternalApplication()`:
+  each files an entry no administrator created, the first two at a possibly
+  unauthenticated caller's request, and a policy per entry there would let
+  such a caller fill `ou=policies` to its applications' ceiling
+  (`xacml.maxApplicationPolicies` since #1210, `xacml/CLAUDE.md`) and stop
+  administrators' own applications getting one. They get their policy at
+  first enable. A hook's failure or throw is logged
+  (`STS-FGA-0010`) and never fails the create or delete it follows.
+
+**`setFgaLifecycle()` is a rule 3e slot, and the test answers yes both ways
+round.** A require of `xacml/fga_policies` from here AT LOAD closes a cycle
+(that module requires this one for the two attributes) and loads the XACML
+store and templates into whatever first requires this module — nearly
+everything, long before 23c — where their `InstanceSlot`s would build
+default instances and the composition root's install would then be refused.
+A LAZY require at the write, as `authzenAttributeProblem()` takes, avoids
+both but not the third cost: this module is in the parent project's Kerberos
+COPY closure through `kerberos/krb5_delegation.ts`, and a create or delete
+in those jobs would reach for a file their image does not carry. The slot
+adds no require at all. The other direction is the natural one, and is what
+`fga_policies.ts` does; its wire step at 23c fills the slot. VALIDATED WHOLE
+(`STS-FGA-0011`): `created` without `deleted` would make policies nothing
+retires. `fgaLifecycleInstalled()` is for a test that replaces it.
+
+**And the type's write door (#564, P3).** `updateApplication()` refuses an
+`oauthAuthorizationDetailsType` value written to an application whose
+`appFgaEnforced` is TRUE when `fga_map.ts`'s `uncovered()` is not empty for
+it (`fgaCoverageProblem()`, `STS-FGA-0019`) — the same rule `enable()`
+holds at the switch (`STS-FGA-0018`). `fga_map.ts` is required LAZILY and
+only for an enforcing application, which is `authorizationDetailsTypeOf()`'s
+arrangement for the mapping grammar: the slot above is about the policy's
+lifecycle, not about a definition, and no Kerberos COPY-closure job ever
+switches enforcement on.
+
+## `fga_gate.ts`: fine-grained authorization at issuance, and the slot that REFUSES when empty (#564, P3)
+
+A leaf in `access_gate.ts`'s shape — `helpers`, the error-code table,
+`InstanceSlot` — whose `setDecider()` `xacml/fga_pep.ts` fills at 23c. It is
+asked one RFC 9396 detail at a time, by `oauth-oidc/authorization_details.ts`'s
+`fineGrainedRefusal()`, and ONLY for a detail whose type's application has
+`appFgaEnforced` TRUE — `fgaStateOf()` above answers that without the XACML
+family. **An empty slot REFUSES (`STS-FGA-0016`), the opposite of
+`issuance_gate.js` and `access_gate.ts`**, because here somebody asked for a
+restriction: issuing an enforcing application's detail undecided would be
+the switch silently not applying. A decider that throws or answers nothing
+is a failure too (`STS-FGA-0015`). Rule 3e both ways round, as for the
+issuance gate: a require from `oauth2.ts` (9) to the PEP would load the
+policy store and the lifecycle far ahead of the composition root and reach
+the console through the XACML surface (a cycle); the PEP reaching into
+`oauth2.ts` would make it know every issuance site. The root builds it beside
+`access_gate`; the answer is `{ outcome: permit | deny | failure, code, why }`.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a
@@ -1034,6 +1105,11 @@ to say about.
 
 **GNAP'S `OPTIONS /gnap` MOVED HERE WITH IT**: it continues to its route
 whatever the decision (RFC 9635 section 9), carrying the headers when allowed.
+**And its preflight lists `OPTIONS` in `Access-Control-Allow-Methods` (#1214)**:
+a browser's discovery request IS an `OPTIONS`, which is not CORS-safelisted,
+so the browser sends it only when the preflight answer names the method, and
+the `cors` package's default list (`GET,HEAD,PUT,PATCH,POST,DELETE`) does not.
+Every other path keeps that default.
 
 Values are normalised when written (`validation.normaliseOrigin()`: case, the
 default port, IDN) and again when read, for `ldapmodify`. Refused: a path, a
@@ -2204,6 +2280,19 @@ by itself says `Content-Type:`. Legal — field names are case-insensitive (RFC
 libest's estclient compares names byte for byte and failed every EST request
 in `single-node` and in no other mode. The spelling is read from
 `rawHeaders`; `tests/request_barrier.js` section 11 holds it on the wire.
+
+**THE FRONT READS A WORKER'S ANSWER WITH A 1 MiB HEADER LIMIT (2026-10-30,
+#1225).** Node's response parser refuses a header block past 16 KiB, so an
+answer the worker built correctly was a 502 naming `STS-WORKER-0030` and
+`Parse Error: Header overflow` — on 8081 a SAML 2.0 Response on the Redirect
+binding, signed and with an encrypted assertion, 19,633 characters in its
+`Location`. Without request workers the same answer was delivered, so the
+hop between this process and its own thread was deciding what an answer may
+carry. `proxy()`'s request passes `maxHeaderSize:
+WORKER_ANSWER_MAX_HEADER_BYTES`; a constant and not a setting, because it
+bounds memory on a trusted hop and nothing a client sends (the listener's
+limit on request headers is unchanged). Past it the answer is still the 502.
+`tests/worker_answer_headers.js` holds both sides.
 
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
@@ -5316,6 +5405,13 @@ over 20,976 combinations, `tests/exchange_policy_exhaustive.js` over all
 gathers the facts from real entries in both modes and drives WS-Trust's
 `handleRst()`; `tests/token_exchange_product.js` and the local job
 `tests/protocol/sts_delegation_policy.js` are every outcome at the doors.
+
+**A FOURTH CALLER, AND NOT A FOURTH REGISTER (#1181).** AuthZEN's OAuth
+token-exchange binding (`authzen/authzen_exchange.ts`) asks `decide()` the
+question the token endpoint asks, for an exchange another authorization
+server is about to perform; `DecideQuestion.authzen`, which no local door
+sends, is carried into the facts untouched and written to the request only
+when present (`authzen/CLAUDE.md`). Nothing here reads it.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 
@@ -9076,9 +9172,12 @@ this service once, as the keytab its create hands over, so `view()` replaces it 
 in `fields` AND in `attributes`, ciphertext included — with a sentence saying how
 much was kept back. The ENTRY still holds it; the KDC reads it through the
 directory, never through here. **It is a schema row and not a raw attribute for a
-reason that is not optional**: `writeApplication()` replaces an entry from its
-record, and an attribute the schema does not list would be erased by the next
-sighting — for a Kerberos service, the next ticket issued for it. **And it is written
+reason that was not optional until #1230**: `writeApplication()` replaced an
+entry from its record, and an attribute the schema did not list was erased by
+the next sighting — for a Kerberos service, the next ticket issued for it.
+Since #1230 the store replaces only `ownedAttributeNames()` and keeps every
+other attribute (`ldap/CLAUDE.md`); the row stays because the pages describe
+it. **And it is written
 through the directory slot, never through `updateApplication()`**, whose audit
 summary, log line and reply all quote the value written.
 
@@ -10556,7 +10655,12 @@ stored again. What carries it:
   ANOTHER entry (`STS-ADMIN-0899`) rather than creating the two-holder state
   every door would then refuse with nothing on either page saying why; LDAP can
   still create it, and the doors refuse it then. Each change says CAEP
-  credential-change `x509`.
+  credential-change `x509`. **An application's half** (#1227):
+  `add-certificate` / `remove-certificate` on the Applications resource and
+  `applicationStoredCertificatesOf()` (`credentials.stored` of its
+  `?application=` answer), the same refusals but `STS-ADMIN-0906` for an
+  identifier the registry does not hold, and the CAEP event under the
+  application's own subject.
 
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and
@@ -13475,6 +13579,7 @@ specification's endpoint is never converted**.
 | `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `include(ns)` (#561) adds a namespace for the next `load()`, so the words of a control the service turns on are fetched only then. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
 | `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. **Since #561** `start()` reads the browser's account list first (`loadAccounts()`) and, with it on, `put()` draws the account control beside the chooser (`accountControl()`, in `#sts-accounts-slot`) — below. |
 | `web_accounts.ts` (`WebAccounts`) | **A browser's accounts as every static page reads them (#561, delivery steps 5 and 6).** `fetchList(env, prefix)`: `GET /authn-api/accounts` of THIS page's own origin with the cookie, **asked only where the shell carries `data-sts-accounts="on"`** (`announced()`) — `ShellDocument.document()` draws that attribute itself, for every static surface, where `authn.multipleAccounts` is on in the ambient realm (`accountsOn()`) and draws nothing where it is off, so with the setting off a shell is to the byte what it was and no page makes the extra request on each load it made before review (`tests/multi_account_protocols.js` 3b–3c, `tests/multi_account_tabs.js` 6 and 8) — never another listener's, since `common/cors.js` sends no `Access-Control-Allow-Credentials` to anybody — and anything but a 200 with `enabled: true` is OFF (`off()`). `live()`, `bySubject()`, `byKey()`, `fingerprint()` and `changed()`; `openChannel(env, onChange)` over `BroadcastChannel('sts-accounts')`, whose message is `{ type: 'accounts-changed', change }` and nothing about whose; `anotherHref()` (the list's `anotherAccount`, the portal's advertised address, else `/portal?accounts=another`); `controlHtml(list, t)`, the public surfaces' control; `actionOf()`, the console's and the portal's menu buttons (`data-account-action`, `data-account-key`). |
+| `web_nav_sections.ts` (`WebNavSections`) | **The collapsible navigation column the console and the portal share (#750, #1229).** `section()` draws one section as a `<details class="navsec" name="<group>" data-section="<key>">` with a `<summary class="navhead">` heading and the caller's `<li>`s, `current` marking the section that holds the page whether open or not; `initial(chosen, holding)` is the first drawing's choice (the section holding the page) and leaves any later one alone; `toggled(doc, selector, target, chosen)` answers a `toggle` (caught in the capture phase, since it does not bubble) with the reader's choice after it, closing the other open sections for a browser that predates the shared `name`; `css(accent, muted, inset)` and `narrowCss(accent, minWidth)` are the heading's rules in the caller's colours, read by `admin-ui/admin.ts` and `portal/web_portal_kit.ts`. Each runtime holds the choice (`openSection`), never storage. What each column lists, and its labels, stay its own. |
 | `web_doc_links.ts` (`WebDocLinks`) | The documentation link on every admin-console and user-portal page and tab (#895). Where it is drawn is in `admin-ui/CLAUDE.md` and `portal/CLAUDE.md`. |
 | `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
 | `web_limits_form.ts` (`WebLimitsForm`) | A right's limits as controls a person may lower (#576): the markup `limits_form.ts`'s `controls()` drew for GNAP's approval page, the portal's absent-owner approvals and the consent screen, moved here so the consent screen's renderer draws it in the browser from the rows its view carries. `LimitsForm.controls()` hands its work to it with `AccessLimits.rows()`; `lowered()`, which reads the controls back, stays on the server. English, as it always was. |

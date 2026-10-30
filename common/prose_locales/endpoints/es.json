@@ -23,6 +23,14 @@
     "en": "d7b1a01d26f2cc80",
     "text": "El repositorio, para que un PEP remoto lo CARGUE"
   },
+  "endpoints.route./xacml/pep/authzen-catalogue.name": {
+    "en": "19bdeda29bc135e4",
+    "text": "El catálogo AuthZEN, para que un PEP remoto lo CARGUE"
+  },
+  "endpoints.route./xacml/pep/authzen-callers.name": {
+    "en": "3cca9630a4d544af",
+    "text": "Los llamantes de AuthZEN, que un PEP remoto ADMITE"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Lo que ha aplicado un PEP remoto"
@@ -30,6 +38,46 @@
   "endpoints.route./xacml/pip.name": {
     "en": "b0b1791a44311248",
     "text": "El Policy Information Point, por HTTP"
+  },
+  "endpoints.route./access/v1/evaluation.name": {
+    "en": "5cd6a5386c4d1353",
+    "text": "Una evaluación de acceso"
+  },
+  "endpoints.route./access/v1/evaluations.name": {
+    "en": "71ce33d985a6eced",
+    "text": "Un lote de evaluaciones de acceso"
+  },
+  "endpoints.route./access/v1/search/subject.name": {
+    "en": "b853f782aa326dda",
+    "text": "Búsqueda de sujetos"
+  },
+  "endpoints.route./access/v1/search/resource.name": {
+    "en": "c82d24d3acd36cb5",
+    "text": "Búsqueda de recursos"
+  },
+  "endpoints.route./access/v1/search/action.name": {
+    "en": "c5373b52e1fb5ed4",
+    "text": "Búsqueda de acciones"
+  },
+  "endpoints.route./access/v1/access-requests.name": {
+    "en": "4b0c4feb0af59f04",
+    "text": "Enviar una solicitud de acceso"
+  },
+  "endpoints.route./access/v1/access-requests/:id.name": {
+    "en": "c8bcbb33d07cfb8f",
+    "text": "Estado de la tarea de una solicitud de acceso"
+  },
+  "endpoints.route./access/v1/access-requests/:id/cancel.name": {
+    "en": "90087f975ac5dec9",
+    "text": "Cancelar una solicitud de acceso"
+  },
+  "endpoints.route./.well-known/authzen-configuration.name": {
+    "en": "2b5f43e5618bacac",
+    "text": "Metadatos del PDP"
+  },
+  "endpoints.route./.well-known/authzen-configuration/*.name": {
+    "en": "c2eadd486305d29d",
+    "text": "Metadatos del PDP (identificador con ruta)"
   },
   "endpoints.route./gnap.name": {
     "en": "33b8b1fd38b28a51",
@@ -118,6 +166,50 @@
   "endpoints.route./admin-api/gnap/:action.name": {
     "en": "812de4df596c12ef",
     "text": "Revocar una concesión o eliminar un conjunto de recursos"
+  },
+  "endpoints.route./uma/rreg.name": {
+    "en": "b93e9a83c0d09d9a",
+    "text": "Registro de recursos: crear, listar"
+  },
+  "endpoints.route./uma/rreg/:id.name": {
+    "en": "34337892864217b3",
+    "text": "Registro de recursos: leer, actualizar, eliminar"
+  },
+  "endpoints.route./uma/perm.name": {
+    "en": "8896272faf315717",
+    "text": "El endpoint de permisos"
+  },
+  "endpoints.route./uma/claims.name": {
+    "en": "87870b4a58a75d4d",
+    "text": "El endpoint de interacción de claims"
+  },
+  "endpoints.route./.well-known/uma2-configuration.name": {
+    "en": "1600a854e8ebe343",
+    "text": "Descubrimiento UMA"
+  },
+  "endpoints.route./.well-known/uma2-configuration/*.name": {
+    "en": "146531da4c5d6ba9",
+    "text": "Descubrimiento UMA (forma con ruta insertada)"
+  },
+  "endpoints.route./uma.name": {
+    "en": "11e030203eddc757",
+    "text": "La página de descripción de UMA"
+  },
+  "endpoints.route./uma/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "El script de la página de descripción"
+  },
+  "endpoints.route./admin-api/uma.name": {
+    "en": "a706278ce3603ad8",
+    "text": "La página UMA de la consola en JSON"
+  },
+  "endpoints.route./admin-api/uma/monitor.name": {
+    "en": "09df5f116b3c0624",
+    "text": "Los recuentos del PEP de UMA en JSON"
+  },
+  "endpoints.route./admin-api/uma/:action.name": {
+    "en": "af591f6b600855e2",
+    "text": "Las nueve acciones de la consola UMA"
   },
   "endpoints.route./pki/crl/:scope/:ca.name": {
     "en": "8d20c59eb134e55e",
@@ -994,6 +1086,14 @@
   "endpoints.route./admin-api/secret-destinations/:action.name": {
     "en": "f8f3c83e76dc9f4c",
     "text": "Cambiar los destinos de envío de secretos"
+  },
+  "endpoints.route./admin-api/xacml/authzen.name": {
+    "en": "7fd038e122addddd",
+    "text": "El catálogo y los llamantes de la API AuthZEN"
+  },
+  "endpoints.route./admin-api/xacml/authzen/:action.name": {
+    "en": "92f7278aab7540fa",
+    "text": "Cambiar el catálogo de AuthZEN o el ámbito de un llamante"
   },
   "endpoints.route./admin-api/passkey-report.name": {
     "en": "9c856324242bc19b",

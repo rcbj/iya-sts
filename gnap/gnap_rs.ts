@@ -432,7 +432,10 @@ class GnapRs {
     }
     if (!caller.instanceId && config.value('gnap.instanceIds') !== false &&
         caller.descriptor.format !== 'reference') {
-      const instanceId = store.handle(18);
+      // The same key at the same resource server gets the same identifier
+      // back, derived, as a client does (#1221).
+      const instanceId = store.instanceIdFor(rs.identifier,
+                                             caller.descriptor.identity);
       store.putInstance(instanceId,
                         { identifier: rs.identifier,
                           key: caller.descriptor.value });

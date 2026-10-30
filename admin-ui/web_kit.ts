@@ -146,6 +146,11 @@ const LIST_PARAMS = {
                    // The named authorization servers' page (#313).
                    'serversPage'],
   '/admin/gnap/monitor': ['per', 'page'],
+  // UMA 2.0's four lists, the two filters, the owner and the what-if
+  // (uma/uma_console.ts).
+  '/admin/uma': ['per', 'resourcesPage', 'ticketsPage', 'rptsPage',
+                 'pendingPage', 'resourceServer', 'owner', 'resource',
+                 'scope', 'party', 'client'],
   // ===== certificate enrollment list params (2026-09-13) =====
   '/admin/acme': ['per', 'certificatesPage', 'credentialsPage',
                   'accountsPage', 'hostNamesPage'],

@@ -94,6 +94,23 @@ behind. `tests/protocol/sts_portal_sessions.js` asserts, for the first four
 (Overview, Applications, Password, Security keys), that its own entry is marked
 `aria-current="page"`.
 
+**THE COLUMN BEHAVES AS THE CONSOLE'S SIDEBAR SINCE #1229** (rcbj: "update
+the menu in the User Portal (/portal) to behave the same way as the Admin
+Console. Ideally, code is reused"). Each `NAV` section is a `<details>` of one
+named group (`PortalShell.NAV_GROUP`, `data-section` its `key`), collapsed
+until the reader opens it, one open at a time; the runtime's `openSection` is
+`null` until the first page is drawn, which opens the section holding it
+(`PortalShell.sectionKeyOf()`, by `navPathFor()`, so a page under a listed
+one counts as that page's), and after that is what the reader opened or `''`
+when they closed it — held in the runtime, never in storage. The section
+holding the page is marked `current` (it was `open` until #1229, a class that
+now means something else), open or not. The markup, the toggle rule and the
+heading's CSS are `common/web_nav_sections.ts`'s, the console's code moved
+there rather than copied; `admin-ui/CLAUDE.md` (#750) argues the behaviour,
+and `tests/portal_nav_sections.js` holds the portal's half of it. The column
+still does not scroll on its own (`web_portal_kit.ts`'s stylesheet note), so
+there is no `revealActiveNav()` here.
+
 **A `GET` AND A `POST` SHARE `/portal/password`.** The form has to live
 somewhere now that it is not on the overview, and a form and the handler that
 answers it on two addresses is a distinction nobody could state a reason for.
@@ -2264,3 +2281,15 @@ language-free on the account answer; the browser translates. `pending`,
 `timedout` and `none` stay "No". The portal is this origin, so it does
 not use a site-scoped or federated DBSC session.
 
+## SHARING: `/portal/shared` AND `/portal/shared-with-me` (#1168 phase 3, #1192)
+
+User-Managed Access 2.0's two pages, a section of their own (rcbj's
+decision 7). **The first page writes a POLICY**: each share is one XACML rule
+in the person's own document (`uma/uma_owner_policy.ts`; `uma/CLAUDE.md`
+argues the fixed shape and why a card is drawn only for a rule that rebuilds
+to the same XML). One `POST /account-api/shared` takes the form's `action`
+(`share`, `unshare`, `alfa`), the consents page's arrangement. **A01 holds as
+everywhere**: the owner is the token's subject, a resource named in the form
+must be theirs and a share named for removal must be in their document
+(`tests/portal_shared.js` D1). The section is always in the column; the page
+says when UMA is off.

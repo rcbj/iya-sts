@@ -81,9 +81,11 @@ attribute that the seeded people carry: alice and bob are staff, and carol is
 an admin. **A new realm's repository starts empty**, and a PDP with an empty
 repository answers NotApplicable to everything.
 
-New policies come from seven templates: **RBAC**, **ABAC**, this service's own
+New policies come from eight templates: **RBAC**, **ABAC**, this service's own
 four (`role-issuance`, `access-control`, `risk-response` and
-`signal-response`), and **blank**, an empty `Policy` or `PolicySet`. A blank `deny-unless-permit` policy **denies everything**, and
+`signal-response`), **blank**, an empty `Policy` or `PolicySet`, and
+`fga-default`, the policy every application is created with (see
+[fine-grained authorization](fga.md)). A blank `deny-unless-permit` policy **denies everything**, and
 the console says so wherever you meet one. You can also import a policy
 written in ALFA.
 
@@ -424,7 +426,8 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.issuancePolicy` | `STS_XACML_ISSUANCE_POLICY` | `role-issuance` | yes | The policy the issuance PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked what happens when a person's risk level changes. A repository entry with this name overrides the built-in one. |
 | `xacml.signalResponsePolicy` | `STS_XACML_SIGNAL_RESPONSE_POLICY` | `signal-response` | yes | The policy asked what this service's console and portal do with a verified CAEP or RISC event they receive. A repository entry with this name overrides the built-in one; a disabled one ends nothing. |
-| `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many entries `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. |
+| `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many of the policies administrators write `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. Applications' own [fine-grained authorization](fga.md) policies do not count. |
+| `xacml.maxApplicationPolicies` | `STS_XACML_MAX_APPLICATION_POLICIES` | `500` | yes | How many applications' own [fine-grained authorization](fga.md) policies `ou=policies` may hold, orphaned ones included. The default is `applications.max`'s. A create past the limit is refused (`STS-FGA-0024`). |
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
 | `xacml.remotePeps` | `STS_XACML_REMOTE_PEPS` | `true` | yes | Whether `/xacml/pep/*` and `POST /xacml/pip` answer. When off they answer 501. |
 | `xacml.pepRequireCertificate` | `STS_XACML_PEP_REQUIRE_CERTIFICATE` | `true` | yes | Whether a PEP registration needs a client certificate. When off, a registration without one is marked unauthenticated. |
@@ -574,6 +577,8 @@ an enforcement.
 
 ## Related
 
+* [Authorization overview](authorization.md): every authorization decision
+  this service makes, and where each is documented
 * [Remote PEP](remote-pep.md): the `xacml-pep/` container, with a worked
   example
 * [TLS and mutual TLS](tls.md) and [PKI](pki.md): the client certificate and

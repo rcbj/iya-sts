@@ -267,6 +267,22 @@
     "en": "fbd4d4a27b747323",
     "text": "策略决策点、其策略以及远程 PEP 的入口。"
   },
+  "listeners.applications.authzen.label": {
+    "en": "2986dab4911b3205",
+    "text": "AuthZEN"
+  },
+  "listeners.applications.authzen.what": {
+    "en": "26f176a9b231df2f",
+    "text": "AuthZEN Authorization API：基于 XACML 引擎的访问评估，以及其元数据文档。"
+  },
+  "listeners.applications.uma.label": {
+    "en": "6d9ae1cf94d49aa6",
+    "text": "User-Managed Access"
+  },
+  "listeners.applications.uma.what": {
+    "en": "2bf34c3abf834191",
+    "text": "UMA 2.0 保护 API（资源注册和许可票据）、声明交互页面和 uma2-configuration 文档。"
+  },
   "listeners.applications.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"

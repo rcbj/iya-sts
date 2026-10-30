@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "第 3.5 节：按值发送密钥的客户端会获得一个 instance_id，下次可以按引用发送。"
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "接受已注册客户端的未注册实例"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "第 2.3 和 2.3.3 节：任何应用都未注册的密钥，若其 class_id 指明的已注册 GNAP 客户端列有已注册的 gnapFinishUri，则被接受为该客户端的实例——浏览器应用（每个浏览器生成一个密钥）就是这样让用户登录的。此类实例从不跳过批准页面。关闭时：在产品模式下拒绝未注册的密钥（#1216）。"
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "保持已批准授权可继续"
@@ -1012,8 +1020,8 @@
     "text": "提供的算法"
   },
   "webauthn.algorithms|description": {
-    "en": "baa2f6e1bfd03f47",
-    "text": "`pubKeyCredParams`，按优先顺序排列——本服务接受凭据所用的 COSE 算法。名称采用 JOSE 拼写，由验证签名的模块 `authn/webauthn.js` 自己的表映射为 COSE 标识符：RFC 9964 的后量子 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）和 `ML-DSA-87`（-50）；RFC 9864 的完全指定算法 `ESP256`（-9）、`ESP384`（-51）、`ESP512`（-52）、`Ed25519`（-19）和 `Ed448`（-53），其曲线会根据密钥检查；`ES256`（-7）、`ES384`（-35）、`ES512`（-36）、`EdDSA`（-8）；RFC 8812 的 `ES256K`（-47，secp256k1）；以及 `PS256`（-37）、`PS384`（-38）、`PS512`（-39）、`RS256`（-257）、`RS384`（-258）和 `RS512`（-259）。算法不在此列表中的凭据会被拒绝（WebAuthn Level 3 第 7.1 节）。表外的名称会被丢弃并发出警告，而不是被发送，因为提供本服务无法验证的算法会产生一个能注册却永远无法使用的凭据。**默认按此顺序请求七种算法：`ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`**；身份验证器采用它支持的第一个，因此顺序就是偏好，其他任何算法都可以勾选。SHA-1 的 `RS1`（-65535）可以列出，但只有在 `webauthn.insecureAlgorithms` 开启时（仅限开发）才会被提供和接受；`webauthn.pqcOnly` 将列表收窄为 ML-DSA。"
+    "en": "d5e0c4a5c20494f6",
+    "text": "`pubKeyCredParams`，按优先顺序排列——本服务接受凭据所用的 COSE 算法。名称采用 JOSE 拼写，由验证签名的模块 `authn/webauthn.js` 自己的表映射为 COSE 标识符：RFC 9964 的后量子 `ML-DSA-44`（-48）、`ML-DSA-65`（-49）和 `ML-DSA-87`（-50）；RFC 9864 的完全指定算法 `ESP256`（-9）、`ESP384`（-51）、`ESP512`（-52）、`Ed25519`（-19）和 `Ed448`（-53），其曲线会根据密钥检查；`ES256`（-7）、`ES384`（-35）、`ES512`（-36）、`EdDSA`（-8）；RFC 8812 的 `ES256K`（-47，secp256k1）；以及 `PS256`（-37）、`PS384`（-38）、`PS512`（-39）、`RS256`（-257）、`RS384`（-258）和 `RS512`（-259）。算法不在此列表中的凭据会被拒绝（WebAuthn Level 3 第 7.1 节）。表外的名称会被丢弃并发出警告，而不是被发送，因为提供本服务无法验证的算法会产生一个能注册却永远无法使用的凭据。**默认按此顺序请求六种算法：`ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `EdDSA`, `ES256`, `RS256`**；身份验证器采用它支持的第一个，因此顺序就是偏好，其他任何算法都可以勾选。默认不请求 `ES384`，因为 Windows 上的某些浏览器与它不兼容。SHA-1 的 `RS1`（-65535）可以列出，但只有在 `webauthn.insecureAlgorithms` 开启时（仅限开发）才会被提供和接受；`webauthn.pqcOnly` 将列表收窄为 ML-DSA。"
   },
   "webauthn.algorithms|csvValueNotes|ML-DSA-44": {
     "en": "0fed17862f33fa73",
@@ -6784,8 +6792,16 @@
     "text": "策略库可容纳的策略数"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "ou=policies 下可以存放多少个条目。与 ou=federations 和 ou=applications 具有同类限制，原因也相同：在默认持久化模式下此目录位于内存中，能够无限制创建条目的调用方可以耗尽它。达到上限会拒绝创建并记录日志；它从不驱逐条目。"
+    "en": "bb4fc97c445e9e60",
+    "text": "ou=policies 下可以存放多少个条目。与 ou=federations 和 ou=applications 具有同类限制，原因也相同：在默认持久化模式下此目录位于内存中，能够无限制创建条目的调用方可以耗尽它。达到上限会拒绝创建并记录日志；它从不驱逐条目。应用自有的细粒度授权策略不计入此处：由 xacml.maxApplicationPolicies 限制。"
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "存储库可容纳的应用策略数"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "存储库可容纳多少个应用自有的细粒度授权策略（ou=policies 下带有 xacmlApplication 的条目，包括孤立的条目）。它们不计入 xacml.maxPolicies，后者限制管理员编写的策略。默认值即 applications.max 的默认值，因此注册表默认接纳的每个应用都可以拥有一个；请与 applications.max 一起调高。达到上限会拒绝创建并记录日志；它从不驱逐条目。"
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6890,6 +6906,286 @@
   "xacml.pepNotifyTimeoutMs|description": {
     "en": "b02ca7d48b1cb3f5",
     "text": "等待 PEP 应答提醒的时长。有意比 SSF 的十秒更短，原因正是提醒之所以为提醒的那一点：丢失的推送就是丢失的事件，所以 SSF 会等待；丢失的提醒只付出一个轮询间隔的延迟，别无代价，所以等待才是代价高昂的错误。真正在等待它的，是刚刚保存了策略的人的控制台表单。"
+  },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "启用 AuthZEN"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "开启时，AuthZEN Authorization API 在 /access/v1 下应答。关闭时，其路由仍保持注册状态并应答 501，与 XACML 的路由一样：功能已关闭，而不是 URL 有误。它使用 XACML 引擎作出决策，因此在 xacml.enabled 关闭时也会应答 501。调用方仍需拥有 AUTHZEN_PEPS 角色（roles.authzenPepGroup）和应用范围，才会得到任何答复。"
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "AuthZEN 调用方的身份验证方式"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls，默认值：本服务依据其客户端信任库验证的客户端证书，解析为存储该证书的目录条目（对于本服务签发的证书，则解析为其指明的人员）。bearer：来自 client_credentials 的 OAuth 2.0 访问令牌，受众为本领域的 /access/v1，并携带 authzen:evaluate；调用方即该客户端。mtls+bearer：两者兼具，且令牌必须绑定到出示的证书（RFC 8705），使两者指明同一方。在所有模式下都会检查：AuthZEN 将 PEP 的身份验证留给部署方（第 11.2 节），而任何人都能驱动的决策端点就是策略的预言机。"
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "指明目录人员的主体类型"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "其 subject.id 为本领域目录中人员的 subject.type 值，以逗号分隔。对于这些类型，策略信息点会提供主体的角色和目录属性，且这些值具有权威性：调用方无法发送它们。对于任何其他类型，不会查询目录，因此恰好与某人姓名匹配的 id 并不是那个人。为空表示从不查询目录。"
+  },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "启用批量评估"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "开启时，POST /access/v1/evaluations 在一个请求中应答多个访问评估（第 7 节），元数据文档也会列出它。关闭时该路由应答 501，元数据不列出它；/access/v1/evaluation 不受影响。"
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "一批可携带的评估数"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "一个 POST /access/v1/evaluations 可携带的最多条目数。超过时，在决定任何条目之前整批以 400 拒绝：每个条目都是在本服务线程上的一次完整决策，而无上限的列表是耗尽它的一种方式。"
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "最大批量请求（字节）"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "POST /access/v1/evaluations 接受的最大请求体。超过时，整批在读取之前以 400 拒绝。服务自身的请求体上限（5 MB）是上限。"
+  },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "签名 AuthZEN 元数据"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "开启时，/.well-known/authzen-configuration 携带 signed_metadata（AuthZEN 1.0 第 9.1 节）：一个包含相同成员的 JWT，iss 为 PDP 标识符，像 RFC 8414 的元数据一样用领域的密钥签名（oauth2.signedMetadataAlgorithm、oauth2.signedMetadataCertificateHeader），并可用领域的 JWKS 验证。支持它的 PEP 以签名的值优先于普通值。"
+  },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "向声明了义务的 PEP 交付义务"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "AuthZEN 的 Obligations Profile（草案）。开启时，仅当请求的 context.supported_obligations 列出答复中的每种义务类型时，才在 context.obligations 中把 XACML 义务交给 PEP——携带义务的 Permit 才应答 true；元数据公布 supported_obligations。没有该声明或关闭此项时，携带本服务自身无法履行的义务的 Permit 应答 false，因为从未听说过该配置文件的 PEP 否则会授予访问。"
+  },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "为其他服务器决定 OAuth 令牌交换"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "AuthZEN Binding for OAuth 2.0 Token Exchange（草案），本服务作为另一个授权服务器所询问的 PDP。开启时，resource.type 为 audience 且操作为 issue:<type>:token_exchange 的元组是一个闸门，resource.type 为 protected_resource 的元组是一个范围，二者都按固定的转换规则决定，所用的委托事实和签发策略与决定本地 RFC 8693 交换时相同；主体闸门可携带 context.issuance，它只会收窄；元数据会声明令牌签发能力。关闭时，这些元组是交给根策略的普通问题。"
+  },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "启用 Search APIs"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "开启时，三种 AuthZEN 搜索在 /access/v1/search 下应答（主体、资源、操作），元数据会列出它们。一次搜索用领域的根策略对本服务能列出的每个候选作出决定，并应答被允许的那些：主体是领域目录中的人员，资源是其应用、API 和委托关系，操作是策略用来与 action-id 比较的名称。关闭时，这些路由应答 501。"
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "一次搜索决定的候选数"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "一次搜索最多决定的候选数。每个候选都是本服务线程上的一次完整决策；超过上限后，其余候选不再决定，应答的 context.incomplete 表示结果不完整。"
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "每个搜索页的结果数"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "请求未指定 page.limit 时，一次搜索在一页中应答的结果数；用 page.next_token 继续。"
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "返回决策的原因"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "开启时，决策会携带一个 context，其中包含 XACML 决策、原因、任何 advice，以及使 Permit 变为 false 的 obligations。默认关闭：原因会向调用方透露有关策略的信息，而无论如何，单独的 decision 就是答案。"
+  },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "访问请求与审批"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "AuthZEN 访问请求与审批配置文件（草案）及其回调配套规范。开启时，XACML 应答中携带 advice urn:sts:xacml:advice:access-request 的 Deny 会应答 false 并附带 context.access_request；PEP 将其提交到 POST /access/v1/access-requests，由该 advice 指定的审批人在门户或控制台中作出决定，下一次评估时出示的批准会作为可信事实到达根策略。元数据会写明该端点和该能力。不带该 advice 的拒绝永远不可请求。关闭时，这些路由应答 501，任何拒绝都不可请求。"
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "可提交的拒绝可被提交的时长（秒）"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "可请求的拒绝的 expires_at，以及其 binding_token 的有效期：在此之后的提交会以 expired_denial 被拒绝，PEP 需重新评估。"
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "访问请求等待审批人的时长（秒）"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "超过此时长的待处理访问请求会过期，由 authzen.access-requests 调度作业处理，并在每次读取时判断。已完成的请求会多保留一天，供 PEP 读取。"
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "批准的最长有效期（秒）"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "批准的 approved_until 的上限。策略的 advice（max-approval-seconds）和请求方的 requested_until 都可以缩短它，但都不能延长它。"
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "紧急访问的有效时长（秒）"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "紧急访问请求——requested_access.emergency，在策略的 advice 允许时，并附带 context.business_justification——会立即获批，最长有效此时长，并向其审批人发送邮件以供复核。"
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "待处理访问请求的 Retry-After（秒）"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "请求待处理期间，任务状态端点所应答的 Retry-After；PEP 至少等待这么久才会再次查询。"
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "一个领域可持有的待处理访问请求数"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "一个领域最多可同时持有的待处理访问请求数；超过后，提交会被以 503 拒绝，直到其中一些被决定或过期。"
+  },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "启用 User-Managed Access"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "开启时，UMA 2.0 保护 API 在 /uma 下应答，令牌端点执行并公布 urn:ietf:params:oauth:grant-type:uma-ticket 授权，/.well-known/uma2-configuration 描述它们。关闭时，路由仍保持已注册并应答 501（与 XACML 的路由相同），该授权为 unsupported_grant_type，发现文档不提供。关闭它不会遗忘资源所有者共享过的任何内容。"
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "领域的 UMA 授权策略"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "决定每个 UMA 许可之领域层的 ou=policies 条目名称：哪些资源服务器、客户端和声明签发方可以参与，以及请求方必须是已知的。没有该名称的条目时，由内置的 uma-authorization 模板决定；条目会覆盖它，已禁用的条目不会回退到模板（签发策略的规则）。之后再询问资源所有者自己的文档和资源服务器的细粒度策略，每一层都必须为 Permit。"
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "许可票据有效期（秒）"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "许可票据（Federated Authorization 第 4 节）可在令牌端点出示的时长。每个 need_info、request_submitted 和 request_denied 应答都会轮换票据，因此不断询问的客户端出示的票据绝不会比此更旧；票据在整个集群中只能使用一次。"
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "RPT 有效期（秒）"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "请求方令牌的存活时长。有意设得较短：RPT 的许可是签发时所有者允许的内容，较短的有效期限制了不做内省的资源服务器仍然认可已撤回共享的时长。需要更长时间的客户端可再次出示其票据或升级其 RPT，这会重新决定每项许可。"
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "随 RPT 签发刷新令牌"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "uma-ticket 授权是否在 RPT 之外同时应答刷新令牌。默认关闭（rcbj 在 #1168 上的决定 4）：Grant 规范禁止在刷新时进行授权评估，而本服务在每次刷新时都会重新决定，无法重新决定的 RPT 最好改为短期有效。开启时，刷新会像升级一样重新运行每一层，不再通过的许可会被丢弃。"
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "持久化声明令牌有效期（秒）"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "持久化声明令牌（PCT）为某个客户端保留所收集的请求方声明的时长。PCT 是按摘要存储的句柄，绑定到客户端和请求方，可在 /oauth2/revoke 以 token_type_hint=pct 撤销，并在注销全部时终止。"
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "部分许可被拒绝时为已授予的许可签发 RPT"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "开启时（rcbj 在 #1168 上的决定 3），请求多项许可、其中一些被授予而另一些被拒绝的票据，会以携带已授予子集的 RPT 应答——即 Grant 规范的部分 RPT 选项——只有在全部未被授予时才应答 request_denied。关闭时，任何一项被拒绝的许可都会拒绝整个请求。只要某个问题对请求方为 Indeterminate，就优先应答 need_info 而不是以上两者。"
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "允许资源所有者以 ALFA 编辑其文档"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "开启时，/portal/shared 允许资源所有者在共享表单旁以 ALFA 编辑其整个 UMA 文档。默认关闭（rcbj 在 #1168 上的决定 2）：此时并非由表单编写的规则会以只读方式显示为自定义规则。所有者的文档只会被询问所有者自己的资源，因此手写规则最坏也只能共享其作者拥有的内容。"
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "所有者层可读取的目录属性"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "策略信息点（Policy Information Point）为资源所有者层所应答的请求方目录条目属性，以逗号分隔：即一个人自己的规则可读取的关于陌生人的信息。领域层读取目录的方式与每个签发问题相同。为空表示所有者的规则除了作为声明收集的内容外不能读取任何信息。"
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "等待所有者批准的时长（秒）"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "request_submitted 请求在 /portal/shared 上等待所有者答复的时长。超过后仍未答复，客户端的下一次轮询将为 request_denied。在已配置邮件通道且所有者未拒绝通知时，会通过邮件告知所有者。"
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "单个所有者可有的待处理批准数"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "同时等待某个所有者答复的最多请求数。超过后，再有 request_submitted 将应答 request_denied 而不是排队：无上限的队列会让陌生人填满一个人的门户。"
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "所有者文档最大大小（字节）"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "资源所有者策略的 XACML 文档最大可占的字节数。会使其超出上限的共享将被拒绝，文档保持原样。"
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "所有者文档中的最多规则数"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "资源所有者的文档可容纳的最多 Rule 数：它自己的 owner-self 规则、每个共享一条、每个已给出的批准一条。会使其超出上限的共享将被拒绝。"
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "单个所有者可注册的资源数"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "跨所有资源服务器代表某个所有者注册的最多资源数。超过后的注册将被拒绝：否则持有保护 API 令牌的资源服务器可以无限制地以他人名义注册。"
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "单个资源的最多范围数"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "一个已注册资源可携带的最多 resource_scopes 数。范围是字符串，绝不会被访问：规范允许范围指向的范围描述文档不会被获取。"
   },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
@@ -8022,6 +8318,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "其成员拥有内置 XACML_USER 角色的目录组，这是三个 XACML 端点本身所要求的角色——GET /xacml、POST /xacml/pdp 和 GET /xacml/policies。出示了经本服务验证的客户端证书的调用方，是本服务能够指明身份的一方；而该组的成员身份才使其成为本服务允许进入的一方，两者被分开的理由与上面的 roles.remotePepGroup 相同：证书证明身份，组授予权限。这是第二个组，而不是同一个组：REMOTE_PEPS 可访问三个 /xacml/pep 端点，它们分发本服务用于执行其自身访问控制的文档，若由一个组同时授予两者，那么允许调用方访问XACML 界面本身就会悄无声息地允许其访问那些端点。设置为空字符串表示没有人拥有该角色，这会对每个调用方关闭这三个端点；这是在不关闭 xacml.enabled、从而不连带失去嵌入式签发和访问 PEP 的情况下移除 XACML 界面的方法。"
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "授予 AUTHZEN_PEPS 角色的组"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "其成员持有内置 AUTHZEN_PEPS 角色的目录组，/access/v1 下的 AuthZEN Authorization API 要求的就是该角色。成员可以是人员、服务账户或应用（对于使用自己的访问令牌进行身份验证的调用方）。它是第三个组，而不是另外两个组中的任何一个：AUTHZEN_PEPS 只请求决策，别无其他；而 XACML_USER 还会读取策略库，REMOTE_PEPS 则拉取本服务用于执行自身访问控制的文档以及指定人员的属性。将其设为空字符串意味着没有任何人持有该角色，从而对每个调用方关闭 /access/v1。"
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "Avslutar varje inloggningssession vars livslängd eller inaktivitetstidsgräns har passerats och, i varje sfär, högst den sfärens authn.sessionShedPerSweep av ett subjekts egna överskottssessioner."
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "Utgång av AuthZEN-åtkomstbegäranden"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) som passerat sin expires_at till expired — skriver dess granskningsrad och skickar dess callback — och tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpt ut om det är senare. En läsning tillämpar själv tidsgränsen, så det här är registret och städningen, aldrig det som avgör."
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "Utrensning av utgångna cacheposter"
@@ -100,8 +108,8 @@
     "text": "GNAP: utgångna beviljanden"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Slutför varje GNAP-beviljande vars interaktions- eller beviljandelivslängd (gnap.grantLifetimeS) har tagit slut och som ingen begäran har rört sedan dess, och registrerar varför (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Avslutar varje GNAP-behörighet vars interaktion eller behörighetens livslängd (gnap.grantLifetimeS) har löpt ut och som ingen begäran har rört sedan dess, och registrerar varför (#432), och tar bort varje instanspost som inte har använts lika länge (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",
@@ -582,6 +590,14 @@
   "sched.jobs.tls.ticket-key-rotate.describe": {
     "en": "d685d1a2ff40e09e",
     "text": "Ersätter sessionsbiljettnyckeln som varje nods TLS-lyssnare delar i ett aktivt-aktivt kluster, så att en biljett som en nod utfärdat kan återupptas på en annan. Nyckeln den ersätter tas bort, vilket begränsar hur länge en återupptagen sessions hemligheter kan återvinnas ur en biljett."
+  },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "UMA-utgång"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Tar bort varje behörighetsbiljett, beständig anspråkstoken, RPT-post och väntande ägargodkännande för User-Managed Access som passerat sin livstid (#1168). En läsning tillämpar tidsgränsen själv, så detta är städningen, aldrig det som avgör."
   },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",

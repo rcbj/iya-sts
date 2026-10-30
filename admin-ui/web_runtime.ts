@@ -65,6 +65,7 @@ import SpaClient = require('../common/web_spa_client');
 import WebAnnouncements = require('../common/web_announcements');
 import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
+import WebNavSections = require('../common/web_nav_sections');
 import WebForms = require('./web_forms');
 import SettingsForms = require('./web_settings');
 import WebAnswers = require('./web_answers');
@@ -1287,9 +1288,9 @@ class ConsoleRuntime extends SpaClient {
     // after that records what they opened, or '' when they closed it, and
     // that is what later drawings use. With no sections in hand yet the
     // choice waits for a drawing that has them.
-    if (this.openSection === null && Array.isArray(shell.sections) &&
-        shell.sections.length) {
-      this.openSection = WebShell.sectionKeyOf(shell.sections, active);
+    if (Array.isArray(shell.sections) && shell.sections.length) {
+      this.openSection = WebNavSections.initial(this.openSection,
+        WebShell.sectionKeyOf(shell.sections, active));
     }
     this.env.document.title = title + ' — IYA STS admin';
     this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
@@ -1446,11 +1447,9 @@ class ConsoleRuntime extends SpaClient {
   // A SIDEBAR SECTION OPENED OR CLOSED (#750). `toggle` does not bubble, so
   // `start()` listens for it in the capture phase and hands every one here;
   // only a section of the sidebar's nav is acted on. Opening one records it
-  // and closes any other: the shared `name` (WebShell.NAV_GROUP) already does
-  // that in a browser that knows it, where the loop finds nothing open, and
-  // in one that predates it the loop IS the one-open rule. Closing the one
-  // recorded forgets it; the `toggle` for a section the browser closed
-  // because another opened does not, whichever order the two arrive in.
+  // and closes any other; closing the one recorded forgets it. The rule is
+  // `common/web_nav_sections.ts`'s `toggled()`, which the portal's runtime
+  // shares (#1229).
   /**
    * Records the sidebar section opened, and closes the others.
    *
@@ -1458,27 +1457,8 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   onNavToggle(target: Json): void {
-    if (!target || !target.classList ||
-        !target.classList.contains('navsec') ||
-        typeof target.getAttribute !== 'function') {
-      return;
-    }
-    const key = String(target.getAttribute('data-section') || '');
-    if (!target.open) {
-      if (this.openSection === key) {
-        this.openSection = '';
-      }
-      return;
-    }
-    this.openSection = key;
-    const doc = this.env.document;
-    const open = doc && doc.querySelectorAll
-      ? doc.querySelectorAll('aside.side details.navsec[open]') : [];
-    for (let i = 0; i < open.length; i++) {
-      if (open[i] !== target) {
-        open[i].open = false;
-      }
-    }
+    this.openSection = WebNavSections.toggled(this.env.document,
+      'aside.side details.navsec[open]', target, this.openSection);
   }
 
   // A SCRIPT A PAGE NAMES (`data-script`): markup drawn by `innerHTML` runs

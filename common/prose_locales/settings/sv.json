@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "Avsnitt 3.5: en klient som skickade sin nyckel som värde får ett instance_id som den kan skicka som referens nästa gång."
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "Godta oregistrerade instanser av en registrerad klient"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "Avsnitt 2.3 och 2.3.3: en nyckel som ingen applikation registrerar godtas som en instans av den registrerade GNAP-klient som dess class_id anger, när den klienten har ett registrerat gnapFinishUri — så loggar en webbläsarapplikation, som skapar en nyckel per webbläsare, in personer. En sådan instans hoppar aldrig över godkännandesidan. Av: en oregistrerad nyckel nekas i produktläge (#1216)."
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "Låt godkända behörigheter kunna fortsättas"
@@ -1012,8 +1020,8 @@
     "text": "Erbjudna algoritmer"
   },
   "webauthn.algorithms|description": {
-    "en": "baa2f6e1bfd03f47",
-    "text": "`pubKeyCredParams`, i prioritetsordning — de COSE-algoritmer som tjänsten godtar en autentiseringsuppgift i. Namnen är JOSE-stavningar och mappas till COSE-identifierare av `authn/webauthn.js` egen tabell, vilket är modulen som verifierar signaturen: RFC 9964:s postkvantsäkra `ML-DSA-44` (-48), `ML-DSA-65` (-49) och `ML-DSA-87` (-50); RFC 9864:s fullständigt specificerade `ESP256` (-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) och `Ed448` (-53), vars kurva kontrolleras mot nyckeln; `ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8); RFC 8812:s `ES256K` (-47, secp256k1); och `PS256` (-37), `PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` (-258) och `RS512` (-259). En autentiseringsuppgift vars algoritm inte finns på listan vägras (WebAuthn Level 3 avsnitt 7.1). Ett namn utanför tabellen tas bort med en varning i stället för att skickas, eftersom att erbjuda en algoritm som tjänsten inte kan verifiera ger en autentiseringsuppgift som registreras och sedan aldrig fungerar. **Standardvärdet begär sju, i den här ordningen: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `ES384`, `EdDSA`, `ES256`, `RS256`**; en autentiserare tar den första den stöder, så ordningen är en prioritet, och vilken annan algoritm som helst kan kryssas i. SHA-1:s `RS1` (-65535) får namnges men erbjuds och godtas bara medan `webauthn.insecureAlgorithms` är på (endast utveckling); `webauthn.pqcOnly` begränsar listan till ML-DSA."
+    "en": "d5e0c4a5c20494f6",
+    "text": "`pubKeyCredParams`, i prioritetsordning — de COSE-algoritmer som tjänsten godtar en autentiseringsuppgift i. Namnen är JOSE-stavningar och mappas till COSE-identifierare av `authn/webauthn.js` egen tabell, vilket är modulen som verifierar signaturen: RFC 9964:s postkvantsäkra `ML-DSA-44` (-48), `ML-DSA-65` (-49) och `ML-DSA-87` (-50); RFC 9864:s fullständigt specificerade `ESP256` (-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) och `Ed448` (-53), vars kurva kontrolleras mot nyckeln; `ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8); RFC 8812:s `ES256K` (-47, secp256k1); och `PS256` (-37), `PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` (-258) och `RS512` (-259). En autentiseringsuppgift vars algoritm inte finns på listan vägras (WebAuthn Level 3 avsnitt 7.1). Ett namn utanför tabellen tas bort med en varning i stället för att skickas, eftersom att erbjuda en algoritm som tjänsten inte kan verifiera ger en autentiseringsuppgift som registreras och sedan aldrig fungerar. **Standardvärdet begär sex, i den här ordningen: `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44`, `EdDSA`, `ES256`, `RS256`**; en autentiserare tar den första den stöder, så ordningen är en prioritet, och vilken annan algoritm som helst kan kryssas i. `ES384` begärs inte som standard, eftersom vissa webbläsare i Windows inte är kompatibla med den. SHA-1:s `RS1` (-65535) får namnges men erbjuds och godtas bara medan `webauthn.insecureAlgorithms` är på (endast utveckling); `webauthn.pqcOnly` begränsar listan till ML-DSA."
   },
   "webauthn.algorithms|csvValueNotes|ML-DSA-44": {
     "en": "0fed17862f33fa73",
@@ -6784,8 +6792,16 @@
     "text": "Policyer som repositoryt får rymma"
   },
   "xacml.maxPolicies|description": {
-    "en": "eae9db3ed7f2d788",
-    "text": "Hur många poster som får finnas under ou=policies. Samma slags gräns som ou=federations och ou=applications har, och av samma skäl: den här katalogen ligger i minnet i standardläget för persistens, och en anropare som kan skapa poster utan gräns kan uttömma den. Att nå gränsen vägrar SKAPANDET och loggar; den tar aldrig bort något."
+    "en": "bb4fc97c445e9e60",
+    "text": "Hur många poster som får finnas under ou=policies. Samma slags gräns som ou=federations och ou=applications har, och av samma skäl: den här katalogen ligger i minnet i standardläget för persistens, och en anropare som kan skapa poster utan gräns kan uttömma den. Att nå gränsen vägrar SKAPANDET och loggar; den tar aldrig bort något. En applikations egen policy för finkornig auktorisering räknas inte här: xacml.maxApplicationPolicies begränsar dem."
+  },
+  "xacml.maxApplicationPolicies|label": {
+    "en": "58baa1db130e1e2b",
+    "text": "Applikationspolicyer som arkivet får innehålla"
+  },
+  "xacml.maxApplicationPolicies|description": {
+    "en": "30e66b56e28dbac3",
+    "text": "Hur många applikationers egna policyer för finkornig auktorisering (poster under ou=policies med xacmlApplication, föräldralösa inräknade) arkivet får innehålla. De räknas inte mot xacml.maxPolicies, som begränsar de policyer administratörer skriver. Standardvärdet är standardvärdet för applications.max, så varje applikation som registret tar emot som standard kan ha en; höj det tillsammans med applications.max. Att nå gränsen vägrar SKAPANDET och loggar; den tar aldrig bort något."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6890,6 +6906,286 @@
   "xacml.pepNotifyTimeoutMs|description": {
     "en": "b02ca7d48b1cb3f5",
     "text": "Hur länge man väntar på att en PEP ska svara på en knuff. KORTARE ÄN SSF:S TIO SEKUNDER MED AVSIKT, och skälet är det som gör en knuff till en knuff: en förlorad push är en förlorad händelse, så SSF väntar; en förlorad knuff kostar ett avfrågningsintervall av latens och inget annat alls, så att vänta är det dyra misstaget. Det som FAKTISKT väntar på den är konsolformuläret hos den som just sparade en policy."
+  },
+  "authzen.enabled|label": {
+    "en": "82d2f79b7a0ac393",
+    "text": "AuthZEN aktiverat"
+  },
+  "authzen.enabled|description": {
+    "en": "9989f6296bde3aaa",
+    "text": "När den är på svarar AuthZEN Authorization API under /access/v1. När den är av förblir dess rutter REGISTRERADE och svarar 501, precis som XACML:s: funktionen är av, URL:en är inte fel. Den fattar beslut med XACML-motorn, så den svarar 501 även medan xacml.enabled är av. En anropare behöver fortfarande rollen AUTHZEN_PEPS (roles.authzenPepGroup) och ett applikationsomfång innan den får veta något."
+  },
+  "authzen.callerAuthentication|label": {
+    "en": "0d54f64fbd17edd1",
+    "text": "Hur en AuthZEN-anropare autentiserar sig"
+  },
+  "authzen.callerAuthentication|description": {
+    "en": "0d1f5428d150bfd9",
+    "text": "mtls, standardvärdet: ett klientcertifikat som den här tjänsten VERIFIERAR mot sitt klientförtroendelager, upplöst till den katalogpost som lagrar det (eller den person det namnger, för ett som den här tjänsten utfärdat). bearer: en OAuth 2.0-åtkomsttoken från client_credentials, med den här sfärens /access/v1 som målgrupp och med authzen:evaluate; anroparen är klienten. mtls+bearer: båda, och tokenen måste vara bunden till det uppvisade certifikatet (RFC 8705), så att de två namnger en och samma part. Kontrolleras i alla lägen: AuthZEN överlåter autentiseringen av PEP:en till driftsättningen (avsnitt 11.2), och en beslutsslutpunkt som vem som helst kan driva är ett orakel för policyn."
+  },
+  "authzen.resolveSubjectTypes|label": {
+    "en": "5e92e9e48b446187",
+    "text": "Subjekttyper som namnger en person i katalogen"
+  },
+  "authzen.resolveSubjectTypes|description": {
+    "en": "e5b02e80d4c28af6",
+    "text": "De subject.type-värden vars subject.id är en person i den här sfärens katalog, kommaseparerade. För dem svarar Policy Information Point med subjektets roller och katalogattribut, och de är AUKTORITATIVA: en anropare kan inte skicka dem. För alla andra typer tillfrågas inte katalogen, så ett id som råkar matcha en persons namn är inte den personen. Tomt betyder att katalogen aldrig tillfrågas."
+  },
+  "authzen.batchEnabled|label": {
+    "en": "226d41afe4d10424",
+    "text": "Batchutvärderingar påslagna"
+  },
+  "authzen.batchEnabled|description": {
+    "en": "09e89f17a1789b12",
+    "text": "När det är på besvarar POST /access/v1/evaluations flera åtkomstutvärderingar i en begäran (avsnitt 7), och metadatadokumentet namnger den. Av svarar vägen 501 och metadatan utelämnar den; /access/v1/evaluation påverkas inte."
+  },
+  "authzen.maxEvaluations|label": {
+    "en": "807685616b938e0f",
+    "text": "Utvärderingar en batch får bära"
+  },
+  "authzen.maxEvaluations|description": {
+    "en": "0fed425ade5fd638",
+    "text": "Det största antalet poster en POST /access/v1/evaluations får bära. Över det avvisas hela batchen med 400 innan någon post avgörs: varje post är ett fullt beslut på tjänstens tråd, och en obegränsad lista är ett sätt att förbruka den."
+  },
+  "authzen.maxBodyBytes|label": {
+    "en": "d27d8c8a77c93c60",
+    "text": "Största batchbegäran (byte)"
+  },
+  "authzen.maxBodyBytes|description": {
+    "en": "f87dab881941fc82",
+    "text": "Den största kropp POST /access/v1/evaluations tar emot. Över den avvisas hela batchen med 400 innan den läses. Tjänstens egen kroppsgräns (5 MB) är taket."
+  },
+  "authzen.signedMetadata|label": {
+    "en": "7d20e83cf58c25e1",
+    "text": "Signera AuthZEN-metadatan"
+  },
+  "authzen.signedMetadata|description": {
+    "en": "f21d61faadc593c0",
+    "text": "När det är på bär /.well-known/authzen-configuration signed_metadata (AuthZEN 1.0 avsnitt 9.1): en JWT av samma medlemmar, iss PDP-identifieraren, signerad med sfärens nyckel som RFC 8414-metadatan är (oauth2.signedMetadataAlgorithm, oauth2.signedMetadataCertificateHeader) och verifierbar med sfärens JWKS. En PEP som stöder den tror på de signerade värdena framför de vanliga."
+  },
+  "authzen.obligationsProfile|label": {
+    "en": "0a64f3a8decc8720",
+    "text": "Lämna över skyldigheter till en PEP som deklarerar dem"
+  },
+  "authzen.obligationsProfile|description": {
+    "en": "d856eb355e794d04",
+    "text": "AuthZEN:s Obligations Profile (ett utkast). När det är på lämnas en XACML-skyldighet över till PEP:en i context.obligations — och en Permit som bär en svarar true — ENDAST när begärans context.supported_obligations räknar upp varje skyldighetstyp i svaret; metadatan annonserar supported_obligations. Utan den deklarationen, eller med detta av, svarar en Permit med en skyldighet som tjänsten inte själv kan utföra false, eftersom en PEP som aldrig hört talas om profilen annars skulle ge åtkomst."
+  },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "Avgör OAuth-tokenutbyten åt andra servrar"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "AuthZEN Binding for OAuth 2.0 Token Exchange (ett utkast), med den här tjänsten som den PDP en annan auktoriseringsserver frågar. När den är på är en tupel vars resource.type är audience och vars åtgärd är issue:<type>:token_exchange en grind, och en vars resource.type är protected_resource ett omfång, avgjorda av fasta konverteringsregler med samma delegeringsfakta och samma utfärdandepolicy som ett lokalt RFC 8693-utbyte avgörs med; subjektets grind kan bära context.issuance, som bara begränsar; och metadata annonserar förmågan att utfärda token. Av är de tuplerna vanliga frågor till rotpolicyn."
+  },
+  "authzen.searchEnabled|label": {
+    "en": "dc167dc0906f464e",
+    "text": "Search APIs aktiverade"
+  },
+  "authzen.searchEnabled|description": {
+    "en": "70c3885264cc1776",
+    "text": "När det är på svarar de tre AuthZEN-sökningarna under /access/v1/search (subjekt, resurs, åtgärd), och metadatan namnger dem. En sökning avgör varje kandidat som den här tjänsten kan namnge med sfärens rotpolicy och svarar med de tillåtna: subjekten är sfärens personer i katalogen, resurserna dess applikationer, API:er och delegeringsrelationer, åtgärderna de namn som policyn jämför action-id med. Av svarar vägarna 501."
+  },
+  "authzen.searchMaxCandidates|label": {
+    "en": "2975f92129e80bb1",
+    "text": "Kandidater som en sökning avgör"
+  },
+  "authzen.searchMaxCandidates|description": {
+    "en": "3f416374700938f2",
+    "text": "Det största antalet kandidater som en sökning avgör. Varje kandidat är ett fullständigt beslut på den här tjänstens tråd; bortom taket avgörs resten inte och svarets context.incomplete säger att resultatet är partiellt."
+  },
+  "authzen.searchPageSize|label": {
+    "en": "5b5ec2a37e6c1966",
+    "text": "Resultat per söksida"
+  },
+  "authzen.searchPageSize|description": {
+    "en": "90d4d04ba4399f4b",
+    "text": "Hur många resultat en sökning svarar med på en sida när begäran inte anger page.limit; page.next_token fortsätter."
+  },
+  "authzen.returnReasons|label": {
+    "en": "02f02c9b852dcfca",
+    "text": "Returnera skälen för ett beslut"
+  },
+  "authzen.returnReasons|description": {
+    "en": "b02d024ed71640ad",
+    "text": "När den är på bär ett beslut en context med XACML-beslutet, varför, eventuella advice och de obligations som gjorde en Permit till false. Av som standard: ett skäl berättar något om policyn för en anropare, och decision ensamt är svaret i båda fallen."
+  },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "Åtkomstbegäranden och godkännanden"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "AuthZEN Access Request and Approval Profile (ett utkast), med dess callback-komplement. När den är på besvaras ett Deny vars XACML-svar bär advice urn:sts:xacml:advice:access-request med false och context.access_request; en PEP skickar in den till POST /access/v1/access-requests, en godkännare som advice anger avgör den i portalen eller konsolen, och ett godkännande som presenteras vid nästa utvärdering når rotpolicyn som betrodda fakta. Metadata anger endpoint och capability. Ett nekande utan advice kan aldrig begäras. När den är av svarar rutterna 501 och inget nekande kan begäras."
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "Hur länge ett begärbart nekande får skickas in (sekunder)"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "expires_at för ett begärbart nekande och livslängden för dess binding_token: en inskickning efter det avvisas som expired_denial och PEP:en utvärderar igen."
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "Hur länge en åtkomstbegäran väntar på en godkännare (sekunder)"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "En väntande åtkomstbegäran som passerat detta är expired, av schemaläggarjobbet authzen.access-requests och vid varje läsning. En avslutad sparas en dag längre så att PEP:en kan läsa den."
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "Det längsta ett godkännande gäller (sekunder)"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "Taket för ett godkännandes approved_until. Policyns advice (max-approval-seconds) och den som begär åtkomst (requested_until) kan var och en förkorta det; ingen av dem förlänger det."
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "Hur länge nödåtkomst gäller (sekunder)"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "En begäran om nödåtkomst — requested_access.emergency, där policyns advice tillåter det, med en context.business_justification — godkänns omedelbart för högst så här länge, och dess godkännare får e-post för att granska den."
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "Retry-After för en väntande åtkomstbegäran (sekunder)"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "Den Retry-After som uppgiftsstatus-endpointen svarar med medan en begäran väntar; en PEP väntar minst så här länge innan den frågar igen."
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "Väntande åtkomstbegäranden en sfär rymmer"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "Det högsta antalet åtkomstbegäranden en sfär rymmer som väntande; efter det avvisas en inskickning med 503 tills några avgjorts eller gått ut."
+  },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "User-Managed Access aktiverat"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "När det är på svarar UMA 2.0:s skydds-API under /uma, tokenslutpunkten utför beviljandet urn:ietf:params:oauth:grant-type:uma-ticket och annonserar det, och /.well-known/uma2-configuration beskriver dem. Av förblir vägarna REGISTRERADE och svarar 501, som XACML:s gör, beviljandet är unsupported_grant_type och upptäcktsdokumentet serveras inte. Inget som en resursägare delat glöms bort när det slås av."
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "Sfärens UMA-auktoriseringspolicy"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "Namnet på den ou=policies-post som avgör SFÄRENS lager för varje UMA-behörighet: vilka resursservrar, klienter och utfärdare av anspråk som får delta, och att en begärande part måste vara känd. Utan någon post med det namnet avgör den inbyggda mallen uma-authorization; en post åsidosätter den, och en AVAKTIVERAD post faller inte tillbaka (utfärdandepolicyns regel). Resursägarens eget dokument och resursserverns finkorniga policy tillfrågas efter den, och varje lager måste svara Permit."
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "Behörighetsbiljettens livstid (sekunder)"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "Hur länge en behörighetsbiljett (Federated Authorization avsnitt 4) får visas upp vid tokenslutpunkten. Varje svar med need_info, request_submitted och request_denied ROTERAR biljetten, så en klient som fortsätter fråga visar aldrig upp en äldre än detta; en biljett förbrukas en gång i hela klustret."
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "RPT-livstid (sekunder)"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "Hur länge en token för begärande part lever. KORT MED AVSIKT: en RPT:s behörighet är vad ägaren tillät när den utfärdades, och en kort livstid begränsar hur länge en återtagen delning fortfarande respekteras av en resursserver som inte gör introspektion. En klient som vill ha längre visar upp sin biljett igen eller uppgraderar sin RPT, vilket avgör varje behörighet på nytt."
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "Utfärda en uppdateringstoken med en RPT"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "Huruvida uma-ticket-beviljandet svarar med en uppdateringstoken bredvid RPT:n. AV SOM STANDARD (rcbjs beslut 4 i #1168): Grant-specifikationen förbjuder en auktoriseringsbedömning vid uppdatering, den här tjänsten avgör på nytt vid varje uppdatering, och en RPT som inte kan avgöras på nytt bör hellre vara kortlivad. På kör uppdateringen om varje lager, som en uppgradering gör, och en behörighet som inte längre går igenom släpps."
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "Livstid för beständig anspråkstoken (sekunder)"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "Hur länge en beständig anspråkstoken (PCT) behåller de anspråk som samlats in om en begärande part för en klient. En PCT är ett handtag lagrat via sin hash, bundet till klienten och den begärande parten, återkallningsbart vid /oauth2/revoke med token_type_hint=pct, och avslutat av en utloggning från allt."
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "Utfärda en RPT för de beviljade behörigheterna när några vägras"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "När det är på (rcbjs beslut 3 i #1168) besvaras en biljett som begär flera behörigheter, av vilka några beviljas och andra vägras, med en RPT som bär den beviljade delmängden — Grant-specifikationens alternativ med partiell RPT — och med request_denied bara när ingen beviljas. Av vägrar varje vägrad behörighet hela begäran. need_info föredras framför båda så snart en fråga är Indeterminate med avseende på den begärande parten."
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "Låt en resursägare redigera sitt dokument som ALFA"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "När det är på låter /portal/shared en resursägare redigera hela sitt UMA-dokument som ALFA, bredvid delningsformuläret. AV SOM STANDARD (rcbjs beslut 2 i #1168): en regel som formuläret inte skrev visas då skrivskyddad som en anpassad regel. En ägares dokument tillfrågas bara någonsin om ägarens egna resurser, så det värsta en handskriven regel kan göra är att dela det dess författare äger."
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "Katalogattribut som ägarens lager får läsa"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "De attribut i en begärande parts katalogpost som Policy Information Point svarar med för resurs-ÄGARENS lager, kommaseparerade: vad en persons egen regel får läsa om en främling. Sfärens lager läser katalogen som varje utfärdandefråga gör. Tomt betyder att en ägares regel inte får läsa något utom det som samlats in som anspråk."
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "Hur länge en ägares godkännande inväntas (sekunder)"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "Hur länge en request_submitted-begäran väntar på /portal/shared på ägarens svar. Obesvarad efter det blir klientens nästa avfrågning request_denied. Ägaren meddelas via e-post där kanalen är konfigurerad och de inte har avböjt aviseringar."
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "Väntande godkännanden per ägare"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "Högsta antalet begäranden som samtidigt väntar på en ägares svar. Därutöver besvaras ytterligare en request_submitted med request_denied i stället för att köas: en obegränsad kö är ett sätt för en främling att fylla en persons portal."
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "Största ägardokument (byte)"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "Den största storlek i byte som en resursägares XACML-policydokument får ha. En delning som skulle ta det förbi gränsen vägras och dokumentet lämnas som det var."
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "Flest regler i ett ägardokument"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "Det högsta antalet Rules en resursägares dokument får innehålla: dess egen owner-self-regel, en per delning och en per givet godkännande. En delning som skulle ta det förbi gränsen vägras."
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "Registrerade resurser per ägare"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "Det högsta antalet resurser som registrerats för en ägares räkning, över alla resursservrar. En registrering därutöver vägras: annars skulle en resursserver med en skydds-API-token kunna registrera obegränsat i någons namn."
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "Flest omfång på en resurs"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "Det högsta antalet resource_scopes en registrerad resurs får bära. Ett omfång är en sträng och kontaktas aldrig: ett dokument med omfångsbeskrivning som specifikationen tillåter ett omfång att namnge hämtas inte."
   },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
@@ -8022,6 +8318,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Kataloggruppen vars medlemmar har den inbyggda rollen XACML_USER, som är vad de tre egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp och GET /xacml/policies. En anropare som visar ett klientcertifikat som tjänsten VERIFIERAT är någon den kan namnge; medlemskap i den här gruppen är det som gör dem till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger de tre slutpunkterna för alla anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbyggda utfärdande- och åtkomst-PEP:arna med den."
+  },
+  "roles.authzenPepGroup|label": {
+    "en": "8dacfdf5504e732a",
+    "text": "Grupp som ger rollen AUTHZEN_PEPS"
+  },
+  "roles.authzenPepGroup|description": {
+    "en": "1fa346a8c5f6e56e",
+    "text": "Den katalogrupp vars medlemmar har den inbyggda rollen AUTHZEN_PEPS, vilket är vad AuthZEN Authorization API under /access/v1 kräver. En medlem är en person, ett tjänstekonto eller en applikation (för en anropare som autentiserar sig med sin egen åtkomsttoken). DET ÄR EN TREDJE GRUPP OCH INTE NÅGON AV DE ANDRA TVÅ: AUTHZEN_PEPS ber om beslut och inget annat, medan XACML_USER också läser repositoryt och REMOTE_PEPS hämtar de dokument som den här tjänsten upprätthåller sin egen åtkomst med samt en namngiven persons attribut. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger /access/v1 för varje anropare."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

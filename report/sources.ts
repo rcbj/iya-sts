@@ -2929,6 +2929,144 @@ function reportAnchorRefusal(plan: any): any {
   };
 }
 
+// THE INPUTS OF AN AUTHZEN SEARCH SOURCE (#1176), read off the filter: each
+// field `Catalog.authzenInputs()` names, as an `eq` leaf of the top-level
+// `and` (or the filter itself). An input only inside an `or` or a `not` is
+// not one, because a search is asked with one value per input. The other
+// leaves still narrow the rows, as every filter does.
+function reportAuthzenInputs(plan: any): any {
+  log.debug("Entering reportAuthzenInputs().");
+  const names = new Catalog().authzenInputs(String(plan && plan.source));
+  if (!names) {
+    log.debug("Leaving reportAuthzenInputs(). Not a search source.");
+    return null;
+  }
+  const where = plan.where;
+  const leaves = where && where.op === 'and' ? where.args
+    : (where ? [where] : []);
+  const given: Record<string, string> = {};
+  leaves.forEach(function (leaf: any): void {
+    if (leaf && leaf.op === 'eq' && names.indexOf(leaf.field) >= 0 &&
+        typeof leaf.value === 'string' && leaf.value) {
+      given[leaf.field] = leaf.value;
+    }
+  });
+  const missing = names.filter(function (name: string): boolean {
+    return !Object.prototype.hasOwnProperty.call(given, name);
+  });
+  if (missing.length) {
+    log.debug("Leaving reportAuthzenInputs(). Missing " + missing.join());
+    return {
+      refusal: {
+        ok: false,
+        code: 'STS-REPORT-0054',
+        error: 'invalid_query',
+        description: 'A query on ' + plan.source + ' is one AuthZEN ' +
+          'search, asked with ' + names.join(', ') + ', each as an eq ' +
+          'filter of the top-level "and" (or as the whole filter); ' +
+          'missing: ' + missing.join(', ') + '.'
+      }
+    };
+  }
+  log.debug("Leaving reportAuthzenInputs().");
+  return { given: given };
+}
+
+// THE AUTHZEN SEARCH, ASKED AS THE REPORT'S OWNER (#1176; rcbj: "reports
+// should run with the permissions of the person logged into the report").
+// The owner is the AuthZEN caller and `sts-report` the application, with no
+// caller-scope check — the person is not a PEP, and the reports
+// application's own rights (REPORT_USE, the definition's policy) have
+// already admitted them. One search, every candidate decided by the root
+// XACML policy, with the page as large as the candidate cap so that one
+// call answers it: a report pages its own rows. An owner from another realm
+// (#1038) is refused rather than asked about: the caller is a NAME, and in
+// this realm that name is somebody else, or nobody.
+async function reportReadAuthzen(plan: any, given: Record<string, string>,
+                                 rows: any, control: any): Promise<any> {
+  log.debug("Entering reportReadAuthzen().");
+  const realms = require('../common/realms');
+  const config = require('../common/config');
+  const authzen = require('../authzen/authzen');
+  const owner = String((control && control.owner) || '');
+  const ownerRealm = String((control && control.ownerRealm) || '');
+  const here = String(realms.currentId() || '');
+  const refused = function (code: string, error: string,
+                            description: string): any {
+    log.debug("Entering refused(). " + code);
+    log.debug("Leaving refused().");
+    return { ok: false, code: code, error: error, description: description };
+  };
+  if (!authzen.searchEnabled()) {
+    log.warn(errorCodes.tag('STS-REPORT-0055') + 'report: ' + plan.source +
+      ' refused; the AuthZEN search APIs are off in this realm.');
+    log.debug("Leaving reportReadAuthzen(). Search is off.");
+    return refused('STS-REPORT-0055', 'unavailable', 'The AuthZEN search ' +
+      'APIs are off in this realm (authzen.searchEnabled).');
+  }
+  if (!owner || (ownerRealm && ownerRealm !== here)) {
+    log.warn(errorCodes.tag('STS-REPORT-0055') + 'report: ' + plan.source +
+      ' refused; the owner is not a person of this realm.');
+    log.debug("Leaving reportReadAuthzen(). No owner here.");
+    return refused('STS-REPORT-0055', 'forbidden', 'An AuthZEN search ' +
+      'runs as the report\'s owner, who has to be a person of this realm; ' +
+      'this report\'s owner is ' + (owner ? 'of another realm' : 'unknown') +
+      '.');
+  }
+  const kind = plan.source === 'authzenSubjects' ? 'subject'
+    : (plan.source === 'authzenResources' ? 'resource' : 'action');
+  const body: any = {
+    subject: { type: given.subjectType },
+    resource: { type: given.resourceType },
+    page: { limit: Number(config.value('authzen.searchMaxCandidates')) }
+  };
+  if (kind !== 'subject') {
+    body.subject.id = given.subjectId;
+  }
+  if (kind !== 'resource') {
+    body.resource.id = given.resourceId;
+  }
+  if (kind !== 'action') {
+    body.action = { name: given.action };
+  }
+  const answer = authzen.runSearch(kind, body, { name: owner },
+    { checkScope: false, application: 'sts-report', where: 'report' });
+  if (!answer || answer.status !== 200) {
+    const code = String((answer && answer.code) || 'STS-REPORT-0055');
+    log.debug("Leaving reportReadAuthzen(). Refused " + code);
+    return refused(code, answer && answer.status === 501 ? 'unavailable'
+      : 'invalid_query', String((answer && answer.error &&
+      answer.error.message) || 'The AuthZEN search was refused.'));
+  }
+  const results = answer.body.results || [];
+  for (let i = 0; i < results.length; i++) {
+    const row: any = {
+      subjectType: given.subjectType,
+      subjectId: kind === 'subject' ? String(results[i].id)
+        : given.subjectId,
+      action: kind === 'action' ? String(results[i].name) : given.action,
+      resourceType: given.resourceType,
+      resourceId: kind === 'resource' ? String(results[i].id)
+        : given.resourceId
+    };
+    const keep = await reportOffer(row, rows, control);
+    if (keep === false) {
+      log.debug("Leaving reportReadAuthzen(). Stopped.");
+      return null;
+    }
+  }
+  // AN INCOMPLETE SEARCH IS SAID SO in the log, under the code the search
+  // recorded on its audit row; the report holds the rows it was given.
+  if (answer.body.context && answer.body.context.incomplete) {
+    log.warn(errorCodes.tag('STS-AUTHZEN-0045') + 'report: the ' + kind +
+      ' search of ' + plan.source + ' was incomplete; ' +
+      String(answer.body.context.reason_admin &&
+             answer.body.context.reason_admin.en || ''));
+  }
+  log.debug("Leaving reportReadAuthzen(). " + results.length + " row(s).");
+  return null;
+}
+
 async function reportReadWork(plan: any, control: any): Promise<any> {
   log.debug("Entering reportReadWork().");
   const anchor = reportAnchorRefusal(plan);
@@ -2936,9 +3074,22 @@ async function reportReadWork(plan: any, control: any): Promise<any> {
     log.debug("Leaving reportReadWork(). Not anchored.");
     return anchor;
   }
+  const inputs = reportAuthzenInputs(plan);
+  if (inputs && inputs.refusal) {
+    log.warn(errorCodes.tag('STS-REPORT-0054') + 'report: ' +
+      inputs.refusal.description);
+    log.debug("Leaving reportReadWork(). An AuthZEN input is missing.");
+    return inputs.refusal;
+  }
   const rows = new Rows(plan, reportTypes(plan));
   const held = control || {};
-  if (reportReader) {
+  if (inputs && !reportReader) {
+    const searched = await reportReadAuthzen(plan, inputs.given, rows, held);
+    if (searched) {
+      log.debug("Leaving reportReadWork(). The search was refused.");
+      return searched;
+    }
+  } else if (reportReader) {
     await reportReader(plan, function (row: any): boolean {
       return rows.take(row);
     }, held);
@@ -3329,6 +3480,10 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
     budgetMs: plan.execution === 'sync' ? limits.syncMaxMs() :
       limits.asyncMaxMs(),
     execution: plan.execution,
+    // WHO THE REPORT RUNS AS (#1176): the AuthZEN search sources ask the
+    // policy with the owner as the caller.
+    owner: reportActor(job),
+    ownerRealm: String(job.ownerRealm || ''),
     cancelled: function (): boolean {
       const current = stores.getJob(job.id);
       return !!(current && (current.cancelRequested ||

@@ -95,6 +95,18 @@
     "en": "6803d7137bac3178",
     "text": "full para sa mandatoryong feature set: ang policy language, ang pitong decision value kasama ang tatlong extended Indeterminate, target matching, mga condition, mga variable, ang labindalawang combining algorithm, mga obligation at advice, mga policy reference, at ang standard function library sa lahat ng labimpitong datatype. Sinusuri laban sa OASIS conformance suite — 454 sa 455 na mandatoryong case ang pumapasa, at ang nag-iisang exception ay nakatala kasama ang argumento nito sa xacml/conformance/MANIFEST.js. HINDI saklaw: AttributeSelector at ang mga XPath function (Indeterminate ang policy na gumagamit ng isa sa halip na tahimik na walang laman), ang Multiple Decision at Hierarchical Resource profile, at administrative delegation."
   },
+  "stsmetadata.specs.authzen10.coverage": {
+    "en": "73b5afdb5c895b9d",
+    "text": "partial: ang Access Evaluation API (section 6), pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng per-realm na attribute catalogue, na may X-Request-ID at ang section 11.3 challenge, ang Access Evaluations API (section 7) na may tatlong semantics nito, at ang PDP metadata (section 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang Obligations Profile draft para sa PEP na nagdedeklara ng mga type, at ang tatlong Search API (section 8) sa mga tao, application, API, delegation relationship at policy action ng serbisyong ito, may paging at hindi transitive. Kulang: per-result na obligation sa isang search, at ang OAuth profile, na draft pa rin."
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial: ang requestable na denial (context.access_request, evaluation_id, evaluated_at, reason) kung saan minamarkahan ng policy ng realm ang isang Deny ng access-request advice, naka-bind ayon sa value sa pamamagitan ng binding_token na pinipirmahan ng realm na ito (ang mga inline claim); ang pagsumite na may Idempotency-Key, 201 o 202 at isang Task Handle; ang task status endpoint na may Retry-After; pagkansela sa pamamagitan ng POST o DELETE; ang anim na status; ang reevaluate completion mode, ang approval.id na nireresolba sa trusted state at ang approval na umaabot sa policy bilang trusted facts; next_action at ang limang reason; bawat problem type; ang metadata member, jwks_uri at capability. Kulang: evaluation_id bilang binding ayon sa reference, approval.state, ang hashed na binding form, mga machine-readable na anyo (form_url, request_schema_url), display, at ang mga companion na BULK, ACTOR at CATALOG."
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial: ang callback ng isang pagsumite (endpoint, state, events), ang endpoint na nililimitahan sa mga URL na nirehistro ng administrator para sa humihiling na PEP, isang notification-only na callback para sa bawat hiniling na terminal event, na inaauthenticate ng maikling JWT na pinipirmahan ng realm na ito, sa ilalim ng outbound policy. Kulang: ang partial event (BULK) at mga event subscription sa antas ng deployment; hindi na muling sinusubukan ang nabigong delivery."
+  },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full para sa request at response: ang mga shorthand na pangalan ng category, ang maiikling pangalan ng datatype, datatype inference mula sa JSON type (kasama ang pagkakaiba ng integer/double, na binabasa mula sa source text dahil itinapon na ito ng JSON.parse), mga array bilang bag, mga obligation, advice at ang PolicyIdentifierList. Walang policy syntax na itinatakda ang profile, kaya nananatiling XML ang mga policy."
@@ -134,6 +146,14 @@
   "stsmetadata.specs.rfc9767.coverage": {
     "en": "c36892dc6db9d597",
     "text": "full: ang discovery document na nakaharap sa RS sa /.well-known/gnap-as-rs, token introspection na may token model ng section 2.1, resource set registration, token derivation sa pamamagitan ng existing_access_token, at bawat format sa token format registry ng section 5.2 — jwt-signed, jwt-encrypted, macaroon, biscuit at zcap — mina-mint at vine-verify. Nakikita ng resource server ng section 6.3 na sumusuri ng token nang mag-isa ang isang revocation (#432): may dalang Token Status List status claim ang mga JWT format, inilalathala ang mga revocation identifier ng mga binawing biscuit (hindi standard), at maaaring magmay-ari ang isang nakarehistrong resource server ng Shared Signals stream na nakakarinig ng session-revoked para sa mga token na naka-audience dito. Walang ganoong mekanismo ang mga macaroon at zcap token; introspection ang daan nila."
+  },
+  "stsmetadata.specs.uma2-grant.coverage": {
+    "en": "de5c44fe6f4c8008",
+    "text": "partial: discovery (section 2); ang urn:ietf:params:oauth:grant-type:uma-ticket grant (section 3.3) na ang ticket ay isang beses lang nagagamit sa buong cluster at naka-bind sa unang client na nag-present nito, ang mga hinihinging scope ng section 3.3.4, isang PCT na ipinresent, need_info na may rotated ticket at required_claims, request_denied, partial RPT (uma.partialRpt), RPT upgrade, at bawat permission na pinagpapasyahan ng policy ng realm, ng sariling XACML document ng resource owner, ng fine-grained policy ng resource server at ng issuance gate; ang PCT na in-issue nang makalap ang mga claim at nare-revoke sa /oauth2/revoke; ang claims interaction endpoint (section 3.3.2) sa pamamagitan ng iisang sign-in ng serbisyong ito; isang pushed claim_token sa ID Token format, mula sa realm na ito o sa isang declared assertion issuer; at request_submitted, na sumasagot ang owner sa portal, at ang approval ay isinusulat bilang rule ng sarili niyang policy. Kulang: SAML bilang claim_token_format, at step-up sa acr na hinihingi ng isang share sa interaction (tumatanggi ang share sa ganoong kaso). Walang laman ang uma_profiles_supported."
+  },
+  "stsmetadata.specs.uma2-fedauthz.coverage": {
+    "en": "6b8ea1097c24f058",
+    "text": "partial: ang protection API access token (section 2) bilang ordinaryong access token na naka-audience sa /uma na may dalang uma_protection, sa pamamagitan ng code flow (tao ang owner) o client_credentials (ang application ang owner, kung may dala itong umaOwnsResources); resource registration (section 3) — gumawa, basahin, i-update, burahin at ilista, kasama ang user_access_policy_uri; at ang permission endpoint (section 4) na nag-i-issue ng isang ticket para sa isa o ilang permission, kasama ang invalid_resource_id at invalid_scope. RPT introspection (section 5) na ang PAT ay Bearer sa /oauth2/introspect: mga permission at walang scope, para lang sa mga RPT ng resource server na iyon. Hindi kailanman kinukuha ang scope description document na pinapangalanan ng isang scope URI: ang scope ay isang string."
   },
   "stsmetadata.specs.rfc9421.coverage": {
     "en": "3326ecc9e0fc4e59",
@@ -747,6 +767,14 @@
     "en": "f21e16beea449f7d",
     "text": "Bawat NAKA-ENABLE na policy at kung alin ang root, kasama ang isang sync token sa eksaktong mga byte na iyon; ang ?since=<token> ay sumasagot ng 304. ANG PULL ANG KONTRATA — pina-poll ito ng remote PEP sa sarili nitong interval at nag-e-evaluate nang lokal gamit ang sarili nitong kopya ng engine, dahil ang PEP na nagtatanong bawat request ay magiging /xacml/pdp na may network hop sa harap ng bawat access decision. Nangangailangan ng REMOTE_PEPS — IBANG role mula sa XACML_USER na hinihingi ng apat na endpoint sa itaas, at ibang group, dahil ito ang endpoint na naglalathala ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access. Hindi isinasama ang NAKA-DISABLE na policy sa halip na ipadala nang may flag, dahil ang PEP na nag-load nito ay magpapatupad ng policy na hindi ipinapatupad ng serbisyong ito."
   },
+  "stsmetadata.endpoints./xacml/pep/authzen-catalogue.what": {
+    "en": "bcec1fc31c824002",
+    "text": "Ang katalogo ng mga attribute ng AuthZEN ng realm — ang mga row ng authzenAttribute sa sts-authzen-api, binasa gaya ng pagbasa ng POST /access/v1/evaluation — at ang mga setting ng AuthZEN na nagbabago sa pagmamapa o sa sagot, kasama ang sarili nitong sync token; sumasagot ng 304 ang ?since=<token>. Kinukuha ito katabi ng mga patakaran ng container na xacml-pep, na ang edge PDP ay sumasagot sa AuthZEN gamit ang eksaktong mga row na ito, kaya iisa ang pagmamapa ng isang kahilingan sa dalawang lugar. Nangangailangan ng REMOTE_PEPS, gaya ng pagkuha ng mga patakaran. Karagdagan lamang: hindi nagbabago ang /xacml/pep/policies. Pinangangalanan ng fgaApplications ang mga application na nagpapatupad ng fine-grained na awtorisasyon, at kasama ito sa sync token: ipinapasa ng edge PDP ang isang ebalwasyon tungkol sa isa sa mga ito sa POST /access/v1/evaluation ng realm na ito sa halip na ito mismo ang magpasya (#564)."
+  },
+  "stsmetadata.endpoints./xacml/pep/authzen-callers.what": {
+    "en": "59db273e0a0989c3",
+    "text": "Kung sino ang tinatanggap ngayon ng realm na ito sa AuthZEN API nito, upang ayon dito tumanggap ang edge PDP ng container na xacml-pep: bawat tumatawag na tinatanggap ng access-control policy sa /access/v1/* (AUTHZEN_PEPS, ayon sa pasya ng policy), pinangalanan kung paano ito nakikita ng isang policy sa urn:sts:xacml:authzen:caller, kasama ang SHA-256 ng DER ng bawat certificate na itutugma ng serbisyong ito sa pangalang iyon, ang saklaw ng application nito at ang mga endpoint kung saan ito tinatanggap, at isang sariling sync token; ang ?since=<token> ay sumasagot ng 304. Gumagalaw ang token kapag may nagbago sa isang miyembro, isang certificate, isang saklaw o sa sagot ng policy, at humahabol ang edge sa susunod nitong poll. Nangangailangan ng REMOTE_PEPS, gaya ng pagkuha ng mga policy, kaya sinumang may hawak ng role na iyon ay makababasa kung sino ang maaaring magtanong sa PDP (rcbj sa #1189). Karagdagan lamang: hindi nagbabago ang /xacml/pep/policies at /xacml/pep/authzen-catalogue."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Ang mga cumulative counter nito at ang sync token na hawak nito — na siyang ginagawang paghahambing na isinasagawa ng serbisyong ito ang \"current\" sa halip na pahayag ng PEP tungkol sa sarili nito. Nangyari ang mga desisyong iyon sa ibang process at wala sa mga iyon ang nakita ng serbisyong ito, na siyang buong punto ng remote PEP. HINDI ito gumagawa ng row: ang heartbeat mula sa isang hindi kailanman nagparehistro ay tinatanggihan nang may pangalan ng registration endpoint, dahil ang row na ginawa rito ay walang dalang certificate, walang notify URL at walang petsa ng registration."
@@ -754,6 +782,46 @@
   "stsmetadata.endpoints./xacml/pip.what": {
     "en": "8d15807def09ebea",
     "text": "XML ang pasok, XML ang labas. Mag-POST ng <PIPRequest> na may dalang XACML <Request> na pinagpapasyahan mo at isang <AttributeDesignator> bawat attribute na kailangan; makakatanggap ng <Attributes> pabalik SA HUGIS NA DINADALA ITO NG ISANG <Request>. UMIIRAL ITO DAHIL ANG REMOTE PEP AY MAY HAWAK NG ENGINE AT HINDI NG DIRECTORY: ang PIP ng serbisyong ito AY ou=users, kaya ang policy na nagtatalaga ng attribute na hindi dinala ng request ay nare-resolve sa walang lamang bag sa ibang container at sa tunay na value dito — iisang policy na nagpapasya nang dalawang paraan sa dalawang enforcement point, na siyang drift na pinipigilan ng shared repository, na muling lumilitaw isang layer pababa. WALANG PIP PROTOCOL NA TINUTUKOY ANG XACML, kaya kakaunti hangga't maaari ang iniimbento nito: ang parehong direksyon ay sariling XML ng XACML, binabasa at isinusulat ng xacml_xml.js at hindi ng anumang bago, at ang response ay isang REQUEST FRAGMENT na isinisingit ng PEP sa sarili nitong request — pagkatapos nito ay nahahanap ng engine nito ang mga value kung saan tumitingin ang designator, nang walang pagsasalin at walang branch. Sumasagot ito sa pamamagitan ng PAREHONG resolverFor() na ibinibigay sa embedded PDP, kaya hindi sila magkakasalungat, at nire-resolve nito ang entry nang ISANG BESES bawat tawag para hindi makakita ng dalawang magkaibang tao ang isang batch ng designator. TATLONG PATAKARAN: ang hindi na-resolve na designator ay WALANG <Attribute> at hindi kailanman walang lamang attribute o error, dahil ganoon ang hitsura ng request na hindi kailanman nagdala nito; binabasa ang MustBePresent at HINDI inilalapat, dahil kung ano ang ibig sabihin ng walang lamang bag ay itinatakda ng designator at ng function na pinagbibigyan nito, na parehong nasa engine ng CALLER; at ang access-subject category lang ang nare-resolve. Ang limang dahilan kung bakit puwedeng walang laman ang bag ay ibinabalik sa <Unresolved>, sa SARILING namespace ng serbisyong ito para hindi ito makita ng PEP na XACML core namespace lang ang binabasa. Nangangailangan ito ng REMOTE_PEPS sa halip na XACML_USER na hinihingi ng natitirang bahagi ng /xacml — ang nag-iisang endpoint dito na ang role ay hindi sumusunod sa path nito, dahil ang ibinabalik ay sariling data ng isang tao at hindi patakarang puwedeng suriin ng sinuman."
+  },
+  "stsmetadata.endpoints./access/v1/evaluation.what": {
+    "en": "83b5c5b154533638",
+    "text": "Mag-POST ng AuthZEN subject, action, resource at context; makakuha ng decision na true o false. Pinagpapasyahan ng XACML engine laban sa ROOT policy ng realm, na may protocol = authzen sa request. Umaabot lamang ang isang property sa policy sa pamamagitan ng attribute catalogue ng realm, at ang hindi naideklara ay 400 sa bawat mode. Nag-a-authenticate ang CALLER ayon sa authzen.callerAuthentication — client certificate bilang default, access token na may dalang authzen:evaluate, o pareho — at dapat may hawak na AUTHZEN_PEPS at naka-scope sa application na tinatanong nito. Ang pagtanggi ay 200 false; ang fault na naabot ng PDP ay 500, hindi kailanman false."
+  },
+  "stsmetadata.endpoints./access/v1/evaluations.what": {
+    "en": "8bc09fb8f18ab7e3",
+    "text": "POST ng mga top-level na default na subject, action, resource at context at ng evaluations array na pinapalitan ng mga item nito ang mga iyon; ang sagot ay evaluations, isang desisyon bawat item ayon sa pagkakasunod ng request. Ang options.evaluations_semantic ay execute_all (ang default), deny_on_first_deny o permit_on_first_permit. Ang pagkabigo ng isang item ay false na may context.error at hindi kailanman itinatago ng 200; ang batch na lampas sa authzen.maxEvaluations o authzen.maxBodyBytes ay 400 bago may mapagpasyahan. Bawat item ay sarili nitong audit row, dala ang id ng batch."
+  },
+  "stsmetadata.endpoints./access/v1/search/subject.what": {
+    "en": "fe8e4325c7dcb03b",
+    "text": "I-POST ang request ng seksyon 8; makakuha ng results at isang pahina. Sinasagot ang mga subject ng isang uri na maaaring gumawa ng action sa isang resource: ang mga tao sa directory ng realm, para sa uring nasa authzen.resolveSubjectTypes. Bawat kandidato ay pinagpapasyahan ng root policy ng realm nang eksakto gaya ng isang evaluation, at ang mga pinahihintulutan lamang ang mga resulta; hinahati sa pahina gamit ang page.next_token, nililimitahan ng authzen.searchMaxCandidates, at sinasabing hindi kumpleto lampas dito."
+  },
+  "stsmetadata.endpoints./access/v1/search/resource.what": {
+    "en": "7cec603566a02dc0",
+    "text": "I-POST ang request ng seksyon 8; makakuha ng results at isang pahina. Sinasagot ang mga resource ng isang uri na maaaring gawan ng action ng isang subject: application, api o delegation, mula sa directory ng mga application. Bawat kandidato ay pinagpapasyahan ng root policy ng realm nang eksakto gaya ng isang evaluation, at ang mga pinahihintulutan lamang ang mga resulta; hinahati sa pahina gamit ang page.next_token, nililimitahan ng authzen.searchMaxCandidates, at sinasabing hindi kumpleto lampas dito."
+  },
+  "stsmetadata.endpoints./access/v1/search/action.what": {
+    "en": "b5c83db3aa38640f",
+    "text": "I-POST ang request ng seksyon 8; makakuha ng results at isang pahina. Sinasagot ang mga action na maaaring gawin ng isang subject sa isang resource: ang mga pangalang ikinukumpara ng root policy sa action-id, at ang sariling mga permission ng isang application o API. Bawat kandidato ay pinagpapasyahan ng root policy ng realm nang eksakto gaya ng isang evaluation, at ang mga pinahihintulutan lamang ang mga resulta; hinahati sa pahina gamit ang page.next_token, nililimitahan ng authzen.searchMaxCandidates, at sinasabing hindi kumpleto lampas dito."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "I-POST ang subject, resource, action at context ng isang tinanggihang evaluation kasama ang denial na natanggap nito (ang binding_token at expires_at nito, ibinabalik nang hindi binabago); makakuha ng 202 at isang Task Handle, o 201 na may resulta kapag agad itong napagpasyahan (emergency access na pinapayagan ng policy). Tanging ang Deny na minarkahan ng policy ng realm ng advice na urn:sts:xacml:advice:access-request ang requestable. Parehong caller door at AUTHZEN_PEPS gaya ng isang evaluation; iginagalang ang Idempotency-Key bawat caller; callback lang sa URL na nakarehistro para sa caller. Bawat pagtanggi ay problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "I-GET ang task: ang status nito (pending, approved, denied, expired, cancelled, failed), Retry-After habang pending, at kapag naaprubahan na ang reevaluate result kasama ang approval na dala ng PEP sa susunod nitong evaluation bilang context.approval. Ang task ay nakikita lang ng caller na nagsumite nito; sa iba, ito ay unknown_task."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "I-POST, o i-DELETE, para kanselahin ang pending na task ng caller; ang tapos na isa ay sumasagot ng 409 invalid_task_state."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
+    "en": "eb2dea870b873bc2",
+    "text": "Ang dokumento ng section 9: policy_decision_point (ang base ng realm na ito, tumutugma sa URL na pinagkukunan nito) at ang mga endpoint lang na sumasagot dito (ang batch at ang tatlong search habang naka-on ang bawat isa, at access_request_endpoint na may jwks_uri at ang access-request capability habang naka-on ang authzen.accessRequests), supported_obligations, at signed_metadata, isang JWT ng parehong mga member na ang iss ay ang PDP identifier, na mabe-verify gamit ang JWKS ng realm (authzen.signedMetadata). Pampubliko; sumasagot ng 501 habang naka-off ang API."
+  },
+  "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
+    "en": "15cec7da69cb22fd",
+    "text": "Ang parehong dokumento sa ipinasok na anyo ng seksyon 9.2, kung saan ang identifier ng PDP ay sa isang realm: /realm/<id> pagkatapos ng segment, sinasagot sa loob ng realm na iyon. Ang anumang ibang path ay walang pinapangalanang PDP at isang 404."
   },
   "stsmetadata.endpoints./gnap.what": {
     "en": "0a6481b8d5fe5896",
@@ -842,6 +910,50 @@
   "stsmetadata.endpoints./admin-api/gnap/:action.what": {
     "en": "d80279b4f86d8ba8",
     "text": "Ang dalawang control sa /admin/gnap bilang iisang action resource: revoke-grant (ang grant at bawat token sa ilalim nito, kasama ang CAEP event na ipapadala ng sariling DELETE ng client) at delete-resource-set."
+  },
+  "stsmetadata.endpoints./uma/rreg.what": {
+    "en": "5b1209610fcc3969",
+    "text": "Federated Authorization section 3. I-POST ang resource description (kailangan ang resource_scopes; opsyonal ang name, type, description, icon_uri; ang scope ay isang string at hindi kailanman kinokontak) gamit ang protection API token (PAT) bilang Bearer o DPoP: 201 na may _id, user_access_policy_uri (ang /portal/shared ng owner) at isang Location. Inililista ng GET ang mga _id na nirehistro ng owner at resource server ng PAT na ito. ANG SUBJECT NG PAT ANG OWNER ng lahat ng nire-register gamit ito — isang tao sa code flow, ang application mismo sa client_credentials kung may dala itong umaOwnsResources — at walang anumang ipinapadala ng resource server ang nagpapangalan ng owner. Sinusuri ang PAT sa bawat mode. Nililimitahan ng uma.maxResourcesPerOwner at uma.maxResourceScopes; 501 habang naka-off ang uma.enabled."
+  },
+  "stsmetadata.endpoints./uma/rreg/:id.what": {
+    "en": "670e1795fbc003c3",
+    "text": "I-GET ang resource description; i-PUT ang bago (200 na may _id); i-DELETE ito (204). Ang resource na nirehistro ng ibang owner o ibang resource server ay not_found (404) dito, at walang nagsasabi kung alin. unsupported_method_type (405) para sa anumang ibang method."
+  },
+  "stsmetadata.endpoints./uma/perm.what": {
+    "en": "b9a235927c812cb9",
+    "text": "Federated Authorization section 4. I-POST ang isang object o array ng {resource_id, resource_scopes} kasama ang PAT: 201 na may isang permission ticket para sa lahat ng iyon, na iaabot sa client sa WWW-Authenticate challenge ng section 3.2 ng Grant specification. Hindi policy ang well-formedness: ang hindi naka-register na resource ay invalid_resource_id at ang hindi naka-register na scope ay invalid_scope, parehong 400, bago pa magtanong ng kahit ano. Nabubuhay ang ticket nang uma.ticketLifetimeS at isang beses lang nagagamit sa buong cluster."
+  },
+  "stsmetadata.endpoints./uma/claims.what": {
+    "en": "d0075cc9de5f44f5",
+    "text": "Ang section 3.3.2 ng Grant specification: ang client na sinagot ng need_info ay nagpapadala rito ng requesting party na may client_id, ticket, claims_redirect_uri at state. Nagsa-sign in sila sa pamamagitan ng iisang sign-in ng serbisyong ito, itinatala bilang requesting party ng ticket, at ibinabalik na may authorization_state=claims_submitted at bagong ticket. Ang claims_redirect_uri ay dapat isa sa mga nirehistro ng client (oauthClaimsRedirectUri), eksaktong tinutugma; ang anumang iba ay sinasabi sa tao at hindi kailanman nire-redirect-an."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration.what": {
+    "en": "9d41c4e007caa064",
+    "text": "Ang section 2 document ng Grant specification: ang mga member ng RFC 8414 para sa authorization server ng realm na ito kasama ang permission_endpoint, resource_registration_endpoint, introspection_endpoint, claims_interaction_endpoint at uma_profiles_supported (walang laman: walang profile na naipatupad nang buo), at ang UMA grant sa grant_types_supported habang ginagawa lang ito. Cache-Control: no-store, gaya ng bawat dokumentong may dalang key. Sumasagot ng 501 habang naka-off ang uma.enabled: kasinungalingan ang dokumentong nag-a-advertise ng mga endpoint na hindi sumasagot."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration/*.what": {
+    "en": "2b88d2429a93782c",
+    "text": "Ang parehong dokumento sa inserted form ng RFC 8414, kung saan ang issuer ay sa isang realm: /realm/<id> pagkatapos ng segment, sinasagot sa loob ng realm na iyon. Ang anumang ibang path ay walang pinapangalanang realm at 404."
+  },
+  "stsmetadata.endpoints./uma.what": {
+    "en": "35251459226228a7",
+    "text": "Ang sariling page ng serbisyong ito na nagsasabi kung ano ang UMA 2.0 dito: ang mga endpoint, ang mga resource server na naka-declare sa realm na ito, ang apat na layer na nagpapasya ng isang permission, at ang mga setting. Ang shell ng isang static surface (#584); ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng pareho bilang data."
+  },
+  "stsmetadata.endpoints./uma/description.js.what": {
+    "en": "5427ba067f3c0091",
+    "text": "Ang iisang bundle ng mga description page, sa path ng family na ito."
+  },
+  "stsmetadata.endpoints./admin-api/uma.what": {
+    "en": "6c3373c7363b58ee",
+    "text": "Ang iginuguhit ng GET /admin/uma, mula sa parehong view function (#1195): ang mga resource server, mga resource, mga live na ticket at RPT, mga naghihintay na request, isang owner at ang dry-run na what-if."
+  },
+  "stsmetadata.endpoints./admin-api/uma/monitor.what": {
+    "en": "092fae243a21641a",
+    "text": "Ang uma row ng XACML monitor at, bawat resource server, ang hawak nito ngayon."
+  },
+  "stsmetadata.endpoints./admin-api/uma/:action.what": {
+    "en": "dffe8070a25174ec",
+    "text": "I-enable o i-disable ang isang resource server, hayaan itong mag-may-ari ng mga resource, burahin ang isang resource, i-revoke ang isang RPT, at mag-share, mag-unshare, mag-approve o tumanggi sa sariling dokumento ng isang application."
   },
   "stsmetadata.endpoints./pki/crl/:scope/:ca.what": {
     "en": "ed94a6a95a2f95e4",
@@ -1878,6 +1990,14 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination at test-push (isang canary version na isinulat sa isang test secret): ang apat na act ng console, bawat isa ay ina-audit. Tinatanggap ang write credential at hindi kailanman ibinabalik."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563). Ang iginuguhit ng AuthZEN tab ng /admin/xacml: kung sumasagot ang /access/v1 sa realm, kung paano nag-aauthenticate ang mga caller nito, ang mga setting ng AuthZEN, ang attribute catalogue sa sts-authzen-api, ang mga miyembro ng roles.authzenPepGroup kasama ang mga application na maaaring itanong ng bawat isa at ang mga nakarehistro nilang callback URL, at ang mga access request ng realm (#1180)."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563). set-attribute, remove-attribute, set-scope at set-callbacks, at ang apat na act sa isang access request (#1180) — approve, deny, revoke at cancel, ang unang tatlo ay itinatanong sa access-control policy gaya ng pagtatanong ng portal: ang mga act ng tab, bawat isa ay naka-audit. Ang catalogue row papunta sa reserved identifier ay tinatanggihan dito gaya sa bawat write."
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",
@@ -3578,6 +3698,14 @@
   "stsmetadata.protocols.XACML.what": {
     "en": "67c5a7f56c196939",
     "text": "Isang Policy Decision Point, isang policy repository na AY ang ou=policies sa embedded directory, isang Policy Information Point na nagbabasa ng mga attribute mula sa sariling entry ng subject, at isang embedded na Policy Enforcement Point. ANG NAG-IISANG FAMILY DITO NA SUMASAGOT SA TANONG TUNGKOL SA HANGGANAN NG IBA: bawat ibang protocol sa serbisyong ito ay nag-a-authenticate o nagpo-provision ng isang tao, at ang isang ito ay inaabutan ng subject na na-authenticate na sa ibang lugar at tinatanong kung maaari sila. Pinanghahawakan sa OASIS conformance suite sa halip na sa test na isinulat dito."
+  },
+  "stsmetadata.protocols.AuthZEN.what": {
+    "en": "fd1e05bdba949f8d",
+    "text": "Ang AuthZEN Authorization API sa ibabaw ng XACML engine: nagtatanong ang isang Policy Enforcement Point ng isang tanong bawat access at sinasabihan ng true o false, na pinagpasyahan laban sa root policy ng realm. Isang ADAPTER: imina-map ang request sa isang XACML request sa pamamagitan ng attribute catalogue bawat realm at ng nag-iisang request builder, at imina-map pabalik ang sagot nang fail-closed. Hindi nito ginagalaw ang mga XACML endpoint at ang remote PEP container."
+  },
+  "stsmetadata.protocols.UMA 2.0.what": {
+    "en": "7c03af276f90480f",
+    "text": "User-Managed Access 2.0, isang GRANT at hindi decision engine: nire-register ng isang resource server ang mga resource na hawak nito para sa isang resource owner sa pamamagitan ng protection API at humihingi ng permission ticket kapag may dumating na client; ipinepresent ng client ang ticket sa token endpoint; at bawat permission — isang resource, isang scope — ay ini-issue lang kapag ang uma-authorization policy ng realm, ang SARILING XACML DOCUMENT NG OWNER (isinulat gamit ang isang form sa portal), ang fine-grained policy ng resource server kung nagpapatupad ito ng isa, at ang issuance gate ay lahat nagsasabing Permit. Ang tanging idinadagdag ng UMA na wala sa iba rito ay isang policy na isinusulat ng isang tao; ang kawalan nito ay hindi kailanman consent. Naka-off hanggang i-on ito ng isang realm (uma.enabled)."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

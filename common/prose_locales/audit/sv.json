@@ -879,6 +879,70 @@
     "en": "d9fe267d0aae76d6",
     "text": "Den inbäddade PEP:en verkställde ett beslut"
   },
+  "audit.actions.authzen.decision.label": {
+    "en": "9a9264e25acb9778",
+    "text": "En AuthZEN-åtkomstutvärdering avgjordes"
+  },
+  "audit.actions.authzen.search.label": {
+    "en": "c7d970c13ae99f25",
+    "text": "En AuthZEN-sökning besvarades"
+  },
+  "audit.actions.fga.decision.label": {
+    "en": "c2696096c0749879",
+    "text": "Ett finkornigt auktoriseringsbeslut fattades vid utfärdandet"
+  },
+  "audit.actions.admin.authzen.attribute.set.label": {
+    "en": "c5eff2fc8ecdf500",
+    "text": "En rad i AuthZEN-attributkatalogen lades till eller ersattes"
+  },
+  "audit.actions.admin.authzen.attribute.removed.label": {
+    "en": "9da1f55642984ce8",
+    "text": "En rad i AuthZEN-attributkatalogen togs bort"
+  },
+  "audit.actions.admin.authzen.scope.set.label": {
+    "en": "bacc42f309e8f6f8",
+    "text": "En AuthZEN-anropares applikationsomfång angavs"
+  },
+  "audit.actions.admin.authzen.pep.granted.label": {
+    "en": "e4ce0755a11d0f80",
+    "text": "En fjärr-PEP beviljades AuthZEN-åtkomst till en applikation som tillämpar finkornig auktorisering"
+  },
+  "audit.actions.admin.authzen.callbacks.set.label": {
+    "en": "e8439c3ddb41d93f",
+    "text": "Callback-URL:erna för en AuthZEN-anropares åtkomstbegäran angavs"
+  },
+  "audit.actions.authzen.access-request.submitted.label": {
+    "en": "ce6c6f5f15939b8e",
+    "text": "En AuthZEN-åtkomstbegäran skickades in"
+  },
+  "audit.actions.authzen.access-request.approved.label": {
+    "en": "5148eda4f7a84802",
+    "text": "En AuthZEN-åtkomstbegäran godkändes"
+  },
+  "audit.actions.authzen.access-request.denied.label": {
+    "en": "22560158f5a3aaca",
+    "text": "En AuthZEN-åtkomstbegäran nekades"
+  },
+  "audit.actions.authzen.access-request.expired.label": {
+    "en": "2ced214d20f8f301",
+    "text": "En AuthZEN-åtkomstbegäran gick ut"
+  },
+  "audit.actions.authzen.access-request.cancelled.label": {
+    "en": "f00e80626f3daa82",
+    "text": "En AuthZEN-åtkomstbegäran avbröts"
+  },
+  "audit.actions.authzen.access-request.revoked.label": {
+    "en": "fdf6095a2de11ed6",
+    "text": "Godkännandet av en AuthZEN-åtkomstbegäran återkallades"
+  },
+  "audit.actions.authzen.access-request.approver-refused.label": {
+    "en": "fbeebe0256b7890e",
+    "text": "Policyn nekade en person beslutet om en AuthZEN-åtkomstbegäran"
+  },
+  "audit.actions.authzen.access-request.callback.label": {
+    "en": "432e877d55af1913",
+    "text": "Callbacken för en AuthZEN-åtkomstbegäran skickades eller misslyckades"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Utfärdande-PEP:en vägrade låta den här tjänsten prägla något"
@@ -934,6 +998,74 @@
   "audit.actions.gnap.grant.forward.label": {
     "en": "9756220c110d11f1",
     "text": "Personen på en GNAP-godkännandesida var inte den användare som begäran namngav, och beviljandet skickades till den användarens portal (#432 fas 6)"
+  },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "En UMA-resursserver registrerade en resurs för en ägares räkning"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "En UMA-resursserver uppdaterade en registrerad resurs"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "En UMA-resursserver tog bort en registrerad resurs"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "En UMA-resursserver fick en behörighetsbiljett utfärdad"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "En UMA-behörighet avgjordes av en av dess policyer"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "Ett UMA uma-ticket-beviljande besvarades"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "En beständig anspråkstoken (PCT) för UMA återkallades"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "En UMA-begäran köades för godkännande av sin resursägare"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "En resursägare godkände eller vägrade en UMA-begäran"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "En begärande part loggades in vid UMA:s slutpunkt för anspråksinteraktion"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "En resursägare delade en resurs via UMA"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "En resursägare tog bort en UMA-delning"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "En resursägare skrev om sin UMA-policy som ALFA"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "En applikation gjordes till UMA-resursserver i konsolen"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "En applikation upphörde att vara UMA-resursserver i konsolen, och dess RPT:er återkallades"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "Huruvida en applikation får äga UMA-resurser ändrades i konsolen"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "En UMA-RPT återkallades i konsolen"
   },
   "audit.actions.gnap.grant.finalize.label": {
     "en": "fee9afbd448956f2",

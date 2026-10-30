@@ -6636,6 +6636,20 @@ const PROMPT_HEADERS_BYTES = 5 * 1024 * 1024;
 // above it and is simply never repeated.
 const REPLAY_BODY_BYTES = 1024 * 1024;
 
+// The largest header block proxy() reads back from a worker's ANSWER (#1225).
+// Node's HTTP parser refuses a block past 16 KiB by default, and on this hop
+// that refusal was a 502 naming STS-WORKER-0030 — "the request worker went
+// away" — for an answer the worker had produced correctly: on 8081 a SAML 2.0
+// Response on the Redirect binding, signed and with its assertion encrypted,
+// is 19,633 characters in its `Location`. The hop is between this process and
+// its own thread, so it must not be what decides how large an answer's
+// headers may be; with no request workers the same answer is delivered.
+// A MEBIBYTE, NOT A SETTING: it bounds memory on a trusted hop rather than
+// anything a client sends (the listener's own limit on REQUEST headers is
+// unchanged), and nothing this service builds comes near it — a Redirect
+// message is warned about from saml2.redirectWarnLength (8000) on.
+const WORKER_ANSWER_MAX_HEADER_BYTES = 1024 * 1024;
+
 // How many requests were sent again that way, for stats().
 let replayCount = 0;
 
@@ -7216,7 +7230,10 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       // it is made: without it this used the global agent, `maxSockets:
       // Infinity`, and a bulk load answered one request in five thousand
       // with a 502 that named `connect EAGAIN`.
-      agent: entry.agent
+      agent: entry.agent,
+      // A worker's answer may carry headers past node's 16 KiB default
+      // (#1225); see WORKER_ANSWER_MAX_HEADER_BYTES.
+      maxHeaderSize: WORKER_ANSWER_MAX_HEADER_BYTES
     }, onAnswer);
     one.on('error', onUpstreamError);
     log.debug("Leaving open().");
@@ -8608,6 +8625,7 @@ module.exports = {
   barrier: barrier,
   receiveSync: receiveSync,
   proxy: proxy,
+  WORKER_ANSWER_MAX_HEADER_BYTES: WORKER_ANSWER_MAX_HEADER_BYTES,
   // THE LISTENER'S RECONCILE, exported for tests/listener_branch_adoption.js
   // (2026-09-13): that one pass runs at a time and that a pass left waiting
   // for a branch arms the fallback are decisions about promises and a timer,

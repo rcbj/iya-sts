@@ -102,6 +102,9 @@ const SSF_DELIVERY = ['/.well-known/ssf-configuration', '/ssf/stream',
 const EXEMPT = {
   '/admin/gnap': 'draws its own list from gnap/gnap_console.ts, and was the ' +
                  'model for this table',
+  // #1195: GNAP's arrangement — the endpoints come from the surface's own
+  // discovery document, read by uma/uma_console.ts.
+  '/admin/uma': 'draws its own list from uma/uma_console.ts, as GNAP does',
   // Under Protocols since 2026-10-01 because it CONFIGURES, not because it
   // is a protocol: a delegated permission is asked for at the OAuth 2.0
   // endpoints, which /admin/oauth2 lists, and the acts it keeps are made at
@@ -400,8 +403,9 @@ class ProtocolEndpoints {
       ]),
       '/admin/xacml': [
         '/xacml', '/xacml/pdp', '/xacml/policies',
-        '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
-        '/xacml/pip'
+        '/xacml/pep/register', '/xacml/pep/policies',
+        '/xacml/pep/authzen-catalogue', '/xacml/pep/authzen-callers',
+        '/xacml/pep/heartbeat', '/xacml/pip'
       ].map(route),
       '/admin/scim': [
         '/scim', '/scim/v2/ServiceProviderConfig', '/scim/v2/ResourceTypes',

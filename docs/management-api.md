@@ -107,7 +107,9 @@ never in the service's environment (see the next section).
 
 **In the compose stack (`docker compose up`), the secret is kept in OpenBao**,
 at `secret/sts-admin` in the field `adminApiClientSecret`. The seeder
-generates it on the run that initialises the store. To choose the value
+generates it on the run that initialises the store: 48 random bytes,
+base64url-encoded (64 characters), the same length as every other client
+secret this service generates. To choose the value
 yourself, set `ADMIN_API_CLIENT_SECRET` in the host's environment before that
 first `up`. Compose passes it to the **seeder**, which stores it. It does not
 pass it to the service.
@@ -476,7 +478,12 @@ cover:
 * **Applications and what they are issued.** The application register,
   consent, permissions, roles, delegation and who may delegate (`GET
   /admin-api/delegation/policy`), issued tokens, the claim and SAML
-  attribute sets, and signing keys.
+  attribute sets, and signing keys. An application's fine-grained
+  authorization policy and switch, and its access types' XACML mapping, are
+  `POST /admin-api/applications/{action}` acts too (`fga-enable`,
+  `fga-disable`, `fga-create-policy`, `fga-reset-policy`,
+  `set-access-type-row`, `remove-access-type-row`, `set-not-for-policy`;
+  [Fine-grained authorization](fga.md#the-console-and-the-api)).
 * **Each protocol family's settings and state.** OAuth 2.0 / OIDC and
   authorization servers, SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation
   relationships, Kerberos principals, LDAP, SCIM, SPIFFE, Shared Signals
