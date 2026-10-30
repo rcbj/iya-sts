@@ -2281,6 +2281,19 @@ libest's estclient compares names byte for byte and failed every EST request
 in `single-node` and in no other mode. The spelling is read from
 `rawHeaders`; `tests/request_barrier.js` section 11 holds it on the wire.
 
+**THE FRONT READS A WORKER'S ANSWER WITH A 1 MiB HEADER LIMIT (2026-10-30,
+#1225).** Node's response parser refuses a header block past 16 KiB, so an
+answer the worker built correctly was a 502 naming `STS-WORKER-0030` and
+`Parse Error: Header overflow` — on 8081 a SAML 2.0 Response on the Redirect
+binding, signed and with an encrypted assertion, 19,633 characters in its
+`Location`. Without request workers the same answer was delivered, so the
+hop between this process and its own thread was deciding what an answer may
+carry. `proxy()`'s request passes `maxHeaderSize:
+WORKER_ANSWER_MAX_HEADER_BYTES`; a constant and not a setting, because it
+bounds memory on a trusted hop and nothing a client sends (the listener's
+limit on request headers is unchanged). Past it the answer is still the 502.
+`tests/worker_answer_headers.js` holds both sides.
+
 ### A SECOND POOL FOR THE CONSOLE AND THE PORTAL (2026-09-13)
 
 `workers.surfaceCount` workers kept for this service's OWN two hosted
