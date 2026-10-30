@@ -12,6 +12,16 @@
 //!   on, marked stale: a PDP outage that denied everything everywhere would
 //!   be the worse failure. A PEP that has NEVER pulled is a different state,
 //!   reported as `loaded: false`.
+//! * **THE AUTHZEN CATALOGUE IS PULLED BESIDE THE POLICIES** (#1179), from
+//!   `GET /xacml/pep/authzen-catalogue`, with a sync token of its own and
+//!   the same rule: a failed pull keeps the last good catalogue. Every row
+//!   is read again through this container's own grammar
+//!   (`authzen_catalogue.rs`), as every policy is read again through its
+//!   own engine. The policy pull is still the one the timers back off on;
+//!   a catalogue that cannot be pulled changes what AuthZEN answers and
+//!   nothing about `/protected`. A catalogue change does not nudge — the
+//!   service's nudge is about the policy repository — so it converges on
+//!   the poll.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -24,6 +34,7 @@ use sts_xacml::pdp::Repository;
 use sts_xacml::policy::PolicyNode;
 use sts_xacml::xml;
 
+use crate::authzen_catalogue::{self, Row};
 use crate::enforce::Outcome;
 use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
@@ -34,6 +45,105 @@ use crate::pdp_client::{Body, PdpClient};
 pub struct Policies {
     pub root: Option<PolicyNode>,
     pub repository: Repository,
+    /// The document the PDP marked as the root would not load HERE. The
+    /// service answers a root that will not load as a fault
+    /// (`STS-XACML-0012`), so the AuthZEN endpoints do too, rather than
+    /// reading it as "no root" and answering false.
+    pub root_refused: bool,
+}
+
+/// The realm's AuthZEN settings, as the catalogue carries them — the
+/// service's defaults until one is pulled, and for any member a PDP did
+/// not send.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuthzenSettings {
+    pub enabled: bool,
+    pub resolve_subject_types: Vec<String>,
+    pub batch_enabled: bool,
+    pub max_evaluations: usize,
+    pub max_body_bytes: usize,
+    pub return_reasons: bool,
+}
+
+impl Default for AuthzenSettings {
+    fn default() -> AuthzenSettings {
+        AuthzenSettings {
+            enabled: true,
+            resolve_subject_types: vec!["user".to_string()],
+            batch_enabled: true,
+            max_evaluations: 64,
+            max_body_bytes: 262_144,
+            return_reasons: false,
+        }
+    }
+}
+
+impl AuthzenSettings {
+    /// Reads the `settings` a pulled catalogue carries, member by member,
+    /// within the service's own bounds for each.
+    pub fn of(said: &Value) -> AuthzenSettings {
+        let d = AuthzenSettings::default();
+        let number = |key: &str, low: u64, high: u64, fallback: usize| {
+            said[key]
+                .as_u64()
+                .filter(|n| (low..=high).contains(n))
+                .map_or(fallback, |n| n as usize)
+        };
+        AuthzenSettings {
+            enabled: said["enabled"].as_bool().unwrap_or(d.enabled),
+            resolve_subject_types: said["resolveSubjectTypes"]
+                .as_array()
+                .map(|list| {
+                    list.iter()
+                        .filter_map(Value::as_str)
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or(d.resolve_subject_types),
+            batch_enabled: said["batchEnabled"]
+                .as_bool()
+                .unwrap_or(d.batch_enabled),
+            max_evaluations: number("maxEvaluations", 1, 1000, 64),
+            max_body_bytes: number("maxBodyBytes", 1024, 5_242_880, 262_144),
+            return_reasons: said["returnReasons"]
+                .as_bool()
+                .unwrap_or(d.return_reasons),
+        }
+    }
+}
+
+/// The AuthZEN catalogue this PEP holds, replaced WHOLE on a successful
+/// pull, as the policies are.
+#[derive(Debug, Clone, Default)]
+pub struct Catalogue {
+    /// A catalogue was pulled at least once.
+    pub loaded: bool,
+    pub sync_token: String,
+    /// The realm the PDP answered in: the trusted `urn:sts:xacml:realm`.
+    pub realm: String,
+    /// The realm has its `sts-authzen-api` object, without which the API
+    /// is off there.
+    pub api_object: bool,
+    pub rows: Arc<Vec<Row>>,
+    pub settings: AuthzenSettings,
+    /// Rows this container's grammar refused, and values the PDP left out.
+    pub refused: Vec<String>,
+    pub left_out: u64,
+    pub last_pull_at: String,
+    pub last_pull_ok: bool,
+    pub last_pull_why: String,
+}
+
+/// What the AuthZEN endpoints have answered, cumulative in this process —
+/// kept apart from the enforcement counters the heartbeat reports, because
+/// these decisions are ENFORCED by the caller, in its own process.
+#[derive(Clone, Copy, Default)]
+struct AuthzenCounters {
+    decisions: u64,
+    permitted: u64,
+    denied: u64,
+    errors: u64,
 }
 
 /// Everything about the current holding.
@@ -74,6 +184,9 @@ struct Counters {
 
 struct State {
     held: Held,
+    catalogue: Catalogue,
+    authzen: AuthzenCounters,
+    last_catalogue_kept_why: String,
     registration: Registration,
     counters: Counters,
     /// The reason the last failed pull gave, so a repeat is not warned twice.
@@ -110,6 +223,12 @@ impl Sync {
                 },
                 counters: Counters::default(),
                 last_kept_why: String::new(),
+                catalogue: Catalogue {
+                    last_pull_why: "No pull has been attempted yet.".into(),
+                    ..Catalogue::default()
+                },
+                authzen: AuthzenCounters::default(),
+                last_catalogue_kept_why: String::new(),
             }),
         }
     }
@@ -127,6 +246,60 @@ impl Sync {
     pub fn current(&self) -> (Arc<Policies>, bool) {
         let state = self.lock();
         (state.held.policies.clone(), state.held.loaded)
+    }
+
+    /// Whether a policy pull has ever LOADED anything — "this PEP has
+    /// never pulled" and "it pulled and there is no root" are different
+    /// answers on the AuthZEN endpoints, as they are on `GET /`.
+    pub fn ever_loaded(&self) -> bool {
+        !self.lock().held.last_change_at.is_empty()
+    }
+
+    /// The AuthZEN catalogue held now.
+    pub fn catalogue(&self) -> Catalogue {
+        self.lock().catalogue.clone()
+    }
+
+    /// One AuthZEN answer: `Some(decision)`, or `None` for an error.
+    pub fn count_authzen(&self, decision: Option<bool>) {
+        let mut state = self.lock();
+        state.authzen.decisions += 1;
+        match decision {
+            Some(true) => state.authzen.permitted += 1,
+            Some(false) => state.authzen.denied += 1,
+            None => state.authzen.errors += 1,
+        }
+    }
+
+    /// `authzen.catalogue` and `authzen.answered` on `GET /`.
+    pub fn authzen_json(&self) -> Value {
+        let state = self.lock();
+        let c = &state.catalogue;
+        let a = state.authzen;
+        json!({
+            "catalogue": {
+                "loaded": c.loaded,
+                "syncToken": c.sync_token,
+                "realm": c.realm,
+                "apiObject": c.api_object,
+                "rows": c.rows.len(),
+                "refused": c.refused,
+                "leftOutByThePdp": c.left_out,
+                "settings": {
+                    "enabled": c.settings.enabled,
+                    "resolveSubjectTypes": c.settings.resolve_subject_types,
+                    "batchEnabled": c.settings.batch_enabled,
+                    "maxEvaluations": c.settings.max_evaluations,
+                    "maxBodyBytes": c.settings.max_body_bytes,
+                    "returnReasons": c.settings.return_reasons
+                },
+                "lastPullAt": c.last_pull_at,
+                "lastPullOk": c.last_pull_ok,
+                "lastPullWhy": c.last_pull_why
+            },
+            "answered": { "decisions": a.decisions, "true": a.permitted,
+                          "false": a.denied, "errors": a.errors }
+        })
     }
 
     pub fn sync_token(&self) -> String {
@@ -304,6 +477,7 @@ impl Sync {
     pub async fn pull(&self, cause: &str) -> bool {
         let changed_before = self.lock().held.last_change_at.clone();
         self.pull_once(cause).await;
+        self.pull_catalogue().await;
         let mut state = self.lock();
         if cause == "nudge" {
             state.held.last_nudge_at = iso_now();
@@ -380,6 +554,7 @@ impl Sync {
         let mut repository = HashMap::new();
         let mut refused = Vec::new();
         let mut root = None;
+        let mut root_refused = false;
         for row in &rows {
             let document = row["document"].as_str().unwrap_or("");
             match xml::parse_policy(document) {
@@ -393,10 +568,15 @@ impl Sync {
                 }
                 // Left out and NAMED: enforcing half a document is worse
                 // than not having it.
-                Err(error) => refused.push((
-                    row["name"].as_str().unwrap_or("").to_string(),
-                    error.message,
-                )),
+                Err(error) => {
+                    if row["isRoot"].as_bool() == Some(true) {
+                        root_refused = true;
+                    }
+                    refused.push((
+                        row["name"].as_str().unwrap_or("").to_string(),
+                        error.message,
+                    ))
+                }
             }
         }
         // Exactly one policy is unambiguously the root — restated, so this
@@ -445,7 +625,11 @@ impl Sync {
         state.held = Held {
             loaded: has_root,
             sync_token: token,
-            policies: Arc::new(Policies { root, repository }),
+            policies: Arc::new(Policies {
+                root,
+                repository,
+                root_refused,
+            }),
             policy_count: count,
             last_pull_at: now.clone(),
             last_pull_ok: true,
@@ -501,6 +685,158 @@ impl Sync {
                 "{}xacml-pep: {}",
                 tag(code),
                 state.held.last_pull_why
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // THE AUTHZEN CATALOGUE (#1179). Pulled after every policy pull, with
+    // its own token; a failure keeps what is held.
+    // -----------------------------------------------------------------------
+    async fn pull_catalogue(&self) {
+        let token = self.lock().catalogue.sync_token.clone();
+        let query = if token.is_empty() {
+            String::new()
+        } else {
+            format!("?since={}", encode(&token))
+        };
+        let answer = self
+            .client
+            .call(
+                Method::GET,
+                &format!("/xacml/pep/authzen-catalogue{}", query),
+                None,
+            )
+            .await;
+        if let Some(error) = &answer.error {
+            self.keep_catalogue(
+                &format!("Could not reach the PDP: {}", error),
+                "STS-XPEP-0040",
+            );
+            return;
+        }
+        if answer.status == 304 {
+            let mut state = self.lock();
+            state.catalogue.last_pull_at = iso_now();
+            state.catalogue.last_pull_ok = true;
+            state.catalogue.last_pull_why =
+                "Unchanged; this catalogue is current.".into();
+            state.last_catalogue_kept_why.clear();
+            return;
+        }
+        if answer.status != 200 {
+            let detail = answer
+                .error_description()
+                .map(|d| format!(": {}", d))
+                .unwrap_or_default();
+            let older = if answer.status == 404 {
+                " A PDP older than #1179 has no catalogue endpoint."
+            } else {
+                ""
+            };
+            self.keep_catalogue(
+                &format!(
+                    "The PDP answered {} to the catalogue pull{}.{}",
+                    answer.status, detail, older
+                ),
+                "STS-XPEP-0041",
+            );
+            return;
+        }
+        let Some(said) = answer.json.filter(|j| j["rows"].is_array()) else {
+            self.keep_catalogue(
+                "The PDP answered 200 with something that is not an \
+                 AuthZEN catalogue.",
+                "STS-XPEP-0041",
+            );
+            return;
+        };
+        self.load_catalogue(&said);
+    }
+
+    /// Reads every pulled row through this container's own grammar: a row
+    /// it refuses is left out and named, never mapped with.
+    fn load_catalogue(&self, said: &Value) {
+        let values = said["rows"].as_array().cloned().unwrap_or_default();
+        let mut rows: Vec<Row> = Vec::new();
+        let mut refused = Vec::new();
+        for value in &values {
+            match authzen_catalogue::parse(value) {
+                Ok(row) => {
+                    if rows.iter().any(|r| {
+                        r.object == row.object && r.property == row.property
+                    }) {
+                        refused.push(format!(
+                            "{}.{} has more than one row; the first is used",
+                            row.object, row.property
+                        ));
+                    } else {
+                        rows.push(row);
+                    }
+                }
+                Err(problem) => refused
+                    .push(format!("{} ({})", problem.problem, problem.code)),
+            }
+        }
+        if !refused.is_empty() {
+            tracing::warn!(
+                "{}xacml-pep: {} of {} pulled AuthZEN catalogue row(s) were \
+                 refused by this container's grammar and left out, so those \
+                 properties are undeclared here: {}",
+                tag("STS-XPEP-0042"),
+                refused.len(),
+                values.len(),
+                refused.join("; ")
+            );
+        }
+        let token = said["syncToken"].as_str().unwrap_or("").to_string();
+        let count = rows.len();
+        let mut state = self.lock();
+        state.last_catalogue_kept_why.clear();
+        state.catalogue = Catalogue {
+            loaded: true,
+            sync_token: token.clone(),
+            realm: said["realm"].as_str().unwrap_or("").to_string(),
+            api_object: said["apiObject"].is_string(),
+            rows: Arc::new(rows),
+            settings: AuthzenSettings::of(&said["settings"]),
+            refused,
+            left_out: said["leftOut"].as_u64().unwrap_or(0),
+            last_pull_at: iso_now(),
+            last_pull_ok: true,
+            last_pull_why: format!("Pulled {} catalogue row(s).", count),
+        };
+        tracing::info!(
+            "xacml-pep: pulled the AuthZEN catalogue: {} row(s), token {}.",
+            count,
+            token
+        );
+    }
+
+    /// A failed catalogue pull keeps what is held, and warns once per
+    /// distinct reason.
+    fn keep_catalogue(&self, why: &str, code: &str) {
+        let mut state = self.lock();
+        state.catalogue.last_pull_ok = false;
+        state.catalogue.last_pull_why = if state.catalogue.loaded {
+            format!(
+                "{} KEEPING the catalogue pulled at {}, so AuthZEN goes on \
+                 mapping as it did.",
+                why, state.catalogue.last_pull_at
+            )
+        } else {
+            format!(
+                "{} NO CATALOGUE IS HELD, so the AuthZEN endpoints answer \
+                 503: a request cannot be mapped as the service maps it.",
+                why
+            )
+        };
+        if state.last_catalogue_kept_why != why {
+            state.last_catalogue_kept_why = why.to_string();
+            tracing::warn!(
+                "{}xacml-pep: {}",
+                tag(code),
+                state.catalogue.last_pull_why
             );
         }
     }

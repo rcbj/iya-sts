@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4855** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4867** of them, in **49** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 46
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 46
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
@@ -4691,6 +4691,18 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0032` | The certificate the HTTPS listener is serving is expired or not yet valid, so clients that check will refuse the handshake. | — |
 | `STS-XPEP-0033` | The remote XACML PEP met an uncaught exception after it had started, and contained it rather than exiting (#355): it carries on enforcing the policy it last pulled. The line carries the stack; a distinct fault is logged at occurrences 1, 2, 3 and each power of ten. | none — logged; the PEP carries on |
 | `STS-XPEP-0034` *(retired)* | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
+| `STS-XPEP-0035` | An AuthZEN request reached the remote PEP's edge PDP with no client certificate: over plain HTTP, or on the HTTPS listener without presenting one (#1179). Its callers authenticate by mutual TLS only. | HTTP 401, an error message |
+| `STS-XPEP-0036` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP did not verify against PEP_AUTHZEN_CLIENT_CA (#1179). | HTTP 401, an error message |
+| `STS-XPEP-0037` | The client certificate an AuthZEN caller presented to the remote PEP's edge PDP verified, and its SHA-256 is not in PEP_AUTHZEN_CALLERS, the container's stand-in for the service's AUTHZEN_PEPS role (#1179). | HTTP 403, an error message |
+| `STS-XPEP-0038` | PEP_AUTHZEN_CALLERS is not a JSON array, or an entry of it is not a name, a 64-digit SHA-256 and at most 64 applications, and was left out; the remote PEP's edge PDP admits nobody it cannot read (#1179). | none — logged at start |
+| `STS-XPEP-0039` | The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, unreadable or holding no certificate), so its HTTPS listener asks no caller for a certificate and its AuthZEN edge PDP admits nobody (#1179). | HTTP 401 from the AuthZEN endpoints; logged at start |
+| `STS-XPEP-0040` | The remote PEP could not reach the PDP to pull the AuthZEN catalogue (GET /xacml/pep/authzen-catalogue). The catalogue already held is kept (#1179). | none — logged; the PEP carries on |
+| `STS-XPEP-0041` | The PDP refused the remote PEP's AuthZEN catalogue pull, or answered with something that is not a catalogue (a PDP older than #1179 answers 404). The catalogue already held is kept. | none — logged; the PEP carries on |
+| `STS-XPEP-0042` | Rows of a pulled AuthZEN catalogue were refused by the remote PEP's own catalogue grammar and left out, so those properties are undeclared at its edge PDP (#1179). | none — logged; the rest is loaded |
+| `STS-XPEP-0043` | An AuthZEN request reached the remote PEP's edge PDP before it had pulled both the policies and the AuthZEN catalogue, so it cannot map a request as the service does (#1179). | HTTP 503, an error message |
+| `STS-XPEP-0044` | An AuthZEN request reached a remote PEP whose edge PDP is turned off (PEP_AUTHZEN=false) (#1179). | HTTP 501, an error message |
+| `STS-XPEP-0045` | The remote PEP's AuthZEN metadata was asked for with no PDP identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path and was ignored (#1179). | HTTP 404 from GET /.well-known/authzen-configuration; logged at start |
+| `STS-XPEP-0046` | A single AuthZEN evaluation sent to the remote PEP's edge PDP was larger than PEP_MAX_BODY_BYTES and was refused unread (#1179). | HTTP 413, an error message |
 
 ## STS-AUTHZEN
 
