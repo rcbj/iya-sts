@@ -21391,6 +21391,32 @@ const CODES = [
       'the definition would leave member paths neither mapped nor listed ' +
       'in notForPolicy, which enforcement could not decide.',
     spec: 'the caller\'s refusal, naming the uncovered paths' },
+  { code: 'STS-FGA-0020',
+    summary: 'Resetting an application\'s fine-grained policy to the ' +
+      'fga-default template was refused because it was not confirmed: the ' +
+      'reset replaces every rule an administrator wrote, so it needs ' +
+      'confirm.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0021',
+    summary: 'Resetting an application\'s fine-grained policy was refused: ' +
+      'the application has no policy of its own (appFgaPolicy is empty, ' +
+      'names a missing entry, or names one that is not its own). Create ' +
+      'the default policy instead.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0022',
+    summary: 'Deleting a policy from the XACML repository was refused: it ' +
+      'is the fine-grained policy an application still names in ' +
+      'appFgaPolicy. Only a policy no application names (an orphan of a ' +
+      'deleted application) may be removed.',
+    spec: 'the caller\'s refusal (why on a console or /admin-api reply)' },
+  { code: 'STS-FGA-0023',
+    summary: 'A mapping row or a notForPolicy entry could not be changed ' +
+      'on an access type from the console or /admin-api: the row to ' +
+      'remove is not on the type, or the row offered does not read ' +
+      '(a bad path, attribute identifier, category, data type or ' +
+      'multiplicity, or a reserved identifier).',
+    spec: 'the caller\'s refusal (errors and field on a console or ' +
+      '/admin-api reply)' },
   { code: 'STS-FGA-0100',
     summary: 'A fine-grained authorization question was asked with a ' +
       'type definition that is not usable (it carries a problem, or names ' +

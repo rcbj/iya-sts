@@ -4003,6 +4003,32 @@ const SCHEMAS = {
                        'than for some — a policy listed with problems will ' +
                        'not load and the PDP reports Indeterminate.' }
       }) },
+      // #564, P5: the applications' own policies, grouped by owner.
+      applicationPolicies: { type: 'array',
+        description: 'Every policy an application owns (it carries ' +
+                     'xacmlApplication), grouped by that application: ' +
+                     '`application`, `known` (still in the registry), ' +
+                     '`enforced`, and `policies`, each with `name`, ' +
+                     '`policyId`, `version`, `enabled`, `orphanedAt` and ' +
+                     '`referenced` (the application names it in ' +
+                     'appFgaPolicy). A policy no application references ' +
+                     'may be deleted (POST /admin-api/xacml/delete); one ' +
+                     'that is referenced is refused (STS-FGA-0022). None ' +
+                     'is ever the root.',
+        items: openObject('One application and the policies it owns.', {
+          application: { type: 'string' },
+          known: { type: 'boolean' },
+          enforced: { type: 'boolean' },
+          policies: { type: 'array', items: openObject(
+            'One policy the application owns.', {
+              name: { type: 'string' },
+              policyId: { type: ['string', 'null'] },
+              version: { type: 'string' },
+              enabled: { type: 'boolean' },
+              orphanedAt: { type: ['string', 'null'] },
+              referenced: { type: 'boolean' }
+            }) }
+        }) },
       serviceOwn: { type: 'array',
         items: { $ref: '#/components/schemas/XacmlServiceOwnPolicy' },
         description: 'The two policies deciding this service\'s own ' +

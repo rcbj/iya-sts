@@ -604,7 +604,11 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'remove-custom-claim', 'set-claim-attributes',
                              'set-claim-selections',
                              'inherit-claim-attributes', 'set-access-type',
-                             'remove-access-type', 'set-permission-claims',
+                             'remove-access-type', 'set-access-type-row',
+                             'remove-access-type-row', 'set-not-for-policy',
+                             'fga-enable', 'fga-disable',
+                             'fga-create-policy', 'fga-reset-policy',
+                             'set-permission-claims',
                              'clear-permission-claims', 'export-ldif',
                              'import-ldif', 'forget', 'add-owner',
                              'remove-owner'];
@@ -5948,8 +5952,11 @@ class AdminActions {
     // `requiredMembers` is the body's name for the definition's `required`:
     // a body member called `required` would collide with the JSON Schema
     // keyword the management API's request schema is written in.
+    // `notForPolicy` (#564, P5): the member paths a fine-grained policy
+    // deliberately never sees, one per line like the others.
     ['locations', 'actions', 'datatypes', 'privileges', 'requiredMembers',
-     'consentActions', 'derivableFrom', 'introspectionClaims']
+     'consentActions', 'derivableFrom', 'introspectionClaims',
+     'notForPolicy']
       .forEach(function (name: string): void {
         const values = list(name);
         if (values && values.length) {
@@ -5981,6 +5988,13 @@ class AdminActions {
     const limits = json('limits');
     if (limits !== undefined) {
       out.limits = limits;
+    }
+    // THE MAPPING'S ROWS (#564, P5): a JSON array, or its text from the
+    // declare form. Written whole here; the tab's per-row forms are
+    // `set-access-type-row` and `remove-access-type-row`.
+    const xacml = json('xacml');
+    if (xacml !== undefined) {
+      out.xacml = xacml;
     }
     log.debug("Leaving AdminActions.accessTypeDefinitionFrom().");
     return out;
@@ -6064,6 +6078,294 @@ class AdminActions {
                       'definition from the next request.' };
   }
 
+  // -------------------------------------------------------------------------
+  // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5), from the Access types
+  // tab's XACML mapping sub-tabs: `set-access-type-row` adds the row for a
+  // member path or replaces the one already there, `remove-access-type-row`
+  // takes it off, and `set-not-for-policy` replaces the list of paths the
+  // policy deliberately never sees. AuthZEN's catalogue (`set-attribute`,
+  // `remove-attribute` on `authzen_admin.ts`) is the model: a row keyed by
+  // what it maps, replaced rather than doubled.
+  //
+  // **THE SAME DOOR AS `set-access-type`.** Each rewrites the one
+  // `oauthAuthorizationDetailsType` value of the type through
+  // `updateApplication()`, which holds the grammar (`STS-REG-0112`, the
+  // reserved identifiers among it) and, on an application that enforces
+  // fine-grained authorization, the coverage (`STS-FGA-0019`): a remove that
+  // would leave a member uncovered there is refused with the paths named.
+  //
+  // **A ROW IS READ BEFORE IT IS WRITTEN**, by `fga_map.ts`'s `parseRow()`
+  // — the grammar's own reader, not a copy — so a refusal can say which
+  // FIELD of the form was wrong (`field`), and the console draws the
+  // sentence beside that box rather than at the top of the page.
+  // -------------------------------------------------------------------------
+  /**
+   * The field of the row form a mapping problem is about, read off the
+   * grammar's sentence (`row.attributeId: …`, `xacml[2].category must…`).
+   *
+   * @param problem - the grammar's sentence
+   * @returns `path`, `attributeId`, `category`, `dataType`,
+   *   `multiplicity`, `notForPolicy`, or ''
+   */
+  private mappingFieldOf(problem: string): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.mappingFieldOf().");
+    const text = String(problem || '');
+    const row = /(?:^row|\])\.(path|attributeId|category|dataType|multiplicity|description)\b/
+      .exec(text);
+    const field = row ? row[1]
+      : (/notForPolicy/.test(text) ? 'notForPolicy' : '');
+    log.debug("Leaving AdminActions.mappingFieldOf(). " + (field || '-'));
+    return field;
+  }
+
+  // The type's definition as an object to change: the stored JSON, or a
+  // bare type name as `{ type }`. A value that is neither cannot be held,
+  // since every write door refuses one; it is read as its name.
+  private definitionObjectOf(stored: string): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.definitionObjectOf().");
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(String(stored));
+    } catch (e) {
+      log.debug("Caught in AdminActions.definitionObjectOf(): " +
+                ((e && e.message) || e));
+      // A bare type name, which the grammar allows and JSON does not.
+      parsed = null;
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      log.debug("Leaving AdminActions.definitionObjectOf(). An object.");
+      return parsed;
+    }
+    log.debug("Leaving AdminActions.definitionObjectOf(). A name.");
+    return { type: typeof parsed === 'string' ? parsed : String(stored) };
+  }
+
+  // Replaces the values `mine` with `value` on the entry, putting them back
+  // when the new one is refused — `set-access-type`'s order, so a refused
+  // write never leaves the type undeclared.
+  private replaceAccessTypeValue(identifier: string, mine: string[],
+                                 value: string): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.replaceAccessTypeValue().");
+    for (let j = 0; j < mine.length; j++) {
+      applications.updateApplication(identifier, {
+        mode: 'remove', attribute: 'oauthAuthorizationDetailsType',
+        value: mine[j] });
+    }
+    const added = applications.updateApplication(identifier, {
+      mode: 'add', attribute: 'oauthAuthorizationDetailsType', value: value });
+    if (!added.ok) {
+      mine.forEach(function (old: string): void {
+        applications.updateApplication(identifier, {
+          mode: 'add', attribute: 'oauthAuthorizationDetailsType',
+          value: old });
+      });
+      log.debug("Leaving AdminActions.replaceAccessTypeValue(). Refused.");
+      return added;
+    }
+    log.debug("Leaving AdminActions.replaceAccessTypeValue().");
+    return added;
+  }
+
+  // The `set-access-type-row`, `remove-access-type-row` and
+  // `set-not-for-policy` actions (see the switch).
+  private accessTypeMappingAction(action: string, identifier: string,
+                                  body: any): any {
+    const self = this;
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminActions.accessTypeMappingAction(). " + action);
+    // Lazy, as every reach from here into a family's library is: `fga_map`
+    // is pure and loads nothing, but this file may be required at 18.
+    const fgaMap = require('../xacml/fga_map');
+    const entry = applications.get(identifier);
+    if (!entry) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). No entry.");
+      return this.refused('STS-REG-0295', { ok: false,
+        errors: ['There is no application called "' + identifier + '".'] });
+    }
+    const type = String(body.type || '').trim();
+    const held = [].concat((entry.fields || {}).oauthAuthorizationDetailsType ||
+                           []).map(String);
+    const mine = held.filter(function (value: string): boolean {
+      return applications.authorizationDetailsTypeOf(value).type === type;
+    });
+    if (!mine.length) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). Not held.");
+      return this.refused('STS-REG-0295', { ok: false, type: type,
+        errors: ['The application "' + identifier + '" declares no ' +
+                 'access type "' + type.slice(0, 120) + '".'] });
+    }
+    const definition = this.definitionObjectOf(mine[0]);
+    const rows = Array.isArray(definition.xacml) ? definition.xacml : [];
+    const text = function (name: string): string {
+      log.debug("Entering text().");
+      log.debug("Leaving text().");
+      return body[name] === undefined || body[name] === null ? ''
+        : String(body[name]).trim();
+    };
+    let said = '';
+    if (action === 'set-access-type-row') {
+      const row: any = { path: text('path'), attributeId: text('attributeId') };
+      ['category', 'dataType', 'multiplicity', 'description']
+        .forEach(function (name: string): void {
+          if (text(name)) {
+            row[name] = text(name);
+          }
+        });
+      const checked = fgaMap.FgaMap.parseRow(row, 'row');
+      if (!checked.row) {
+        log.debug("Leaving AdminActions.accessTypeMappingAction(). The " +
+                  "row does not read.");
+        return this.refused('STS-FGA-0023', { ok: false, type: type,
+          field: this.mappingFieldOf(checked.problem),
+          errors: ['The row was not saved: ' + checked.problem + '.'] });
+      }
+      const path = checked.row.path;
+      row.path = path;
+      const kept = rows.filter(function (one: any): boolean {
+        return !(one && String(one.path || '').trim() === path);
+      });
+      said = (kept.length < rows.length ? 'Replaced' : 'Added') +
+        ' the row mapping ' + path + ' to ' + checked.row.attributeId;
+      definition.xacml = kept.concat([row]);
+    } else if (action === 'remove-access-type-row') {
+      const path = text('path');
+      const kept = rows.filter(function (one: any): boolean {
+        return !(one && String(one.path || '').trim() === path);
+      });
+      if (kept.length === rows.length) {
+        log.debug("Leaving AdminActions.accessTypeMappingAction(). No " +
+                  "such row.");
+        return this.refused('STS-FGA-0023', { ok: false, type: type,
+          field: 'path',
+          errors: ['The access type "' + type + '" of "' + identifier +
+                   '" has no row mapping "' + path.slice(0, 120) + '".'] });
+      }
+      said = 'Took off the row mapping ' + path;
+      if (kept.length) {
+        definition.xacml = kept;
+      } else {
+        delete definition.xacml;
+      }
+    } else {
+      const given = body.notForPolicy;
+      const list = (Array.isArray(given) ? given
+        : (given === undefined || given === null ? []
+          : String(given).split(/[\r\n,]+/)))
+        .map(function (one: any): string { return String(one).trim(); })
+        .filter(function (one: string, n: number, all: string[]): boolean {
+          return !!one && all.indexOf(one) === n;
+        });
+      said = list.length
+        ? 'notForPolicy is now ' + list.join(', ')
+        : 'notForPolicy is now empty';
+      if (list.length) {
+        definition.notForPolicy = list;
+      } else {
+        delete definition.notForPolicy;
+      }
+    }
+    const value = JSON.stringify(definition);
+    const parsed = applications.authorizationDetailsTypeOf(value);
+    if (parsed.problem) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). The " +
+                "definition does not read: " + parsed.problem);
+      return this.refused('STS-FGA-0023', { ok: false, type: type,
+        field: this.mappingFieldOf(parsed.problem),
+        errors: ['The mapping was not saved: ' + parsed.problem + '.'] });
+    }
+    const written = this.replaceAccessTypeValue(identifier, mine, value);
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.accessTypeMappingAction(). Write " +
+                "refused.");
+      // The coverage refusal (STS-FGA-0019) keeps its own code; its
+      // sentence names the paths, and the field is the one the act was
+      // about.
+      written.type = type;
+      written.field = action === 'set-not-for-policy' ? 'notForPolicy'
+                                                     : 'path';
+      return self.refusedBy('STS-FGA-0023', written);
+    }
+    log.debug("Leaving AdminActions.accessTypeMappingAction(). Saved.");
+    return { ok: true, application: identifier, type: type,
+             definition: definition,
+             message: said + ' on the access type "' + type + '" of "' +
+                      identifier + '". A fine-grained policy reads its ' +
+                      'details through this mapping from the next ' +
+                      'request.' };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FINE-GRAINED AUTHORIZATION TAB'S FOUR ACTS (#564, P5): the switch
+  // (`fga-enable`, `fga-disable`), *Create the default policy*
+  // (`fga-create-policy`) and *Reset to the default policy*
+  // (`fga-reset-policy`). Each is one call into `xacml/fga_policies.ts`,
+  // which owns the policy and its lifecycle and holds every refusal —
+  // enable's uncovered types (STS-FGA-0018, naming the paths), a disabled
+  // or unparseable policy (0006, 0007), an unconfirmed reset (0020) — so
+  // this layer only turns its `why` into the console's `errors` and keeps
+  // its code. The audit rows are `fga_policies.ts`'s and the registry's
+  // (`xacml.policy.write`, the entry's modify), as they are for the
+  // lifecycle P1 wrote.
+  //
+  // Lazy for the reason `xacml_admin.ts` gives: the module is built by the
+  // composition root at 23c, after this file's 18.
+  // -------------------------------------------------------------------------
+  private fgaAction(action: string, identifier: string, body: any): any {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminActions.fgaAction(). " + action);
+    const fga = require('../xacml/fga_policies');
+    const actor = String(body.actor || '');
+    const confirmed = body.confirm === true || body.confirm === 'true' ||
+                      body.confirm === 'on';
+    const result = action === 'fga-enable'
+      ? fga.enable(identifier, { actor: actor })
+      : (action === 'fga-disable'
+        ? fga.disable(identifier, { actor: actor })
+        : (action === 'fga-create-policy'
+          ? fga.ensure(identifier, { actor: actor })
+          : fga.reset(identifier, { actor: actor, confirm: confirmed })));
+    if (!result.ok) {
+      log.debug("Leaving AdminActions.fgaAction(). Refused: " +
+                result.failure);
+      return this.refused(errorCodes.codeOf(result) || 'STS-FGA-0012', {
+        ok: false, application: identifier,
+        failure: String(result.failure || ''),
+        errors: [String(result.why || 'Refused.')] });
+    }
+    const policy = String(result.policy || '');
+    let message;
+    if (action === 'fga-enable') {
+      message = 'Fine-grained authorization is enforced on "' + identifier +
+        '": every authorization detail of its types, and every AuthZEN ' +
+        'evaluation about it, is decided by its policy "' + policy +
+        '" from the next request.';
+    } else if (action === 'fga-disable') {
+      message = 'Fine-grained authorization is no longer enforced on "' +
+        identifier + '". Its policy is kept as it is.';
+    } else if (action === 'fga-create-policy') {
+      message = result.created
+        ? 'Created "' + policy + '", the fine-grained authorization ' +
+          'policy of "' + identifier + '", from the fga-default template.'
+        : '"' + identifier + '" already has its policy "' + policy + '".';
+    } else {
+      message = 'The policy "' + policy + '" of "' + identifier + '" was ' +
+        'reset to the fga-default template: one rule permitting every ' +
+        'detail.' + (result.enforced
+          ? ' It is enforced, so every detail of its types is permitted ' +
+            'until that rule is narrowed.' : '');
+    }
+    log.debug("Leaving AdminActions.fgaAction().");
+    return { ok: true, application: identifier, policy: policy,
+             enforced: result.enforced === undefined ? undefined
+                                                     : !!result.enforced,
+             created: result.created === undefined ? undefined
+                                                   : !!result.created,
+             message: message };
+  }
+
   /**
    * Performs a `/admin/applications` action: create, edit attributes, confirm
    * or discard an observed address, manage secrets, software statements and TLS
@@ -6100,7 +6402,10 @@ class AdminActions {
                       'remove-custom-claim', 'set-claim-attributes',
                       'set-claim-selections',
                       'inherit-claim-attributes', 'set-access-type',
-                      'remove-access-type', 'set-permission-claims',
+                      'remove-access-type', 'set-access-type-row',
+                      'remove-access-type-row', 'set-not-for-policy',
+                      'fga-enable', 'fga-disable', 'fga-create-policy',
+                      'fga-reset-policy', 'set-permission-claims',
                       'clear-permission-claims', 'export-ldif', 'forget'];
     if (needsOne.indexOf(action) >= 0 && !identifier) {
       log.debug("Leaving AdminActions.applicationsAction(). No application " +
@@ -6743,6 +7048,26 @@ class AdminActions {
     // ---------------------------------------------------------------------
     if (action === 'set-access-type' || action === 'remove-access-type') {
       const result = this.accessTypeAction(action, identifier, body);
+      log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
+    }
+
+    // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5): the Access types tab's
+    // XACML mapping sub-tabs, through the same door.
+    if (action === 'set-access-type-row' ||
+        action === 'remove-access-type-row' ||
+        action === 'set-not-for-policy') {
+      const result = this.accessTypeMappingAction(action, identifier, body);
+      log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
+                (result.ok ? 'ok' : 'refused') + ".");
+      return result;
+    }
+
+    // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5).
+    if (action === 'fga-enable' || action === 'fga-disable' ||
+        action === 'fga-create-policy' || action === 'fga-reset-policy') {
+      const result = this.fgaAction(action, identifier, body);
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return result;

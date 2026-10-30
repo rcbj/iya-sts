@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4874** of them, in **50** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4878** of them, in **50** subsystems.
 
 ## Where a code appears
 
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 40
-* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 27
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 31
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4769,6 +4769,10 @@ Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacm
 | `STS-FGA-0017` | A token exchange asked for an authorization detail whose type's application enforces fine-grained authorization, and the subject_token does not cover it: it is not a token this service issued with authorization_details, or none of its details of that type covers the requested one (RFC 9396 section 6's subset rule). | invalid_authorization_details (HTTP 400) |
 | `STS-FGA-0018` | Switching fine-grained authorization on for an application was refused: a type it declares has member paths that are neither mapped (xacml) nor listed in notForPolicy, or its schema is open. | the caller's refusal, naming the uncovered paths |
 | `STS-FGA-0019` | An oauthAuthorizationDetailsType value written to an application that enforces fine-grained authorization was refused: the definition would leave member paths neither mapped nor listed in notForPolicy, which enforcement could not decide. | the caller's refusal, naming the uncovered paths |
+| `STS-FGA-0020` | Resetting an application's fine-grained policy to the fga-default template was refused because it was not confirmed: the reset replaces every rule an administrator wrote, so it needs confirm. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-FGA-0021` | Resetting an application's fine-grained policy was refused: the application has no policy of its own (appFgaPolicy is empty, names a missing entry, or names one that is not its own). Create the default policy instead. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-FGA-0022` | Deleting a policy from the XACML repository was refused: it is the fine-grained policy an application still names in appFgaPolicy. Only a policy no application names (an orphan of a deleted application) may be removed. | the caller's refusal (why on a console or /admin-api reply) |
+| `STS-FGA-0023` | A mapping row or a notForPolicy entry could not be changed on an access type from the console or /admin-api: the row to remove is not on the type, or the row offered does not read (a bad path, attribute identifier, category, data type or multiplicity, or a reserved identifier). | the caller's refusal (errors and field on a console or /admin-api reply) |
 | `STS-FGA-0100` | A fine-grained authorization question was asked with a type definition that is not usable (it carries a problem, or names no type), so no request could be built for the detail. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0101` | A fine-grained authorization question was asked about a detail that is not a JSON object of the definition's type. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
 | `STS-FGA-0102` | A fine-grained authorization question was asked without the trusted facts the adapter must supply: the owning application, or a stage that is one of authorize, token, refresh, exchange, par or access. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |

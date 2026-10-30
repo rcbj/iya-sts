@@ -101,6 +101,28 @@ interface ActOptions {
   actor?: string;
   // retire() only: the deleted entry's appFgaPolicy.
   policy?: string;
+  // reset() only: the administrator confirmed the rewrite (#564, P5).
+  confirm?: boolean;
+}
+
+// One declared type, as the console's Fine-grained authorization tab and
+// `GET /admin-api/applications?application=` read it (#564, P5).
+interface TypeCoverage {
+  type: string;
+  covered: boolean;
+  uncovered: string[];
+  rows: number;
+  notForPolicy: string[];
+}
+
+// One policy an application owns, as the XACML Policies tab groups them.
+interface OwnedRow {
+  name: string;
+  policyId: string | null;
+  version: string;
+  enabled: boolean;
+  orphanedAt: string | null;
+  referenced: boolean;
 }
 
 interface FgaDeps {
@@ -108,6 +130,7 @@ interface FgaDeps {
   errorCodes: {
     tag(code: string): string;
     mark<T>(target: T, code: string): T;
+    codeOf(result: unknown): string;
   };
   audit: { audit(row: Record<string, unknown>): unknown };
   store: {
@@ -116,6 +139,7 @@ interface FgaDeps {
     remove(name: string): boolean;
     parseDocument(document: string): any;
     fgaPolicyFor(identifier: string): PolicyRow | null;
+    fgaPolicies(): PolicyRow[];
   };
   templates: {
     build(id: string, answers: object, options?: object): any;
@@ -598,6 +622,230 @@ class FgaPolicies {
              enforced: enforced };
   }
 
+  // -------------------------------------------------------------------------
+  // RESET (#564, P5). The console's *Reset to the default policy*: the
+  // application's OWN policy rewritten from `fga-default`, under the same
+  // entry name, so `appFgaPolicy` and every audit row that named it still
+  // name it. **IT FOLLOWS THE REFERENCE, AS ensure() DOES**: a reference to
+  // somebody else's policy, or to an orphan, is not reset — that would
+  // rewrite a document another application decides with, or one kept for
+  // audit. Such an application has no policy of its own and is told to
+  // create one (STS-FGA-0021), which `ensure()` does under a fresh name.
+  //
+  // **CONFIRMED, OR REFUSED (STS-FGA-0020).** The reset replaces every rule
+  // an administrator wrote with one that permits everything, which on an
+  // enforced application widens what it allows at once. The console asks
+  // with a checkbox and the API with `confirm`, the arrangement
+  // `listeners_admin.ts` has for the one other write that can undo an
+  // administrator's own configuration in one press.
+  //
+  // **THE ENABLED FLAG IS KEPT.** "Reset the document" and "turn it back
+  // on" are two decisions; a disabled policy stays disabled, and the
+  // XACML Policies tab's Enable is where the second is made.
+  // -------------------------------------------------------------------------
+  /**
+   * Rewrites an application's own fine-grained policy from the
+   * `fga-default` template, keeping its entry name and its enabled flag.
+   *
+   * @param identifier - the application's identifier
+   * @param options - `actor`, and `confirm`, which must be true
+   * @returns `{ ok, policy, enforced, changed }`, or a refusal: an unknown
+   *   application (STS-FGA-0009), no confirmation (STS-FGA-0020), no
+   *   policy of its own (STS-FGA-0021), or a write refused (STS-FGA-0008)
+   */
+  reset(identifier: string, options?: ActOptions): FgaResult {
+    const { log, store, templates, xml, applications, audit } = this.deps;
+    const id = String(identifier);
+    const opts = options || {};
+    log.debug("Entering FgaPolicies.reset(). identifier=" + id);
+    const state = applications.fgaStateOf(id);
+    if (!state.known) {
+      log.debug("Leaving FgaPolicies.reset(). Unknown application.");
+      return this.refused('STS-FGA-0009', 'unknown-application',
+                          'There is no application called "' + id +
+                          '" in this realm.');
+    }
+    if (opts.confirm !== true) {
+      log.debug("Leaving FgaPolicies.reset(). Not confirmed.");
+      return this.refused('STS-FGA-0020', 'not-confirmed',
+                          'Resetting the fine-grained policy of "' + id +
+                          '" replaces every rule in it with one that ' +
+                          'permits every detail. Confirm it (confirm: ' +
+                          'true) to go ahead; nothing was changed.');
+    }
+    const own = this.ownPolicy(id, state.policy);
+    if (!own) {
+      log.debug("Leaving FgaPolicies.reset(). No policy of its own.");
+      return this.refused('STS-FGA-0021', 'no-own-policy',
+                          'The application "' + id + '" has no ' +
+                          'fine-grained policy of its own to reset' +
+                          (state.policy ? ' (appFgaPolicy names "' +
+                            state.policy + '", which is not its own)' : '') +
+                          '. Create the default policy instead.');
+    }
+    const built = templates.build(TEMPLATE, { application: id });
+    if (!built.ok) {
+      log.debug("Leaving FgaPolicies.reset(). The template refused.");
+      return this.refused('STS-FGA-0008', 'not-written',
+                          'The ' + TEMPLATE + ' template did not build: ' +
+                          built.why);
+    }
+    const written = store.write(own.name, xml.writePolicy(built.policy), {
+      enabled: own.enabled, isRoot: false,
+      description: built.policy.description, application: id,
+      orphanedAt: null });
+    if (!written.ok) {
+      log.debug("Leaving FgaPolicies.reset(). The store refused.");
+      return this.refused('STS-FGA-0008', 'not-written',
+                          'The fine-grained policy "' + own.name + '" of "' +
+                          id + '" could not be rewritten: ' + written.why);
+    }
+    audit.audit({ action: 'xacml.policy.write', actor: opts.actor || '',
+                  protocol: 'XACML',
+                  detail: 'Reset "' + own.name + '", the fine-grained ' +
+                          'authorization policy of the application "' + id +
+                          '", to the ' + TEMPLATE + ' template' +
+                          (own.enabled ? '.' : '; it stays disabled.') });
+    log.debug("Leaving FgaPolicies.reset(). " + own.name);
+    return { ok: true, policy: own.name, enforced: state.enforced,
+             changed: true };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHO NAMES A POLICY (#564, P5). An entry carrying `xacmlApplication` is
+  // REFERENCED when that application is in the registry and its
+  // `appFgaPolicy` is this entry's name — the one test that says whether
+  // removing it would leave an application pointing at nothing
+  // (STS-FGA-0004). The orphan mark is not that test: a policy left by an
+  // application deleted through LDAP carries no mark and is still named by
+  // nobody, and an administrator may remove it as decision 3 says.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the identifier of the application that names a policy in its
+   * `appFgaPolicy`, or ''.
+   *
+   * @param row - a policy row carrying `application` and `name`
+   * @returns the identifier, or '' when no application names it
+   */
+  holderOf(row: { name: string; application?: string | null } | null):
+      string {
+    const { log, applications } = this.deps;
+    log.debug("Entering FgaPolicies.holderOf().");
+    if (!row || !row.application) {
+      log.debug("Leaving FgaPolicies.holderOf(). Not an owned policy.");
+      return '';
+    }
+    const state = applications.fgaStateOf(String(row.application));
+    const holder = state.known && state.policy === row.name
+      ? String(row.application) : '';
+    log.debug("Leaving FgaPolicies.holderOf(). " + (holder || 'Nobody.'));
+    return holder;
+  }
+
+  /**
+   * Lists every policy an application owns, grouped by the application,
+   * each marked with whether the application is still in the registry and
+   * whether it still names the policy — what the XACML Policies tab draws.
+   *
+   * @returns `[{ application, known, enforced, policies }]`, by identifier
+   */
+  ownedPolicies(): Array<{ application: string; known: boolean;
+                           enforced: boolean; policies: OwnedRow[] }> {
+    const self = this;
+    const { log, store, applications } = this.deps;
+    log.debug("Entering FgaPolicies.ownedPolicies().");
+    const groups: Record<string, { application: string; known: boolean;
+                                   enforced: boolean;
+                                   policies: OwnedRow[] }> = {};
+    store.fgaPolicies().forEach(function (row: PolicyRow): void {
+      const owner = String(row.application);
+      if (!groups[owner]) {
+        const state = applications.fgaStateOf(owner);
+        groups[owner] = { application: owner, known: state.known,
+                          enforced: state.known && state.enforced,
+                          policies: [] };
+      }
+      groups[owner].policies.push({
+        name: row.name, policyId: row.id, version: row.version,
+        enabled: row.enabled, orphanedAt: row.orphanedAt || null,
+        referenced: self.holderOf(row) === owner });
+    });
+    const out = Object.keys(groups).sort().map(function (key: string) {
+      return groups[key];
+    });
+    log.debug("Leaving FgaPolicies.ownedPolicies(). " + out.length);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE APPLICATION'S STATE, AS THE CONSOLE DRAWS IT (#564, P5): the switch,
+  // the reference and the policy behind it, whether `resolve()` could decide
+  // with it and if not why (its code), and every declared type with its
+  // coverage. A VIEW, so it never refuses: an unknown application is
+  // answered `known: false`, and a type that does not read is listed with
+  // its problem rather than dropped, because it is exactly the one a reader
+  // has to see.
+  // -------------------------------------------------------------------------
+  /**
+   * Describes an application's fine-grained authorization for its page.
+   *
+   * @param identifier - the application's identifier
+   * @returns `{ known, enforced, reference, policy, usable, failure, code,
+   *   why, types, unreadable, template }`
+   */
+  state(identifier: string): Record<string, any> {
+    const { log, store, applications, map, errorCodes } = this.deps;
+    const id = String(identifier);
+    log.debug("Entering FgaPolicies.state(). identifier=" + id);
+    const held = applications.fgaStateOf(id);
+    if (!held.known) {
+      log.debug("Leaving FgaPolicies.state(). Unknown application.");
+      return { known: false, enforced: false, reference: '', policy: null,
+               usable: false, failure: 'unknown-application',
+               code: 'STS-FGA-0009', why: '', types: [], unreadable: [],
+               template: TEMPLATE };
+    }
+    const row = held.policy ? store.read(held.policy) : null;
+    const policy = row ? {
+      name: row.name, policyId: row.id, version: row.version,
+      enabled: row.enabled, application: row.application || null,
+      orphanedAt: row.orphanedAt || null,
+      own: row.application === id && !row.orphanedAt,
+      editor: '/admin/xacml/editor?policy=' + encodeURIComponent(row.name)
+    } : null;
+    const resolved = this.resolve(id);
+    const entry = applications.get(id);
+    const raw = ((entry && entry.fields) || {}).oauthAuthorizationDetailsType;
+    const values = raw === undefined || raw === null ? []
+      : (Array.isArray(raw) ? raw : [raw]);
+    const types: TypeCoverage[] = [];
+    const unreadable: Array<{ stored: string; problem: string }> = [];
+    values.forEach(function (value: unknown): void {
+      const definition = applications.authorizationDetailsTypeOf(value);
+      if (!definition || definition.problem) {
+        unreadable.push({ stored: String(value).slice(0, 200),
+                          problem: String((definition &&
+                                           definition.problem) || '') });
+        return;
+      }
+      const paths = map.uncovered(definition);
+      types.push({ type: String(definition.type), covered: !paths.length,
+                   uncovered: paths,
+                   rows: (definition.xacml || []).length,
+                   notForPolicy: (definition.notForPolicy || []).slice(0) });
+    });
+    const out = {
+      known: true, enforced: held.enforced, reference: held.policy,
+      policy: policy, usable: !!resolved.ok,
+      failure: resolved.ok ? '' : String(resolved.failure || ''),
+      code: resolved.ok ? '' : errorCodes.codeOf(resolved),
+      why: resolved.ok ? '' : String(resolved.why || ''),
+      types: types, unreadable: unreadable, template: TEMPLATE
+    };
+    log.debug("Leaving FgaPolicies.state(). " + types.length + " type(s).");
+    return out;
+  }
+
   /**
    * Fills `applications.setFgaLifecycle()`: `created` ensures the new
    * application's policy, `deleted` retires the deleted one's.
@@ -652,5 +900,9 @@ export = {
   uncoveredTypes: slot.forward('uncoveredTypes'),
   disable: slot.forward('disable'),
   retire: slot.forward('retire'),
-  resolve: slot.forward('resolve')
+  resolve: slot.forward('resolve'),
+  reset: slot.forward('reset'),
+  holderOf: slot.forward('holderOf'),
+  ownedPolicies: slot.forward('ownedPolicies'),
+  state: slot.forward('state')
 };

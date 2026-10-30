@@ -16021,7 +16021,16 @@ class AdminApi {
                          'strongly signed in (#432 phase 6). A definition ' +
                          'that ' +
                          'does not read is refused (`STS-REG-0294`) and the ' +
-                         'one declared stays.',
+                         'one declared stays.\n\n`xacml` (rows of `path`, ' +
+                         '`attributeId`, `category`, `dataType`, ' +
+                         '`multiplicity`) and `notForPolicy` are the ' +
+                         'type\'s fine-grained authorization mapping ' +
+                         '(#564), written whole here and a row at a time ' +
+                         'by `set-access-type-row`, `remove-access-type-row` ' +
+                         'and `set-not-for-policy`; on an application that ' +
+                         'enforces fine-grained authorization a definition ' +
+                         'leaving a member uncovered is refused ' +
+                         '(`STS-FGA-0019`).',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -16051,7 +16060,12 @@ class AdminApi {
                 introspectionClaims: { type: ['array', 'string'],
                                        items: { type: 'string' } },
                 schema: { type: ['object', 'string'] },
-                limits: { type: ['object', 'string'] }
+                limits: { type: ['object', 'string'] },
+                // #564: the fine-grained mapping, written whole.
+                xacml: { type: ['array', 'string'],
+                         items: { type: 'object' } },
+                notForPolicy: { type: ['array', 'string'],
+                                items: { type: 'string' } }
               },
               required: ['application', 'type'],
               examples: [{ application: 'payments-api',
@@ -16088,6 +16102,217 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The application and the type removed.' },
+
+          // A TYPE'S MAPPING, ONE ROW AT A TIME (#564, P5): the Access
+          // types tab's XACML mapping sub-tabs. AuthZEN's catalogue acts
+          // are the model; each rewrites the type's one value through the
+          // door `set-access-type` uses.
+          { action: 'set-access-type-row',
+            operationId: 'setApplicationAccessTypeRow',
+            summary: 'Map one member of an access type to an XACML ' +
+                     'attribute',
+            description: 'Adds to `type`\'s `xacml` mapping the row for ' +
+                         '`path`, or replaces the row already mapping that ' +
+                         'path: the member of an RFC 9396 detail of the ' +
+                         'type that becomes the attribute `attributeId` ' +
+                         'when an application\'s fine-grained ' +
+                         'authorization policy decides it. `category` ' +
+                         '(resource by default), `dataType` (string by ' +
+                         'default) and `multiplicity` (single or bag) take ' +
+                         'AuthZEN\'s catalogue names or the XACML URIs. ' +
+                         'The row is read by the mapping\'s grammar before ' +
+                         'it is written, and refused (`STS-FGA-0023`, with ' +
+                         '`field` naming the member that was wrong) for a ' +
+                         'path that is not a member path or names `type` ' +
+                         'or a common data field, an identifier this ' +
+                         'service reserves for what it writes itself ' +
+                         '(`urn:sts:xacml:*`, subject-id, resource-id, ' +
+                         'action-id, the current-time attributes, or a ' +
+                         'bare directory name in a subject category), or a ' +
+                         'category, data type or multiplicity outside the ' +
+                         'set. On an application that enforces ' +
+                         'fine-grained authorization the write is also ' +
+                         'held to coverage (`STS-FGA-0019`).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                path: { type: 'string' },
+                attributeId: { type: 'string' },
+                category: { type: 'string' },
+                dataType: { type: 'string' },
+                multiplicity: { type: 'string' },
+                description: { type: 'string' }
+              },
+              required: ['application', 'type', 'path', 'attributeId'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           path: 'instructedAmount.amount',
+                           attributeId: 'urn:example:payment:amount',
+                           dataType: 'double' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in ' +
+                                 '`definition`.' },
+          { action: 'remove-access-type-row',
+            operationId: 'removeApplicationAccessTypeRow',
+            summary: 'Take one row off an access type\'s XACML mapping',
+            description: 'Removes the row mapping `path` from `type`\'s ' +
+                         '`xacml` member. Refused (`STS-FGA-0023`) for a ' +
+                         'path no row maps, and (`STS-FGA-0019`) on an ' +
+                         'application that enforces fine-grained ' +
+                         'authorization when the member would be left ' +
+                         'neither mapped nor in notForPolicy.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                path: { type: 'string' }
+              },
+              required: ['application', 'type', 'path'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           path: 'instructedAmount.amount' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in ' +
+                                 '`definition`.' },
+          { action: 'set-not-for-policy',
+            operationId: 'setApplicationAccessTypeNotForPolicy',
+            summary: 'Name the members of an access type its policy ' +
+                     'deliberately never sees',
+            description: 'Replaces `type`\'s `notForPolicy` list: member ' +
+                         'paths a fine-grained authorization policy is ' +
+                         'never given, listed so that the type still ' +
+                         'counts as covered. An array, or text with one ' +
+                         'path per line or comma; empty clears the list. ' +
+                         'Refused (`STS-FGA-0023`) for a path the grammar ' +
+                         'does not read, or one a row maps; and ' +
+                         '(`STS-FGA-0019`) on an application that enforces ' +
+                         'fine-grained authorization when a member would ' +
+                         'be left uncovered.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                type: { type: 'string' },
+                notForPolicy: { type: ['array', 'string'],
+                                items: { type: 'string' } }
+              },
+              required: ['application', 'type'],
+              examples: [{ application: 'payments-api',
+                           type: 'payment_initiation',
+                           notForPolicy: ['remittanceInformation'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The definition written, in ' +
+                                 '`definition`.' },
+
+          // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5): the switch, and
+          // the policy the application owns.
+          { action: 'fga-enable', operationId: 'enableApplicationFga',
+            summary: 'Enforce an application\'s fine-grained ' +
+                     'authorization policy',
+            description: 'Sets `appFgaEnforced`: from the next request every ' +
+                         'RFC 9396 authorization detail of a type this ' +
+                         'application declares is decided by its own ' +
+                         'policy, at the authorization, PAR and token ' +
+                         'endpoints, and so is every AuthZEN evaluation ' +
+                         'whose resource resolves to it. The policy is ' +
+                         'created from `fga-default` first if it has none. ' +
+                         'Refused while a declared type is not covered ' +
+                         '(`STS-FGA-0018`, naming each type and its ' +
+                         'uncovered member paths, `*` for an open schema), ' +
+                         'while its policy is disabled (`STS-FGA-0006`) or ' +
+                         'does not parse (`STS-FGA-0007`), and for an ' +
+                         'application this realm does not hold ' +
+                         '(`STS-FGA-0009`). `failure` names which.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'payments-api' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `policy` it is decided by, and ' +
+                                 '`enforced: true`.' },
+          { action: 'fga-disable', operationId: 'disableApplicationFga',
+            summary: 'Stop enforcing an application\'s fine-grained ' +
+                     'authorization policy',
+            description: 'Clears `appFgaEnforced`. The policy is kept ' +
+                         'exactly as it is, and AuthZEN evaluations about ' +
+                         'the application are decided by the realm\'s root ' +
+                         'policy again.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'payments-api' }],
+              additionalProperties: false
+            },
+            responseDescription: '`enforced: false`.' },
+          { action: 'fga-create-policy',
+            operationId: 'createApplicationFgaPolicy',
+            summary: 'Give an application its default fine-grained ' +
+                     'authorization policy',
+            description: 'Writes the `fga-default` policy (one rule ' +
+                         'permitting every detail) into `ou=policies` for ' +
+                         'an application that has none of its own — one ' +
+                         'registered by a client, seen in development ' +
+                         'mode, or whose policy could not be written when ' +
+                         'it was created — and names it in ' +
+                         '`appFgaPolicy`. An application that has one is ' +
+                         'answered with it, `created: false`. Refused ' +
+                         '(`STS-FGA-0008`) when `ou=policies` is full ' +
+                         '(`xacml.maxPolicies`).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { application: { type: 'string' } },
+              required: ['application'],
+              examples: [{ application: 'payments-api' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `policy` and whether it was ' +
+                                 '`created`.' },
+          { action: 'fga-reset-policy',
+            operationId: 'resetApplicationFgaPolicy',
+            summary: 'Reset an application\'s fine-grained authorization ' +
+                     'policy to the default',
+            description: 'Rewrites the document of the application\'s own ' +
+                         'policy from `fga-default`, under the same entry ' +
+                         'name, replacing every rule in it with one that ' +
+                         'permits every detail; its enabled flag is kept. ' +
+                         'Needs `confirm` (`STS-FGA-0020` without it), and ' +
+                         'refused (`STS-FGA-0021`) for an application with ' +
+                         'no policy of its own — use `fga-create-policy`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                // `true` from a script, `true` or `on` from the console's
+                // checkbox, as the listeners mapping takes it.
+                confirm: { oneOf: [{ type: 'boolean' },
+                                   { type: 'string',
+                                     enum: ['true', 'false', 'on'] }],
+                           description: 'The rewrite is meant.' }
+              },
+              // NOT required here: an unticked box posts nothing, and
+              // the handler's refusal (STS-FGA-0020) says what the
+              // validator's could not — what the reset would do.
+              required: ['application'],
+              examples: [{ application: 'payments-api', confirm: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The `policy` rewritten.' },
 
           // THE CREDENTIALS SECTION'S MUTUAL TLS CONTROLS (RFC 8705,
           // 2026-09-13).
@@ -17149,7 +17374,16 @@ class AdminApi {
             summary: 'Remove a policy from the repository',
             description: 'Deleting the ROOT leaves the repository deciding ' +
                          'nothing, and the reply says so rather than letting ' +
-                         'it be discovered by a Deny.',
+                         'it be discovered by a Deny.\n\nAN APPLICATION\'S ' +
+                         'FINE-GRAINED POLICY (#564) is deleted only when ' +
+                         'no application names it in appFgaPolicy — an ' +
+                         'orphan of a deleted application ' +
+                         '(`applicationPolicies` on GET ' +
+                         '/admin-api/xacml/policies marks which). The one ' +
+                         'an application still names is refused ' +
+                         '(`STS-FGA-0022`); reset it with POST ' +
+                         '/admin-api/applications/fga-reset-policy ' +
+                         'instead.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
