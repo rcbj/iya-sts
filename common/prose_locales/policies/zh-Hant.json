@@ -572,12 +572,16 @@
     "text": "此設定檔的用途，供下一位接手的人參考。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "9c184b4ac272a663",
-    "text": "在「具名」驗證原則上（#1148）：指名此原則的應用程式（appAuthnPolicy）所允許的一種第一因素機制——password、password-mfa、webauthn、spnego、wallet 或 federation，每個值一種。一個都不列則允許領域所允許的每一種。"
+    "en": "66db848b0bb1c58f",
+    "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第一因素機制——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、password-mfa、webauthn、spnego、wallet 或 federation，每個值一項。一項都沒有時，允許本領域允許的全部機制。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "b59799bd06b5022d",
-    "text": "在「具名」驗證原則上（#1148）：指名此原則的應用程式所允許的一種第二因素——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每個值一種。一個都不列則維持領域的驗證原則不變。"
+    "en": "7c8e4d8b4cce7c08",
+    "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第二因素——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每個值一項。一項都沒有時，本領域的驗證原則維持不變。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "用於具名驗證原則（#1237）：一次登入由應用程式（appAuthnPolicy）與此人的群組（stsAuthnPolicy）指定了多個原則時，哪一個適用——數值最低者，取值 1 到 1000，相同時依名稱決定。未設定時為 100。"
   },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",

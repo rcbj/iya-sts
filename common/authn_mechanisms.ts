@@ -170,20 +170,28 @@ class AuthnMechanisms {
   }
 
   /**
-   * The mechanisms an application allows: the first-factor list of the
-   * named authentication policy its `appAuthnPolicy` names (#1148). None is
+   * The mechanisms a sign-in allows: the first-factor list of the named
+   * authentication policy that applies — the one its application's
+   * `appAuthnPolicy` names (#1148) or one of the person's groups'
+   * `stsAuthnPolicy` names, the lowest precedence winning (#1237). None is
    * every one. A value no mechanism has is kept, so a misspelt list — or a
    * policy that does not exist — allows nothing rather than everything.
    *
    * @param fields - the entry's fields, or null
+   * @param person - the person signing in, where known (#1237): the policy
+   *   one of their groups names competes with the application's
    * @returns the mechanism ids, each once
    */
-  static allowedOf(fields: any): string[] {
+  static allowedOf(fields: any, person?: unknown): string[] {
     log.debug('Entering AuthnMechanisms.allowedOf().');
     // Required lazily: the policy is a leaf over the directory slot, and
     // this module is required by its callers before the slot is filled.
-    const held = fields
-      ? require('./authn_policy').mechanismsFor(fields).mechanisms : null;
+    // The person too, once known (#1237): their groups' policies compete
+    // with the application's on precedence.
+    const held = fields || person
+      ? require('./authn_policy').mechanismsFor(fields || null, person)
+        .mechanisms
+      : null;
     const out: string[] = [];
     [].concat(held === undefined || held === null ? [] : held)
       .forEach(function (one: any) {

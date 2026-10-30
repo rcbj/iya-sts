@@ -7222,8 +7222,8 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-AUTHN-0534',
     summary: 'A named authentication policy was not deleted: an application ' +
-      'of this realm still names it (appAuthnPolicy), and would then allow ' +
-      'no mechanism (#1148).',
+      '(appAuthnPolicy) or a group (stsAuthnPolicy, #1237) of this realm ' +
+      'still names it, and would then allow no mechanism (#1148).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-AUTHN-0535',
     summary: 'This realm holds no named authentication policy of that name ' +
@@ -7231,9 +7231,10 @@ const CODES = [
       'that does not exist.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-AUTHN-0536',
-    summary: 'An application names an authentication policy (appAuthnPolicy) ' +
-      'that this realm does not hold — written past the console, or the ' +
-      'policy was deleted by hand — so it allows no mechanism until the ' +
+    summary: 'An application (appAuthnPolicy) or one of the person\'s ' +
+      'groups (stsAuthnPolicy, #1237) names an authentication policy that ' +
+      'this realm does not hold — written past the console, or the policy ' +
+      'was deleted by hand — so the sign-in allows no mechanism until the ' +
       'policy exists or the reference changes (#1148).',
     spec: 'none (logged; the sign-in is refused as for a mechanism the ' +
       'application does not allow)' },
@@ -7249,6 +7250,10 @@ const CODES = [
     summary: 'A named passkey policy was not deleted: an application ' +
       '(appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm ' +
       'still names it (#1235).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0539',
+    summary: 'A named authentication policy was not saved: its precedence ' +
+      'is not a whole number from 1 to 1000 (#1237).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +

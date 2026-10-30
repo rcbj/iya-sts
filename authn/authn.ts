@@ -7954,10 +7954,12 @@ class Authn {
     // the policy's other rules (the console's alarm) answer every asking.
     // The second factors (#475) are the same kind of question, asked here on
     // the same terms: only of an application that allows only some.
+    // THE PERSON IS KNOWN HERE (#1237), so the policy one of their groups
+    // names competes with the application's.
     if (extra.gated === true && mechanismEvent && extra.application &&
-        (this.declaredMechanismsFor(String(extra.application))
+        (this.declaredMechanismsFor(String(extra.application), username)
           .allowed.length ||
-         this.mfaAllowedFor(String(extra.application)).length)) {
+         this.mfaAllowedFor(String(extra.application), username).length)) {
       // A DOOR THAT ASKED THE POLICY ITSELF (`gated: true`) asked it before
       // the authentication was complete — the password screen before its
       // second factor — so it could not ask about the MECHANISM, which needs
@@ -10344,13 +10346,16 @@ class Authn {
   // as it is. Read where the second-factor step is chosen, on the way to the
   // screen and back from it, so the same reason as declaredMechanismsFor()'s
   // holds: a registry that throws costs the narrowing, never the sign-in,
-  // and the issuance policy reads the same registry and decides.
+  // and the issuance policy reads the same registry and decides. THE PERSON
+  // IS KNOWN HERE (#1237), so the policy one of their groups names competes
+  // with the application's on precedence.
   // ---------------------------------------------------------------------------
-  private mfaAllowedFor(applicationId): string[] {
+  private mfaAllowedFor(applicationId, username?: string): string[] {
     const { log, applications, errorCodes } = this.deps;
     log.debug("Entering Authn.mfaAllowedFor(). application=" +
               (applicationId || '(none)'));
     const name = String(applicationId || '').trim();
+    const person = String(username || '').trim();
     if (!name) {
       log.debug("Leaving Authn.mfaAllowedFor(). No application.");
       return [];
@@ -10358,7 +10363,7 @@ class Authn {
     let allowed: string[] = [];
     try {
       const entry = applications.get(name);
-      allowed = mfaLib.allowedOf(entry ? entry.fields : null);
+      allowed = mfaLib.allowedOf(entry ? entry.fields : null, person);
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0016') +
                 'authn: the application registry threw while reading the ' +
@@ -10372,13 +10377,18 @@ class Authn {
     return allowed;
   }
 
-  private declaredMechanismsFor(applicationId) {
+  // BEFORE THE PERSON IS KNOWN (#1237) — the routing below, the screen's
+  // first draw — `username` is absent and only the application's reference
+  // can be a candidate; the session's start asks again with the person, so
+  // the policy one of their groups names is held to there.
+  private declaredMechanismsFor(applicationId, username?: string) {
     const { log, federation, applications, config, errorCodes } = this.deps;
     log.debug("Entering Authn.declaredMechanismsFor(). application=" +
               (applicationId || '(none)'));
+    const person = String(username || '').trim();
     let entry = null;
     try {
-      entry = applications.get(String(applicationId || ''));
+      entry = applicationId ? applications.get(String(applicationId)) : null;
     } catch (e) {
       // Swallowed for federationFor()'s reason and no other: this runs on the
       // way to the sign-in screen, so a registry that throws must cost the
@@ -10397,17 +10407,23 @@ class Authn {
     // Since #1148 it is the first-factor list of the named authentication
     // policy the application names; a name no policy holds allows nothing,
     // and the screen says which policy is missing.
-    const allowed = mechanismLib.allowedOf(entry ? entry.fields : null);
-    const named = entry
-      ? require('../common/authn_policy').mechanismsFor(entry.fields) : null;
+    const allowed = mechanismLib.allowedOf(entry ? entry.fields : null,
+                                           person);
+    const named = entry || person
+      ? require('../common/authn_policy')
+        .mechanismsFor(entry ? entry.fields : null, person) : null;
     if (named && named.missing) {
       log.debug("Leaving Authn.declaredMechanismsFor(). Its policy is " +
                 "missing.");
-      return { allowed: allowed, usable: [], problem: 'The application "' +
-        applicationId + '" names the authentication policy "' +
-        named.policy + '", which this realm does not hold, so nobody can ' +
-        'sign in to it until the policy exists or its appAuthnPolicy ' +
-        'changes.' };
+      return { allowed: allowed, usable: [], problem: named.by === 'group'
+        ? 'The group "' + named.holder + '" names the authentication ' +
+          'policy "' + named.policy + '", which this realm does not hold, ' +
+          'so its members cannot sign in until the policy exists or its ' +
+          'stsAuthnPolicy changes.'
+        : 'The application "' + applicationId + '" names the ' +
+          'authentication policy "' + named.policy + '", which this realm ' +
+          'does not hold, so nobody can sign in to it until the policy ' +
+          'exists or its appAuthnPolicy changes.' };
     }
     if (!allowed.length) {
       log.debug("Leaving Authn.declaredMechanismsFor(). That entry allows " +
@@ -12238,7 +12254,8 @@ class Authn {
     // `narrowedAway` keeps that person off the enrolment below, which is for
     // somebody who holds nothing: enrolling for them unproved is the bypass.
     // -----------------------------------------------------------------------
-    const mfaAllowed = this.mfaAllowedFor(String(record.application || ''));
+    const mfaAllowed = this.mfaAllowedFor(String(record.application || ''),
+                                          username);
     const passwordSecond = !firstIsFederation &&
       this.deps.authnPolicy.allows('password', 'second-factor') &&
       mfaLib.allowsStepFactor(mfaAllowed, 'password');
@@ -14822,7 +14839,8 @@ class Authn {
     // another the person holds, a held one PROVED and then an allowed one
     // ENROLLED (`thenEnrol`), or a refusal.
     // ---------------------------------------------------------------------
-    const mfaAllowed = this.mfaAllowedFor(String(record.application || ''));
+    const mfaAllowed = this.mfaAllowedFor(String(record.application || ''),
+                                          username);
     let thenEnrol = false;
     if (mfaAllowed.length && factor && !passwordless) {
       const narrowed = this.narrowSecondFactor(username, mfaAllowed, enrolled,

@@ -1020,12 +1020,15 @@ accepts** by naming a **named authentication policy** (#1148). They are on
 the same tab, Directory → Policies → *Authentication policy*, which has the
 passkey policy's three sub-tabs: **Default** (the realm's own policy),
 **Named policies** (the list, with Change and Delete) and **New policy**.
-Each named policy holds exactly two lists:
+Each named policy holds two lists and a precedence:
 
 * **the first-factor mechanisms it allows**: `password`, `password-mfa`,
   `webauthn`, `spnego`, `wallet`, `federation`;
 * **the second factors it allows**: `password`, `securityKey`, `totp`,
-  `recoveryCode`, `emailCode`, `emailLink`, `wallet`.
+  `recoveryCode`, `emailCode`, `emailLink`, `wallet`;
+* **its precedence**, a whole number from 1 to 1000 (100 when not given),
+  which decides between policies named for the same sign-in. A precedence
+  outside that range is refused (`STS-AUTHN-0539`).
 
 **None ticked in a list allows every one** (for the second factors: leaves
 the realm's as they are). Everything else about signing in — which
@@ -1040,25 +1043,49 @@ field replaced the two lists an application used to hold itself
 browser sign-in to the application — the routing, the re-prompt, the
 narrowed second factor — is in [Applications](applications.md#sign-in-mechanisms-how-its-people-may-sign-in).
 
+**A group names one too**, in **`stsAuthnPolicy`**, on the group's page (or
+`POST /admin-api/groups/set-policy` with `attribute: stsAuthnPolicy`), which
+accepts only `default` or a policy the realm holds. For a sign-in to an
+application, the candidates are the policy the application names and the
+policy each of the person's groups names. **The one with the lowest
+precedence applies**; a tie goes to the name that sorts first, and the realm's
+policy applies as it is where nothing is named. For example, an application
+naming `staff` (precedence 50) is held to `staff` for most people, and to
+`contractors` (precedence 10) for a member of a group naming `contractors`.
+
+* **Before the person is known** — the sign-in screen's first draw, and where
+  an application allowing one mechanism sends its people — only the
+  application's policy can apply. Once the person is known the choice is made
+  again: the second factor offered is narrowed by the policy that applies to
+  them, and the session's start and every browser issuance are held to it.
+  A person whose groups' policy allows fewer first factors than the
+  screen offered is re-prompted or refused at that point, as for an
+  application's own list.
+* A sign-in that names no application is held to the policy that applies
+  when an application's issuance is asked for on that session.
+
 * A policy is stored as `cn=<name>,ou=authnPolicies` in the realm's
   directory, beside the realm's own `cn=default`. A name is lower-case
   letters, digits and hyphens, and cannot be `default` (`STS-AUTHN-0532`).
   A realm's policies are its own: nothing is inherited from the default
   realm.
-* **Deleting a policy an application names is refused** (`STS-AUTHN-0534`).
-  Point the application elsewhere first.
+* **Deleting a policy an application or a group names is refused**
+  (`STS-AUTHN-0534`). Point them elsewhere first.
 * **A name no policy holds allows nothing.** The console and the API accept
   only `default` or a policy the realm holds, but an `ldapmodify` can write
-  any value; an application naming a policy that does not exist allows no
-  mechanism at all until the policy exists or the name changes
-  (`STS-AUTHN-0536`).
+  any value. An application naming a policy that does not exist allows no
+  mechanism at all, and so does a group naming one for every member, until
+  the policy exists or the name changes (`STS-AUTHN-0536`).
 
 API: the `named` list in the `authn` member of `GET /admin-api/policies`;
 `POST /admin-api/policies/save-named-authn-policy` with `name`,
-`description`, `mechanisms` and `secondFactors` (it replaces a policy of the
-same name); `POST /admin-api/policies/delete-named-authn-policy` with
-`name`; and `POST /admin-api/applications/set` with
-`attribute: appAuthnPolicy` to point an application at one.
+`description`, `precedence`, `mechanisms` and `secondFactors` (it replaces a
+policy of the same name); `POST /admin-api/policies/delete-named-authn-policy`
+with `name`; `POST /admin-api/applications/set` with
+`attribute: appAuthnPolicy` to point an application at one; and
+`POST /admin-api/groups/set-policy` with `attribute: stsAuthnPolicy` to point
+a group at one. Each named policy in the list carries its `precedence` and
+`namedBy`, the `applications` and `groups` naming it.
 
 ### Emailed codes and links
 

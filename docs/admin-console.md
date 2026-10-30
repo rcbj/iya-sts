@@ -629,7 +629,8 @@ write them, where the kind is `password`, `authn`, `serviceAccount`,
 `passkey`, `locale`, `attributes` or `postLogin`. The authentication policy
 tab also holds the realm's [named authentication
 policies](authentication.md#named-authentication-policies), which an
-application names in `appAuthnPolicy`
+application names in `appAuthnPolicy` and a group in `stsAuthnPolicy`, the
+lowest precedence applying
 (`save-named-authn-policy`, `delete-named-authn-policy`).
 
 **The password policy** is a minimum length (12), how many previous passwords

@@ -1317,7 +1317,10 @@ has no role and no say.** The realm's policy says what the realm supports: its
 `webauthn.primaryAllowed` / `webauthn.mfaAllowed`, asked by
 `webauthnPolicy.useAllowed()`. An application overrides it through the
 named authentication policy it names (`appAuthnPolicy`, #1148; its own
-`appAuthnMechanism` / `appMfaMechanism` until then): the policy's first
+`appAuthnMechanism` / `appMfaMechanism` until then), or one of the person's
+groups names (`stsAuthnPolicy`, #1237) at a lower precedence once the person
+is known — `mfaAllowedFor()` and the session's start ask with the person,
+the routing before it without (`common/CLAUDE.md` 3bd): the policy's first
 factors (`webauthn` among them, enforced by the issuance policy's
 authn-mechanism rule) and second factors (`securityKey` among them, applied
 where the second step is chosen: `mfaAllowedFor()` /

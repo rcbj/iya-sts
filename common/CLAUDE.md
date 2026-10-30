@@ -12185,9 +12185,10 @@ application's own `appAuthnMechanism` and `appMfaMechanism`: the application
 holds ONE reference, `appAuthnPolicy` (`common/applications.js`), and the
 lists live on a policy. rcbj's decisions:
 
-- **THE APPLICATION NAMES ITS POLICY**, one value — the opposite direction
-  from a named passkey policy (3ch), which names its applications.
-- **A NAMED POLICY HOLDS TWO LISTS AND NOTHING ELSE**: the first-factor
+- **THE APPLICATION NAMES ITS POLICY**, one value; since #1237 a GROUP
+  names one too (`stsAuthnPolicy`, rule 3cx), and the named passkey policy
+  went the same way in #1235.
+- **A NAMED POLICY HOLDS TWO LISTS AND A PRECEDENCE**: the first-factor
   mechanisms allowed (`stsAuthnPolicyMechanism`, `federation.MECHANISM_IDS`)
   and the second factors allowed (`stsAuthnPolicySecondFactor`), each "none
   is every one" exactly as the two attributes were. Everything else about
@@ -12198,12 +12199,12 @@ lists live on a policy. rcbj's decisions:
   applications name its own policies. `default` is not a name a policy can
   take (`STS-AUTHN-0532`); an application naming it, or nothing, is narrowed
   by nothing beyond the realm's policy.
-- **`mechanismsFor(fields)` IS THE ONE QUESTION** every reader of the two old
-  attributes asks now — the routing in `authn.ts`, `authn_mechanisms.ts`'s
-  and `mfa_mechanisms.ts`'s `allowedOf()` (and so the issuance gate), the
-  `authMechanisms` report source. **A name no policy holds allows NO
-  mechanism** (`missing`, `STS-AUTHN-0536`): a reference fails closed, as a
-  misspelt list did. The console's and the API's writes are checked against
+- **`mechanismsFor(fields, person)` IS THE ONE QUESTION** every reader of
+  the two old attributes asks now — the routing in `authn.ts`,
+  `authn_mechanisms.ts`'s and `mfa_mechanisms.ts`'s `allowedOf()` (and so
+  the issuance gate), the `authMechanisms` report source. **A name no policy
+  holds allows NO mechanism** (`missing`, `STS-AUTHN-0536`): a reference
+  fails closed, as a misspelt list did — a group's as an application's. The console's and the API's writes are checked against
   `default` and the realm's policies (`CHOICES_CHECKED_HERE`,
   `STS-REG-0203`), so that state is reached only past them — an
   `ldapmodify`; a delete of a name the realm does not hold is
@@ -12211,18 +12212,52 @@ lists live on a policy. rcbj's decisions:
 - **TWO ACTS BESIDE SAVE AND RESET**, `policy_kinds.ts`'s `extraActions`:
   `save-named-authn-policy` {name, description, mechanisms, secondFactors}
   (an unknown value is `STS-AUTHN-0533`) and `delete-named-authn-policy`
-  {name}, REFUSED while an application of the realm names it
-  (`STS-AUTHN-0534`; `applications.js`'s `applicationsNamingAuthnPolicy()`,
-  reached lazily because this file is a leaf). The console draws the
+  {name}, REFUSED while an application or a group of the realm names it
+  (`STS-AUTHN-0534`; `namedBy()`, which reaches `applications.js`'s
+  `applicationsNamingPolicy()` lazily because this file is a leaf, and the
+  directory's `groupsNamingPolicy()`). The console draws the
   Authentication policy tab as the passkey policy's three sub-tabs (rcbj):
   Default, Named policies and New policy, the last two from
   `admin-ui/web_policies.ts`'s `namedAuthnPoliciesSection()`.
 - **NO MIGRATION IS OWED** (`applications.js`): the two old attributes are
   no longer read.
 
-`tests/named_authn_policies.js` holds the named policies, and
-`tests/authn_policy.js` the module, the inheritance, the mail guard, the
-retired settings and a kind registered later.
+**GROUPS NAME ONE TOO, AND THE POLICIES COMPETE (#1237, rule 3cx).** A
+group's `stsAuthnPolicy` (declared with `PolicySelection.declareReference()`,
+so the group page draws its picker and `setGroupPolicy()` checks it) names a
+policy as `appAuthnPolicy` does, and a named policy carries
+`stsAuthnPolicyPrecedence` (1 to 1000, 100 when absent; a bad one on a save
+is `STS-AUTHN-0539`). `mechanismsFor(fields, person)` hands the
+application's reference and the person's groups' (`personGroupReferences()`,
+the group index) to `PolicySelection.rank()`; the lowest precedence wins,
+ties by name, `default` where nothing is named, and ANY missing name fails
+the sign-in closed. A person names none of their own.
+
+- **BEFORE THE PERSON IS KNOWN ONLY THE APPLICATION'S REFERENCE APPLIES**:
+  `authn.ts`'s routing (`mechanismFor()`, the screen's first draw) asks with
+  no person. The choice is made again with the person at the second factor
+  (`mfaAllowedFor()`), at the session's start (the gated doors' mechanism
+  question) and in the issuance gate's facts (`mechanismFactsOf()`,
+  `mfaFactsOf()`, from `asked.subject`).
+- **A SIGN-IN NAMING NO APPLICATION IS NOT ASKED**, as before #1237: the
+  gate answers "no application to decide about", so a group's policy is held
+  to when an application's issuance is asked for on that session, which every
+  browser issuance names.
+- **THE CONSOLE** draws the Named policies sub-tab with the generic section's
+  precedence row, "named by" sentences and `references` (rule 3cx), the two
+  checkbox lists staying this kind's own; the kind row is `tabbed`. The kind
+  exports no `SELECTORS`: its save and reset take `default` alone and its
+  named policies have acts of their own, so `authnPolicyExtras()` sets
+  `selectors` and `references` on the view itself.
+- **THE REPORT** (`authMechanisms`) gains a row per mechanism of the policy
+  each group names (`group`, `policy` columns); an application's rows are
+  its own reference's, as the screen's first draw reads it.
+
+`tests/named_authn_policies.js` holds the named policies,
+`tests/authn_policy_by_group.js` the group reference and the ranking (both
+ways round, at the issuance gate), and `tests/authn_policy.js` the module,
+the inheritance, the mail guard, the retired settings and a kind registered
+later.
 
 ## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
 

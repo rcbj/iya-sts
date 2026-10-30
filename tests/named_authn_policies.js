@@ -195,7 +195,9 @@ function childMain() {
       const shown = ((ap && ap.named) || []).filter(function (one) {
         return one.name === 'wallet-or-key';
       })[0];
-      note(viaAct.ok && shown && shown.namedBy.join() === 'nap-web' &&
+      note(viaAct.ok && shown &&
+           shown.namedBy.applications.join() === 'nap-web' &&
+           shown.namedBy.groups.length === 0 && shown.precedence === 100 &&
            shown.mechanisms.join() === 'wallet,webauthn' &&
            shown.secondFactors.length === 0 &&
            (ap.vocabulary.mechanisms || []).indexOf('spnego') >= 0,
