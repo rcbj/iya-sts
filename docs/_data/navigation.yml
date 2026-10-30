@@ -93,14 +93,32 @@
     - { title: SCIM 2.0, url: /scim.html }
     - { title: "Configuring SCIM 2.0", url: /configure-scim.html }
 
-- section: Authorization policy
+# AUTHORIZATION GATHERS EVERY PAGE ABOUT A DECISION, and also LINKS to the
+# sections that belong where they are (rcbj, 2026-10-30, #564). Roles, scopes,
+# delegated permission grants, consent and RFC 9396 are part of the OAuth or
+# console pages they live on, and moving them would split those pages. The
+# items carrying a `#` are those links: the sidebar never marks them
+# current, because `page.url` carries no fragment. tests/doc_links.js holds
+# every fragment here to a heading of its page.
+- section: Authorization
   items:
+    - { title: Authorization overview, url: /authorization.html }
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
-    - { title: AuthZEN, url: /authzen.html }
-    - { title: Fine-grained authorization, url: /fga.html }
-    - { title: Delegation and impersonation, url: /delegation.html }
-    - { title: Remote PEP, url: /remote-pep.html }
     - { title: "Configuring XACML and ALFA", url: /configure-xacml.html }
+    - { title: Fine-grained authorization, url: /fga.html }
+    - { title: AuthZEN, url: /authzen.html }
+    - { title: Remote PEP, url: /remote-pep.html }
+    - { title: Delegation and impersonation, url: /delegation.html }
+    - { title: "Roles", url: "/configuration.html#roles" }
+    - { title: "Requiring a role for an application", url: "/configure-xacml.html#require-a-role-to-use-an-application" }
+    - { title: "Scopes a client may be issued", url: "/oauth-oidc.html#scopes-a-client-may-be-issued" }
+    - { title: "Delegated permission grants", url: "/oauth-oidc.html#permissions-on-another-application-delegated-or-the-applications-own" }
+    - { title: "Consent", url: "/oauth-oidc.html#consent" }
+    - { title: "Rich authorization requests (RFC 9396)", url: "/oauth-oidc.html#rich-authorization-requests-rfc-9396" }
+    - { title: "GNAP access types", url: "/gnap.html#access-types-and-the-issuance-policy" }
+    - { title: "Devices in the issuance policy", url: "/devices.html#the-issuance-policy" }
+    - { title: "Console: roles", url: "/admin-console.html#roles--adminroles" }
+    - { title: "Console: delegated permissions", url: "/admin-console.html#delegated-permissions" }
 
 - section: Shared Signals
   items:

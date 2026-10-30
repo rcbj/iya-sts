@@ -576,6 +576,8 @@ an enforcement.
 
 ## Related
 
+* [Authorization overview](authorization.md): every authorization decision
+  this service makes, and where each is documented
 * [Remote PEP](remote-pep.md): the `xacml-pep/` container, with a worked
   example
 * [TLS and mutual TLS](tls.md) and [PKI](pki.md): the client certificate and

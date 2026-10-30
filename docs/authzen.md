@@ -340,6 +340,8 @@ live source; this table is a copy.
 
 ## Related
 
+* [Authorization overview](authorization.md) — every authorization decision
+  this service makes, and where each is documented
 * [XACML 3.0 and ALFA](xacml.md) — the engine, the repository and writing a
   policy
 * [Remote PEP](remote-pep.md) — the container that pulls the policies and

@@ -513,6 +513,7 @@ change anything here:
 
 ## See also
 
+- [Authorization overview](authorization.md) — every authorization decision this service makes, and where each is documented
 - [What is not checked](what-is-not-checked.md) — the permissive posture, and where this family is the exception
 - [Trust realms](trust-realms.md) — what a realm separates
 - [Configuration](configuration.md) — how the service's own settings resolve, `xacml.*` among them
