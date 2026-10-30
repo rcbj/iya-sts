@@ -118,6 +118,12 @@ import AccessLimits = require('../common/access_limits');
 // and stays here: it is not an authorization decision.
 import gate = require('../common/issuance_gate');
 import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
+// FINE-GRAINED AUTHORIZATION AT ISSUANCE (#564, P3): a LEAF whose decider
+// the XACML family fills at 23c (rule 3e; `common/fga_gate.ts` argues the
+// slot both ways round). It is asked only about a detail whose type's
+// application enforces FGA — the switch is `applications.fgaStateOf()`'s,
+// read here — and with no decider it REFUSES.
+import fgaGate = require('../common/fga_gate');
 
 // A loose JSON-shaped object: a detail, a definition, a refusal.
 type Json = any;
@@ -130,6 +136,8 @@ interface AuthorizationDetailsDeps {
   log: typeof helpers.log;
   gate: typeof gate;
   scopeVerdicts: typeof scopeVerdicts;
+  fgaGate: { decide(question: Json): Json };
+  realms: { currentId(): string };
 }
 
 // A refusal of `conformance()`, by kind, as RFC 9396's codes: the schema's
@@ -298,7 +306,9 @@ class AuthorizationDetails {
       errorCodes: errorCodes,
       log: helpers.log,
       gate: gate,
-      scopeVerdicts: scopeVerdicts
+      scopeVerdicts: scopeVerdicts,
+      fgaGate: fgaGate,
+      realms: realms
     };
   }
 
@@ -1174,6 +1184,166 @@ class AuthorizationDetails {
     return { ok: true, details: details, resolved: resolved };
   }
 
+  // -------------------------------------------------------------------------
+  // FINE-GRAINED AUTHORIZATION AT ISSUANCE (#564, P3) — AN EXTRA CONJUNCT.
+  //
+  // A detail whose TYPE belongs to an application that enforces
+  // fine-grained authorization (`appFgaEnforced`) is granted only when that
+  // application's own policy permits it (rcbj's decisions 1 and 5). Asked
+  // AFTER `parse()` — the issuance policy's two type questions (rule 3bt)
+  // and RFC 9396's well-formedness have already passed — and never instead
+  // of either. A detail of any other type, the built-in `openid_credential`
+  // included, asks nothing, so an application without FGA enforced sees
+  // behaviour byte for byte as before.
+  //
+  // One question per detail, in order, and the FIRST refusal answers: a
+  // grant is all of its details or nothing (RFC 9396 has no partial grant
+  // of a detail), so deciding the rest would audit decisions that change
+  // nothing. The definition is `declaredTypes()`'s entry NOW — so a refresh
+  // carrying details from an earlier grant is decided against the current
+  // policy AND the current definition.
+  //
+  // The answer is null when every detail is granted, or a refusal marked
+  // with its code: `outcome` `deny` (a decision: the caller answers
+  // `access_denied` or `invalid_authorization_details`) or `failure` (a
+  // fault: `server_error`), and `description`.
+  // -------------------------------------------------------------------------
+  /**
+   * Asks each detail of an application that enforces fine-grained
+   * authorization of that application's policy (#564).
+   *
+   * @param details - the validated details (null or empty asks nothing)
+   * @param facts - `stage` (one of `xacml_request.js`'s FGA_STAGES),
+   *   `clientId`, `subject` ({ id, kind }), `grantType`
+   * @returns null when nothing is refused, or `{ outcome, description,
+   *   type, application }` marked with its STS-FGA code
+   */
+  fineGrainedRefusal(details: Json[] | null, facts: Json): Json {
+    const { log, applications, errorCodes, fgaGate, realms } = this.deps;
+    log.debug("Entering AuthorizationDetails.fineGrainedRefusal().");
+    if (!Array.isArray(details) || !details.length) {
+      log.debug("Leaving AuthorizationDetails.fineGrainedRefusal(). None.");
+      return null;
+    }
+    const asked = facts || {};
+    const declared = this.declaredTypes();
+    for (let i = 0; i < details.length; i++) {
+      const detail = details[i];
+      const definition = detail && typeof detail === 'object'
+        ? declared[detail.type] : null;
+      if (!definition) {
+        continue;
+      }
+      const state = applications.fgaStateOf(String(definition.identifier));
+      if (!state.enforced) {
+        continue;
+      }
+      const answer = fgaGate.decide({
+        application: String(definition.identifier),
+        detail: detail,
+        definition: definition,
+        stage: String(asked.stage || ''),
+        realm: String(realms.currentId() || ''),
+        clientId: String(asked.clientId || ''),
+        subject: asked.subject || {},
+        grantType: String(asked.grantType || '')
+      }) || { outcome: 'failure', code: 'STS-FGA-0015', why: '' };
+      if (answer.outcome === 'permit') {
+        continue;
+      }
+      const deny = answer.outcome === 'deny';
+      const where = 'authorization_details[' + i + '] (type "' +
+        String(detail.type).slice(0, 200) + '")';
+      log.debug("Leaving AuthorizationDetails.fineGrainedRefusal(). " +
+                answer.outcome + " " + answer.code);
+      return errorCodes.mark({
+        outcome: deny ? 'deny' : 'failure',
+        type: String(detail.type),
+        application: String(definition.identifier),
+        description: deny
+          ? where + ' is not granted: the fine-grained authorization ' +
+            'policy of the application that declares the type does not ' +
+            'permit it.'
+          : where + ' could not be decided: the fine-grained ' +
+            'authorization policy of the application that declares the ' +
+            'type cannot be evaluated, so it is refused rather than issued ' +
+            'undecided.'
+      }, String(answer.code || (deny ? 'STS-FGA-0014' : 'STS-FGA-0015')));
+    }
+    log.debug("Leaving AuthorizationDetails.fineGrainedRefusal(). Granted.");
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE TOKEN EXCHANGE'S BOUND (#564, decision 6). RFC 8693 leaves what an
+  // exchanged token carries to the server's policy, and an exchange is
+  // "granted what is asked" for a detail today (3am). For a type whose
+  // application ENFORCES fine-grained authorization that would let a client
+  // holding any token of a person mint details the person never
+  // authorized: so the requested detail must be COVERED (section 6's
+  // subset rule, `covers()`) by one of the subject_token's own
+  // `authorization_details` — which only a token this service issued with
+  // details can carry. A subject_token from elsewhere, or one of ours with
+  // none of that type, refuses. Types of applications that do not enforce
+  // are unchanged.
+  // -------------------------------------------------------------------------
+  /**
+   * The exchange bound: each requested detail of an enforcing application's
+   * type must be covered by the subject_token's details.
+   *
+   * @param requested - the details the exchange asks for
+   * @param subjectDetails - the subject_token's `authorization_details`
+   * @param issuedHere - whether the subject_token is one this service issued
+   *   and verified
+   * @returns null, or `{ description, type }` marked STS-FGA-0017
+   */
+  exchangeBoundProblem(requested: Json[] | null, subjectDetails: Json,
+                       issuedHere: boolean): Json {
+    const { log, applications, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering AuthorizationDetails.exchangeBoundProblem().");
+    if (!Array.isArray(requested) || !requested.length) {
+      log.debug("Leaving AuthorizationDetails.exchangeBoundProblem(). None.");
+      return null;
+    }
+    const declared = this.declaredTypes();
+    const granted = issuedHere && Array.isArray(subjectDetails)
+      ? subjectDetails : [];
+    for (let i = 0; i < requested.length; i++) {
+      const detail = requested[i];
+      const definition = detail && typeof detail === 'object'
+        ? declared[detail.type] : null;
+      if (!definition ||
+          !applications.fgaStateOf(String(definition.identifier)).enforced) {
+        continue;
+      }
+      const covered = granted.some(function (one: Json): boolean {
+        return self.covers(one, detail);
+      });
+      if (covered) {
+        continue;
+      }
+      log.debug("Leaving AuthorizationDetails.exchangeBoundProblem(). " +
+                "Not covered.");
+      return errorCodes.mark({
+        type: String(detail.type),
+        description: 'authorization_details[' + i + '] (type "' +
+          String(detail.type).slice(0, 200) + '") belongs to an ' +
+          'application that enforces fine-grained authorization, so a ' +
+          'token exchange may carry it only where the subject_token ' +
+          'already does: ' + (issuedHere
+            ? 'none of the subject_token\'s authorization_details covers ' +
+              'it (RFC 9396 section 6).'
+            : 'the subject_token is not one this authorization server ' +
+              'issued and verified, so it carries no authorization_details ' +
+              'to cover it.')
+      }, 'STS-FGA-0017');
+    }
+    log.debug("Leaving AuthorizationDetails.exchangeBoundProblem(). " +
+              "Bounded.");
+    return null;
+  }
+
   private deepEqual(a: unknown, b: unknown): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthorizationDetails.deepEqual().");
@@ -1604,6 +1774,8 @@ export = {
   introspectionView: slot.forward('introspectionView'),
   coveredProblem: slot.forward('coveredProblem'),
   narrow: slot.forward('narrow'),
+  fineGrainedRefusal: slot.forward('fineGrainedRefusal'),
+  exchangeBoundProblem: slot.forward('exchangeBoundProblem'),
   audienceFor: slot.forward('audienceFor'),
   needsConsent: slot.forward('needsConsent'),
   describe: slot.forward('describe'),
