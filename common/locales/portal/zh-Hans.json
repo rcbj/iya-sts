@@ -52,6 +52,8 @@
   "nav.devices.heading": "您的设备",
   "nav.ciba.label": "登录请求",
   "nav.ciba.heading": "登录请求",
+  "nav.access-requests.label": "访问请求",
+  "nav.access-requests.heading": "等待您处理的访问请求",
   "nav.device.label": "为设备登录",
   "nav.device.heading": "为设备登录",
   "nav.claim-sources.label": "声明来源",

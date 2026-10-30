@@ -1,0 +1,15 @@
+{
+  "sub": "Las solicitudes de acceso AuthZEN que lo designan como aprobador: al punto de aplicación de una aplicación se le denegó algo que la política del dominio permite solicitar, y espera a una de las personas que la política designó. <strong>Aprobar no concede nada por sí mismo</strong>: la aplicación vuelve a preguntar, presentando la aprobación, y la política del dominio decide de nuevo.",
+  "off": "Las solicitudes de acceso están desactivadas en este dominio.",
+  "none": "No hay ninguna solicitud de acceso esperándolo.",
+  "asks": "Un punto de aplicación solicita este acceso:",
+  "subject": "Para",
+  "action": "Acción",
+  "resource": "Sobre",
+  "application": "Aplicación",
+  "requester": "Solicitado por",
+  "waits": "Espera hasta el {when}.",
+  "approve": "Aprobar",
+  "deny": "Denegar",
+  "done": "{status, select, approved {La solicitud de acceso está aprobada. La aplicación puede volver a preguntar ahora.} denied {La solicitud de acceso está denegada.} other {La solicitud de acceso está {status}.}}"
+}

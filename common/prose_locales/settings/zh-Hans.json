@@ -6955,6 +6955,14 @@
     "en": "d856eb355e794d04",
     "text": "AuthZEN 的 Obligations Profile（草案）。开启时，仅当请求的 context.supported_obligations 列出答复中的每种义务类型时，才在 context.obligations 中把 XACML 义务交给 PEP——携带义务的 Permit 才应答 true；元数据公布 supported_obligations。没有该声明或关闭此项时，携带本服务自身无法履行的义务的 Permit 应答 false，因为从未听说过该配置文件的 PEP 否则会授予访问。"
   },
+  "authzen.tokenExchange|label": {
+    "en": "265963e74fcc239e",
+    "text": "为其他服务器决定 OAuth 令牌交换"
+  },
+  "authzen.tokenExchange|description": {
+    "en": "80e27b8072f61744",
+    "text": "AuthZEN Binding for OAuth 2.0 Token Exchange（草案），本服务作为另一个授权服务器所询问的 PDP。开启时，resource.type 为 audience 且操作为 issue:<type>:token_exchange 的元组是一个闸门，resource.type 为 protected_resource 的元组是一个范围，二者都按固定的转换规则决定，所用的委托事实和签发策略与决定本地 RFC 8693 交换时相同；主体闸门可携带 context.issuance，它只会收窄；元数据会声明令牌签发能力。关闭时，这些元组是交给根策略的普通问题。"
+  },
   "authzen.searchEnabled|label": {
     "en": "dc167dc0906f464e",
     "text": "启用 Search APIs"
@@ -6986,6 +6994,62 @@
   "authzen.returnReasons|description": {
     "en": "b02d024ed71640ad",
     "text": "开启时，决策会携带一个 context，其中包含 XACML 决策、原因、任何 advice，以及使 Permit 变为 false 的 obligations。默认关闭：原因会向调用方透露有关策略的信息，而无论如何，单独的 decision 就是答案。"
+  },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "访问请求与审批"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "AuthZEN 访问请求与审批配置文件（草案）及其回调配套规范。开启时，XACML 应答中携带 advice urn:sts:xacml:advice:access-request 的 Deny 会应答 false 并附带 context.access_request；PEP 将其提交到 POST /access/v1/access-requests，由该 advice 指定的审批人在门户或控制台中作出决定，下一次评估时出示的批准会作为可信事实到达根策略。元数据会写明该端点和该能力。不带该 advice 的拒绝永远不可请求。关闭时，这些路由应答 501，任何拒绝都不可请求。"
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "可提交的拒绝可被提交的时长（秒）"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "可请求的拒绝的 expires_at，以及其 binding_token 的有效期：在此之后的提交会以 expired_denial 被拒绝，PEP 需重新评估。"
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "访问请求等待审批人的时长（秒）"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "超过此时长的待处理访问请求会过期，由 authzen.access-requests 调度作业处理，并在每次读取时判断。已完成的请求会多保留一天，供 PEP 读取。"
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "批准的最长有效期（秒）"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "批准的 approved_until 的上限。策略的 advice（max-approval-seconds）和请求方的 requested_until 都可以缩短它，但都不能延长它。"
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "紧急访问的有效时长（秒）"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "紧急访问请求——requested_access.emergency，在策略的 advice 允许时，并附带 context.business_justification——会立即获批，最长有效此时长，并向其审批人发送邮件以供复核。"
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "待处理访问请求的 Retry-After（秒）"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "请求待处理期间，任务状态端点所应答的 Retry-After；PEP 至少等待这么久才会再次查询。"
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "一个领域可持有的待处理访问请求数"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "一个领域最多可同时持有的待处理访问请求数；超过后，提交会被以 503 拒绝，直到其中一些被决定或过期。"
   },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",

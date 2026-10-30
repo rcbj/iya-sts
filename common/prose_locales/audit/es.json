@@ -903,6 +903,42 @@
     "en": "bacc42f309e8f6f8",
     "text": "Se estableció el ámbito de aplicaciones de un llamante de AuthZEN"
   },
+  "audit.actions.admin.authzen.callbacks.set.label": {
+    "en": "e8439c3ddb41d93f",
+    "text": "Se definieron las URL de callback de las solicitudes de acceso de un llamador AuthZEN"
+  },
+  "audit.actions.authzen.access-request.submitted.label": {
+    "en": "ce6c6f5f15939b8e",
+    "text": "Se envió una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.approved.label": {
+    "en": "5148eda4f7a84802",
+    "text": "Se aprobó una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.denied.label": {
+    "en": "22560158f5a3aaca",
+    "text": "Se denegó una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.expired.label": {
+    "en": "2ced214d20f8f301",
+    "text": "Venció una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.cancelled.label": {
+    "en": "f00e80626f3daa82",
+    "text": "Se canceló una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.revoked.label": {
+    "en": "fdf6095a2de11ed6",
+    "text": "Se revocó la aprobación de una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.approver-refused.label": {
+    "en": "fbeebe0256b7890e",
+    "text": "La política le negó a una persona la decisión sobre una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.callback.label": {
+    "en": "432e877d55af1913",
+    "text": "Se envió, o falló, el callback de una solicitud de acceso AuthZEN"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "El PEP de emisión no permitió que este servicio acuñara algo"

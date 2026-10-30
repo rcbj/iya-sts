@@ -52,6 +52,8 @@
   "nav.devices.heading": "Vos appareils",
   "nav.ciba.label": "Demandes de connexion",
   "nav.ciba.heading": "Demandes de connexion",
+  "nav.access-requests.label": "Demandes d’accès",
+  "nav.access-requests.heading": "Les demandes d’accès qui vous attendent",
   "nav.device.label": "Connecter un appareil",
   "nav.device.heading": "Connecter un appareil",
   "nav.claim-sources.label": "Sources de revendications",

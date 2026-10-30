@@ -1037,6 +1037,28 @@ const ACTIONS = [
     label: 'An AuthZEN attribute catalogue row was removed' },
   { action: 'admin.authzen.scope.set', category: 'admin',
     label: 'An AuthZEN caller\'s application scope was set' },
+  // THE ACCESS REQUEST AND APPROVAL PROFILE (#1180): one row per transition
+  // of a task, and per refusal of an approver.
+  { action: 'admin.authzen.callbacks.set', category: 'admin',
+    label: 'An AuthZEN caller\'s access request callback URLs were set' },
+  { action: 'authzen.access-request.submitted', category: 'authorization',
+    label: 'An AuthZEN access request was submitted' },
+  { action: 'authzen.access-request.approved', category: 'authorization',
+    label: 'An AuthZEN access request was approved' },
+  { action: 'authzen.access-request.denied', category: 'authorization',
+    label: 'An AuthZEN access request was denied' },
+  { action: 'authzen.access-request.expired', category: 'authorization',
+    label: 'An AuthZEN access request expired' },
+  { action: 'authzen.access-request.cancelled', category: 'authorization',
+    label: 'An AuthZEN access request was cancelled' },
+  { action: 'authzen.access-request.revoked', category: 'authorization',
+    label: 'An AuthZEN access request\'s approval was revoked' },
+  { action: 'authzen.access-request.approver-refused',
+    category: 'authorization',
+    label: 'The policy refused a person the decision of an AuthZEN access ' +
+           'request' },
+  { action: 'authzen.access-request.callback', category: 'authorization',
+    label: 'An AuthZEN access request\'s callback was sent or failed' },
   // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
   //
   // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since

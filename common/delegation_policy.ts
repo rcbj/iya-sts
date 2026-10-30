@@ -131,6 +131,14 @@ interface DecideQuestion {
   // The SIDs a subject of another realm still carries after SID filtering
   // (#430): the only grants, beside its name, that roles.js reads for it.
   subjectSids?: string[];
+  // AuthZEN's token-exchange binding only (#1181): what the question was
+  // asked with — the trusted caller and application, the tuples' types and
+  // token types, and the catalogue's rows — handed to the request as
+  // `xacml_request.js`'s `exchange()` `authzen` facts, so a realm's policy
+  // can tell an exchange decided for another authorization server from one
+  // this service performs. NO OTHER DOOR SENDS IT, and nothing here reads
+  // it: the facts gathered and the questions asked are the same either way.
+  authzen?: Json;
 }
 
 // What `decide()` answers. `refusal` says which rule refused, so each door can
@@ -647,6 +655,10 @@ class DelegationPolicy {
       mayActNamesActor: !!question.mayActNamesActor,
       protectedGroups: this.protectedGroupKeys()
     } as Json;
+    // #1181: carried, never read here (DecideQuestion's `authzen`).
+    if (question.authzen) {
+      facts.authzen = question.authzen;
+    }
     // ACROSS A KERBEROS TRUST (#430 Phase 3): the facts the cross-realm
     // rules read, added only for such a question.
     const settingsAsked: Json = {

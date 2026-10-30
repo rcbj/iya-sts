@@ -96,8 +96,16 @@
     "text": "full——就必要功能集而言：原則語言、七種決策值（包括三種延伸的 Indeterminate）、目標比對、條件、變數、十二種組合演算法、義務與建議、原則參照，以及涵蓋全部十七種資料類型的標準函式庫。依 OASIS 一致性測試套件檢驗——455 個必要案例中通過 454 個，唯一的例外連同其論證記錄於 xacml/conformance/MANIFEST.js。「未」涵蓋：AttributeSelector 與 XPath 函式（使用它們的原則會是 Indeterminate，而不是默默為空）、Multiple Decision 與 Hierarchical Resource 設定檔，以及管理委派。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "587fa315b80f6a67",
-    "text": "partial: Access Evaluation API（第 6 節），由 XACML 引擎依據領域的根原則、透過依領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；Access Evaluations API（第 7 節）及其三種語意；兩種形式的 PDP 中繼資料（第 9 節），包括 signed_metadata；面向宣告了類型之 PEP 的 Obligations Profile 草案；以及三個 Search APIs（第 8 節），涵蓋本服務自己的人員、應用程式、API、委派關係與原則動作，分頁且不具遞移性。缺少：搜尋中依結果的義務，以及 Access Request and Approval 與 OAuth 設定檔，皆仍為草案。"
+    "en": "73b5afdb5c895b9d",
+    "text": "partial：存取評估 API（第 6 節），由 XACML 引擎依據領域根原則、透過每個領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；存取批次評估 API（第 7 節）及其三種語意；PDP 中繼資料（第 9 節）的兩種形式，包括 signed_metadata；供宣告類型之 PEP 使用的 Obligations Profile 草案；以及針對本服務自有的人員、應用程式、API、委派關係與原則動作的三個搜尋 API（第 8 節），分頁且不具傳遞性。尚缺：搜尋中逐結果的 obligations，以及仍為草案的 OAuth 設定檔。"
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial：可請求的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域原則以 access-request advice 標記的 Deny，依值繫結，使用本領域簽署的 binding_token（內嵌宣告）；帶 Idempotency-Key 的提交，201 或 202 以及 Task Handle；帶 Retry-After 的工作狀態端點；透過 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式，approval.id 在可信狀態中解析，核准作為可信事實到達原則；next_action 及五種 reason；每種 problem 類型；中繼資料成員、jwks_uri 與能力。尚缺：以參照方式繫結的 evaluation_id、approval.state、雜湊繫結形式、機器可讀形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial：提交的回呼（endpoint、state、events），endpoint 限於管理員為請求端 PEP 註冊的 URL，為每個請求的終態事件傳送僅通知的回呼，由本領域簽署的短 JWT 驗證，並受對外政策約束。尚缺：partial 事件（BULK）與部署層級的事件訂閱；傳遞失敗不會重試。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -787,9 +795,21 @@
     "en": "b5c83db3aa38640f",
     "text": "POST 第 8 節的請求；取得 results 與一個分頁。回應某主體可對某資源執行的動作：根原則用來與 action-id 比較的名稱，以及應用程式或 API 本身的權限。每個候選都由領域的根原則以與評估完全相同的方式決定，只有被允許者才是結果；以 page.next_token 分頁，受 authzen.searchMaxCandidates 限制，超過時標示為不完整。"
   },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "提交一個被拒絕的評估的主體、資源、動作與內容，並附上其收到的拒絕（其 binding_token 與 expires_at，原樣回傳）；得到 202 與 Task Handle，或在立即作出決定時（原則允許的緊急存取）得到 201 及結果。只有被領域原則以 advice urn:sts:xacml:advice:access-request 標記的 Deny 才可請求。與評估相同的呼叫端入口與 AUTHZEN_PEPS；依呼叫端遵守 Idempotency-Key；回呼僅發往為該呼叫端註冊的 URL。每次拒絕都是 problem+json。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "GET 工作：其狀態（pending、approved、denied、expired、cancelled、failed），待處理期間的 Retry-After，以及獲核准後的 reevaluate 結果，其中的核准由 PEP 在下一次評估中作為 context.approval 攜帶。工作只對提交它的呼叫端可見；對其他任何人，它都是 unknown_task。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "POST 或 DELETE，用於取消呼叫端的待處理工作；已完成的工作回應 409 invalid_task_state。"
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "3b9a539920fa8ef3",
-    "text": "第 9 節的文件：policy_decision_point（本領域的基底，與取得它的 URL 一致），以及僅在此處回應的端點（批次端點與三種搜尋，各自開啟時），不含 capabilities；包含 supported_obligations，以及 signed_metadata，一個包含相同成員、iss 為 PDP 識別碼、可用領域 JWKS 驗證的 JWT（authzen.signedMetadata）。公開；API 關閉時回應 501。"
+    "en": "eb2dea870b873bc2",
+    "text": "第 9 節的文件：policy_decision_point（本領域的基底，與取得它時所用的 URL 一致），以及僅在此處回應的端點（批次端點與三個搜尋端點，各自開啟時；以及在 authzen.accessRequests 開啟時的 access_request_endpoint，連同 jwks_uri 與 access-request 能力）、supported_obligations，以及 signed_metadata——一個包含相同成員的 JWT，iss 為 PDP 識別碼，可用領域的 JWKS 驗證（authzen.signedMetadata）。公開；API 關閉時回應 501。"
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",
@@ -1920,12 +1940,12 @@
     "text": "非規格端點（#221）。add-destination、update-destination、remove-destination 與 test-push（將一個金絲雀版本寫入測試機密）：主控台的四個動作，每個都會被稽核。寫入認證資訊只收取，絕不傳回。"
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
-    "en": "13078c3a299db762",
-    "text": "非規範（#563）。/admin/xacml 的 AuthZEN 分頁所顯示的內容：/access/v1 是否在該領域回應、其呼叫方如何驗證、AuthZEN 設定、sts-authzen-api 上的屬性目錄，以及 roles.authzenPepGroup 的成員與各自可詢問的應用程式。"
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563)。/admin/xacml 的 AuthZEN 索引標籤所繪製的內容：/access/v1 是否在領域中回應、其呼叫端如何驗證、AuthZEN 設定、sts-authzen-api 上的屬性目錄、roles.authzenPepGroup 的成員及其各自可查詢的應用程式與已註冊的回呼 URL，以及領域的存取請求（#1180）。"
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
-    "en": "7efc1c9a3697b22a",
-    "text": "非規範（#563）。set-attribute、remove-attribute 與 set-scope：該分頁的三項操作，皆記入稽核。對應到保留識別碼的目錄列在此處與每次寫入時一樣遭到拒絕。"
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563)。set-attribute、remove-attribute、set-scope 與 set-callbacks，以及針對存取請求的四個動作（#1180）——approve、deny、revoke 與 cancel，前三個與入口網站一樣交由存取控制原則裁決：即索引標籤的動作，均有稽核。指向保留識別碼的目錄列在此處與在每次寫入時一樣被拒絕。"
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",

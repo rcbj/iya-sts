@@ -321,6 +321,28 @@ const VOCABULARY = Object.freeze({
   // (`subject.properties.department`, `context.source_ip`), so a policy can
   // tell a property that was absent from one sent with an empty value.
   AUTHZEN_SUPPLIED: 'urn:sts:xacml:authzen:supplied',
+  // THE FACTS OF A TOKEN-EXCHANGE QUESTION ASKED OVER AUTHZEN (#1181, the
+  // OAuth 2.0 Token Exchange Binding), written by `exchange()` beside the
+  // exchange vocabulary ONLY when `authzen/authzen_exchange.ts` asks, so a
+  // local RFC 8693, WS-Trust or Kerberos question is the request it always
+  // was. action: the token type short name of the gate action
+  // (`issue:<type>:token_exchange`), as the binding registers it —
+  // `access_token`, `id_jag`, `txn_token`.
+  AUTHZEN_TOKEN_TYPE: 'urn:sts:xacml:authzen:token-type',
+  // environment: `context.subject_token_type` and `context.actor_token_type`,
+  // verbatim (RFC 8693 token type URIs), and how many entries deep the
+  // subject token's `act` chain already is (an integer; 0 for none).
+  AUTHZEN_SUBJECT_TOKEN_TYPE: 'urn:sts:xacml:authzen:subject-token-type',
+  AUTHZEN_ACTOR_TOKEN_TYPE: 'urn:sts:xacml:authzen:actor-token-type',
+  AUTHZEN_ACT_DEPTH: 'urn:sts:xacml:authzen:act-depth',
+  // environment, TRUSTED, and only after `authzen/authzen_access_request.ts`
+  // VERIFIED a presented `context.approval` against its store (#1180): the
+  // approval's id, until when it holds (a dateTime) and who approved it. A
+  // policy that requires an approval reads these; the values a PEP sent
+  // beside the id never reach a request.
+  AUTHZEN_APPROVAL_ID: 'urn:sts:xacml:authzen:approval-id',
+  AUTHZEN_APPROVED_UNTIL: 'urn:sts:xacml:authzen:approved-until',
+  AUTHZEN_APPROVER: 'urn:sts:xacml:authzen:approver',
   // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564): one RFC 9396
   // authorization detail, asked of the policy of the RESOURCE application
   // that declares its type. Written by `xacml/fga_map.ts` alone, through
@@ -816,6 +838,36 @@ class AuthorizationRequest {
       this.resource(V.EXCHANGE_TARGET_FOREIGN_TGT_DELEGATION,
                     one(target.foreignTgtDelegation));
     }
+    // #1181: ONLY for a question asked over AuthZEN's token-exchange
+    // binding (`authzen/authzen_exchange.ts`), so every local question is
+    // the request it always was, attribute for attribute. `authzen`:
+    //   caller, application   trusted, from the authenticated caller
+    //   subjectType, actorType the two gate tuples' subject.type
+    //   tokenType             the gate action's token type short name
+    //   subjectTokenType, actorTokenType, actDepth
+    //                         the binding's context, read by its fixed rules
+    //   supplied, attributes  as `authzen()` takes them: the paths sent, and
+    //                         the realm catalogue's rows for anything else
+    const asked = given.authzen || null;
+    if (asked) {
+      this.subject(V.AUTHZEN_SUBJECT_TYPE, one(asked.subjectType));
+      this.attribute(I, V.AUTHZEN_SUBJECT_TYPE, one(asked.actorType));
+      this.action(V.AUTHZEN_TOKEN_TYPE, one(asked.tokenType));
+      this.environment(V.AUTHZEN_CALLER, one(asked.caller));
+      this.environment(V.AUTHZEN_APPLICATION, one(asked.application));
+      this.environment(V.AUTHZEN_SUBJECT_TOKEN_TYPE,
+                       one(asked.subjectTokenType));
+      this.environment(V.AUTHZEN_ACTOR_TOKEN_TYPE, one(asked.actorTokenType));
+      this.environment(V.AUTHZEN_ACT_DEPTH, [Number(asked.actDepth) || 0],
+                       model.TYPE.INTEGER);
+      this.environment(V.AUTHZEN_SUPPLIED, list(asked.supplied));
+      const self = this;
+      (Array.isArray(asked.attributes) ? asked.attributes : [])
+        .forEach(function (row) {
+          self.attribute(row.category, row.attributeId, row.values,
+                         row.dataType);
+        });
+    }
     return this;
   }
 
@@ -1148,6 +1200,8 @@ class AuthorizationRequest {
   //   realm, caller, application
   //                       trusted, from the authenticated caller
   //   supplied            the paths of every member the caller sent
+  //   approval            a VERIFIED approval (#1180), { approvalId,
+  //                       approvedUntil, approver }, or null
   //   attributes          [{ category, attributeId, dataType, values }],
   //                       each a catalogue row's, the values lexical
   // The subject's id is XACML's own subject-id, the action's name its
@@ -1179,6 +1233,13 @@ class AuthorizationRequest {
     this.environment(V.AUTHZEN_SUPPLIED,
                      (Array.isArray(given.supplied) ? given.supplied : [])
                        .map(String));
+    const approval = given.approval || null;
+    if (approval && approval.approvalId) {
+      this.environment(V.AUTHZEN_APPROVAL_ID, one(approval.approvalId));
+      this.environment(V.AUTHZEN_APPROVED_UNTIL, one(approval.approvedUntil),
+                       model.TYPE.DATETIME);
+      this.environment(V.AUTHZEN_APPROVER, one(approval.approver));
+    }
     const self = this;
     (Array.isArray(given.attributes) ? given.attributes : [])
       .forEach(function (row) {

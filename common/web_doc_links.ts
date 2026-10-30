@@ -341,6 +341,7 @@ const PORTAL: Record<string, string> = {
     'risk-scoring.html#what-people-say-about-their-own-sign-ins',
   '/portal/consents': 'oauth-oidc.html#consent',
   '/portal/gnap': 'gnap.html#what-a-person-sees-portalgnap',
+  '/portal/access-requests': 'authzen.html#access-requests-and-approvals',
   '/portal/email': 'mail.html',
   '/portal/owned/roles': 'admin-console.html#roles--adminroles',
   '/portal/owned/groups': 'admin-console.html#groups--admingroups',

@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "结束所有已超过生存期或空闲超时的单点登录会话，并在每个领域中最多结束该领域 authn.sessionShedPerSweep 个同一主体自身的超额会话。"
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "AuthZEN 访问请求到期"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "将每个已超过 expires_at 的待处理 AuthZEN 访问请求（#1180）移为 expired——写入其审计行并发送其回调——并在已完成一天之后，或其批准失效之后（以较晚者为准）将其移除。读取时会自行应用截止时间，因此这里只是记录与清理，从不负责决定。"
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "过期缓存条目清除"

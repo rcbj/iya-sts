@@ -304,7 +304,33 @@ const ISSUANCE_ATTRIBUTE = {
   // On the RESOURCE: the group DNs the definition is shared with (a job's,
   // its definition's), compared as OBJECT_OWNER is. Empty for a row shared
   // with nobody, and for a question about the API rather than a row.
-  REPORT_SHARED_GROUP: 'urn:sts:xacml:report-shared-group'
+  REPORT_SHARED_GROUP: 'urn:sts:xacml:report-shared-group',
+  // -------------------------------------------------------------------------
+  // THE ACCESS REQUEST RULE'S VOCABULARY (#1180): an AuthZEN access request
+  // a person would approve, deny or revoke (resource
+  // `authzen-access-request`, action `approve-access-request`). On the
+  // RESOURCE, the request: its id, the PEP that asked (requester), the
+  // subject it is about and its type, the action, the resource and its
+  // type, and the application — the requester and the subject lowercased.
+  // -------------------------------------------------------------------------
+  ACCESS_REQUEST_ID: 'urn:sts:xacml:authzen:access-request-id',
+  ACCESS_REQUEST_REQUESTER: 'urn:sts:xacml:authzen:request-requester',
+  ACCESS_REQUEST_SUBJECT: 'urn:sts:xacml:authzen:request-subject',
+  ACCESS_REQUEST_SUBJECT_TYPE: 'urn:sts:xacml:authzen:request-subject-type',
+  ACCESS_REQUEST_ACTION: 'urn:sts:xacml:authzen:request-action',
+  ACCESS_REQUEST_RESOURCE: 'urn:sts:xacml:authzen:request-resource',
+  ACCESS_REQUEST_RESOURCE_TYPE:
+    'urn:sts:xacml:authzen:request-resource-type',
+  ACCESS_REQUEST_APPLICATION: 'urn:sts:xacml:authzen:request-application',
+  // On the SUBJECT: whether the policy's advice named the approver (a role
+  // they hold, a group they are in, an owner of the application), a
+  // boolean, and every name they go by, lowercased — for the
+  // self-approval comparison.
+  APPROVER_ELIGIBLE: 'urn:sts:xacml:authzen:approver-eligible',
+  APPROVER_IDENTITY: 'urn:sts:xacml:authzen:approver-identity',
+  // On the ENVIRONMENT: the door the approver acts through — `portal` or
+  // `admin-api`.
+  APPROVER_DOOR: 'urn:sts:xacml:authzen:approver-door'
 };
 
 // ---------------------------------------------------------------------------
@@ -4241,7 +4267,38 @@ const TEMPLATES: TemplateRow[] = [
         help: 'Comma- or newline-separated: `read` (see the definition and ' +
               'its jobs, download a result), `run` (run it), `write` ' +
               '(change, share or delete it, which the default leaves to ' +
-              'the owner and a report administrator).' }
+              'the owner and a report administrator).' },
+      // THE ACCESS REQUEST RULE (#1180): who may approve, deny or revoke an
+      // AuthZEN access request — rcbj's decision 2, that self-approval and
+      // separation of duties are policy rather than an `if`.
+      { name: 'permitAccessRequestApproval',
+        label: 'Permit the approvers an AuthZEN access request names',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. The FOURTH rule (#1180): a person the denying ' +
+              'policy\'s advice named — holding its approver role, in its ' +
+              'approver group, or an owner of the application — may ' +
+              'approve, deny or revoke that access request (action ' +
+              'approve-access-request on resource authzen-access-request). ' +
+              'No refuses every approver, so no request is ever approved. ' +
+              'The first rule never permits this resource.' },
+      { name: 'permitAdministratorApproval',
+        label: 'Permit an Admin Write administrator to decide any access ' +
+               'request',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. With yes, a person holding ADMIN_WRITE who acts ' +
+              'through the management API (the console) may decide an ' +
+              'access request the advice did not name them for. The ' +
+              'self-approval rule below still holds for them.' },
+      { name: 'forbidSelfApproval',
+        label: 'Refuse an approver who is the request\'s subject or ' +
+               'requester',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. With yes, a person any of whose names — ' +
+              'username, DN, mail, urn:uuid: subject — is the access ' +
+              'request\'s subject or the PEP that asked is refused the ' +
+              'decision, whatever role they hold. A separation-of-duties ' +
+              'rule of your own is a further Deny rule over the same ' +
+              'facts.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildAccessControl().');
@@ -4379,6 +4436,14 @@ const TEMPLATES: TemplateRow[] = [
                      TYPE.STRING)
       ]));
       conjuncts.push(satisfiesOwnership);
+      // NEVER AN ACCESS REQUEST (#1180): a role the request's resource
+      // required would otherwise let its holder approve their own request,
+      // round the fourth rule's self-approval refusal. A conjunct, so every
+      // other resource is decided exactly as before.
+      conjuncts.push(B.apply(F1 + 'not', [B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'authzen-access-request'),
+        B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
+                     TYPE.STRING)])]));
 
       const condition = conjuncts.length === 1
         ? conjuncts[0]
@@ -4581,6 +4646,86 @@ const TEMPLATES: TemplateRow[] = [
         obligations: [], advice: []
       };
 
+      // ---------------------------------------------------------------------
+      // THE FOURTH RULE: WHO MAY DECIDE AN AUTHZEN ACCESS REQUEST (#1180).
+      //
+      // Asked by `authzen/authzen_access_request.ts` before a person
+      // approves, denies or revokes one, from the portal or the console,
+      // TARGETED at that question alone. Every conjunct narrows:
+      //   * the subject authenticated;
+      //   * EITHER the advice named them (`approver-eligible`, computed from
+      //     the role, the group and the owners it names), OR — with
+      //     `permitAdministratorApproval` — they hold ADMIN_WRITE and act
+      //     through the management API;
+      //   * and — with `forbidSelfApproval` — none of their names is the
+      //     request's subject or its requester: the comparison is over
+      //     lowercased bags, so `Alice` and `alice` are one person.
+      // ---------------------------------------------------------------------
+      const permitApproval = B.yes(given.permitAccessRequestApproval, true);
+      const permitAdminApproval =
+        B.yes(given.permitAdministratorApproval, true);
+      const forbidSelf = B.yes(given.forbidSelfApproval, true);
+      const S = model.CATEGORY.ACCESS_SUBJECT;
+      const named = B.apply(F3 + 'any-of', [
+        { kind: 'function', functionId: F1 + 'boolean-equal' },
+        B.value(TYPE.BOOLEAN, 'true'),
+        B.designator(S, ISSUANCE_ATTRIBUTE.APPROVER_ELIGIBLE, TYPE.BOOLEAN)]);
+      const administrator = B.apply(F1 + 'and', [
+        B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, 'admin-api'),
+          B.designator(model.CATEGORY.ENVIRONMENT,
+                       ISSUANCE_ATTRIBUTE.APPROVER_DOOR, TYPE.STRING)]),
+        B.apply(F1 + 'string-is-in', [
+          B.value(TYPE.STRING, 'ADMIN_WRITE'),
+          B.designator(S, ISSUANCE_ATTRIBUTE.ROLE, TYPE.STRING)])]);
+      const notThem = function (attribute: string): any {
+        log.debug("Entering notThem().");
+        log.debug("Leaving notThem().");
+        return B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(S, ISSUANCE_ATTRIBUTE.APPROVER_IDENTITY, TYPE.STRING),
+          B.designator(R, attribute, TYPE.STRING)])]);
+      };
+      const approvalConjuncts = [
+        B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          B.value(TYPE.BOOLEAN, 'true'),
+          B.designator(S, ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
+        permitAdminApproval ? B.apply(F1 + 'or', [named, administrator])
+                            : named
+      ].concat(forbidSelf
+        ? [notThem(ISSUANCE_ATTRIBUTE.ACCESS_REQUEST_SUBJECT),
+           notThem(ISSUANCE_ATTRIBUTE.ACCESS_REQUEST_REQUESTER)]
+        : []);
+      const approvalRule = {
+        id: options.idBase + ':rule:access-request-approvers',
+        effect: model.EFFECT.PERMIT,
+        description: 'Permit a person to approve, deny or revoke an AuthZEN ' +
+                     'access request (#1180) when the denying policy\'s ' +
+                     'advice named them — its approver role, its approver ' +
+                     'group, or the application\'s owners' +
+                     (permitAdminApproval ? ' — or they hold ADMIN_WRITE ' +
+                       'and act through the management API' : '') +
+                     (forbidSelf ? ', and none of their names is the ' +
+                       'request\'s subject or the PEP that asked it' : '') +
+                     '.',
+        // `authzen-access-request` and `approve-access-request` are
+        // `common/access_gate.ts`'s RESOURCE.AUTHZEN_ACCESS_REQUEST and
+        // ACTION.APPROVE_ACCESS_REQUEST, written out for the report rule's
+        // reason.
+        target: B.targetOf([[
+          B.match(F1 + 'string-equal',
+                  B.value(TYPE.STRING, 'authzen-access-request'),
+                  B.designator(R, model.ATTRIBUTE.RESOURCE_ID,
+                               TYPE.STRING))], [
+          B.match(F1 + 'string-equal',
+                  B.value(TYPE.STRING, 'approve-access-request'),
+                  B.designator(model.CATEGORY.ACTION,
+                               model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]),
+        condition: B.apply(F1 + 'and', approvalConjuncts),
+        obligations: [], advice: []
+      };
+
       const ownerRule = {
         id: options.idBase + ':rule:owner-administers-what-they-own',
         effect: model.EFFECT.PERMIT,
@@ -4631,6 +4776,11 @@ const TEMPLATES: TemplateRow[] = [
                          'a shared group\'s member the listed actions on ' +
                          'one shared with them'
                        : '') +
+                     (permitApproval
+                       ? '. A fourth rule (#1180) permits the approvers an ' +
+                         'AuthZEN access request names to decide it, and ' +
+                         'the first rule never permits that resource'
+                       : '') +
                      '. Everything else is denied: the combining algorithm ' +
                      'is deny-unless-permit, so an access decision does not ' +
                      'depend on a PEP\'s bias.',
@@ -4654,7 +4804,8 @@ const TEMPLATES: TemplateRow[] = [
           condition: condition,
           obligations: [], advice: []
         }].concat(permitOwnerAdministration ? [ownerRule] : [])
-          .concat(permitReportSharing ? [reportRule] : []),
+          .concat(permitReportSharing ? [reportRule] : [])
+          .concat(permitApproval ? [approvalRule] : []),
         obligations: [], advice: []
       };
     }

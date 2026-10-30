@@ -1022,18 +1022,26 @@ var config = {
 
   // --- AuthZEN ---------------------------------------------------------
   authzen: {
-    enabled: true,                // AuthZEN enabled
-    callerAuthentication: "mtls", // How an AuthZEN caller authenticates
-    resolveSubjectTypes: "user",  // Subject types that name a directory person
-    batchEnabled: true,           // Batch evaluations enabled
-    maxEvaluations: 64,           // Evaluations one batch may carry
-    maxBodyBytes: 262144,         // Largest batch request (bytes)
-    signedMetadata: true,         // Sign the AuthZEN metadata
-    obligationsProfile: true,     // Hand obligations to a PEP that declares them
-    searchEnabled: true,          // Search APIs enabled
-    searchMaxCandidates: 1000,    // Candidates one search decides
-    searchPageSize: 50,           // Results per search page
-    returnReasons: false          // Return the reasons for a decision
+    enabled: true,                     // AuthZEN enabled
+    callerAuthentication: "mtls",      // How an AuthZEN caller authenticates
+    resolveSubjectTypes: "user",       // Subject types that name a directory person
+    batchEnabled: true,                // Batch evaluations enabled
+    maxEvaluations: 64,                // Evaluations one batch may carry
+    maxBodyBytes: 262144,              // Largest batch request (bytes)
+    signedMetadata: true,              // Sign the AuthZEN metadata
+    obligationsProfile: true,          // Hand obligations to a PEP that declares them
+    tokenExchange: false,              // Decide OAuth token exchanges for other servers
+    searchEnabled: true,               // Search APIs enabled
+    searchMaxCandidates: 1000,         // Candidates one search decides
+    searchPageSize: 50,                // Results per search page
+    returnReasons: false,              // Return the reasons for a decision
+    accessRequests: true,              // Access requests and approvals
+    accessRequestDenialLifetimeS: 600, // How long a requestable denial may be submitted (seconds)
+    accessRequestLifetimeS: 604800,    // How long an access request waits for an approver (seconds)
+    accessRequestMaxApprovalS: 86400,  // The longest an approval holds (seconds)
+    accessRequestEmergencyS: 3600,     // How long emergency access holds (seconds)
+    accessRequestRetryAfterS: 30,      // Retry-After on a pending access request (seconds)
+    accessRequestMaxPending: 10000     // Pending access requests a realm holds
   },
 
   // --- SSF -------------------------------------------------------------

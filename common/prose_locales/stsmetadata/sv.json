@@ -96,8 +96,16 @@
     "text": "full för den obligatoriska funktionsuppsättningen: policyspråket, de sju beslutsvärdena inklusive de tre utökade Indeterminate, målmatchning, villkor, variabler, de tolv kombinationsalgoritmerna, obligations och advice, policyreferenser, och standardfunktionsbiblioteket över alla sjutton datatyper. Hållen mot OASIS konformitetssvit — 454 av de 455 obligatoriska fallen godkänns, och det enda undantaget är dokumenterat med sitt argument i xacml/conformance/MANIFEST.js. INTE täckt: AttributeSelector och XPath-funktionerna (en policy som använder en av dem är Indeterminate snarare än tyst tom), profilerna Multiple Decision och Hierarchical Resource, och administrativ delegering."
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "587fa315b80f6a67",
-    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda dess former, signed_metadata inräknad, och utkastet till Obligations Profile för en PEP som deklarerar typerna, och de tre Search APIs (avsnitt 8) över den här tjänstens egna personer, applikationer, API:er, delegeringsrelationer och policyåtgärder, sidindelade och inte transitiva. Saknas: obligations per resultat i en sökning, och profilerna Access Request and Approval och OAuth, fortfarande utkast."
+    "en": "73b5afdb5c895b9d",
+    "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda formerna, signed_metadata inkluderad, samt utkastet Obligations Profile för en PEP som deklarerar typerna, och de tre Search API:erna (avsnitt 8) över den här tjänstens egna personer, applikationer, API:er, delegeringsrelationer och policyåtgärder, sidindelade och inte transitiva. Saknas: obligations per resultat i en sökning, och OAuth-profilen, fortfarande ett utkast."
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial: det begärbara nekandet (context.access_request, evaluation_id, evaluated_at, reason) där sfärens policy markerar ett Deny med advice för åtkomstbegäran, bundet via värde med en binding_token som den här sfären signerar (de inbäddade anspråken); inskickningen med Idempotency-Key, 201 eller 202 och ett Task Handle; uppgiftsstatus-endpointen med Retry-After; avbrytande via POST eller DELETE; de sex statusarna; reevaluate-slutförandeläget, approval.id löst i betrott tillstånd och godkännandet som når policyn som betrodda fakta; next_action och de fem reasons; varje problemtyp; metadatamedlemmen, jwks_uri och capability. Saknas: evaluation_id som bindning via referens, approval.state, den hashade bindningsformen, maskinläsbara former (form_url, request_schema_url), display samt kompanjonerna BULK, ACTOR och CATALOG."
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial: en inskicknings callback (endpoint, state, events), där endpointen hålls till de URL:er en administratör registrerat för den begärande PEP:en, en callback enbart för notifiering för varje begärd slutlig händelse, autentiserad med en kort JWT som den här sfären signerar, under den utgående policyn. Saknas: händelsen partial (BULK) och prenumerationer på händelser på driftsättningsnivå; en misslyckad leverans görs inte om."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -787,9 +795,21 @@
     "en": "b5c83db3aa38640f",
     "text": "POST:a begäran i avsnitt 8; få results och en sida. Svarar med de åtgärder ett subjekt får utföra på en resurs: de namn som rotpolicyn jämför action-id med, och en applikations eller ett API:s egna behörigheter. Varje kandidat avgörs av sfärens rotpolicy exakt som en utvärdering, och bara de tillåtna är resultat; sidindelat med page.next_token, begränsat av authzen.searchMaxCandidates, och angivet som ofullständigt bortom det."
   },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "POST:a en nekad utvärderings subject, resource, action och context med nekandet den fick (dess binding_token och expires_at, ekade oförändrade); få 202 och ett Task Handle, eller 201 med resultatet när det avgörs direkt (nödåtkomst som policyn tillåter). Endast ett Deny som sfärens policy markerat med advice urn:sts:xacml:advice:access-request är begärbart. Samma anropardörr och AUTHZEN_PEPS som en utvärdering; Idempotency-Key respekteras per anropare; en callback endast till en URL som registrerats för anroparen. Varje avvisning är problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "GET:a uppgiften: dess status (pending, approved, denied, expired, cancelled, failed), Retry-After medan den väntar, och när den godkänts reevaluate-resultatet med godkännandet som PEP:en bär med sig vid sin nästa utvärdering som context.approval. En uppgift är synlig endast för anroparen som skickade in den; för alla andra är den unknown_task."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "POST eller DELETE för att avbryta en väntande uppgift som tillhör anroparen; en avslutad svarar 409 invalid_task_state."
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "3b9a539920fa8ef3",
-    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som stämmer med den URL det hämtas under) och bara de slutpunkter som svarar här (batchen och de tre sökningarna medan var och en är på), inga capabilities, supported_obligations, och signed_metadata, en JWT av samma medlemmar med iss PDP-identifieraren, verifierbar med sfärens JWKS (authzen.signedMetadata). Offentligt; svarar 501 medan API:t är avstängt."
+    "en": "eb2dea870b873bc2",
+    "text": "Dokumentet i avsnitt 9: policy_decision_point (den här sfärens bas, som matchar URL:en det hämtas under) och endast de endpoints som svarar här (batchen och de tre sökningarna medan var och en är på, och access_request_endpoint med jwks_uri och capability för åtkomstbegäran medan authzen.accessRequests är på), supported_obligations, och signed_metadata, en JWT med samma medlemmar där iss är PDP-identifieraren, verifierbar med sfärens JWKS (authzen.signedMetadata). Publik; svarar 501 medan API:t är av."
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",
@@ -1920,12 +1940,12 @@
     "text": "ICKE-SPEC (#221). add-destination, update-destination, remove-destination och test-push (en kanarieversion skriven till en testhemlighet): konsolens fyra handlingar, var och en granskad. Skrivbehörighetsuppgiften tas emot och returneras aldrig."
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
-    "en": "13078c3a299db762",
-    "text": "ICKE-SPECIFICERAT (#563). Det som fliken AuthZEN på /admin/xacml visar: om /access/v1 svarar i sfären, hur dess anropare autentiserar sig, AuthZEN-inställningarna, attributkatalogen på sts-authzen-api och medlemmarna i roles.authzenPepGroup med de applikationer var och en får fråga om."
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563). Vad AuthZEN-fliken i /admin/xacml ritar: om /access/v1 svarar i sfären, hur dess anropare autentiserar sig, AuthZEN-inställningarna, attributkatalogen på sts-authzen-api, medlemmarna i roles.authzenPepGroup med de applikationer var och en får fråga om och deras registrerade callback-URL:er, samt sfärens åtkomstbegäranden (#1180)."
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
-    "en": "7efc1c9a3697b22a",
-    "text": "ICKE-SPECIFICERAT (#563). set-attribute, remove-attribute och set-scope: flikens tre åtgärder, var och en granskad. En katalograd mot en reserverad identifierare avvisas här som vid varje skrivning."
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563). set-attribute, remove-attribute, set-scope och set-callbacks, samt de fyra åtgärderna på en åtkomstbegäran (#1180) — approve, deny, revoke och cancel, de tre första frågade av åtkomstkontrollpolicyn på det sätt portalen frågar dem: flikens åtgärder, var och en granskad. En katalograd på en reserverad identifierare avvisas här som vid varje skrivning."
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",

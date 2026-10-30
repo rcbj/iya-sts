@@ -501,6 +501,12 @@ class ProtocolStack {
     // #131: /portal/ciba, where a person answers a backchannel sign-in.
     this.build('portal/portal_ciba', require('../portal/portal_ciba'),
                'PortalCiba');
+    // #1180: /portal/access-requests, where an approver decides an AuthZEN
+    // access request. It reaches the AuthZEN family (23c-ii) only when
+    // asked, so building it here loads none of it.
+    this.build('portal/portal_access_requests',
+               require('../portal/portal_access_requests'),
+               'PortalAccessRequests');
     // #150: /portal/device, where a person enters a device's user code.
     this.build('portal/portal_device', require('../portal/portal_device'),
                'PortalDevice');
@@ -1944,6 +1950,12 @@ class ProtocolStack {
     // whose surface's `decide()`, `enforce()` and `callerIdentity()` it calls
     // (lazily, inside a request, so the order is also a reader's); it
     // requires no route module. `/access/v1/*` collides with nothing.
+    // The Access Request and Approval Profile (#1180): a library the surface
+    // requires, built first so its instance — and its scheduler job,
+    // registered when it is installed — is the root's.
+    this.build('authzen/authzen_access_request',
+               require('../authzen/authzen_access_request'),
+               'AccessRequests');
     require('../authzen/authzen');
     this.build('authzen/authzen', require('../authzen/authzen'),
                'AuthzenSurface');

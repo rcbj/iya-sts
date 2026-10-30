@@ -198,7 +198,15 @@ const RESOURCE = {
   // any row and a shared group's member on a read or a run. An application
   // holding a report role is an owner and nothing else. Until #1030 every
   // one of those decisions was an `if` in `report/rights.ts`.
-  REPORT_API: 'report-api'
+  REPORT_API: 'report-api',
+  // AN AUTHZEN ACCESS REQUEST (#1180), the tenth resource, asked by
+  // `authzen/authzen_access_request.ts`'s `mayDecide()` before a person
+  // approves, denies or revokes one — from the portal or the console. The
+  // first rule never permits it (it would let any role-holder approve
+  // their own request); the built-in document's fourth rule decides it,
+  // over the facts in `accessRequestObject`, so self-approval and
+  // separation of duties are policy (rcbj's decision 2 on #1180).
+  AUTHZEN_ACCESS_REQUEST: 'authzen-access-request'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's
@@ -221,7 +229,11 @@ const ACTION = {
   // nor a change to it, and the one act a share grants beside reading —
   // which is why it is a word of its own rather than `read` with a note. A
   // realm's override narrows or widens it through `reportSharedActions`.
-  RUN: 'run'
+  RUN: 'run',
+  // DECIDING AN AUTHZEN ACCESS REQUEST (#1180): approving it, denying it,
+  // or revoking its approval, one question for all three — who may decide
+  // a request is who may decide it either way.
+  APPROVE_ACCESS_REQUEST: 'approve-access-request'
 };
 
 // The person a decision is about — the SECURITY CONTEXT's, never the
@@ -259,8 +271,31 @@ interface AccessRequest {
   requiredAllRoles?: string[];
   ownedObject?: OwnedObject | null;
   reportObject?: ReportObject | null;
+  accessRequestObject?: AccessRequestObject | null;
   context?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+// An AuthZEN access request being decided (#1180): the tuple, who asked,
+// and what the approver is. The values are lowercased where the rule
+// compares them with the approver's identity.
+interface AccessRequestObject {
+  id: string;
+  // The PEP that submitted it, and the subject it is about.
+  requester: string;
+  subject: string;
+  subjectType: string;
+  action: string;
+  resource: string;
+  resourceType: string;
+  application: string;
+  // Whether the approver is one the advice named (a role, a group, the
+  // application's owners) — computed, as routing is.
+  eligible: boolean;
+  // `portal` or `admin-api`.
+  door: string;
+  // Every name the approver goes by, lowercased.
+  approverIdentity: string[];
 }
 
 // A report definition or job the question is about (#1030). `owner` goes in

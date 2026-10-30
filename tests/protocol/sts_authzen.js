@@ -32,6 +32,22 @@
 //      unimplemented advertised, every advertised URL answering.
 //   8. REGRESSION: the XACML surface's own gate is unchanged — an AuthZEN
 //      caller is not an XACML_USER.
+//   9. THE OAUTH TOKEN-EXCHANGE BINDING (#1181), with authzen.tokenExchange
+//      turned on in the realm: two applications with a delegation between
+//      them, the two gates and a scope tuple answered as the token endpoint
+//      would answer the same exchange (the realm is in development mode, so
+//      only the refusal enforced in every mode — a may_act naming somebody
+//      else — is false), context.issuance narrowing only, a gate for
+//      another grant false, a binding member on an ordinary tuple refused,
+//      and the capability advertised only while the binding is on.
+//  10. THE ACCESS REQUEST AND APPROVAL PROFILE (#1180): a publish the root
+//      policy denies with the access-request advice is requestable; the
+//      PEP submits it (202, a Task Handle), polls it pending, an
+//      administrator approves it through `/admin-api` (the access-control
+//      policy's fourth rule), and the re-evaluation carrying the approval
+//      is permitted — while one for another resource is out_of_scope. The
+//      portal's door and self-approval are held in process
+//      (`tests/authzen_access_request.js`).
 //
 // **THE BEARER DOOR IS HELD IN PROCESS ONLY** (`tests/authzen_evaluation.js`
 // B): issuing a client a delegated permission grant of `authzen:evaluate`
@@ -111,6 +127,8 @@ const TODO_POLICY = [
   '        id = "urn:example:todo:owner-id" type = string }',
   '    attribute tags { category = resourceCat id = "urn:example:tags"',
   '        type = string }',
+  '    attribute approval { category = environmentCat',
+  '        id = "urn:sts:xacml:authzen:approval-id" type = string }',
   '    policy todoRoot {',
   '        id = "urn:test:authzen-todo"',
   '        apply firstApplicable',
@@ -145,6 +163,23 @@ const TODO_POLICY = [
   '            condition stringIsIn(stringOneAndOnly(owner), mail)',
   '        }',
   '        rule ban { deny target clause act == "can_ban" }',
+  // #1180: publishing needs an approval; without one the Deny carries
+  // the access-request advice naming the approvers' group.
+  '        rule approvedPublish {',
+  '            permit',
+  '            target clause act == "can_publish_todo"',
+  '            condition integerGreaterThan(stringBagSize(approval), 0)',
+  '        }',
+  '        rule requestablePublish {',
+  '            deny',
+  '            target clause act == "can_publish_todo"',
+  '            on deny {',
+  '                advice "urn:sts:xacml:advice:access-request" {',
+  '                    "urn:sts:xacml:advice:access-request:approver-group"',
+  '                        = "todo-approvers"',
+  '                }',
+  '            }',
+  '        }',
   '        rule explode {',
   '            permit',
   '            target clause act == "explode"',
@@ -592,9 +627,15 @@ async function theMetadata() {
                 PREFIX,
       "answered " + r.status + " " + r.text);
   });
-  check("the searches are advertised, no capabilities, and signed_metadata " +
-        "is a JWT", function () {
-    assert.ok(!doc.capabilities && typeof doc.signed_metadata === "string" &&
+  check("the searches and the access request endpoint are advertised, " +
+        "the access-request capability alone, and signed_metadata is a JWT",
+        function () {
+    assert.ok(Array.isArray(doc.capabilities) &&
+              doc.capabilities.join() ===
+                "urn:openid:authzen:capability:access-request" &&
+              /\/access\/v1\/access-requests$/.test(
+                String(doc.access_request_endpoint)) &&
+              typeof doc.signed_metadata === "string" &&
               ["subject", "resource", "action"].every(function (kind) {
                 return /\/access\/v1\/search\//.test(
                   String(doc["search_" + kind + "_endpoint"]));
@@ -614,6 +655,73 @@ async function theMetadata() {
   log.debug("Leaving theMetadata().");
 }
 
+async function theAccessRequests() {
+  log.debug("Entering theAccessRequests().");
+  log.info("=== 9. access requests and approvals (#1180) ===");
+  await must("/groups/create", { group: "todo-approvers" },
+             "created the approvers' group");
+  await must("/groups/add-member", { group: "todo-approvers",
+                                     member: "rick" },
+             "put rick in the approvers' group");
+  const asked = todo("morty", "can_publish_todo", "morty@the-citadel.com");
+  const denied = await evaluate(asked);
+  const ar = ((denied.body || {}).context || {}).access_request || {};
+  check("a publish without an approval is a requestable denial", function () {
+    assert.ok(denied.status === 200 && denied.body.decision === false &&
+              ar.binding_token && ar.expires_at &&
+              /\/access\/v1\/access-requests$/.test(String(ar.endpoint)),
+      "answered " + denied.status + " " + String(denied.text).slice(0, 400));
+  });
+  const submitted = await pep("POST", PREFIX + "/access/v1/access-requests",
+    caller, Object.assign({}, asked, {
+      denial: { expires_at: ar.expires_at, binding_token: ar.binding_token,
+                evaluation_id: denied.body.context.evaluation_id } }),
+    { "Idempotency-Key": "sts-authzen-" + names.runStamp() });
+  const task = (submitted.body || {}).task || {};
+  check("the submission is 202 with a Task Handle", function () {
+    assert.ok(submitted.status === 202 && task.status === "pending" &&
+              /^arq_/.test(String(task.id)) && task.status_endpoint,
+      "answered " + submitted.status + " " +
+      String(submitted.text).slice(0, 400));
+  });
+  const pending = await pep("GET", String(task.status_endpoint), caller);
+  check("the task status endpoint answers pending with Retry-After",
+        function () {
+    assert.ok(pending.status === 200 && pending.body.task.status ===
+              "pending" && Number(pending.headers["retry-after"]) > 0,
+      "answered " + pending.status + " " + String(pending.text).slice(0, 300));
+  });
+  await must("/xacml/authzen/approve-access-request", { request: task.id },
+             "approved the access request as an administrator");
+  const approved = await pep("GET", String(task.status_endpoint), caller);
+  const approval = ((approved.body || {}).result || {}).approval || {};
+  check("the task is approved with the reevaluate result", function () {
+    assert.ok(approved.status === 200 &&
+              approved.body.task.status === "approved" &&
+              approved.body.result.mode === "reevaluate" &&
+              /^apr_/.test(String(approval.id)),
+      "answered " + approved.status + " " +
+      String(approved.text).slice(0, 300));
+  });
+  const again = await evaluate(Object.assign({}, asked, {
+    context: { application: APPLICATION, approval: approval } }));
+  check("the re-evaluation carrying the approval is permitted", function () {
+    assert.ok(again.status === 200 && again.body.decision === true,
+      "answered " + again.status + " " + String(again.text).slice(0, 300));
+  });
+  const elsewhere = await evaluate(Object.assign({}, asked, {
+    resource: { type: "todo", id: "todo-2",
+                properties: { ownerID: "morty@the-citadel.com" } },
+    context: { application: APPLICATION, approval: approval } }));
+  check("the approval does not reach another resource", function () {
+    assert.ok(elsewhere.status === 200 && elsewhere.body.decision === false &&
+              elsewhere.body.context.reason === "out_of_scope",
+      "answered " + elsewhere.status + " " +
+      String(elsewhere.text).slice(0, 300));
+  });
+  log.debug("Leaving theAccessRequests().");
+}
+
 async function theXacmlSurfaceIsUnchanged() {
   log.debug("Entering theXacmlSurfaceIsUnchanged().");
   log.info("=== 8. regression: the XACML surface's own gate ===");
@@ -627,6 +735,108 @@ async function theXacmlSurfaceIsUnchanged() {
       "answered " + r.status + " " + String(r.text).slice(0, 300));
   });
   log.debug("Leaving theXacmlSurfaceIsUnchanged().");
+}
+
+// THE OAUTH TOKEN-EXCHANGE BINDING (#1181): an exchange of rick's token by
+// the client the token was issued for, toward an API it may delegate to.
+async function theTokenExchangeBinding() {
+  log.debug("Entering theTokenExchangeBinding().");
+  log.info("=== 9. the OAuth token-exchange binding ===");
+  const front = "aztx-front-" + names.runStamp().toLowerCase();
+  const back = "aztx-back-" + names.runStamp().toLowerCase();
+  const audience = "https://" + back + ".example.net";
+  await must("/applications/create", { identifier: back,
+    protocols: ["oauth2"],
+    fields: { oauthClientId: [back], oauthAudience: [audience] } },
+    "created " + back);
+  await must("/applications/create", { identifier: front,
+    protocols: ["oauth2"],
+    fields: { oauthClientId: [front], appAllowedToDelegateTo: [back],
+              oauthAllowedScope: ["read:docs"] } },
+    "created " + front);
+  const set = await postJson(api("/config/set"),
+                             { key: "authzen.tokenExchange", value: true });
+  assert.ok(set.status === 200, "setting authzen.tokenExchange answered " +
+            set.status + " " + set.text);
+  try {
+    const action = { name: "issue:access_token:token_exchange" };
+    const exchange = function (context, extra) {
+      log.debug("Entering exchange().");
+      log.debug("Leaving exchange().");
+      return pep("POST", PREFIX + "/access/v1/evaluations", caller, {
+        resource: { type: "audience", id: audience },
+        context: Object.assign({ application: APPLICATION,
+                                 client_id: front,
+                                 subject_token: { aud: front,
+                                                  scope: "read:docs" } },
+                               context || {}),
+        evaluations: [
+          { subject: { type: "user", id: "rick" }, action: action },
+          { subject: { type: "client", id: front }, action: action }
+        ].concat(extra || []),
+        options: { evaluations_semantic: "execute_all" } });
+    };
+    let r = await exchange(null, [
+      { subject: { type: "user", id: "rick" }, action: { name: "read:docs" },
+        resource: { type: "protected_resource", id: audience } }]);
+    check("both gates and the scope tuple are true for an exchange the " +
+          "delegation settings allow", function () {
+      const all = (r.body && r.body.evaluations) || [];
+      assert.ok(r.status === 200 && all.length === 3 &&
+                all.every(function (one) { return one.decision === true; }),
+        "answered " + r.status + " " + r.text);
+    });
+    r = await exchange({ subject_token: { aud: front, scope: "read:docs",
+                                          exp: Math.floor(Date.now() / 1000) +
+                                               90 } });
+    check("a scopeless request's subject gate carries only narrowing " +
+          "shaping: token_lifetime within the subject token's life, and " +
+          "granted_scope", function () {
+      const first = ((r.body && r.body.evaluations) || [])[0] || {};
+      const issuance = (first.context || {}).issuance || {};
+      assert.ok(first.decision === true && issuance.token_lifetime > 0 &&
+                issuance.token_lifetime <= 90 &&
+                issuance.granted_scope === "read:docs" &&
+                Object.keys(issuance).every(function (key) {
+                  return ["token_lifetime", "granted_scope"]
+                    .indexOf(key) >= 0;
+                }), "answered " + r.status + " " + r.text);
+    });
+    r = await exchange({ may_act: { sub: "somebody-else" } });
+    check("a may_act naming somebody else refuses the requesting party " +
+          "gate, in development mode too", function () {
+      const all = (r.body && r.body.evaluations) || [];
+      assert.ok(r.status === 200 && all[0].decision === true &&
+                all[1].decision === false, "answered " + r.status + " " +
+                r.text);
+    });
+    r = await pep("POST", PREFIX + "/access/v1/evaluation", caller, {
+      subject: { type: "user", id: "rick" },
+      action: { name: "issue:access_token:authorization_code" },
+      resource: { type: "audience", id: audience },
+      context: { application: APPLICATION } });
+    check("a gate for another grant is a decision, false", function () {
+      assert.ok(r.status === 200 && r.body && r.body.decision === false,
+        "answered " + r.status + " " + r.text);
+    });
+    r = await evaluate(Object.assign(todo("rick", "can_read_user"), {
+      context: { application: APPLICATION, client_id: front } }));
+    check("a binding context member on an ordinary tuple is 400", function () {
+      assert.strictEqual(r.status, 400, r.text);
+    });
+    const doc = await get(base + "/.well-known/authzen-configuration" +
+                          PREFIX);
+    check("the token issuance capability is advertised while the binding " +
+          "is on", function () {
+      assert.ok(doc.status === 200 && doc.body &&
+                JSON.stringify(doc.body.capabilities) ===
+                  JSON.stringify(["urn:openid:authzen:capability:" +
+                                  "token-issuance"]), doc.text);
+    });
+  } finally {
+    await postJson(api("/config/reset"), { key: "authzen.tokenExchange" });
+  }
+  log.debug("Leaving theTokenExchangeBinding().");
 }
 
 async function test() {
@@ -645,7 +855,9 @@ async function test() {
   await theSearches();
   await theMetadata();
   await theXacmlSurfaceIsUnchanged();
-  assert.ok(checks >= 35,
+  await theTokenExchangeBinding();
+  await theAccessRequests();
+  assert.ok(checks >= 47,
     "only " + checks + " checks ran; a section stopped being called.");
   log.info(checks + " checks passed.");
   log.info("Test completed successfully.");
@@ -657,8 +869,8 @@ program
   .name("sts_authzen")
   .description("Drive IYA STS's AuthZEN Authorization API over HTTP in a " +
       "throwaway trust realm: the interop Todo scenario in ALFA, the " +
-      "result mapping, the value rules, the trust boundaries, the batch " +
-      "and the metadata.")
+      "result mapping, the value rules, the trust boundaries, the batch, " +
+      "the metadata and the access requests.")
   .addOption(new Option("-u, --url <url>", "base url of the STS under test")
       .default(base))
   .parse(process.argv);

@@ -139,6 +139,7 @@ not drawn.
 | Who may act for you | `/portal/delegate` |
 | Connected claim sources | `/portal/claim-sources` |
 | Sign-in requests (CIBA) | `/portal/ciba` |
+| Access requests waiting for you as an approver (AuthZEN, #1180) | `/portal/access-requests` |
 | Your devices | `/portal/devices` |
 | Your self-issued IDs | `/portal/self-issued` |
 | Add a credential to your wallet, and the ones issued to you | `/portal/wallet` |

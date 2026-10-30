@@ -96,8 +96,16 @@
     "text": "full：覆盖强制功能集：策略语言、七种决策值（包括三种扩展的 Indeterminate）、目标匹配、条件、变量、十二种组合算法、义务和建议、策略引用，以及覆盖全部十七种数据类型的标准函数库。按 OASIS 一致性测试套件验证——455 个强制用例中通过 454 个，唯一的例外连同其论证记录在 xacml/conformance/MANIFEST.js 中。未覆盖：AttributeSelector 和 XPath 函数（使用它们的策略结果为 Indeterminate，而不是悄无声息地为空）、Multiple Decision 和 Hierarchical Resource 配置文件，以及管理委托。"
   },
   "stsmetadata.specs.authzen10.coverage": {
-    "en": "587fa315b80f6a67",
-    "text": "partial: Access Evaluation API（第 6 节），由 XACML 引擎依据领域的根策略、通过按领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；Access Evaluations API（第 7 节）及其三种语义；两种形式的 PDP 元数据（第 9 节），包括 signed_metadata；面向声明了类型的 PEP 的 Obligations Profile 草案；以及三个 Search APIs（第 8 节），覆盖本服务自己的人员、应用、API、委托关系和策略操作，分页且不具传递性。缺少：搜索中按结果的义务，以及 Access Request and Approval 和 OAuth 配置文件，它们仍是草案。"
+    "en": "73b5afdb5c895b9d",
+    "text": "partial：访问评估 API（第 6 节），由 XACML 引擎依据领域根策略、通过每个领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；访问批量评估 API（第 7 节）及其三种语义；PDP 元数据（第 9 节）的两种形式，包括 signed_metadata；面向声明了类型的 PEP 的 Obligations Profile 草案；以及针对本服务自有的人员、应用程序、API、委托关系和策略操作的三个搜索 API（第 8 节），分页且不具传递性。缺失：搜索中逐结果的 obligations，以及仍为草案的 OAuth 配置文件。"
+  },
+  "stsmetadata.specs.authzen-arap.coverage": {
+    "en": "e785acbe5ead52ad",
+    "text": "partial：可请求的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略以 access-request advice 标记的 Deny，按值绑定，使用本领域签署的 binding_token（内联声明）；带 Idempotency-Key 的提交，201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式，approval.id 在可信状态中解析，批准作为可信事实到达策略；next_action 及五种 reason；每种 problem 类型；元数据成员、jwks_uri 和能力。缺失：以引用方式绑定的 evaluation_id、approval.state、哈希绑定形式、机器可读形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 和 CATALOG 配套规范。"
+  },
+  "stsmetadata.specs.authzen-arap-callback.coverage": {
+    "en": "3a25215ba9e17fe4",
+    "text": "partial：提交的回调（endpoint、state、events），endpoint 限于管理员为请求方 PEP 注册的 URL，为每个请求的终态事件发送仅通知的回调，由本领域签署的短 JWT 认证，并受出站策略约束。缺失：partial 事件（BULK）和部署级事件订阅；投递失败不会重试。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -787,9 +795,21 @@
     "en": "b5c83db3aa38640f",
     "text": "POST 第 8 节的请求；获得 results 和一个分页。应答某主体可对某资源执行的操作：根策略用来与 action-id 比较的名称，以及应用或 API 自身的权限。每个候选都由领域的根策略按与评估完全相同的方式决定，只有被允许的才是结果；以 page.next_token 分页，受 authzen.searchMaxCandidates 限制，超过时标为不完整。"
   },
+  "stsmetadata.endpoints./access/v1/access-requests.what": {
+    "en": "15c0d860d27c7cbe",
+    "text": "提交一个被拒绝的评估的主体、资源、操作和上下文，并附上其收到的拒绝（其 binding_token 和 expires_at，原样回传）；得到 202 和 Task Handle，或在立即作出决定时（策略允许的紧急访问）得到 201 及结果。只有被领域策略以 advice urn:sts:xacml:advice:access-request 标记的 Deny 才可请求。与评估相同的调用方入口和 AUTHZEN_PEPS；按调用方遵守 Idempotency-Key；回调仅发往为该调用方注册的 URL。每次拒绝都是 problem+json。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
+    "en": "264083b977756230",
+    "text": "GET 任务：其状态（pending、approved、denied、expired、cancelled、failed），待处理期间的 Retry-After，以及获批后的 reevaluate 结果，其中的批准由 PEP 在下一次评估中作为 context.approval 携带。任务只对提交它的调用方可见；对其他任何人，它都是 unknown_task。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/:id/cancel.what": {
+    "en": "781b4535d30637e1",
+    "text": "POST 或 DELETE，用于取消调用方的待处理任务；已完成的任务应答 409 invalid_task_state。"
+  },
   "stsmetadata.endpoints./.well-known/authzen-configuration.what": {
-    "en": "3b9a539920fa8ef3",
-    "text": "第 9 节的文档：policy_decision_point（本领域的基址，与获取它的 URL 一致），以及仅在此处应答的端点（批量端点和三种搜索，各自开启时），不含 capabilities；包含 supported_obligations，以及 signed_metadata，一个包含相同成员、iss 为 PDP 标识符、可用领域 JWKS 验证的 JWT（authzen.signedMetadata）。公开；API 关闭时应答 501。"
+    "en": "eb2dea870b873bc2",
+    "text": "第 9 节的文档：policy_decision_point（本领域的基址，与获取它时所用的 URL 一致），以及仅在此处应答的端点（批量端点和三个搜索端点，各自开启时；以及在 authzen.accessRequests 开启时的 access_request_endpoint，连同 jwks_uri 和 access-request 能力）、supported_obligations，以及 signed_metadata——一个包含相同成员的 JWT，iss 为 PDP 标识符，可用领域的 JWKS 验证（authzen.signedMetadata）。公开；API 关闭时应答 501。"
   },
   "stsmetadata.endpoints./.well-known/authzen-configuration/*.what": {
     "en": "15cec7da69cb22fd",
@@ -1920,12 +1940,12 @@
     "text": "非规范（#221）。add-destination、update-destination、remove-destination 和 test-push（将一个金丝雀版本写入测试秘密）：控制台的四个操作，每个都会被审计。写入凭据被接收后永不返回。"
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen.what": {
-    "en": "13078c3a299db762",
-    "text": "非规范（#563）。/admin/xacml 的 AuthZEN 选项卡所显示的内容：/access/v1 是否在该领域应答、其调用方如何认证、AuthZEN 设置、sts-authzen-api 上的属性目录，以及 roles.authzenPepGroup 的成员及各自可询问的应用。"
+    "en": "3781ec90d71493a0",
+    "text": "NON-SPEC (#563)。/admin/xacml 的 AuthZEN 选项卡所绘制的内容：/access/v1 是否在领域中应答、其调用方如何认证、AuthZEN 设置、sts-authzen-api 上的属性目录、roles.authzenPepGroup 的成员及其各自可查询的应用程序和已注册的回调 URL，以及领域的访问请求（#1180）。"
   },
   "stsmetadata.endpoints./admin-api/xacml/authzen/:action.what": {
-    "en": "7efc1c9a3697b22a",
-    "text": "非规范（#563）。set-attribute、remove-attribute 和 set-scope：该选项卡的三项操作，均记入审计。映射到保留标识符的目录行在此处与每次写入时一样被拒绝。"
+    "en": "0977938e10df294c",
+    "text": "NON-SPEC (#563)。set-attribute、remove-attribute、set-scope 和 set-callbacks，以及针对访问请求的四个操作（#1180）——approve、deny、revoke 和 cancel，前三个与门户一样交由访问控制策略裁决：即选项卡的操作，均有审计。指向保留标识符的目录行在此处与在每次写入时一样被拒绝。"
   },
   "stsmetadata.endpoints./admin-api/passkey-report.what": {
     "en": "d45e78dec310a21d",

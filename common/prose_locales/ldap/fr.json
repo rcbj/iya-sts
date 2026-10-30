@@ -715,6 +715,10 @@
     "en": "6a97533f3574f71e",
     "text": "PORTÉE D’APPLICATIONS AUTHZEN (#563) : les applications que ce client, appelant /access/v1 avec son propre jeton client_credentials, peut nommer dans context.application — un identifiant par valeur. L’identifiant propre du client est toujours dans la portée. Défini par un administrateur, jamais par l’appelant."
   },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "RAPPEL (CALLBACK) D’UNE DEMANDE D’ACCÈS AUTHZEN (#1180) : une URL https que ce client, en tant que PEP AuthZEN, peut nommer comme callback.endpoint d’une demande d’accès — une par valeur, comparée exactement. Une demande qui en nomme une autre est refusée ; ce service n’appelle jamais une URL de rappel tirée d’une seule demande. Défini par un administrateur, jamais par l’appelant."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 section 3 : les valeurs acr que cette application, en tant que serveur de ressources, exige de l’authentification sous-jacente à un jeton d’accès — séparées par des espaces, la préférée en premier. Un jeton dont l’acr ne satisfait aucune d’elles reçoit un défi 401 insufficient_user_authentication avec celles-ci comme acr_values. Les niveaux 0 < 1 < mfa sont ordonnés ; hwk, phr et phrh sont satisfaits par un mot de passe accompagné d’une clé de sécurité ; toute autre valeur uniquement par cet acr exact. VIDE n’exige rien."

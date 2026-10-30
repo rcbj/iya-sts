@@ -14,6 +14,12 @@
 //   POST /access/v1/evaluations   a batch of evaluations (section 7) — #1164
 //   POST /access/v1/search/{subject,resource,action}
 //                                 the three searches (section 8) — #1175
+//   POST /access/v1/access-requests
+//   GET  /access/v1/access-requests/:id
+//   POST|DELETE /access/v1/access-requests/:id/cancel
+//                                 the Access Request and Approval Profile's
+//                                 submission, task status and cancellation
+//                                 (`authzen_access_request.ts`) — #1180
 //
 // per realm, under the realm's prefix. Deliberately thin, as `xacml/xacml.ts`
 // is: it reads a request, asks `authzen_caller.ts` who is asking and whether
@@ -51,6 +57,8 @@ import catalogue = require('./authzen_catalogue');
 import map = require('./authzen_map');
 import callers = require('./authzen_caller');
 import search = require('./authzen_search');
+import exchange = require('./authzen_exchange');
+import accessRequests = require('./authzen_access_request');
 
 const { log } = helpers;
 
@@ -62,6 +70,7 @@ type Handler = (req: Req, res: Res, next?: () => void) => unknown;
 interface RouteTable {
   get(path: string, ...handlers: Handler[]): unknown;
   post(path: string, ...handlers: Handler[]): unknown;
+  delete(path: string, ...handlers: Handler[]): unknown;
 }
 
 // The identifier of the API's own resource object, which carries the
@@ -111,6 +120,8 @@ interface SurfaceDeps {
   applications: any;
   caller: any;
   search: any;
+  // The OAuth 2.0 Token Exchange Binding (#1181).
+  exchange: any;
   loadXacml(): any;
   loadMonitor(): any;
   // The embedded FGA PEP (#564, P4), for an application that enforces
@@ -119,6 +130,9 @@ interface SurfaceDeps {
   // The authorization server's published-document signer, for
   // `signed_metadata` (#1178): required when a document is signed.
   loadOauth2(): any;
+  // The Access Request and Approval Profile (#1180): the instance the root
+  // built, through its facades.
+  accessRequests: any;
 }
 
 /**
@@ -156,6 +170,8 @@ class AuthzenSurface {
       applications: require('../common/applications'),
       caller: new callers.AuthzenCaller(callers.AuthzenCaller.defaultDeps()),
       search: new search.AuthzenSearch(search.AuthzenSearch.defaultDeps()),
+      exchange: new exchange.AuthzenTokenExchange(
+        exchange.AuthzenTokenExchange.defaultDeps()),
       loadXacml: function (): any {
         log.debug("Entering loadXacml().");
         log.debug("Leaving loadXacml().");
@@ -175,7 +191,8 @@ class AuthzenSurface {
         log.debug("Entering loadOauth2().");
         log.debug("Leaving loadOauth2().");
         return require('../oauth-oidc/oauth2');
-      }
+      },
+      accessRequests: accessRequests
     };
   }
 
@@ -334,12 +351,19 @@ class AuthzenSurface {
    * @param rows - the realm's catalogue
    * @param batchId - the request id, or the batch's, for the audit row
    * @param where - the endpoint, for the audit row
+   * @param plan - the token-exchange binding's plan of the request (#1181),
+   *   or none: the item is then planned alone
+   * @param index - the item's place in that plan
+   * @param req - the request, for the base a requestable denial's endpoint
+   *   and binding name (#1180); without it no denial is requestable
    * @returns the item's result
    */
   evaluateOne(body: unknown, caller: any, rows: any[], batchId: string,
-              where: string): ItemResult {
+              where: string, plan?: any, index?: number,
+              req?: Req): ItemResult {
     const self = this;
-    const { log, config, audit, errorCodes, realms } = this.deps;
+    const { log, config, audit, errorCodes } = this.deps;
+    const ar = this.deps.accessRequests;
     log.debug("Entering AuthzenSurface.evaluateOne().");
     const failed = function (status: number, code: string,
                              message: string): ItemResult {
@@ -348,6 +372,22 @@ class AuthzenSurface {
       return { status: status, decision: false, code: code,
                error: { status: status, message: message } };
     };
+    // THE TOKEN-EXCHANGE BINDING'S TUPLES (#1181) are answered by its fixed
+    // conversion, never by the root policy; everything else is the API as
+    // it was, less a context member only those tuples may carry.
+    const planned = plan || self.planOf([body]);
+    const entry = planned.entries[index || 0] || { kind: '' };
+    if (entry.kind) {
+      const bound = self.evaluateBinding(body, caller, rows, batchId, where,
+                                         planned, entry);
+      log.debug("Leaving AuthzenSurface.evaluateOne(). The binding's.");
+      return bound;
+    }
+    const stray = exchange.strayContext(body, self.deps.exchange.enabled());
+    if (stray) {
+      log.debug("Leaving AuthzenSurface.evaluateOne(). A binding member.");
+      return failed(400, 'STS-AUTHZEN-0101', stray);
+    }
     const read = map.read(body, rows);
     if (read.refusal) {
       log.debug("Leaving AuthzenSurface.evaluateOne(). " +
@@ -362,15 +402,27 @@ class AuthzenSurface {
       log.debug("Leaving AuthzenSurface.evaluateOne(). " + scoped.code);
       return failed(scoped.status, scoped.code, scoped.message);
     }
+    // A PRESENTED APPROVAL (#1180) IS VERIFIED BEFORE ANYTHING IS DECIDED,
+    // and reaches the request only as trusted facts once it is: an
+    // approval never turns a denial into a Permit by itself — the root
+    // policy decides, reading those facts or not.
+    const verdict = evaluation.approval
+      ? (ar.enabled()
+        ? ar.verify(evaluation.approval, body, caller.name,
+                    scoped.application)
+        : { ok: false, reason: 'approval_unverifiable' })
+      : null;
     const decided = self.decideEvaluation(evaluation, caller.name,
-                                          scoped.application);
+                                          scoped.application,
+                                          accessRequests.factsOf(verdict));
     if (decided.unusable) {
       // AN ERROR, NEVER `false` (#564, decision 8): the application enforces
       // fine-grained authorization and there is nothing to decide with — no
       // reference, a policy that is missing, not its own, disabled or will
       // not parse (STS-FGA-0003 to 0007), no such application (0009), or a
       // throw or an unreadable registry (0015). Not counted on the monitor:
-      // no engine decided anything.
+      // no engine decided anything, and no access request can be built from
+      // a decision nobody made (#1180).
       self.recordUnusable(caller, evaluation, scoped.application, batchId,
                           where, decided.unusable.code,
                           decided.unusable.policy);
@@ -381,10 +433,24 @@ class AuthzenSurface {
     const outcome = decided.outcome;
     const faultCode = decided.faultCode;
     const decidedBy = decided.decidedBy;
+    const approvalCodes: any = { approval_unverifiable: 'STS-AUTHZEN-0084',
+                                 approval_expired: 'STS-AUTHZEN-0085',
+                                 out_of_scope: 'STS-AUTHZEN-0086' };
     const recorded = outcome.fault
       ? (faultCode || 'STS-AUTHZEN-0028')
       : (outcome.obligationProblems.length ? 'STS-AUTHZEN-0041'
-        : (outcome.undischargeable.length ? 'STS-AUTHZEN-0029' : ''));
+        : (outcome.undischargeable.length ? 'STS-AUTHZEN-0029'
+          : (verdict && !verdict.ok ? approvalCodes[verdict.reason] : '')));
+    // A REQUESTABLE DENIAL (#1180): a Deny whose answer carries the
+    // access-request advice, while the profile is on. Built before the
+    // audit row so the row can say so.
+    const xacmlDenied = outcome.xacmlDecision === 'Deny' ||
+                        outcome.xacmlDecision === 'NotApplicable';
+    const denial = !outcome.fault && !outcome.decision && xacmlDenied && req
+      ? ar.requestableDenial(req, body,
+                             accessRequests.termsOf(outcome.advice),
+                             caller.name, scoped.application)
+      : null;
     // WHAT THE ROW CARRIES: who asked, about which application, the two
     // types and the action, the request id, the decision — and NO property
     // value and no credential (decision 9). Since #564, the application's
@@ -410,7 +476,12 @@ class AuthzenSurface {
             return one.type;
           }).join(', ') : '') +
         (outcome.obligationProblems.length ? '; ' +
-          outcome.obligationProblems.join('; ') : '') + '.'
+          outcome.obligationProblems.join('; ') : '') +
+        (verdict ? '; an approval was presented and ' + (verdict.ok
+          ? 'verified (' + verdict.task.id + ')'
+          : 'not used: ' + verdict.reason) : '') +
+        (denial ? '; the denial is requestable (' + denial.evaluation_id +
+          ')' : '') + '.'
     });
     if (outcome.fault) {
       log.error(errorCodes.tag('STS-AUTHZEN-0028') + 'authzen: the PDP ' +
@@ -429,7 +500,132 @@ class AuthzenSurface {
       out.context = Object.assign(out.context || {},
                                   { obligations: outcome.obligations });
     }
+    // The profile's Decision Context members (#1180): a requestable
+    // denial's, and a re-evaluation's next step or approval.
+    if (denial) {
+      out.context = Object.assign(out.context || {}, denial);
+    }
+    if (verdict) {
+      out.context = Object.assign(out.context || {},
+        accessRequests.reevaluation(verdict, outcome.decision, denial));
+    }
     log.debug("Leaving AuthzenSurface.evaluateOne(). " + outcome.decision);
+    return out;
+  }
+
+  /**
+   * Plans a request's items for the token-exchange binding (#1181): which
+   * are its gate and scope tuples, and how they group. Every item is the
+   * API's own while `authzen.tokenExchange` is off.
+   *
+   * @param bodies - the items, defaults merged
+   * @returns the plan
+   */
+  planOf(bodies: unknown[]): any {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.planOf().");
+    const plan = this.deps.exchange.plan(bodies);
+    exchange.AuthzenTokenExchange.noteScopes(plan, bodies);
+    log.debug("Leaving AuthzenSurface.planOf().");
+    return plan;
+  }
+
+  /**
+   * Answers one of the token-exchange binding's tuples (#1181): its fixed
+   * context read, the rest through the catalogue as any request's, the
+   * caller's application scope, and the answer from the questions a local
+   * exchange asks — recorded as every evaluation is, on one audit row and
+   * the monitor's count.
+   *
+   * @param body - the item, defaults merged
+   * @param caller - the admitted caller
+   * @param rows - the realm's catalogue
+   * @param batchId - the request id, for the audit row
+   * @param where - the endpoint, for the audit row
+   * @param plan - the request's plan
+   * @param entry - the item's entry in it
+   * @returns the item's result
+   */
+  evaluateBinding(body: unknown, caller: any, rows: any[], batchId: string,
+                  where: string, plan: any, entry: any): ItemResult {
+    const self = this;
+    const { log, config, audit } = this.deps;
+    log.debug("Entering AuthzenSurface.evaluateBinding(). " + entry.kind);
+    const failed = function (status: number, code: string,
+                             message: string): ItemResult {
+      log.debug("Entering failed(). " + code);
+      log.debug("Leaving failed().");
+      return { status: status, decision: false, code: code,
+               error: { status: status, message: message } };
+    };
+    const given: any = body;
+    const context = exchange.readContext(body);
+    if (context.refusal) {
+      log.debug("Leaving AuthzenSurface.evaluateBinding(). The context.");
+      return failed(400, 'STS-AUTHZEN-0100', context.refusal);
+    }
+    const typed = ['other-gate', 'unregistered-gate'].indexOf(entry.kind) < 0;
+    const subjectType = given && given.subject &&
+      typeof given.subject === 'object' ? given.subject.type : undefined;
+    if (typed && subjectType !== undefined &&
+        exchange.SUBJECT_TYPES.indexOf(subjectType) < 0) {
+      log.debug("Leaving AuthzenSurface.evaluateBinding(). subject.type.");
+      return failed(400, 'STS-AUTHZEN-0102', 'subject.type of a token-' +
+        'exchange tuple is one of ' + exchange.SUBJECT_TYPES.join(', ') +
+        ' (the Token Issuance Profile\'s registry).');
+    }
+    const read = map.read(context.rest, rows);
+    if (read.refusal) {
+      log.debug("Leaving AuthzenSurface.evaluateBinding(). " +
+                read.refusal.code);
+      return failed(read.refusal.status, read.refusal.code,
+                    read.refusal.message);
+    }
+    const evaluation = read.evaluation;
+    const scoped = self.deps.caller.applicationOf(caller,
+                                                  evaluation.application);
+    if (!scoped.application) {
+      log.debug("Leaving AuthzenSurface.evaluateBinding(). " + scoped.code);
+      return failed(scoped.status, scoped.code, scoped.message);
+    }
+    const answer = self.deps.exchange.answer(plan, entry, body,
+      context.fixed, evaluation,
+      { caller: caller.name, application: scoped.application });
+    // THE ROW: the evaluation's own, and what the exchange question
+    // answered — the kind of tuple, the token type, the semantics and who
+    // decided — never a claim, a property value or a credential.
+    audit.audit({
+      action: 'authzen.decision',
+      actor: caller.name,
+      protocol: 'AuthZEN',
+      errorCode: answer.code || undefined,
+      detail: where + ' decided ' + String(answer.decision) + ' for a ' +
+        evaluation.subject.type + ' to ' + evaluation.action.name + ' a ' +
+        evaluation.resource.type + ', application "' + scoped.application +
+        '"' + (batchId ? ', request ' + batchId : '') + '; ' +
+        exchange.AuthzenTokenExchange.describe(entry, answer) + '.'
+    });
+    self.deps.loadMonitor().record('authzen',
+      { decision: answer.xacmlDecision || (answer.decision ? 'Permit'
+                                                           : 'Deny') });
+    // The code goes with the result for the caller's record, never into the
+    // answer (`common/error_codes.js`: recorded, never sent).
+    const out: ItemResult = { status: 200, decision: answer.decision,
+                              code: answer.code || undefined };
+    // `context.issuance` (the Token Issuance Profile's envelope) is the
+    // answer's, not an explanation, so it is sent whatever
+    // `authzen.returnReasons` says; the reasons are sent only when asked.
+    if (answer.issuance) {
+      out.context = { issuance: answer.issuance };
+    }
+    if (config.value('authzen.returnReasons') === true) {
+      out.context = Object.assign(out.context || {}, {
+        xacml_decision: answer.xacmlDecision,
+        reason_admin: { en: answer.why }
+      }, answer.semantics ? { exchange_semantics: answer.semantics } : {});
+    }
+    log.debug("Leaving AuthzenSurface.evaluateBinding(). " +
+              answer.decision);
     return out;
   }
 
@@ -458,13 +654,14 @@ class AuthzenSurface {
    * @param evaluation - the evaluation `authzen_map.ts` read
    * @param callerName - the trusted caller
    * @param application - the trusted application
+   * @param approval - a verified approval's trusted facts (#1180), or null
    * @returns `{ outcome, faultCode, decidedBy, unusable }`: `unusable` is
    *   `{ code, policy }` (nothing else set) when the application enforces
    *   and its policy cannot be used; `decidedBy` is `decideAccess()`'s
    *   answer when the application's policy decided, else null
    */
   decideEvaluation(evaluation: any, callerName: string,
-                   application: string): any {
+                   application: string, approval?: any): any {
     const self = this;
     const { log, config, errorCodes, realms } = this.deps;
     log.debug("Entering AuthzenSurface.decideEvaluation().");
@@ -486,7 +683,8 @@ class AuthzenSurface {
       realm: String(realms.currentId() || ''),
       caller: callerName,
       application: application,
-      fga: fgaEnforced
+      fga: fgaEnforced,
+      approval: approval || null
     });
     const xacml = self.deps.loadXacml();
     const resolve = self.resolves(evaluation.subject.type);
@@ -779,8 +977,10 @@ class AuthzenSurface {
    * The PDP's metadata document (section 9), for the realm the request is
    * answered in. It names ONLY what answers here: the single endpoint, and
    * the batch one while `authzen.batchEnabled` is on, the three searches
-   * while `authzen.searchEnabled` is on (#1175), no `capabilities` — and,
-   * while
+   * while `authzen.searchEnabled` is on (#1175), the token issuance
+   * capability while `authzen.tokenExchange` is on (#1181), the access
+   * request endpoint, `jwks_uri` and the access-request capability while
+   * `authzen.accessRequests` is on (#1180) — and, while
    * `authzen.signedMetadata` is on, `signed_metadata` (#1178).
    *
    * @param req - the request
@@ -809,6 +1009,27 @@ class AuthzenSurface {
     // The Obligations Profile's member (its section 6), while it is on.
     if (self.deps.config.value('authzen.obligationsProfile') !== false) {
       out.supported_obligations = map.supportedObligationTypes();
+    }
+    // THE CAPABILITIES, each only while its profile answers. The token
+    // issuance capability (#1181): the binding registers no URN of its own
+    // and has the PDP advertise the profile's. It is a commitment to decide
+    // every registered gate action — this PDP answers one of another grant
+    // false, which is a decision — never a statement about the policy.
+    const capabilities: string[] = [];
+    if (self.deps.exchange.enabled()) {
+      capabilities.push(exchange.CAPABILITY);
+    }
+    // The Access Request and Approval Profile's members (#1180): the
+    // endpoint, the realm's JWKS that verifies a binding_token, and the
+    // capability.
+    const requests = self.deps.accessRequests.metadata(req);
+    if (requests) {
+      out.access_request_endpoint = requests.access_request_endpoint;
+      out.jwks_uri = requests.jwks_uri;
+      capabilities.push(requests.capability);
+    }
+    if (capabilities.length) {
+      out.capabilities = capabilities;
     }
     const signed = self.signedMetadata(out);
     if (signed) {
@@ -995,7 +1216,8 @@ class AuthzenSurface {
     // answer it (section 7.1: "backwards-compatible").
     if (!items.length) {
       const single = AuthzenSurface.merged(body, {});
-      const one = self.evaluateOne(single, caller, rows, id, where);
+      const one = self.evaluateOne(single, caller, rows, id, where,
+                                   self.planOf([single]), 0, req);
       if (one.error) {
         errorCodes.mark(res, one.code);
         // error-code: none — marked on the line above with the item's code.
@@ -1016,14 +1238,22 @@ class AuthzenSurface {
     const batchId = id || ('authzen-' +
                            self.deps.helpers.randomId(12));
     const out: any[] = [];
+    // EVERY ITEM MERGED FIRST, and planned together: the token-exchange
+    // binding's two gates and its scope tuples are one exchange (#1181),
+    // so which gate an item is, and whose scope, is known only from the
+    // whole batch.
+    const requests = items.map(function (item: unknown) {
+      return AuthzenSurface.merged(body, item);
+    });
+    const plan = self.planOf(requests);
     for (let i = 0; i < items.length; i += 1) {
-      const request = AuthzenSurface.merged(body, items[i]);
+      const request = requests[i];
       const one = request === null
         ? { status: 400, decision: false, code: 'STS-AUTHZEN-0001',
             error: { status: 400, message: 'An evaluation is a JSON ' +
                                            'object.' } }
         : self.evaluateOne(request, caller, rows,
-                           batchId + '#' + i, where);
+                           batchId + '#' + i, where, plan, i, req);
       // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
       // never hidden by the batch's 200 (section 7.2). It is still false,
       // which is the fail-closed reading of an item nobody could decide.
@@ -1075,7 +1305,8 @@ class AuthzenSurface {
       const body = AuthzenSurface.bodyOf(req);
       const result = self.evaluateOne(body === undefined ? null : body,
                                       caller, self.rows(), id,
-                                      'POST ' + EVALUATION_PATH);
+                                      'POST ' + EVALUATION_PATH, undefined,
+                                      undefined, req);
       if (result.error) {
         errorCodes.mark(res, result.code);
         callers.send(res, result.status, result.error.message);
@@ -1161,6 +1392,72 @@ class AuthzenSurface {
     });
 
     // -----------------------------------------------------------------------
+    // THE ACCESS REQUEST AND APPROVAL PROFILE (#1180): the submission, the
+    // task status and the cancellation, behind the same door as every
+    // other AuthZEN endpoint (the profile: these are protected APIs, and
+    // the caller is authenticated before anything is read). Every refusal
+    // is RFC 9457 problem+json, the profile's error responses.
+    // -----------------------------------------------------------------------
+    const REQUESTS = accessRequests.REQUESTS_PATH;
+    const ar = self.deps.accessRequests;
+    const requestsOpen = function (req: Req, res: Res, where: string): any {
+      log.debug('Entering requestsOpen(). ' + where);
+      self.requestId(req, res);
+      if (self.offCheck(res)) {
+        log.debug('Leaving requestsOpen(). Off.');
+        return null;
+      }
+      if (!ar.enabled()) {
+        ar.problem(res, 501, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
+                   'and Approval Profile is turned off in this realm ' +
+                   '(authzen.accessRequests).');
+        log.debug('Leaving requestsOpen(). The profile is off.');
+        return null;
+      }
+      const caller = self.admit(req, res);
+      log.debug('Leaving requestsOpen(). ' + (caller ? 'Admitted.'
+                                                     : 'Not admitted.'));
+      return caller;
+    };
+    app.post(REQUESTS, function (req, res) {
+      log.debug('Entering POST ' + REQUESTS + '.');
+      const caller = requestsOpen(req, res, 'POST ' + REQUESTS);
+      if (!caller) {
+        log.debug('Leaving POST ' + REQUESTS + '. Refused.');
+        return;
+      }
+      ar.submit(req, res, caller, AuthzenSurface.bodyOf(req),
+                function (who: any, application: string): any {
+                  return self.deps.caller.applicationOf(who, application);
+                });
+      log.debug('Leaving POST ' + REQUESTS + '.');
+    });
+    app.get(REQUESTS + '/:id', function (req, res) {
+      log.debug('Entering GET ' + REQUESTS + '/:id.');
+      const caller = requestsOpen(req, res, 'GET ' + REQUESTS + '/:id');
+      if (!caller) {
+        log.debug('Leaving GET ' + REQUESTS + '/:id. Refused.');
+        return;
+      }
+      ar.status(res, caller, String(req.params.id || ''));
+      log.debug('Leaving GET ' + REQUESTS + '/:id.');
+    });
+    // POST, AND DELETE AS ITS EQUIVALENT (the profile's cancellation).
+    const cancelled = function (req: Req, res: Res): void {
+      log.debug('Entering ' + req.method + ' ' + REQUESTS + '/:id/cancel.');
+      const caller = requestsOpen(req, res, 'cancel');
+      if (!caller) {
+        log.debug('Leaving the cancellation. Refused.');
+        return;
+      }
+      ar.cancel(res, caller, String(req.params.id || ''),
+                AuthzenSurface.bodyOf(req));
+      log.debug('Leaving the cancellation.');
+    };
+    app.post(REQUESTS + '/:id/cancel', cancelled);
+    app.delete(REQUESTS + '/:id/cancel', cancelled);
+
+    // -----------------------------------------------------------------------
     // GET /.well-known/authzen-configuration — the metadata (section 9).
     //
     // SECTION 9.2 INSERTS the well-known segment between the host and the
@@ -1229,5 +1526,6 @@ export = {
   EVALUATION_PATH: EVALUATION_PATH,
   EVALUATIONS_PATH: EVALUATIONS_PATH,
   METADATA_PATH: METADATA_PATH,
+  REQUESTS_PATH: accessRequests.REQUESTS_PATH,
   SEMANTICS: SEMANTICS
 };

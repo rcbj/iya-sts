@@ -59,6 +59,18 @@
     "en": "c5373b52e1fb5ed4",
     "text": "Åtgärdssökning"
   },
+  "endpoints.route./access/v1/access-requests.name": {
+    "en": "4b0c4feb0af59f04",
+    "text": "Skicka in en åtkomstbegäran"
+  },
+  "endpoints.route./access/v1/access-requests/:id.name": {
+    "en": "c8bcbb33d07cfb8f",
+    "text": "En åtkomstbegärans uppgiftsstatus"
+  },
+  "endpoints.route./access/v1/access-requests/:id/cancel.name": {
+    "en": "90087f975ac5dec9",
+    "text": "Avbryt en åtkomstbegäran"
+  },
   "endpoints.route./.well-known/authzen-configuration.name": {
     "en": "2b5f43e5618bacac",
     "text": "PDP-metadata"

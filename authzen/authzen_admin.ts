@@ -23,6 +23,17 @@
 //   set-scope         the applications a caller may ask about: a person's or
 //                     service account's `stsAuthzenApplication`, or an
 //                     application's `appAuthzenApplication`, replaced whole
+//   set-callbacks     the callback URLs registered for a caller (#1180):
+//                     `stsAuthzenCallbackUri` or `appAuthzenCallbackUri`,
+//                     replaced whole — the only URLs an access request's
+//                     callback may name
+//   approve-access-request, deny-access-request, revoke-access-request,
+//   cancel-access-request
+//                     an administrator's act on one access request (#1180,
+//                     rcbj's decision 3), through
+//                     `authzen_access_request.ts`'s `decide()` — the
+//                     portal's door too — so the access-control policy is
+//                     asked exactly as it is for an approver there
 //
 // **THE SCOPE IS AN ADMINISTRATOR'S AND NOBODY ELSE'S** (rcbj on #563,
 // decision 1), so this is its only writer for a person: `sts*` is refused by
@@ -51,14 +62,28 @@ const API_OBJECT = 'sts-authzen-api';
 const PERSON_SCOPE = 'stsAuthzenApplication';
 const APPLICATION_SCOPE = 'appAuthzenApplication';
 
+// And the two that hold the callback URLs registered for a caller (#1180).
+const PERSON_CALLBACK = 'stsAuthzenCallbackUri';
+const APPLICATION_CALLBACK = 'appAuthzenCallbackUri';
+
+// The most callback URLs one caller may have registered.
+const MAX_CALLBACKS = 8;
+
+// The most access requests the tab lists.
+const MAX_REQUESTS = 200;
+
 // The most members the tab lists, and the most applications one caller may
 // be scoped to. Bounds, because both are drawn on one page.
 const MAX_MEMBERS = 200;
 const MAX_SCOPE = 64;
 
-// The three acts.
+// The acts.
 const ACTIONS = Object.freeze(['set-attribute', 'remove-attribute',
-                               'set-scope']);
+                               'set-scope', 'set-callbacks',
+                               'approve-access-request',
+                               'deny-access-request',
+                               'revoke-access-request',
+                               'cancel-access-request']);
 
 // What the directory slot carries.
 interface DirectoryHooks {
@@ -81,6 +106,9 @@ interface AdminDeps {
   realms: any;
   loadConsole(): any;
   loadCaller(): any;
+  // The Access Request and Approval Profile (#1180), lazily: it requires
+  // this module back for the directory and a caller's callbacks.
+  loadAccessRequests(): any;
 }
 
 /**
@@ -123,6 +151,11 @@ class AuthzenAdmin {
         log.debug("Entering loadCaller().");
         log.debug("Leaving loadCaller().");
         return require('./authzen_caller');
+      },
+      loadAccessRequests: function (): any {
+        log.debug("Entering loadAccessRequests().");
+        log.debug("Leaving loadAccessRequests().");
+        return require('./authzen_access_request');
       }
     };
   }
@@ -197,6 +230,8 @@ class AuthzenAdmin {
                kind: 'application',
                applications: AuthzenAdmin.valuesOf(full.fields,
                                                    APPLICATION_SCOPE),
+               callbacks: AuthzenAdmin.valuesOf(full.fields,
+                                                APPLICATION_CALLBACK),
                member: !!full.dn &&
                        members.indexOf(String(full.dn).toLowerCase()) >= 0 };
     }
@@ -210,6 +245,8 @@ class AuthzenAdmin {
              kind: entry.serviceAccount ? 'service-account' : 'person',
              applications: AuthzenAdmin.valuesOf(entry.attributes,
                                                  PERSON_SCOPE),
+             callbacks: AuthzenAdmin.valuesOf(entry.attributes,
+                                              PERSON_CALLBACK),
              member: members.indexOf(String(entry.dn).toLowerCase()) >= 0 ||
                      self.memberByName(members, entry) };
   }
@@ -250,11 +287,13 @@ class AuthzenAdmin {
     const callers = members.slice(0, MAX_MEMBERS).map(function (dn: string) {
       return self.callerOf(dn) ||
         { dn: dn, name: dn, kind: 'unknown', applications: [],
-          member: true };
+          callbacks: [], member: true };
     });
     const asked = String((query || {}).caller || '').trim();
     const consoleModule = self.deps.loadConsole();
     const caller = self.deps.loadCaller();
+    const requests = self.deps.loadAccessRequests();
+    const listed = requests.list(MAX_REQUESTS);
     const out = {
       realm: String(realms.currentId() || ''),
       enabled: config.value('authzen.enabled') !== false,
@@ -287,8 +326,18 @@ class AuthzenAdmin {
       callersTotal: members.length,
       looked: asked ? (self.callerOf(asked) || { name: asked, kind: 'none',
                                                   applications: [],
+                                                  callbacks: [],
                                                   member: false })
-                    : null
+                    : null,
+      // THE ACCESS REQUESTS (#1180): every one of the realm's, newest
+      // first, with what an administrator may do to each.
+      accessRequests: {
+        enabled: requests.enabled(),
+        rows: listed.map(function (row: any) {
+          return requests.viewOf(row);
+        }),
+        maxCallbacks: MAX_CALLBACKS
+      }
     };
     log.debug("Leaving AuthzenAdmin.view(). " + out.catalogue.rows.length +
               " row(s), " + callers.length + " caller(s).");
@@ -383,13 +432,18 @@ class AuthzenAdmin {
       out = self.removeAttribute(given, who || {});
     } else if (action === 'set-scope') {
       out = self.setScope(given, who || {});
+    } else if (action === 'set-callbacks') {
+      out = self.setCallbacks(given, who || {});
+    } else if (/-access-request$/.test(action) &&
+               ACTIONS.indexOf(action) >= 0) {
+      out = self.accessRequestAct(action, given, who || {});
     } else {
       // THE SENTENCE EVERY ACTION HANDLER HERE WRITES, which
       // `tests/protocol/sts_admin_api_operations.js` reads to hold the
       // document's actions to the handler's.
       out = self.refused('STS-AUTHZEN-0030', 'Unknown action "' +
-                         action.slice(0, 60) + '". The three are: ' +
-                         ACTIONS.join(', ') + '.');
+                         action.slice(0, 60) + '". The ' + ACTIONS.length +
+                         ' are: ' + ACTIONS.join(', ') + '.');
     }
     log.debug("Leaving AuthzenAdmin.act(). " + (out.ok ? 'ok' : 'refused'));
     return out;
@@ -554,6 +608,106 @@ class AuthzenAdmin {
     return { ok: true, changed: true,
              caller: Object.assign({}, caller, { applications: list }) };
   }
+
+  // THE CALLBACK URLS A CALLER MAY NAME (#1180, rcbj's decision 4): an
+  // administrator's, replaced whole, https only — the access request's
+  // callback is held to these exactly, and a request can name no other.
+  private setCallbacks(body: any, who: any): any {
+    const self = this;
+    const { log, applications, audit } = this.deps;
+    log.debug("Entering AuthzenAdmin.setCallbacks().");
+    const raw = body.callbacks;
+    const list = (Array.isArray(raw) ? raw
+      : String(raw == null ? '' : raw).split(/[\s,]+/))
+      .map(function (one: unknown) {
+        return String(one).trim();
+      }).filter(Boolean)
+      .filter(function (one: string, i: number, all: string[]) {
+        return all.indexOf(one) === i;
+      });
+    const bad = list.filter(function (one: string) {
+      let url: URL | null = null;
+      try {
+        url = new URL(one);
+      } catch (e) {
+        log.debug("Caught in AuthzenAdmin.setCallbacks(): " +
+                  ((e && e.message) || e));
+        url = null;
+      }
+      return !url || url.protocol !== 'https:' || one.length > 2048 ||
+             !!url.username || !!url.password || !!url.hash;
+    });
+    if (list.length > MAX_CALLBACKS || bad.length) {
+      log.debug("Leaving AuthzenAdmin.setCallbacks(). Refused.");
+      return self.refused('STS-AUTHZEN-0094', 'A caller may have at most ' +
+                          MAX_CALLBACKS + ' callback URLs, each an https ' +
+                          'URL with no credentials and no fragment' +
+                          (bad.length ? '; "' + bad[0].slice(0, 120) +
+                                        '" is not one' : '') + '.');
+    }
+    const caller = self.callerOf(String(body.caller || ''));
+    if (!caller) {
+      log.debug("Leaving AuthzenAdmin.setCallbacks(). Nobody.");
+      return self.refused('STS-AUTHZEN-0094', 'There is no person, service ' +
+                          'account or application called "' +
+                          String(body.caller || '').slice(0, 120) +
+                          '" in this realm.');
+    }
+    if (caller.kind === 'application') {
+      caller.callbacks.forEach(function (one: string) {
+        applications.updateApplication(caller.name, {
+          mode: 'remove', attribute: APPLICATION_CALLBACK, value: one });
+      });
+      for (let i = 0; i < list.length; i += 1) {
+        const added = applications.updateApplication(caller.name, {
+          mode: 'add', attribute: APPLICATION_CALLBACK, value: list[i] });
+        if (!added.ok) {
+          log.debug("Leaving AuthzenAdmin.setCallbacks(). Refused.");
+          return added;
+        }
+      }
+    } else if (!directory ||
+               !directory.write(caller.dn, PERSON_CALLBACK, list)) {
+      log.debug("Leaving AuthzenAdmin.setCallbacks(). Not written.");
+      return self.refused('STS-AUTHZEN-0094', 'The callback URLs could not ' +
+                          'be written onto ' + caller.dn + '.');
+    }
+    audit.audit({ action: 'admin.authzen.callbacks.set',
+                  actor: String(who.actor || ''), protocol: 'AuthZEN',
+                  detail: 'Registered ' + list.length + ' access request ' +
+                          'callback URL(s) for the AuthZEN caller ' +
+                          caller.name + ' (via ' +
+                          String(who.via || 'console') + ').' });
+    log.debug("Leaving AuthzenAdmin.setCallbacks().");
+    return { ok: true, changed: true,
+             caller: Object.assign({}, caller, { callbacks: list }) };
+  }
+
+  // AN ADMINISTRATOR'S ACT ON ONE ACCESS REQUEST (#1180): the portal's
+  // door, `decide()`, with the management API's verified caller as the
+  // approver and its roles — so the access-control policy's fourth rule is
+  // asked, and self-approval is refused here as it is there.
+  private accessRequestAct(action: string, body: any, who: any): any {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenAdmin.accessRequestAct(). " + action);
+    const requests = this.deps.loadAccessRequests();
+    const id = String(body.request || '').trim();
+    let out: any;
+    if (!id || !String(who.actor || '')) {
+      out = this.refused('STS-AUTHZEN-0090', 'An access request act names ' +
+                         'the request, and is made by a signed-in caller.');
+    } else if (action === 'cancel-access-request') {
+      out = requests.cancelByAdministrator(id, String(who.actor));
+    } else {
+      out = requests.decide(id, action.replace(/-access-request$/, ''),
+                            { username: String(who.actor),
+                              door: 'admin-api',
+                              roles: Array.isArray(who.roles)
+                                ? who.roles.map(String) : [] });
+    }
+    log.debug("Leaving AuthzenAdmin.accessRequestAct(). " + !!out.ok);
+    return out;
+  }
 }
 
 // THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2).
@@ -577,6 +731,20 @@ export = {
   ACTIONS: ACTIONS,
   PERSON_SCOPE: PERSON_SCOPE,
   APPLICATION_SCOPE: APPLICATION_SCOPE,
+  PERSON_CALLBACK: PERSON_CALLBACK,
+  APPLICATION_CALLBACK: APPLICATION_CALLBACK,
+  MAX_CALLBACKS: MAX_CALLBACKS,
+  /**
+   * The directory's slot as it was filled (#1180): the access requests
+   * read an approver's entry and a group's members through it.
+   *
+   * @returns the hooks, or null
+   */
+  directoryHooks: function (): DirectoryHooks | null {
+    log.debug("Entering directoryHooks().");
+    log.debug("Leaving directoryHooks().");
+    return directory;
+  },
   /**
    * Fills the directory's slot; `ldap_server.js` calls it when it loads.
    *
