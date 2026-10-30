@@ -737,9 +737,11 @@ function theMetadata(t, surface) {
     } finally {
       config.clearOverride('authzen.tokenExchange');
     }
-    t.check(off.capabilities === undefined &&
-            JSON.stringify(on.capabilities) ===
-              '["urn:openid:authzen:capability:token-issuance"]',
+    // Other profiles advertise capabilities of their own (#1180's access
+    // requests, on by default), so the check is for this one's URN.
+    const TOKEN_ISSUANCE = 'urn:openid:authzen:capability:token-issuance';
+    t.check((off.capabilities || []).indexOf(TOKEN_ISSUANCE) < 0 &&
+            (on.capabilities || []).indexOf(TOKEN_ISSUANCE) >= 0,
             'M1. the token issuance capability is advertised only while ' +
             'the binding answers', JSON.stringify({ off: off, on: on }));
   } finally {

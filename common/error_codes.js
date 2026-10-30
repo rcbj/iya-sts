@@ -21392,89 +21392,6 @@ const CODES = [
       'not be read for the caller list a remote PEP pulled, and was left ' +
       'out (#1189).',
     spec: 'none — logged; the pull is answered' },
-  { code: 'STS-AUTHZEN-0100',
-    summary: 'An AuthZEN token-exchange binding tuple (#1181) carried a ' +
-      'context member its fixed rules read in the wrong JSON type, an ' +
-      'unusable subject_token claim, an act chain nested too deep, or ' +
-      'a may_act without sub.',
-    spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
-  { code: 'STS-AUTHZEN-0101',
-    summary: 'An AuthZEN request that is not one of the token-exchange ' +
-      'binding\'s gate or scope tuples, or that arrived while ' +
-      'authzen.tokenExchange is off, carried a context member only ' +
-      'the binding\'s fixed rules read (#1181).',
-    spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
-  { code: 'STS-AUTHZEN-0102',
-    summary: 'An AuthZEN token-exchange binding tuple named a subject.type ' +
-      'other than the Token Issuance Profile\'s user, client or ' +
-      'workload (#1181).',
-    spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
-  { code: 'STS-AUTHZEN-0103',
-    summary: 'An AuthZEN gate tuple named a grant other than token_exchange ' +
-      '(issue:<type>:<grant>); this PDP decides the token-exchange ' +
-      'gate only, and answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0104',
-    summary: 'An AuthZEN token-exchange gate named a token type that is not ' +
-      'a registered short name; answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0105',
-    summary: 'An AuthZEN scope tuple (resource.type protected_resource) ' +
-      'arrived with no token-exchange gate in its request, and was ' +
-      'answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0106',
-    summary: 'An AuthZEN scope tuple named a subject other than the exchange ' +
-      'subject (or, for a Txn-Token, the requesting party), and was ' +
-      'answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0107',
-    summary: 'An AuthZEN token-exchange request named a third subject for ' +
-      'the same target and token type, beside the subject gate and ' +
-      'the requesting party gate; answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0108',
-    summary: 'The issuance policy refused, enforced, a token exchange asked ' +
-      'over AuthZEN, on a fact about the subject or the target (or ' +
-      'about the pair); the subject gate was answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0109',
-    summary: 'The issuance policy refused, enforced, a token exchange asked ' +
-      'over AuthZEN, on a fact about the requesting party (or about ' +
-      'the pair); the requesting party gate was answered false ' +
-      '(#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0110',
-    summary: 'The issuance policy would have refused a token exchange asked ' +
-      'over AuthZEN, but not enforced in development mode; the gate ' +
-      'was answered true, as the local token endpoint would issue it, ' +
-      'and the row says what product would answer (#1181).',
-    spec: 'decision: true' },
-  { code: 'STS-AUTHZEN-0111',
-    summary: 'An AuthZEN scope tuple\'s scope was refused or dropped by the ' +
-      'issuance policy at the exchange stage (exchange-widens-scope, ' +
-      'exchange-permission-not-delegated); answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0112',
-    summary: 'An AuthZEN scope tuple\'s scope is not declared by the client ' +
-      '(oauthAllowedScope, the scope policy\'s mint stage); answered ' +
-      'false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0113',
-    summary: 'An AuthZEN scope tuple\'s scope is a gated permission no role ' +
-      'of its subject authorizes (#302); answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0114',
-    summary: 'An AuthZEN token-exchange subject gate named a subject token ' +
-      'with no lifetime left (context.subject_token.exp), so any ' +
-      'token_lifetime would be 0, a denial; answered false (#1181).',
-    spec: 'decision: false' },
-  { code: 'STS-AUTHZEN-0115',
-    summary: 'A granted_scope wider than the subject token\'s scope was built ' +
-      'for an AuthZEN token-exchange answer and was not sent: the ' +
-      'no-broadening rule held at the last moment, which is a defect ' +
-      '(#1181).',
-    spec: 'none — logged; the envelope is sent without it' },
   { code: 'STS-AUTHZEN-0070',
     summary: 'An AuthZEN access request, task status or cancellation reached ' +
       'a realm where authzen.accessRequests (the Access Request and ' +
@@ -21611,6 +21528,89 @@ const CODES = [
       'object, or its requested_until not an RFC 3339 instant in the ' +
       'future.',
     spec: 'HTTP 400, application/problem+json' },
+  { code: 'STS-AUTHZEN-0100',
+    summary: 'An AuthZEN token-exchange binding tuple (#1181) carried a ' +
+      'context member its fixed rules read in the wrong JSON type, an ' +
+      'unusable subject_token claim, an act chain nested too deep, or ' +
+      'a may_act without sub.',
+    spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
+  { code: 'STS-AUTHZEN-0101',
+    summary: 'An AuthZEN request that is not one of the token-exchange ' +
+      'binding\'s gate or scope tuples, or that arrived while ' +
+      'authzen.tokenExchange is off, carried a context member only ' +
+      'the binding\'s fixed rules read (#1181).',
+    spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
+  { code: 'STS-AUTHZEN-0102',
+    summary: 'An AuthZEN token-exchange binding tuple named a subject.type ' +
+      'other than the Token Issuance Profile\'s user, client or ' +
+      'workload (#1181).',
+    spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
+  { code: 'STS-AUTHZEN-0103',
+    summary: 'An AuthZEN gate tuple named a grant other than token_exchange ' +
+      '(issue:<type>:<grant>); this PDP decides the token-exchange ' +
+      'gate only, and answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0104',
+    summary: 'An AuthZEN token-exchange gate named a token type that is not ' +
+      'a registered short name; answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0105',
+    summary: 'An AuthZEN scope tuple (resource.type protected_resource) ' +
+      'arrived with no token-exchange gate in its request, and was ' +
+      'answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0106',
+    summary: 'An AuthZEN scope tuple named a subject other than the exchange ' +
+      'subject (or, for a Txn-Token, the requesting party), and was ' +
+      'answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0107',
+    summary: 'An AuthZEN token-exchange request named a third subject for ' +
+      'the same target and token type, beside the subject gate and ' +
+      'the requesting party gate; answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0108',
+    summary: 'The issuance policy refused, enforced, a token exchange asked ' +
+      'over AuthZEN, on a fact about the subject or the target (or ' +
+      'about the pair); the subject gate was answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0109',
+    summary: 'The issuance policy refused, enforced, a token exchange asked ' +
+      'over AuthZEN, on a fact about the requesting party (or about ' +
+      'the pair); the requesting party gate was answered false ' +
+      '(#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0110',
+    summary: 'The issuance policy would have refused a token exchange asked ' +
+      'over AuthZEN, but not enforced in development mode; the gate ' +
+      'was answered true, as the local token endpoint would issue it, ' +
+      'and the row says what product would answer (#1181).',
+    spec: 'decision: true' },
+  { code: 'STS-AUTHZEN-0111',
+    summary: 'An AuthZEN scope tuple\'s scope was refused or dropped by the ' +
+      'issuance policy at the exchange stage (exchange-widens-scope, ' +
+      'exchange-permission-not-delegated); answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0112',
+    summary: 'An AuthZEN scope tuple\'s scope is not declared by the client ' +
+      '(oauthAllowedScope, the scope policy\'s mint stage); answered ' +
+      'false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0113',
+    summary: 'An AuthZEN scope tuple\'s scope is a gated permission no role ' +
+      'of its subject authorizes (#302); answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0114',
+    summary: 'An AuthZEN token-exchange subject gate named a subject token ' +
+      'with no lifetime left (context.subject_token.exp), so any ' +
+      'token_lifetime would be 0, a denial; answered false (#1181).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0115',
+    summary: 'A granted_scope wider than the subject token\'s scope was built ' +
+      'for an AuthZEN token-exchange answer and was not sent: the ' +
+      'no-broadening rule held at the last moment, which is a defect ' +
+      '(#1181).',
+    spec: 'none — logged; the envelope is sent without it' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +
