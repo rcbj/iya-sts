@@ -8339,12 +8339,13 @@ tab, and a service account's section of the person page —
 * **Sub-tabs are a declaration** (`tabbed: true` on the kind's row in
   `admin-core/policy_kinds.ts`, carried as `kind.tabbed` on the view):
   `<kind>-sub-default`, `<kind>-sub-named`, `<kind>-sub-new`, the schema
-  under all three. Only the passkey policy declares it today; the locale and
-  post-login policies' named profiles are drawn as they were.
+  under all three. The passkey, locale and post-login policies declare it
+  (#1235, #1238, #1239).
 * **`PoliciesPage.namedProfileParts()` draws what the kind declares**
   (`member.selectors`, `member.references`): a box per list selector a kind
-  still keeps (the post-login policy's groups; the locale policy's
-  applications left with #1238), the precedence, and on a tabbed kind's Named policies sub-tab,
+  still keeps (none since #1238 and #1239: the locale policy's
+  applications and the post-login policy's groups both went), the
+  precedence, and on a tabbed kind's Named policies sub-tab,
   above each profile's form, the applications, groups and people NAMING it
   (`named.namedBy`), read-only. **The application search the forms carried
   (#609) is gone with the applications box** — `policySearch()`, the

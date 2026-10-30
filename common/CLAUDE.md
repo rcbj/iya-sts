@@ -14049,9 +14049,27 @@ invitation ends Skip; a required activity BLOCKS the sign-in; off by
 default, and done inside the sign-in flow.
 
 * **`post_login_policy.ts` is the seventh kind on Directory → Policies**,
-  `locale_policy.ts`'s pattern with the passkey policy's group selection
-  (`selectGroups`, `precedence`). Exclusion is a disabled named profile at a
-  lower precedence — no second list.
+  `locale_policy.ts`'s pattern. **Since #1239 (3cx) what a named profile
+  covers NAMES it**: a group in `stsPostLoginPolicy`, an application in
+  `appPostLoginPolicy`; the profile keeps its rows and `precedence`, and
+  `stsPostLoginSelectGroup` is gone (schema too; no migration). Exclusion is
+  a disabled named profile at a lower precedence — no second list — named
+  from a group or, now, an application. A dangling reference selects
+  nothing (STS-AUTHN-0539: the policy asks, it guards no door, so it does
+  not fail closed); a named profile something names is not deleted
+  (STS-AUTHN-0540). The kind is tabbed.
+* **AN APPLICATION IS KNOWN ONLY AT A SIGN-IN (#1239).** `dueFor(username,
+  application)` hands `authn.ts`'s application to `forPerson(username,
+  groupsOf, application)`, which ranks it with the groups'. The questions
+  asked of a PERSON outside a sign-in — `post_login_activities.ts`'s
+  `decide()` (the reminder walk) and `report/sources.ts`'s
+  `postLoginProgress` (a row with no stamped profile) — pass none and rank
+  the groups alone. So a profile off that a group names keeps its members
+  out of the mail as well as the sign-in; one an application names keeps a
+  sign-in to that application out and does not stop a mail, which only asks
+  the person to sign in. `personGroups()` answers each group WITH the
+  profile it names (`personGroupReferences()`, one read shared with the
+  started activities' group test, as #1126 asked).
 * **`post_login.ts` answers the per-person question** (`dueFor()`) and keeps
   `post_login.progress` (cell-tier, on demand): first invitation, snooze,
   done. "Post-quantum" is the key's ALGORITHM, never its lane — a realm with
@@ -14267,9 +14285,9 @@ directory's `groupsNamingPolicy()` (the group index, which holds all six
 group references already) and `peopleNamingPolicyAsync()` (the holders of
 the attribute, async: a kind whose delete must ask it awaits it).
 
-**The post-login policy keeps its own group list until #1239** and hands a
-profile listing one of the person's groups to `rank()` as that group's
-reference: the same answer as before, by construction.
+**The post-login policy converted in #1239** (3ct): `stsPostLoginPolicy`
+on the group, `appPostLoginPolicy` on the application, and the list it kept
+until then is gone.
 
 ### The recipe a kind follows (#1236–#1241)
 
