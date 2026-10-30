@@ -1105,6 +1105,11 @@ to say about.
 
 **GNAP'S `OPTIONS /gnap` MOVED HERE WITH IT**: it continues to its route
 whatever the decision (RFC 9635 section 9), carrying the headers when allowed.
+**And its preflight lists `OPTIONS` in `Access-Control-Allow-Methods` (#1214)**:
+a browser's discovery request IS an `OPTIONS`, which is not CORS-safelisted,
+so the browser sends it only when the preflight answer names the method, and
+the `cors` package's default list (`GET,HEAD,PUT,PATCH,POST,DELETE`) does not.
+Every other path keeps that default.
 
 Values are normalised when written (`validation.normaliseOrigin()`: case, the
 default port, IDN) and again when read, for `ldapmodify`. Refused: a path, a
