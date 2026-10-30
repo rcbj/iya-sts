@@ -1972,6 +1972,25 @@ const SCHEMA = {
             'token, may name in context.application — one identifier per ' +
             'value. The client\'s own identifier is always in scope. Set ' +
             'by an administrator, never by the caller.' },
+    // THE ACCESS REQUEST CALLBACK URLS (#1180): where this service may tell
+    // this client, as an AuthZEN PEP, that an access request it submitted
+    // finished — the CALLBACK companion's endpoint, held to these exactly,
+    // so a request names one of them or none. Written by an administrator
+    // (the AuthZEN tab's set-callbacks); `federation/CLAUDE.md` carries the
+    // URL-dialling argument.
+    { name: 'appAuthzenCallbackUri', kind: 'multi',
+      from: 'the console (the AuthZEN tab), the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      familyWhy: 'It is where /access/v1 tells this client an access request ' +
+        'finished, and that API is an OAuth 2.0 resource; on an entry ' +
+        'declared for no OAuth family it would read like a delivery in ' +
+        'service.',
+      what: 'AUTHZEN ACCESS REQUEST CALLBACK (#1180): an https URL this ' +
+            'client, as an AuthZEN PEP, may name as an access request\'s ' +
+            'callback.endpoint — one per value, matched exactly. A request ' +
+            'naming any other is refused; this service never dials a ' +
+            'callback URL taken from a request alone. Set by an ' +
+            'administrator, never by the caller.' },
     // -------------------------------------------------------------------
     // RFC 9470, STEP-UP AUTHENTICATION (2026-09-13). TWO ATTRIBUTES ON A
     // RESOURCE: what it requires of the authentication behind an access token
@@ -4663,6 +4682,8 @@ const EDITABLE = {
   // caller may be scoped to several applications.
   authzenAttribute: 'multi',
   appAuthzenApplication: 'multi',
+  // The access request callback URLs (#1180): a caller may register several.
+  appAuthzenCallbackUri: 'multi',
   // RFC 9470's two. Each holds one answer: the acr values are one ordered
   // list in one value, because a directory's multi-valued attribute has no
   // order and the order is the preference.
@@ -6730,6 +6751,7 @@ const FIELD_EXAMPLES = {
   authzenAttribute: '{"object":"resource","property":"classification",' +
     '"attributeId":"urn:example:classification"}',
   appAuthzenApplication: 'engineering-portal',
+  appAuthzenCallbackUri: 'https://pep.example.com/callbacks/access-requests',
   oauthStepUpAcrValues: 'mfa',
   oauthStepUpMaxAge: '600',
   oauthDefaultAcrValues: 'mfa 1',

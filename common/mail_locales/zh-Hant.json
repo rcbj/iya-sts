@@ -55,6 +55,16 @@
       "text": "應用程式 {{client}} 要求代表帳戶 {{username}} 取得存取權：{{rights}}。\n\n在您核准之前，不會允許任何存取。如需核准或拒絕，請在 {{expiresMinutes}} 分鐘內登入並開啟此頁面：\n\n{{link}}\n\n如果您不認得此要求，請在該頁面拒絕，或忽略此郵件：它會自行過期。\n",
       "html": "<p>應用程式 <strong>{{client}}</strong> 要求代表帳戶 <strong>{{username}}</strong> 取得存取權：{{rights}}。</p><p>在您核准之前，不會允許任何存取。請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">核准或拒絕</a>。</p><p>如果您不認得此要求，請在該頁面拒絕，或忽略此郵件：它會自行過期。</p>"
     },
+    "authzen-access-request": {
+      "subject": "{{service}}：一項存取請求正在等待您的核准",
+      "text": "一項存取請求將您（{{username}}）列為其核准者之一：{{subject}} 請求透過 {{requester}} 在應用程式 {{application}} 中對 {{resource}} 執行 {{action}}。\n\n在核准者核准之前，不允許任何操作。如需核准或拒絕，請登入並在 {{expiresMinutes}} 分鐘內開啟此頁面：\n\n{{link}}\n\n如果您不認得此請求，請在該頁面拒絕它，或忽略此郵件：它會自行過期。\n",
+      "html": "<p>一項存取請求將您（<strong>{{username}}</strong>）列為其核准者之一：<strong>{{subject}}</strong> 請求透過 {{requester}} 在應用程式 <strong>{{application}}</strong> 中對 <strong>{{resource}}</strong> 執行 <strong>{{action}}</strong>。</p><p>在核准者核准之前，不允許任何操作。請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">核准或拒絕</a>。</p><p>如果您不認得此請求，請在該頁面拒絕它，或忽略此郵件：它會自行過期。</p>"
+    },
+    "authzen-emergency-access": {
+      "subject": "{{service}}：已授予緊急存取權限，請您審查",
+      "text": "一項將您（{{username}}）列為核准者之一的請求已被立即授予緊急存取權限，未經核准者核准：{{subject}} 可以在短時間內透過 {{requester}} 在應用程式 {{application}} 中對 {{resource}} 執行 {{action}}。\n\n提供的理由：{{justification}}\n\n政策允許對此進行緊急存取。請審查，如不合理請撤銷：\n\n{{link}}\n",
+      "html": "<p>一項將您（<strong>{{username}}</strong>）列為核准者之一的請求已被立即授予緊急存取權限，未經核准者核准：<strong>{{subject}}</strong> 可以在短時間內透過 {{requester}} 在應用程式 <strong>{{application}}</strong> 中對 <strong>{{resource}}</strong> 執行 <strong>{{action}}</strong>。</p><p>提供的理由：{{justification}}</p><p>政策允許對此進行緊急存取。請<a href=\"{{link}}\">審查</a>，如不合理請撤銷。</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}}：{{username}} 的 {{act}}",
       "text": "本服務（而非某個人）於 {{when}} 對帳戶 {{username}} 執行了操作：{{act}}。\n\n{{why}}\n\n您收到此郵件，是因為您在此領域中擁有 Admin Write 權限。\n",

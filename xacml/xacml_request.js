@@ -335,6 +335,14 @@ const VOCABULARY = Object.freeze({
   AUTHZEN_SUBJECT_TOKEN_TYPE: 'urn:sts:xacml:authzen:subject-token-type',
   AUTHZEN_ACTOR_TOKEN_TYPE: 'urn:sts:xacml:authzen:actor-token-type',
   AUTHZEN_ACT_DEPTH: 'urn:sts:xacml:authzen:act-depth',
+  // environment, TRUSTED, and only after `authzen/authzen_access_request.ts`
+  // VERIFIED a presented `context.approval` against its store (#1180): the
+  // approval's id, until when it holds (a dateTime) and who approved it. A
+  // policy that requires an approval reads these; the values a PEP sent
+  // beside the id never reach a request.
+  AUTHZEN_APPROVAL_ID: 'urn:sts:xacml:authzen:approval-id',
+  AUTHZEN_APPROVED_UNTIL: 'urn:sts:xacml:authzen:approved-until',
+  AUTHZEN_APPROVER: 'urn:sts:xacml:authzen:approver',
   // THE FACTS OF A PASSKEY QUESTION (#536): a passkey being registered
   // (`register-passkey`) or signing somebody in (`use-passkey`), gathered by
   // `common/passkey_policy.ts`. Nothing here decides; the built-in issuance
@@ -1151,6 +1159,8 @@ class AuthorizationRequest {
   //   realm, caller, application
   //                       trusted, from the authenticated caller
   //   supplied            the paths of every member the caller sent
+  //   approval            a VERIFIED approval (#1180), { approvalId,
+  //                       approvedUntil, approver }, or null
   //   attributes          [{ category, attributeId, dataType, values }],
   //                       each a catalogue row's, the values lexical
   // The subject's id is XACML's own subject-id, the action's name its
@@ -1182,6 +1192,13 @@ class AuthorizationRequest {
     this.environment(V.AUTHZEN_SUPPLIED,
                      (Array.isArray(given.supplied) ? given.supplied : [])
                        .map(String));
+    const approval = given.approval || null;
+    if (approval && approval.approvalId) {
+      this.environment(V.AUTHZEN_APPROVAL_ID, one(approval.approvalId));
+      this.environment(V.AUTHZEN_APPROVED_UNTIL, one(approval.approvedUntil),
+                       model.TYPE.DATETIME);
+      this.environment(V.AUTHZEN_APPROVER, one(approval.approver));
+    }
     const self = this;
     (Array.isArray(given.attributes) ? given.attributes : [])
       .forEach(function (row) {

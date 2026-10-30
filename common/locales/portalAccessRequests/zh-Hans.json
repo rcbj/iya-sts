@@ -1,0 +1,15 @@
+{
+  "sub": "将您列为审批人的 AuthZEN 访问请求：某个应用程序的执行点被拒绝了领域策略允许申请的操作，正在等待策略指定的某位人员。<strong>批准本身不会授予任何权限</strong>：应用程序会携带批准再次询问，由领域策略重新决定。",
+  "off": "此领域已关闭访问请求。",
+  "none": "没有等待您处理的访问请求。",
+  "asks": "一个执行点请求此访问：",
+  "subject": "对象",
+  "action": "操作",
+  "resource": "资源",
+  "application": "应用程序",
+  "requester": "请求方",
+  "waits": "等待至 {when}。",
+  "approve": "批准",
+  "deny": "拒绝",
+  "done": "{status, select, approved {访问请求已批准。应用程序现在可以再次询问。} denied {访问请求已拒绝。} other {访问请求状态为 {status}。}}"
+}

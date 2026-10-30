@@ -715,6 +715,10 @@
     "en": "6a97533f3574f71e",
     "text": "「AuthZEN 應用程式範圍」（#563）：此用戶端以自己的 client_credentials 權杖呼叫 /access/v1 時，可在 context.application 中指名的應用程式——每個值一個識別碼。用戶端自己的識別碼一律在範圍內。由管理員設定，絕不由呼叫端設定。"
   },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "AuthZEN 存取請求回呼（#1180）：此用戶端作為 AuthZEN PEP 可指定為存取請求 callback.endpoint 的 https URL——每個值一個，須完全相符。指定其他任何 URL 的請求都會被拒絕；本服務絕不會僅憑請求中的 URL 就向其發出回呼。由管理員設定，絕不由呼叫端設定。"
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 第 3 節：此應用程式作為資源伺服器，對存取權杖背後之驗證所要求的 acr 值——以空格分隔，最偏好者在前。acr 不符合任何一個的權杖，會收到 401 insufficient_user_authentication 挑戰，並以這些值作為 acr_values。等級 0 < 1 < mfa 有先後順序；hwk、phr 與 phrh 由密碼加上安全金鑰滿足；其他任何值只由完全相同的 acr 滿足。空白則不要求任何東西。"

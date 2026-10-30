@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "Avslutar varje inloggningssession vars livslängd eller inaktivitetstidsgräns har passerats och, i varje sfär, högst den sfärens authn.sessionShedPerSweep av ett subjekts egna överskottssessioner."
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "Utgång av AuthZEN-åtkomstbegäranden"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) som passerat sin expires_at till expired — skriver dess granskningsrad och skickar dess callback — och tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpt ut om det är senare. En läsning tillämpar själv tidsgränsen, så det här är registret och städningen, aldrig det som avgör."
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "Utrensning av utgångna cacheposter"

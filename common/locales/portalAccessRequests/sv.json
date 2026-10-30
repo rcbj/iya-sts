@@ -1,0 +1,15 @@
+{
+  "sub": "De AuthZEN-åtkomstbegäranden som anger dig som godkännare: ett programs tillämpningspunkt nekades något som sfärens policy låter begäras, och väntar på någon av de personer policyn angav. <strong>Ett godkännande beviljar ingenting i sig</strong>: programmet frågar igen med godkännandet, och sfärens policy beslutar på nytt.",
+  "off": "Åtkomstbegäranden är avstängda i den här sfären.",
+  "none": "Ingen åtkomstbegäran väntar på dig.",
+  "asks": "En tillämpningspunkt begär den här åtkomsten:",
+  "subject": "För",
+  "action": "Åtgärd",
+  "resource": "På",
+  "application": "Program",
+  "requester": "Begärd av",
+  "waits": "Den väntar till {when}.",
+  "approve": "Godkänn",
+  "deny": "Neka",
+  "done": "{status, select, approved {Åtkomstbegäran är godkänd. Programmet kan fråga igen nu.} denied {Åtkomstbegäran är nekad.} other {Åtkomstbegäran är {status}.}}"
+}

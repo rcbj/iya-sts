@@ -715,6 +715,10 @@
     "en": "6a97533f3574f71e",
     "text": "AUTHZEN-APPLIKATIONSOMFÅNG (#563): de applikationer som den här klienten, när den anropar /access/v1 med sin egen client_credentials-token, får namnge i context.application — en identifierare per värde. Klientens egen identifierare ingår alltid i omfånget. Sätts av en administratör, aldrig av anroparen."
   },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "CALLBACK FÖR AUTHZEN-ÅTKOMSTBEGÄRAN (#1180): en https-URL som den här klienten, som AuthZEN PEP, får ange som en åtkomstbegärans callback.endpoint — en per värde, matchad exakt. En begäran som anger någon annan avvisas; den här tjänsten anropar aldrig en callback-URL som enbart hämtats från en begäran. Sätts av en administratör, aldrig av anroparen."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 avsnitt 3: de acr-värden som den här applikationen, i egenskap av resursserver, kräver av autentiseringen bakom en åtkomsttoken — blankstegsseparerade, det mest föredragna först. En token vars acr inte uppfyller något av dem utmanas med 401 insufficient_user_authentication med dessa som acr_values. Nivåerna 0 < 1 < mfa är ordnade; hwk, phr och phrh uppfylls av ett lösenord med en säkerhetsnyckel; alla andra värden bara av exakt den acr:en. TOMT kräver ingenting."

@@ -23,6 +23,14 @@
     "en": "5631096a0aa7c62f",
     "text": "結束所有已超過存留期或閒置逾時的登入工作階段，並在每個領域中最多結束該領域 authn.sessionShedPerSweep 個同一主體自身的超額工作階段。"
   },
+  "sched.jobs.authzen.access-requests.title": {
+    "en": "c63a46aaaa2a9f6f",
+    "text": "AuthZEN 存取請求到期"
+  },
+  "sched.jobs.authzen.access-requests.describe": {
+    "en": "e0a885271868119c",
+    "text": "將每個已超過 expires_at 的待處理 AuthZEN 存取請求（#1180）移為 expired——寫入其稽核列並傳送其回呼——並在已完成一天之後，或其核准失效之後（以較晚者為準）將其移除。讀取時會自行套用截止時間，因此這裡只是記錄與清理，從不負責決定。"
+  },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
     "text": "逐出過期快取項目"

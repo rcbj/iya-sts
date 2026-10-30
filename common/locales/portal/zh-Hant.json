@@ -52,6 +52,8 @@
   "nav.devices.heading": "您的裝置",
   "nav.ciba.label": "登入要求",
   "nav.ciba.heading": "登入要求",
+  "nav.access-requests.label": "存取請求",
+  "nav.access-requests.heading": "等待您處理的存取請求",
   "nav.device.label": "讓裝置登入",
   "nav.device.heading": "讓裝置登入",
   "nav.claim-sources.label": "宣告來源",

@@ -441,6 +441,12 @@ const NAV = [
       // credential on their own entry. Drawn by `portal_ciba.ts`.
       { path: BASE + '/ciba', label: 'Sign-in requests',
         heading: 'Sign-in requests' },
+      // ACCESS REQUESTS (#1180), beside Sign-in requests and for its
+      // reason: an approval here gives access elsewhere — though to
+      // somebody else, as the approver an AuthZEN access request's policy
+      // named, never as its subject. Drawn by `portal_access_requests.ts`.
+      { path: BASE + '/access-requests', label: 'Access requests',
+        heading: 'Access requests waiting for you' },
       // SIGN IN A DEVICE (#150, 2026-09-26), for CIBA's reason: the code a
       // television or a command line shows is typed here, and an approval
       // signs this person in on it (RFC 8628). Drawn by `portal_device.ts`.

@@ -106,6 +106,11 @@ interface Evaluation {
   // The Obligations Profile's `context.supported_obligations` (#1177), or
   // null when the request did not say.
   supportedObligations: string[] | null;
+  // The Access Request and Approval Profile's `context.approval` (#1180),
+  // as sent, or null: only its `id` is ever read, by
+  // `authzen_access_request.ts`'s `verify()`, and nothing in it reaches the
+  // policy until that found it.
+  approval: any;
   attributes: MappedAttribute[];
   supplied: string[];
 }
@@ -129,6 +134,9 @@ interface Trusted {
   realm: string;
   caller: string;
   application: string;
+  // A verified approval (#1180): `{ approvalId, approvedUntil, approver }`,
+  // written as trusted facts, or absent.
+  approval?: any;
 }
 
 // One obligation as the Obligations Profile sends it (#1177).
@@ -314,6 +322,21 @@ class AuthzenMap {
       }
       supportedObligations = sent.slice(0);
     }
+    // `context.approval` (#1180): an object carrying the `id` this service
+    // issued. Its shape is checked here; whether it is an approval at all is
+    // `verify()`'s, against the store.
+    let approval: any = null;
+    if (context.approval !== undefined) {
+      const sent = context.approval;
+      if (!isObject(sent) || typeof sent.id !== 'string' || !sent.id ||
+          sent.id.length > MAX_TEXT) {
+        log.debug("Leaving AuthzenMap.read(). A bad approval.");
+        return refused('STS-AUTHZEN-0003',
+          'context.approval must be the approval object a completed access ' +
+          'request returned, with its id.');
+      }
+      approval = sent;
+    }
     let application = '';
     if (context.application !== undefined) {
       if (typeof context.application !== 'string' || !context.application ||
@@ -332,6 +355,9 @@ class AuthzenMap {
     }
     if (supportedObligations) {
       supplied.push('context.supported_obligations');
+    }
+    if (approval) {
+      supplied.push('context.approval');
     }
     const attributes: MappedAttribute[] = [];
     const walked = [
@@ -355,6 +381,7 @@ class AuthzenMap {
                            resource: parts.resource,
                            application: application,
                            supportedObligations: supportedObligations,
+                           approval: approval,
                            attributes: attributes, supplied: supplied } };
   }
 
@@ -619,6 +646,7 @@ class AuthzenMap {
       .authzen({ subject: evaluation.subject, action: evaluation.action,
                  resource: evaluation.resource, realm: trusted.realm,
                  caller: trusted.caller, application: trusted.application,
+                 approval: trusted.approval || null,
                  supplied: evaluation.supplied,
                  attributes: evaluation.attributes })
       .build();

@@ -715,6 +715,10 @@
     "en": "6a97533f3574f71e",
     "text": "AUTHZEN APPLICATION SCOPE (#563): ang mga application na puwedeng pangalanan ng client na ito sa context.application, kapag tumatawag sa /access/v1 gamit ang sarili nitong client_credentials token — isang identifier bawat value. Laging nasa scope ang sariling identifier ng client. Itinatakda ng administrator, hindi kailanman ng caller."
   },
+  "applications.schema.attributes.appAuthzenCallbackUri.what": {
+    "en": "2e00248f61ba1cad",
+    "text": "CALLBACK NG AUTHZEN ACCESS REQUEST (#1180): isang https URL na maaaring ipangalan ng client na ito, bilang AuthZEN PEP, bilang callback.endpoint ng isang access request — isa bawat value, eksaktong tugma. Tinatanggihan ang request na may ibang pinangalanan; hindi kailanman nagda-dial ang serbisyong ito ng callback URL na galing lang sa isang request. Itinatakda ng administrator, hindi kailanman ng caller."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "847d2fc846138cb9",
     "text": "RFC 9470 section 3: ang mga acr value na hinihingi ng application na ito, bilang resource server, sa authentication sa likod ng isang access token — pinaghihiwalay ng espasyo, ang pinakagusto ang una. Ang token na walang natutugunang acr ay hinahamon ng 401 insufficient_user_authentication na ang mga ito ang acr_values. Nakaayos ang mga level na 0 < 1 < mfa; ang hwk, phr at phrh ay natutugunan ng password kasama ang security key; ang anumang ibang value ay ng eksaktong acr na iyon lang. ANG WALANG LAMAN ay walang hinihingi."

@@ -826,13 +826,19 @@ async function childBody() {
           doc.supported_obligations.indexOf('step-up') >= 0,
           'W0. the metadata advertises supported_obligations (#1177)',
           JSON.stringify(doc));
+  // The access request endpoint and its capability since #1180, the first
+  // capability this document names; nothing else.
   t.check(advertised.every(function (key) {
     return ['access_evaluation_endpoint', 'access_evaluations_endpoint',
             'search_subject_endpoint', 'search_resource_endpoint',
-            'search_action_endpoint'].indexOf(key) >= 0;
-  }) && advertised.length === 5 && !doc.capabilities,
+            'search_action_endpoint',
+            'access_request_endpoint'].indexOf(key) >= 0;
+  }) && advertised.length === 6 && Array.isArray(doc.capabilities) &&
+          doc.capabilities.join() ===
+            'urn:openid:authzen:capability:access-request',
           'W3. every implemented endpoint is advertised, the three searches ' +
-          'among them, and no capabilities', JSON.stringify(doc));
+          'and the access request endpoint among them, and the one ' +
+          'capability implemented', JSON.stringify(doc));
   for (let i = 0; i < advertised.length; i += 1) {
     const at = String(doc[advertised[i]]).replace(/^https?:\/\/[^/]+/, '');
     const answered = await request(port, 'POST', at, null, {});

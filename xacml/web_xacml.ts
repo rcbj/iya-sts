@@ -369,7 +369,8 @@ class XacmlPage {
   /**
    * Draws the AuthZEN tab (#563) from `GET /admin-api/xacml/authzen`: the
    * API's state and settings, its attribute catalogue with the form that
-   * adds a row, and the callers in the AUTHZEN_PEPS group with their scopes.
+   * adds a row, the callers in the AUTHZEN_PEPS group with their scopes and
+   * callback URLs, and the realm's access requests with their acts (#1180).
    *
    * @param ctx - the render context (`WebKit.context()`)
    * @param json - the tab's view
@@ -468,9 +469,81 @@ class XacmlPage {
             return '<code>' + esc(app) + '</code>';
           }).join(', ')
           : '<em>' + t.html('consoleXacml.authzen.noScope') + '</em>') +
+        '</td><td>' + ((one.callbacks || []).map(function (url) {
+          return '<code>' + esc(url) + '</code>';
+        }).join('<br>') || '—') +
         '</td></tr>';
-    }).join('') || '<tr><td colspan="3">' +
+    }).join('') || '<tr><td colspan="4">' +
       t.html('consoleXacml.authzen.noCallers') + '</td></tr>';
+    // THE CALLBACK URLS A CALLER MAY NAME (#1180): replaced whole.
+    const callbackForm = writable
+      ? '<h3>' + t.html('consoleXacml.authzen.callbacksHeading') + '</h3>' +
+        '<form method="post" action="' + PAGE + '">' +
+        self.hidden('action', 'set-callbacks') +
+        '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
+        '</td><td>' + self.textField('caller', '', 40) +
+        '</td></tr><tr><td>' + t.html('consoleXacml.authzen.callbacks') +
+        '</td><td>' + self.textField('callbacks', '', 60) +
+        '</td></tr></table><p class="sub">' +
+        t.html('consoleXacml.authzen.callbacksNote') + '</p>' +
+        '<button type="submit">' +
+        t.html('consoleXacml.authzen.setCallbacks') + '</button></form>'
+      : '';
+    // THE ACCESS REQUESTS (#1180): every one of the realm's, newest first,
+    // with the acts an administrator may take — each asked of the
+    // access-control policy as an approver's is in the portal.
+    const ar = view.accessRequests || { enabled: false, rows: [] };
+    const actForm = function (action, id, label, danger) {
+      return '<form method="post" action="' + PAGE + '" ' +
+        'style="display:inline">' + self.hidden('action', action) +
+        self.hidden('request', id) + '<button type="submit"' +
+        (danger ? ' class="danger"' : '') + '>' + label +
+        '</button></form> ';
+    };
+    const code = function (value) {
+      return '<code>' + esc(String(value == null ? '' : value)) + '</code>';
+    };
+    const requestRows = (ar.rows || []).map(function (row) {
+      const subject = row.subject || {};
+      const resource = row.resource || {};
+      const acts = !writable ? '' : (row.status === 'pending'
+        ? actForm('approve-access-request', row.id,
+                  t.html('consoleXacml.authzen.approve'), false) +
+          actForm('deny-access-request', row.id,
+                  t.html('consoleXacml.authzen.deny'), true) +
+          actForm('cancel-access-request', row.id,
+                  t.html('consoleXacml.authzen.cancel'), true)
+        : (row.status === 'approved' && row.approval &&
+           !row.approval.revoked
+          ? actForm('revoke-access-request', row.id,
+                    t.html('consoleXacml.authzen.revoke'), true) : ''));
+      return '<tr><td>' + code(row.id) + '<div class="sub">' +
+        esc(t.date(Number(row.createdAt) * 1000)) + '</div></td><td>' +
+        code(subject.type) + ' ' + code(subject.id) + '<div class="sub">' +
+        code((row.action || {}).name) + ' ' + code(resource.type) + ' ' +
+        code(resource.id) + '</div></td><td>' + code(row.application) +
+        '<div class="sub">' + code(row.requester) + '</div></td><td>' +
+        t.html('consoleXacml.authzen.requestStatus',
+               { status: String(row.status) }) +
+        (row.emergency ? ' <strong>' +
+          t.html('consoleXacml.authzen.emergency') + '</strong>' : '') +
+        (row.approval ? '<div class="sub">' +
+          t.html(row.approval.revoked ? 'consoleXacml.authzen.revoked'
+                                      : 'consoleXacml.authzen.approvedUntil',
+                 { who: String(row.approval.approver || ''),
+                   when: t.date(Number(row.approval.approvedUntil) * 1000) }) +
+          '</div>' : '') + '</td><td>' + acts + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">' +
+      t.html('consoleXacml.authzen.noRequests') + '</td></tr>';
+    const requests = '<h2>' + t.html('consoleXacml.authzen.requestsHeading') +
+      '</h2><p class="sub">' + t.html('consoleXacml.authzen.requestsNote') +
+      (ar.enabled ? '' : ' ' + t.html('consoleXacml.authzen.requestsOff')) +
+      '</p><table><thead><tr><th>' +
+      t.html('consoleXacml.authzen.request') + '</th><th>' +
+      t.html('consoleXacml.authzen.asked') + '</th><th>' +
+      t.html('consoleXacml.authzen.applicationAndPep') + '</th><th>' +
+      t.html('consoleXacml.authzen.state') + '</th><th></th></tr></thead>' +
+      '<tbody>' + requestRows + '</tbody></table>';
     const scope = writable
       ? '<h3>' + t.html('consoleXacml.authzen.scopeHeading') + '</h3>' +
         '<form method="post" action="' + PAGE + '">' +
@@ -497,8 +570,10 @@ class XacmlPage {
       '<p class="sub">' + t.html('consoleXacml.authzen.callersNote') +
       '</p><table><thead><tr><th>' + t.html('consoleXacml.authzen.caller') +
       '</th><th>' + t.html('consoleXacml.authzen.kind') + '</th><th>' +
-      t.html('consoleXacml.authzen.applications') + '</th></tr></thead>' +
-      '<tbody>' + callers + '</tbody></table>' + scope;
+      t.html('consoleXacml.authzen.applications') + '</th><th>' +
+      t.html('consoleXacml.authzen.callbacks') + '</th></tr></thead>' +
+      '<tbody>' + callers + '</tbody></table>' + scope + callbackForm +
+      requests;
   }
 
   /**

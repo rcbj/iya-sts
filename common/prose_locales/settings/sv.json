@@ -6995,6 +6995,62 @@
     "en": "b02d024ed71640ad",
     "text": "När den är på bär ett beslut en context med XACML-beslutet, varför, eventuella advice och de obligations som gjorde en Permit till false. Av som standard: ett skäl berättar något om policyn för en anropare, och decision ensamt är svaret i båda fallen."
   },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "Åtkomstbegäranden och godkännanden"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "AuthZEN Access Request and Approval Profile (ett utkast), med dess callback-komplement. När den är på besvaras ett Deny vars XACML-svar bär advice urn:sts:xacml:advice:access-request med false och context.access_request; en PEP skickar in den till POST /access/v1/access-requests, en godkännare som advice anger avgör den i portalen eller konsolen, och ett godkännande som presenteras vid nästa utvärdering når rotpolicyn som betrodda fakta. Metadata anger endpoint och capability. Ett nekande utan advice kan aldrig begäras. När den är av svarar rutterna 501 och inget nekande kan begäras."
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "Hur länge ett begärbart nekande får skickas in (sekunder)"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "expires_at för ett begärbart nekande och livslängden för dess binding_token: en inskickning efter det avvisas som expired_denial och PEP:en utvärderar igen."
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "Hur länge en åtkomstbegäran väntar på en godkännare (sekunder)"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "En väntande åtkomstbegäran som passerat detta är expired, av schemaläggarjobbet authzen.access-requests och vid varje läsning. En avslutad sparas en dag längre så att PEP:en kan läsa den."
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "Det längsta ett godkännande gäller (sekunder)"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "Taket för ett godkännandes approved_until. Policyns advice (max-approval-seconds) och den som begär åtkomst (requested_until) kan var och en förkorta det; ingen av dem förlänger det."
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "Hur länge nödåtkomst gäller (sekunder)"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "En begäran om nödåtkomst — requested_access.emergency, där policyns advice tillåter det, med en context.business_justification — godkänns omedelbart för högst så här länge, och dess godkännare får e-post för att granska den."
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "Retry-After för en väntande åtkomstbegäran (sekunder)"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "Den Retry-After som uppgiftsstatus-endpointen svarar med medan en begäran väntar; en PEP väntar minst så här länge innan den frågar igen."
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "Väntande åtkomstbegäranden en sfär rymmer"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "Det högsta antalet åtkomstbegäranden en sfär rymmer som väntande; efter det avvisas en inskickning med 503 tills några avgjorts eller gått ut."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "SSF aktiverat"

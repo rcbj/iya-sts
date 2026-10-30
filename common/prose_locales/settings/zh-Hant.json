@@ -6995,6 +6995,62 @@
     "en": "b02d024ed71640ad",
     "text": "開啟時，決策會攜帶一個 context，內含 XACML 決策、原因、任何 advice，以及使 Permit 成為 false 的 obligations。預設為關閉：原因會讓呼叫端得知原則的某些資訊，而無論如何，單獨的 decision 就是答案。"
   },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "存取請求與核准"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "AuthZEN 存取請求與核准設定檔（草案）及其回呼配套規範。開啟時，XACML 回應中攜帶 advice urn:sts:xacml:advice:access-request 的 Deny 會回應 false 並附帶 context.access_request；PEP 將其提交到 POST /access/v1/access-requests，由該 advice 指名的核准者在入口網站或主控台中作出決定，下一次評估時出示的核准會作為可信事實到達根原則。中繼資料會寫明該端點與該能力。不帶該 advice 的拒絕永遠不可請求。關閉時，這些路由回應 501，任何拒絕都不可請求。"
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "可請求的拒絕可被提交的時間長度（秒）"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "可請求的拒絕的 expires_at，以及其 binding_token 的存留期：在此之後的提交會以 expired_denial 被拒絕，PEP 需重新評估。"
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "存取請求等待核准者的時間長度（秒）"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "超過此時間的待處理存取請求會過期，由 authzen.access-requests 排程作業處理，並在每次讀取時判斷。已完成的請求會多保留一天，供 PEP 讀取。"
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "核准的最長有效時間（秒）"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "核准的 approved_until 的上限。原則的 advice（max-approval-seconds）與請求者的 requested_until 都可以縮短它，但都不能延長它。"
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "緊急存取的有效時間長度（秒）"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "緊急存取請求——requested_access.emergency，在原則的 advice 允許時，並附帶 context.business_justification——會立即獲核准，最長有效此時間，並向其核准者寄出郵件以供覆核。"
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "待處理存取請求的 Retry-After（秒）"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "請求待處理期間，工作狀態端點所回應的 Retry-After；PEP 至少等待這麼久才會再次查詢。"
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "一個領域可持有的待處理存取請求數"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "一個領域最多可同時持有的待處理存取請求數；超過後，提交會以 503 被拒絕，直到其中一些被決定或過期。"
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "啟用 SSF"

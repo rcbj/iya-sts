@@ -55,6 +55,16 @@
       "text": "Programmet {{client}} ber om åtkomst för kontot {{username}}: {{rights}}.\n\nIngenting tillåts förrän du godkänner det. Logga in och öppna den här sidan inom {{expiresMinutes}} minuter för att godkänna eller neka:\n\n{{link}}\n\nOm du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.\n",
       "html": "<p>Programmet <strong>{{client}}</strong> ber om åtkomst för kontot <strong>{{username}}</strong>: {{rights}}.</p><p>Ingenting tillåts förrän du godkänner det. <a href=\"{{link}}\">Godkänn eller neka</a> inom {{expiresMinutes}} minuter.</p><p>Om du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.</p>"
     },
+    "authzen-access-request": {
+      "subject": "{{service}}: en åtkomstbegäran väntar på ditt godkännande",
+      "text": "En åtkomstbegäran anger dig, {{username}}, som en av sina godkännare: {{subject}} begär att få {{action}} {{resource}} i programmet {{application}}, via {{requester}}.\n\nIngenting tillåts förrän en godkännare har godkänt den. Logga in och öppna den här sidan inom {{expiresMinutes}} minuter för att godkänna eller neka den:\n\n{{link}}\n\nOm du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.\n",
+      "html": "<p>En åtkomstbegäran anger dig, <strong>{{username}}</strong>, som en av sina godkännare: <strong>{{subject}}</strong> begär att få <strong>{{action}}</strong> <strong>{{resource}}</strong> i programmet <strong>{{application}}</strong>, via {{requester}}.</p><p>Ingenting tillåts förrän en godkännare har godkänt den. <a href=\"{{link}}\">Godkänn eller neka den</a> inom {{expiresMinutes}} minuter.</p><p>Om du inte känner igen begäran kan du neka den där eller strunta i det här meddelandet: den upphör av sig själv.</p>"
+    },
+    "authzen-emergency-access": {
+      "subject": "{{service}}: nödåtkomst har beviljats och behöver granskas",
+      "text": "Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, {{username}}, som en av sina godkännare: {{subject}} får {{action}} {{resource}} i programmet {{application}}, via {{requester}}, under en kort tid.\n\nDen angivna motiveringen: {{justification}}\n\nPolicyn tillåter nödåtkomst till detta. Granska den och återkalla den om den inte var befogad:\n\n{{link}}\n",
+      "html": "<p>Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, <strong>{{username}}</strong>, som en av sina godkännare: <strong>{{subject}}</strong> får <strong>{{action}}</strong> <strong>{{resource}}</strong> i programmet <strong>{{application}}</strong>, via {{requester}}, under en kort tid.</p><p>Den angivna motiveringen: {{justification}}</p><p>Policyn tillåter nödåtkomst till detta. <a href=\"{{link}}\">Granska den</a> och återkalla den om den inte var befogad.</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}}: {{act}} för {{username}}",
       "text": "Tjänsten, inte en person, utförde en åtgärd på kontot {{username}} {{when}}: {{act}}.\n\n{{why}}\n\nDu får detta eftersom du har Admin Write i den här sfären.\n",

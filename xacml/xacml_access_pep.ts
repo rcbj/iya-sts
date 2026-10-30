@@ -116,6 +116,14 @@ interface AccessQuestion {
   reportObject?: {
     kind: string; owner: string; groups?: string[]; person: string;
   } | null;
+  // An AuthZEN access request being decided (#1180):
+  // `common/access_gate.ts`.
+  accessRequestObject?: {
+    id: string; requester: string; subject: string; subjectType: string;
+    action: string; resource: string; resourceType: string;
+    application: string; eligible: boolean; door: string;
+    approverIdentity: string[];
+  } | null;
 }
 
 // What a decision answers.
@@ -408,6 +416,34 @@ class XacmlAccessPep {
         .resource(ATTRIBUTE.REPORT_SHARED_GROUP,
                   (row.groups || []).map(String))
         .subject(ATTRIBUTE.OWNER_SUBJECT, [String(row.person || '')]);
+    }
+    // THE ACCESS REQUEST RULE'S QUESTION (#1180): the request's tuple and
+    // who asked it on the resource, who the approver is and whether the
+    // advice named them on the subject, and the door on the environment.
+    // The fourth rule compares the approver's identity with the request's
+    // subject and requester, so self-approval is a rule.
+    const ask = asked.accessRequestObject;
+    if (ask && ask.id) {
+      req.resource(ATTRIBUTE.ACCESS_REQUEST_ID, [String(ask.id)])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_REQUESTER,
+                  [String(ask.requester || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_SUBJECT,
+                  [String(ask.subject || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_SUBJECT_TYPE,
+                  [String(ask.subjectType || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_ACTION, [String(ask.action || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_RESOURCE,
+                  [String(ask.resource || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_RESOURCE_TYPE,
+                  [String(ask.resourceType || '')])
+        .resource(ATTRIBUTE.ACCESS_REQUEST_APPLICATION,
+                  [String(ask.application || '')])
+        .subject(ATTRIBUTE.APPROVER_ELIGIBLE,
+                 [ask.eligible === true ? 'true' : 'false'],
+                 model.TYPE.BOOLEAN)
+        .subject(ATTRIBUTE.APPROVER_IDENTITY,
+                 (ask.approverIdentity || []).map(String))
+        .environment(ATTRIBUTE.APPROVER_DOOR, [String(ask.door || '')]);
     }
     req.category(model.CATEGORY.ENVIRONMENT);
     log.debug("Leaving XacmlAccessPep.buildRequest().");

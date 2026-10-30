@@ -13409,6 +13409,71 @@ const SETTINGS = [
                  'a Permit false. Off by default: a reason tells a caller ' +
                  'something about the policy, and decision alone is the ' +
                  'answer either way.' },
+  // THE ACCESS REQUEST AND APPROVAL PROFILE (#1180), a draft: a denial the
+  // policy marks requestable becomes a task an approver decides, and an
+  // approval reaches the next evaluation only as trusted facts the root
+  // policy reads. authzen/CLAUDE.md argues it.
+  { key: 'authzen.accessRequests', group: 'AuthZEN',
+    label: 'Access requests and approvals',
+    env: 'STS_AUTHZEN_ACCESS_REQUESTS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'The AuthZEN Access Request and Approval Profile (a ' +
+                 'draft), with its callback companion. When on, a Deny ' +
+                 'whose XACML answer carries the advice ' +
+                 'urn:sts:xacml:advice:access-request answers false with ' +
+                 'context.access_request; a PEP submits it to ' +
+                 'POST /access/v1/access-requests, an approver named by the ' +
+                 'advice decides it in the portal or the console, and an ' +
+                 'approval presented on the next evaluation reaches the ' +
+                 'root policy as trusted facts. The metadata names the ' +
+                 'endpoint and the capability. A denial without the advice ' +
+                 'is never requestable. Off, the routes answer 501 and no ' +
+                 'denial is requestable.' },
+  { key: 'authzen.accessRequestDenialLifetimeS', group: 'AuthZEN',
+    label: 'How long a requestable denial may be submitted (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_DENIAL_LIFETIME_S', type: 'int',
+    dflt: 600, min: 30, max: 86400, runtime: true,
+    description: 'The expires_at of a requestable denial and the lifetime ' +
+                 'of its binding_token: a submission after it is refused ' +
+                 'expired_denial and the PEP evaluates again.' },
+  { key: 'authzen.accessRequestLifetimeS', group: 'AuthZEN',
+    label: 'How long an access request waits for an approver (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_LIFETIME_S', type: 'int',
+    dflt: 604800, min: 60, max: 31536000, runtime: true,
+    description: 'A pending access request past this is expired, by the ' +
+                 'authzen.access-requests scheduler job and at every read. ' +
+                 'A finished one is kept a day longer for the PEP to read.' },
+  { key: 'authzen.accessRequestMaxApprovalS', group: 'AuthZEN',
+    label: 'The longest an approval holds (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_APPROVAL_S', type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'The ceiling of an approval\'s approved_until. The ' +
+                 'policy\'s advice (max-approval-seconds) and the ' +
+                 'requester\'s requested_until may each shorten it; ' +
+                 'neither lengthens it.' },
+  { key: 'authzen.accessRequestEmergencyS', group: 'AuthZEN',
+    label: 'How long emergency access holds (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_EMERGENCY_S', type: 'int',
+    dflt: 3600, min: 60, max: 86400, runtime: true,
+    description: 'An emergency access request — requested_access.emergency, ' +
+                 'where the policy\'s advice allows it, with a ' +
+                 'context.business_justification — is approved at once for ' +
+                 'at most this long, and its approvers are mailed to ' +
+                 'review it.' },
+  { key: 'authzen.accessRequestRetryAfterS', group: 'AuthZEN',
+    label: 'Retry-After on a pending access request (seconds)',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S', type: 'int', dflt: 30,
+    min: 1, max: 3600, runtime: true,
+    description: 'The Retry-After the task status endpoint answers while a ' +
+                 'request is pending; a PEP waits at least this long ' +
+                 'before it asks again.' },
+  { key: 'authzen.accessRequestMaxPending', group: 'AuthZEN',
+    label: 'Pending access requests a realm holds',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING', type: 'int',
+    dflt: 10000, min: 1, max: 1000000, runtime: true,
+    description: 'The most access requests one realm holds pending; past ' +
+                 'it a submission is refused 503 until some are decided or ' +
+                 'expire.' },
 
   // --- Shared Signals Framework (SSF) --------------------------------------
   //

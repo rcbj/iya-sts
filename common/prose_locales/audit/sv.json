@@ -899,6 +899,42 @@
     "en": "bacc42f309e8f6f8",
     "text": "En AuthZEN-anropares applikationsomfång angavs"
   },
+  "audit.actions.admin.authzen.callbacks.set.label": {
+    "en": "e8439c3ddb41d93f",
+    "text": "Callback-URL:erna för en AuthZEN-anropares åtkomstbegäran angavs"
+  },
+  "audit.actions.authzen.access-request.submitted.label": {
+    "en": "ce6c6f5f15939b8e",
+    "text": "En AuthZEN-åtkomstbegäran skickades in"
+  },
+  "audit.actions.authzen.access-request.approved.label": {
+    "en": "5148eda4f7a84802",
+    "text": "En AuthZEN-åtkomstbegäran godkändes"
+  },
+  "audit.actions.authzen.access-request.denied.label": {
+    "en": "22560158f5a3aaca",
+    "text": "En AuthZEN-åtkomstbegäran nekades"
+  },
+  "audit.actions.authzen.access-request.expired.label": {
+    "en": "2ced214d20f8f301",
+    "text": "En AuthZEN-åtkomstbegäran gick ut"
+  },
+  "audit.actions.authzen.access-request.cancelled.label": {
+    "en": "f00e80626f3daa82",
+    "text": "En AuthZEN-åtkomstbegäran avbröts"
+  },
+  "audit.actions.authzen.access-request.revoked.label": {
+    "en": "fdf6095a2de11ed6",
+    "text": "Godkännandet av en AuthZEN-åtkomstbegäran återkallades"
+  },
+  "audit.actions.authzen.access-request.approver-refused.label": {
+    "en": "fbeebe0256b7890e",
+    "text": "Policyn nekade en person beslutet om en AuthZEN-åtkomstbegäran"
+  },
+  "audit.actions.authzen.access-request.callback.label": {
+    "en": "432e877d55af1913",
+    "text": "Callbacken för en AuthZEN-åtkomstbegäran skickades eller misslyckades"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Utfärdande-PEP:en vägrade låta den här tjänsten prägla något"

@@ -5,6 +5,8 @@
   "sched.jobs.authn.account-set-expiry.describe": "Brings every browser's account set up to date (#561): an account whose session ended is remembered as signed out, one remembered longer than authn.rememberedAccountDays is dropped, and an empty set is deleted.",
   "sched.jobs.authn.session-expiry.title": "Session expiry",
   "sched.jobs.authn.session-expiry.describe": "Ends every sign-on session whose lifetime or idle timeout has passed, and, in each realm, at most that realm's authn.sessionShedPerSweep of one subject's own surplus sessions.",
+  "sched.jobs.authzen.access-requests.title": "AuthZEN access request expiry",
+  "sched.jobs.authzen.access-requests.describe": "Moves every pending AuthZEN access request (#1180) past its expires_at to expired — writing its audit row and sending its callback — and removes a finished one a day after it finished, or once its approval ran out if that is later. A read applies the deadline itself, so this is the record and the clean-up, never what decides.",
   "sched.jobs.caches.eject-expired.title": "Expired cache entries ejection",
   "sched.jobs.caches.eject-expired.describe": "Deletes, in this process, every cache and replay-store entry whose lifetime has passed — housekeeping only: each store still refuses an expired entry where it reads it.",
   "sched.jobs.cluster.claims-purge.title": "Expired claims sweep",

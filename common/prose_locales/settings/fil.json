@@ -6995,6 +6995,62 @@
     "en": "b02d024ed71640ad",
     "text": "Kapag naka-on, may dalang context ang isang decision na may XACML decision, ang dahilan, anumang advice, at ang mga obligation na nagpa-false sa isang Permit. Naka-off bilang default: may sinasabi ang isang dahilan sa caller tungkol sa policy, at ang decision lamang ang sagot alinman dito."
   },
+  "authzen.accessRequests|label": {
+    "en": "2b01a5135ed07a1a",
+    "text": "Mga access request at approval"
+  },
+  "authzen.accessRequests|description": {
+    "en": "8d07cfb7d8cb2450",
+    "text": "Ang AuthZEN Access Request and Approval Profile (isang draft), kasama ang callback companion nito. Kapag naka-on, ang Deny na ang XACML na sagot ay may advice na urn:sts:xacml:advice:access-request ay sinasagot ng false na may context.access_request; isinusumite ito ng isang PEP sa POST /access/v1/access-requests, ang approver na pinangalanan ng advice ang nagpapasya nito sa portal o sa console, at ang approval na iprinisenta sa susunod na evaluation ay umaabot sa root policy bilang trusted facts. Pinangangalanan ng metadata ang endpoint at ang capability. Ang denial na walang advice ay hindi kailanman maaaring hilingin. Kapag naka-off, 501 ang sagot ng mga route at walang denial na maaaring hilingin."
+  },
+  "authzen.accessRequestDenialLifetimeS|label": {
+    "en": "c9cf8e4874b316a2",
+    "text": "Gaano katagal maaaring isumite ang requestable na denial (segundo)"
+  },
+  "authzen.accessRequestDenialLifetimeS|description": {
+    "en": "387494b16914dfd5",
+    "text": "Ang expires_at ng isang requestable na denial at ang lifetime ng binding_token nito: ang pagsumite pagkatapos nito ay tinatanggihan bilang expired_denial at muling nag-evaluate ang PEP."
+  },
+  "authzen.accessRequestLifetimeS|label": {
+    "en": "a80904e033749e64",
+    "text": "Gaano katagal naghihintay ang access request sa approver (segundo)"
+  },
+  "authzen.accessRequestLifetimeS|description": {
+    "en": "7b5f40bb209248a0",
+    "text": "Ang pending na access request na lampas dito ay expired, sa pamamagitan ng scheduler job na authzen.access-requests at sa bawat pagbasa. Ang tapos na isa ay itinatago nang isang araw pa para mabasa ng PEP."
+  },
+  "authzen.accessRequestMaxApprovalS|label": {
+    "en": "d44ff473abd81709",
+    "text": "Ang pinakamatagal na tumatagal ang isang approval (segundo)"
+  },
+  "authzen.accessRequestMaxApprovalS|description": {
+    "en": "33b93dd4a4f7cd10",
+    "text": "Ang pinakamataas na limitasyon ng approved_until ng isang approval. Maaaring paikliin ito ng advice ng policy (max-approval-seconds) at ng requested_until ng humihiling; wala sa kanila ang nagpapahaba nito."
+  },
+  "authzen.accessRequestEmergencyS|label": {
+    "en": "7bb7042cf97f2712",
+    "text": "Gaano katagal tumatagal ang emergency access (segundo)"
+  },
+  "authzen.accessRequestEmergencyS|description": {
+    "en": "955d02890424af2a",
+    "text": "Ang emergency access request — requested_access.emergency, kung pinapayagan ng advice ng policy, na may context.business_justification — ay agad na inaaprubahan nang hindi hihigit sa tagal na ito, at ime-mail ang mga approver nito para suriin ito."
+  },
+  "authzen.accessRequestRetryAfterS|label": {
+    "en": "b0e42d5dfd85dcd7",
+    "text": "Retry-After sa pending na access request (segundo)"
+  },
+  "authzen.accessRequestRetryAfterS|description": {
+    "en": "5edce04c77b881f9",
+    "text": "Ang Retry-After na isinasagot ng task status endpoint habang pending ang isang request; naghihintay ang isang PEP nang kahit ganito katagal bago ito magtanong muli."
+  },
+  "authzen.accessRequestMaxPending|label": {
+    "en": "175388352c41e325",
+    "text": "Mga pending na access request na hawak ng isang realm"
+  },
+  "authzen.accessRequestMaxPending|description": {
+    "en": "6b3f5e73f6fcafaf",
+    "text": "Ang pinakamaraming access request na hawak ng isang realm bilang pending; lampas dito, tinatanggihan ang pagsumite nang may 503 hanggang may mapagpasyahan o mag-expire."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "Naka-enable ang SSF"
