@@ -5518,8 +5518,9 @@ const CODES = [
       '5.2): its time step is at or below the last one accepted.',
     spec: 'HTTP 200 one-time code page with the reason' },
   { code: 'STS-AUTHN-0107',
-    summary: 'A password policy save or reset named a profile other than ' +
-      '\'default\'.',
+    summary: 'A password policy save or reset named a profile that is ' +
+      'neither \'default\' nor a name of lower-case letters, digits and ' +
+      'hyphens (at most 64) (#1236; before it, any name but \'default\').',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0108',
     summary: 'A password policy save was refused because a field is missing, ' +
@@ -7249,6 +7250,20 @@ const CODES = [
     summary: 'A named passkey policy was not deleted: an application ' +
       '(appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm ' +
       'still names it (#1235).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0539',
+    summary: 'An application (appPasswordPolicy) or a group ' +
+      '(stsPasswordPolicy) names a password policy that this realm does ' +
+      'not hold — written past the console, or the policy was deleted by ' +
+      'hand — so the DEFAULT password policy applies to every password ' +
+      'that reference reaches, whatever else is named, until the policy ' +
+      'exists or the reference changes (#1236). Logged once per reference ' +
+      'per process.',
+    spec: 'none (logged; the password is held to the default profile)' },
+  { code: 'STS-AUTHN-0540',
+    summary: 'A named password policy was not deleted: an application ' +
+      '(appPasswordPolicy) or a group (stsPasswordPolicy) of this realm ' +
+      'still names it (#1236).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +

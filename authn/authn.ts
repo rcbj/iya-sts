@@ -17903,9 +17903,16 @@ class Authn {
     }
     // Screened against Pwned Passwords first (#62 P6).
     await require('../common/breached_passwords').screen(chosen);
+    // THE APPLICATION IS KNOWN HERE (#1236): the sign-in being resumed
+    // names it, so a password policy it names (`appPasswordPolicy`) ranks
+    // beside the person's groups'.
     const written = credentials.setPassword(step.username, chosen,
                                             { via: 'the forced password ' +
-                                                'change' });
+                                                'change',
+                                              application: String(
+                                                (step.authn &&
+                                                 step.authn.application) ||
+                                                '') });
     if (!written.ok) {
       errorCodes.mark(res, errorCodes.codeOf(written) || 'STS-AUTHN-0146');
       log.debug('Leaving Authn.passwordChangeAct(). The store refused ' +

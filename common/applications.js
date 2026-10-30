@@ -4644,6 +4644,26 @@ const SCHEMA = {
             'attribute names cannot be deleted (STS-I18N-0014).\n\nIt is ' +
             'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
             'and starts empty.' },
+    // THE PASSWORD POLICY THIS APPLICATION NAMES (#1236), `appPasskeyPolicy`'s
+    // arrangement: one value, checked at the write against `default` and
+    // this realm's named password policies. Read where a password is set
+    // with the application in hand — the sign-in's forced password change.
+    { name: 'appPasswordPolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE PASSWORD POLICY A PASSWORD SET WHILE SIGNING IN TO THIS ' +
+            'APPLICATION IS HELD TO: `default` (or empty), or the name of a ' +
+            'named password policy of this realm (Directory > Policies). ' +
+            'It competes on precedence with the password policy each of ' +
+            'the person\'s groups names (stsPasswordPolicy): the lowest ' +
+            'precedence applies, ties by name, and `default` where nothing ' +
+            'names one. A door with no application in hand (the portal, ' +
+            'the console, LDAP) ranks the groups\' alone.\n\nA name no ' +
+            'policy of this realm holds — written past the console — makes ' +
+            'the default password policy apply, whatever else is named, ' +
+            'and is logged (STS-AUTHN-0539). A named password policy this ' +
+            'attribute names cannot be deleted (STS-AUTHN-0540).\n\nIt is ' +
+            'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
+            'and starts empty.' },
     // -------------------------------------------------------------------
     // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564). The RESOURCE
     // application that declares an authorization_details type owns the
@@ -4971,6 +4991,8 @@ const EDITABLE = {
   appPasskeyPolicy: 'set',
   // #1238: the locale policy, the same reason.
   appLocalePolicy: 'set',
+  // #1236: the password policy, the same reason.
+  appPasswordPolicy: 'set',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -6203,6 +6225,12 @@ const ATTRIBUTE_CHOICES = {
       .map(function (one) { return String(one.name); })
       .filter(function (one) { return one !== 'default'; }));
   },
+  // `default` and this realm's named password policies (#1236).
+  appPasswordPolicy: function () {
+    return ['default'].concat(require('./password_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
   },
@@ -6290,7 +6318,7 @@ function enrollmentProfileChoices(withDevice) {
 // one per kind that an application selects: indexed by the kept listing and
 // asked by `applicationsNamingPolicy()`.
 const POLICY_REFERENCES = ['appAuthnPolicy', 'appPasskeyPolicy',
-  'appLocalePolicy'];
+  'appLocalePolicy', 'appPasswordPolicy'];
 
 const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelTokenDeliveryMode',
@@ -6303,6 +6331,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'appPasskeyPolicy',
   // #1238: the same, for the locale policy.
   'appLocalePolicy',
+  // #1236: the password policy's.
+  'appPasswordPolicy',
   'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
   'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
   // #395: a misspelt mode would silently be the default, and a misspelt
