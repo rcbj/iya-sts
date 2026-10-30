@@ -1042,9 +1042,9 @@ class PasswordPolicy {
   list(): PasswordProfile[] {
     const { log } = this.deps;
     log.debug('Entering PasswordPolicy.list().');
-    const named = this.haveDirectory()
+    const named = (this.haveDirectory()
       ? PolicySelection.named(this.directory.allPasswordPolicies(),
-                              SELECTION) : [];
+                              SELECTION) : []).sort(PolicySelection.compare);
     const rows = [this.read(DEFAULT_PROFILE)].concat(named.map((one) => {
       return this.read(one.name);
     }));
