@@ -80,6 +80,8 @@ import InstanceSlot = require('./instance_slot');
 // The sentences `describe()` makes are filled from SENTENCES below, so the
 // server can translate them into a console reader's language (#543).
 import serverProse = require('./server_prose');
+// The selection every policy kind shares (#1235, rule 3cx): a leaf.
+import PolicySelection = require('./policy_selection');
 
 const { log } = helpers;
 
@@ -163,7 +165,15 @@ const PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /**
  * Where a named profile ranks when its entry says nothing readable.
  */
-const DEFAULT_PRECEDENCE = 100;
+const DEFAULT_PRECEDENCE = PolicySelection.DEFAULT_PRECEDENCE;
+
+/**
+ * How `common/policy_selection.ts` reads a named profile (#1235): by group
+ * alone.
+ */
+const SELECTION = { groupAttribute: 'stsPostLoginSelectGroup',
+                    precedenceAttribute: 'stsPostLoginPrecedence',
+                    defaultPrecedence: DEFAULT_PRECEDENCE };
 
 /**
  * The activities a profile may ask for. One today.
@@ -553,9 +563,9 @@ class PostLoginPolicy {
   private precedenceOf(attributes: Record<string, unknown>): number {
     const { log } = this.deps;
     log.debug("Entering PostLoginPolicy.precedenceOf().");
-    const p = Number(this.firstValue(attributes, 'stsPostLoginPrecedence'));
+    const p = PolicySelection.precedenceOf(attributes, SELECTION);
     log.debug("Leaving PostLoginPolicy.precedenceOf().");
-    return p >= 1 && p <= 1000 ? p : DEFAULT_PRECEDENCE;
+    return p;
   }
 
   /**
@@ -704,38 +714,13 @@ class PostLoginPolicy {
     }
     let out = DEFAULT_PROFILE;
     try {
-      const named = this.directory.allPostLoginPolicies()
-        .filter(function (one) {
-          return String(one.name || '').toLowerCase() !== DEFAULT_PROFILE;
-        });
-      if (named.length) {
+      // THE SHARED SELECTION (#1235, rule 3cx), by group alone: no
+      // reference names a post-login profile yet.
+      const entries = this.directory.allPostLoginPolicies();
+      if (PolicySelection.named(entries, SELECTION).length) {
         const held = typeof groupsOf === 'function' ? groupsOf()
           : this.personGroups(username);
-        const groups = (held || [])
-          .map(function (g: any) {
-            return [String(g.cn || '').toLowerCase(),
-                    String(g.dn || '').toLowerCase()];
-          }).reduce(function (all: string[], two: string[]) {
-            return all.concat(two);
-          }, []).filter(Boolean);
-        const hit = named.map((entry) => {
-          const at = entry.attributes || {};
-          return {
-            name: String(entry.name).toLowerCase(),
-            precedence: this.precedenceOf(at),
-            groups: this.allValues(at, 'stsPostLoginSelectGroup')
-              .map(function (one) {
-                return one.trim().toLowerCase();
-              })
-          };
-        }).filter(function (one) {
-          return one.groups.some(function (g) {
-            return groups.indexOf(g) >= 0;
-          });
-        }).sort(function (a, b) {
-          return a.precedence - b.precedence || (a.name < b.name ? -1 : 1);
-        })[0];
-        out = hit ? hit.name : DEFAULT_PROFILE;
+        out = PolicySelection.rank(entries, SELECTION, [], held || []).name;
       }
     } catch (e) {
       // A directory that cannot be asked gives the default: the sign-in is

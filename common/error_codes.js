@@ -7237,6 +7237,17 @@ const CODES = [
       'policy exists or the reference changes (#1148).',
     spec: 'none (logged; the sign-in is refused as for a mechanism the ' +
       'application does not allow)' },
+  { code: 'STS-AUTHN-0537',
+    summary: 'An application names a passkey policy (appPasskeyPolicy) ' +
+      'that this realm does not hold — written past the console, or the ' +
+      'policy was deleted by hand — so the default passkey policy applies ' +
+      'to a sign-in for it until the policy exists or the reference ' +
+      'changes (#1235).',
+    spec: 'none (logged; the sign-in goes on under the default profile)' },
+  { code: 'STS-AUTHN-0538',
+    summary: 'A named passkey policy was not deleted: an application of ' +
+      'this realm still names it (appPasskeyPolicy) (#1235).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

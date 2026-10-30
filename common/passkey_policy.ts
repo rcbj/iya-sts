@@ -156,6 +156,20 @@
 //     sign-in screen), the application; `/portal/keys` and activation know
 //     no application, so only group selectors apply there.
 //
+// #1235 (2026-10-30, rcbj's decision on #1234) MOVED THE APPLICATION SIDE ONTO
+// THE APPLICATION: `stsPasskeySelectApplication` is gone, and an application
+// names its passkey policy in ONE attribute of its own, `appPasskeyPolicy`
+// (`default`, empty, or a named profile of the realm; checked at the write,
+// STS-REG-0203), as `appAuthnPolicy` names its authentication policy (#1148).
+// A profile still selects GROUPS. The candidates are the profile the
+// application names and every profile selecting one of the person's groups,
+// ranked as above by `common/policy_selection.ts` (rule 3cx), the one
+// selection every kind shares. A name the realm does not hold — written past
+// the console — selects `default`, the realm's baseline, and is logged
+// (STS-AUTHN-0537); a profile an application still names is not deleted
+// (STS-AUTHN-0538). No migration is owed: a stored application list is
+// simply no longer read.
+//
 // #534 (2026-10-08) added `aggregateDevices`, ON — what the sign-in did
 // before: one "Use passkey" ceremony whose `allowCredentials` lists every
 // key of the step's role, the authenticator choosing. Off, a person holding
@@ -342,6 +356,8 @@ import issuanceGate = require('./issuance_gate');
 // A leaf over `config` and `error_codes`, both already below this module.
 import mode = require('./mode');
 // THE AMBIENT SELECTION (#535), for the rest of a request.
+// The selection every policy kind shares (#1235, rule 3cx): a leaf.
+import PolicySelection = require('./policy_selection');
 import { AsyncLocalStorage } from 'async_hooks';
 
 const { log } = helpers;
@@ -575,9 +591,6 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 const SELECTORS = [
-  { key: 'selectApplications', attribute: 'stsPasskeySelectApplication',
-    what: 'The applications (identifier or client_id) a named passkey ' +
-          'policy applies to, at a sign-in for one of them.' },
   { key: 'selectGroups', attribute: 'stsPasskeySelectGroup',
     what: 'The groups (cn or DN) whose members a named passkey policy ' +
           'applies to.' },
@@ -585,7 +598,17 @@ const SELECTORS = [
     what: 'Which named passkey policy wins where several match: the lowest, ' +
           'from 1 to 1000.' }
 ];
-const DEFAULT_PRECEDENCE = 100;
+const DEFAULT_PRECEDENCE = PolicySelection.DEFAULT_PRECEDENCE;
+/**
+ * How `common/policy_selection.ts` reads a named profile (#1235).
+ */
+const SELECTION = { groupAttribute: 'stsPasskeySelectGroup',
+                    precedenceAttribute: 'stsPasskeyPrecedence',
+                    defaultPrecedence: DEFAULT_PRECEDENCE };
+/**
+ * The attributes that NAME a passkey profile (#1235): on an application.
+ */
+const REFERENCES = Object.freeze({ application: 'appPasskeyPolicy' });
 /**
  * A selection (#535).
  */
@@ -1467,154 +1490,124 @@ class PasskeyPolicy {
 
   /**
    * Works out which profile applies to a person signing in to an
-   * application, without selecting it: the matching named profile with the
-   * lowest precedence (ties by name), else `default`.
+   * application, without selecting it: of the profile the application names
+   * (`appPasskeyPolicy`, #1235) and the named profiles selecting one of the
+   * person's groups, the lowest precedence (ties by name), else `default`.
    *
    * @param username - the person, or '' where not yet known
-   * @param application - the application, or '' where none is known
+   * @param application - the application (its identifier or a client_id),
+   *   or '' where none is known
    * @returns the profile name
    */
   selectionFor(username: string, application: string): string {
-    const { log } = this.deps;
+    const { log, errorCodes } = this.deps;
     log.debug("Entering PasskeyPolicy.selectionFor().");
     if (!this.haveDirectory()) {
       log.debug("Leaving PasskeyPolicy.selectionFor(). No directory.");
       return DEFAULT_PROFILE;
     }
-    const named = this.directory.allPasskeyPolicies().filter(function (one) {
-      return String(one.name || '').toLowerCase() !== DEFAULT_PROFILE;
-    });
-    if (!named.length) {
+    const entries = this.directory.allPasskeyPolicies();
+    if (!PolicySelection.named(entries, SELECTION).length) {
       log.debug("Leaving PasskeyPolicy.selectionFor(). None named.");
       return DEFAULT_PROFILE;
     }
-    const app = String(application || '').trim().toLowerCase();
     const hook = this.directory.personGroups;
     const groups = username && typeof hook === 'function'
-      ? (hook.call(this.directory, username) || []).map(function (g: any) {
-        return [String(g.cn || '').toLowerCase(),
-                String(g.dn || '').toLowerCase()];
-      }).reduce(function (all: string[], two: string[]) {
-        return all.concat(two);
-      }, []).filter(Boolean)
-      : [];
-    const matching = named.map((entry) => {
-      const at = entry.attributes || {};
-      const p = Number(this.firstValue(at, 'stsPasskeyPrecedence'));
-      return {
-        name: String(entry.name).toLowerCase(),
-        precedence: p >= 1 && p <= 1000 ? p : DEFAULT_PRECEDENCE,
-        apps: this.allValues(at, 'stsPasskeySelectApplication')
-          .map(function (one) { return one.trim().toLowerCase(); }),
-        groups: this.allValues(at, 'stsPasskeySelectGroup')
-          .map(function (one) { return one.trim().toLowerCase(); })
-      };
-    }).filter(function (one) {
-      return (!!app && one.apps.indexOf(app) >= 0) ||
-             one.groups.some(function (g) { return groups.indexOf(g) >= 0; });
-    }).sort(function (a, b) {
-      return a.precedence - b.precedence || (a.name < b.name ? -1 : 1);
-    });
-    const out = matching.length ? matching[0].name : DEFAULT_PROFILE;
-    log.debug("Leaving PasskeyPolicy.selectionFor(). " + out);
+      ? (hook.call(this.directory, username) || []) : [];
+    const ranked = PolicySelection.rank(entries, SELECTION, [
+      { by: 'application', value: this.applicationReference(application) }
+    ], groups);
+    if (ranked.missing.length) {
+      // A REFERENCE NO PROFILE ANSWERS (#1235) selects the baseline: the
+      // default profile is never weaker than nothing, which is why this kind
+      // reads it where the authentication policy fails closed.
+      log.warn(errorCodes.tag('STS-AUTHN-0537') + 'passkey policy: the ' +
+               'application "' + application + '" names the passkey ' +
+               'policy "' + ranked.missing[0].name + '", which this realm ' +
+               'does not hold; the default profile applies to it until ' +
+               'the policy exists or appPasskeyPolicy changes.');
+    }
+    log.debug("Leaving PasskeyPolicy.selectionFor(). " + ranked.name);
+    return ranked.name;
+  }
+
+  // THE PROFILE AN APPLICATION NAMES (#1235): its `appPasskeyPolicy`, found
+  // by what a sign-in names it by — a client_id, else its identifier. The
+  // registry is required LAZILY: it is loaded after this leaf, and a require
+  // at load would close a cycle. '' where nothing is named or nothing can be
+  // asked.
+  private applicationReference(application: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.applicationReference().");
+    const name = String(application === undefined || application === null
+      ? '' : application).trim();
+    if (!name) {
+      log.debug("Leaving PasskeyPolicy.applicationReference(). None.");
+      return '';
+    }
+    let out = '';
+    try {
+      const applications = require('./applications');
+      const row = applications.forClientId(name) || applications.get(name);
+      out = String([].concat(((row && row.fields) || {})[
+        REFERENCES.application] || [])[0] || '');
+    } catch (e) {
+      log.debug("Caught in PasskeyPolicy.applicationReference(): " +
+                ((e && e.message) || e));
+      out = '';
+    }
+    log.debug("Leaving PasskeyPolicy.applicationReference(). " +
+              (out || 'none'));
     return out;
   }
 
   // -------------------------------------------------------------------------
-  // THE POLICIES THAT NAME ONE APPLICATION (#609), for its page: read-only,
-  // and nothing is stored for it — the relation is the named profiles'
-  // `stsPasskeySelectApplication` and nothing else (rcbj's decision 1). An
-  // application answers to its identifier and to each client_id, matched as
-  // `selectionFor()` matches the one a sign-in names: trimmed and in any
-  // case. The one that applies is the lowest precedence among them (ties by
-  // name), `selectionFor()`'s order, else `default` — for a sign-in naming
-  // the application and nobody yet; a profile selecting a group the person
-  // is in can still win for that person, which the page says.
+  // THE APPLICATION PAGE'S ANSWER (#609, reshaped by #1235): the profile the
+  // application names in `appPasskeyPolicy` (its picker is that field),
+  // whether the realm holds it, what a sign-in naming it gets before any
+  // person is known, and how many named profiles select by group and could
+  // still win for a person.
   // -------------------------------------------------------------------------
   /**
-   * Lists this realm's named profiles that name an application, in the
-   * order `selectionFor()` ranks them, and which one applies to it.
+   * Says which passkey profile an application's reference comes to.
    *
-   * @param names - what the application answers to: its identifier and each
-   *   client_id
-   * @returns `{ policies, applies, appliesBy, groupPolicies }` — each
-   *   policy `{ name, dn, precedence, selectApplications, selectGroups,
-   *   matched, applies }`; `applies` the lowest precedence naming the
-   *   application by any of its names, else `default`; `appliesBy` the
-   *   profile a sign-in naming it by each one gets before any person is
-   *   known; `groupPolicies` how many named profiles select by group and
-   *   could still win for a person
+   * @param reference - the application's `appPasskeyPolicy` value
+   * @returns `{ named, missing, applies, precedence, groupPolicies }`
    */
-  forApplication(names: unknown[]): {
-      policies: Array<{ name: string; dn: string; precedence: number;
-                        selectApplications: string[];
-                        selectGroups: string[]; matched: string[];
-                        applies: boolean }>;
-      applies: string; appliesBy: Record<string, string>;
+  forApplication(reference: unknown): {
+      named: string; missing: boolean; applies: string; precedence: number;
       groupPolicies: number } {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.forApplication().");
-    const wanted = (Array.isArray(names) ? names : []).map(function (one) {
-      return String(one === undefined || one === null ? '' : one).trim()
-        .toLowerCase();
-    }).filter(Boolean);
-    if (!this.haveDirectory()) {
-      log.debug("Leaving PasskeyPolicy.forApplication(). No directory.");
-      return { policies: [], applies: DEFAULT_PROFILE, appliesBy: {},
-               groupPolicies: 0 };
+    const entries = this.haveDirectory()
+      ? this.directory.allPasskeyPolicies() : [];
+    const out = PolicySelection.forReference(entries, SELECTION, reference);
+    log.debug("Leaving PasskeyPolicy.forApplication(). " + out.applies);
+    return out;
+  }
+
+  /**
+   * The applications naming a named profile (#1235): what refuses its delete
+   * and what its Named policies entry lists. Lazily, for
+   * `applicationReference()`'s reason.
+   *
+   * @param name - the profile's name
+   * @returns the applications' identifiers
+   */
+  namedBy(name: unknown): { applications: string[]; people: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.namedBy().");
+    let applications: string[] = [];
+    try {
+      applications = require('./applications')
+        .applicationsNamingPolicy(REFERENCES.application, name);
+    } catch (e) {
+      log.debug("Caught in PasskeyPolicy.namedBy(): " +
+                ((e && e.message) || e));
+      applications = [];
     }
-    const named = this.directory.allPasskeyPolicies().filter(function (one) {
-      return String(one.name || '').toLowerCase() !== DEFAULT_PROFILE;
-    }).map((entry) => {
-      const at = entry.attributes || {};
-      const p = Number(this.firstValue(at, 'stsPasskeyPrecedence'));
-      const apps = this.allValues(at, 'stsPasskeySelectApplication');
-      return {
-        name: String(entry.name).toLowerCase(),
-        dn: String(entry.dn || ''),
-        precedence: p >= 1 && p <= 1000 ? p : DEFAULT_PRECEDENCE,
-        selectApplications: apps,
-        selectGroups: this.allValues(at, 'stsPasskeySelectGroup'),
-        matched: apps.filter(function (one) {
-          return wanted.indexOf(one.trim().toLowerCase()) >= 0;
-        }),
-        applies: false
-      };
-    });
-    const policies = named.filter(function (one) {
-      return one.matched.length > 0;
-    }).sort(function (a, b) {
-      return a.precedence - b.precedence || (a.name < b.name ? -1 : 1);
-    });
-    if (policies.length) {
-      policies[0].applies = true;
-    }
-    const groupPolicies = named.filter(function (one) {
-      return one.selectGroups.length > 0;
-    }).length;
-    const applies = policies.length ? policies[0].name : DEFAULT_PROFILE;
-    // A SIGN-IN NAMES ONE OF THEM — an OAuth client its client_id, SAML its
-    // entity ID — so where two policies name the application by different
-    // names, which applies depends on the name: `selectionFor()`'s answer
-    // for each, before any person is known.
-    const appliesBy: Record<string, string> = {};
-    (Array.isArray(names) ? names : []).forEach(function (one) {
-      const raw = String(one === undefined || one === null ? '' : one).trim();
-      if (!raw) {
-        return;
-      }
-      const lower = raw.toLowerCase();
-      const first = policies.filter(function (p) {
-        return p.matched.some(function (m) {
-          return m.trim().toLowerCase() === lower;
-        });
-      })[0];
-      appliesBy[raw] = first ? first.name : DEFAULT_PROFILE;
-    });
-    log.debug("Leaving PasskeyPolicy.forApplication(). " + policies.length +
-              " name it; " + applies + " applies.");
-    return { policies: policies, applies: applies, appliesBy: appliesBy,
-             groupPolicies: groupPolicies };
+    log.debug("Leaving PasskeyPolicy.namedBy(). " + applications.length);
+    return { applications: applications, people: [] };
   }
 
   /**
@@ -1761,17 +1754,14 @@ class PasskeyPolicy {
       });
     }
     const at = entry ? (entry.attributes || {}) : {};
-    const precedence = Number(this.firstValue(at, 'stsPasskeyPrecedence'));
     const out = Object.assign({
       name: profile,
-      // THE SELECTORS (#535): empty for `default`, which needs none.
-      selectApplications: profile === DEFAULT_PROFILE ? []
-        : this.allValues(at, 'stsPasskeySelectApplication'),
+      // THE SELECTORS (#535): empty for `default`, which needs none. The
+      // applications name a profile themselves since #1235.
       selectGroups: profile === DEFAULT_PROFILE ? []
         : this.allValues(at, 'stsPasskeySelectGroup'),
       precedence: profile === DEFAULT_PROFILE ? 0
-        : (precedence >= 1 && precedence <= 1000 ? precedence
-                                                 : DEFAULT_PRECEDENCE),
+        : PolicySelection.precedenceOf(at, SELECTION),
       stored: found.from === 'realm',
       inherited: found.from === 'default-realm',
       from: found.from,
@@ -3277,53 +3267,21 @@ class PasskeyPolicy {
     return null;
   }
 
-  // A named profile's selectors as sent (#535): lists by comma, line or
-  // array, each value at most 256 characters with no control character, at
-  // most 32 of each, and a precedence from 1 to 1000 (100 when omitted).
+  // A named profile's selectors as sent (#535): its groups by comma, line or
+  // array, each at most 256 characters with no control character, at most
+  // 32, and a precedence from 1 to 1000 (100 when omitted) —
+  // `PolicySelection.checkSelectors()` (#1235). A profile with no group is
+  // no longer refused: an application may name it (`appPasskeyPolicy`).
   private checkSelectors(given: Record<string, any>):
-      { applications: string[]; groups: string[]; precedence: number;
-        problems: string[] } {
+      { groups: string[]; precedence: number; problems: string[] } {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.checkSelectors().");
-    const problems: string[] = [];
-    const listOf = function (raw: unknown, what: string): string[] {
-      log.debug("Entering checkSelectors() listOf().");
-      const items = (Array.isArray(raw) ? raw : String(raw === undefined ||
-                                                       raw === null ? ''
-                                                                    : raw)
-        .split(/[,\n]/)).map(function (one) {
-          return String(one).trim();
-        }).filter(Boolean);
-      if (items.length > 32 || items.some(function (one) {
-        return one.length > 256 || /[\u0000-\u001f\u007f]/.test(one);
-      })) {
-        problems.push(what + ' must be at most 32 values of at most 256 ' +
-                      'characters each, with no control character.');
-      }
-      log.debug("Leaving checkSelectors() listOf().");
-      return items.slice(0, 32);
-    };
-    const applications = listOf(given.selectApplications,
-                                'The applications a named profile applies to');
-    const groups = listOf(given.selectGroups,
-                          'The groups a named profile applies to');
-    const raw = given.precedence;
-    const precedence = raw === undefined || raw === null || raw === ''
-      ? DEFAULT_PRECEDENCE : Number(raw);
-    if (!(Number.isInteger(precedence) && precedence >= 1 &&
-          precedence <= 1000)) {
-      problems.push('The precedence of a named profile is a whole number ' +
-                    'from 1 to 1000; "' + String(raw).slice(0, 20) +
-                    '" is not.');
-    }
-    if (!applications.length && !groups.length) {
-      problems.push('A named profile with no application and no group ' +
-                    'would apply to nobody; name at least one.');
-    }
-    log.debug("Leaving PasskeyPolicy.checkSelectors(). " + problems.length +
-              " problem(s).");
-    return { applications: applications, groups: groups,
-             precedence: precedence, problems: problems };
+    const out = PolicySelection.checkSelectors(given, SELECTION,
+                                               { maxValues: 32,
+                                                 maxLength: 256 });
+    log.debug("Leaving PasskeyPolicy.checkSelectors(). " +
+              out.problems.length + " problem(s).");
+    return out;
   }
 
   // A save's values with every optional row it left out filled as the save
@@ -3638,7 +3596,6 @@ class PasskeyPolicy {
       delete attributes.description;
     }
     if (selectors) {
-      attributes.stsPasskeySelectApplication = selectors.applications;
       attributes.stsPasskeySelectGroup = selectors.groups;
       attributes.stsPasskeyPrecedence = String(selectors.precedence);
     }
@@ -3674,6 +3631,17 @@ class PasskeyPolicy {
     if (!this.haveDirectory()) {
       log.debug('Leaving PasskeyPolicy.reset(). No directory.');
       return { ok: true, removed: false, profile: this.read(which) };
+    }
+    // NOT WHILE AN APPLICATION NAMES IT (#1235): it would be left naming a
+    // profile the realm does not hold. The groups it selects are on the
+    // profile and go with it, so they refuse nothing.
+    const held = which === DEFAULT_PROFILE ? null
+      : PolicySelection.deleteProblem('passkey policy', which,
+                                      this.namedBy(which));
+    if (held) {
+      log.debug('Leaving PasskeyPolicy.reset(). Still named.');
+      return errorCodes.mark({ ok: false, errors: [held] },
+                             'STS-AUTHN-0538');
     }
     // A NAMED PROFILE IS REMOVED WHOLE (#535); `default` goes back to
     // inheriting.
@@ -3772,6 +3740,8 @@ export = {
   select: slot.forward('select'),
   selectionFor: slot.forward('selectionFor'),
   forApplication: slot.forward('forApplication'),
+  namedBy: slot.forward('namedBy'),
+  REFERENCES: REFERENCES,
   selectedName: slot.forward('selectedName'),
   hasSelection: slot.forward('hasSelection'),
   withSelection: slot.forward('withSelection'),
