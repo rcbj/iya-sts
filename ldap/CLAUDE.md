@@ -194,6 +194,17 @@ from `listen()`* is the rule this is an instance of.
    — deliberately, because the record being written was read from that entry a
    moment ago, so merging would make it impossible ever to REMOVE a value and a
    redirect URI deleted with `ldapmodify` would come back on the next request.
+   **That argument covers only the attributes the registry MODELS (#1230,
+   2026-10-30)**, so only those are replaced: `save()` passes
+   `applications.ownedAttributeNames()` (lower-cased base names, `;binary`
+   folded away) and `withUnownedAttributes()` carries every other attribute
+   of the existing entry onto the new one. Until then every sighting —
+   `POST /ssf/stream`'s receiver, a SAML SP's sign-in — erased a certificate
+   `add-certificate` had stored (`userCertificate;binary`), and an attribute
+   an operator added with `ldapmodify`, with no audit row; a Shared Signals
+   receiver authenticating by that certificate was then refused
+   STS-SSF-0151. The carried attributes are on the stored entry, so the
+   journal writes them with it. `tests/application_entry_unowned.js` holds it.
 
    **ONE ENTRY PER PERSON, AND IT IS ENFORCED AT FOUR DOORS RATHER THAN ASSUMED
    AT ONE.** Most of it was already true by accident: `identityOf()` normalises
