@@ -108,8 +108,8 @@
     "text": "GNAP: mga expired na grant"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Tinatapos ang bawat GNAP grant na natapos na ang interaction o grant lifetime (gnap.grantLifetimeS) at hindi na nagalaw ng anumang request mula noon, at nire-record kung bakit (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Tinatapos ang bawat GNAP grant na tapos na ang interaction o ang grant lifetime (gnap.grantLifetimeS) at hindi na nagalaw ng anumang request mula noon, at itinatala kung bakit (#432), at binubura ang bawat instance record na hindi nagamit nang ganoon katagal (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",

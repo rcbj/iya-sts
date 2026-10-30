@@ -403,6 +403,14 @@
     "en": "d4fb2f482bdf2751",
     "text": "第 3.5 節：以值傳送金鑰的用戶端會獲得一個 instance_id，下次可以參照方式傳送。"
   },
+  "gnap.unregisteredInstances|label": {
+    "en": "f3003fa68f6cd2d8",
+    "text": "接受已註冊用戶端的未註冊執行個體"
+  },
+  "gnap.unregisteredInstances|description": {
+    "en": "1b930b5da711360a",
+    "text": "第 2.3 和 2.3.3 節：任何應用程式都未註冊的金鑰，若其 class_id 指明的已註冊 GNAP 用戶端列有已註冊的 gnapFinishUri，則被接受為該用戶端的執行個體——瀏覽器應用程式（每個瀏覽器產生一個金鑰）就是這樣讓使用者登入的。此類執行個體從不略過核准頁面。關閉時：在產品模式下拒絕未註冊的金鑰（#1216）。"
+  },
   "gnap.continueAfterApproval|label": {
     "en": "4f08ba78aed4a5de",
     "text": "保持已核准授權可繼續"

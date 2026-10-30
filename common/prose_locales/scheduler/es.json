@@ -108,8 +108,8 @@
     "text": "GNAP: concesiones caducadas"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "Finaliza cada concesión GNAP cuya vida útil de interacción o de concesión (gnap.grantLifetimeS) haya terminado y que ninguna solicitud haya tocado desde entonces, registrando el motivo (#432)."
+    "en": "7e87c3407b68cee0",
+    "text": "Finaliza cada concesión GNAP cuya interacción o vigencia de la concesión (gnap.grantLifetimeS) ha terminado y que ninguna solicitud ha tocado desde entonces, registrando el motivo (#432), y elimina cada registro de instancia sin usar durante ese mismo tiempo (#1221)."
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",

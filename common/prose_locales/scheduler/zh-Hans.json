@@ -108,8 +108,8 @@
     "text": "GNAP：过期授予"
   },
   "sched.jobs.gnap.grant-expiry.describe": {
-    "en": "d5ae13ff9e6e4b50",
-    "text": "终结每个交互或授予生存期（gnap.grantLifetimeS）已结束、且此后没有任何请求触及的 GNAP 授予，并记录原因（#432）。"
+    "en": "7e87c3407b68cee0",
+    "text": "将交互或授权有效期（gnap.grantLifetimeS）已结束、且此后没有任何请求触及的每个 GNAP 授权终结，并记录原因（#432）；同时删除在同样时长内未被使用的每条实例记录（#1221）。"
   },
   "sched.jobs.gnap.spend-purge.title": {
     "en": "cefadb9704ec0cd1",
