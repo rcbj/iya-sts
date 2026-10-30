@@ -152,8 +152,8 @@
     "text": "draft-behera-ldap-password-policy 中用于密码策略条目的类。`pwdAttribute` 指明该策略管辖的属性，在这里始终为 `userPassword`。"
   },
   "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
-    "en": "4daf3a60dd76691a",
-    "text": "本服务自己的类，承载草案没有对应属性的组成规则和生成长度。该条目以配置文件命名（`cn=default`）。"
+    "en": "4a651241a26c3b18",
+    "text": "本服务自己的类，承载草案没有对应属性的组成规则和生成长度。该条目以配置文件命名：`cn=default`，或某个命名策略的名称。"
   },
   "password.SCHEMA.attributes.pwdAttribute.what": {
     "en": "603a95b316f4b6f5",
@@ -211,6 +211,10 @@
     "en": "b088d02f4ec32169",
     "text": "算法为 scrypt 时，新存储密码的 scrypt 并行度。Node 在一个线程上计算它，因此更高的值耗费的是时间而不是核心；成本的说明列出了 OWASP 接受的组合。"
   },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "为同一个人命名了多个命名密码策略时哪一个生效：最低者，取值 1 到 1000。"
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "此配置文件的用途，留给下一个人看。"
@@ -222,6 +226,10 @@
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",
     "text": "密码上次设置的时间，采用 GeneralizedTime 格式。由本服务维护。"
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "为同一个人命名了多个命名密码策略时哪一个生效：最低者，取值 1 到 1000。"
   },
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",

@@ -514,7 +514,7 @@ const SCHEMA = {
       what: 'This service\'s own class, carrying the composition rules and ' +
             'the generated length the draft has no attribute for. The entry ' +
             'is named by the PROFILE: `cn=default`, or a named policy\'s ' +
-            'name (#1236).' }
+            'name.' }
   ],
   attributes: [
     { name: 'pwdAttribute',

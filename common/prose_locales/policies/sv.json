@@ -152,8 +152,8 @@
     "text": "Klassen från draft-behera-ldap-password-policy för en post med en lösenordspolicy. `pwdAttribute` anger attributet som policyn styr, och här är det alltid `userPassword`."
   },
   "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
-    "en": "4daf3a60dd76691a",
-    "text": "Den här tjänstens egen klass, som bär sammansättningsreglerna och den genererade längden som utkastet saknar attribut för. Posten namnges efter PROFILEN (`cn=default`)."
+    "en": "4a651241a26c3b18",
+    "text": "Den här tjänstens egen klass, som bär sammansättningsreglerna och den genererade längden som utkastet saknar attribut för. Posten namnges efter PROFILEN: `cn=default`, eller en namngiven policys namn."
   },
   "password.SCHEMA.attributes.pwdAttribute.what": {
     "en": "603a95b316f4b6f5",
@@ -211,6 +211,10 @@
     "en": "b088d02f4ec32169",
     "text": "scrypts parallellism för ett nyligen lagrat lösenord när algoritmen är scrypt. Node beräknar den på en tråd, så ett högre värde kostar tid snarare än kärnor; kostnadens beskrivning listar de par som OWASP godtar."
   },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Vilken namngiven lösenordspolicy som vinner där flera namnges för en person: den lägsta, från 1 till 1000."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Vad profilen är till för, för nästa person."
@@ -222,6 +226,10 @@
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",
     "text": "När lösenordet senast sattes, som en GeneralizedTime. Underhålls av den här tjänsten."
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Vilken namngiven lösenordspolicy som vinner där flera namnges för en person: den lägsta, från 1 till 1000."
   },
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
