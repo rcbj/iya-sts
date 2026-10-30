@@ -158,6 +158,13 @@ function references(t, app, tag) {
                           ghost.errors]));
   ldap.createUser(member, { invent: false });
   ldap.createUser(outsider, { invent: false });
+  // NEITHER NAMES A LANGUAGE, so a page falls through to the policy: the
+  // one population gave them (fr-CA) would rank above it.
+  [member, outsider].forEach(function (who) {
+    require('../ldap/person_editor').update(who,
+      { attribute: 'preferredLanguage', mode: 'remove', value: 'fr-CA' },
+      { actor: 'locale_policy test', via: 'test' });
+  });
   ldap.createGroup(group);
   ldap.addGroupMember(group, member);
   const grouped = ldap.setGroupPolicy(group, 'stsLocalePolicy', 'teams');

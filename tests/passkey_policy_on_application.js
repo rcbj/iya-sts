@@ -314,8 +314,11 @@ function subTabs(t, names) {
           passkey.references.group === 'stsPasskeyPolicy',
           'C4. the view says the kind ranks by precedence and what names it',
           JSON.stringify([passkey.selectors, passkey.references]));
-  t.check(at('id="locale-sub-default"') < 0 && at('id="locale-named"') > 0,
-          'C5. the locale policy keeps its named profiles under its default');
+  // The locale policy is ranked by reference since #1238, and tabbed too.
+  t.check(at('id="locale-sub-default"') > 0 &&
+          at('id="locale-sub-named"') > at('id="locale-sub-default"') &&
+          at('id="locale-sub-new"') > at('id="locale-sub-named"'),
+          'C5. the locale policy\'s named profiles are its own sub-tabs');
   const groups = require(ROOT + '/admin-ui/web_groups');
   const detail = adminViews.groupDetailJson(request(),
                                             ldap.groupDnFor(names.groupName));
