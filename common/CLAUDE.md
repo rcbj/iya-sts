@@ -9172,9 +9172,12 @@ this service once, as the keytab its create hands over, so `view()` replaces it 
 in `fields` AND in `attributes`, ciphertext included — with a sentence saying how
 much was kept back. The ENTRY still holds it; the KDC reads it through the
 directory, never through here. **It is a schema row and not a raw attribute for a
-reason that is not optional**: `writeApplication()` replaces an entry from its
-record, and an attribute the schema does not list would be erased by the next
-sighting — for a Kerberos service, the next ticket issued for it. **And it is written
+reason that was not optional until #1230**: `writeApplication()` replaced an
+entry from its record, and an attribute the schema did not list was erased by
+the next sighting — for a Kerberos service, the next ticket issued for it.
+Since #1230 the store replaces only `ownedAttributeNames()` and keeps every
+other attribute (`ldap/CLAUDE.md`); the row stays because the pages describe
+it. **And it is written
 through the directory slot, never through `updateApplication()`**, whose audit
 summary, log line and reply all quote the value written.
 

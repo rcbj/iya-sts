@@ -3648,6 +3648,8 @@ const SCHEMA = {
     // optional: writeApplication() REPLACES an entry from its record, and an
     // attribute the schema does not list would be erased by the next
     // sighting — which for a Kerberos service is the next ticket issued for it.
+    // (Since #1230 the store keeps an attribute the schema does not list;
+    // these stay rows because the pages and the record describe them.)
     { name: 'krb5ServiceKeys', kind: 'single',
       from: '/admin/kerberos/principals',
       secret: true,
@@ -12027,7 +12029,9 @@ function normaliseFields(value) {
 // made of:
 //
 //   readApplication(identifier)   the entry, or null
-//   writeApplication(identifier, attributes)  create or update it
+//   writeApplication(identifier, attributes, { owned })  create or update
+//                                 it, replacing the owned attributes and
+//                                 keeping every other one (#1230)
 //   allApplications()             every entry, in tree order
 //   countApplications()           how many there are, for the cap message
 //
@@ -12323,6 +12327,47 @@ function attributesFor(record) {
   return attributes;
 }
 
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTES THIS REGISTRY OWNS ON AN ENTRY (#1230), handed to the store
+// with every write so that it can tell the two kinds of attribute on an
+// application's entry apart.
+//
+// `writeApplication()` REPLACES the attributes named here from the record,
+// which is what lets a value removed with ldapmodify stay removed (its
+// comment argues it). Everything ELSE on the entry was written by a door
+// that does not go through this module — a certificate stored by
+// `add-certificate` (#1061, #1227), an attribute an operator added with
+// ldapmodify — and the record never carried it, so a replace erased it at
+// the next sighting. The store keeps those now, and needs this list to know
+// which they are.
+//
+// LOWER-CASED BASE NAMES: LDAP attribute descriptions are case-insensitive
+// (RFC 4512 section 2.5) and an option (`;binary`, `;lang-en`) does not make
+// another attribute, so `userCertificate;binary` is owned exactly when
+// `userCertificate` is. `objectClass` is owned too: `attributesFor()` writes
+// it. Built once, because SCHEMA does not change while the process runs.
+// ---------------------------------------------------------------------------
+let ownedNames = null;
+
+/**
+ * Returns the attributes this registry writes onto an application's entry,
+ * as lower-cased base names (no LDAP options).
+ *
+ * @returns the names
+ */
+function ownedAttributeNames() {
+  log.debug("Entering ownedAttributeNames().");
+  if (!ownedNames) {
+    const names = ['objectclass'];
+    SCHEMA.attributes.forEach(function (row) {
+      names.push(String(row.name).split(';')[0].toLowerCase());
+    });
+    ownedNames = Object.freeze(Array.from(new Set(names)));
+  }
+  log.debug("Leaving ownedAttributeNames(). " + ownedNames.length + ".");
+  return ownedNames;
+}
+
 // Attribute names arrive from the directory in one of TWO spellings and every
 // lookup here has to survive both. The store lower-cases them, because
 // @ldapjs/attribute lower-cases a type on the way in; readApplication() then
@@ -12612,8 +12657,11 @@ function save(record, how) {
     log.debug("Leaving save().");
     return false;
   }
+  // WITH THE NAMES IT OWNS (#1230): the store replaces those and keeps
+  // whatever else is on the entry. See ownedAttributeNames().
   const written = !!backing.writeApplication(record.identifier,
-                                             attributesFor(record));
+                                             attributesFor(record),
+                                             { owned: ownedAttributeNames() });
   if (written && !(how && how.quiet)) {
     noteCredentialWrite(record, how);
   }
@@ -21573,6 +21621,8 @@ module.exports = {
   // The two conversions, exported because ldap_server.js seeds and reads
   // entries with them and this module owns the schema they encode.
   attributesFor: attributesFor,
+  // What the store replaces on a write and what it keeps (#1230).
+  ownedAttributeNames: ownedAttributeNames,
   nativeSsoOf: nativeSsoOf,
   httpSignaturesOf: httpSignaturesOf,
   didClaimWithPairwiseOf: didClaimWithPairwiseOf,
