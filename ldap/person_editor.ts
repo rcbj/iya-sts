@@ -1001,6 +1001,17 @@ class PersonEditor {
       log.debug("Leaving PersonEditor.update(). Not a policy here.");
       return this.refused('STS-LDAP-0106', notHeld);
     }
+    // AND ONLY BY A HOLDER THE KIND ALLOWS (#1240): the service-account
+    // policy is named by a service account and nobody else. The kind says
+    // who in its declaration; a clear is always allowed.
+    const declared = row.choices && value !== ''
+      ? PolicySelection.referenceOf('person', row.name) : null;
+    const notHolder = declared && declared.holderRefusal
+      ? declared.holderRefusal(person.attributes, value) : null;
+    if (notHolder) {
+      log.debug("Leaving PersonEditor.update(). Not a holder of it.");
+      return this.refused(notHolder.code, notHolder.message);
+    }
     const before = (person.attributes[lower] || []).map(String);
     // A HOT PATH, run once per held value: no Entering/Leaving pair here,
     // which would drown the log in a line per value compared.
