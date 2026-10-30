@@ -744,6 +744,65 @@ class UmaOwnerPolicy {
   }
 
   /**
+   * Writes an owner's approval of a waiting request (#1194): for each
+   * permission, a share with the requesting party until `until`, with no
+   * approval obligation — the record of what was approved IS the policy.
+   *
+   * **PLACED RIGHT AFTER `owner-self`, before every share**: this engine's
+   * deny-unless-permit answers with the FIRST permitting rule and its
+   * obligations, so an approval placed after the owner's "ask me" share
+   * would be shadowed by it and the request asked about again for ever.
+   *
+   * @param owner - the owner's key
+   * @param pending - the request: `requestingParty`, `permissions`
+   * @param until - the approval's end, an xs:dateTime
+   * @returns `{ ok: true, shares }`, or `{ ok: false, code, why }`
+   */
+  approve(owner: string, pending: Json, until: string): Json {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering UmaOwnerPolicy.approve().");
+    let doc: Json;
+    try {
+      doc = self.documentOf(owner);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-UMA-0309') + 'uma: the document of ' +
+                'the owner "' + owner + '" does not parse, so no approval ' +
+                'was written: ' + ((e && e.message) || e));
+      log.debug("Leaving UmaOwnerPolicy.approve(). Unreadable.");
+      return errorCodes.mark({ ok: false, code: 'STS-UMA-0309',
+        why: 'Your sharing policy could not be read.' }, 'STS-UMA-0309');
+    }
+    if (doc.policy.kind !== 'Policy') {
+      log.debug("Leaving UmaOwnerPolicy.approve(). A policy set.");
+      return errorCodes.mark({ ok: false, code: 'STS-UMA-0307',
+        why: 'Your sharing policy is a policy set written as ALFA; an ' +
+             'approval cannot be added to it.' }, 'STS-UMA-0307');
+    }
+    const specs: ShareSpec[] = (pending.permissions || []).map(
+      function (p: Json): ShareSpec {
+        return { id: self.deps.randomId(9),
+                 resourceId: String(p.resource_id),
+                 scopes: (p.resource_scopes || []).map(String),
+                 recipient: { kind: 'person',
+                              value: String(pending.requestingParty) },
+                 expires: until, acr: '', askMe: false };
+      });
+    const rules: Json[] = (doc.policy.rules || []).slice();
+    const at = rules.length && rules[0].id === U.OWNER_SELF_RULE ? 1 : 0;
+    Array.prototype.splice.apply(rules, [at, 0].concat(
+      specs.map(UmaOwnerPolicy.ruleFor) as any));
+    const saved = self.write(owner, Object.assign({}, doc.policy,
+                                                  { rules: rules }));
+    if (!saved.ok) {
+      log.debug("Leaving UmaOwnerPolicy.approve(). " + saved.code);
+      return saved;
+    }
+    log.debug("Leaving UmaOwnerPolicy.approve(). " + specs.length);
+    return { ok: true, shares: specs };
+  }
+
+  /**
    * Replaces an owner's whole document with ALFA they wrote, where
    * `uma.ownerAlfaEditing` allows it; every RPT over their resources is
    * revoked, since nothing can say which rule a hand edit narrowed.
@@ -823,5 +882,6 @@ export = {
   readShare: slot.forward('readShare'),
   share: slot.forward('share'),
   unshare: slot.forward('unshare'),
+  approve: slot.forward('approve'),
   setAlfa: slot.forward('setAlfa')
 };

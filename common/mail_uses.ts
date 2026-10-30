@@ -932,6 +932,52 @@ class MailUses {
   }
 
   // -------------------------------------------------------------------------
+  // 8. A UMA 2.0 REQUEST WAITING FOR ITS RESOURCE OWNER (#1194): an "ask me
+  // each time" share was matched, and the request waits on /portal/shared.
+  // Never throws, for `accessRequested()`'s reason.
+  // -------------------------------------------------------------------------
+  /**
+   * Tells a resource owner that a UMA request waits for their approval.
+   *
+   * @param username - the owner
+   * @param facts - `requester`, `client`, `resource`, `scopes`,
+   *   `expiresMinutes`, `dedupKey`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  umaApprovalRequested(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.umaApprovalRequested(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.umaApprovalRequested(). Nobody, or no " +
+                  "transport.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'uma-approval',
+        values: { username: username, requester: String(f.requester || ''),
+                  client: String(f.client || ''),
+                  resource: String(f.resource || ''),
+                  scopes: String(f.scopes || ''),
+                  expiresMinutes: String(f.expiresMinutes || '') },
+        links: { link: '/portal/shared' },
+        dedupKey: String(f.dedupKey || ('uma-approval:' + username)),
+        via: 'a UMA request', actor: String(f.client || '')
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.umaApprovalRequested(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0180') + 'mail: the UMA approval ' +
+               'notice for ' + username + ' in the "' + realms.currentId() +
+               '" realm could not be queued: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.umaApprovalRequested().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
   // 7. AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS (#1180): to the
   // address on the approver's own entry, never one a request names; the
   // link is the portal page, which signs nobody in. The dedup key names the

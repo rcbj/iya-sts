@@ -22145,6 +22145,55 @@ const CODES = [
       'them — their document, resources and RPTs — could not be forgotten ' +
       '(#1192).',
     spec: 'none — logged; the delete stands' },
+  // Claims interaction, claim tokens and the owner's approval (#1194).
+  { code: 'STS-UMA-0400',
+    summary: 'The UMA claims interaction endpoint was asked for by a client ' +
+      'it does not know, or with a claims_redirect_uri the client did not ' +
+      'register (oauthClaimsRedirectUri); the person is told and not ' +
+      'redirected (#1194).',
+    spec: 'HTTP 400, a page; no redirect' },
+  { code: 'STS-UMA-0401',
+    summary: 'The UMA claims interaction endpoint was asked for where ' +
+      'uma.enabled is off (#1194).',
+    spec: 'HTTP 501, a page' },
+  { code: 'STS-UMA-0402',
+    summary: 'A UMA request needing its owner\'s approval was not queued: ' +
+      'the owner already has uma.maxPendingPerOwner requests waiting ' +
+      '(#1194).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0403',
+    summary: 'The resource owner refused a UMA request that waited for ' +
+      'their approval (#1194).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0404',
+    summary: 'A UMA request that waited for its owner\'s approval was not ' +
+      'answered within uma.pendingLifetimeS (#1194).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0405',
+    summary: 'A UMA request waits for its resource owner\'s approval ' +
+      '(an "ask me each time" share): request_submitted with a rotated ' +
+      'ticket (#1194).',
+    spec: 'request_submitted (HTTP 403)' },
+  { code: 'STS-UMA-0406',
+    summary: 'A pushed claim_token named nobody: not the ID Token format, ' +
+      'not an ID Token of this realm or a declared assertion issuer, not ' +
+      'audienced to the client, or naming nobody of this realm. The policy ' +
+      'answers need_info (#1194).',
+    spec: 'none — the request goes on with nobody known' },
+  { code: 'STS-UMA-0407',
+    summary: 'The UMA claims interaction endpoint was given a ticket that ' +
+      'is unknown, expired or ended (#1194).',
+    spec: 'a redirect to the claims_redirect_uri with ' +
+      'authorization_state=not_authorized' },
+  { code: 'STS-UMA-0408',
+    summary: 'A resource owner answered a UMA request that is not waiting ' +
+      'for them (#1194).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0409',
+    summary: 'The UMA claims interaction endpoint was given a ticket that ' +
+      'another client presented (#1194).',
+    spec: 'a redirect to the claims_redirect_uri with ' +
+      'authorization_state=not_authorized' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

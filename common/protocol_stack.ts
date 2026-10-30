@@ -2063,8 +2063,12 @@ class ProtocolStack {
     // `common/uma_gate.ts`: this line is what offers the uma-ticket grant.
     this.build('uma/uma_pep', require('../uma/uma_pep'), 'UmaPep');
     this.build('uma/uma_grant', require('../uma/uma_grant'), 'UmaGrant');
+    // #1194: claims interaction, claim tokens and the owner's approval;
+    // its wire step hands the grant this instance.
+    this.build('uma/uma_claims', require('../uma/uma_claims'), 'UmaClaims');
     this.build('uma/uma', require('../uma/uma'), 'UmaSurface');
     this.register(app, require('../uma/uma'), 'uma/uma');
+    this.register(app, require('../uma/uma_claims'), 'uma/uma_claims');
 
     // CERTIFICATE ENROLLMENT (2026-09-13) — 23e, 23f, 23g. ACME (RFC 8555), EST
     // (RFC 7030) and SCEP (RFC 8894). After the console at 18, whose shell each

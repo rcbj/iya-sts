@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5013** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5023** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
-* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 55
+* [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 65
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4924,6 +4924,16 @@ Raised from: uma/.
 | `STS-UMA-0309` | A resource owner's stored UMA document does not parse. Nothing was decided with it, and the portal says it could not be read (#1192). | HTTP 500 on the account API; server_error at the token endpoint (phase 4) |
 | `STS-UMA-0310` | The portal's Sharing section was asked for by a person whose subject could not be read (#1192). | HTTP 500 on the account API |
 | `STS-UMA-0311` | A person was deleted from the directory and what UMA held for them — their document, resources and RPTs — could not be forgotten (#1192). | none — logged; the delete stands |
+| `STS-UMA-0400` | The UMA claims interaction endpoint was asked for by a client it does not know, or with a claims_redirect_uri the client did not register (oauthClaimsRedirectUri); the person is told and not redirected (#1194). | HTTP 400, a page; no redirect |
+| `STS-UMA-0401` | The UMA claims interaction endpoint was asked for where uma.enabled is off (#1194). | HTTP 501, a page |
+| `STS-UMA-0402` | A UMA request needing its owner's approval was not queued: the owner already has uma.maxPendingPerOwner requests waiting (#1194). | request_denied (HTTP 403) |
+| `STS-UMA-0403` | The resource owner refused a UMA request that waited for their approval (#1194). | request_denied (HTTP 403) |
+| `STS-UMA-0404` | A UMA request that waited for its owner's approval was not answered within uma.pendingLifetimeS (#1194). | request_denied (HTTP 403) |
+| `STS-UMA-0405` | A UMA request waits for its resource owner's approval (an "ask me each time" share): request_submitted with a rotated ticket (#1194). | request_submitted (HTTP 403) |
+| `STS-UMA-0406` | A pushed claim_token named nobody: not the ID Token format, not an ID Token of this realm or a declared assertion issuer, not audienced to the client, or naming nobody of this realm. The policy answers need_info (#1194). | none — the request goes on with nobody known |
+| `STS-UMA-0407` | The UMA claims interaction endpoint was given a ticket that is unknown, expired or ended (#1194). | a redirect to the claims_redirect_uri with authorization_state=not_authorized |
+| `STS-UMA-0408` | A resource owner answered a UMA request that is not waiting for them (#1194). | HTTP 400 on the account API |
+| `STS-UMA-0409` | The UMA claims interaction endpoint was given a ticket that another client presented (#1194). | a redirect to the claims_redirect_uri with authorization_state=not_authorized |
 
 ## STS-ADMIN
 

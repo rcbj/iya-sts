@@ -970,10 +970,15 @@ const SPECS: Spec[] = [
               '(uma.partialRpt), RPT upgrade, and every permission decided ' +
               'by the realm\'s policy, the resource owner\'s own XACML ' +
               'document, the resource server\'s fine-grained policy and the ' +
-              'issuance gate; the PCT revocable at /oauth2/revoke. Missing ' +
-              'until #1168\'s phase 5: the claims interaction endpoint, a ' +
-              'pushed claim_token and request_submitted. ' +
-              'uma_profiles_supported is empty.' },
+              'issuance gate; the PCT issued when claims were gathered and ' +
+              'revocable at /oauth2/revoke; the claims interaction endpoint ' +
+              '(section 3.3.2) through this service\'s one sign-in; a pushed ' +
+              'claim_token in the ID Token format, from this realm or a ' +
+              'declared assertion issuer; and request_submitted, the owner ' +
+              'answering on the portal, an approval written as a rule of ' +
+              'their own policy. Missing: SAML as a claim_token_format, and ' +
+              'a step-up to an acr a share requires at the interaction ' +
+              '(the share then refuses). uma_profiles_supported is empty.' },
   { id: 'uma2-fedauthz',
     name: 'Federated Authorization for User-Managed Access (UMA) 2.0',
     where: 'Kantara Initiative',
@@ -4057,6 +4062,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'invalid_scope, both 400, before any question is asked. The ' +
           'ticket lives uma.ticketLifetimeS and is spent once across the ' +
           'cluster.' },
+  { path: '/uma/claims', group: 'UMA 2.0',
+    name: 'The claims interaction endpoint', specs: ['uma2-grant'],
+    what: 'The Grant specification\'s section 3.3.2: a client told ' +
+          'need_info sends the requesting party here with client_id, ' +
+          'ticket, claims_redirect_uri and state. They sign in through ' +
+          'this service\'s one sign-in, are recorded as the ticket\'s ' +
+          'requesting party, and go back with ' +
+          'authorization_state=claims_submitted and a new ticket. The ' +
+          'claims_redirect_uri must be one the client registered ' +
+          '(oauthClaimsRedirectUri), matched exactly; any other is told to ' +
+          'the person and never redirected to.' },
   { path: '/.well-known/uma2-configuration', group: 'UMA 2.0',
     name: 'UMA discovery', specs: ['uma2-grant'],
     what: 'The Grant specification\'s section 2 document: RFC 8414\'s ' +

@@ -41,5 +41,10 @@
   "resource": "资源",
   "owner": "所有者",
   "scopes": "范围",
-  "expires": "截止"
+  "expires": "截止",
+  "pendingLine": "{requester} 通过 {client} 请求",
+  "approve": "批准一天",
+  "refuse": "拒绝",
+  "doneApproved": "已批准：已为该人添加为期一天的共享。",
+  "doneRefused": "已拒绝。"
 }

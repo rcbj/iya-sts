@@ -41,5 +41,10 @@
   "resource": "Resource",
   "owner": "Owner",
   "scopes": "Scopes",
-  "expires": "Until"
+  "expires": "Until",
+  "pendingLine": "{requester} asks through {client}",
+  "approve": "Approve for a day",
+  "refuse": "Refuse",
+  "doneApproved": "Approved: a share for that person was added for a day.",
+  "doneRefused": "Refused."
 }

@@ -199,11 +199,30 @@ class SharedPages {
         }).join('')
       : '<div class="card"><p class="sub">' +
         t.html('portalShared.noResources') + '</p></div>';
+    const answer = function (p: Json, action: string, label: string,
+                             cls: string): string {
+      return '<form method="post" action="' + kit.esc(PATH) + '" ' +
+        'style="display:inline"><input type="hidden" name="action" value="' +
+        action + '"><input type="hidden" name="pending" value="' +
+        kit.esc(p.id) + '"><button type="submit"' +
+        (cls ? ' class="' + cls + '"' : '') + '>' + label +
+        '</button></form>';
+    };
     const pending = '<h2>' + t.html('portalShared.pendingHeading') +
       '</h2><div class="card">' + ((view.pending || []).length
         ? '<ul>' + view.pending.map(function (p: Json) {
-            return '<li>' + kit.esc(p.requestingParty) + ' · <code>' +
-              kit.esc(p.client) + '</code></li>';
+            return '<li>' + t.html('portalShared.pendingLine',
+              { requester: String(p.requestingParty),
+                client: String(p.client) }) + ' — ' +
+              (p.permissions || []).map(function (x: Json) {
+                return '<code>' + kit.esc(x.resource_id) + '</code> (' +
+                  (x.resource_scopes || []).map(function (s: string) {
+                    return kit.esc(s);
+                  }).join(', ') + ')';
+              }).join('; ') + ' ' +
+              answer(p, 'approve', t.html('portalShared.approve'), '') + ' ' +
+              answer(p, 'refuse', t.html('portalShared.refuse'), 'danger') +
+              '</li>';
           }).join('') + '</ul>'
         : '<p class="sub">' + t.html('portalShared.pendingNone') + '</p>') +
       '</div>';

@@ -175,7 +175,7 @@ class UmaSurface {
       pat: umaPat,
       capabilities: function (): Capabilities {
         return { grant: require('../common/uma_gate').installed() === true,
-                 claims: false };
+                 claims: require('./uma_claims').routed() === true };
       },
       loadOauth2: function (): Json {
         log.debug("Entering loadOauth2().");

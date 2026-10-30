@@ -282,6 +282,33 @@ const BUILT_IN: TemplateSpec[] = [
   // requester named. The requester is the PEP's trusted name, the subject,
   // action and resource the denied tuple's — data, never wording.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // #1194: A UMA 2.0 REQUEST WAITING FOR ITS RESOURCE OWNER. A NOTIFICATION,
+  // for `access-request`'s reason: the request waits on /portal/shared
+  // whether or not this is sent, nothing is approved by mail, and the link
+  // is the portal page. The requester is a username and the client its
+  // registered identifier; the resource is the owner's own name for it.
+  // -------------------------------------------------------------------------
+  { id: 'uma-approval', category: 'notification',
+    title: 'Somebody asks to reach a resource you share',
+    values: ['username', 'requester', 'client', 'resource', 'scopes',
+             'expiresMinutes'],
+    links: ['link'],
+    subject: '{{service}}: somebody asks to reach a resource you share',
+    text: '{{requester}} asks, through {{client}}, to reach your resource ' +
+          '{{resource}} ({{scopes}}). You asked to be asked each time.\n\n' +
+          'Nothing is allowed until you approve it. To approve or refuse ' +
+          'it, sign in and open this page within {{expiresMinutes}} ' +
+          'minutes:\n\n{{link}}\n\nIf you do not recognise the request, ' +
+          'refuse it there or ignore this message: it runs out by itself.\n',
+    html: '<p><strong>{{requester}}</strong> asks, through ' +
+          '<strong>{{client}}</strong>, to reach your resource ' +
+          '<strong>{{resource}}</strong> ({{scopes}}). You asked to be asked ' +
+          'each time.</p><p>Nothing is allowed until you approve it. ' +
+          '<a href="{{link}}">Approve or refuse it</a> within ' +
+          '{{expiresMinutes}} minutes.</p><p>If you do not recognise the ' +
+          'request, refuse it there or ignore this message: it runs out by ' +
+          'itself.</p>' },
   { id: 'authzen-access-request', category: 'notification',
     title: 'An access request waits for your approval',
     values: ['username', 'requester', 'subject', 'action', 'resource',

@@ -41,5 +41,10 @@
   "resource": "資源",
   "owner": "擁有者",
   "scopes": "範圍",
-  "expires": "截止"
+  "expires": "截止",
+  "pendingLine": "{requester} 透過 {client} 請求",
+  "approve": "核准一天",
+  "refuse": "拒絕",
+  "doneApproved": "已核准：已為該人新增為期一天的分享。",
+  "doneRefused": "已拒絕。"
 }

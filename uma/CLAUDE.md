@@ -219,6 +219,44 @@ realm policy's `uma-client-grant-type` gate requires.
 * **A PCT ends with a sign-out of everything** — `logout/`'s `uma` family,
   GNAP grants' rule — and at `/oauth2/revoke` whatever the hint says.
 
+## Phase 5 (#1194): claims interaction, claim tokens, the owner's approval
+
+`uma_claims.ts` registers `GET /uma/claims` (after `uma`'s routes) and its
+wire step hands the grant this instance (`uma_grant.ts`'s `setClaims()`),
+which is what makes the grant read the interaction's person, a pushed
+`claim_token` and the approval queue. `oauthClaimsRedirectUri` is a client
+attribute of its own (`common/applications.js`), and the `uma-approval` mail
+template a notification, in every catalog.
+
+### Decisions made here, and why
+
+* **The interaction endpoint draws no page of its own.** It redirects to the
+  one sign-in (`authn.beginAuthentication()`, as `/launch` does) and back;
+  the only text it answers is the refusal told to the person, as text, so a
+  return address nobody registered is never followed. A static surface for
+  one sentence would be a bundle, a shell and seven catalogs for nothing.
+* **The ticket carries the person** (`requestingParty`, `acr`) through the
+  rotation, so the grant reads them from the ticket the client was handed,
+  and a ticket another client presented first is `not_authorized`.
+* **A claim_token that names nobody is not an error.** It is logged (0406)
+  and the request goes on with nobody known, so the realm policy's own
+  missing attribute answers `need_info` — a client cannot tell a bad token
+  from no token, and nothing a client asserted reaches the policy.
+* **An approval is a rule, placed before every share.** This engine's
+  deny-unless-permit answers with the FIRST permitting rule and its
+  obligations, so a rule appended after the "ask me" share would be
+  shadowed and the request asked about again for ever
+  (`uma_owner_policy.ts`'s `approve()` argues it). It holds a day.
+* **The pending request's answer is read before anything else at a poll**:
+  a refusal or an unanswered request is `request_denied` whatever the
+  policy now says, and an approval is forgotten once read, so the next poll
+  is decided by the rule alone.
+* **Not built:** a step-up at the interaction to an `acr` a share requires
+  (the session's own `acr` is recorded, and the share refuses below it); SAML
+  as a `claim_token_format`; `claims_redirect_uris` in RFC 7591 dynamic
+  registration (set on the application instead); and requiring a claims
+  redirect URI of every public client.
+
 ## What is deliberately not here
 
 * `uma_profiles_supported` is empty until a profile is implemented end to

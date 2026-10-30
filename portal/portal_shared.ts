@@ -51,9 +51,12 @@ const QUERY = vz.object({
 // THE ONE FORM'S FIELDS, every action's: the 2d check holds every field a
 // portal form sends to one its operation takes.
 const SHARE_FORM = vz.object({
-  action: vt.oneOf(['share', 'unshare', 'alfa'])
+  action: vt.oneOf(['share', 'unshare', 'alfa', 'approve', 'refuse'])
     .describe('share adds a share; unshare removes one; alfa replaces the ' +
-              'whole document, where the realm allows it.'),
+              'whole document, where the realm allows it; approve and ' +
+              'refuse answer a request waiting for you.'),
+  pending: vt.opt(vt.identifier)
+    .describe('approve, refuse: the waiting request\'s id, from the list.'),
   resource: vt.opt(vt.identifier)
     .describe('share: the resource\'s _id, one of yours.'),
   scope: vt.opt(vz.union([vt.name, vt.repeatable(vt.name)]))
@@ -88,6 +91,7 @@ interface PortalSharedDeps {
   loadStore(): Json;
   loadOwnerPolicy(): Json;
   loadSurface(): Json;
+  loadClaims(): Json;
   now(): number;
 }
 
@@ -126,6 +130,11 @@ class PortalShared {
         helpers.log.debug("Entering loadOwnerPolicy().");
         helpers.log.debug("Leaving loadOwnerPolicy().");
         return require('../uma/uma_owner_policy');
+      },
+      loadClaims: function loadClaims(): Json {
+        helpers.log.debug("Entering loadClaims().");
+        helpers.log.debug("Leaving loadClaims().");
+        return require('../uma/uma_claims');
       },
       loadSurface: function loadSurface(): Json {
         helpers.log.debug("Entering loadSurface().");
@@ -281,6 +290,12 @@ class PortalShared {
       message = t.text('portalShared.doneRemoved',
                        { revoked: (result && result.revoked) || 0 });
       kind = 'uma.share.remove';
+    } else if (body.action === 'approve' || body.action === 'refuse') {
+      result = this.deps.loadClaims().answer(owner, String(body.pending || ''),
+                                             body.action === 'approve');
+      message = t.text(body.action === 'approve' ? 'portalShared.doneApproved'
+                                                 : 'portalShared.doneRefused');
+      kind = 'uma.approval.answer';
     } else {
       result = policy.setAlfa(owner, String(body.alfa || ''));
       message = t.text('portalShared.doneAlfa',
@@ -304,7 +319,9 @@ class PortalShared {
       target: String((result.share && result.share.resourceId) || owner),
       summary: String(who) + ' ' + (kind === 'uma.share.add'
         ? 'shared a resource' : (kind === 'uma.share.remove'
-          ? 'removed a share' : 'rewrote their sharing policy as ALFA')) +
+          ? 'removed a share' : (kind === 'uma.approval.answer'
+            ? body.action + 'd a waiting request'
+            : 'rewrote their sharing policy as ALFA'))) +
         (result.revoked ? '; ' + result.revoked + ' RPT(s) revoked' : '') +
         '.',
       detail: { owner: owner, share: String((result.share &&
@@ -363,7 +380,9 @@ class PortalShared {
           'policy: a resource of yours, its scopes, and who — a person, a ' +
           'group, anyone signed in to this realm, or anyone whose claim ' +
           'has a value — with an optional expiry, authentication level and ' +
-          '"ask me each time". `unshare` removes one and revokes the ' +
+          '"ask me each time". `approve` and `refuse` answer a request ' +
+          'waiting for you; an approval adds a share for that person ' +
+          'for a day. `unshare` removes one and revokes the ' +
           'requesting party tokens that carried it. `alfa` replaces the ' +
           'whole policy, where the realm allows it, and revokes every ' +
           'token over your resources. A resource or share that is not ' +

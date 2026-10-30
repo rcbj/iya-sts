@@ -1150,6 +1150,13 @@ const ACTIONS = [
     label: 'A UMA uma-ticket grant was answered' },
   { action: 'uma.pct.revoke', category: 'protocol',
     label: 'A UMA persisted claims token was revoked' },
+  { action: 'uma.approval.request', category: 'protocol',
+    label: 'A UMA request was queued for its resource owner\'s approval' },
+  { action: 'uma.approval.answer', category: 'admin',
+    label: 'A resource owner approved or refused a UMA request' },
+  { action: 'uma.claims.gathered', category: 'protocol',
+    label: 'A requesting party was signed in at the UMA claims interaction ' +
+           'endpoint' },
   { action: 'uma.share.add', category: 'admin',
     label: 'A resource owner shared a resource through UMA' },
   { action: 'uma.share.remove', category: 'admin',

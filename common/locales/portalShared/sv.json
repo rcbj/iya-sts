@@ -41,5 +41,10 @@
   "resource": "Resurs",
   "owner": "Ägare",
   "scopes": "Scopes",
-  "expires": "Till"
+  "expires": "Till",
+  "pendingLine": "{requester} ber om det genom {client}",
+  "approve": "Godkänn för en dag",
+  "refuse": "Avslå",
+  "doneApproved": "Godkänt: en delning med den personen lades till för en dag.",
+  "doneRefused": "Avslaget."
 }

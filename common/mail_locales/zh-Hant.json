@@ -1,5 +1,10 @@
 {
   "templates": {
+    "uma-approval": {
+      "subject": "{{service}}：有人請求存取您分享的資源",
+      "text": "{{requester}} 透過 {{client}} 請求存取您的資源 {{resource}}（{{scopes}}）。您曾要求每次都詢問您。\n\n在您核准之前，什麼都不允許。要核准或拒絕，請在 {{expiresMinutes}} 分鐘內登入並開啟此頁面：\n\n{{link}}\n\n如果您不認得此請求，請在那裡拒絕或忽略此訊息：它會自行過期。\n",
+      "html": "<p><strong>{{requester}}</strong> 透過 <strong>{{client}}</strong> 請求存取您的資源 <strong>{{resource}}</strong>（{{scopes}}）。您曾要求每次都詢問您。</p><p>在您核准之前，什麼都不允許。請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">核准或拒絕</a>。</p><p>如果您不認得此請求，請在那裡拒絕或忽略此訊息：它會自行過期。</p>"
+    },
     "password-reset": {
       "subject": "重設您的 {{service}} 密碼",
       "text": "有人（{{requestedBy}}）要求重設帳戶 {{username}} 的密碼。\n\n如需設定新密碼，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n此連結只能使用一次。如果這不是您的要求，可以忽略此郵件：在連結被使用之前，什麼都不會改變。\n",

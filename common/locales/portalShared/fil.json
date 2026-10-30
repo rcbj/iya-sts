@@ -41,5 +41,10 @@
   "resource": "Resource",
   "owner": "May-ari",
   "scopes": "Mga scope",
-  "expires": "Hanggang"
+  "expires": "Hanggang",
+  "pendingLine": "Humihiling si {requester} sa pamamagitan ng {client}",
+  "approve": "Aprubahan sa loob ng isang araw",
+  "refuse": "Tanggihan",
+  "doneApproved": "Naaprubahan: nagdagdag ng share sa taong iyon sa loob ng isang araw.",
+  "doneRefused": "Tinanggihan."
 }

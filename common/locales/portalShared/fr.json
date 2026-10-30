@@ -41,5 +41,10 @@
   "resource": "Ressource",
   "owner": "Propriétaire",
   "scopes": "Scopes",
-  "expires": "Jusqu’au"
+  "expires": "Jusqu’au",
+  "pendingLine": "{requester} le demande par l’intermédiaire de {client}",
+  "approve": "Approuver pour un jour",
+  "refuse": "Refuser",
+  "doneApproved": "Approuvé : un partage avec cette personne a été ajouté pour un jour.",
+  "doneRefused": "Refusé."
 }

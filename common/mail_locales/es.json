@@ -1,5 +1,10 @@
 {
   "templates": {
+    "uma-approval": {
+      "subject": "{{service}}: alguien pide acceder a un recurso que usted comparte",
+      "text": "{{requester}} pide, mediante {{client}}, acceder a su recurso {{resource}} ({{scopes}}). Usted pidió que se le preguntara cada vez.\n\nNada se permite hasta que usted lo apruebe. Para aprobarlo o rechazarlo, inicie sesión y abra esta página en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.\n",
+      "html": "<p><strong>{{requester}}</strong> pide, mediante <strong>{{client}}</strong>, acceder a su recurso <strong>{{resource}}</strong> ({{scopes}}). Usted pidió que se le preguntara cada vez.</p><p>Nada se permite hasta que usted lo apruebe. <a href=\"{{link}}\">Apruébelo o recházelo</a> en los próximos {{expiresMinutes}} minutos.</p><p>Si no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.</p>"
+    },
     "password-reset": {
       "subject": "Restablezca su contraseña de {{service}}",
       "text": "Alguien — {{requestedBy}} — pidió restablecer la contraseña de la cuenta {{username}}.\n\nPara elegir una contraseña nueva, abra este enlace en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSolo funciona una vez. Si no lo pidió usted, puede ignorar este mensaje: nada cambia hasta que se use el enlace.\n",

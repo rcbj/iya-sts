@@ -1196,6 +1196,16 @@ const SCHEMA = {
             'redirect_uri this service has ACCEPTED for the application ' +
             'beside them. The two are not the same claim and the registry ' +
             'does not merge them silently — see appRedirectUriObserved.' },
+    // UMA 2.0 (#1168, #1194): where the claims interaction endpoint returns
+    // the requesting party, the Grant specification's section 3.3.2. A list
+    // of its own, exact-match, and never an RFC 6749 redirect_uri unless it
+    // is listed here too.
+    { name: 'oauthClaimsRedirectUri', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'Where /uma/claims may send the requesting party back to this ' +
+            'client after gathering claims (UMA 2.0 Grant section 3.3.2, ' +
+            'claims_redirect_uri). Matched exactly; a claims_redirect_uri ' +
+            'not listed here is told to the person and never redirected to.' },
     { name: 'appRedirectUriObserved', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'A redirect_uri seen on an authorization request that this ' +
             'service answered. Kept apart from oauthRedirectUri because ' +
@@ -5057,6 +5067,8 @@ const EDITABLE = {
   gnapJweKey: 'set',
   gnapScopedSignals: 'set',
   oauthRedirectUri: 'multi',
+  // UMA 2.0 (#1194): the claims interaction endpoint's return addresses.
+  oauthClaimsRedirectUri: 'multi',
   oauthPostLogoutRedirectUri: 'multi',
   oauthFrontchannelLogoutUri: 'set',
   oauthFrontchannelLogoutSessionRequired: 'set',

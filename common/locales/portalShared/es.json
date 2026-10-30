@@ -41,5 +41,10 @@
   "resource": "Recurso",
   "owner": "Propietario",
   "scopes": "Scopes",
-  "expires": "Hasta"
+  "expires": "Hasta",
+  "pendingLine": "{requester} lo pide mediante {client}",
+  "approve": "Aprobar por un día",
+  "refuse": "Rechazar",
+  "doneApproved": "Aprobado: se añadió un uso compartido con esa persona por un día.",
+  "doneRefused": "Rechazado."
 }

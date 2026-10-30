@@ -29,7 +29,7 @@ put to the XACML engine, and this page says which policies answer it.
 | 2 (#1191) | The protection API: the PAT, resource registration, the permission endpoint, discovery | built |
 | 3 (#1192) | The resource owner's own policy, and the portal's *Sharing* section | built |
 | 4 (#1193) | The `uma-ticket` grant: the layers, `need_info`, the RPT, the PCT, upgrade, introspection, revocation | built |
-| 5 (#1194) | Claims interaction, `claim_token`, `request_submitted` and the owner's approval | |
+| 5 (#1194) | Claims interaction, `claim_token`, `request_submitted` and the owner's approval | built |
 | 6 (#1195) | The console, `/admin-api` and the monitor | |
 | 7 (#1196) | Protocol tests with Keycloak as the independent peer | |
 
@@ -139,6 +139,39 @@ revoke the RPTs that carried what changed, so introspection answers
 `active: false`. A PCT is revoked at `/oauth2/revoke`. **An RPT is what the
 owner allowed when it was issued**: a resource server that needs the current
 answer asks [AuthZEN](authzen.md)'s `/access/v1/evaluation`.
+
+## When the requesting party is not known yet
+
+A policy that needs to know who is asking answers `need_info` with
+`redirect_user: true`. The client then does one of two things:
+
+* **Sends the person to the claims interaction endpoint**,
+  `GET /uma/claims?client_id=...&ticket=...&claims_redirect_uri=...&state=...`.
+  They sign in with this service's normal sign-in, and are sent back to the
+  `claims_redirect_uri` with `authorization_state=claims_submitted`, a new
+  `ticket` and the `state`. The `claims_redirect_uri` must be one the client
+  registered in **`oauthClaimsRedirectUri`**, matched exactly; any other is
+  told to the person and never redirected to. A ticket that cannot be used
+  goes back with `authorization_state=not_authorized`.
+* **Pushes a `claim_token`** with
+  `claim_token_format=http://openid.net/specs/openid-connect-core-1_0.html#IDToken`:
+  an ID Token this realm issued, or one from a declared assertion issuer,
+  audienced to the client and naming a person of this realm. Its other
+  claims reach the policy as `urn:sts:xacml:uma:claim:<name>`.
+
+Either way the grant then answers with a **`pct`**, a persisted claims token
+the client may present next time instead.
+
+## When the owner asked to be asked
+
+A share saved with **Ask me each time** answers `request_submitted` with a new
+`ticket` and an `interval`. The owner finds the request under **Requests
+waiting for you** on `/portal/shared`, and is mailed where mail is set up.
+**Approve** adds a share with that person for a day, as a rule of the owner's
+policy; **Refuse** ends it. The client polls with its latest ticket: while
+nobody has answered it is told `request_submitted` again; after an approval
+it gets its RPT; after a refusal, or after `uma.pendingLifetimeS`, it gets
+`request_denied`.
 
 ## How a permission is decided
 
