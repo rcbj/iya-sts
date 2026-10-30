@@ -32,7 +32,10 @@
 //      is decided against the new one; a disabled or missing policy is
 //      server_error, never a permit; the token exchange's bound; a type
 //      write left uncovered on an enforcing application is refused; and the
-//      audit rows carry no detail value.
+//      audit rows carry no detail value. Since P4: at PAR the request names
+//      no subject (never subject-id ''), and limits a person lowered at
+//      consent are asked again where the authorization endpoint mints an
+//      access token (implicit), and refused access_denied.
 //
 // **THE CHILD** is `tests/rfc9396_authorization_details.js`'s reason: the
 // protocol stack registers every route on the shared app and builds a CA.
@@ -238,6 +241,25 @@ function thePep(t) {
           pep.detailDigest({ a: [2, { c: 4, d: 3 }], b: 1 }),
           '2l. the detail digest is of canonical JSON: member order does ' +
           'not change it');
+  // NOBODY IS NOT A SUBJECT CALLED '' (#564 P4): the PAR endpoint's
+  // question, before anybody signed in, carries no subject attributes.
+  const model = require('../xacml/xacml_model');
+  const atPar = mapping.request(detail, definition, { application: 'docs',
+    stage: 'par', subject: {}, clientId: 'cli' });
+  const subjectCategory = ((atPar.request || {}).categories || [])
+    .filter(function (one) {
+      return one.category === model.CATEGORY.ACCESS_SUBJECT;
+    })[0] || { attributes: [] };
+  const ids = subjectCategory.attributes.map(function (one) {
+    return one.attributeId;
+  });
+  t.check(!!atPar.request &&
+          ids.indexOf(model.ATTRIBUTE.SUBJECT_ID) < 0 &&
+          ids.indexOf('urn:sts:xacml:subject-kind') < 0 &&
+          ids.indexOf('urn:sts:xacml:client-id') >= 0,
+          '2m. at PAR, with no subject, the request has no subject-id and ' +
+          'no subject kind (never \'\'), and keeps the client',
+          ids.join(', '));
   log.debug("Leaving thePep().");
 }
 
@@ -353,6 +375,23 @@ function childMain() {
                 attributeId: 'urn:example:classification' }],
       notForPolicy: ['note']
     };
+    const PAYS = 'fgai-pay';
+    const COUNT = { type: 'object', additionalProperties: false,
+                    properties: { count: { type: 'integer' } } };
+    const PAY = {
+      type: 'fgai_payment',
+      locations: ['https://pay.fgai.example/'],
+      actions: ['initiate'],
+      schema: { type: 'object', additionalProperties: false,
+                properties: {
+                  type: { const: 'fgai_payment' },
+                  locations: { type: 'array', items: { type: 'string' } },
+                  actions: { type: 'array', items: { type: 'string' } },
+                  limits: COUNT } },
+      limits: COUNT,
+      xacml: [{ path: 'limits.count', attributeId: 'urn:example:count',
+                dataType: 'integer' }]
+    };
     inRealm(function () {
       const docs = applications.createApplication({ identifier: DOCS,
         protocols: ['oauth2'], fields: { oauthClientId: DOCS,
@@ -363,6 +402,16 @@ function childMain() {
       applications.createApplication({ identifier: 'fgai-open',
         protocols: ['oauth2'], fields: { oauthClientId: 'fgai-open',
           oauthAuthorizationDetailsType: ['open_access'] } });
+      // A SECOND RESOURCE, with LIMITS a person may lower at consent
+      // (#432 phase 5) and the count mapped for its policy (#564 P4's fix:
+      // the lowered details are asked again where an access token is
+      // minted at the authorization endpoint).
+      const pay = applications.createApplication({ identifier: PAYS,
+        protocols: ['oauth2'], fields: { oauthClientId: PAYS,
+          oauthAudience: ['https://pay.fgai.example/'],
+          oauthAuthorizationDetailsType: [JSON.stringify(PAY)] } });
+      note(pay.ok, '3b-ii. a resource declaring fgai_payment, with limits',
+           JSON.stringify(pay.errors || ''));
       applications.createApplication({ identifier: 'fgai',
         protocols: ['oauth2'], fields: { oauthClientId: 'fgai',
           oauthClientSecret: SECRET, oauthRedirectUri: [REDIRECT],
@@ -388,7 +437,7 @@ function childMain() {
     const local = function (location) {
       return String(location || '').replace(/^https?:\/\/[^/]+/, '');
     };
-    const drive = async function (first) {
+    const drive = async function (first, limits) {
       let r = first;
       const pages = { consentCount: 0 };
       for (let hop = 0; hop < 12; hop++) {
@@ -408,7 +457,8 @@ function childMain() {
                                                   at: local(where) });
           pages.consentCount += 1;
           r = await screen.answerConsent({ port: port, jar: jar,
-            at: local(where), opened: page, decision: 'allow' });
+            at: local(where), opened: page, decision: 'allow',
+            limits: limits });
           continue;
         }
         r = await request(port, 'GET', local(where), { cookies: true });
@@ -651,6 +701,77 @@ function childMain() {
          text.slice(0, 400));
     note(payloadOf(readToken).authorization_details !== undefined,
          '3ab. (the permitted token carries the detail it was granted)');
+
+    // --- j. nobody at PAR is not a subject called '' (#564 P4) ------------
+    // A policy that refuses an EMPTY subject-id: before P4 the PAR
+    // endpoint's question carried subject-id '' and was refused here; now
+    // it carries none, the rule does not match, and the detail is pushed.
+    writePolicy(ALFA_HEAD.concat([
+      '        rule nobodyByName {',
+      '            deny',
+      '            target clause who == ""',
+      '        }',
+      '        rule everythingElse {',
+      '            permit',
+      '        }',
+      '    }',
+      '}']).join('\n').replace('    policy documents {',
+      '    attribute who { category = subjectCat\n' +
+      '        id = "urn:oasis:names:tc:xacml:1.0:subject:subject-id"\n' +
+      '        type = string }\n    policy documents {'));
+    r = await par({ authorization_details: JSON.stringify([doc(['read'])]) });
+    note(r.status === 201,
+         '3ac. at PAR, with nobody signed in, the request names no subject ' +
+         '— a rule refusing subject-id "" does not match',
+         r.status + ' ' + r.text.slice(0, 200));
+    writePolicy(NO_DELETE);
+
+    // --- k. limits lowered at consent are asked again (#564 P4) -----------
+    const payPolicy = inRealm(function () {
+      const on = fga.enable(PAYS, { actor: 'test' });
+      const name = applications.fgaStateOf(PAYS).policy;
+      store.write(name, xml.writePolicy(alfa.parse([
+        'namespace fgaipay {',
+        '    attribute act { category = actionCat',
+        '        id = "urn:oasis:names:tc:xacml:1.0:action:action-id"',
+        '        type = string }',
+        '    attribute cnt { category = resourceCat',
+        '        id = "urn:example:count" type = integer }',
+        '    policy payments {',
+        '        id = "urn:test:fgai-pay"',
+        '        apply firstApplicable',
+        '        target clause act == "grant-authorization-detail"',
+        '        rule atLeastThree {',
+        '            permit',
+        '            condition integerGreaterThanOrEqual(',
+        '                integerOneAndOnly(cnt), 3)',
+        '        }',
+        '    }',
+        '}'].join('\n'))), { enabled: true });
+      return on;
+    });
+    note(payPolicy.ok && payPolicy.enforced === true,
+         '3ad. fgai-pay enforces FGA; its policy permits a count of at ' +
+         'least 3', JSON.stringify(payPolicy));
+    const payment = { type: 'fgai_payment',
+                      locations: ['https://pay.fgai.example/'],
+                      actions: ['initiate'], limits: { count: 5 } };
+    const implicit = function () {
+      return authorize({ response_type: 'token', scope: 'openid',
+        nonce: 'n-' + crypto.randomBytes(4).toString('hex'),
+        authorization_details: JSON.stringify([payment]) });
+    };
+    flow = await drive(await implicit(), { lim_t0r0_count: '4' });
+    note(flow.pages.consentCount === 1 &&
+         /[#&]access_token=/.test(flow.location),
+         '3ae. an implicit flow whose count the person lowers to 4 is ' +
+         'still permitted and mints its token', flow.location);
+    flow = await drive(await implicit(), { lim_t0r0_count: '2' });
+    note(flow.pages.consentCount === 1 &&
+         /error=access_denied/.test(flow.location) &&
+         !/access_token=/.test(flow.location),
+         '3af. lowered to 2, the lowered detail is asked again before the ' +
+         'token is minted, and refused access_denied', flow.location);
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
