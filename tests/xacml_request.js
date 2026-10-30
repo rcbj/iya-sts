@@ -314,7 +314,7 @@ function theFgaQuestion(t) {
   // before anybody signed in, and the subject's attributes are left out.
   const nobody = new xacmlRequest.AuthorizationRequest({})
     .fga(Object.assign({}, facts, { stage: 'par', subject: {} })).build();
-  t.check(valuesOf(nobody, S, model.ATTRIBUTE.SUBJECT_ID).length === 0 &&
+  t.check(valuesOf(nobody, S, model.ATTRIBUTE.SUBJECT_ID) === null &&
           !(categoryOf(nobody, S) || { attributes: [] }).attributes
             .some(function (one) {
               return one.attributeId === model.ATTRIBUTE.SUBJECT_ID ||
