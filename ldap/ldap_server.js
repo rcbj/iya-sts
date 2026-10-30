@@ -23663,7 +23663,8 @@ function serviceAccountWriteRefusal(working, touched) {
   const reference = serviceAccountPolicy.writeRefusal(working);
   if (reference) {
     log.debug('Leaving serviceAccountWriteRefusal(). The policy reference.');
-    return coded(reference.code,
+    return coded(reference.code === 'STS-SVCACCT-0048' ? 'STS-SVCACCT-0048'
+                   : 'STS-SVCACCT-0050',
                  new ldap.ConstraintViolationError(reference.message));
   }
   if (!serviceAccounts.isServiceAccount(working)) {
