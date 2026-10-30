@@ -101,6 +101,35 @@ function quotedTargets(problems, cache) {
   log.debug("Leaving quotedTargets().");
 }
 
+// THE SIDEBAR'S LINKS, AND THE AUTHORIZATION OVERVIEW'S (#564). The
+// Authorization section links to sections that stay on their own pages
+// (`/oauth-oidc.html#consent`), and the overview page is a table of the
+// same, so a renamed heading would leave a link landing at the top of a
+// long page with nothing failing. `/` is the index and `/api/` is TypeDoc
+// output, not markdown, so neither is a target here.
+function navigationTargets(problems, cache) {
+  log.debug("Entering navigationTargets().");
+  const nav = fs.readFileSync(path.join(DOCS, '_data', 'navigation.yml'),
+                              'utf8');
+  const re = /url:\s*"?([^"}\s]+)"?/g;
+  let found;
+  while ((found = re.exec(nav)) !== null) {
+    const url = found[1];
+    if (url === '/' || url.indexOf('/api/') === 0) {
+      continue;
+    }
+    checkTarget(url.replace(/^\//, ''), 'sidebar ' + url, problems, cache);
+  }
+  const overview = fs.readFileSync(path.join(DOCS, 'authorization.md'),
+                                   'utf8');
+  const link = /\]\(([a-z0-9.-]+\.md(?:#[a-z0-9-]+)?)\)/g;
+  while ((found = link.exec(overview)) !== null) {
+    checkTarget(found[1].replace(/\.md/, '.html'),
+                'authorization.md ' + found[1], problems, cache);
+  }
+  log.debug("Leaving navigationTargets().");
+}
+
 function webFiles() {
   log.debug("Entering webFiles().");
   const out = [];
@@ -178,6 +207,7 @@ async function run(t) {
   const problems = [];
   const cache = {};
   quotedTargets(problems, cache);
+  navigationTargets(problems, cache);
 
   const pages = {};
   WebPages.PAGES.forEach(function (row) {

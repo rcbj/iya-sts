@@ -306,5 +306,18 @@
   "authzen.deny": "Tanggihan",
   "authzen.cancel": "Kanselahin",
   "authzen.revoke": "Bawiin",
-  "authzen.noRequests": "Walang access request na naisumite sa realm na ito."
+  "authzen.noRequests": "Walang access request na naisumite sa realm na ito.",
+  "fga.heading": "Mga sariling policy ng mga application",
+  "fga.label": "Ano ang seksiyong ito",
+  "fga.p1": "Ang bawat application ay may sariling policy ng pinong awtorisasyon na nagpapasya sa mga RFC 9396 detail ng sarili nitong mga type. Hindi ito kailanman ang root, hindi ito kailanman ipinapadala sa mga remote PEP, at ine-edit ito sa editor gaya ng ibang policy.",
+  "fga.p2": "Ang policy ng application na binura ay pinapanatili, naka-disable at minarkahang ulila, hanggang alisin ito rito. Hindi maaalis ang policy na binabanggit pa ng isang application; ibalik ito mula sa tab na Pinong awtorisasyon ng application.",
+  "fga.thApplication": "Application",
+  "fga.thVersion": "Bersyon",
+  "fga.enforced": "ipinapatupad",
+  "fga.deleted": "binura",
+  "fga.orphaned": "ulila mula {when}",
+  "fga.unreferenced": "walang application na bumabanggit dito",
+  "fga.remove": "Alisin",
+  "fga.removeTip": "Burahin ang policy na ito. Walang application na bumabanggit dito, kaya walang nagpapasya gamit ito.",
+  "fga.none": "Walang application na may policy sa realm na ito."
 }

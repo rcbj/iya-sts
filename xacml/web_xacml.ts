@@ -588,7 +588,14 @@ class XacmlPage {
     const self = this;
     const writable = ctx.write;
 
-    const rows = json.policies.map(function (row) {
+    // AN APPLICATION'S OWN POLICY IS LISTED WITH ITS APPLICATION (#564,
+    // P5), in the section below, not among the repository's: it is never
+    // the root, never pulled, and is removed only as an orphan, so a row
+    // beside the root's offering the same three buttons would invite the
+    // two the server refuses.
+    const rows = json.policies.filter(function (row) {
+      return !row.application;
+    }).map(function (row) {
       const problems = row.problems.length
         ? '<div class="sub" style="color:#b00">' +
           row.problems.map(esc).join('<br>') + '</div>'
@@ -601,7 +608,8 @@ class XacmlPage {
           ? t.html('consoleXacml.policies.disable')
           : t.html('consoleXacml.policies.enable')) +
         '</button></form> ' +
-        (row.isRoot ? '' : '<form method="post" ' +
+        // An application's own policy (#564) is never offered as the root.
+        (row.isRoot || row.application ? '' : '<form method="post" ' +
           'action="/admin/xacml/policies" style="display:inline">' +
           self.hidden('action', 'set-root') + self.hidden('name', row.name) +
           '<button type="submit">' + t.html('consoleXacml.policies.makeRoot') +
@@ -669,6 +677,7 @@ class XacmlPage {
       t.html('consoleXacml.th.actions') +
       '</th></tr>' + rows +
       '</table>' +
+      self.applicationPoliciesSection(json, writable, t) +
       self.renderServiceOwnPolicies(json.serviceOwn, writable, t) +
       (writable
         ? '<h2>' + t.html('consoleXacml.alfa.heading') + '</h2>' + kit.note(
@@ -695,6 +704,87 @@ class XacmlPage {
             t.text('consoleXacml.template.label')) + templateForms
         : '');
     return body;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE APPLICATIONS' OWN POLICIES (#564, P5), grouped by application —
+  // `applicationPolicies` on `GET /admin-api/xacml/policies`. Each policy
+  // links into the editor like any other; Enable and Disable are the
+  // repository's own actions; **Make root is never offered** (STS-FGA-0002
+  // refuses it anyway); and **Remove is offered only for a policy no
+  // application names** — an orphan of a deleted application, decision 3's
+  // "an administrator removes it" — because the one an application still
+  // names is refused (STS-FGA-0022) and is reset from the application's own
+  // Fine-grained authorization tab, which the application cell links to.
+  // -------------------------------------------------------------------------
+  /**
+   * Draws the policies applications own, grouped by application.
+   *
+   * @param json - `policiesJson()`'s answer
+   * @param writable - whether the reader may change them
+   * @param t - the page's translator (#539)
+   * @returns the section's HTML
+   */
+  static applicationPoliciesSection(json: Json, writable: boolean,
+                                    t: Json): string {
+    const self = this;
+    const groups = json.applicationPolicies || [];
+    const rows = groups.map(function (group) {
+      const who = group.known
+        ? '<a href="/admin/applications?application=' +
+          encodeURIComponent(group.application) + '#tab-fga"><code>' +
+          esc(group.application) + '</code></a>' + (group.enforced
+            ? ' <strong>' + t.html('consoleXacml.fga.enforced') + '</strong>'
+            : '')
+        : '<code>' + esc(group.application) + '</code> <em>' +
+          t.html('consoleXacml.fga.deleted') + '</em>';
+      return (group.policies || []).map(function (row, n) {
+        const marks = [];
+        if (row.orphanedAt) {
+          marks.push('<span class="state-revoked">' +
+            t.html('consoleXacml.fga.orphaned', { when: row.orphanedAt }) +
+            '</span>');
+        } else if (!row.referenced) {
+          marks.push('<span class="state-revoked">' +
+            t.html('consoleXacml.fga.unreferenced') + '</span>');
+        }
+        const actions = writable
+          ? '<form method="post" action="/admin/xacml/policies" ' +
+            'style="display:inline">' +
+            self.hidden('action', row.enabled ? 'disable' : 'enable') +
+            self.hidden('name', row.name) + '<button type="submit">' +
+            (row.enabled ? t.html('consoleXacml.policies.disable')
+                         : t.html('consoleXacml.policies.enable')) +
+            '</button></form> ' + (row.referenced ? ''
+              : '<form method="post" action="/admin/xacml/policies" ' +
+                'style="display:inline">' + self.hidden('action', 'delete') +
+                self.hidden('name', row.name) + '<button type="submit" ' +
+                'title="' + esc(t.text('consoleXacml.fga.removeTip')) + '">' +
+                t.html('consoleXacml.fga.remove') + '</button></form>')
+          : '<span class="sub">' + t.html('consoleXacml.readOnly') +
+            '</span>';
+        return '<tr><td>' + (n === 0 ? who : '') + '</td><td>' +
+          '<a href="/admin/xacml/editor?policy=' +
+          encodeURIComponent(row.name) + '"><code>' + esc(row.name) +
+          '</code></a>' + (marks.length ? '<div class="sub">' +
+            marks.join(' ') + '</div>' : '') + '</td><td><code>' +
+          esc(row.policyId || '') + '</code></td><td>' +
+          esc(row.version || '') + '</td><td>' + (row.enabled
+            ? t.html('consoleXacml.policies.enabled')
+            : '<em>' + t.html('consoleXacml.policies.disabled') + '</em>') +
+          '</td><td>' + actions + '</td></tr>';
+      }).join('');
+    }).join('') || '<tr><td colspan="6">' +
+      t.html('consoleXacml.fga.none') + '</td></tr>';
+    return '<h2 id="fga-policies">' + t.html('consoleXacml.fga.heading') +
+      '</h2>' + kit.note('<p>' + t.html('consoleXacml.fga.p1') + '</p><p>' +
+        t.html('consoleXacml.fga.p2') + '</p>',
+        t.text('consoleXacml.fga.label')) +
+      '<table><tr><th>' + t.html('consoleXacml.fga.thApplication') +
+      '</th><th>' + t.html('consoleXacml.th.name') + '</th><th>PolicyId' +
+      '</th><th>' + t.html('consoleXacml.fga.thVersion') + '</th><th>' +
+      t.html('consoleXacml.th.state') + '</th><th>' +
+      t.html('consoleXacml.th.actions') + '</th></tr>' + rows + '</table>';
   }
 
   /**

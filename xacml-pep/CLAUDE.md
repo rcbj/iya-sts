@@ -41,14 +41,14 @@ shim) are in git history.
 | `listener.rs` | The HTTPS listener whose pair is re-read from disk, and which asks for a client certificate when `PEP_AUTHZEN_CLIENT_CA` is set (#1179). |
 | `service.rs` | The one handler for both listeners, `/protected`'s decision, `GET /`. |
 | `authzen_catalogue.rs`, `authzen_map.rs` | Ports of `authzen/authzen_catalogue.ts` and `authzen/authzen_map.ts`: the catalogue grammar, the request reading and the fail-closed mapping (#1179). Pure. |
-| `authzen.rs` | The AuthZEN edge PDP's endpoints, the admission of a caller by the pulled list and the optional local narrowing (#1189), the batch and the metadata (#1179). |
+| `authzen.rs` | The AuthZEN edge PDP's endpoints, the admission of a caller by the pulled list and the optional local narrowing (#1189), the batch and the metadata (#1179), and the forward of an evaluation about an application that enforces fine-grained authorization to the service (#564, P7). |
 | `main.rs` | Start-up, the backoff timers, the fault handler, `--stamp`, `--healthcheck`. |
 
 ## The tests, and which half each guards
 
 | Test | What it holds |
 |---|---|
-| `cargo test -p xacml-pep` | **The SHAPE**: the PIP walk over ONE document holding a designator in five places (a target, a condition, a variable definition, an obligation assignment, a policy reached by `PolicyIdReference`) and NOT the resource-category one beside them; the PIP answer read with the engine's own request reader; the listener's reload rules and a real mutual-TLS handshake read by `peer_of()`; the enforcement rule against `enforcement_cases.json`; and the AuthZEN mapping against `authzen_cases.json`, the request it builds, the fail-closed result, the pulled caller list's grammar, admission by it and by the local narrowing, and the application scope. |
+| `cargo test -p xacml-pep` | **The SHAPE**: the PIP walk over ONE document holding a designator in five places (a target, a condition, a variable definition, an obligation assignment, a policy reached by `PolicyIdReference`) and NOT the resource-category one beside them; the PIP answer read with the engine's own request reader; the listener's reload rules and a real mutual-TLS handshake read by `peer_of()`; the enforcement rule against `enforcement_cases.json`; and the AuthZEN mapping against `authzen_cases.json`, the request it builds, the fail-closed result, the pulled caller list's grammar, admission by it and by the local narrowing, and the application scope; and (#564, P7) the catalogue's `fgaApplications` read whole or not at all, which applications are forwarded, the forwarded body, the service's every answer mapped to a decision or an error (never `false`), and the forward over a real socket to a mock service — the realm's path, `X-Request-ID`, a 500, a refusal of the PEP, a timeout and nobody listening. |
 | `tests/authzen_map.js` S | **The service's mapping against the same `authzen_cases.json`** — so the two readings of one request are checked against one expectation, as the two enforcement rules are. |
 | `tests/authzen_evaluation.js` K, P | The PDP's side of the two AuthZEN pulls, `GET /xacml/pep/authzen-catalogue` (K) and `GET /xacml/pep/authzen-callers` (P), in process — P holding each pulled caller's name to the one the certificate door gives a real handshake. |
 | `cargo test -p sts-xacml` | The engine against the vendored OASIS suite, case for case as `tests/xacml_conformance.js` holds the service's. |
@@ -408,6 +408,7 @@ console.
 | `PEP_AUTHZEN_CLIENT_CA` | — | **A path, read once**: the CA bundle an AuthZEN caller's certificate must chain to. Set, the HTTPS listener ASKS every client for a certificate; unset or unreadable, the edge PDP admits nobody (`STS-XPEP-0039`). |
 | `PEP_AUTHZEN_CALLERS` | — | **Optional since #1189.** A JSON array of `{ "name", "sha256", "applications" }`. Set, it NARROWS the callers pulled from the service to the certificates it names (`STS-XPEP-0054`), and before the first caller pull it decides alone, as #1179's door did (`STS-XPEP-0037`); unset, the pulled list alone decides and nothing is answered before it (`STS-XPEP-0050`). Set to a value that names nobody, it admits nobody. A malformed entry is left out (`STS-XPEP-0038`). |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). |
+| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). |
 
 **The compose service, beyond the table** (moved from `docker-compose.yml`'s
@@ -563,6 +564,92 @@ place where both can be asked of one holding.
   `STS-XPEP-0043`): with no catalogue every property would be undeclared,
   which is an answer the service would not give.
 
+### An application that enforces fine-grained authorization is FORWARDED (#564, P7)
+
+**rcbj's decision of 2026-10-30, extending #564's decision 4: this
+container does not decide an evaluation about an application that enforces
+fine-grained authorization. It forwards it to the service, and an error
+there is an error here — never `false`, never the root's answer.** The
+application's policy is withheld from the policy pull, so the root is the
+only thing it could answer from, and that would be the restriction silently
+not applying.
+
+* **WHICH.** The catalogue pull carries `fgaApplications` (`xacml/CLAUDE.md`),
+  inside the catalogue's token, held on `Catalogue`. `evaluate_one()` reads
+  the request and resolves the application EXACTLY as for any other
+  (`authzen_map::read()`, then `application_of()`) and forwards when the
+  application is on the list (`forwards()`). Reading first is right, not
+  merely convenient: the service reads the same request with the same
+  catalogue before it routes on the application, so a request refused here
+  would be refused there with the same code, and an application out of the
+  caller's scope never reaches the service at all.
+* **THE FAIL-SAFE BEFORE THE FIRST PULL IS THE EXISTING ONE.** The list
+  travels with the catalogue, and nothing is answered before a catalogue
+  has loaded (`503`, `STS-XPEP-0043`), so there is no moment when an
+  evaluation is answered without a list to classify it by. A member that is
+  not a list of identifiers refuses the WHOLE catalogue and keeps the one
+  held (`STS-XPEP-0059`; before any, `503` goes on) — unlike a malformed
+  catalogue row or caller entry, which is left out and the rest used,
+  because an identifier left out here is an enforcing application decided
+  from the root. An ABSENT member is an empty list: a service that does not
+  send it predates fine-grained authorization, so nothing there enforces it.
+  The cost that remains is convergence: an application switched on is
+  decided here from the root until the next catalogue poll, as a caller
+  the service stops admitting is admitted until then.
+* **ONE SINGLE EVALUATION PER FORWARDED ITEM, NOT THE BATCH.** A batch item
+  is forwarded as `POST /access/v1/evaluation` with the batch's defaults
+  merged in (`merged()`, the request the service would have read for that
+  item). Forwarding the batch would hand the service items this container
+  decides itself and a semantic (`deny_on_first_deny`,
+  `permit_on_first_permit`) that has to stop at the first decisive item
+  wherever it was decided; splitting keeps the semantic, the order and each
+  item's own error here, in one place, and needs the PEP admitted to the
+  single endpoint only. The cost is a round trip per forwarded item, in
+  order. **There is no Search API here** (*What it cannot do*), so there is
+  nothing of a search to forward.
+* **WHAT IS SENT.** The caller's request for that evaluation
+  (`forwarded_body()`), with `context.application` SET to the resolved
+  application whether or not the caller sent it — the service scopes the
+  question by the PEP's own scope, which may name several. The trusted
+  facts are the service's: `urn:sts:xacml:authzen:caller` there is the PEP,
+  and `supplied` names `context.application`. `X-Request-ID` is the
+  caller's (a batch item's is `<batch id>#<index>`), so the service's audit
+  row and this container's log line are found together. To
+  `<PEP_PDP_URL>/access/v1/evaluation` — the realm prefix is the PDP URL's
+  — through `PdpClient::call_with()`: the ONE client, so the same client
+  certificate and the same verification of the PDP as the pull, with
+  `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` in place of `PEP_TIMEOUT_MS`. Neither
+  the body nor a property value is logged.
+* **WHAT COMES BACK** (`forwarded_result()`): a `200` with a boolean
+  `decision` is the answer, its `context` passed on (reasons, obligations).
+  `400`, `413`, `500`, `501`, `503` are the service's status and message —
+  about the request or the application's policy (`500` is its
+  `STS-AUTHZEN-0046`) — `STS-XPEP-0057`. `401`/`403` are the service
+  refusing THIS PEP, which the caller cannot mend: `502` naming what the
+  PEP's entry needs (AUTHZEN_PEPS, the application in
+  `stsAuthzenApplication`), `STS-XPEP-0056`. Any other status `502`
+  (`0057`); a `200` without a boolean decision `502` (`0058`); no answer
+  `502`, or `504` past the timeout (`0055`). Each is the single endpoint's
+  status or a batch item's `context.error`, and an item's error is
+  `denied` for the batch semantic, as any item error is.
+* **COUNTED AND LOGGED HERE**: `answered` counts it like any decision or
+  error, and `answered.forwarded` apart; the log line is the usual one
+  (types, action, caller, application, request id, never a value) saying it
+  was forwarded, with the code when it failed. `GET /`'s
+  `catalogue.fgaApplications` is a COUNT — `GET /` answers anybody.
+* **WHAT THE OPERATOR OWES**, in `docs/remote-pep.md`: the PEP's own entry
+  (the one its certificate is stored on, already holding REMOTE_PEPS) holds
+  AUTHZEN_PEPS and has every enforcing application its callers ask about in
+  its scope; and the realm's door admits a certificate. Nothing here
+  checks that ahead of time: the service's answer is the check, and the
+  `502`'s message says what to grant.
+* **NOT A PROTOCOL JOB.** No protocol job configures this container's edge
+  PDP (a client CA and a caller certificate presented to it), so the forward
+  is held by `cargo test` against a mock service on a loopback socket, and
+  the service's half — `fgaApplications` through a switch flip — by
+  `tests/authzen_evaluation.js` K10–K12 and `tests/protocol/sts_fga.js`
+  sections 3 and 10.
+
 ### Who may ask: mutual TLS, and the service's own list, pulled
 
 rcbj's default for the service (`authzen.callerAuthentication=mtls`) is
@@ -629,6 +716,9 @@ before the first pull, one not on the local list 403 (`-0037`). No
   `context.supported_obligations` is an undeclared member here), and sends
   no `signed_metadata`, holding none of the realm's signing keys. Each is a
   follow-up, not a regression: the fail-closed answer is the same.
+* **FINE-GRAINED AUTHORIZATION IS NOT DECIDED HERE** (#564): it is
+  forwarded (above), so it costs a round trip and depends on the service
+  being up, and a switch of enforcement reaches here on the next poll.
 * **THE TOKEN DOORS.** `bearer` and `mtls+bearer` check a token's issuer,
   audience, revocation and client against the realm in process. Not here.
 * **REVOCATION** of the caller's certificate is not checked here. A
@@ -671,7 +761,9 @@ threw, a retried registration or a heartbeat that threw, the engine modules
 not found, an unhandled promise rejection — conditions a Rust binary built
 from one workspace cannot meet. A panic once started is `STS-XPEP-0033`,
 contained and throttled as before. **0035–0046 are the AuthZEN edge PDP's**
-(#1179), **0047–0054 its caller pull and admission by it** (#1189); a request it refuses under the mapping contract is logged with the
+(#1179), **0047–0054 its caller pull and admission by it** (#1189),
+**0055–0059 the forward of a fine-grained authorization evaluation and the
+catalogue's `fgaApplications`** (#564, P7); a request it refuses under the mapping contract is logged with the
 `STS-AUTHZEN-*` code the service gives the same request.
 
 

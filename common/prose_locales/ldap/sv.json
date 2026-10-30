@@ -1723,6 +1723,14 @@
     "en": "2c8a385006302f63",
     "text": "AUTENTISERINGSPOLICYN SOM DEN HÄR APPLIKATIONENS PERSONER LOGGAR IN UNDER: `default` (eller tomt), eller namnet på en namngiven autentiseringspolicy i den här sfären (Katalog > Policyer). En namngiven policy innehåller de tillåtna mekanismerna för första faktor (password, password-mfa, webauthn, spnego, wallet, federation; anges ingen tillåts alla) och de tillåtna andra faktorerna (password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet; anges ingen lämnas sfärens som de är). `default` tillåter varje mekanism som sfärens autentiseringspolicy tillåter.\n\nUPPRÄTTHÅLLS vid varje webbläsarinloggning i applikationen, i båda lägena: en person vars session vilar på en mekanism som policyn inte tillåter skickas att logga in igen med en som den tillåter. En enda angiven mekanism för första faktor är också dit inloggningen går (`spnego` till /authn/spnego, `wallet` till /authn/wallet, `federation` till appFederationRelationship). De andra faktorerna kan bara SNÄVA IN sfärens policy: en som den har stängt av förblir avstängd här.\n\nEtt namn som ingen policy i den här sfären bär — skrivet förbi konsolen — tillåter INGEN mekanism förrän policyn finns (STS-AUTHN-0536).\n\nDET SKRIVS AV INGEN: inget protokoll presenterar det, så det är redigerbart och börjar tomt."
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "Postnamnet i ou=policies för den finkorniga auktoriseringspolicy som den här applikationen äger, som avgör varje auktoriseringsdetalj av de typer den deklarerar när appFgaEnforced är TRUE."
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "TRUE när den här applikationens finkorniga policy tillämpas. Saknas eller FALSE betyder att den inte gör det, vilket är standard."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, samt standardattributen owner och description."
@@ -1862,6 +1870,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "Dokumentets egen <Description>, där det har en."
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "Identifieraren för den applikation som ÄGER den här policyn, som avgör detaljerna i den applikationens authorization_details-typer. En sådan policy är aldrig roten, nås aldrig av en PolicyIdReference från roten och skickas aldrig till en fjärr-PEP."
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "När den ägande applikationen togs bort. Policyn behålls, inaktiverad, för granskning tills en administratör tar bort den."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

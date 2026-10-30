@@ -26,7 +26,10 @@
 // they may, asks `authzen_map.ts` what the question is, hands the XACML
 // request to the XACML surface's own `decide()` against the realm's ROOT
 // policy and `enforce()`s the answer deny-biased, and writes what comes back.
-// No decision logic lives here.
+// No decision logic lives here. **An application that enforces fine-grained
+// authorization is the one exception (#564, P4)**: its evaluations are
+// decided against ITS OWN policy, through `xacml/fga_pep.ts`'s
+// `decideAccess()`, with the same result rules — `evaluateOne()` argues it.
 //
 // **A DENIAL IS A 200, AN ERROR IS NOT.** Section 5.5: `decision: false` is
 // an answer. A request that could not be evaluated is 400 (its shape or a
@@ -92,6 +95,12 @@ const BATCH_MEMBERS = Object.freeze(['subject', 'action', 'resource',
 // A request id this service will echo.
 const REQUEST_ID = /^[\x21-\x7e]{1,128}$/;
 
+// What a PEP is told when an application that enforces fine-grained
+// authorization has no usable policy (#564, STS-AUTHZEN-0046): that it is an
+// error, and nothing about the policy, which is the deployment's business.
+const UNUSABLE_MESSAGE = 'The application\'s fine-grained authorization ' +
+  'policy cannot be used, so the request could not be evaluated.';
+
 // One evaluation's result: a decision, or an error, with what was recorded.
 interface ItemResult {
   status: number;
@@ -115,6 +124,9 @@ interface SurfaceDeps {
   exchange: any;
   loadXacml(): any;
   loadMonitor(): any;
+  // The embedded FGA PEP (#564, P4), for an application that enforces
+  // fine-grained authorization: lazily, as the XACML surface is.
+  loadFgaPep(): any;
   // The authorization server's published-document signer, for
   // `signed_metadata` (#1178): required when a document is signed.
   loadOauth2(): any;
@@ -169,6 +181,11 @@ class AuthzenSurface {
         log.debug("Entering loadMonitor().");
         log.debug("Leaving loadMonitor().");
         return require('../xacml/xacml_monitor');
+      },
+      loadFgaPep: function (): any {
+        log.debug("Entering loadFgaPep().");
+        log.debug("Leaving loadFgaPep().");
+        return require('../xacml/fga_pep');
       },
       loadOauth2: function (): any {
         log.debug("Entering loadOauth2().");
@@ -398,8 +415,24 @@ class AuthzenSurface {
     const decided = self.decideEvaluation(evaluation, caller.name,
                                           scoped.application,
                                           accessRequests.factsOf(verdict));
+    if (decided.unusable) {
+      // AN ERROR, NEVER `false` (#564, decision 8): the application enforces
+      // fine-grained authorization and there is nothing to decide with — no
+      // reference, a policy that is missing, not its own, disabled or will
+      // not parse (STS-FGA-0003 to 0007), no such application (0009), or a
+      // throw or an unreadable registry (0015). Not counted on the monitor:
+      // no engine decided anything, and no access request can be built from
+      // a decision nobody made (#1180).
+      self.recordUnusable(caller, evaluation, scoped.application, batchId,
+                          where, decided.unusable.code,
+                          decided.unusable.policy);
+      log.debug("Leaving AuthzenSurface.evaluateOne(). " +
+                decided.unusable.code);
+      return failed(500, 'STS-AUTHZEN-0046', UNUSABLE_MESSAGE);
+    }
     const outcome = decided.outcome;
     const faultCode = decided.faultCode;
+    const decidedBy = decided.decidedBy;
     const approvalCodes: any = { approval_unverifiable: 'STS-AUTHZEN-0084',
                                  approval_expired: 'STS-AUTHZEN-0085',
                                  out_of_scope: 'STS-AUTHZEN-0086' };
@@ -420,7 +453,8 @@ class AuthzenSurface {
       : null;
     // WHAT THE ROW CARRIES: who asked, about which application, the two
     // types and the action, the request id, the decision — and NO property
-    // value and no credential (decision 9).
+    // value and no credential (decision 9). Since #564, the application's
+    // fine-grained policy, its PolicyId and version, when it decided.
     audit.audit({
       action: 'authzen.decision',
       actor: caller.name,
@@ -431,6 +465,7 @@ class AuthzenSurface {
           ')') + ' for a ' + evaluation.subject.type + ' to ' +
         evaluation.action.name + ' a ' + evaluation.resource.type +
         ', application "' + scoped.application + '"' +
+        AuthzenSurface.decidedByText(decidedBy) +
         (batchId ? ', request ' + batchId : '') +
         (outcome.discharged.length ? '; discharged ' +
           outcome.discharged.join(', ') : '') +
@@ -596,43 +631,103 @@ class AuthzenSurface {
 
   /**
    * Decides one evaluation that has been read and scoped: the XACML request
-   * built, the root policy asked, the answer enforced and mapped back, and
-   * the decision counted. The one place a question is put to the policy, for
-   * an evaluation, a batch item and every candidate of a search.
+   * built, the policy asked, the answer enforced and mapped back, and the
+   * decision counted. The one place a question is put to a policy, for an
+   * evaluation, a batch item and every candidate of a search.
+   *
+   * WHICH POLICY DECIDES (#564, P4; rcbj's decision 4, which amends #563's
+   * decision 7). An application that ENFORCES fine-grained authorization
+   * (`appFgaEnforced`, read from the registry — no XACML is needed to ask)
+   * is decided against ITS OWN policy alone, through the embedded FGA PEP's
+   * `decideAccess()`: the same resolve and the same `decidePolicy()` an
+   * issuance question uses, so the two can never disagree about which
+   * policy is the application's. Every other application — FGA off, or no
+   * such entry — is decided against the realm ROOT exactly as before. Being
+   * here, the routing holds for a search's candidates as for an evaluation
+   * (#1175 decides each candidate through this method).
+   *
+   * A registry that cannot be read is NOT read as "not enforced": that
+   * would route an enforcing application's question to the root, which is
+   * the restriction silently not applying. It is `unusable`, as a policy
+   * that cannot be used is, and the caller answers an error.
    *
    * @param evaluation - the evaluation `authzen_map.ts` read
    * @param callerName - the trusted caller
    * @param application - the trusted application
    * @param approval - a verified approval's trusted facts (#1180), or null
-   * @returns `{ outcome, faultCode }`
+   * @returns `{ outcome, faultCode, decidedBy, unusable }`: `unusable` is
+   *   `{ code, policy }` (nothing else set) when the application enforces
+   *   and its policy cannot be used; `decidedBy` is `decideAccess()`'s
+   *   answer when the application's policy decided, else null
    */
   decideEvaluation(evaluation: any, callerName: string,
-                   application: string,
-                   approval?: any): { outcome: any; faultCode: string } {
+                   application: string, approval?: any): any {
     const self = this;
     const { log, config, errorCodes, realms } = this.deps;
     log.debug("Entering AuthzenSurface.decideEvaluation().");
+    let fgaEnforced = false;
+    try {
+      fgaEnforced = !!self.deps.applications.fgaStateOf(
+        application).enforced;
+    } catch (e) {
+      log.debug("Caught in AuthzenSurface.decideEvaluation(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0046') + 'authzen: whether "' +
+                application + '" enforces fine-grained ' +
+                'authorization could not be read: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving AuthzenSurface.decideEvaluation(). FGA unreadable.");
+      return { unusable: { code: 'STS-FGA-0015', policy: '' } };
+    }
     const request = map.request(evaluation, {
       realm: String(realms.currentId() || ''),
       caller: callerName,
       application: application,
+      fga: fgaEnforced,
       approval: approval || null
     });
     const xacml = self.deps.loadXacml();
-    const answer = xacml.decide(request,
-      { resolve: self.resolves(evaluation.subject.type) });
+    const resolve = self.resolves(evaluation.subject.type);
+    let answer: any;
+    let decidedBy: any = null;
+    if (fgaEnforced) {
+      const routed = self.deps.loadFgaPep().decideAccess(
+        application, request, { resolve: resolve });
+      if (!routed || !routed.ok) {
+        const code = String((routed && routed.code) || 'STS-FGA-0015');
+        log.warn(errorCodes.tag('STS-AUTHZEN-0046') + 'authzen: "' +
+                 application + '" enforces fine-grained ' +
+                 'authorization and its policy cannot be used (' + code +
+                 '); the evaluation is an error.');
+        log.debug("Leaving AuthzenSurface.decideEvaluation(). " + code);
+        return { unusable: { code: code,
+                             policy: String((routed && routed.policy) ||
+                                            '') } };
+      }
+      answer = routed.answer;
+      decidedBy = routed;
+    } else {
+      answer = xacml.decide(request, { resolve: resolve });
+    }
     const faultCode = String(errorCodes.codeOf(answer) || '');
     const enforcement = xacml.enforce(answer, 'deny-biased');
     // THE OBLIGATIONS PROFILE (#1177), while `authzen.obligationsProfile`
-    // is on: the PEP's declaration decides what is handed (`outcome()`).
+    // is on: the PEP's declaration decides what is handed (`outcome()`),
+    // whichever policy decided.
     const profile = config.value('authzen.obligationsProfile') !== false;
     const outcome = map.outcome(answer, enforcement, faultCode,
       profile ? evaluation.supportedObligations : null);
     // COUNTED AS A DECISION AND NOT AN ENFORCEMENT, the PDP endpoint's
-    // reason: the caller enforced it, in its own process.
+    // reason: the caller enforced it, in its own process. ON THIS ROW
+    // WHICHEVER POLICY DECIDED (#564): the monitor's rows are per ASKER, and
+    // the asker is an AuthZEN PEP; the `fga` row counts what this process
+    // ENFORCES at issuance, and counting this there would claim an
+    // enforcement nobody here made — and counting it on both, one decision
+    // twice. The audit row says which policy decided.
     self.deps.loadMonitor().record('authzen', { decision: answer.decision });
     log.debug("Leaving AuthzenSurface.decideEvaluation().");
-    return { outcome: outcome, faultCode: faultCode };
+    return { outcome: outcome, faultCode: faultCode, decidedBy: decidedBy,
+             unusable: null };
   }
 
   /**
@@ -711,7 +806,11 @@ class AuthzenSurface {
       self.resolves(evaluation.subject.type), most);
     const permitted: string[] = [];
     let faults = 0;
+    let unusable: any = null;
     named.values.forEach(function (candidate: string) {
+      if (unusable) {
+        return;
+      }
       const one = JSON.parse(JSON.stringify(evaluation));
       if (kind === 'subject') {
         one.subject.id = candidate;
@@ -721,12 +820,34 @@ class AuthzenSurface {
         one.action.name = candidate;
       }
       const decided = self.decideEvaluation(one, caller.name, application);
-      if (decided.outcome.fault) {
+      if (decided.unusable) {
+        unusable = decided.unusable;
+      } else if (decided.outcome.fault) {
         faults += 1;
       } else if (decided.outcome.decision === true) {
         permitted.push(candidate);
       }
     });
+    // AN APPLICATION WHOSE FINE-GRAINED POLICY CANNOT BE USED (#564): the
+    // whole search is an error, never an empty or partial answer and never
+    // the root's — every candidate would meet the same policy, so a result
+    // without them would be the restriction answering "nobody" by accident.
+    // The row carries the STS-FGA code that says why.
+    if (unusable) {
+      audit.audit({
+        action: 'authzen.search',
+        actor: caller.name,
+        protocol: 'AuthZEN',
+        errorCode: unusable.code,
+        detail: String(opts.where || 'search') + ' searched ' + kind +
+          's and decided nothing (the fine-grained authorization policy' +
+          (unusable.policy ? ' "' + unusable.policy + '"' : '') +
+          ' of application "' + application + '" cannot be used, ' +
+          unusable.code + ')' + (opts.id ? ', request ' + opts.id : '') + '.'
+      });
+      log.debug("Leaving AuthzenSurface.runSearch(). " + unusable.code);
+      return failed(500, 'STS-AUTHZEN-0046', UNUSABLE_MESSAGE);
+    }
     const limit = asked.page.limit === null
       ? Number(config.value('authzen.searchPageSize')) : asked.page.limit;
     const shown = permitted.slice(offset, offset + limit);
@@ -768,6 +889,51 @@ class AuthzenSurface {
     log.debug("Leaving AuthzenSurface.runSearch(). " + permitted.length +
               " permitted.");
     return { status: 200, body: out };
+  }
+
+  /**
+   * The audit row's words naming the fine-grained policy that decided, or
+   * '' when the realm root did.
+   *
+   * @param decidedBy - `decideAccess()`'s answer, or null
+   * @returns the words
+   */
+  static decidedByText(decidedBy: any): string {
+    log.debug("Entering AuthzenSurface.decidedByText().");
+    if (!decidedBy) {
+      log.debug("Leaving AuthzenSurface.decidedByText(). The root.");
+      return '';
+    }
+    log.debug("Leaving AuthzenSurface.decidedByText().");
+    return ', decided by its fine-grained authorization policy "' +
+      String(decidedBy.policy || '') + '" (PolicyId ' +
+      String(decidedBy.policyId || '-') + ', version ' +
+      String(decidedBy.version || '-') + ')';
+  }
+
+  // THE ROW OF AN EVALUATION NO POLICY COULD DECIDE (#564, P4): an
+  // application that enforces fine-grained authorization whose policy
+  // cannot be used. The row carries the STS-FGA code that says WHY — the
+  // response is marked STS-AUTHZEN-0046, which says only that it happened —
+  // and the policy entry when one was named. No property value (decision 9).
+  private recordUnusable(caller: any, evaluation: any, application: string,
+                         batchId: string, where: string, code: string,
+                         policy: string): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering AuthzenSurface.recordUnusable(). " + code);
+    audit.audit({
+      action: 'authzen.decision',
+      actor: caller.name,
+      protocol: 'AuthZEN',
+      errorCode: code,
+      detail: where + ' decided nothing (the fine-grained authorization ' +
+        'policy' + (policy ? ' "' + policy + '"' : '') + ' of application "' +
+        application + '" cannot be used, ' + code + ') for a ' +
+        evaluation.subject.type + ' to ' + evaluation.action.name + ' a ' +
+        evaluation.resource.type + (batchId ? ', request ' + batchId : '') +
+        '.'
+    });
+    log.debug("Leaving AuthzenSurface.recordUnusable().");
   }
 
   /**

@@ -1663,7 +1663,76 @@ running totals under that `grant_id`**, so a client cannot renew its budget
 by refreshing its token. ([GNAP](gnap.md#limits) describes what a resource
 server does with the totals.)
 
-`derivableFrom` is GNAP's (RFC 9767 derivation). `interaction`,
+**How a detail reaches the owning application's policy** (fine-grained
+authorization, #564). A definition may also say which of a detail's members
+an XACML policy sees, and which it deliberately does not:
+
+| Member | What it says |
+|---|---|
+| `xacml` | rows of `path` (a member, or a dotted path into a nested object) → `attributeId`, and optionally `category` (default `resource`), `dataType` (default `string`) and `multiplicity` (`single`, the default, or `bag` for an array) |
+| `notForPolicy` | member paths that are never sent to the policy |
+
+The five common fields need neither: whenever a detail carries them they are
+sent as `urn:sts:xacml:fga:detail:action`, `…:detail:privilege` (action
+category), `…:detail:location`, `…:detail:datatype` and
+`…:detail:identifier` (resource category). Beside them the policy is told,
+by the service and never by the detail, the detail's type
+(`urn:sts:xacml:fga:detail-type`), the owning application
+(`urn:sts:xacml:fga:application`), a SHA-256 of the type's definition
+(`urn:sts:xacml:fga:definition-digest`), the stage
+(`urn:sts:xacml:fga:stage`: `authorize`, `token`, `refresh`, `exchange`,
+`par`), every member path the policy was sent
+(`urn:sts:xacml:fga:supplied`, so an empty value and an absent one differ),
+the subject, the client and the realm, with the action
+`grant-authorization-detail`. The issue's document example, with a closed
+schema:
+
+```json
+{"type": "document_access",
+ "actions": ["read", "update", "delete"],
+ "schema": {"type": "object", "additionalProperties": false,
+            "properties": {"type": {}, "actions": {}, "identifier": {},
+                           "locations": {}, "classification": {"type": "string"},
+                           "owner": {"type": "object", "additionalProperties": false,
+                                     "properties": {"department": {"type": "string"}}},
+                           "note": {"type": "string"}}},
+ "xacml": [
+   {"path": "classification", "attributeId": "urn:example:classification"},
+   {"path": "owner.department", "attributeId": "urn:example:department"}],
+ "notForPolicy": ["note"]}
+```
+
+* **A row may not name a trusted identifier**: anything under
+  `urn:sts:xacml:`, XACML's subject-id, resource-id and action-id, the
+  current-time attributes, or a bare directory attribute name (such as
+  `employeeType`) in a subject category. Such a definition is refused when it
+  is written (`STS-REG-0112`), as are an unknown category or datatype, a row
+  for `type` or a common field, two rows for one member and a member both
+  mapped and listed in `notForPolicy`. These are the rules
+  [AuthZEN's catalogue](authzen.md#the-attribute-catalogue) follows.
+* **Values are typed by the row**: a string is parsed as the row's datatype,
+  a JSON number reaches only an `integer` or `double` row, `null` is refused,
+  an array only for a `bag` row, and a nested object only through dotted
+  rows. A member no row maps and `notForPolicy` does not list never becomes
+  an attribute.
+* **A type is covered** when every member its schema permits is a common
+  field, mapped, or listed in `notForPolicy`. A schema that permits members it
+  does not name — no schema, or no `"additionalProperties": false` — can never
+  be covered, so close it.
+
+**When the declaring application enforces fine-grained authorization**
+(`appFgaEnforced`), each detail of its types is granted only when the
+application's own policy says Permit: asked at `/oauth2/authorize` after
+sign-in and before the consent screen (a refusal is `access_denied`, sent to
+the `redirect_uri`), at `/oauth2/par` and at `/oauth2/token` for every grant,
+a refresh included (`invalid_authorization_details`). A policy that cannot be
+used is `server_error`, never a grant, and a token exchange may ask only for
+details its `subject_token` already carries. Applications that do not
+enforce it are unaffected. See [what happens at
+issuance](fga.md#what-happens-at-issuance).
+
+`derivableFrom` is GNAP's (RFC 9767 derivation), and GNAP ignores `xacml` and
+`notForPolicy`. `interaction`,
 `consentActions` and `acr` are recorded and enforced by a later phase of #432.
 The resource application's page has an **Access types** tab that edits the
 catalogue, and `/admin-api/applications/set-access-type` and

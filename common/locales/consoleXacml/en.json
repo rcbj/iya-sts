@@ -306,5 +306,18 @@
   "authzen.deny": "Deny",
   "authzen.cancel": "Cancel",
   "authzen.revoke": "Revoke",
-  "authzen.noRequests": "No access request has been submitted in this realm."
+  "authzen.noRequests": "No access request has been submitted in this realm.",
+  "fga.heading": "Applications' own policies",
+  "fga.label": "What this section is",
+  "fga.p1": "Each application owns a fine-grained authorization policy that decides the RFC 9396 details of its own types. It is never the root, the remote PEPs are never sent it, and it is edited in the editor like any other policy.",
+  "fga.p2": "A policy whose application was deleted is kept, disabled and marked orphaned, until it is removed here. The policy an application still names cannot be removed; reset it from the application's Fine-grained authorization tab.",
+  "fga.thApplication": "Application",
+  "fga.thVersion": "Version",
+  "fga.enforced": "enforced",
+  "fga.deleted": "deleted",
+  "fga.orphaned": "orphaned since {when}",
+  "fga.unreferenced": "no application names it",
+  "fga.remove": "Remove",
+  "fga.removeTip": "Delete this policy. No application names it, so nothing decides with it.",
+  "fga.none": "No application owns a policy in this realm."
 }

@@ -32,6 +32,21 @@
 //! until the first pull. No bearer door, no revocation check of an outside
 //! authority, no audit row (a log line instead): `xacml-pep/CLAUDE.md`
 //! states each.
+//!
+//! **AN APPLICATION THAT ENFORCES FINE-GRAINED AUTHORIZATION IS NOT DECIDED
+//! HERE** (#564, P7; rcbj's decision of 2026-10-30, extending #564's
+//! decision 4). Its policy is the application's own, which the pull
+//! withholds, and FGA is decided only in the service. So an evaluation
+//! whose application — resolved exactly as for any other — is on the
+//! catalogue's `fgaApplications` is FORWARDED, as one single evaluation, to
+//! the realm's `POST /access/v1/evaluation` on the service, over the client
+//! (and the client certificate) this container pulls with, carrying the
+//! application explicitly in `context.application`. The service's decision
+//! is the answer. Anything else — the service's error, its refusal of this
+//! PEP, an answer that is not a decision, no answer in
+//! `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` — is an ERROR to the caller (a status,
+//! or a batch item's `context.error`), never `false` and never the root's
+//! answer.
 
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -44,6 +59,7 @@ use crate::authzen_map::{self, Trusted};
 use crate::enforce::Enforcer;
 use crate::listener::Transport;
 use crate::options::{AuthzenCaller, Bias, Options};
+use crate::pdp_client::{Answer, Body, PdpClient};
 use crate::service::Pep;
 use crate::sync::{Callers, Catalogue};
 
@@ -357,6 +373,189 @@ pub fn merged(defaults: &Map<String, Value>, item: &Value) -> Option<Value> {
 /// parsed; anything that is not JSON is `null`, which the mapping refuses.
 pub fn body_of(bytes: &[u8]) -> Value {
     serde_json::from_str(&String::from_utf8_lossy(bytes)).unwrap_or(Value::Null)
+}
+
+/// Whether an evaluation about `application` is the SERVICE'S to decide
+/// (#564, P7): the application enforces fine-grained authorization, by the
+/// catalogue pulled last. Asked after the application is resolved, so the
+/// question is about the application the service would resolve too.
+pub fn forwards(catalogue: &Catalogue, application: &str) -> bool {
+    catalogue.fga_applications.iter().any(|a| a == application)
+}
+
+/// The body forwarded for one evaluation: the caller's request for it —
+/// the batch item with the top-level defaults merged in, which is the
+/// request the service would have read for that item — with
+/// `context.application` set to the application resolved here. Set always,
+/// even when the caller left it to the scope: the service scopes the
+/// question by THIS PEP's scope there, which may name several applications.
+/// The cost, stated in `xacml-pep/CLAUDE.md`: the service's
+/// `urn:sts:xacml:authzen:supplied` bag names `context.application` though
+/// the caller did not send it.
+pub fn forwarded_body(body: &Value, application: &str) -> Value {
+    let mut out = body.clone();
+    if let Some(map) = out.as_object_mut() {
+        let context = map
+            .entry("context")
+            .or_insert_with(|| Value::Object(Map::new()));
+        if let Some(context) = context.as_object_mut() {
+            context.insert("application".into(), json!(application));
+        }
+    }
+    out
+}
+
+/// The service's message from an AuthZEN error body, or what to say
+/// instead.
+fn service_message(answer: &Answer) -> String {
+    answer
+        .json
+        .as_ref()
+        .and_then(|j| j["error"]["message"].as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            format!("The service answered HTTP {}.", answer.status)
+        })
+}
+
+/// What the service's answer to a forwarded evaluation is to the caller
+/// (#564, P7). A decision is passed on, `context` and all. EVERYTHING ELSE
+/// IS AN ERROR, never `false`:
+///
+/// * no answer: 504 when the time ran out, 502 otherwise (`STS-XPEP-0055`);
+/// * 401 or 403: the service refused THIS PEP, which is the operator's to
+///   mend and not the caller's — 502, saying what the PEP's entry needs
+///   (`STS-XPEP-0056`);
+/// * 400, 413, 500, 501, 503: the service's own status and message, which
+///   are about the request or the application's policy
+///   (`STS-XPEP-0057`; a 500 is `STS-AUTHZEN-0046`'s "the policy cannot be
+///   used" there);
+/// * any other status, or a 200 with no boolean `decision`: 502
+///   (`STS-XPEP-0057`, `-0058`).
+fn forwarded_result(
+    answer: &Answer,
+    application: &str,
+    timeout_ms: u64,
+) -> ItemResult {
+    if let Some(why) = &answer.error {
+        return if answer.timed_out {
+            ItemResult::failed(
+                504,
+                "STS-XPEP-0055",
+                format!(
+                    "\"{}\" enforces fine-grained authorization, which only \
+                     the service decides, and the service did not answer \
+                     the forwarded evaluation within {} ms \
+                     (PEP_AUTHZEN_FORWARD_TIMEOUT_MS).",
+                    application, timeout_ms
+                ),
+            )
+        } else {
+            ItemResult::failed(
+                502,
+                "STS-XPEP-0055",
+                format!(
+                    "\"{}\" enforces fine-grained authorization, which only \
+                     the service decides, and the service could not be \
+                     reached: {}",
+                    application, why
+                ),
+            )
+        };
+    }
+    match answer.status {
+        200 => {
+            let decision = answer
+                .json
+                .as_ref()
+                .and_then(|j| j.get("decision"))
+                .and_then(Value::as_bool);
+            let Some(decision) = decision else {
+                return ItemResult::failed(
+                    502,
+                    "STS-XPEP-0058",
+                    format!(
+                        "The service answered the evaluation forwarded for \
+                         \"{}\" with something that is not an AuthZEN \
+                         decision.",
+                        application
+                    ),
+                );
+            };
+            ItemResult {
+                status: 200,
+                decision,
+                context: answer
+                    .json
+                    .as_ref()
+                    .and_then(|j| j.get("context"))
+                    .filter(|c| c.is_object())
+                    .cloned(),
+                error: None,
+                code: "",
+            }
+        }
+        401 | 403 => ItemResult::failed(
+            502,
+            "STS-XPEP-0056",
+            format!(
+                "\"{}\" enforces fine-grained authorization, which only the \
+                 service decides, and the service refused this edge PDP \
+                 when it forwarded the evaluation (HTTP {}): the remote \
+                 PEP's own directory entry, the one its client certificate \
+                 is stored on, must hold AUTHZEN_PEPS and have \"{}\" in \
+                 its application scope (stsAuthzenApplication). The service \
+                 said: {}",
+                application,
+                answer.status,
+                application,
+                service_message(answer)
+            ),
+        ),
+        400 | 413 | 500 | 501 | 503 => ItemResult::failed(
+            answer.status,
+            "STS-XPEP-0057",
+            service_message(answer),
+        ),
+        other => ItemResult::failed(
+            502,
+            "STS-XPEP-0057",
+            format!(
+                "\"{}\" enforces fine-grained authorization, which only the \
+                 service decides, and the service answered HTTP {} to the \
+                 forwarded evaluation.",
+                application, other
+            ),
+        ),
+    }
+}
+
+/// Forwards one evaluation to the service's `POST /access/v1/evaluation`
+/// in the realm the PDP URL names, with `X-Request-ID` when there is one,
+/// bounded by `timeout_ms`, and reads what came back. The body is never
+/// logged: it carries the caller's property values.
+async fn forward_to(
+    client: &PdpClient,
+    body: &Value,
+    application: &str,
+    request_id: &str,
+    timeout_ms: u64,
+) -> ItemResult {
+    let mut headers: Vec<(&str, String)> =
+        vec![("Content-Type", "application/json".to_string())];
+    if let Some(id) = self::request_id(Some(request_id)) {
+        headers.push(("X-Request-ID", id));
+    }
+    let answer = client
+        .call_with(
+            reqwest::Method::POST,
+            EVALUATION_PATH,
+            Some(Body::Json(forwarded_body(body, application))),
+            &headers,
+            Some(std::time::Duration::from_millis(timeout_ms)),
+        )
+        .await;
+    forwarded_result(&answer, application, timeout_ms)
 }
 
 impl Pep {
@@ -715,6 +914,53 @@ impl Pep {
                 return ItemResult::failed(status, code, message)
             }
         };
+        // THE SERVICE'S TO DECIDE (#564, P7): forwarded, never answered
+        // from the root, and counted and logged here like any other.
+        if forwards(catalogue, &application) {
+            let timeout = self.options.authzen_forward_timeout_ms;
+            let one = forward_to(
+                self.sync.client(),
+                body,
+                &application,
+                batch_id,
+                timeout,
+            )
+            .await;
+            self.sync.count_forwarded();
+            self.sync
+                .count_authzen(one.error.is_none().then_some(one.decision));
+            let line = format!(
+                "xacml-pep: authzen: {} forwarded to the service, for a {} to \
+                 {} a {}, caller \"{}\", application \"{}\" (it enforces \
+                 fine-grained authorization){}",
+                endpoint,
+                evaluation.subject_type,
+                evaluation.action_name,
+                evaluation.resource_type,
+                caller.name,
+                application,
+                if batch_id.is_empty() {
+                    String::new()
+                } else {
+                    format!(", request {}", batch_id)
+                }
+            );
+            match &one.error {
+                None => tracing::info!(
+                    "{}; the service decided {}.",
+                    line,
+                    one.decision
+                ),
+                Some((status, message)) => tracing::warn!(
+                    "{}{}; an error, {}: {}",
+                    tag(one.code),
+                    line,
+                    status,
+                    message
+                ),
+            }
+            return one;
+        }
         let request = authzen_map::request(
             &evaluation,
             &Trusted {
@@ -1085,6 +1331,276 @@ mod tests {
         assert_eq!(out["extra"], true);
         assert!(out.get("evaluations").is_none());
         assert!(merged(defaults.as_object().unwrap(), &json!([1])).is_none());
+    }
+
+    /// Classification (#564, P7): an application on the pulled
+    /// `fgaApplications` is forwarded, another is not, and nothing is
+    /// forwarded by a catalogue that names none.
+    #[test]
+    fn forwards_only_an_enforcing_application() {
+        let mut catalogue = Catalogue::default();
+        assert!(!forwards(&catalogue, "todo-app"));
+        catalogue.fga_applications =
+            std::sync::Arc::new(vec!["payments".to_string()]);
+        assert!(forwards(&catalogue, "payments"));
+        assert!(!forwards(&catalogue, "todo-app"));
+        assert!(!forwards(&catalogue, "Payments"), "identifiers are exact");
+    }
+
+    /// The forwarded body is the caller's, with `context.application` set
+    /// whether or not the caller named it, and every other member kept.
+    #[test]
+    fn forwards_the_callers_body_with_the_application_named() {
+        let bare = json!({ "subject": { "type": "user", "id": "a" },
+                           "action": { "name": "read" },
+                           "resource": { "type": "doc", "id": "1",
+                                         "properties": { "x": 1 } } });
+        let out = forwarded_body(&bare, "payments");
+        assert_eq!(out["context"]["application"], "payments");
+        assert_eq!(out["resource"]["properties"]["x"], 1);
+        let named = json!({ "subject": { "type": "user", "id": "a" },
+                            "context": { "application": "payments",
+                                         "region": "eu" } });
+        let out = forwarded_body(&named, "payments");
+        assert_eq!(out["context"]["application"], "payments");
+        assert_eq!(out["context"]["region"], "eu");
+    }
+
+    fn answered(status: u16, body: Value) -> Answer {
+        Answer {
+            status,
+            text: body.to_string(),
+            json: Some(body),
+            error: None,
+            timed_out: false,
+        }
+    }
+
+    /// What the service answered, to the caller: a decision passed on with
+    /// its context; every failure an error with its own status and code —
+    /// never `false`.
+    #[test]
+    fn maps_the_services_answer_and_never_reads_a_failure_as_false() {
+        let yes = forwarded_result(
+            &answered(
+                200,
+                json!({ "decision": true,
+                                   "context": { "reason": "r" } }),
+            ),
+            "payments",
+            5000,
+        );
+        assert_eq!(
+            (yes.status, yes.decision, yes.error.is_none()),
+            (200, true, true)
+        );
+        assert_eq!(yes.context, Some(json!({ "reason": "r" })));
+        let no = forwarded_result(
+            &answered(200, json!({ "decision": false })),
+            "payments",
+            5000,
+        );
+        assert_eq!(
+            (no.status, no.decision, no.context.is_none()),
+            (200, false, true)
+        );
+        let cases: Vec<(Answer, u16, &str)> = vec![
+            (
+                answered(
+                    500,
+                    json!({ "error": { "status": 500,
+                    "message": "The application's policy cannot be used." } }),
+                ),
+                500,
+                "STS-XPEP-0057",
+            ),
+            (
+                answered(
+                    400,
+                    json!({ "error": { "status": 400,
+                    "message": "bad" } }),
+                ),
+                400,
+                "STS-XPEP-0057",
+            ),
+            (
+                answered(
+                    403,
+                    json!({ "error": { "status": 403,
+                    "message": "not admitted" } }),
+                ),
+                502,
+                "STS-XPEP-0056",
+            ),
+            (answered(401, json!({})), 502, "STS-XPEP-0056"),
+            (answered(404, json!({})), 502, "STS-XPEP-0057"),
+            (
+                answered(200, json!({ "decision": "yes" })),
+                502,
+                "STS-XPEP-0058",
+            ),
+            (
+                Answer {
+                    error: Some("connection refused".into()),
+                    ..Answer::default()
+                },
+                502,
+                "STS-XPEP-0055",
+            ),
+            (
+                Answer {
+                    error: Some("late".into()),
+                    timed_out: true,
+                    ..Answer::default()
+                },
+                504,
+                "STS-XPEP-0055",
+            ),
+        ];
+        for (answer, status, code) in cases {
+            let one = forwarded_result(&answer, "payments", 5000);
+            assert_eq!(one.status, status, "{:?}", answer.json);
+            assert_eq!(one.code, code, "{:?}", answer.json);
+            assert!(one.error.is_some() && !one.decision);
+        }
+        let refused =
+            forwarded_result(&answered(403, json!({})), "payments", 5000);
+        let message = refused.error.unwrap().1;
+        assert!(message.contains("AUTHZEN_PEPS"), "{}", message);
+        assert!(message.contains("stsAuthzenApplication"), "{}", message);
+        let passed = forwarded_result(
+            &answered(
+                500,
+                json!({ "error": { "status": 500,
+                "message": "The application's policy cannot be used." } }),
+            ),
+            "payments",
+            5000,
+        );
+        assert_eq!(
+            passed.error.unwrap().1,
+            "The application's policy cannot be used."
+        );
+    }
+
+    /// THE FORWARD OVER A REAL SOCKET (#564, P7), against a mock service on
+    /// a loopback port standing in for the realm's AuthZEN endpoint: the
+    /// realm's path is the PDP URL's, the body arrives with
+    /// `context.application` and the caller's members, `X-Request-ID`
+    /// travels, the service's decision comes back, its 500 and its refusal
+    /// of the PEP are errors, a slow service is a 504 within the bound, and
+    /// nobody listening is a 502.
+    #[tokio::test]
+    async fn forwards_to_the_realms_evaluation_endpoint() {
+        use axum::extract::Json;
+        use axum::http::{HeaderMap, StatusCode};
+        use axum::routing::post;
+        use std::sync::{Arc, Mutex};
+
+        let seen: Arc<Mutex<Vec<(Value, String)>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let kept = seen.clone();
+        let handler = move |headers: HeaderMap, Json(body): Json<Value>| {
+            let kept = kept.clone();
+            async move {
+                let id = headers
+                    .get("x-request-id")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                kept.lock().unwrap().push((body.clone(), id));
+                match body["action"]["name"].as_str().unwrap_or("") {
+                    "read" => {
+                        (StatusCode::OK, Json(json!({ "decision": true })))
+                    }
+                    "write" => {
+                        (StatusCode::OK, Json(json!({ "decision": false })))
+                    }
+                    "refused" => (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({ "error": { "status": 403,
+                            "message": "no" } })),
+                    ),
+                    "slow" => {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            1500,
+                        ))
+                        .await;
+                        (StatusCode::OK, Json(json!({ "decision": true })))
+                    }
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({ "error": { "status": 500,
+                            "message": "unusable" } })),
+                    ),
+                }
+            }
+        };
+        let router = axum::Router::new()
+            .route("/realm/r1/access/v1/evaluation", post(handler));
+        let socket =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            // The mock lives as long as the test; a failure to serve shows
+            // up as every forward below failing, so it is only reported.
+            if let Err(error) = axum::serve(socket, router).await {
+                eprintln!("the mock service stopped: {}", error);
+            }
+        });
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = format!("http://127.0.0.1:{}/realm/r1", port);
+        let client = PdpClient::new(&options).unwrap();
+        let ask = |action: &str| {
+            json!({ "subject": { "type": "user", "id": "alice" },
+                    "action": { "name": action },
+                    "resource": { "type": "payment", "id": "p1",
+                                  "properties": { "amount": 10 } } })
+        };
+
+        let one =
+            forward_to(&client, &ask("read"), "payments", "az-1#0", 1000).await;
+        assert_eq!(
+            (one.status, one.decision, one.error.is_none()),
+            (200, true, true)
+        );
+        {
+            let seen = seen.lock().unwrap();
+            let (body, id) = seen.last().unwrap();
+            assert_eq!(body["context"]["application"], "payments");
+            assert_eq!(body["resource"]["properties"]["amount"], 10);
+            assert_eq!(id, "az-1#0");
+        }
+        let no = forward_to(&client, &ask("write"), "payments", "", 1000).await;
+        assert_eq!(
+            (no.status, no.decision, no.error.is_none()),
+            (200, false, true)
+        );
+        assert_eq!(
+            seen.lock().unwrap().last().unwrap().1,
+            "",
+            "no id is sent when the caller sent none"
+        );
+        let broken =
+            forward_to(&client, &ask("other"), "payments", "", 1000).await;
+        assert_eq!((broken.status, broken.code), (500, "STS-XPEP-0057"));
+        assert!(!broken.decision);
+        let refused =
+            forward_to(&client, &ask("refused"), "payments", "", 1000).await;
+        assert_eq!((refused.status, refused.code), (502, "STS-XPEP-0056"));
+        let slow = forward_to(&client, &ask("slow"), "payments", "", 200).await;
+        assert_eq!((slow.status, slow.code), (504, "STS-XPEP-0055"));
+
+        // NOBODY LISTENING: a port bound and released.
+        let gone = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let dead = gone.local_addr().unwrap().port();
+        drop(gone);
+        options.pdp_url = format!("http://127.0.0.1:{}/realm/r1", dead);
+        let nowhere = PdpClient::new(&options).unwrap();
+        let down =
+            forward_to(&nowhere, &ask("read"), "payments", "", 1000).await;
+        assert_eq!((down.status, down.code), (502, "STS-XPEP-0055"));
+        assert!(!down.decision);
     }
 
     #[test]

@@ -25,6 +25,8 @@ and the nudge.
 |---|---|
 | `xacml_model.js` | The vocabulary: the identifiers the specification fixes, the shape of a policy tree, and the seven decision values. **No I/O.** |
 | `xacml_request.js` | **The one request builder (#306, part E of #88).** #88 section 7's AuthorizationRequest — principal and its type, roles, client, target, audience, requested action and scopes, protocol, grant type, intermediary — spelt from ONE vocabulary and grouped into XACML's categories. Every PEP builds through it: the issuance, access, risk and signal PEPs, the demonstration PEP at `/xacml/protected`, `/admin/xacml/decide`, and the remote PEP, which copies it beside the engine. It decides nothing; the shared identifiers (`ROLE`, `SUBJECT_KIND`) live here because a remote PEP cannot load `xacml_templates.ts`. `tests/xacml_request.js` fails on a module that goes back to building its own. **No I/O.** |
+| `xacml_attribute_rows.ts` | **The attribute-row grammar and value rules (#563, #564)**: the categories and datatypes a row may name, the reserved identifiers no row may name, the member-path grammar, and how a JSON value becomes XACML values under a row. Shared by AuthZEN's catalogue and FGA's `xacml` rows, never copied — see *Fine-grained authorization's request*, rule 3cy. **No I/O.** |
+| `fga_map.ts` | **A validated RFC 9396 authorization detail as an XACML request (#564, P2)**: the grammar of a type's `xacml` and `notForPolicy` members, the built-in rows of the common data fields, `uncovered()`, the definition digest, and `request()` through the builder's `fga()`. Rule 3cy. **No I/O.** |
 | `xacml_datatypes.js` | The seventeen datatypes — parse, write, equality, ordering. The table every function is generated over. **No I/O.** |
 | `xacml_functions.js` | The standard function library: 275 identifiers, about thirty implementations. **No I/O.** |
 | `xacml_validate.js` | Static type checking. What a policy is REFUSED for at load, before any request. **No I/O.** |
@@ -34,7 +36,9 @@ and the nudge.
 | `xacml_store.ts` | The repository. Owns the policy schema; `ou=policies` IS the store. |
 | `xacml_pip.ts` | Attribute resolution off the subject's own directory entry. |
 | `xacml.ts` | The protocol routes: the four under `/xacml` proper, the three under `/xacml/pep` and `POST /xacml/pip`, plus the embedded PEP. |
-| `xacml_templates.ts` | Five starting points: RBAC, ABAC, this service's own two, and **`blank`** — an empty Policy or PolicySet, which is the only way to create a PolicySet from the console without ALFA. **Adding one is a row in `TEMPLATES` and nothing else.** No DOM. |
+| `xacml_templates.ts` | The starting points: RBAC, ABAC, this service's own four, **`blank`** — an empty Policy or PolicySet, which is the only way to create a PolicySet from the console without ALFA — and **`fga-default`**, the policy every application is created with (#564). **Adding one is a row in `TEMPLATES` and nothing else.** No DOM. |
+| `fga_pep.ts` | **The embedded fine-grained authorization PEP (#564, P3).** One RFC 9396 detail of an application that enforces FGA: the policy resolved, the detail mapped, decided against THAT policy alone (`xacml.ts`'s `decidePolicy()`), deny-biased, audited (`fga.decision`) and counted (the monitor's `fga` row). Fills `common/fga_gate.ts`'s decider when wired at 23c. **Since P4 also `decideAccess()`**: an AuthZEN evaluation about an enforcing application, decided against its policy alone for `authzen/authzen.ts`. A LIBRARY. Rule 3cz. |
+| `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
@@ -194,6 +198,16 @@ the repository.
 Filtered BY NAME and not by a flag on the entry, because those two names are
 settings: an operator who points `xacml.accessPolicy` at a document of their own
 has made THAT one internal, and a stored flag would still be on the old one.
+
+**Every policy an application owns is withheld too (#564), and BY ITS FLAG**
+(`xacmlApplication`) — the opposite choice, for the opposite reason:
+ownership is not a setting that can be pointed elsewhere but a fact written
+with the policy. It is named in `withheld` like the two above. The filter is
+`XacmlSurface.pepPull()`, the route's body as a method so a test can hold it
+without the mutual-TLS gate. See *Application-scoped fine-grained
+authorization* below. What the container is sent instead is the list of
+applications that enforce, on the AuthZEN catalogue pull, so its edge PDP
+forwards their evaluations here (P7, *`GET /xacml/pep/authzen-catalogue`*).
 
 ## ALFA
 
@@ -1093,6 +1107,12 @@ consequences, and the third is why it is not a modification stamp:
   incremented by the write path would have been correct for the two doors that
   remembered to increment it.
 
+**A policy an application owns is not in it (#564)**, because it is never
+sent: were it counted, every client created in a realm would make every
+remote PEP re-pull bytes that had not changed. (The two service policies the
+pull withholds BY NAME are still in the digest, as they were before #564: a
+token that moves when nothing sent moved costs a re-pull and no more.)
+
 `current` is therefore a COMPARISON this service performs rather than a claim
 the PEP makes about itself.
 
@@ -1122,11 +1142,26 @@ settings that change the mapping or the answer, behind `pepAccess()` and
 * **`GET /xacml`'s endpoint list does not name it**, because that document is
   one of the existing endpoints rcbj said stay unchanged; `/admin/sts-metadata`
   and `/admin/xacml`'s protocol-endpoint table do.
+* **`fgaApplications`: THE APPLICATIONS THAT ENFORCE FINE-GRAINED
+  AUTHORIZATION (#564, P7).** The edge FORWARDS an evaluation about one of
+  them to this realm's `/access/v1/evaluation` (rcbj's decision of
+  2026-10-30; `authzen/CLAUDE.md`), so it has to know which. The list is
+  `applications.applicationsEnforcingFga()`, sorted, an ADDITIVE member —
+  identifiers only, never a policy, so `/xacml/pep/policies`' withholding is
+  untouched — and **inside the catalogue's digest**, so switching
+  `appFgaEnforced` moves the token and the edge pulls again on its poll.
+  Here rather than on the policy pull because it changes what the AuthZEN
+  answer IS, which is this pull's subject, and because the policies' token
+  is what heartbeats compare. **A registry that cannot be read refuses the
+  whole catalogue** (500, `STS-FGA-0108`) rather than sending an empty
+  list: an empty list would have the edge decide every enforcing
+  application from the root, and a refusal keeps it on the list it holds.
 
 `tests/authzen_evaluation.js` K holds it in process: the gate (no certificate,
 and an AUTHZEN_PEPS caller that is not a remote PEP, both 403), the rows and
 settings, the ETag and 304, a token that moves with a row and a setting, and
-`/xacml/pep/policies`' token that does not.
+`/xacml/pep/policies`' token that does not; and (K10–K12) `fgaApplications`
+through a switch flip, which moves this token and not the policies'.
 
 ## `GET /xacml/pep/authzen-callers` — who the edge PDP admits (#1189)
 
@@ -1384,6 +1419,7 @@ routing an internal decision through a policy engine that is already here.
 | access-subject | `urn:sts:xacml:home-jurisdiction` | the jurisdiction the subject is homed in — a transfer question only (#98) |
 | environment | `urn:sts:xacml:serving-jurisdiction`, `urn:sts:xacml:client-country`, `urn:sts:xacml:transfer-listed`, `urn:sts:xacml:realm`, `urn:sts:xacml:purpose`, `urn:sts:xacml:setting:cells.hardGeofence` | the serving cell's jurisdiction, the client's country when known, whether the realm lists the transfer, the realm, a release's purpose, the hard geofence — a transfer question only (#98) |
 | resource | `urn:sts:xacml:data-category` | `session`, `request` or `attributes` — a transfer question only (#98) |
+| resource, action, environment | `urn:sts:xacml:fga:*` | an RFC 9396 detail asked of its owning application's policy — a fine-grained authorization question only (#564, rule 3cy) |
 
 #### 3bs. One question per requested scope (#304, part C of #88)
 
@@ -1479,6 +1515,88 @@ obligation, and an interaction word the reader does not know reads as
 `always`. The grant engine does what they say (`gnap/CLAUDE.md`, *Phase 6*);
 the approval fact gained the value `owner`, the resource owner approving on
 their portal.
+
+#### Fine-grained authorization's request (#564) — rule 3cy
+
+**AN RFC 9396 DETAIL, ASKED OF THE POLICY OF THE APPLICATION THAT OWNS ITS
+TYPE** (rcbj's decision 1 on #564). This is phase P2: the mapping and the
+request, pure (`fga_map.ts`). Where the policy lives and its lifecycle are
+P1's, where the question is asked and what a refusal does are P3's, and
+AuthZEN deciding against the application's policy is P4's.
+
+| Detail | Category | Attribute |
+|---|---|---|
+| `type` | resource | `urn:sts:xacml:fga:detail-type`, and `resource-id` at an issuance stage |
+| `actions`, `privileges` | action | `urn:sts:xacml:fga:detail:action`, `…:detail:privilege` (string bags) |
+| `locations`, `datatypes` | resource | `urn:sts:xacml:fga:detail:location`, `…:detail:datatype` (string bags) |
+| `identifier` | resource | `urn:sts:xacml:fga:detail:identifier` |
+| any other member | the type's `xacml` row's | the row's, and nothing else |
+| a `notForPolicy` member | — | nothing, and not in `supplied` either |
+| *(trusted)* | access-subject | `subject-id`, `urn:sts:xacml:subject-kind`, `urn:sts:xacml:client-id` |
+| *(trusted)* | resource | `urn:sts:xacml:fga:application`, `urn:sts:xacml:fga:definition-digest` |
+| *(trusted)* | action | `action-id` = `grant-authorization-detail` at every issuance stage (`authorize`, `token`, `refresh`, `exchange`, `par`); the caller's action at `access` |
+| *(trusted)* | environment | `urn:sts:xacml:protocol` (`oauth2`), `urn:sts:xacml:realm`, `urn:sts:xacml:fga:stage`, `urn:sts:xacml:grant-type`, `urn:sts:xacml:fga:supplied` |
+
+**The common data fields are BUILT-IN rows**, applied when present: they mean
+the same in every type (and in a GNAP right), so a policy reads them with no
+declaration, and an absent field is an absent attribute. A type's row may not
+name `type` or a common field, and `notForPolicy` may not list one — each is
+mapped once, under one identifier. Strings, not `anyURI`, for `locations`, as
+GNAP's `right-location` is, so one `string-is-in` reads both protocols.
+
+**The facts are written by `xacml_request.js`'s `fga()` (rule 3br), and the
+action-id is FORCED at an issuance stage** whatever the caller passes, so an
+issuance question can never be asked as anything else. Every identifier is in
+`VOCABULARY` (`FGA_*`), spelt the same in the Rust builder
+(`tests/xacml_request.js` E2, F), with `FGA_STAGES`,
+`FGA_ISSUANCE_STAGES` and `FGA_GRANT_ACTION` exported beside it — engine
+data, so an embedded FGA PDP in the remote PEP (future work, decision 4)
+finds them named.
+
+**THE ROWS AND THE VALUE RULES ARE AUTHZEN'S, SHARED THROUGH
+`xacml_attribute_rows.ts`, NOT COPIED.** A row is AuthZEN's catalogue row with
+`path` for `property` and no `object`; its category defaults to resource. The
+reserved identifiers — all of `urn:sts:xacml:` by prefix, subject-id,
+resource-id, action-id, the current-time attributes, a bare LDAP-shaped name
+in a subject category — are refused when the DEFINITION is written
+(`applications.js`'s `authorizationDetailsTypeOf()`, `STS-REG-0112`, which
+requires `fga_map.ts` lazily and only for a definition carrying one of the two
+members). Two rows for one member, one inside another's member, two members
+onto one attribute, and a member both mapped and not for policy are refused
+too: each would make what a policy reads ambiguous. The value rules are the
+walk AuthZEN's request goes through, so a detail can never forge a trusted
+attribute and a member no row names is refused rather than guessed at
+(`STS-FGA-0103`).
+
+**COVERAGE IS A QUESTION ABOUT THE TYPE, `uncovered()`**, which P1/P3 ask
+before FGA may be enforced: the member paths the type's JSON Schema permits
+that are neither a common field, mapped, nor `notForPolicy` — and `*` (or
+`<path>.*`) where the schema permits members it does not name. **An open
+schema makes the type uncoverable**: no schema, or a level without
+`additionalProperties: false`. `unevaluatedProperties: false` closes a level
+only where it has no applicator (`allOf`, `anyOf`, `oneOf`, `$ref`,
+`$dynamicRef`, `if`/`then`/`else`, `dependentSchemas`) that could evaluate
+members this module cannot enumerate; `patternProperties` leaves it open.
+Conservative on purpose: an administrator closes a schema with one keyword,
+and closing it also makes RFC 9396 section 5 refuse the stranger before any
+policy is asked. A nested object is walked only where a row or a
+`notForPolicy` entry reaches into it; otherwise the member is mapped whole, or
+uncovered.
+
+**THE DIGEST** is a SHA-256, lowercase hex, of the definition's canonical JSON
+(members sorted; a bare name is `{"type":…}`), so a policy may be pinned to the
+definition it was written against; `authorizationDetailsTypeOf()` keeps the
+object as `source` and `declaredTypes()` carries it with `xacml` and
+`notForPolicy`, so P3 hands `fga_map.request()` a `declaredTypes()` entry as
+it stands.
+
+**`STS-FGA-0100`–`0107` are all DEFENSIVE**: details reach `request()` after
+RFC 9396 validation, so a definition that is not usable (0100), a detail not
+of its type (0101), missing trusted facts (0102), an uncovered member (0103)
+and the value rules' four kinds (0104 null, 0105 type, 0106 array, 0107
+object or depth) are refusals no well-formed path produces — never an
+attribute. They start at 0100 so P1's lifecycle codes keep the low numbers.
+`tests/fga_map.js` holds the contract, through the real engine at the end.
 
 #### Where a person's data may go (#98, D4 and D11) — rule 3bu
 
@@ -2373,7 +2491,7 @@ ADMIN_READ alone, both, and an empty required-all.
 **None is left (#596, 2026-10-12; #591 P5).** `GET /xacml/protected`, the embedded PEP's demonstration, and `xacml.pepBias`, which only it read, were deleted: the runtime ships no demonstration code, and the `xacml-pep` container's `GET /protected` already was that PEP — the same request through the same builder, the bias as its own option (`PEP_BIAS`), the same section 7.2 rule — in the place a PEP lives (`xacml-pep/CLAUDE.md`). What stays in the runtime:
 
 * **`enforce()`**, for `/admin/xacml/decide`'s what-if, with the bias as an ARGUMENT; the what-if (`GET /admin-api/xacml/decide`) answers `enforcement` (deny-biased, the one the page draws) and `enforcements`, both biases — one decision, two outcomes, which is what flipping the setting used to show. `tests/xacml_pep.js` still holds `enforce()` and the Rust `enforce.rs` to `xacml-pep/enforcement_cases.json`.
-* **The monitor** lists two embedded PEPs, not three; a remote PEP's refusals and undischargeable obligations arrive on its heartbeat.
+* **The monitor** lists two embedded PEPs, not three; a remote PEP's refusals and undischargeable obligations arrive on its heartbeat. (A third embedded one, the fine-grained authorization PEP, joined in #564's P3 — rule 3cz — for a reason of its own, not as the demonstration back.)
 * **The tests moved**: `sts_xacml_endpoints.js` sections 2 and 5 read the bias and the obligation rule off the what-if, `sts_xacml_editor.js` asks the PDP through it, and `sts_xacml_remote_pep.js` section 4b asserts the obligation rule IN THE CONTAINER, on policy it pulled. Both throwaway-realm jobs still create their realm in development, as before. A permit-biased PEP is not driven end to end: the launcher's PEP runs one bias, and the two are compared through the shared table instead.
 * `GET /xacml` names the trust-anchor door, `POST /admin-api/tls/trust/add` (the open `POST /tls/trust` was deleted by #597), and no longer carries `pep`.
 * `STS-XACML-0014` and `0015`, the demonstration PEP's two refusals, are retired; the remote PEP's are its own `STS-XPEP-*` lines.
@@ -2516,3 +2634,228 @@ arrangement is the owner rule's, read the other way round:
 
 `tests/report_access_policy.js` holds it end to end; `tests/access_policy.js`
 is untouched, which is the claim that the other surfaces are.
+
+## Application-scoped fine-grained authorization (#564)
+
+**The RESOURCE application that declares an `authorization_details` type
+owns the policy that decides details of that type** (rcbj's decision 1 on
+#564; the design and the six decisions are his comment of 2026-10-29). This
+is phase 1: the policy model and its lifecycle. The mapping grammar (P2),
+enforcement at issuance (P3), AuthZEN against an application's policy (P4),
+the console and `/admin-api` (P5) and the protocol tests (P6) follow, each
+adding to this section.
+
+### The model
+
+* **The policy is an ordinary `ou=policies` entry carrying
+  `xacmlApplication`**, the owner's realm-local identifier. Beside it,
+  `xacmlOrphanedAt` once the owner is deleted. Both are facts about the
+  DEPLOYMENT, as `xacmlEnabled` is, and not about the document — so
+  `xacml_store.ts`'s `write()` CARRIES THEM FORWARD when a caller does not
+  name them. `writePolicy()` replaces the entry, and every door that rewrites
+  a policy (the editor's save, enable, disable, the root demotion in
+  set-root) passes only the document and the flags it read: without the
+  carry, one edit in the editor would have turned an application's policy
+  into an ordinary one, eligible as the root and sent to every remote PEP.
+* **The application names it**: `appFgaPolicy` (the entry name) and
+  `appFgaEnforced` (the switch, off by default) on its entry,
+  `common/CLAUDE.md` (*Fine-grained authorization: the application's half*).
+* **The default document is the `fga-default` template**: one Permit rule
+  with no Target under deny-unless-permit, Version 1.0. A REAL decision, not
+  a fallback: an empty permit-unless-deny document would answer Permit by
+  falling through, which reads in an audit row like a policy that decided,
+  and the day somebody deletes the rule this one denies. Its PolicyId is
+  `urn:sts:xacml:fga:` and the identifier with every UTF-8 octet outside RFC
+  3986's unreserved set percent-encoded (`PolicyBuilders.fgaPolicyId()`) —
+  injective, which `slug()` is not (`a.b` and `a-b` slug alike), and a valid
+  URI whatever the identifier holds. The ENTRY name is a handle for a
+  reader: `fga-`, an 80-character slug, and twelve hex digits of the
+  identifier's SHA-256; `-2`, `-3`… when that is taken.
+
+### Never the root, and why the store says it rather than the callers
+
+`root()`'s "the only enabled policy" fallback is the reason. Every
+application created gets an ENABLED policy, so a realm with one ordinary
+policy would hold two enabled policies the moment somebody registered a
+client, the fallback would stop answering, and the realm would decide
+NotApplicable to everything. So `root()` ignores an owned row in both halves
+(a flagged one too, which only an `ldapmodify` can produce); `repository()`
+leaves it out of the PolicyIdReference map (its PolicyId is chosen by whoever
+named the application, and an orphan and its successor share one);
+`write()` refuses one as the root (STS-FGA-0001); and `xacml_admin.ts`'s
+set-root refuses it (STS-FGA-0002) BEFORE demoting the incumbent, which the
+store's refusal alone would have left the repository without. The console
+draws no make-root control on one. Every caller of `root()` and
+`repository()` — the PDP's decide, the three embedded PEPs' repositories,
+the remote PEP pull, `GET /xacml`, the console's counts — inherits the
+exclusion without an edit; that is why it lives in the store.
+
+### The lifecycle, `fga_policies.ts`
+
+* **Created with the application** on the console's door —
+  `createApplication()`, which the console, `/admin-api` and an LDIF import
+  all go through. **NOT** a development-mode sighting, an RFC 7591
+  registration or this service's own seeded applications: the first two can
+  be made by an unauthenticated caller, and a policy per entry would let one
+  fill `ou=policies` to `xacml.maxPolicies` and lock administrators out of
+  writing policies. Every one of them gets its policy at first enable —
+  decision 2's own fallback — as does any application created before 23c.
+* **`ensure()` FOLLOWS THE REFERENCE AND NEVER ADOPTS.** A policy that merely
+  carries the identifier is not attached. An application deleted through
+  LDAP (which bypasses retirement) and created again under the same
+  identifier would otherwise inherit a policy written for the one that went
+  — exactly what keeping an orphan for audit must not grant. A failed
+  reference write takes the new policy back, so no unreferenced live policy
+  is left behind.
+* **`enable()`** ensures, then refuses while the policy is disabled
+  (STS-FGA-0006) or does not parse (STS-FGA-0007): an enforced application
+  with such a policy refuses every detail, and the moment to say so is while
+  somebody is switching it on. **`disable()`** touches only the switch.
+* **`retire()` on deletion**: disabled, `xacmlOrphanedAt` written (RFC 4517
+  GeneralizedTime), kept until an administrator deletes it (decision 3).
+  **Orphaned is an explicit MARK, not a computation**: "its owner is not in
+  the registry" stops being true when an application of the same identifier
+  is created again, and the orphan would silently read as the new one's. The
+  reference arrives from `deleteApplication()`, read before the entry went.
+* **`resolve()`** is what P3 and P4 decide with: the row, parsed, and
+  `enforced` — or a failure named and coded: `unknown-application` (0009),
+  `no-policy` (0003), `missing-policy` (0004), `not-its-policy` (0005, also
+  an orphan), `disabled-policy` (0006), `unparseable-policy` (0007). Each
+  carries `enforced`, since only an enforced application's failure refuses.
+* **Not by mode.** Nothing here differs between development and product.
+
+**`xacml.maxPolicies` (200) bounds these too**, and `applications.max` is
+500. An application created past the cap is still created, without a policy
+(STS-FGA-0008, logged under STS-FGA-0010 by the hook), and gets one at
+enable once there is room. Whether owned policies should have a bound of
+their own is open.
+
+`tests/fga_policies.js` holds all of it in a throwaway realm.
+
+### Enforcement at issuance, `fga_pep.ts` (P3) — rule 3cz
+
+**The authorization, PAR and token endpoints ask the owning application's
+policy about each detail of its types, once `appFgaEnforced` is TRUE**
+(`oauth-oidc/CLAUDE.md` 3am says where in each and why). They ask
+`common/fga_gate.ts`, a leaf slot this module fills at 23c — rule 3e both
+ways round, `common/CLAUDE.md` argues it — and **the gate REFUSES when
+empty**, unlike the issuance gate: the question is only asked of an
+application somebody switched on.
+
+* **The policy alone.** `resolve()` (P1), `fga_map.request()` (P2), then
+  `xacml.ts`'s new `decidePolicy(policy, request, { repository, resolve })`
+  — what `decide()` now goes through for the root — with NO repository: an
+  owned policy's PolicyId is chosen by whoever named the application, and
+  the store keeps owned policies out of the map for that reason. P4's AuthZEN
+  decision against an application's policy uses the same method. The PIP is
+  asked only for a `user` subject (AuthZEN's `resolves()` line): a client
+  credentials subject, or nobody at PAR, is not a directory entry.
+* **Only a Permit with nothing undischargeable is yes** (`enforce()`,
+  deny-biased). Deny, NotApplicable and an Indeterminate over a missing
+  attribute DENY (`STS-FGA-0014`); a detail the mapping refuses DENIES under
+  the mapping's code (0100–0107) — it cannot be put to the policy. A resolve
+  failure (0003–0007, 0009) and an Indeterminate the engine reached through
+  a processing or syntax error (`STS-XACML-0013`, re-coded `STS-FGA-0015`)
+  are OPERATIONAL FAILURES (`server_error`): nobody decided, and a client
+  told `invalid_authorization_details` would believe the detail was wrong.
+  A throw is a failure too, and still audited.
+* **One `fga.decision` audit row per decision**: application, policy entry,
+  PolicyId and version, type, definition digest, subject and kind, client,
+  stage, grant, outcome, XACML decision, code — and a SHA-256 of the
+  detail's canonical JSON, NEVER a value: a detail is one transaction's
+  facts, and the audit log is read by people never meant to see them. The
+  action is in `audit.js`'s table and its label in the six catalogs.
+* **The monitor's `fga` row**, `kind: 'embedded'`, `enforces: true`: this
+  process grants or refuses, so allowed and refused are counted as for the
+  other two PEPs. Only decisions the PDP REACHED are counted; a resolve
+  failure or a refused mapping is audited and not counted, which keeps the
+  row's reconciliation (allowed + refused + unenforced = decisions) about
+  decisions the engine made.
+* **Coverage is enforced at both doors**: `enable()` refuses while a type
+  the application declares has a non-empty `uncovered()`
+  (`uncoveredTypes()`, `STS-FGA-0018`), BEFORE ensuring a policy, so a
+  refused enable writes nothing; and `applications.js` refuses a type
+  definition written to an enforcing application that would be uncovered
+  (`STS-FGA-0019`, `common/CLAUDE.md`).
+* **Not by mode.**
+
+`tests/fga_issuance.js` holds the gate, the PEP over stubs, and the
+endpoints end to end in a throwaway realm.
+
+### AuthZEN against an application's policy, `decideAccess()` (P4)
+
+**rcbj's decision 4: resource servers talk to remote PEPs, and FGA is
+decided ONLY here, at the AuthZEN endpoint.** An evaluation whose resolved
+application has `appFgaEnforced` TRUE is decided against THAT application's
+policy instead of the realm root (this amends #563's decision 7;
+`authzen/CLAUDE.md`, *What is decided*, carries AuthZEN's half). This
+directory's half:
+
+* **One first step for both questions.** `policyOf()` is the resolve and its
+  coded failure, logged once, and both `evaluate()` (issuance) and
+  `decideAccess()` (access) start with it; both then call `xacml.ts`'s
+  `decidePolicy()` with NO repository. So an issuance question and an access
+  question about one application cannot come to disagree about which
+  document is its policy, or about how a PolicyIdReference in it resolves
+  (it does not: the map is the root's, and owned policies are kept out of
+  it).
+* **What `decideAccess()` does NOT do**, because AuthZEN already does it:
+  build the request (AuthZEN's mapping, with the builder's `fgaAccess()`),
+  read the answer (decision 8's `outcome()`, which tells a fault by the
+  STS-XACML-0013 mark `decidePolicy()` leaves), audit (`authzen.decision`,
+  naming the policy) and count. **It is counted on the monitor's `authzen`
+  row, never `fga`**: that row is the issuance PEP's and counts
+  enforcements, and an AuthZEN answer is enforced by its caller; counting it
+  on both would count one decision twice.
+* **It answers, never throws**: the PDP's answer with the policy's entry,
+  PolicyId and version, or `{ ok: false }` under the resolve's code
+  (0003–0007, 0009) or `STS-FGA-0015` for a throw — which AuthZEN answers
+  as an ERROR (`STS-AUTHZEN-0046`, 500), never `false` and never the root.
+* **The builder, rule 3br**: `fgaAccess({ application })` adds
+  `urn:sts:xacml:fga:application` (resource, as `fga()` writes it, so one
+  target matches both questions) and `urn:sts:xacml:fga:stage = access`
+  (always) to AuthZEN's request, and nothing else. Both identifiers were
+  already in `VOCABULARY` and spelt by the Rust builder, so the remote PEP
+  needed nothing; an embedded FGA PDP there (future work) would find them.
+* **And `fga()` writes no subject when there is no id** (a P3 leftover):
+  `principal()` writes `''` for an absent name, which several PEPs mean as
+  "nobody", but an application's administrator reads `subject-id == ""` as
+  somebody. At PAR, before anybody signed in, the request now carries no
+  `subject-id` and no subject kind; the client stays.
+
+`tests/fga_authzen.js` holds it end to end; `tests/xacml_request.js` F7 and
+F8 hold the builder.
+
+### The console and `/admin-api` (P5)
+
+**Four more methods on `fga_policies.ts`, so the console decides nothing.**
+`reset()` rewrites the application's OWN policy from `fga-default` under
+the same entry name — following the reference as `ensure()` does, so an
+orphan or somebody else's policy is never rewritten (STS-FGA-0021: create
+one instead) — and keeps its enabled flag, because "reset the document" and
+"turn it back on" are two decisions. It needs `confirm` (STS-FGA-0020): on
+an enforcing application it widens what is allowed at once. `holderOf(row)`
+is the one test for "may this policy be removed": the application that
+names it in `appFgaPolicy`, or ''. **The orphan mark is not that test** — a
+policy left by an application deleted through LDAP carries no mark and is
+still named by nobody. `ownedPolicies()` groups `store.fgaPolicies()` by
+owner with `known`, `enforced` and each policy's `referenced`; `state(id)`
+is the application tab's view (the switch, the reference, the policy with
+its editor link, `usable` with the resolve's `code` and `why`, each type's
+`uncovered()`).
+
+* **`xacml_admin.ts`'s `delete` refuses a policy an application still
+  names** (STS-FGA-0022), before removing anything: the application would
+  be left naming nothing, and an enforcing one would refuse every detail
+  (0004). The orphan, decision 3's, is removed through the same `delete`.
+  `policiesJson()` carries `applicationPolicies` (`ownedPolicies()`), and the
+  Policies tab draws the owned rows there instead of in the repository's
+  table. Both reach `fga_policies.ts` through a lazy `loadFga()` dep: it is
+  built by the composition root at 23c, and a require at load would run
+  its slot's build ahead of that.
+* **What the console and API act through** is `admin-ui/CLAUDE.md`'s and
+  `mgmt-api/CLAUDE.md`'s; the audit rows are the ones P1 writes
+  (`xacml.policy.write` for create and reset, the entry's modify for the
+  switch, `xacml.policy.delete` naming the orphan's application).
+
+`tests/fga_console.js` holds it.

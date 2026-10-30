@@ -48,7 +48,7 @@
 // side, and the page says which is which.
 //
 // ---------------------------------------------------------------------------
-// THREE THINGS ASK THE PDP IN THIS PROCESS, AND ONLY TWO OF THEM ENFORCE.
+// FIVE THINGS ASK THE PDP IN THIS PROCESS, AND THREE OF THEM ENFORCE.
 //
 // The catalogue below is the whole list and it is DATA rather than prose,
 // because `/admin/xacml/monitor` renders it and `GET
@@ -66,6 +66,10 @@
 //                service mints anything, through `common/issuance_gate.js`.
 //   `access`     `xacml_access_pep.ts`. Every surface `common/access_gate.ts`
 //                lists asks it through that gate.
+//   `fga`        `fga_pep.ts` (#564). An RFC 9396 detail of an application
+//                that enforces fine-grained authorization, asked through
+//                `common/fga_gate.ts` at the authorization, PAR and token
+//                endpoints, against that application's own policy.
 //   `pdp`        `POST /xacml/pdp` — **NOT A PEP AND NOT COUNTED AS ONE.**
 //                Somebody else's PEP asked this service a question and enforced
 //                the answer in their own process. This service saw the
@@ -374,6 +378,36 @@ class XacmlMonitor {
         },
         obligations: false },
 
+      // THE FINE-GRAINED AUTHORIZATION PEP (#564): an RFC 9396 detail of an
+      // application that enforces FGA, decided by that application's own
+      // policy at the authorization, PAR and token endpoints. It ENFORCES —
+      // the detail is granted or refused in this process — so it carries
+      // allowed and refused like the two PEPs above. Only decisions the PDP
+      // reached are counted; a policy that cannot be resolved is audited
+      // (`fga.decision`) and not counted, as no engine decided anything.
+      // AN AUTHZEN EVALUATION DECIDED BY AN APPLICATION'S POLICY (#564, P4)
+      // IS NOT COUNTED HERE but on the `authzen` row: this row counts what
+      // this process ENFORCES, and that answer is enforced by the AuthZEN
+      // caller in its own process — counting it here would add an allowed
+      // or refused figure nobody here produced, and counting it on both rows
+      // would count one decision twice.
+      { id: 'fga',
+        label: 'The fine-grained authorization PEP',
+        kind: 'embedded',
+        where: 'common/fga_gate.ts, from the authorization, PAR and token ' +
+               'endpoints',
+        module: 'xacml/fga_pep.ts',
+        guards: 'Every RFC 9396 authorization detail whose type belongs to ' +
+                'an application that enforces fine-grained authorization, ' +
+                'decided against that application\'s own policy.',
+        enforces: true,
+        bias: function () {
+          log.debug("Entering bias().");
+          log.debug("Leaving bias().");
+          return 'deny-biased (fixed)';
+        },
+        obligations: false },
+
       { id: 'pdp',
         label: 'The PDP endpoint',
         kind: 'endpoint',
@@ -393,7 +427,13 @@ class XacmlMonitor {
 
       // THE AUTHZEN ENDPOINTS (#563): the PDP endpoint's case again, in
       // AuthZEN's shape. A decision is counted; the enforcement was the
-      // caller's, so the allowed and refused cells stay empty.
+      // caller's, so the allowed and refused cells stay empty. Since #564's
+      // P4 an evaluation about an application that enforces fine-grained
+      // authorization is decided by that application's policy and STILL
+      // counted here, once: the row is the asker's, whichever policy
+      // answered, and the `authzen.decision` audit row names the policy. An
+      // evaluation whose policy could not be used reached no engine and is
+      // not counted.
       { id: 'authzen',
         label: 'The AuthZEN endpoints',
         kind: 'endpoint',

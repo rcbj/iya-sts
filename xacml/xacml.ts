@@ -344,7 +344,8 @@ interface XacmlSurfaceDeps {
   // load: the application registry the catalogue lives on, and the grammar
   // `authzen/authzen.ts` reads it with — so the edge PDP is sent exactly the
   // rows the service maps a request with.
-  loadApplications(): { get(identifier: string): any };
+  loadApplications(): { get(identifier: string): any;
+                        applicationsEnforcingFga(): string[] };
   loadAuthzenCatalogue(): { rowsOf(values: unknown):
                               { rows: any[]; problems: string[] };
                             valueOf(row: any): string };
@@ -721,13 +722,47 @@ class XacmlSurface {
                obligations: [], advice: [], policyIdentifiers: [] },
                'STS-XACML-0012');
     }
+    const answer = this.decidePolicy(policy, request, {
+      repository: store.repository(),
+      resolve: !(options && options.resolve === false)
+    });
+    log.debug('Leaving XacmlSurface.decide(). ' + answer.decision);
+    return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DECISION AGAINST A GIVEN, PARSED POLICY (#564). `decide()` above is
+  // this with the realm's root and the root's PolicyIdReference map; an
+  // application's fine-grained policy is decided with THAT policy alone
+  // (`xacml/fga_pep.ts`, and AuthZEN in P4), never the root and never the
+  // map — its PolicyId is chosen by whoever named the application, and the
+  // store leaves owned policies out of the map for that reason
+  // (`xacml_store.ts`'s `repository()`). One function, so the two cannot
+  // come to differ about `returnPolicyIdList`, the PIP or what an
+  // Indeterminate through a fault is marked with.
+  // ---------------------------------------------------------------------------
+  /**
+   * Decides a parsed request against a given parsed policy.
+   *
+   * @param policy - the policy or policy set, as `parseDocument()` answers it
+   * @param request - the request, in the shapes of `xacml_model.js`
+   * @param options - `repository` (the PolicyIdReference map, or null for
+   *   none) and `resolve` (false decides on the request's own attributes,
+   *   with no PIP)
+   * @returns the PDP's response; an Indeterminate reached through a
+   *   processing or syntax error is marked STS-XACML-0013
+   */
+  decidePolicy(policy: any, request: any,
+               options?: { repository?: any; resolve?: boolean }): any {
+    const { log, config, errorCodes, model, pdp, pip } = this.deps;
+    log.debug('Entering XacmlSurface.decidePolicy().');
+    const opts = options || {};
     if (config.value('xacml.returnPolicyIdList') === true) {
       request.returnPolicyIdList = true;
     }
     const answer = pdp.evaluate(policy, request, {
-      repository: store.repository(),
-      resolver: options && options.resolve === false ? null
-        : pip.resolverFor(request)
+      repository: opts.repository || null,
+      resolver: opts.resolve === false ? null : pip.resolverFor(request)
     });
     // AN INDETERMINATE THE ENGINE REACHED THROUGH A PROCESSING OR SYNTAX ERROR
     // is a fault somebody has to fix, where a missing attribute is an answer
@@ -738,7 +773,7 @@ class XacmlSurface {
          answer.status.code === model.STATUS.SYNTAX_ERROR)) {
       errorCodes.mark(answer, 'STS-XACML-0013');
     }
-    log.debug('Leaving XacmlSurface.decide(). ' + answer.decision);
+    log.debug('Leaving XacmlSurface.decidePolicy(). ' + answer.decision);
     return answer;
   }
 
@@ -838,14 +873,28 @@ class XacmlSurface {
   // **A VALUE THAT IS NOT A ROW IS LEFT OUT AND COUNTED**, never sent: the
   // service leaves it out of the mapping too, so the edge maps that property
   // as undeclared exactly as the service does. Its text is not sent.
+  //
+  // **AND THE APPLICATIONS THAT ENFORCE FINE-GRAINED AUTHORIZATION (#564,
+  // P7; rcbj's decision of 2026-10-30, extending decision 4).** An
+  // evaluation about one of them is decided HERE, against the application's
+  // own policy, which `/xacml/pep/policies` withholds — so the edge cannot
+  // decide it, and forwards it to this realm's `/access/v1/evaluation`.
+  // `fgaApplications` is how it tells which: an additive member, inside the
+  // digest, so switching `appFgaEnforced` moves the token and the edge pulls
+  // again on its next poll. Only the identifiers travel, never a policy. A
+  // registry that cannot be read is NOT an empty list (that would send every
+  // enforcing application to the root): the whole catalogue is refused with
+  // a 500 (`STS-FGA-0108`), and the edge keeps the one it holds.
   // ===========================================================================
   /**
    * The AuthZEN catalogue a remote PEP pulls, and its sync token, for the
    * realm the request is answered in.
    *
-   * @returns `{ token, body }`
+   * @returns `{ token, body }`, or `{ token: '', body: null, unreadable }`
+   *   when which applications enforce fine-grained authorization cannot be
+   *   read
    */
-  authzenCatalogue(): { token: string; body: any } {
+  authzenCatalogue(): { token: string; body: any; unreadable?: string } {
     const { log, config, errorCodes } = this.deps;
     log.debug('Entering XacmlSurface.authzenCatalogue().');
     const grammar = this.deps.loadAuthzenCatalogue();
@@ -884,9 +933,25 @@ class XacmlSurface {
       maxBodyBytes: Number(config.value('authzen.maxBodyBytes')),
       returnReasons: config.value('authzen.returnReasons') === true
     };
+    let fgaApplications: string[] = [];
+    try {
+      fgaApplications = this.deps.loadApplications()
+        .applicationsEnforcingFga();
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.authzenCatalogue(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-FGA-0108') + 'xacml: which ' +
+                'applications enforce fine-grained authorization could not ' +
+                'be read, so the AuthZEN catalogue is not sent: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving XacmlSurface.authzenCatalogue(). Unreadable.');
+      return { token: '', body: null,
+               unreadable: String((e && e.message) || e) };
+    }
     const realm = String(realms.currentId() || '');
     const token = this.deps.sha256Base64(JSON.stringify({
-      realm: realm, apiObject: !!object, rows: rows, settings: settings }))
+      realm: realm, apiObject: !!object, rows: rows, settings: settings,
+      fgaApplications: fgaApplications }))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const body = {
       syncToken: token,
@@ -895,11 +960,15 @@ class XacmlSurface {
       rows: rows,
       leftOut: read.problems.length,
       settings: settings,
+      fgaApplications: fgaApplications,
       note: 'The AuthZEN attribute catalogue of this realm: the rows of ' +
             'authzenAttribute on sts-authzen-api, read as this service ' +
             'reads them for POST /access/v1/evaluation, and the settings ' +
             'that change the mapping or the answer. An edge PDP maps a ' +
-            'request with exactly these, or not at all.'
+            'request with exactly these, or not at all. fgaApplications ' +
+            'names the applications that enforce fine-grained ' +
+            'authorization: an evaluation about one of them is decided by ' +
+            'this service alone, so an edge PDP forwards it here.'
     };
     log.debug('Leaving XacmlSurface.authzenCatalogue(). ' + rows.length +
               ' row(s).');
@@ -1951,6 +2020,46 @@ class XacmlSurface {
   }
 
   // ---------------------------------------------------------------------------
+  // WHAT A REMOTE PEP IS SENT: the body of `GET /xacml/pep/policies`, as a
+  // method so the filter is one piece of code a test can hold (#564) rather
+  // than an expression inside a handler behind mutual TLS. The route's own
+  // comment argues each exclusion.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns what `GET /xacml/pep/policies` sends: every enabled policy
+   * except this service's own two (by setting) and every policy an
+   * application owns (`xacmlApplication`), and the names of those withheld.
+   *
+   * @returns `{ root, policies, withheld }`
+   */
+  pepPull(): { root: string | null; policies: any[]; withheld: string[] } {
+    const { log, config, store } = this.deps;
+    log.debug("Entering XacmlSurface.pepPull().");
+    const root = store.root();
+    const internal = [config.value('xacml.accessPolicy') || 'access-control',
+                      config.value('xacml.issuancePolicy') || 'role-issuance']
+      .map(function (one) { return String(one).toLowerCase(); });
+    const withheld = [];
+    const policies = store.all().filter(function (row) {
+      if (internal.indexOf(String(row.name).toLowerCase()) >= 0 ||
+          row.application) {
+        withheld.push(row.name);
+        return false;
+      }
+      return row.enabled;
+    }).map(function (row) {
+      return { name: row.name, policyId: row.id, kind: row.kind,
+               version: row.version, combiningAlgId: row.combiningAlgId,
+               isRoot: !!(root && root.name === row.name),
+               description: row.description, document: row.document };
+    });
+    log.debug("Leaving XacmlSurface.pepPull(). " + policies.length +
+              " sent, " + withheld.length + " withheld.");
+    return { root: root ? root.name : null, policies: policies,
+             withheld: withheld };
+  }
+
+  // ---------------------------------------------------------------------------
   // GET /xacml — what this surface is.
   // ---------------------------------------------------------------------------
   /**
@@ -2180,6 +2289,10 @@ class XacmlSurface {
           enabled: row.enabled,
           isRoot: !!(root && root.name === row.name),
           description: row.description,
+          // #564: the application that owns it, and since when it has been
+          // orphaned; null for an ordinary policy.
+          application: row.application || null,
+          orphanedAt: row.orphanedAt || null,
           document: row.document };
         // A policy that does not load is reported HERE rather than only when a
         // decision meets it, because the moment somebody is looking at the list
@@ -2460,23 +2573,23 @@ class XacmlSurface {
       // of their own has made THAT one internal, and a stored flag would still
       // be on the old one. Reading the settings is reading the same answer
       // `xacml_access_pep.ts` and `xacml_role_pep.ts` read.
+      //
+      // **AND EVERY POLICY AN APPLICATION OWNS (#564), BY ITS FLAG**, which
+      // is the opposite choice for the opposite reason: ownership is not a
+      // setting that can be pointed elsewhere, it is a fact the entry
+      // carries (`xacmlApplication`), written with the policy. Such a policy
+      // decides the authorization details of its application's types, which
+      // only this service is asked about (rcbj's decision 4: fine-grained
+      // authorization is decided here, at the AuthZEN endpoint); a remote PEP
+      // that loaded it beside the root would hold a document it is never
+      // asked to evaluate, and a PolicySet root there could reference it by
+      // a PolicyId an application's administrator chose. Named, as the two
+      // above are. An embedded FGA PDP in the remote PEP is future work and
+      // would be a pull of its own, not this one.
       // =======================================================================
-      const internal = [config.value('xacml.accessPolicy') || 'access-control',
-                        config.value('xacml.issuancePolicy') || 'role-issuance']
-        .map(function (one) { return String(one).toLowerCase(); });
-      const withheld = [];
-      const rows = store.all().filter(function (row) {
-        if (internal.indexOf(String(row.name).toLowerCase()) >= 0) {
-          withheld.push(row.name);
-          return false;
-        }
-        return row.enabled;
-      }).map(function (row) {
-        return { name: row.name, policyId: row.id, kind: row.kind,
-                 version: row.version, combiningAlgId: row.combiningAlgId,
-                 isRoot: !!(root && root.name === row.name),
-                 description: row.description, document: row.document };
-      });
+      const pulled = self.pepPull();
+      const rows = pulled.policies;
+      const withheld = pulled.withheld;
       res.status(200).type('application/json').set('Cache-Control', 'no-store')
          .set('ETag', '"' + token + '"')
          .send(JSON.stringify({
@@ -2503,7 +2616,10 @@ class XacmlSurface {
                  'process can supply. Enforced elsewhere they would answer ' +
                  'NotApplicable to everything, which a deny-biased PEP turns ' +
                  'into a refusal of everything. They are readable at GET ' +
-                 '/xacml/policies.' +
+                 '/xacml/policies. So is every policy an application owns ' +
+                 '(xacmlApplication): it decides that application\'s ' +
+                 'authorization details, which only this service is asked ' +
+                 'about.' +
                  (withheld.length
                    ? ' Withheld here: ' + withheld.join(', ') + '.'
                    : '')
@@ -2537,6 +2653,23 @@ class XacmlSurface {
         return;
       }
       const catalogue = self.authzenCatalogue();
+      if (!catalogue.body) {
+        // NOT SENT RATHER THAN SENT WITHOUT THE FGA LIST (#564, P7): a
+        // catalogue naming no enforcing application would have the edge
+        // decide those from the root. A 500 keeps the edge on what it holds.
+        errorCodes.mark(res, 'STS-FGA-0108');
+        res.status(500).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({
+             error: 'server_error',
+             error_description: 'Which applications enforce fine-grained ' +
+               'authorization could not be read, so the AuthZEN catalogue ' +
+               'is not sent; keep the one held.'
+           }, null, 2));
+        log.debug('Leaving GET /xacml/pep/authzen-catalogue. The FGA ' +
+                  'applications could not be read.');
+        return;
+      }
       const since = String(req.query.since || '');
       if (since && since === catalogue.token) {
         res.status(304)
@@ -3094,7 +3227,12 @@ export = {
   // The same door for a certificate in hand, for the edge caller list a
   // remote PEP pulls (#1189, `authzen_caller.ts`'s `edgeCallers()`).
   certificateCaller: slot.forward('certificateCaller'),
+  // A decision against a given policy alone (#564): an application's
+  // fine-grained policy is never the root.
+  decidePolicy: slot.forward('decidePolicy'),
   description: slot.forward('description'),
+  // What a remote PEP's pull is sent, and what it is not (#564).
+  pepPull: slot.forward('pepPull'),
   enabled: slot.forward('enabled'),
   // The designator cap a PIP query is held to, for
   // `tests/scan_and_rate_limits.js` (2026-09-12).

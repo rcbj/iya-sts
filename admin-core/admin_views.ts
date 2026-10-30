@@ -11117,6 +11117,42 @@ class AdminViews {
                          { policies: policies });
   }
 
+  // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5): `fga_policies.ts`'s
+  // `state()`, which is the module that owns the policy and its switch and
+  // so the one that can say what they are. Lazy, because that module is
+  // built by the composition root at 23c and this file may be loaded at 18;
+  // and a view must still draw, so a module that cannot be asked answers
+  // null and the tab says it cannot be read rather than taking the page.
+  /**
+   * An application's fine-grained authorization, as its tab draws it.
+   *
+   * @param row - the application's registry row
+   * @returns `fga_policies.state()`'s answer, or null
+   */
+  applicationFgaState(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationFgaState().");
+    let out = null;
+    try {
+      out = require('../xacml/fga_policies')
+        .state(String((row && row.identifier) || ''));
+      // The mapping forms' closed sets, read off the grammar that holds
+      // them (`xacml_attribute_rows.ts`), as the AuthZEN tab's are.
+      const grammar = require('../xacml/xacml_attribute_rows');
+      out.choices = {
+        categories: Object.keys(grammar.CATEGORY_NAMES),
+        dataTypes: Object.keys(grammar.TYPE_NAMES),
+        multiplicities: grammar.MULTIPLICITIES.slice(0)
+      };
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationFgaState(): " +
+                ((e && e.message) || e));
+      out = null;
+    }
+    log.debug("Leaving AdminViews.applicationFgaState().");
+    return out;
+  }
+
   applicationPageData(req, row, states) {
     const { log, applications, mode, baseUrlOf } = this.deps;
     const self = this;
@@ -11212,6 +11248,9 @@ class AdminViews {
           return Object.assign({ stored: stored },
                                applications.authorizationDetailsTypeOf(stored));
         }),
+      // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5): the switch, the
+      // policy it owns and each declared type's coverage.
+      fga: self.applicationFgaState(row),
       // THE SCOPE CLAIMS TAB (2026-10-09): each permission this resource
       // server exposes and the catalogue attributes it maps.
       permissionClaims: self.applicationPermissionClaimsState(row),

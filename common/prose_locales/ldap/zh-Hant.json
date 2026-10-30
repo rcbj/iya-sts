@@ -1723,6 +1723,14 @@
     "en": "2c8a385006302f63",
     "text": "「此應用程式的人員登入時所依據的驗證原則」：`default`（或空白），或本領域某個具名驗證原則的名稱（目錄 > 原則）。具名原則包含允許的第一因素機制（password、password-mfa、webauthn、spnego、wallet、federation；一個都不列則全部允許）與允許的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一個都不列則維持領域的設定不變）。`default` 允許領域驗證原則所允許的每一種機制。\n\n在兩種模式下，於每次以瀏覽器登入該應用程式時「強制執行」：工作階段所依據的機制不為該原則所允許的人，會被送回以原則允許的機制重新登入。只列出一種第一因素機制時，它也是登入的去處（`spnego` 至 /authn/spnego，`wallet` 至 /authn/wallet，`federation` 至 appFederationRelationship）。第二因素只會「縮小」領域的原則：領域已關閉的第二因素在此仍然關閉。\n\n本領域沒有任何原則使用的名稱——繞過主控台寫入——在該原則存在之前「不允許任何」機制（STS-AUTHN-0536）。\n\n它「無人寫入」：沒有任何協定提供它，因此可以編輯，且初始為空白。"
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "此應用程式所擁有的細粒度授權原則在 ou=policies 中的項目名稱；一旦 appFgaEnforced 為 TRUE，該原則將決定此應用程式所宣告類型的每一項授權詳細資料。"
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "當此應用程式的細粒度原則被強制執行時為 TRUE。缺少或為 FALSE 表示未強制執行，這是預設值。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及標準的 owner 與 description。"
@@ -1862,6 +1870,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "文件自己的 <Description>（若有）。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "擁有此原則的應用程式的識別碼；該原則決定該應用程式的 authorization_details 類型的詳細資料。此類原則永遠不會成為根原則，永遠不會被根原則透過 PolicyIdReference 參照，也永遠不會傳送給遠端 PEP。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "所屬應用程式被刪除的時間。該原則會被保留並停用以供稽核，直到管理員將其移除。"
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

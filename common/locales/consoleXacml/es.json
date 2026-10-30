@@ -306,5 +306,18 @@
   "authzen.deny": "Denegar",
   "authzen.cancel": "Cancelar",
   "authzen.revoke": "Revocar",
-  "authzen.noRequests": "No se ha enviado ninguna solicitud de acceso en este dominio."
+  "authzen.noRequests": "No se ha enviado ninguna solicitud de acceso en este dominio.",
+  "fga.heading": "Políticas propias de las aplicaciones",
+  "fga.label": "Qué es esta sección",
+  "fga.p1": "Cada aplicación tiene una política de autorización detallada que decide los detalles RFC 9396 de sus propios tipos. Nunca es la raíz, nunca se envía a los PEP remotos y se edita en el editor como cualquier otra política.",
+  "fga.p2": "La política de una aplicación eliminada se conserva, desactivada y marcada como huérfana, hasta que se quita aquí. La política que una aplicación todavía nombra no se puede quitar; restablézcala desde la pestaña Autorización detallada de la aplicación.",
+  "fga.thApplication": "Aplicación",
+  "fga.thVersion": "Versión",
+  "fga.enforced": "aplicada",
+  "fga.deleted": "eliminada",
+  "fga.orphaned": "huérfana desde {when}",
+  "fga.unreferenced": "ninguna aplicación la nombra",
+  "fga.remove": "Quitar",
+  "fga.removeTip": "Elimina esta política. Ninguna aplicación la nombra, así que nada decide con ella.",
+  "fga.none": "Ninguna aplicación tiene una política en este dominio."
 }

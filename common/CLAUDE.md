@@ -941,6 +941,75 @@ Both acts are audited (`application.export`, `application.import`) with the
 attribute NAMES and never a value. `tests/application_ldif.js` and
 `tests/protocol/sts_application_ldif.js` hold it.
 
+## Fine-grained authorization: the application's half, and the `setFgaLifecycle()` slot (#564, 2026-10-29)
+
+Every application created gets a fine-grained authorization policy it owns
+in `ou=policies`, and every application deleted has that policy retired —
+disabled, marked orphaned, kept (rcbj's decisions 2 and 3 on #564). The
+policy and the lifecycle are `xacml/fga_policies.ts`'s and argued in
+`xacml/CLAUDE.md` (*Application-scoped fine-grained authorization*); this
+module keeps two attributes and says WHEN.
+
+* **`appFgaPolicy`** names the policy's entry and **`appFgaEnforced`** is
+  the switch (`TRUE`; absent or `FALSE` is off, the default). Both are
+  schema rows and in NO `EDITABLE` row: switching enforcement on creates the
+  policy first, and an ordinary field write through `update-fields` would
+  skip that. `fgaStateOf()` reads them and `setFgaState()` is the one door
+  that writes them, audited as `application.update`. Being derived, an LDIF
+  export leaves them out and an import refuses them (`STS-REG-0350`), so an
+  imported application gets a policy of its own.
+* **`createApplication()` calls the `created` hook and `deleteApplication()`
+  the `deleted` one**, the second with the `appFgaPolicy` read before the
+  entry went. Not `seen()`, `register()` or `seedInternalApplication()`:
+  each files an entry no administrator created, the first two at a possibly
+  unauthenticated caller's request, and a policy per entry there would let
+  such a caller fill `ou=policies` to `xacml.maxPolicies`. They get their
+  policy at first enable. A hook's failure or throw is logged
+  (`STS-FGA-0010`) and never fails the create or delete it follows.
+
+**`setFgaLifecycle()` is a rule 3e slot, and the test answers yes both ways
+round.** A require of `xacml/fga_policies` from here AT LOAD closes a cycle
+(that module requires this one for the two attributes) and loads the XACML
+store and templates into whatever first requires this module — nearly
+everything, long before 23c — where their `InstanceSlot`s would build
+default instances and the composition root's install would then be refused.
+A LAZY require at the write, as `authzenAttributeProblem()` takes, avoids
+both but not the third cost: this module is in the parent project's Kerberos
+COPY closure through `kerberos/krb5_delegation.ts`, and a create or delete
+in those jobs would reach for a file their image does not carry. The slot
+adds no require at all. The other direction is the natural one, and is what
+`fga_policies.ts` does; its wire step at 23c fills the slot. VALIDATED WHOLE
+(`STS-FGA-0011`): `created` without `deleted` would make policies nothing
+retires. `fgaLifecycleInstalled()` is for a test that replaces it.
+
+**And the type's write door (#564, P3).** `updateApplication()` refuses an
+`oauthAuthorizationDetailsType` value written to an application whose
+`appFgaEnforced` is TRUE when `fga_map.ts`'s `uncovered()` is not empty for
+it (`fgaCoverageProblem()`, `STS-FGA-0019`) — the same rule `enable()`
+holds at the switch (`STS-FGA-0018`). `fga_map.ts` is required LAZILY and
+only for an enforcing application, which is `authorizationDetailsTypeOf()`'s
+arrangement for the mapping grammar: the slot above is about the policy's
+lifecycle, not about a definition, and no Kerberos COPY-closure job ever
+switches enforcement on.
+
+## `fga_gate.ts`: fine-grained authorization at issuance, and the slot that REFUSES when empty (#564, P3)
+
+A leaf in `access_gate.ts`'s shape — `helpers`, the error-code table,
+`InstanceSlot` — whose `setDecider()` `xacml/fga_pep.ts` fills at 23c. It is
+asked one RFC 9396 detail at a time, by `oauth-oidc/authorization_details.ts`'s
+`fineGrainedRefusal()`, and ONLY for a detail whose type's application has
+`appFgaEnforced` TRUE — `fgaStateOf()` above answers that without the XACML
+family. **An empty slot REFUSES (`STS-FGA-0016`), the opposite of
+`issuance_gate.js` and `access_gate.ts`**, because here somebody asked for a
+restriction: issuing an enforcing application's detail undecided would be
+the switch silently not applying. A decider that throws or answers nothing
+is a failure too (`STS-FGA-0015`). Rule 3e both ways round, as for the
+issuance gate: a require from `oauth2.ts` (9) to the PEP would load the
+policy store and the lifecycle far ahead of the composition root and reach
+the console through the XACML surface (a cycle); the PEP reaching into
+`oauth2.ts` would make it know every issuance site. The root builds it beside
+`access_gate`; the answer is `{ outcome: permit | deny | failure, code, why }`.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a

@@ -1723,6 +1723,14 @@
     "en": "2c8a385006302f63",
     "text": "ANG AUTHENTICATION POLICY NA SINUSUNOD SA PAG-SIGN IN NG MGA TAO NG APPLICATION NA ITO: `default` (o walang laman), o ang pangalan ng isang named authentication policy ng realm na ito (Directory > Mga policy). Hawak ng named policy ang mga first-factor mechanism na pinapayagan (password, password-mfa, webauthn, spnego, wallet, federation; kapag wala, pinapayagan ang lahat) at ang mga second factor na pinapayagan (password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet; kapag wala, nananatili ang sa realm). Pinapayagan ng `default` ang bawat mechanism na pinapayagan ng authentication policy ng realm.\n\nIPINAPATUPAD sa bawat browser sign-in sa application, sa parehong mode: ang taong ang session ay nakasandal sa mechanism na hindi pinapayagan ng policy ay pinapabalik para mag-sign in muli gamit ang isang pinapayagan nito. Kapag iisang first-factor mechanism ang nakalista, doon din pupunta ang sign-in (`spnego` sa /authn/spnego, `wallet` sa /authn/wallet, `federation` sa appFederationRelationship). PINAPAKITID lang ng mga second factor ang policy ng realm: ang naka-off doon ay naka-off din dito.\n\nAng pangalang hindi hawak ng alinmang policy ng realm na ito — isinulat nang lampas sa console — ay WALANG pinapayagang mechanism hanggang umiral ang policy (STS-AUTHN-0536).\n\nWALANG NAGSUSULAT NITO: walang protocol na nagpapakita nito, kaya puwede itong i-edit at nagsisimulang walang laman."
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "Ang pangalan ng entry sa ou=policies ng fine-grained authorization policy na pag-aari ng application na ito, na nagpapasya sa bawat authorization detail ng mga type na idinedeklara nito kapag TRUE na ang appFgaEnforced."
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "TRUE kapag ipinapatupad ang fine-grained policy ng application na ito. Ang wala o FALSE ay nangangahulugang hindi, na siyang default."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, at ang standard na owner at description."
@@ -1862,6 +1870,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "Ang sariling <Description> ng document, kung mayroon."
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "Ang identifier ng application na MAY-ARI ng policy na ito, na nagpapasya sa mga detalye ng mga authorization_details type ng application na iyon. Ang ganitong policy ay hindi kailanman ang root, hindi kailanman naaabot ng isang PolicyIdReference mula sa root, at hindi kailanman ipinapadala sa isang remote PEP."
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "Kung kailan binura ang application na may-ari. Itinatago ang policy, naka-disable, para sa audit, hanggang alisin ito ng isang administrator."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

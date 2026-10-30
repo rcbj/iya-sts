@@ -3645,7 +3645,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'xacml-pep container, whose edge PDP answers AuthZEN with exactly ' +
           'these rows, so one request is mapped one way in both places. ' +
           'Requires REMOTE_PEPS, as the policy pull does. Additive: ' +
-          '/xacml/pep/policies is unchanged.' },
+          '/xacml/pep/policies is unchanged. fgaApplications names the ' +
+          'applications that enforce fine-grained authorization, inside ' +
+          'the sync token: the edge PDP forwards an evaluation about one ' +
+          'of them to this realm\'s POST /access/v1/evaluation rather than ' +
+          'decide it (#564).' },
   { path: '/xacml/pep/authzen-callers', group: 'XACML',
     name: 'The AuthZEN callers, for a remote PEP to ADMIT',
     specs: ['xacml30', 'authzen10'],

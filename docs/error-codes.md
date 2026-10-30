@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4920** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4958** of them, in **50** subsystems.
 
 ## Where a code appears
 
@@ -87,8 +87,9 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 54
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 91
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 32
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4711,6 +4712,11 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0052` | The realm the remote PEP pulled its AuthZEN callers from authenticates them by a token (authzen.callerAuthentication bearer or mtls+bearer), which the edge PDP cannot check, so it admits nobody (#1189). | HTTP 401, an error message |
 | `STS-XPEP-0053` | A caller on the remote PEP's pulled AuthZEN caller list asked an endpoint the service's access-control policy does not admit it to (#1189). | HTTP 403, an error message |
 | `STS-XPEP-0054` | A caller on the remote PEP's pulled AuthZEN caller list is not on PEP_AUTHZEN_CALLERS, which, when it is set, narrows the pulled list to the certificates it names (#1189). | HTTP 403, an error message |
+| `STS-XPEP-0055` | The remote PEP's edge PDP could not forward an AuthZEN evaluation about an application that enforces fine-grained authorization to the service: the service could not be reached, or did not answer within PEP_AUTHZEN_FORWARD_TIMEOUT_MS (#564). The evaluation is an error, never false. | HTTP 502 (504 on a timeout), or a batch item's context.error |
+| `STS-XPEP-0056` | The service refused the remote PEP itself when its edge PDP forwarded an AuthZEN evaluation about an application that enforces fine-grained authorization (401 or 403): the PEP's directory entry must hold AUTHZEN_PEPS and have the application in its stsAuthzenApplication scope (#564). | HTTP 502, or a batch item's context.error |
+| `STS-XPEP-0057` | The service answered an error to an AuthZEN evaluation the remote PEP's edge PDP forwarded (an application that enforces fine-grained authorization): its status and message are passed to the caller, never turned into false (#564). | the service's own status and message, or a batch item's context.error |
+| `STS-XPEP-0058` | The service answered 200 to an AuthZEN evaluation the remote PEP's edge PDP forwarded, with something that is not an AuthZEN decision (no boolean decision) (#564). | HTTP 502, or a batch item's context.error |
+| `STS-XPEP-0059` | The AuthZEN catalogue the remote PEP pulled carried an fgaApplications member that is not an array of application identifiers. The catalogue is refused whole and the one held is kept: which evaluations must be forwarded cannot be told (#564). | none; the edge keeps what it holds |
 
 ## STS-AUTHZEN
 
@@ -4747,7 +4753,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0025` | An AuthZEN request named a context.application its caller is not scoped to (stsAuthzenApplication or appAuthzenApplication). | HTTP 403, an error message |
 | `STS-AUTHZEN-0026` | An AuthZEN caller is scoped to no application, so it may ask about none. | HTTP 403, an error message |
 | `STS-AUTHZEN-0027` | An AuthZEN caller is scoped to several applications and the request named none in context.application. | HTTP 400, an error message |
-| `STS-AUTHZEN-0028` | The PDP could not evaluate an AuthZEN request: the root policy does not load, or evaluation met a processing or syntax error. Answered as an error, never as an ordinary denial. | HTTP 500, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0028` | The PDP could not evaluate an AuthZEN request: the root policy does not load, or evaluation met a processing or syntax error — against the root, or against the fine-grained policy of an application that enforces it (#564). Answered as an error, never as an ordinary denial. | HTTP 500, an error message (a batch item's context.error) |
 | `STS-AUTHZEN-0029` | An AuthZEN Permit was answered false because the decision carried an obligation this PDP cannot discharge, until the Obligations Profile is implemented end to end. | decision: false |
 | `STS-AUTHZEN-0030` | An AuthZEN console or /admin-api act named an action the AuthZEN tab does not have. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-AUTHZEN-0031` | An AuthZEN remove-attribute named an object and property the catalogue has no row for. | the caller's refusal (errors on a console or /admin-api reply) |
@@ -4765,6 +4771,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0043` | An AuthZEN search continued with a page.token this search did not issue, or after an entity or the limit changed (section 8.2). | HTTP 400, an error message |
 | `STS-AUTHZEN-0044` | An AuthZEN search reached a realm where authzen.searchEnabled is off. | HTTP 501, an error message |
 | `STS-AUTHZEN-0045` | An AuthZEN search named more candidates than authzen.searchMaxCandidates; only the first were decided and the answer said it was incomplete. | context.incomplete |
+| `STS-AUTHZEN-0046` | An AuthZEN evaluation about an application that enforces fine-grained authorization could not be decided: the application's policy cannot be used, or whether it enforces could not be read. The audit row's code says why (STS-FGA-0003 to 0007, 0009, or 0015). Answered as an error, never as a denial, and never decided against the realm root instead (#564). | HTTP 500, an error message (a batch item's context.error) |
 | `STS-AUTHZEN-0060` | The AuthZEN catalogue a remote PEP pulled from GET /xacml/pep/authzen-catalogue left out values of authzenAttribute on sts-authzen-api that are not catalogue rows; the edge PDP maps those properties as undeclared, as the service does (#1179). | none — logged; the pull is answered |
 | `STS-AUTHZEN-0061` | The AuthZEN caller list a remote PEP pulled from GET /xacml/pep/authzen-callers was cut: the AuthZEN group has more members than are read, or a member more certificates (#1189). A caller past the cut is refused at the edge and still answered here. | none — logged; the pull is answered |
 | `STS-AUTHZEN-0062` | A certificate held by a member of the AuthZEN group could not be read for the caller list a remote PEP pulled, and was left out (#1189). | none — logged; the pull is answered |
@@ -4811,6 +4818,47 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0113` | An AuthZEN scope tuple's scope is a gated permission no role of its subject authorizes (#302); answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0114` | An AuthZEN token-exchange subject gate named a subject token with no lifetime left (context.subject_token.exp), so any token_lifetime would be 0, a denial; answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0115` | A granted_scope wider than the subject token's scope was built for an AuthZEN token-exchange answer and was not sent: the no-broadening rule held at the last moment, which is a defect (#1181). | none — logged; the envelope is sent without it |
+
+## STS-FGA
+
+**Fine-grained authorization.** Application-scoped fine-grained authorization: the policy each application owns in ou=policies (created with it, retired with it), the appFgaEnforced switch, the refusals that keep such a policy out of the repository root, and an RFC 9396 authorization detail mapped onto an XACML request through its type's xacml rows and asked of the owning application's policy.
+
+Raised from: xacml/fga_policies.ts, xacml/fga_map.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, and the lifecycle slot in common/applications.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-FGA-0001` | A policy that belongs to an application (it carries xacmlApplication) was written as the repository root and refused: an application's fine-grained policy decides that application's details and never the realm's root question. | the write is refused |
+| `STS-FGA-0002` | The console or /admin-api asked to make an application's fine-grained policy the repository root, and was refused before the current root was demoted. | the caller's refusal (why on a console or /admin-api reply) |
+| `STS-FGA-0003` | An application has no fine-grained policy: its appFgaPolicy is empty. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0004` | An application's appFgaPolicy names a policy entry that is not in this realm's ou=policies. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0005` | An application's appFgaPolicy names a policy entry that does not belong to it: the entry's xacmlApplication is absent or names another application, or the entry is marked orphaned. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0006` | An application's fine-grained policy is disabled (xacmlEnabled FALSE). An enforced application with a disabled policy refuses; switching enforcement on is refused until the policy is enabled. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0007` | An application's fine-grained policy does not parse or does not type-check. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint), and an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) where the application enforces FGA; none otherwise |
+| `STS-FGA-0008` | An application's default fine-grained policy could not be written: there is no directory, ou=policies is at xacml.maxPolicies, or the document was refused. The application stays without one until FGA is next enabled on it. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
+| `STS-FGA-0009` | A fine-grained authorization act named an application this realm's registry does not hold. | the caller's refusal; an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) when the application went between the two reads |
+| `STS-FGA-0010` | The application lifecycle hook (create or delete) failed or threw. The application create or delete itself stands; the policy was not created or not retired. | none — logged; the create or delete succeeds |
+| `STS-FGA-0011` | The FGA lifecycle slot offered to common/applications.js was incomplete (it needs both created and deleted) and was not installed. | none — logged at load |
+| `STS-FGA-0012` | An application's appFgaPolicy or appFgaEnforced could not be written to its entry: the directory refused the write. | the caller's refusal |
+| `STS-FGA-0013` | A deleted application's fine-grained policy could not be disabled and marked orphaned; it is left as it was. | none — logged; the delete succeeds |
+| `STS-FGA-0014` | An application that enforces fine-grained authorization refused an authorization detail of one of its types: its policy decided Deny, NotApplicable, or Indeterminate over a missing attribute, or Permit with an obligation this service cannot discharge. Only a Permit with nothing undischargeable grants a detail. | access_denied at the authorization endpoint (redirected), invalid_authorization_details at the PAR and token endpoints (HTTP 400) |
+| `STS-FGA-0015` | A fine-grained authorization decision could not be made: the application's policy reached Indeterminate through a processing or syntax error, or the embedded FGA PEP threw or answered nothing. The detail is refused; this is a fault, never a Permit. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint); an AuthZEN error (STS-AUTHZEN-0046, HTTP 500) for an access question that threw |
+| `STS-FGA-0016` | An authorization detail's type belongs to an application that enforces fine-grained authorization, and no FGA decider is installed in this process (the XACML family is not loaded), so the detail is refused rather than issued undecided. | server_error (HTTP 500 at the token and PAR endpoints, redirected at the authorization endpoint) |
+| `STS-FGA-0017` | A token exchange asked for an authorization detail whose type's application enforces fine-grained authorization, and the subject_token does not cover it: it is not a token this service issued with authorization_details, or none of its details of that type covers the requested one (RFC 9396 section 6's subset rule). | invalid_authorization_details (HTTP 400) |
+| `STS-FGA-0018` | Switching fine-grained authorization on for an application was refused: a type it declares has member paths that are neither mapped (xacml) nor listed in notForPolicy, or its schema is open. | the caller's refusal, naming the uncovered paths |
+| `STS-FGA-0019` | An oauthAuthorizationDetailsType value written to an application that enforces fine-grained authorization was refused: the definition would leave member paths neither mapped nor listed in notForPolicy, which enforcement could not decide. | the caller's refusal, naming the uncovered paths |
+| `STS-FGA-0020` | Resetting an application's fine-grained policy to the fga-default template was refused because it was not confirmed: the reset replaces every rule an administrator wrote, so it needs confirm. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-FGA-0021` | Resetting an application's fine-grained policy was refused: the application has no policy of its own (appFgaPolicy is empty, names a missing entry, or names one that is not its own). Create the default policy instead. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-FGA-0022` | Deleting a policy from the XACML repository was refused: it is the fine-grained policy an application still names in appFgaPolicy. Only a policy no application names (an orphan of a deleted application) may be removed. | the caller's refusal (why on a console or /admin-api reply) |
+| `STS-FGA-0023` | A mapping row or a notForPolicy entry could not be changed on an access type from the console or /admin-api: the row to remove is not on the type, or the row offered does not read (a bad path, attribute identifier, category, data type or multiplicity, or a reserved identifier). | the caller's refusal (errors and field on a console or /admin-api reply) |
+| `STS-FGA-0100` | A fine-grained authorization question was asked with a type definition that is not usable (it carries a problem, or names no type), so no request could be built for the detail. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0101` | A fine-grained authorization question was asked about a detail that is not a JSON object of the definition's type. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0102` | A fine-grained authorization question was asked without the trusted facts the adapter must supply: the owning application, or a stage that is one of authorize, token, refresh, exchange, par or access. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0103` | An authorization detail carried a member its type neither maps (xacml) nor lists in notForPolicy, so it could not reach the owning application's policy and was never read as an attribute. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0104` | A member of an authorization detail that a type's xacml row maps was null, or a bag held a null. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0105` | A member of an authorization detail had a JSON type its xacml row's datatype does not take, or a string outside that datatype's lexical space. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0106` | A member of an authorization detail was an array where its xacml row sends a single value, or carried more than 256 values. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0107` | A member of an authorization detail was an object where its xacml row sends values (a nested object reaches a request only through rows for its own members), or was nested too deeply. | access_denied at the authorization endpoint, invalid_authorization_details at the PAR and token endpoints |
+| `STS-FGA-0108` | Which applications enforce fine-grained authorization could not be read when a remote PEP pulled the AuthZEN catalogue (GET /xacml/pep/authzen-catalogue), so the catalogue was not sent: one naming no enforcing application would have the edge PDP decide their evaluations from the root (#564). | HTTP 500 server_error; the edge keeps the catalogue it holds |
 
 ## STS-ADMIN
 

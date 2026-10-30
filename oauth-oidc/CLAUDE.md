@@ -2027,6 +2027,72 @@ so must `admin-ui/admin.ts`.
      GNAP tokens only, so an RS counting RAR limits keys its totals on the
      token's `grant_id` the same way.
 
+   **AND SINCE #564 A DEFINITION SAYS HOW ITS DETAILS REACH A POLICY**:
+   `xacml` (rows of member path -> attribute, AuthZEN's catalogue grammar)
+   and `notForPolicy` (members deliberately not mapped), read by
+   `xacml/fga_map.ts`'s `mappingOf()` at every write door (`STS-REG-0112`)
+   and carried on `declaredTypes()`'s entry with the definition object
+   (`source`) the policy's digest is taken of. The five common fields need
+   neither — built-in rows map them. Nothing in RAR's own processing reads
+   the two members: they matter only to fine-grained authorization, which
+   asks the OWNING application's policy about each detail
+   (`xacml/CLAUDE.md` rule 3cy; enforcement at issuance is #564's P3).
+   GNAP reads the same catalogue and ignores them.
+
+   **AND SINCE #564's P3 THE OWNING APPLICATION'S POLICY IS AN EXTRA
+   CONJUNCT AT ISSUANCE — rule 3cz.** For a detail whose type's application
+   has `appFgaEnforced` TRUE, `fineGrainedRefusal()` asks
+   `common/fga_gate.ts` (filled by `xacml/fga_pep.ts`) after `parse()` — the
+   two type questions (3bt) and well-formedness have already passed — and
+   only a Permit grants it. Every other detail asks nothing, so an
+   application without FGA enforced is unchanged. Where it is asked, and
+   why there:
+
+   * **The authorization endpoint, inside the session branch and ABOVE the
+     consent block**: the subject is the person, who exists only once there
+     is a session, and a refused detail must never be drawn on the screen.
+     A denial is `access_denied` through `fail()` — redirected, `prompt=none`
+     included (the answer needs no interaction, so `consent_required` would
+     be wrong); a fault is `server_error`.
+   * **Again after consent, for LOWERED limits, where this pass mints an
+     access token** (#564's P4, a P3 leftover): the check above decided the
+     details the client SENT, and the Allow replaces them with the ones the
+     person lowered, which no policy has seen — and a policy may refuse a
+     lower value. With `token` in the response type (implicit, hybrid) the
+     token is minted in `issueAuthorizationResponse()` and never reaches
+     `tokenSet()`, so the lowered set is asked there, stage `authorize`,
+     with the same two refusals. A bare `code` is not asked twice: the
+     token endpoint asks about the code's lowered details at redemption.
+   * **The PAR endpoint**, after the audience plan, in the token endpoint's
+     style as every refusal there is: `invalid_authorization_details` (400)
+     or `server_error` (500, the endpoint's own fault answer). Nobody has
+     signed in, so the subject is left out — since P4 ENTIRELY, no
+     `subject-id` and no subject kind, never `''`, which a policy would read
+     as somebody (`xacml_request.js`'s `fga()`); the authorization endpoint
+     asks again with the person.
+   * **`tokenSet()`, THE FUNNEL, not each grant**: every grant that yields
+     details mints through it — code, refresh, client credentials, password,
+     both assertion grants, exchange, device, CIBA poll and push — so one
+     check there cannot be forgotten by a grant added later, which is the
+     argument `bearerRefusedBy()` beside it already makes. The stage is
+     `refresh` for the refresh grant (decided against the CURRENT policy
+     and the current `declaredTypes()` definition), `exchange` for an
+     exchange, `token` otherwise. It decides what the ACCESS token carries.
+     A denial is `invalid_authorization_details` (400); a fault
+     `server_error`, carried on `AccessTokenRefused` with `status: 500`,
+     which the token endpoint's wrapper now honours. **The cost, stated:**
+     like the issuance gate's refusal in `issue()`, it comes after the code
+     or the refresh token was spent, so a refused refresh ends the grant.
+   * **The exchange's BOUND (rcbj's decision 6), in the exchange branch
+     before `issue()`**: a requested detail of an enforcing application's
+     type must be covered (`covers()`) by the subject_token's own
+     `authorization_details`, and only a token this server issued and
+     verified (not an assertion, not development's unverified read) counts
+     (`exchangeBoundProblem()`, `STS-FGA-0017`). Other types are granted as
+     asked, as before.
+
+   `tests/fga_issuance.js` holds it.
+
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5
    says MUST, and spec compliance is above development's convenience. The

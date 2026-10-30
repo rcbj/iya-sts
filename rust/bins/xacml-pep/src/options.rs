@@ -71,6 +71,12 @@ pub struct Options {
     /// The PDP identifier the metadata names, an `https` origin; empty means
     /// "the origin the HTTPS request arrived at".
     pub authzen_pdp_identifier: String,
+    /// How long the edge PDP waits for the service when it FORWARDS an
+    /// evaluation about an application that enforces fine-grained
+    /// authorization (#564): `PEP_AUTHZEN_FORWARD_TIMEOUT_MS`, apart from
+    /// `PEP_TIMEOUT_MS` because the caller is waiting on this one, and a
+    /// pull is not waited on by anybody. At least 1.
+    pub authzen_forward_timeout_ms: u64,
 }
 
 /// One caller `PEP_AUTHZEN_CALLERS` names: the certificate it presents, by
@@ -289,6 +295,11 @@ impl Options {
                 .trim()
                 .is_empty(),
             authzen_pdp_identifier: authzen_pdp_identifier(),
+            authzen_forward_timeout_ms: int_from_env(
+                "PEP_AUTHZEN_FORWARD_TIMEOUT_MS",
+                5000u64,
+            )
+            .max(1),
         }
     }
 }

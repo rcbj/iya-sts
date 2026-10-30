@@ -30,6 +30,14 @@
 //!   container's own grammar (`parse_pulled_callers()`), never taken on
 //!   trust. It converges on the poll too: a caller the service stops
 //!   admitting is admitted here until the next one.
+//! * **THE CATALOGUE NAMES THE APPLICATIONS THAT ENFORCE FINE-GRAINED
+//!   AUTHORIZATION** (#564, P7): `fgaApplications`, whose evaluations the
+//!   edge FORWARDS to the service rather than deciding from the root. It is
+//!   inside the catalogue's token, so a switch flip is pulled on the next
+//!   poll. A member that is not a list of identifiers refuses the WHOLE
+//!   catalogue (`STS-XPEP-0059`), keeping the one held: which evaluations
+//!   must be forwarded cannot be told from it, and guessing "none" would
+//!   decide an enforcing application from the root.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -135,6 +143,9 @@ pub struct Catalogue {
     pub api_object: bool,
     pub rows: Arc<Vec<Row>>,
     pub settings: AuthzenSettings,
+    /// The applications that enforce fine-grained authorization (#564):
+    /// an evaluation about one of them is FORWARDED to the service.
+    pub fga_applications: Arc<Vec<String>>,
     /// Rows this container's grammar refused, and values the PDP left out.
     pub refused: Vec<String>,
     pub left_out: u64,
@@ -183,6 +194,36 @@ pub const CALLER_ENDPOINTS: [&str; 2] = ["evaluation", "evaluations"];
 
 /// Reads a pulled caller list STRICTLY, as `parse_callers()` reads
 /// `PEP_AUTHZEN_CALLERS`: an entry that is not a name, at least one 64-digit
+/// The catalogue's `fgaApplications` (#564, P7): the applications that
+/// enforce fine-grained authorization. ABSENT is an empty list — a service
+/// that does not send it predates fine-grained authorization, so no
+/// application there enforces it. PRESENT, it must be an array of non-empty
+/// strings of at most 256 characters, or the whole catalogue is refused:
+/// an entry left out here would be an enforcing application decided from
+/// the root, so unlike a caller entry nothing is dropped and carried on.
+pub fn parse_fga_applications(said: &Value) -> Result<Vec<String>, String> {
+    let Some(given) = said.get("fgaApplications") else {
+        return Ok(Vec::new());
+    };
+    let refused = || {
+        "The PDP's AuthZEN catalogue carried an fgaApplications member \
+         that is not an array of application identifiers, so which \
+         evaluations must be forwarded to it cannot be told; the catalogue \
+         is refused whole."
+            .to_string()
+    };
+    let list = given.as_array().ok_or_else(refused)?;
+    let mut out = Vec::new();
+    for one in list {
+        let id = one
+            .as_str()
+            .filter(|s| !s.is_empty() && s.chars().count() <= 256)
+            .ok_or_else(refused)?;
+        out.push(id.to_string());
+    }
+    Ok(out)
+}
+
 /// SHA-256, at most 64 applications of at most 256 characters and endpoints
 /// from `CALLER_ENDPOINTS` is LEFT OUT and named, so a defect admits nobody
 /// rather than somebody. Answers the door, the callers, and the problems.
@@ -274,6 +315,8 @@ struct AuthzenCounters {
     permitted: u64,
     denied: u64,
     errors: u64,
+    /// Of the decisions, those the service made, forwarded (#564).
+    forwarded: u64,
 }
 
 /// Everything about the current holding.
@@ -402,6 +445,19 @@ impl Sync {
         self.lock().callers.clone()
     }
 
+    /// The client this PEP pulls with — the AuthZEN forward (#564) goes
+    /// through it, so it presents the same certificate and verifies the PDP
+    /// the same way.
+    pub fn client(&self) -> &PdpClient {
+        &self.client
+    }
+
+    /// One forwarded AuthZEN evaluation (#564), counted beside
+    /// [`Sync::count_authzen`], which counts it too.
+    pub fn count_forwarded(&self) {
+        self.lock().authzen.forwarded += 1;
+    }
+
     /// One AuthZEN answer: `Some(decision)`, or `None` for an error.
     pub fn count_authzen(&self, decision: Option<bool>) {
         let mut state = self.lock();
@@ -442,6 +498,9 @@ impl Sync {
                 "realm": c.realm,
                 "apiObject": c.api_object,
                 "rows": c.rows.len(),
+                // A COUNT, for the reason above: which applications
+                // enforce is the service's to tell a REMOTE_PEPS holder.
+                "fgaApplications": c.fga_applications.len(),
                 "refused": c.refused,
                 "leftOutByThePdp": c.left_out,
                 "settings": {
@@ -457,7 +516,8 @@ impl Sync {
                 "lastPullWhy": c.last_pull_why
             },
             "answered": { "decisions": a.decisions, "true": a.permitted,
-                          "false": a.denied, "errors": a.errors }
+                          "false": a.denied, "errors": a.errors,
+                          "forwarded": a.forwarded }
         })
     }
 
@@ -917,6 +977,13 @@ impl Sync {
     /// Reads every pulled row through this container's own grammar: a row
     /// it refuses is left out and named, never mapped with.
     fn load_catalogue(&self, said: &Value) {
+        let fga_applications = match parse_fga_applications(said) {
+            Ok(list) => list,
+            Err(why) => {
+                self.keep_catalogue(&why, "STS-XPEP-0059");
+                return;
+            }
+        };
         let values = said["rows"].as_array().cloned().unwrap_or_default();
         let mut rows: Vec<Row> = Vec::new();
         let mut refused = Vec::new();
@@ -960,6 +1027,7 @@ impl Sync {
             api_object: said["apiObject"].is_string(),
             rows: Arc::new(rows),
             settings: AuthzenSettings::of(&said["settings"]),
+            fga_applications: Arc::new(fga_applications),
             refused,
             left_out: said["leftOut"].as_u64().unwrap_or(0),
             last_pull_at: iso_now(),
@@ -1298,5 +1366,31 @@ mod tests {
         assert_eq!(problems.len(), 6, "{:?}", problems);
         let (none, nothing, refused) = parse_pulled_callers(&json!({}));
         assert!(none.is_empty() && nothing.is_empty() && refused.is_empty());
+    }
+
+    /// `fgaApplications` (#564, P7): absent is none (a service older than
+    /// fine-grained authorization); a list of identifiers is read as it
+    /// is; anything else refuses the whole catalogue rather than dropping
+    /// an entry, which would decide that application from the root.
+    #[test]
+    fn fga_applications_are_read_whole_or_not_at_all() {
+        assert_eq!(parse_fga_applications(&json!({})), Ok(Vec::new()));
+        assert_eq!(
+            parse_fga_applications(&json!({ "fgaApplications": ["a", "b"] })),
+            Ok(vec!["a".to_string(), "b".to_string()])
+        );
+        assert_eq!(
+            parse_fga_applications(&json!({ "fgaApplications": [] })),
+            Ok(Vec::new())
+        );
+        for bad in [
+            json!({ "fgaApplications": "a" }),
+            json!({ "fgaApplications": null }),
+            json!({ "fgaApplications": ["a", 1] }),
+            json!({ "fgaApplications": ["a", ""] }),
+            json!({ "fgaApplications": ["x".repeat(257)] }),
+        ] {
+            assert!(parse_fga_applications(&bad).is_err(), "{}", bad);
+        }
     }
 }

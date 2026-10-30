@@ -476,7 +476,12 @@ cover:
 * **Applications and what they are issued.** The application register,
   consent, permissions, roles, delegation and who may delegate (`GET
   /admin-api/delegation/policy`), issued tokens, the claim and SAML
-  attribute sets, and signing keys.
+  attribute sets, and signing keys. An application's fine-grained
+  authorization policy and switch, and its access types' XACML mapping, are
+  `POST /admin-api/applications/{action}` acts too (`fga-enable`,
+  `fga-disable`, `fga-create-policy`, `fga-reset-policy`,
+  `set-access-type-row`, `remove-access-type-row`, `set-not-for-policy`;
+  [Fine-grained authorization](fga.md#the-console-and-the-api)).
 * **Each protocol family's settings and state.** OAuth 2.0 / OIDC and
   authorization servers, SAML 2.0 and 1.1, WS-Trust, WS-Federation, federation
   relationships, Kerberos principals, LDAP, SCIM, SPIFFE, Shared Signals

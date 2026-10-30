@@ -81,9 +81,11 @@ attribute that the seeded people carry: alice and bob are staff, and carol is
 an admin. **A new realm's repository starts empty**, and a PDP with an empty
 repository answers NotApplicable to everything.
 
-New policies come from seven templates: **RBAC**, **ABAC**, this service's own
+New policies come from eight templates: **RBAC**, **ABAC**, this service's own
 four (`role-issuance`, `access-control`, `risk-response` and
-`signal-response`), and **blank**, an empty `Policy` or `PolicySet`. A blank `deny-unless-permit` policy **denies everything**, and
+`signal-response`), **blank**, an empty `Policy` or `PolicySet`, and
+`fga-default`, the policy every application is created with (see
+[fine-grained authorization](fga.md)). A blank `deny-unless-permit` policy **denies everything**, and
 the console says so wherever you meet one. You can also import a policy
 written in ALFA.
 
@@ -574,6 +576,8 @@ an enforcement.
 
 ## Related
 
+* [Authorization overview](authorization.md): every authorization decision
+  this service makes, and where each is documented
 * [Remote PEP](remote-pep.md): the `xacml-pep/` container, with a worked
   example
 * [TLS and mutual TLS](tls.md) and [PKI](pki.md): the client certificate and

@@ -922,7 +922,11 @@ sightings. An application's **Authentication attempts** tab lists the audit
 log's attempts that name it: credentials accepted and refused, sessions
 refused, and a person's existing session presented to it for single sign-on
 (method *existing session*), which asks for no credential and was on neither
-tab before. [Applications](applications.md) documents the page,
+tab before. Its **Fine-grained authorization** tab holds the XACML policy
+the application owns for the details of its access types, with the switch
+that enforces it, and its **Access types** tab maps each type's members to
+XACML attributes; [Fine-grained authorization](fga.md#the-console-and-the-api)
+walks through both. [Applications](applications.md) documents the page,
 `/admin/applications/new`, the schema and CORS.
 
 ## Monitoring

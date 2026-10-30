@@ -30,12 +30,24 @@ pub struct Answer {
     pub json: Option<serde_json::Value>,
     /// Why nothing (usable) came back.
     pub error: Option<String>,
+    /// Nothing came back because the time ran out — told apart from a
+    /// refused connection for the AuthZEN forward (#564), which answers 504
+    /// for the one and 502 for the other.
+    pub timed_out: bool,
 }
 
 impl Answer {
     fn failed(why: String) -> Answer {
         Answer {
             error: Some(why),
+            ..Answer::default()
+        }
+    }
+
+    fn failed_by(error: &reqwest::Error) -> Answer {
+        Answer {
+            error: Some(describe(error)),
+            timed_out: error.is_timeout(),
             ..Answer::default()
         }
     }
@@ -120,11 +132,34 @@ impl PdpClient {
         path: &str,
         body: Option<Body>,
     ) -> Answer {
+        self.call_with(method, path, body, &[], None).await
+    }
+
+    /// [`PdpClient::call`] with extra request headers and a timeout of its
+    /// own in place of `PEP_TIMEOUT_MS` — the AuthZEN forward (#564), which
+    /// carries the caller's `X-Request-ID` and is bounded by
+    /// `PEP_AUTHZEN_FORWARD_TIMEOUT_MS`. The same client, so the same
+    /// certificate and the same verification of the PDP.
+    #[tracing::instrument(level = "debug", skip(self, body, headers))]
+    pub async fn call_with(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Body>,
+        headers: &[(&str, String)],
+        timeout: Option<Duration>,
+    ) -> Answer {
         let url = format!("{}{}", self.base, path);
         let mut request = self
             .http
             .request(method, &url)
             .header("Accept", "application/json");
+        for (name, value) in headers {
+            request = request.header(*name, value.as_str());
+        }
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
         match body {
             Some(Body::Json(value)) => request = request.json(&value),
             Some(Body::Xml(text)) => {
@@ -135,7 +170,7 @@ impl PdpClient {
         }
         let mut response = match request.send().await {
             Ok(response) => response,
-            Err(error) => return Answer::failed(describe(&error)),
+            Err(error) => return Answer::failed_by(&error),
         };
         let status = response.status().as_u16();
         let mut bytes = Vec::new();
@@ -151,7 +186,7 @@ impl PdpClient {
                     }
                 }
                 Ok(None) => break,
-                Err(error) => return Answer::failed(describe(&error)),
+                Err(error) => return Answer::failed_by(&error),
             }
         }
         let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -163,6 +198,7 @@ impl PdpClient {
             text,
             json,
             error: None,
+            timed_out: false,
         }
     }
 }

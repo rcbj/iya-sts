@@ -15,7 +15,10 @@ AuthZEN caller, for an internal application, or for its own console and
 APIs, is written in [XACML 3.0](xacml.md) (or in ALFA, which is stored as
 XACML). An AuthZEN request is **converted** into an XACML request by rules
 this page defines, decided by the realm's root policy, and the XACML result is
-converted back.
+converted back. An evaluation about an application that enforces
+[fine-grained authorization](fga.md) is decided against that application's
+own policy instead; see
+[Applications with their own policy](#applications-with-their-own-policy).
 
 ```
    a PEP                       iya-sts (one trust realm)
@@ -37,7 +40,11 @@ decides locally, and an AuthZEN PEP asks this service per request.
 The [remote PEP](remote-pep.md#an-authzen-edge-pdp) container answers the same
 access evaluations itself, as an **edge PDP** over the policy and the attribute
 catalogue it pulls from the realm — so a PEP in its network can ask a PDP
-nearby, and gets the answer the service would give. **It admits the callers
+nearby, and gets the answer the service would give. An evaluation about an
+application that enforces fine-grained authorization, whose policy the edge
+PDP is never sent, it forwards to this service (see
+[Applications with their own policy](#applications-with-their-own-policy)).
+**It admits the callers
 this realm admits**, pulled from the service: who holds `AUTHZEN_PEPS` as the
 access-control policy decides it, by their certificates, with their
 application scopes. Anybody holding `REMOTE_PEPS` can read that list. What it
@@ -142,6 +149,61 @@ something else:
 A member that AuthZEN 1.0 does not define, at the top level or inside
 `subject`, `action` or `resource`, is also refused with 400.
 
+### Applications with their own policy
+
+An application whose `appFgaEnforced` is on owns the policy that decides
+access to it (see [Fine-grained authorization](fga.md)). An evaluation whose
+application — `context.application`, or the caller's only one — is such an
+application is decided against **that policy alone**: not the root, and not
+a policy the root references. Every other application is decided against the
+root, as above. Nothing about the request changes for the caller, and the
+metadata document is the same. A [search](#searching) about such an
+application decides each candidate against the same policy.
+
+The request the policy sees is the one the three parts above build, with two
+more facts:
+
+| Attribute | Category | Value |
+|---|---|---|
+| `urn:sts:xacml:fga:application` | resource | the application whose policy decides |
+| `urn:sts:xacml:fga:stage` | environment | `access` |
+
+For example, a caller scoped to `https://docs.example/api` sends
+
+```json
+{"subject":  {"type": "user", "id": "alice"},
+ "action":   {"name": "delete"},
+ "resource": {"type": "document", "id": "doc-1"},
+ "context":  {"application": "https://docs.example/api"}}
+```
+
+If that application enforces fine-grained authorization and its policy denies
+`delete` at stage `access`, the answer is `{"decision": false}`, whatever the
+root policy says. If its policy is disabled or does not parse, the answer is
+`500` (`STS-AUTHZEN-0046`), and in a batch that item's `context.error`; a
+search is `500` as a whole. A caller still reaches only applications in its
+scope: naming one outside it is `403`. Obligations are handed back by the
+rules under *Obligations* below, whichever policy decided.
+
+The audit row of such an evaluation names the application's policy, its
+`PolicyId` and version. The decision is counted on the AuthZEN row of
+**XACML → Monitor**, like every AuthZEN decision.
+
+**The remote PEP's edge PDP forwards these evaluations here.** Application
+policies are withheld from `GET /xacml/pep/policies`, so the edge PDP never
+holds one. Instead the AuthZEN catalogue it pulls names the applications that
+enforce fine-grained authorization (`fgaApplications`), and an evaluation
+the edge PDP is asked about one of them is sent, as one single evaluation
+naming the application in `context.application`, to this realm's
+`POST /access/v1/evaluation` over mutual TLS with the PEP's own certificate.
+This service decides it against the application's policy, as above, and the
+edge passes the answer back. An error here — the `500` for a policy that
+cannot be used, a refusal of the PEP, no answer — is an error there, never
+`false`. So the PEP's directory entry must hold `AUTHZEN_PEPS` and have the
+application in its scope, and a policy here sees the **PEP** as the caller.
+[The remote PEP](remote-pep.md#applications-that-enforce-fine-grained-authorization-forwarded)
+has the details.
+
 ## The conversion back, XACML to AuthZEN
 
 Only an explicit Permit allows access. A failure to decide is never reported
@@ -155,6 +217,7 @@ as an ordinary denial:
 | NotApplicable | `false` |
 | Indeterminate because an attribute was missing | `false` |
 | Indeterminate because of a fault (a root policy that will not load, a processing error) | an error (500), never `false` |
+| No usable policy for an application that enforces fine-grained authorization | an error (`500`), never `false`, and never the root policy instead |
 
 `urn:sts:xacml:obligation:log` is the one obligation this service carries out;
 it is recorded in the audit log.
@@ -351,7 +414,7 @@ evaluated gets an error status and a body of the form
 | 400 | the request is not valid: a missing member, a value that breaks the rules below, an undeclared property, or several applications in scope and none named |
 | 401 | the caller did not authenticate; `WWW-Authenticate: Bearer realm="<issuer>"` when tokens are accepted |
 | 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named |
-| 500 | the policy could not be evaluated (for example the root policy does not load) — never reported as `false` |
+| 500 | the policy could not be evaluated (for example the root policy does not load, or the application enforces fine-grained authorization and its policy is disabled or missing) — never reported as `false` |
 | 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
 
 ### Several evaluations at once
@@ -396,7 +459,8 @@ override them, member by member:
 The three AuthZEN Search APIs (section 8) answer which subjects, resources or
 actions the realm's policy permits. XACML has no reverse query, so a search
 takes the **candidates this service can name**, asks the realm's root policy
-about each one exactly as an evaluation would, and answers the permitted
+(or, for an application that enforces fine-grained authorization, that
+application's own policy) about each one exactly as an evaluation would, and answers the permitted
 ones. Every result is therefore a real Permit.
 
 | Endpoint | Request | Candidates |
@@ -723,12 +787,21 @@ authorization server cannot disagree. If a rule must apply only to exchanges
 asked over AuthZEN, test `urn:sts:xacml:authzen:caller` in the issuance
 policy's exchange rules.
 
+The binding is decided by the issuance policy even when the caller's
+application enforces [fine-grained authorization](fga.md). A local token
+exchange asks that application's policy only about RFC 9396 authorization
+details, and the binding carries none.
+
 ## Access requests and approvals
 
 This service implements the draft **AuthZEN Access Request and Approval
 Profile** and its **Callback** companion. It is both the profile's PDP and its
 Access Request Service. An approval never permits anything by itself: the
-PEP asks again, carrying the approval, and the realm's root policy decides.
+PEP asks again, carrying the approval, and the realm's root policy decides
+(or, for an application that enforces
+[fine-grained authorization](fga.md), that application's own policy, which
+then also decides whether the denial can be requested and reads the
+approval's facts).
 
 ### Which denials can be requested
 
@@ -988,6 +1061,8 @@ None of these is advertised in the metadata:
 
 ## Related
 
+* [Authorization overview](authorization.md) — every authorization decision
+  this service makes, and where each is documented
 * [XACML 3.0 and ALFA](xacml.md) — the engine, the repository and writing a
   policy
 * [Remote PEP](remote-pep.md) — the container that pulls the policies and

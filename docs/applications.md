@@ -447,6 +447,11 @@ two routes, each visible to the other immediately.
   only the registration, the secret and the registration access token.
 * **`forget` is the one operation that loses a fact**, which is why it is
   separate from `revoke-registration`.
+* **The Fine-grained authorization tab** (`fga-enable`, `fga-disable`,
+  `fga-create-policy`, `fga-reset-policy`) and the **Access types** tab's
+  XACML mapping (`set-access-type-row`, `remove-access-type-row`,
+  `set-not-for-policy`) are described in
+  [Fine-grained authorization](fga.md#the-console-and-the-api).
 
 The page marks `oauthClientSecret` and `appRegistrationAccessToken` as
 credentials where it prints them. Two counting caveats are on the page:

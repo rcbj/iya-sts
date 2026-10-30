@@ -39,6 +39,18 @@ Adding a page: write the markdown, add it to the right section of
 `_data/navigation.yml` so it appears in the sidebar, and link it from
 `index.md`. There is no index to regenerate.
 
+**A sidebar item may link to a SECTION of another page** (rcbj, 2026-10-30,
+#564): the *Authorization* section gathers the pages about a decision
+(`authorization.md`, the overview, then XACML, FGA, AuthZEN, the remote PEP,
+delegation) and LINKS to the authorization sections that belong on the
+OAuth, configuration, GNAP, devices and console pages, rather than moving
+them and splitting those pages. Such an item's `url` carries a `#` fragment,
+which is a kramdown id of the target page; the sidebar never marks it
+current, because `page.url` has no fragment. `tests/doc_links.js` holds
+every sidebar fragment, and every link in `authorization.md`, to a heading
+of its page, so renaming a heading fails there rather than quietly landing a
+reader at the top of a long page.
+
 **The sidebar is four small overrides of minima 2.5.1, the version GitHub
 Pages ships**: `_layouts/default.html` (minima's, with the sidebar
 beside the content), `_includes/header.html` (the title only, and the menu

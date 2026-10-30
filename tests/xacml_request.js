@@ -25,6 +25,14 @@
 //      and signal PEPs' includeInResult false and no policy-id list.
 //   E. THE REMOTE PEP LOADS IT: it is in `engine.js`'s MODULES and has a
 //      COPY line in the Dockerfile.
+//   F. A FINE-GRAINED AUTHORIZATION QUESTION (#564): `fga()` writes the
+//      trusted facts in their categories, forces `grant-authorization-
+//      detail` as the action-id at every issuance stage, takes the caller's
+//      action at `access`, and every FGA identifier is in `urn:sts:xacml:`
+//      and spelt by the Rust builder too (E2 reads every one it declares).
+//      With no subject id the subject's attributes are left out (F7), and
+//      `fgaAccess()` adds the application and stage `access` to an AuthZEN
+//      question decided by an application's policy (F8, P4).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -239,6 +247,102 @@ function theRemotePep(t) {
   log.debug("Leaving theRemotePep().");
 }
 
+// The FGA adapter's facts (#564): the categories, the forced issuance
+// action, and the one namespace.
+function theFgaQuestion(t) {
+  log.debug("Entering theFgaQuestion().");
+  t.log.info('=== F. a fine-grained authorization question ===');
+  const facts = {
+    realm: 'acme', subject: { id: 'alice', kind: 'user' },
+    clientId: 'docs-client', application: 'document-service',
+    detailType: 'document_access', definitionDigest: 'abc',
+    stage: 'token', action: 'read', grantType: 'authorization_code',
+    supplied: ['actions', 'identifier'],
+    attributes: [{ category: model.CATEGORY.ACTION,
+                   attributeId: V.FGA_DETAIL_ACTION,
+                   dataType: model.TYPE.STRING, values: ['read'] }]
+  };
+  const built = new xacmlRequest.AuthorizationRequest({}).fga(facts).build();
+  const S = model.CATEGORY.ACCESS_SUBJECT;
+  const R = model.CATEGORY.RESOURCE;
+  const A = model.CATEGORY.ACTION;
+  const E = model.CATEGORY.ENVIRONMENT;
+  t.check(valuesOf(built, S, model.ATTRIBUTE.SUBJECT_ID).join() === 'alice' &&
+          valuesOf(built, S, V.SUBJECT_KIND).join() === 'user' &&
+          valuesOf(built, S, V.CLIENT_ID).join() === 'docs-client',
+          'F1. the subject, its kind and the client are on the subject',
+          JSON.stringify(built));
+  t.check(valuesOf(built, R, model.ATTRIBUTE.RESOURCE_ID).join() ===
+            'document_access' &&
+          valuesOf(built, R, V.FGA_APPLICATION).join() ===
+            'document-service' &&
+          valuesOf(built, R, V.FGA_DETAIL_TYPE).join() ===
+            'document_access' &&
+          valuesOf(built, R, V.FGA_DEFINITION_DIGEST).join() === 'abc',
+          'F2. the type is the resource-id; the application, the type and ' +
+          'the definition digest are on the resource');
+  t.check(valuesOf(built, E, V.PROTOCOL).join() === 'oauth2' &&
+          valuesOf(built, E, V.REALM).join() === 'acme' &&
+          valuesOf(built, E, V.FGA_STAGE).join() === 'token' &&
+          valuesOf(built, E, V.GRANT_TYPE).join() === 'authorization_code' &&
+          valuesOf(built, E, V.FGA_SUPPLIED).join() === 'actions,identifier',
+          'F3. the protocol, realm, stage, grant type and supplied paths ' +
+          'are environment');
+  t.check(valuesOf(built, A, model.ATTRIBUTE.ACTION_ID).join() ===
+            xacmlRequest.FGA_GRANT_ACTION &&
+          valuesOf(built, A, V.FGA_DETAIL_ACTION).join() === 'read',
+          'F4. an issuance stage asks grant-authorization-detail whatever ' +
+          'action is given; the mapped rows are sent as given');
+  const access = new xacmlRequest.AuthorizationRequest({})
+    .fga(Object.assign({}, facts, { stage: 'access', resourceId: 'doc-1' }))
+    .build();
+  t.check(valuesOf(access, A, model.ATTRIBUTE.ACTION_ID).join() === 'read' &&
+          valuesOf(access, R, model.ATTRIBUTE.RESOURCE_ID).join() === 'doc-1',
+          'F5. at access the action and resource-id are the caller\'s');
+  const strangers = Object.keys(V).filter(function (name) {
+    return name.indexOf('FGA_') === 0 &&
+           V[name].indexOf('urn:sts:xacml:fga:') !== 0;
+  });
+  t.check(strangers.length === 0 &&
+          xacmlRequest.FGA_STAGES.length === 6 &&
+          xacmlRequest.FGA_ISSUANCE_STAGES.every(function (one) {
+            return xacmlRequest.FGA_STAGES.indexOf(one) >= 0;
+          }),
+          'F6. every FGA identifier is in urn:sts:xacml:fga:, and the ' +
+          'issuance stages are stages', strangers.join(', '));
+  // NOBODY IS NOT A SUBJECT CALLED '' (#564, P4): the PAR endpoint asks
+  // before anybody signed in, and the subject's attributes are left out.
+  const nobody = new xacmlRequest.AuthorizationRequest({})
+    .fga(Object.assign({}, facts, { stage: 'par', subject: {} })).build();
+  t.check(valuesOf(nobody, S, model.ATTRIBUTE.SUBJECT_ID) === null &&
+          !(categoryOf(nobody, S) || { attributes: [] }).attributes
+            .some(function (one) {
+              return one.attributeId === model.ATTRIBUTE.SUBJECT_ID ||
+                     one.attributeId === V.SUBJECT_KIND;
+            }) &&
+          valuesOf(nobody, S, V.CLIENT_ID).join() === 'docs-client',
+          'F7. with no subject id there is no subject-id and no subject ' +
+          'kind at all, never \'\'; the client stays', JSON.stringify(nobody));
+  // AN AUTHZEN QUESTION ROUTED TO AN APPLICATION'S POLICY (#564, P4):
+  // AuthZEN's request as it always was, plus the application and the stage.
+  const routed = new xacmlRequest.AuthorizationRequest({})
+    .authzen({ subject: { type: 'user', id: 'alice' },
+               action: { name: 'read' },
+               resource: { type: 'document', id: 'doc-1' },
+               realm: 'acme', caller: 'pep-1', application: 'docs' })
+    .fgaAccess({ application: 'docs', stage: 'token' }).build();
+  t.check(valuesOf(routed, E, V.PROTOCOL).join() === 'authzen' &&
+          valuesOf(routed, E, V.AUTHZEN_APPLICATION).join() === 'docs' &&
+          valuesOf(routed, R, V.FGA_APPLICATION).join() === 'docs' &&
+          valuesOf(routed, E, V.FGA_STAGE).join() === 'access' &&
+          valuesOf(routed, A, model.ATTRIBUTE.ACTION_ID).join() === 'read' &&
+          valuesOf(routed, S, model.ATTRIBUTE.SUBJECT_ID).join() === 'alice',
+          'F8. fgaAccess() adds the application and stage access (whatever ' +
+          'stage is given) to AuthZEN\'s question and changes nothing of it',
+          JSON.stringify(routed));
+  log.debug("Leaving theFgaQuestion().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   theBuilder(t);
@@ -246,6 +350,7 @@ async function run(t) {
   nobodyElseBuilds(t);
   samePepRequests(t);
   theRemotePep(t);
+  theFgaQuestion(t);
   log.debug("Leaving run().");
 }
 

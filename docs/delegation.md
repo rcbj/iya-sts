@@ -1644,6 +1644,8 @@ describes the page's tables and
 
 ## Related
 
+* [Authorization overview](authorization.md): every authorization decision
+  this service makes, and where each is documented.
 * [XACML 3.0 and ALFA](xacml.md): the issuance policy these rules are part of.
 * [Applications](applications.md): where the application attributes are edited.
 * [Service accounts](service-accounts.md): the credential a WS-Trust requester

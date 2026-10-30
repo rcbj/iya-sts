@@ -343,6 +343,35 @@ const VOCABULARY = Object.freeze({
   AUTHZEN_APPROVAL_ID: 'urn:sts:xacml:authzen:approval-id',
   AUTHZEN_APPROVED_UNTIL: 'urn:sts:xacml:authzen:approved-until',
   AUTHZEN_APPROVER: 'urn:sts:xacml:authzen:approver',
+  // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564): one RFC 9396
+  // authorization detail, asked of the policy of the RESOURCE application
+  // that declares its type. Written by `xacml/fga_map.ts` alone, through
+  // `fga()` below. resource, TRUSTED — from the registry, never from the
+  // detail: the application that owns the type (its identifier), the
+  // detail's type, and a SHA-256 of the type's canonical definition, so a
+  // policy can be pinned to the definition it was written against.
+  FGA_APPLICATION: 'urn:sts:xacml:fga:application',
+  FGA_DETAIL_TYPE: 'urn:sts:xacml:fga:detail-type',
+  FGA_DEFINITION_DIGEST: 'urn:sts:xacml:fga:definition-digest',
+  // environment, TRUSTED: the moment the question is asked at — FGA_STAGES
+  // below — and every member path of the detail that reached the request
+  // (`actions`, `amount.currency`), so a policy can tell a member sent
+  // empty from one not sent. A member the type lists in `notForPolicy` is
+  // in neither.
+  FGA_STAGE: 'urn:sts:xacml:fga:stage',
+  FGA_SUPPLIED: 'urn:sts:xacml:fga:supplied',
+  // THE DETAIL'S COMMON DATA FIELDS (RFC 9396 section 2.2), each mapped by
+  // a BUILT-IN row whenever the detail carries it, so a policy may test
+  // them with no declaration: `actions` and `privileges` (action, string
+  // bags), `locations` and `datatypes` (resource, string bags) and
+  // `identifier` (resource, one string). Strings rather than anyURI for
+  // `locations`, as GNAP's right-location is, so one `string-is-in` reads
+  // both protocols. A type's own `xacml` rows cover its other members.
+  FGA_DETAIL_ACTION: 'urn:sts:xacml:fga:detail:action',
+  FGA_DETAIL_LOCATION: 'urn:sts:xacml:fga:detail:location',
+  FGA_DETAIL_DATATYPE: 'urn:sts:xacml:fga:detail:datatype',
+  FGA_DETAIL_IDENTIFIER: 'urn:sts:xacml:fga:detail:identifier',
+  FGA_DETAIL_PRIVILEGE: 'urn:sts:xacml:fga:detail:privilege',
   // THE FACTS OF A PASSKEY QUESTION (#536): a passkey being registered
   // (`register-passkey`) or signing somebody in (`use-passkey`), gathered by
   // `common/passkey_policy.ts`. Nothing here decides; the built-in issuance
@@ -472,6 +501,18 @@ const VOCABULARY = Object.freeze({
 // The principal types a request may name. Anything else is a person, which
 // is what a request that never said meant.
 const SUBJECT_KINDS = Object.freeze(['user', 'application']);
+
+// THE STAGES A FINE-GRAINED AUTHORIZATION QUESTION IS ASKED AT (#564), as
+// `urn:sts:xacml:fga:stage` carries them: the authorization endpoint, the
+// token endpoint (a code or a direct grant), a refresh, a token exchange,
+// the PAR endpoint — the five ISSUANCE stages, whose action-id is
+// FGA_GRANT_ACTION — and `access`, AuthZEN's per-request question, whose
+// action is the one the resource server asks about.
+const FGA_STAGES = Object.freeze(['authorize', 'token', 'refresh',
+                                  'exchange', 'par', 'access']);
+const FGA_ISSUANCE_STAGES = Object.freeze(['authorize', 'token', 'refresh',
+                                           'exchange', 'par']);
+const FGA_GRANT_ACTION = 'grant-authorization-detail';
 
 class AuthorizationRequest {
   // `options`:
@@ -1209,6 +1250,109 @@ class AuthorizationRequest {
     return this;
   }
 
+  // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564). `facts`:
+  //   realm, protocol      trusted; the protocol `oauth2` unless named
+  //   subject { id, kind } the principal and principal_type; BOTH left out
+  //                        when there is no id (the PAR endpoint, before
+  //                        anybody signed in — #564's P4)
+  //   clientId             the OAuth client the detail came through
+  //   application          the identifier of the application that owns
+  //                        the detail's type
+  //   detailType, definitionDigest
+  //   stage                one of FGA_STAGES
+  //   action               the action-id; at an ISSUANCE stage it is
+  //                        always FGA_GRANT_ACTION, whatever is given, so
+  //                        no caller can ask an issuance question as
+  //                        anything else
+  //   resourceId           the resource-id; the detail's type unless given
+  //                        (AuthZEN's resource.id at `access`)
+  //   grantType            the OAuth grant, where there is one
+  //   supplied             every member path that reached the request
+  //   attributes           [{ category, attributeId, dataType, values }] —
+  //                        the built-in common-field rows' and the type's
+  //                        `xacml` rows', the values lexical
+  // Everything but `attributes` and `supplied` is the adapter's own
+  // knowledge (`xacml/fga_map.ts`), never the detail's; the rows cannot name
+  // any of it, because every identifier above is in `urn:sts:xacml:` or is
+  // XACML's own, and the row grammar refuses both
+  // (`xacml_attribute_rows.ts`). A fact not known is left out rather than
+  // sent as '', so no rule reads an absent one as a value.
+  fga(facts) {
+    log.debug("Entering AuthorizationRequest.fga().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    const one = function (value) {
+      log.debug("Entering one().");
+      log.debug("Leaving one().");
+      return value ? [String(value)] : [];
+    };
+    const subject = given.subject || {};
+    const stage = String(given.stage || '');
+    const issuance = FGA_ISSUANCE_STAGES.indexOf(stage) >= 0;
+    // NOBODY IS NOT A SUBJECT CALLED ''. `principal()` writes '' for an
+    // absent name, which is how several PEPs say "nobody" to a policy that
+    // expects it; a fine-grained policy is written by an application's
+    // administrator, who would read `subject-id == ""` as a person with an
+    // empty name — or, worse, a rule comparing it to a list would simply not
+    // match and fall through. So with no id there is NO subject-id and no
+    // subject kind at all: an empty bag, which a policy tests as absence
+    // (a designator with MustBePresent, or `stringBagSize(...) == 0`). The
+    // client is still a fact, and stays.
+    if (subject.id !== undefined && subject.id !== null &&
+        String(subject.id) !== '') {
+      this.principal(subject.id, subject.kind);
+    }
+    this.client(given.clientId);
+    const action = issuance ? FGA_GRANT_ACTION : String(given.action || '');
+    if (action) {
+      this.requestedAction(action);
+    }
+    this.target(given.resourceId || given.detailType || '');
+    this.resource(V.FGA_APPLICATION, one(given.application));
+    this.resource(V.FGA_DETAIL_TYPE, one(given.detailType));
+    this.resource(V.FGA_DEFINITION_DIGEST, one(given.definitionDigest));
+    this.protocol(given.protocol || 'oauth2');
+    this.environment(V.REALM, one(given.realm));
+    this.environment(V.FGA_STAGE, one(stage));
+    if (given.grantType) {
+      this.grantType(given.grantType);
+    }
+    this.environment(V.FGA_SUPPLIED,
+                     (Array.isArray(given.supplied) ? given.supplied : [])
+                       .map(String));
+    const self = this;
+    (Array.isArray(given.attributes) ? given.attributes : [])
+      .forEach(function (row) {
+        self.attribute(row.category, row.attributeId, row.values,
+                       row.dataType);
+      });
+    log.debug("Leaving AuthorizationRequest.fga().");
+    return this;
+  }
+
+  // AN AUTHZEN QUESTION DECIDED BY AN APPLICATION'S FINE-GRAINED POLICY
+  // (#564, P4). Chained after `authzen()`, which has written the question
+  // as AuthZEN always does — subject, action, resource, the catalogue's rows
+  // and AuthZEN's trusted facts, `protocol = authzen` among them — and adds
+  // the two facts an FGA policy reads to know what it is being asked:
+  //   application   the identifier of the application whose policy decides
+  //                 (resource, `urn:sts:xacml:fga:application`, as `fga()`
+  //                 writes it, so one target matches both questions)
+  //   stage         always `access`, whatever is given: this is the
+  //                 per-request question, never an issuance one
+  // Nothing else: the subject, action and resource are AuthZEN's, already
+  // written, and writing them again would make a bag of two.
+  fgaAccess(facts) {
+    log.debug("Entering AuthorizationRequest.fgaAccess().");
+    const given = facts || {};
+    const V = VOCABULARY;
+    this.resource(V.FGA_APPLICATION,
+                  given.application ? [String(given.application)] : []);
+    this.environment(V.FGA_STAGE, ['access']);
+    log.debug("Leaving AuthorizationRequest.fgaAccess().");
+    return this;
+  }
+
   // The request, in the engine's shape (`xacml_model.js`).
   build() {
     log.debug("Entering AuthorizationRequest.build().");
@@ -1229,5 +1373,8 @@ class AuthorizationRequest {
 module.exports = {
   AuthorizationRequest: AuthorizationRequest,
   VOCABULARY: VOCABULARY,
-  SUBJECT_KINDS: SUBJECT_KINDS
+  SUBJECT_KINDS: SUBJECT_KINDS,
+  FGA_STAGES: FGA_STAGES,
+  FGA_ISSUANCE_STAGES: FGA_ISSUANCE_STAGES,
+  FGA_GRANT_ACTION: FGA_GRANT_ACTION
 };

@@ -1723,6 +1723,14 @@
     "en": "2c8a385006302f63",
     "text": "LA POLITIQUE D’AUTHENTIFICATION SOUS LAQUELLE SE CONNECTENT LES PERSONNES DE CETTE APPLICATION : `default` (ou vide), ou le nom d’une politique d’authentification nommée de ce domaine (Annuaire > Politiques). Une politique nommée contient les mécanismes de premier facteur autorisés (password, password-mfa, webauthn, spnego, wallet, federation ; si aucun n’est indiqué, tous sont autorisés) et les seconds facteurs autorisés (password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet ; si aucun n’est indiqué, ceux du domaine restent tels quels). `default` autorise tous les mécanismes qu’autorise la politique d’authentification du domaine.\n\nAPPLIQUÉE à chaque connexion par navigateur à l’application, dans les deux modes : une personne dont la session repose sur un mécanisme que la politique n’autorise pas est renvoyée se connecter de nouveau avec un mécanisme qu’elle autorise. Un seul mécanisme de premier facteur indiqué est aussi l’endroit où va la connexion (`spnego` vers /authn/spnego, `wallet` vers /authn/wallet, `federation` vers appFederationRelationship). Les seconds facteurs ne font que RESTREINDRE la politique du domaine : un second facteur qu’elle a désactivé reste désactivé ici.\n\nUn nom qu’aucune politique de ce domaine ne porte — écrit en contournant la console — n’autorise AUCUN mécanisme tant que la politique n’existe pas (STS-AUTHN-0536).\n\nIl n’est ÉCRIT PAR PERSONNE : aucun protocole ne le présente, il est donc modifiable et commence vide."
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "Le nom de l’entrée dans ou=policies de la politique d’autorisation fine que possède cette application, qui décide chaque détail d’autorisation des types qu’elle déclare dès que appFgaEnforced vaut TRUE."
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "TRUE lorsque la politique fine de cette application est appliquée. Absent ou FALSE signifie qu’elle ne l’est pas, ce qui est la valeur par défaut."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, ainsi que les attributs standard owner et description."
@@ -1862,6 +1870,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "La propre <Description> du document, lorsqu’il en a une."
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "L’identifiant de l’application qui POSSÈDE cette politique, laquelle décide les détails des types authorization_details de cette application. Une telle politique n’est jamais la racine, n’est jamais atteinte par une PolicyIdReference depuis la racine et n’est jamais envoyée à un PEP distant."
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "Le moment où l’application propriétaire a été supprimée. La politique est conservée, désactivée, pour l’audit, jusqu’à ce qu’un administrateur la supprime."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

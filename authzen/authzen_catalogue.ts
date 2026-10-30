@@ -66,10 +66,16 @@
 // `context.application` is not a catalogue property either: the adapter
 // reads it to choose the caller's application scope, and the application the
 // policy sees is the trusted `urn:sts:xacml:authzen:application`.
+//
+// **THE THREE RULES ABOVE ARE `xacml/xacml_attribute_rows.ts`'s SINCE #564**,
+// because an access type's `xacml` rows (fine-grained authorization) map a
+// caller's JSON onto XACML the same way and must be refused for the same
+// reasons; `reservedProblem()` here calls that one. The codes stay AuthZEN's.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
 import model = require('../xacml/xacml_model');
+import rowsGrammar = require('../xacml/xacml_attribute_rows');
 
 const { log } = helpers;
 
@@ -108,53 +114,18 @@ const DEFAULT_CATEGORY = Object.freeze({
   context: model.CATEGORY.ENVIRONMENT
 });
 
-// The categories a row may name, by short name. The full URIs are accepted
-// too (any of `model.CATEGORY`'s), and a row is stored with the URI.
-const CATEGORY_NAMES = Object.freeze({
-  'access-subject': model.CATEGORY.ACCESS_SUBJECT,
-  'recipient-subject': model.CATEGORY.RECIPIENT_SUBJECT,
-  'intermediary-subject': model.CATEGORY.INTERMEDIARY_SUBJECT,
-  'codebase': model.CATEGORY.CODEBASE,
-  'requesting-machine': model.CATEGORY.REQUESTING_MACHINE,
-  'resource': model.CATEGORY.RESOURCE,
-  'action': model.CATEGORY.ACTION,
-  'environment': model.CATEGORY.ENVIRONMENT
-});
-
-// The datatypes a row may name, by short name — every datatype the engine
-// has but `xpathExpression`, which a JSON value cannot carry (it needs the
-// XML content it is evaluated against). The full URIs are accepted too.
-const TYPE_NAMES = Object.freeze({
-  'string': model.TYPE.STRING,
-  'boolean': model.TYPE.BOOLEAN,
-  'integer': model.TYPE.INTEGER,
-  'double': model.TYPE.DOUBLE,
-  'time': model.TYPE.TIME,
-  'date': model.TYPE.DATE,
-  'dateTime': model.TYPE.DATETIME,
-  'dayTimeDuration': model.TYPE.DAYTIME_DURATION,
-  'yearMonthDuration': model.TYPE.YEARMONTH_DURATION,
-  'anyURI': model.TYPE.ANYURI,
-  'hexBinary': model.TYPE.HEXBINARY,
-  'base64Binary': model.TYPE.BASE64BINARY,
-  'rfc822Name': model.TYPE.RFC822NAME,
-  'x500Name': model.TYPE.X500NAME,
-  'dnsName': model.TYPE.DNSNAME,
-  'ipAddress': model.TYPE.IPADDRESS
-});
-
-// The two multiplicities.
-const MULTIPLICITIES = Object.freeze(['single', 'bag']);
-
-// This service's own namespace: everything in it is reserved (the header).
-const RESERVED_PREFIX = 'urn:sts:xacml:';
-
-// XACML's own identifiers the adapter fills itself, or the PDP supplies.
-const RESERVED_IDS = Object.freeze([
-  model.ATTRIBUTE.SUBJECT_ID, model.ATTRIBUTE.RESOURCE_ID,
-  model.ATTRIBUTE.ACTION_ID, model.ATTRIBUTE.CURRENT_TIME,
-  model.ATTRIBUTE.CURRENT_DATE, model.ATTRIBUTE.CURRENT_DATETIME
-]);
+// THE ROW GRAMMAR'S SHARED HALF — the categories and datatypes a row may
+// name, the reserved identifiers and the path segments — is
+// `xacml/xacml_attribute_rows.ts`'s since #564, because an access type's
+// `xacml` rows (FGA) are the same rows and must be refused for the same
+// reasons. This module keeps what is AuthZEN's: the object, its default
+// category, `context.application`, and the codes.
+const CATEGORY_NAMES = rowsGrammar.CATEGORY_NAMES;
+const TYPE_NAMES = rowsGrammar.TYPE_NAMES;
+const MULTIPLICITIES = rowsGrammar.MULTIPLICITIES;
+const RESERVED_PREFIX = rowsGrammar.RESERVED_PREFIX;
+const MAX_DEPTH = rowsGrammar.MAX_DEPTH;
+const MAX_ID_LENGTH = rowsGrammar.MAX_ID_LENGTH;
 
 // The context members the adapter reads itself (the header):
 // `application`, and since #1177 the Obligations Profile's
@@ -181,27 +152,6 @@ const BINDING_CONTEXT = Object.freeze(['client_id', 'acr', 'amr',
                                        'actor_token_type', 'subject_token',
                                        'act', 'may_act']);
 
-// The subject categories, where a bare name would be read as a directory
-// attribute of the subject.
-const SUBJECT_CATEGORIES = Object.freeze([
-  model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.RECIPIENT_SUBJECT,
-  model.CATEGORY.INTERMEDIARY_SUBJECT, model.CATEGORY.CODEBASE,
-  model.CATEGORY.REQUESTING_MACHINE
-]);
-
-// `xacml_pip.ts`'s test for a bare directory attribute name, spelt the same.
-const BARE_NAME = /^[A-Za-z][A-Za-z0-9;-]*$/;
-
-// One segment of a property path. Narrower than a JSON member name on
-// purpose: a dot is the path separator, so a member whose name holds one
-// could never be told from a nested one.
-const SEGMENT = /^[A-Za-z0-9_$@:-]{1,64}$/;
-
-// The deepest a dotted path may go, and the longest identifier a row may
-// carry. Generous; a bound because the catalogue is walked per request.
-const MAX_DEPTH = 6;
-const MAX_ID_LENGTH = 512;
-
 /**
  * The AuthZEN attribute catalogue's grammar: one row read, checked and
  * written back, and the list on an entry read whole. Pure, without I/O.
@@ -217,31 +167,11 @@ class AuthzenCatalogue {
   static reservedProblem(attributeId: string, category: string):
       string | null {
     log.debug("Entering AuthzenCatalogue.reservedProblem().");
-    const id = String(attributeId || '');
-    if (id.toLowerCase().indexOf(RESERVED_PREFIX) === 0) {
-      log.debug("Leaving AuthzenCatalogue.reservedProblem(). Ours.");
-      return '"' + id + '" is in this service\'s own namespace (' +
-        RESERVED_PREFIX + '), where every trusted fact lives — the roles, ' +
-        'the realm, the protocol, the caller and its application. A ' +
-        'request-supplied attribute suppresses the PIP, so a row mapping ' +
-        'onto one would let a caller forge it';
-    }
-    if (RESERVED_IDS.indexOf(id) >= 0) {
-      log.debug("Leaving AuthzenCatalogue.reservedProblem(). XACML's own.");
-      return '"' + id + '" is filled by the adapter from subject.id, ' +
-        'action.name or resource.id, or supplied by the PDP, and from ' +
-        'nothing else';
-    }
-    if (SUBJECT_CATEGORIES.indexOf(category) >= 0 && BARE_NAME.test(id)) {
-      log.debug("Leaving AuthzenCatalogue.reservedProblem(). A directory " +
-                "attribute name.");
-      return '"' + id + '" in a subject category is read as the subject\'s ' +
-        'directory attribute, and for a subject this realm resolves the ' +
-        'directory is authoritative. Send the property under an ' +
-        'identifier of your own, such as urn:example:' + id;
-    }
-    log.debug("Leaving AuthzenCatalogue.reservedProblem(). Allowed.");
-    return null;
+    // The shared rule (`xacml_attribute_rows.ts`): FGA's rows are refused
+    // by the same function, never a copy of it.
+    const out = rowsGrammar.reservedProblem(attributeId, category);
+    log.debug("Leaving AuthzenCatalogue.reservedProblem().");
+    return out;
   }
 
   /**
@@ -297,11 +227,8 @@ class AuthzenCatalogue {
                problem: 'object must be one of ' + OBJECTS.join(', ') };
     }
     const property = text('property');
-    const segments = property ? property.split('.') : [];
-    if (!segments.length || segments.length > MAX_DEPTH ||
-        !segments.every(function (one: string) {
-          return SEGMENT.test(one);
-        })) {
+    const segments = rowsGrammar.segmentsOf(property);
+    if (!segments) {
       log.debug("Leaving AuthzenCatalogue.parse(). Bad property.");
       return { code: 'STS-AUTHZEN-0010',
                problem: 'property must be a member name, or a dotted path ' +
@@ -328,8 +255,7 @@ class AuthzenCatalogue {
                         'to but never override' };
     }
     const attributeId = text('attributeId');
-    if (!attributeId || attributeId.length > MAX_ID_LENGTH ||
-        /\s/.test(attributeId)) {
+    if (!rowsGrammar.idShaped(attributeId)) {
       log.debug("Leaving AuthzenCatalogue.parse(). Bad attributeId.");
       return { code: 'STS-AUTHZEN-0010',
                problem: 'attributeId must be a non-empty identifier with no ' +
@@ -339,11 +265,7 @@ class AuthzenCatalogue {
     const categoryText = text('category');
     let category = DEFAULT_CATEGORY[object];
     if (categoryText) {
-      const uris = Object.keys(CATEGORY_NAMES).map(function (key: string) {
-        return CATEGORY_NAMES[key];
-      });
-      category = CATEGORY_NAMES[categoryText] ||
-        (uris.indexOf(categoryText) >= 0 ? categoryText : '');
+      category = rowsGrammar.categoryOf(categoryText);
       if (!category) {
         log.debug("Leaving AuthzenCatalogue.parse(). Bad category.");
         return { code: 'STS-AUTHZEN-0010',
@@ -352,12 +274,7 @@ class AuthzenCatalogue {
                           ', or its XACML URI' };
       }
     }
-    const typeText = text('dataType') || 'string';
-    const typeUris = Object.keys(TYPE_NAMES).map(function (key: string) {
-      return TYPE_NAMES[key];
-    });
-    const dataType = TYPE_NAMES[typeText] ||
-      (typeUris.indexOf(typeText) >= 0 ? typeText : '');
+    const dataType = rowsGrammar.dataTypeOf(text('dataType'));
     if (!dataType) {
       log.debug("Leaving AuthzenCatalogue.parse(). Bad dataType.");
       return { code: 'STS-AUTHZEN-0010',
@@ -374,8 +291,7 @@ class AuthzenCatalogue {
     const reserved = AuthzenCatalogue.reservedProblem(attributeId, category);
     if (reserved) {
       log.debug("Leaving AuthzenCatalogue.parse(). Reserved.");
-      return { code: SUBJECT_CATEGORIES.indexOf(category) >= 0 &&
-                     BARE_NAME.test(attributeId)
+      return { code: rowsGrammar.isDirectoryName(attributeId, category)
                  ? 'STS-AUTHZEN-0012' : 'STS-AUTHZEN-0011',
                problem: reserved };
     }

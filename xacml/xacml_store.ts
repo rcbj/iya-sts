@@ -121,6 +121,10 @@ interface PolicyRow {
   enabled: boolean;
   isRoot: boolean;
   document: string;
+  // The owning application's identifier (#564), or null for an ordinary
+  // policy; and when that application was deleted, or null.
+  application: string | null;
+  orphanedAt: string | null;
 }
 
 // What `write()` is told besides the document.
@@ -128,6 +132,9 @@ interface WriteOptions {
   isRoot?: boolean;
   enabled?: boolean;
   description?: unknown;
+  // #564. Absent means "keep what the entry already says": see write().
+  application?: string | null;
+  orphanedAt?: string | null;
 }
 
 // What `write()` answers.
@@ -189,7 +196,19 @@ const SCHEMA = {
             'root decides nothing and says so; a repository with two is ' +
             'refused at write time rather than picking one.' },
     { name: 'description',
-      what: "The document's own <Description>, where it has one." }
+      what: "The document's own <Description>, where it has one." },
+    // #564: APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION. Two facts about
+    // the DEPLOYMENT, like xacmlEnabled, and neither derived from the
+    // document — so an edit of the document through any door keeps them.
+    { name: 'xacmlApplication',
+      what: 'The identifier of the application that OWNS this policy, ' +
+            'which decides the details of that application\'s ' +
+            'authorization_details types. Such a policy is never the ' +
+            'root, is never reached by a PolicyIdReference from the root, ' +
+            'and is never sent to a remote PEP.' },
+    { name: 'xacmlOrphanedAt',
+      what: 'When the owning application was deleted. The policy is kept, ' +
+            'disabled, for audit, until an administrator removes it.' }
   ]
 };
 
@@ -632,7 +651,9 @@ class XacmlStore {
         description: at('description') || '',
         enabled: at('xacmlEnabled') !== 'FALSE',
         isRoot: at('xacmlIsRoot') === 'TRUE',
-        document: at('xacmlPolicyDocument') || ''
+        document: at('xacmlPolicyDocument') || '',
+        application: at('xacmlApplication') || null,
+        orphanedAt: at('xacmlOrphanedAt') || null
       };
     });
     log.debug('Leaving XacmlStore.all(). ' + rows.length + ' policy(ies).');
@@ -698,6 +719,52 @@ class XacmlStore {
   }
 
   // -------------------------------------------------------------------------
+  // THE POLICIES APPLICATIONS OWN (#564).
+  //
+  // An application's fine-grained policy is an ordinary entry in this
+  // container carrying `xacmlApplication`; the application's own
+  // `appFgaPolicy` is the REFERENCE, and `xacml/fga_policies.ts` follows
+  // that rather than searching. These two answer the questions the
+  // reference cannot: every such policy (the console's list, the pull's
+  // withheld names, the orphans an administrator is left to remove), and
+  // the live one for an identifier.
+  // -------------------------------------------------------------------------
+  /**
+   * Lists every policy an application owns, orphaned ones included.
+   * @returns the rows carrying `xacmlApplication`, by name
+   */
+  fgaPolicies(): PolicyRow[] {
+    const { log } = this.deps;
+    log.debug('Entering XacmlStore.fgaPolicies().');
+    const rows = this.all().filter(function (row) {
+      return !!row.application;
+    }).sort(function (a, b) {
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    log.debug('Leaving XacmlStore.fgaPolicies(). ' + rows.length + '.');
+    return rows;
+  }
+
+  /**
+   * Returns the policy an application owns now: the one carrying its
+   * identifier in `xacmlApplication` and not marked orphaned. An orphan
+   * left by an earlier application of the same identifier is never it.
+   * @param identifier - the application's identifier
+   * @returns the row, or null; the first by name if, against every door
+   * here, there are several
+   */
+  fgaPolicyFor(identifier: string): PolicyRow | null {
+    const { log } = this.deps;
+    log.debug('Entering XacmlStore.fgaPolicyFor().');
+    const found = this.fgaPolicies().filter(function (row) {
+      return row.application === String(identifier) && !row.orphanedAt;
+    })[0] || null;
+    log.debug('Leaving XacmlStore.fgaPolicyFor(). ' +
+              (found ? found.name : 'None.'));
+    return found;
+  }
+
+  // -------------------------------------------------------------------------
   // THE ROOT, AND THE REPOSITORY BEHIND IT.
   //
   // A PDP evaluates ONE document and reaches the rest through
@@ -706,17 +773,29 @@ class XacmlStore {
   // rule like "the only PolicySet" or "the first one", both of which change
   // their answer when somebody adds a second policy and neither of which
   // anybody can see.
+  //
+  // **AN APPLICATION'S FINE-GRAINED POLICY IS NOT A CANDIDATE (#564)**, and
+  // the fallback below is why it has to be said here rather than only at
+  // the write: every application created gets one, ENABLED, so a realm
+  // holding one ordinary policy and one application would hold two enabled
+  // policies and "the only enabled policy" would stop answering — a realm
+  // whose root had been obvious would decide NotApplicable to everything
+  // the moment somebody registered a client. A row carrying
+  // `xacmlApplication` is therefore invisible to both halves, including one
+  // somebody flagged `xacmlIsRoot` with an `ldapmodify`, which `write()`
+  // refuses (STS-FGA-0001) and LDAP cannot be stopped from doing.
   // -------------------------------------------------------------------------
   /**
    * Returns the repository's root: the one enabled policy flagged root, or
-   * the only enabled policy when none is flagged.
+   * the only enabled policy when none is flagged. A policy an application
+   * owns (`xacmlApplication`) is never either.
    * @returns the root row, or null when there is none or more than one
    */
   root(): PolicyRow | null {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.root().');
     const enabled = this.all().filter(function (row) {
-      return row.enabled;
+      return row.enabled && !row.application;
     });
     const roots = enabled.filter(function (row) {
       return row.isRoot;
@@ -748,10 +827,18 @@ class XacmlStore {
   // resolves a `PolicyIdReference` against. Built per decision rather than
   // held, because the directory is the store and a cached map is a second copy
   // of it.
+  //
+  // AN APPLICATION'S FINE-GRAINED POLICY IS LEFT OUT (#564), for two
+  // reasons. Its PolicyId is derived from the application's identifier,
+  // which an application's administrator chose, so a root that references
+  // it would hand that administrator a say in the realm's root decision;
+  // and an orphaned policy and its successor share that PolicyId (both are
+  // derived from the same identifier), so the map would answer for
+  // whichever the directory happened to iterate last.
   /**
    * Builds the map a `PolicyIdReference` is resolved against: every enabled
    * policy that parses, keyed by its PolicyId. A policy that does not parse
-   * is left out and logged.
+   * is left out and logged, and so is every policy an application owns.
    * @returns PolicyId to parsed policy model
    */
   repository(): Record<string, any> {
@@ -760,7 +847,7 @@ class XacmlStore {
     log.debug('Entering XacmlStore.repository().');
     const map = {};
     this.all().forEach(function (row) {
-      if (!row.enabled || !row.id) {
+      if (!row.enabled || !row.id || row.application) {
         return;
       }
       try {
@@ -835,6 +922,34 @@ class XacmlStore {
                problems: (error.xacmlDetail && error.xacmlDetail.problems) ||
                          null }, 'STS-XACML-0028');
     }
+    // THE OWNER AND THE ORPHAN MARK ARE KEPT UNLESS THE CALLER SAYS
+    // OTHERWISE (#564). `writePolicy()` REPLACES the entry, and every door
+    // that rewrites a policy — the editor's save, enable and disable, the
+    // root demotion in set-root — passes the document and the flags it read
+    // and nothing else; were they not carried forward here, editing an
+    // application's policy once in the editor would silently turn it into
+    // an ordinary policy, eligible as the root and sent to every remote PEP.
+    // They are facts about the deployment, as `xacmlEnabled` is, so they
+    // live beside it and not in the document.
+    const before = this.all().filter(function (row) {
+      return row.name === name;
+    })[0] || null;
+    const application = settings.application !== undefined
+      ? (settings.application ? String(settings.application) : null)
+      : (before ? before.application : null);
+    const orphanedAt = settings.orphanedAt !== undefined
+      ? (settings.orphanedAt ? String(settings.orphanedAt) : null)
+      : (before ? before.orphanedAt : null);
+    if (settings.isRoot && application) {
+      log.debug('Leaving XacmlStore.write(). An application\'s policy as ' +
+                'the root.');
+      return errorCodes.mark({ ok: false,
+               why: 'Policy "' + name + '" belongs to the application "' +
+                    application + '" (xacmlApplication) and decides that ' +
+                    'application\'s authorization details. It cannot be ' +
+                    'the root of this repository; make an ordinary policy ' +
+                    'the root instead.' }, 'STS-FGA-0001');
+    }
     // TWO ROOTS IS REFUSED AT WRITE TIME rather than reported at decision
     // time, for the reason `root()` gives: a repository with two roots answers
     // arbitrarily, and the moment to say so is while somebody is looking.
@@ -864,6 +979,12 @@ class XacmlStore {
     };
     if (settings.description) {
       attributes.description = String(settings.description);
+    }
+    if (application) {
+      attributes.xacmlApplication = application;
+    }
+    if (orphanedAt) {
+      attributes.xacmlOrphanedAt = orphanedAt;
     }
     const written = directory.writePolicy(name, attributes);
     if (written) {
@@ -990,6 +1111,8 @@ export = {
   setChangeObserver: slot.forward('setChangeObserver'),
   all: slot.forward('all'),
   read: slot.forward('read'),
+  fgaPolicies: slot.forward('fgaPolicies'),
+  fgaPolicyFor: slot.forward('fgaPolicyFor'),
   root: slot.forward('root'),
   repository: slot.forward('repository'),
   write: slot.forward('write'),

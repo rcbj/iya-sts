@@ -460,6 +460,89 @@ policy repository. Until the container has pulled both the policies and the
 catalogue, the AuthZEN endpoints answer `503` rather than map a request
 differently from the service.
 
+### Applications that enforce fine-grained authorization: forwarded
+
+An application that enforces [fine-grained authorization](fga.md) is decided
+against **its own policy**, and only the service decides it: application
+policies are withheld from `GET /xacml/pep/policies`, so the container never
+holds them. **The container does not answer an evaluation about such an
+application. It forwards it to the service.**
+
+```
+   a resource server        the remote PEP (edge PDP)          iya-sts (the realm)
+
+  POST /access/v1/evaluation
+  { …, context: {           1. admit the caller, read the
+    application: "docs" } }    request, resolve the application
+                            2. "docs" is on fgaApplications
+                               ──▶ POST <PEP_PDP_URL>/access/v1/evaluation
+                                   (mutual TLS, the PEP's own     3. decided against
+                                    certificate)                     the application's
+                                                                     own policy
+  { "decision": false } ◀── 4. the service's answer         ◀──
+```
+
+* **Which applications.** The catalogue pull carries `fgaApplications`, the
+  identifiers of the applications whose fine-grained authorization is
+  enforced (the switch on the application's *Fine-grained authorization*
+  tab). The member is inside the catalogue's sync token, so switching
+  enforcement on or off reaches the container at its next poll
+  (`PEP_POLL_INTERVAL_MS`, 15 seconds by default). Until then an application
+  just switched **on** is still decided here from the root, and one just
+  switched off is still forwarded.
+* **Which evaluations.** The application is resolved exactly as for any other
+  evaluation — `context.application` checked against the caller's scope, or
+  the caller's only application. Applications not on the list are decided
+  here, as before.
+* **What is sent.** The caller's request for that evaluation, unchanged but
+  for `context.application`, which is always set to the resolved application.
+  A batch item is forwarded **as one single evaluation** (the batch's
+  defaults merged into it, as the service would have read the item); the
+  batch's semantic and order are kept here, and the other items are decided
+  here. `X-Request-ID` is passed on (for a batch item, the batch's id and the
+  item's index). The service's answer, including its `context`, is the
+  item's answer.
+* **Who asks.** The container itself, on the client certificate it already
+  presents to pull (`PEP_TLS_CERT`). At the service it is an AuthZEN caller
+  like any other, so a policy there sees **the PEP** as
+  `urn:sts:xacml:authzen:caller`, not the caller that asked the container,
+  and the `urn:sts:xacml:authzen:supplied` bag names `context.application`
+  even when the caller left it out.
+* **Errors are errors, never `false`.** If the service answers an error, the
+  caller gets an error, as a status from the single endpoint or a batch
+  item's `context.error`:
+
+  | The service | The caller of the edge PDP gets |
+  |---|---|
+  | a decision | that decision |
+  | `400`, `413`, `500`, `501` or `503` (a `500` is the service's "the application's policy cannot be used") | the same status and the service's message |
+  | `401` or `403` — it does not admit **the PEP** | `502`, saying the PEP's entry needs `AUTHZEN_PEPS` and the application in its scope |
+  | any other status, or a `200` that is not a decision | `502` |
+  | no answer within `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `504` |
+  | could not be reached | `502` |
+
+* **Before the first catalogue pull** nothing is answered (`503`), since
+  without the catalogue the container cannot tell which applications must be
+  forwarded. A catalogue whose `fgaApplications` it cannot read is refused
+  whole and the one it holds is kept.
+
+**What the operator must grant.** The PEP's own directory entry — the one its
+client certificate is stored on, which already holds `REMOTE_PEPS` — must
+also:
+
+1. hold **`AUTHZEN_PEPS`** (be a member of `roles.authzenPepGroup`,
+   `authzen-peps`, and be admitted by the access-control policy on
+   `authzen-api`); and
+2. have **every application that enforces fine-grained authorization** that
+   its callers ask about in its **application scope**
+   (`stsAuthzenApplication`, on the AuthZEN tab).
+
+Without them the service answers `401` or `403`, and the container answers
+`502` with a message saying exactly this. The realm's
+`authzen.callerAuthentication` must admit a certificate (`mtls`, the
+default); a realm whose door is a token admits no caller to the container
+anyway.
+
 ### Its callers: mutual TLS, admitted by the service's own list
 
 The AuthZEN endpoints answer on the **HTTPS listener** (above) to a caller
@@ -563,11 +646,15 @@ arrived at.
 | The three Search APIs (`/access/v1/search/*`) | Not served. The metadata does not list them |
 | The Obligations Profile: an obligation is handed in `context.obligations` when the PEP declares its type in `context.supported_obligations` | Not implemented. A Permit carrying any obligation but `urn:sts:xacml:obligation:log` answers `false`; `context.supported_obligations` is an undeclared member |
 | `signed_metadata` in the metadata document | Not sent; the edge PDP holds no signing key of the realm's |
+| An evaluation about an application that enforces [fine-grained authorization](fga.md) is decided against that application's own policy ([AuthZEN](authzen.md#applications-with-their-own-policy)) | Not decided here: forwarded to the service, which decides it ([above](#applications-that-enforce-fine-grained-authorization-forwarded)). It costs a round trip, needs the PEP's entry to hold `AUTHZEN_PEPS` with the application in its scope, and follows a switch of enforcement from the next poll |
 
 `GET /`'s `authzen` block says what it holds: the catalogue's token, its rows,
 the settings, the last pull, how many callers and certificates the pulled
 list holds (counted, never named — `GET /` answers whoever reaches the
-container), whether `PEP_AUTHZEN_CALLERS` narrows it, and what it has answered.
+container), whether `PEP_AUTHZEN_CALLERS` narrows it, how many applications
+enforce fine-grained authorization (`catalogue.fgaApplications`, a count), and
+what it has answered (`answered.forwarded` counts the evaluations the service
+decided).
 
 ## Reading `GET /` when something is wrong
 
@@ -582,6 +669,7 @@ container), whether `PEP_AUTHZEN_CALLERS` narrows it, and what it has answered.
 | `https.listening: false` | no usable listener pair yet. `https.problem` says whether the files are missing (issue one) or refused (the key is not the certificate's, or a file will not parse) |
 | `authzen.catalogue.loaded: false` | no AuthZEN catalogue pulled yet, so the AuthZEN endpoints answer `503`. `authzen.catalogue.lastPullWhy` says why; a `404` means a service older than the catalogue endpoint |
 | `authzen.pulledCallers.loaded: false` | no caller list pulled yet. Without `PEP_AUTHZEN_CALLERS` the AuthZEN endpoints answer `503`; with it, that list alone decides. `authzen.pulledCallers.lastPullWhy` says why; a `404` means a service older than the caller list |
+| `authzen.answered.errors` rising with `answered.forwarded` | evaluations forwarded to the service are failing. The container's log says why; `STS-XPEP-0056` means the service does not admit the PEP itself — give its entry `AUTHZEN_PEPS` and the application in its scope |
 | `authzen.pulledCallers.door` other than `mtls` | the realm authenticates its AuthZEN callers by a token, so the list is empty and every caller is refused `401` |
 
 **The two ends can disagree about staleness, and that is deliberate**: this PEP
@@ -622,6 +710,7 @@ and a PEP has none.
 | `PEP_AUTHZEN_CLIENT_CA` | — | the CA bundle an AuthZEN caller's certificate must chain to. Unset, nobody is admitted |
 | `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at |
+| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` |
 | `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
 
 ## Against a trust realm
@@ -654,11 +743,15 @@ change anything here:
   decisions under both biases — and the AuthZEN mapping against
   `xacml-pep/authzen_cases.json`, which **`tests/authzen_map.js`** holds the
   service's mapping to as well, and the caller list's grammar and the
-  admission by it. None of it makes an HTTP request.
+  admission by it, and the forward of a fine-grained authorization
+  evaluation — the only part that makes an HTTP request, to a mock service
+  on a loopback port.
 - **`tests/authzen_evaluation.js`** holds the service's side of the two
-  AuthZEN pulls in process: the catalogue (K) and the callers (P), whose
-  names it checks against what the certificate door names over a real
-  handshake.
+  AuthZEN pulls in process: the catalogue (K, with `fgaApplications` through
+  a switch of enforcement) and the callers (P), whose names it checks
+  against what the certificate door names over a real handshake.
+  **`tests/protocol/sts_fga.js`** holds `fgaApplications` against a running
+  service. No job drives the container's edge PDP itself over the network.
 - **`tests/protocol/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the service's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is
@@ -673,6 +766,7 @@ change anything here:
 
 ## See also
 
+- [Authorization overview](authorization.md) — every authorization decision this service makes, and where each is documented
 - [What is not checked](what-is-not-checked.md) — the permissive posture, and where this family is the exception
 - [Trust realms](trust-realms.md) — what a realm separates
 - [Configuration](configuration.md) — how the service's own settings resolve, `xacml.*` among them

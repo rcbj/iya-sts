@@ -59,6 +59,9 @@
 // fourth position in it: `role-issuance` and `access-control` are the two
 // documents this service asks about ITSELF, and `blank` is an empty page.
 // This comment said "TWO TEMPLATES" until 2026-09-06, when there were five.
+// `fga-default` (#564) is outside the argument too: it is the policy every
+// application is created with, and the console lists it for the reason it
+// lists the service's own — so that somebody can build the same document.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -1159,6 +1162,38 @@ class PolicyBuilders {
     log.debug("Leaving PolicyBuilders.slug().");
     return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'x';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE POLICYID OF AN APPLICATION'S FINE-GRAINED POLICY (#564).
+  //
+  // Derived from the application's realm-local identifier, deterministically
+  // and UNAMBIGUOUSLY — which `slug()` is not: `a.b` and `a-b` slug alike, so
+  // two applications would share a PolicyId and an audit row naming one
+  // could not say which. Every octet of the identifier's UTF-8 outside RFC
+  // 3986's unreserved set (letters, digits, `-`, `.`, `_`, `~`) is
+  // percent-encoded, so the encoding is injective and the result is a valid
+  // URI whatever the identifier holds — a client_id that is itself a URL, an
+  // SPN with a `/` and an `@`, a SAML entityID with a `#`. `encodeURIComponent`
+  // alone leaves `!'()*` bare; they are legal in a URN but are encoded here
+  // too, so the one rule is "unreserved stays, everything else is %XX".
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the PolicyId of an application's fine-grained policy:
+   * `urn:sts:xacml:fga:` and the identifier with every octet outside RFC
+   * 3986's unreserved characters percent-encoded.
+   *
+   * @param identifier - the application's identifier
+   * @returns the PolicyId
+   */
+  static fgaPolicyId(identifier: unknown): string {
+    log.debug("Entering PolicyBuilders.fgaPolicyId().");
+    const encoded = encodeURIComponent(String(identifier || ''))
+      .replace(/[!'()*]/g, function (one) {
+        return '%' + one.charCodeAt(0).toString(16).toUpperCase();
+      });
+    log.debug("Leaving PolicyBuilders.fgaPolicyId().");
+    return 'urn:sts:xacml:fga:' + encoded;
   }
 }
 
@@ -4981,6 +5016,80 @@ const TEMPLATES: TemplateRow[] = [
   },
   {
     // -----------------------------------------------------------------------
+    // AN APPLICATION'S DEFAULT FINE-GRAINED POLICY (#564).
+    //
+    // Every application created gets one (rcbj's decision 2), written by
+    // `xacml/fga_policies.ts` into `ou=policies` carrying the application's
+    // identifier in `xacmlApplication`; it decides the details of the
+    // `authorization_details` types that application declares, once FGA is
+    // enforced on it.
+    //
+    // **ONE PERMIT RULE, AND THAT IS A DECISION RATHER THAN AN ABSENCE.**
+    // An empty deny-unless-permit document (`blank`) would refuse every
+    // detail the moment an administrator switched enforcement on; an empty
+    // permit-unless-deny one would answer Permit by FALLING THROUGH, which
+    // reads in an audit row exactly like a policy that decided. A rule whose
+    // Effect is Permit and whose Target is empty says, in the document,
+    // "this application allows every detail of its types", which is what a
+    // new application should do, and gives the editor the obvious place to
+    // narrow it: the rule's Target or Condition. deny-unless-permit around
+    // it, so that the day somebody deletes the rule the policy refuses
+    // rather than turning NotApplicable — and later phases refuse anything
+    // that is not a Permit anyway.
+    //
+    // The PolicyId is derived from the identifier (`fgaPolicyId()`), not from
+    // the entry name, so the document says whose it is wherever it is read.
+    // -----------------------------------------------------------------------
+    id: 'fga-default',
+    label: 'Application fine-grained authorization (default)',
+    blurb: 'The default policy an application owns for the details of its ' +
+           'own authorization_details types: one rule permitting every ' +
+           'detail. Every application gets one when it is created; edit ' +
+           'its rule to narrow what the application allows.',
+    what: 'Produces a Policy whose PolicyId is derived from the ' +
+          'application\'s identifier, with one Permit rule and no Target, ' +
+          'under deny-unless-permit. It is a real decision rather than a ' +
+          'fallback: removing the rule makes the policy deny. A policy ' +
+          'created from this template here is an ordinary policy; the one ' +
+          'an application owns is created with the application.',
+    parameters: [
+      { name: 'application', label: 'The application\'s identifier',
+        dflt: 'example-application', type: 'string',
+        help: 'Its client_id, entityID, wtrealm, AppliesTo or service ' +
+              'principal name. The PolicyId is derived from it, with every ' +
+              'character outside letters, digits and -._~ percent-encoded.' }
+    ],
+    build: function (answers) {
+      log.debug('Entering buildFgaDefault().');
+      const application = String(answers.application || '');
+      const policyId = PolicyBuilders.fgaPolicyId(application);
+      log.debug('Leaving buildFgaDefault(). ' + policyId);
+      return {
+        kind: 'Policy',
+        id: policyId,
+        version: '1.0',
+        description: 'The fine-grained authorization policy of the ' +
+                     'application "' + application + '". It decides each ' +
+                     'authorization detail of that application\'s types, ' +
+                     'and permits every one until its rule is narrowed.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        target: null,
+        variables: {},
+        rules: [{
+          id: policyId + ':rule:permit-every-detail',
+          effect: model.EFFECT.PERMIT,
+          description: 'Every authorization detail of this application\'s ' +
+                       'types is permitted. Narrow this rule\'s Target or ' +
+                       'add a Condition to decide otherwise.',
+          target: null,
+          condition: null, obligations: [], advice: []
+        }],
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
     // THE BLANK ONE, AND IT IS THE ODD ROW IN THIS TABLE.
     //
     // Every other template here is an argument — RBAC against ABAC, and the
@@ -5305,5 +5414,6 @@ export = {
   build: slot.forward('build'),
   catalogue: slot.forward('catalogue'),
   listOf: PolicyBuilders.listOf,
-  slug: PolicyBuilders.slug
+  slug: PolicyBuilders.slug,
+  fgaPolicyId: PolicyBuilders.fgaPolicyId
 };
