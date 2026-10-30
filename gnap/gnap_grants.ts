@@ -944,6 +944,11 @@ class GnapGrants {
       }
       instanceId = member.reference;
       classInstance = !!found.classInstance;
+      // A client using its identifier keeps it (#1221). A static
+      // gnapInstanceId has no record, and touching one is a no-op.
+      if (found.dynamic) {
+        this.deps.store.touchInstance(member.reference);
+      }
       if (found.key) {
         descriptor = keys.describe(found.key,
                                    this.referenceResolver);
@@ -2396,7 +2401,10 @@ class GnapGrants {
     const response: Record<string, any> = {};
     if (config.value('gnap.instanceIds') !== false && !caller.instanceId &&
         caller.descriptor.format !== 'reference') {
-      const instanceId = store.handle(18);
+      // The same key at the same application gets the same identifier back,
+      // derived, so a repeat sign-in rewrites one record (#1221).
+      const instanceId = store.instanceIdFor(identifier,
+                                             caller.descriptor.identity);
       store.putInstance(instanceId, { identifier: identifier, key:
                                       caller.descriptor.value,
                                       // Still an unregistered key (#1216)
@@ -4138,8 +4146,13 @@ class GnapGrants {
         ended += 1;
       }
     });
-    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ".");
-    return { summary: ended + ' GNAP grant(s) finalized as expired' };
+    // And the instance records nobody has used for gnap.grantLifetimeS
+    // (#1221): the store only grew before.
+    const purged = store.purgeInstances();
+    log.debug("Leaving GnapGrants.expireGrants(). " + ended + ", " + purged +
+              " instance record(s).");
+    return { summary: ended + ' GNAP grant(s) finalized as expired, ' +
+                      purged + ' unused instance record(s) deleted' };
   }
 
   /**
@@ -4159,7 +4172,8 @@ class GnapGrants {
       title: 'GNAP: expired grants',
       describe: 'Finalizes each GNAP grant whose interaction or grant ' +
                 'lifetime (gnap.grantLifetimeS) has ended and that no ' +
-                'request has touched since, recording why (#432).',
+                'request has touched since, recording why (#432), and ' +
+                'deletes each instance record unused for as long (#1221).',
       owner: 'gnap/gnap_grants.ts',
       kind: 'cluster', scope: 'realm', everyMs: function (): number {
         return 300000;
