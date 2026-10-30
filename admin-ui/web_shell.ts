@@ -30,6 +30,7 @@ import kit = require('./web_kit');
 import DashboardPage = require('./web_dashboard');
 import WebAccounts = require('../common/web_accounts');
 import DocLinks = require('../common/web_doc_links');
+import WebNavSections = require('../common/web_nav_sections');
 
 type Json = any;
 
@@ -393,14 +394,13 @@ class WebShell {
         }).join('');
         const key = WebShell.slugOf(section.title);
         // The title in the reader's language; `what` is the server's prose
-        // and is drawn as it came.
-        return '<details class="navsec' +
-          (inThisSection ? ' current' : '') + '" name="' +
-          WebShell.NAV_GROUP + '" data-section="' + kit.esc(key) + '"' +
-          (page.openSection === key ? ' open' : '') + '>' +
-          '<summary class="navhead" title="' + kit.esc(section.what) + '">' +
-          kit.esc(WebShell.sectionTitle(t, 'section', section.title)) +
-          '</summary><ul>' + links + '</ul></details>';
+        // and is drawn as it came. The `<details>` is the portal's too
+        // (`common/web_nav_sections.ts`, #1229).
+        return WebNavSections.section({
+          group: WebShell.NAV_GROUP, key: key, current: inThisSection,
+          open: page.openSection === key, what: section.what,
+          title: kit.esc(WebShell.sectionTitle(t, 'section', section.title)),
+          items: links });
       }).join('') + '</nav>';
     return html;
   }
