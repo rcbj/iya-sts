@@ -243,8 +243,10 @@ async function doors(t) {
     const named = ldap.setGroupPolicy(group, 'stsAttributePolicy', 'Strict');
     const again = ldap.setGroupPolicy(group, 'stsAttributePolicy', 'strict');
     const ghost = ldap.setGroupPolicy(group, 'stsAttributePolicy', 'gone');
-    const undeclared = ldap.setGroupPolicy(group, 'stsPostLoginPolicy',
-                                           'strict');
+    // An attribute no kind declares: `description`, which a group holds
+    // but which names no policy (#1239 declared `stsPostLoginPolicy`, which
+    // this check used before).
+    const undeclared = ldap.setGroupPolicy(group, 'description', 'strict');
     t.check(named.ok && named.changed && !again.changed &&
             !ghost.ok && errorCodes.codeOf(ghost) === 'STS-LDAP-0195' &&
             !undeclared.ok &&
