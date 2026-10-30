@@ -1719,6 +1719,14 @@
     "en": "2c8a385006302f63",
     "text": "LA POLÍTICA DE AUTENTICACIÓN CON LA QUE INICIAN SESIÓN LAS PERSONAS DE ESTA APLICACIÓN: `default` (o vacío), o el nombre de una política de autenticación con nombre de este dominio (Directorio > Políticas). Una política con nombre contiene los mecanismos de primer factor permitidos (password, password-mfa, webauthn, spnego, wallet, federation; si no hay ninguno, se permiten todos) y los segundos factores permitidos (password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet; si no hay ninguno, los del dominio quedan como están). `default` permite todos los mecanismos que permite la política de autenticación del dominio.\n\nSE APLICA en cada inicio de sesión por navegador en la aplicación, en ambos modos: una persona cuya sesión se basa en un mecanismo que la política no permite es enviada a iniciar sesión de nuevo con uno que sí permita. Un único mecanismo de primer factor indicado es también adonde va el inicio de sesión (`spnego` a /authn/spnego, `wallet` a /authn/wallet, `federation` a appFederationRelationship). Los segundos factores solo RESTRINGEN la política del dominio: uno que esta haya desactivado sigue desactivado aquí.\n\nUn nombre que no tiene ninguna política de este dominio — escrito sin pasar por la consola — no permite NINGÚN mecanismo hasta que la política exista (STS-AUTHN-0536).\n\nNO LO ESCRIBE NADIE: ningún protocolo lo presenta, así que es editable y empieza vacío."
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "El nombre de la entrada en ou=policies de la política de autorización detallada que posee esta aplicación, que decide cada detalle de autorización de los tipos que declara una vez que appFgaEnforced es TRUE."
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "TRUE cuando se aplica la política detallada de esta aplicación. Ausente o FALSE significa que no se aplica, que es el valor predeterminado."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, y los estándar owner y description."
@@ -1858,6 +1866,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "El propio <Description> del documento, cuando lo tiene."
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "El identificador de la aplicación que POSEE esta política, que decide los detalles de los tipos authorization_details de esa aplicación. Una política así nunca es la raíz, nunca se alcanza mediante una PolicyIdReference desde la raíz y nunca se envía a un PEP remoto."
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "Cuándo se eliminó la aplicación propietaria. La política se conserva, deshabilitada, para la auditoría, hasta que un administrador la elimine."
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

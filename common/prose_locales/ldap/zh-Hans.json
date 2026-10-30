@@ -1719,6 +1719,14 @@
     "en": "2c8a385006302f63",
     "text": "此应用的人员登录时所依据的身份验证策略：`default`（或为空），或本领域某个命名身份验证策略的名称（目录 > 策略）。命名策略包含允许的第一因素机制（password、password-mfa、webauthn、spnego、wallet、federation；一个都不列则全部允许）和允许的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一个都不列则保持领域的设置不变）。`default` 允许领域身份验证策略所允许的每一种机制。\n\n在两种模式下，每次通过浏览器登录该应用时都会强制执行：会话所依据的机制不被该策略允许的人，会被送回去用策略允许的机制重新登录。只列出一种第一因素机制时，它也是登录的去处（`spnego` 去 /authn/spnego，`wallet` 去 /authn/wallet，`federation` 去 appFederationRelationship）。第二因素只会收窄领域的策略：领域已关闭的第二因素在这里仍然关闭。\n\n本领域没有任何策略使用的名称——绕过控制台写入——在该策略存在之前不允许任何机制（STS-AUTHN-0536）。\n\n它无人写入：没有任何协议提供它，因此它可编辑，且初始为空。"
   },
+  "applications.schema.attributes.appFgaPolicy.what": {
+    "en": "feebbd1d5f494bab",
+    "text": "此应用所拥有的细粒度授权策略在 ou=policies 中的条目名称；一旦 appFgaEnforced 为 TRUE，该策略将决定此应用所声明类型的每一项授权详情。"
+  },
+  "applications.schema.attributes.appFgaEnforced.what": {
+    "en": "7857e5ec7ea0bfdf",
+    "text": "当此应用的细粒度策略被强制执行时为 TRUE。缺失或为 FALSE 表示未强制执行，这是默认值。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及标准的 owner 和 description。"
@@ -1858,6 +1866,14 @@
   "xacmlPolicies.schema.attributes.description.what": {
     "en": "7aa4f682ef6437eb",
     "text": "文档自己的 <Description>（如有）。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlApplication.what": {
+    "en": "b48d1edc927f48db",
+    "text": "拥有此策略的应用的标识符；该策略决定该应用的 authorization_details 类型的详情。此类策略永远不会成为根策略，永远不会被根策略通过 PolicyIdReference 引用，也永远不会发送给远程 PEP。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlOrphanedAt.what": {
+    "en": "eb941b100ed53ed4",
+    "text": "所属应用被删除的时间。该策略会被保留并禁用以供审计，直到管理员将其删除。"
   },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",

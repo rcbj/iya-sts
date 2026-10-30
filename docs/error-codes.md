@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4846** of them, in **49** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4859** of them, in **50** subsystems.
 
 ## Where a code appears
 
@@ -89,6 +89,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 39
+* [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 13
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 254
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
@@ -4739,6 +4740,28 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0037` | An AuthZEN access evaluations request was larger than the realm's authzen.maxBodyBytes; the whole batch was refused unread. | HTTP 400, an error message |
 | `STS-AUTHZEN-0038` | An AuthZEN access evaluations request carried more items than the realm's authzen.maxEvaluations; the whole batch was refused before any item was decided. | HTTP 400, an error message |
 | `STS-AUTHZEN-0039` | An AuthZEN access evaluations request reached a realm where authzen.batchEnabled is off. | HTTP 501, an error message |
+
+## STS-FGA
+
+**Fine-grained authorization.** Application-scoped fine-grained authorization: the policy each application owns in ou=policies (created with it, retired with it), the appFgaEnforced switch, and the refusals that keep such a policy out of the repository root.
+
+Raised from: xacml/fga_policies.ts, xacml/xacml_store.ts, xacml/xacml_admin.ts, and the lifecycle slot in common/applications.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-FGA-0001` | A policy that belongs to an application (it carries xacmlApplication) was written as the repository root and refused: an application's fine-grained policy decides that application's details and never the realm's root question. | the write is refused |
+| `STS-FGA-0002` | The console or /admin-api asked to make an application's fine-grained policy the repository root, and was refused before the current root was demoted. | the caller's refusal (why on a console or /admin-api reply) |
+| `STS-FGA-0003` | An application has no fine-grained policy: its appFgaPolicy is empty. | none here — a later phase refuses the issuance |
+| `STS-FGA-0004` | An application's appFgaPolicy names a policy entry that is not in this realm's ou=policies. | none here — a later phase refuses the issuance |
+| `STS-FGA-0005` | An application's appFgaPolicy names a policy entry that does not belong to it: the entry's xacmlApplication is absent or names another application, or the entry is marked orphaned. | none here — a later phase refuses the issuance |
+| `STS-FGA-0006` | An application's fine-grained policy is disabled (xacmlEnabled FALSE). An enforced application with a disabled policy refuses; switching enforcement on is refused until the policy is enabled. | none here — a later phase refuses the issuance |
+| `STS-FGA-0007` | An application's fine-grained policy does not parse or does not type-check. | none here — a later phase refuses the issuance |
+| `STS-FGA-0008` | An application's default fine-grained policy could not be written: there is no directory, ou=policies is at xacml.maxPolicies, or the document was refused. The application stays without one until FGA is next enabled on it. | the caller's refusal, or none when an application create triggered it (the create still succeeds) |
+| `STS-FGA-0009` | A fine-grained authorization act named an application this realm's registry does not hold. | the caller's refusal |
+| `STS-FGA-0010` | The application lifecycle hook (create or delete) failed or threw. The application create or delete itself stands; the policy was not created or not retired. | none — logged; the create or delete succeeds |
+| `STS-FGA-0011` | The FGA lifecycle slot offered to common/applications.js was incomplete (it needs both created and deleted) and was not installed. | none — logged at load |
+| `STS-FGA-0012` | An application's appFgaPolicy or appFgaEnforced could not be written to its entry: the directory refused the write. | the caller's refusal |
+| `STS-FGA-0013` | A deleted application's fine-grained policy could not be disabled and marked orphaned; it is left as it was. | none — logged; the delete succeeds |
 
 ## STS-ADMIN
 
