@@ -37,6 +37,7 @@ and the nudge.
 | `xacml_pip.ts` | Attribute resolution off the subject's own directory entry. |
 | `xacml.ts` | The protocol routes: the four under `/xacml` proper, the three under `/xacml/pep` and `POST /xacml/pip`, plus the embedded PEP. |
 | `xacml_templates.ts` | The starting points: RBAC, ABAC, this service's own four, **`blank`** — an empty Policy or PolicySet, which is the only way to create a PolicySet from the console without ALFA — and **`fga-default`**, the policy every application is created with (#564). **Adding one is a row in `TEMPLATES` and nothing else.** No DOM. |
+| `fga_pep.ts` | **The embedded fine-grained authorization PEP (#564, P3).** One RFC 9396 detail of an application that enforces FGA: the policy resolved, the detail mapped, decided against THAT policy alone (`xacml.ts`'s `decidePolicy()`), deny-biased, audited (`fga.decision`) and counted (the monitor's `fga` row). Fills `common/fga_gate.ts`'s decider when wired at 23c. A LIBRARY. Rule 3cz. |
 | `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
@@ -2399,7 +2400,7 @@ ADMIN_READ alone, both, and an empty required-all.
 **None is left (#596, 2026-10-12; #591 P5).** `GET /xacml/protected`, the embedded PEP's demonstration, and `xacml.pepBias`, which only it read, were deleted: the runtime ships no demonstration code, and the `xacml-pep` container's `GET /protected` already was that PEP — the same request through the same builder, the bias as its own option (`PEP_BIAS`), the same section 7.2 rule — in the place a PEP lives (`xacml-pep/CLAUDE.md`). What stays in the runtime:
 
 * **`enforce()`**, for `/admin/xacml/decide`'s what-if, with the bias as an ARGUMENT; the what-if (`GET /admin-api/xacml/decide`) answers `enforcement` (deny-biased, the one the page draws) and `enforcements`, both biases — one decision, two outcomes, which is what flipping the setting used to show. `tests/xacml_pep.js` still holds `enforce()` and the Rust `enforce.rs` to `xacml-pep/enforcement_cases.json`.
-* **The monitor** lists two embedded PEPs, not three; a remote PEP's refusals and undischargeable obligations arrive on its heartbeat.
+* **The monitor** lists two embedded PEPs, not three; a remote PEP's refusals and undischargeable obligations arrive on its heartbeat. (A third embedded one, the fine-grained authorization PEP, joined in #564's P3 — rule 3cz — for a reason of its own, not as the demonstration back.)
 * **The tests moved**: `sts_xacml_endpoints.js` sections 2 and 5 read the bias and the obligation rule off the what-if, `sts_xacml_editor.js` asks the PDP through it, and `sts_xacml_remote_pep.js` section 4b asserts the obligation rule IN THE CONTAINER, on policy it pulled. Both throwaway-realm jobs still create their realm in development, as before. A permit-biased PEP is not driven end to end: the launcher's PEP runs one bias, and the two are compared through the shared table instead.
 * `GET /xacml` names the trust-anchor door, `POST /admin-api/tls/trust/add` (the open `POST /tls/trust` was deleted by #597), and no longer carries `pep`.
 * `STS-XACML-0014` and `0015`, the demonstration PEP's two refusals, are retired; the remote PEP's are its own `STS-XPEP-*` lines.
@@ -2640,3 +2641,52 @@ their own is open.
 
 `tests/fga_policies.js` holds all of it in a throwaway realm.
 
+### Enforcement at issuance, `fga_pep.ts` (P3) — rule 3cz
+
+**The authorization, PAR and token endpoints ask the owning application's
+policy about each detail of its types, once `appFgaEnforced` is TRUE**
+(`oauth-oidc/CLAUDE.md` 3am says where in each and why). They ask
+`common/fga_gate.ts`, a leaf slot this module fills at 23c — rule 3e both
+ways round, `common/CLAUDE.md` argues it — and **the gate REFUSES when
+empty**, unlike the issuance gate: the question is only asked of an
+application somebody switched on.
+
+* **The policy alone.** `resolve()` (P1), `fga_map.request()` (P2), then
+  `xacml.ts`'s new `decidePolicy(policy, request, { repository, resolve })`
+  — what `decide()` now goes through for the root — with NO repository: an
+  owned policy's PolicyId is chosen by whoever named the application, and
+  the store keeps owned policies out of the map for that reason. P4's AuthZEN
+  decision against an application's policy uses the same method. The PIP is
+  asked only for a `user` subject (AuthZEN's `resolves()` line): a client
+  credentials subject, or nobody at PAR, is not a directory entry.
+* **Only a Permit with nothing undischargeable is yes** (`enforce()`,
+  deny-biased). Deny, NotApplicable and an Indeterminate over a missing
+  attribute DENY (`STS-FGA-0014`); a detail the mapping refuses DENIES under
+  the mapping's code (0100–0107) — it cannot be put to the policy. A resolve
+  failure (0003–0007, 0009) and an Indeterminate the engine reached through
+  a processing or syntax error (`STS-XACML-0013`, re-coded `STS-FGA-0015`)
+  are OPERATIONAL FAILURES (`server_error`): nobody decided, and a client
+  told `invalid_authorization_details` would believe the detail was wrong.
+  A throw is a failure too, and still audited.
+* **One `fga.decision` audit row per decision**: application, policy entry,
+  PolicyId and version, type, definition digest, subject and kind, client,
+  stage, grant, outcome, XACML decision, code — and a SHA-256 of the
+  detail's canonical JSON, NEVER a value: a detail is one transaction's
+  facts, and the audit log is read by people never meant to see them. The
+  action is in `audit.js`'s table and its label in the six catalogs.
+* **The monitor's `fga` row**, `kind: 'embedded'`, `enforces: true`: this
+  process grants or refuses, so allowed and refused are counted as for the
+  other two PEPs. Only decisions the PDP REACHED are counted; a resolve
+  failure or a refused mapping is audited and not counted, which keeps the
+  row's reconciliation (allowed + refused + unenforced = decisions) about
+  decisions the engine made.
+* **Coverage is enforced at both doors**: `enable()` refuses while a type
+  the application declares has a non-empty `uncovered()`
+  (`uncoveredTypes()`, `STS-FGA-0018`), BEFORE ensuring a policy, so a
+  refused enable writes nothing; and `applications.js` refuses a type
+  definition written to an enforcing application that would be uncovered
+  (`STS-FGA-0019`, `common/CLAUDE.md`).
+* **Not by mode.**
+
+`tests/fga_issuance.js` holds the gate, the PEP over stubs, and the
+endpoints end to end in a throwaway realm.
