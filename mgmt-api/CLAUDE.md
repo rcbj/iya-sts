@@ -2075,6 +2075,20 @@ in the `POST /users/:action` table; the rule-7 parity job
 (`sts_admin_api_operations`) needs a stack and was not run in #1061's
 session.
 
+**THE APPLICATION'S HALF (#1227, 2026-10-30)**: `add-certificate`
+(`application`, `certificate`) and `remove-certificate` (`application`,
+`sha256`) on `POST /applications/:action`, through the same
+`storedCertificateAction()` with `kind` 'application', and the list as
+`credentials.stored` of `GET /admin-api/applications?application=`
+(`applicationStoredCertificatesOf()`) rather than a GET of its own — the
+application's credentials already arrive on that answer, as the person's
+`mfa.signing` does. The route now passes `via: 'api'` and the caller's name
+in the context, which these two audit with. Refusals as the person's, but an
+identifier the registry does not hold is `STS-ADMIN-0906` (0898 says
+person). The CAEP event goes under the application's own subject
+(`application` on the notice, `ssf/CLAUDE.md`'s #221 P5), which mails
+nobody. `tests/application_stored_certificates.js` holds it.
+
 ## A REALM'S OWN TOKEN (2026-09-14, #32)
 
 A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7

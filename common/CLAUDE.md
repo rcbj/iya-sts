@@ -10652,7 +10652,12 @@ stored again. What carries it:
   ANOTHER entry (`STS-ADMIN-0899`) rather than creating the two-holder state
   every door would then refuse with nothing on either page saying why; LDAP can
   still create it, and the doors refuse it then. Each change says CAEP
-  credential-change `x509`.
+  credential-change `x509`. **An application's half** (#1227):
+  `add-certificate` / `remove-certificate` on the Applications resource and
+  `applicationStoredCertificatesOf()` (`credentials.stored` of its
+  `?application=` answer), the same refusals but `STS-ADMIN-0906` for an
+  identifier the registry does not hold, and the CAEP event under the
+  application's own subject.
 
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and

@@ -1357,7 +1357,14 @@ class ApplicationsPage {
               t.html('consoleApplications.a2.enrollHeading') +
               '</h3>' + ApplicationsPage.applicationEnrollmentPanel(ctx,
                 row, carryBack,
-                                                            'credentials')) },
+                                                            'credentials')) +
+            // STORED CERTIFICATES (#1227), on EVERY application and not
+            // forFamilies(): a certificate stored on the entry authenticates
+            // the application at every door that reads a client certificate
+            // as an identity, whatever it is declared for.
+            ApplicationsPage.applicationStoredCertificatesSection(
+              (json.page.credentials || {}).stored, row.identifier,
+              carryBack, !!ctx.write, t) },
         { id: 'tab-origins',
           label: t.text('consoleApplications.a2.tabOrigins'),
           html: ApplicationsPage.applicationCorsSection(row, carryBack, t) },
@@ -2807,6 +2814,82 @@ class ApplicationsPage {
         ? ApplicationsPage.applicationSigningSection(state.signing, id,
                                                      carryBack, t)
         : '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // STORED CERTIFICATES ON THE APPLICATION'S OWN PAGE (#1227).
+  //
+  // The person's Stored certificates block (#1061, `web_users.ts`) for an
+  // application: what its entry stores in `userCertificate` — a certificate
+  // from an outside certificate authority authenticates the application only
+  // while it is stored here, byte for byte, and on no other entry — with a
+  // Remove each and a PEM box that stores one. `credentials.stored` of
+  // `GET /admin-api/applications?application=`, and `POST /admin-api/
+  // applications/add-certificate` and `remove-certificate`, are the same
+  // three (rule 7). Admin Write for either. No script: plain forms.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws an application's Stored certificates subsection: what its entry
+   * stores in `userCertificate`, a Remove form each, and the form that
+   * stores one.
+   *
+   * @param state - `credentials.stored`, from
+   *   `applicationStoredCertificatesOf()`
+   * @param id - the application's identifier
+   * @param carryBack - the hidden `back` field every form carries
+   * @param write - whether the reader holds Admin Write
+   * @param t - the page's translator (#539)
+   * @returns the subsection as HTML
+   */
+  static applicationStoredCertificatesSection(state, id, carryBack, write,
+                                              t) {
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + name + '" value="' +
+             kit.esc(value) + '">';
+    };
+    const view = state && state.ok ? state : { certificates: [] };
+    const rows = view.certificates.length
+      ? '<table><tr><th>' + t.html('consoleApplications.a2.storedThSubject') +
+        '</th><th>' + t.html('consoleApplications.a2.storedThIssuer') +
+        '</th><th>' + t.html('consoleApplications.a2.storedThValidity') +
+        '</th><th>SHA-256</th><th></th></tr>' +
+        view.certificates.map(function (one) {
+          return '<tr><td><code>' + kit.esc(one.subject || '—') +
+            '</code></td><td><code>' + kit.esc(one.issuer || '—') +
+            '</code></td><td>' + kit.esc(one.notBefore || '—') + ' – ' +
+            kit.esc(one.notAfter || '—') +
+            (one.expired
+              ? ' <strong>' + t.html('consoleApplications.a2.storedExpired') +
+                '</strong>' : '') +
+            '</td><td><code>' + kit.esc(one.sha256) + '</code></td><td>' +
+            (write
+              ? '<form method="post" action="/admin/applications">' +
+                carryBack + hidden('action', 'remove-certificate') +
+                hidden('application', id) + hidden('sha256', one.sha256) +
+                '<button class="danger" type="submit"' +
+                kit.tip(t.text('consoleApplications.a2.storedRemoveTip')) +
+                '>' + t.html('consoleApplications.a2.remove') +
+                '</button></form>'
+              : '') + '</td></tr>';
+        }).join('') + '</table>'
+      : '<p class="sub">' + t.html('consoleApplications.a2.storedNone') +
+        '</p>';
+    const addForm = write
+      ? '<form method="post" action="/admin/applications">' + carryBack +
+        hidden('action', 'add-certificate') + hidden('application', id) +
+        '<div class="formrow"><label' +
+        kit.tip(t.text('consoleApplications.a2.storedAddTip')) + '>' +
+        t.html('consoleApplications.a2.storedAddLabel') + '<br>' +
+        '<textarea name="certificate" rows="6" cols="66" ' +
+        'spellcheck="false"></textarea></label></div>' +
+        '<div class="formrow"><button type="submit" title="' +
+        kit.esc(t.text('consoleApplications.a2.storedAddTitle')) + '">' +
+        t.html('consoleApplications.a2.storedAdd') + '</button></div></form>'
+      : kit.note(t.html('consoleApplications.a2.storedNeedsWrite'));
+    return '<h3 id="credentials-stored">' +
+      t.html('consoleApplications.a2.storedHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.a2.storedLead')) +
+      rows + addForm;
   }
 
   // ---------------------------------------------------------------------------

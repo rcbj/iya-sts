@@ -7164,6 +7164,15 @@ an operator says ahead of time which certificate is whose. The Attributes
 tab's editor still does not offer `userCertificate`: its value is binary, and
 this block is its door. `mgmt-api/CLAUDE.md` has the API twin.
 
+**An application's** (#1227, 2026-10-30) is the same block at the end of the
+application page's Credentials tab
+(`ApplicationsPage.applicationStoredCertificatesSection()`), drawn from
+`credentials.stored` and posting `add-certificate` / `remove-certificate` to
+`applicationsAction()`. It is drawn on EVERY application, not behind
+`forFamilies()`: a stored certificate authenticates the application at every
+door that reads a client certificate as one, whatever it is declared for. Its
+words are `consoleApplications.a2.stored*`, in the seven base catalogs.
+
 ## `/admin/mail` AND `/admin/mail/outbox`: THE MAIL CHANNEL'S TWO PAGES (2026-09-22, #63)
 
 One module, `mail_admin.ts`, filed in two sections by the console's filing

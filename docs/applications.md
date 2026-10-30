@@ -447,6 +447,28 @@ two routes, each visible to the other immediately.
   only the registration, the secret and the registration access token.
 * **`forget` is the one operation that loses a fact**, which is why it is
   separate from `revoke-registration`.
+* **Stored certificates** (`add-certificate`, `remove-certificate`) are on
+  the **Credentials** tab of every application, whatever it is declared for:
+  what the entry stores in `userCertificate` — subject, issuer, validity and
+  SHA-256 — with **Remove** per row, and a box to paste one more (PEM, the
+  leaf only) and **Store** it. A certificate from an outside certificate
+  authority in the client truststore authenticates the application only
+  while it is stored on its entry and no other — a Shared Signals receiver
+  presenting one, for example
+  ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). It is
+  the person's **Stored certificates** block, for an application:
+  `POST /admin-api/applications/add-certificate`
+  `{"application":"my-ssf-receiver","certificate":"-----BEGIN CERTIFICATE-----…"}`
+  and `remove-certificate` `{"application":"…","sha256":"…"}` are the same
+  acts, and `credentials.stored` of `GET /admin-api/applications?application=`
+  is the list. Refused: anything that is not one X.509 certificate
+  (`STS-ADMIN-0897`), a certificate already stored on another entry
+  (`STS-ADMIN-0899`), removing one the entry does not store
+  (`STS-ADMIN-0900`), and an identifier the registry does not hold
+  (`STS-ADMIN-0906`). Each change sends a CAEP `credential-change` of type
+  `x509` under the application's own subject. RFC 8705's `tls_client_auth`
+  at the token endpoint does not read it; that keeps its own registered
+  subject.
 * **The Fine-grained authorization tab** (`fga-enable`, `fga-disable`,
   `fga-create-policy`, `fga-reset-policy`) and the **Access types** tab's
   XACML mapping (`set-access-type-row`, `remove-access-type-row`,

@@ -14832,7 +14832,17 @@ class AdminApi {
                      'client_id); and `groupPolicies`, how many named ' +
                      'policies select by group and could still win for a ' +
                      'given person. Nothing about it is stored on the ' +
-                     'application.\n\n**This reply carries credentials** — ' +
+                     'application.\n\n**The ?application= reply\'s ' +
+                     '`credentials.stored`** (#1227) is what the entry ' +
+                     'stores in `userCertificate`, each certificate\'s ' +
+                     'SHA-256, subject, issuer, serial and validity, in ' +
+                     'the shape GET /admin-api/users/certificates lists a ' +
+                     'person\'s: an outside certificate authority\'s ' +
+                     'certificate authenticates the application only while ' +
+                     'it is stored there and on no other entry. POST ' +
+                     '/admin-api/applications/add-certificate and ' +
+                     '`remove-certificate` change it.\n\n' +
+                     '**This reply carries credentials** — ' +
                      '`oauthClientSecret` and `appRegistrationAccessToken`, ' +
                      'opened. They are sealed at rest wherever the process ' +
                      'holds a durable key-encryption key, but anyone who ' +
@@ -15026,7 +15036,10 @@ class AdminApi {
             authorizationServers: resourceMetadata.authorizationServersOf(req),
             // For `issue-software-statement`: the issuer a statement names is
             // the one published at the address this request arrived on.
-            base: baseUrlOf(req)
+            base: baseUrlOf(req),
+            // For `add-certificate` and `remove-certificate` (#1227): who
+            // the audit row names, as the person's twin names it.
+            via: 'api', actor: self.callerNameOf(res)
           });
           // `refresh-metadata` is asynchronous — it dials the service
           // provider's metadata URL — and every other action is not. See that
@@ -16498,6 +16511,83 @@ class AdminApi {
             },
             responseDescription: 'The revoked certificate, the reason, and ' +
                                  'the application as it now stands.' },
+
+          // THE CREDENTIALS SECTION'S STORED CERTIFICATES (#1227): the
+          // person's add-certificate and remove-certificate (#1061), on an
+          // application's entry.
+          { action: 'add-certificate',
+            operationId: 'addApplicationCertificate',
+            summary: 'Store a certificate on an application\'s entry, so ' +
+                     'an outside certificate authority\'s certificate ' +
+                     'authenticates it',
+            description: 'Stores one X.509 certificate in the ' +
+                         'application\'s `userCertificate` (RFC 4523; ' +
+                         'written as `userCertificate;binary`). A ' +
+                         'certificate from an outside certificate ' +
+                         'authority — one trusted through the Client ' +
+                         'Truststores — is an identity at a door that ' +
+                         'reads a client certificate as an application ' +
+                         '(a Shared Signals receiver\'s, for one) only ' +
+                         'while it is stored, byte for byte, on exactly ' +
+                         'one entry of the realm: never ' +
+                         'by its common name or subject (#1061, #1227). ' +
+                         'Refused when it is not one certificate ' +
+                         '(STS-ADMIN-0897), when it is already stored on ' +
+                         'another entry (STS-ADMIN-0899) or the registry ' +
+                         'holds no such application (STS-ADMIN-0906). A ' +
+                         'renewed certificate is stored again. Sends a ' +
+                         'CAEP credential-change (x509) under the ' +
+                         'application\'s own subject. RFC 8705\'s token ' +
+                         'endpoint does not read it: `tls_client_auth` ' +
+                         'keeps its own registered subject.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string',
+                               description: 'The application\'s ' +
+                                            'identifier, exactly as this ' +
+                                            'registry holds it.' },
+                certificate: { type: 'string',
+                               description: 'The leaf, as one PEM block ' +
+                                            'or base64 DER.' }
+              },
+              required: ['application', 'certificate'],
+              examples: [{ application: 'my-ssf-receiver',
+                           certificate: '-----BEGIN CERTIFICATE-----\n' +
+                                        'MIIC...\n-----END CERTIFICATE-----' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
+          { action: 'remove-certificate',
+            operationId: 'removeApplicationCertificate',
+            summary: 'Take a stored certificate off an application\'s entry',
+            description: 'Removes one certificate from the application\'s ' +
+                         '`userCertificate`, named by the SHA-256 of its ' +
+                         'DER (as `credentials.stored` of GET ' +
+                         '/admin-api/applications?application= lists it). ' +
+                         'From then on it authenticates nobody (#1227). ' +
+                         'Refused for a SHA-256 the entry does not store ' +
+                         '(STS-ADMIN-0900) and for an application the ' +
+                         'registry does not hold (STS-ADMIN-0906).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string',
+                               description: 'The application\'s ' +
+                                            'identifier, exactly as this ' +
+                                            'registry holds it.' },
+                sha256: { type: 'string',
+                          description: 'The SHA-256 of the certificate\'s ' +
+                                       'DER, hex.' }
+              },
+              required: ['application', 'sha256'],
+              examples: [{ application: 'my-ssf-receiver',
+                           sha256: '0'.repeat(64) }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
 
           // THE SOFTWARE STATEMENTS SECTION'S CONTROL (RFC 7591 section 2.3,
           // 2026-09-13).

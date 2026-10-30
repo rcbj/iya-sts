@@ -12418,7 +12418,13 @@ class AdminViews {
       },
       sources: applications.KEY_SOURCES.slice(),
       mtls: this.applicationMtlsState(row, one, chainAvailable),
-      signing: this.applicationSigningState(row, chainAvailable)
+      signing: this.applicationSigningState(row, chainAvailable),
+      // THE CERTIFICATES STORED ON THE ENTRY (#1227), as the person's page
+      // carries theirs (#1061): a certificate from an outside authority
+      // authenticates the application only while it is stored here and on
+      // no other entry. Required when drawn, for `userPageData()`'s reason.
+      stored: require('./admin_actions').applicationStoredCertificatesOf(
+        String(row.identifier || ''))
     };
     state.json = {
       clientSecret: { held: state.clientSecret.held,
@@ -12441,7 +12447,8 @@ class AdminViews {
       oauthDeclared: oauthDeclared,
       sources: state.sources,
       mtls: state.mtls,
-      signing: state.signing
+      signing: state.signing,
+      stored: state.stored
     };
     log.debug("Leaving AdminViews.applicationCredentialsState().");
     return state;
