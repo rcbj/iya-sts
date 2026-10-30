@@ -2829,8 +2829,8 @@ type RouteApp = typeof app;
 
 const APPLICATION_TAB_IDS = ['tab-overview', 'tab-authentications',
   'tab-config', 'tab-credentials', 'tab-origins', 'tab-access-types',
-  'tab-fga', 'tab-scope-claims', 'tab-signals', 'tab-statements', 'tab-addresses',
-  'tab-permissions', 'tab-roles', 'tab-owners', 'tab-metadata', 'tab-entry',
+  'tab-fga', 'tab-scope-claims', 'tab-signals', 'tab-statements',
+  'tab-addresses', 'tab-permissions', 'tab-roles', 'tab-owners', 'tab-metadata', 'tab-entry',
   'cfg-saml2', 'cfg-saml11',
   'tab-import-export', 'tab-remove'];
 
