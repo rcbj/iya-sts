@@ -952,6 +952,51 @@ const SPECS: Spec[] = [
               'that hears session-revoked for the tokens audienced to it. ' +
               'Macaroon and zcap tokens have no such mechanism; introspection ' +
               'is their path.' },
+  // --- User-Managed Access 2.0 (#1168): two Kantara Recommendations.
+  //     "UMA 2.0 Core" is the 1.0 document's name, and resource
+  //     registration is a section of Federated Authorization, not a
+  //     specification of its own (the ticket's third link is a 404).
+  { id: 'uma2-grant',
+    name: 'User-Managed Access (UMA) 2.0 Grant for OAuth 2.0 Authorization',
+    where: 'Kantara Initiative',
+    url: 'https://docs.kantarainitiative.org/uma/wg/' +
+         'rec-oauth-uma-grant-2.0.html',
+    coverage: 'partial: discovery (section 2); the ' +
+              'urn:ietf:params:oauth:grant-type:uma-ticket grant (section ' +
+              '3.3) with the ticket spent once across the cluster and bound ' +
+              'to the first client that presents it, section 3.3.4\'s ' +
+              'requested scopes, a PCT presented, need_info with a rotated ' +
+              'ticket and required_claims, request_denied, a partial RPT ' +
+              '(uma.partialRpt), RPT upgrade, and every permission decided ' +
+              'by the realm\'s policy, the resource owner\'s own XACML ' +
+              'document, the resource server\'s fine-grained policy and the ' +
+              'issuance gate; the PCT issued when claims were gathered and ' +
+              'revocable at /oauth2/revoke; the claims interaction endpoint ' +
+              '(section 3.3.2) through this service\'s one sign-in; a pushed ' +
+              'claim_token in the ID Token format, from this realm or a ' +
+              'declared assertion issuer; and request_submitted, the owner ' +
+              'answering on the portal, an approval written as a rule of ' +
+              'their own policy. Missing: SAML as a claim_token_format, and ' +
+              'a step-up to an acr a share requires at the interaction ' +
+              '(the share then refuses). uma_profiles_supported is empty.' },
+  { id: 'uma2-fedauthz',
+    name: 'Federated Authorization for User-Managed Access (UMA) 2.0',
+    where: 'Kantara Initiative',
+    url: 'https://docs.kantarainitiative.org/uma/wg/' +
+         'rec-federated-authz-2.0.html',
+    coverage: 'partial: the protection API access token (section 2) as an ' +
+              'ordinary access token audienced to /uma carrying ' +
+              'uma_protection, by the code flow (the owner a person) or ' +
+              'client_credentials (the owner the application, where it ' +
+              'carries umaOwnsResources); resource registration (section ' +
+              '3) — create, read, update, delete and list, with ' +
+              'user_access_policy_uri; and the permission endpoint ' +
+              '(section 4) issuing one ticket for one or several ' +
+              'permissions, with invalid_resource_id and invalid_scope. ' +
+              'RPT introspection (section 5) with the PAT as Bearer at ' +
+              '/oauth2/introspect: permissions and no scope, for that ' +
+              'resource server\'s RPTs alone. A scope description document ' +
+              'a scope URI names is never fetched: a scope is a string.' },
   { id: 'rfc9421', name: 'RFC 9421 — HTTP Message Signatures',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc9421',
@@ -3981,6 +4026,95 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'The two controls on /admin/gnap as one action resource: ' +
           'revoke-grant (the grant and every token under it, with the CAEP ' +
           'event a client\'s own DELETE would send) and delete-resource-set.' },
+  // --- User-Managed Access 2.0 (#1168). uma/CLAUDE.md argues the family.
+  { path: '/uma/rreg', group: 'UMA 2.0',
+    name: 'Resource registration: create, list',
+    specs: ['uma2-fedauthz'],
+    what: 'Federated Authorization section 3. POST a resource description ' +
+          '(resource_scopes required; name, type, description, icon_uri ' +
+          'optional; a scope is a string and is never dialled) with a ' +
+          'protection API token (PAT) as Bearer or DPoP: 201 with _id, ' +
+          'user_access_policy_uri (the owner\'s /portal/shared) and a ' +
+          'Location. GET lists the _ids this PAT\'s owner and resource ' +
+          'server registered. THE PAT\'S SUBJECT IS THE OWNER of ' +
+          'everything registered with it — a person on the code flow, the ' +
+          'application itself on client_credentials where it carries ' +
+          'umaOwnsResources — and nothing a resource server sends names ' +
+          'an owner. The PAT is checked in every mode. Bounded by ' +
+          'uma.maxResourcesPerOwner and uma.maxResourceScopes; 501 while ' +
+          'uma.enabled is off.' },
+  { path: '/uma/rreg/:id', group: 'UMA 2.0',
+    name: 'Resource registration: read, update, delete',
+    specs: ['uma2-fedauthz'],
+    what: 'GET the resource description; PUT a new one (200 with _id); ' +
+          'DELETE it (204). A resource another owner or another resource ' +
+          'server registered is not_found (404) here, and nothing says ' +
+          'which. unsupported_method_type (405) for any other method.' },
+  { path: '/uma/perm', group: 'UMA 2.0',
+    name: 'The permission endpoint',
+    specs: ['uma2-fedauthz', 'uma2-grant'],
+    what: 'Federated Authorization section 4. POST one object or an array ' +
+          'of {resource_id, resource_scopes} with the PAT: 201 with one ' +
+          'permission ticket for all of them, to hand the client in the ' +
+          'WWW-Authenticate challenge of the Grant specification\'s ' +
+          'section 3.2. Well-formedness is not policy: an unregistered ' +
+          'resource is invalid_resource_id and an unregistered scope ' +
+          'invalid_scope, both 400, before any question is asked. The ' +
+          'ticket lives uma.ticketLifetimeS and is spent once across the ' +
+          'cluster.' },
+  { path: '/uma/claims', group: 'UMA 2.0',
+    name: 'The claims interaction endpoint', specs: ['uma2-grant'],
+    what: 'The Grant specification\'s section 3.3.2: a client told ' +
+          'need_info sends the requesting party here with client_id, ' +
+          'ticket, claims_redirect_uri and state. They sign in through ' +
+          'this service\'s one sign-in, are recorded as the ticket\'s ' +
+          'requesting party, and go back with ' +
+          'authorization_state=claims_submitted and a new ticket. The ' +
+          'claims_redirect_uri must be one the client registered ' +
+          '(oauthClaimsRedirectUri), matched exactly; any other is told to ' +
+          'the person and never redirected to.' },
+  { path: '/.well-known/uma2-configuration', group: 'UMA 2.0',
+    name: 'UMA discovery', specs: ['uma2-grant'],
+    what: 'The Grant specification\'s section 2 document: RFC 8414\'s ' +
+          'members for this realm\'s authorization server plus ' +
+          'permission_endpoint, resource_registration_endpoint, ' +
+          'introspection_endpoint, claims_interaction_endpoint and ' +
+          'uma_profiles_supported (empty: no profile is implemented end to ' +
+          'end), and the UMA grant in grant_types_supported only while it ' +
+          'is performed. Cache-Control: no-store, as every document that ' +
+          'carries a key. Answered 501 while uma.enabled is off: a document ' +
+          'advertising endpoints that do not answer would be a lie.' },
+  { path: '/.well-known/uma2-configuration/*', group: 'UMA 2.0',
+    name: 'UMA discovery (inserted-path form)', specs: ['uma2-grant'],
+    what: 'The same document at RFC 8414\'s inserted form, where the ' +
+          'issuer is a realm\'s: /realm/<id> after the segment, answered ' +
+          'inside that realm. Any other path names no realm and is a 404.' },
+  { path: '/uma', group: 'UMA 2.0',
+    name: 'The UMA description page', specs: ['uma2-grant', 'uma2-fedauthz'],
+    what: 'This service\'s own page saying what UMA 2.0 is here: the ' +
+          'endpoints, the resource servers declared in this realm, the ' +
+          'four layers a permission is decided by, and the settings. A ' +
+          'static surface\'s shell (#584); ?format=json, or an Accept ' +
+          'preferring JSON, answers the same as data.' },
+  { path: '/uma/description.js', group: 'UMA 2.0',
+    name: 'The description page\'s script', specs: [],
+    what: 'The description pages\' one bundle, on this family\'s path.' },
+  { path: '/admin-api/uma', group: 'UMA 2.0',
+    name: 'The UMA console page over JSON', specs: ['uma2-grant',
+                                                    'uma2-fedauthz'],
+    what: 'What GET /admin/uma draws, out of the same view function (#1195): ' +
+          'the resource servers, resources, live tickets and RPTs, waiting ' +
+          'requests, an owner and the dry-run what-if.' },
+  { path: '/admin-api/uma/monitor', group: 'UMA 2.0',
+    name: 'The UMA PEP\'s counts over JSON', specs: ['uma2-grant'],
+    what: 'The uma row of the XACML monitor and, per resource server, what ' +
+          'it holds now.' },
+  { path: '/admin-api/uma/:action', group: 'UMA 2.0',
+    name: 'The UMA console\'s nine acts', specs: ['uma2-grant',
+                                                  'uma2-fedauthz'],
+    what: 'Enable or disable a resource server, let it own resources, ' +
+          'delete a resource, revoke an RPT, and share, unshare, approve or ' +
+          'refuse on an application\'s own document.' },
   { path: '/pki/crl/:scope/:ca', group: 'PKI',
     name: 'The certificate revocation list of one authority',
     specs: ['rfc5280'],
@@ -9987,6 +10121,20 @@ const PROTOCOLS: Protocol[] = [
           'attribute catalogue and the one request builder, and the answer ' +
           'is mapped back fail-closed. The XACML endpoints and the remote ' +
           'PEP container are untouched by it.' },
+  { name: 'UMA 2.0', groups: ['UMA 2.0'],
+    specs: ['uma2-grant', 'uma2-fedauthz'],
+    what: 'User-Managed Access 2.0, a GRANT and not a decision engine: a ' +
+          'resource server registers the resources it holds for a ' +
+          'resource owner through the protection API and asks a ' +
+          'permission ticket when a client arrives; the client presents ' +
+          'the ticket at the token endpoint; and each permission — one ' +
+          'resource, one scope — is issued only when the realm\'s ' +
+          'uma-authorization policy, the OWNER\'S OWN XACML DOCUMENT ' +
+          '(authored by a form on the portal), the resource server\'s ' +
+          'fine-grained policy where it enforces one, and the issuance ' +
+          'gate all say Permit. The one thing UMA adds that nothing else ' +
+          'here has is a policy a person writes; absence of one is never ' +
+          'consent. Off until a realm turns it on (uma.enabled).' },
   { name: 'Federation', groups: ['Federation'],
     specs: ['saml2-profiles', 'saml11-profiles', 'ws-federation', 'oidc',
             'rfc6749'],

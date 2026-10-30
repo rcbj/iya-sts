@@ -1687,6 +1687,50 @@ class Logout {
         } },
 
       // -----------------------------------------------------------------------
+      // UMA 2.0'S PERSISTED CLAIMS TOKENS (#1168, #1193): what a client keeps
+      // so a person need not be asked for the same claims again. A sign-out
+      // of EVERYTHING ends them (the design's decision 7), for the GNAP
+      // grants' reason; an ordinary sign-out of one application does not.
+      // The RPTs themselves are access tokens, and end with the access-token
+      // families. Required LAZILY: the UMA family is 23d-ii.
+      // `endOrder` 27, with the credentials and before the session.
+      { id: 'uma', endOrder: 27, endsWithSession: true,
+        label: 'UMA persisted claims tokens',
+        protocol: 'UMA 2.0',
+        spec: 'UMA 2.0 Grant for OAuth 2.0 Authorization, section 3.3.3 ' +
+              '(the PCT)',
+        what: 'Handles a client holds so that the claims gathered about ' +
+              'this person need not be gathered again. Ending one makes the ' +
+              'client ask for them afresh; the RPTs already issued are ' +
+              'access tokens and end with those.',
+        collect: (ctx) => {
+          log.debug("Entering uma.collect().");
+          const subject = helpers.subjectForName(String(ctx.key || ''));
+          const store = subject ? require('../uma/uma_store') : null;
+          const rows = store ? store.pctsOf(subject).map((pct) => {
+            return this.row('uma', 'pct', String(pct.key), {
+              label: String(pct.client || ''),
+              detail: 'claims gathered for the client ' +
+                      String(pct.client || ''),
+              startedAt: (Number(pct.issuedAt) || 0) * 1000,
+              expiresAt: (Number(pct.expiresAt) || 0) * 1000
+            });
+          }) : [];
+          log.debug("Leaving uma.collect(). " + rows.length);
+          return rows;
+        },
+        terminate: (r) => {
+          log.debug("Entering uma.terminate().");
+          const gone = require('../uma/uma_store').deletePct(r.handle, true);
+          log.debug("Leaving uma.terminate().");
+          return gone
+            ? { ok: true, message: 'the persisted claims token held by ' +
+                r.label + ' is ended' }
+            : { ok: false, message: 'that persisted claims token had ' +
+                                    'already ended' };
+        } },
+
+      // -----------------------------------------------------------------------
       { id: 'ldap', endOrder: 23,
         label: 'Directory connections',
         protocol: 'LDAP',

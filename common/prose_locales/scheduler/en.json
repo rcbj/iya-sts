@@ -147,6 +147,8 @@
   "sched.jobs.ssf.stream-maintenance.describe": "Pauses, disables or deletes a stream whose receiver has been inactive for ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), announcing a pause or disable with a stream-updated event first, and sends a verification event to every enabled stream that has had none from this transmitter for ssf.verificationEveryS (section 8.1.4).",
   "sched.jobs.tls.ticket-key-rotate.title": "TLS session-ticket key rotation",
   "sched.jobs.tls.ticket-key-rotate.describe": "Replaces the session-ticket key every node's TLS listeners share in an active-active cluster, so a ticket one node issued resumes on another. The key it replaces is deleted, which bounds how long a resumed session's secrets can be recovered from a ticket.",
+  "sched.jobs.uma.sweep.title": "UMA expiry",
+  "sched.jobs.uma.sweep.describe": "Removes every User-Managed Access permission ticket, persisted claims token, RPT record and pending owner approval past its life (#1168). A read applies the deadline itself, so this is the clean-up, never what decides.",
   "sched.sentence.onDemand": "on demand only",
   "sched.sentence.cron": "cron {{cron}} (UTC)",
   "sched.sentence.every": "every {{span}} (a fixed interval)",

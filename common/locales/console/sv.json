@@ -101,6 +101,7 @@
   "nav.commands": "Leverantörskommandon",
   "nav.claim-providers": "Anspråksleverantörer",
   "nav.gnap": "GNAP",
+  "nav.uma": "UMA 2.0",
   "nav.totp": "TOTP MFA",
   "nav.backup-codes": "Återställningskoder",
   "nav.webauthn": "WebAuthn",

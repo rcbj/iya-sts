@@ -591,6 +591,14 @@
     "en": "d685d1a2ff40e09e",
     "text": "Pinapalitan ang session-ticket key na pinagsasaluhan ng mga TLS listener ng bawat node sa isang active-active cluster, kaya ang ticket na in-issue ng isang node ay maipagpapatuloy sa iba. Binubura ang key na pinalitan nito, na naglilimita kung gaano katagal mababawi mula sa ticket ang mga lihim ng ipinagpatuloy na session."
   },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "UMA expiry"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Inaalis ang bawat User-Managed Access permission ticket, persisted claims token, RPT record at nakabinbing owner approval na lampas na sa buhay nito (#1168). Ang read mismo ang nag-a-apply ng deadline, kaya ito ang paglilinis, hindi kailanman ang nagpapasya."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "kapag hiniling lang"

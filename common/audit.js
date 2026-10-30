@@ -1134,6 +1134,53 @@ const ACTIONS = [
     label: 'The person at a GNAP approval page was not the user the ' +
            'request named, and the grant was sent to that user\'s portal ' +
            '(#432 phase 6)' },
+  // USER-MANAGED ACCESS 2.0 (#1168): the protection API's acts, each with
+  // the resource server, the owner and the resource's id — never a
+  // resource's name or description, which are the owner's data.
+  { action: 'uma.resource.register', category: 'protocol',
+    label: 'A UMA resource server registered a resource on an owner\'s ' +
+           'behalf' },
+  { action: 'uma.resource.update', category: 'protocol',
+    label: 'A UMA resource server updated a registered resource' },
+  { action: 'uma.resource.delete', category: 'protocol',
+    label: 'A UMA resource server deleted a registered resource' },
+  { action: 'uma.permission.ticket', category: 'protocol',
+    label: 'A UMA resource server was issued a permission ticket' },
+  // A resource owner's acts on their own policy (#1192): the share's id and
+  // resource, never a recipient's claim value or a resource's name.
+  // THE GRANT (#1193): one row per question a permission was put to, and
+  // one per grant's outcome; a PCT's revocation.
+  { action: 'uma.decision', category: 'authorization',
+    label: 'A UMA permission was decided by one of its policies' },
+  { action: 'uma.grant', category: 'protocol',
+    label: 'A UMA uma-ticket grant was answered' },
+  { action: 'uma.pct.revoke', category: 'protocol',
+    label: 'A UMA persisted claims token was revoked' },
+  { action: 'uma.approval.request', category: 'protocol',
+    label: 'A UMA request was queued for its resource owner\'s approval' },
+  { action: 'uma.approval.answer', category: 'admin',
+    label: 'A resource owner approved or refused a UMA request' },
+  { action: 'uma.claims.gathered', category: 'protocol',
+    label: 'A requesting party was signed in at the UMA claims interaction ' +
+           'endpoint' },
+  { action: 'uma.share.add', category: 'admin',
+    label: 'A resource owner shared a resource through UMA' },
+  { action: 'uma.share.remove', category: 'admin',
+    label: 'A resource owner removed a UMA share' },
+  { action: 'uma.policy.alfa', category: 'admin',
+    label: 'A resource owner rewrote their UMA policy as ALFA' },
+  // PROTOCOLS -> UMA'S ACTS (#1195). An application owner's document is
+  // changed under the three rows above; these are the administrator's own.
+  { action: 'uma.resource-server.enable', category: 'admin',
+    label: 'An application was made a UMA resource server on the console' },
+  { action: 'uma.resource-server.disable', category: 'admin',
+    label: 'An application stopped being a UMA resource server on the ' +
+           'console, and its RPTs were revoked' },
+  { action: 'uma.owns-resources.set', category: 'admin',
+    label: 'Whether an application may own UMA resources was changed on ' +
+           'the console' },
+  { action: 'uma.rpt.revoke', category: 'admin',
+    label: 'A UMA RPT was revoked on the console' },
   { action: 'gnap.grant.finalize', category: 'protocol',
     label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
            'rejected or expired' },

@@ -435,6 +435,50 @@ const GNAP_RIGHT_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE USER-MANAGED ACCESS QUESTIONS (#1168). One RPT permission — one
+// registered resource, one scope — is issued only when every layer answers
+// Permit: the realm's `uma-authorization` policy (built in, CALLED like
+// `role-issuance`, overridden by the `ou=policies` entry
+// `uma.authorizationPolicy` names), the resource OWNER's own document (the
+// `uma-owner-default` template's shape, written by the portal's share form,
+// decided alone through `decidePolicy()` as an application's fine-grained
+// policy is), and — where the resource server enforces it — that
+// application's fine-grained policy (#564). `xacml_request.js`'s `uma()`
+// spells the facts and FORCES the action-id by layer: `ACTION` for the
+// realm's layer, the scope itself for the owner's, `FGA_ACTION` for the
+// resource server's.
+//
+// `APPROVAL_OBLIGATION` is what a share saved with *Ask me each time*
+// carries on its Permit: the PEP answers `request_submitted`, queues the
+// request for the owner, and an approval APPENDS a time-bound Rule to the
+// owner's document (phase 5) — so the record of what was approved IS the
+// policy. The PEP discharges this one obligation and no other; a Permit
+// carrying an obligation it does not know refuses, as every embedded PEP's
+// does (`xacml.ts`'s `enforce()`).
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids and the one obligation of the User-Managed Access
+ * questions (#1168).
+ */
+const UMA_ATTRIBUTE = {
+  ACTION: 'issue-uma-permission',
+  FGA_ACTION: 'grant-uma-permission',
+  APPROVAL_OBLIGATION: 'urn:sts:xacml:obligation:uma-approval',
+  // The assignment an approval obligation may carry: how long, in seconds,
+  // an approval the owner gives is to hold. Absent, the PEP's own default.
+  APPROVAL_SECONDS: 'urn:sts:xacml:uma-approval-seconds',
+  // The template ids, and the built-in realm policy's name where no
+  // `uma.authorizationPolicy` entry overrides it.
+  REALM_TEMPLATE: 'uma-authorization',
+  OWNER_TEMPLATE: 'uma-owner-default',
+  // The owner document's own rule, and the id every share rule carries
+  // after this prefix (phase 3's form writes them; `uma_owner_policy.ts`
+  // reads them back).
+  OWNER_SELF_RULE: 'owner-self',
+  SHARE_RULE_PREFIX: 'share:'
+};
+
+// ---------------------------------------------------------------------------
 // THE TRANSFER QUESTIONS (#98 D4, the design's section 6: "geofencing is
 // policy, not code"). When the service is deployed as CELLS — each in one
 // legal jurisdiction, each person homed in one — three questions go to the
@@ -1194,6 +1238,65 @@ class PolicyBuilders {
       });
     log.debug("Leaving PolicyBuilders.fgaPolicyId().");
     return 'urn:sts:xacml:fga:' + encoded;
+  }
+
+  /**
+   * The PolicyId of a resource owner's User-Managed Access document
+   * (#1168): the owner's key — a person's subject, or an application's
+   * identifier — percent-encoded as `fgaPolicyId()` encodes, under
+   * `urn:sts:xacml:uma-owner:`, so the document says whose it is wherever
+   * it is read.
+   *
+   * @param owner - the owner's key
+   * @returns the PolicyId
+   */
+  static umaOwnerPolicyId(owner: unknown): string {
+    log.debug("Entering PolicyBuilders.umaOwnerPolicyId().");
+    const encoded = encodeURIComponent(String(owner || ''))
+      .replace(/[!'()*]/g, function (one) {
+        return '%' + one.charCodeAt(0).toString(16).toUpperCase();
+      });
+    log.debug("Leaving PolicyBuilders.umaOwnerPolicyId().");
+    return 'urn:sts:xacml:uma-owner:' + encoded;
+  }
+
+  /**
+   * A designator that MUST be present: the one way a policy makes an absent
+   * attribute an Indeterminate over a missing attribute rather than an
+   * empty bag, which is how the UMA realm policy says "nobody is known yet"
+   * (#1168).
+   *
+   * @param category - the category URI
+   * @param attributeId - the attribute identifier
+   * @param type - the datatype URI
+   * @returns the designator node, MustBePresent
+   */
+  static requiredDesignator(category: string, attributeId: string,
+                            type: string): any {
+    log.debug("Entering PolicyBuilders.requiredDesignator().");
+    log.debug("Leaving PolicyBuilders.requiredDesignator().");
+    return { kind: 'designator', category: category,
+             attributeId: attributeId, dataType: type, issuer: null,
+             mustBePresent: true };
+  }
+
+  /**
+   * "The boolean attribute holds true": `any-of(boolean-equal, true, bag)`,
+   * which is false for an absent attribute as for a false one — so a fact a
+   * PEP forgot to send never reads as permission (#1168).
+   *
+   * @param category - the category URI
+   * @param attributeId - the boolean attribute's identifier
+   * @returns the apply node
+   */
+  static holdsTrue(category: string, attributeId: string): any {
+    log.debug("Entering PolicyBuilders.holdsTrue().");
+    log.debug("Leaving PolicyBuilders.holdsTrue().");
+    return PolicyBuilders.apply(F3 + 'any-of', [
+      { kind: 'function', functionId: F1 + 'boolean-equal' },
+      PolicyBuilders.value(TYPE.BOOLEAN, 'true'),
+      PolicyBuilders.designator(category, attributeId, TYPE.BOOLEAN)
+    ]);
   }
 }
 
@@ -4227,10 +4330,13 @@ const TEMPLATES: TemplateRow[] = [
         label: 'What an owner may do to an application',
         dflt: 'read, set, add, remove, update-fields, add-owner, ' +
               'remove-owner, regenerate-secret, rotate-secret, add-secret, ' +
-              'remove-secret',
+              'remove-secret, owner-share, owner-unshare, owner-approve, ' +
+              'owner-refuse',
         type: 'list',
         help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
-              '/admin-api/applications/{action}. The four that write ' +
+              '/admin-api/applications/{action}, and the four owner-* ' +
+              'actions of POST /admin-api/uma/{action} on the ' +
+              'application\'s UMA document (#1195). The four that write ' +
               'attributes are held to the next list. Never create or ' +
               'forget, and never reveal-secret.' },
       { name: 'ownerApplicationAttributes',
@@ -4500,7 +4606,8 @@ const TEMPLATES: TemplateRow[] = [
           'set-service-account-destination, rotate-password'),
         'application': listedOr('ownerApplicationActions',
           'read, set, add, remove, update-fields, add-owner, remove-owner, ' +
-          'regenerate-secret, rotate-secret, add-secret, remove-secret')
+          'regenerate-secret, rotate-secret, add-secret, remove-secret, ' +
+          'owner-share, owner-unshare, owner-approve, owner-refuse')
       };
       const ownerAttributes = listedOr('ownerApplicationAttributes',
         'appName, description, appHomePageUrl, appCorsOrigin, ' +
@@ -5090,6 +5197,241 @@ const TEMPLATES: TemplateRow[] = [
   },
   {
     // -----------------------------------------------------------------------
+    // THE REALM'S USER-MANAGED ACCESS POLICY (#1168 phase 1): the first of
+    // the three layers an RPT permission is decided by. BUILT IN AND CALLED
+    // rather than seeded, for `role-issuance`'s reason — every realm has it
+    // out of the box, with nothing to delete, and an `ou=policies` entry
+    // named in `uma.authorizationPolicy` overrides it (`uma/uma_pep.ts`
+    // reads it as `xacml_role_pep.ts` reads the issuance policy; a DISABLED
+    // entry does not fall back).
+    //
+    // IT IS THE ADMINISTRATOR'S LAYER: which resource servers, clients and
+    // claim sources may take part at all, and whether anybody is known yet.
+    // The rules are DENIES, one per gate, plus the two Permits below, under
+    // deny-overrides so that a Deny wins over a Permit and — the point of
+    // the algorithm — an Indeterminate reaches the PEP:
+    //
+    //   uma-resource-server-declared   Deny: the resource server is not
+    //                                  declared for the protocol `uma`
+    //   uma-client-grant-type          Deny: the client did not register
+    //                                  the UMA grant type
+    //   uma-claim-issuer-declared      Deny: a pushed claim_token's issuer
+    //                                  is not one the realm declared
+    //   uma-requesting-party-required  a MustBePresent subject-id, so with
+    //                                  nobody known the answer is
+    //                                  Indeterminate over a missing
+    //                                  attribute of the access-subject
+    //                                  category — which the PEP answers as
+    //                                  `need_info` (decision 6). It never
+    //                                  Denies: with somebody known its
+    //                                  condition is false.
+    //   uma-owner-self                 Permit: the requesting party is the
+    //                                  owner
+    //   uma-participants-permitted     Permit: a requesting party is known
+    //
+    // The last rule is what makes the OWNER's layer reachable: #1168's
+    // design named `uma-owner-self` as the only built-in Permit, and read
+    // literally that would refuse every share at this layer before the
+    // owner's document was asked, which is the opposite of what a share is
+    // for. The design's sentence that holds is "a realm tightens by adding
+    // a rule": a Deny added here wins over both Permits.
+    //
+    // The TARGET is `protocol == uma`, so an operator's override named in
+    // `uma.authorizationPolicy` that was built from another template still
+    // speaks only to UMA questions.
+    // -----------------------------------------------------------------------
+    id: 'uma-authorization',
+    label: 'User-Managed Access authorization (this service\'s own)',
+    blurb: 'The realm\'s layer of every UMA 2.0 permission: which resource ' +
+           'servers, clients and claim issuers may take part, that a ' +
+           'requesting party must be known (or claims are asked for), and ' +
+           'that an owner may always reach their own resources. The ' +
+           'resource owner\'s own document and the resource server\'s ' +
+           'fine-grained policy are asked after it.',
+    what: 'Produces a Policy under deny-overrides: three Deny rules, one ' +
+          'per gate (an undeclared resource server, a client without the ' +
+          'UMA grant type, an undeclared claim issuer); a rule whose ' +
+          'MustBePresent subject-id turns "nobody is known" into an ' +
+          'Indeterminate over a missing attribute, which the UMA endpoint ' +
+          'answers as need_info; and two Permits, one for the owner ' +
+          'asking about their own resource and one for any known ' +
+          'requesting party. A Deny a realm adds wins over both. The ' +
+          'Target is protocol == uma.',
+    parameters: [],
+    build: function (answers, options) {
+      log.debug('Entering buildUmaAuthorization().');
+      const S = model.CATEGORY.ACCESS_SUBJECT;
+      const R = model.CATEGORY.RESOURCE;
+      const E = model.CATEGORY.ENVIRONMENT;
+      const V = xacmlRequest.VOCABULARY;
+      const base = options.idBase;
+      const deny = function (id: string, description: string,
+                             category: string, attributeId: string): any {
+        log.debug('Entering deny().');
+        log.debug('Leaving deny().');
+        return {
+          id: base + ':rule:' + id,
+          effect: model.EFFECT.DENY,
+          description: description,
+          target: null,
+          condition: B.apply(F1 + 'not',
+                             [B.holdsTrue(category, attributeId)]),
+          obligations: [], advice: []
+        };
+      };
+      const policy = {
+        kind: 'Policy',
+        id: base,
+        version: '1.0',
+        description: 'The realm\'s User-Managed Access policy: the first ' +
+                     'layer of every UMA 2.0 permission (#1168). The ' +
+                     'resource owner\'s own document and, where the ' +
+                     'resource server enforces one, its fine-grained ' +
+                     'policy decide after it; every layer must Permit.',
+        combiningAlgId: model.RULE_ALG.DENY_OVERRIDES,
+        target: B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, 'uma'),
+                  B.designator(E, V.PROTOCOL, TYPE.STRING))
+        ]]),
+        variables: {},
+        rules: [
+          deny('uma-resource-server-declared',
+               'The resource server that registered the resource is not ' +
+               'an application declared for the protocol uma.',
+               R, V.UMA_RESOURCE_SERVER_DECLARED),
+          deny('uma-client-grant-type',
+               'The client presenting the permission ticket did not ' +
+               'register the UMA grant type ' +
+               '(urn:ietf:params:oauth:grant-type:uma-ticket).',
+               S, V.UMA_CLIENT_GRANT_DECLARED),
+          deny('uma-claim-issuer-declared',
+               'A pushed claim_token names an issuer this realm has not ' +
+               'declared (its own, or a declared assertion issuer).',
+               S, V.UMA_CLAIM_ISSUER_DECLARED),
+          {
+            id: base + ':rule:uma-requesting-party-required',
+            effect: model.EFFECT.DENY,
+            description: 'Nobody is known yet: the requesting party has ' +
+                         'to be identified before anything is decided. ' +
+                         'Its subject-id MUST be present, so with no ' +
+                         'requesting party the answer is Indeterminate ' +
+                         'over the missing attribute, which the UMA ' +
+                         'endpoint answers as need_info; with one it ' +
+                         'denies nothing.',
+            target: null,
+            condition: B.apply(F1 + 'integer-equal', [
+              B.apply(F1 + 'string-bag-size', [
+                B.requiredDesignator(S, model.ATTRIBUTE.SUBJECT_ID,
+                                     TYPE.STRING)
+              ]),
+              B.value(TYPE.INTEGER, '0')
+            ]),
+            obligations: [], advice: []
+          },
+          {
+            id: base + ':rule:uma-owner-self',
+            effect: model.EFFECT.PERMIT,
+            description: 'The requesting party is the resource owner: an ' +
+                         'owner may always reach their own resources.',
+            target: null,
+            condition: B.holdsTrue(S, V.UMA_REQUESTING_PARTY_IS_OWNER),
+            obligations: [], advice: []
+          },
+          {
+            id: base + ':rule:uma-participants-permitted',
+            effect: model.EFFECT.PERMIT,
+            description: 'A requesting party is known, and no gate above ' +
+                         'denied: the realm has nothing against this ' +
+                         'question, and the owner\'s document decides ' +
+                         'next. A realm tightens by adding a Deny rule.',
+            target: null,
+            condition: B.holdsTrue(S, V.UMA_REQUESTING_PARTY_KNOWN),
+            obligations: [], advice: []
+          }
+        ],
+        obligations: [], advice: []
+      };
+      log.debug('Leaving buildUmaAuthorization(). ' + policy.rules.length +
+                ' rule(s).');
+      return policy;
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
+    // A RESOURCE OWNER'S OWN DOCUMENT, AS IT STARTS (#1168 phase 1): the
+    // second layer, created from this row at the owner's first share and
+    // kept in `uma.ownerPolicies` — never in ou=policies, never the root,
+    // never in `repository()`'s map, never sent to a remote PEP (rcbj's
+    // decision 1 on #1168). Decided ALONE through `decidePolicy()` with no
+    // repository, as an application's fine-grained policy is.
+    //
+    // deny-unless-permit, for `fga-default`'s reason the other way round: a
+    // person's document starts by sharing NOTHING, and an owner with no
+    // document at all is NotApplicable, which the PEP refuses — absence is
+    // never consent. The one rule, `owner-self`, lets the owner reach their
+    // own resource; every share the portal's form writes is a further
+    // Permit rule of a fixed shape (phase 3), and a rule the form did not
+    // write is drawn as a custom rule.
+    //
+    // A Policy rather than a PolicySet, though #1168's design says the
+    // latter in passing: the form writes RULES, and a PolicySet would hold
+    // them one Policy deeper for no reader's benefit. The PolicyId is
+    // derived from the owner's key (`umaOwnerPolicyId()`), so the document
+    // says whose it is wherever it is read.
+    // -----------------------------------------------------------------------
+    id: 'uma-owner-default',
+    label: 'User-Managed Access, a resource owner\'s document (default)',
+    blurb: 'What a resource owner\'s own UMA document is before they have ' +
+           'shared anything: one rule letting the owner reach their own ' +
+           'resources, under deny-unless-permit. Every share the portal ' +
+           'form saves is a further rule in it.',
+    what: 'Produces a Policy whose PolicyId is derived from the owner\'s ' +
+          'key, with one Permit rule, owner-self (the requesting party is ' +
+          'the owner), under deny-unless-permit. It shares nothing by ' +
+          'itself. A policy created from this template here is an ' +
+          'ordinary policy; the one an owner holds lives in the UMA ' +
+          'store and is written by /portal/shared.',
+    parameters: [
+      { name: 'owner', label: 'The owner\'s key',
+        dflt: 'urn:uuid:00000000-0000-4000-8000-000000000000',
+        type: 'string',
+        help: 'A person\'s subject (urn:uuid:<entryUUID>), or an ' +
+              'application\'s identifier where the application owns ' +
+              'resources (umaOwnsResources). The PolicyId is derived ' +
+              'from it.' }
+    ],
+    build: function (answers) {
+      log.debug('Entering buildUmaOwnerDefault().');
+      const owner = String(answers.owner || '');
+      const policyId = PolicyBuilders.umaOwnerPolicyId(owner);
+      const V = xacmlRequest.VOCABULARY;
+      log.debug('Leaving buildUmaOwnerDefault(). ' + policyId);
+      return {
+        kind: 'Policy',
+        id: policyId,
+        version: '1.0',
+        description: 'The User-Managed Access document of the resource ' +
+                     'owner "' + owner + '": who may reach which of their ' +
+                     'registered resources, with which scopes. It shares ' +
+                     'nothing until a share rule is added.',
+        combiningAlgId: model.RULE_ALG.DENY_UNLESS_PERMIT,
+        target: null,
+        variables: {},
+        rules: [{
+          id: UMA_ATTRIBUTE.OWNER_SELF_RULE,
+          effect: model.EFFECT.PERMIT,
+          description: 'The owner may always reach their own resources.',
+          target: null,
+          condition: B.holdsTrue(model.CATEGORY.ACCESS_SUBJECT,
+                                 V.UMA_REQUESTING_PARTY_IS_OWNER),
+          obligations: [], advice: []
+        }],
+        obligations: [], advice: []
+      };
+    }
+  },
+  {
+    // -----------------------------------------------------------------------
     // THE BLANK ONE, AND IT IS THE ODD ROW IN THIS TABLE.
     //
     // Every other template here is an argument — RBAC against ABAC, and the
@@ -5228,6 +5570,8 @@ class XacmlTemplates {
    */
   static readonly TRANSFER_ATTRIBUTE = TRANSFER_ATTRIBUTE;
   static readonly PASSKEY_ATTRIBUTE = PASSKEY_ATTRIBUTE;
+  /** The User-Managed Access questions' action-ids and obligation (#1168). */
+  static readonly UMA_ATTRIBUTE = UMA_ATTRIBUTE;
   static readonly EXCHANGE_ATTRIBUTE = EXCHANGE_ATTRIBUTE;
   /**
    * The risk-response action-ids.
@@ -5405,6 +5749,7 @@ export = {
   PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
   PASSKEY_ATTRIBUTE: XacmlTemplates.PASSKEY_ATTRIBUTE,
+  UMA_ATTRIBUTE: XacmlTemplates.UMA_ATTRIBUTE,
   EXCHANGE_ATTRIBUTE: XacmlTemplates.EXCHANGE_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,
@@ -5415,5 +5760,6 @@ export = {
   catalogue: slot.forward('catalogue'),
   listOf: PolicyBuilders.listOf,
   slug: PolicyBuilders.slug,
-  fgaPolicyId: PolicyBuilders.fgaPolicyId
+  fgaPolicyId: PolicyBuilders.fgaPolicyId,
+  umaOwnerPolicyId: PolicyBuilders.umaOwnerPolicyId
 };

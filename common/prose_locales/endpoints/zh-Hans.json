@@ -167,6 +167,50 @@
     "en": "812de4df596c12ef",
     "text": "吊销授权或删除资源集"
   },
+  "endpoints.route./uma/rreg.name": {
+    "en": "b93e9a83c0d09d9a",
+    "text": "资源注册：创建、列出"
+  },
+  "endpoints.route./uma/rreg/:id.name": {
+    "en": "34337892864217b3",
+    "text": "资源注册：读取、更新、删除"
+  },
+  "endpoints.route./uma/perm.name": {
+    "en": "8896272faf315717",
+    "text": "许可端点"
+  },
+  "endpoints.route./uma/claims.name": {
+    "en": "87870b4a58a75d4d",
+    "text": "声明交互端点"
+  },
+  "endpoints.route./.well-known/uma2-configuration.name": {
+    "en": "1600a854e8ebe343",
+    "text": "UMA 发现"
+  },
+  "endpoints.route./.well-known/uma2-configuration/*.name": {
+    "en": "146531da4c5d6ba9",
+    "text": "UMA 发现（插入路径形式）"
+  },
+  "endpoints.route./uma.name": {
+    "en": "11e030203eddc757",
+    "text": "UMA 说明页"
+  },
+  "endpoints.route./uma/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "说明页的脚本"
+  },
+  "endpoints.route./admin-api/uma.name": {
+    "en": "a706278ce3603ad8",
+    "text": "以 JSON 提供的 UMA 控制台页面"
+  },
+  "endpoints.route./admin-api/uma/monitor.name": {
+    "en": "09df5f116b3c0624",
+    "text": "以 JSON 提供的 UMA PEP 计数"
+  },
+  "endpoints.route./admin-api/uma/:action.name": {
+    "en": "af591f6b600855e2",
+    "text": "UMA 控制台的九项操作"
+  },
   "endpoints.route./pki/crl/:scope/:ca.name": {
     "en": "8d20c59eb134e55e",
     "text": "单个颁发机构的证书吊销列表"

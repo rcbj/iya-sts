@@ -137,6 +137,16 @@ const REPORT_SCOPES = Object.freeze(['report:use', 'report:admin']);
  */
 const AUTHZEN_SCOPE = 'authzen:evaluate';
 
+// THE UMA 2.0 PROTECTION API'S ONE (#1168): `uma_protection`, Federated
+// Authorization section 2's own word. `/uma` is this service's own resource
+// server, so it is protected like the rest — a client must hold a delegated
+// permission grant of it on `sts-uma-protection-api`, in both modes, and the
+// protection API asks again on every call.
+/**
+ * The UMA 2.0 protection API's one scope, protected like the rest.
+ */
+const UMA_PROTECTION_SCOPE = 'uma_protection';
+
 // AN OWNER'S TWO (#607): `/admin-api` for the objects a person owns, read
 // and changed within the access-control policy's owner rule. Protected like
 // the admin scopes — a client must declare them, in both modes, and the API
@@ -340,7 +350,7 @@ class ScopePolicy {
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
      DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE,
-     AUTHZEN_SCOPE]
+     AUTHZEN_SCOPE, UMA_PROTECTION_SCOPE]
       .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
               OWNER_SCOPES)
       .forEach(function (one) {
@@ -889,6 +899,7 @@ export = {
   OIDC_SCOPES: OIDC_SCOPES,
   ADMIN_SCOPES: ADMIN_SCOPES,
   REPORT_SCOPES: REPORT_SCOPES,
+  UMA_PROTECTION_SCOPE: UMA_PROTECTION_SCOPE,
   OWNER_SCOPES: OWNER_SCOPES,
   DEBUGGER_PERMISSION: DEBUGGER_PERMISSION,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,

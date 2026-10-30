@@ -1,5 +1,10 @@
 {
   "templates": {
+    "uma-approval": {
+      "subject": "{{service}}: may humihiling na maabot ang isang resource na ibinabahagi mo",
+      "text": "Humihiling si {{requester}}, sa pamamagitan ng {{client}}, na maabot ang iyong resource na {{resource}} ({{scopes}}). Hiniling mong tanungin ka sa bawat pagkakataon.\n\nWalang pinapayagan hangga’t hindi mo ito inaaprubahan. Para aprubahan o tanggihan ito, mag-sign in at buksan ang pahinang ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nKung hindi mo kilala ang kahilingan, tanggihan ito roon o huwag pansinin ang mensaheng ito: kusa itong mag-e-expire.\n",
+      "html": "<p>Humihiling si <strong>{{requester}}</strong>, sa pamamagitan ng <strong>{{client}}</strong>, na maabot ang iyong resource na <strong>{{resource}}</strong> ({{scopes}}). Hiniling mong tanungin ka sa bawat pagkakataon.</p><p>Walang pinapayagan hangga’t hindi mo ito inaaprubahan. <a href=\"{{link}}\">Aprubahan o tanggihan ito</a> sa loob ng {{expiresMinutes}} minuto.</p><p>Kung hindi mo kilala ang kahilingan, tanggihan ito roon o huwag pansinin ang mensaheng ito: kusa itong mag-e-expire.</p>"
+    },
     "password-reset": {
       "subject": "I-reset ang iyong password sa {{service}}",
       "text": "May humiling — {{requestedBy}} — na i-reset ang password ng account na {{username}}.\n\nPara pumili ng bagong password, buksan ang link na ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nIsang beses lang ito gagana. Kung hindi ikaw ang humiling nito, puwede mong balewalain ang mensaheng ito: walang magbabago hangga't hindi ginagamit ang link.\n",

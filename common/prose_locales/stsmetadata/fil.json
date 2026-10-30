@@ -147,6 +147,14 @@
     "en": "c36892dc6db9d597",
     "text": "full: ang discovery document na nakaharap sa RS sa /.well-known/gnap-as-rs, token introspection na may token model ng section 2.1, resource set registration, token derivation sa pamamagitan ng existing_access_token, at bawat format sa token format registry ng section 5.2 — jwt-signed, jwt-encrypted, macaroon, biscuit at zcap — mina-mint at vine-verify. Nakikita ng resource server ng section 6.3 na sumusuri ng token nang mag-isa ang isang revocation (#432): may dalang Token Status List status claim ang mga JWT format, inilalathala ang mga revocation identifier ng mga binawing biscuit (hindi standard), at maaaring magmay-ari ang isang nakarehistrong resource server ng Shared Signals stream na nakakarinig ng session-revoked para sa mga token na naka-audience dito. Walang ganoong mekanismo ang mga macaroon at zcap token; introspection ang daan nila."
   },
+  "stsmetadata.specs.uma2-grant.coverage": {
+    "en": "de5c44fe6f4c8008",
+    "text": "partial: discovery (section 2); ang urn:ietf:params:oauth:grant-type:uma-ticket grant (section 3.3) na ang ticket ay isang beses lang nagagamit sa buong cluster at naka-bind sa unang client na nag-present nito, ang mga hinihinging scope ng section 3.3.4, isang PCT na ipinresent, need_info na may rotated ticket at required_claims, request_denied, partial RPT (uma.partialRpt), RPT upgrade, at bawat permission na pinagpapasyahan ng policy ng realm, ng sariling XACML document ng resource owner, ng fine-grained policy ng resource server at ng issuance gate; ang PCT na in-issue nang makalap ang mga claim at nare-revoke sa /oauth2/revoke; ang claims interaction endpoint (section 3.3.2) sa pamamagitan ng iisang sign-in ng serbisyong ito; isang pushed claim_token sa ID Token format, mula sa realm na ito o sa isang declared assertion issuer; at request_submitted, na sumasagot ang owner sa portal, at ang approval ay isinusulat bilang rule ng sarili niyang policy. Kulang: SAML bilang claim_token_format, at step-up sa acr na hinihingi ng isang share sa interaction (tumatanggi ang share sa ganoong kaso). Walang laman ang uma_profiles_supported."
+  },
+  "stsmetadata.specs.uma2-fedauthz.coverage": {
+    "en": "6b8ea1097c24f058",
+    "text": "partial: ang protection API access token (section 2) bilang ordinaryong access token na naka-audience sa /uma na may dalang uma_protection, sa pamamagitan ng code flow (tao ang owner) o client_credentials (ang application ang owner, kung may dala itong umaOwnsResources); resource registration (section 3) — gumawa, basahin, i-update, burahin at ilista, kasama ang user_access_policy_uri; at ang permission endpoint (section 4) na nag-i-issue ng isang ticket para sa isa o ilang permission, kasama ang invalid_resource_id at invalid_scope. RPT introspection (section 5) na ang PAT ay Bearer sa /oauth2/introspect: mga permission at walang scope, para lang sa mga RPT ng resource server na iyon. Hindi kailanman kinukuha ang scope description document na pinapangalanan ng isang scope URI: ang scope ay isang string."
+  },
   "stsmetadata.specs.rfc9421.coverage": {
     "en": "3326ecc9e0fc4e59",
     "text": "partial: pag-sign at pag-verify ng mga request at response na may bawat derived component, mga component parameter ng header at structured field (sf, key, bs, req), maraming signature, ang anim na algorithm ng section 3.3 at bawat JWS algorithm na sinasalita ng serbisyong ito sa ilalim ng section 3.3.7, kasama ang post-quantum. Sinusuri ito laban sa mga test vector ng Appendix B ng specification sa tests/http_signatures.js. Ito ang httpsig proof ng GNAP at ang FAPI 2.0 HTTP Signatures profile sa mga OAuth resource server. Tinatanggihan ang mga trailer (tr), dahil walang trailer section ang message model."
@@ -902,6 +910,50 @@
   "stsmetadata.endpoints./admin-api/gnap/:action.what": {
     "en": "d80279b4f86d8ba8",
     "text": "Ang dalawang control sa /admin/gnap bilang iisang action resource: revoke-grant (ang grant at bawat token sa ilalim nito, kasama ang CAEP event na ipapadala ng sariling DELETE ng client) at delete-resource-set."
+  },
+  "stsmetadata.endpoints./uma/rreg.what": {
+    "en": "5b1209610fcc3969",
+    "text": "Federated Authorization section 3. I-POST ang resource description (kailangan ang resource_scopes; opsyonal ang name, type, description, icon_uri; ang scope ay isang string at hindi kailanman kinokontak) gamit ang protection API token (PAT) bilang Bearer o DPoP: 201 na may _id, user_access_policy_uri (ang /portal/shared ng owner) at isang Location. Inililista ng GET ang mga _id na nirehistro ng owner at resource server ng PAT na ito. ANG SUBJECT NG PAT ANG OWNER ng lahat ng nire-register gamit ito — isang tao sa code flow, ang application mismo sa client_credentials kung may dala itong umaOwnsResources — at walang anumang ipinapadala ng resource server ang nagpapangalan ng owner. Sinusuri ang PAT sa bawat mode. Nililimitahan ng uma.maxResourcesPerOwner at uma.maxResourceScopes; 501 habang naka-off ang uma.enabled."
+  },
+  "stsmetadata.endpoints./uma/rreg/:id.what": {
+    "en": "670e1795fbc003c3",
+    "text": "I-GET ang resource description; i-PUT ang bago (200 na may _id); i-DELETE ito (204). Ang resource na nirehistro ng ibang owner o ibang resource server ay not_found (404) dito, at walang nagsasabi kung alin. unsupported_method_type (405) para sa anumang ibang method."
+  },
+  "stsmetadata.endpoints./uma/perm.what": {
+    "en": "b9a235927c812cb9",
+    "text": "Federated Authorization section 4. I-POST ang isang object o array ng {resource_id, resource_scopes} kasama ang PAT: 201 na may isang permission ticket para sa lahat ng iyon, na iaabot sa client sa WWW-Authenticate challenge ng section 3.2 ng Grant specification. Hindi policy ang well-formedness: ang hindi naka-register na resource ay invalid_resource_id at ang hindi naka-register na scope ay invalid_scope, parehong 400, bago pa magtanong ng kahit ano. Nabubuhay ang ticket nang uma.ticketLifetimeS at isang beses lang nagagamit sa buong cluster."
+  },
+  "stsmetadata.endpoints./uma/claims.what": {
+    "en": "d0075cc9de5f44f5",
+    "text": "Ang section 3.3.2 ng Grant specification: ang client na sinagot ng need_info ay nagpapadala rito ng requesting party na may client_id, ticket, claims_redirect_uri at state. Nagsa-sign in sila sa pamamagitan ng iisang sign-in ng serbisyong ito, itinatala bilang requesting party ng ticket, at ibinabalik na may authorization_state=claims_submitted at bagong ticket. Ang claims_redirect_uri ay dapat isa sa mga nirehistro ng client (oauthClaimsRedirectUri), eksaktong tinutugma; ang anumang iba ay sinasabi sa tao at hindi kailanman nire-redirect-an."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration.what": {
+    "en": "9d41c4e007caa064",
+    "text": "Ang section 2 document ng Grant specification: ang mga member ng RFC 8414 para sa authorization server ng realm na ito kasama ang permission_endpoint, resource_registration_endpoint, introspection_endpoint, claims_interaction_endpoint at uma_profiles_supported (walang laman: walang profile na naipatupad nang buo), at ang UMA grant sa grant_types_supported habang ginagawa lang ito. Cache-Control: no-store, gaya ng bawat dokumentong may dalang key. Sumasagot ng 501 habang naka-off ang uma.enabled: kasinungalingan ang dokumentong nag-a-advertise ng mga endpoint na hindi sumasagot."
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration/*.what": {
+    "en": "2b88d2429a93782c",
+    "text": "Ang parehong dokumento sa inserted form ng RFC 8414, kung saan ang issuer ay sa isang realm: /realm/<id> pagkatapos ng segment, sinasagot sa loob ng realm na iyon. Ang anumang ibang path ay walang pinapangalanang realm at 404."
+  },
+  "stsmetadata.endpoints./uma.what": {
+    "en": "35251459226228a7",
+    "text": "Ang sariling page ng serbisyong ito na nagsasabi kung ano ang UMA 2.0 dito: ang mga endpoint, ang mga resource server na naka-declare sa realm na ito, ang apat na layer na nagpapasya ng isang permission, at ang mga setting. Ang shell ng isang static surface (#584); ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng pareho bilang data."
+  },
+  "stsmetadata.endpoints./uma/description.js.what": {
+    "en": "5427ba067f3c0091",
+    "text": "Ang iisang bundle ng mga description page, sa path ng family na ito."
+  },
+  "stsmetadata.endpoints./admin-api/uma.what": {
+    "en": "6c3373c7363b58ee",
+    "text": "Ang iginuguhit ng GET /admin/uma, mula sa parehong view function (#1195): ang mga resource server, mga resource, mga live na ticket at RPT, mga naghihintay na request, isang owner at ang dry-run na what-if."
+  },
+  "stsmetadata.endpoints./admin-api/uma/monitor.what": {
+    "en": "092fae243a21641a",
+    "text": "Ang uma row ng XACML monitor at, bawat resource server, ang hawak nito ngayon."
+  },
+  "stsmetadata.endpoints./admin-api/uma/:action.what": {
+    "en": "dffe8070a25174ec",
+    "text": "I-enable o i-disable ang isang resource server, hayaan itong mag-may-ari ng mga resource, burahin ang isang resource, i-revoke ang isang RPT, at mag-share, mag-unshare, mag-approve o tumanggi sa sariling dokumento ng isang application."
   },
   "stsmetadata.endpoints./pki/crl/:scope/:ca.what": {
     "en": "ed94a6a95a2f95e4",
@@ -3650,6 +3702,10 @@
   "stsmetadata.protocols.AuthZEN.what": {
     "en": "fd1e05bdba949f8d",
     "text": "Ang AuthZEN Authorization API sa ibabaw ng XACML engine: nagtatanong ang isang Policy Enforcement Point ng isang tanong bawat access at sinasabihan ng true o false, na pinagpasyahan laban sa root policy ng realm. Isang ADAPTER: imina-map ang request sa isang XACML request sa pamamagitan ng attribute catalogue bawat realm at ng nag-iisang request builder, at imina-map pabalik ang sagot nang fail-closed. Hindi nito ginagalaw ang mga XACML endpoint at ang remote PEP container."
+  },
+  "stsmetadata.protocols.UMA 2.0.what": {
+    "en": "7c03af276f90480f",
+    "text": "User-Managed Access 2.0, isang GRANT at hindi decision engine: nire-register ng isang resource server ang mga resource na hawak nito para sa isang resource owner sa pamamagitan ng protection API at humihingi ng permission ticket kapag may dumating na client; ipinepresent ng client ang ticket sa token endpoint; at bawat permission — isang resource, isang scope — ay ini-issue lang kapag ang uma-authorization policy ng realm, ang SARILING XACML DOCUMENT NG OWNER (isinulat gamit ang isang form sa portal), ang fine-grained policy ng resource server kung nagpapatupad ito ng isa, at ang issuance gate ay lahat nagsasabing Permit. Ang tanging idinadagdag ng UMA na wala sa iba rito ay isang policy na isinusulat ng isang tao; ang kawalan nito ay hindi kailanman consent. Naka-off hanggang i-on ito ng isang realm (uma.enabled)."
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

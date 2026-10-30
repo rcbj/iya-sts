@@ -359,6 +359,20 @@ const NAV = [
       { path: BASE + '/owned/applications', label: 'Applications',
         heading: 'Applications you own' }
     ] },
+  // SHARING (#1168, rcbj's decision 7): User-Managed Access 2.0 — what the
+  // person shares, as a policy they write, and what others share with
+  // them. A section of its own rather than under *Your account*, because
+  // its first page is a CONTROL over somebody else's access, which no page
+  // there is. Drawn by `web_shared.ts` from `portal_shared.ts`.
+  { key: 'sharing', title: 'Sharing',
+    what: 'What you share with other people through User-Managed Access, ' +
+          'and what they share with you.',
+    items: [
+      { path: BASE + '/shared', label: 'What I share',
+        heading: 'What you share' },
+      { path: BASE + '/shared-with-me', label: 'Shared with me',
+        heading: 'What others share with you' }
+    ] },
   { key: 'signIn', title: 'How I sign in',
     what: 'The credentials on your own entry, one page each.',
     items: [

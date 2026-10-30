@@ -561,6 +561,25 @@ const PROTOCOLS = [
           'finish URIs are return addresses like any other; a resource ' +
           'server carries the locations it answers for and, once it has ' +
           'registered a resource set, the macaroon root key it verifies with.' },
+  // USER-MANAGED ACCESS 2.0 (#1168). A RESOURCE SERVER: the application
+  // whose protection API token (PAT) registers resources and asks permission
+  // tickets, and the audience of every RPT issued for them. It is an OAuth
+  // client too — the PAT is an ordinary access token its client_id obtains
+  // — so it carries no identifier of its own here: declaring the family is
+  // what makes an OAuth client a UMA resource server, and the realm's
+  // uma-authorization policy refuses a registration or a permission for one
+  // that is not declared. `umaOwnsResources` (its one family-scoped
+  // attribute) lets the APPLICATION be the resource owner, through a
+  // client_credentials PAT (rcbj's decision 5 on #1168).
+  { id: 'uma', label: 'UMA 2.0', kind: '',
+    kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A User-Managed Access 2.0 resource server: an OAuth client that ' +
+          'obtains a protection API token for /uma, registers the ' +
+          'resources it holds for a resource owner, asks permission ' +
+          'tickets for them, and is the audience of the requesting party ' +
+          'tokens issued for them. Declaring the family is what admits it; ' +
+          'umaOwnsResources lets the application itself be an owner.' },
   // CERTIFICATE ENROLLMENT (rcbj, 2026-10-01): ACME, EST and SCEP, a family
   // each, so an application may be allowed one and not another. An
   // application is already an enrollment SUBJECT in all three
@@ -1177,6 +1196,16 @@ const SCHEMA = {
             'redirect_uri this service has ACCEPTED for the application ' +
             'beside them. The two are not the same claim and the registry ' +
             'does not merge them silently — see appRedirectUriObserved.' },
+    // UMA 2.0 (#1168, #1194): where the claims interaction endpoint returns
+    // the requesting party, the Grant specification's section 3.3.2. A list
+    // of its own, exact-match, and never an RFC 6749 redirect_uri unless it
+    // is listed here too.
+    { name: 'oauthClaimsRedirectUri', kind: 'multi',
+      from: 'the console, the management API, or by hand',
+      what: 'Where /uma/claims may send the requesting party back to this ' +
+            'client after gathering claims (UMA 2.0 Grant section 3.3.2, ' +
+            'claims_redirect_uri). Matched exactly; a claims_redirect_uri ' +
+            'not listed here is told to the person and never redirected to.' },
     { name: 'appRedirectUriObserved', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'A redirect_uri seen on an authorization request that this ' +
             'service answered. Kept apart from oauthRedirectUri because ' +
@@ -4584,7 +4613,22 @@ const SCHEMA = {
       from: 'this registry, when fine-grained authorization is switched',
       what: 'TRUE when this application\'s fine-grained policy is ' +
             'enforced. Absent or FALSE means it is not, which is the ' +
-            'default.' }
+            'default.' },
+    // -------------------------------------------------------------------
+    // USER-MANAGED ACCESS 2.0 (#1168). A resource server's one attribute:
+    // whether the APPLICATION may be a resource owner itself, through a
+    // client_credentials protection API token (rcbj's decision 5). Off, a
+    // PAT issued to the client as itself is refused at /uma, and every
+    // resource it registers belongs to the person whose code-flow PAT it
+    // presents. DECLARED, so editable, and family-scoped by its prefix.
+    // -------------------------------------------------------------------
+    { name: 'umaOwnsResources', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'TRUE when this UMA 2.0 resource server may register ' +
+            'resources it OWNS ITSELF, through a protection API token ' +
+            'obtained with client_credentials. Absent or FALSE, the ' +
+            'default, means a PAT must be a person\'s (the code flow) and ' +
+            'that person owns what it registers.' }
   ]
 };
 
@@ -4637,6 +4681,8 @@ const EDITABLE = {
   // having been deliberately withdrawn — which, on the one attribute here
   // that REFUSES people, is the failure worth designing against.
   appRequiredRole: 'multi',
+  // UMA 2.0 (#1168): whether the resource server may own resources itself.
+  umaOwnsResources: 'set',
   // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
   // rows and `common/delegation_policy.ts`.
   appAllowedToDelegateTo: 'multi',
@@ -5021,6 +5067,8 @@ const EDITABLE = {
   gnapJweKey: 'set',
   gnapScopedSignals: 'set',
   oauthRedirectUri: 'multi',
+  // UMA 2.0 (#1194): the claims interaction endpoint's return addresses.
+  oauthClaimsRedirectUri: 'multi',
   oauthPostLogoutRedirectUri: 'multi',
   oauthFrontchannelLogoutUri: 'set',
   oauthFrontchannelLogoutSessionRequired: 'set',
@@ -5953,7 +6001,10 @@ const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
   'urn:ietf:params:oauth:grant-type:jwt-bearer',
   'urn:ietf:params:oauth:grant-type:saml2-bearer',
   'urn:openid:params:grant-type:ciba',
-  'urn:ietf:params:oauth:grant-type:device_code'];
+  'urn:ietf:params:oauth:grant-type:device_code',
+  // UMA 2.0 (#1168): a client that presents permission tickets declares it,
+  // and the realm's uma-authorization policy refuses one that does not.
+  'urn:ietf:params:oauth:grant-type:uma-ticket'];
 
 /**
  * A response_type value with its words sorted, the order every member of
@@ -6952,6 +7003,7 @@ const FIELD_FAMILY_PREFIXES = [
   ['spiffe', ['spiffe']],
   ['ssf', ['ssf']],
   ['gnap', ['gnap']],
+  ['uma', ['uma']],
   ['did', ['did']],
   ['acme', ['acme']],
   ['est', ['est']],
@@ -6982,6 +7034,7 @@ const FIELD_GROUPS = [
   { id: 'spiffe', label: 'SPIFFE', families: ['spiffe'] },
   { id: 'ssf', label: 'Shared Signals', families: ['ssf'] },
   { id: 'gnap', label: 'GNAP', families: ['gnap'] },
+  { id: 'uma', label: 'User-Managed Access', families: ['uma'] },
   { id: 'did', label: 'Decentralized Identifier (DID)', families: ['did'] },
   { id: 'enroll', label: 'Certificate enrollment',
     families: ['acme', 'est', 'scep'] },
@@ -20460,7 +20513,20 @@ const API_PERMISSIONS = Object.freeze({
   'sts-authzen-api': Object.freeze({ base: 'urn:sts:authzen-api:',
     permissions: Object.freeze([
       ['authzen:evaluate', 'AuthZEN access evaluations at /access/v1 ' +
-                           '(AUTHZEN_PEPS)']]) })
+                           '(AUTHZEN_PEPS)']]) }),
+  // THE UMA 2.0 PROTECTION API (#1168, rcbj's decision 4): Federated
+  // Authorization section 2's `uma_protection` scope, the one word the
+  // specification itself names. A resource server's client obtains a PAT
+  // carrying it — by the code flow, where the resource owner is the person
+  // consenting, or by client_credentials where the application owns
+  // resources (umaOwnsResources) — and holds a delegated permission grant
+  // of it on this object, written when UMA is switched on for it.
+  'sts-uma-protection-api': Object.freeze({
+    base: 'urn:sts:uma-protection-api:',
+    permissions: Object.freeze([
+      ['uma_protection', 'Register resources and ask permission tickets ' +
+                         'on the resource owner\'s behalf at /uma (UMA ' +
+                         '2.0 protection API)']]) })
 });
 
 // The delegated permission grants a seeded client holds, as
@@ -20555,6 +20621,11 @@ function apiResourceApplications(base) {
     row('sts-authzen-api', 'AuthZEN API',
         [helpers.rebaseTo(realmBase, 'authzen') + '/access/v1'],
         'this service\'s own AuthZEN Authorization API at /access/v1'),
+    // The UMA 2.0 protection API (#1168): its audience, the realm's `/uma`,
+    // and its one permission, `uma_protection`.
+    row('sts-uma-protection-api', 'UMA protection API',
+        [helpers.rebaseTo(realmBase, 'uma') + '/uma'],
+        'this service\'s own UMA 2.0 protection API at /uma'),
     row('sts-resource', 'Default resource',
         [helpers.rebaseTo(realmBase, 'oauth-oidc') + '/resource'],
         'this service\'s default resource indicator (UserInfo, SCIM, ' +
@@ -21145,6 +21216,40 @@ function fgaStateOf(identifier) {
  *
  * @returns their identifiers, sorted
  */
+// THE APPLICATIONS DECLARED FOR A PROTOCOL FAMILY (#1168): what the UMA
+// surface draws as the realm's resource servers, and what its discovery
+// says. Read off the kept listing with no view built, as
+// `applicationsEnforcingFga()` below is, and SORTED. A store that cannot be
+// read answers an empty list here rather than throwing: this is a listing
+// for a page and a document, never a decision — the policy decides a
+// resource server's standing from the declaration on ITS entry.
+/**
+ * Lists the applications in the ambient realm declared for a protocol
+ * family (`appAllowedProtocol`).
+ *
+ * @param family - the family id, as PROTOCOLS names it
+ * @returns their identifiers, sorted
+ */
+function applicationsDeclaredFor(family) {
+  log.debug("Entering applicationsDeclaredFor(). family=" + family);
+  const wanted = String(family || '').trim().toLowerCase();
+  const kept = listing();
+  if (!kept || !wanted) {
+    log.debug("Leaving applicationsDeclaredFor(). No store or no family.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    if (item.record.identifier &&
+        declaredFamiliesOf(item.record).indexOf(wanted) >= 0) {
+      out.push(String(item.record.identifier));
+    }
+  });
+  out.sort();
+  log.debug("Leaving applicationsDeclaredFor(). " + out.length + ".");
+  return out;
+}
+
 function applicationsEnforcingFga() {
   log.debug("Entering applicationsEnforcingFga().");
   const kept = listing();
@@ -21498,6 +21603,7 @@ module.exports = {
   // editableAttributes() itself exists for. Both halves come off the SCHEMA
   // row's `families` member.
   declaredFamiliesOf: declaredFamiliesOf,
+  applicationsDeclaredFor: applicationsDeclaredFor,
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
   secretDestinationCredentialOf: secretDestinationCredentialOf,

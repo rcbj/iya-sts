@@ -118,7 +118,9 @@ function childMain() {
     { base: '/xacml', kind: 'xacml', ns: 'describeXacml', hadJson: true },
     { base: '/ssf', kind: 'ssf', ns: 'describeSsf', hadJson: true },
     { base: '/scim', kind: 'scim', ns: 'describeScim', hadJson: true },
-    { base: '/spiffe', kind: 'spiffe', ns: 'describeSpiffe', hadJson: true }
+    { base: '/spiffe', kind: 'spiffe', ns: 'describeSpiffe', hadJson: true },
+    // USER-MANAGED ACCESS 2.0 (#1168): the seventh family, born a shell.
+    { base: '/uma', kind: 'uma', ns: 'describeUma', hadJson: true }
   ];
 
   (async function () {

@@ -79,6 +79,14 @@
     "en": "8477ecf26c38a2a6",
     "text": "Le domaine est le locataire d’AuthZEN : un appelant est recherché dans l’annuaire propre du domaine, de sorte que l’appelant d’un autre domaine n’est personne ici, et une question est décidée d’après la politique racine propre du domaine. Le catalogue d’attributs est l’objet sts-authzen-api du domaine, et chaque paramètre authzen.* appartient au domaine."
   },
+  "realms.support.uma-2-0.family": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "realms.support.uma-2-0.note": {
+    "en": "a33f3eba62abae2e",
+    "text": "Le domaine est le locataire d’UMA : ses serveurs de ressources sont les applications du domaine déclarées pour uma, son jeton d’API de protection est le propre jeton d’accès du domaine, ses six magasins — les ressources enregistrées, les documents des propriétaires, les tickets, les PCT, les RPT et les approbations en attente — sont ceux du domaine, sa politique de la couche domaine est l’entrée uma-authorization du domaine ou le modèle intégré, et chaque paramètre uma.* est celui du domaine."
+  },
   "realms.support.federation.family": {
     "en": "f8c6e8016cfb9bea",
     "text": "Fédération"

@@ -449,7 +449,30 @@ class XacmlMonitor {
           log.debug("Leaving bias().");
           return null;
         },
-        obligations: false }
+        obligations: false },
+
+      // THE UMA PEP (#1168, #1193): one UMA 2.0 permission — a registered
+      // resource and a scope — decided by the realm's uma-authorization
+      // policy and the resource owner's own document. It ENFORCES — the
+      // permission is put in an RPT or not, in this process — so it carries
+      // allowed and refused. A resource server's fine-grained layer counts
+      // on the `fga` row, as every FGA decision does.
+      { id: 'uma',
+        label: 'The UMA PEP',
+        kind: 'embedded',
+        where: 'POST /oauth2/token with the uma-ticket grant',
+        module: 'uma/uma_pep.ts',
+        guards: 'Every UMA 2.0 permission an RPT would carry: the realm\'s ' +
+                'uma-authorization policy, then the resource owner\'s own ' +
+                'document. Absence of an owner document is NotApplicable, ' +
+                'which refuses.',
+        enforces: true,
+        bias: function () {
+          log.debug("Entering bias().");
+          log.debug("Leaving bias().");
+          return 'deny-biased (fixed)';
+        },
+        obligations: true }
     ];
     log.debug("Leaving XacmlMonitor.catalogue().");
     return rows;

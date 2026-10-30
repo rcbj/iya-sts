@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "Isang GNAP client instance, o isang GNAP resource server, o pareho: isang party na nagpapatunay ng possession ng key sa /gnap (RFC 9635) o sa RS-facing API (RFC 9767). Ang key nito ay gnapKey (isang public key object) o gnapKeyReference na may naka-seal na gnapSymmetricKey; ang mga finish URI nito ay mga return address gaya ng iba; dala ng resource server ang mga location na sinasagot nito at, kapag nakapagrehistro na ito ng resource set, ang macaroon root key na ginagamit nito sa pag-verify."
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "Isang User-Managed Access 2.0 resource server: isang OAuth client na kumukuha ng protection API token para sa /uma, nagre-register ng mga resource na hawak nito para sa isang resource owner, humihingi ng mga permission ticket para sa mga ito, at siyang audience ng mga requesting party token na in-issue para sa mga ito. Ang pagdeklara ng family ang nagpapapasok dito; pinapayagan ng umaOwnsResources na ang application mismo ang maging owner."
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "Mga nakarehistrong redirect URI mula sa isang registration, at anumang redirect_uri na TINANGGAP ng serbisyong ito para sa application sa tabi nila. Hindi parehong pahayag ang dalawa at hindi sila tahimik na pinagsasama ng registry — tingnan ang appRedirectUriObserved."
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "Kung saan puwedeng ibalik ng /uma/claims ang requesting party sa client na ito matapos mangalap ng mga claim (UMA 2.0 Grant section 3.3.2, claims_redirect_uri). Eksaktong tinutugma; ang claims_redirect_uri na wala rito ay sinasabi sa tao at hindi kailanman nire-redirect-an."
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -1730,6 +1742,10 @@
   "applications.schema.attributes.appFgaEnforced.what": {
     "en": "7857e5ec7ea0bfdf",
     "text": "TRUE kapag ipinapatupad ang fine-grained policy ng application na ito. Ang wala o FALSE ay nangangahulugang hindi, na siyang default."
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "TRUE kapag puwedeng mag-register ang UMA 2.0 resource server na ito ng mga resource na SARILI NITONG PAG-AARI, gamit ang protection API token na nakuha sa client_credentials. Kapag wala o FALSE, ang default, ang PAT ay dapat sa isang tao (ang code flow) at ang taong iyon ang may-ari ng nire-register nito."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

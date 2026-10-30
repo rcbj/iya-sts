@@ -843,6 +843,42 @@
     "en": "349171490df64541",
     "text": "與繫結權杖比對的憑證指紋（RFC 8705）"
   },
+  "crypto.families.uma-2-0.signs": {
+    "en": "c22ee886c8b04abd",
+    "text": "本身不簽署任何內容。請求方權杖（RPT）是領域透過唯一的簽署入口簽署的 RFC 9068 存取權杖（見 OAuth2 / OIDC）；許可票證與持久化宣告權杖是隨機控制代碼，而非簽章。"
+  },
+  "crypto.families.uma-2-0.verifies": {
+    "en": "b4864c9dcb80100e",
+    "text": "保護 API 權杖（PAT），即一種存取權杖，透過本領域自己的 JWS 驗證（見 OAuth2 / OIDC），在其攜帶時連同其 DPoP 證明或 RFC 8705 憑證繫結一併驗證；推送的 claim_token，即來自本領域或已宣告之判斷提示簽發者的 ID Token，以相同方式驗證。"
+  },
+  "crypto.families.uma-2-0.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "無。"
+  },
+  "crypto.families.uma-2-0.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "無。"
+  },
+  "crypto.families.uma-2-0.hashes": {
+    "en": "d0596b4d7e7d1faa",
+    "text": "許可票證與持久化宣告權杖以其 SHA-256 儲存，因此儲存區不保有任何可用的控制代碼。"
+  },
+  "crypto.families.uma-2-0.keys": {
+    "en": "5ee5db5c94943e3d",
+    "text": "沒有自己的金鑰。領域的簽署金鑰簽署 RPT 並驗證 PAT，與其他地方相同。"
+  },
+  "crypto.families.uma-2-0.whatItDoesNot": {
+    "en": "68ffcefb9ff39fa2",
+    "text": "它不簽署任何決定與許可：許可是 RPT 的一項宣告，RPT 的簽章是 OAuth 的簽章。"
+  },
+  "crypto.families.uma-2-0.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "此處不簽署、不加密也不解密任何內容"
+  },
+  "crypto.families.uma-2-0.algorithms.1.what": {
+    "en": "2a781ca079088054",
+    "text": "票證或 PCT 儲存所用的摘要"
+  },
   "crypto.families.oauth2-oidc.signs": {
     "en": "ba9dd042c619d87e",
     "text": "每個存取權杖與重新整理權杖，以及 ID Token，以領域的 RSA 金鑰用 RS256 簽署。註冊了 `id_token_signed_response_alg` 的用戶端則改用該演算法，其 ID Token 與其後端通道 Logout Token 皆然（section 2.4：與 ID Token 相同的金鑰），取自共用的 JWS 表——每條曲線、兩條 Edwards 曲線，以及後量子與複合演算法。已簽署的 UserInfo 回應也是如此，另加 HMAC 系列（以該用戶端自己的 `client_secret` 簽署，因此不需要發布的金鑰）與 `none`。**還有 RFC 9701 JWT 內省回應**（2026-09-13），型別為 `token-introspection+jwt`，使用 RS256 或資源伺服器註冊的 `introspection_signed_response_alg`——同一張表與 HMAC 系列，絕不使用 `none`。**還有資源回應**（#178）：標記為 `fapi-2-response` 的 RFC 9421 HTTP 訊息簽章，使用 `oauth2.httpSignatureResponseAlg` 所指名的領域金鑰（預設為 ES256；提供 ML-DSA），涵蓋回應，並透過 `;req` 涵蓋它所回答的請求。"

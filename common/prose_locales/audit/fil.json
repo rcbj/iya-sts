@@ -999,6 +999,74 @@
     "en": "9756220c110d11f1",
     "text": "Ang tao sa GNAP approval page ay hindi ang user na pinangalanan ng request, at ipinadala ang grant sa portal ng user na iyon (#432 phase 6)"
   },
+  "audit.actions.uma.resource.register.label": {
+    "en": "b253bd03b622448e",
+    "text": "Nag-register ang isang UMA resource server ng resource para sa isang owner"
+  },
+  "audit.actions.uma.resource.update.label": {
+    "en": "3705331ffcb119be",
+    "text": "In-update ng isang UMA resource server ang isang naka-register na resource"
+  },
+  "audit.actions.uma.resource.delete.label": {
+    "en": "43c1511735e515a1",
+    "text": "Binura ng isang UMA resource server ang isang naka-register na resource"
+  },
+  "audit.actions.uma.permission.ticket.label": {
+    "en": "6a4630a842c26dac",
+    "text": "Na-issue-an ng permission ticket ang isang UMA resource server"
+  },
+  "audit.actions.uma.decision.label": {
+    "en": "8e90efa24878623e",
+    "text": "Napagpasyahan ng isa sa mga policy nito ang isang UMA permission"
+  },
+  "audit.actions.uma.grant.label": {
+    "en": "cb954f9d1f566208",
+    "text": "Nasagot ang isang UMA uma-ticket grant"
+  },
+  "audit.actions.uma.pct.revoke.label": {
+    "en": "38d7090318287cda",
+    "text": "Na-revoke ang isang UMA persisted claims token"
+  },
+  "audit.actions.uma.approval.request.label": {
+    "en": "34301d2d0b4b6f39",
+    "text": "Inilagay sa pila ang isang UMA request para sa approval ng resource owner nito"
+  },
+  "audit.actions.uma.approval.answer.label": {
+    "en": "24003dd09f3f1d9f",
+    "text": "In-approve o tinanggihan ng isang resource owner ang isang UMA request"
+  },
+  "audit.actions.uma.claims.gathered.label": {
+    "en": "44ba2fb4c324cb10",
+    "text": "Na-sign in ang isang requesting party sa UMA claims interaction endpoint"
+  },
+  "audit.actions.uma.share.add.label": {
+    "en": "306e44da983c55b0",
+    "text": "Nag-share ang isang resource owner ng resource sa pamamagitan ng UMA"
+  },
+  "audit.actions.uma.share.remove.label": {
+    "en": "ed6819ba0bfca606",
+    "text": "Inalis ng isang resource owner ang isang UMA share"
+  },
+  "audit.actions.uma.policy.alfa.label": {
+    "en": "5bd6dabe5bfd8ac3",
+    "text": "Isinulat muli ng isang resource owner ang kanyang UMA policy bilang ALFA"
+  },
+  "audit.actions.uma.resource-server.enable.label": {
+    "en": "a078fa03b48e7906",
+    "text": "Ginawang UMA resource server ang isang application sa console"
+  },
+  "audit.actions.uma.resource-server.disable.label": {
+    "en": "49fc6c6f0a6a54e6",
+    "text": "Hindi na UMA resource server ang isang application sa console, at na-revoke ang mga RPT nito"
+  },
+  "audit.actions.uma.owns-resources.set.label": {
+    "en": "cb2b2176a5885cc3",
+    "text": "Binago sa console kung puwedeng mag-may-ari ng mga UMA resource ang isang application"
+  },
+  "audit.actions.uma.rpt.revoke.label": {
+    "en": "568d9ae5728f93c4",
+    "text": "Na-revoke sa console ang isang UMA RPT"
+  },
   "audit.actions.gnap.grant.finalize.label": {
     "en": "fee9afbd448956f2",
     "text": "May GNAP grant na na-finalize, kasama ang dahilan: issued, revoked, rejected o expired"

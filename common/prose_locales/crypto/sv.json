@@ -843,6 +843,42 @@
     "en": "349171490df64541",
     "text": "Certifikattumavtrycket som en bunden token jämförs med (RFC 8705)"
   },
+  "crypto.families.uma-2-0.signs": {
+    "en": "c22ee886c8b04abd",
+    "text": "Inget eget. En token för begärande part (RPT) är en RFC 9068-åtkomsttoken som sfären signerar genom den enda tratten (se OAuth2 / OIDC); en behörighetsbiljett och en beständig anspråkstoken är slumpmässiga handtag, inte signaturer."
+  },
+  "crypto.families.uma-2-0.verifies": {
+    "en": "b4864c9dcb80100e",
+    "text": "Skydds-API-token (PAT), en åtkomsttoken, genom den här sfärens egen JWS-verifiering (se OAuth2 / OIDC), med dess DPoP-bevis eller RFC 8705-certifikatbindning där den bär en; en inskickad claim_token, en ID Token från den här sfären eller från en deklarerad utfärdare av intyg, på samma sätt."
+  },
+  "crypto.families.uma-2-0.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Inget."
+  },
+  "crypto.families.uma-2-0.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Inget."
+  },
+  "crypto.families.uma-2-0.hashes": {
+    "en": "d0596b4d7e7d1faa",
+    "text": "Den SHA-256 under vilken en behörighetsbiljett och en beständig anspråkstoken lagras, så att lagret inte innehåller något fungerande handtag."
+  },
+  "crypto.families.uma-2-0.keys": {
+    "en": "5ee5db5c94943e3d",
+    "text": "Inga egna. Sfärens signeringsnycklar signerar RPT:n och verifierar PAT:en, som överallt annars."
+  },
+  "crypto.families.uma-2-0.whatItDoesNot": {
+    "en": "68ffcefb9ff39fa2",
+    "text": "Den signerar inget beslut och ingen behörighet: en behörighet är ett anspråk i RPT:n, och RPT:ns signatur är OAuths."
+  },
+  "crypto.families.uma-2-0.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "Inget signeras, krypteras eller dekrypteras här"
+  },
+  "crypto.families.uma-2-0.algorithms.1.what": {
+    "en": "2a781ca079088054",
+    "text": "Den hash som en biljett eller PCT lagras under"
+  },
   "crypto.families.oauth2-oidc.signs": {
     "en": "ba9dd042c619d87e",
     "text": "Varje åtkomsttoken och uppdateringstoken, och ID Token, med sfärens RSA-nyckel som RS256. En klient som registrerar `id_token_signed_response_alg` får den algoritmen i stället, för sin ID Token och sin Logout Token för back-channel likaså (avsnitt 2.4: samma nycklar som ID Tokens), ur den delade JWS-tabellen — varje kurva, båda Edwards-kurvorna, och de postkvanta och sammansatta. Ett signerat UserInfo-svar på samma sätt, plus HMAC-familjen (signerad med den klientens egen `client_secret`, vilket är varför den inte behöver någon publicerad nyckel) och `none`. **OCH ETT RFC 9701-JWT-INTROSPEKTIONSSVAR** (2026-09-13), typat `token-introspection+jwt`, i RS256 eller den `introspection_signed_response_alg` som resursservern registrerade — samma tabell och HMAC-familjen, aldrig `none`. **OCH ETT RESURSSVAR** (#178): en RFC 9421-HTTP-meddelandesignatur märkt `fapi-2-response`, med den sfärnyckel som `oauth2.httpSignatureResponseAlg` namnger (ES256 som standard; ML-DSA erbjuds), över svaret och, genom `;req`, den begäran det besvarar."

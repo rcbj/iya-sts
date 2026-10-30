@@ -7059,6 +7059,126 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Le nombre maximal de demandes d’accès qu’un domaine conserve en attente ; au-delà, une soumission est refusée avec 503 jusqu’à ce que certaines soient décidées ou expirent."
   },
+  "uma.enabled|label": {
+    "en": "2a3767bd4bc83294",
+    "text": "User-Managed Access activé"
+  },
+  "uma.enabled|description": {
+    "en": "d217a5cb642e6513",
+    "text": "Activé, l’API de protection UMA 2.0 répond sous /uma, le point de terminaison de jeton exécute le grant urn:ietf:params:oauth:grant-type:uma-ticket et l’annonce, et /.well-known/uma2-configuration les décrit. Désactivé, les routes restent ENREGISTRÉES et répondent 501, comme celles de XACML, le grant est unsupported_grant_type, et le document de découverte n’est pas servi. Rien de ce qu’un propriétaire de ressources a partagé n’est oublié en le désactivant."
+  },
+  "uma.authorizationPolicy|label": {
+    "en": "490b39438bf569ae",
+    "text": "La politique d’autorisation UMA du domaine"
+  },
+  "uma.authorizationPolicy|description": {
+    "en": "4eaed6da48fc219f",
+    "text": "Le nom de l’entrée ou=policies qui décide la couche DOMAINE de chaque permission UMA : quels serveurs de ressources, clients et émetteurs de claims peuvent participer, et qu’une partie requérante doit être connue. Sans entrée de ce nom, le modèle intégré uma-authorization décide ; une entrée le remplace, et une entrée DÉSACTIVÉE ne se replie pas sur lui (la règle de la politique d’émission). Le document propre du propriétaire de ressources et la politique fine du serveur de ressources sont interrogés après elle, et chaque couche doit répondre Permit."
+  },
+  "uma.ticketLifetimeS|label": {
+    "en": "8f272b98267dc54a",
+    "text": "Durée de vie du ticket de permission (secondes)"
+  },
+  "uma.ticketLifetimeS|description": {
+    "en": "c9515c4c66e6b813",
+    "text": "Combien de temps un ticket de permission (Federated Authorization section 4) peut être présenté au point de terminaison de jeton. Chaque réponse need_info, request_submitted et request_denied FAIT TOURNER le ticket, si bien qu’un client qui continue de demander n’en présente jamais un plus ancien que cela ; un ticket n’est consommé qu’une fois dans tout le cluster."
+  },
+  "uma.rptLifetimeS|label": {
+    "en": "67883eb5c4bb91f6",
+    "text": "Durée de vie du RPT (secondes)"
+  },
+  "uma.rptLifetimeS|description": {
+    "en": "8438c04fa2fbad21",
+    "text": "Combien de temps vit un jeton de partie requérante. COURT EXPRÈS : la permission d’un RPT est ce que le propriétaire autorisait lors de son émission, et une vie courte borne la durée pendant laquelle un partage retiré est encore honoré par un serveur de ressources qui ne fait pas d’introspection. Un client qui veut plus présente à nouveau son ticket ou met à niveau son RPT, ce qui redécide chaque permission."
+  },
+  "uma.rptRefreshToken|label": {
+    "en": "49e090b393f81da5",
+    "text": "Émettre un jeton d’actualisation avec un RPT"
+  },
+  "uma.rptRefreshToken|description": {
+    "en": "4258d92f9692bda7",
+    "text": "Indique si le grant uma-ticket répond avec un jeton d’actualisation à côté du RPT. DÉSACTIVÉ PAR DÉFAUT (décision 4 de rcbj sur #1168) : la spécification Grant interdit une évaluation d’autorisation à l’actualisation, ce service redécide à chaque actualisation, et un RPT qui ne peut pas être redécidé ferait mieux d’avoir une vie courte. Activé, l’actualisation réexécute chaque couche, comme le fait une mise à niveau, et une permission qui ne passe plus est abandonnée."
+  },
+  "uma.pctLifetimeS|label": {
+    "en": "5da630b4175abd1f",
+    "text": "Durée de vie du jeton de claims persisté (secondes)"
+  },
+  "uma.pctLifetimeS|description": {
+    "en": "a3cf80e3ae030fd2",
+    "text": "Combien de temps un jeton de claims persisté (PCT) conserve les claims recueillis sur une partie requérante pour un client. Un PCT est un identifiant stocké par son empreinte, lié au client et à la partie requérante, révocable à /oauth2/revoke avec token_type_hint=pct, et terminé par une déconnexion de tout."
+  },
+  "uma.partialRpt|label": {
+    "en": "4be32cc79b738b20",
+    "text": "Émettre un RPT pour les permissions accordées lorsque certaines sont refusées"
+  },
+  "uma.partialRpt|description": {
+    "en": "fccd28a4bd5a9f18",
+    "text": "Activé (décision 3 de rcbj sur #1168), un ticket demandant plusieurs permissions, dont certaines sont accordées et d’autres refusées, reçoit en réponse un RPT portant le sous-ensemble accordé — l’option de RPT partiel de la spécification Grant — et request_denied seulement lorsqu’aucune ne l’est. Désactivé, toute permission refusée refuse la demande entière. need_info est préféré à l’un et l’autre dès qu’une question est Indeterminate au sujet de la partie requérante."
+  },
+  "uma.ownerAlfaEditing|label": {
+    "en": "f8b08463425013f9",
+    "text": "Permettre à un propriétaire de ressources de modifier son document en ALFA"
+  },
+  "uma.ownerAlfaEditing|description": {
+    "en": "b975b96cdc288005",
+    "text": "Activé, /portal/shared permet à un propriétaire de ressources de modifier tout son document UMA en ALFA, à côté du formulaire de partage. DÉSACTIVÉ PAR DÉFAUT (décision 2 de rcbj sur #1168) : une règle que le formulaire n’a pas écrite est alors affichée en lecture seule comme règle personnalisée. Le document d’un propriétaire n’est jamais interrogé que sur les ressources du propriétaire lui-même, si bien que le pire qu’une règle écrite à la main puisse faire est de partager ce que possède son auteur."
+  },
+  "uma.requestingPartyAttributes|label": {
+    "en": "f3b97c0383be53df",
+    "text": "Attributs d’annuaire que la couche du propriétaire peut lire"
+  },
+  "uma.requestingPartyAttributes|description": {
+    "en": "1e739193d5d99adf",
+    "text": "Les attributs de l’entrée d’annuaire d’une partie requérante que le Policy Information Point fournit pour la couche du PROPRIÉTAIRE de ressources, séparés par des virgules : ce que la règle propre d’une personne peut lire sur un inconnu. La couche domaine lit l’annuaire comme le fait chaque question d’émission. Vide signifie que la règle d’un propriétaire ne peut lire que ce qui a été recueilli comme claims."
+  },
+  "uma.pendingLifetimeS|label": {
+    "en": "7a18c1d797def017",
+    "text": "Durée d’attente de l’approbation d’un propriétaire (secondes)"
+  },
+  "uma.pendingLifetimeS|description": {
+    "en": "db2a362a5dbfc4d3",
+    "text": "Combien de temps une demande request_submitted attend sur /portal/shared la réponse du propriétaire. Sans réponse au-delà, la prochaine interrogation du client reçoit request_denied. Le propriétaire est prévenu par courriel là où le canal est configuré et qu’il n’a pas refusé les notifications."
+  },
+  "uma.maxPendingPerOwner|label": {
+    "en": "17221baf356258cc",
+    "text": "Approbations en attente par propriétaire"
+  },
+  "uma.maxPendingPerOwner|description": {
+    "en": "1c4b449fa78a2bd1",
+    "text": "Le nombre maximal de demandes attendant en même temps la réponse d’un propriétaire. Au-delà, une nouvelle request_submitted reçoit request_denied au lieu d’être mise en file : une file sans limite est un moyen pour un inconnu de remplir le portail d’une personne."
+  },
+  "uma.maxOwnerPolicyBytes|label": {
+    "en": "06d238d559e6f4bf",
+    "text": "Plus grand document de propriétaire (octets)"
+  },
+  "uma.maxOwnerPolicyBytes|description": {
+    "en": "5dbebde490b5e141",
+    "text": "La taille maximale, en octets, du document XACML de la politique d’un propriétaire de ressources. Un partage qui la dépasserait est refusé et le document reste tel quel."
+  },
+  "uma.maxOwnerRules|label": {
+    "en": "63f06d501261317a",
+    "text": "Nombre maximal de règles d’un document de propriétaire"
+  },
+  "uma.maxOwnerRules|description": {
+    "en": "7a45d46a565c3fa9",
+    "text": "Le nombre maximal de Rules que peut contenir le document d’un propriétaire de ressources : sa propre règle owner-self, une par partage et une par approbation donnée. Un partage qui le dépasserait est refusé."
+  },
+  "uma.maxResourcesPerOwner|label": {
+    "en": "adea2d5c99dda1c1",
+    "text": "Ressources enregistrées par propriétaire"
+  },
+  "uma.maxResourcesPerOwner|description": {
+    "en": "955c0cbbe33fe599",
+    "text": "Le nombre maximal de ressources enregistrées pour le compte d’un propriétaire, tous serveurs de ressources confondus. Un enregistrement au-delà est refusé : sinon, un serveur de ressources muni d’un jeton d’API de protection pourrait enregistrer sans limite au nom de quelqu’un."
+  },
+  "uma.maxResourceScopes|label": {
+    "en": "f897b03bdfa8f8b9",
+    "text": "Nombre maximal de portées par ressource"
+  },
+  "uma.maxResourceScopes|description": {
+    "en": "88e9111412bf025b",
+    "text": "Le nombre maximal de resource_scopes que peut porter une ressource enregistrée. Une portée est une chaîne et n’est jamais contactée : un document de description de portée que la spécification permet à une portée de nommer n’est pas récupéré."
+  },
   "ssf.enabled|label": {
     "en": "0315bd4417ce380f",
     "text": "SSF activé"

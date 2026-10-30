@@ -54,6 +54,7 @@ import FederationPage = require('../federation/web_federation');
 import EstPage = require('../est/web_est');
 import GeolocationPage = require('./web_geolocation');
 import GnapPage = require('../gnap/web_gnap');
+import UmaPage = require('../uma/web_uma');
 import GrantsPage = require('../oauth-oidc/web_grants');
 import GroupsPage = require('./web_groups');
 import KerberosPrincipalsPage =
@@ -284,6 +285,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                       'deliveries'],
   '/admin/claim-providers': ['providers', 'register', 'links'],
   '/admin/gnap': ['grants', 'resources', 'settings'],
+  // UMA 2.0 (#1195): GNAP's sibling, a tab per list.
+  '/admin/uma': ['servers', 'resources', 'tokens', 'pending', 'owner',
+                 'whatif', 'settings'],
   '/admin/totp': ['settings'],
   '/admin/backup-codes': ['settings'],
   '/admin/webauthn': ['settings'],
@@ -986,6 +990,8 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return TokensPage.setBody(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/uma', title: 'UMA 2.0', operation: '/admin-api/uma',
+    render: UmaPage.render },
   { path: '/admin/used-assertions', title: 'Used assertions',
     operation: '/admin-api/used-assertions',
     render: function (view: Json, ctx?: Json): string {

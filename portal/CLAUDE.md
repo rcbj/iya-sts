@@ -2264,3 +2264,15 @@ language-free on the account answer; the browser translates. `pending`,
 `timedout` and `none` stay "No". The portal is this origin, so it does
 not use a site-scoped or federated DBSC session.
 
+## SHARING: `/portal/shared` AND `/portal/shared-with-me` (#1168 phase 3, #1192)
+
+User-Managed Access 2.0's two pages, a section of their own (rcbj's
+decision 7). **The first page writes a POLICY**: each share is one XACML rule
+in the person's own document (`uma/uma_owner_policy.ts`; `uma/CLAUDE.md`
+argues the fixed shape and why a card is drawn only for a rule that rebuilds
+to the same XML). One `POST /account-api/shared` takes the form's `action`
+(`share`, `unshare`, `alfa`), the consents page's arrangement. **A01 holds as
+everywhere**: the owner is the token's subject, a resource named in the form
+must be theirs and a share named for removal must be in their document
+(`tests/portal_shared.js` D1). The section is always in the column; the page
+says when UMA is off.

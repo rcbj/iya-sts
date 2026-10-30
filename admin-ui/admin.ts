@@ -1161,6 +1161,19 @@ const SECTIONS = [
                '<strong>A key proof is verified in every mode</strong> ' +
                '&mdash; what is mode-gated is whether a proved key nobody ' +
                'registered is admitted.' },
+      // UMA 2.0 (#1168 phase 6, #1195): GNAP's sibling, a flat item too —
+      // the resource servers, resources, tickets, RPTs, the requests waiting
+      // for an owner, an owner's document, the what-if and the uma.*
+      // settings, all on one page. Drawn by uma/web_uma.ts.
+      { path: '/admin/uma', label: 'UMA 2.0',
+        blurb: 'User-Managed Access 2.0: resource servers register a ' +
+               'resource owner\'s resources, and a requesting party\'s ' +
+               'client trades a permission ticket for an RPT the realm\'s ' +
+               'policy and the owner\'s own document decide. The resource ' +
+               'servers and their resources, the live tickets and RPTs, ' +
+               'what waits for an owner, an application owner\'s document, ' +
+               'a what-if over every layer, and the <code>uma.*</code> ' +
+               'settings.' },
       { path: '/admin/totp', label: 'TOTP MFA',
         blurb: 'An authenticator app as a second factor &mdash; RFC 6238 ' +
                'over RFC 4226 &mdash; and the eight parameters the ' +
@@ -8937,6 +8950,8 @@ const SETTING_HOMES = [
   { group: 'XACML', pages: ['/admin/xacml'] },
   // AuthZEN (#563): decided by the XACML engine, so homed beside it.
   { group: 'AuthZEN', pages: ['/admin/xacml'] },
+  // UMA 2.0 (#1168): its own page since phase 6 (#1195).
+  { group: 'UMA', pages: ['/admin/uma'] },
   // THE CERTIFICATE AUTHORITY'S FOUR SETTINGS, on the page that builds one.
   // They are DEFAULTS FOR A FORM rather than a policy — what a hierarchy was
   // built with is stored on the hierarchy — so the page that takes each of

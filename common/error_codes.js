@@ -435,6 +435,24 @@ const SUBSYSTEMS = [
           'authorization detail mapped onto an XACML request through its ' +
           'type\'s xacml rows and asked of the owning application\'s ' +
           'policy.' },
+  // UMA (#1168): User-Managed Access 2.0, its own subsystem rather than
+  // OAUTH's or XACML's, because a code here is about the protection API
+  // (the PAT, a registration, a permission ticket), the uma-ticket grant's
+  // own errors (need_info, request_submitted, request_denied), the
+  // resource owner's document and the portal's Sharing section; the
+  // engine's faults keep their XACML codes and the token's RFC 6749 errors
+  // their OAUTH ones. The stores' codes start at 0001, the protection API's
+  // at 0100, the grant's at 0200, the owner's document and the portal's at
+  // 0300, claims interaction and approval at 0400, the console's at 0500.
+  { id: 'UMA', label: 'User-Managed Access 2.0',
+    where: 'uma/',
+    what: 'UMA 2.0: the protection API a resource server registers ' +
+          'resources and asks permission tickets through (the PAT), the ' +
+          'uma-ticket grant that decides each permission through the ' +
+          'realm\'s policy, the resource owner\'s own XACML document and ' +
+          'the resource server\'s fine-grained policy, the permission ' +
+          'ticket and PCT stores, claims gathering, the owner\'s approval ' +
+          'of an "ask me" share, and the Sharing section of the portal.' },
   { id: 'ADMIN', label: 'Admin console',
     where: 'admin-ui/ (except pki_admin.js), admin-core/',
     what: 'The console at /admin, its gate, and the actions behind its ' +
@@ -21897,6 +21915,336 @@ const CODES = [
       'naming no enforcing application would have the edge PDP decide ' +
       'their evaluations from the root (#564).',
     spec: 'HTTP 500 server_error; the edge keeps the catalogue it holds' },
+  // ===== UMA ===============================================================
+  { code: 'STS-UMA-0001',
+    summary: 'Whether a UMA permission ticket or PCT was already spent ' +
+      'could not be asked of the cluster claim store, so the value was ' +
+      'refused rather than accepted twice (#1168).',
+    spec: 'invalid_grant (HTTP 400) at the token endpoint; the value ' +
+      'is not consumed' },
+  { code: 'STS-UMA-0002',
+    summary: 'A resource owner\'s UMA document was not written: it is ' +
+      'larger than uma.maxOwnerPolicyBytes, or names no owner (#1168).',
+    spec: 'the caller\'s refusal (HTTP 400 on the account API); the ' +
+      'document is left as it was' },
+  { code: 'STS-UMA-0003',
+    summary: 'A resource owner\'s UMA document was not written: it holds ' +
+      'more rules than uma.maxOwnerRules (#1168).',
+    spec: 'the caller\'s refusal (HTTP 400 on the account API); the ' +
+      'document is left as it was' },
+  { code: 'STS-UMA-0004',
+    summary: 'The uma.sweep scheduler job failed while removing expired ' +
+      'permission tickets, PCTs, RPT records and pending approvals; a read ' +
+      'still applies every deadline itself (#1168).',
+    spec: 'none — the run is recorded as failed' },
+  // The protection API (Federated Authorization for UMA 2.0, sections 2–4).
+  { code: 'STS-UMA-0100',
+    summary: 'A UMA protection API request carried no protection API ' +
+      'token (PAT): no Authorization: Bearer or DPoP header (#1168).',
+    spec: 'HTTP 401, WWW-Authenticate: Bearer realm="<issuer>"' },
+  { code: 'STS-UMA-0101',
+    summary: 'The PAT presented at the UMA protection API does not verify: ' +
+      'not this realm\'s signature, expired, not an access token, or ' +
+      'another issuer\'s (#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0102',
+    summary: 'The PAT presented at the UMA protection API is not audienced ' +
+      'to this realm\'s /uma (#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0103',
+    summary: 'The PAT presented at the UMA protection API does not carry ' +
+      'uma_protection, or its client no longer holds a delegated ' +
+      'permission grant of urn:sts:uma-protection-api:uma_protection on ' +
+      'sts-uma-protection-api (#1168).',
+    spec: 'HTTP 403 insufficient_scope, WWW-Authenticate: Bearer ' +
+      'scope="uma_protection"' },
+  { code: 'STS-UMA-0104',
+    summary: 'The client the PAT was issued to is not an application ' +
+      'declared for the protocol uma, so it is no resource server here ' +
+      '(#1168).',
+    spec: 'HTTP 403 invalid_token' },
+  { code: 'STS-UMA-0105',
+    summary: 'The PAT was issued to the client as ITSELF (client_credentials) ' +
+      'while its application does not carry umaOwnsResources TRUE, so ' +
+      'there is no resource owner for what it would register (#1168, ' +
+      'rcbj\'s decision 5).',
+    spec: 'HTTP 403 invalid_token' },
+  { code: 'STS-UMA-0106',
+    summary: 'The PAT presented at the UMA protection API has been revoked ' +
+      '(#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0107',
+    summary: 'The PAT\'s sender constraint was not met: a DPoP-bound token ' +
+      'sent as Bearer or with a refused proof, or an RFC 8705 ' +
+      'certificate-bound token without its certificate (#1168).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-UMA-0108',
+    summary: 'A UMA request reached a realm where uma.enabled is off: the ' +
+      'routes stay registered and answer 501 (#1168).',
+    spec: 'HTTP 501' },
+  { code: 'STS-UMA-0109',
+    summary: 'A UMA request reached a realm that has no ' +
+      'sts-uma-protection-api object, the protection API\'s resource ' +
+      'object, so the API is off there (#1168).',
+    spec: 'HTTP 501' },
+  { code: 'STS-UMA-0110',
+    summary: 'A UMA resource registration body is not a JSON object; a ' +
+      'member the resource description does not have is not stored ' +
+      '(#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0111',
+    summary: 'A UMA resource registration carries no resource_scopes, or ' +
+      'one that is not a non-empty array of scope strings (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0112',
+    summary: 'A UMA resource registration carries more resource_scopes ' +
+      'than uma.maxResourceScopes (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0113',
+    summary: 'A UMA resource description member (name, type, description, ' +
+      'icon_uri) is not a string, is too long, or icon_uri is not an ' +
+      'https URL (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0114',
+    summary: 'A UMA resource registration request named a resource this ' +
+      'resource server did not register for this owner (#1168).',
+    spec: 'HTTP 404 not_found' },
+  { code: 'STS-UMA-0115',
+    summary: 'A UMA protection API request used a method the endpoint does ' +
+      'not support (#1168).',
+    spec: 'HTTP 405 unsupported_method_type' },
+  { code: 'STS-UMA-0116',
+    summary: 'A UMA resource registration would take the owner past ' +
+      'uma.maxResourcesPerOwner (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0117',
+    summary: 'A UMA permission request body is not an object or an array ' +
+      'of objects each with resource_id and resource_scopes (#1168).',
+    spec: 'HTTP 400 invalid_request' },
+  { code: 'STS-UMA-0118',
+    summary: 'A UMA permission request named a resource_id this resource ' +
+      'server did not register (#1168).',
+    spec: 'HTTP 400 invalid_resource_id' },
+  { code: 'STS-UMA-0119',
+    summary: 'A UMA permission request named a scope the resource was not ' +
+      'registered with (#1168).',
+    spec: 'HTTP 400 invalid_scope' },
+  { code: 'STS-UMA-0120',
+    summary: 'A path under /.well-known/uma2-configuration names no realm ' +
+      'of this service (#1168).',
+    spec: 'HTTP 404' },
+  // The uma-ticket grant (#1193).
+  { code: 'STS-UMA-0200',
+    summary: 'The uma-ticket grant was asked where it is not offered: no UMA ' +
+      'family in the process, or uma.enabled off in the realm; or the slot ' +
+      'was given something that is not a whole handler (#1193).',
+    spec: 'unsupported_grant_type (HTTP 400)' },
+  { code: 'STS-UMA-0201',
+    summary: 'The uma-ticket grant named no ticket, or a ticket that is ' +
+      'unknown, expired, rotated or ended (#1193).',
+    spec: 'invalid_request or invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0202',
+    summary: 'A UMA permission ticket was presented again after it was ' +
+      'spent, on this node or another (#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0203',
+    summary: 'A UMA permission ticket was presented by a client other than ' +
+      'the one that presented it first (#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0204',
+    summary: 'An RPT presented for upgrade is unknown, expired, or not this ' +
+      'client\'s, this requesting party\'s or this resource server\'s ' +
+      '(#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0205',
+    summary: 'A scope of the uma-ticket grant names no scope of any ' +
+      'resource in the ticket (the Grant specification, section 3.3.4) ' +
+      '(#1193).',
+    spec: 'invalid_scope (HTTP 400)' },
+  { code: 'STS-UMA-0206',
+    summary: 'A persisted claims token presented with the uma-ticket grant ' +
+      'is unknown, expired or another client\'s (#1193).',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-UMA-0208',
+    summary: 'A UMA permission could not be decided: a policy that does not ' +
+      'evaluate, a throw, or the grant\'s handler failing. Nobody decided, ' +
+      'so it is never request_denied (#1193).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-UMA-0209',
+    summary: 'A UMA policy needs an attribute about the requesting party ' +
+      'that is not known yet: the request is answered need_info with the ' +
+      'attribute in required_claims (#1193).',
+    spec: 'need_info (HTTP 403)' },
+  { code: 'STS-UMA-0210',
+    summary: 'A UMA permission was refused by a policy (Deny, NotApplicable, ' +
+      'or a missing attribute not about the requesting party); the request ' +
+      'is request_denied when nothing, or (uma.partialRpt off) not ' +
+      'everything, was granted (#1193).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0211',
+    summary: 'The realm\'s UMA authorization policy (uma.authorizationPolicy) ' +
+      'is disabled; a disabled entry does not fall back to the built-in ' +
+      'template (#1193).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-UMA-0212',
+    summary: 'A UMA policy needs an attribute that is not about the ' +
+      'requesting party, so no claim can supply it; the permission is ' +
+      'refused (#1193).',
+    spec: 'request_denied (HTTP 403) where nothing else is granted' },
+  { code: 'STS-UMA-0213',
+    summary: 'A resource owner\'s UMA document does not parse when a ' +
+      'permission is decided with it (#1193).',
+    spec: 'server_error (HTTP 500)' },
+  { code: 'STS-UMA-0214',
+    summary: 'A UMA policy permitted with an obligation the UMA PEP cannot ' +
+      'discharge, so the permission is refused (#1193).',
+    spec: 'request_denied (HTTP 403) where nothing else is granted' },
+  { code: 'STS-UMA-0215',
+    summary: 'A resource in a UMA ticket or RPT is gone, or no longer the ' +
+      'ticket\'s owner\'s, so its permission is refused (#1193).',
+    spec: 'request_denied (HTTP 403) where nothing else is granted' },
+  { code: 'STS-UMA-0216',
+    summary: 'A UMA permission needs the owner\'s approval (the share asks ' +
+      'each time) and was not issued (#1193).',
+    spec: 'request_submitted (HTTP 403), or request_denied' },
+  { code: 'STS-UMA-0217',
+    summary: 'The issuance policy refused the RPT as an access token ' +
+      '(issue-access-token), the fourth layer of every UMA permission ' +
+      '(#1193).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0218',
+    summary: 'A persisted claims token was presented for revocation by a ' +
+      'client other than the one it was issued to (#1193).',
+    spec: 'invalid_grant (HTTP 400) at /oauth2/revoke' },
+  // The resource owner's document and the portal's Sharing section (#1192).
+  { code: 'STS-UMA-0300',
+    summary: 'A share named a resource that is not one of the owner\'s ' +
+      'registered resources (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0301',
+    summary: 'A share named no scope, or a scope the resource was not ' +
+      'registered with (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0302',
+    summary: 'A share named no kind of recipient, a person this realm does ' +
+      'not hold, or the owner themselves (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0303',
+    summary: 'A share with a group named a group this realm does not hold ' +
+      '(#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0304',
+    summary: 'A share by claim named a malformed claim name or value ' +
+      '(#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0305',
+    summary: 'A share\'s expiry was not a date in the future, or its ' +
+      'authentication level was not one printable word (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0306',
+    summary: 'A resource owner asked to edit their UMA document as ALFA ' +
+      'while uma.ownerAlfaEditing is off (#1192).',
+    spec: 'HTTP 403 on the account API' },
+  { code: 'STS-UMA-0307',
+    summary: 'A resource owner\'s ALFA did not parse or validate, or a ' +
+      'share was asked of a document that is a policy set (#1192).',
+    spec: 'HTTP 400 on the account API; the document is left as it was' },
+  { code: 'STS-UMA-0308',
+    summary: 'A share to remove is not one of the owner\'s (#1192).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0309',
+    summary: 'A resource owner\'s stored UMA document does not parse. ' +
+      'Nothing was decided with it, and the portal says it could not be ' +
+      'read (#1192).',
+    spec: 'HTTP 500 on the account API; server_error at the token ' +
+      'endpoint (phase 4)' },
+  { code: 'STS-UMA-0310',
+    summary: 'The portal\'s Sharing section was asked for by a person ' +
+      'whose subject could not be read (#1192).',
+    spec: 'HTTP 500 on the account API' },
+  { code: 'STS-UMA-0311',
+    summary: 'A person was deleted from the directory and what UMA held for ' +
+      'them — their document, resources and RPTs — could not be forgotten ' +
+      '(#1192).',
+    spec: 'none — logged; the delete stands' },
+  // Claims interaction, claim tokens and the owner's approval (#1194).
+  { code: 'STS-UMA-0400',
+    summary: 'The UMA claims interaction endpoint was asked for by a client ' +
+      'it does not know, or with a claims_redirect_uri the client did not ' +
+      'register (oauthClaimsRedirectUri); the person is told and not ' +
+      'redirected (#1194).',
+    spec: 'HTTP 400, a page; no redirect' },
+  { code: 'STS-UMA-0401',
+    summary: 'The UMA claims interaction endpoint was asked for where ' +
+      'uma.enabled is off (#1194).',
+    spec: 'HTTP 501, a page' },
+  { code: 'STS-UMA-0402',
+    summary: 'A UMA request needing its owner\'s approval was not queued: ' +
+      'the owner already has uma.maxPendingPerOwner requests waiting ' +
+      '(#1194).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0403',
+    summary: 'The resource owner refused a UMA request that waited for ' +
+      'their approval (#1194).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0404',
+    summary: 'A UMA request that waited for its owner\'s approval was not ' +
+      'answered within uma.pendingLifetimeS (#1194).',
+    spec: 'request_denied (HTTP 403)' },
+  { code: 'STS-UMA-0405',
+    summary: 'A UMA request waits for its resource owner\'s approval ' +
+      '(an "ask me each time" share): request_submitted with a rotated ' +
+      'ticket (#1194).',
+    spec: 'request_submitted (HTTP 403)' },
+  { code: 'STS-UMA-0406',
+    summary: 'A pushed claim_token named nobody: not the ID Token format, ' +
+      'not an ID Token of this realm or a declared assertion issuer, not ' +
+      'audienced to the client, or naming nobody of this realm. The policy ' +
+      'answers need_info (#1194).',
+    spec: 'none — the request goes on with nobody known' },
+  { code: 'STS-UMA-0407',
+    summary: 'The UMA claims interaction endpoint was given a ticket that ' +
+      'is unknown, expired or ended (#1194).',
+    spec: 'a redirect to the claims_redirect_uri with ' +
+      'authorization_state=not_authorized' },
+  { code: 'STS-UMA-0408',
+    summary: 'A resource owner answered a UMA request that is not waiting ' +
+      'for them (#1194).',
+    spec: 'HTTP 400 on the account API' },
+  { code: 'STS-UMA-0409',
+    summary: 'The UMA claims interaction endpoint was given a ticket that ' +
+      'another client presented (#1194).',
+    spec: 'a redirect to the claims_redirect_uri with ' +
+      'authorization_state=not_authorized' },
+  { code: 'STS-UMA-0500',
+    summary: 'An /admin-api UMA action threw (#1195).',
+    spec: 'HTTP 500 on the management API' },
+  { code: 'STS-UMA-0501',
+    summary: 'A UMA console action was not one of the nine (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0502',
+    summary: 'A UMA console action named an application this realm does ' +
+      'not hold (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0503',
+    summary: 'A UMA console action\'s write to an application entry was ' +
+      'refused by the application register (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0504',
+    summary: 'A UMA console action named a resource that is not ' +
+      'registered (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0505',
+    summary: 'A UMA console action named an RPT that is not live (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0506',
+    summary: 'A UMA owner action named an application that does not own ' +
+      'resources (umaOwnsResources) (#1195).',
+    spec: 'HTTP 400 on the management API' },
+  { code: 'STS-UMA-0507',
+    summary: 'A UMA owner action on an application\'s document was refused ' +
+      'without a code of its own (#1195).',
+    spec: 'HTTP 400 on the management API' },
   { code: 'STS-ADMIN-0001',
     summary: 'The admin console could not start a sign-in: its OIDC client ' +
       'entry (sts-admin-console) is missing, or declares a client secret ' +

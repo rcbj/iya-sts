@@ -147,6 +147,14 @@
     "en": "c36892dc6db9d597",
     "text": "full：面向资源服务器的发现文档 /.well-known/gnap-as-rs、采用第 2.1 节令牌模型的令牌内省、资源集注册、通过 existing_access_token 进行的令牌派生，以及第 5.2 节令牌格式注册表中的每种格式——jwt-signed、jwt-encrypted、macaroon、biscuit 和 zcap——均可铸造和验证。第 6.3 节中自行检查令牌的资源服务器能看到吊销（#432）：JWT 格式携带令牌状态列表的 status 声明，已吊销 biscuit 的吊销标识符会被公布（非标准），已注册的资源服务器可以拥有一个共享信号流，以获知针对以其为受众的令牌的 session-revoked。macaroon 和 zcap 令牌没有这样的机制；内省是它们的途径。"
   },
+  "stsmetadata.specs.uma2-grant.coverage": {
+    "en": "de5c44fe6f4c8008",
+    "text": "partial：发现（第 2 节）；urn:ietf:params:oauth:grant-type:uma-ticket 授权（第 3.3 节），票据在整个集群中只使用一次并绑定到首个出示它的客户端，第 3.3.4 节的请求范围，出示 PCT，带轮换票据和 required_claims 的 need_info，request_denied，部分 RPT（uma.partialRpt），RPT 升级，以及每项许可均由领域的策略、资源所有者自己的 XACML 文档、资源服务器的细粒度策略和签发闸门共同决定；收集声明时签发、可在 /oauth2/revoke 撤销的 PCT；通过本服务唯一登录实现的声明交互端点（第 3.3.2 节）；以 ID Token 格式推送、来自本领域或已声明断言签发方的 claim_token；以及 request_submitted，所有者在门户上答复，批准作为其自身策略的一条规则写入。缺失：作为 claim_token_format 的 SAML，以及在交互时升级到共享所要求的 acr（此时共享会拒绝）。uma_profiles_supported 为空。"
+  },
+  "stsmetadata.specs.uma2-fedauthz.coverage": {
+    "en": "6b8ea1097c24f058",
+    "text": "partial：保护 API 访问令牌（第 2 节），作为受众为 /uma、携带 uma_protection 的普通访问令牌，通过授权码流程（所有者为某个人）或 client_credentials（所有者为应用程序，前提是其携带 umaOwnsResources）获取；资源注册（第 3 节）——创建、读取、更新、删除和列出，含 user_access_policy_uri；以及许可端点（第 4 节），为一项或多项许可签发一张票据，含 invalid_resource_id 和 invalid_scope。RPT 内省（第 5 节），在 /oauth2/introspect 以 PAT 作为 Bearer：返回许可且不返回范围，仅限该资源服务器的 RPT。范围 URI 指向的范围描述文档绝不会被获取：范围就是字符串。"
+  },
   "stsmetadata.specs.rfc9421.coverage": {
     "en": "3326ecc9e0fc4e59",
     "text": "partial：对请求和响应进行签名和验证，支持每个派生组件、标头和结构化字段组件参数（sf、key、bs、req）、多个签名、第 3.3 节的六种算法，以及按第 3.3.7 节本服务支持的每种 JWS 算法，包括后量子算法。由 tests/http_signatures.js 按规范附录 B 的测试向量验证。它是 GNAP 的 httpsig 证明，也是 OAuth 资源服务器上的 FAPI 2.0 HTTP Signatures 配置文件。尾部字段（tr）会被拒绝，因为消息模型没有尾部部分。"
@@ -902,6 +910,50 @@
   "stsmetadata.endpoints./admin-api/gnap/:action.what": {
     "en": "d80279b4f86d8ba8",
     "text": "/admin/gnap 上的两个控件，作为一个操作资源：revoke-grant（该授权及其下的每个令牌，并发出客户端自己的 DELETE 会发送的 CAEP 事件）和 delete-resource-set。"
+  },
+  "stsmetadata.endpoints./uma/rreg.what": {
+    "en": "5b1209610fcc3969",
+    "text": "Federated Authorization 第 3 节。以保护 API 令牌（PAT）作为 Bearer 或 DPoP，POST 资源描述（resource_scopes 必填；name、type、description、icon_uri 可选；范围是字符串，绝不会被访问）：返回 201，含 _id、user_access_policy_uri（所有者的 /portal/shared）和 Location。GET 列出此 PAT 的所有者和资源服务器注册的 _id。PAT 的主体就是用它注册的一切内容的所有者——授权码流程下为某个人，client_credentials 下且携带 umaOwnsResources 时为应用程序本身——资源服务器发送的任何内容都不能指定所有者。PAT 在每种模式下都会被检查。受 uma.maxResourcesPerOwner 和 uma.maxResourceScopes 限制；uma.enabled 关闭时为 501。"
+  },
+  "stsmetadata.endpoints./uma/rreg/:id.what": {
+    "en": "670e1795fbc003c3",
+    "text": "GET 资源描述；PUT 新的描述（200，含 _id）；DELETE 它（204）。由其他所有者或其他资源服务器注册的资源在此处为 not_found（404），并且不会说明是哪种情况。任何其他方法为 unsupported_method_type（405）。"
+  },
+  "stsmetadata.endpoints./uma/perm.what": {
+    "en": "b9a235927c812cb9",
+    "text": "Federated Authorization 第 4 节。携带 PAT POST 一个 {resource_id, resource_scopes} 对象或数组：返回 201，含覆盖所有这些许可的一张许可票据，用于在 Grant 规范第 3.2 节的 WWW-Authenticate 质询中交给客户端。格式正确与否不是策略：未注册的资源为 invalid_resource_id，未注册的范围为 invalid_scope，均为 400，且在提出任何问题之前返回。票据存活 uma.ticketLifetimeS，并在整个集群中只使用一次。"
+  },
+  "stsmetadata.endpoints./uma/claims.what": {
+    "en": "d0075cc9de5f44f5",
+    "text": "Grant 规范第 3.3.2 节：收到 need_info 的客户端将请求方带着 client_id、ticket、claims_redirect_uri 和 state 送到此处。请求方通过本服务唯一的登录进行登录，被记录为该票据的请求方，然后带着 authorization_state=claims_submitted 和一张新票据返回。claims_redirect_uri 必须是客户端已注册的地址（oauthClaimsRedirectUri），精确匹配；其他任何地址都会告知本人，且绝不会重定向到该地址。"
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration.what": {
+    "en": "9d41c4e007caa064",
+    "text": "Grant 规范第 2 节的文档：本领域授权服务器的 RFC 8414 成员，加上 permission_endpoint、resource_registration_endpoint、introspection_endpoint、claims_interaction_endpoint 和 uma_profiles_supported（为空：没有端到端实现的配置文件），且仅在执行 UMA 授权时将其列入 grant_types_supported。Cache-Control: no-store，与每个携带密钥的文档相同。uma.enabled 关闭时应答 501：公布不会应答的端点的文档将是谎言。"
+  },
+  "stsmetadata.endpoints./.well-known/uma2-configuration/*.what": {
+    "en": "2b88d2429a93782c",
+    "text": "RFC 8414 插入形式下的同一文档，此时签发方是某个领域的：在该段之后为 /realm/<id>，在该领域内应答。任何其他路径都不指向任何领域，返回 404。"
+  },
+  "stsmetadata.endpoints./uma.what": {
+    "en": "35251459226228a7",
+    "text": "本服务自己的页面，说明 UMA 2.0 在这里是什么：端点、本领域中声明的资源服务器、决定一项许可的四个层，以及设置。静态界面的外壳（#584）；?format=json 或偏好 JSON 的 Accept 会以数据形式应答相同内容。"
+  },
+  "stsmetadata.endpoints./uma/description.js.what": {
+    "en": "5427ba067f3c0091",
+    "text": "说明页的唯一脚本包，位于本协议族的路径下。"
+  },
+  "stsmetadata.endpoints./admin-api/uma.what": {
+    "en": "6c3373c7363b58ee",
+    "text": "GET /admin/uma 绘制的内容，出自同一个视图函数（#1195）：资源服务器、资源、有效的票据和 RPT、等待中的请求、某个所有者以及假设演练。"
+  },
+  "stsmetadata.endpoints./admin-api/uma/monitor.what": {
+    "en": "092fae243a21641a",
+    "text": "XACML 监视器中的 uma 行，以及每个资源服务器当前持有的内容。"
+  },
+  "stsmetadata.endpoints./admin-api/uma/:action.what": {
+    "en": "dffe8070a25174ec",
+    "text": "启用或禁用资源服务器、允许其拥有资源、删除资源、撤销 RPT，以及在应用程序自己的文档上共享、取消共享、批准或拒绝。"
   },
   "stsmetadata.endpoints./pki/crl/:scope/:ca.what": {
     "en": "ed94a6a95a2f95e4",
@@ -3650,6 +3702,10 @@
   "stsmetadata.protocols.AuthZEN.what": {
     "en": "fd1e05bdba949f8d",
     "text": "基于 XACML 引擎的 AuthZEN Authorization API：策略执行点每次访问提出一个问题，得到 true 或 false 的答复，依据领域的根策略作出决策。这是一个适配器：请求通过按领域划分的属性目录和唯一的请求构建器映射为 XACML 请求，答复则以 fail-closed 方式映射回来。XACML 端点和远程 PEP 容器不受其影响。"
+  },
+  "stsmetadata.protocols.UMA 2.0.what": {
+    "en": "7c03af276f90480f",
+    "text": "User-Managed Access 2.0，是一种授权（GRANT）而不是决策引擎：资源服务器通过保护 API 为资源所有者注册其持有的资源，并在客户端到来时请求许可票据；客户端在令牌端点出示票据；每项许可——一个资源、一个范围——只有在领域的 uma-authorization 策略、所有者自己的 XACML 文档（通过门户上的表单编写）、资源服务器的细粒度策略（如其实施）以及签发闸门全部为 Permit 时才会签发。UMA 带来的、此处其他任何功能都没有的唯一东西，是由个人编写的策略；没有策略绝不等于同意。在领域开启之前为关闭（uma.enabled）。"
   },
   "stsmetadata.protocols.Federation.what": {
     "en": "2cbc9f735c713f9b",

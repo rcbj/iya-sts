@@ -101,6 +101,7 @@
   "nav.commands": "Provider Commands",
   "nav.claim-providers": "Fournisseurs de revendications",
   "nav.gnap": "GNAP",
+  "nav.uma": "UMA 2.0",
   "nav.totp": "MFA TOTP",
   "nav.backup-codes": "Codes de récupération",
   "nav.webauthn": "WebAuthn",

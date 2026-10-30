@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "Une instance de client GNAP, ou un serveur de ressources GNAP, ou les deux : une partie qui prouve la possession d’une clé auprès de /gnap (RFC 9635) ou de l’API destinée aux serveurs de ressources (RFC 9767). Sa clé est gnapKey (un objet de clé publique) ou gnapKeyReference avec un gnapSymmetricKey scellé ; ses URI de fin sont des adresses de retour comme les autres ; un serveur de ressources porte les emplacements pour lesquels il répond et, une fois qu’il a enregistré un ensemble de ressources, la clé racine de macaron avec laquelle il vérifie."
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "Un serveur de ressources User-Managed Access 2.0 : un client OAuth qui obtient un jeton d’API de protection pour /uma, enregistre les ressources qu’il détient pour un propriétaire de ressources, demande des tickets de permission pour elles et est l’audience des jetons de partie requérante émis pour elles. Déclarer la famille est ce qui l’admet ; umaOwnsResources permet à l’application elle-même d’être propriétaire."
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "Les URI de redirection enregistrés lors d’un enregistrement, et tout redirect_uri que ce service a ACCEPTÉ pour l’application à côté. Ce ne sont pas la même affirmation et le registre ne les fusionne pas silencieusement — voir appRedirectUriObserved."
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "Où /uma/claims peut renvoyer la partie requérante vers ce client après avoir recueilli les claims (UMA 2.0 Grant section 3.3.2, claims_redirect_uri). Comparé à l’identique ; un claims_redirect_uri absent de cette liste est signalé à la personne et n’est jamais la cible d’une redirection."
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -1730,6 +1742,10 @@
   "applications.schema.attributes.appFgaEnforced.what": {
     "en": "7857e5ec7ea0bfdf",
     "text": "TRUE lorsque la politique fine de cette application est appliquée. Absent ou FALSE signifie qu’elle ne l’est pas, ce qui est la valeur par défaut."
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "TRUE lorsque ce serveur de ressources UMA 2.0 peut enregistrer des ressources DONT IL EST LUI-MÊME PROPRIÉTAIRE, au moyen d’un jeton d’API de protection obtenu par client_credentials. Absent ou FALSE, la valeur par défaut, signifie qu’un PAT doit être celui d’une personne (le flux de code) et que cette personne possède ce qu’il enregistre."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

@@ -63,6 +63,36 @@ pub mod vocabulary {
         "urn:sts:xacml:fga:detail:identifier";
     pub const FGA_DETAIL_PRIVILEGE: &str =
         "urn:sts:xacml:fga:detail:privilege";
+    // The facts of a User-Managed Access question (#1168), spelt as
+    // `xacml/xacml_request.js` spells them; the remote PEP builds none of
+    // these today, and a policy written against one spelling must match
+    // what both builders would send.
+    pub const ACR: &str = "urn:sts:xacml:acr";
+    pub const UMA_RESOURCE_TYPE: &str = "urn:sts:xacml:uma:resource-type";
+    pub const UMA_RESOURCE_SERVER: &str =
+        "urn:sts:xacml:uma:resource-server";
+    pub const UMA_RESOURCE_SERVER_DECLARED: &str =
+        "urn:sts:xacml:uma:resource-server-declared";
+    pub const UMA_OWNER: &str = "urn:sts:xacml:uma:owner";
+    pub const UMA_OWNER_KIND: &str = "urn:sts:xacml:uma:owner-kind";
+    pub const UMA_SCOPE: &str = "urn:sts:xacml:uma:scope";
+    pub const UMA_REQUESTING_PARTY_KNOWN: &str =
+        "urn:sts:xacml:uma:requesting-party-known";
+    pub const UMA_REQUESTING_PARTY_IS_OWNER: &str =
+        "urn:sts:xacml:uma:requesting-party-is-owner";
+    pub const UMA_CLAIM_SOURCE: &str = "urn:sts:xacml:uma:claim-source";
+    pub const UMA_CLAIM_ISSUER: &str = "urn:sts:xacml:uma:claim-issuer";
+    pub const UMA_CLAIM_ISSUER_DECLARED: &str =
+        "urn:sts:xacml:uma:claim-issuer-declared";
+    pub const UMA_REQUESTING_PARTY_GROUP: &str =
+        "urn:sts:xacml:uma:requesting-party-group";
+    pub const UMA_CLIENT_GRANT_DECLARED: &str =
+        "urn:sts:xacml:uma:client-grant-declared";
+    pub const UMA_CLAIM_PREFIX: &str = "urn:sts:xacml:uma:claim:";
+    pub const UMA_LAYER: &str = "urn:sts:xacml:uma:layer";
+    pub const UMA_STAGE: &str = "urn:sts:xacml:uma:stage";
+    pub const UMA_TICKET_AGE: &str = "urn:sts:xacml:uma:ticket-age";
+    pub const UMA_RPT_PRESENTED: &str = "urn:sts:xacml:uma:rpt-presented";
 }
 
 /// The principal types a request may name; anything else is a person.

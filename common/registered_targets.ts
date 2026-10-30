@@ -265,6 +265,15 @@ export = class RegisteredTargets {
                 "AuthZEN API; its object " + (on ? 'exists.' : 'is gone.'));
       return on ? 'the AuthZEN API (/access/v1)' : '';
     }
+    // THE UMA 2.0 PROTECTION API (#1168): this realm's `/uma`, which a
+    // resource server asks for as its `resource` when it obtains a PAT and
+    // which `uma/uma_pat.ts` accepts as a token's audience.
+    if (underAny('/uma')) {
+      const on = RegisteredTargets.seeded('sts-uma-protection-api');
+      log.debug("Leaving RegisteredTargets.ownResourceServer(). The UMA " +
+                "protection API; its object " + (on ? 'exists.' : 'is gone.'));
+      return on ? 'the UMA 2.0 protection API (/uma)' : '';
+    }
     log.debug("Leaving RegisteredTargets.ownResourceServer(). None.");
     return '';
   }

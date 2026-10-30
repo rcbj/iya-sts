@@ -1,5 +1,10 @@
 {
   "templates": {
+    "uma-approval": {
+      "subject": "{{service}} : quelqu’un demande à accéder à une ressource que vous partagez",
+      "text": "{{requester}} demande, par l’intermédiaire de {{client}}, à accéder à votre ressource {{resource}} ({{scopes}}). Vous avez demandé qu’on vous le demande à chaque fois.\n\nRien n’est autorisé tant que vous ne l’approuvez pas. Pour l’approuver ou la refuser, connectez-vous et ouvrez cette page dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nSi vous ne reconnaissez pas cette demande, refusez-la sur cette page ou ignorez ce message : elle expire d’elle-même.\n",
+      "html": "<p><strong>{{requester}}</strong> demande, par l’intermédiaire de <strong>{{client}}</strong>, à accéder à votre ressource <strong>{{resource}}</strong> ({{scopes}}). Vous avez demandé qu’on vous le demande à chaque fois.</p><p>Rien n’est autorisé tant que vous ne l’approuvez pas. <a href=\"{{link}}\">Approuvez-la ou refusez-la</a> dans les {{expiresMinutes}} minutes.</p><p>Si vous ne reconnaissez pas cette demande, refusez-la sur cette page ou ignorez ce message : elle expire d’elle-même.</p>"
+    },
     "password-reset": {
       "subject": "Réinitialisez votre mot de passe {{service}}",
       "text": "Quelqu’un — {{requestedBy}} — a demandé la réinitialisation du mot de passe du compte {{username}}.\n\nPour choisir un nouveau mot de passe, ouvrez ce lien dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nIl ne fonctionne qu’une fois. Si vous n’êtes pas à l’origine de cette demande, vous pouvez ignorer ce message : rien ne change tant que le lien n’est pas utilisé.\n",

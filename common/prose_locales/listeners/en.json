@@ -68,6 +68,8 @@
   "listeners.applications.xacml.what": "The policy decision point, its policies and the remote PEPs' doors.",
   "listeners.applications.authzen.label": "AuthZEN",
   "listeners.applications.authzen.what": "The AuthZEN Authorization API: access evaluations over the XACML engine, and its metadata document.",
+  "listeners.applications.uma.label": "User-Managed Access",
+  "listeners.applications.uma.what": "The UMA 2.0 protection API (resource registration and permission tickets), the claims interaction page and the uma2-configuration document.",
   "listeners.applications.acme.label": "ACME",
   "listeners.applications.acme.what": "Certificate enrollment by ACME.",
   "listeners.applications.est.label": "EST",

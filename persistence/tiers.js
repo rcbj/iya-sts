@@ -383,6 +383,15 @@ const CELL_MINTED = [
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
   'gnap.tokenValues', 'gnap.userCodes', 'gnap.userRefs', 'krb5.principals',
+  // USER-MANAGED ACCESS (#1168): every one of its six stores is somebody's
+  // or minted here. A registered resource names its OWNER, a person, and
+  // was registered where their resource server arrived; an owner's policy
+  // document IS the person's data; a permission ticket, a PCT and an RPT
+  // record are minted at the endpoint that issued them and name the
+  // requesting party; a pending approval names the owner it waits for.
+  // None is configuration every cell must hold the same copy of.
+  'uma.ownerPolicies', 'uma.pcts', 'uma.pending', 'uma.resources',
+  'uma.rpts', 'uma.tickets',
   'ldap.clusterConnections', 'ldap.clusterSignOuts', 'mail.outbox',
   'mail.preferences', 'oauth2.attestationChallenges', 'oauth2.authzCodes',
   'oauth2.backchannelDeliveries', 'oauth2_bcp.grantTokens',

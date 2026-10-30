@@ -1,5 +1,10 @@
 {
   "templates": {
+    "uma-approval": {
+      "subject": "{{service}}: någon ber om att nå en resurs du delar",
+      "text": "{{requester}} ber, genom {{client}}, om att nå din resurs {{resource}} ({{scopes}}). Du bad om att bli tillfrågad varje gång.\n\nIngenting tillåts förrän du godkänner det. För att godkänna eller avslå, logga in och öppna den här sidan inom {{expiresMinutes}} minuter:\n\n{{link}}\n\nOm du inte känner igen förfrågan, avslå den där eller ignorera det här meddelandet: den upphör av sig själv.\n",
+      "html": "<p><strong>{{requester}}</strong> ber, genom <strong>{{client}}</strong>, om att nå din resurs <strong>{{resource}}</strong> ({{scopes}}). Du bad om att bli tillfrågad varje gång.</p><p>Ingenting tillåts förrän du godkänner det. <a href=\"{{link}}\">Godkänn eller avslå</a> inom {{expiresMinutes}} minuter.</p><p>Om du inte känner igen förfrågan, avslå den där eller ignorera det här meddelandet: den upphör av sig själv.</p>"
+    },
     "password-reset": {
       "subject": "Återställ ditt lösenord för {{service}}",
       "text": "Någon — {{requestedBy}} — bad om att lösenordet för kontot {{username}} skulle återställas.\n\nÖppna den här länken inom {{expiresMinutes}} minuter för att välja ett nytt lösenord:\n\n{{link}}\n\nDen fungerar en gång. Om det inte var du som bad om det kan du strunta i det här meddelandet: ingenting ändras förrän länken används.\n",

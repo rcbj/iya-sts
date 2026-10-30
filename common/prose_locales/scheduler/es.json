@@ -591,6 +591,14 @@
     "en": "d685d1a2ff40e09e",
     "text": "Reemplaza la clave de tickets de sesión que comparten las escuchas TLS de todos los nodos en un clúster activo-activo, para que un ticket emitido por un nodo se reanude en otro. La clave que reemplaza se elimina, lo que limita durante cuánto tiempo pueden recuperarse a partir de un ticket los secretos de una sesión reanudada."
   },
+  "sched.jobs.uma.sweep.title": {
+    "en": "262aeee3389f2e36",
+    "text": "Caducidad UMA"
+  },
+  "sched.jobs.uma.sweep.describe": {
+    "en": "167f79e724fe8b34",
+    "text": "Elimina cada ticket de permiso, token de claims persistido, registro de RPT y aprobación pendiente del propietario de User-Managed Access que haya superado su vida (#1168). Una lectura aplica el plazo por sí misma, así que esto es la limpieza, nunca lo que decide."
+  },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",
     "text": "solo a petición"

@@ -4939,6 +4939,16 @@ function realmSupport() {
             'own root policy. The attribute catalogue is the realm\'s ' +
             'sts-authzen-api object, and every authzen.* setting is the ' +
             'realm\'s.' },
+    { family: 'UMA 2.0', state: 'full', by: 'path',
+      cards: ['UMA 2.0'],
+      note: 'The realm is UMA\'s tenant: its resource servers are the ' +
+            'realm\'s applications declared for uma, its protection API ' +
+            'token is the realm\'s own access token, its six stores — ' +
+            'the registered resources, the owners\' documents, the ' +
+            'tickets, PCTs, RPTs and pending approvals — are the realm\'s, ' +
+            'its realm-layer policy is the realm\'s uma-authorization ' +
+            'entry or the built-in template, and every uma.* setting is ' +
+            'the realm\'s.' },
     { family: 'Federation', state: 'full', by: 'path',
       cards: ['Federation'],
       note: 'Its own relationships — ou=federations is in the realm\'s ' +

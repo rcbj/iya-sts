@@ -634,6 +634,7 @@ interface AdminApiDeps {
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
   // The AuthZEN tab's operations (#563).
   loadAuthzenApi(): typeof import('./authzen_api');
+  loadUmaApi(): typeof import('./uma_api');
   // Monitoring → Passkeys' operations (#942).
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // Directory → Post-login activities' operations (#1111).
@@ -752,6 +753,9 @@ class AdminApi {
       },
       loadSecretDestinationsApi: function () {
         return require('./secret_destinations_api');
+      },
+      loadUmaApi: function () {
+        return require('./uma_api');
       },
       loadAuthzenApi: function () {
         return require('./authzen_api');
@@ -2969,6 +2973,7 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
+            loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
@@ -6883,7 +6888,14 @@ class AdminApi {
                          'be revoked, which POST ' +
                          '/admin-api/gnap/revoke-grant does with `user`. ' +
                          '`gnapGrantsCells` says what a multi-cell ' +
-                         'service\'s list leaves out.' }
+                         'service\'s list leaves out.' },
+          { name: 'uma',
+            description: 'This person\'s UMA 2.0 (#1195): `resources` they ' +
+                         'own, the `shares` in their document, the ' +
+                         'permissions they hold in live RPTs (`held`, ' +
+                         'which POST /admin-api/uma/revoke-rpt revokes) and ' +
+                         'the requests waiting for them (`pending`). Null ' +
+                         'where UMA is not loaded.' }
         ])),
         responseDescription: 'The list, or one identity.',
         responseSchema: { oneOf: [
@@ -25646,6 +25658,9 @@ class AdminApi {
       // THE AUTHZEN TAB (#563): the API's settings, its attribute catalogue
       // and its callers' scopes, the console's own (`mgmt-api/authzen_api.ts`).
       ...loadAuthzenApi().ROUTES,
+      // UMA 2.0 (#1195): Protocols -> UMA's view, counts and nine acts,
+      // the console's own (`mgmt-api/uma_api.ts`).
+      ...loadUmaApi().ROUTES,
       // MONITORING → PASSKEYS (#942): who holds which passkey algorithm,
       // its export and its Recount now (`mgmt-api/passkey_report_api.ts`).
       ...loadPasskeyReportApi().ROUTES,
@@ -27955,6 +27970,28 @@ const OWNER_OPERATIONS: OwnerOperation[] = [
       log.debug("Entering target().");
       log.debug("Leaving target().");
       return String(body.application || '');
+    } },
+  // AN APPLICATION'S UMA DOCUMENT (#1195): the owner tab of /admin/uma,
+  // read with `?owner=` and answered with that tab alone (the page's other
+  // lists are every resource server's), and its four owner-* acts. The
+  // object is the application, so `ownerApplicationActions` decides them.
+  { method: 'GET', kind: 'application', path: '/uma',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.owner || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      log.debug("Leaving project().");
+      return { owner: (answer && answer.owner) || null };
+    } },
+  { method: 'POST', kind: 'application',
+    pattern: /^\/uma\/(owner-[a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.owner || '');
     } },
   { method: 'POST', kind: 'service-account',
     pattern: /^\/users\/([a-z][a-z-]*)$/,

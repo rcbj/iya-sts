@@ -843,6 +843,42 @@
     "en": "349171490df64541",
     "text": "L’empreinte de certificat à laquelle un jeton lié est comparé (RFC 8705)"
   },
+  "crypto.families.uma-2-0.signs": {
+    "en": "c22ee886c8b04abd",
+    "text": "Rien en propre. Un jeton de partie requérante (RPT) est un jeton d’accès RFC 9068 que le domaine signe par l’unique entonnoir (voir OAuth2 / OIDC) ; un ticket de permission et un jeton de claims persisté sont des identifiants aléatoires, pas des signatures."
+  },
+  "crypto.families.uma-2-0.verifies": {
+    "en": "b4864c9dcb80100e",
+    "text": "Le jeton d’API de protection (PAT), un jeton d’accès, par la vérification JWS propre à ce domaine (voir OAuth2 / OIDC), avec sa preuve DPoP ou sa liaison de certificat RFC 8705 lorsqu’il en porte une ; un claim_token poussé, un ID Token de ce domaine ou d’un émetteur d’assertions déclaré, de la même manière."
+  },
+  "crypto.families.uma-2-0.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.uma-2-0.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.uma-2-0.hashes": {
+    "en": "d0596b4d7e7d1faa",
+    "text": "Le SHA-256 sous lequel un ticket de permission et un jeton de claims persisté sont stockés, de sorte que le magasin ne détient aucun identifiant utilisable."
+  },
+  "crypto.families.uma-2-0.keys": {
+    "en": "5ee5db5c94943e3d",
+    "text": "Aucune en propre. Les clés de signature du domaine signent le RPT et vérifient le PAT, comme partout ailleurs."
+  },
+  "crypto.families.uma-2-0.whatItDoesNot": {
+    "en": "68ffcefb9ff39fa2",
+    "text": "Il ne signe aucune décision ni aucune permission : une permission est un claim du RPT, et la signature du RPT est celle d’OAuth."
+  },
+  "crypto.families.uma-2-0.algorithms.0.what": {
+    "en": "ca015fb2c53fd1a5",
+    "text": "Rien n’est signé, chiffré ni déchiffré ici"
+  },
+  "crypto.families.uma-2-0.algorithms.1.what": {
+    "en": "2a781ca079088054",
+    "text": "L’empreinte sous laquelle un ticket ou un PCT est stocké"
+  },
   "crypto.families.oauth2-oidc.signs": {
     "en": "ba9dd042c619d87e",
     "text": "Chaque jeton d’accès et jeton d’actualisation, ainsi que l’ID Token, avec la clé RSA du domaine en RS256. Un client qui enregistre `id_token_signed_response_alg` obtient cet algorithme à la place, pour son ID Token comme pour son Logout Token back-channel (section 2.4 : les mêmes clés que les ID Tokens), tiré de la table JWS partagée — chaque courbe, les deux courbes d’Edwards, et les algorithmes post-quantiques et composites. Une réponse UserInfo signée de la même manière, plus la famille HMAC (signée avec le propre `client_secret` de ce client, raison pour laquelle elle ne nécessite aucune clé publiée) et `none`. **AINSI QU’UNE RÉPONSE D’INTROSPECTION JWT RFC 9701** (2026-09-13), de type `token-introspection+jwt`, en RS256 ou avec l’`introspection_signed_response_alg` que le serveur de ressources a enregistré — la même table et la famille HMAC, jamais `none`. **AINSI QU’UNE RÉPONSE DE RESSOURCE** (#178) : une signature de message HTTP RFC 9421 étiquetée `fapi-2-response`, avec la clé du domaine que nomme `oauth2.httpSignatureResponseAlg` (ES256 par défaut ; ML-DSA proposé), sur la réponse et, par `;req`, sur la requête à laquelle elle répond."

@@ -450,6 +450,9 @@ class ProtocolStack {
     // enforcing application's details (it is not `access_gate`'s "empty
     // means allow"; `fga_gate.ts` argues it).
     this.build('common/fga_gate', require('./fga_gate'), 'FgaGate');
+    // #1168: the UMA 2.0 grant's slot — a leaf, filled by
+    // `uma/uma_grant.ts` at 23d-ii; empty, the grant is not offered.
+    this.build('common/uma_gate', require('./uma_gate'), 'UmaGate');
     this.build('ssf/ssf_streams', require('../ssf/ssf_streams'), 'SsfStreams');
     this.build('ssf/ssf_http', require('../ssf/ssf_http'), 'SsfHttp');
     this.build('ssf/ssf_receivers', require('../ssf/ssf_receivers'),
@@ -483,6 +486,11 @@ class ProtocolStack {
     this.build('portal/portal_owned',
                require('../portal/portal_owned'),
                'PortalOwned');
+    // #1192: /portal/shared and /portal/shared-with-me, UMA's Sharing
+    // section. It reaches the UMA family (23d-ii) lazily.
+    this.build('portal/portal_shared',
+               require('../portal/portal_shared'),
+               'PortalShared');
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');
@@ -1554,6 +1562,9 @@ class ProtocolStack {
                'AuthzenAdmin');
     this.build('mgmt-api/authzen_api', require('../mgmt-api/authzen_api'),
                'AuthzenApi');
+    // PROTOCOLS -> UMA'S OPERATIONS (#1195), spread by `mgmt-api/admin_api`
+    // as AuthZEN's are. It reaches `uma/uma_console` (23d-ii) lazily.
+    this.build('mgmt-api/uma_api', require('../mgmt-api/uma_api'), 'UmaApi');
     // MONITORING -> PASSKEYS' OPERATIONS (#942), spread by
     // `mgmt-api/admin_api` into its table as the destinations' are.
     this.build('mgmt-api/passkey_report_api',
@@ -2033,6 +2044,38 @@ class ProtocolStack {
     this.register(app, require('../gnap/gnap'), 'gnap/gnap');
     this.register(app, require('../gnap/gnap_interact'), 'gnap/gnap_interact');
     this.register(app, require('../gnap/gnap_admin'), 'gnap/gnap_admin');
+
+    // USER-MANAGED ACCESS 2.0 (#1168) — 23d-ii. After the console (18),
+    // `oauth2` (9), `authn` (8), `ldap_server` (21) and the armed XACML
+    // family (23c), all of which it reads; after `gnap` (23d) for a reader,
+    // since both are grants over the same engine. The store first (a
+    // library: six `realms.map()` stores, a cluster claim), then the PAT
+    // door (a library), then the surface, whose wire step registers the
+    // `uma.sweep` scheduler job. One require, and — as the phases land —
+    // the `register()` calls `uma`, `uma_claims`, `uma_admin`, GNAP's shape.
+    // `/uma/*` and `/.well-known/uma2-configuration` collide with nothing.
+    require('../uma/uma');
+    this.build('uma/uma_store', require('../uma/uma_store'), 'UmaStore');
+    this.build('uma/uma_pat', require('../uma/uma_pat'), 'UmaPat');
+    // #1192: a resource owner's own document — a library over the store
+    // and the templates, which the portal reaches lazily.
+    this.build('uma/uma_owner_policy', require('../uma/uma_owner_policy'),
+               'UmaOwnerPolicy');
+    // #1193: the PEP (the realm's and the owner's layers, and the resource
+    // server's FGA policy) and the grant, whose wire step fills
+    // `common/uma_gate.ts`: this line is what offers the uma-ticket grant.
+    this.build('uma/uma_pep', require('../uma/uma_pep'), 'UmaPep');
+    this.build('uma/uma_grant', require('../uma/uma_grant'), 'UmaGrant');
+    // #1194: claims interaction, claim tokens and the owner's approval;
+    // its wire step hands the grant this instance.
+    this.build('uma/uma_claims', require('../uma/uma_claims'), 'UmaClaims');
+    this.build('uma/uma', require('../uma/uma'), 'UmaSurface');
+    // #1195: Protocols -> UMA's view and acts, a library the management
+    // API reaches lazily; the page itself is the static console's.
+    this.build('uma/uma_console', require('../uma/uma_console'),
+               'UmaConsole');
+    this.register(app, require('../uma/uma'), 'uma/uma');
+    this.register(app, require('../uma/uma_claims'), 'uma/uma_claims');
 
     // CERTIFICATE ENROLLMENT (2026-09-13) — 23e, 23f, 23g. ACME (RFC 8555), EST
     // (RFC 7030) and SCEP (RFC 8894). After the console at 18, whose shell each

@@ -343,6 +343,14 @@
     "en": "86edbf0cbc0fcbab",
     "text": "En GNAP-klientinstans, eller en GNAP-resursserver, eller båda: en part som bevisar innehav av en nyckel för /gnap (RFC 9635) eller för API:t för resursservrar (RFC 9767). Dess nyckel är gnapKey (ett publikt nyckelobjekt) eller gnapKeyReference med en förseglad gnapSymmetricKey; dess finish-URI:er är returadresser som alla andra; en resursserver bär de platser den svarar för och, när den har registrerat en resursuppsättning, den rotnyckel för macaroons som den verifierar med."
   },
+  "applications.protocols.uma.label": {
+    "en": "62ae4b72c0645f34",
+    "text": "UMA 2.0"
+  },
+  "applications.protocols.uma.what": {
+    "en": "6d748dac04623f29",
+    "text": "En User-Managed Access 2.0-resursserver: en OAuth-klient som skaffar en skydds-API-token för /uma, registrerar de resurser den håller för en resursägare, begär behörighetsbiljetter för dem och är målgrupp för de tokener för begärande part som utfärdas för dem. Att deklarera familjen är det som släpper in den; umaOwnsResources låter applikationen själv vara ägare."
+  },
   "applications.protocols.acme.label": {
     "en": "a8308e8e2e4b7330",
     "text": "ACME"
@@ -510,6 +518,10 @@
   "applications.schema.attributes.oauthRedirectUri.what": {
     "en": "36056278a77af2f2",
     "text": "Registrerade omdirigerings-URI:er från en registrering, och varje redirect_uri som den här tjänsten har GODTAGIT för applikationen bredvid dem. De två är inte samma påstående och registret slår inte ihop dem i tysthet — se appRedirectUriObserved."
+  },
+  "applications.schema.attributes.oauthClaimsRedirectUri.what": {
+    "en": "2827c1189c742346",
+    "text": "Vart /uma/claims får skicka tillbaka den begärande parten till den här klienten efter att ha samlat in anspråk (UMA 2.0 Grant avsnitt 3.3.2, claims_redirect_uri). Matchas exakt; en claims_redirect_uri som inte listas här meddelas personen och omdirigeras aldrig till."
   },
   "applications.schema.attributes.appRedirectUriObserved.what": {
     "en": "8ef752a64a9931a4",
@@ -1730,6 +1742,10 @@
   "applications.schema.attributes.appFgaEnforced.what": {
     "en": "7857e5ec7ea0bfdf",
     "text": "TRUE när den här applikationens finkorniga policy tillämpas. Saknas eller FALSE betyder att den inte gör det, vilket är standard."
+  },
+  "applications.schema.attributes.umaOwnsResources.what": {
+    "en": "498689e2da216b2e",
+    "text": "TRUE när den här UMA 2.0-resursservern får registrera resurser den SJÄLV ÄGER, med en skydds-API-token som skaffats med client_credentials. Saknas eller FALSE, standardvärdet, betyder att en PAT måste tillhöra en person (kodflödet) och att den personen äger det den registrerar."
   },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",

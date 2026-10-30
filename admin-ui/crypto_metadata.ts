@@ -1890,6 +1890,39 @@ class CryptoMetadata {
              '(RFC 8705)', ['SHA-256']]
           ];
         } },
+      // USER-MANAGED ACCESS 2.0 (#1168): AuthZEN's position and AuthZEN's
+      // case — every token it accepts or issues is OAuth's, verified and
+      // signed by the layers that own them.
+      { name: 'UMA 2.0',
+        signs: 'Nothing of its own. A requesting party token is an RFC ' +
+               '9068 access token the realm signs through the one funnel ' +
+               '(see OAuth2 / OIDC); a permission ticket and a persisted ' +
+               'claims token are random handles, not signatures.',
+        verifies: 'The protection API token (PAT), an access token, by ' +
+                  'this realm\'s own JWS verification (see OAuth2 / OIDC), ' +
+                  'with its DPoP proof or RFC 8705 certificate binding ' +
+                  'where it carries one; a pushed claim_token, an ID ' +
+                  'Token from this realm or a declared assertion issuer, ' +
+                  'the same way.',
+        encrypts: 'Nothing.',
+        decrypts: 'Nothing.',
+        keys: 'None of its own. The realm\'s signing keys sign the RPT and ' +
+              'verify the PAT, as everywhere else.',
+        hashes: 'The SHA-256 under which a permission ticket and a ' +
+                'persisted claims token are stored, so the store holds no ' +
+                'working handle.',
+        whatItDoesNot: 'It signs no decision and no permission: a ' +
+                       'permission is a claim of the RPT, and the RPT\'s ' +
+                       'signature is OAuth\'s.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            ['Nothing is signed, encrypted or decrypted here', []],
+            ['The digest a ticket or PCT is stored under', ['SHA-256']]
+          ];
+        } },
       { name: 'OAuth2 / OIDC',
         signs: 'Every access token and refresh token, and the ID Token, with ' +
                'the realm\'s RSA key as RS256. A client that registers ' +
