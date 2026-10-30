@@ -9,12 +9,19 @@
 // USER-MANAGED ACCESS 2.0 OVER HTTP (#1168 phase 7, #1196), in whichever mode
 // the service is in, in a throwaway trust realm.
 //
-// THIS JOB IS BOTH THE RESOURCE SERVER AND THE CLIENT. The ticket asked for
-// Keycloak as the independent peer (rcbj's decision 8); Keycloak's
-// authorization services are themselves a UMA authorization server, and its
-// UMA client library dials Keycloak-shaped addresses built from a realm name,
-// so it cannot be pointed at this service as it stands. That is put to rcbj
-// on #1196; until it is answered this job drives both sides over the wire.
+// THE JOB IS THE RESOURCE SERVER AND THE CLIENT, AND SO IS KEYCLOAK. rcbj's
+// decisions on #1196 (2026-10-30): Keycloak's own UMA library,
+// keycloak-authz-client, is the independent peer, through
+// tests/tools/keycloak-uma-driver (built into the tests image, jscep's
+// arrangement) behind a loopback proxy this job runs — the library builds
+// its discovery address in Keycloak's layout, /realms/<name>/.well-known/
+// uma2-configuration, and the proxy answers it with the realm's document;
+// every other request goes where that document says, to the service.
+// Section 12 drives it. Where the library speaks Keycloak's dialect rather
+// than the specification's, the service stays strict (rcbj): its PAT asks no
+// scope, so the job hands it one; it registers `scopes: [{name}]`, so the
+// job registers in the specification's form; and it reads introspected
+// permissions as `rsid`/`scopes`, so it sees them without their ids.
 //
 //   1. SETUP: a realm with uma.enabled; an owner, a requesting party and a
 //      stranger; a resource server made one through POST
@@ -46,6 +53,17 @@
 //      scope the ticket does not carry, a stranger.
 //  10. THE CONSOLE'S OPERATIONS: GET /admin-api/uma and its monitor.
 //  11. uma.enabled OFF: the grant is no longer advertised or performed.
+//  12. KEYCLOAK'S LIBRARY: discovery through the proxy; its own PAT and its
+//      registration body refused (the service stays strict); list,
+//      permission, the grant with the party's ID Token as claim_token,
+//      introspection with its client credentials, and delete.
+//  13. AUTHZEN AT ACCESS TIME (rcbj, #1196): /access/v1/evaluation about a
+//      registered UMA resource answers the owner's share — true before the
+//      owner removes it, false after (section 7).
+//  14. ACROSS NODES (cluster mode; one node asserts the same): one ticket
+//      presented concurrently, several times per node, issues exactly one
+//      RPT; a PCT is honoured on every node for its client and on none for
+//      another.
 //
 // The in-process halves are tests/uma_*.js. The realm is left behind
 // (tests/CLAUDE.md, *No job removes a realm*).
@@ -54,8 +72,16 @@
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const childProcess = require("child_process");
 const crypto = require("crypto");
+const fs = require("fs");
+const http = require("http");
+const https = require("https");
+const os = require("os");
+const path = require("path");
 const { Command, Option } = require("commander");
+const credentials = require("../tools/pep-credential.js");
+const kit = require("./enroll_clients_kit.js");
 const names = require("./random_username.js");
 const authnSignin = require("./authn_signin");
 const consentScreen = require("./consent_screen.js");
@@ -98,6 +124,15 @@ const CLIENT = "uma-client-" + STAMP;
 const CLIENT2 = "uma-client2-" + STAMP;
 const RS_REDIRECT = "https://" + RS + ".example.com/callback";
 const CLAIMS_REDIRECT = "https://" + CLIENT + ".example.com/claims";
+const CLIENT_REDIRECT = "https://" + CLIENT + ".example.com/callback";
+const AUTHZEN_CALLER = "uma-authzen-" + STAMP;
+const ID_TOKEN_FORMAT =
+  "http://openid.net/specs/openid-connect-core-1_0.html#IDToken";
+const NODES = Math.max(1,
+  Math.floor(Number(process.env.STS_TEST_CLUSTER_NODES) || 1));
+const addedAnchors = [];
+const storedHere = [];
+let authzenCaller = null;
 const SECRETS = {};
 const DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) " +
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
@@ -318,6 +353,132 @@ async function interact(ticket, who) {
            sentState: state };
 }
 
+// The get/post pair tests/tools/pep-credential.js takes.
+function apiPair() {
+  log.debug("Entering apiPair().");
+  log.debug("Leaving apiPair().");
+  return {
+    get: function (url) {
+      return fetchJson(url);
+    },
+    post: function (url, payload) {
+      return fetchJson(url, { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload) });
+    }
+  };
+}
+
+// One request with a client certificate (sts_fga.js's): fetch cannot
+// present one.
+function withCertificate(method, urlPath, identity, payload) {
+  log.debug("Entering withCertificate(). " + method + " " + urlPath);
+  log.debug("Leaving withCertificate().");
+  return new Promise(function (resolve, reject) {
+    const target = new URL(urlPath.indexOf("http") === 0 ? urlPath
+                                                          : base + urlPath);
+    const data = payload === undefined ? null : JSON.stringify(payload);
+    const request = https.request({
+      host: target.hostname, port: target.port || 443,
+      path: target.pathname + target.search, method: method,
+      rejectUnauthorized: false,
+      cert: identity ? identity.certPem : undefined,
+      key: identity ? identity.keyPem : undefined,
+      headers: data ? { "Content-Type": "application/json",
+                        "Content-Length": Buffer.byteLength(data) } : {}
+    }, function (response) {
+      let text = "";
+      response.on("data", function (chunk) {
+        text += chunk;
+      });
+      response.on("end", function () {
+        let body;
+        try {
+          body = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in a callback in withCertificate(): " +
+                    ((e && e.message) || e));
+          // Not JSON; the caller reports the status and the text.
+          body = null;
+        }
+        resolve({ status: response.statusCode, body: body, text: text });
+      });
+    });
+    request.on("error", reject);
+    if (data) {
+      request.write(data);
+    }
+    request.end();
+  });
+}
+
+// AuthZEN about a registered UMA resource (section 13).
+function accessOf(who, scope, resourceId) {
+  log.debug("Entering accessOf(). " + who + " " + scope);
+  log.debug("Leaving accessOf().");
+  return withCertificate("POST", PREFIX + "/access/v1/evaluation",
+    authzenCaller, {
+      subject: { type: "user", id: who },
+      action: { name: scope },
+      resource: { type: "uma_resource", id: resourceId },
+      context: { application: RS } });
+}
+
+// THE PROXY KEYCLOAK'S LIBRARY IS POINTED AT (section 12): its discovery
+// address in Keycloak's layout, answered with this realm's document. It
+// answers that one path and nothing else.
+async function keycloakProxy() {
+  log.debug("Entering keycloakProxy().");
+  const server = http.createServer(function (req, res) {
+    const m = /^\/realms\/([^/]+)\/\.well-known\/uma2-configuration$/
+      .exec(String(req.url || ""));
+    if (!m || m[1] !== REALM) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    fetch(REALM_BASE + "/.well-known/uma2-configuration")
+      .then(async function (r) {
+        res.writeHead(r.status, { "Content-Type": "application/json" });
+        res.end(await r.text());
+      }, function (e) {
+        log.debug("Caught in keycloakProxy(): " + ((e && e.message) || e));
+        res.writeHead(502);
+        res.end();
+      });
+  });
+  await new Promise(function (ok) {
+    server.listen(0, "127.0.0.1", ok);
+  });
+  log.debug("Leaving keycloakProxy().");
+  return server;
+}
+
+// One command of tests/tools/keycloak-uma-driver: its request on stdin,
+// its one JSON answer on stdout. Asynchronous, because the proxy it dials
+// answers from this process.
+function keycloak(command, settings, extra) {
+  log.debug("Entering keycloak(). " + command);
+  log.debug("Leaving keycloak().");
+  return new Promise(function (resolve) {
+    const child = childProcess.execFile("keycloak-uma-driver", [command],
+      { timeout: 120000, maxBuffer: 16 * 1024 * 1024 },
+      function (error, stdout, stderr) {
+        let out = null;
+        try {
+          out = JSON.parse(String(stdout || "").trim().split("\n").pop());
+        } catch (e) {
+          log.debug("Caught in keycloak(): " + ((e && e.message) || e));
+          // No answer: the run's own failure says why.
+          out = { ok: false, message: String((error && error.message) ||
+                  stderr || "no answer").slice(0, 600) };
+        }
+        resolve(out);
+      });
+    child.stdin.end(JSON.stringify(Object.assign({}, settings, extra || {})));
+  });
+}
+
 async function setUp() {
   log.debug("Entering setUp().");
   log.info("=== 1. setup ===");
@@ -343,8 +504,9 @@ async function setUp() {
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
     { id: RS2, fields: { oauthGrantType: ["client_credentials"],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
-    { id: CLIENT, fields: { oauthGrantType: [GRANT],
+    { id: CLIENT, fields: { oauthGrantType: [GRANT, "authorization_code"],
         oauthClaimsRedirectUri: [CLAIMS_REDIRECT],
+        oauthRedirectUri: [CLIENT_REDIRECT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
     { id: CLIENT2, fields: { oauthGrantType: [GRANT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } }
@@ -365,6 +527,24 @@ async function setUp() {
     await must("/uma/set-owns-resources", { application: rs, value: "TRUE" },
                "let " + rs + " own resources");
   }
+  // THE AUTHZEN CALLER (section 13): a certificate this job mints, its
+  // Root trusted, stored on an entry of its own in authzen-peps, scoped to
+  // the resource server — sts_fga.js's arrangement.
+  authzenCaller = await credentials.mint({
+    subject: "CN=" + AUTHZEN_CALLER + ",OU=authzen,O=iya-sts tests" });
+  const posted = await credentials.trustAnchor(base,
+                                               authzenCaller.anchorPem);
+  assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+    "Root CA this file built; it answered " + posted.status);
+  addedAnchors.push(authzenCaller.anchorPem);
+  storedHere.push(await credentials.storeOnEntry(apiPair(), base, PREFIX,
+    AUTHZEN_CALLER, authzenCaller.leaf.pem));
+  await must("/groups/add-member",
+             { group: "authzen-peps", member: AUTHZEN_CALLER },
+             "put the AuthZEN caller in authzen-peps");
+  await must("/xacml/authzen/set-scope",
+             { caller: AUTHZEN_CALLER, applications: [RS] },
+             "scoped the AuthZEN caller to the resource server");
   const view = await mustRead("/uma", "the UMA page");
   check("1. the resource servers are on /admin-api/uma, each holding " +
         "uma_protection", function () {
@@ -459,6 +639,164 @@ async function patByClient(id) {
             "the PAT by client_credentials: " + brief(r));
   log.debug("Leaving patByClient().");
   return r.body.access_token;
+}
+
+// The party's ID Token, audienced to CLIENT: the code flow as that person.
+async function idTokenFor(who) {
+  log.debug("Entering idTokenFor(). " + who);
+  const verifier = crypto.randomBytes(32).toString("base64url");
+  const challenge = crypto.createHash("sha256").update(verifier)
+    .digest("base64url");
+  const url = REALM_BASE + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: CLIENT, redirect_uri: CLIENT_REDIRECT,
+    scope: "openid", state: "s-" + crypto.randomBytes(6).toString("hex"),
+    nonce: "n-" + crypto.randomBytes(6).toString("hex"),
+    code_challenge: challenge, code_challenge_method: "S256" }).toString();
+  const location = await signInThrough(url, who);
+  const code = queryOf(location).get("code");
+  assert.ok(code, "the authorization code for the party's ID Token: " +
+                  location);
+  const r = await token(CLIENT, { grant_type: "authorization_code",
+    code: code, redirect_uri: CLIENT_REDIRECT, code_verifier: verifier });
+  assert.ok(r.status === 200 && r.body.id_token,
+            "the party's ID Token: " + brief(r));
+  log.debug("Leaving idTokenFor().");
+  return r.body.id_token;
+}
+
+// =========================================================================
+// 12. KEYCLOAK'S LIBRARY (rcbj's decisions on #1196).
+// =========================================================================
+async function viaKeycloak(appPat) {
+  log.debug("Entering viaKeycloak().");
+  log.info("=== 12. keycloak-authz-client ===");
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "sts-uma-kc-"));
+  const bundle = await kit.trustBundle(work);
+  const proxy = await keycloakProxy();
+  const server = "http://127.0.0.1:" + proxy.address().port;
+  const as = function (id) {
+    log.debug("Entering as(). " + id);
+    log.debug("Leaving as().");
+    return { server: server, realm: REALM, clientId: id,
+             secret: SECRETS[id], trust: bundle.file };
+  };
+  try {
+    let k = await keycloak("discover", as(RS));
+    check("12a. the library reads the realm's discovery document through " +
+          "the proxy, and calls the service where it says", function () {
+      assert.ok(k.ok, JSON.stringify(k));
+      assert.strictEqual(k.configuration.token_endpoint,
+                         REALM_BASE + "/oauth2/token", JSON.stringify(k));
+      assert.strictEqual(k.configuration.resource_registration_endpoint,
+                         REALM_BASE + "/uma/rreg", JSON.stringify(k));
+    });
+    k = await keycloak("register", as(RS),
+                       { name: "Keycloak's own", scopes: ["read"] });
+    check("12b. the library's own PAT asks no uma_protection, and is " +
+          "refused (the service stays strict)", function () {
+      assert.strictEqual(k.ok, false, JSON.stringify(k));
+      assert.strictEqual(k.status, 401, JSON.stringify(k));
+    });
+    k = await keycloak("register", as(RS),
+                       { pat: appPat, name: "Keycloak's form",
+                         scopes: ["read"] });
+    check("12c. its registration body, scopes: [{name}], is not " +
+          "resource_scopes, and is refused 400 (the service stays strict)",
+          function () {
+      assert.strictEqual(k.ok, false, JSON.stringify(k));
+      assert.strictEqual(k.status, 400, JSON.stringify(k));
+    });
+    const made = await withPat(appPat, "POST", "/uma/rreg",
+      { name: "Keycloak document", resource_scopes: ["read"] });
+    assert.strictEqual(made.status, 201, "registered in the spec's form: " +
+                       brief(made));
+    const doc = made.body._id;
+    await must("/uma/owner-share", { owner: RS, resource: doc,
+      scope: "read", recipientKind: "person", recipient: PARTY },
+      "shared the Keycloak document with the party");
+    k = await keycloak("list", as(RS), { pat: appPat });
+    check("12d. the library lists the resource server's resources",
+          function () {
+      assert.ok(k.ok && k.ids.indexOf(doc) >= 0, JSON.stringify(k));
+    });
+    k = await keycloak("permission", as(RS),
+                       { pat: appPat, resourceId: doc, scopes: ["read"] });
+    check("12e. the library asks a permission ticket", function () {
+      assert.ok(k.ok && k.ticket, JSON.stringify(k));
+    });
+    const ticket = k.ticket;
+    const idToken = await idTokenFor(PARTY);
+    k = await keycloak("authorize", as(CLIENT), { ticket: ticket,
+      claimToken: idToken, claimTokenFormat: ID_TOKEN_FORMAT });
+    check("12f. the library, as the client, trades the ticket and the " +
+          "party's ID Token (claim_token) for an RPT", function () {
+      assert.ok(k.ok && k.token, JSON.stringify(k).slice(0, 600));
+    });
+    const rpt = k.token;
+    k = await keycloak("introspect", as(RS), { rpt: rpt });
+    check("12g. the library introspects with its client credentials and " +
+          "Keycloak's hint: active, one permission (read in Keycloak's " +
+          "field names, so without its id)", function () {
+      assert.ok(k.ok && k.active === true, JSON.stringify(k));
+      assert.ok(Array.isArray(k.permissions) && k.permissions.length === 1,
+                JSON.stringify(k));
+    });
+    k = await keycloak("delete", as(RS), { pat: appPat, id: doc });
+    const after = await keycloak("introspect", as(RS), { rpt: rpt });
+    check("12h. the library deletes the resource, and the RPT over it is " +
+          "inactive", function () {
+      assert.ok(k.ok, JSON.stringify(k));
+      assert.strictEqual(after.active, false, JSON.stringify(after));
+    });
+  } finally {
+    proxy.close();
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+  log.debug("Leaving viaKeycloak().");
+}
+
+// =========================================================================
+// 14. ACROSS NODES. A job cannot pick a node — the balancer does — so each
+// question is asked several times per node; one node asks the same.
+// =========================================================================
+async function acrossNodes(appPat, manual, pct) {
+  log.debug("Entering acrossNodes(). " + NODES);
+  log.info("=== 14. across " + NODES + " node(s) ===");
+  const tries = Math.max(4, NODES * 4);
+  const ticket = await ticketFor(appPat, manual, ["read"]);
+  const raced = await Promise.all(Array.from({ length: tries },
+    function () {
+      return token(CLIENT, { grant_type: GRANT, ticket: ticket, pct: pct });
+    }));
+  check("14a. one ticket presented " + tries + " times at once issues " +
+        "exactly one RPT; every other try is invalid_grant", function () {
+    const issued = raced.filter(function (one) {
+      return one.status === 200;
+    });
+    assert.strictEqual(issued.length, 1, raced.map(brief).join(" | "));
+    assert.ok(raced.every(function (one) {
+      return one.status === 200 || (one.body &&
+        one.body.error === "invalid_grant");
+    }), raced.map(brief).join(" | "));
+  });
+  const honoured = [];
+  const refused = [];
+  for (let i = 0; i < tries; i++) {
+    honoured.push(await token(CLIENT, { grant_type: GRANT, pct: pct,
+      ticket: await ticketFor(appPat, manual, ["read"]) }));
+    refused.push(await token(CLIENT2, { grant_type: GRANT, pct: pct,
+      ticket: await ticketFor(appPat, manual, ["read"]) }));
+  }
+  check("14b. the PCT is honoured for its client on every try, on " +
+        "whichever node, and never for another client", function () {
+    assert.ok(honoured.every(function (one) {
+      return one.status === 200 && one.body.access_token;
+    }), honoured.map(brief).join(" | "));
+    assert.ok(refused.every(function (one) {
+      return one.status !== 200 && !(one.body && one.body.access_token);
+    }), refused.map(brief).join(" | "));
+  });
+  log.debug("Leaving acrossNodes().");
 }
 
 async function test() {
@@ -625,7 +963,16 @@ async function test() {
   // =========================================================================
   // 7. REVOCATION ON THE PORTAL.
   // =========================================================================
-  log.info("=== 7. revocation on the portal ===");
+  log.info("=== 7. revocation on the portal, and 13. AuthZEN ===");
+  let az = await accessOf(PARTY, "view", photos);
+  const azStranger = await accessOf(STRANGER, "view", photos);
+  check("13a. AuthZEN about the UMA resource answers the owner's share: " +
+        "the party true, a stranger false", function () {
+    assert.strictEqual(az.status, 200, az.status + " " + az.text);
+    assert.strictEqual(az.body.decision, true, az.text);
+    assert.strictEqual(azStranger.body && azStranger.body.decision, false,
+                       azStranger.text);
+  });
   await onPortal(OWNER, { action: "unshare", share: viewShare.id },
                  "removed the view share");
   r = await introspect(ownerPat, upgraded);
@@ -633,6 +980,12 @@ async function test() {
         function () {
     assert.strictEqual(r.status, 200, brief(r));
     assert.strictEqual(r.body.active, false, r.text);
+  });
+  az = await accessOf(PARTY, "view", photos);
+  check("13b. and AuthZEN answers false at once: the resource server asking " +
+        "at access time sees the revocation", function () {
+    assert.strictEqual(az.status, 200, az.status + " " + az.text);
+    assert.strictEqual(az.body.decision, false, az.text);
   });
 
   // =========================================================================
@@ -692,6 +1045,9 @@ async function test() {
     assert.strictEqual(r.body.error, "request_denied", r.text);
   });
 
+  await viaKeycloak(appPat);
+  await acrossNodes(appPat, manual, pct);
+
   // =========================================================================
   // 10. THE CONSOLE'S OPERATIONS.
   // =========================================================================
@@ -741,7 +1097,24 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+function forgetTheStored() {
+  log.debug("Entering forgetTheStored().");
+  log.debug("Leaving forgetTheStored().");
+  return credentials.forgetStored(apiPair(), base, storedHere);
+}
+
+// The certificate stored and the Root trusted are taken off whatever
+// happened, as sts_fga.js does; the realm is left.
+test().then(function () {
+  return forgetTheStored().then(function () {
+    return credentials.settleAnchors(base, addedAnchors, null);
+  });
+}, function (e) {
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  return forgetTheStored().then(function () {
+    return credentials.settleAnchors(base, addedAnchors, e);
+  });
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

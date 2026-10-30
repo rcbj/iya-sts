@@ -293,6 +293,42 @@ template a notification, in every catalog.
   grants tab's Revoke: every act it could offer is on `/admin/uma`, which it
   links to by `?owner=`.
 
+## Phase 7 (#1196): the protocol job, and Keycloak's library as the peer
+
+`tests/protocol/sts_uma.js` drives everything over HTTP, the job as resource
+server and client; section 12 drives **keycloak-authz-client 26.0.12**
+(rcbj's decision 8, re-made on 2026-10-30 once it was clear Keycloak's
+SERVER cannot be a UMA client of another authorization server): a thin
+command line, `tests/tools/keycloak-uma-driver`, built into the tests image
+as jscep's is, pointed at a loopback proxy in the job, because the library
+builds its discovery address as `/realms/<name>/.well-known/
+uma2-configuration` and this service answers `/realm/<id>/`.
+
+### What the library found, and what was decided (rcbj, 2026-10-30)
+
+| Finding | Decision |
+|---|---|
+| It obtains its PAT by `client_credentials` with no `scope` and no `resource`, so the token carries no `uma_protection` and is refused 401 | **Stay strict.** A PAT asks for `uma_protection` (Federated Authorization 1.3.1); the job hands the library one (`protection(String)`), and 12b asserts the bare one is refused |
+| It registers a resource as `"scopes": [{"name": …}]`, Keycloak's representation, not section 3.1's `resource_scopes` | **Stay strict.** The job registers in the specification's form; 12c asserts Keycloak's is refused 400 |
+| It introspects an RPT with its CLIENT CREDENTIALS and `token_type_hint=requesting_party_token`, and this service refused any hint but two (400) | **A bug, fixed**: RFC 7662 section 2.1 says an unknown hint is searched past, not refused; introspection now takes any short hint, as revocation has since #102 |
+| …and, authenticated that way, it was answered no `permissions` | **Answered as the PAT door answers** (`uma_gate.permissionsFor()`), for the resource server the RPT was issued for and nobody else; in a realm whose introspection is open (development), the one client the request names is taken as said |
+| It reads introspected permissions as `rsid`/`rsname`/`scopes`, so the specification's `resource_id`/`resource_scopes` reach it as nulls | **Recorded, nothing changed**; 12g asserts the count |
+
+### AuthZEN at access time
+
+The ticket's AuthZEN check found that `/access/v1/evaluation` never read
+UMA: design point 11's "a resource server that needs the current answer asks
+AuthZEN" got the root's answer. rcbj chose (2026-10-30) to make it read UMA:
+the `uma_resource` type, `authzen/CLAUDE.md` (*What is decided*).
+
+### Across nodes
+
+A job cannot choose a node; the balancer does. So section 14 asks each
+question several times per node (`STS_TEST_CLUSTER_NODES`): one ticket
+presented at once from every try issues exactly one RPT (the cluster claim),
+and a PCT is honoured for its client on every try and for another client on
+none.
+
 ## What is deliberately not here
 
 * `uma_profiles_supported` is empty until a profile is implemented end to

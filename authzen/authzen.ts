@@ -127,6 +127,9 @@ interface SurfaceDeps {
   // The embedded FGA PEP (#564, P4), for an application that enforces
   // fine-grained authorization: lazily, as the XACML surface is.
   loadFgaPep(): any;
+  // UMA 2.0's PEP, store and grant (#1196), lazily: an evaluation about a
+  // registered UMA resource is decided by UMA's layers.
+  loadUma(): any;
   // The authorization server's published-document signer, for
   // `signed_metadata` (#1178): required when a document is signed.
   loadOauth2(): any;
@@ -138,6 +141,10 @@ interface SurfaceDeps {
 /**
  * The AuthZEN Authorization API's routes over the XACML engine.
  */
+// The AuthZEN resource type naming a registered UMA 2.0 resource (#1196):
+// its `id` is the resource's `_id`, as the protection API answered it.
+const UMA_RESOURCE_TYPE = 'uma_resource';
+
 class AuthzenSurface {
   /**
    * Builds the surface over its dependencies.
@@ -181,6 +188,14 @@ class AuthzenSurface {
         log.debug("Entering loadMonitor().");
         log.debug("Leaving loadMonitor().");
         return require('../xacml/xacml_monitor');
+      },
+      loadUma: function (): any {
+        log.debug("Entering loadUma().");
+        log.debug("Leaving loadUma().");
+        return { surface: require('../uma/uma'),
+                 store: require('../uma/uma_store'),
+                 pep: require('../uma/uma_pep'),
+                 grant: require('../uma/uma_grant') };
       },
       loadFgaPep: function (): any {
         log.debug("Entering loadFgaPep().");
@@ -665,6 +680,18 @@ class AuthzenSurface {
     const self = this;
     const { log, config, errorCodes, realms } = this.deps;
     log.debug("Entering AuthzenSurface.decideEvaluation().");
+    // A REGISTERED UMA RESOURCE (#1196, rcbj 2026-10-30) is decided by UMA's
+    // layers, not the root or the FGA policy: the resource server asking at
+    // access time gets the CURRENT answer — the realm's uma-authorization
+    // policy and the owner's own document as they are now — which is what
+    // #1168's design point 11 sends it here for. An owner's revocation is
+    // therefore false here at once, as well as an inactive RPT.
+    if (String(evaluation.resource && evaluation.resource.type) ===
+        UMA_RESOURCE_TYPE) {
+      const uma = self.decideUma(evaluation, application);
+      log.debug("Leaving AuthzenSurface.decideEvaluation(). UMA's.");
+      return uma;
+    }
     let fgaEnforced = false;
     try {
       fgaEnforced = !!self.deps.applications.fgaStateOf(
@@ -727,6 +754,69 @@ class AuthzenSurface {
     self.deps.loadMonitor().record('authzen', { decision: answer.decision });
     log.debug("Leaving AuthzenSurface.decideEvaluation().");
     return { outcome: outcome, faultCode: faultCode, decidedBy: decidedBy,
+             unusable: null };
+  }
+
+  /**
+   * Decides an evaluation about a registered UMA resource (#1196): the
+   * resource is `{ type: 'uma_resource', id: <its _id> }`, the action's
+   * name one of its scopes, the subject a person by username or subject,
+   * and the application the resource server it is registered with. The UMA
+   * PEP's own `decide()` is asked as a dry run — the token endpoint's
+   * question at stage `assess`, with the client's grant taken as declared,
+   * since nobody is asking for a token — and the answer is mapped as
+   * AuthZEN's outcome. Anything that does not name a resource of that
+   * resource server, or a scope it was registered with, is false.
+   *
+   * @param evaluation - the evaluation read
+   * @param application - the trusted application, the resource server
+   * @returns `{ outcome, faultCode, decidedBy, unusable }`
+   */
+  decideUma(evaluation: any, application: string): any {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.decideUma().");
+    const no = function (why: string): any {
+      log.debug("Entering no().");
+      log.debug("Leaving no().");
+      return { fault: false, decision: false, xacmlDecision: 'NotApplicable',
+               why: why, undischargeable: [], discharged: [], advice: [],
+               obligations: [], obligationProblems: [] };
+    };
+    const uma = self.deps.loadUma();
+    let outcome: any;
+    let faultCode = '';
+    const resource = uma.surface.enabled()
+      ? uma.store.resource(String(evaluation.resource.id || '')) : null;
+    const scope = String((evaluation.action && evaluation.action.name) || '');
+    if (!resource || String(resource.resourceServer) !== application) {
+      outcome = no('no such UMA resource of this resource server');
+    } else if ([].concat(resource.resource_scopes || []).map(String)
+                 .indexOf(scope) < 0) {
+      outcome = no('not a scope the resource was registered with');
+    } else {
+      const id = String((evaluation.subject && evaluation.subject.id) || '');
+      const sub = /^urn:uuid:/i.test(id) ? id : helpers.subjectForName(id);
+      const party = sub ? uma.grant.partyOf(sub, 'authzen') : null;
+      const verdict = uma.pep.decide({
+        resource: resource, scope: scope,
+        requestingParty: party || { known: false },
+        clientId: '', clientGrantDeclared: true, claims: {}, ticketAgeS: 0,
+        rptPresented: false, stage: 'assess', dryRun: true });
+      if (verdict.outcome === 'fault') {
+        faultCode = String(verdict.code || 'STS-AUTHZEN-0028');
+        outcome = Object.assign(no(String(verdict.why || '')),
+                                { fault: true, xacmlDecision: 'Indeterminate' });
+      } else {
+        outcome = Object.assign(no(String(verdict.why || '')), {
+          decision: verdict.outcome === 'permit',
+          xacmlDecision: verdict.outcome === 'permit' ? 'Permit' : 'Deny' });
+      }
+    }
+    self.deps.loadMonitor().record('authzen',
+      { decision: outcome.fault ? 'Indeterminate' : outcome.xacmlDecision });
+    log.debug("Leaving AuthzenSurface.decideUma(). " + outcome.decision);
+    return { outcome: outcome, faultCode: faultCode, decidedBy: null,
              unusable: null };
   }
 

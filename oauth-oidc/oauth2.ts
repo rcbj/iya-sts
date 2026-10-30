@@ -1520,9 +1520,16 @@ const TOKEN_FORM = vz.looseObject({
 // RFC 7662 and RFC 7009. Both take one token and an optional hint about which
 // kind it is, and this service reads only the first — the hint is advisory in
 // both specifications and a wrong one must not change the answer.
+//
+// THE HINT IS ANY SHORT STRING HERE TOO (#1196, 2026-10-30), as revocation's
+// has been since #102. RFC 7662 section 2.1: a server that cannot locate the
+// token by the hint MUST search every type it supports, and MAY ignore the
+// hint — so a value outside the two this service issues is ignored, never a
+// malformed request. Keycloak's UMA client (keycloak-authz-client) sends
+// `requesting_party_token`, and was refused 400 until this was relaxed.
 const TOKEN_QUERY_FORM = vz.looseObject({
   token: vz.string().max(validation.CAP.TEXT).optional(),
-  token_type_hint: vt.opt(vt.oneOf(['access_token', 'refresh_token'])),
+  token_type_hint: vz.string().max(256).optional(),
   client_id: vt.opt(vt.identifier),
   client_secret: vz.string().max(1024).optional()
 });
@@ -1534,7 +1541,8 @@ const TOKEN_QUERY_FORM = vz.looseObject({
 // rather than refused as a malformed request, which is what sharing
 // introspection's form did. And `token` stays optional to the validator so
 // that its absence is answered by name (`STS-OAUTH-0608`) rather than as a
-// schema failure. Introspection keeps its own form, unchanged.
+// schema failure. Introspection kept its own form, and since #1196 takes the
+// hint the same way.
 // OPENID CONNECT CIBA CORE 1.0 SECTION 7.1 (#131): the Backchannel
 // Authentication Endpoint's form. A `request` carries every other member
 // signed instead (section 7.1.1).
@@ -19504,6 +19512,27 @@ class OAuth2Server {
             answer[name] = view.claims[name];
           }
         });
+      }
+    }
+    // AN RPT'S PERMISSIONS FOR ITS OWN RESOURCE SERVER (#1196, rcbj's
+    // decision of 2026-10-30): Keycloak's resource server introspects an RPT
+    // with its client credentials rather than its PAT, and is answered here
+    // exactly as the PAT door would answer it — the permissions, no scope.
+    // Any other caller or token is answered as before. In a realm whose
+    // introspection is open (development mode), nothing is authenticated
+    // here, so the ONE client the request names is taken as said — the
+    // stance this service takes on a development client's credentials
+    // everywhere; product mode authenticates it above.
+    const umaCaller = authenticated ? clientId
+      : (function (): string {
+          const named = self.presentedClientIds(req, body);
+          return named.length === 1 ? String(named[0]) : '';
+        })();
+    if (umaCaller && answer.active === true) {
+      const umaPermissions = umaGate.permissionsFor(answer, umaCaller);
+      if (umaPermissions) {
+        answer = Object.assign({}, answer, { permissions: umaPermissions });
+        delete answer.scope;
       }
     }
     if (!wantsJwt) {

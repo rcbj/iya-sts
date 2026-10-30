@@ -55,6 +55,10 @@ interface UmaHandler {
   introspect(ctx: Json): Json;
   // A PCT's revocation: `{ found: false }` when the token is no PCT.
   revokePct(token: string, clientId: string, identified: boolean): Json;
+  // An RPT's permissions for the resource server it was issued for, when
+  // that resource server introspects it with its OWN client credentials
+  // (#1196): null for anything else.
+  permissionsFor(answer: Json, clientId: string): Json;
 }
 
 interface UmaGateDeps {
@@ -108,7 +112,8 @@ class UmaGate {
         typeof handler.offered !== 'function' ||
         typeof handler.grant !== 'function' ||
         typeof handler.introspect !== 'function' ||
-        typeof handler.revokePct !== 'function')) {
+        typeof handler.revokePct !== 'function' ||
+        typeof handler.permissionsFor !== 'function')) {
       log.error(errorCodes.tag('STS-UMA-0200') + 'uma_gate: setHandler() ' +
                 'was given something that is not a whole handler, so it ' +
                 'was refused; the UMA grant is not offered.');
@@ -208,6 +213,26 @@ class UmaGate {
     log.debug("Leaving UmaGate.revokePct().");
     return this.handler.revokePct(token, clientId, identified);
   }
+
+  /**
+   * An RPT's permissions, for the resource server it was issued for when
+   * that resource server introspects it authenticated as its own client —
+   * keycloak-authz-client's way (rcbj, 2026-10-30, #1196) — or null.
+   *
+   * @param answer - the endpoint's introspection answer, active
+   * @param clientId - the client that authenticated
+   * @returns the permissions, or null
+   */
+  permissionsFor(answer: Json, clientId: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering UmaGate.permissionsFor().");
+    if (!this.offered()) {
+      log.debug("Leaving UmaGate.permissionsFor(). Not offered.");
+      return null;
+    }
+    log.debug("Leaving UmaGate.permissionsFor().");
+    return (this.handler as UmaHandler).permissionsFor(answer, clientId);
+  }
 }
 
 const slot = new InstanceSlot<UmaGate>(
@@ -232,5 +257,6 @@ export = {
   offered: slot.forward('offered'),
   grant: slot.forward('grant'),
   introspect: slot.forward('introspect'),
-  revokePct: slot.forward('revokePct')
+  revokePct: slot.forward('revokePct'),
+  permissionsFor: slot.forward('permissionsFor')
 };
