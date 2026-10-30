@@ -536,6 +536,11 @@ function checkNothingRequiresItEarly(t) {
                    // 2026-10-12), for `adminViews`' paging only — required
                    // LAZILY in the request, after the console is built.
                    'ssf/ssf_transmitters_api.ts',
+                   // UMA's console views (#1195), for `adminViews`' paging
+                   // and settings block: built at 23d-ii in
+                   // `common/protocol_stack.ts`, after 18 and 19, so the
+                   // require is a cache hit and moves no route.
+                   'uma/uma_console.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

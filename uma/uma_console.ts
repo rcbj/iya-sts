@@ -663,8 +663,12 @@ class UmaConsole {
     const via = String((context && context.via) || 'console');
     if (ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving UmaConsole.act(). Unknown.");
-      return self.refused('STS-UMA-0501', 'There is no UMA action "' +
-                          action + '".');
+      // THE SENTENCE EVERY ACTION HANDLER HERE WRITES, naming the actions,
+      // which `tests/protocol/sts_admin_api_operations.js` reads to hold
+      // the document's actions to the handler's.
+      return self.refused('STS-UMA-0501', 'Unknown action "' +
+                          action.slice(0, 60) + '". The ' + ACTIONS.length +
+                          ' are: ' + ACTIONS.join(', ') + '.');
     }
     if (action === 'delete-resource') {
       const id = String(given.resource || '');

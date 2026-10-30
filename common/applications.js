@@ -5944,7 +5944,9 @@ const BOOLEAN_ATTRIBUTES = [
   // Who may start a sign-in (#426, #710).
   'saml2IdpInitiatedSso', 'saml2SpInitiatedSso', 'saml11IdpInitiatedSso',
   'saml11SpInitiatedSso', 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
-  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso'
+  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
+  // UMA 2.0 (#1168): whether the resource server may own resources itself.
+  'umaOwnsResources'
 ];
 
 /**
@@ -6945,6 +6947,8 @@ const FIELD_EXAMPLES = {
   gnapOwnerLookupUri: 'https://rs.example.com/owners/{identifier}',
   gnapJweKey: '{"kty":"EC","crv":"P-256","use":"enc","x":"…","y":"…"}',
   oauthRedirectUri: 'https://app.example.com/callback',
+  // UMA 2.0 (#1194): the claims interaction's return address.
+  oauthClaimsRedirectUri: 'https://app.example.com/uma/claims-callback',
   oauthPostLogoutRedirectUri: 'https://app.example.com/signed-out',
   oauthFrontchannelLogoutUri: 'https://app.example.com/frontchannel-logout',
   oauthBackchannelLogoutUri: 'https://app.example.com/backchannel-logout',
