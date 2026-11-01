@@ -7706,13 +7706,19 @@ sections on the application's configuration tabs:
 * **Each SAML family sub-sub-tab** opens with its own
   `applicationClaimsSection(..., [family])` and claim-selection section, so
   SAML 1.1 and SAML 2.0 values stay with the protocol that consumes them.
+* **The GNAP sub-tab** (#1250) opens with
+  `applicationClaimsSection(..., ['gnap_access_token'], 'cfg-gnap-claims')`.
+  The rows are what a `jwt-signed` access token, and the JWT inside a
+  `jwt-encrypted` one, carry besides the protocol's own. There is no
+  selection table. The Kerberos sub-tab's anchor is `#cfg-krb5-claims`.
 
 Each section draws `adminViews.applicationClaimsState()`: the rows in force,
 marked `realm` or `application`, with a replaced realm row marked as such.
 Its forms post `set-custom-claim` and `remove-custom-claim` to
 `/admin/applications`, both new arms of `applicationsAction()` mirrored at
 `/admin-api/applications/<action>` (rule 7), and come back to
-`#cfg-oauth-claims` or `#cfg-saml-attributes`, **on a refusal too**: the
+`#cfg-oauth-claims`, `#cfg-<family>-claims`, `#cfg-krb5-claims` or
+`#cfg-gnap-claims`, **on a refusal too**: the
 refusal is about one row and the reader is still on that application. The
 model is `common/CLAUDE.md`'s *An application's own claim sets*. The GET
 carries `customClaims` and `tokenLifetimes`.

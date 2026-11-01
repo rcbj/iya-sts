@@ -1777,7 +1777,10 @@ class GnapGrants {
       try {
         minted = await tokens.mint(format, model, { base: base,
           rs: rs ? { identity: rs.identifier, jweKey: jweKey } : null,
-          sessionId: grant.ro ? grant.ro.sessionId : null, setId: grant.id });
+          sessionId: grant.ro ? grant.ro.sessionId : null, setId: grant.id,
+          // #1250: which application's rows, and ${username} in them.
+          application: grant.client.identifier,
+          username: username || '' });
       } catch (e) {
         log.debug("Caught in GnapGrants.issueTokens(): " +
                   ((e && e.message) || e));
@@ -4032,7 +4035,9 @@ class GnapGrants {
           this.realmBase(req), rs: rs ? { identity: rs.identifier, jweKey:
                                           this.field(rs, 'gnapJweKey') ?
                                           JSON.parse(this.field(rs,
-          'gnapJweKey')) : null } : null, setId: record.grantId });
+          'gnapJweKey')) : null } : null, setId: record.grantId,
+          application: record.instanceId,
+          username: record.username || '' });
     } catch (e) {
       log.debug("Caught in GnapGrants.manageVerified(): " +
                 ((e && e.message) || e));

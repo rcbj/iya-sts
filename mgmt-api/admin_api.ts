@@ -15859,28 +15859,34 @@ class AdminApi {
                      'SAML attributes',
             description: 'Adds a row to one of the application\'s own claim ' +
                          'sets — `access_token`, `id_token`, `userinfo`, ' +
-                         '`saml2`, `saml11` or `kerberos-pac` (#493: added ' +
-                         'to a service ticket for one of its SPNs) — or ' +
-                         'replaces its row of the ' +
+                         '`saml2`, `saml11`, `kerberos-pac` (#493: added ' +
+                         'to a service ticket for one of its SPNs) or ' +
+                         '`gnap_access_token` (#1250: added to a jwt-signed ' +
+                         'GNAP access token and to the JWT inside a ' +
+                         'jwt-encrypted one; the protocol\'s own claims ' +
+                         'win, and groups, roles and the ticked catalogue ' +
+                         'are not added) — or replaces its row of the ' +
                          'same name. At issuance the application\'s rows are ' +
                          'ADDED to the realm\'s set and win by name. A row is ' +
                          'a typed value (`value`, with `${placeholders}`) or a ' +
                          'directory attribute of the person (`attribute`, ' +
-                         'with `multi` and, for the three JSON sets, `type`); ' +
+                         'with `multi` and, for the JSON sets including ' +
+                         '`gnap_access_token`, `type`); ' +
                          'a SAML 2.0 row may carry `nameFormat`, a SAML 1.1 ' +
                          'row `namespace`. Held to the realm\'s rules: a ' +
                          'reserved name, an attribute that may not be ' +
                          'released or an unknown type is refused ' +
-                         '(`STS-REG-0206`), as is an OAuth set on an ' +
-                         'application declared for no OAuth family.',
+                         '(`STS-REG-0206`), as is a set whose protocol the ' +
+                         'application is not declared for.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: {
                 application: { type: 'string' },
                 set: { type: 'string',
-                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11', 'kerberos-pac'] },
+                       enum: ['access_token', 'id_token', 'userinfo',
+                              'saml2', 'saml11', 'kerberos-pac',
+                              'gnap_access_token'] },
                 name: { type: 'string' },
                 value: { type: 'string' },
                 attribute: { type: 'string' },
@@ -15889,10 +15895,10 @@ class AdminApi {
                         enum: ['string', 'number', 'boolean', 'json',
                                'int64', 'uint64'],
                         description: 'The JSON type of an attribute row in ' +
-                                     'the three JSON sets; in `kerberos-pac` ' +
-                                     '(#493) every row\'s PAC claim type, ' +
-                                     'of string, int64, uint64 and ' +
-                                     'boolean.' },
+                                     'the JSON sets, `gnap_access_token` ' +
+                                     'among them; in `kerberos-pac` (#493) ' +
+                                     'every row\'s PAC claim type, of ' +
+                                     'string, int64, uint64 and boolean.' },
                 nameFormat: { type: 'string' },
                 namespace: { type: 'string' }
               },
@@ -15921,8 +15927,9 @@ class AdminApi {
               properties: {
                 application: { type: 'string' },
                 set: { type: 'string',
-                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11', 'kerberos-pac'] },
+                       enum: ['access_token', 'id_token', 'userinfo',
+                              'saml2', 'saml11', 'kerberos-pac',
+                              'gnap_access_token'] },
                 name: { type: 'string' }
               },
               required: ['application', 'set', 'name'],

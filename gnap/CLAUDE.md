@@ -1010,6 +1010,19 @@ needs here:
 * **THE PORTAL'S GNAP PAGES ARE NOT THESE**: `/portal/gnap` and the absent
   owner's `/portal/ciba` are the portal's (#568), over `/account-api`.
 
+## Custom claims on the access-token JWT (#1250)
+
+The two JWT formats carry an application's `gnap_access_token` rows
+(`gnapClaimsAccessToken`, the GNAP configuration tab's Custom claims
+section). `claimsOf()` asks `admin_stats.configuredJwtClaims()`, which reads
+those rows and not the groups claim, the roles claim or the ticked
+catalogue, then assigns the protocol claims over them. A name the payload
+sets itself wins, including when that member is absent. Macaroon, biscuit
+and zcap do not call it. A read that throws is logged as `STS-GNAP-0908`
+and the token is still minted. `modelOfClaims()` does not read the extras
+back. Reserved names are the JWT list plus `access`, `flags`, `label` and
+`grant_id`. `username` is reserved; `uid` is not.
+
 ## Error codes
 
 `STS-GNAP-NNNN`, registered in `common/error_codes.js`:
@@ -1035,6 +1048,7 @@ needs here:
 | 0890–0901 | #432 phase 6: a right dropped at issue for an approval without the page (0890) or short of its acr (0891); a trusted client that must interact (0892) or has no session for an acr (0893); an absent owner's time run out (0894); a derivation beyond the original needing its owner (0895) or short of the original's acr (0896); the owner's queue full (0897), the owner homed in another cell (0898), an unmet step-up (0899), the notice not queued (0900), an unknown owner (0901) |
 | 0902–0904 | #496, #505 and #593: an unregistered application in product (0902), a location naming no registered resource server in product (0903), an access token request naming no resource server at all, in every mode (0904) — see *A token for nobody in particular* below |
 | 0905 | #738: `interact.acr` of only `phr` and/or `phrh` was unmet after the one interaction (`request_denied`). A skip that never starts that interaction stays 0893 |
+| 0908 | #1250: the custom claims configured for an access-token JWT could not be read. The token is still minted, without them |
 
 `tests/error_codes.js` carries `gnapError(res`, `interactionError(res` and
 `apiRefusal(res` as failure patterns.

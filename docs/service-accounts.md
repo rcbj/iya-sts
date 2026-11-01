@@ -140,7 +140,9 @@ account.
 
 ### Named policies
 
-Some accounts need different rules from the rest, for example a deployment
+[Policies](policies.md#service-account-policy) is the rule this kind shares
+with the others: the account names the profile. Some accounts need different
+rules from the rest, for example a deployment
 pipeline that rotates every week while every other account rotates monthly.
 For that, create a **named policy** on **Directory → Policies →
 Service-account policy → New policy**, or with

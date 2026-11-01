@@ -58,6 +58,12 @@
 // selection, the funnel, the audit row and the catalogue are this file's, as
 // for the other five.
 //
+// `gnap_access_token` (#1250) is a seventh id in `SET_IDS`, so a fresh realm
+// seeds an empty selection for it. Nothing draws that selection and nothing
+// issues it through `claimsFor()`: the GNAP access-token JWT reads configured
+// rows through `configuredJwtClaims()`, and `APP_SELECTION_ATTRIBUTES` does
+// not name the set.
+//
 // Keeping them separate is what makes "issue a credential carrying a claim the
 // access token does not" and "ask for a claim nothing here issues" reachable.
 // One page setting all three would make both impossible to produce, and those
@@ -273,9 +279,11 @@ CATALOGUE.forEach(function (row) {
 
 // The sets are admin_stats.js's, read from there rather than written out again:
 // a set added over there has to appear here, and a copy of the list is how it
-// would fail to. It was four until 2026-08-26 and is five now, and NOTHING IN
-// THIS FILE WAS EDITED TO MAKE THAT TRUE — which is the whole reason the list
-// is derived.
+// would fail to. It was four until 2026-08-26 and grew with each set, and
+// NOTHING IN THIS FILE WAS EDITED TO MAKE THAT TRUE — which is the whole
+// reason the list is derived. The seventh, `gnap_access_token` (#1250),
+// seeds an empty selection that no page draws and that `claimsFor()` does
+// not issue.
 /**
  * The ids of the claim sets a selection is kept for.
  */

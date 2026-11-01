@@ -77,6 +77,8 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   'oauthPermissionClaims',
   // And a Kerberos service's own PAC claims (#493).
   'krb5ClaimsPac',
+  // And a GNAP client's access-token JWT claims (#1250).
+  'gnapClaimsAccessToken',
   // A secret destination's write credential (#221 P3): write-only, set on
   // Directory → Secret destinations.
   'secretDestCredential',

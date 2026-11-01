@@ -132,7 +132,8 @@ The `default` profile applies everywhere in the realm. A realm with no
 
 ### Named profiles, for applications and groups
 
-A realm may keep **named profiles**. Each has the two fields above and a
+[Policies](policies.md#locale-policy) is the rule this kind shares with the
+others. A realm may keep **named profiles**. Each has the two fields above and a
 **precedence**, a whole number from 1 to 1000 (100 if you leave it out). A
 named profile lists nothing. Whatever it covers names it instead:
 

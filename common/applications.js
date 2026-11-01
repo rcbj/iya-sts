@@ -3607,6 +3607,23 @@ const SCHEMA = {
             '(those of the TGT it was issued from), an application row ' +
             'replacing the claim of the same name. Only while ' +
             'krb5.pacClaims is on.' },
+    // #1250: THIS CLIENT'S OWN GNAP ACCESS-TOKEN JWT CLAIMS, one JSON array
+    // of rows of the realm's shape (`name` and `value`, or `name`,
+    // `attribute`, `multi` and `type`). Added to a jwt-signed token, and to
+    // the JWT inside a jwt-encrypted token, for this client instance; an
+    // application row wins by name. The protocol's own claims win over both.
+    // Macaroon, biscuit and zcap do not carry them. Kept off the field grid
+    // for the rows above's reason: the GNAP tab's Custom claims section
+    // writes them.
+    { name: 'gnapClaimsAccessToken', kind: 'single',
+      from: 'the console\'s Custom claims section',
+      what: 'THIS CLIENT\'S OWN GNAP ACCESS-TOKEN JWT CLAIMS, as a JSON ' +
+            'array of rows like the other custom-claim sets. Added to a ' +
+            'jwt-signed token and to the JWT inside a jwt-encrypted token ' +
+            'issued to this client, an application row replacing the realm ' +
+            'row of the same name. The token\'s own claims (access, flags, ' +
+            'label, grant_id and the JWT names) cannot be overridden. ' +
+            'Macaroon, biscuit and zcap tokens do not carry these rows.' },
     // #186: UNCONSTRAINED DELEGATION is Kerberos's alone, and OFF unless set.
     { name: 'krb5TrustedForDelegation', kind: 'single', from: 'by hand',
       what: 'TRUE or FALSE, default FALSE: this Kerberos service is TRUSTED ' +
@@ -4989,6 +5006,8 @@ const EDITABLE = {
   krb5ForeignTgtDelegation: 'set',
   // #493: one JSON array, like the five claim sets below.
   krb5ClaimsPac: 'set',
+  // #1250: one JSON array, the GNAP access-token JWT's own rows.
+  gnapClaimsAccessToken: 'set',
   oid4vpClientId: 'multi',
   // The four that are ONLY ever declared — nothing in this service writes them.
   federationPartnerId: 'multi',
@@ -5438,7 +5457,8 @@ const CLAIM_ROW_SETS = {
   oauthClaimsUserinfo: 'userinfo',
   saml2CustomAttributes: 'saml2',
   saml11CustomAttributes: 'saml11',
-  krb5ClaimsPac: 'kerberos-pac'
+  krb5ClaimsPac: 'kerberos-pac',
+  gnapClaimsAccessToken: 'gnap_access_token'
 };
 
 /**
@@ -6835,7 +6855,10 @@ function gridExcludedAttributes() {
                'oauthClaimsUserinfo', 'saml2CustomAttributes',
                'saml11CustomAttributes',
                // And the Kerberos PAC claims section (#493).
-               'krb5ClaimsPac'].concat(
+               'krb5ClaimsPac',
+               // And the GNAP access-token JWT's Custom claims section
+               // (#1250).
+               'gnapClaimsAccessToken'].concat(
                  // And their attribute selections (#495), drawn as the
                  // catalogue's checkboxes — and a resource server's claims
                  // per permission, drawn on the Scope claims tab.

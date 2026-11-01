@@ -89,6 +89,18 @@ can report, because a trigger is a fact about the code. The same test decided
 written out; the row shape of `/admin-api/sessions` is in the OpenAPI document,
 so it is not.
 
+## `policies.md`, and the pages that own one kind
+
+`policies.md` is the account of **Directory → Policies** after #1234: the
+seven kinds, and the one rule they share — the holder names the profile, the
+lowest precedence applies, and a dangling name means what that kind says.
+The fields of a kind stay on the page that already owned them
+(`authentication.md`, `passkeys.md`, `languages.md`, `service-accounts.md`,
+`post-login-activities.md`, `configure-scim.md`). A new fact about *which
+profile applies* goes in `policies.md`. A new fact about *what a profile's
+rows do* goes on the kind's page. The console's documentation link for
+`/admin/policies` points here (`common/web_doc_links.ts`).
+
 ## The API reference under /api/ is generated, not written here (2026-09-27)
 
 The sidebar's *API reference* is TypeDoc output built from the source's

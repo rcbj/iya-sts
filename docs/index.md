@@ -47,6 +47,8 @@ each.
 **Administration** —
 [Admin console](admin-console.md): `/admin`, who may use it and what its pages
 do ·
+[Policies](policies.md): Directory → Policies, the seven kinds, and how a
+named policy is chosen ·
 [Applications](applications.md): the registry of every client, relying party
 and service provider ·
 [Management API](management-api.md): `/admin-api`, every console control
