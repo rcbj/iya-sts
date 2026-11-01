@@ -324,7 +324,7 @@ async function test() {
   const refused = await send(realmApi + "/policies/reset-postLogin-policy", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profile: "pilot" }) });
-  check("a profile a group names is not deleted (STS-AUTHN-0540)",
+  check("a profile a group names is not deleted (STS-AUTHN-0543)",
     function () {
       assert.ok(refused.status === 400 ||
                 (refused.body && refused.body.ok === false),
