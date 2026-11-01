@@ -189,8 +189,12 @@ async function productChecks(t, tag) {
           'requires (0164), and its editor marks the row required; a ' +
           'non-member may',
           JSON.stringify([named.errors, kept.errors, dropped.errors]));
-  const added = attributePolicy.createRefusal(
-    Object.assign({ uid: ['np-added-' + tag] }, full('Added', 'Person')),
+  // The doors derive `cn` before they ask, as createUser() does; this
+  // check is about the group the same write adds, not about that name.
+  const prospective = Object.assign({ uid: ['np-added-' + tag] },
+                                    full('Added', 'Person'));
+  attributePolicy.deriveCommonName(prospective);
+  const added = attributePolicy.createRefusal(prospective,
     { uid: 'np-added-' + tag, groups: [group] });
   t.check(!!added && added.policy === 'strict' &&
           JSON.stringify(added.missing) === '["title"]',

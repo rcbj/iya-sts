@@ -1688,8 +1688,24 @@
     "text": "Ang mga attribute na dapat may value ang bawat tao sa realm na ito, bukod sa uid, cn at sn, na laging kailangan. Isang listahan, o pinaghihiwalay ng kuwit. Anumang attribute na puwedeng ibigay sa isang tao: ang inetOrgPerson schema, ang credential catalogue, mail, at ang mga custom attribute ng realm na ito. Ipinatutupad sa product mode: tinatanggihan sa bawat pinto ang paggawa nang wala ang isa, at hindi puwedeng alisin ng isang edit ang isa. Default ang givenName, sn at mail."
   },
   "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
-    "en": "12630f210e385441",
-    "text": "Ang class ng serbisyong ito para sa attribute policy: ang mga attribute na dapat hawak ng bawat tao sa isang realm. Pinangangalanan ng PROFILE (`cn=default`)."
+    "en": "df463dd3d0380799",
+    "text": "Ang class ng serbisyong ito para sa attribute policy: ang mga attribute na dapat hawak ng bawat tao sa isang realm. Pinangangalanan ng PROFILE (`cn=default`, o isang named profile na sa realm mismo)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "Sa isang tao o isang group: ang attribute policy na pinapangalanan nito, `default` o isang named profile ng realm. Isang value."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "ito ay para sa taong nagpapangalan nito, o nasa group na nagpapangalan nito, kapag walang ibang policy na pinapangalanan nila ang may mas mababang precedence kaysa {{precedence}}"
   },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",

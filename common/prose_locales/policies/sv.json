@@ -1688,8 +1688,24 @@
     "text": "De attribut som varje person i den här sfären måste ha ett värde för, utöver uid, cn och sn, som alltid krävs. En lista, eller kommaseparerade. Vilket attribut som helst som en person kan få: inetOrgPerson-schemat, katalogen över inloggningsuppgifter, mail och den här sfärens anpassade attribut. Tillämpas i produktläge: att skapa en person utan något av dem nekas vid varje väg in, och en ändring får inte ta bort något. Standard är givenName, sn och mail."
   },
   "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
-    "en": "12630f210e385441",
-    "text": "Tjänstens klass för en attributpolicy: de attribut som varje person i en sfär måste ha. Namngiven efter PROFILEN (`cn=default`)."
+    "en": "df463dd3d0380799",
+    "text": "Tjänstens klass för en attributpolicy: de attribut som varje person i en sfär måste ha. Namngiven efter PROFILEN (`cn=default`, eller en namngiven profil som är sfärens egen)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "På en person eller en grupp: attributpolicyn den namnger, `default` eller en namngiven profil i sfären. Ett värde."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "den gäller en person som namnger den, eller som ingår i en grupp som namnger den, när ingen annan policy de namnger har lägre precedens än {{precedence}}"
   },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",

@@ -127,7 +127,9 @@
 // reaches the directory through a slot `ldap/ldap_server.js` fills. The
 // offered list is `ldap/person_editor.ts`'s universe, required LAZILY:
 // `person_editor` requires this module at load, for the custom rows and the
-// required flags it draws.
+// required flags it draws. The names a reference may take are this realm's
+// profile names and not a read of each profile: a read asks that universe,
+// and the universe asks the names, so a read from the choices never returns.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -883,6 +885,26 @@ class AttributePolicy {
     return out;
   }
 
+  /**
+   * The names a person or a group may name: `default`, then this realm's
+   * named profiles in the same order as `list()`. Names only. `list()` reads
+   * each profile, a read asks the person editor's universe, and the universe
+   * asks these names to draw the picker, so a read from here never returns
+   * (#1241).
+   *
+   * @returns the names
+   */
+  profileNames(): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AttributePolicy.profileNames().");
+    const names = [DEFAULT_PROFILE].concat(this.namedEntries().slice()
+      .sort(PolicySelection.compare).map(function (one) {
+        return one.name;
+      }));
+    log.debug("Leaving AttributePolicy.profileNames(). " + names.length);
+    return names;
+  }
+
   // -------------------------------------------------------------------------
   // WHICH PROFILE APPLIES TO A PERSON (#1241, rule 3cx).
   // -------------------------------------------------------------------------
@@ -992,7 +1014,13 @@ class AttributePolicy {
     log.debug("Entering AttributePolicy.required().");
     let out: string[];
     try {
-      out = this.profileFor(subject).required;
+      // THE UID IS ON THE ENTRY (#1241). The person editor asks with
+      // `{ attributes }` alone, as an edit's refusal is asked, and the
+      // groups are read by that uid. Without it a group's profile marks
+      // nothing on the page.
+      const resolved = subject
+        ? this.subjectOf(subject.attributes, subject) : null;
+      out = this.profileFor(resolved).required;
     } catch (e) {
       // A policy that cannot be read still requires what the schema does.
       log.debug("Caught in AttributePolicy.required(): " +
@@ -1899,9 +1927,9 @@ slot.buildNowUnlessDeferred();
 // they stand when asked.
 const referenceChoices = function referenceChoices(): string[] {
   log.debug("Entering attribute policy reference choices.");
-  const names = slot.get().list().map(function (one) {
-    return String(one.name);
-  });
+  // NAMES, NOT `list()` — `profileNames()` says why a read here never
+  // returns (#1241).
+  const names = slot.get().profileNames();
   log.debug("Leaving attribute policy reference choices.");
   return names;
 };
