@@ -130,7 +130,8 @@
 
 - section: Client libraries
   items:
-    - { title: Authentication libraries, url: /client-libraries.html }
+    - { title: Authentication libraries, url: /authentication-libraries.html }
+    - { title: OpenID Connect and CAEP clients, url: /client-libraries.html }
 
 - section: Certificates and workloads
   items:
