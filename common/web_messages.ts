@@ -344,16 +344,17 @@ class WebMessages {
   }
 
   // THE ONE TAG STRIPPER, AND IT REPEATS (2026-10-30). One pass of
-  // `/<[^>]*>/g` is not a sanitizer: it turns `<scr<b>ipt>` into `<script>`,
-  // because removing the inner tag joins the two halves of an outer one that
-  // the pass had already stepped over. CodeQL's
-  // js/incomplete-multi-character-sanitization found the three copies of
-  // that one-liner (here, `web_kit.ts`'s plainTextOf(), `web_pages.ts`'s
-  // textOf()); this replaces all three. The pass repeats until it removes
-  // nothing, which no interleaving survives — each pass that changes the
-  // string shortens it, so it ends. A `<` with no `>` after it stays: a lone
-  // `<` is text, and what the callers do with the result (HTML text that is
-  // valid already, or a value a renderer escapes) is unchanged.
+  // `/<[^>]*>/g` is not a sanitizer. That class swallows a `<`, so
+  // `<scr<b>ipt>` loses `<scr<b>` and leaves `ipt>`; a class that stops
+  // before the inner `<` instead removes `<b>` and leaves `<script>`.
+  // CodeQL's js/incomplete-multi-character-sanitization found the three
+  // copies of that one-liner (here, `web_kit.ts`'s plainTextOf(),
+  // `web_pages.ts`'s textOf()); this replaces all three. A match may not
+  // contain `<`, and the pass repeats until it removes nothing, so a tag
+  // the removal assembles is taken on the next pass. Each pass that changes
+  // the string shortens it, so it ends. A `<` with no `>` after it stays:
+  // a lone `<` is text, and what the callers do with the result (HTML text
+  // that is valid already, or a value a renderer escapes) is unchanged.
   /**
    * Removes every tag from a fragment, repeatedly, until none is left.
    *
@@ -365,7 +366,7 @@ class WebMessages {
     let before: string;
     do {
       before = out;
-      out = out.replace(/<[^>]*>/g, '');
+      out = out.replace(/<[^<>]*>/g, '');
     } while (out !== before);
     return out;
   }

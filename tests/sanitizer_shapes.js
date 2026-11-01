@@ -10,8 +10,9 @@
 //
 // The tag stripper the static surfaces share (`WebMessages.stripTags()`,
 // behind `WebKit.plainTextOf()` and `WebPages.textOf()`) used to be one pass
-// of `/<[^>]*>/g`, which turns `<scr<b>ipt>` into `<script>`: removing the
-// inner tag joins the halves of an outer one. It now repeats until nothing
+// of `/<[^>]*>/g`. That class swallows a `<`, so `<scr<b>ipt>` leaves
+// `ipt>`; a match that stops before the inner `<` removes `<b>` and leaves
+// `<script>`. It now refuses a `<` inside a match and repeats until nothing
 // is removed, so no `<…>` survives it, whatever the interleaving.
 //
 // The person editor's DN shape could be made to backtrack exponentially: its
