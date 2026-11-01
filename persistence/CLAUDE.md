@@ -2046,6 +2046,12 @@ listener.
   idempotent: the applier reads the current row) and shrink the rest; it was
   not changed here because it moves the replication contract every process
   starts on, and wants the full suite.
+  **Closed later.** The mark is taken when the store opens, before any
+  read (#804, 2026-10-21, the cell's log; #619, the global tier's log too).
+  A change committed during the restore is above that mark and is applied.
+  Re-applying one the restore already read is the applier reading the
+  current row. `tests/directory_window.js` F0c holds the single log;
+  `tests/replication_restore_floor.js` holds both logs of a cell.
 * **The keystore's start** (2.0 s front, 1.7 s each worker: 25 authorities,
   204 data encryption keys) and **each process writing the default realm's
   certificate authority back to the store at every start** ("written to the
@@ -3392,7 +3398,12 @@ since #98: the module's own exports are the instance for the process's main
 log (the cell's, or the only one), and `persistence.js`'s `coordinate()`
 builds `createReplication('global')` on the global driver itself, so its own
 rows are skipped by the origin the global driver stamps. Its pull and trim
-jobs carry `global` in their ids. The two may pull at once; the one thing they
+jobs carry `global` in their ids. **Each follower starts from the head its
+own log had when the store opened, before any restore read (#619).** The
+two sequences are not comparable: a cell seq is never the global floor. A
+change committed on either log during the restore is above that log's mark
+and is applied; one the restore already read is applied again by reading
+the current row. The two may pull at once; the one thing they
 share, `persistence_minted.js`'s page prefetch, never answers across them
 because a handle is in exactly one tier. **The read barrier waits on the
 cell's log only**: a global change made in another cell arrives after the

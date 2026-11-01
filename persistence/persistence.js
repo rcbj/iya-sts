@@ -444,10 +444,13 @@ const inFlightDirectory = new Map();
 let restoring = false;
 
 // THE CHANGE LOG'S HEAD WHEN THIS PROCESS OPENED THE STORE, before it read a
-// row back (2026-10-21): where `coordinate()` starts following from, so that
-// a change another process commits WHILE this one restores is applied
-// rather than marked as seen. Null where the driver has no change log.
+// row back (2026-10-21, #619): where `coordinate()` starts following from, so
+// that a change another process commits WHILE this one restores is applied
+// rather than marked as seen. Null where the driver has no change log. The
+// second is the GLOBAL tier's log when the store is two databases (#98).
+// The two sequences are not one number and are never compared.
 let restoreFloorSeq = null;
+let globalRestoreFloorSeq = null;
 
 // True once stop() has run. A flush scheduled by a late timer after the pool is
 // closed would log an error about a closed client on every shutdown.
@@ -2496,6 +2499,37 @@ function routingDigest(realmId, kind, value) {
                               String(kind) + '\n' + String(value));
 }
 
+// THE CHANGE LOG'S HEAD AS A STARTING FLOOR (#619). A finite seq, or null
+// when this driver has no log or the read failed. Null is the old start:
+// the head when coordination begins, after the restore. A failure here is
+// not fatal — the process still starts, and a failed coordination says so.
+function readChangeFloor(one) {
+  log.debug("Entering readChangeFloor().");
+  if (!one || typeof one.latestChangeSeq !== 'function') {
+    log.debug("Leaving readChangeFloor(). No change log.");
+    return Promise.resolve(null);
+  }
+  let pending = null;
+  try {
+    pending = one.latestChangeSeq();
+  } catch (e) {
+    log.debug("Caught in readChangeFloor(): " + ((e && e.message) || e));
+    // A floor that cannot be read is the old start: the head when
+    // coordination begins. The process still starts.
+    log.debug("Leaving readChangeFloor(). The head could not be read.");
+    return Promise.resolve(null);
+  }
+  log.debug("Leaving readChangeFloor().");
+  return Promise.resolve(pending).then(function (seq) {
+    const n = Number(seq);
+    return Number.isFinite(n) ? n : null;
+  }, function (e) {
+    log.debug("Caught in readChangeFloor(): " + ((e && e.message) || e));
+    // Coordination then starts at the head, as it did before the floor.
+    return null;
+  });
+}
+
 // The half of `start()` that runs once the connection string is final. Split
 // out above; `resolvedUrl` is what postgres dials and is ignored by ldif.
 // ---------------------------------------------------------------------------
@@ -2913,25 +2947,35 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     return cluster.gate(driver);
   }).then(function () {
     // THE FLOOR, ONCE THIS NODE HAS JOINED AND BEFORE ANYTHING IS READ BACK
-    // (2026-10-21). Coordination used to start at the log's head as it was
-    // when coordination began — after the whole restore — so a change
-    // another process committed in between, after this one had read that
-    // table, was below the mark and never applied. On 8081 a worker's
-    // restore runs for 30 s while the front process writes (its keys
-    // settled, the realms reseeded, scheduler jobs), and since the workers
+    // (2026-10-21, #619). Coordination used to start at the log's head as
+    // it was when coordination began — after the whole restore — so a
+    // change another process committed in between, after this one had read
+    // that table, was below the mark and never applied. On 8081 a worker's
+    // restore runs while the front process writes, and since the workers
     // start beside the front's own restore (`server.js`) it writes more of
     // it then. Changes from here on are applied again; an applier re-reads
     // the row, so one already restored is applied as it is.
-    if (typeof driver.latestChangeSeq !== 'function') {
-      return null;
-    }
-    return driver.latestChangeSeq().then(function (seq) {
-      restoreFloorSeq = Number.isFinite(Number(seq)) ? Number(seq) : null;
-    }, function (e) {
-      log.debug("Caught in openStore() reading the change log's head: " +
-                ((e && e.message) || e));
-      // Coordination then starts at the head, as it always did.
-      restoreFloorSeq = null;
+    //
+    // A CELL HAS TWO LOGS, AND THE NUMBERS ARE NOT ONE NUMBER (#98). The
+    // tiered driver's latestChangeSeq() is the CELL's. The global follower
+    // used to read its head when coordination began, after this process had
+    // read the global tables — realms, settings, keys, the global minted
+    // stores — so the same window was open on that log. Its head is taken
+    // here, from the global driver. A cell seq is never a global floor.
+    restoreFloorSeq = null;
+    globalRestoreFloorSeq = null;
+    const global = driver.tiered &&
+      typeof driver.globalDriver === 'function' ? driver.globalDriver()
+                                                : null;
+    // Both heads before any restore read. A cell seq is not a global one.
+    const cellFloor = readChangeFloor(driver);
+    const globalFloorRead = global ? readChangeFloor(global)
+                                   : Promise.resolve(null);
+    return cellFloor.then(function (cellSeq) {
+      restoreFloorSeq = cellSeq;
+      return globalFloorRead;
+    }).then(function (globalSeq) {
+      globalRestoreFloorSeq = globalSeq;
     });
   }).then(function () {
     // ---------------------------------------------------------------------
@@ -4410,9 +4454,18 @@ function coordinate() {
   if (!driver || !driver.tiered) {
     return started;
   }
+  // THE GLOBAL LOG'S OWN FLOOR (#619), taken beside the cell's when the
+  // store opened. Not the cell's seq and not the session-index floor: those
+  // number the cell's log, and using one here would skip or replay the
+  // wrong global rows. Null reads the head at this call, which is the gap.
+  const globalFloor = globalRestoreFloorSeq !== null &&
+    globalRestoreFloorSeq !== undefined &&
+    Number.isFinite(Number(globalRestoreFloorSeq))
+    ? Number(globalRestoreFloorSeq) : null;
   globalReplication = replication.createReplication('global');
   return started.then(function (fromCell) {
-    return globalReplication.start(driver.globalDriver(), appliers)
+    return globalReplication.start(driver.globalDriver(), appliers,
+                                   globalFloor)
       .then(function (fromGlobal) {
         return Object.assign({}, fromCell, { global: fromGlobal });
       });

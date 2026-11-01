@@ -159,10 +159,10 @@ function createReplication(label) {
   let origin = '';
 
   // The high-water mark: every change up to and including this one has been
-  // applied here. Set at startup to whatever the log's maximum was at the
-  // moment
-  // the restore finished, because a process that has just read the whole store
-  // is up to date with everything committed before that instant by definition.
+  // applied here. `start()` sets it from the seq its caller passes.
+  // persistence.js samples that seq when the store opens, before any row is
+  // read back (#619, #804), so a commit during the restore stays above it.
+  // With no seq, `start()` reads the head at the call.
   //
   // **SINCE 2026-09-14 (#46) IT IS A LOW-WATER MARK AND `highest` IS BESIDE
   // IT.** `applied` is "every seq at or below this is applied or given up on";
@@ -327,12 +327,13 @@ function createReplication(label) {
   }
 
   // ---------------------------------------------------------------------------
-  // STARTING. Called from `server.js` AFTER the whole store has been restored —
-  // including the minted rows, which need the keystore — because the high-water
-  // mark is only meaningful once this process is up to date.
+  // STARTING. Called after the store has been restored. The seq to start
+  // from was sampled when the store opened, before that restore (#619):
+  // arming the follower earlier would apply into a store not restored yet,
+  // and sampling here would miss a commit that landed in between.
   // ---------------------------------------------------------------------------
   /**
-   * Starts following the change log from its current head.
+   * Starts following one change log.
    *
    * Called after the whole store has been restored. Registers the per-process
    * pull job and the change-log trim job, and listens for the driver's nudge.
@@ -367,9 +368,11 @@ function createReplication(label) {
       return Promise.resolve({ coordinating: false });
     }
 
-    // A session-index walk passes the seq it captured before its first page
-    // (#350). Commits during that walk stay above it. Every other start
-    // reads the head, which is what the restore already holds.
+    // A caller that sampled a seq before its restore passes it: the
+    // session-index walk (#350), and the head from when the store opened
+    // (#619). Commits after that seq stay above it and are applied. With
+    // no seq this reads the head now, which is "already restored" only
+    // when nothing could commit between the restore's reads and here.
     const pinned = Number.isFinite(fromSeq) ? fromSeq : null;
     const reading = pinned === null ? driver.latestChangeSeq()
                                     : Promise.resolve(pinned);
