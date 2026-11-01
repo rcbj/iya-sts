@@ -1801,7 +1801,11 @@ kind (`PolicyKind.extraActions`: summary, description and request body) and
 answered through `policiesAction()`'s `act` verb — the same resource, the same
 console form target, so rule 7 needed no new operation. `GET
 /admin-api/policies` grew `missing=count`, a walk of the realm's people asked
-only on request.
+only on request. **Since #1241 both policies routes may answer late**: `GET`
+is `adminViews.policiesViewAsync()` (the people naming each named attribute
+profile, a holder question asked asynchronously), and `POST` awaits a
+`policiesAction()` whose kind's `reset()` answered a promise (the delete of a
+named attribute profile, refused while named, STS-LDAP-0197).
 
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 

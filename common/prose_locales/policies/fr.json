@@ -1688,8 +1688,24 @@
     "text": "Les attributs dont toute personne de ce domaine doit avoir une valeur, en plus de uid, cn et sn, toujours obligatoires. Une liste, ou séparés par des virgules. Tout attribut qu’une personne peut recevoir : le schéma inetOrgPerson, le catalogue des identifiants, mail, et les attributs personnalisés de ce domaine. Appliqué en mode produit : une création sans l’un d’eux est refusée à toutes les portes, et une modification ne peut pas en retirer un. Par défaut givenName, sn et mail."
   },
   "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
-    "en": "12630f210e385441",
-    "text": "La classe de ce service pour une politique d’attributs : les attributs que toute personne d’un domaine doit avoir. Nommée par le PROFIL (`cn=default`)."
+    "en": "df463dd3d0380799",
+    "text": "La classe de ce service pour une politique d’attributs : les attributs que toute personne d’un domaine doit avoir. Nommée par le PROFIL (`cn=default`, ou un profil nommé propre au domaine)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "Sur une personne ou un groupe : la politique d’attributs qu’il nomme, `default` ou un profil nommé du domaine. Une valeur."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "elle s’applique à une personne qui la nomme, ou qui est dans un groupe qui la nomme, lorsqu’aucune autre politique qu’elle nomme n’a une précédence inférieure à {{precedence}}"
   },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",

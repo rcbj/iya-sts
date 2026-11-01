@@ -1688,8 +1688,24 @@
     "text": "除始终必填的 uid、cn 和 sn 之外，此领域中每个人都必须有值的属性。列表，或以逗号分隔。可以是人员可拥有的任何属性：inetOrgPerson 架构、凭据目录、mail，以及此领域的自定义属性。在 product 模式下强制执行：缺少其中任何一项的创建在每个入口都会被拒绝，编辑也不能移除其中任何一项。默认为 givenName、sn 和 mail。"
   },
   "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
-    "en": "12630f210e385441",
-    "text": "本服务用于属性策略的类：一个领域中每个人都必须持有的属性。以配置文件命名（`cn=default`）。"
+    "en": "df463dd3d0380799",
+    "text": "本服务用于属性策略的类：一个领域中每个人都必须持有的属性。以配置文件命名（`cn=default`，或该领域自己的命名配置文件）。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "当此人及其群组指定了多个命名属性策略时，哪一个适用：最低者，取值 1 到 1000。"
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "在人员或群组上：其所指定的属性策略，`default` 或该领域的一个命名配置文件。一个值。"
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "当此人及其群组指定了多个命名属性策略时，哪一个适用：最低者，取值 1 到 1000。"
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "它适用于指定它的人，或属于指定它的群组的人，且他们所指定的其他策略都没有比 {{precedence}} 更低的优先级"
   },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",

@@ -1688,8 +1688,24 @@
     "text": "Los atributos de los que toda persona de este dominio debe tener un valor, además de uid, cn y sn, que son siempre obligatorios. Una lista, o separados por comas. Cualquier atributo que pueda recibir una persona: el esquema inetOrgPerson, el catálogo de credenciales, mail y los atributos personalizados de este dominio. Se aplica en modo de producto: una creación sin alguno se rechaza en todas las puertas, y una modificación no puede quitar uno. Predeterminado: givenName, sn y mail."
   },
   "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
-    "en": "12630f210e385441",
-    "text": "La clase de este servicio para una política de atributos: los atributos que toda persona de un dominio debe tener. Nombrada por el PERFIL (`cn=default`)."
+    "en": "df463dd3d0380799",
+    "text": "La clase de este servicio para una política de atributos: los atributos que toda persona de un dominio debe tener. Nombrada por el PERFIL (`cn=default`, o un perfil con nombre propio del dominio)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "En una persona o un grupo: la política de atributos que nombra, `default` o un perfil con nombre del dominio. Un valor."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "se aplica a una persona que la nombra, o que está en un grupo que la nombra, cuando ninguna otra política que nombre tiene una precedencia menor que {{precedence}}"
   },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
