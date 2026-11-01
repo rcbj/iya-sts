@@ -34,6 +34,12 @@
 //     can open it and an RS reads it through introspection (RFC 9767 section
 //     3.3).
 //
+// Configured claims (#1250) ride on these two JWT formats only. `claimsOf()`
+// reads `configuredJwtClaims('gnap_access_token')` — the rows, not the groups
+// claim, the roles claim or the ticked catalogue — and assigns the protocol
+// claims over them. A read that throws is STS-GNAP-0908 and the token is
+// still minted. `modelOfClaims()` does not read the extras back.
+//
 // ---------------------------------------------------------------------------
 // WHERE EACH FORMAT'S KEY COMES FROM — AND WHY NONE OF THEM IS A NEW KEY
 // STORE.
@@ -91,9 +97,12 @@ interface GnapTokensDeps {
   helpers: any;
   STS: { certPem: string; kid: string };
   stsCrypto: any;
-  errorCodes: { mark<T>(target: T, code: string): T };
+  errorCodes: { mark<T>(target: T, code: string): T;
+                tag(code: string): string };
   config: { value(key: string): unknown };
-  stats: { isRevoked(jti: string): boolean };
+  stats: { isRevoked(jti: string): boolean;
+           configuredJwtClaims?(id: string,
+                                context: any): Record<string, any> };
   macaroon: any;
   biscuit: any;
   zcap: any;
@@ -388,11 +397,49 @@ class GnapTokens {
 
   // -------------------------------------------------------------------------
   // THE JWT CLAIMS FOR THE MODEL (RFC 9767 section 2.1's JWT mappings).
+  //
+  // Configured rows (#1250) are read here and assigned UNDER the protocol
+  // claims, so a name the token already sets wins. Only the two JWT formats
+  // call this. A read that throws is logged and the token is still minted.
   // -------------------------------------------------------------------------
-  private claimsOf(model: any, statusRef?: any): Record<string, any> {
+  private configuredClaims(model: any, claimContext: any): Record<string, any> {
+    const { log } = this;
+    const { errorCodes, stats } = this.deps;
+    log.debug("Entering GnapTokens.configuredClaims().");
+    const read = stats.configuredJwtClaims;
+    if (typeof read !== 'function') {
+      log.debug("Leaving GnapTokens.configuredClaims(). None configured.");
+      return {};
+    }
+    const application = (claimContext && (claimContext.application ||
+      claimContext.client_id)) || model.instanceId || '';
+    const username = claimContext && claimContext.username != null
+      ? claimContext.username : '';
+    let custom: Record<string, any> = {};
+    try {
+      custom = read.call(stats, 'gnap_access_token', {
+        application: application, client_id: application,
+        username: username }) || {};
+    } catch (e) {
+      log.debug("Caught in GnapTokens.configuredClaims(): " +
+                ((e && e.message) || e));
+      // The grant still completes. A claim set that cannot be read must not
+      // stop a token whose protocol claims a resource server can verify.
+      log.error(errorCodes.tag('STS-GNAP-0908') +
+                'gnap: the custom claims configured for an access-token ' +
+                'JWT could not be read, so the token is minted without ' +
+                'them: ' + ((e && e.message) || e));
+      custom = {};
+    }
+    log.debug("Leaving GnapTokens.configuredClaims().");
+    return custom && typeof custom === 'object' ? custom : {};
+  }
+
+  private claimsOf(model: any, statusRef?: any,
+                   claimContext?: any): Record<string, any> {
     const { log } = this;
     log.debug("Entering GnapTokens.claimsOf().");
-    const claims: Record<string, any> = {
+    const protocol: Record<string, any> = {
       typ: JWT_TYP,
       iss: model.iss,
       jti: model.jti,
@@ -416,26 +463,33 @@ class GnapTokens {
                                            uri: statusRef.uri } }
                         : undefined
     };
+    // On the protocol object, before the merge below, so a configured row
+    // of the same name cannot replace what the model says (#1250).
     if (model.sub) {
-      claims.sub = model.sub;
+      protocol.sub = model.sub;
     }
     if (model.aud && model.aud.length) {
-      claims.aud = model.aud.length === 1 ? model.aud[0] : model.aud;
+      protocol.aud = model.aud.length === 1 ? model.aud[0] : model.aud;
     }
     if (model.cnf) {
-      claims.cnf = model.cnf;
+      protocol.cnf = model.cnf;
     }
     // RFC 8693 section 4.1's `act`, as the model holds it (#432): the
     // resource server that derived this token, nesting each earlier one.
     if (model.act) {
-      claims.act = model.act;
+      protocol.act = model.act;
     }
     // The grant a right's `limits` (in `access`, as the model holds them)
     // are counted against (#432 phase 5) — the name introspection answers
     // it under too.
     if (model.grant) {
-      claims.grant_id = model.grant;
+      protocol.grant_id = model.grant;
     }
+    // Protocol claims win by being assigned second (#1250). An undefined
+    // protocol member is then deleted, which does not remove a configured
+    // claim of a different name.
+    const claims = Object.assign({},
+      this.configuredClaims(model, claimContext), protocol);
     Object.keys(claims).forEach(function (name) {
       if (claims[name] === undefined) {
         delete claims[name];
@@ -448,6 +502,8 @@ class GnapTokens {
   private modelOfClaims(claims: any) {
     const { log } = this;
     log.debug("Entering GnapTokens.modelOfClaims().");
+    // Custom claims (#1250) are not read back. The model is the protocol's,
+    // and a resource server that wants the extras reads the JWT.
     log.debug("Leaving GnapTokens.modelOfClaims().");
     return {
       jti: claims.jti || null,
@@ -561,7 +617,8 @@ class GnapTokens {
       // `gnap.accessTokenCertificateHeader` decides the `x5c` / `x5u`, on the
       // JWS in both JWT formats — never on the JWE around jwt-encrypted, which
       // is encrypted to a resource server's key or to a secret.
-      const signed = helpers.signJwt(this.claimsOf(valid.model, statusRef),
+      const signed = helpers.signJwt(this.claimsOf(valid.model, statusRef,
+                                                   context),
                                      { grant: 'gnap',
                                        setId: context.setId || null,
                                        sessionId: context.sessionId || null },

@@ -1956,6 +1956,14 @@ class ApplicationsPage {
             // ACROSS TRUSTS (#430 Phase 4): what its delegation attributes
             // mean across the realm's trusts, read-only.
             ApplicationsPage.applicationAcrossTrustsSection(ctx, row)
+          : '') +
+        // The GNAP access-token JWT's own rows (#1250). No ticked catalogue:
+        // groups, roles and the directory-attribute ticks stay on the sets
+        // that already carry them.
+        (group.id === 'gnap'
+          ? ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
+              ['gnap_access_token'], 'cfg-gnap-claims',
+              t.text('consoleApplications.a2.customClaims'))
           : '');
       // The sub-tab's own fields, in one form.
       const fieldForm =
@@ -5488,7 +5496,7 @@ class ApplicationsPage {
    * @param ctx - the render context (`kit.context()`)
    * @param row - the application's view
    * @param carryBack - the hidden `back` field
-   * @param setIds - which of the five sets to draw
+   * @param setIds - which claim sets to draw
    * @param anchor - the section's id, which a form comes back to
    * @param title - the section's heading
    * @returns the markup

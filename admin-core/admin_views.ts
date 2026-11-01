@@ -12194,12 +12194,15 @@ class AdminViews {
       saml2: ['saml2'],
       saml11: ['saml11'],
       // #493: a Kerberos service's own PAC claims.
-      'kerberos-pac': ['krb5']
+      'kerberos-pac': ['krb5'],
+      // #1250: a GNAP client's own access-token JWT claims.
+      gnap_access_token: ['gnap']
     };
     const labels = {
       access_token: 'Access token', id_token: 'ID Token',
       userinfo: 'UserInfo response', saml2: 'SAML 2.0 attributes',
-      saml11: 'SAML 1.1 attributes', 'kerberos-pac': 'Kerberos PAC claims'
+      saml11: 'SAML 1.1 attributes', 'kerberos-pac': 'Kerberos PAC claims',
+      gnap_access_token: 'GNAP access token'
     };
     const sets = Object.keys(families).filter(function (id) {
       return families[id].some(function (one) {

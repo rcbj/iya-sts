@@ -20110,6 +20110,12 @@ const CODES = [
       'every other grant).',
     spec: 'RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 ' +
       '(active: false)' },
+  { code: 'STS-GNAP-0908',
+    summary: 'The custom claims configured for a GNAP access-token JWT ' +
+      'could not be read. The token is still minted, without those claims. ' +
+      'The protocol claims are unaffected.',
+    spec: 'RFC 9635 section 3.2.1 (the access token is opaque to the ' +
+      'client); the JWT is what a resource server verifies' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +

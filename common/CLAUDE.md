@@ -11167,14 +11167,28 @@ string claim, and the ticked attributes) and `kerberosApplicationPacClaims()`
 (`kerberos/CLAUDE.md`, *PAC CLIENT CLAIMS*). A ticket that carried claims is
 recorded with `claimSet: 'kerberos-pac'` and its username, so
 `liveClaimBearers()` lists it.
+
+**THE SEVENTH SET, `gnap_access_token` (#1250)**, is the claims a GNAP
+access-token JWT carries besides the protocol's own (`kind: 'gnap'`). It is
+on none of the claim-set pages: an application's GNAP configuration tab draws
+it (`gnapClaimsAccessToken`). `configuredJwtClaims()` reads the rows only, so
+the groups claim, the roles claim and the ticked catalogue are not added.
+The two JWT formats (`jwt-signed`, and the JWT inside `jwt-encrypted`) merge
+that object under the protocol claims, so a protocol name wins. Macaroon,
+biscuit and zcap do not carry it. A read that throws is `STS-GNAP-0908` and
+the token is still minted. Reserved names are the JWT list plus `access`,
+`flags`, `label` and `grant_id`. There is no directory-attribute selection
+and no combine attribute: unset stays union.
+
 `jwtClaims()` and `samlAttributes()` read `effectiveClaimSet(id, context)`
 instead of `claimSet(id)`. That is the realm's rows, with the application's
 **added and winning by name** (rcbj's choice), so an application with none
 issues exactly what the realm does.
 
 * **Which application:** `applicationForClaims()` finds it by `client_id`
-  for the three JSON sets and by `audience` for the two SAML sets, reading
-  by identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
+  for the three JSON sets and for the GNAP set (the client instance
+  identifier), and by `audience` for the two SAML sets, reading by
+  identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
   keys `applications.settingFor()` already answers per-application settings
   for.
 * **One set of rules:** `checkClaimEntries()` was lifted out of
