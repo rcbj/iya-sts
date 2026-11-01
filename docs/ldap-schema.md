@@ -173,6 +173,7 @@ uploaded instead.
 | `stsMayAct` | the one party this person named as a delegate. It becomes `may_act` in their access tokens |
 | `stsAuthzenApplication` | the applications this person or service account may ask the AuthZEN API about, one per value; set by an administrator only (#563) |
 | `stsAuthzenCallbackUri` | the https URLs this person or service account, as an AuthZEN PEP, may name as an access request's callback, one per value; set by an administrator only (#1180) |
+| `stsServiceAccountPolicy` | the [named service-account policy](service-accounts.md#named-policies) a service account is governed by, or `default`; single-valued, held only by a service account and cleared with `stsServiceAccount`. Set on the person's Policies tab, with `POST /admin-api/users/set-attribute`, or by an LDAP modify, each checked against the realm's policies (#1240) |
 | `stsMailVerified` | the address they proved they receive mail at (#63) |
 | `stsMailVerifyToken`, `stsMailVerifyExpires`, `stsMailVerifyAddress` | a pending verification link. The token is **withheld** |
 
