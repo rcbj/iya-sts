@@ -1431,14 +1431,17 @@ member, has every field's current value).
 
 * **The `default` profile** reaches everybody in the realm. A realm without
   its own follows the default realm's.
-* **A named profile** reaches the members of the groups in its
-  `selectGroups`. Where several reach one person, the lowest `precedence`
-  (1 to 1000) wins. Post-login profiles select by group only, never by
-  application: the activity is about the person, not what they signed in
-  to.
-* **To leave a group out**, give it a named profile with `enabled` off and a
+* **A named profile** lists nothing; a group names it in
+  `stsPostLoginPolicy` (the group's page, or
+  `POST /admin-api/groups/set-policy`) and an application in
+  `appPostLoginPolicy`. At a sign-in, of the profile the application names
+  and those the person's groups name, the lowest `precedence` (1 to 1000)
+  wins. Reminder mails and the progress report know no application and go
+  by the groups ([details](post-login-activities.md#which-profile-applies-groups-and-applications-name-it)).
+* **To leave a group out**, name from it a profile with `enabled` off and a
   lower precedence than the profile that would otherwise reach it. That
-  keeps them out of a started activity too (below).
+  keeps them out of a started activity too (below). Naming such a profile
+  from an application leaves a sign-in to that application out.
 * **Or start the activity for some groups instead** of switching the policy
   on: a started activity on **Directory → Post-login activities** asks the
   members of its groups (or the whole realm) at sign-in, under the rules of
@@ -1455,11 +1458,13 @@ A rollout usually goes like this:
 
    ```bash
    api policies/save-postLogin-policy '{"profile":"pqc-pilot",
-     "selectGroups":["pqc-pilot"],"precedence":10,
+     "precedence":10,
      "enabled":true,"activity":"pqc-passkey-migration",
      "snoozeDays":7,"graceDays":0,"noPasskey":"leave",
      "method":"automatic","attestation":"any",
      "noPasskeyFallback":"none"}'
+   api groups/set-policy '{"group":"pqc-pilot",
+     "attribute":"stsPostLoginPolicy","policy":"pqc-pilot"}'
    ```
 
 3. **Watch where it fails** in the `passkeyCeremonies` report source

@@ -305,13 +305,13 @@ function childMain() {
          JSON.stringify(policy.read()));
     const badName = policy.save('Pilot!', fields());
     const missing = policy.save('default', { enabled: true });
-    const noGroup = policy.save('pilot', fields({ selectGroups: [] }));
+    const badRank = policy.save('pilot', fields({ precedence: 0 }));
     note(!badName.ok && errorCodes.codeOf(badName) === 'STS-AUTHN-0470' &&
          !missing.ok && errorCodes.codeOf(missing) === 'STS-AUTHN-0471' &&
-         !noGroup.ok && errorCodes.codeOf(noGroup) === 'STS-AUTHN-0471',
-         'A2. a bad name, a missing field and a named profile with no ' +
-         'group are refused under their codes',
-         JSON.stringify([badName.errors, missing.errors, noGroup.errors]));
+         !badRank.ok && errorCodes.codeOf(badRank) === 'STS-AUTHN-0471',
+         'A2. a bad name, a missing field and a named profile\'s ' +
+         'precedence out of range are refused under their codes',
+         JSON.stringify([badName.errors, missing.errors, badRank.errors]));
 
     // B. On.
     const on = policy.save('default', fields({ enabled: true,
@@ -338,14 +338,18 @@ function childMain() {
                          bobInvited]));
     policy.save('default', fields({ enabled: true, snoozeDays: 3 }));
 
-    // C. Exclusion by group.
+    // C. Exclusion by group: the group names the profile (#1239).
     const excluded = policy.save('pla-excluded', fields({ enabled: false,
-      selectGroups: ['pla-excluded'], precedence: 10 }));
-    note(excluded.ok && policy.profileNameFor('pla-eve') === 'pla-excluded' &&
+      precedence: 10 }));
+    const pointed = ldap.setGroupPolicy('pla-excluded', 'stsPostLoginPolicy',
+                                        'pla-excluded');
+    note(excluded.ok && pointed.ok &&
+         policy.profileNameFor('pla-eve') === 'pla-excluded' &&
          policy.profileNameFor('pla-ann') === 'default' &&
          postLogin.dueFor('pla-eve') === null,
-         'C. a disabled named profile reaches its group\'s members, who ' +
-         'are due nothing', JSON.stringify(excluded.errors || []));
+         'C. a disabled named profile a group names reaches its members, ' +
+         'who are due nothing',
+         JSON.stringify([excluded.errors, pointed.errors]));
 
     // D. Over HTTP: held, a way round refused, Skip.
     let s = await signIn('pla-ann', annOld);
@@ -610,6 +614,7 @@ function childMain() {
          'M. /account-api has no upgrade operation and webauthn.pqcUpgrade ' +
          'is no setting', String(setting));
 
+    ldap.setGroupPolicy('pla-excluded', 'stsPostLoginPolicy', '');
     policy.reset('pla-excluded');
     policy.reset('default');
     server.close();

@@ -8343,12 +8343,13 @@ tab, and a service account's section of the person page —
   since #1236 — whose own section (`passwordPolicySection()`) wraps its
   default part in the same three sub-tabs and keeps the doors, the history,
   the generator and the schema under them, as reference for all three —
-  and the locale policy since #1238. The post-login policy's named profiles
-  are drawn as they were.
+  and the locale policy since #1238, and the post-login policy since
+  #1239.
 * **`PoliciesPage.namedProfileParts()` draws what the kind declares**
   (`member.selectors`, `member.references`): a box per list selector a kind
-  still keeps (the post-login policy's groups; the locale policy's
-  applications left with #1238), the precedence, and on a tabbed kind's Named policies sub-tab,
+  still keeps (none since #1238 and #1239: the locale policy's
+  applications and the post-login policy's groups both went), the
+  precedence, and on a tabbed kind's Named policies sub-tab,
   above each profile's form, the applications, groups and people NAMING it
   (`named.namedBy`), read-only. **The application search the forms carried
   (#609) is gone with the applications box** — `policySearch()`, the

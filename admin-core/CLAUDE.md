@@ -554,8 +554,8 @@ named policies without touching the console, the API or each other:
 
 * **On the module**: `SELECTORS` (the save's selector fields — the
   `precedence` row for a kind whose holders name its policies; the locale
-  and post-login policies still list applications or groups until #1238 and
-  #1239), `REFERENCES` (`{ application?, group?, person? }`, the attribute by
+  and post-login policies list nothing since #1238 and #1239),
+  `REFERENCES` (`{ application?, group?, person? }`, the attribute by
   which each holder names a profile) and `namedBy(name)` (`{ applications,
   groups, people }`). `admin_views.policyKindMember()` publishes them as
   `selectors`, `references` and each named row's `namedBy`; `admin_api.ts`
