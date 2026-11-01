@@ -7255,11 +7255,11 @@ const CODES = [
     summary: 'An application (appPasswordPolicy) or a group ' +
       '(stsPasswordPolicy) names a password policy that this realm does ' +
       'not hold — written past the console, or the policy was deleted by ' +
-      'hand — so the DEFAULT password policy applies to every password ' +
-      'that reference reaches, whatever else is named, until the policy ' +
-      'exists or the reference changes (#1236). Logged once per reference ' +
-      'per process.',
-    spec: 'none (logged; the password is held to the default profile)' },
+      'hand — so that reference names nothing: the valid references that ' +
+      'remain still rank, and the default password policy applies where ' +
+      'none remains, until the policy exists or the reference changes ' +
+      '(#1236). Logged once per reference per process.',
+    spec: 'none (logged; the password is held to the remaining ranking)' },
   { code: 'STS-AUTHN-0540',
     summary: 'A named password policy was not deleted: an application ' +
       '(appPasswordPolicy) or a group (stsPasswordPolicy) of this realm ' +

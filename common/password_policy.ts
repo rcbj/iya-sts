@@ -131,17 +131,18 @@
 // (#1234's table). A reader with no person in hand (the service-account
 // policy's save check, a page with nobody signed in) reads `default`.
 //
-// **A REFERENCE TO A POLICY THE REALM DOES NOT HOLD FAILS CLOSED TO
-// `default`** (STS-AUTHN-0539) — the WHOLE answer is `default`, whatever
-// else ranked. Both writes are checked and a named policy is not deleted
-// while anything names it (STS-AUTHN-0540), so only a write past the
-// console makes one. `default` is the one policy an operator has stated
-// for everybody, never weaker than no policy; letting the rest of the
-// ranking stand would hand a person whatever lax profile some other group
-// names exactly when the reference meant to override it is broken. The
-// case against: an application's stricter policy is displaced by a broken
-// GROUP reference. It was weighed and accepted — the answer must not
-// depend on which reference broke, and the log names it.
+// **A REFERENCE TO A POLICY THE REALM DOES NOT HOLD IS DROPPED, AND THE
+// REST STILL RANK** (STS-AUTHN-0539, logged once per reference per
+// process): the valid references that remain compete as ever, and
+// `default` applies only where none remains. Both writes are checked and a
+// named policy is not deleted while anything names it (STS-AUTHN-0540), so
+// only a write past the console makes one. It replaced, on review the same
+// day, a rule that made the WHOLE answer `default` on any dangling
+// reference: that let a broken reference override a stricter policy a
+// VALID reference names — an application's twenty-character minimum
+// undone by a typo on some group — which is a loosening, not a closing.
+// A dangling reference never named anything this realm can apply, so
+// dropping it takes away nothing that was in force.
 //
 // Named policies are the realm's own and are not inherited (#1234's
 // decision 3); neither is `default`, which never was.
@@ -892,7 +893,7 @@ class PasswordPolicy {
    * the application names (`appPasswordPolicy`) and the policies the
    * person's groups name (`stsPasswordPolicy`), the lowest precedence (ties
    * by name), else `default`. A reference to a policy this realm does not
-   * hold makes the answer `default` (STS-AUTHN-0539).
+   * hold is dropped and the rest still rank (STS-AUTHN-0539).
    *
    * @param username - the person, or nothing: then `default`, unless an
    *   application names a policy
@@ -943,8 +944,9 @@ class PasswordPolicy {
     const ranked = PolicySelection.rank(entries, SELECTION, references
       .concat(PolicySelection.groupReferences(groups)));
     if (ranked.missing.length) {
-      // FAIL CLOSED TO `default` (the header): the whole answer, whatever
-      // else ranked. Said once per broken reference in this process.
+      // DROPPED (the header): `rank()` has already left them out, and the
+      // valid references that remain decide. Said once per broken
+      // reference in this process.
       ranked.missing.forEach(function (one) {
         const key = one.by + '\u0000' + one.holder + '\u0000' + one.name;
         if (MISSING_SAID.has(key)) {
@@ -957,13 +959,10 @@ class PasswordPolicy {
         log.warn(errorCodes.tag('STS-AUTHN-0539') + 'password policy: the ' +
                  one.by + ' "' + one.holder + '" names the password ' +
                  'policy "' + one.name + '", which this realm does not ' +
-                 'hold, so the default password policy applies to every ' +
-                 'password it reaches until the policy exists or the ' +
-                 'reference changes.');
+                 'hold, so it names nothing: the other references still ' +
+                 'rank, and default applies where none remains, until the ' +
+                 'policy exists or the reference changes.');
       });
-      log.debug("Leaving PasswordPolicy.selectionFor(). A reference is " +
-                "missing; default.");
-      return DEFAULT_PROFILE;
     }
     log.debug("Leaving PasswordPolicy.selectionFor(). " + ranked.name +
               " (" + ranked.by + ").");
@@ -1239,8 +1238,8 @@ class PasswordPolicy {
       return { ok: true, removed: false, profile: this.read(which) };
     }
     // NOT WHILE AN APPLICATION OR A GROUP NAMES IT (#1236): it would be
-    // left naming a policy the realm does not hold, which fails closed to
-    // `default` — a loosening nobody asked for, made by a delete.
+    // left naming a policy the realm does not hold, which names nothing —
+    // a loosening nobody asked for, made by a delete.
     const held = which === DEFAULT_PROFILE ? null
       : PolicySelection.deleteProblem(NOUN, which, this.namedBy(which));
     if (held) {

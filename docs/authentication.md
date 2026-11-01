@@ -226,9 +226,10 @@ generates for the person and how their password is hashed.
 Each reference accepts only `default` or a policy the realm holds, and a
 named policy that a group or an application still names cannot be removed
 (`STS-AUTHN-0540`). If a reference names a policy the realm does not hold —
-written past the console — the person is held to `default`, whatever else is
-named, and the service logs `STS-AUTHN-0539`. Named policies belong to their
-realm and are not inherited by other realms.
+written past the console — that reference counts for nothing: the other
+policies named for the person still rank as above, `default` applies only
+where none remains, and the service logs `STS-AUTHN-0539`. Named policies
+belong to their realm and are not inherited by other realms.
 
 ### WebAuthn
 

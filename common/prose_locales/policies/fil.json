@@ -2031,6 +2031,14 @@
     "en": "68ddb58dcaaf956f",
     "text": "isang LDAP add o modify ng userPassword sa 389 o 636"
   },
+  "page.doors.5.door": {
+    "en": "2ad6798475ed5717",
+    "text": "/authn/password-change (ang pagbabagong hinihingi ng isang sign-in; maaaring pangalanan ng application na sinisign-in-an ang policy)"
+  },
+  "page.doors.6.door": {
+    "en": "f6310f5585f611ea",
+    "text": "/portal/reset-password (isang reset link)"
+  },
   "page.pools.0": {
     "en": "66175c2ffcf81f48",
     "text": "maliliit na titik"

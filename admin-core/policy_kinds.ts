@@ -180,7 +180,17 @@ const VIEW_PROSE = Object.freeze({
                     via: 'credentials.setPassword()' }),
     Object.freeze({ door: 'an LDAP add or modify of userPassword on 389 or ' +
                           '636',
-                    via: 'credentials.preparePassword()' })
+                    via: 'credentials.preparePassword()' }),
+    // #1236: the two doors the list had left out — the forced change at
+    // sign-in, the one door holding an application (whose
+    // `appPasswordPolicy` ranks too), and a reset link. Appended, so the
+    // catalogs' indexed keys above keep their translations.
+    Object.freeze({ door: '/authn/password-change (the change a sign-in ' +
+                          'requires; the application signed in to may name ' +
+                          'the policy)',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: '/portal/reset-password (a reset link)',
+                    via: 'credentials.setPassword()' })
   ]),
   notDoors: 'SCIM carries no password (this service advertises ' +
     'changePassword: false), and a password is never set by signing in. ' +

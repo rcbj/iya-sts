@@ -9015,17 +9015,17 @@ service-account policy's save check of its rotated length against the
 password minimum is one, and is right to be: it is a property of the realm,
 not of an account. SCIM writes no password (`changePassword: false`).
 
-**A REFERENCE TO A POLICY THE REALM DOES NOT HOLD FAILS CLOSED TO `default`,
-THE WHOLE ANSWER** (STS-AUTHN-0539, logged once per reference per process —
-the sign-in upgrade asks at every verified password, and a per-event log of
-one misconfiguration is the flood the log rules forbid). The ticket's
-default rule, kept after weighing the case against it: the passkey policy
-reads such a reference as no candidate and lets the rest of the ranking
-stand, which for a password would hand a person whatever lax policy another
-group names exactly when the reference meant to override it is broken; and
-`default` is the one policy an operator has stated for everybody. The cost
-is that a broken GROUP reference displaces an application's stricter
-policy too; the answer must not depend on WHICH reference broke, and only a
+**A REFERENCE TO A POLICY THE REALM DOES NOT HOLD IS DROPPED, AND THE VALID
+REFERENCES THAT REMAIN STILL RANK** (STS-AUTHN-0539, logged once per
+reference per process — the sign-in upgrade asks at every verified
+password, and a per-event log of one misconfiguration is the flood the log
+rules forbid); `default` applies only where none remains. **The first cut
+(the same day) made the WHOLE answer `default` on any dangling reference,
+and was reversed on review**: that let a broken reference override a
+stricter policy a VALID reference names — an application's twenty-character
+minimum undone by a stale value on some group — which is a weakening
+dressed as failing closed. A dangling reference never named anything the
+realm can apply, so dropping it removes nothing that was in force. Only a
 write past the console can make one (both doors check, and a named policy
 still named is not deleted, STS-AUTHN-0540). The ranking is skipped
 outright where the realm holds no named policy, so the common case costs
@@ -14273,8 +14273,9 @@ Directory → Policies gets named policies, and
   reference and `default` are no candidate. A name the realm does not hold
   is no candidate either and comes back in `missing`: what it MEANS is the
   kind's (the authentication policy fails closed, #1148; the passkey policy
-  logs it and reads on, its default being the realm's baseline; the
-  password policy answers `default` whatever else ranked, #1236, 3ac).
+  logs it and reads on, its default being the realm's baseline; so does the
+  password policy, #1236, 3ac, after a first cut that answered `default`
+  whatever else ranked was found to weaken a valid stricter reference).
 * **CHECKED AT THE WRITE, AND NOT DELETED WHILE NAMED.** Each holder has one
   door: an application's field through `applications.js`'
   CHOICES_CHECKED_HERE (STS-REG-0203), a group's through the directory's

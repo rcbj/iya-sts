@@ -1556,10 +1556,11 @@ class AdminApi {
               '(`appPasswordPolicy`) and a group (`stsPasswordPolicy`) name ' +
               'a named policy; of those naming one for a person the lowest ' +
               '`precedence` applies (ties by name), else `default`, and a ' +
-              'reference to a policy the realm does not hold makes it ' +
-              '`default` (STS-AUTHN-0539). A named policy still named is ' +
-              'not removed (STS-AUTHN-0540). **A change applies to the NEXT ' +
-              'password set in this realm and to nothing already stored**, ' +
+              'reference to a policy the realm does not hold names ' +
+              'nothing, and the rest still rank (STS-AUTHN-0539). A named ' +
+              'policy still named is not removed (STS-AUTHN-0540). **A ' +
+              'change applies to the NEXT password set in this realm and ' +
+              'to nothing already stored**, ' +
               'which is a hash and cannot be re-checked.',
         example: { minLength: 14 }
       },

@@ -4658,9 +4658,9 @@ const SCHEMA = {
             'precedence applies, ties by name, and `default` where nothing ' +
             'names one. A door with no application in hand (the portal, ' +
             'the console, LDAP) ranks the groups\' alone.\n\nA name no ' +
-            'policy of this realm holds — written past the console — makes ' +
-            'the default password policy apply, whatever else is named, ' +
-            'and is logged (STS-AUTHN-0539). A named password policy this ' +
+            'policy of this realm holds — written past the console — names ' +
+            'nothing, the group references still rank, and it is logged ' +
+            '(STS-AUTHN-0539). A named password policy this ' +
             'attribute names cannot be deleted (STS-AUTHN-0540).\n\nIt is ' +
             'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
             'and starts empty.' },

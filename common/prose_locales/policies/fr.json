@@ -2031,6 +2031,14 @@
     "en": "68ddb58dcaaf956f",
     "text": "un add ou un modify LDAP de userPassword sur 389 ou 636"
   },
+  "page.doors.5.door": {
+    "en": "2ad6798475ed5717",
+    "text": "/authn/password-change (le changement qu’une connexion exige ; l’application à laquelle on se connecte peut nommer la politique)"
+  },
+  "page.doors.6.door": {
+    "en": "f6310f5585f611ea",
+    "text": "/portal/reset-password (un lien de réinitialisation)"
+  },
   "page.pools.0": {
     "en": "66175c2ffcf81f48",
     "text": "lettres minuscules"

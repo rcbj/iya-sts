@@ -27,8 +27,9 @@
 //      policy says; the generator and the rules a form prints are the
 //      person's.
 //   D. A reference to a policy the realm does not hold — a delete made past
-//      the console — makes the answer `default` for that person, whatever
-//      else names one (STS-AUTHN-0539, fail closed).
+//      the console — is dropped (STS-AUTHN-0539): the valid references that
+//      remain still rank, so it overrides neither another group's policy
+//      nor the application's; `default` only where none remains.
 //   E. A named policy something names is not deleted (STS-AUTHN-0540); once
 //      nothing does, it is. Another realm does not inherit it.
 //   F. The console: the Password policy tab is Default / Named policies /
@@ -263,28 +264,43 @@ function doors(t) {
   log.debug('Leaving doors().');
 }
 
-function failsClosed(t) {
-  log.debug('Entering failsClosed().');
+function danglingDropped(t) {
+  log.debug('Entering danglingDropped().');
   const saved = named(GONE, { precedence: 1, minLength: 64,
                               generatedLength: 64 });
   ldap.createGroup(TAG + '-gonegroup');
   ldap.addGroupMember(TAG + '-gonegroup', MEMBER);
+  ldap.addGroupMember(TAG + '-gonegroup', LONE);
   const pointed = pointGroup(TAG + '-gonegroup', GONE);
   // A DELETE MADE PAST THE CONSOLE: the directory's own hook, which the
   // policy's refusal does not guard.
   const removed = passwordPolicy.directoryInstalled()
     .deletePasswordPolicy(GONE);
   t.check(saved.ok && pointed.ok && removed &&
-          passwordPolicy.selectionFor(MEMBER, '') === 'default' &&
-          passwordPolicy.profileFor(MEMBER).name === 'default' &&
-          passwordPolicy.selectionFor(LONE, '') === 'default',
-          'D1. a group naming a policy the realm does not hold makes the ' +
-          'member\'s policy default, though another group names one ' +
-          '(fail closed)', JSON.stringify([saved.errors, pointed.errors]));
+          passwordPolicy.selectionFor(MEMBER, '') === STRICT &&
+          passwordPolicy.profileFor(MEMBER).name === STRICT &&
+          passwordPolicy.selectionFor(MEMBER, APP) === APP_POLICY &&
+          passwordPolicy.selectionFor(LONE, APP) === APP_POLICY,
+          'D1. a group naming a policy the realm does not hold is dropped: ' +
+          'it overrides neither the other group\'s policy nor the ' +
+          'application\'s named policy', JSON.stringify([saved.errors,
+                                                         pointed.errors]));
+  t.check(passwordPolicy.selectionFor(LONE, '') === 'default',
+          'D2. where the dangling reference was the only one, default ' +
+          'applies');
+  withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off' },
+               function () {
+    const viaApp = credentials.setPassword(LONE, 'Abcdefghij-12!',
+                                           { application: APP });
+    t.check(!viaApp.ok &&
+            /profile "pwnp\d+-app"/.test((viaApp.errors || []).join(' ')),
+            'D3. and at the door: the application\'s policy still refuses ' +
+            'what default would take', JSON.stringify(viaApp.errors));
+  });
   pointGroup(TAG + '-gonegroup', '');
   t.check(passwordPolicy.selectionFor(MEMBER, '') === STRICT,
-          'D2. once the reference is cleared the ranking stands again');
-  log.debug('Leaving failsClosed().');
+          'D4. once the reference is cleared nothing changes for the member');
+  log.debug('Leaving danglingDropped().');
 }
 
 function deletes(t) {
@@ -369,7 +385,7 @@ function run(t) {
     savesAndReferences(t);
     selection(t);
     doors(t);
-    failsClosed(t);
+    danglingDropped(t);
     deletes(t);
     consoleTab(t);
   } finally {
@@ -395,6 +411,6 @@ module.exports = {
   name: 'password named policies',
   describe: 'Named password policies an application (appPasswordPolicy) ' +
             'or a group (stsPasswordPolicy) names, selected at every door ' +
-            'that sets a password, failing closed to default (#1236)',
+            'that sets a password; a dangling reference is dropped (#1236)',
   run: run
 };

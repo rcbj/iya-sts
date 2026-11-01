@@ -507,6 +507,8 @@
   "page.doors.1.door": "POST /admin-api/users/create and /admin-api/users/set-password",
   "page.doors.3.door": "/portal/activate (the first password a person sets)",
   "page.doors.4.door": "an LDAP add or modify of userPassword on 389 or 636",
+  "page.doors.5.door": "/authn/password-change (the change a sign-in requires; the application signed in to may name the policy)",
+  "page.doors.6.door": "/portal/reset-password (a reset link)",
   "page.pools.0": "lowercase letters",
   "page.pools.1": "uppercase letters",
   "page.pools.2": "digits",

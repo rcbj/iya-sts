@@ -2031,6 +2031,14 @@
     "en": "68ddb58dcaaf956f",
     "text": "在 389 或 636 上对 userPassword 进行的 LDAP 添加或修改"
   },
+  "page.doors.5.door": {
+    "en": "2ad6798475ed5717",
+    "text": "/authn/password-change（登录所要求的更改；所登录的应用可以指定策略）"
+  },
+  "page.doors.6.door": {
+    "en": "f6310f5585f611ea",
+    "text": "/portal/reset-password（重置链接）"
+  },
   "page.pools.0": {
     "en": "66175c2ffcf81f48",
     "text": "小写字母"
