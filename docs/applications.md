@@ -782,6 +782,7 @@ application. An application can override them on its own configuration tabs
 |---|---|---|
 | OAuth 2.0 / OpenID Connect | **Token lifetimes** | Shows the access token, ID Token, refresh token and refresh-idle lifetimes in force for this client, whether each is its own or the realm's, and the realm page's warnings. The overrides are the `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS` and `oauthRefreshIdleSeconds` fields on the same tab. The clock skew stays realm-wide. |
 | OAuth 2.0 / OpenID Connect | **Custom claims** | The access token, ID Token and UserInfo claims for this client. |
+| GNAP | **Custom claims** | The claims a `jwt-signed` access token, and the JWT inside a `jwt-encrypted` one, carry for this client instance (`gnap_access_token`), besides the protocol's own. Macaroon, biscuit and zcap do not carry them. The set has no combine control of its own: the application's rows are added to the realm's and win by name. |
 | SAML | **Custom SAML attributes** | The SAML 2.0 attributes (with an optional NameFormat) and SAML 1.1 attributes (with a namespace) for this audience. |
 | Verifiable Credentials | **Credential claims** | The directory attributes a credential issued to this OpenID4VCI client carries (see below). |
 
@@ -800,24 +801,30 @@ not be released, or an unknown type is refused (`STS-REG-0206`). So is a set
 whose protocol the application is not declared for.
 
 Which application a claim applies to: for tokens and UserInfo, the client
-(`client_id`); for SAML, the audience (the service provider's entityID, or a
-WS-Federation or WS-Trust relying party). These are the same keys its other
-per-application settings use.
+(`client_id`); for a GNAP access token, the client instance identifier; for
+SAML, the audience (the service provider's entityID, or a WS-Federation or
+WS-Trust relying party). These are the same keys its other per-application
+settings use. A protocol name (`access`, `flags`, `label`, `grant_id`, and
+the JWT names such as `sub` and `username`) cannot be overridden. `uid` can.
 
 The management API: `POST /admin-api/applications/set-custom-claim` (with
-`set` = `access_token`, `id_token`, `userinfo`, `saml2` or `saml11`, and
-`name`, plus `value`, or `attribute` with `multi` and `type`) and
+`set` = `access_token`, `id_token`, `userinfo`, `saml2`, `saml11`,
+`kerberos-pac` or `gnap_access_token`, and `name`, plus `value`, or
+`attribute` with `multi` and `type`) and
 `POST /admin-api/applications/remove-custom-claim`. `GET
 /admin-api/applications?application=<id>` returns `customClaims` and
 `tokenLifetimes`.
 
 #### Directory attributes and credential claims
 
-Under the rows, each section also draws the realm's **ticked catalogue of
-directory attributes** for that set — the attributes the realm's Custom
-claims, UserInfo claims and Custom SAML attributes pages tick — and the
+Under the rows, each of those sections also draws the realm's **ticked
+catalogue of directory attributes** for that set — the attributes the realm's
+Custom claims, UserInfo claims and Custom SAML attributes pages tick — and the
 **Verifiable Credentials** sub-tab draws the realm's **Credential claims**
-selection for an application declared for OpenID4VCI.
+selection for an application declared for OpenID4VCI. The GNAP **Custom
+claims** section has the rows and not this catalogue. A GNAP access-token JWT
+does not gain the ticked directory attributes, the groups claim or the roles
+claim.
 
 **A selection is a whole set, so the application's replaces the realm's.**
 While the application has none of its own, the realm's selection is in force

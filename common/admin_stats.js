@@ -3988,6 +3988,13 @@ const RESERVED_JWT_CLAIMS = [
   'status'
 ];
 
+// Names a GNAP access-token JWT sets itself, beside the JWT list (#1250).
+// RFC 9635 section 3.2.1 leaves the token opaque to the client; the payload
+// a resource server verifies already carries these, and a configured row of
+// the same name would be overwritten at the mint or, worse, read as the
+// access rights. `username` is already on the JWT list. `uid` is not.
+const GNAP_RESERVED_CLAIMS = ['access', 'flags', 'label', 'grant_id'];
+
 // PER TRUST REALM, AND IT WAS NOT UNTIL 2026-08-28.
 //
 // `realms.obj(factory)` builds one of these per realm, so `CLAIM_SETS[id]` is
@@ -4005,14 +4012,16 @@ const RESERVED_JWT_CLAIMS = [
 // so one set disagreed with itself about whether it belonged to a realm.
 //
 // The LABEL and the KIND are constants and are duplicated into every
-// partition, which costs five strings per realm and keeps the table one shape:
-// splitting the metadata from the state would have been two tables to keep in
-// step, and the thing that goes wrong with two tables is a set in one and not
-// the other.
+// partition, which costs one string per set per realm and keeps the table one
+// shape: splitting the metadata from the state would have been two tables to
+// keep in step, and the thing that goes wrong with two tables is a set in one
+// and not the other.
 //
 // `CLAIM_SET_IDS` below reads `Object.keys()` off this, which the proxy
 // answers from the ambient realm's partition — every partition carries the
-// same five ids, because they come from this one factory.
+// same ids, because they come from this one factory. A row persisted before
+// a set existed is merged over the factory (`realms.obj()`'s restore), so
+// the new set keeps its empty list rather than disappearing.
 function freshClaimSets() {
   log.debug("Entering freshClaimSets().");
   log.debug("Leaving freshClaimSets().");
@@ -4029,13 +4038,21 @@ function freshClaimSets() {
     // → Kerberos (`/admin/kerberos/claims`) — and its rows carry a TYPE of
     // the four a PAC claim can have. See KERBEROS PAC CLAIMS below.
     'kerberos-pac': { label: 'Kerberos PAC claims', kind: 'kerberos',
-                      claims: [] }
+                      claims: [] },
+    // THE SEVENTH SET (#1250): the claims a GNAP access-token JWT carries
+    // besides the protocol's own. Kind `gnap`, so it is on none of the pages
+    // above — an application's GNAP configuration tab draws it
+    // (`gnapClaimsAccessToken`) — and `reservedNames()` refuses the JWT list
+    // plus `GNAP_RESERVED_CLAIMS`. Groups, roles and the ticked catalogue are
+    // not part of it: `configuredJwtClaims()` reads the rows only.
+    gnap_access_token: { label: 'GNAP access token', kind: 'gnap',
+                         claims: [] }
   };
 }
 
 /**
- * The six custom claim sets, per realm: the access token, ID Token, UserInfo,
- * SAML 2.0, SAML 1.1 and Kerberos PAC sets.
+ * The seven custom claim sets, per realm: the access token, ID Token,
+ * UserInfo, SAML 2.0, SAML 1.1, Kerberos PAC and GNAP access-token sets.
  */
 const CLAIM_SETS = realms.obj(freshClaimSets,
                               { persist: 'admin_stats.claimSets' });
@@ -4062,7 +4079,7 @@ const CLAIM_SETS = realms.obj(freshClaimSets,
 //   thing is a JWT carrying `iss` and `aud` as well. Every name on that list is
 //   load-bearing in at least one of the two shapes, so the list applies whole.
 /**
- * The ids of the six claim sets.
+ * The ids of the seven claim sets.
  */
 const CLAIM_SET_IDS = Object.keys(CLAIM_SETS);
 
@@ -4664,17 +4681,21 @@ function recordClaimSetChange(id, set, added, removed, count, ok, errors,
 // an <Attribute>, and refusing them there would tell a caller their call will
 // fail when it will succeed.
 /**
- * Returns the names a claim set refuses: the reserved JWT claims for a JWT or
- * UserInfo set, none for a SAML set.
+ * Returns the names a claim set refuses: the reserved JWT claims for a JWT,
+ * UserInfo or GNAP set (and the GNAP payload's own names for a GNAP set),
+ * none for a SAML set.
  *
  * @param set - the claim set
  * @returns the reserved names
  */
 function reservedNames(set) {
   log.debug("Entering reservedNames().");
+  const names = (set.kind === 'jwt' || set.kind === 'userinfo')
+    ? RESERVED_JWT_CLAIMS
+    : (set.kind === 'gnap'
+      ? RESERVED_JWT_CLAIMS.concat(GNAP_RESERVED_CLAIMS) : []);
   log.debug("Leaving reservedNames().");
-  return (set.kind === 'jwt' || set.kind === 'userinfo') ? RESERVED_JWT_CLAIMS :
-          [];
+  return names;
 }
 
 // The JSON types an attribute claim's values become in a JWT (#94). A SAML
@@ -4907,17 +4928,20 @@ function setClaimSet(id, entries) {
   return { ok: true, errors: [], claims: cleaned };
 }
 
-// AN APPLICATION'S OWN CLAIM SETS (rcbj, 2026-10-01). Each of the five sets
-// may also be configured on an APPLICATION, on its OAuth / OpenID Connect
-// and SAML configuration tabs, as one JSON array of rows on its entry
+// AN APPLICATION'S OWN CLAIM SETS (rcbj, 2026-10-01). Each set may also be
+// configured on an APPLICATION, on the configuration tab of the protocol that
+// issues it, as one JSON array of rows on its entry
 // (`APP_CLAIM_ATTRIBUTES`). At issuance they are ADDED to the realm's set and
 // WIN BY NAME — rcbj's choice: the realm's rows still go out, an
 // application's row replaces the realm's row of the same name, and an
-// application with none issues exactly what the realm does.
+// application with none issues exactly what the realm does. The GNAP set
+// (#1250) is the same rows on the GNAP tab; its JWT reads them through
+// `configuredJwtClaims()`, not `jwtClaims()`.
 //
 // WHICH APPLICATION: the one the per-application settings already answer
 // for (`applications.settingFor()`) — the OAuth `client_id` for the three
-// JSON sets, the audience (a service provider's entityID, a WS-Federation
+// JSON sets and the GNAP client instance identifier for `gnap_access_token`,
+// the audience (a service provider's entityID, a WS-Federation
 // realm) for the two SAML sets — read by identifier, then by client_id or
 // AppliesTo. The rows are held to `checkClaimEntries()` at the write; a row
 // stored by hand that fails it is dropped here with a warning rather than
@@ -4930,7 +4954,9 @@ const APP_CLAIM_ATTRIBUTES = {
   saml11: 'saml11CustomAttributes',
   // #493: an application's own PAC claims, added to a SERVICE TICKET issued
   // for one of its krb5ServicePrincipalName values.
-  'kerberos-pac': 'krb5ClaimsPac'
+  'kerberos-pac': 'krb5ClaimsPac',
+  // #1250: an application's own GNAP access-token JWT claims.
+  gnap_access_token: 'gnapClaimsAccessToken'
 };
 
 /**
@@ -5028,8 +5054,8 @@ function applicationClaimSet(id, application) {
 // token and never again.
 /**
  * Names the application an issuance's claims are for: the resolved
- * application, else the client_id for the JSON sets and the audience for
- * the SAML ones.
+ * application, else the client_id for the JSON sets and the GNAP set, and
+ * the audience for the SAML ones.
  *
  * @param id - the claim set id
  * @param context - the issuance's context
@@ -5184,6 +5210,56 @@ function applyClaimRelease(out, context, what) {
   return out;
 }
 
+// The configured rows of one set, expanded into an object, with no groups,
+// roles or ticked catalogue. Called once per token from jwtClaims() and from
+// configuredJwtClaims(), so no Entering/Leaving pair — the hot-path
+// exception, stated as it requires. Those two bracket it.
+function configuredClaimObject(id, context) {
+  const out = {};
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  configured.forEach(function (claim) {
+    if (claim.attribute) {
+      const value = jwtAttributeClaimValue(entry, claim);
+      if (value !== undefined) {
+        out[claim.name] = value;
+      }
+      return;
+    }
+    out[claim.name] = typedValue(expandValue(claim.value, context));
+  });
+  return out;
+}
+
+// The configured rows only (#1250). GNAP's two JWT formats call this rather
+// than jwtClaims(), so a token does not gain the groups claim, the roles
+// claim or the ticked catalogue. Those three belong to the OAuth, OIDC and
+// SAML sets their settings name. The release policy still applies: it only
+// ever removes.
+/**
+ * Returns the configured claim rows for a set, expanded and filtered by the
+ * release policy, without groups, roles or the directory-attribute catalogue.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the claims, ready to merge under a protocol payload
+ */
+function configuredJwtClaims(id, context) {
+  log.debug("Entering configuredJwtClaims(). id=" + id);
+  const out = configuredClaimObject(id, context);
+  applyClaimRelease(out, context, 'custom claim(s)');
+  const names = Object.keys(out);
+  if (names.length) {
+    log.debug("configuredJwtClaims(): " + names.length +
+              " configured claim(s) for a " + id + ": " + names.join(', '));
+  }
+  log.debug("Leaving configuredJwtClaims(). " + names.length + " claim(s).");
+  return out;
+}
+
 // The custom claims for a JWT, expanded against this token's context and typed.
 // Returns a plain object ready to be merged into a payload — and the merge at
 // the call site is written so the protocol's own claims win, which is belt as
@@ -5236,21 +5312,9 @@ function jwtClaims(id, context) {
   const out = resolvedRoleClaims(context);
   Object.assign(out, resolvedGroupClaims(id, context));
   Object.assign(out, resolvedJwtClaims(id, context));
-  // The realm's set with the application's own rows over it (2026-10-01).
-  const configured = effectiveClaimSet(id, context);
-  // Read once, and only when a row needs it (#94).
-  const entry = configured.some(function (claim) { return !!claim.attribute; })
-    ? resolvedEntryAttributes(context) : null;
-  configured.forEach(function (claim) {
-    if (claim.attribute) {
-      const value = jwtAttributeClaimValue(entry, claim);
-      if (value !== undefined) {
-        out[claim.name] = value;
-      }
-      return;
-    }
-    out[claim.name] = typedValue(expandValue(claim.value, context));
-  });
+  // The configured rows over the three layers above, so a name somebody
+  // typed still wins (configuredClaimObject(), #1250's extraction).
+  Object.assign(out, configuredClaimObject(id, context));
   // ---------------------------------------------------------------------
   // AND THE FOURTH LAYER, WHICH ONLY EVER REMOVES: the federation release
   // policy for this audience, if there is one.
@@ -8209,6 +8273,7 @@ module.exports = {
   reservedNames: reservedNames,
   CLAIM_SETS: CLAIM_SETS,
   RESERVED_JWT_CLAIMS: RESERVED_JWT_CLAIMS,
+  GNAP_RESERVED_CLAIMS: GNAP_RESERVED_CLAIMS,
   PLACEHOLDERS: PLACEHOLDERS,
   DEFAULT_SAML11_NAMESPACE: DEFAULT_SAML11_NAMESPACE,
   REVOCABLE_KINDS: REVOCABLE_KINDS,
@@ -8320,6 +8385,9 @@ module.exports = {
   setAttributeResolver: setAttributeResolver,
   setGroupResolver: setGroupResolver,
   jwtClaims: jwtClaims,
+  // The configured rows alone (#1250): GNAP's JWT formats, which must not
+  // gain the groups claim, the roles claim or the ticked catalogue.
+  configuredJwtClaims: configuredJwtClaims,
   samlAttributes: samlAttributes,
   // The release filter on its own, for the ONE caller that produces claims
   // without going through a claim set — the UserInfo endpoint's answer to a

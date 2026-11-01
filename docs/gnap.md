@@ -138,6 +138,28 @@ marker every token this service signs carries for its own token register
 (`Bearer`, `ID`, `Refresh` on the OAuth tokens); it is not the token's type,
 and a resource server should not dispatch on it.
 
+### Custom claims
+
+RFC 9635 section 3.2.1 leaves the access token opaque to the client, so a
+custom claim is not a field of the token response. It is a claim of the JWT
+a resource server verifies.
+
+On **Directory → Applications → the application → Configuration → GNAP →
+Custom claims**, each row is added to a `jwt-signed` token and to the JWT
+inside a `jwt-encrypted` one (`gnapClaimsAccessToken`, the
+`gnap_access_token` set). The application's row wins over the realm's row of
+the same name. A name the token sets itself wins over both: `access`,
+`flags`, `label`, `grant_id`, and the JWT names (`iss`, `sub`, `aud`,
+`exp`, `client_id`, `username`, and the rest of that list). `uid` is not
+reserved. Macaroon, biscuit and zcap tokens do not carry these rows. The
+groups claim, the roles claim and the ticked directory-attribute catalogue
+are not added.
+
+`POST /admin-api/applications/set-custom-claim` with `set` =
+`gnap_access_token` writes the same row.
+[Applications](applications.md#custom-claims-saml-attributes-and-token-lifetimes)
+describes the section.
+
 ### Seeing a revocation without introspection
 
 A resource server that verifies a token itself, rather than introspecting it,

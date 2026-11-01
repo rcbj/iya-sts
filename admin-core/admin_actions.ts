@@ -6793,8 +6793,9 @@ class AdminActions {
     // ---------------------------------------------------------------------
     // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES (rcbj,
     // 2026-10-01), from the Custom claims section of its OAuth / OpenID
-    // Connect tab and the Custom SAML attributes section of its SAML tab.
-    // `set` names one of the five claim sets; `set-custom-claim` adds a row
+    // Connect tab, the Custom SAML attributes section of its SAML tab, and
+    // the Custom claims section of its GNAP tab (#1250).
+    // `set` names one of the claim sets; `set-custom-claim` adds a row
     // or replaces the row of the same name, `remove-custom-claim` takes one
     // off. The whole list is held to the realm's rules
     // (`stats.checkClaimEntries()`) before it is written as one JSON array,
@@ -6828,7 +6829,9 @@ class AdminActions {
         id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
         saml2: ['saml2'], saml11: ['saml11'],
         // #493: a Kerberos service's own PAC claims.
-        'kerberos-pac': ['krb5']
+        'kerberos-pac': ['krb5'],
+        // #1250: a GNAP client's own access-token JWT claims.
+        gnap_access_token: ['gnap']
       };
       const declaredFamilies = applications.declaredFamiliesOf(entry);
       if (action === 'set-custom-claim' &&
@@ -9054,11 +9057,13 @@ class AdminActions {
   // cosmetic: it is the set ids the door being knocked on carries, so a POST to
   // /admin/claims naming `saml2` is refused by name instead of quietly changing
   // a set whose page it is not on and then redirecting to a page that cannot
-  // show what it did. It defaults to all five, which is what a caller that has
-  // not been given a family — nothing today — would get.
+  // show what it did. It defaults to every claim set, which is what a caller
+  // that has not been given a family — nothing today — would get. The pages
+  // and the four doors pass their own lists, so the GNAP set (#1250) is not
+  // among them.
   /**
-   * Changes one of the five claim sets — `/admin/claims`,
-   * `/admin/saml-attributes` and `/admin/userinfo-claims` all post here.
+   * Changes one claim set — `/admin/claims`, `/admin/saml-attributes` and
+   * `/admin/userinfo-claims` all post here.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
    * @param names - the attribute names the form repeated, read at the transport
