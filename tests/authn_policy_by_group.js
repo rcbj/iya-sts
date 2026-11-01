@@ -25,7 +25,7 @@
 //      precedence is lower; for somebody outside the group the
 //      application's; the application's again once the group's precedence
 //      is raised above it; a tie goes by name. A bad precedence is refused
-//      (STS-AUTHN-0539).
+//      (STS-AUTHN-0541).
 //   C. A REAL READER, the issuance gate: the facts it puts to the policy for
 //      a session are the group's lists for a member and the application's
 //      for anybody else.
@@ -194,8 +194,8 @@ function ranking(t) {
   t.check(tie.policy === [NAMES.app, NAMES.group].sort()[0],
           'B5. an equal precedence goes by name', JSON.stringify(tie));
   const bad = authnPolicy.saveNamed(NAMES.group, { precedence: 1001 });
-  t.check(!bad.ok && errorCodes.codeOf(bad) === 'STS-AUTHN-0539',
-          'B6. a precedence outside 1 to 1000 is refused (STS-AUTHN-0539)',
+  t.check(!bad.ok && errorCodes.codeOf(bad) === 'STS-AUTHN-0541',
+          'B6. a precedence outside 1 to 1000 is refused (STS-AUTHN-0541)',
           JSON.stringify(bad.errors));
   authnPolicy.saveNamed(NAMES.group, {
     mechanisms: ['wallet'], secondFactors: ['totp'], precedence: 10 });
