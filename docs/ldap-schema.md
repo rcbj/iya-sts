@@ -211,7 +211,8 @@ profile](post-login-activities.md#which-profile-applies-groups-and-applications-
 or `default`, and `stsAttributePolicy`, a named attribute policy (below).
 It is set on the group's page or with
 `POST /admin-api/groups/set-policy`, which accepts only a policy the realm
-holds; it competes on precedence with the policy the application names.
+holds. The holder names the policy; the policy lists nobody. See
+[Policies](policies.md#who-names-which-kind).
 
 A group `fedProvisionGroups` creates also carries `federationRelationship`,
 the relationship id that created it. A later sign-in through that

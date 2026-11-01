@@ -65,7 +65,9 @@ with it still loads.
 
 ### Which profile applies: groups and applications name it
 
-The `default` profile reaches everyone in the realm. A realm without its own
+[Policies](policies.md#post-login-activity-policy) is the rule this kind
+shares with the others. The `default` profile reaches everyone in the realm.
+A realm without its own
 `default` profile follows the default realm's.
 
 A **named profile** lists nothing: it has its fields and a `precedence`

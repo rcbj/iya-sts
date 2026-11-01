@@ -1212,6 +1212,18 @@ the sign-in only: a started activity's reminder mails and the progress
 report go by the person's groups. See
 [post-login activities](post-login-activities.md#which-profile-applies-groups-and-applications-name-it).
 
+### The password policy that applies to it
+
+An application names its password policy in **`appPasswordPolicy`**, a field
+of the same *Every protocol* sub-tab: `default`, or a named password policy
+of the realm. Nothing else is accepted. It holds a password chosen while
+somebody is signing in to this application, ranked against the policies the
+person's groups name in `stsPasswordPolicy`. A password set with no
+application in hand — the portal, a reset link, the console, an LDAP write —
+does not read this field. See
+[Policies](policies.md#password-policy) and
+[Different password rules](authentication.md#different-password-rules-for-different-applications-or-groups).
+
 ## Development and product mode
 
 | | Development | Product |
