@@ -781,7 +781,9 @@ function childMain() {
       // And the New service-account policy (#1240), for the same reason.
       '/admin-api/policies/save-serviceAccount-policy': ['newProfile'],
       // The post-login policy's, tabbed since #1239.
-      '/admin-api/policies/save-postLogin-policy': ['newProfile']
+      '/admin-api/policies/save-postLogin-policy': ['newProfile'],
+      // And the New attribute policy (#1241), for the same reason.
+      '/admin-api/policies/save-attributes-policy': ['newProfile']
     };
     // AND A FIELD'S SEARCH (#459, #461): its box, its page and its people
     // / applications toggle are read by the runtime's round trip and never
