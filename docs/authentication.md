@@ -191,7 +191,9 @@ cluster (`security.rateLimit*`).
 
 ### Different password rules for different applications or groups
 
-Besides `default`, a realm can hold **named password policies**, each with
+The same ranking is how every kind of policy on Directory → Policies is
+chosen. [Policies](policies.md) is that account. Besides `default`, a realm
+can hold **named password policies**, each with
 every rule `default` has and a **precedence** from 1 to 1000. Add one on
 *Directory → Policies → Password policy → New policy*, or with
 `POST /admin-api/policies/save-password-policy` naming a `profile` other

@@ -334,7 +334,7 @@ here — they are on [Applications](applications.md).
 | **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
 | **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused, sessions refused, and an existing session presented to an application for single sign-on (method *existing session*) |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
-| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Other — each with its own **Save**, and the address on Contact |
+| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Policies, Custom, Other — each with its own **Save**, and the address on Contact |
 | **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
 | **Federation links** | the partners' subjects that sign them in |
 | **Directory entry** | the LDAP object, every attribute, and *Change one attribute by name* |
@@ -408,7 +408,12 @@ entry that is not there.
 
 The **Attributes** tab draws every attribute that may be changed as a typed
 field, the way an [application's](applications.md) configuration is drawn:
-one sub-tab per group, each a form with its own **Save**. A single-valued
+one sub-tab per group, each a form with its own **Save**. **Policies** is
+where this person names a policy of a kind a person can name: the attribute
+policy (`stsAttributePolicy`) and, for a service account, the
+service-account policy (`stsServiceAccountPolicy`). See
+[Policies](policies.md#who-names-which-kind). **Custom** is the realm's own
+attributes, defined on Directory → Policies → Attribute policy. A single-valued
 attribute is a text box (empty clears it); a multi-valued one is one box per
 value, with **+** to add a box and the bin to delete one. Every box shows an
 example of a valid value, and every field's name carries a tooltip saying
@@ -623,15 +628,16 @@ too, and so does completing a reset link. `caep.autoEmitTypes` and
 ### Policies — `/admin/policies`
 
 **Directory → Policies** holds every kind of policy a realm has.
-`GET /admin-api/policies` answers each as a member, and
+[Policies](policies.md) is the account of the seven kinds and of how a named
+policy is chosen: the holder names it, and the lowest precedence applies.
+`GET /admin-api/policies` answers each kind as a member, and
 `POST /admin-api/policies/save-<kind>-policy` and `reset-<kind>-policy`
 write them, where the kind is `password`, `authn`, `serviceAccount`,
-`passkey`, `locale`, `attributes` or `postLogin`. The authentication policy
-tab also holds the realm's [named authentication
-policies](authentication.md#named-authentication-policies), which an
-application names in `appAuthnPolicy` and a group in `stsAuthnPolicy`, the
-lowest precedence applying
-(`save-named-authn-policy`, `delete-named-authn-policy`).
+`passkey`, `locale`, `attributes` or `postLogin`. The page is one tab per
+kind, and each of those tabs has the sub-tabs **Default**, **Named
+policies** and **New policy**. A last tab, **All profiles**, lists every
+profile of every kind. The authentication policy's named profiles use
+`save-named-authn-policy` and `delete-named-authn-policy`.
 
 **The password policy** is a minimum length (12), how many previous passwords
 may not be reused (5), a minimum number of symbols (1), and whether an uppercase
@@ -807,14 +813,25 @@ address, `local-part@domain`; an emptied box removes the attribute. Nothing
 else reads it.
 
 **Policies this group names.** On the drill-down, below the email address,
-one choice per kind of policy a group may name — today the passkey policy
-(`stsPasskeyPolicy`) and the post-login activity policy
-(`stsPostLoginPolicy`) — offering `default` and the realm's named policies of
-that kind. **Save** writes it onto the group's own entry; `POST
-/admin-api/groups/set-policy` is the same act. The policy a group names
-applies to its members where it has a lower precedence than the policy the
-application names; a named policy a group names cannot be removed until the
-group names another.
+one choice per kind of policy a group may name. A group may name six:
+
+| Attribute | Kind |
+|---|---|
+| `stsPasswordPolicy` | [Password](policies.md#password-policy) |
+| `stsAuthnPolicy` | [Authentication](policies.md#authentication-policy) |
+| `stsPasskeyPolicy` | [Passkey](policies.md#passkey-policy) |
+| `stsLocalePolicy` | [Locale](policies.md#locale-policy) |
+| `stsAttributePolicy` | [Attribute](policies.md#the-attribute-policy) |
+| `stsPostLoginPolicy` | [Post-login](policies.md#post-login-activity-policy) |
+
+Each offers `default` and the realm's named policies of that kind. **Save**
+writes the choice onto the group's own entry. `POST
+/admin-api/groups/set-policy` is the same act, with `attribute` naming the
+row. The policy a group names competes, by precedence, with the policy the
+application names and, for the attribute policy, with the policy the person
+names. [Who names which kind](policies.md#who-names-which-kind) is the whole
+rule. A named policy a group still names cannot be removed until the group
+names `default` or another policy.
 
 Three behaviours are the directory being consistent with itself:
 

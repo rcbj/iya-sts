@@ -564,7 +564,8 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 
 ### Different rules for different applications or groups
 
-Beside the `default` passkey policy, a realm can keep **named passkey
+[Policies](policies.md#passkey-policy) is the rule this kind shares with the
+others. Beside the `default` passkey policy, a realm can keep **named passkey
 policies**. Each has every row above and a precedence from 1 to 1000. A named
 policy lists nothing itself: **the application and the group name it**.
 
