@@ -7129,10 +7129,10 @@ function create(options) {
       return this.releaseClaim(ORIGIN_SCOPE, '', held.key, held.reservation);
     },
 
-    // The high-water mark at startup. A process that has just RESTORED the
-    // whole store is, by definition, up to date with everything committed
-    // before this instant — so it starts from here rather than from 0 and
-    // does not re-apply the entire history of the deployment on the way up.
+    // The log's head. persistence.js samples it when the store opens, before
+    // any row is read back (#619), and passes that seq to the follower.
+    // Sampling it again when coordination begins is the gap: a commit after
+    // a table was read and before that call is then below the mark.
     latestChangeSeq: function () {
       log.debug('Entering the postgres driver latestChangeSeq().');
       log.debug("Leaving latestChangeSeq().");

@@ -302,12 +302,15 @@ class ServiceState {
         // ---------------------------------------------------------------------
         // AND THEN COORDINATION, WHICH IS LAST AND HAS TO BE.
         //
-        // It takes the change log's high-water mark and treats everything below
-        // it as already applied — which is only true once this process really
-        // HAS restored everything: the settings, the realms, the directory, the
-        // keys and the minted rows. Starting it any earlier would mark changes
-        // as seen that this process had not seen, and they would never be
-        // applied by anything.
+        // The follower is armed here, after every restore. The high-water
+        // mark it starts from was taken when the store opened, before any
+        // of those reads (#619, #804): a change committed during the
+        // restore is above that mark and is applied, and applying one the
+        // restore already read is the applier reading the current row.
+        // Arming the follower any earlier would apply into a store this
+        // process had not restored yet. Taking the mark HERE, after the
+        // reads, is the gap: a change committed after a table was read and
+        // before this call is in neither.
         //
         // **A FAILURE HERE IS NOT FATAL, WHICH IS THE OPPOSITE OF THE TWO STEPS
         // ABOVE**, and the asymmetry is the argument: a process that cannot
