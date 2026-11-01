@@ -2401,14 +2401,18 @@ function reportListed(value: any): string[] {
 }
 
 /**
- * Realm policy rows, then one row per mechanism an application lists.
+ * Realm policy rows, then one row per mechanism an application lists, then
+ * one per mechanism the policy a group names lists (#1237).
  * An empty list adds nothing: that application inherits the realm policy.
  *
  * @param policy - `authn_policy.read()`
  * @param applications - `applications.list()`
+ * @param groups - optional; `[{ group, policy }]`, each group naming a named
+ *   authentication policy (`stsAuthnPolicy`)
  * @returns catalog rows
  */
-function reportMechanismRows(policy: any, applications: any[]): any[] {
+function reportMechanismRows(policy: any, applications: any[],
+                             groups?: any[]): any[] {
   log.debug("Entering reportMechanismRows().");
   const rows: any[] = [];
   const held = policy && typeof policy === 'object' ? policy : {};
@@ -2420,7 +2424,9 @@ function reportMechanismRows(policy: any, applications: any[]): any[] {
       id: mech.id,
       type: mech.kind,
       enabled: primary || second,
-      application: 'realm'
+      application: 'realm',
+      group: '',
+      policy: 'default'
     });
   }
   const apps = Array.isArray(applications) ? applications : [];
@@ -2433,29 +2439,82 @@ function reportMechanismRows(policy: any, applications: any[]): any[] {
     // THE LISTS OF THE AUTHENTICATION POLICY IT NAMES (#1148), which
     // replaced its own appAuthnMechanism and appMfaMechanism. A policy that
     // does not exist allows nothing and adds no row.
+    // Asked with no person (#1237): the application's own reference, as
+    // the sign-in screen's first draw reads it. A group's policy that may
+    // outrank it for a member is a row of its own, below.
     const fields = view.fields || {};
     const named = require('../common/authn_policy').mechanismsFor(fields);
-    const primary = named.missing ? [] : reportListed(named.mechanisms);
-    const second = named.missing ? [] : reportListed(named.secondFactors);
-    for (let p = 0; p < primary.length; p++) {
-      rows.push({
-        id: primary[p],
-        type: 'primary',
-        enabled: true,
-        application: id
-      });
+    reportPolicyRows(rows, named, id, '');
+  }
+  // THE POLICIES GROUPS NAME (#1237), a row per mechanism each lists, with
+  // the group and the policy: what a member signing in may get where that
+  // policy's precedence is the lowest named for them.
+  const named = Array.isArray(groups) ? groups : [];
+  const policyApi = require('../common/authn_policy');
+  for (let g = 0; g < named.length; g++) {
+    const one = named[g] || {};
+    const cn = String(one.group || '');
+    if (!cn) {
+      continue;
     }
-    for (let s = 0; s < second.length; s++) {
-      rows.push({
-        id: second[s],
-        type: 'second',
-        enabled: true,
-        application: id
-      });
-    }
+    const resolved = policyApi.namedPolicy(one.policy);
+    reportPolicyRows(rows, resolved
+      ? { policy: resolved.name, missing: false,
+          mechanisms: resolved.mechanisms,
+          secondFactors: resolved.secondFactors }
+      : { policy: String(one.policy || ''), missing: true,
+          mechanisms: [], secondFactors: [] }, '', cn);
   }
   log.debug("Leaving reportMechanismRows().");
   return rows;
+}
+
+// One row per mechanism a resolved named policy lists, for an application
+// or a group. A policy that does not exist allows nothing and adds no row.
+function reportPolicyRows(rows: any[], named: any, application: string,
+                          group: string): void {
+  log.debug("Entering reportPolicyRows().");
+  const primary = named.missing ? [] : reportListed(named.mechanisms);
+  const second = named.missing ? [] : reportListed(named.secondFactors);
+  const policy = String(named.policy || 'default');
+  for (let p = 0; p < primary.length; p++) {
+    rows.push({
+      id: primary[p],
+      type: 'primary',
+      enabled: true,
+      application: application,
+      group: group,
+      policy: policy
+    });
+  }
+  for (let s = 0; s < second.length; s++) {
+    rows.push({
+      id: second[s],
+      type: 'second',
+      enabled: true,
+      application: application,
+      group: group,
+      policy: policy
+    });
+  }
+  log.debug("Leaving reportPolicyRows().");
+}
+
+// The groups naming a named authentication policy (#1237): for each policy
+// of the realm, the groups the directory's group index says name it — a
+// lookup per policy, never a walk of the groups.
+function reportGroupPolicies(policyApi: any): any[] {
+  log.debug("Entering reportGroupPolicies().");
+  const out: any[] = [];
+  const policies = policyApi.named();
+  for (let i = 0; i < policies.length; i++) {
+    const groups = policyApi.namedBy(policies[i].name).groups || [];
+    for (let g = 0; g < groups.length; g++) {
+      out.push({ group: groups[g], policy: policies[i].name });
+    }
+  }
+  log.debug("Leaving reportGroupPolicies(). " + out.length);
+  return out;
 }
 
 async function reportReadMechanisms(rows: any, control: any):
@@ -2463,7 +2522,8 @@ async function reportReadMechanisms(rows: any, control: any):
   log.debug("Entering reportReadMechanisms().");
   const policyApi = require('../common/authn_policy');
   const applications = require('../common/applications');
-  const flat = reportMechanismRows(policyApi.read(), applications.list());
+  const flat = reportMechanismRows(policyApi.read(), applications.list(),
+                                   reportGroupPolicies(policyApi));
   for (let i = 0; i < flat.length; i++) {
     const keep = await reportOffer(flat[i], rows, control);
     if (keep === false) {

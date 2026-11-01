@@ -201,9 +201,11 @@ of policy: `stsPasskeyPolicy`, a [named passkey
 policy](passkeys.md#different-rules-for-different-applications-or-groups) or
 `default`, `stsLocalePolicy`, a [named locale
 policy](languages.md#named-profiles-for-applications-and-groups) or
-`default`, and `stsPasswordPolicy`, a [named password
+`default`, `stsPasswordPolicy`, a [named password
 policy](authentication.md#different-password-rules-for-different-applications-or-groups)
-or `default`. It is set on the group's page or with
+or `default`, and `stsAuthnPolicy`, a [named authentication
+policy](authentication.md#named-authentication-policies) or `default`. It is
+set on the group's page or with
 `POST /admin-api/groups/set-policy`, which accepts only a policy the realm
 holds; it competes on precedence with the policy the application names.
 
