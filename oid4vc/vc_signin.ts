@@ -188,6 +188,9 @@ const CLAIM_SKEW_MS = 60 * 1000;
 
 // Where an enrolment is started from and returns to (#129).
 const ENROL_HOME = '/portal/self-issued';
+// Where a person gets a credential issued again (#653): the portal's wallet
+// page, `portal/portal_wallet.ts`.
+const REISSUE_HOME = '/portal/wallet';
 
 // The query parameters the two shells and the start view take, and
 // `wallet`, which the start passes to the Verifier's own rule
@@ -1226,7 +1229,13 @@ class VcSignin {
           retry: retry,
           verdict: (selfIssued ? 'selfIssued' : 'presentation') +
                    (tx.verdict.ok ? '.verified' : '.notVerified'),
-          checks: this.checksOf(tx) }));
+          checks: this.checksOf(tx),
+          // WHERE A NEW CREDENTIAL IS ISSUED (#653), for one this realm
+          // disowned and a new one would replace: the person's own wallet
+          // page. Unprefixed, as every path in a view is; the surface adds
+          // the realm's.
+          reissue: outcome.disowned && outcome.disowned.reissue
+            ? REISSUE_HOME : '' }));
       log.debug("Leaving VcSignin.finish(). " + outcome.errorCode + ".");
       return;
     }

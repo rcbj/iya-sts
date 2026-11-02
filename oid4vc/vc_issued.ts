@@ -185,6 +185,16 @@ interface Issued {
   channel?: string;
 }
 
+// WHY A CREDENTIAL SIGNS NOBODY IN ANY MORE (#653), `disownedFact()`'s
+// answer.
+interface DisownedFact {
+  kind: string;
+  reason: string;
+  at: string;
+  via: string;
+  reissue: boolean;
+}
+
 // One credential of a person's history, for `/portal/wallet`.
 interface HistoryEntry {
   id: string;
@@ -235,6 +245,9 @@ interface VcIssuedDeps {
   artifactByKey: (key: string) => any;
   revokeArtifact: (record: any, via: string) => boolean;
   statusOf: (key: string) => number;
+  // When and by what a status entry was last set (#653), or null. Optional.
+  statusChangeOf?: (key: string) => { status: number; changedAt: number;
+                                     via: string } | null;
   setStatus: (key: string, value: number, via: string) => boolean;
   store: Store;
   // THE TWO INDEXES (2026-10-17): see `bySubject` and `byNotification`.
@@ -393,6 +406,7 @@ class VcIssued {
       artifactByKey: stats.artifactByKey,
       revokeArtifact: stats.revokeArtifact,
       statusOf: vcStatus.statusOf,
+      statusChangeOf: vcStatus.changeOf,
       setStatus: vcStatus.setStatus,
       store: issued,
       subjectIndex: bySubject,
@@ -711,52 +725,119 @@ class VcIssued {
   }
 
   // ---------------------------------------------------------------------------
-  // WHY THESE CREDENTIALS SIGN NOBODY IN ANY MORE, or ''. See the header for
+  // WHY THESE CREDENTIALS SIGN NOBODY IN ANY MORE, or null. See the header for
   // the three acts. Asked of the credentials a presentation COULD be; for a
   // Data Integrity row those are every sibling with the same validity window,
   // and any one of them disowned disowns the presentation, because nothing in
   // an unlinkable proof says which sibling it came from.
+  //
+  // **A FACT, NOT ONLY A SENTENCE (#653).** A refusal that said only "Token
+  // Status List index 48658 is INVALID" left the person unable to tell that
+  // their own earlier global sign-out had done it, or that the fix is a new
+  // credential. So the answer carries the KIND of act, WHEN it happened
+  // (where anything recorded it) and by WHAT, and whether a credential
+  // issued again would sign in — true for every kind but a suspension, which
+  // an administrator may lift and which a new credential would not explain.
+  // The sentence `disownedReason()` answers is this fact's `reason`, so the
+  // two cannot disagree. A batch's copies are rows of their own, and a
+  // global sign-out stamps each, so whichever copy is presented answers the
+  // same act.
   // ---------------------------------------------------------------------------
   /**
-   * Says why these credentials sign nobody in any more; any one candidate
-   * disowned disowns the presentation.
+   * Says why these credentials sign nobody in any more, as a fact; any one
+   * candidate disowned disowns the presentation.
+   *
+   * @param row - the row
+   * @param candidates - the credentials the presentation could be
+   * @returns `{ kind, reason, at, via, reissue }`, or null; `kind` is
+   *   `signed-out`, `removed`, `revoked` or `status`, `at` an ISO 8601
+   *   instant or ''
+   */
+  disownedFact(row: any, candidates: Issued[]): DisownedFact | null {
+    const { log, artifactRevokedByKey, statusOf } = this.deps;
+    log.debug("Entering VcIssued.disownedFact().");
+    const disownedAt = Number((row && row.disownedAt) || 0);
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      if (disownedAt && c.issuedAt <= disownedAt) {
+        const via = String(row.disownedVia || 'unstated');
+        const at = VcIssued.instant(disownedAt);
+        log.debug("Leaving VcIssued.disownedFact(). Signed out.");
+        return { kind: 'signed-out', at: at, via: via, reissue: true,
+                 reason: 'a global sign-out (' + via + ') disowned the ' +
+                   'credentials issued to this wallet for this person ' +
+                   'before ' + at };
+      }
+      if (c.removedAt) {
+        const via = String(c.removedVia || 'unstated');
+        const at = VcIssued.instant(c.removedAt);
+        log.debug("Leaving VcIssued.disownedFact(). Removed.");
+        return { kind: 'removed', at: at, via: via, reissue: true,
+                 reason: 'its holder removed it (' + via + ')' +
+                   (at ? ' at ' + at : '') };
+      }
+      const mark = c.artifactKey ? artifactRevokedByKey(c.artifactKey) : null;
+      if (mark) {
+        const via = String(mark.via || 'unstated');
+        const at = VcIssued.instant(mark.at);
+        log.debug("Leaving VcIssued.disownedFact(). Revoked.");
+        return { kind: 'revoked', at: at, via: via, reissue: true,
+                 reason: 'it was revoked in this service\'s issued ' +
+                   'register (' + via + ')' + (at ? ' at ' + at : '') };
+      }
+      const status = c.statusKey ? statusOf(c.statusKey) : 0;
+      if (status) {
+        // WHO SET THE BIT, AND WHEN — the status list's own record of its
+        // last change (`vc_status.ts`'s `changeOf()`). Optional, so a test's
+        // own deps need not name it; and absent for an entry that reads
+        // INVALID only because it expired or was forgotten.
+        // Only a change TO the status read counts: an entry still VALID
+        // underneath reads INVALID from its expiry or the issued register's
+        // mark, and its last change says nothing about either.
+        const last = (c.statusKey && this.deps.statusChangeOf)
+          ? this.deps.statusChangeOf(c.statusKey) : null;
+        const change = last && Number(last.status) === status ? last : null;
+        const via = change ? String(change.via || 'unstated') : '';
+        const at = change ? VcIssued.instant(change.changedAt) : '';
+        const name = status === 2 ? 'SUSPENDED' : status === 1 ? 'INVALID' :
+          'status ' + status;
+        log.debug("Leaving VcIssued.disownedFact(). Status " + status + ".");
+        return { kind: 'status', at: at, via: via, reissue: status !== 2,
+                 reason: 'its status list entry says ' + name +
+                   (via ? ' (' + via + ')' : '') + (at ? ' since ' + at : '') };
+      }
+    }
+    log.debug("Leaving VcIssued.disownedFact(). Not disowned.");
+    return null;
+  }
+
+  /**
+   * Says why these credentials sign nobody in any more, as the sentence of
+   * `disownedFact()`.
    *
    * @param row - the row
    * @param candidates - the credentials the presentation could be
    * @returns the reason, or ''
    */
   disownedReason(row: any, candidates: Issued[]): string {
-    const { log, artifactRevokedByKey, statusOf } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering VcIssued.disownedReason().");
-    const disownedAt = Number((row && row.disownedAt) || 0);
-    for (let i = 0; i < candidates.length; i++) {
-      const c = candidates[i];
-      if (disownedAt && c.issuedAt <= disownedAt) {
-        log.debug("Leaving VcIssued.disownedReason(). Signed out.");
-        return 'a global sign-out (' + (row.disownedVia || 'unstated') +
-          ') disowned the credentials issued to this wallet for this ' +
-          'person before ' + new Date(disownedAt).toISOString();
-      }
-      if (c.removedAt) {
-        log.debug("Leaving VcIssued.disownedReason(). Removed.");
-        return 'its holder removed it (' + (c.removedVia || 'unstated') + ')';
-      }
-      const mark = c.artifactKey ? artifactRevokedByKey(c.artifactKey) : null;
-      if (mark) {
-        log.debug("Leaving VcIssued.disownedReason(). Revoked.");
-        return 'it was revoked in this service\'s issued register (' +
-          (mark.via || 'unstated') + ')';
-      }
-      const status = c.statusKey ? statusOf(c.statusKey) : 0;
-      if (status) {
-        log.debug("Leaving VcIssued.disownedReason(). Status " + status + ".");
-        return 'its status list entry says ' +
-          (status === 2 ? 'SUSPENDED' : status === 1 ? 'INVALID' :
-            'status ' + status);
-      }
+    const fact = this.disownedFact(row, candidates);
+    log.debug("Leaving VcIssued.disownedReason().");
+    return fact ? fact.reason : '';
+  }
+
+  // An instant as ISO 8601, from milliseconds or a string a record kept; ''
+  // where nothing usable was recorded.
+  private static instant(value: unknown): string {
+    helpers.log.debug("Entering VcIssued.instant().");
+    const ms = typeof value === 'number' ? value : Date.parse(String(value));
+    if (!value || !isFinite(ms) || ms <= 0) {
+      helpers.log.debug("Leaving VcIssued.instant(). None.");
+      return '';
     }
-    log.debug("Leaving VcIssued.disownedReason(). Not disowned.");
-    return '';
+    helpers.log.debug("Leaving VcIssued.instant().");
+    return new Date(ms).toISOString();
   }
 
   // ---------------------------------------------------------------------------
@@ -1564,6 +1645,7 @@ export = {
   lookup: slot.forward('lookup'),
   lookupHolder: slot.forward('lookupHolder'),
   credentialsMatching: slot.forward('credentialsMatching'),
+  disownedFact: slot.forward('disownedFact'),
   disownedReason: slot.forward('disownedReason'),
   rowsForSubject: slot.forward('rowsForSubject'),
   rowByKey: slot.forward('rowByKey'),

@@ -255,6 +255,12 @@ class WebVcSignin {
               ' &mdash; ' + esc(c.detail) + '</li>';
           }).join('') + '</ul>'
         : '') +
+      // THE WAY TO A NEW CREDENTIAL (#653), where this realm disowned the
+      // one presented and a new one would sign in.
+      (v.reissue
+        ? '<p><a id="wallet-reissue" href="' + esc(v.reissue) + '">' +
+          'Get a new credential issued</a></p>'
+        : '') +
       (v.retry
         ? '<p><a id="wallet-retry" href="' + esc(v.retry) + '">' +
           (v.verdict ? 'Try another credential' : 'Start again') + '</a></p>'

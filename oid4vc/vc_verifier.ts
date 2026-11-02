@@ -250,6 +250,9 @@ import vpConfig = require('./vc_verifier_config');
 // default. Read once per request BUILT, and the transaction carries the expiry
 // it was given.
 const VP_TTL_MS = 10 * 60 * 1000;
+// WHERE A PERSON GETS A CREDENTIAL ISSUED AGAIN (#653): the portal's wallet
+// page (`portal/portal_wallet.ts`), under the realm's prefix.
+const REISSUE_PATH = '/portal/wallet';
 
 // ---------------------------------------------------------------------------
 // WHICH KEYS A PRESENTED CREDENTIAL'S ISSUER SIGNATURE MAY VERIFY AGAINST
@@ -3586,12 +3589,21 @@ class VcVerifier {
       }
       candidates = [].concat(row.credentials || []);
     }
-    const disowned = vcIssued.disownedReason(row, candidates);
+    const disowned = vcIssued.disownedFact(row, candidates);
     if (disowned) {
-      return refuse('STS-VC-0071', 'This credential has been disowned: ' +
-                    disowned + '. It still verifies, and it signs nobody in ' +
-                    'here any more — its status list says so too. A ' +
-                    'credential issued to you after that will.');
+      // WHAT TO DO ABOUT IT (#653): a new credential, from the person's own
+      // wallet page — except for a suspension, which a new credential would
+      // not explain and an administrator may lift. `disowned` rides the
+      // outcome so the wallet's answer and the browser's page say the same.
+      const refused: any = refuse('STS-VC-0071', 'This credential has been ' +
+        'disowned: ' + disowned.reason + '. It still verifies, and it signs ' +
+        'nobody in here any more — its status list says so too. ' +
+        (disowned.reissue
+          ? 'A credential issued to you after that will: get one issued ' +
+            'again on the Wallet page of your account.'
+          : 'An administrator of this service may reinstate it.'));
+      refused.disowned = disowned;
+      return refused;
     }
     if (statusRefused) {
       return refuse(verified.statusErrorCode || 'STS-VC-0072',
@@ -3850,15 +3862,56 @@ class VcVerifier {
       key: key, algs: ISSUER_ALGS, policy: policy,
       exempt: !own && this.statusOptional(verified.issuerCertificatePem)
     });
-    this.vpCheck(verified.checks, 'Credential status', answer.ok,
-                 answer.detail);
+    // WHY THIS REALM'S OWN CREDENTIAL IS NO LONGER GOOD (#653). The list
+    // says only INVALID; the issued register says what made it so — a
+    // global sign-out, the holder's removal, an administrator — and when.
+    // Asked here, for every door, of a JOSE credential, whose row is one
+    // lookup by its digest; an ldp_vc's is found by its holder key, which
+    // a sign-in does in `signInOutcome()` and a bar-door verification has
+    // no reason to.
+    const disowned = !answer.ok && own && format !== 'ldp_vc'
+      ? this.disownedOf(verified) : null;
+    const detail = disowned
+      ? answer.detail + ' — why: ' + disowned.reason
+      : answer.detail;
+    this.vpCheck(verified.checks, 'Credential status', answer.ok, detail);
     if (!answer.ok) {
       verified.ok = false;
       verified.statusRefused = true;
-      verified.statusDetail = answer.detail;
+      verified.statusDetail = detail;
       verified.statusErrorCode = answer.errorCode || 'STS-VC-0072';
+      if (disowned) {
+        verified.statusDisowned = disowned;
+      }
     }
     log.debug("Leaving VcVerifier.statusCheck(). " + answer.ok + ".");
+  }
+
+  // The issued register's account of a presented JOSE credential this realm
+  // signed whose status refused it (#653): `vc_issued.ts`'s
+  // `disownedFact()` for its row, or null where the register has no row (a
+  // credential issued on a token this realm did not verify, or before a
+  // restart in development mode) or says nothing more than the list.
+  private disownedOf(verified: any): any {
+    const { log, vcIssued } = this.deps;
+    log.debug("Entering VcVerifier.disownedOf().");
+    const row = verified.credentialJwt
+      ? vcIssued.lookup(verified.credentialJwt) : null;
+    const fact = row
+      ? vcIssued.disownedFact(row, [].concat(row.credentials || [])) : null;
+    log.debug("Leaving VcVerifier.disownedOf(). " +
+              (fact ? fact.kind : "Nothing recorded") + ".");
+    return fact;
+  }
+
+  // WHERE A PERSON GETS A CREDENTIAL ISSUED AGAIN (#653): their own wallet
+  // page in the portal, in the realm the request arrived in. Absolute, for a
+  // wallet, which has no page to resolve a path against.
+  private reissueUrl(req: any): string {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering VcVerifier.reissueUrl().");
+    log.debug("Leaving VcVerifier.reissueUrl().");
+    return baseUrlOf(req) + REISSUE_PATH;
   }
 
   // Is the trusted issuer certificate that verified a credential listed in
@@ -4744,6 +4797,17 @@ class VcVerifier {
         // checks go in the description, because a wallet developer cannot fix
         // "no".
         const failed = verified.checks.filter((c) => { return !c.ok; });
+        const failedText = failed.map((c) => {
+          return c.name + ' — ' + c.detail;
+        }).join(' | ');
+        // WHY, AND WHAT TO DO (#653): what the issued register knows about a
+        // credential of this realm's that the list refused — said in the
+        // checks for a JOSE credential (statusCheck()), and from the
+        // sign-in's outcome for an ldp_vc, whose row only a sign-in finds —
+        // and where a new one is issued.
+        const outcome = record.signIn && record.signIn.outcome;
+        const disowned = (outcome && outcome.disowned) ||
+                         verified.statusDisowned || null;
         // A refusal whose only failed check is the issuer certificate's
         // revocation is named for that, so an operator is sent to the
         // certificate rather than to the wallet.
@@ -4753,8 +4817,13 @@ class VcVerifier {
         res.status(400).type('application/json').send(JSON.stringify({
           error: 'invalid_request',
           error_description: 'The presentation was refused: ' +
-            failed.map((c) => { return c.name + ' — ' + c.detail; })
-                  .join(' | ')
+            failedText +
+            (disowned && failedText.indexOf(disowned.reason) < 0
+              ? ' | Credential register — why: ' +
+                disowned.reason : '') +
+            (disowned && disowned.reissue
+              ? '. Get a new credential issued at ' + this.reissueUrl(req)
+              : '')
         }));
         log.debug("Leaving the OID4VP response endpoint. Refused " +
                   failed.length +
