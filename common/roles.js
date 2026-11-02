@@ -617,21 +617,35 @@ function isBuiltIn(name) {
 // authorizing `admin:write` would be the scope-as-authorization mistake
 // written into the register instead.
 // ---------------------------------------------------------------------------
+// **AND A THIRD, SECURITY_ADMIN (#645, 2026-11-02)**, over the console's
+// Security Administrator group (`admin.securityGroup`). It authorizes
+// `admin:security`, which the management API asks — INSTEAD of
+// `admin:write` — for a change to a Directory → Policies policy, for naming
+// one on an application, group or person, for granting the role itself and
+// for acting on the account of a person who holds it
+// (`common/security_operations.ts`). It implies Admin Read on the roster, so
+// its group is one of ADMIN_READ's, and NOT Admin Write: the role exists so
+// that managing security can be somebody's whole job. `sts-api-client` is
+// seeded in it, as in the other two (rcbj's decision on #645), so a machine
+// that writes policy keeps working until an operator takes it out.
 /**
- * The two console roles, ADMIN_READ and ADMIN_WRITE: configured roles seeded
- * in every realm, each authorizing the native permission of the same name.
+ * The three console roles, ADMIN_READ, ADMIN_WRITE and SECURITY_ADMIN:
+ * configured roles seeded in every realm, each authorizing the native
+ * permission of its own.
  *
- * Their groups are read from the `admin.readGroup` / `admin.writeGroup`
- * settings, never stored; people hold them through the console roster.
+ * Their groups are read from the `admin.readGroup` / `admin.writeGroup` /
+ * `admin.securityGroup` settings, never stored; people hold them through the
+ * console roster.
  */
 const CONSOLE_ROLES = [
   { name: 'ADMIN_READ', consoleRole: 'read', permission: 'admin:read',
-    groupSettings: ['admin.readGroup', 'admin.writeGroup'],
+    groupSettings: ['admin.readGroup', 'admin.writeGroup',
+                    'admin.securityGroup'],
     seedApplications: ['sts-api-client'],
     what: 'Admin Read: every READ on /admin-api. Held by the console\'s ' +
-          'Admin Read and Admin Write groups (Admin Write implies Admin ' +
-          'Read) and by the applications listed here. Authorizes the ' +
-          'admin:read permission.' },
+          'Admin Read, Admin Write and Security Administrator groups (both ' +
+          'of the others imply Admin Read) and by the applications listed ' +
+          'here. Authorizes the admin:read permission.' },
   { name: 'ADMIN_WRITE', consoleRole: 'write', permission: 'admin:write',
     groupSettings: ['admin.writeGroup'],
     seedApplications: ['sts-api-client'],
@@ -639,7 +653,18 @@ const CONSOLE_ROLES = [
           'Held by the console\'s Admin Write group and by the applications ' +
           'listed here. Authorizes the admin:write permission. It does not ' +
           'imply Admin Read on a token: a token may carry either scope, and ' +
-          'the policy asks for the one the operation needs.' }
+          'the policy asks for the one the operation needs.' },
+  { name: 'SECURITY_ADMIN', consoleRole: 'security',
+    permission: 'admin:security',
+    groupSettings: ['admin.securityGroup'],
+    seedApplications: ['sts-api-client'],
+    what: 'Security Administrator: the /admin-api operations that change ' +
+          'security — a policy on Directory → Policies, a policy named on ' +
+          'an application, group or person, a grant of this role, and the ' +
+          'account of a person who holds it. Admin Write does not reach ' +
+          'them. Held by the console\'s Security Administrator group and ' +
+          'by the applications listed here. Authorizes the admin:security ' +
+          'permission.' }
 ];
 
 // The application the seed puts in both. The bootstrap client,
@@ -652,7 +677,7 @@ const CONSOLE_ROLE_APPLICATION = 'sts-api-client';
 
 // ---------------------------------------------------------------------------
 // THE NATIVE ROLES (#309, a follow-up to #88, 2026-09-28): every role that
-// authorizes one of this service's NATIVE permissions — the two console roles
+// authorizes one of this service's NATIVE permissions — the three console roles
 // above, ADMIN_CONSOLE (#454), DEVICE_COMPLIANCE, and the two Shared Signals
 // roles SSF_READ and SSF_MANAGE. Each is seeded in every realm, cannot be
 // deleted, and authorizes exactly its permission.
@@ -796,10 +821,10 @@ function consoleRoleFor(name) {
 }
 
 /**
- * Tells whether a role name is one of the two console roles.
+ * Tells whether a role name is one of the three console roles.
  *
  * @param name - a role name
- * @returns true for ADMIN_READ or ADMIN_WRITE
+ * @returns true for ADMIN_READ, ADMIN_WRITE or SECURITY_ADMIN
  */
 function isConsoleRole(name) {
   log.debug("Entering isConsoleRole().");

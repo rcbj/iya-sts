@@ -23965,6 +23965,16 @@ const CODES = [
       'certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): ' +
       'such a client\'s tokens are accepted only certificate-bound.',
     spec: 'invalid_token (HTTP 401)' },
+  // #645 (2026-11-02): the Security Administrator's role.
+  { code: 'STS-API-0138',
+    summary: 'A management API write that only a Security Administrator may ' +
+      'make — a Directory → Policies policy saved, reset or acted on, a ' +
+      'policy named on an application, group or person, the Security ' +
+      'Administrator\'s role granted or revoked by any door, or the account ' +
+      'of a person who holds it acted on — was asked with a token that does ' +
+      'not carry admin:security or whose subject does not hold ' +
+      'SECURITY_ADMIN. Admin Write does not reach these.',
+    spec: 'HTTP 403' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

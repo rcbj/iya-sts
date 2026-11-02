@@ -8477,6 +8477,27 @@ const SETTINGS = [
                  'this group does not also need the read group, because a ' +
                  'role that could change a page it could not see would be a ' +
                  'trap rather than a permission.' },
+  // THE SECURITY ADMINISTRATOR (#645, 2026-11-02): the third console role.
+  // Only its members may change a Directory → Policies policy or name one on
+  // an application, group or person, and only they may grant it or change
+  // this setting — pointing it at another group would be a grant
+  // (`common/security_operations.ts`). Process-wide for admin.writeGroup's
+  // reason.
+  { key: 'admin.securityGroup', group: 'Admin console',
+    label: 'Security Administrator role',
+    env: 'ADMIN_SECURITY_GROUP', type: 'string', dflt: 'security-admin',
+    perProcess: true,
+    runtime: true,
+    description: 'The cn of the directory group whose members are Security ' +
+                 'Administrators: only they may change a policy on Directory ' +
+                 '→ Policies, name a policy on an application, group or ' +
+                 'person, grant this role, or act on the account of a ' +
+                 'person who holds it. Admin Write alone may not. THE ROLE ' +
+                 'IMPLIES ADMIN READ and nothing else, so it can be held by ' +
+                 'somebody who is not otherwise an administrator. The ' +
+                 'default realm\'s group is the service\'s Security ' +
+                 'Administrators, over every realm; a realm\'s own group ' +
+                 'confines its members to that realm.' },
 
   // -------------------------------------------------------------------------
   // THE MANAGEMENT API'S OWN GATE (2026-09-09), which is a different question

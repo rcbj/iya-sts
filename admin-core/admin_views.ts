@@ -1488,12 +1488,16 @@ class AdminViews {
                                                           : 'realm';
     const outsideRealm = authority === 'realm' &&
                          realms.currentId() !== identityRealm;
+    // SECURITY_ADMIN is the roster's `security` (#645), which implies read.
     const roles = (caller.roles || []).map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
-        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+        : (role === 'ADMIN_WRITE' ? 'write'
+          : (role === 'SECURITY_ADMIN' ? 'security'
+            : String(role).toLowerCase()));
     });
     const read = !outsideRealm && roles.indexOf('read') >= 0;
     const write = !outsideRealm && roles.indexOf('write') >= 0;
+    const security = !outsideRealm && roles.indexOf('security') >= 0;
     log.debug("Leaving AdminViews.apiGateStateOf(). " + authority + ".");
     return {
       enforced: true, available: rbac.available(), session: true,
@@ -1502,7 +1506,7 @@ class AdminViews {
       readGroup: config.value('admin.readGroup'),
       writeGroup: config.value('admin.writeGroup'),
       sessionRealm: identityRealm, foreignSession: false,
-      read: read || write, write: write,
+      read: read || write || security, write: write, security: security,
       roles: outsideRealm ? [] : roles,
       open: false, closed: false, windowOpens: true, empty: false,
       bootstrapPasswordRequired: false, windowWithheld: false,
@@ -1585,6 +1589,7 @@ class AdminViews {
                                 !rbac.passwordSignIn(session));
     const held = outsideRealm || passwordRequired
       ? Object.assign({}, asked, { roles: [], read: false, write: false,
+                                   security: false,
                                    open: false, openable: outsideRealm
                                      ? false : asked.openable })
       : asked;
@@ -1617,6 +1622,8 @@ class AdminViews {
       foreignSession: !!(found && found.foreign),
       read: enforced ? held.read : true,
       write: enforced ? held.write : true,
+      // #645: the Security Administrator's role, from the same answer.
+      security: enforced ? !!held.security : true,
       roles: enforced ? held.roles : rbac.ROLE_IDS.slice(0),
       open: enforced && held.open,
       closed: enforced && held.empty && !held.open && !held.roles.length,

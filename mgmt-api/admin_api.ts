@@ -281,6 +281,8 @@ import accountState = require('../common/account_state');
 // table the create VALIDATES against is what stops this document offering a
 // family that call would refuse.
 import applications = require('../common/applications');
+// WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645): a leaf the gate asks.
+import SecurityOperations = require('../common/security_operations');
 // RFC 9728, for `load-resource-metadata`: the realm's authorization servers the
 // document is compared with are addressed by the request, so this handler
 // computes them and hands them to the action. A library that registers nothing.
@@ -26654,6 +26656,77 @@ class AdminApi {
              attributes: attributes, project: row.project || null };
   }
 
+  // ---------------------------------------------------------------------------
+  // A WRITE ONLY A SECURITY ADMINISTRATOR MAY MAKE (#645): asked of
+  // `common/security_operations.ts` with the console operation this request
+  // mirrors and what it reads of the realm the request is about. Null for a
+  // read and for every write Admin Write may make.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the security change a request is, or null.
+   *
+   * @param req - the request, inside the gate
+   * @returns `{ kind, detail }`, or null
+   */
+  securityChangeOf(req) {
+    const { log, parseBody, rbac, applications, adminActions, config,
+            realms } = this.deps;
+    log.debug("Entering AdminApi.securityChangeOf().");
+    const method = String(req.method || '').toUpperCase();
+    if (method === 'GET' || method === 'HEAD') {
+      log.debug("Leaving AdminApi.securityChangeOf(). A read.");
+      return null;
+    }
+    const operation = this.consoleOperationOf(req);
+    const body = Object.assign({}, parseBody(req) || {});
+    const realm = realms.currentId();
+    const change = SecurityOperations.classify({
+      method: method, path: operation.path, action: operation.action,
+      body: body
+    }, {
+      securityGroup: function () {
+        log.debug("Entering securityGroup().");
+        log.debug("Leaving securityGroup().");
+        return String(config.value(SecurityOperations.SECURITY_GROUP_SETTING) ||
+                      '');
+      },
+      holdsSecurity: function (username) {
+        log.debug("Entering holdsSecurity().");
+        log.debug("Leaving holdsSecurity().");
+        return rbac.holdsSecurity(username, realm);
+      },
+      applicationValues: function (identifier, attribute) {
+        log.debug("Entering applicationValues().");
+        const row = applications.get(identifier);
+        const fields = (row && row.fields) || {};
+        const wanted = String(attribute).toLowerCase();
+        const key = Object.keys(fields).filter(function (name) {
+          return name.toLowerCase() === wanted;
+        })[0];
+        log.debug("Leaving applicationValues().");
+        return key ? [].concat(fields[key]).map(String) : [];
+      },
+      personValues: function (username, attribute) {
+        log.debug("Entering personValues().");
+        log.debug("Leaving personValues().");
+        return rbac.personValues(username, attribute, realm);
+      },
+      groupValues: function (group, attribute) {
+        log.debug("Entering groupValues().");
+        log.debug("Leaving groupValues().");
+        return rbac.groupValues(group, attribute, realm);
+      },
+      fieldsCoveredBy: function (given) {
+        log.debug("Entering fieldsCoveredBy().");
+        log.debug("Leaving fieldsCoveredBy().");
+        return adminActions.fieldsCoveredBy(given);
+      }
+    });
+    log.debug("Leaving AdminApi.securityChangeOf(). " +
+              (change ? change.kind : 'not one'));
+    return change;
+  }
+
   // The operation a request is, as the CONSOLE path it mirrors and the action
   // it names: `/admin-api/pki/build-root` is a POST of `build-root` to
   // `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
@@ -27222,16 +27295,23 @@ class AdminApi {
         // permission of the ADMIN_CONSOLE role the console's client confers
         // on everybody who signs in through it — see withConsoleRoutes().
         const consoleOp = self.isConsoleOperation(req);
+        // A WRITE THAT CHANGES SECURITY (#645) takes `admin:security`, the
+        // permission of SECURITY_ADMIN, INSTEAD of `admin:write`: a Security
+        // Administrator need not hold Admin Write, and Admin Write alone may
+        // not make it — see `common/security_operations.ts`.
+        const securityChange = mdmFeed || consoleOp ? null
+          : self.securityChangeOf(req);
         const scopesWanted = mdmFeed ? 'device:compliance'
           : (consoleOp ? 'admin:console'
-            : (req.method === 'GET' ? 'admin:read' : 'admin:write'));
+            : (securityChange ? 'admin:security'
+              : (req.method === 'GET' ? 'admin:read' : 'admin:write')));
         const presentation = self.presentedTokenOf(req);
         const presented = presentation.token;
         if (!presented) {
           // The scope to ask for: the feed's or the console's own (#454)
           // where the operation is one of theirs, both admin scopes
           // otherwise.
-          const hint = mdmFeed || consoleOp ? scopesWanted
+          const hint = mdmFeed || consoleOp || securityChange ? scopesWanted
                                             : 'admin:read admin:write';
           res.set('WWW-Authenticate',
                   'Bearer realm="' + BASE + '", scope="' + hint + '"');
@@ -27651,7 +27731,9 @@ class AdminApi {
         // policy's refusal would only say a role was missing.
         // ---------------------------------------------------------------------
         const ownerScope = req.method === 'GET' ? 'owner:read' : 'owner:write';
-        const ownerPath = !mdmFeed && !consoleOp &&
+        // Never for a security change (#645): naming a policy on an object
+        // you own is still naming a policy.
+        const ownerPath = !mdmFeed && !consoleOp && !securityChange &&
           carried.indexOf(scopesWanted) < 0 &&
           carried.indexOf(ownerScope) >= 0;
         const owned = ownerPath ? self.ownedOperationOf(req) : null;
@@ -27713,9 +27795,34 @@ class AdminApi {
                   ? 'application' : 'person') + ' to ' +
                 (neededScope === 'device:compliance' ? 'DEVICE_COMPLIANCE'
                   : (neededScope === 'admin:read' ? 'ADMIN_READ'
-                                                  : 'ADMIN_WRITE')) +
+                    : (neededScope === 'admin:security' ? 'SECURITY_ADMIN'
+                                                        : 'ADMIN_WRITE'))) +
                 ' on /admin/roles (or POST /admin-api/roles/add-member)') +
             ' and ask for a new token.'] });
+        }
+        // ---------------------------------------------------------------------
+        // A SECURITY CHANGE WITHOUT THE SECURITY ADMINISTRATOR (#645), refused
+        // HERE and not only by the access-control policy below: with
+        // `xacml.enforceAccess` off that policy allows everything, and the
+        // separation must not be one setting away from gone. The token must
+        // carry `admin:security` and its subject hold SECURITY_ADMIN now
+        // (held ∩ carried, above).
+        // ---------------------------------------------------------------------
+        if (securityChange &&
+            (scopes.indexOf('admin:security') < 0 ||
+             effective.roles.indexOf('SECURITY_ADMIN') < 0)) {
+          log.info('admin-api: refusing ' + req.method + ' ' +
+                   (req.originalUrl || req.url) + ' for ' + who + ': ' +
+                   securityChange.detail + '.');
+          errorCodes.mark(res, 'STS-API-0138');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'Only a Security Administrator may make this change: ' +
+            securityChange.detail + '. It needs a token carrying ' +
+            'admin:security whose subject holds SECURITY_ADMIN — Admin ' +
+            'Write does not reach it. This token carries ' +
+            (scopes.length ? scopes.join(', ') : '(no scope)') + '. A ' +
+            'Security Administrator grants the role on /admin/rbac (POST ' +
+            BASE + '/rbac/grant with role=security).'] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
@@ -27767,7 +27874,8 @@ class AdminApi {
         const requiredRoles = mdmFeed ? ['DEVICE_COMPLIANCE']
           : (consoleOp ? ['ADMIN_CONSOLE']
             : (path === '/me' ? ['ADMIN_READ', 'ADMIN_CONSOLE']
-              : (req.method === 'GET' ? ['ADMIN_READ'] : ['ADMIN_WRITE'])));
+              : (securityChange ? ['SECURITY_ADMIN']
+                : (req.method === 'GET' ? ['ADMIN_READ'] : ['ADMIN_WRITE']))));
         const requiredAllRoles = consoleOp && !frameOnly
           ? [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'] : [];
         // THE OWNER RULE'S QUESTION (#607), on an owner's token: the object,
@@ -27835,9 +27943,11 @@ class AdminApi {
                   (requiredAllRoles.length ? ' and ' +
                     (req.method === 'GET' ? 'admin:read (ADMIN_READ)'
                                           : 'admin:write (ADMIN_WRITE)') : '')
-                : 'A ' + (req.method === 'GET'
-                  ? 'read needs admin:read (ADMIN_READ)'
-                  : 'write needs admin:write (ADMIN_WRITE)'))) +
+                : (securityChange
+                  ? 'This change needs admin:security (SECURITY_ADMIN)'
+                  : 'A ' + (req.method === 'GET'
+                    ? 'read needs admin:read (ADMIN_READ)'
+                    : 'write needs admin:write (ADMIN_WRITE)')))) +
             '. The document is on /admin/xacml and xacml.enforceAccess turns ' +
             'the layer off.'] });
         }
