@@ -104,12 +104,13 @@ protocol's section of the sidebar:
 [Delegation and impersonation](delegation.md)
 
 **Client libraries** —
-[Authentication libraries](client-libraries.md): client libraries tested
-against iya-sts, each signing a person in with the OpenID Connect
-Authorization Code flow as a public client and receiving their CAEP signals —
-one for browser single-page applications (JavaScript and TypeScript), one for
-native macOS apps (Swift). More will be added as libraries are tested or
-written.
+[Authentication libraries](authentication-libraries.md): client libraries
+for integrating an application with iya-sts. Node.js has six published npm
+modules. Python, Java, Rust, Go, and C# repositories cover the four
+server-side libraries; those packages are not on a public registry yet.
+[OpenID Connect and CAEP clients](client-libraries.md) is the detailed
+guide to the browser OpenID Connect client and the Swift client for native
+macOS apps.
 
 **Operating it** —
 [The compose stack](docker-compose.md) ·

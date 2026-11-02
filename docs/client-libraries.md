@@ -1,20 +1,17 @@
 ---
-title: Authentication libraries
+title: OpenID Connect and CAEP clients
 ---
 
-# Authentication libraries
+# OpenID Connect and CAEP clients
 
-These are client libraries that have been tested against iya-sts. Each one is
-the relying party's side of a flow this service implements, packaged so an
-application can use it without writing the protocol code itself.
+The catalogue of authentication libraries, by language, is
+[Authentication libraries](authentication-libraries.md). This page is the
+detailed guide to the browser OpenID Connect client and the Swift client
+for native macOS apps. Both have been run against iya-sts, are written to
+the specifications, and also work with other OpenID providers and SSF
+transmitters.
 
-**This list will grow.** More libraries will be added as they are tested
-against iya-sts or written for it. A library listed here has been run against
-iya-sts; that does not mean it works only with iya-sts. Both libraries below
-are written to the specifications and also work with other OpenID providers
-and SSF transmitters.
-
-The two libraries listed so far have the same use case on two platforms:
+The two libraries have the same use case on two platforms:
 
 * **OpenID Connect Authorization Code flow with PKCE, as a public client.** The
   application holds no client secret (`token_endpoint_auth_method: none`). It
@@ -521,6 +518,7 @@ on by default ([Several accounts](multiple-accounts.md)).
 
 ## Related
 
+* [Authentication libraries](authentication-libraries.md)
 * [OAuth 2.0 and OpenID Connect](oauth-oidc.md)
 * [Configuring OpenID Connect flows](configure-oidc-flows.md)
 * [Configuring OAuth 2.0 grants](configure-oauth2-grants.md)
