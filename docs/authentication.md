@@ -74,6 +74,11 @@ belongs to no protocol:
 * a stable **`sid`**, and a cookie handle that rotates on every
   re-authentication.
 
+The subject, the filing name and a sign-in name are
+[People](people.md). The application that sent them is an
+[application](applications.md), the same entry in every protocol.
+[Directory](directory.md).
+
 An ID Token, a SAML `AuthnStatement` or a WS-Federation token is rendered
 *from* the session and carries its `sid` or `SessionIndex`. A re-authentication
 by the same person (`prompt=login`, `max_age`, SAML `ForceAuthn`, RFC 9470

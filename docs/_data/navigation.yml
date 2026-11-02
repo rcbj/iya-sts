@@ -70,7 +70,6 @@
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
-    - { title: Service accounts, url: /service-accounts.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
     - { title: Reports, url: /reporting.html }
     - { title: Attribute sources, url: /attribute-sources.html }
@@ -85,14 +84,27 @@
     - { title: "Configuring OpenID4VP and wallet sign-in", url: /configure-oid4vp.html }
     - { title: W3C VC API, url: /vc-api.html }
 
-- section: Directory and provisioning
+# DIRECTORY IS A USER AND AN APPLICATION, protocol-independent, then the
+# policy they are held to, then the ways in. Each object has its page, and
+# the configuration of each is a section of directory.md. Groups stay on the
+# console page. tests/doc_links.js holds every fragment here to a heading.
+- section: Directory
   items:
+    - { title: Directory, url: /directory.html }
+    - { title: People, url: /people.html }
+    - { title: "Configuring a person", url: "/directory.html#configuring-a-person" }
+    - { title: Applications, url: /applications.html }
+    - { title: "Configuring an application", url: "/directory.html#configuring-an-application" }
+    - { title: Policies, url: /policies.html }
+    - { title: "Configuring a policy", url: "/directory.html#configuring-a-policy" }
+    - { title: Groups, url: "/admin-console.html#groups--admingroups" }
+    - { title: Service accounts, url: /service-accounts.html }
     - { title: LDAP, url: /ldap.html }
     - { title: LDAP schema, url: /ldap-schema.html }
-    - { title: Policies, url: /policies.html }
     - { title: "Configuring LDAP", url: /configure-ldap.html }
     - { title: SCIM 2.0, url: /scim.html }
     - { title: "Configuring SCIM 2.0", url: /configure-scim.html }
+    - { title: Bulk directory import, url: /bulk-import.html }
 
 # AUTHORIZATION GATHERS EVERY PAGE ABOUT A DECISION, and also LINKS to the
 # sections that belong where they are (rcbj, 2026-10-30, #564). Roles, scopes,
@@ -147,7 +159,6 @@
 - section: Administration
   items:
     - { title: Admin console, url: /admin-console.html }
-    - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
     - { title: Account API, url: /account-api.html }
 
@@ -155,7 +166,6 @@
   items:
     - { title: The compose stack, url: /docker-compose.html }
     - { title: Persistence, url: /persistence.html }
-    - { title: Bulk directory import, url: /bulk-import.html }
     - { title: PostgreSQL schema, url: /postgres-schema.html }
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }

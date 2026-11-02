@@ -8,7 +8,8 @@ nav_order: 12
 **Directory → Policies** (`/admin/policies`) is where a realm sets the rules
 it holds people to: passwords, sign-in, passkeys, language, the attributes a
 person must carry, what a service account may do, and what somebody is asked
-to do after they sign in.
+to do after they sign in. How a policy relates to the person and the
+application that name it is the [Directory](directory.md#a-policy) chapter.
 
 Each kind is a directory entry in its own container, with a tab of its own.
 `GET /admin-api/policies` answers every kind. The

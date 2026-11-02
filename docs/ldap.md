@@ -198,7 +198,8 @@ this service believes.
 With `ldap.autocreateUsers` on (the default), an entry appears at
 `uid=<name>,ou=users,<base>` the first time somebody authenticates through a
 protocol that has no switch of its own. **One person is one entry**, however
-they arrive by those protocols. `alice`, `alice@REALM` and her `sub` all name
+they arrive by those protocols. `alice`, `alice@REALM`, her `sub` and a live sign-in name
+([People](people.md#sign-in-names)) all name
 one entry, and a client certificate whose subject CN is `alice` folds onto
 that entry too. A DID or a SPIFFE ID, which names nobody by itself, is filed
 under a name made from a digest of it, with the identifier on the entry as
