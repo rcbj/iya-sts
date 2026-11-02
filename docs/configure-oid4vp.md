@@ -370,6 +370,12 @@ api config/set '{"key":"oid4vp.signInSelfIssued","value":true}'
 The sign-in screen then offers **Sign in with a self-issued ID**, and the
 portal's `/portal/self-issued` page lets a person enrol a key.
 
+While it is off, `/portal/self-issued` says so and says how to change it. A
+person who holds Admin Write in the realm sees the setting
+(`oid4vp.signInSelfIssued`, or `OID4VP_SIGN_IN_SELF_ISSUED` at start) and a
+link to **Protocols → Verifiable Credentials → OpenID4VP settings**. Anybody
+else is told to ask an administrator to turn that setting on.
+
 **2. Enrol a key**, one of two ways:
 
 * **The person**, on `/portal/self-issued`: **Enrol a wallet**. The wallet

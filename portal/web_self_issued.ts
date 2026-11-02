@@ -112,7 +112,35 @@ class SelfIssuedPages {
           '</a></p><p class="sub">' + t.html('portalSelfIssued.enrolNote') +
           ' ' + t.html('portalSelfIssued.reprove') + '</p>'
         : '<p class="sub" id="siop-off">' + t.html('portalSelfIssued.off') +
-          '</p>') + '</div>';
+          SelfIssuedPages.turnOnNote(view.turnOn, t) + '</p>') + '</div>';
+  }
+
+  /**
+   * How the sign-in is turned on, after the sentence saying it is off
+   * (#655), or '': to a person who may change the realm's settings, the
+   * setting, its environment variable and a link to the console tab that
+   * draws it; to anybody else, the setting to ask an administrator for.
+   * The link is root-relative, so the runtime puts it in the realm as it
+   * does every other (`realmLinks()`).
+   *
+   * @param turnOn - the view's `turnOn`, or nothing
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static turnOnNote(turnOn: Json, t: Json): string {
+    if (!turnOn || !turnOn.setting) {
+      return '';
+    }
+    const named = { setting: String(turnOn.setting),
+                    env: String(turnOn.env || '') };
+    if (turnOn.administrator === true && turnOn.page) {
+      return ' <span id="siop-turn-on">' +
+        t.html('portalSelfIssued.offAdmin', named) + ' <a href="' +
+        kit.esc(String(turnOn.page)) + '">' +
+        t.html('portalSelfIssued.offAdminLink') + '</a></span>';
+    }
+    return ' <span id="siop-ask-admin">' +
+      t.html('portalSelfIssued.offAsk', named) + '</span>';
   }
 
   /**
