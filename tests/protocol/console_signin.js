@@ -324,8 +324,10 @@ function consoleBundle() {
 // a deployment with an administrator admits only a holder, and a job that
 // reads console pages answers 403 for want of a role rather than for anything
 // it tests. Opt-in, because sts_realm_administrators.js grants and confines
-// roles itself. "write" grants both. The role goes to an account whose
-// password only this process holds.
+// roles itself. "write" grants both. Since #645 it may also be "security" or
+// a list (`["write", "security"]`), for a job whose writes are the Security
+// Administrator's. The role goes to an account whose password only this
+// process holds.
 //
 // Answers the client described at the top of this file.
 async function signInToTheConsole(base, user, log2, options) {
@@ -350,8 +352,22 @@ async function signInToTheConsole(base, user, log2, options) {
   }
 
   const password = await ensureConsoleAccount(base, user, say);
-  if (opts.grant === "read" || opts.grant === "write") {
-    const roles = opts.grant === "write" ? ["read", "write"] : ["read"];
+  // A LIST AS WELL SINCE #645: `["write", "security"]` adds the Security
+  // Administrator, which a job saving a policy needs — the console asks
+  // admin:security at sign-in, and it is narrowed off a person without the
+  // role. "write" still means read and write.
+  const asked = [].concat(opts.grant || []);
+  const roles = [];
+  asked.forEach(function (one) {
+    const wanted = one === "write" ? ["read", "write"]
+      : (one === "read" || one === "security") ? [one] : [];
+    wanted.forEach(function (role) {
+      if (roles.indexOf(role) < 0) {
+        roles.push(role);
+      }
+    });
+  });
+  if (roles.length) {
     for (const role of roles) {
       const r = await fetch(base + "/admin-api/rbac/grant", {
         method: "POST", headers: { "Content-Type": "application/json" },
