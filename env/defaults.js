@@ -83,12 +83,12 @@ var config = {
 
   // --- Admin console ---------------------------------------------------
   admin: {
-    bootstrapUsername: "admin", // Bootstrap administrator account; restart to apply
-    bootstrapPassword: "",      // Bootstrap administrator password; restart to apply
-    readGroup: "admin-read",    // Admin Read role
-    writeGroup: "admin-write",  // Admin Write role
+    bootstrapUsername: "admin",      // Bootstrap administrator account; restart to apply
+    bootstrapPassword: "",           // Bootstrap administrator password; restart to apply
+    readGroup: "admin-read",         // Admin Read role
+    writeGroup: "admin-write",       // Admin Write role
     securityGroup: "security-admin", // Security Administrator role
-    openWhenEmpty: true         // Open until the bootstrap administrator signs in
+    openWhenEmpty: true              // Open until the bootstrap administrator signs in
   },
 
   // --- GNAP ------------------------------------------------------------
