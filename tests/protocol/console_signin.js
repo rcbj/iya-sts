@@ -383,7 +383,8 @@ async function signInToTheConsole(base, user, log2, options) {
   const authorize = base + "/oauth2/authorize?" + new URLSearchParams({
     response_type: "code", client_id: "sts-admin-console",
     redirect_uri: redirectUri,
-    scope: "openid admin:read admin:write admin:console",
+    // admin:security since #645, as the console's runtime asks.
+    scope: "openid admin:read admin:write admin:security admin:console",
     state: state, code_challenge: b64u(crypto.createHash("sha256")
       .update(verifier).digest()),
     code_challenge_method: "S256", resource: resource,

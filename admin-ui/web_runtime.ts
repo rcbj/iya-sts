@@ -78,11 +78,12 @@ type Json = any;
 // The console's client: public, DPoP-bound (`sender_constraints.ts`,
 // `DPOP_BOUND_PUBLIC_CLIENTS`).
 const CLIENT_ID = 'sts-admin-console';
-// What it asks for: an ID Token for who signed in, the two scopes the
-// management API takes, narrowed at issuance to the roles the person holds,
-// and the console's own (#454), which every person signing in here is
-// issued through the ADMIN_CONSOLE role this client confers.
-const SCOPE = 'openid admin:read admin:write admin:console';
+// What it asks for: an ID Token for who signed in, the three scopes the
+// management API takes (admin:security since #645), narrowed at issuance to
+// the roles the person holds, and the console's own (#454), which every
+// person signing in here is issued through the ADMIN_CONSOLE role this
+// client confers.
+const SCOPE = 'openid admin:read admin:write admin:security admin:console';
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-console-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
