@@ -286,6 +286,12 @@ function joinGroup(globalAttrs, cellAttrs) {
 const GLOBAL_MINTED = {
   // Configuration, which every cell must hold the same copy of.
   'authorization_servers.profiles': 'the named authorization servers',
+  // The audit export destinations (#641): a URL, a format and a sealed
+  // credential each, no personal data, and every cell delivers its own
+  // events to the same ones. Each cell's position in its own ring is
+  // `audit.export.cursors`, which is cell-tier with the ring it walks.
+  'audit.export.destinations': 'where a realm\'s audit events are ' +
+    'delivered',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',
@@ -363,6 +369,9 @@ const CELL_MINTED = [
   'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokenHolders',
   'admin_stats.tokens',
   'admin_stats.users', 'attribute_sources.status', 'audit.events',
+  // A destination's cursor over THIS cell's audit ring (#641), beside the
+  // ring itself: another cell's cursor would point into events it never held.
+  'audit.export.cursors',
   'audit.nums', 'authn.pending',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',
   'authn.webauthnCredentials', 'authorization_details.consented',
