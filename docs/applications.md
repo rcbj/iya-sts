@@ -4,15 +4,21 @@ title: Applications
 
 # Applications
 
-A person who authenticates here has a directory entry and a row on
-`/admin/users`. The **application** on the other side of that authentication
-has one too: an entry under `ou=applications` in the embedded directory. It
-answers the question *what applications has this service seen?*, whatever
-protocol brought each one.
+An **application** is protocol-independent. Whichever protocol it spoke,
+it is one entry under the realm's `ou=applications`. How that entry
+sits beside a user is the
+[Directory](directory.md#an-application) chapter. The admin console's
+**Directory → Applications** and `/admin-api/applications` are that
+entry. A [user](people.md) is a different entry, under `ou=users`, and
+a group is a different entry again.
 
-**The entries are the registry, not a copy of one.** Every protocol endpoint
-that checks a client's configuration reads it from these entries, so an
-`ldapmodify` of one is a configuration change.
+The application is the other party of a sign-in. The
+[session](sessions.md) belongs to the user. Every protocol names this
+same entry: as the client, the audience or the service a token, an
+assertion or a ticket was issued for. The user's subject stays the
+user's.
+
+## What an application is here
 
 ```
 dc=example,dc=com
@@ -24,11 +30,157 @@ dc=example,dc=com
                       relying parties, the OpenID4VP verifier, Kerberos services
 ```
 
-The directory is a tree per [trust realm](trust-realms.md), so each realm has a
-registry of its own. `GET /admin/ldap/applications` lists the entries and
-publishes the schema; `?format=json` is the machine-readable form.
+The entries are the registry. Every protocol endpoint that checks a
+client's configuration reads it from these entries, so an `ldapmodify`
+of one is a configuration change. Nothing caches them.
+[The directory is the source of truth](#the-directory-is-the-source-of-truth).
+
+## One application, one entry
+
+The entry appears when an identifier is accepted, when an administrator
+or `POST /oauth2/register` creates it, when an LDAP add writes it under
+`ou=applications`, or when this service seeds one of its own surfaces
+at startup. Which acceptance records it is
+[One entry per identifier](#one-entry-per-identifier).
+
+The **identifier** is `appIdentifier`: the name exactly as it was
+presented. Matching keeps case, so `Acme` and `acme` are two entries.
+The identifier is not folded, and it carries no protocol prefix. An
+application that arrives under one identifier in two protocols is one
+entry that has been seen in both.
+
+The distinguished name is
+`cn=<the filing name>,ou=applications,<the realm's base>`. The filing
+name is the identifier when that identifier is at most 64 characters.
+Past that, `cn` is `app-` and the first twelve hexadecimal digits of
+the identifier's SHA-256, and `appIdentifier` stays the whole name. A
+search for the application uses `appIdentifier`.
+
+Each [trust realm](trust-realms.md) has its own applications. The same
+identifier in two realms is two entries.
+
+In development mode an identifier nobody has registered is accepted,
+and the entry is recorded. Product mode refuses an application nobody
+registered.
+[Development and product mode](#development-and-product-mode). Past
+`applications.max` a further entry is refused.
+[Configuration](#configuration).
+
+## The names
+
+| Name | What it is |
+|---|---|
+| Identifier | `appIdentifier`. The key. What the registry lists the entry under. |
+| Filing name | `cn`. The identifier, or `app-` and twelve hexadecimal digits when the identifier is longer than 64 characters. The RDN. |
+| Display name | `appName`. What a page calls it. With none stored, the identifier is the name. It selects no entry. |
+| Protocol name | the attribute that family looks up: `oauthClientId`, `samlEntityId`, `wsfedRealm`, `wstrustAppliesTo`, `krb5ServicePrincipalName`, `oid4vpClientId`, and the others on [LDAP schema](ldap-schema.md#applications-ouapplications). Usually the identifier. A second value is another name this entry answers to, matched exactly. |
+| Audience | `oauthAudience`. An `aud` a token for this application carries. It is declared. A sighting never writes it. |
+| Application subject | `urn:sts:application:<identifier>`. The name on a certificate this realm issues the application, and the subject of a signal about the application. |
+| DID | `did:web:<host>:applications:<identifier>` when that family is declared. [A DID describing an application](#a-did-describing-an-application). |
+
+`/admin/applications` is one row per application, keyed on the
+identifier. A lookup by a protocol name matches the characters that
+were stored. Two entries that list the same `oauthClientId` are a
+mistake: the lookup finds the first, and the overlap is recorded.
+
+An entry whose kind is `oauth2-resource-server`, and which has no
+`oauth2-client` kind beside it, is an audience. The authorization
+server refuses that `client_id` at the authorization, token, and the
+other client endpoints, in every mode.
+[The applications that are this service](#the-applications-that-are-this-service).
+
+## Registration and a sighting
+
+A sighting and a registration are two acts, and both can leave a fact
+on the same entry.
+
+* A **sighting** is this service recording an identifier it accepted.
+  In development that writes the entry. It does not register the
+  application. An `ldapmodify` of that entry changes its configuration
+  and leaves it unregistered.
+* A **registration** is somebody creating it. `appRegisteredBy` says
+  which door: `administrator` (the console or the management API),
+  `rfc7591`, `startup`, or `ldap:<the bound DN>`. An unbound add, which
+  only development allows, is recorded as `ldap`. An add that already
+  carries `appRegisteredBy` keeps that value. Only an add stamps it.
+
+Product mode serves an application only when it is registered.
+
+**Revoke registration** keeps the entry and its history.
+`appRegistered` becomes `FALSE`, and the client secret and the
+registration access token are removed. **Forget** removes the entry.
+[The console page and the API](#the-console-page-and-the-api).
+
+A family the application is **declared** for is `appAllowedProtocol`.
+A family it has been **seen** in is `appProtocol`. In product mode an
+issuance through a family the application is not declared for is
+refused. An application declared for nothing is refused nothing.
+[Declared families and recorded ones](#declared-families-and-recorded-ones).
+
+**Declared** configuration is what the checks read: redirect URIs,
+grant types, scopes, the secret, whether the client is public or
+confidential. It is editable. **Derived** facts are what happened: the
+counters, the first and last sighting, the kinds it has been seen as.
+The console and the API refuse a write of a derived fact.
+[Declared and derived](#declared-and-derived).
+[What the checks read](#what-the-checks-read).
+
+### The client secret
+
+`oauthClientSecret` is stored on the entry, one record per secret, each
+with its own expiry, sealed at rest where keys persist. In product mode
+a search of the directory never returns it, nor the registration access
+token. The console shows a secret to an administrator. The audit log
+never records the value.
+
+On **New application**, **Lifetime (days)** beside **Generate Secret**
+takes a whole number of days from 0 to 730. 0 means the secret never
+expires. Leave it empty and the secret uses
+`oauth2.clientSecretLifetimeDays`. The lifetime applies to the secret
+in the box, whether it was generated or typed. A lifetime with no
+secret is refused. With the API, send `lifetimeDays` on
+`POST /admin-api/applications/create` beside
+`fields.oauthClientSecret`. A later secret is added on the
+application's **Credentials** tab, which takes the same field.
+[The schema, and what "schema" means here](#the-schema-and-what-schema-means-here).
+
+## What a second name leaves unchanged
+
+A protocol name, a display name, an audience and a DID are further
+names of the same entry. The identifier stays the key.
+
+| | Stays |
+|---|---|
+| The entry | one entry, however many protocol names it holds |
+| The key | `appIdentifier` |
+| A token about a person | the person's `sub`, `urn:uuid:<their entryUUID>`. This entry's identifier is the client or the audience on that token. |
+| The application's own subject | `urn:sts:application:<identifier>` |
+| The directory address | `cn=<filing name>,ou=applications,<the realm's base>` |
+| Another realm | its own entry, with its own identifier |
+
+## Where an application is visible
+
+* **Directory → Applications**, `/admin/applications`, and
+  `GET /admin-api/applications`. The list is the entries, including one
+  created before anything has connected to it.
+  [The console page and the API](#the-console-page-and-the-api).
+* The directory, under the realm's `ou=applications`.
+  `GET /admin/ldap/applications` lists the entries and publishes the
+  schema. `?format=json` is the machine-readable form.
+* [`/portal/applications`](user-facing-pages.md#the-user-portal), the
+  applications a signed-in person may use.
+* `POST /oauth2/register`, which writes an entry.
+  [Software statements](#software-statements-rfc-7591-section-23).
+* This service's own surfaces, seeded at startup when the identifier
+  is free.
+  [The applications that are this service](#the-applications-that-are-this-service).
 
 ## Features
+
+What an application is sits
+[above](#what-an-application-is-here). The sections below are the
+mechanism: which sighting writes the entry, what each check reads, and
+the settings on the page.
 
 ### One entry per identifier
 

@@ -7,7 +7,8 @@ title: Service accounts
 A **service account** is a person entry used by a program (issue #221). It
 is an ordinary entry under `ou=users`. The auxiliary class
 `stsServiceAccount` and the attribute `stsServiceAccount: TRUE` mark it as a
-service account. It is **not** an application.
+service account. It is **not** an application. How that person sits beside
+an application and a policy is the [Directory](directory.md#a-person) chapter.
 
 A service account keeps everything a person entry has: a password, app
 passwords, Kerberos keys, a `sub`, groups and roles. Shared Signals report

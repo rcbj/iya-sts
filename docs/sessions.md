@@ -33,7 +33,9 @@ from that one difference.
 WS-Federation, SAML 2.0, SAML 1.1 and the admin console all read the same
 cookie, which is why signing in through one signs you in to all of them and why
 signing out of one signs you out of all of them. There is no per-protocol
-session anywhere in this service.
+session anywhere in this service. The person it belongs to is a
+[user](people.md), and the other party is an
+[application](applications.md). [Directory](directory.md).
 
 ### The cookie
 
