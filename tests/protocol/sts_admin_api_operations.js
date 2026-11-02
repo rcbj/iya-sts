@@ -4549,11 +4549,16 @@ async function theAdminRolesRoundTrip() {
   const rolesAvailable = (before.body.roles || []).map(function (r) {
     return typeof r === "string" ? r : r.role;
   }).filter(Boolean);
-  assert.ok(rolesAvailable.length === 2,
-    "there should be exactly TWO console roles — read and write. They are " +
-    "the whole of this console's authorization model, and a third would be a " +
-    "design change rather than a configuration one. It published " +
-    JSON.stringify(rolesAvailable));
+  // THREE SINCE #645 (2026-11-02): the Security Administrator joined read
+  // and write, which was the design change this assertion said a third role
+  // would be. It names the set rather than counting it, so a fourth, or one
+  // of the three renamed, still fails here.
+  assert.deepStrictEqual(rolesAvailable.slice().sort(),
+    ["read", "security", "write"],
+    "there should be exactly THREE console roles — read, write and " +
+    "security (#645). They are the whole of this console's authorization " +
+    "model, and another would be a design change rather than a " +
+    "configuration one. It published " + JSON.stringify(rolesAvailable));
   assert.ok(String(before.body.groupsDn || "").indexOf("dc=" + REALM) >= 0,
     "READ FROM INSIDE " + REALM + ", THE ROSTER IS THAT REALM'S (#32): each " +
     "realm has administrators of its own, and the default realm's are the " +
