@@ -1735,6 +1735,22 @@
     "en": "2c8a385006302f63",
     "text": "此应用的人员登录时所依据的身份验证策略：`default`（或为空），或本领域某个命名身份验证策略的名称（目录 > 策略）。命名策略包含允许的第一因素机制（password、password-mfa、webauthn、spnego、wallet、federation；一个都不列则全部允许）和允许的第二因素（password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet；一个都不列则保持领域的设置不变）。`default` 允许领域身份验证策略所允许的每一种机制。\n\n在两种模式下，每次通过浏览器登录该应用时都会强制执行：会话所依据的机制不被该策略允许的人，会被送回去用策略允许的机制重新登录。只列出一种第一因素机制时，它也是登录的去处（`spnego` 去 /authn/spnego，`wallet` 去 /authn/wallet，`federation` 去 appFederationRelationship）。第二因素只会收窄领域的策略：领域已关闭的第二因素在这里仍然关闭。\n\n本领域没有任何策略使用的名称——绕过控制台写入——在该策略存在之前不允许任何机制（STS-AUTHN-0536）。\n\n它无人写入：没有任何协议提供它，因此它可编辑，且初始为空。"
   },
+  "applications.schema.attributes.appPasskeyPolicy.what": {
+    "en": "7bc62e3e8f1d7a2a",
+    "text": "登录此应用所遵循的通行密钥策略：`default`（或为空），或此领域的一个命名通行密钥策略的名称（Directory > Policies）。它按优先级与此人每个组所指定的通行密钥策略（stsPasskeyPolicy）竞争：优先级最低者生效，相同时按名称，没有任何指定时为 `default`。\n\n此领域中不存在的策略名称（在控制台之外写入）不指定任何策略，并会被记录（STS-AUTHN-0537）。此属性所指定的命名通行密钥策略不能被删除（STS-AUTHN-0538）。\n\n它不由任何人写入：没有协议提供它，因此可编辑，初始为空。"
+  },
+  "applications.schema.attributes.appLocalePolicy.what": {
+    "en": "2fbcb920f26d8f11",
+    "text": "此应用的页面或邮件所回退使用的语言策略：`default`（或为空），或此领域的一个命名语言策略的名称（Directory > Policies）。当请求、此人和浏览器都没有指定目录能提供的语言时，它决定页面使用的语言，也决定因此应用而创建的人员所获得的 preferredLanguage。已知此人时，它按优先级与此人每个组所指定的语言策略（stsLocalePolicy）竞争：优先级最低者生效，相同时按名称，没有任何指定时为 `default`。\n\n此领域中不存在的策略名称（在控制台之外写入）不指定任何策略，并会被记录（STS-I18N-0013）：适用 `default`，因为它只决定语言。此属性所指定的命名语言策略不能被删除（STS-I18N-0014）。\n\n它不由任何人写入：没有协议提供它，因此可编辑，初始为空。"
+  },
+  "applications.schema.attributes.appPasswordPolicy.what": {
+    "en": "3422915746161336",
+    "text": "在登录此应用时设置的密码所遵循的密码策略：`default`（或为空），或此领域的一个命名密码策略的名称（Directory > Policies）。它按优先级与此人每个组所指定的密码策略（stsPasswordPolicy）竞争：优先级最低者生效，相同时按名称，没有任何指定时为 `default`。手头没有应用的入口（门户、控制台、LDAP）只对各组的策略排序。\n\n此领域中不存在的策略名称（在控制台之外写入）不指定任何策略，各组的引用仍参与排序，并会被记录（STS-AUTHN-0539）。此属性所指定的命名密码策略不能被删除（STS-AUTHN-0540）。\n\n它不由任何人写入：没有协议提供它，因此可编辑，初始为空。"
+  },
+  "applications.schema.attributes.appPostLoginPolicy.what": {
+    "en": "b5b9d466c5a220cc",
+    "text": "登录此应用时遵循的登录后活动策略：`default`（或为空），或此领域某个命名登录后策略的名称（目录 > 策略）。它与此人每个群组所指定的登录后策略（stsPostLoginPolicy）按优先级竞争：优先级最低者生效，相同时按名称，无任何指定时为 `default`。活动关闭的命名策略在胜出时会“排除”登录此应用。\n\n只在登录时读取：已启动活动的提醒邮件和进度报告不知道任何应用，只按此人的群组选择。\n\n此领域没有任何策略持有的名称（绕过控制台写入）不指定任何策略，并会记录日志（STS-AUTHN-0542）。此属性所指定的命名登录后策略不能删除（STS-AUTHN-0543）。\n\n它“无人写入”：没有协议提供它，因此可编辑，初始为空。"
+  },
   "applications.schema.attributes.appFgaPolicy.what": {
     "en": "feebbd1d5f494bab",
     "text": "此应用所拥有的细粒度授权策略在 ou=policies 中的条目名称；一旦 appFgaEnforced 为 TRUE，该策略将决定此应用所声明类型的每一项授权详情。"

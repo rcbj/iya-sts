@@ -95,12 +95,12 @@
 //
 // **THE REPORT** is the per-process scheduler job `process.memory-report`. It
 // runs every five minutes in every process that runs the scheduler (the
-// front and each request worker), and each run logs ONE line with the role,
-// `process.memoryUsage()` and the heap limit. A request worker also sends
-// its figures to the front process over the pool's channel, so that a later
-// exit can be reported beside the last figures seen (`STS-WORKER-0046`,
-// `0047`). The run's summary is recorded like any per-process run, so
-// Monitoring → Scheduler shows each process's latest.
+// front and each request worker). Each run records its summary with the
+// role, `process.memoryUsage()` and the heap limit; the log line is debug.
+// A request worker also sends its figures to the front process over the
+// pool's channel, so that a later exit can be reported beside the last
+// figures seen (`STS-WORKER-0046`, `0047`). Monitoring → Scheduler shows
+// each process's latest.
 //
 // A LEAF: it requires config, error_codes and node's own modules at load,
 // and the scheduler only through the instance `protocol_stack.ts` hands it.
@@ -745,9 +745,9 @@ class ProcessMemory {
   }
 
   /**
-   * One run of `process.memory-report`: logs this process's line, sends a
-   * request worker's figures to the front process, and answers the run's
-   * summary.
+   * One run of `process.memory-report`: records this process's summary,
+   * sends a request worker's figures to the front process, and answers
+   * the snapshot. The log line is debug.
    *
    * @returns the snapshot
    */
@@ -784,9 +784,10 @@ class ProcessMemory {
     scheduler.register({
       id: REPORT_JOB,
       title: 'Memory report',
-      describe: 'Logs, in this process, one line with its role and its ' +
-                'memory: resident size, heap used and total, the heap ' +
-                'limit, external memory and array buffers (#341).',
+      describe: 'Records, in this process, the run\'s summary with its ' +
+                'role and its memory: resident size, heap used and total, ' +
+                'the heap limit, external memory and array buffers. The ' +
+                'log line is debug (#341).',
       owner: 'common/process_memory.ts',
       kind: 'per-process',
       everyMs: function (): number {

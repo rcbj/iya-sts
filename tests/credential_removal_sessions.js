@@ -537,8 +537,8 @@ function childMain() {
     // ====================================================================
     const ERIN = 'crs-erin-' + stamp;
     person(ERIN);
-    await realms.run(realms.DEFAULT_REALM, function () {
-      mail.directory().writeAddress(ERIN, 'erin@crs.example', 'admin');
+    await realms.run(realms.DEFAULT_REALM, async function () {
+      await mail.directory().writeAddress(ERIN, 'erin@crs.example', 'admin');
       const saved = authnPolicy.save('default', Object.assign({},
         authnPolicy.DEFAULTS, { emailCodeSecondFactor: true,
           emailLinkSecondFactor: true, emailLinkPrimary: true,

@@ -157,8 +157,8 @@ class PasskeyReportApi {
       { name: 'profile', in: 'query', required: false,
         schema: { type: 'string', maxLength: 128 },
         description: 'Count the people a NAMED passkey profile selects by ' +
-                     'group (#535: the members of its ' +
-                     '`stsPasskeySelectGroup` groups), bounded as `group` ' +
+                     'group (#535, #1235: the members of the groups whose ' +
+                     '`stsPasskeyPolicy` names it), bounded as `group` ' +
                      'is. `default` is refused: it selects nobody by group.' },
       { name: 'application', in: 'query', required: false,
         schema: { type: 'string', maxLength: 512 },

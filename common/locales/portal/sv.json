@@ -18,6 +18,8 @@
   "nav.gnap.heading": "Åtkomst du har gett via GNAP",
   "nav.email.label": "E-post",
   "nav.email.heading": "Din e-postadress och dina meddelanden",
+  "nav.pseudonyms.label": "Inloggningsnamn",
+  "nav.pseudonyms.heading": "Namn du kan logga in med",
   "section.owned.title": "Resurser jag äger",
   "section.owned.what": "De roller, grupper, tjänstekonton och applikationer som anger dig, eller en grupp du är med i, som ägare.",
   "nav.owned.roles.label": "Roller",

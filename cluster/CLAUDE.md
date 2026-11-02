@@ -721,8 +721,9 @@ leader's row never. `scheduler.historyDays` and `scheduler.maxRuns` are gone.
   every process drops the rows as it applies them, in batches of 2000 with
   the job waiting for each to be written down (`deps.settle`, a
   `flushThrough()`) before the next, at most 25 a run and asking
-  `ctx.stillOwner()` between them. What a run leaves is the next run's. One
-  summary line per run that did anything; `STS-SCHED-0017` when it fails.
+  `ctx.stillOwner()` between them. What a run leaves is the next run's. The
+  run's summary records what it removed or pinned; that log line is debug.
+  `STS-SCHED-0017` when it fails.
 * **A start reads less than the table holds**: the run store declares #333's
   `expiresAt`, answered by `Scheduler.expiryOf()` — for a finished run, its
   end plus the longer of the window and `(count + 1)` of its job's
@@ -936,7 +937,7 @@ row's body runs on a request worker except those marked **front**:
 | `spiffe.authority-rotation` | cluster, realm; hourly, from each authority's own age, in both modes | `spiffe/spiffe_ca.ts` (D6) |
 | `spiffe.sigstore-tuf-refresh` | cluster, service; `spiffe.dockerSigstoreTufRefreshS` (daily), off while `spiffe.dockerSigstoreTufRootFile` is empty — the sigstore trust root through TUF, a failure keeping the last verified set (#170) | `spiffe/spiffe_sigstore_tuf.ts`, `spiffe/CLAUDE.md` |
 | `spiffe.target-reconcile` | cluster, service, **front** (its stopping flag is the front's); every 15 s, off when `ECS_CONTAINER_METADATA_URI_V4` is unset and while this process is stopping — each running task's private address registered in this cluster's SPIFFE target groups, an address no running task still has deregistered; a failure is `STS-CLUSTER-0027` and the service keeps serving (#323) | `cluster/spiffe_targets.js`, `deploy/aws/CLAUDE.md` |
-| `process.memory-report` | per-process; every 5 minutes — one log line per process (front, protocol worker, surface worker) with its rss, heap used and total, heap limit, external and array buffers; a request worker also sends its figures to the front process, which reports them beside that worker's exit (#341) | `common/process_memory.ts`, `common/CLAUDE.md` |
+| `process.memory-report` | per-process; every 5 minutes — records, in this process, the run's summary with its role and its memory (rss, heap used and total, heap limit, external and array buffers); the log line is debug. A request worker also sends its figures to the front process, which reports them beside that worker's exit (#341) | `common/process_memory.ts`, `common/CLAUDE.md` |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |
 | `devices.android-status-refresh` | cluster, service; `devices.androidStatusRefreshS` (daily), off while `devices.androidStatusUrl` is empty — downloads Google's Android attestation status list and activates it, which queues the recheck | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |
 | `devices.android-status-recheck` | cluster, service (loops over realms); daily and on a list's activation — the people and devices MARKED as holding an Android-attested key, asked of the store asynchronously, a realm skipped when neither the list nor the registrations moved since its last complete recheck (#615) | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |
@@ -952,6 +953,7 @@ row's body runs on a request worker except those marked **front**:
 | `report.drain.here` | per-process, realm, quiet; every 2 s — `report.drain` on the process that holds `ops.reporting` (`STS_REPORT_NODE=true`); a no-op otherwise (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.retention.here` | per-process, realm, quiet; every 60 s — `report.retention` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.schedule.here` | per-process, realm, quiet; every 60 s — `report.schedule` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `audit.export` | per-process, realm, quiet; `auditExport.intervalS` — each process delivers its own audit ring to the enabled destinations, cursors `merge: 'own'`, at-least-once (#641) | `common/audit_export.ts`, `common/CLAUDE.md` 3da |
 
 **The timers still outside it** are listed, each with the reason it stays, in
 `tests/no_periodic_timers.js`, which fails on a new one and on an entry whose
@@ -991,6 +993,19 @@ stores.
   fetches. The report allows a quiet job's row to be that old before calling
   it stale.
 
+**A JOB'S BODY LOGS ONLY WHEN SOMETHING IS WRONG.** Routine info from
+`run()` and from everything it calls is written at debug
+(`common/job_log.ts`, around the three calls to `run()`). A warning, an
+error, and an info line that carries an `STS-` code — a recorded failure,
+including an audit refusal — are written as asked. `STS_LOG_LEVEL=debug`
+still shows the routine lines. The run row on /admin/scheduler records a
+run that succeeded. That success is not an audit event, so the audit
+export does not send "Scheduler run … succeeded"; a failure and an
+abandonment are audit rows and are exported. Lines outside a body stay:
+who leads, a run held for load, an outcome that cannot be written. A
+job's `quiet: true` is the store's run-row rate limit (`QUIET_RECORD_MS`,
+above) and is a different thing.
+
 **A job registered at first use** (the four purges) requires the scheduler
 LAZILY, at that use: `scheduler.ts` requires `cluster_claims.js`, and
 `used_assertions.js` is in the parent project's Kerberos COPY closure.
@@ -1025,9 +1040,9 @@ node draws a page reads every row.
   The names to keep are read FRESH (`cluster.state()`), with this node's own
   added; a read that fails, or a state with no membership, deletes nothing
   and says so in the run's summary. The driver refuses an empty keep list for
-  the same reason. Each deletion is logged once at info, by name; a delete
-  that fails is `STS-CORE-0128`, logged when it starts failing, and thrown so
-  the scheduler records the run as failed.
+  the same reason. The run's summary records each deletion; the log line is
+  debug. A delete that fails is `STS-CORE-0128`, logged when it starts
+  failing, and thrown so the scheduler records the run as failed.
 * **THE ANSWERING NODE IS LIVE.** Its own section is its live view; its own
   row is never drawn. The totals are over the nodes not gone.
 * **NAMES, NEVER ADDRESSES.** Neither page carries a host name any more — it

@@ -6784,6 +6784,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'CLIENT: it is on the audit row and in the log line only. READ ' +
           'ONLY — the table is source. Mirrors GET /admin/error-codes; the ' +
           'same table is docs/error-codes.md.' },
+  { path: '/admin-api/audit-export', group: 'Management API',
+    name: 'Audit export', specs: ['openapi'],
+    what: 'NON-SPEC (#641). What Monitoring → Audit export draws: each ' +
+          'destination without its secrets, and this process\'s queue and ' +
+          'delivery counters. Each process delivers its own events.' },
+  { path: '/admin-api/audit-export/:action', group: 'Management API',
+    name: 'Change the audit export destinations', specs: ['openapi'],
+    what: 'NON-SPEC (#641). add, update, remove, enable, disable and ' +
+          'test: the console\'s six acts, each audited. A token is taken ' +
+          'and never returned. The test event is not an audit row.' },
   { path: '/admin-api/audit', group: 'Management API', name: 'Audit log',
     specs: ['rfc4511'],
     what: 'NON-SPEC. What happened here, in order, as JSON: every ' +

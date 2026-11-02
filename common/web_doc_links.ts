@@ -32,6 +32,11 @@
 // `server` and `clients` are exact for the same reason: the words are not
 // this service's.
 //
+// A NEW SCREEN OWES ITS ROW IN THE SAME CHANGE. The console and portal
+// page tables are what `tests/doc_links.js` walks. A screen added without
+// a row here draws no link, on a tabbed page and on an untabbed one. The
+// row is part of the screen's design (`admin-ui/CLAUDE.md`).
+//
 // A `web_` MODULE: it requires nothing, logs nothing, and names nothing of
 // node's. `admin-ui/CLAUDE.md` and `portal/CLAUDE.md` say where the link
 // is drawn.
@@ -63,6 +68,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/caches': 'caches.html',
   '/admin/cert-issuance': 'configure-enrollment.html',
   '/admin/audit': 'admin-console.html#audit-log--adminaudit',
+  '/admin/audit-export': 'audit-export.html',
   '/admin/caep-sessions': 'caep-events.html',
   '/admin/caep-sessions/session': 'caep-events.html',
   '/admin/cells': 'cells.html',
@@ -132,7 +138,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/passkey-report':
     'admin-console.html#passkeys--adminpasskey-report',
   '/admin/pki': 'pki.html',
-  '/admin/policies': 'admin-console.html#policies--adminpolicies',
+  '/admin/policies': 'policies.html',
   '/admin/rbac': 'admin-console.html#who-may-use-the-console',
   '/admin/realms': 'trust-realms.html',
   '/admin/risc-accounts': 'signals-received.html',
@@ -241,7 +247,7 @@ const EXACT: Record<string, string> = {
   'tab-custom': 'listeners.html',
   'tab-applications': 'listeners.html',
   'tab-defaults': 'listeners.html',
-  'policies-tab-metadata': 'admin-console.html#policies--adminpolicies',
+  'policies-tab-metadata': 'policies.html',
   'tab-password': 'authentication.html#passwords',
   'tab-authn': 'authentication.html#the-authentication-policy',
   'tab-serviceAccount': 'service-accounts.html',
@@ -249,7 +255,7 @@ const EXACT: Record<string, string> = {
   'tab-locale': 'languages.html#the-locale-policy',
   'tab-attributes':
     'configure-scim.html#the-attribute-policy-in-product-mode',
-  'tab-profiles': 'admin-console.html#policies--adminpolicies',
+  'tab-profiles': 'policies.html#all-profiles',
   'cfg-families': 'applications.html#the-console-page-and-the-api',
   'cfg-every': 'applications.html#the-console-page-and-the-api',
   'cfg-oauth': 'oauth-oidc.html',
@@ -345,6 +351,8 @@ const PORTAL: Record<string, string> = {
   '/portal/gnap': 'gnap.html#what-a-person-sees-portalgnap',
   '/portal/access-requests': 'authzen.html#access-requests-and-approvals',
   '/portal/email': 'mail.html',
+  '/portal/pseudonyms': 'people.html#sign-in-names',
+  '/portal/verify-pseudonym': 'people.html#sign-in-names',
   '/portal/owned/roles': 'admin-console.html#roles--adminroles',
   '/portal/owned/groups': 'admin-console.html#groups--admingroups',
   '/portal/owned/service-accounts': 'service-accounts.html',

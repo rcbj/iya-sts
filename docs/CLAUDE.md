@@ -37,7 +37,9 @@ step here; what the generator replaces is the typing, not the file.
 
 Adding a page: write the markdown, add it to the right section of
 `_data/navigation.yml` so it appears in the sidebar, and link it from
-`index.md`. There is no index to regenerate.
+`index.md`. A console or portal screen that page explains gets its row in
+`common/web_doc_links.ts` in the same change (`admin-ui/CLAUDE.md`, *A link
+to the documentation*). There is no index to regenerate.
 
 **A sidebar item may link to a SECTION of another page** (rcbj, 2026-10-30,
 #564): the *Authorization* section gathers the pages about a decision
@@ -88,6 +90,46 @@ can report, because a trigger is a fact about the code. The same test decided
 `sessions.md`: the session RECORD's fields are published nowhere, so they are
 written out; the row shape of `/admin-api/sessions` is in the OpenAPI document,
 so it is not.
+
+## `directory.md`, and the pages that own one object
+
+`directory.md` is the Directory chapter. A user and an application are
+protocol-independent, and that pair is what the service is about. The
+chapter says how they relate to a policy, and which page configures
+each. It does not restate the object. The objects' own pages stay where
+they are:
+
+* **`people.md` defines the person.** The subject, the filing name, and
+  sign-in names (`stsPseudonym`, #644). The attribute rows stay in
+  `ldap-schema.md`, the console's Users page stays in `admin-console.md`,
+  how an identity is placed stays in `ldap.md`, and the session record
+  stays in `sessions.md`.
+* **`applications.md` defines the application.** The identifier, the
+  filing name, the name each protocol calls it, and a registration
+  beside a sighting, then its fields, the console page and the
+  per-application settings.
+* **`policies.md` is which profile applies**, and the attribute policy's
+  fields. The split with the kind's own page is the section below. An
+  XACML policy in `ou=policies` is `authorization.md` and `xacml.md`, not
+  a profile.
+
+A new fact about how the three objects relate goes in `directory.md`. A
+new fact about one object goes on that object's page. The sidebar's
+*Configuring a person*, *Configuring an application* and *Configuring a
+policy* items are sections of `directory.md`, so renaming those headings
+fails `tests/doc_links.js`.
+
+## `policies.md`, and the pages that own one kind
+
+`policies.md` is the account of **Directory → Policies** after #1234: the
+seven kinds, and the one rule they share — the holder names the profile, the
+lowest precedence applies, and a dangling name means what that kind says.
+The fields of a kind stay on the page that already owned them
+(`authentication.md`, `passkeys.md`, `languages.md`, `service-accounts.md`,
+`post-login-activities.md`, `configure-scim.md`). A new fact about *which
+profile applies* goes in `policies.md`. A new fact about *what a profile's
+rows do* goes on the kind's page. The console's documentation link for
+`/admin/policies` points here (`common/web_doc_links.ts`).
 
 ## The API reference under /api/ is generated, not written here (2026-09-27)
 

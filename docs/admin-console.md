@@ -208,7 +208,8 @@ way. Its five sections:
   enrollment monitors, Verifiable Credentials, passkeys, OAuth activity,
   SCIM metrics, sign-out, the database,
   encryption, the secret store, caches, the worker pools, node health, the
-  scheduler, the mail outbox, risk, the audit log and the error codes.
+  scheduler, the mail outbox, risk, the audit log, the audit export and the
+  error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
   cluster, mail, admin roles, the protocol debugger, the service metadata, the
   API explorer, key pairs and cryptography.
@@ -334,7 +335,7 @@ here — they are on [Applications](applications.md).
 | **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
 | **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused, sessions refused, and an existing session presented to an application for single sign-on (method *existing session*) |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
-| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Other — each with its own **Save**, and the address on Contact |
+| **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Policies, Custom, Other — each with its own **Save**, and the address on Contact |
 | **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
 | **Federation links** | the partners' subjects that sign them in |
 | **Directory entry** | the LDAP object, every attribute, and *Change one attribute by name* |
@@ -359,7 +360,8 @@ the entry's current name (so a rename does not split one person into two rows),
 the older `urn:sts:user:` prefix is still read and stripped, and the realm is
 split off at the last `@`. The cost is shown rather than hidden: two different
 people called `alice` in two Kerberos realms are one row, which the Realms
-column makes visible. Case is never collapsed.
+column makes visible. Case is never collapsed. A live sign-in name reaches
+that same row. [People](people.md#sign-in-names).
 
 **The list is built from three sources**: the authentications recorded, every
 token's `sub`/`username`, and every artifact's subject. An identity can be
@@ -408,7 +410,12 @@ entry that is not there.
 
 The **Attributes** tab draws every attribute that may be changed as a typed
 field, the way an [application's](applications.md) configuration is drawn:
-one sub-tab per group, each a form with its own **Save**. A single-valued
+one sub-tab per group, each a form with its own **Save**. **Policies** is
+where this person names a policy of a kind a person can name: the attribute
+policy (`stsAttributePolicy`) and, for a service account, the
+service-account policy (`stsServiceAccountPolicy`). See
+[Policies](policies.md#who-names-which-kind). **Custom** is the realm's own
+attributes, defined on Directory → Policies → Attribute policy. A single-valued
 attribute is a text box (empty clears it); a multi-valued one is one box per
 value, with **+** to add a box and the bin to delete one. Every box shows an
 example of a valid value, and every field's name carries a tooltip saying
@@ -623,14 +630,16 @@ too, and so does completing a reset link. `caep.autoEmitTypes` and
 ### Policies — `/admin/policies`
 
 **Directory → Policies** holds every kind of policy a realm has.
-`GET /admin-api/policies` answers each as a member, and
+[Policies](policies.md) is the account of the seven kinds and of how a named
+policy is chosen: the holder names it, and the lowest precedence applies.
+`GET /admin-api/policies` answers each kind as a member, and
 `POST /admin-api/policies/save-<kind>-policy` and `reset-<kind>-policy`
 write them, where the kind is `password`, `authn`, `serviceAccount`,
-`passkey`, `locale`, `attributes` or `postLogin`. The authentication policy
-tab also holds the realm's [named authentication
-policies](authentication.md#named-authentication-policies), which an
-application names in `appAuthnPolicy`
-(`save-named-authn-policy`, `delete-named-authn-policy`).
+`passkey`, `locale`, `attributes` or `postLogin`. The page is one tab per
+kind, and each of those tabs has the sub-tabs **Default**, **Named
+policies** and **New policy**. A last tab, **All profiles**, lists every
+profile of every kind. The authentication policy's named profiles use
+`save-named-authn-policy` and `delete-named-authn-policy`.
 
 **The password policy** is a minimum length (12), how many previous passwords
 may not be reused (5), a minimum number of symbols (1), and whether an uppercase
@@ -646,7 +655,12 @@ defaults are in force. **It is enforced in product mode only**, at every door
 that sets a password: the console, `/admin-api`, `/portal/password`,
 `/portal/activate` and an LDAP add or modify of `userPassword`, which is hashed
 on the way in. Development mode applies no rule and records the history anyway.
-[LDAP](ldap.md#the-password-policy-is-a-directory-entry) has more.
+[LDAP](ldap.md#the-password-policy-is-a-directory-entry) has more. The tab is
+three sub-tabs, **Default**, **Named policies** and **New policy**: a named
+password policy has every rule and a precedence, and applies to the members
+of a group naming it (`stsPasswordPolicy`) and to a password chosen while
+signing in to an application naming it (`appPasswordPolicy`) — see
+[Authentication](authentication.md#different-password-rules-for-different-applications-or-groups).
 
 **The authentication policy** (#64) is a separate policy on the same page:
 
@@ -704,6 +718,32 @@ required is not refused anything for it; `GET /admin-api/policies?missing=count`
 counts them, and the tab gives the LDAP filter that finds them. A service
 account and the bootstrap administrator are exempt.
 
+**Named attribute policies** (#1241) let one realm require different things
+of different people. The tab has four sub-tabs: **Default**, **Named
+policies**, **New policy** and **Custom attributes**. A named policy is a
+required list and a precedence from 1 to 1000. It belongs to the realm and is
+never inherited. Two kinds of entry name one through `stsAttributePolicy`:
+
+* **a person**, on the **Policies** tab of their page, or at a create (the
+  console, `POST /admin-api/users/create` with `attributes`);
+* **a group**, on the group's page or with
+  `POST /admin-api/groups/set-policy`.
+
+When the person and their groups name several policies, the one with the
+lowest precedence applies, with ties broken by name. When they name none,
+`default` applies.
+
+**When a person is created**, the policy is chosen from the reference the
+create writes and any group that already lists the new DN. **When a person is
+edited**, it is chosen from their reference as the edit leaves it and the
+groups they are in.
+
+A reference to a policy the realm does not hold selects nothing: the rest
+decide, and the service logs it as STS-LDAP-0196. A named policy that a person
+or group still names cannot be removed (STS-LDAP-0197). Its entry on **Named
+policies** lists who names it. The count of people who lack a required
+attribute holds each person to their own policy.
+
 **Custom attributes** are defined on the same tab: a name, a label, a syntax
 (`string`, `integer`, `boolean`, `date`, `email`, `uri` or `dn`) and whether it
 holds one value or several. A custom attribute can then be set on a person's
@@ -711,7 +751,8 @@ page and at `/admin/users/new`, is checked against its syntax, and may be
 required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
-removed while anybody holds a value of it or the policy requires it.
+removed while anybody holds a value of it or any of the realm's policies
+requires it.
 `/admin/users/new` and a person's Attributes tab outline every required field
 in red and mark it *required*.
 
@@ -727,7 +768,8 @@ WebAuthn), `narrow` or `list-and-refuse`
 **The post-login activity policy** (#1096) asks the people it reaches to do
 something after they sign in, before they are sent back to the application:
 today, register a post-quantum (ML-DSA) passkey. It is off by default, has a
-`default` profile and named profiles that select groups by precedence, and
+`default` profile and named profiles that groups and applications name,
+ranked by precedence, and
 says how long Skip puts it off, when it becomes required, what a person with
 no passkey is asked, and how a classical passkey is moved (upgraded in place
 or added alongside). See
@@ -771,6 +813,27 @@ job of it finishes with Notify on; a shared group with no address is
 written up as `STS-REPORT-0037` when a notice is due. The box takes one
 address, `local-part@domain`; an emptied box removes the attribute. Nothing
 else reads it.
+
+**Policies this group names.** On the drill-down, below the email address,
+one choice per kind of policy a group may name. A group may name six:
+
+| Attribute | Kind |
+|---|---|
+| `stsPasswordPolicy` | [Password](policies.md#password-policy) |
+| `stsAuthnPolicy` | [Authentication](policies.md#authentication-policy) |
+| `stsPasskeyPolicy` | [Passkey](policies.md#passkey-policy) |
+| `stsLocalePolicy` | [Locale](policies.md#locale-policy) |
+| `stsAttributePolicy` | [Attribute](policies.md#the-attribute-policy) |
+| `stsPostLoginPolicy` | [Post-login](policies.md#post-login-activity-policy) |
+
+Each offers `default` and the realm's named policies of that kind. **Save**
+writes the choice onto the group's own entry. `POST
+/admin-api/groups/set-policy` is the same act, with `attribute` naming the
+row. The policy a group names competes, by precedence, with the policy the
+application names and, for the attribute policy, with the policy the person
+names. [Who names which kind](policies.md#who-names-which-kind) is the whole
+rule. A named policy a group still names cannot be removed until the group
+names `default` or another policy.
 
 Three behaviours are the directory being consistent with itself:
 
@@ -1331,8 +1394,9 @@ is shown, but never decides the kind.
   one is known, and the algorithms its passkeys use. *Not reported* is the
   passkeys whose authenticator named no model.
 * **Profiles** shows what each [passkey policy](authentication.md#the-passkey-policy)
-  profile asks (`postQuantumRequired`) and what it selects. A named profile that
-  selects groups has a link to count its population.
+  profile asks (`postQuantumRequired`), and the groups and applications that
+  name it. A named profile a group names has a link to count its population,
+  the members of those groups.
 * **Attestation** counts passkeys by the signature algorithm of the
   attestation certificate (the leaf, #941). A passkey registered before that
   algorithm was stored, or one whose attestation carried no certificate, is
@@ -1563,6 +1627,54 @@ categories and `/admin/metrics` untouched.
 The log is held per trust realm, in memory, and in product mode on postgres it
 is kept in the store with the rest of the minted state
 ([Persistence](persistence.md)).
+
+### Audit export — `/admin/audit-export`
+
+Monitoring → Audit export configures where this process delivers its own
+audit events, and shows how far that delivery has got. The same controls are
+`GET /admin-api/audit-export` (Admin Read, `admin:read`) and
+`POST /admin-api/audit-export/{add,update,remove,enable,disable,test}`
+(Admin Write, `admin:write`). The settings on the page are
+[Audit export](configuration.md#audit-export). Worked examples for syslog,
+a file, a webhook, Splunk HEC and LogRhythm are on
+[Audit export destinations](audit-export.md).
+
+A destination is syslog (TCP by default, or UDP, or TLS), a filesystem path,
+a webhook, Splunk HEC, or LogRhythm, which uses the syslog adapter. Each
+process delivers the events in its own audit ring. The figures on this page
+are this process: queue depth, delivered, awaiting, retrying, permanently
+failed, dropped, latency and availability. Another process has its own.
+
+The event id a destination receives is this process's origin and the event's
+`seq`. A numeric gap in `seq` is unused space in another worker's block, the
+same fact the audit log states above. Delivery keeps a bookmark of the next
+event it meant to send. When that bookmark is gone from this process's ring,
+one dropped episode is recorded and delivery continues from what the ring
+still holds.
+
+Delivery is at least once. A crash after a destination has accepted an event
+and before this process saves the cursor delivers that event again.
+Downstream systems deduplicate on the event id. After
+`auditExport.retryMaxPeriodMs` the destination is probed once more. When
+that probe fails, the probed event and further events in the same run, up to
+the batch, are counted permanently failed, and the destination waits the
+first retry delay. An HTTP 400 rejects that one event and moves the cursor
+past it; the batch drop starts on a later failure that is still a pause.
+
+A token and a secret header are sealed when they are saved and are absent
+from the page and from the API answer. Leaving the token box empty on an
+update keeps the sealed value. A test sends a synthetic event to that
+destination. The synthetic event is absent from the audit ring. The act of
+testing is an audit row, `admin.audit-export.test`.
+
+Webhook and Splunk HEC destinations use `https`. In development mode
+`auditExport.allowHttp` may allow plain `http`, and that delivery is logged.
+Product mode uses `https`. A loopback, link-local or private address,
+including RFC 6598 `100.64.0.0/10`, is refused in product mode unless
+`auditExport.allowPrivateDestinations` is on. Cloud metadata addresses stay
+refused when that setting is on. A filesystem path is absolute, and when
+`auditExport.fileRoots` is set it lies under one of those directories. The
+settings take effect on the next run.
 
 ## Protocols pages worth explaining
 

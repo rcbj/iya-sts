@@ -3745,7 +3745,10 @@ class UsersPage {
     const gridRow = function (row) {
       return {
         attribute: row.name,
-        type: row.multi ? 'array' : 'string',
+        // A policy reference (#1235) is one value from a closed set: a radio
+        // per policy, the application grid's `enum`.
+        type: row.choices ? 'enum' : row.multi ? 'array' : 'string',
+        choices: row.choices,
         what: row.label + ' — ' + row.schema + '.' +
               (row.note
                 ? t.text('consoleUsers.personFieldsSection.takes',
@@ -3798,11 +3801,81 @@ class UsersPage {
         (editor.mail
           ? '<p><code>' + kit.esc(editor.mail) + '</code></p>'
           : kit.note(t.html('consoleUsers.mfaSection.none')));
-    const panels = groups.map(function (group) {
+    // Sign-in names (#644), on the same Contact sub-tab as the address.
+    // The pending address is data, not a catalog parameter.
+    const aliases = editor.pseudonyms || [];
+    const aliasPending = editor.pseudonymPending || '';
+    const aliasRows = aliases.map(function (name) {
+      return '<tr><td><code>' + kit.esc(name) + '</code></td><td>' +
+        (gate.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="set-pseudonyms">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+            '<input type="hidden" name="remove" value="' + kit.esc(name) +
+            '"><button type="submit">' +
+            t.html('consoleUsers.personFieldsSection.pseudonymRemove') +
+            '</button></form>'
+          : '') + '</td></tr>';
+    }).join('');
+    const aliasCard = '<h3 id="pseudonyms">' +
+      t.html('consoleUsers.personFieldsSection.pseudonymHeading') + '</h3>' +
+      '<p class="sub">' +
+      t.html('consoleUsers.personFieldsSection.pseudonymIntro') + '</p>' +
+      (aliases.length
+        ? '<table>' + aliasRows + '</table>'
+        : '<p class="sub">' +
+          t.html('consoleUsers.personFieldsSection.pseudonymNone') + '</p>') +
+      (aliasPending
+        ? '<p>' + t.html('consoleUsers.personFieldsSection.pseudonymPending') +
+          ' <code>' + kit.esc(aliasPending) + '</code></p>' +
+          (gate.write
+            ? '<form method="post" action="/admin/users">' +
+              '<input type="hidden" name="action" value="set-pseudonyms">' +
+              '<input type="hidden" name="user" value="' + kit.esc(key) +
+              '">' +
+              '<input type="hidden" name="from" value="user">' +
+              '<input type="hidden" name="back" value="' + kit.esc(back) +
+              '">' +
+              '<input type="hidden" name="cancelPending" value="true">' +
+              '<p><button type="submit">' +
+              t.html('consoleUsers.personFieldsSection.pseudonymCancel') +
+              '</button></p></form>'
+            : '')
+        : '') +
+      (gate.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="set-pseudonyms">' +
+          '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+          '<div class="formrow"><label for="personpseudonym"' +
+          kit.tip(t.text(
+            'consoleUsers.personFieldsSection.pseudonymAddTip')) + '>' +
+          t.html('consoleUsers.personFieldsSection.pseudonymAdd') +
+          '</label><input type="text" id="personpseudonym" name="add" ' +
+          'size="34" maxlength="254" required' +
+          kit.tip(t.text(
+            'consoleUsers.personFieldsSection.pseudonymAddTip')) + '>' +
+          '<button type="submit">' +
+          t.html('consoleUsers.personFieldsSection.pseudonymAdd') +
+          '</button><span class="sub">' +
+          t.html('consoleUsers.personFieldsSection.pseudonymCap') +
+          '</span></div></form>'
+        : '');
+    const contactHead = mailForm + aliasCard;
+    // The Policies tab (#1235) only where some kind a person selects has
+    // declared its reference: an empty tab would offer nothing to set.
+    const panels = groups.filter(function (group) {
+      return group.id !== 'policies' || editor.attributes.some(function (row) {
+        return row.editable && row.group === 'policies';
+      });
+    }).map(function (group) {
       const mine = editor.attributes.filter(function (row) {
         return row.editable && row.group === group.id;
       });
-      const contact = group.id === 'contact' ? mailForm : '';
+      const contact = group.id === 'contact' ? contactHead : '';
       if (!mine.length) {
         return { id: 'ufg-' + group.id, label: group.label, html: contact };
       }

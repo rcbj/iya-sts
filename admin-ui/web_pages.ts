@@ -29,9 +29,11 @@
 // ---------------------------------------------------------------------------
 
 import WebKit = require('./web_kit');
+import webMessages = require('../common/web_messages');
 import AcmePage = require('../acme/web_acme');
 import ApplicationsPage = require('./web_applications');
 import AuditPage = require('./web_audit');
+import AuditExportPage = require('./web_audit_export');
 import ServiceAccountsPage = require('./web_service_accounts');
 import AuthorizationServersPage = require('./web_authorization_servers');
 import AttributeSourcesPage =
@@ -370,6 +372,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                   'providers', 'failures', 'settings'],
   '/admin/risk-scoring': ['assessments', 'signals', 'decisions', 'process'],
   '/admin/audit': ['events', 'settings'],
+  '/admin/audit-export': ['destinations', 'add', 'status', 'settings'],
   '/admin/error-codes': ['subsystems', 'codes'],
   '/admin/realms': ['realms', 'define', 'settings'],
   '/admin/config': ['index', 'settings'],
@@ -487,6 +490,9 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return AuditPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/audit-export', title: 'Audit export',
+    operation: '/admin-api/audit-export',
+    render: AuditExportPage.render },
   { path: '/admin/caep-sessions/session', title: 'CAEP sessions — one session',
     operation: '/admin-api/caep/sessions', params: { id: 'session' },
     render: function (view: Json, ctx?: Json): string {
@@ -1478,7 +1484,7 @@ class WebPages {
     const named: Json = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
                           nbsp: ' ', mdash: '—', ndash: '–', rsaquo: '›',
                           lsaquo: '‹', hellip: '…', middot: '·' };
-    return String(html || '').replace(/<[^>]*>/g, '')
+    return webMessages.WebMessages.stripTags(String(html || ''))
       .replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
         function (whole: string, code: string): string {
           if (code.charAt(0) === '#') {

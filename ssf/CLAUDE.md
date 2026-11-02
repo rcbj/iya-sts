@@ -1156,7 +1156,8 @@ every undeliverable signal". One audit row and log line when a stream is
 declared dead (`ssf.stream.dead`, `STS-SSF-0093`) and one when it revives
 (`ssf.stream.revived`); one line per realm per sweep
 (`ssf.deadLetterSweepS`, 60) counting what was dead-lettered since the last,
-by stream and by code (`STS-SSF-0094`); and on the stream's own log one line
+by stream and by code (`STS-SSF-0094`); a sweep that only expired or
+orphaned letters writes that count at debug; and on the stream's own log one line
 when a run of failures STARTS, not per failure. `ssf.event.refused` is no longer
 written by a push. **Every process sweeps**: deletes are idempotent, the counts
 summarised are each process's own, and `nextProbeAtMs` is set before a probe so

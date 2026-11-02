@@ -34,7 +34,9 @@ about that line had to change.
    The rule that does matter is **a control added to `/admin` gets an operation
    on `/admin-api` in the same commit** — `/admin/users` grew its first form
    (create a person in the directory) and `POST /admin-api/users/:action` with
-   its one `create` action arrived with it — — a CONTROL, which is why a page with no
+   its one `create` action arrived with it. `set-pseudonyms` (#644) is one of
+   those actions: add or remove one sign-in name, and the console's Contact
+   sub-tab is its form — a CONTROL, which is why a page with no
    form on it needs only its GET. Not eventually, and not when somebody
    asks: an API that covers eight of nine controls is worse than one that covers
    none, because the ninth is found by a caller who has already written the code
@@ -1801,7 +1803,11 @@ kind (`PolicyKind.extraActions`: summary, description and request body) and
 answered through `policiesAction()`'s `act` verb — the same resource, the same
 console form target, so rule 7 needed no new operation. `GET
 /admin-api/policies` grew `missing=count`, a walk of the realm's people asked
-only on request.
+only on request. **Since #1241 both policies routes may answer late**: `GET`
+is `adminViews.policiesViewAsync()` (the people naming each named attribute
+profile, a holder question asked asynchronously), and `POST` awaits a
+`policiesAction()` whose kind's `reset()` answered a promise (the delete of a
+named attribute profile, refused while named, STS-LDAP-0197).
 
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 
@@ -2753,3 +2759,16 @@ and `applicationPolicies` on `GET /admin-api/xacml/policies`;
   type on.
 
 `tests/fga_console.js` holds the operations' presence and the acts.
+
+## Audit export (#641, 2026-11-01)
+
+`mgmt-api/audit_export_api.ts` spreads two operations onto the management
+API, tag Monitoring. `GET /admin-api/audit-export` (`getAuditExport`) is the
+general gate's GET, so `admin:read`. `POST /admin-api/audit-export/:action`
+(`add`, `update`, `remove`, `enable`, `disable`, `test`) is `admin:write`.
+There is no separate monitor scope: Admin Read and Admin Write are the two
+console roles. The handler calls `common/audit_export`'s `view` and `act`.
+An answer carries `tokenSet` and `secretHeaderSet` and never the sealed
+values. The OpenAPI example is a syslog destination
+(`{ id, type, host, transport }`) and names no token. `common/CLAUDE.md`
+(3da) is the delivery. The console page is `admin-ui/CLAUDE.md`.

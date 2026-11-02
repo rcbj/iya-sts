@@ -22,7 +22,9 @@
 //      offers and which works before anybody has signed in;
 //   4. the browser's `Accept-Language` (RFC 9110 section 12.5.4);
 //   5. the LOCALE POLICY's default for the application the page is drawn for
-//      (`common/locale_policy.ts`), and English if that answers nothing.
+//      and, where the page knows them, the person — whose groups may name a
+//      profile too (`common/locale_policy.ts`, #1238) — and English if that
+//      answers nothing.
 //
 // The first that a catalog answers wins (`I18n.negotiate()`); a preference no
 // catalog answers is passed over rather than ending the search, so a reader
@@ -153,7 +155,11 @@ class PageLocale {
     const asked = page || {};
     let lastResort = 'en';
     try {
-      lastResort = localePolicy.defaultLocaleFor(asked.application || '');
+      // THE PERSON TOO, where the page knows one (#1238): their groups may
+      // name a locale profile that outranks the application's. A page drawn
+      // before anybody is known is chosen by its application alone.
+      lastResort = localePolicy.defaultLocaleFor(asked.application || '',
+                                                 asked.username || '');
     } catch (e) {
       // A policy that cannot be read leaves English as the last resort; a
       // page is still drawn.
@@ -344,20 +350,24 @@ class PageLocale {
    * `<html>` (#570), for its runtime to choose the page's language in the
    * browser: the build the catalogs are versioned by, the chooser's choice
    * (the cookie is HttpOnly, so the browser cannot read it), and the locale
-   * policy's default for the surface's application. Each value is
-   * canonical or the build number, so nothing a request sent is drawn back
-   * as it arrived.
+   * policy's default for the surface's application and, where known, its
+   * person. Each value is canonical or the build number, so nothing a
+   * request sent is drawn back as it arrived.
    *
    * @param req - the request for the shell
    * @param application - the surface's application, for the policy
+   * @param person - the person the shell is drawn for, where the route
+   *   serving it already holds one (#1238: their groups may name the
+   *   profile); '' where nobody is known yet
    * @returns `[[name, value], ...]`, for `ShellDocument.document()`
    */
-  static shellAttributes(req: any,
-                         application: string): Array<[string, string]> {
+  static shellAttributes(req: any, application: string,
+                         person?: string): Array<[string, string]> {
     log.debug("Entering PageLocale.shellAttributes().");
     let lastResort = 'en';
     try {
-      lastResort = localePolicy.defaultLocaleFor(application || '');
+      lastResort = localePolicy.defaultLocaleFor(application || '',
+                                                 person || '');
     } catch (e) {
       // A policy that cannot be read leaves English as the last resort, as
       // `translatorFor()` does.

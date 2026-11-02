@@ -957,8 +957,19 @@ class Krb5PersonKeys {
     }
     const record = opened.record;
     if (record.name !== name || record.realm !== principals.REALM) {
-      // Exact, as Kerberos names are: the salt carries the name as it was, and
-      // a key for `Alice` is not a key for `alice`.
+      // Exact, as Kerberos names are: the salt carries the name as it was,
+      // and a key for `Alice` is not a key for `alice`. A case-only
+      // mismatch of that principal stays this refusal and records nothing
+      // new. A live pseudonym can find the person (#644) and still must
+      // not unlock keys sealed under a different name.
+      const foldedApart = record.realm === principals.REALM &&
+        String(record.name || '').toLowerCase() !==
+          String(name || '').toLowerCase();
+      if (foldedApart) {
+        log.info(this.deps.errorCodes.tag('STS-KRB-0243') + 'krb5-keys: a ' +
+                 'principal resolved to a person whose stored keys are ' +
+                 'bound to a different name.');
+      }
       log.debug('Leaving Krb5PersonKeys.personKeys(). Bound to ' +
                 record.name + '@' + record.realm + '.');
       return { state: 'unknown', detail: 'the stored keys are bound to ' +

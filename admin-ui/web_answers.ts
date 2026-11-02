@@ -400,8 +400,7 @@ class WebAnswers {
   static isFieldSearch(page: string, fields: Json): boolean {
     return (page === '/admin/applications/edit' ||
             page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE ||
-            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE ||
-            page === POLICIES_PAGE) &&
+            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -882,16 +881,17 @@ class WebAnswers {
     // A REFUSED NEW NAMED POLICY (#841). The New policy form posts
     // `newProfile`. A validation failure used to navigate to `?error=`,
     // which draws that form blank and drops every field the reader typed.
-    // The search already keeps a Find in `state.policyDrafts` under the
-    // form's own key (`passkey-apps`, not the typed name); a refused Save
-    // uses the same cell, and the refusal is drawn on the form. Keying by
-    // the form rather than the typed name means a name that matches a
-    // stored profile does not land on that profile's form.
+    // The posted fields are kept in `state.policyDrafts` under the form's
+    // own key (`passkey-new`, not the typed name), and the refusal is drawn
+    // on the form. Keying by the form rather than the typed name means a
+    // name that matches a stored profile does not land on that profile's
+    // form. (The key was `<kind>-apps` while the form searched for
+    // applications, #609; #1235 took the search away.)
     if (page === POLICIES_PAGE && !ok &&
         WebAnswers.one(fields, 'newProfile') === '1') {
       const kindId = String(action || '').replace(/^save-/, '')
         .replace(/-policy$/, '');
-      const key = kindId + '-apps';
+      const key = kindId + '-new';
       const out = WebAnswers.copy(json);
       const before = out.state || {};
       const drafts = Object.assign({}, before.policyDrafts || {});
@@ -901,6 +901,22 @@ class WebAnswers {
       out.state = Object.assign({}, before, {
         policyDrafts: drafts, policySaveErrors: saveErrors });
       return { json: out, banner: '' };
+    }
+    // A REFUSED AUDIT EXPORT DESTINATION (#641). The add form and each
+    // update form are drawn from the saved destinations. A refusal was
+    // never saved, and the notice navigation drew the add form empty,
+    // which dropped every field the reader had typed. The posted fields
+    // stay in `state.auditExportDraft`. A success stays a notice, so the
+    // form comes back clear once the destination is stored. Enable,
+    // disable, remove and test are not this form.
+    if (page === '/admin/audit-export' && !ok &&
+        (action === 'add' || action === 'update')) {
+      const out = WebAnswers.copy(json);
+      out.state = Object.assign({}, out.state || {}, {
+        auditExportDraft: { action: action, fields: fields || {} } });
+      return { json: out,
+               banner: kit.refusalBanner(errors.length ? errors
+                 : ['Refused.'], 'The destination was not saved.') };
     }
     return null;
   }

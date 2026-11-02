@@ -73,8 +73,9 @@ half starts each. A number from 1 up fixes the width; 1 starts them one at a
 time. The listener opens once the first worker of each pool is up, and the
 rest start behind it. **Every thread has a
 heap limit** derived from the container's memory limit and the number of
-threads (`workers.heapLimitMb`: 0 to derive, -1 for none). Each thread logs its
-memory every five minutes (the `process.memory-report` job). A worker whose
+threads (`workers.heapLimitMb`: 0 to derive, -1 for none). Each thread records
+its memory every five minutes (the `process.memory-report` job); Monitoring →
+Scheduler shows the latest. A worker whose
 heap reaches its limit ends on its own and is replaced, and the service goes
 on (`STS-WORKER-0046`); a container that reaches its memory limit loses the
 whole process, which is why few threads are better than many.

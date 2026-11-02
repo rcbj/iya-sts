@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5036** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5078** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -63,15 +63,15 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 414
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 421
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 147
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 243
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 156
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -82,24 +82,25 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 51
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 358
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 14
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 359
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
-* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 255
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 258
 * [Management API (`STS-API`)](#sts-api) — 87
-* [User portal (`STS-PORTAL`)](#sts-portal) — 107
+* [User portal (`STS-PORTAL`)](#sts-portal) — 109
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 54
+* [Audit export (`STS-AUDIT`)](#sts-audit) — 14
 
 ## STS-HTTP
 
@@ -1309,7 +1310,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0104` | A stored TOTP shared secret could not be decoded from base32, so the code could not be checked. | HTTP 200 one-time code page with the reason |
 | `STS-AUTHN-0105` | A presented one-time code matched no time step in the allowed window: wrong, or expired. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; action result at enrolment |
 | `STS-AUTHN-0106` | A presented one-time code was already used (RFC 6238 section 5.2): its time step is at or below the last one accepted. | HTTP 200 one-time code page with the reason |
-| `STS-AUTHN-0107` | A password policy save or reset named a profile other than 'default'. | action result with the reason |
+| `STS-AUTHN-0107` | A password policy save or reset named a profile that is neither 'default' nor a name of lower-case letters, digits and hyphens (at most 64) (#1236; before it, any name but 'default'). | action result with the reason |
 | `STS-AUTHN-0108` | A password policy save was refused because a field is missing, out of range, unreadable, or inconsistent with another. | action result with the reason |
 | `STS-AUTHN-0109` | A password policy save was refused because this process has no embedded directory to keep ou=passwordPolicies in. | action result with the reason |
 | `STS-AUTHN-0110` | The directory refused to store the password policy profile (it is at its maximum number of entries). | action result with the reason |
@@ -1614,9 +1615,16 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0531` | A new passkey was not enrolled: this realm accepts a passkey neither as a first factor nor as a second factor (webauthn.primaryAllowed, webauthn.mfaAllowed and the authentication policy), so it could never be used (#1135). | action result or page with the reason |
 | `STS-AUTHN-0532` | A named authentication policy was not saved: its name is not lower-case letters, digits and hyphens (at most 63, starting with a letter or digit), or it is "default", the realm's own policy (#1148). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0533` | A named authentication policy was not saved: a first-factor mechanism or a second factor it lists is not one this service knows (#1148). | none (a console or management API refusal, HTTP 400) |
-| `STS-AUTHN-0534` | A named authentication policy was not deleted: an application of this realm still names it (appAuthnPolicy), and would then allow no mechanism (#1148). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0534` | A named authentication policy was not deleted: an application (appAuthnPolicy) or a group (stsAuthnPolicy, #1237) of this realm still names it, and would then allow no mechanism (#1148). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0535` | This realm holds no named authentication policy of that name (#1148): a delete, or an application's appAuthnPolicy, named one that does not exist. | none (a console or management API refusal, HTTP 400) |
-| `STS-AUTHN-0536` | An application names an authentication policy (appAuthnPolicy) that this realm does not hold — written past the console, or the policy was deleted by hand — so it allows no mechanism until the policy exists or the reference changes (#1148). | none (logged; the sign-in is refused as for a mechanism the application does not allow) |
+| `STS-AUTHN-0536` | An application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy, #1237) names an authentication policy that this realm does not hold — written past the console, or the policy was deleted by hand — so the sign-in allows no mechanism until the policy exists or the reference changes (#1148). | none (logged; the sign-in is refused as for a mechanism the application does not allow) |
+| `STS-AUTHN-0537` | An application (appPasskeyPolicy) or a group (stsPasskeyPolicy) names a passkey policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default passkey policy, where nothing else names one) until the policy exists or the reference changes (#1235). | none (logged; the sign-in goes on under the default profile) |
+| `STS-AUTHN-0538` | A named passkey policy was not deleted: an application (appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm still names it (#1235). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0539` | An application (appPasswordPolicy) or a group (stsPasswordPolicy) names a password policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference names nothing: the valid references that remain still rank, and the default password policy applies where none remains, until the policy exists or the reference changes (#1236). Logged once per reference per process. | none (logged; the password is held to the remaining ranking) |
+| `STS-AUTHN-0540` | A named password policy was not deleted: an application (appPasswordPolicy) or a group (stsPasswordPolicy) of this realm still names it (#1236). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0541` | A named authentication policy was not saved: its precedence is not a whole number from 1 to 1000 (#1237). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0542` | An application (appPostLoginPolicy) or a group (stsPostLoginPolicy) names a post-login activity policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default post-login policy, where nothing else names one) until the policy exists or the reference changes (#1239). | none (logged; the sign-in goes on under the profile the other references select) |
+| `STS-AUTHN-0543` | A named post-login activity policy was not deleted: an application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of this realm still names it (#1239). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 
@@ -3094,6 +3102,7 @@ Raised from: kerberos/.
 | `STS-KRB-0240` | S4U2Proxy evidence that crossed a Kerberos trust was refused: its PAC's server, KDC or ticket signature does not verify with the inter-realm key that sealed it, so the ticket or its PAC was altered or forged after the issuing realm signed it. | [MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0241` | A Kerberos trust's key rotation or pairing was refused: no such key, no source for the new key, a partner that is not a trust realm of this service, or the partner realm's side could not be written. | none — the console and /admin-api (#430) |
 | `STS-KRB-0242` | Classic constrained delegation across a Kerberos trust was refused by the target's realm: the front end's realm referred the evidence, and this realm's own krb5.crossRealmClassicDelegation is off (both realms must turn it on). | KDC_ERR_POLICY (12); [MS-SFU] 3.2.5.2 |
+| `STS-KRB-0243` | A Kerberos principal named a person the directory found, and the name on their stored keys differs from that principal even after both are folded to lower case. The keys stay unused. A case-only mismatch of the real principal is the older refusal and is not this code (#644). | none (a log line; the principal is unknown to the KDC) |
 
 ## STS-LDAP
 
@@ -3182,7 +3191,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0103` | A person's attribute edit (#228) named an attribute the editor does not change: a credential, a binary value, the username or the address (which have doors of their own), or one outside the person schema. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0104` | A person's attribute edit (#228) named the attribute the entry's own DN is built from, which would leave the DN and the entry disagreeing. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0105` | A person's attribute edit (#228) was not set, add or remove, or was an add to an attribute that holds one value. | HTTP 400 (API) or a 303 with error= |
-| `STS-LDAP-0106` | A person's attribute edit (#228), or a create from the field grid, carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0106` | A person's attribute edit (#228), or a create from the field grid, carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove; or, for a policy reference a kind declared (#1235), named neither `default` nor a named policy of the realm. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0107` | A person's attribute edit (#228) added a value the attribute already holds. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
@@ -3250,6 +3259,15 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0191` | The node-ldapjs in use does not support the saslMechanisms and bindDnFromHandler server options, so a SASL EXTERNAL bind cannot be decoded and its connection is closed (#1047). | none — logged at startup |
 | `STS-LDAP-0192` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is not stored in userCertificate on any person entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
 | `STS-LDAP-0193` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is stored in userCertificate on more than one entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0194` | A group's policy reference was not set: the attribute is not one by which a group names a policy of a kind that has declared one (stsPasskeyPolicy, ...) (#1235). | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0195` | A group's policy reference was not set: the value names neither `default` nor a named policy of that kind this realm holds (#1235). | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0196` | A person or one of their groups names an attribute policy this realm does not hold: the reference selects nothing, and the profile the rest name, or `default`, is applied (#1241). | none (a log line; the create or edit goes on) |
+| `STS-LDAP-0197` | A named attribute policy was not deleted: a person or a group still names it through stsAttributePolicy (#1241). | HTTP 400 (console and API) |
+| `STS-LDAP-0198` | An LDAP add or modify named stsPseudonym or one of its pending verification attributes. Those are written by the portal and by POST /admin-api/users/set-pseudonyms (#644). | LDAP constraintViolation (19) |
+| `STS-LDAP-0199` | A pseudonym was refused for its shape: empty, longer than 254 characters, a character a distinguished name reserves, a distinguished name, a subject, a DID, a SPIFFE identity, a reserved name, or an eighth value when the person already holds eight (#644). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0200` | A pseudonym is already another person's uid, RDN or live pseudonym in this realm, or another cell already holds the name (#644). The other cell is not named in the answer. | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0201` | A pseudonym is this person's own uid or RDN (#644). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0202` | An email-shaped pseudonym is already some other person's mail address, or a mail address is already some other person's uid or live pseudonym (#644). Two people may still share a mail attribute with each other. | HTTP 400 JSON (the sentence; the code is recorded) |
 
 ## STS-ATTR
 
@@ -4066,15 +4084,17 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 | `STS-I18N-0001` | A catalog file under common/locales or a built-in mail translation under common/mail_locales could not be read or parsed (or catalogs.json itself, in which case every page is drawn in English); the messages it held fall back along their chain to English (#539). | none — an error in the log |
 | `STS-I18N-0002` | A page asked for a message no catalog has, or one whose text is malformed; the key itself, or the text as written, was drawn. tests/i18n_catalogs.js is what keeps this from shipping (#539). | none — a warning in the log |
 | `STS-I18N-0003` | A locale policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#539). | HTTP 400 (management API) |
-| `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile named no application or too many (#539). | HTTP 400 (management API) |
+| `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile's precedence was not a whole number from 1 to 1000 (#539, #1238). | HTTP 400 (management API) |
 | `STS-I18N-0005` | A locale policy could not be saved: this process has no embedded directory, so there is no ou=localePolicies (#539). | HTTP 400 (management API) |
 | `STS-I18N-0006` | A locale policy could not be saved: the directory is at its maximum number of entries (#539). | HTTP 400 (management API) |
-| `STS-I18N-0007` | A named locale policy save was refused: an application it names is already on another named locale profile, and an application is on one at most (#539). | HTTP 400 (management API) |
+| `STS-I18N-0007` *(retired)* | A named locale policy save was refused: an application it names is already on another named locale profile, and an application is on one at most (#539). Retired by #1238: an application names its locale profile in appLocalePolicy, one value, so it cannot be on two. | — |
 | `STS-I18N-0008` | The language chooser was posted a value that is not a BCP 47 tag a catalog answers, or a malformed form; nothing was set (#539). | HTTP 400 |
 | `STS-I18N-0009` | The language chooser set its cookie but could not write the signed-in person's preferredLanguage; the person editor refused or could not be asked. Their entry still names the old language, which outranks the cookie (#539). | none — a warning in the log |
 | `STS-I18N-0010` | POST /admin-api/console/language was called by a caller that is not a person — an application's token — which has no preferredLanguage of its own to set (#539 phase 5). | HTTP 400 (management API) |
 | `STS-I18N-0011` | A prose catalog under common/prose_locales — the translations of the sentences the server writes into a console view, such as a setting's description — could not be read or parsed; that prose falls back along its chain to English (#543). | none — an error in the log |
 | `STS-I18N-0012` | GET /web/locales/<namespace>/<catalog>.json named a namespace or a catalog this service does not have, or a file name that is not <catalog>.json; nothing is read from disk by a requested name (#570). | HTTP 404 |
+| `STS-I18N-0013` | An application (appLocalePolicy) or a group (stsLocalePolicy) names a locale policy that this realm does not hold — written past the console, or the policy deleted by hand. The reference selects nothing and `default` applies where nothing else names a profile: the locale policy decides only a fallback language, so it does not fail closed (#1238). | none — a warning in the log |
+| `STS-I18N-0014` | A named locale policy was not deleted: an application (appLocalePolicy) or a group (stsLocalePolicy) of this realm still names it (#1238). | HTTP 400 (management API) |
 
 ## STS-GNAP
 
@@ -4442,6 +4462,7 @@ Raised from: gnap/.
 | `STS-GNAP-0905` | A GNAP grant's interact.acr named only phr, or only phrh, and the session still had not earned that class after the one interaction. A list that also names some other token is not this refusal (#738). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
 | `STS-GNAP-0906` | In product mode, a GNAP client instance proved a key no application entry registers, and the class_id its request sent does not name an application such a key may be an instance of: no GNAP client of that identifier in the realm, a resource server, one nobody registered, or one listing no registered gnapFinishUri (#1216). With no class_id, the refusal is STS-GNAP-0082. | HTTP 401 GNAP invalid_client (RFC 9635 sections 2.3 and 2.3.3) |
 | `STS-GNAP-0907` | A GNAP grant made by an unregistered instance of its application (#1216) was refused at use — its continuation, or introspected inactive — because gnap.unregisteredInstances has been turned off since (#1219). Such a grant is never refused for the key missing from the entry, where it never was (that is STS-GNAP-0731 for every other grant). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
+| `STS-GNAP-0908` | The custom claims configured for a GNAP access-token JWT could not be read. The token is still minted, without those claims. The protocol claims are unaffected. | RFC 9635 section 3.2.1 (the access token is opaque to the client); the JWT is what a resource server verifies |
 
 ## STS-DEVICE
 
@@ -4512,7 +4533,7 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-SVCACCT-0001` | A service-account policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second. | HTTP 400 (management API) |
+| `STS-SVCACCT-0001` | A service-account policy profile was named with something that is neither `default` nor a name of lower-case letters, digits and hyphens (#1240). | HTTP 400 (management API) |
 | `STS-SVCACCT-0002` | A service-account policy save was refused: a field was missing or out of range, the rotated password's length was below the password policy's minimum, or rotation was turned on in a realm with no push destination. | HTTP 400 (management API) |
 | `STS-SVCACCT-0003` | There is no embedded directory in this process, so a service-account policy could not be saved. | HTTP 400 (management API) |
 | `STS-SVCACCT-0004` | The directory would not store the service-account policy profile: it holds its maximum number of entries. | HTTP 400 (management API) |
@@ -4541,6 +4562,10 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 | `STS-SVCACCT-0044` | A service account's rotated password could not be pushed to its destination (or the destination register is not loaded); nothing changed and the next run tries again. | none — a warning in the log and an audit row |
 | `STS-SVCACCT-0045` | ALARM: a service account's rotated password was pushed to its destination and could not be committed here, so the destination holds a password this service does not accept until the next rotation. | none — an error in the log and an audit row |
 | `STS-SVCACCT-0046` | No generated password of the service-account policy's length satisfied the password policy, so the rotation stopped before pushing anything. | none — a warning in the log and an audit row |
+| `STS-SVCACCT-0047` | A service account names, in stsServiceAccountPolicy, a service-account policy the realm does not hold; `default` governs it until the policy exists or the reference changes (#1240). | none — a warning in the log |
+| `STS-SVCACCT-0048` | stsServiceAccountPolicy was written on a person who is not a service account; only a service account names a service-account policy (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0049` | A named service-account policy was not deleted because a service account still names it in stsServiceAccountPolicy (#1240). | HTTP 400 (management API) |
+| `STS-SVCACCT-0050` | stsServiceAccountPolicy was written, over LDAP or at a create, naming neither `default` nor a service-account policy of this realm (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
 
 ## STS-XACML
 
@@ -5210,6 +5235,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0904` | A message-signing certificate action named an application the registry does not hold (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0905` | A message-signing certificate action named a person with no entry in this realm, and none is created (#521). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0906` | Storing, removing or listing a certificate on an application's entry was refused: the registry holds no application by that identifier, and none is created (#1227). | HTTP 400 (API) or a refusal on the application's page |
+| `STS-ADMIN-0907` | Setting or clearing the policy a group names of one kind was refused by the directory (#1235); the refusal carries the directory's own code. | HTTP 400 (API) or a refusal on the group's page |
+| `STS-ADMIN-0908` | set-pseudonyms was given a body that does not name exactly one of add, remove or cancelPending, or that names no person (#644). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0909` | set-pseudonyms named nobody in this realm, or the directory refused the value. The directory's own STS-LDAP code is recorded on its log (#644). | HTTP 400 (API) or a refusal on the person's page |
 
 ## STS-API
 
@@ -5422,6 +5450,8 @@ Raised from: portal/.
 | `STS-PORTAL-0620` | A search on /portal/delegate (GET /account-api/delegate/candidates) was refused: the text had fewer than three characters, the fewest the search takes, so that a search is never a listing of the directory (2026-10-20). | HTTP 400 JSON |
 | `STS-PORTAL-0621` | A search on /portal/delegate was refused: the person or their address had asked more times in the rate-limit window than the search allows (thirty a person, 120 an address). Where the limiter names its own bucket, its code is recorded instead (2026-10-20). | HTTP 429 JSON |
 | `STS-PORTAL-0622` | A search on /portal/delegate could not be answered: no directory was installed, or the store could not be read. The page says so and the DN form still works (2026-10-20). | HTTP 503 JSON |
+| `STS-PORTAL-0623` | A pseudonym change on /account-api could not be attempted: the directory module was not loaded. A directory refusal records its own STS-LDAP code instead (#644). | HTTP 503 JSON |
+| `STS-PORTAL-0624` | A /portal/verify-pseudonym link is unknown, expired, mismatched or already spent (#644). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 
@@ -5778,6 +5808,29 @@ Raised from: report/.
 | `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
 | `STS-REPORT-0054` | A query on an AuthZEN search source (authzenSubjects, authzenResources, authzenActions) does not give every input the search is asked with as an eq filter of the top-level "and", so it was refused rather than run (#1176). | invalid_query (the job fails) |
 | `STS-REPORT-0055` | An AuthZEN search source could not be asked: the search APIs are off in the realm (authzen.searchEnabled), or the report's owner is not a person of the realm it runs in, and a search runs as its owner (#1176). | unavailable or forbidden (the job fails) |
+
+## STS-AUDIT
+
+**Audit export.** Delivery of this process's audit events to operator-configured destinations: syslog, a file, a webhook, Splunk HEC and LogRhythm (#641).
+
+Raised from: common/audit_export.ts, mgmt-api/audit_export_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-AUDIT-0001` | An audit export destination was refused because its configuration is not usable: an unknown action or type, a missing field, or an id that is not the shape the register takes (#641). | invalid_request (the act is refused) |
+| `STS-AUDIT-0002` | An audit export act named a destination id this realm does not have (#641). | invalid_request (the act is refused) |
+| `STS-AUDIT-0003` | An audit export secret could not be sealed under the realm's data key, so the destination was not stored (#641). | invalid_request (the act is refused) |
+| `STS-AUDIT-0004` | A filesystem audit export path was refused: it is not absolute, it climbs out of its directory, or it is outside auditExport.fileRoots (#641). | invalid_request (the act is refused); none (a delivery failure) |
+| `STS-AUDIT-0005` | An audit export URL or host was refused: a scheme other than http or https, userinfo, a private or loopback address the settings do not allow, or a cloud metadata address, which is never allowed (#641). | invalid_request (the act is refused); none (a delivery failure) |
+| `STS-AUDIT-0006` | A syslog audit export could not be sent: the socket would not connect, the write failed, or TLS was refused (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0007` | An HTTP audit export (webhook or Splunk HEC) failed: the connection failed, the peer answered 401 or 403, or it answered a status that is not acceptance. The cursor stays, and the destination retries (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0008` | A filesystem audit export could not append the event: the path could not be opened or the write failed (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0009` | Audit events were trimmed off this process's ring before audit export delivered them. The bookmark of the next undelivered event was gone. The count is one episode, not a sequence-number gap, and what remains is delivered (#641). | none (a warning) |
+| `STS-AUDIT-0010` | The audit export test event could not be delivered to the destination. The synthetic event is not an audit row (#641). | invalid_request (the test act fails) |
+| `STS-AUDIT-0011` | An audit export destination has been failing for auditExport.retryMaxPeriodMs, so the event at the head was probed once more. On failure that event, and further events in the same run up to the batch, are counted permanently failed without another send, and the destination waits the first retry delay. The ids are on the row. Delivery is at-least-once, not exactly-once (#641). | none (a warning) |
+| `STS-AUDIT-0012` | auditExport.skipTlsVerification is on and is ignored, because this realm is in product mode: webhook, Splunk HEC and syslog TLS verify the peer. Said once per process (#641). | none (a warning) |
+| `STS-AUDIT-0014` | A webhook or Splunk HEC destination answered a redirect. Audit export does not follow it. The cursor stays and the destination pauses (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0015` | A webhook or Splunk HEC destination rejected the event itself (HTTP 400). That event is counted permanently failed and the cursor moves past it. The destination is not paused for the events after it (#641). | none (that event is dropped; later events are still delivered) |
 
 ## Adding a code
 

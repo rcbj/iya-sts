@@ -77,7 +77,7 @@ const ACTIVATE = BASE + '/activate';
 // realm in its own prefix — and the bundle draws them without signing in.
 const FOR_NOBODY = [ACTIVATE, BASE + '/reset-password',
                     BASE + '/forgot-password', BASE + '/verify-email',
-                    BASE + '/callback'];
+                    BASE + '/verify-pseudonym', BASE + '/callback'];
 
 interface DirectoryHooks {
   personEntry(username: string): any;

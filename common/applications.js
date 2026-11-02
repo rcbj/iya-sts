@@ -3607,6 +3607,23 @@ const SCHEMA = {
             '(those of the TGT it was issued from), an application row ' +
             'replacing the claim of the same name. Only while ' +
             'krb5.pacClaims is on.' },
+    // #1250: THIS CLIENT'S OWN GNAP ACCESS-TOKEN JWT CLAIMS, one JSON array
+    // of rows of the realm's shape (`name` and `value`, or `name`,
+    // `attribute`, `multi` and `type`). Added to a jwt-signed token, and to
+    // the JWT inside a jwt-encrypted token, for this client instance; an
+    // application row wins by name. The protocol's own claims win over both.
+    // Macaroon, biscuit and zcap do not carry them. Kept off the field grid
+    // for the rows above's reason: the GNAP tab's Custom claims section
+    // writes them.
+    { name: 'gnapClaimsAccessToken', kind: 'single',
+      from: 'the console\'s Custom claims section',
+      what: 'THIS CLIENT\'S OWN GNAP ACCESS-TOKEN JWT CLAIMS, as a JSON ' +
+            'array of rows like the other custom-claim sets. Added to a ' +
+            'jwt-signed token and to the JWT inside a jwt-encrypted token ' +
+            'issued to this client, an application row replacing the realm ' +
+            'row of the same name. The token\'s own claims (access, flags, ' +
+            'label, grant_id and the JWT names) cannot be overridden. ' +
+            'Macaroon, biscuit and zcap tokens do not carry these rows.' },
     // #186: UNCONSTRAINED DELEGATION is Kerberos's alone, and OFF unless set.
     { name: 'krb5TrustedForDelegation', kind: 'single', from: 'by hand',
       what: 'TRUE or FALSE, default FALSE: this Kerberos service is TRUSTED ' +
@@ -4594,6 +4611,101 @@ const SCHEMA = {
             'until the policy exists (STS-AUTHN-0536).\n\nIt is WRITTEN ' +
             'BY NOBODY: no protocol presents it, so it is editable and ' +
             'starts empty.' },
+    // ---------------------------------------------------------------------
+    // THE PASSKEY POLICY THIS APPLICATION NAMES (#1235, rcbj on #1234,
+    // 2026-10-30: "a unique application or user attribute ... that points at
+    // each type of named policy"). It replaced the named passkey policy's
+    // own list of applications (`stsPasskeySelectApplication`, #535, #609),
+    // and no migration is owed; a group names one in `stsPasskeyPolicy`. `appAuthnPolicy`'s arrangement: one value,
+    // CHECKED AT THE WRITE (CHOICES_CHECKED_HERE) against `default` and this
+    // realm's named passkey policies, and listed in POLICY_REFERENCES so the
+    // policy can ask which applications name it.
+    // ---------------------------------------------------------------------
+    { name: 'appPasskeyPolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE PASSKEY POLICY A SIGN-IN TO THIS APPLICATION IS HELD TO: ' +
+            '`default` (or empty), or the name of a named passkey policy ' +
+            'of this realm (Directory > Policies). It competes on ' +
+            'precedence with the passkey policy each of the person\'s ' +
+            'groups names (stsPasskeyPolicy): the lowest precedence ' +
+            'applies, ties by name, and `default` where nothing names ' +
+            'one.\n\nA name no policy of this realm holds — written past ' +
+            'the console — names nothing and is logged (STS-AUTHN-0537). A ' +
+            'named passkey policy this attribute names cannot be deleted ' +
+            '(STS-AUTHN-0538).\n\nIt is WRITTEN ' +
+            'BY NOBODY: no protocol presents it, so it is editable and ' +
+            'starts empty.' },
+    // ---------------------------------------------------------------------
+    // THE LOCALE POLICY THIS APPLICATION NAMES (#1238, rcbj on #1234). It
+    // replaced the named locale policy's own list of applications
+    // (`stsLocaleSelectApplication`, #539) and its one-profile-per-
+    // application refusal (STS-I18N-0007, retired); no migration is owed. A
+    // group names one in `stsLocalePolicy`. `appPasskeyPolicy`'s
+    // arrangement: one value, CHECKED AT THE WRITE, in POLICY_REFERENCES.
+    // ---------------------------------------------------------------------
+    { name: 'appLocalePolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE LOCALE POLICY A PAGE OR A MAIL FOR THIS APPLICATION FALLS ' +
+            'BACK TO: `default` (or empty), or the name of a named locale ' +
+            'policy of this realm (Directory > Policies). It decides the ' +
+            'language a page is drawn in when the request, the person and ' +
+            'the browser name none a catalog answers, and the ' +
+            'preferredLanguage a person this application causes to be ' +
+            'created is given. Where the person is known it competes on ' +
+            'precedence with the locale policy each of the person\'s groups ' +
+            'names (stsLocalePolicy): the lowest precedence applies, ties ' +
+            'by name, and `default` where nothing names one.\n\nA name no ' +
+            'policy of this realm holds — written past the console — names ' +
+            'nothing and is logged (STS-I18N-0013): `default` applies, as ' +
+            'a language is all it decides. A named locale policy this ' +
+            'attribute names cannot be deleted (STS-I18N-0014).\n\nIt is ' +
+            'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
+            'and starts empty.' },
+    // THE PASSWORD POLICY THIS APPLICATION NAMES (#1236), `appPasskeyPolicy`'s
+    // arrangement: one value, checked at the write against `default` and
+    // this realm's named password policies. Read where a password is set
+    // with the application in hand — the sign-in's forced password change.
+    { name: 'appPasswordPolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE PASSWORD POLICY A PASSWORD SET WHILE SIGNING IN TO THIS ' +
+            'APPLICATION IS HELD TO: `default` (or empty), or the name of a ' +
+            'named password policy of this realm (Directory > Policies). ' +
+            'It competes on precedence with the password policy each of ' +
+            'the person\'s groups names (stsPasswordPolicy): the lowest ' +
+            'precedence applies, ties by name, and `default` where nothing ' +
+            'names one. A door with no application in hand (the portal, ' +
+            'the console, LDAP) ranks the groups\' alone.\n\nA name no ' +
+            'policy of this realm holds — written past the console — names ' +
+            'nothing, the group references still rank, and it is logged ' +
+            '(STS-AUTHN-0539). A named password policy this ' +
+            'attribute names cannot be deleted (STS-AUTHN-0540).\n\nIt is ' +
+            'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
+            'and starts empty.' },
+    // ---------------------------------------------------------------------
+    // THE POST-LOGIN ACTIVITY POLICY THIS APPLICATION NAMES (#1239, rcbj on
+    // #1234): `appPasskeyPolicy`'s arrangement. A sign-in to the application
+    // ranks it with the profiles the person's groups name; a question asked
+    // of a person outside a sign-in (a started activity's mail, the
+    // progress report) has no application and does not read it.
+    // ---------------------------------------------------------------------
+    { name: 'appPostLoginPolicy', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      what: 'THE POST-LOGIN ACTIVITY POLICY A SIGN-IN TO THIS APPLICATION ' +
+            'FOLLOWS: `default` (or empty), or the name of a named ' +
+            'post-login policy of this realm (Directory > Policies). It ' +
+            'competes on precedence with the post-login policy each of the ' +
+            'person\'s groups names (stsPostLoginPolicy): the lowest ' +
+            'precedence applies, ties by name, and `default` where nothing ' +
+            'names one. A named policy with its activity off EXCLUDES a ' +
+            'sign-in to this application where it wins.\n\nIt is read at ' +
+            'the sign-in only: a started activity\'s reminder mail and the ' +
+            'progress report know no application, and select by the ' +
+            'person\'s groups alone.\n\nA name no policy of this realm ' +
+            'holds — written past the console — names nothing and is ' +
+            'logged (STS-AUTHN-0542). A named post-login policy this ' +
+            'attribute names cannot be deleted (STS-AUTHN-0543).\n\nIt is ' +
+            'WRITTEN BY NOBODY: no protocol presents it, so it is editable ' +
+            'and starts empty.' },
     // -------------------------------------------------------------------
     // APPLICATION-SCOPED FINE-GRAINED AUTHORIZATION (#564). The RESOURCE
     // application that declares an authorization_details type owns the
@@ -4894,6 +5006,8 @@ const EDITABLE = {
   krb5ForeignTgtDelegation: 'set',
   // #493: one JSON array, like the five claim sets below.
   krb5ClaimsPac: 'set',
+  // #1250: one JSON array, the GNAP access-token JWT's own rows.
+  gnapClaimsAccessToken: 'set',
   oid4vpClientId: 'multi',
   // The four that are ONLY ever declared — nothing in this service writes them.
   federationPartnerId: 'multi',
@@ -4917,6 +5031,14 @@ const EDITABLE = {
   // the lists are a named authentication policy's and this names it: `set`,
   // one value, for the same reason — nothing can observe it.
   appAuthnPolicy: 'set',
+  // #1235: the passkey policy, `appAuthnPolicy`'s reason.
+  appPasskeyPolicy: 'set',
+  // #1238: the locale policy, the same reason.
+  appLocalePolicy: 'set',
+  // #1236: the password policy, the same reason.
+  appPasswordPolicy: 'set',
+  // #1239: the post-login activity policy, the same reason.
+  appPostLoginPolicy: 'set',
   // The home page, `set` for its row's reason: an application has one. It is
   // editable AND written by register() from RFC 7591 `client_uri`, which is the
   // same arrangement oauthRedirectUri has — a registration states it, and an
@@ -5335,7 +5457,8 @@ const CLAIM_ROW_SETS = {
   oauthClaimsUserinfo: 'userinfo',
   saml2CustomAttributes: 'saml2',
   saml11CustomAttributes: 'saml11',
-  krb5ClaimsPac: 'kerberos-pac'
+  krb5ClaimsPac: 'kerberos-pac',
+  gnapClaimsAccessToken: 'gnap_access_token'
 };
 
 /**
@@ -6136,6 +6259,31 @@ const ATTRIBUTE_CHOICES = {
     return ['default'].concat(require('./authn_policy').named()
       .map(function (one) { return one.name; }));
   },
+  // `default` and this realm's named passkey policies (#1235), read when
+  // asked, for the same reason.
+  appPasskeyPolicy: function () {
+    return ['default'].concat(require('./passkey_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
+  // `default` and this realm's named locale policies (#1238), the same way.
+  appLocalePolicy: function () {
+    return ['default'].concat(require('./locale_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
+  // `default` and this realm's named password policies (#1236).
+  appPasswordPolicy: function () {
+    return ['default'].concat(require('./password_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
+  // `default` and this realm's named post-login policies (#1239), the same.
+  appPostLoginPolicy: function () {
+    return ['default'].concat(require('./post_login_policy').list()
+      .map(function (one) { return String(one.name); })
+      .filter(function (one) { return one !== 'default'; }));
+  },
   acmeAllowedProfiles: function () {
     return enrollmentProfileChoices(false);
   },
@@ -6219,6 +6367,12 @@ function enrollmentProfileChoices(withDevice) {
   return withDevice ? ids.concat(['device']) : ids;
 }
 
+// THE ATTRIBUTES BY WHICH AN APPLICATION NAMES A POLICY (#1235, rule 3cx),
+// one per kind that an application selects: indexed by the kept listing and
+// asked by `applicationsNamingPolicy()`.
+const POLICY_REFERENCES = ['appAuthnPolicy', 'appPasskeyPolicy',
+  'appLocalePolicy', 'appPasswordPolicy', 'appPostLoginPolicy'];
+
 const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'oauthBackchannelTokenDeliveryMode',
   'oauthBackchannelAuthenticationRequestSigningAlg', 'gnapKeyProof',
@@ -6226,6 +6380,14 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
   'secretDestProvider', 'secretDestPayload', 'appAuthnPolicy',
+  // #1235: a policy reference names a policy the realm holds.
+  'appPasskeyPolicy',
+  // #1238: the same, for the locale policy.
+  'appLocalePolicy',
+  // #1236: the password policy's.
+  'appPasswordPolicy',
+  // #1239: the post-login activity policy's, the same.
+  'appPostLoginPolicy',
   'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
   'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
   // #395: a misspelt mode would silently be the default, and a misspelt
@@ -6693,7 +6855,10 @@ function gridExcludedAttributes() {
                'oauthClaimsUserinfo', 'saml2CustomAttributes',
                'saml11CustomAttributes',
                // And the Kerberos PAC claims section (#493).
-               'krb5ClaimsPac'].concat(
+               'krb5ClaimsPac',
+               // And the GNAP access-token JWT's Custom claims section
+               // (#1250).
+               'gnapClaimsAccessToken'].concat(
                  // And their attribute selections (#495), drawn as the
                  // catalogue's checkboxes — and a resource server's claims
                  // per permission, drawn on the Scope claims tab.
@@ -18621,7 +18786,14 @@ function buildListing(backing) {
     // #493: the KDC finds the application a service ticket is for by SPN.
     byServicePrincipal: new Map(),
     byPermission: new Map(),
-    byPermissionBase: new Map()
+    byPermissionBase: new Map(),
+    // #1235: the applications naming each policy, by reference attribute
+    // and the name lower-case — what refuses a policy's delete and lists
+    // its applications, without a walk of the listing per question.
+    byPolicyReference: POLICY_REFERENCES.reduce(function (all, attribute) {
+      all[attribute] = new Map();
+      return all;
+    }, {})
   };
   // Each Map holds the applications in `list()`'s order, so the first is the
   // one the filter over `list()` found first, and the length is the count
@@ -18651,6 +18823,13 @@ function buildListing(backing) {
     if (base) {
       indexInto(listing.byPermissionBase, base, item);
     }
+    POLICY_REFERENCES.forEach(function (attribute) {
+      const named = String(valuesOf(fields[attribute])[0] || '').trim()
+        .toLowerCase();
+      if (named) {
+        indexInto(listing.byPolicyReference[attribute], named, item);
+      }
+    });
   });
   items.forEach(deepFreeze);
   log.debug("Leaving buildListing(). " + items.length + " application(s).");
@@ -18727,25 +18906,52 @@ function list() {
   return rows;
 }
 
-// THE APPLICATIONS NAMING AN AUTHENTICATION POLICY (#1148): what refuses its
-// delete and what Directory > Policies draws beside it. Compared lower-case,
-// as `authn_policy.ts` names a policy.
+// ---------------------------------------------------------------------------
+// THE APPLICATIONS NAMING A POLICY (#1148 for the authentication policy,
+// generalised by #1235, rule 3cx): what refuses a named policy's delete and
+// what Directory > Policies lists beside it. Every attribute by which an
+// application names a policy of some kind is a row of POLICY_REFERENCES, and
+// the kept listing indexes it (`byPolicyReference`), so a question costs the
+// applications that name the policy rather than a walk of every one.
+// Compared lower-case, as every kind names a policy.
+//
+// A KIND ADOPTING A REFERENCE adds its attribute here, a declaration above,
+// an EDITABLE row, an ATTRIBUTE_CHOICES source and a CHOICES_CHECKED_HERE
+// entry — `appPasskeyPolicy`'s five lines.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the applications whose policy-reference attribute names a policy,
+ * in the ambient realm, in `list()`'s order.
+ *
+ * @param attribute - the reference attribute, one of POLICY_REFERENCES
+ * @param name - the policy's name
+ * @returns the applications' identifiers
+ */
+function applicationsNamingPolicy(attribute, name) {
+  log.debug("Entering applicationsNamingPolicy(). " + attribute);
+  const wanted = String(name == null ? '' : name).trim().toLowerCase();
+  if (!wanted || POLICY_REFERENCES.indexOf(attribute) < 0) {
+    log.debug("Leaving applicationsNamingPolicy(). Not a question.");
+    return [];
+  }
+  const out = lookedUp('byPolicyReference', wanted, attribute)
+    .map(function (row) {
+      return row.identifier;
+    });
+  log.debug("Leaving applicationsNamingPolicy(). " + out.length + ".");
+  return out;
+}
+
 /**
  * Lists the applications whose `appAuthnPolicy` names an authentication
- * policy, in the ambient realm.
+ * policy, in the ambient realm (#1148).
  *
  * @param name - the policy's name
  * @returns the applications' identifiers
  */
 function applicationsNamingAuthnPolicy(name) {
   log.debug("Entering applicationsNamingAuthnPolicy().");
-  const wanted = String(name == null ? '' : name).trim().toLowerCase();
-  const out = !wanted ? [] : list().filter(function (row) {
-    const held = [].concat(((row && row.fields) || {}).appAuthnPolicy || [])[0];
-    return String(held || '').trim().toLowerCase() === wanted;
-  }).map(function (row) {
-    return row.identifier;
-  });
+  const out = applicationsNamingPolicy('appAuthnPolicy', name);
   log.debug("Leaving applicationsNamingAuthnPolicy(). " + out.length + ".");
   return out;
 }
@@ -21707,6 +21913,8 @@ module.exports = {
   deleteApplication: deleteApplication,
   list: list,
   applicationsNamingAuthnPolicy: applicationsNamingAuthnPolicy,
+  applicationsNamingPolicy: applicationsNamingPolicy,
+  POLICY_REFERENCES: POLICY_REFERENCES,
   // The clock `list()` is kept by (#625).
   listingVersion: listingVersion,
   ownerValues: ownerValues,

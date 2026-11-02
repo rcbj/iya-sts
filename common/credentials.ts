@@ -1499,8 +1499,9 @@ class Credentials {
    *
    * @param username - the account (any key the directory locates)
    * @param door - `browser`, a password door's id, or `kerberos`
-   * @returns true when the name is a service account and the realm's
-   *   service-account policy does not open that door
+   * @returns true when the name is a service account and ITS
+   *   service-account policy (#1240: the profile it names, else `default`)
+   *   does not open that door
    */
   serviceAccountRefusesDoor(username, door) {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
@@ -1510,7 +1511,8 @@ class Credentials {
       log.debug('Leaving Credentials.serviceAccountRefusesDoor(). Not one.');
       return false;
     }
-    const out = !serviceAccountPolicy.allowsDoor(String(door || ''));
+    const out = !serviceAccountPolicy.allowsDoor(String(door || ''),
+      serviceAccountPolicy.profileFor(name));
     log.debug('Leaving Credentials.serviceAccountRefusesDoor(). ' + out);
     return out;
   }
@@ -2294,17 +2296,19 @@ class Credentials {
    *
    * @param password - the password
    * @param username - the person
+   * @param application - the application the password is set for, where
+   *   one is known (#1236): it may name the profile
    * @returns the problem as one sentence, or empty when there is none or
    *   nothing is checked
    */
-  passwordProblem(password, username) {
+  passwordProblem(password, username, application?) {
     const { log, mode, passwordPolicy } = this.deps;
     log.debug("Entering Credentials.passwordProblem().");
     if (!mode.verifiesCredentials()) {
       log.debug("Leaving Credentials.passwordProblem().");
       return '';
     }
-    const profile = passwordPolicy.profileFor(username);
+    const profile = passwordPolicy.profileFor(username, application);
     const problems = passwordPolicy.problemsWith(password, profile);
     if (!problems.length) {
       log.debug("Leaving Credentials.passwordProblem().");
@@ -2323,13 +2327,16 @@ class Credentials {
    * Returns the password rules as a person reads them, and whether they are
    * enforced, for a form to print before it refuses anything.
    *
-   * @param username - the person
+   * @param username - the person; the profile is the one their groups name
+   *   (#1236), `default` for nobody
+   * @param application - the application, where one is known: it may name
+   *   the profile too
    * @returns `{ enforced, … }`
    */
-  passwordRules(username) {
+  passwordRules(username, application?) {
     const { log, mode, passwordPolicy } = this.deps;
     log.debug("Entering Credentials.passwordRules().");
-    const profile = passwordPolicy.profileFor(username);
+    const profile = passwordPolicy.profileFor(username, application);
     log.debug("Leaving Credentials.passwordRules().");
     return { enforced: mode.verifiesCredentials(),
              profile: profile.name,
@@ -2423,7 +2430,9 @@ class Credentials {
    * @param opts - `current` and `history` from an entry the caller holds,
    *   `generated` for a password this service just made up, and
    *   `hashOfThisPassword`, a hash of exactly this password the caller
-   *   already made with `crypto.hashSecretAsync()` (#756)
+   *   already made with `crypto.hashSecretAsync()` (#756), and
+   *   `application`, the application the password is set for where the door
+   *   knows one, which may name the profile (#1236)
    * @returns `{ ok: true, hash, history, … }`, or a refusal with its reason
    *   and code
    */
@@ -2439,8 +2448,12 @@ class Credentials {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
     log.debug('Entering Credentials.rotatesThroughDestination().');
     const facts = username ? serviceAccounts.of(username) : null;
+    // THE ACCOUNT'S OWN PROFILE (#1240): the one its facts name.
     const out = !!facts && !!facts.destination &&
-                serviceAccountPolicy.rotation().enabled;
+                serviceAccountPolicy.rotation(
+                  serviceAccountPolicy.profileForReference(facts.policy,
+                                                           facts.username))
+                  .enabled;
     log.debug('Leaving Credentials.rotatesThroughDestination(). ' + out);
     return out;
   }
@@ -2480,12 +2493,16 @@ class Credentials {
                  'Use Rotate now on its page, or POST /admin-api/users/' +
                  'rotate-password.'] });
     }
-    const profile = passwordPolicy.profileFor(name);
+    // THE PERSON'S PROFILE (#1236): the one their groups name, or the
+    // application's where the door knows one (`opts.application`, the
+    // sign-in's forced change), ranked; `default` where nothing names one.
+    const profile = passwordPolicy.profileFor(name, options.application);
     const enforced = mode.verifiesCredentials();
     if (enforced) {
       const problems = passwordPolicy.problemsWith(password, profile);
       if (problems.length) {
-        const said = this.passwordProblem(password, name);
+        const said = this.passwordProblem(password, name,
+                                          options.application);
         log.info('credentials: a password for ' + name + ' was refused by ' +
                  'the password policy: ' + problems.join('; ') + '.');
         log.debug('Leaving Credentials.preparePassword(). It breaks the ' +
@@ -2586,7 +2603,8 @@ class Credentials {
    *
    * @param username - the person
    * @param password - the new password
-   * @param opts - `generated` for a password from `generatePassword()`
+   * @param opts - `generated` for a password from `generatePassword()`, and
+   *   `application`, the application it is set for where known (#1236)
    * @returns `{ ok: true, username, … }`, or a refusal `{ ok: false, errors }`
    */
   setPassword(username, password, opts?) {
@@ -11754,10 +11772,12 @@ class Credentials {
     const directory = this.directory;
     log.debug("Entering Credentials.mfaRequirementFor().");
     const name = String(username || '').trim();
-    // A SERVICE ACCOUNT IN A REALM THAT EXEMPTS THEM (#221): nothing is
-    // required of it, by its entry, the realm or a console role.
-    if (name && this.deps.serviceAccountPolicy.exemptFromSecondFactor() &&
-        this.deps.serviceAccounts.isServiceAccountName(name)) {
+    // A SERVICE ACCOUNT WHOSE POLICY EXEMPTS IT (#221; its own profile
+    // since #1240): nothing is required of it, by its entry, the realm or a
+    // console role.
+    if (name && this.deps.serviceAccounts.isServiceAccountName(name) &&
+        this.deps.serviceAccountPolicy.exemptFromSecondFactor(
+          this.deps.serviceAccountPolicy.profileFor(name))) {
       log.debug("Leaving Credentials.mfaRequirementFor(). An exempt service " +
                 "account.");
       return { required: false, byUser: false, byRealm: false,

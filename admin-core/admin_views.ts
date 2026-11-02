@@ -99,6 +99,8 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
+// The policy references a group may make (#1235, rule 3cx): a leaf.
+import PolicySelection = require('../common/policy_selection');
 import InstanceSlot = require('../common/instance_slot');
 // The credential store, for the ways-in list the new-person form offers.
 import credentials = require('../common/credentials');
@@ -2604,12 +2606,18 @@ class AdminViews {
     // profile of this realm, with its rows and its selectors, in precedence
     // order, for the console's forms and the API.
     if (Array.isArray(module.SELECTORS)) {
-      // WHICH SELECTORS the kind's named profiles carry (#539): the passkey
-      // policy's three, or the locale policy's applications alone, so the
-      // console draws the controls the kind has and no others.
+      // WHICH SELECTORS the kind's named profiles carry (#539): the
+      // precedence, or a list a kind still keeps (the post-login policy's
+      // groups, until #1239), so the console draws the controls the kind
+      // has and no others.
       (out as any).selectors = module.SELECTORS.map(function (one) {
         return one.key;
       });
+      // WHAT NAMES A PROFILE (#1235, rule 3cx): the attribute on an
+      // application, a group and/or a person by which one names its profile
+      // of this kind, so the console says which; `{}` for a kind selected
+      // by its own lists alone.
+      (out as any).references = Object.assign({}, module.REFERENCES || {});
       (out as any).named = module.list().filter(function (one) {
         return one.name !== module.DEFAULT_PROFILE;
       }).map(function (one) {
@@ -2618,6 +2626,11 @@ class AdminViews {
           selectApplications: one.selectApplications || [],
           selectGroups: one.selectGroups || [],
           precedence: one.precedence,
+          // The applications, groups and people naming it (#1235),
+          // read-only here: each is edited on its own page.
+          namedBy: typeof module.namedBy === 'function'
+            ? module.namedBy(one.name)
+            : { applications: [], groups: [], people: [] },
           rules: module.describe(one),
           fields: module.FIELDS.map(function (field) {
             return { key: field.key, attribute: field.attribute,
@@ -2693,12 +2706,18 @@ class AdminViews {
                    : false,
                  what: m.what };
       }),
-      // THE NAMED POLICIES (#1148), each with the applications naming it,
-      // and the two vocabularies the form offers.
+      // THE NAMED POLICIES (#1148), each with its precedence and what names
+      // it — the applications and, since #1237, the groups (`namedBy()`,
+      // the group index) — and the two vocabularies the form offers. The
+      // selector and the references are the generic named-policy section's
+      // (rule 3cx), set here rather than through the module's SELECTORS:
+      // this kind's save and reset take `default` alone, its named policies
+      // having acts of their own.
+      selectors: ['precedence'],
+      references: Object.assign({}, authn.REFERENCES),
       named: authn.named().map((one) => {
         return Object.assign({}, one, {
-          namedBy: this.deps.applications
-            .applicationsNamingAuthnPolicy(one.name)
+          namedBy: authn.namedBy(one.name)
         });
       }),
       vocabulary: {
@@ -2785,6 +2804,9 @@ class AdminViews {
       const profiles = kind.module.list();
       out.kinds.push({ id: kind.id, label: kind.label,
                        container: kind.container, governs: kind.governs,
+                       // Drawn as Default / Named policies / New policy
+                       // sub-tabs (#609; declared on the kind, #1235).
+                       tabbed: kind.tabbed === true,
                        profiles: profiles.length,
                        actions: [policyKinds.saveAction(kind),
                                  policyKinds.resetAction(kind)]
@@ -2810,6 +2832,40 @@ class AdminViews {
     out.paging = this.pagingJson(listed.paging);
     log.debug("Leaving AdminViews.policiesView(). " + kinds.length +
               " kind(s), " + rows.length + " profile(s).");
+    return out;
+  }
+
+  /**
+   * Builds Directory → Policies as `policiesView()` does, and then fills in
+   * the PEOPLE naming each named profile of a kind whose module offers
+   * `namedByAsync()` (#1241: the attribute policy, whose people name a
+   * profile from their own entry). Who holds a reference attribute is a
+   * holder question asked asynchronously — rcbj's rule, no synchronous walk
+   * on a request — so it cannot be part of the synchronous view.
+   *
+   * @param query - the request's query
+   * @returns a promise of the page's JSON
+   */
+  async policiesViewAsync(query) {
+    const { log, policyKinds } = this.deps;
+    log.debug("Entering AdminViews.policiesViewAsync().");
+    const out = this.policiesView(query);
+    for (const kind of policyKinds.list()) {
+      const module = kind.module;
+      const member = out[kind.id];
+      if (typeof module.namedByAsync !== 'function' || !member ||
+          !Array.isArray(member.named)) {
+        continue;
+      }
+      for (const row of member.named) {
+        const found = await module.namedByAsync(row.name);
+        row.namedBy = Object.assign({}, row.namedBy || {},
+                                    { people: found.people || [],
+                                      peopleComplete:
+                                        found.complete !== false });
+      }
+    }
+    log.debug("Leaving AdminViews.policiesViewAsync().");
     return out;
   }
 
@@ -8825,7 +8881,12 @@ class AdminViews {
     catalogue.forEach(function (row) {
       claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
     });
-    const rows = personEditor.editableAttributes().map(function (row) {
+    // A POLICY REFERENCE (#1235) is not offered here: it is named on the
+    // person's own page, where `personEditor.update()` checks it against the
+    // realm's policies, and a create does not pass through that check.
+    const rows = personEditor.editableAttributes().filter(function (row) {
+      return row.group !== 'policies';
+    }).map(function (row) {
       return { name: row.name, label: row.label, schema: row.schema,
                multi: row.multi, must: row.must, note: row.note,
                group: row.group, example: row.example, simple: row.simple };
@@ -10677,6 +10738,10 @@ class AdminViews {
       json: Object.assign({ found: true }, info, {
         canWrite: !!groupWriter,
         group: pagedGroup,
+        // THE POLICY THE GROUP NAMES OF EACH KIND THAT A GROUP SELECTS
+        // (#1235, rule 3cx): one picker each, `default` and the realm's
+        // named policies; `set-policy` writes it.
+        policyReferences: this.groupPolicyReferences(group),
         // Closed to its owners, and why (#607).
         ownership: this.ownershipOf('group', group.dn),
         membersPaging: this.pagingJson(memberPage.paging),
@@ -10686,6 +10751,26 @@ class AdminViews {
                        write: config.value('admin.writeGroup') }
       })
     };
+  }
+
+  /**
+   * The policy references a group's page draws (#1235): each kind's
+   * declared group attribute, its choices and the value the group holds.
+   *
+   * @param group - the group's entry
+   * @returns `[{ attribute, noun, choices, value }]`
+   */
+  groupPolicyReferences(group) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.groupPolicyReferences().");
+    const held = (group && group.attributes) || {};
+    const out = PolicySelection.referencesOn('group').map(function (one) {
+      const value = PolicySelection.valuesOf(held, one.attribute)[0] || '';
+      return { attribute: one.attribute, noun: one.noun,
+               choices: one.choices, value: PolicySelection.fold(value) };
+    });
+    log.debug("Leaving AdminViews.groupPolicyReferences(). " + out.length);
+    return out;
   }
 
   // `?group=` means the drill-down — and the NO-DIRECTORY branch comes first,
@@ -11079,48 +11164,38 @@ class AdminViews {
     return out;
   }
 
-  // #609: the named passkey policies whose applications list names this
-  // application — by its identifier or a client_id, as a sign-in names it —
-  // in precedence order with the one that applies marked, for the Every
-  // protocol sub-tab's read-only card. Nothing is stored on the entry: the
-  // relation is the policies' `stsPasskeySelectApplication`. A view must
-  // still draw, so a policy that cannot be asked answers none.
+  // #609, reshaped by #1235: the passkey policy this application names
+  // (`appPasskeyPolicy`, its picker among the Every protocol fields), whether
+  // the realm holds it, what a sign-in for it gets before any person is known,
+  // and how many named policies select by group and could still win — for the
+  // Every protocol sub-tab's read-only card. A view must still draw, so a
+  // policy that cannot be asked answers `default`.
   /**
-   * The named passkey policies that name an application, and which applies.
+   * The passkey policy an application names, and which applies.
    *
    * @param row - the application's registry row
-   * @returns `passkeyPolicy.forApplication()`'s answer, with `names` (what
-   *   the application was matched by) and `link` (the Policies page's tab)
+   * @returns `passkeyPolicy.forApplication()`'s answer, with `link` (the
+   *   Policies page's place for the policy that applies)
    */
   applicationPasskeyPolicies(row) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationPasskeyPolicies().");
     const fields = (row && row.fields) || {};
-    const names = [String((row && row.identifier) || '')]
-      .concat([].concat(fields.oauthClientId || []).map(String))
-      .filter(function (one, n, all) {
-        return one !== '' && all.indexOf(one) === n;
-      });
+    const reference = [].concat(fields.appPasskeyPolicy || [])[0] || '';
     let out;
     try {
-      out = require('../common/passkey_policy').forApplication(names);
+      out = require('../common/passkey_policy').forApplication(reference);
     } catch (e) {
       log.debug("Caught in AdminViews.applicationPasskeyPolicies(): " +
                 ((e && e.message) || e));
-      out = { policies: [], applies: 'default', appliesBy: {},
-              groupPolicies: 0 };
+      out = { named: 'default', missing: false, applies: 'default',
+              precedence: 0, groupPolicies: 0 };
     }
     log.debug("Leaving AdminViews.applicationPasskeyPolicies(). " +
-              out.policies.length + " policy(ies).");
-    // Each policy's own place on Directory > Policies, the named profile's
-    // heading on the Passkey policy tab's Named policies sub-tab.
-    const policies = out.policies.map(function (one) {
-      return Object.assign({}, one, {
-        link: '/admin/policies#passkey-profile-' + one.name });
-    });
-    return Object.assign({ names: names,
-                           link: '/admin/policies#passkey' }, out,
-                         { policies: policies });
+              out.applies);
+    return Object.assign({}, out, {
+      link: out.applies === 'default' ? '/admin/policies#passkey'
+        : '/admin/policies#passkey-profile-' + out.applies });
   }
 
   // THE FINE-GRAINED AUTHORIZATION TAB (#564, P5): `fga_policies.ts`'s
@@ -12119,12 +12194,15 @@ class AdminViews {
       saml2: ['saml2'],
       saml11: ['saml11'],
       // #493: a Kerberos service's own PAC claims.
-      'kerberos-pac': ['krb5']
+      'kerberos-pac': ['krb5'],
+      // #1250: a GNAP client's own access-token JWT claims.
+      gnap_access_token: ['gnap']
     };
     const labels = {
       access_token: 'Access token', id_token: 'ID Token',
       userinfo: 'UserInfo response', saml2: 'SAML 2.0 attributes',
-      saml11: 'SAML 1.1 attributes', 'kerberos-pac': 'Kerberos PAC claims'
+      saml11: 'SAML 1.1 attributes', 'kerberos-pac': 'Kerberos PAC claims',
+      gnap_access_token: 'GNAP access token'
     };
     const sets = Object.keys(families).filter(function (id) {
       return families[id].some(function (one) {
@@ -14582,7 +14660,9 @@ class AdminViews {
       log.debug("Leaving AdminViews.serviceAccountJson(). A person.");
       return null;
     }
-    const profile = serviceAccountPolicy.read();
+    // THE ACCOUNT'S OWN PROFILE (#1240): the one it names, else `default`.
+    const profile = serviceAccountPolicy.profileForReference(facts.policy,
+                                                             facts.username);
     const rotation = serviceAccountPolicy.rotation(profile);
     const rotatedMs = facts.rotatedAt
       ? Date.parse(facts.rotatedAt.replace(
@@ -14618,7 +14698,9 @@ class AdminViews {
         allowBrowserSignIn: profile.allowBrowserSignIn === true,
         doors: serviceAccountPolicy.allowedDoors(profile),
         requiresOwner: profile.requireOwner === true,
-        from: profile.from
+        from: profile.from,
+        // Which profile governs it (#1240): `default` or a named one.
+        name: profile.name
       }
     };
   }
@@ -14977,7 +15059,10 @@ class AdminViews {
       // an account may name, and their own DN, which a search may not offer
       // (an account cannot own itself).
       serviceAccountRules: {
-        requiresOwner: this.deps.serviceAccountPolicy.requiresOwner(),
+        // The person's own profile (#1240): the one they name, else
+        // `default` — which is also what a person not yet one is held to.
+        requiresOwner: this.deps.serviceAccountPolicy.requiresOwner(
+          this.deps.serviceAccountPolicy.profileFor(key)),
         maxOwners: this.deps.serviceAccounts.MAX_OWNERS,
         dn: String((view.directory && view.directory.json &&
                     view.directory.json.dn) || '')
@@ -16132,6 +16217,7 @@ export = {
   rolesRegister: slot.forward('rolesRegister'),
   rolesView: slot.forward('rolesView'),
   policiesView: slot.forward('policiesView'),
+  policiesViewAsync: slot.forward('policiesViewAsync'),
   DEFAULT_CREDENTIAL: DEFAULT_CREDENTIAL,
   rolesPreview: slot.forward('rolesPreview'),
   claimsPreviewUser: slot.forward('claimsPreviewUser'),

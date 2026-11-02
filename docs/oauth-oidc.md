@@ -2390,7 +2390,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.backchannelLogoutRetentionS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_RETENTION_S` | `86400` | yes | How long a delivery is kept; one still pending past it is dead-lettered. |
 | `oauth2.backchannelLogoutMaxRows` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_MAX_ROWS` | `2000` | yes | The most deliveries one realm keeps; finished rows go first. |
 | `oauth2.backchannelLogoutConcurrency` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_CONCURRENCY` | `8` | yes | How many due deliveries one process attempts at once. |
-| `oauth2.backchannelLogoutSummaryS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_SUMMARY_S` | `60` | yes | At most one summary log line per realm per interval. |
+| `oauth2.backchannelLogoutSummaryS` | `STS_OAUTH2_BACKCHANNEL_LOGOUT_SUMMARY_S` | `60` | yes | How often one realm's logout count may be logged. A dead letter or a deferred delivery is a warning (STS-OAUTH-0545); a count with neither is written only at debug. |
 | `logout.anyUser` | `LOGOUT_ANY_USER` | `true` | yes | `/logout` honours a `username` naming somebody else (development only; ignored in product mode). |
 | `logout.kerberosSignOut` | `LOGOUT_KERBEROS_SIGN_OUT` | `true` | yes | Signing out stamps an instant on the Kerberos principal, after which older tickets are refused at the TGS. |
 | `logout.ldapDisconnect` | `LOGOUT_LDAP_DISCONNECT` | `true` | yes | Signing out closes every directory connection bound as that person. |

@@ -152,8 +152,8 @@
     "text": "La classe de draft-behera-ldap-password-policy pour une entrée de politique de mot de passe. `pwdAttribute` nomme l’attribut que régit la politique, et ici c’est toujours `userPassword`."
   },
   "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
-    "en": "4daf3a60dd76691a",
-    "text": "La classe propre à ce service, qui porte les règles de composition et la longueur générée, pour lesquelles le brouillon n’a pas d’attribut. L’entrée est nommée par le PROFIL (`cn=default`)."
+    "en": "4a651241a26c3b18",
+    "text": "La classe propre à ce service, qui porte les règles de composition et la longueur générée, pour lesquelles le brouillon n’a pas d’attribut. L’entrée est nommée par le PROFIL : `cn=default`, ou le nom d’une politique nommée."
   },
   "password.SCHEMA.attributes.pwdAttribute.what": {
     "en": "603a95b316f4b6f5",
@@ -211,6 +211,10 @@
     "en": "b088d02f4ec32169",
     "text": "Le parallélisme de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt. Node le calcule sur un seul thread, donc une valeur plus élevée coûte du temps plutôt que des cœurs ; la description du coût liste les paires acceptées par l'OWASP."
   },
+  "password.SCHEMA.attributes.stsPasswordPrecedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Quelle politique de mot de passe nommée l’emporte lorsque plusieurs sont nommées pour une personne : la plus basse, de 1 à 1000."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "À quoi sert le profil, pour la personne suivante."
@@ -222,6 +226,10 @@
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",
     "text": "La date à laquelle le mot de passe a été défini pour la dernière fois, au format GeneralizedTime. Tenu à jour par ce service."
+  },
+  "password.SELECTORS.precedence.what": {
+    "en": "f8becfc3b7045813",
+    "text": "Quelle politique de mot de passe nommée l’emporte lorsque plusieurs sont nommées pour une personne : la plus basse, de 1 à 1000."
   },
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
@@ -572,12 +580,16 @@
     "text": "À quoi sert le profil, pour la personne suivante."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "9c184b4ac272a663",
-    "text": "Sur une politique d’authentification NOMMÉE (#1148) : un mécanisme de premier facteur qu’autorisent les applications qui nomment cette politique (appAuthnPolicy) — password, password-mfa, webauthn, spnego, wallet ou federation, une valeur chacun. Si aucun n’est indiqué, tous ceux qu’autorise le domaine le sont."
+    "en": "66db848b0bb1c58f",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un mécanisme de premier facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, password-mfa, webauthn, spnego, wallet ou federation, une valeur chacun. Si aucun n’est indiqué, tous ceux qu’autorise le domaine le sont."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "b59799bd06b5022d",
-    "text": "Sur une politique d’authentification NOMMÉE (#1148) : un second facteur qu’autorisent les applications qui nomment cette politique — password, securityKey, totp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Si aucun n’est indiqué, la politique d’authentification du domaine reste telle quelle."
+    "en": "7c8e4d8b4cce7c08",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un second facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, securityKey, totp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Si aucun n’est indiqué, la politique d’authentification du domaine reste telle quelle."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
+    "en": "afff5dad656a9845",
+    "text": "Sur une politique d’authentification NOMMÉE (#1237) : laquelle s’applique lorsque plusieurs sont nommées pour une même connexion — par l’application (appAuthnPolicy) et par les groupes de la personne (stsAuthnPolicy) — la plus faible, de 1 à 1000, les égalités départagées par le nom. 100 en son absence."
   },
   "authn.SCHEMA.personAttributes.stsMailFactor.what": {
     "en": "7498b88833038685",
@@ -728,8 +740,8 @@
     "text": "ce qu’un compte de service peut faire — le second facteur, le navigateur, les portes à mot de passe — et la rotation de son mot de passe"
   },
   "kinds.serviceAccount.appliesTo": {
-    "en": "7529888c07b7db03",
-    "text": "à chaque compte de service de ce domaine, à partir de sa prochaine connexion, de son prochain bind ou de sa prochaine rotation"
+    "en": "34a64ba365919802",
+    "text": "à chaque compte de service qu’elle régit — ceux qui la nomment et, pour `default`, ceux qui n’en nomment aucune —, à partir de sa prochaine connexion, de son prochain bind ou de sa prochaine rotation"
   },
   "kinds.serviceAccount.fallsBackTo": {
     "en": "c56187f00ea11347",
@@ -876,8 +888,8 @@
     "text": "Une rotation échouée est réessayée à la prochaine exécution de la tâche. Après ce nombre d’échecs consécutifs, le compte est signalé sur Supervision → Comptes de service et journalisé comme une alarme (STS-SVCACCT-0042)."
   },
   "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
-    "en": "0ff4e4aa3597259f",
-    "text": "La classe de ce service pour une politique des comptes de service : ce qu’un compte de service de ce domaine peut faire et comment son mot de passe tourne. L’entrée est nommée par le PROFIL (`cn=default`)."
+    "en": "5ef697454678b011",
+    "text": "La classe de ce service pour une politique des comptes de service : ce qu’un compte de service de ce domaine peut faire et comment son mot de passe tourne. L’entrée est nommée par le PROFIL : `cn=default`, ou un profil nommé qu’un compte de service nomme dans son stsServiceAccountPolicy."
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
@@ -939,6 +951,10 @@
     "en": "604c6f36ecb4ac58",
     "text": "Une rotation échouée est réessayée à la prochaine exécution de la tâche. Après ce nombre d’échecs consécutifs, le compte est signalé sur Supervision → Comptes de service et journalisé comme une alarme (STS-SVCACCT-0042)."
   },
+  "serviceAccount.SCHEMA.attributes.stsServiceAccountPrecedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Quelle politique des comptes de service nommée l’emporte lorsque plusieurs sont nommées : la plus basse, de 1 à 1000. Un compte de service ne nomme qu’une politique, donc aujourd’hui elle ne décide rien."
+  },
   "serviceAccount.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "À quoi sert le profil, pour la personne suivante."
@@ -998,6 +1014,10 @@
   "serviceAccount.DOORS.allowPasswordGrant.what": {
     "en": "7fe8d96fec703361",
     "text": "grant_type=password au point de terminaison de jeton (RFC 6749 section 4.3), là où le domaine autorise cet octroi."
+  },
+  "serviceAccount.SELECTORS.precedence.what": {
+    "en": "3bc40f48dcc93e91",
+    "text": "Quelle politique des comptes de service nommée l’emporte lorsque plusieurs sont nommées : la plus basse, de 1 à 1000. Un compte de service ne nomme qu’une politique, donc aujourd’hui elle ne décide rien."
   },
   "serviceAccount.sentences.exempt": {
     "en": "b26ecbca5a57dc48",
@@ -1379,14 +1399,6 @@
     "en": "5098a9645fefe2ff",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
   },
-  "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
-    "en": "03ba679923c40b45",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique des clés d’accès nommée, lors d’une connexion pour l’une d’elles."
-  },
-  "passkey.SCHEMA.attributes.stsPasskeySelectGroup.what": {
-    "en": "8c6adaafe4e8fbc4",
-    "text": "Les groupes (cn ou DN) aux membres desquels s’applique une politique des clés d’accès nommée."
-  },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",
     "text": "Quelle politique des clés d’accès nommée l’emporte lorsque plusieurs correspondent : la plus basse, de 1 à 1000."
@@ -1402,14 +1414,6 @@
   "passkey.SCHEMA.personAttributes.stsPasswordResetSource.what": {
     "en": "110d1231fc9be5f4",
     "text": "Qui a émis le lien de réinitialisation du mot de passe présent sur cette entrée : `self` (le formulaire de mot de passe oublié) ou `operator` (un administrateur). Écrit et effacé avec le lien. Tenu à jour par ce service."
-  },
-  "passkey.SELECTORS.selectApplications.what": {
-    "en": "03ba679923c40b45",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique des clés d’accès nommée, lors d’une connexion pour l’une d’elles."
-  },
-  "passkey.SELECTORS.selectGroups.what": {
-    "en": "8c6adaafe4e8fbc4",
-    "text": "Les groupes (cn ou DN) aux membres desquels s’applique une politique des clés d’accès nommée."
   },
   "passkey.SELECTORS.precedence.what": {
     "en": "cd02467de702ad24",
@@ -1604,24 +1608,24 @@
     "text": "Attribuer cette langue à une nouvelle personne"
   },
   "locale.FIELDS.populatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création fait partie de ses applications. Les entrées existantes ne sont jamais réécrites."
+    "en": "aac6446069dd5f66",
+    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création le nomme, ou l’un des groupes de la personne. Les entrées existantes ne sont jamais réécrites."
   },
   "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
-    "en": "2c86d88e73ffc794",
-    "text": "La classe de ce service pour une politique de langue : la langue de repli des pages d’un domaine, qu’il attribue aussi à une nouvelle personne. Nommée par le PROFIL (`cn=default`, ou un profil nommé choisi par application)."
+    "en": "796100ae10a7611a",
+    "text": "La classe de ce service pour une politique de langue : la langue de repli des pages d’un domaine, qu’il attribue aussi à une nouvelle personne. Nommée par le PROFIL (`cn=default`, ou un profil nommé que nomme une application ou un groupe)."
   },
   "locale.SCHEMA.attributes.stsLocaleDefault.what": {
     "en": "7b103155bd0c34db",
     "text": "Une étiquette de langue BCP 47 (RFC 5646), comme en, fr-CA ou zh-TW. Les pages sont affichées dans cette langue lorsque la requête, la preferredLanguage de la personne, le sélecteur de langue et le navigateur ne nomment rien à quoi un catalogue réponde ; les dates et les nombres sont formatés pour elle même là où aucun catalogue ne le fait. Le courrier adressé à une personne dont l’entrée ne nomme aucune langue est rédigé dans cette langue. Remplace le paramètre mail.defaultLanguage."
   },
   "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
-    "en": "6685ff4a00c8a43b",
-    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création fait partie de ses applications. Les entrées existantes ne sont jamais réécrites."
+    "en": "aac6446069dd5f66",
+    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création le nomme, ou l’un des groupes de la personne. Les entrées existantes ne sont jamais réécrites."
   },
-  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique de langue nommée. Une application figure dans un profil nommé au plus."
+  "locale.SCHEMA.attributes.stsLocalePrecedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Quelle politique de langue nommée l’emporte lorsque plusieurs sont nommées pour une page : la plus basse, de 1 à 1000."
   },
   "locale.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1631,9 +1635,9 @@
     "en": "839242d6ed29c817",
     "text": "La preferredLanguage que la politique de langue a attribuée à cette personne lors de la création de son entrée. Tant que preferredLanguage lui est encore égale, c’est le choix de la POLITIQUE, et une page la classe après la langue du navigateur ; dès que quelqu’un en définit une autre, c’est celle de la personne. Écrit uniquement par ce service."
   },
-  "locale.SELECTORS.selectApplications.what": {
-    "en": "54e34db4c7e1b556",
-    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique de langue nommée. Une application figure dans un profil nommé au plus."
+  "locale.SELECTORS.precedence.what": {
+    "en": "f96d91dbc5ec1199",
+    "text": "Quelle politique de langue nommée l’emporte lorsque plusieurs sont nommées pour une page : la plus basse, de 1 à 1000."
   },
   "locale.sentences.drawnIn": {
     "en": "def5bb364db8e407",
@@ -1654,14 +1658,6 @@
   "locale.sentences.mail": {
     "en": "ab1ab635d8ef149d",
     "text": "le courrier adressé à une personne dont l’entrée ne nomme aucune langue est rédigé en {{tag}}"
-  },
-  "locale.sentences.appliesTo": {
-    "en": "098d842668109368",
-    "text": "s’applique à {{list}}"
-  },
-  "locale.sentences.param.noApplication": {
-    "en": "cb8bd4fa96dda063",
-    "text": "aucune application"
   },
   "kinds.attributes.label": {
     "en": "6619889d4a9f485d",
@@ -1692,8 +1688,24 @@
     "text": "Les attributs dont toute personne de ce domaine doit avoir une valeur, en plus de uid, cn et sn, toujours obligatoires. Une liste, ou séparés par des virgules. Tout attribut qu’une personne peut recevoir : le schéma inetOrgPerson, le catalogue des identifiants, mail, et les attributs personnalisés de ce domaine. Appliqué en mode produit : une création sans l’un d’eux est refusée à toutes les portes, et une modification ne peut pas en retirer un. Par défaut givenName, sn et mail."
   },
   "attributes.SCHEMA.objectClasses.stsAttributePolicy.what": {
-    "en": "12630f210e385441",
-    "text": "La classe de ce service pour une politique d’attributs : les attributs que toute personne d’un domaine doit avoir. Nommée par le PROFIL (`cn=default`)."
+    "en": "df463dd3d0380799",
+    "text": "La classe de ce service pour une politique d’attributs : les attributs que toute personne d’un domaine doit avoir. Nommée par le PROFIL (`cn=default`, ou un profil nommé propre au domaine)."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "Sur une personne ou un groupe : la politique d’attributs qu’il nomme, `default` ou un profil nommé du domaine. Une valeur."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "elle s’applique à une personne qui la nomme, ou qui est dans un groupe qui la nomme, lorsqu’aucune autre politique qu’elle nomme n’a une précédence inférieure à {{precedence}}"
   },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
@@ -1800,8 +1812,8 @@
     "text": "Demander après la connexion"
   },
   "postLogin.FIELDS.enabled.what": {
-    "en": "4c8090556412a140",
-    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT les membres de ses groupes."
+    "en": "594af708f511f0b5",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT ceux pour qui il est sélectionné : les membres des groupes qui le nomment, et une connexion à une application qui le nomme."
   },
   "postLogin.FIELDS.activity.label": {
     "en": "38da1505ca837328",
@@ -1868,12 +1880,12 @@
     "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
   },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
-    "en": "7ac360a6d70b525c",
-    "text": "La classe de ce service pour un profil d’activité après connexion : ce qu’il est demandé à une personne de faire après s’être connectée. Nommée par le PROFIL (`cn=default`, ou un profil nommé choisi par groupe)."
+    "en": "b1a01fe693170513",
+    "text": "La classe de ce service pour un profil d’activité après connexion : ce qu’il est demandé à une personne de faire après s’être connectée. Nommée par le PROFIL (`cn=default`, ou un profil nommé que nomme une application ou un groupe)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginEnabled.what": {
-    "en": "4c8090556412a140",
-    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT les membres de ses groupes."
+    "en": "594af708f511f0b5",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, chaque personne que ce profil atteint et qui doit effectuer l’activité ci-dessous est invitée à l’effectuer après s’être connectée, avant d’être renvoyée vers l’application. Un profil nommé où ce réglage est désactivé EXCLUT ceux pour qui il est sélectionné : les membres des groupes qui le nomment, et une connexion à une application qui le nomme."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
     "en": "93b1483272fe7b46",
@@ -1903,13 +1915,9 @@
     "en": "4fa78beae92d0ce5",
     "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
   },
-  "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
-    "en": "5fdad032c7e1e1e7",
-    "text": "Les groupes (cn ou DN) aux membres desquels s’applique un profil après connexion nommé."
-  },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
-    "en": "dbc9cfe2efed4348",
-    "text": "Quel profil après connexion nommé l’emporte lorsque plusieurs atteignent une même personne : le plus bas, de 1 à 1000."
+    "en": "2b5b2ba409912c7d",
+    "text": "Quel profil après connexion nommé l’emporte lorsque plusieurs sont nommés pour une même connexion — par l’application et par les groupes de la personne : le plus bas, de 1 à 1000."
   },
   "postLogin.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
@@ -1919,13 +1927,9 @@
     "en": "b56a731743cd58be",
     "text": "Retiré (#1135) : le rôle dans lequel une personne sans clé d’accès en enregistrait une. Une clé d’accès n’a pas de rôle ; rien ne le lit."
   },
-  "postLogin.SELECTORS.selectGroups.what": {
-    "en": "5fdad032c7e1e1e7",
-    "text": "Les groupes (cn ou DN) aux membres desquels s’applique un profil après connexion nommé."
-  },
   "postLogin.SELECTORS.precedence.what": {
-    "en": "dbc9cfe2efed4348",
-    "text": "Quel profil après connexion nommé l’emporte lorsque plusieurs atteignent une même personne : le plus bas, de 1 à 1000."
+    "en": "2b5b2ba409912c7d",
+    "text": "Quel profil après connexion nommé l’emporte lorsque plusieurs sont nommés pour une même connexion — par l’application et par les groupes de la personne : le plus bas, de 1 à 1000."
   },
   "postLogin.sentences.off": {
     "en": "f22422aec6b67033",
@@ -1984,12 +1988,8 @@
     "text": "une personne qui ne détient aucune clé d’accès est invitée à enregistrer une clé d’accès post-quantique, et peut l’ignorer jusqu’à la fin du délai de grâce"
   },
   "postLogin.sentences.appliesTo": {
-    "en": "ce39627aa02b361d",
-    "text": "s’applique aux membres de {{list}}, avec la priorité {{precedence}}"
-  },
-  "postLogin.sentences.param.noGroup": {
-    "en": "4a00d86d0ff8747a",
-    "text": "aucun groupe"
+    "en": "f195acc04e68d15e",
+    "text": "s’applique là où une application ou un groupe le nomme (appPostLoginPolicy, stsPostLoginPolicy), avec la priorité {{precedence}}"
   },
   "messages.saved": {
     "en": "aff7d1fa6042bebd",
@@ -2046,6 +2046,14 @@
   "page.doors.4.door": {
     "en": "68ddb58dcaaf956f",
     "text": "un add ou un modify LDAP de userPassword sur 389 ou 636"
+  },
+  "page.doors.5.door": {
+    "en": "2ad6798475ed5717",
+    "text": "/authn/password-change (le changement qu’une connexion exige ; l’application à laquelle on se connecte peut nommer la politique)"
+  },
+  "page.doors.6.door": {
+    "en": "f6310f5585f611ea",
+    "text": "/portal/reset-password (un lien de réinitialisation)"
   },
   "page.pools.0": {
     "en": "66175c2ffcf81f48",

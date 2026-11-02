@@ -466,10 +466,13 @@ function deviceBoundFactOf(asked) {
 // THE SIGN-IN MECHANISM FACTS OF A BROWSER ISSUANCE (#457): the mechanisms
 // the named application allows (the first-factor list of the authentication
 // policy it names, `appAuthnPolicy`, since #1148; its own `appAuthnMechanism`
-// until then) and those the person's authentication satisfies, or null
-// when there is nothing to compare — no application, one that allows every
-// mechanism, or an issuance that is not a browser sign-in (rcbj:
-// browser-based authentication only).
+// until then — or, since #1237, the policy one of the PERSON'S GROUPS names
+// where its precedence is lower) and those the person's authentication
+// satisfies, or null when there is nothing to compare — no application, a
+// policy that allows every mechanism, or an issuance that is not a browser
+// sign-in (rcbj: browser-based authentication only). A sign-in naming no
+// application is not asked here, as before: the issuance it is for — an
+// authorization code, an assertion — names one, and is asked then.
 //
 // A BROWSER ISSUANCE is one of four: a session started at a sign-in door,
 // which names the event it is about to record (`authenticationEvent`); and
@@ -515,6 +518,18 @@ function authorityFactsOf(asked) {
            emailVerified: String(authority.emailVerified || 'true') };
 }
 
+// THE PERSON THE ISSUANCE IS FOR (#1237), where the request names one: the
+// policy one of their groups names competes with the application's, so the
+// two facts below are read with them. '' for a client or a workload.
+function personOf(asked) {
+  log.debug('Entering personOf().');
+  const subject = asked.subject || {};
+  const out = subject.kind === 'user' && subject.name
+    ? String(subject.name) : '';
+  log.debug('Leaving personOf().');
+  return out;
+}
+
 /**
  * The sign-in mechanism facts of a browser issuance (#457).
  *
@@ -524,6 +539,7 @@ function authorityFactsOf(asked) {
 function mechanismFactsOf(asked) {
   log.debug('Entering mechanismFactsOf().');
   const name = String(asked.application || '').trim();
+  const person = personOf(asked);
   const event = asked.authenticationEvent || null;
   const session = asked.session || null;
   if (!name || asked.browser === false ||
@@ -537,7 +553,7 @@ function mechanismFactsOf(asked) {
   const mechanisms = require('./authn_mechanisms');
   try {
     const entry = require('./applications').get(name);
-    allowed = mechanisms.allowedOf(entry ? entry.fields : null);
+    allowed = mechanisms.allowedOf(entry ? entry.fields : null, person);
   } catch (e) {
     log.debug('Caught in mechanismFactsOf(): ' + ((e && e.message) || e));
     log.error(errorCodes.tag('STS-XACML-0169') + 'issuance_gate: the ' +
@@ -561,13 +577,14 @@ function mechanismFactsOf(asked) {
 // THE SECOND-FACTOR FACTS OF A BROWSER ISSUANCE (#475): the second factors
 // the named application allows (the second-factor list of the
 // authentication policy it names, `appAuthnPolicy`, since #1148; its own
-// `appMfaMechanism` until then) and those the person's authentication
-// gave, or null when there is nothing to compare — for mechanismFactsOf()'s
-// reasons, on the same four browser kinds, and also when the authentication
-// gave no second factor at all: the list says which second factors, never
-// whether one is needed (rcbj), so a session on one factor is not this
-// rule's to deny. Never throws: a registry that cannot
-// be read allows whatever the realm allows.
+// `appMfaMechanism` until then — or, since #1237, the policy one of the
+// PERSON'S GROUPS names where its precedence is lower) and those the
+// person's authentication gave, or null when there is nothing to compare —
+// for mechanismFactsOf()'s reasons, on the same four browser kinds, and also
+// when the authentication gave no second factor at all: the list says which
+// second factors, never whether one is needed (rcbj), so a session on one
+// factor is not this rule's to deny. Never throws: a registry that cannot be
+// read allows whatever the realm allows.
 // ---------------------------------------------------------------------------
 /**
  * The second-factor facts of a browser issuance (#475).
@@ -578,6 +595,7 @@ function mechanismFactsOf(asked) {
 function mfaFactsOf(asked) {
   log.debug('Entering mfaFactsOf().');
   const name = String(asked.application || '').trim();
+  const person = personOf(asked);
   const event = asked.authenticationEvent || null;
   const session = asked.session || null;
   if (!name || asked.browser === false ||
@@ -597,7 +615,7 @@ function mfaFactsOf(asked) {
   let allowed = [];
   try {
     const entry = require('./applications').get(name);
-    allowed = factors.allowedOf(entry ? entry.fields : null);
+    allowed = factors.allowedOf(entry ? entry.fields : null, person);
   } catch (e) {
     log.debug('Caught in mfaFactsOf(): ' + ((e && e.message) || e));
     log.error(errorCodes.tag('STS-XACML-0172') + 'issuance_gate: the ' +

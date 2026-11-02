@@ -93,6 +93,29 @@ relying party may overrule it with `wsfedAssertionLifetimeMin` on its entry (see
 [the assertion settings](saml2-sso.md#the-assertion-settings-every-application-inherits)).
 The RSTR's `wsu:Lifetime` states the lifetime without the skew.
 
+**The SAML 2.0 token names the session it came from** ([#1243](https://github.com/rcbj/iya-sts/issues/1243)),
+as the [SAML 2.0 identity provider's](saml2-sso.md) assertion does:
+
+- **`SessionIndex` is the sign-on session's id**, the one a
+  [CAEP `session-revoked`](caep-events.md#session-revoked) names. A relying
+  party that keeps it from the sign-in can tell which of its own sessions to
+  end when that event arrives. Every token issued in one session carries the
+  same value.
+- **`AuthnInstant` is when the person authenticated**, the session's
+  authentication time, not when the token was issued. A relying party that
+  limits the authentication's age reads it from here.
+- **The bearer `SubjectConfirmation` carries `SubjectConfirmationData`**: a
+  `Recipient` that is the `wreply` the token is posted to, and a `NotOnOrAfter`
+  equal to the `Conditions`' (skew included). There is no `InResponseTo`,
+  because a `wsignin1.0` is not a SAML request. SAML 2.0 makes this element
+  optional and WS-Federation does not require it, but relying-party libraries
+  written for SAML 2.0 refuse a token without it.
+
+Until #1243 the SAML 2.0 token carried the assertion's own ID as
+`SessionIndex`, the time of issue as `AuthnInstant`, and a bare bearer
+confirmation. The SAML 1.1 token's `AuthenticationInstant` was already the
+session's authentication time.
+
 **`ds:Signature` sits in three different positions** in the three documents
 this profile involves — last in a SAML 1.1 assertion, second (after `Issuer`)
 in a SAML 2.0 one, and first in the federation metadata's `EntityDescriptor` —

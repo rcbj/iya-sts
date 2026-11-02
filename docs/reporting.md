@@ -441,9 +441,13 @@ The realm's configured federation relationships, as they are now.
 The realm authentication policy, one row per mechanism with `application`
 `realm`, plus one row per mechanism the [named authentication
 policy](authentication.md#named-authentication-policies) an application
-names in `appAuthnPolicy` lists. An application on `default`, or whose
-policy lists none, inherits the realm policy and adds no row; so does one
-naming a policy that does not exist. This is not a count of sign-ins.
+names in `appAuthnPolicy` lists, plus one row per mechanism the named
+policy a group names in `stsAuthnPolicy` lists. An application on
+`default`, or whose policy lists none, inherits the realm policy and adds no
+row; so does one naming a policy that does not exist. Where an application
+and a member's groups name policies for one sign-in, the lowest precedence
+applies, so a group's rows say what its members may get, not what they
+always get. This is not a count of sign-ins.
 Non-browser doors are outside the policy.
 
 | Field | Type | Meaning | Filter | Sort | Group |
@@ -451,7 +455,9 @@ Non-browser doors are outside the policy.
 | `id` | string | The mechanism id. Realm rows use the policy names. An application row uses the value it lists. | yes | yes | no |
 | `type` | string | `both`, `primary`, `second` or `other` for a realm row. `primary` for a first-factor mechanism of the application's authentication policy and `second` for a second factor. | yes | yes | yes |
 | `enabled` | boolean | For a realm row, whether that policy flag is on. For an application row, `true` because its policy lists it. A listed second factor the realm has switched off stays off at sign-in. | yes | yes | yes |
-| `application` | string | `realm`, or the application identifier. | yes | yes | yes |
+| `application` | string | `realm`, or the application identifier; empty on a group's row. | yes | yes | yes |
+| `group` | string | The group cn on a row from the policy that group names; empty otherwise. | yes | yes | yes |
+| `policy` | string | `default` on a realm row; otherwise the named authentication policy the row comes from. | yes | yes | yes |
 
 ### `auditEvents`
 
@@ -690,7 +696,7 @@ without the directory being asked again for every row.
 |---|---|---|---|---|---|
 | `username` | string | The person's uid. | yes | yes | no |
 | `activity` | string | The post-login activity: `pqc-passkey-migration`. | yes | yes | yes |
-| `profile` | string | The post-login profile that reached the person (`default`, or a named profile). | yes | yes | yes |
+| `profile` | string | The post-login profile that reached the person (`default`, or a named profile), as recorded when they were asked; a row recorded without one shows the profile their groups select now (no application is known outside a sign-in). | yes | yes | yes |
 | `role` | string | Retired (#1135): a passkey has no role, so a row written since is empty. A row written before keeps the role it was asked for then, `primary` or `mfa`. | yes | yes | yes |
 | `progress` | string | Where the person stands, the first that holds: `done`, `past-grace`, `snoozed`, `asked`, `mailed`. | yes | yes | yes |
 | `invitedAt` | timestamp | When the person was first asked at a sign-in; the allotted time counts from here. Null when they were only mailed. | yes | yes | no |

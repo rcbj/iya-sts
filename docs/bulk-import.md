@@ -60,12 +60,13 @@ Each record is one person directly under the realm's `ou=users`:
 - **The other attributes** must come from the person attributes of RFC 4519
   and RFC 2798: `cn`, `sn`, `givenName`, `displayName`, `mail`,
   `telephoneNumber`, `title`, `ou`, `employeeNumber`, `manager`,
-  `preferredLanguage` and the rest of those two lists.
+  `preferredLanguage` and the rest of those two lists, and `stspseudonym`.
 - **Refused** (`STS-LDAP-0156`):
   - `userPassword` and the certificate and PKCS #12 attributes, because they
     are credentials;
   - the binary attributes `audio`, `jpegPhoto` and `photo`;
-  - every operational and `sts…` attribute;
+  - every operational attribute, and every `sts…` attribute except
+    `stspseudonym`;
   - a URL value (`name:< url`), an empty value, a NUL byte;
   - a `changetype` other than `add`.
 
@@ -77,12 +78,22 @@ Each record is one person directly under the realm's `ou=users`:
 
 A refused record is counted and skipped, and the rest of the file is imported.
 
-**One entry per person.** A record's names are its RDN value and every `uid`
-it carries. A name already held by another entry under `ou=users` is not
-imported (`STS-LDAP-0160`), and neither is a name held by a record earlier in
-the same file. This is the rule an LDAP add enforces. A record whose DN is
-already in the directory is counted as **present** and skipped. That is what
-makes running the same file twice safe: the second run adds nothing.
+**One entry per person.** A record's names are its RDN value, every `uid`
+it carries, and every `stspseudonym`. A name already held by another entry
+under `ou=users` is not imported (`STS-LDAP-0160`), and neither is a name
+held by another record in the same file. This is the rule an LDAP add
+enforces. A record whose DN is already in the directory is counted as
+**present** and skipped. That is what makes running the same file twice
+safe: the second run adds nothing.
+
+**A sign-in name.** `stspseudonym` is the one `sts` attribute a record may
+carry. Each value is stored live, including an email: an import is a trusted
+source, as an administrator's add is. The three pending-verification
+attributes are refused with the other attributes that are not on the
+allowlist (`STS-LDAP-0156`). The shape and the uniqueness rules are the ones
+on [People](people.md#sign-in-names). A value that is this record's own
+`uid` is refused. An email value that is another person's mail address is
+refused (`STS-LDAP-0202`). This record's own `mail` is not that collision.
 
 ## What an imported person is
 

@@ -173,8 +173,11 @@ uploaded instead.
 | `stsMayAct` | the one party this person named as a delegate. It becomes `may_act` in their access tokens |
 | `stsAuthzenApplication` | the applications this person or service account may ask the AuthZEN API about, one per value; set by an administrator only (#563) |
 | `stsAuthzenCallbackUri` | the https URLs this person or service account, as an AuthZEN PEP, may name as an access request's callback, one per value; set by an administrator only (#1180) |
+| `stsServiceAccountPolicy` | the [named service-account policy](service-accounts.md#named-policies) a service account is governed by, or `default`; single-valued, held only by a service account and cleared with `stsServiceAccount`. Set on the person's Policies tab, with `POST /admin-api/users/set-attribute`, or by an LDAP modify, each checked against the realm's policies (#1240) |
 | `stsMailVerified` | the address they proved they receive mail at (#63) |
 | `stsMailVerifyToken`, `stsMailVerifyExpires`, `stsMailVerifyAddress` | a pending verification link. The token is **withheld** |
+| `stsPseudonym` | another name this person can sign in with, in place of their `uid` (#644). At most eight. A live value is in the username index. An email an administrator sets is live; one the person adds waits for its link. [People](people.md#sign-in-names) |
+| `stsPseudonymVerifyToken`, `stsPseudonymVerifyExpires`, `stsPseudonymVerifyAddress` | a pending sign-in name. The token is **withheld**. The address is absent from the username index |
 
 ---
 
@@ -195,6 +198,23 @@ roster or a role names it for:
 The console groups are created on first grant, and the bootstrap `admin` holds both. `remote-peps` and `xacml-users` are seeded, empty in product mode. In development, demo data adds `cn=developers` and `cn=directory-admins` (which grant nothing), the people `alice`, `bob` and `carol`, and `cn=admin,<base>`.
 
 The names are the defaults of `admin.readGroup`, `admin.writeGroup`, `roles.remotePepGroup` and `roles.xacmlUserGroup`. The directory also treats `groupOfUniqueNames`, `posixGroup` and `groupOfURLs` entries as groups, and reads `uniqueMember` and `memberUid` as well as `member`.
+
+A group may name the policy its members are held to, one attribute per kind
+of policy: `stsPasskeyPolicy`, a [named passkey
+policy](passkeys.md#different-rules-for-different-applications-or-groups) or
+`default`, `stsLocalePolicy`, a [named locale
+policy](languages.md#named-profiles-for-applications-and-groups) or
+`default`, `stsPasswordPolicy`, a [named password
+policy](authentication.md#different-password-rules-for-different-applications-or-groups)
+or `default`, `stsAuthnPolicy`, a [named authentication
+policy](authentication.md#named-authentication-policies) or `default`,
+`stsPostLoginPolicy`, a [named post-login
+profile](post-login-activities.md#which-profile-applies-groups-and-applications-name-it)
+or `default`, and `stsAttributePolicy`, a named attribute policy (below).
+It is set on the group's page or with
+`POST /admin-api/groups/set-policy`, which accepts only a policy the realm
+holds. The holder names the policy; the policy lists nobody. See
+[Policies](policies.md#who-names-which-kind).
 
 A group `fedProvisionGroups` creates also carries `federationRelationship`,
 the relationship id that created it. A later sign-in through that
@@ -234,7 +254,7 @@ draws it with a description of every field.
 | Who may start a sign-in (#426; [Identity-provider-initiated sign-in](idp-initiated-sso.md)) | `saml2IdpInitiatedSso`, `saml2SpInitiatedSso`, `saml11IdpInitiatedSso`, `saml11SpInitiatedSso`, `wsfedIdpInitiatedSso`, `wsfedSpInitiatedSso`, `oauthThirdPartyInitiatedLogin`, `oauthSpInitiatedSso` (each TRUE or FALSE, overriding the realm setting of the same name; identity-provider-initiated is off by default), `oauthInitiateLoginUri` (OpenID Connect Core section 4's `initiate_login_uri`; https, no fragment), `appLaunchProtocol` (`saml2`, `saml11`, `wsfed` or `oidc`: what `/launch/{app}` starts when the link names none) |
 | Kerberos service | `krb5ServicePrincipalName`, `krb5ServiceKeys` (**sealed**), `krb5ServiceKeyInfo` |
 | Delegation (#108, #186; [Delegation and impersonation](delegation.md)) | `appAllowedToDelegateTo`, `appAllowedToActOnBehalfOf`, `appDelegationSemantics`, `appDefaultDelegationSemantics`, `appDelegationSubjectGroup`, `appNotDelegated`, `appMayAct`, and for a Kerberos service `krb5TrustedForDelegation` |
-| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnPolicy` (the [named authentication policy](authentication.md#named-authentication-policies) it signs in under; it replaced `appAuthnMechanism` and `appMfaMechanism`) |
+| Roles and claims | `appRequiredRole`, `appGroupsClaim`, `appGroupsClaimName`, `appGroupsClaimValue`, `appGroupsClaimFromMemberOf`, `appAuthnPolicy` (the [named authentication policy](authentication.md#named-authentication-policies) it signs in under; it replaced `appAuthnMechanism` and `appMfaMechanism`), `appPasskeyPolicy` (the [named passkey policy](passkeys.md#different-rules-for-different-applications-or-groups) a sign-in to it is held to), `appLocalePolicy` (the [named locale policy](languages.md#named-profiles-for-applications-and-groups) its pages and the people it creates fall back to), `appPasswordPolicy` (the [named password policy](authentication.md#different-password-rules-for-different-applications-or-groups) a password set while signing in to it is held to), `appPostLoginPolicy` (the [named post-login profile](post-login-activities.md#which-profile-applies-groups-and-applications-name-it) a sign-in to it follows) |
 | Certificate enrollment | `appEnrolledCertificate`, `appEnrolledPrivateKey`, `appAcmeEabKey`, `appScepChallenge`, `appCertificateHostName` |
 | GNAP | `gnapInstanceId`, `gnapClassId`, `gnapKey`, `gnapKeyIdentity`, `gnapKeyReference`, `gnapKeyProof`, `gnapMtlsTrust`, `gnapSymmetricKey` (**withheld**), `gnapSymmetricAlg`, `gnapDisplayUri`, `gnapLogoUri`, `gnapFinishUri`, `gnapInteractionStartModes`, `gnapAllowedAccess`, `gnapBearerTokens`, `gnapSkipInteraction`, `gnapAccessTokenFormat`, `gnapAccessTokenLifetimeS`, `gnapResourceServerUri`, `gnapOwnerLookupUri`, `gnapJweKey`, `gnapMacaroonKey`, `gnapScopedSignals` |
 | Links to other registries | `oid4vpClientId`, `federationPartnerId`, `appFederationRelationship`, `appFederationAutoRedirect`, `ldapBindDn`, `scimClientId`, `ssfReceiverId`, `ssfDeliveryEndpoint`, `ssfAllowedEvents`, `spiffeWorkloadId` |
@@ -325,7 +345,10 @@ application is deleted, `xacmlOrphanedAt`; see
 `stsPwd*` attributes (`stsPwdRequireUppercase`, `stsPwdRequireDigit`,
 `stsPwdMinSymbols`, `stsPwdGeneratedLength` and others), which cover the
 composition rules and the generator. The default profile is **not seeded**:
-the defaults apply until an administrator saves one. See `common/password_policy.ts`.
+the defaults apply until an administrator saves one. A named policy is
+`cn=<name>` beside it, with the same attributes and `stsPasswordPrecedence`
+(1 to 1000); a group names one in `stsPasswordPolicy` and an application in
+`appPasswordPolicy`. See `common/password_policy.ts`.
 
 ## Attribute policies and custom attributes: `ou=attributePolicies`, `ou=attributeDefinitions`
 
@@ -333,6 +356,14 @@ the defaults apply until an administrator saves one. See `common/password_policy
 `stsAttributeRequired` (one value per attribute every person must hold, besides
 `uid`, `cn` and `sn`) and an optional `description`. Absent, the default
 realm's applies, then the built-in default (`givenName`, `sn`, `mail`).
+
+A realm's **named** attribute policies (#1241) are `cn=<name>` beside it, with
+the same attributes and `stsAttributePolicyPrecedence` (1 to 1000). They
+belong to the realm and are never inherited. A person names one with
+`stsAttributePolicy` on their own entry under `ou=users`, and a group names one
+with the same attribute on its own entry. The value is `default` or the
+policy's name, and only one value is allowed. Of the policies the person and
+their groups name, the one with the lowest precedence applies.
 
 `cn=<name>,ou=attributeDefinitions` is one of the realm's custom attributes:
 `objectClass: top, stsAttributeDefinition`, `stsAttributeLabel`,

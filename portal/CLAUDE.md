@@ -44,11 +44,12 @@ acts on — the person is the token's subject.
 
 Every portal page links to the public documentation
 (`https://rcbj.github.io/iya-sts/`), chosen by `common/web_doc_links.ts`. A
-signed-in page draws it at the top of `.main`, above a flash
-(`PortalShell.frame()`). A page drawn for nobody — activation, a password
-reset, forgot-password, verify-email — draws the same link in `drawView()`
-before `PortalShell.bare()`. A problem page and "not a page" do not: `bare()`
-stays path-agnostic.
+new portal page owes its row there in the same change that adds the page.
+`tests/doc_links.js` fails without it. A signed-in page draws it at the top
+of `.main`, above a flash (`PortalShell.frame()`). A page drawn for nobody
+— activation, a password reset, forgot-password, verify-email — draws the
+same link in `drawView()` before `PortalShell.bare()`. A problem page and
+"not a page" do not: `bare()` stays path-agnostic.
 
 
 ## THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT (2026-09-06)
@@ -2191,6 +2192,16 @@ Three pages over the mail channel (`common/CLAUDE.md`, 3ay), in a file beside
 - **The reset form's sentence changed with it**: "no password you had before
   works once it is set" rather than "your old password no longer works",
   because a self-service link removes nothing until it is used.
+
+## `portal_pseudonyms.ts`: `/portal/pseudonyms` and `/portal/verify-pseudonym` (#644)
+
+`/portal/pseudonyms` is signed in. The person is the token's subject, and
+the account API operations take no username. A name that is not an email is
+a sign-in name at once. An email is not, until `/portal/verify-pseudonym`
+spends the link mailed to that address. The GET of the link draws the
+confirmation and spends nothing, because a mail scanner follows every link.
+That page is not `/portal/verify-email`, which confirms the recovery
+address. `account-api/CLAUDE.md` has the operations.
 
 ## RESOURCES I OWN (#604, 2026-10-12)
 

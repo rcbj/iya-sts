@@ -39,30 +39,47 @@
 //                            drawn, so nothing a reader sees differs.
 //
 // ---------------------------------------------------------------------------
-// NAMED PROFILES ARE CHOSEN BY APPLICATION, AND ONLY BY APPLICATION.
+// NAMED PROFILES, AND WHAT NAMES THEM (#1238, rule 3cx; until then #539's
+// lookup by application).
 //
 // Beside `cn=default` a realm may keep profiles of its own (`cn=<name>`,
-// lower-case letters, digits and hyphens), each with the two rows and the
-// applications it applies to (`stsLocaleSelectApplication`, an application's
-// identifier or client_id). rcbj asked for application objects alone, so
-// there are no group selectors — and so NO PRECEDENCE: an application may be
-// on ONE named profile, and a save that would put it on a second is refused
-// (STS-I18N-0007) rather than ranked. Which profile applies is therefore a
-// lookup, `forApplication()`, never a contest.
+// lower-case letters, digits and hyphens), each with the two rows and a
+// PRECEDENCE (`stsLocalePrecedence`, 1 to 1000). A profile lists nothing:
+// what it covers NAMES it (rcbj's decisions on #1234) —
 //
-// `forApplication()` takes the application as an argument rather than
-// selecting it for the rest of the request (#535's `select()`): every caller
-// — a sign-in page, the consent screen, sign-out, SCIM's create — already
-// holds the application it is drawing for, and a locale read is asked once
-// per page, not at a dozen doors that cannot be handed it.
+//   * an application, in `appLocalePolicy` (`common/applications.js`);
+//   * a group, in `stsLocalePolicy` (the group page's picker).
+//
+// Nobody names a locale profile from their own entry: a person's own
+// language is `preferredLanguage`, which outranks every profile anyway.
+// The candidates are the profile the application names and the profile each
+// of the person's groups names; the LOWEST PRECEDENCE WINS, ties by name, and
+// `default` applies where nothing names one (`common/policy_selection.ts`).
+// `stsLocaleSelectApplication` and its one-profile-per-application refusal
+// (STS-I18N-0007, retired) went with #1238, and no migration is owed.
+//
+// THE SELECTION IS AN ARGUMENT (`forApplication(application, person)`), not
+// #535's ambient `select()`: every caller — a sign-in page, the consent
+// screen, sign-out, SCIM's create, a static surface's shell — already holds
+// the application it is drawing for, and the PERSON WHERE ONE IS KNOWN. A
+// page drawn before anybody is known is chosen by its application alone.
+//
+// A REFERENCE TO A PROFILE THE REALM DOES NOT HOLD (written past the console,
+// which checks every reference at the write) SELECTS NOTHING and is logged
+// (STS-I18N-0013); where nothing else names a profile, `default` applies.
+// This kind does NOT fail closed, where the authentication policy does
+// (#1148): it decides only which language a page and a mail fall back to,
+// and refusing to draw a page over that would guard nothing. A named profile
+// something names is not deleted (STS-I18N-0014).
 //
 // Named profiles are NOT inherited across realms; only `default` follows the
 // default realm's.
 //
 // IT IS A LIBRARY (rule 3) AND A LEAF: `helpers`, `realms`, `error_codes`,
-// `i18n` (a leaf), the instance slot, and the directory through a slot
-// `ldap/ldap_server.js` fills. In force in both modes: it decides only what
-// language a reader sees.
+// `i18n` (a leaf), `policy_selection` (a leaf), the instance slot, and the
+// directory through a slot `ldap/ldap_server.js` fills; the application
+// registry is reached LAZILY, as `passkey_policy.ts` reaches it. In force
+// in both modes: it decides only what language a reader sees.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -70,6 +87,7 @@ import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import i18n = require('./i18n');
 import InstanceSlot = require('./instance_slot');
+import PolicySelection = require('./policy_selection');
 // The sentences `describe()` makes are filled from SENTENCES below, so the
 // server can translate them into a console reader's language (#543).
 import serverProse = require('./server_prose');
@@ -93,12 +111,15 @@ interface DirectoryHooks {
                      attributes: Record<string, unknown>): unknown;
   deleteLocalePolicy?(name: string): unknown;
   personLanguage?(key: string): { value: string; populated: boolean };
+  personGroupReferences?(key: string, attribute: string):
+    { cn?: string; dn?: string; value?: string }[];
+  groupsNamingPolicy?(attribute: string, name: unknown): string[];
   [hook: string]: unknown;
 }
 
 interface LocaleProfile {
   name: string;
-  selectApplications: string[];
+  precedence: number;
   stored: boolean;
   inherited: boolean;
   from: 'realm' | 'default-realm' | 'built-in';
@@ -141,14 +162,6 @@ interface LocalePolicyDeps {
  */
 const DEFAULT_PROFILE = 'default';
 
-/**
- * A named profile's name: what a cn may be here.
- */
-const PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
-
-/**
- * The selector a named profile carries, stored beside its rows.
- */
 // ---------------------------------------------------------------------------
 // THE SENTENCES `describe()` MAKES, as templates (#543 phase 2) — one copy,
 // filled there with `ServerProse.fill()` and matched by
@@ -164,17 +177,28 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   populated: 'a person created without a preferredLanguage is given {{tag}}',
   notPopulated: 'a person created without a preferredLanguage is given none',
   mail: 'mail to a person whose entry names no language is written in ' +
-    '{{tag}}',
-  appliesTo: 'applies to {{list}}',
-  'param.noApplication': 'no application'
+    '{{tag}}'
 });
 
+// THE ONE SELECTOR A NAMED PROFILE CARRIES (#1238): its precedence. What it
+// covers names it (REFERENCES), so the console and the API draw this row
+// and no list.
 const SELECTORS = [
-  { key: 'selectApplications', attribute: 'stsLocaleSelectApplication',
-    what: 'The applications (identifier or client_id) a named locale ' +
-          'policy applies to. An application is on one named profile at ' +
-          'most.' }
+  { key: 'precedence', attribute: 'stsLocalePrecedence',
+    what: 'Which named locale policy wins where several are named for a ' +
+          'page: the lowest, from 1 to 1000.' }
 ];
+/**
+ * How `common/policy_selection.ts` reads a named profile (#1238).
+ */
+const SELECTION = { precedenceAttribute: 'stsLocalePrecedence',
+                    defaultPrecedence: PolicySelection.DEFAULT_PRECEDENCE };
+/**
+ * The attributes that NAME a locale profile (#1238): on an application and
+ * on a group.
+ */
+const REFERENCES = Object.freeze({ application: 'appLocalePolicy',
+                                   group: 'stsLocalePolicy' });
 
 /**
  * The policy's fields: one table read as the schema, the console form, the
@@ -200,8 +224,8 @@ const FIELDS: PolicyField[] = [
           'language above as one — by the console, the management API, ' +
           'SCIM, a federated or self-service sign-up, or a bulk load. A ' +
           'named profile applies where the application that caused the ' +
-          'creation is one of its applications. Existing entries are never ' +
-          'rewritten.' }
+          'creation names it, or one of the person\'s groups does. ' +
+          'Existing entries are never rewritten.' }
 ];
 
 /**
@@ -231,8 +255,8 @@ const SCHEMA = {
     { name: 'stsLocalePolicy',
       what: 'This service\'s class for a locale policy: the language a ' +
             'realm\'s pages fall back to and gives a new person. Named by ' +
-            'the PROFILE (`cn=default`, or a named profile chosen by ' +
-            'application).' }
+            'the PROFILE (`cn=default`, or a named profile an application ' +
+            'or a group names).' }
   ],
   attributes: FIELDS.map(function (field) {
     return { name: field.attribute, what: field.what };
@@ -256,7 +280,7 @@ const SCHEMA = {
 
 /**
  * The locale policy: the language a realm's pages fall back to and give a new
- * person, with named profiles chosen by application.
+ * person, with named profiles an application or a group names.
  *
  * Kept as `stsLocalePolicy` entries in `ou=localePolicies`; a realm with no
  * `cn=default` of its own inherits the default realm's, and failing that the
@@ -280,9 +304,13 @@ class LocalePolicy {
    */
   static readonly FIELD_BY_KEY = FIELD_BY_KEY;
   /**
-   * The selector a named profile carries.
+   * The selector a named profile carries: its precedence.
    */
   static readonly SELECTORS = SELECTORS;
+  /**
+   * The attributes that name a profile, on an application and a group.
+   */
+  static readonly REFERENCES = REFERENCES;
   /**
    * The directory schema of `ou=localePolicies`.
    */
@@ -373,20 +401,6 @@ class LocalePolicy {
     log.debug("Leaving LocalePolicy.firstValue().");
     return Array.isArray(found) ? (found[0] === undefined ? '' : found[0])
       : (found === undefined || found === null ? '' : found);
-  }
-
-  // Every value of an attribute, as strings (the selector is a list).
-  private allValues(attributes: Record<string, unknown>,
-                    name: string): string[] {
-    const { log } = this.deps;
-    log.debug("Entering LocalePolicy.allValues().");
-    const found = attributes[name] !== undefined ? attributes[name]
-      : attributes[name.toLowerCase()];
-    log.debug("Leaving LocalePolicy.allValues().");
-    return (Array.isArray(found) ? found : (found === undefined ||
-                                            found === null || found === ''
-                                              ? [] : [found]))
-      .map(String).filter(Boolean);
   }
 
   // `passkey_policy.ts`'s parse, with a language tag for its enum. Never
@@ -510,8 +524,10 @@ class LocalePolicy {
     }
     const out = Object.assign({
       name: profile,
-      selectApplications: profile === DEFAULT_PROFILE ? []
-        : this.allValues(at, 'stsLocaleSelectApplication'),
+      // THE PRECEDENCE (#1238): 0 for `default`, which is never ranked.
+      // What a profile covers names it (`namedBy()`).
+      precedence: profile === DEFAULT_PROFILE ? 0
+        : PolicySelection.precedenceOf(at, SELECTION),
       stored: found.from === 'realm',
       inherited: found.from === 'default-realm',
       from: found.from,
@@ -527,19 +543,18 @@ class LocalePolicy {
   }
 
   /**
-   * Lists the profiles: `default` first, then this realm's named profiles by
-   * name.
+   * Lists the profiles: `default` first, then this realm's named profiles in
+   * the order they rank (the lowest precedence first, ties by name).
    *
    * @returns the profiles
    */
   list(): LocaleProfile[] {
     const { log } = this.deps;
     log.debug('Entering LocalePolicy.list().');
-    const named = this.namedProfiles();
-    const rows = [this.read(DEFAULT_PROFILE)].concat(named.sort()
-      .map((one) => {
-        return this.read(one);
-      }));
+    const named = this.namedProfiles().map((one) => {
+      return this.read(one);
+    }).sort(PolicySelection.compare);
+    const rows = [this.read(DEFAULT_PROFILE)].concat(named);
     log.debug('Leaving LocalePolicy.list(). ' + rows.length +
               ' profile(s).');
     return rows;
@@ -559,34 +574,58 @@ class LocalePolicy {
   }
 
   /**
-   * Returns the name of the profile that applies to an application: the named
-   * profile listing it, else `default`.
+   * Returns the name of the profile that applies to a page or a mail drawn
+   * for an application and, where one is known, a person (#1238): of the
+   * profile the application names (`appLocalePolicy`) and the profiles the
+   * person's groups name (`stsLocalePolicy`), the lowest precedence (ties by
+   * name), else `default`.
    *
    * @param application - an application's identifier or client_id, or ''
+   * @param person - the person (a username, a DN or `urn:uuid:`), or ''
+   *   where nobody is known yet: the application alone then chooses
    * @returns the profile name
    */
-  profileNameFor(application: unknown): string {
-    const { log } = this.deps;
+  profileNameFor(application: unknown, person?: unknown): string {
+    const { log, errorCodes } = this.deps;
     log.debug("Entering LocalePolicy.profileNameFor().");
-    const app = String(application || '').trim().toLowerCase();
-    if (!app || !this.haveDirectory()) {
-      log.debug("Leaving LocalePolicy.profileNameFor(). default.");
+    if (!this.haveDirectory()) {
+      log.debug("Leaving LocalePolicy.profileNameFor(). No directory.");
       return DEFAULT_PROFILE;
     }
     let out = DEFAULT_PROFILE;
     try {
-      const hit = this.directory.allLocalePolicies().filter((entry) => {
-        const name = String(entry.name || '').toLowerCase();
-        return name !== DEFAULT_PROFILE &&
-          this.allValues(entry.attributes || {},
-                         'stsLocaleSelectApplication')
-            .map(function (one) {
-              return one.trim().toLowerCase();
-            }).indexOf(app) >= 0;
-      }).map(function (entry) {
-        return String(entry.name || '').toLowerCase();
-      }).sort()[0];
-      out = hit || DEFAULT_PROFILE;
+      const entries = this.directory.allLocalePolicies();
+      // NOTHING TO RANK, NOTHING TO ASK (the constant-cost rule): a realm
+      // with no named profile — most of them — reads no application and no
+      // group on a page.
+      if (!PolicySelection.named(entries, SELECTION).length) {
+        log.debug("Leaving LocalePolicy.profileNameFor(). None named.");
+        return DEFAULT_PROFILE;
+      }
+      const who = String(person === undefined || person === null ? ''
+        : person).trim();
+      const hook = this.directory.personGroupReferences;
+      const groups = who && typeof hook === 'function'
+        ? (hook.call(this.directory, who, REFERENCES.group) || []) : [];
+      const references: Array<{ by: string; holder?: string;
+                                value: unknown }> = [
+        { by: 'application', holder: String(application || ''),
+          value: this.applicationReference(application) }
+      ];
+      const ranked = PolicySelection.rank(entries, SELECTION, references
+        .concat(PolicySelection.groupReferences(groups)));
+      ranked.missing.forEach(function (one) {
+        // A REFERENCE NO PROFILE ANSWERS (#1238) selects nothing, and where
+        // nothing else names a profile `default` applies. Not closed: the
+        // policy chooses a fallback language and guards nothing.
+        log.warn(errorCodes.tag('STS-I18N-0013') + 'locale policy: the ' +
+                 one.by + ' "' + one.holder + '" names the locale policy "' +
+                 one.name + '", which this realm does not hold; it selects ' +
+                 'nothing, and `default` applies where nothing else names ' +
+                 'a profile, until the policy exists or the reference ' +
+                 'changes.');
+      });
+      out = ranked.name;
     } catch (e) {
       // A directory that cannot be asked gives the default: a reader still
       // gets a page.
@@ -598,31 +637,97 @@ class LocalePolicy {
     return out;
   }
 
+  // THE PROFILE AN APPLICATION NAMES (#1238): its `appLocalePolicy`, found by
+  // what a page names it by — a client_id, else its identifier (an entity
+  // ID, a hosted surface's own client). The registry is required LAZILY: it
+  // is loaded after this leaf, and a require at load would close a cycle.
+  // '' where nothing is named or nothing can be asked.
+  private applicationReference(application: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering LocalePolicy.applicationReference().");
+    const name = String(application === undefined || application === null
+      ? '' : application).trim();
+    if (!name) {
+      log.debug("Leaving LocalePolicy.applicationReference(). None.");
+      return '';
+    }
+    let out = '';
+    try {
+      const applications = require('./applications');
+      const row = applications.forClientId(name) || applications.get(name);
+      out = String([].concat(((row && row.fields) || {})[
+        REFERENCES.application] || [])[0] || '');
+    } catch (e) {
+      log.debug("Caught in LocalePolicy.applicationReference(): " +
+                ((e && e.message) || e));
+      out = '';
+    }
+    log.debug("Leaving LocalePolicy.applicationReference(). " +
+              (out || 'none'));
+    return out;
+  }
+
   /**
-   * Reads the profile that applies to an application.
+   * Reads the profile that applies to an application and, where known, a
+   * person.
    *
    * @param application - an application's identifier or client_id, or ''
+   * @param person - the person, or '' where nobody is known yet
    * @returns the profile
    */
-  forApplication(application: unknown): LocaleProfile {
+  forApplication(application: unknown, person?: unknown): LocaleProfile {
     const { log } = this.deps;
     log.debug("Entering LocalePolicy.forApplication().");
-    const out = this.read(this.profileNameFor(application));
+    const out = this.read(this.profileNameFor(application, person));
     log.debug("Leaving LocalePolicy.forApplication(). " + out.name);
     return out;
   }
 
   /**
-   * Returns the default locale for an application: its profile's
-   * `defaultLocale`.
+   * What names a named profile (#1238): the applications (the application
+   * listing's index, lazily, for `applicationReference()`'s reason) and the
+   * groups (the directory's group index) — what refuses its delete and what
+   * its Named policies entry lists.
+   *
+   * @param name - the profile's name
+   * @returns `{ applications, groups, people }`; nobody names a locale
+   *   profile from their own entry
+   */
+  namedBy(name: unknown): { applications: string[]; groups: string[];
+                            people: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering LocalePolicy.namedBy().");
+    let applications: string[] = [];
+    try {
+      applications = require('./applications')
+        .applicationsNamingPolicy(REFERENCES.application, name);
+    } catch (e) {
+      log.debug("Caught in LocalePolicy.namedBy(): " +
+                ((e && e.message) || e));
+      applications = [];
+    }
+    const hook = this.haveDirectory() ? this.directory.groupsNamingPolicy
+      : null;
+    const groups = typeof hook === 'function'
+      ? (hook.call(this.directory, REFERENCES.group, name) || []) : [];
+    log.debug("Leaving LocalePolicy.namedBy(). " + applications.length +
+              " application(s), " + groups.length + " group(s).");
+    return { applications: applications, groups: groups, people: [] };
+  }
+
+  /**
+   * Returns the default locale for an application and, where known, a
+   * person: their profile's `defaultLocale`.
    *
    * @param application - an application's identifier or client_id, or ''
+   * @param person - the person, or '' where nobody is known yet
    * @returns a canonical language tag
    */
-  defaultLocaleFor(application?: unknown): string {
+  defaultLocaleFor(application?: unknown, person?: unknown): string {
     const { log } = this.deps;
     log.debug("Entering LocalePolicy.defaultLocaleFor().");
-    const out = String(this.forApplication(application || '').defaultLocale);
+    const out = String(this.forApplication(application || '', person || '')
+      .defaultLocale);
     log.debug("Leaving LocalePolicy.defaultLocaleFor(). " + out);
     return out;
   }
@@ -632,12 +737,14 @@ class LocalePolicy {
    * is given, or '' when the applicable profile populates nothing.
    *
    * @param application - the application that caused the creation, or ''
+   * @param person - the person being created (their DN), whose groups may
+   *   already name a profile, or ''
    * @returns the tag, or ''
    */
-  populationFor(application?: unknown): string {
+  populationFor(application?: unknown, person?: unknown): string {
     const { log } = this.deps;
     log.debug("Entering LocalePolicy.populationFor().");
-    const profile = this.forApplication(application || '');
+    const profile = this.forApplication(application || '', person || '');
     const out = profile.populatePreferredLanguage === true
       ? String(profile.defaultLocale || '') : '';
     log.debug("Leaving LocalePolicy.populationFor(). " + (out || 'none'));
@@ -709,12 +816,6 @@ class LocalePolicy {
         : SENTENCES.notPopulated,
       fill(SENTENCES.mail, { tag: tag })
     ];
-    if (rules.name !== DEFAULT_PROFILE) {
-      out.unshift(fill(SENTENCES.appliesTo, {
-        list: rules.selectApplications.length
-          ? rules.selectApplications.join(', ')
-          : SENTENCES['param.noApplication'] }));
-    }
     log.debug("Leaving LocalePolicy.describe().");
     return out;
   }
@@ -722,68 +823,15 @@ class LocalePolicy {
   // -------------------------------------------------------------------------
   // WRITING.
   // -------------------------------------------------------------------------
+  // `default` or a name a named profile may have: the one rule every kind
+  // keeps (`PolicySelection.nameProblem()`, #1238).
   private checkProfileName(name: unknown): string | null {
     const { log } = this.deps;
     log.debug("Entering LocalePolicy.checkProfileName().");
-    const text = String(name || DEFAULT_PROFILE).trim();
-    if (text !== DEFAULT_PROFILE && !PROFILE_NAME.test(text)) {
-      log.debug("Leaving LocalePolicy.checkProfileName().");
-      return 'A locale policy profile is "' + DEFAULT_PROFILE + '" or a ' +
-             'name of lower-case letters, digits and hyphens, at most 64; "' +
-             text.slice(0, 64) + '" is neither.';
-    }
+    const out = PolicySelection.nameProblem(String(name || DEFAULT_PROFILE),
+                                            'locale policy profile', true);
     log.debug("Leaving LocalePolicy.checkProfileName().");
-    return null;
-  }
-
-  // A named profile's applications as sent: a list by comma, line or array,
-  // each at most 256 characters with no control character, at most 64 of
-  // them, at least one — and none already on ANOTHER named profile.
-  private checkApplications(which: string, raw: unknown):
-      { applications: string[]; problems: string[]; claimed: string[] } {
-    const { log } = this.deps;
-    log.debug("Entering LocalePolicy.checkApplications().");
-    const problems: string[] = [];
-    const items = (Array.isArray(raw) ? raw : String(raw === undefined ||
-                                                     raw === null ? '' : raw)
-      .split(/[,\n]/)).map(function (one) {
-        return String(one).trim();
-      }).filter(Boolean);
-    if (items.length > 64 || items.some(function (one) {
-      return one.length > 256 || /[\u0000-\u001f\u007f]/.test(one);
-    })) {
-      problems.push('The applications a named profile applies to must be ' +
-                    'at most 64 values of at most 256 characters each, with ' +
-                    'no control character.');
-    }
-    if (!items.length) {
-      problems.push('A named profile with no application would apply to ' +
-                    'nothing; name at least one.');
-    }
-    const claimed: string[] = [];
-    if (this.haveDirectory()) {
-      this.directory.allLocalePolicies().forEach((entry) => {
-        const name = String(entry.name || '').toLowerCase();
-        if (name === DEFAULT_PROFILE || name === which) {
-          return;
-        }
-        const theirs = this.allValues(entry.attributes || {},
-                                      'stsLocaleSelectApplication')
-          .map(function (one) {
-            return one.trim().toLowerCase();
-          });
-        items.forEach(function (one) {
-          if (theirs.indexOf(one.toLowerCase()) >= 0) {
-            claimed.push(one + ' (on "' + name + '")');
-          }
-        });
-      });
-    }
-    log.debug("Leaving LocalePolicy.checkApplications(). " +
-              problems.length + " problem(s), " + claimed.length +
-              " claimed.");
-    return { applications: items.slice(0, 64), problems: problems,
-             claimed: claimed };
+    return out;
   }
 
   /**
@@ -830,7 +878,7 @@ class LocalePolicy {
    * Saves a profile of this realm, replacing it whole.
    *
    * @param name - the profile name: `default`, or a named profile
-   * @param given - every field, and for a named profile its applications
+   * @param given - every field, and for a named profile its `precedence`
    * @returns `ok` and the profile now in force, or `ok: false` with `errors`
    */
   save(name: unknown, given?: Record<string, any> | null): PolicyResult {
@@ -844,10 +892,12 @@ class LocalePolicy {
     }
     const which = String(name || DEFAULT_PROFILE).trim().toLowerCase();
     const checked = this.validate(given);
-    const apps = which === DEFAULT_PROFILE ? null
-      : this.checkApplications(which, (given || {}).selectApplications);
-    if (apps) {
-      apps.problems.forEach(function (one) {
+    // A NAMED PROFILE'S PRECEDENCE (#1238), from 1 to 1000, 100 when left
+    // out. It carries no other selector: what it covers names it.
+    const ranked = which === DEFAULT_PROFILE ? null
+      : PolicySelection.checkPrecedence(given, SELECTION);
+    if (ranked) {
+      ranked.problems.forEach(function (one) {
         checked.problems.push(one);
       });
     }
@@ -855,15 +905,6 @@ class LocalePolicy {
       log.debug('Leaving LocalePolicy.save(). The values were refused.');
       return errorCodes.mark({ ok: false, errors: checked.problems },
                              'STS-I18N-0004');
-    }
-    if (apps && apps.claimed.length) {
-      log.debug('Leaving LocalePolicy.save(). An application is claimed.');
-      return errorCodes.mark({ ok: false,
-               errors: ['An application is on one named locale profile at ' +
-                        'most, and ' + apps.claimed.join(', ') + ' already ' +
-                        (apps.claimed.length === 1 ? 'is' : 'are') + '. ' +
-                        'Take it off that profile first.'] },
-                             'STS-I18N-0007');
     }
     if (!this.haveDirectory()) {
       log.debug('Leaving LocalePolicy.save(). No directory.');
@@ -885,8 +926,8 @@ class LocalePolicy {
     if (!attributes.description) {
       delete attributes.description;
     }
-    if (apps) {
-      attributes.stsLocaleSelectApplication = apps.applications;
+    if (ranked) {
+      attributes[SELECTION.precedenceAttribute] = String(ranked.precedence);
     }
     const written = this.directory.writeLocalePolicy(which, attributes);
     if (!written) {
@@ -922,6 +963,16 @@ class LocalePolicy {
       log.debug('Leaving LocalePolicy.reset(). No directory.');
       return { ok: true, removed: false, profile: this.read(which) };
     }
+    // NOT WHILE AN APPLICATION OR A GROUP NAMES IT (#1238): it would be left
+    // naming a profile the realm does not hold.
+    const held = which === DEFAULT_PROFILE ? null
+      : PolicySelection.deleteProblem('locale policy', which,
+                                      this.namedBy(which));
+    if (held) {
+      log.debug('Leaving LocalePolicy.reset(). Still named.');
+      return errorCodes.mark({ ok: false, errors: [held] },
+                             'STS-I18N-0014');
+    }
     const removed = !!this.directory.deleteLocalePolicy(which);
     log.debug('Leaving LocalePolicy.reset(). ' +
               (removed ? 'Removed.' : 'Nothing stored.'));
@@ -949,9 +1000,23 @@ const slot = new InstanceSlot<LocalePolicy>(
 
 slot.buildNowUnlessDeferred();
 
+// A GROUP NAMES ITS LOCALE PROFILE (#1238): declared, so the group page draws
+// its picker and the directory's group writer checks it, offering `default`
+// and the realm's named profiles as they stand when asked.
+PolicySelection.declareReference('group', REFERENCES.group, 'locale policy',
+  function () {
+    log.debug("Entering locale policy reference choices.");
+    const names = slot.get().list().map(function (one) {
+      return String(one.name);
+    });
+    log.debug("Leaving locale policy reference choices.");
+    return names;
+  });
+
 /**
  * The locale policy (#539): the language a realm's pages fall back to and
- * give a new person, with named profiles chosen by application. The fifth
+ * give a new person, with named profiles an application or a group names
+ * (#1238). The fifth
  * policy on Directory > Policies. The exports forward to the instance the
  * composition root installs.
  *
@@ -972,6 +1037,7 @@ export = {
   FIELDS: LocalePolicy.FIELDS,
   FIELD_BY_KEY: LocalePolicy.FIELD_BY_KEY,
   SELECTORS: LocalePolicy.SELECTORS,
+  REFERENCES: LocalePolicy.REFERENCES,
   SCHEMA: LocalePolicy.SCHEMA,
   SENTENCES: LocalePolicy.SENTENCES,
   setDirectory: slot.forward('setDirectory'),
@@ -980,6 +1046,7 @@ export = {
   list: slot.forward('list'),
   profileNameFor: slot.forward('profileNameFor'),
   forApplication: slot.forward('forApplication'),
+  namedBy: slot.forward('namedBy'),
   defaultLocaleFor: slot.forward('defaultLocaleFor'),
   populationFor: slot.forward('populationFor'),
   preferredLanguageOf: slot.forward('preferredLanguageOf'),

@@ -6510,8 +6510,9 @@ const SETTINGS = [
     label: 'Command summary interval (s)',
     env: 'STS_OAUTH2_COMMAND_SUMMARY_S', type: 'int', dflt: 60,
     min: 1, max: 86400, runtime: true,
-    description: 'At most one log line per realm this often, counting the ' +
-                 'commands sent, retried and dead-lettered.' },
+    description: 'How often one realm\'s command count may be logged. ' +
+                 'A dead letter or a deferred delivery is a warning; a ' +
+                 'count with neither is written only at debug.' },
   { key: 'oauth2.commandSweepS', group: 'OAuth 2.0 / OIDC',
     label: 'Command sweep interval (s)',
     env: 'STS_OAUTH2_COMMAND_SWEEP_S', type: 'int', dflt: 15,
@@ -6577,8 +6578,10 @@ const SETTINGS = [
     label: 'CIBA notification summary interval (s)',
     env: 'STS_OAUTH2_CIBA_NOTIFY_SUMMARY_S', type: 'int', dflt: 60,
     min: 1, max: 86400, runtime: true,
-    description: 'At most one log line per realm this often, counting the ' +
-                 'pings and pushes sent, retried and dead-lettered.' },
+    description: 'How often one realm\'s ping and push count may be ' +
+                 'logged. A dead letter or a deferred delivery is a ' +
+                 'warning; a count with neither is written only at ' +
+                 'debug.' },
 
   { key: 'oauth2.cibaSweepS', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA sweep interval (s)',
@@ -8425,11 +8428,10 @@ const SETTINGS = [
     label: 'Back-channel logout summary interval (seconds)',
     env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SUMMARY_S', type: 'int', dflt: 60,
     min: 1, max: 86400, runtime: true,
-    description: 'At most one log line per realm per interval, counting ' +
-                 'what this process sent, retried, took over and ' +
-                 'dead-lettered since the last — never a line per attempt ' +
-                 'or per failure. A warning (STS-OAUTH-0545) when anything ' +
-                 'was dead-lettered.' },
+    description: 'How often one realm\'s logout count may be logged. ' +
+                 'A dead letter or a deferred delivery is a warning ' +
+                 '(STS-OAUTH-0545); a count with neither is written ' +
+                 'only at debug. Never a line per attempt.' },
 
   // --- The admin console ---------------------------------------------------
   //
@@ -12981,7 +12983,9 @@ const SETTINGS = [
   { key: 'scimClient.summaryS', group: 'SCIM client',
     label: 'Summary interval (seconds)',
     env: 'STS_SCIM_CLIENT_SUMMARY_S', type: 'int', dflt: 300, min: 1, max: 86400, runtime: true,
-    description: 'At most one summary log line per realm per interval.' },
+    description: 'How often one realm\'s delivery count may be logged. ' +
+                 'A dead letter or a deferred delivery is a warning; a ' +
+                 'count with neither is written only at debug.' },
   { key: 'scimClient.reconcileCheckS', group: 'SCIM client',
     label: 'Reconciliation check (seconds)',
     env: 'STS_SCIM_CLIENT_RECONCILE_CHECK_S', type: 'int', dflt: 60, min: 10, max: 3600, runtime: true,
@@ -15724,6 +15728,125 @@ const SETTINGS = [
                  'holds, the whole log. The log\'s own cap can still drop ' +
                  'older rows.' },
 
+  // --- Audit export (#641) -------------------------------------------------
+  // Delivery of this process's own audit rows to operator-configured
+  // destinations. Read per run of audit.export, in the ambient realm.
+  // An interval of 0 is OFF, so it is never read with `|| n`.
+  { key: 'auditExport.enabled', group: 'Audit export',
+    label: 'Audit export',
+    env: 'AUDIT_EXPORT_ENABLED', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether this process delivers its own audit events to ' +
+                 'the destinations configured on Audit export. Off leaves ' +
+                 'every destination\'s cursor where it is. A delivery ' +
+                 'failure never fails the operation that was audited.' },
+  { key: 'auditExport.intervalS', group: 'Audit export',
+    label: 'Delivery interval (seconds)',
+    env: 'AUDIT_EXPORT_INTERVAL_S', type: 'int',
+    dflt: 5, min: 0, max: 3600, runtime: true,
+    description: 'How often the audit.export job delivers this ' +
+                 'process\'s new audit events. 0 turns the job off. Each ' +
+                 'destination has its own queue, so one slow destination ' +
+                 'does not hold the others.' },
+  { key: 'auditExport.batch', group: 'Audit export',
+    label: 'Events per destination per run',
+    env: 'AUDIT_EXPORT_BATCH', type: 'int',
+    dflt: 50, min: 1, max: 500, runtime: true,
+    description: 'How many events one destination is offered in one run ' +
+                 'of audit.export. What remains waits for the next run.' },
+  { key: 'auditExport.timeoutMs', group: 'Audit export',
+    label: 'Delivery timeout (milliseconds)',
+    env: 'AUDIT_EXPORT_TIMEOUT_MS', type: 'int',
+    dflt: 5000, min: 100, max: 120000, runtime: true,
+    description: 'How long one delivery attempt waits for a destination ' +
+                 'to accept it. A timeout holds that destination\'s ' +
+                 'cursor and retries later. It does not drop the event.' },
+  { key: 'auditExport.budgetMs', group: 'Audit export',
+    label: 'Time budget per destination (milliseconds)',
+    env: 'AUDIT_EXPORT_BUDGET_MS', type: 'int',
+    dflt: 2000, min: 100, max: 60000, runtime: true,
+    description: 'How long one run may spend on one destination. What ' +
+                 'remains waits for the next run, so a slow destination ' +
+                 'cannot hold the job.' },
+  { key: 'auditExport.retryInitialMs', group: 'Audit export',
+    label: 'First retry delay (milliseconds)',
+    env: 'AUDIT_EXPORT_RETRY_INITIAL_MS', type: 'int',
+    dflt: 1000, min: 100, max: 60000, runtime: true,
+    description: 'How long a destination waits after its first delivery ' +
+                 'failure before the next attempt. Each further failure ' +
+                 'waits longer, up to the maximum retry delay.' },
+  { key: 'auditExport.retryMaxMs', group: 'Audit export',
+    label: 'Maximum retry delay (milliseconds)',
+    env: 'AUDIT_EXPORT_RETRY_MAX_MS', type: 'int',
+    dflt: 300000, min: 1000, max: 3600000, runtime: true,
+    description: 'The longest a destination waits between delivery ' +
+                 'attempts while it is failing. The delay grows from the ' +
+                 'first retry delay up to this.' },
+  { key: 'auditExport.retryMaxPeriodMs', group: 'Audit export',
+    label: 'Give up after (milliseconds)',
+    env: 'AUDIT_EXPORT_RETRY_MAX_PERIOD_MS', type: 'int',
+    dflt: 86400000, min: 60000, max: 604800000, runtime: true,
+    description: 'How long a failing destination is retried before the ' +
+                 'event at the head is counted permanently failed and the ' +
+                 'cursor moves past it. Up to one batch of events behind ' +
+                 'that one are counted the same way in that run, and the ' +
+                 'destination is tried again after the first retry delay. ' +
+                 'This is not exactly-once delivery.' },
+  { key: 'auditExport.allowHttp', group: 'Audit export',
+    label: 'Allow plain http',
+    env: 'AUDIT_EXPORT_ALLOW_HTTP', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'dialsPlainHttpOutbound',
+    description: 'Whether a webhook or Splunk HEC destination may use ' +
+                 'http. Development mode only, and ignored in product ' +
+                 'mode, where those destinations use https. Every such ' +
+                 'delivery is logged. Syslog TCP is a separate transport ' +
+                 'and is not this setting.' },
+  { key: 'auditExport.skipTlsVerification', group: 'Audit export',
+    label: 'Skip TLS verification (development only)',
+    env: 'AUDIT_EXPORT_SKIP_TLS_VERIFICATION', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'WARNING. Development mode only. On sends webhook, ' +
+                 'Splunk HEC and syslog TLS without verifying the ' +
+                 'certificate of whoever answers. Every such delivery is ' +
+                 'logged. In product mode it is ignored and cannot be ' +
+                 'set. Name a private CA in the CA file setting instead.' },
+  { key: 'auditExport.caFile', group: 'Audit export',
+    label: 'CA certificates file',
+    env: 'AUDIT_EXPORT_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates a webhook, Splunk HEC or ' +
+                 'syslog TLS destination may chain to, beside node\'s own ' +
+                 'CA store. Empty uses node\'s store alone. A file that ' +
+                 'cannot be read refuses the delivery.' },
+  { key: 'auditExport.allowPrivateDestinations', group: 'Audit export',
+    label: 'Allow private addresses',
+    env: 'AUDIT_EXPORT_ALLOW_PRIVATE_DESTINATIONS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether a destination may be a loopback, link-local or ' +
+                 'private address. Off, product mode refuses those, and ' +
+                 'development mode still allows loopback so a test ' +
+                 'listener works. Cloud metadata addresses are refused ' +
+                 'even when this is on.' },
+  { key: 'auditExport.fileRoots', group: 'Audit export',
+    label: 'Allowed filesystem roots',
+    env: 'AUDIT_EXPORT_FILE_ROOTS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'Absolute directories a filesystem destination may ' +
+                 'write under, separated by commas. Empty allows any ' +
+                 'absolute path an administrator names. A relative path, ' +
+                 'a path that climbs out of its directory, and a path ' +
+                 'outside these roots are refused.' },
+  { key: 'auditExport.redactKeys', group: 'Audit export',
+    label: 'Attributes never exported',
+    env: 'AUDIT_EXPORT_REDACT_KEYS', type: 'string',
+    dflt: 'password,secret,token,authorization,client_secret,assertion,' +
+          'access_token,refresh_token,id_token',
+    runtime: true,
+    description: 'Detail attribute names, separated by commas, removed ' +
+                 'from every exported event. Matching is ' +
+                 'case-insensitive. A destination may name more. ' +
+                 'Passwords, tokens and assertions are on the default ' +
+                 'list.' },
+
   // --- Delegation ----------------------------------------------------------
   //
   // ONE setting, and the absence of a second is deliberate.
@@ -18006,8 +18129,10 @@ const SETTINGS = [
     label: 'Inter-cell delivery summary interval (s)',
     env: 'STS_CELL_DELIVERY_SUMMARY_S', type: 'int', dflt: 300,
     min: 10, max: 86400, runtime: true, perProcess: true,
-    description: 'At most one summary line per realm per this many ' +
-                 'seconds, rather than a line per delivery.' },
+    description: 'How often one realm\'s inter-cell delivery count may ' +
+                 'be logged. A dead letter or a deferred delivery is a ' +
+                 'warning; a count with neither is written only at ' +
+                 'debug.' },
 
   { key: 'cells.deliverySweepS', group: 'Cells',
     label: 'Inter-cell delivery sweep interval (s)',
@@ -19007,7 +19132,7 @@ const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
 // What #539's row says when it is still named.
 const LOCALE = ' decides it now — the locale policy on Directory → ' +
   'Policies, per realm and inherited from the default realm, with named ' +
-  'profiles chosen by application — POST ' +
+  'profiles an application or a group names — POST ' +
   '/admin-api/policies/save-locale-policy, or the console. It is the one ' +
   'default language: a page falls back to it and mail to a person who ' +
   'names none is written in it.';

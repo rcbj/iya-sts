@@ -57,13 +57,31 @@ interface PolicyModule {
   list(): Record<string, any>[];
   save(name: unknown, body?: Record<string, any> | null):
     { ok: boolean; errors?: string[]; profile?: Record<string, any> };
+  // A promise where the kind must ask who names a named profile before it
+  // removes it (#1241: the people naming an attribute profile, a holder
+  // question asked asynchronously).
   reset(name: unknown):
     { ok: boolean; errors?: string[]; removed?: boolean;
-      profile?: Record<string, any> };
+      profile?: Record<string, any> } |
+    Promise<{ ok: boolean; errors?: string[]; removed?: boolean;
+              profile?: Record<string, any> }>;
   describe(profile?: Record<string, any> | null): string[];
   // A kind whose profiles may be NAMED and selected (#535, the passkey
   // policy): the selectors each named profile carries.
   SELECTORS?: ReadonlyArray<Record<string, any>>;
+  // The attributes by which an application, a group and/or a person NAME a
+  // profile of this kind (#1235, rule 3cx), and who names one — for the
+  // Named policies sub-tab and a delete's refusal.
+  REFERENCES?: Readonly<{ application?: string; group?: string;
+                          person?: string }>;
+  namedBy?(name: string): { applications: string[]; groups?: string[];
+                            people: string[] };
+  // The same with the PEOPLE (#1241), a holder question asked
+  // asynchronously; `policiesViewAsync()` fills them in.
+  namedByAsync?(name: string): Promise<{ applications: string[];
+                                         groups?: string[];
+                                         people: string[];
+                                         complete?: boolean }>;
   // Population registration algorithms and mode (#940), on the passkey
   // policy. A kind without them leaves those members off the policies read.
   registrationAlgorithms?(profile?: Record<string, any> | null): string[];
@@ -103,6 +121,10 @@ interface PolicyKind {
   secretFields?: string[];
   // Acts beside save and reset (#396), answered by the module's `act()`.
   extraActions?: ExtraAction[];
+  // Drawn as Default / Named policies / New policy sub-tabs (#609; a
+  // declaration since #1235, so a kind adopting named policies says so in
+  // its own row).
+  tabbed?: boolean;
 }
 
 const KINDS: PolicyKind[] = [];
@@ -169,7 +191,17 @@ const VIEW_PROSE = Object.freeze({
                     via: 'credentials.setPassword()' }),
     Object.freeze({ door: 'an LDAP add or modify of userPassword on 389 or ' +
                           '636',
-                    via: 'credentials.preparePassword()' })
+                    via: 'credentials.preparePassword()' }),
+    // #1236: the two doors the list had left out — the forced change at
+    // sign-in, the one door holding an application (whose
+    // `appPasswordPolicy` ranks too), and a reset link. Appended, so the
+    // catalogs' indexed keys above keep their translations.
+    Object.freeze({ door: '/authn/password-change (the change a sign-in ' +
+                          'requires; the application signed in to may name ' +
+                          'the policy)',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: '/portal/reset-password (a reset link)',
+                    via: 'credentials.setPassword()' })
   ]),
   notDoors: 'SCIM carries no password (this service advertises ' +
     'changePassword: false), and a password is never set by signing in. ' +
@@ -417,7 +449,11 @@ PolicyKinds.register({
   auditAction: 'admin.password-policy.change',
   appliesTo: 'the NEXT password set in this realm and to nothing already ' +
              'stored',
-  fallsBackTo: 'the built-in defaults'
+  fallsBackTo: 'the built-in defaults',
+  // NAMED PASSWORD POLICIES (#1236): an application (`appPasswordPolicy`)
+  // and a group (`stsPasswordPolicy`) name theirs, so the kind is drawn as
+  // Default / Named policies / New policy.
+  tabbed: true
 });
 
 PolicyKinds.register({
@@ -432,8 +468,10 @@ PolicyKinds.register({
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not',
   // NAMED AUTHENTICATION POLICIES (#1148): the mechanisms an application
-  // naming one (`appAuthnPolicy`) allows, saved and deleted beside the
-  // realm's own policy.
+  // (`appAuthnPolicy`) or a group (`stsAuthnPolicy`, #1237) naming one
+  // allows, saved and deleted beside the realm's own policy. Drawn as the
+  // Default / Named policies / New policy sub-tabs (#1237, rule 3cx).
+  tabbed: true,
   extraActions: [
     { action: 'save-named-authn-policy',
       operationId: 'saveNamedAuthnPolicy',
@@ -441,14 +479,19 @@ PolicyKinds.register({
                'realm',
       description: 'Writes `cn=<name>,ou=authnPolicies` in this realm\'s ' +
                    'directory: the first-factor mechanisms (`mechanisms`) ' +
-                   'and the second factors (`secondFactors`) an application ' +
-                   'naming this policy in `appAuthnPolicy` allows — each ' +
-                   'list the WHOLE list, none allowing every one (and ' +
-                   'leaving the realm\'s second factors as they are). ' +
-                   '**The realm\'s own**: not inherited from the default ' +
-                   'realm. The name is lower-case letters, digits and ' +
-                   'hyphens, not `default` (STS-AUTHN-0532); an unknown ' +
-                   'mechanism is refused (STS-AUTHN-0533).',
+                   'and the second factors (`secondFactors`) a sign-in ' +
+                   'allows where this policy applies — each list the WHOLE ' +
+                   'list, none allowing every one (and leaving the realm\'s ' +
+                   'second factors as they are) — and its `precedence` ' +
+                   '(#1237). It applies where the application names it ' +
+                   '(`appAuthnPolicy`) or one of the person\'s groups does ' +
+                   '(`stsAuthnPolicy`) and its precedence is the lowest of ' +
+                   'those named, ties by name. **The realm\'s own**: not ' +
+                   'inherited from the default realm. The name is ' +
+                   'lower-case letters, digits and hyphens, not `default` ' +
+                   '(STS-AUTHN-0532); an unknown mechanism is refused ' +
+                   '(STS-AUTHN-0533), and a precedence that is not a whole ' +
+                   'number from 1 to 1000 (STS-AUTHN-0541).',
       auditAction: 'admin.authn-policy.save-named',
       requestBody: {
         type: 'object',
@@ -457,6 +500,12 @@ PolicyKinds.register({
                   description: 'The policy\'s name.' },
           description: { type: 'string', maxLength: 1024,
                          description: 'What the policy is for.' },
+          precedence: { oneOf: [{ type: 'integer', minimum: 1,
+                                  maximum: 1000 },
+                                { type: 'string' }],
+                        description: 'Where several named policies are ' +
+                                     'named for one sign-in, the lowest ' +
+                                     'applies; 100 when omitted.' },
           mechanisms: { type: 'array', items: { type: 'string' },
                         description: 'The first-factor mechanisms allowed: ' +
                                      'password, password-mfa, webauthn, ' +
@@ -469,16 +518,18 @@ PolicyKinds.register({
         },
         required: ['name'],
         examples: [{ name: 'passkeys-only', description: 'Passwordless',
-                     mechanisms: ['webauthn'], secondFactors: [] }],
+                     precedence: 50, mechanisms: ['webauthn'],
+                     secondFactors: [] }],
         additionalProperties: false
       } },
     { action: 'delete-named-authn-policy',
       operationId: 'deleteNamedAuthnPolicy',
       summary: 'Delete a named authentication policy',
       description: 'Deletes `cn=<name>,ou=authnPolicies` in this realm. ' +
-                   'Refused while an application of this realm names it in ' +
-                   '`appAuthnPolicy` (STS-AUTHN-0534) — it would then allow ' +
-                   'no mechanism — and for a name the realm does not hold ' +
+                   'Refused while an application (`appAuthnPolicy`) or a ' +
+                   'group (`stsAuthnPolicy`, #1237) of this realm names it ' +
+                   '(STS-AUTHN-0534) — it would then allow no mechanism — ' +
+                   'and for a name the realm does not hold ' +
                    '(STS-AUTHN-0535).',
       auditAction: 'admin.authn-policy.delete-named',
       requestBody: {
@@ -502,9 +553,13 @@ PolicyKinds.register({
   governs: 'what a service account may do — the second factor, the ' +
            'browser, the password doors — and how its password rotates',
   module: serviceAccountPolicy as unknown as PolicyModule,
+  // Named profiles, each named by a service account's
+  // `stsServiceAccountPolicy` (#1240).
+  tabbed: true,
   auditAction: 'admin.service-account-policy.change',
-  appliesTo: 'every service account in this realm from the next time it ' +
-             'signs in, binds or is rotated',
+  appliesTo: 'every service account it governs — those naming it, and for ' +
+             '`default` those naming none — from the next time it signs ' +
+             'in, binds or is rotated',
   fallsBackTo: 'the default realm\'s profile where it has one, and the ' +
                'built-in defaults where it has not'
 });
@@ -518,6 +573,7 @@ PolicyKinds.register({
   governs: 'how passkeys behave — whether a sign-in may name no username, ' +
            'and what a security key is asked to store',
   module: passkeyPolicy as unknown as PolicyModule,
+  tabbed: true,
   auditAction: 'admin.passkey-policy.change',
   appliesTo: 'the NEXT sign-in and the NEXT passkey enrolled in this realm; ' +
              'a passkey already enrolled keeps what its authenticator stored',
@@ -574,7 +630,8 @@ PolicyKinds.register({
 
 // #539: the fifth kind, rcbj's "a policy default per realm that automatically
 // populates user locale parameter", with named profiles "assign[ed] ... to
-// application objects".
+// application objects" — named since #1238 by an application
+// (`appLocalePolicy`) or a group (`stsLocalePolicy`), ranked by precedence.
 PolicyKinds.register({
   id: 'locale',
   label: 'Locale policy',
@@ -583,6 +640,7 @@ PolicyKinds.register({
            'written in when a person names none, and the preferredLanguage ' +
            'a new person is given',
   module: localePolicy as unknown as PolicyModule,
+  tabbed: true,
   auditAction: 'admin.locale-policy.change',
   appliesTo: 'the NEXT page drawn and the NEXT person created in this ' +
              'realm; a person created before keeps the preferredLanguage ' +
@@ -603,6 +661,9 @@ PolicyKinds.register({
   governs: 'the attributes every person in this realm must hold, and the ' +
            'custom attributes a person here may be given',
   module: attributePolicy as unknown as PolicyModule,
+  // Default / Named policies / New policy, and the realm's custom
+  // attributes beside them (#1241).
+  tabbed: true,
   auditAction: 'admin.attribute-policy.change',
   appliesTo: 'the NEXT person created and the NEXT edit in this realm; a ' +
              'person who already lacks an attribute it requires keeps every ' +
@@ -675,7 +736,8 @@ PolicyKinds.register({
 // #1096: the seventh kind, rcbj's "post login activity" — what a person is
 // asked to do after signing in, targeted by group membership, configurable
 // and enabled per realm. The first activity is the post-quantum passkey
-// migration.
+// migration. Since #1239 a group or an application names its named policy,
+// and the page is tabbed (Default / Named policies / New policy, #1235).
 PolicyKinds.register({
   id: 'postLogin',
   label: 'Post-login activity policy',
@@ -684,6 +746,7 @@ PolicyKinds.register({
            'sent back to the application — today, to register a ' +
            'post-quantum passkey',
   module: postLoginPolicy as unknown as PolicyModule,
+  tabbed: true,
   auditAction: 'admin.post-login-policy.change',
   appliesTo: 'the NEXT sign-in of every person the profile reaches in this ' +
              'realm; a session already started is not interrupted',

@@ -3379,8 +3379,9 @@ function ensureTombstoneJob(schedulerInstance) {
 // runs — and a start skips those rows in the meantime, so a backlog costs
 // disk and never start-up time.
 //
-// Logged as ONE summary line per run that deleted anything, and the failure
-// once per run with STS-STORE-0065 (the no-per-event-failure-logs rule).
+// The run's summary records what a run deleted. The log line is debug while
+// the purge is a scheduler job. The failure is once per run with
+// STS-STORE-0065 (the no-per-event-failure-logs rule).
 // ---------------------------------------------------------------------------
 const EXPIRY_PURGE_JOB = 'persistence.minted-expiry-purge';
 const EXPIRY_PURGE_MS = 5 * 60 * 1000;

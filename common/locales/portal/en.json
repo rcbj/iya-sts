@@ -18,6 +18,8 @@
   "nav.gnap.heading": "Access you have given through GNAP",
   "nav.email.label": "Email",
   "nav.email.heading": "Your email address and messages",
+  "nav.pseudonyms.label": "Sign-in names",
+  "nav.pseudonyms.heading": "Names you can sign in with",
   "section.owned.title": "Resources I own",
   "section.owned.what": "The roles, groups, service accounts and applications that name you, or a group you are in, as an owner.",
   "nav.owned.roles.label": "Roles",

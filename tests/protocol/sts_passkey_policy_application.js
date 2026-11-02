@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 // ===========================================================================
-// sts_passkey_policy_application.js — AN APPLICATION'S PASSKEY POLICY, READ
-// THROUGH /admin-api, AND THE POLICY PAGE'S APPLICATION SEARCH (#609), over
+// sts_passkey_policy_application.js — THE PASSKEY POLICY AN APPLICATION
+// AND A GROUP NAME, READ THROUGH /admin-api (#609, reshaped by #1235), over
 // HTTP, in every mode the suite runs.
 //
 // `tests/passkey_policy_on_application.js` holds the same design in process
@@ -11,28 +11,29 @@
 // new test goes*: it is about this service's own /admin-api, so it is
 // `local: true`, written here and never vendored from the parent).
 //
-// rcbj's decisions on #609: nothing is stored on the application — the
-// relation is a named passkey policy's `stsPasskeySelectApplication` — and
-// the application read the console draws its page from carries it as
-// `page.passkeyPolicies`; the Passkey policy tab's applications box searches
-// the realm's applications through `GET /admin-api/applications` and stores
-// what it adds by IDENTIFIER, written by the profile's Save as before.
+// rcbj's decisions on #1234 (2026-10-30): what a named policy covers NAMES
+// it — the application in `appPasskeyPolicy`, the group in
+// `stsPasskeyPolicy` — and the policy keeps only its rows and its
+// precedence. The application read the console draws its page from carries
+// what that comes to as `page.passkeyPolicies`.
 //
 // **IN A THROWAWAY REALM OF ITS OWN**, because named passkey policies change
 // what a sign-in gets and the suite runs jobs side by side; a realm's named
 // policies are its own and not inherited. The realm is left behind, as every
 // job's is.
 //
-//   A. three named policies — one naming the application by identifier at
-//      precedence 5, one by its client_id in another case (and a group) at
-//      40, one naming another application at 1 — and the read lists the
-//      first two in precedence order, the first marked as applying, each
-//      with the value that named it and its link; the third is not listed;
-//   B. an application no policy names reads `default`;
-//   C. the search's data: the Applications list, five a page, leaving out
-//      what the box already names, rows by identifier;
-//   D. an Add's identifier saved with the profile's applications is read
-//      back on that application's page as the policy that applies.
+//   A. two named policies, one at precedence 50 and one at 10; the
+//      application names the first through `POST /applications/set`, and a
+//      group the second through `POST /groups/set-policy`; a name the realm
+//      does not hold is refused at both doors;
+//   B. the application read says the policy it names, what applies, its
+//      precedence and how many policies a group names; one naming none
+//      reads `default`;
+//   C. the policies read lists, per named policy, the applications and
+//      groups naming it, and the kind's references;
+//   D. a policy something names is not deleted; #940's registration rows
+//      read back, and classical-only beside post-quantum-required is
+//      refused.
 // ===========================================================================
 
 const assert = require("assert");
@@ -73,8 +74,8 @@ var CLIENT = "pkapp-" + TAG + "-Client";
 var OTHER = "pkapp-" + TAG + "-other";
 var LONE = "pkapp-" + TAG + "-lone";
 var STRICT = "strict-" + TAG;
-var BYCLIENT = "byclient-" + TAG;
-var ELSEWHERE = "elsewhere-" + TAG;
+var BYGROUP = "bygroup-" + TAG;
+var GROUP = "pkgroup-" + TAG;
 
 var checks = 0;
 function check(what, fn) {
@@ -147,6 +148,9 @@ async function test() {
   await created(APP, { oauthClientId: CLIENT }, ["oauth2"]);
   await created(OTHER);
   await created(LONE);
+  const group = await call("POST", "/groups/create", { group: GROUP });
+  assert.strictEqual(group.status, 200, "creating the group answered " +
+                     group.status + " " + String(group.raw).slice(0, 300));
 
   const policies = await call("GET", "/policies");
   assert.ok(policies.status === 200 && policies.body.passkey &&
@@ -173,87 +177,71 @@ async function test() {
   policies.body.passkey.fields.forEach(function (field) {
     defaults[field.key] = field.default;
   });
-  await saveNamed(defaults, STRICT, { selectApplications: APP,
-    precedence: 5, registrationAlgorithms: "ES256,RS256",
+  await saveNamed(defaults, STRICT, { precedence: 50,
+    registrationAlgorithms: "ES256,RS256",
     registrationMode: "classical-only" });
-  await saveNamed(defaults, BYCLIENT, {
-    selectApplications: CLIENT.toUpperCase(), selectGroups: "staff-" + TAG,
-    precedence: 40 });
-  await saveNamed(defaults, ELSEWHERE, { selectApplications: OTHER,
-                                         precedence: 1 });
+  await saveNamed(defaults, BYGROUP, { precedence: 10 });
+  const pointed = await call("POST", "/applications/set", {
+    application: APP, attribute: "appPasskeyPolicy", value: STRICT });
+  const ghost = await call("POST", "/applications/set", {
+    application: OTHER, attribute: "appPasskeyPolicy",
+    value: "ghost-" + TAG });
+  const grouped = await call("POST", "/groups/set-policy", {
+    group: GROUP, attribute: "stsPasskeyPolicy", policy: BYGROUP });
+  const groupGhost = await call("POST", "/groups/set-policy", {
+    group: GROUP, attribute: "stsPasskeyPolicy", policy: "ghost-" + TAG });
+  check("A. AN APPLICATION AND A GROUP NAME A POLICY THE REALM HOLDS, AND " +
+        "ONLY ONE IT HOLDS", function () {
+    assert.strictEqual(pointed.status, 200, String(pointed.raw).slice(0, 300));
+    assert.strictEqual(ghost.status, 400, String(ghost.raw).slice(0, 300));
+    assert.strictEqual(grouped.status, 200, String(grouped.raw).slice(0, 300));
+    assert.strictEqual(groupGhost.status, 400,
+                       String(groupGhost.raw).slice(0, 300));
+  });
 
   const read = await pageOf(APP);
   const pk = read.page && read.page.passkeyPolicies;
-  check("A. THE APPLICATION READ CARRIES THE POLICIES NAMING IT, lowest " +
-        "precedence first and marked, each with what named it and its link",
-        function () {
-    assert.ok(pk && Array.isArray(pk.policies), JSON.stringify(read.page &&
-      Object.keys(read.page)));
-    assert.deepStrictEqual(pk.policies.map(function (one) {
-      return one.name;
-    }), [STRICT, BYCLIENT], JSON.stringify(pk.policies));
-    assert.strictEqual(pk.applies, STRICT);
-    assert.strictEqual(pk.policies[0].applies, true);
-    assert.strictEqual(pk.policies[1].applies, false);
-    assert.deepStrictEqual(pk.policies[0].matched, [APP]);
-    assert.deepStrictEqual(pk.policies[1].matched, [CLIENT.toUpperCase()]);
-    assert.strictEqual(pk.policies[1].precedence, 40);
-    assert.strictEqual(pk.policies[0].link,
-                       "/admin/policies#passkey-profile-" + STRICT);
-    assert.ok(pk.groupPolicies >= 1, JSON.stringify(pk));
-    // An OAuth sign-in names the client_id, and gets the policy naming it.
-    assert.strictEqual(pk.appliesBy[APP], STRICT, JSON.stringify(pk));
-    assert.strictEqual(pk.appliesBy[CLIENT], BYCLIENT, JSON.stringify(pk));
+  check("B. THE APPLICATION READ SAYS THE POLICY IT NAMES, what applies, its " +
+        "precedence and the policies groups name", function () {
+    assert.ok(pk && pk.named === STRICT && pk.applies === STRICT &&
+              pk.missing === false && pk.precedence === 50 &&
+              pk.groupPolicies === 1 &&
+              pk.link === "/admin/policies#passkey-profile-" + STRICT,
+              JSON.stringify(pk));
   });
-
   const lone = (await pageOf(LONE)).page.passkeyPolicies;
-  check("B. AN APPLICATION NO POLICY NAMES READS default", function () {
-    assert.ok(lone && lone.policies.length === 0 &&
-              lone.applies === "default", JSON.stringify(lone));
+  check("B2. AN APPLICATION NAMING NONE READS default", function () {
+    assert.ok(lone && lone.applies === "default" && lone.missing === false,
+              JSON.stringify(lone));
   });
 
-  const listed = await call("GET", "/applications?q=" +
-    encodeURIComponent("pkapp-" + TAG) + "&per=5&page=1&exclude=" +
-    encodeURIComponent(APP) + "&exclude=" + encodeURIComponent(OTHER));
-  check("C. THE SEARCH'S DATA: five a page, by identifier, leaving out what " +
-        "the box names", function () {
-    assert.strictEqual(listed.status, 200, String(listed.raw).slice(0, 300));
-    const ids = (listed.body.applications || []).map(function (one) {
-      return one.identifier;
-    });
-    assert.deepStrictEqual(ids, [LONE], JSON.stringify(ids));
-  });
-
-  // What an Add makes of the box, saved as the profile's Save sends it.
-  // The registration rows are sent again: `defaults` is the schema's
-  // built-in values, captured before the first save, and posting those
-  // would replace #940's list with `realm`.
-  await saveNamed(defaults, STRICT, { selectApplications: APP + ", " + LONE,
-    precedence: 5, registrationAlgorithms: "ES256,RS256",
-    registrationMode: "classical-only" });
-  const after = (await pageOf(LONE)).page.passkeyPolicies;
-  check("D. AN ADDED IDENTIFIER, SAVED, IS READ BACK on that application",
-        function () {
-    assert.strictEqual(after.applies, STRICT, JSON.stringify(after));
-    assert.deepStrictEqual(after.policies[0].matched, [LONE]);
-  });
-  const named = (await call("GET", "/policies")).body.passkey.named;
-  check("D2. AND THE POLICY'S OWN READ HOLDS BOTH, by identifier",
-        function () {
-    const strict = named.filter(function (one) {
+  const body = (await call("GET", "/policies")).body.passkey;
+  check("C. THE POLICIES READ LISTS WHAT NAMES EACH POLICY", function () {
+    assert.deepStrictEqual(body.references, {
+      application: "appPasskeyPolicy", group: "stsPasskeyPolicy" });
+    assert.deepStrictEqual(body.selectors, ["precedence"]);
+    const strict = body.named.filter(function (one) {
       return one.name === STRICT;
     })[0];
-    assert.ok(strict, JSON.stringify(named));
-    assert.deepStrictEqual(strict.selectApplications, [APP, LONE]);
+    const byGroup = body.named.filter(function (one) {
+      return one.name === BYGROUP;
+    })[0];
+    assert.ok(strict && byGroup, JSON.stringify(body.named));
+    assert.deepStrictEqual(strict.namedBy.applications, [APP]);
+    assert.deepStrictEqual(byGroup.namedBy.groups, [GROUP]);
     assert.deepStrictEqual(strict.registrationAlgorithms, ["ES256", "RS256"]);
     assert.strictEqual(strict.registrationMode, "classical-only");
   });
+
+  const held = await call("POST", "/policies/reset-passkey-policy",
+                          { profile: BYGROUP });
+  check("D. A POLICY A GROUP NAMES IS NOT DELETED", function () {
+    assert.strictEqual(held.status, 400, String(held.raw).slice(0, 300));
+    assert.ok(String(held.raw).indexOf(GROUP) >= 0,
+              String(held.raw).slice(0, 300));
+  });
   const conflict = await call("POST", "/policies/save-passkey-policy",
-    // A named profile with no application and no group is refused before
-    // the mode is read (`checkSelectors`). Naming APP is what lets the
-    // classical-only / post-quantum-required conflict be the 400.
     Object.assign({ profile: "conflict-" + TAG }, defaults, {
-      selectApplications: APP,
       registrationAlgorithms: "ES256", registrationMode: "classical-only",
       postQuantumRequired: "registration-and-sign-in" }));
   check("CLASSICAL-ONLY CANNOT BE SAVED BESIDE A POST-QUANTUM REQUIRED " +
@@ -272,10 +260,11 @@ async function test() {
 const program = new Command();
 program
   .name("sts_passkey_policy_application")
-  .description("An application's passkey policies read through /admin-api " +
-      "(page.passkeyPolicies), and the policy page's application search " +
-      "and its Add saved by identifier (#609), plus population registration " +
-      "algorithms, modes and the classical-only / PQ-required conflict (#940).")
+  .description("The passkey policy an application and a group name " +
+      "(appPasskeyPolicy, stsPasskeyPolicy, #1235), read through " +
+      "/admin-api (page.passkeyPolicies, #609), plus population " +
+      "registration algorithms, modes and the classical-only / PQ-required " +
+      "conflict (#940).")
   // Accepted and ignored: run-report.js passes --url to every job.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))

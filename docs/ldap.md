@@ -198,7 +198,8 @@ this service believes.
 With `ldap.autocreateUsers` on (the default), an entry appears at
 `uid=<name>,ou=users,<base>` the first time somebody authenticates through a
 protocol that has no switch of its own. **One person is one entry**, however
-they arrive by those protocols. `alice`, `alice@REALM` and her `sub` all name
+they arrive by those protocols. `alice`, `alice@REALM`, her `sub` and a live sign-in name
+([People](people.md#sign-in-names)) all name
 one entry, and a client certificate whose subject CN is `alice` folds onto
 that entry too. A DID or a SPIFFE ID, which names nobody by itself, is filed
 under a name made from a digest of it, with the identifier on the entry as
@@ -312,8 +313,15 @@ Tokens can carry the groups a person is in. See the `groups.*` settings below.
 ### The password policy is a directory entry
 
 A realm's password policy is the entry `cn=default,ou=passwordPolicies,<base>`.
-It is not seeded: an absent entry means the built-in defaults apply. Its
-attributes are:
+It is not seeded: an absent entry means the built-in defaults apply. A named
+password policy is `cn=<name>` in the same container with the same
+attributes and `stsPasswordPrecedence`. A group names one in
+`stsPasswordPolicy`, and an application names one in `appPasswordPolicy`.
+An LDAP write of `userPassword` has no application, so the person's groups
+decide and `default` applies where they name none
+([Policies](policies.md#password-policy),
+[named password policies](authentication.md#different-password-rules-for-different-applications-or-groups)).
+Its attributes are:
 
 | Attribute | Default | Meaning |
 |---|---|---|

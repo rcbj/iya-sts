@@ -355,7 +355,7 @@ verdict for each; a new undeclared store owes a row here.
 | `ldap_server.js` `entries` | Persisted another way — the directory's diff, above. |
 | `ldap_server.js` `usernameIndexes`, `subtreeClocks`, `groupIndexes`, `uuidIndexes`; `federation.js` `releaseIndexes` | Fine — derived from the directory and rebuilt from it. |
 | `helpers.js` `stsKeysFor` | Persisted another way — `keystore.js`. |
-| `ssf_streams.ts` `deadCounts`, `tally` | Fine — an estimate rebuilt at every sweep, and the count behind the sweep's one log line; the letters themselves are persisted. |
+| `ssf_streams.ts` `deadCounts`, `tally` | Fine — an estimate rebuilt at every sweep, and the count behind the sweep's one warning (`STS-SSF-0094`); the letters themselves are persisted. |
 | `ssf_dead_letter_report.ts` `sweepNotes` | **Persisted since 2026-09-18** as `ssf_dead_letter_report.sweeps`, `merge: 'own'`, and the page fans every process's in — it was the dead-letter page's sweep history, emptied by every restart. |
 
 `memory` is still the default. A run that says nothing about persistence behaves
@@ -1501,6 +1501,10 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   `entryParams()` makes — origin `bulk import`. **A change to what `putEntry()`
   or `entryParams()` writes is owed here too**; `tests/bulk_import.js` D1
   opens rows and recomputes their columns, and A5 pins the order.
+* **A LIVE `stsPseudonym` IS A NAME IN THAT LOAD (#644).** Its shape is the
+  writer's. An email-shaped value is refused when another accepted record's
+  mail folds to it. The import does not call `writePseudonyms()`.
+  `tests/bulk_import.js` A holds the shape.
 * **THE CHECK IS THREE STATEMENTS A BATCH, NEVER A CORRELATED EXISTS A ROW.**
   The first version guarded the insert with `EXISTS (… name_keys @>
   jsonb_build_array(x))` per row; the planner prices jsonb containment at a
@@ -2046,6 +2050,12 @@ listener.
   idempotent: the applier reads the current row) and shrink the rest; it was
   not changed here because it moves the replication contract every process
   starts on, and wants the full suite.
+  **Closed later.** The mark is taken when the store opens, before any
+  read (#804, 2026-10-21, the cell's log; #619, the global tier's log too).
+  A change committed during the restore is above that mark and is applied.
+  Re-applying one the restore already read is the applier reading the
+  current row. `tests/directory_window.js` F0c holds the single log;
+  `tests/replication_restore_floor.js` holds both logs of a cell.
 * **The keystore's start** (2.0 s front, 1.7 s each worker: 25 authorities,
   204 data encryption keys) and **each process writing the default realm's
   certificate authority back to the store at every start** ("written to the
@@ -3359,7 +3369,9 @@ minted rows split row by row. Three things it does beyond routing:
   (`common/cell_routing.ts` makes them), a delete releases both, and a claim
   answered with another cell is counted (STS-CELL-0020) rather than failing
   the flush — creation paths claim first, and this is the race that check
-  cannot close.
+  cannot close. The index remembers every live sign-in name, the filing
+  name and each `stsPseudonym`, and a rename releases the names that left.
+  A pending verification address is absent from it.
 * **A projected entry is never written here** (origin `projection:<home>`,
   `common/cell_sessions.ts`); a change to one is handed to the sessions module,
   which sends it home. `persistence.materializeEntry()` is how a projection
@@ -3392,7 +3404,12 @@ since #98: the module's own exports are the instance for the process's main
 log (the cell's, or the only one), and `persistence.js`'s `coordinate()`
 builds `createReplication('global')` on the global driver itself, so its own
 rows are skipped by the origin the global driver stamps. Its pull and trim
-jobs carry `global` in their ids. The two may pull at once; the one thing they
+jobs carry `global` in their ids. **Each follower starts from the head its
+own log had when the store opened, before any restore read (#619).** The
+two sequences are not comparable: a cell seq is never the global floor. A
+change committed on either log during the restore is above that log's mark
+and is applied; one the restore already read is applied again by reading
+the current row. The two may pull at once; the one thing they
 share, `persistence_minted.js`'s page prefetch, never answers across them
 because a handle is in exactly one tier. **The read barrier waits on the
 cell's log only**: a global change made in another cell arrives after the

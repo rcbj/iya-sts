@@ -74,6 +74,11 @@ belongs to no protocol:
 * a stable **`sid`**, and a cookie handle that rotates on every
   re-authentication.
 
+The subject, the filing name and a sign-in name are
+[People](people.md). The application that sent them is an
+[application](applications.md), the same entry in every protocol.
+[Directory](directory.md).
+
 An ID Token, a SAML `AuthnStatement` or a WS-Federation token is rendered
 *from* the session and carries its `sid` or `SessionIndex`. A re-authentication
 by the same person (`prompt=login`, `max_age`, SAML `ForceAuthn`, RFC 9470
@@ -152,7 +157,9 @@ cluster (`security.rateLimit*`).
   *Directory → Policies* (`/admin/policies`): minimum length (12), symbols (1),
   an uppercase letter, a digit, and none of the last five passwords. It is
   enforced in product mode wherever a password is set, and it shapes every
-  password the service generates.
+  password the service generates. See
+  [Different password rules for different applications or
+  groups](#different-password-rules-for-different-applications-or-groups).
 * **Forced change.** `pwdReset: TRUE` on an entry (from
   [draft-behera-ldap-password-policy](https://datatracker.ietf.org/doc/html/draft-behera-ldap-password-policy))
   means the password must be changed before it is used. The sign-in screen
@@ -185,6 +192,51 @@ cluster (`security.rateLimit*`).
   a password or enrols a security key or an authenticator app.
 * A person changes their own password at `/portal/password`; an operator sets
   one with `POST /admin-api/users/set-password`.
+
+
+### Different password rules for different applications or groups
+
+The same ranking is how every kind of policy on Directory → Policies is
+chosen. [Policies](policies.md) is that account. Besides `default`, a realm
+can hold **named password policies**, each with
+every rule `default` has and a **precedence** from 1 to 1000. Add one on
+*Directory → Policies → Password policy → New policy*, or with
+`POST /admin-api/policies/save-password-policy` naming a `profile` other
+than `default`:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  https://sts.example.com/admin-api/policies/save-password-policy \
+  -d '{"profile":"admins","precedence":10,"minLength":20,"history":10,
+       "minSymbols":1,"requireUppercase":true,"requireDigit":true,
+       "generatedLength":32}'
+```
+
+A policy applies to the people something names it for:
+
+- a **group**, in its `stsPasswordPolicy` (the group's page, or
+  `POST /admin-api/groups/set-policy` with `"attribute":"stsPasswordPolicy"`),
+  holds every member to it;
+- an **application**, in its `appPasswordPolicy` (a field of the
+  application's *Every protocol* settings, or
+  `POST /admin-api/applications/set`), holds to it a password chosen while
+  signing in to that application — the forced change after a reset.
+
+Of the policies named for a person, the **lowest precedence** applies, ties
+by name; where nothing names one, `default` does. A door with no application
+in hand — the portal's password page, activation, a reset link, the console,
+`/admin-api` and an LDAP write — ranks the person's groups' policies alone,
+and the rules a page shows before a password is typed are the ones that will
+be applied. The same policy decides the length of a password the service
+generates for the person and how their password is hashed.
+
+Each reference accepts only `default` or a policy the realm holds, and a
+named policy that a group or an application still names cannot be removed
+(`STS-AUTHN-0540`). If a reference names a policy the realm does not hold —
+written past the console — that reference counts for nothing: the other
+policies named for the person still rank as above, `default` applies only
+where none remains, and the service logs `STS-AUTHN-0539`. Named policies
+belong to their realm and are not inherited by other realms.
 
 ### WebAuthn
 
@@ -789,45 +841,40 @@ one, with a link back to choose another. The choice is a list of links. The rule
 asked for after a password. Either way the assertion is checked against the
 passkey it names; only the request changes.
 
-**Named passkey policies** (#535). Beside `default`, a realm may keep named
-passkey policies, for example a strict one for administrators. Each has all
-the rows above and three selectors:
+**Named passkey policies** (#535, #1235). Beside `default`, a realm may keep
+named passkey policies, for example a strict one for administrators. Each has
+all the rows above and a precedence, from 1 to 1000. A named policy lists
+nothing itself; what it covers names it:
 
-- the applications it applies to (identifier or client_id);
-- the groups whose members it applies to (by cn or DN);
-- a precedence, from 1 to 1000.
+- an application, in its `appPasskeyPolicy`;
+- a group, in its `stsPasskeyPolicy`, chosen on the group's page.
 
-At a sign-in, the named policy that applies is one listing the application
-being signed in to, or a group the person is in. Where several match, the
-one with the **lowest precedence** wins, and where none matches, `default`
-applies. An application's policy and a person's are not ranked by kind: give
+At a sign-in, the candidates are the policy the application names and the
+policy each of the person's groups names. The one with the **lowest
+precedence** wins, ties by name, and where nothing names one, `default`
+applies. An application's policy and a group's are not ranked by kind: give
 the stricter one the lower number. For example, a strict application at 5
 beats a lenient group at 50.
 
 Registration on `/portal/keys` or through an activation link has no
-application, so only group selectors apply there. A realm's named policies
-are its own: unlike `default`, they are not inherited from the default realm.
+application, so only the groups' policies apply there. A realm's named
+policies are its own: unlike `default`, they are not inherited from the
+default realm. A named policy that an application or a group names cannot be
+removed until they name another.
 
 Manage them on Directory → Policies, or with
-`POST /admin-api/policies/save-passkey-policy` naming `profile`,
-`selectApplications`, `selectGroups` and `precedence`.
-`reset-passkey-policy` with a named `profile` removes it.
+`POST /admin-api/policies/save-passkey-policy` naming `profile` and
+`precedence`. `reset-passkey-policy` with a named `profile` removes it. Name
+one with `POST /admin-api/applications/set` (`appPasskeyPolicy`) or
+`POST /admin-api/groups/set-policy` (`stsPasskeyPolicy`).
 
 The *Passkey policy* tab there has three sub-tabs (#609):
 
 - **Default**: the `default` policy, which applies wherever no named one
   does.
 - **Named policies**: every named policy, each with the applications and
-  groups it selects, its precedence, its form and a Remove.
+  groups that name it, its precedence, its form and a Remove.
 - **New policy**: the form that adds one.
-
-The applications box of a named policy's form has a search under it: type
-part of an application's identifier or name and press **Find** (or Enter).
-The realm's applications are listed five to a page, leaving out the ones the
-box already names, each with an **Add**. Add puts the application's
-**identifier** in the box; nothing is written until the policy's Save, which
-stores the box as `stsPasskeySelectApplication`, as before. A client_id
-typed by hand still works.
 
 An application's own page shows the same relation read-only: see
 [the passkey policy card](applications.md#the-passkey-policy-that-applies-to-it).
@@ -1025,12 +1072,15 @@ accepts** by naming a **named authentication policy** (#1148). They are on
 the same tab, Directory → Policies → *Authentication policy*, which has the
 passkey policy's three sub-tabs: **Default** (the realm's own policy),
 **Named policies** (the list, with Change and Delete) and **New policy**.
-Each named policy holds exactly two lists:
+Each named policy holds two lists and a precedence:
 
 * **the first-factor mechanisms it allows**: `password`, `password-mfa`,
   `webauthn`, `spnego`, `wallet`, `federation`;
 * **the second factors it allows**: `password`, `securityKey`, `totp`,
-  `recoveryCode`, `emailCode`, `emailLink`, `wallet`.
+  `recoveryCode`, `emailCode`, `emailLink`, `wallet`;
+* **its precedence**, a whole number from 1 to 1000 (100 when not given),
+  which decides between policies named for the same sign-in. A precedence
+  outside that range is refused (`STS-AUTHN-0541`).
 
 **None ticked in a list allows every one** (for the second factors: leaves
 the realm's as they are). Everything else about signing in — which
@@ -1045,25 +1095,49 @@ field replaced the two lists an application used to hold itself
 browser sign-in to the application — the routing, the re-prompt, the
 narrowed second factor — is in [Applications](applications.md#sign-in-mechanisms-how-its-people-may-sign-in).
 
+**A group names one too**, in **`stsAuthnPolicy`**, on the group's page (or
+`POST /admin-api/groups/set-policy` with `attribute: stsAuthnPolicy`), which
+accepts only `default` or a policy the realm holds. For a sign-in to an
+application, the candidates are the policy the application names and the
+policy each of the person's groups names. **The one with the lowest
+precedence applies**; a tie goes to the name that sorts first, and the realm's
+policy applies as it is where nothing is named. For example, an application
+naming `staff` (precedence 50) is held to `staff` for most people, and to
+`contractors` (precedence 10) for a member of a group naming `contractors`.
+
+* **Before the person is known** — the sign-in screen's first draw, and where
+  an application allowing one mechanism sends its people — only the
+  application's policy can apply. Once the person is known the choice is made
+  again: the second factor offered is narrowed by the policy that applies to
+  them, and the session's start and every browser issuance are held to it.
+  A person whose groups' policy allows fewer first factors than the
+  screen offered is re-prompted or refused at that point, as for an
+  application's own list.
+* A sign-in that names no application is held to the policy that applies
+  when an application's issuance is asked for on that session.
+
 * A policy is stored as `cn=<name>,ou=authnPolicies` in the realm's
   directory, beside the realm's own `cn=default`. A name is lower-case
   letters, digits and hyphens, and cannot be `default` (`STS-AUTHN-0532`).
   A realm's policies are its own: nothing is inherited from the default
   realm.
-* **Deleting a policy an application names is refused** (`STS-AUTHN-0534`).
-  Point the application elsewhere first.
+* **Deleting a policy an application or a group names is refused**
+  (`STS-AUTHN-0534`). Point them elsewhere first.
 * **A name no policy holds allows nothing.** The console and the API accept
   only `default` or a policy the realm holds, but an `ldapmodify` can write
-  any value; an application naming a policy that does not exist allows no
-  mechanism at all until the policy exists or the name changes
-  (`STS-AUTHN-0536`).
+  any value. An application naming a policy that does not exist allows no
+  mechanism at all, and so does a group naming one for every member, until
+  the policy exists or the name changes (`STS-AUTHN-0536`).
 
 API: the `named` list in the `authn` member of `GET /admin-api/policies`;
 `POST /admin-api/policies/save-named-authn-policy` with `name`,
-`description`, `mechanisms` and `secondFactors` (it replaces a policy of the
-same name); `POST /admin-api/policies/delete-named-authn-policy` with
-`name`; and `POST /admin-api/applications/set` with
-`attribute: appAuthnPolicy` to point an application at one.
+`description`, `precedence`, `mechanisms` and `secondFactors` (it replaces a
+policy of the same name); `POST /admin-api/policies/delete-named-authn-policy`
+with `name`; `POST /admin-api/applications/set` with
+`attribute: appAuthnPolicy` to point an application at one; and
+`POST /admin-api/groups/set-policy` with `attribute: stsAuthnPolicy` to point
+a group at one. Each named policy in the list carries its `precedence` and
+`namedBy`, the `applications` and `groups` naming it.
 
 ### Emailed codes and links
 

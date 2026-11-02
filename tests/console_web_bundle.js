@@ -773,7 +773,17 @@ function childMain() {
       // Directory → Policies' New passkey profile (#841). The hidden
       // field tells a refused create apart from a save of a stored
       // profile; web_answers.ts reads it and the API does not take it.
-      '/admin-api/policies/save-passkey-policy': ['newProfile']
+      '/admin-api/policies/save-passkey-policy': ['newProfile'],
+      // And the locale policy's, tabbed since #1238.
+      '/admin-api/policies/save-locale-policy': ['newProfile'],
+      // And the New password policy (#1236), for the same reason.
+      '/admin-api/policies/save-password-policy': ['newProfile'],
+      // And the New service-account policy (#1240), for the same reason.
+      '/admin-api/policies/save-serviceAccount-policy': ['newProfile'],
+      // The post-login policy's, tabbed since #1239.
+      '/admin-api/policies/save-postLogin-policy': ['newProfile'],
+      // And the New attribute policy (#1241), for the same reason.
+      '/admin-api/policies/save-attributes-policy': ['newProfile']
     };
     // AND A FIELD'S SEARCH (#459, #461): its box, its page and its people
     // / applications toggle are read by the runtime's round trip and never

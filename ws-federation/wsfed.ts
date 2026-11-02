@@ -1628,7 +1628,7 @@ class WsFederation {
                              tokenType,
                              entry?: { path: string; riskStepUp: boolean }) {
     const { applications, buildSaml11Assertion, buildSamlAssertion, config,
-            errorCodes, gate, log, noteSessionChanged } = this.deps;
+            errorCodes, gate, iso, log, noteSessionChanged } = this.deps;
     log.debug("Entering WsFederation.issueSignInResponse(). tokenType=" +
               tokenType);
     const returnPath = (entry && entry.path) || PASSIVE_PATH;
@@ -1849,6 +1849,36 @@ class WsFederation {
         // assertion this profile has always issued, byte for byte.
         authnContextClassRef: askedClass || methods.saml2,
         issuer: issuer,
+        // THE SESSION, THE TIME AND THE CONFIRMATION (#1243), as
+        // saml2_sso.ts passes them; this call passed none of the three, so
+        // the builder's defaults went out.
+        //
+        // SessionIndex is the SESSION's id, not the default (the assertion's
+        // own ID): it is what a CAEP session-revoked names (the complex
+        // subject's `session`) and what /logout and Monitoring → Sessions end,
+        // so a relying party can match the event to the local session this
+        // sign-in started. With the assertion ID, a WS-Federation relying
+        // party could match nothing, and only account events reached it.
+        sessionIndex: session.id,
+        // When the person authenticated, not when this token was built: a
+        // relying party that bounds the authentication's age (what wfresh
+        // asks for) read every token as fresh. The SAML 1.1 branch below
+        // already passed it.
+        authnInstant: authnInstant,
+        // A SubjectConfirmationData. SAML Core 2.4.1.1 makes it optional and
+        // WS-Federation does not use the Web Browser SSO profile that
+        // requires it, but relying-party libraries written for SAML 2.0
+        // refuse a bare bearer confirmation ("no SubjectConfirmationData").
+        // Recipient is the wreply the token is posted to, which binds it to
+        // that address; NotOnOrAfter is the SAME instant as the Conditions'
+        // (saml.clockSkewS included), read as saml2_sso.ts reads it, so the
+        // two expiries in one assertion cannot disagree. No InResponseTo:
+        // a wsignin1.0 is not a SAML request, and there is nothing to answer.
+        subjectConfirmation: {
+          recipient: wreply,
+          notOnOrAfter: iso(lifetimeMin +
+            Math.max(0, Number(config.value('saml.clockSkewS')) || 0) / 60)
+        },
         // The full claim URI in one Name, which is SAML 2.0's shape, with the
         // NameFormat that says so. SAML 1.1 splits the same URI in two.
         attributes: this.claimsFor(user, askedClass || methods.saml2,

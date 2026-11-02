@@ -4,15 +4,21 @@ title: Applications
 
 # Applications
 
-A person who authenticates here has a directory entry and a row on
-`/admin/users`. The **application** on the other side of that authentication
-has one too: an entry under `ou=applications` in the embedded directory. It
-answers the question *what applications has this service seen?*, whatever
-protocol brought each one.
+An **application** is protocol-independent. Whichever protocol it spoke,
+it is one entry under the realm's `ou=applications`. How that entry
+sits beside a user is the
+[Directory](directory.md#an-application) chapter. The admin console's
+**Directory → Applications** and `/admin-api/applications` are that
+entry. A [user](people.md) is a different entry, under `ou=users`, and
+a group is a different entry again.
 
-**The entries are the registry, not a copy of one.** Every protocol endpoint
-that checks a client's configuration reads it from these entries, so an
-`ldapmodify` of one is a configuration change.
+The application is the other party of a sign-in. The
+[session](sessions.md) belongs to the user. Every protocol names this
+same entry: as the client, the audience or the service a token, an
+assertion or a ticket was issued for. The user's subject stays the
+user's.
+
+## What an application is here
 
 ```
 dc=example,dc=com
@@ -24,11 +30,157 @@ dc=example,dc=com
                       relying parties, the OpenID4VP verifier, Kerberos services
 ```
 
-The directory is a tree per [trust realm](trust-realms.md), so each realm has a
-registry of its own. `GET /admin/ldap/applications` lists the entries and
-publishes the schema; `?format=json` is the machine-readable form.
+The entries are the registry. Every protocol endpoint that checks a
+client's configuration reads it from these entries, so an `ldapmodify`
+of one is a configuration change. Nothing caches them.
+[The directory is the source of truth](#the-directory-is-the-source-of-truth).
+
+## One application, one entry
+
+The entry appears when an identifier is accepted, when an administrator
+or `POST /oauth2/register` creates it, when an LDAP add writes it under
+`ou=applications`, or when this service seeds one of its own surfaces
+at startup. Which acceptance records it is
+[One entry per identifier](#one-entry-per-identifier).
+
+The **identifier** is `appIdentifier`: the name exactly as it was
+presented. Matching keeps case, so `Acme` and `acme` are two entries.
+The identifier is not folded, and it carries no protocol prefix. An
+application that arrives under one identifier in two protocols is one
+entry that has been seen in both.
+
+The distinguished name is
+`cn=<the filing name>,ou=applications,<the realm's base>`. The filing
+name is the identifier when that identifier is at most 64 characters.
+Past that, `cn` is `app-` and the first twelve hexadecimal digits of
+the identifier's SHA-256, and `appIdentifier` stays the whole name. A
+search for the application uses `appIdentifier`.
+
+Each [trust realm](trust-realms.md) has its own applications. The same
+identifier in two realms is two entries.
+
+In development mode an identifier nobody has registered is accepted,
+and the entry is recorded. Product mode refuses an application nobody
+registered.
+[Development and product mode](#development-and-product-mode). Past
+`applications.max` a further entry is refused.
+[Configuration](#configuration).
+
+## The names
+
+| Name | What it is |
+|---|---|
+| Identifier | `appIdentifier`. The key. What the registry lists the entry under. |
+| Filing name | `cn`. The identifier, or `app-` and twelve hexadecimal digits when the identifier is longer than 64 characters. The RDN. |
+| Display name | `appName`. What a page calls it. With none stored, the identifier is the name. It selects no entry. |
+| Protocol name | the attribute that family looks up: `oauthClientId`, `samlEntityId`, `wsfedRealm`, `wstrustAppliesTo`, `krb5ServicePrincipalName`, `oid4vpClientId`, and the others on [LDAP schema](ldap-schema.md#applications-ouapplications). Usually the identifier. A second value is another name this entry answers to, matched exactly. |
+| Audience | `oauthAudience`. An `aud` a token for this application carries. It is declared. A sighting never writes it. |
+| Application subject | `urn:sts:application:<identifier>`. The name on a certificate this realm issues the application, and the subject of a signal about the application. |
+| DID | `did:web:<host>:applications:<identifier>` when that family is declared. [A DID describing an application](#a-did-describing-an-application). |
+
+`/admin/applications` is one row per application, keyed on the
+identifier. A lookup by a protocol name matches the characters that
+were stored. Two entries that list the same `oauthClientId` are a
+mistake: the lookup finds the first, and the overlap is recorded.
+
+An entry whose kind is `oauth2-resource-server`, and which has no
+`oauth2-client` kind beside it, is an audience. The authorization
+server refuses that `client_id` at the authorization, token, and the
+other client endpoints, in every mode.
+[The applications that are this service](#the-applications-that-are-this-service).
+
+## Registration and a sighting
+
+A sighting and a registration are two acts, and both can leave a fact
+on the same entry.
+
+* A **sighting** is this service recording an identifier it accepted.
+  In development that writes the entry. It does not register the
+  application. An `ldapmodify` of that entry changes its configuration
+  and leaves it unregistered.
+* A **registration** is somebody creating it. `appRegisteredBy` says
+  which door: `administrator` (the console or the management API),
+  `rfc7591`, `startup`, or `ldap:<the bound DN>`. An unbound add, which
+  only development allows, is recorded as `ldap`. An add that already
+  carries `appRegisteredBy` keeps that value. Only an add stamps it.
+
+Product mode serves an application only when it is registered.
+
+**Revoke registration** keeps the entry and its history.
+`appRegistered` becomes `FALSE`, and the client secret and the
+registration access token are removed. **Forget** removes the entry.
+[The console page and the API](#the-console-page-and-the-api).
+
+A family the application is **declared** for is `appAllowedProtocol`.
+A family it has been **seen** in is `appProtocol`. In product mode an
+issuance through a family the application is not declared for is
+refused. An application declared for nothing is refused nothing.
+[Declared families and recorded ones](#declared-families-and-recorded-ones).
+
+**Declared** configuration is what the checks read: redirect URIs,
+grant types, scopes, the secret, whether the client is public or
+confidential. It is editable. **Derived** facts are what happened: the
+counters, the first and last sighting, the kinds it has been seen as.
+The console and the API refuse a write of a derived fact.
+[Declared and derived](#declared-and-derived).
+[What the checks read](#what-the-checks-read).
+
+### The client secret
+
+`oauthClientSecret` is stored on the entry, one record per secret, each
+with its own expiry, sealed at rest where keys persist. In product mode
+a search of the directory never returns it, nor the registration access
+token. The console shows a secret to an administrator. The audit log
+never records the value.
+
+On **New application**, **Lifetime (days)** beside **Generate Secret**
+takes a whole number of days from 0 to 730. 0 means the secret never
+expires. Leave it empty and the secret uses
+`oauth2.clientSecretLifetimeDays`. The lifetime applies to the secret
+in the box, whether it was generated or typed. A lifetime with no
+secret is refused. With the API, send `lifetimeDays` on
+`POST /admin-api/applications/create` beside
+`fields.oauthClientSecret`. A later secret is added on the
+application's **Credentials** tab, which takes the same field.
+[The schema, and what "schema" means here](#the-schema-and-what-schema-means-here).
+
+## What a second name leaves unchanged
+
+A protocol name, a display name, an audience and a DID are further
+names of the same entry. The identifier stays the key.
+
+| | Stays |
+|---|---|
+| The entry | one entry, however many protocol names it holds |
+| The key | `appIdentifier` |
+| A token about a person | the person's `sub`, `urn:uuid:<their entryUUID>`. This entry's identifier is the client or the audience on that token. |
+| The application's own subject | `urn:sts:application:<identifier>` |
+| The directory address | `cn=<filing name>,ou=applications,<the realm's base>` |
+| Another realm | its own entry, with its own identifier |
+
+## Where an application is visible
+
+* **Directory → Applications**, `/admin/applications`, and
+  `GET /admin-api/applications`. The list is the entries, including one
+  created before anything has connected to it.
+  [The console page and the API](#the-console-page-and-the-api).
+* The directory, under the realm's `ou=applications`.
+  `GET /admin/ldap/applications` lists the entries and publishes the
+  schema. `?format=json` is the machine-readable form.
+* [`/portal/applications`](user-facing-pages.md#the-user-portal), the
+  applications a signed-in person may use.
+* `POST /oauth2/register`, which writes an entry.
+  [Software statements](#software-statements-rfc-7591-section-23).
+* This service's own surfaces, seeded at startup when the identifier
+  is free.
+  [The applications that are this service](#the-applications-that-are-this-service).
 
 ## Features
+
+What an application is sits
+[above](#what-an-application-is-here). The sections below are the
+mechanism: which sighting writes the entry, what each check reads, and
+the settings on the page.
 
 ### One entry per identifier
 
@@ -782,6 +934,7 @@ application. An application can override them on its own configuration tabs
 |---|---|---|
 | OAuth 2.0 / OpenID Connect | **Token lifetimes** | Shows the access token, ID Token, refresh token and refresh-idle lifetimes in force for this client, whether each is its own or the realm's, and the realm page's warnings. The overrides are the `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`, `oauthRefreshTokenTtlS` and `oauthRefreshIdleSeconds` fields on the same tab. The clock skew stays realm-wide. |
 | OAuth 2.0 / OpenID Connect | **Custom claims** | The access token, ID Token and UserInfo claims for this client. |
+| GNAP | **Custom claims** | The claims a `jwt-signed` access token, and the JWT inside a `jwt-encrypted` one, carry for this client instance (`gnap_access_token`), besides the protocol's own. Macaroon, biscuit and zcap do not carry them. The set has no combine control of its own: the application's rows are added to the realm's and win by name. |
 | SAML | **Custom SAML attributes** | The SAML 2.0 attributes (with an optional NameFormat) and SAML 1.1 attributes (with a namespace) for this audience. |
 | Verifiable Credentials | **Credential claims** | The directory attributes a credential issued to this OpenID4VCI client carries (see below). |
 
@@ -800,24 +953,30 @@ not be released, or an unknown type is refused (`STS-REG-0206`). So is a set
 whose protocol the application is not declared for.
 
 Which application a claim applies to: for tokens and UserInfo, the client
-(`client_id`); for SAML, the audience (the service provider's entityID, or a
-WS-Federation or WS-Trust relying party). These are the same keys its other
-per-application settings use.
+(`client_id`); for a GNAP access token, the client instance identifier; for
+SAML, the audience (the service provider's entityID, or a WS-Federation or
+WS-Trust relying party). These are the same keys its other per-application
+settings use. A protocol name (`access`, `flags`, `label`, `grant_id`, and
+the JWT names such as `sub` and `username`) cannot be overridden. `uid` can.
 
 The management API: `POST /admin-api/applications/set-custom-claim` (with
-`set` = `access_token`, `id_token`, `userinfo`, `saml2` or `saml11`, and
-`name`, plus `value`, or `attribute` with `multi` and `type`) and
+`set` = `access_token`, `id_token`, `userinfo`, `saml2`, `saml11`,
+`kerberos-pac` or `gnap_access_token`, and `name`, plus `value`, or
+`attribute` with `multi` and `type`) and
 `POST /admin-api/applications/remove-custom-claim`. `GET
 /admin-api/applications?application=<id>` returns `customClaims` and
 `tokenLifetimes`.
 
 #### Directory attributes and credential claims
 
-Under the rows, each section also draws the realm's **ticked catalogue of
-directory attributes** for that set — the attributes the realm's Custom
-claims, UserInfo claims and Custom SAML attributes pages tick — and the
+Under the rows, each of those sections also draws the realm's **ticked
+catalogue of directory attributes** for that set — the attributes the realm's
+Custom claims, UserInfo claims and Custom SAML attributes pages tick — and the
 **Verifiable Credentials** sub-tab draws the realm's **Credential claims**
-selection for an application declared for OpenID4VCI.
+selection for an application declared for OpenID4VCI. The GNAP **Custom
+claims** section has the rows and not this catalogue. A GNAP access-token JWT
+does not gain the ticked directory attributes, the groups claim or the roles
+claim.
 
 **A selection is a whole set, so the application's replaces the realm's.**
 While the application has none of its own, the realm's selection is in force
@@ -1021,7 +1180,8 @@ the origin).
 
 **`appAuthnPolicy`** names the [named authentication
 policy](authentication.md#named-authentication-policies) an application's
-people sign in under. It is a choice on the application's Configuration tab
+people sign in under, unless one of a person's groups names a policy of
+lower precedence (`stsAuthnPolicy`), which then applies to that person. It is a choice on the application's Configuration tab
 (*Every protocol*): `default` (or empty), the realm's authentication policy
 as it is, or one of the realm's named policies. The policy's **first-factor
 list** is the list of mechanisms the application's people may sign in to it
@@ -1162,42 +1322,59 @@ name and what the grant is.
 
 ### The passkey policy that applies to it
 
-An application's Configuration tab, *Every protocol*, ends with a
-**Passkey policy** card (#609). It is read-only, and it lists every named
-passkey policy of the realm whose applications list names this application,
-by its identifier or by one of its client_ids, matched in any case as a
-sign-in is. For each it shows:
+An application names its passkey policy in **`appPasskeyPolicy`**, a field of
+its Configuration tab, *Every protocol*: `default`, or a named passkey policy
+of the realm (Directory → Policies). Nothing else is accepted.
 
-- its precedence;
-- the value that named the application;
-- any groups it selects as well;
-- whether it is the one that applies.
+The tab ends with a read-only **Passkey policy** card. It says which policy a
+sign-in to the application gets before the person is known, with its
+precedence and a link to it on Directory → Policies. Where the application
+names a policy the realm does not hold (written by hand with an LDAP client),
+the card warns that the `default` passkey policy applies instead.
 
-The one that applies is the lowest precedence among them. Where none names the
-application, the card says the `default` passkey policy applies. Each name
-links to that policy on Directory → Policies.
-
-A sign-in names the application by one of its names: an OAuth or OpenID
-Connect sign-in by its client_id, SAML by its entity ID. Where policies name
-the application by different names, a sign-in gets the policy that names the
-name it used, and the card says so for each name that gets a different one.
-
-**A policy selecting by group can still win for a given person.** Where a
-named policy lists one of the person's groups and has a lower precedence,
-it applies to them instead; the card says how many named policies select by
-group.
-
-Nothing is stored on the application. Which applications a passkey policy
-covers is the policy's `stsPasskeySelectApplication`, edited on
-Directory → Policies (see the
-[passkey policy](authentication.md#the-passkey-policy)). Several policies may
-name one application; precedence decides between them.
+**A policy one of the person's groups names can still win for that person.**
+Where a group the person is in names a policy with a lower precedence, it
+applies to them instead. The card says how many named passkey policies are
+named by a group. See
+[the passkey policy](authentication.md#the-passkey-policy).
 
 The API answer is `page.passkeyPolicies` on
-`GET /admin-api/applications?application=<id>`: `policies` (each `name`,
-`dn`, `precedence`, `selectApplications`, `selectGroups`, `matched`,
-`applies` and `link`), `applies`, `appliesBy` (the policy per name),
-`groupPolicies`, `names` and `link`.
+`GET /admin-api/applications?application=<id>`: `named`, `missing`,
+`applies`, `precedence`, `groupPolicies` and `link`.
+
+### The locale policy it names
+
+An application names its locale policy in **`appLocalePolicy`**, a field of
+the same tab: `default`, or a named locale policy of the realm. Nothing else
+is accepted. It decides the language the application's pages fall back to
+when nobody names one a catalog answers, and the language a person it causes
+to be created is given. Once the person is known, a locale policy one of their
+groups names competes with it on precedence. See [the locale
+policy](languages.md#named-profiles-for-applications-and-groups).
+
+### The post-login activity policy that applies to it
+
+An application names its post-login activity policy in
+**`appPostLoginPolicy`**, a field of the same *Every protocol* sub-tab:
+`default`, or a named post-login profile of the realm. A sign-in to the
+application ranks it against the profiles the person's groups name, the
+lowest precedence winning; a named profile with its activity off, named
+here, keeps a sign-in to this application from being asked. It is read at
+the sign-in only: a started activity's reminder mails and the progress
+report go by the person's groups. See
+[post-login activities](post-login-activities.md#which-profile-applies-groups-and-applications-name-it).
+
+### The password policy that applies to it
+
+An application names its password policy in **`appPasswordPolicy`**, a field
+of the same *Every protocol* sub-tab: `default`, or a named password policy
+of the realm. Nothing else is accepted. It holds a password chosen while
+somebody is signing in to this application, ranked against the policies the
+person's groups name in `stsPasswordPolicy`. A password set with no
+application in hand — the portal, a reset link, the console, an LDAP write —
+does not read this field. See
+[Policies](policies.md#password-policy) and
+[Different password rules](authentication.md#different-password-rules-for-different-applications-or-groups).
 
 ## Development and product mode
 

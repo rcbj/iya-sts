@@ -503,9 +503,11 @@ const ACTIONS = [
   { action: 'logout.backchannel', category: 'session',
     label: 'A back-channel Logout Token reached a relying party, or finally ' +
            'did not' },
-  // THE SCHEDULER (2026-09-22, #49). A row per run when it finishes —
-  // succeeded, failed or abandoned — and one when a run is queued by hand;
-  // never one per tick. `cluster/scheduler.ts`.
+  // THE SCHEDULER (2026-09-22, #49). A row when a run fails or is
+  // abandoned, and one when a run is queued by hand. A run that succeeded
+  // is the run row only (`scheduler.runs`); it is not an audit event, so
+  // an export does not send one. Never one per tick.
+  // `cluster/scheduler.ts`.
   // THE MAIL CHANNEL (#63). One row when a message is QUEUED and one when it
   // reaches its final state — sent, captured or dead — never one per
   // attempt; and one per message the channel REFUSED to queue.
@@ -800,6 +802,9 @@ const ACTIONS = [
   // administrator is a trusted source.
   { action: 'admin.mail.set', category: 'admin',
     label: 'A person\'s address was set by an administrator' },
+  // Sign-in names (#644). The address is absent from the detail.
+  { action: 'admin.pseudonym.set', category: 'admin',
+    label: 'A person\'s sign-in names were changed by an administrator' },
   { action: 'admin.mfa.totp.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
@@ -1659,7 +1664,23 @@ const ACTIONS = [
   { action: 'report.query', category: 'admin',
     label: 'A report query was run' },
   { action: 'report.job.retrieve', category: 'admin',
-    label: 'A report result was retrieved' }
+    label: 'A report result was retrieved' },
+  // AUDIT EXPORT (#641). A destination's configuration changed, or an
+  // operator asked it to take a synthetic event. The delivery itself is
+  // service.failure, and those rows carry detail.exportSkip so the export
+  // does not ship its own failures back out.
+  { action: 'admin.audit-export.add', category: 'admin',
+    label: 'An audit export destination was added' },
+  { action: 'admin.audit-export.update', category: 'admin',
+    label: 'An audit export destination was updated' },
+  { action: 'admin.audit-export.remove', category: 'admin',
+    label: 'An audit export destination was removed' },
+  { action: 'admin.audit-export.enable', category: 'admin',
+    label: 'An audit export destination was enabled' },
+  { action: 'admin.audit-export.disable', category: 'admin',
+    label: 'An audit export destination was disabled' },
+  { action: 'admin.audit-export.test', category: 'admin',
+    label: 'An audit export destination was tested' }
 ];
 
 const CATEGORY_OF_ACTION = {};
@@ -2371,6 +2392,15 @@ function recordHttp(req, res, detail) {
   const marked = errorCodes.codeOf(res);
   const errorCode = marked ||
                     errorCodes.fallbackFor(res.statusCode, !!info.matched);
+  // A SCHEDULER JOB CALLING THIS SERVICE. The poll of its own receiver
+  // (`POST /ssf/poll`, `ssf.ts`) sets this. A 200 is the run row. A
+  // refusal is still recorded.
+  if (res.locals && res.locals.auditQuietWhenOk && !errorCode &&
+      outcomeOfStatus(res.statusCode) === 'success') {
+    log.debug("Leaving recordHttp(). A scheduler job's own call " +
+              "succeeded; not recorded.");
+    return null;
+  }
   // A FAILURE IS RECORDED WITH THE FIREHOSE OFF. `audit.protocolCalls` exists
   // to silence the JWKS polls and metadata fetches; a refused request is the
   // row somebody turned the firehose off to be able to find.
@@ -2608,6 +2638,26 @@ function list() {
   const out = merged().reverse();
   log.debug("Leaving list(). " + out.length + " event(s) returned, newest " +
                                               "first.");
+  return out;
+}
+
+// THIS PROCESS'S RING, OLDEST FIRST (#641). Delivery reads this and not
+// list(): list() is every process's events, newest first, and a second
+// process delivering those would send each event twice. The array is the
+// local ring, oldest at the front — the same copy merged() takes as `mine`.
+// A copy, so a record during a tick cannot move the ground under the tick.
+/**
+ * Lists this process's own events, oldest first.
+ *
+ * The export job delivers these. `list()` is every process, newest first,
+ * and is the wrong source for a cursor.
+ *
+ * @returns a copy of this process's ring
+ */
+function localEvents() {
+  log.debug("Entering localEvents(). " + events.length + " event(s) held.");
+  const out = events.slice(0);
+  log.debug("Leaving localEvents(). " + out.length);
   return out;
 }
 
@@ -2966,6 +3016,7 @@ module.exports = {
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
   list: list,
+  localEvents: localEvents,
   authenticationEventsFor: authenticationEventsFor,
   authenticationEventsForPerson: authenticationEventsForPerson,
   summary: summary,

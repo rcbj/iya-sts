@@ -643,6 +643,10 @@
     "en": "00a6e30371abdc2d",
     "text": "管理员设置了某人的地址"
   },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "管理员更改了一个人的登录名"
+  },
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "操作员清除了某人的身份验证器应用"
@@ -1822,5 +1826,29 @@
   "audit.actions.report.job.retrieve.label": {
     "en": "2f81320658ea37b8",
     "text": "已获取报表结果"
+  },
+  "audit.actions.admin.audit-export.add.label": {
+    "en": "8c0a46b4a7286c31",
+    "text": "已添加审计导出目标"
+  },
+  "audit.actions.admin.audit-export.update.label": {
+    "en": "5dffabe5c58492fb",
+    "text": "已更新审计导出目标"
+  },
+  "audit.actions.admin.audit-export.remove.label": {
+    "en": "a1ce8547b7eb7431",
+    "text": "已移除审计导出目标"
+  },
+  "audit.actions.admin.audit-export.enable.label": {
+    "en": "8b7b2ef9c33fe419",
+    "text": "已启用审计导出目标"
+  },
+  "audit.actions.admin.audit-export.disable.label": {
+    "en": "7dbb1b1d2bdf4aec",
+    "text": "已禁用审计导出目标"
+  },
+  "audit.actions.admin.audit-export.test.label": {
+    "en": "e523fcd6d4957e6d",
+    "text": "已测试审计导出目标"
   }
 }

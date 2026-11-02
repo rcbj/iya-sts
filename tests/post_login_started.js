@@ -44,7 +44,8 @@ const log = require('bunyan').createLogger({ name: 'post_login_started',
 const PQC = 'pqc-passkey-migration';
 
 // The directory double: profile entries as `ou=postLoginPolicies` holds
-// them, and each person's groups.
+// them, each person's groups, and the post-login profile each group names
+// (`stsPostLoginPolicy`, #1239) as the group index answers it.
 function directoryDouble() {
   log.debug("Entering directoryDouble().");
   const out = {
@@ -56,6 +57,8 @@ function directoryDouble() {
       dan: ['cn=staff,ou=groups', 'cn=excluded,ou=groups'],
       eve: ['cn=staff,ou=groups', 'cn=pilot,ou=groups']
     },
+    // A group's `stsPostLoginPolicy`, by DN; '' or absent names nothing.
+    groupPolicy: {},
     groupCalls: 0,
     allPostLoginPolicies: function () {
       return out.entries;
@@ -70,6 +73,14 @@ function directoryDouble() {
       out.groupCalls += 1;
       return (out.memberOf[u] || []).map(function (dn) {
         return { cn: dn.split(',')[0].slice(3), dn: dn };
+      });
+    },
+    personGroupReferences: function (u, attribute) {
+      out.groupCalls += 1;
+      out.askedAttribute = attribute;
+      return (out.memberOf[u] || []).map(function (dn) {
+        return { cn: dn.split(',')[0].slice(3), dn: dn,
+                 value: out.groupPolicy[dn] || '' };
       });
     }
   };
@@ -234,25 +245,28 @@ async function run(t) {
   // D. Exclusion.
   b.directory.entries = [
     entry('excluded', { stsPostLoginEnabled: 'FALSE',
-                        stsPostLoginSelectGroup: 'cn=excluded,ou=groups',
                         stsPostLoginPrecedence: '10' })
   ];
+  b.directory.groupPolicy['cn=excluded,ou=groups'] = 'excluded';
   t.equal(pl.dueFor('dan'), null,
-    'D. a named profile with enabled off excludes its members');
+    'D. a named profile with enabled off excludes the members of the ' +
+    'group naming it (stsPostLoginPolicy, #1239)');
+  t.equal(b.directory.askedAttribute, 'stsPostLoginPolicy',
+    'the group reference asked is the post-login one');
   t.check(!!pl.dueFor('ann'),
     'and default off excludes nobody: a member it does not reach is due');
 
   // E. The rules are the selected profile's.
   b.directory.entries.push(entry('pilot', {
     stsPostLoginEnabled: 'FALSE',
-    stsPostLoginSelectGroup: 'cn=pilot,ou=groups',
     stsPostLoginPrecedence: '50' }));
+  b.directory.groupPolicy['cn=pilot,ou=groups'] = 'pilot';
   t.equal(pl.dueFor('eve'), null,
     'E1. a named profile off that reaches a member excludes her from ' +
     'every started activity');
+  b.directory.groupPolicy['cn=staff,ou=groups'] = 'staffrules';
   b.directory.entries = [b.directory.entries[0], entry('staffrules', {
     stsPostLoginEnabled: 'FALSE',
-    stsPostLoginSelectGroup: 'cn=staff,ou=groups',
     stsPostLoginPrecedence: '200',
     stsPostLoginSnoozeDays: '3', stsPostLoginGraceDays: '14',
     stsPostLoginMethod: 'alongside' })];
@@ -262,7 +276,6 @@ async function run(t) {
     'when no enabling one reaches her');
   b.directory.entries = [b.directory.entries[0], entry('staffrules', {
     stsPostLoginEnabled: 'TRUE',
-    stsPostLoginSelectGroup: 'cn=staff,ou=groups',
     stsPostLoginPrecedence: '200',
     stsPostLoginSnoozeDays: '3', stsPostLoginGraceDays: '14',
     stsPostLoginMethod: 'alongside' })];
@@ -275,6 +288,8 @@ async function run(t) {
     JSON.stringify(ruled));
   // The default profile off, carrying rules of its own: a started activity
   // takes them, `enabled` alone overridden.
+  b.directory.groupPolicy['cn=staff,ou=groups'] = '';
+  b.directory.groupPolicy['cn=pilot,ou=groups'] = '';
   b.directory.entries = [b.directory.entries[0], entry('default', {
     stsPostLoginEnabled: 'FALSE', stsPostLoginSnoozeDays: '5',
     stsPostLoginGraceDays: '9', stsPostLoginMethod: 'alongside' })];
@@ -298,12 +313,13 @@ async function run(t) {
   t.equal(pl.dueFor('ann'), null, 'G2. ended, it asks nobody');
   b.directory.entries.push(entry('staffrules', {
     stsPostLoginEnabled: 'TRUE',
-    stsPostLoginSelectGroup: 'cn=staff,ou=groups',
     stsPostLoginPrecedence: '200' }));
+  b.directory.groupPolicy['cn=staff,ou=groups'] = 'staffrules';
   const byPolicy = pl.dueFor('ann');
   t.equal(byPolicy && byPolicy.askedBy, 'policy',
     'G3. a person the policy itself enables is still asked');
   b.directory.entries.pop();
+  b.directory.groupPolicy['cn=staff,ou=groups'] = '';
 
   // H. No group: the realm.
   const realm = await b.activities.start({ activity: PQC }, ctx);

@@ -1516,6 +1516,13 @@ First entry wins, because the walk stopped at its first hit and the store
 iterates in insertion order — so the entry the index names is the entry the walk
 would have returned.
 
+**A LIVE `stsPseudonym` IS A NAME IN THAT INDEX (#644).** `writePseudonyms()`
+is the one writer. A value it has stored is found the way a `uid` is,
+lower-cased, and `name_keys` is that same set. A pending verification
+address is absent from the index, so signing in with it still finds whoever
+the fold already named. The issued subject stays `urn:uuid:<entryUUID>`.
+The issued username, once the entry exists, is the filing name.
+
 **IT IS MAINTAINED INCREMENTALLY, WHICH `groupIndexNow()` BESIDE IT DELIBERATELY
 IS NOT, and the difference is the shape of the load rather than a change of
 mind.** A group index is read once per token and written rarely, so rebuilding
@@ -4058,6 +4065,18 @@ this directory's:
 * **`peopleMissing()` IS A WALK**, said at the function: no index records
   what an entry LACKS. It answers null in a windowed process, where the
   directory is in the store, and the page gives the RFC 4515 filter instead.
+  Since #1241 it may be handed a function instead of a list: each person's
+  username and own `stsAttributePolicy` in, the names their profile requires
+  out, in the same one walk.
+* **NAMED PROFILES (#1241)**: the slot carries four optional hooks beside
+  the nine — `personGroupReferences`, `groupsNamingPolicy`,
+  `peopleNamingPolicyAsync` and `groupReferences` (the references of groups
+  named by cn or DN, off the group index, for a group a write adds). Optional
+  so the bulk import's read-only slot installs without them. Every door
+  above asks the profile of the person it writes; the person editor hands the
+  policy the whole entry as the edit leaves it, and `checkCreateValues()`
+  holds a policy reference set at a create to its closed set (STS-LDAP-0106),
+  as `update()` does an edit.
 
 ## `userCertificate`: WHAT AN OUTSIDE CERTIFICATE IS STORED IN, AND HOW IT IS FOUND (#1061, 2026-10-27)
 
@@ -4108,3 +4127,50 @@ and how a presented one finds it:
   Entries it seeded before stay, and sign nobody in unless the certificate is
   stored on them.
 
+
+## A GROUP OR A PERSON NAMES ITS POLICY (#1235, 2026-10-30; `common/CLAUDE.md` 3cx)
+
+rcbj on #1234: what a named policy covers names it, and the policy lists
+nothing. This file holds the directory's half; the ranking and the recipe a
+policy kind follows are `common/policy_selection.ts`'s (3cx).
+
+* **A group names its policy of each kind in one attribute on its own
+  entry**: `stsPasswordPolicy`, `stsAuthnPolicy`, `stsPasskeyPolicy`,
+  `stsLocalePolicy`, `stsAttributePolicy`, `stsPostLoginPolicy`
+  (`GROUP_POLICY_REFERENCES`). **All six are in the group index from the
+  day the first kind adopted one** (`policies` on each indexed group, and
+  `byPolicy`, attribute → policy → group keys), so a kind adopting its
+  reference changes nothing here. `personGroupReferences(key, attribute)`
+  rides `groupsOfUser()` — the person's groups and the policy each names,
+  no walk — and `groupsNamingPolicy(attribute, name)` is one map read. A
+  kind hands both to its policy module in its `setDirectory()` hooks, as
+  the passkey policy's do.
+* **`setGroupPolicy()` is the one door that writes one**: the attribute must
+  be one a kind declared (`PolicySelection.declareReference('group', ...)`,
+  STS-LDAP-0194) and the value empty, `default` or a named policy the realm
+  holds (STS-LDAP-0195). It is the group writer's sixth member (the console
+  slot is validated whole), reached from the group page's pickers and
+  `POST /admin-api/groups/set-policy`. The directory is schemaless, so no
+  schema row was owed; an `ldapmodify` can still write anything, and the
+  kind decides what a dangling name means.
+* **A person names theirs on the person editor's Policies tab**: an
+  attribute a kind declared with `declareReference('person', ...)` joins the
+  editor's universe by the declaration alone (the directory is schemaless,
+  and the schema's and the catalogue's lists do not hold a kind's own
+  attribute), and is drawn there as one value from `default` and the
+  realm's named policies, and
+  `update()` refuses another (STS-LDAP-0106). The create form leaves it
+  out: a create does not pass through that check. The names chosen are
+  `stsServiceAccountPolicy` and `stsAttributePolicy` (#1240, #1241).
+  **A kind may also say WHO may hold it** (#1240): the declaration's
+  optional `holderRefusal`, handed the person's attributes, which
+  `update()` asks after the value is held and answers under the kind's own
+  code — the service-account policy's refuses a person who is not a
+  service account (STS-SVCACCT-0048). The LDAP door's half of that kind is
+  `serviceAccountWriteRefusal()`, because `stsServiceAccountPolicy` is one
+  of the service-account attributes (`common/CLAUDE.md` 3cd).
+* **Who names a policy, for a delete's refusal and the Named policies
+  list**: `peopleNamingPolicyAsync(attribute, name, limit)` reads the
+  HOLDERS of the attribute (the store's asked-names index in a window,
+  `passkeyScanAsync()` with a row shape of its own), at most
+  `POLICY_HOLDER_READ`, and says when it stopped first; never the realm.

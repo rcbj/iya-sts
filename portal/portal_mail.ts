@@ -332,8 +332,9 @@ class PortalMail {
                         'STS-HTTP-0017', allowed.detail,
                         { view: { refused: allowed.detail } });
     }
-    const checked = spend ? mailUses.completeVerification(username, token)
-                          : mailUses.checkVerification(username, token);
+    const checked = spend
+      ? await mailUses.completeVerification(username, token)
+      : mailUses.checkVerification(username, token);
     if (!checked.ok) {
       log.debug("Leaving PortalMail.verify(). Refused.");
       const sentence = (checked.errors || [''])[0];

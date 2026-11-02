@@ -501,7 +501,12 @@ const SUBSYSTEMS = [
     where: 'report/',
     what: 'The reports application at /report and its API at /report-api: ' +
           'catalog queries, saved definitions, jobs and stored results ' +
-          '(#956).' }
+          '(#956).' },
+  { id: 'AUDIT', label: 'Audit export',
+    where: 'common/audit_export.ts, mgmt-api/audit_export_api.ts',
+    what: 'Delivery of this process\'s audit events to operator-configured ' +
+          'destinations: syslog, a file, a webhook, Splunk HEC and ' +
+          'LogRhythm (#641).' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -5518,8 +5523,9 @@ const CODES = [
       '5.2): its time step is at or below the last one accepted.',
     spec: 'HTTP 200 one-time code page with the reason' },
   { code: 'STS-AUTHN-0107',
-    summary: 'A password policy save or reset named a profile other than ' +
-      '\'default\'.',
+    summary: 'A password policy save or reset named a profile that is ' +
+      'neither \'default\' nor a name of lower-case letters, digits and ' +
+      'hyphens (at most 64) (#1236; before it, any name but \'default\').',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0108',
     summary: 'A password policy save was refused because a field is missing, ' +
@@ -7222,8 +7228,8 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-AUTHN-0534',
     summary: 'A named authentication policy was not deleted: an application ' +
-      'of this realm still names it (appAuthnPolicy), and would then allow ' +
-      'no mechanism (#1148).',
+      '(appAuthnPolicy) or a group (stsAuthnPolicy, #1237) of this realm ' +
+      'still names it, and would then allow no mechanism (#1148).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-AUTHN-0535',
     summary: 'This realm holds no named authentication policy of that name ' +
@@ -7231,12 +7237,58 @@ const CODES = [
       'that does not exist.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-AUTHN-0536',
-    summary: 'An application names an authentication policy (appAuthnPolicy) ' +
-      'that this realm does not hold — written past the console, or the ' +
-      'policy was deleted by hand — so it allows no mechanism until the ' +
+    summary: 'An application (appAuthnPolicy) or one of the person\'s ' +
+      'groups (stsAuthnPolicy, #1237) names an authentication policy that ' +
+      'this realm does not hold — written past the console, or the policy ' +
+      'was deleted by hand — so the sign-in allows no mechanism until the ' +
       'policy exists or the reference changes (#1148).',
     spec: 'none (logged; the sign-in is refused as for a mechanism the ' +
       'application does not allow)' },
+  { code: 'STS-AUTHN-0537',
+    summary: 'An application (appPasskeyPolicy) or a group ' +
+      '(stsPasskeyPolicy) names a passkey policy that this realm does not ' +
+      'hold — written past the console, or the policy was deleted by hand ' +
+      '— so that reference selects nothing (the default passkey policy, ' +
+      'where nothing else names one) until the policy exists or the ' +
+      'reference changes (#1235).',
+    spec: 'none (logged; the sign-in goes on under the default profile)' },
+  { code: 'STS-AUTHN-0538',
+    summary: 'A named passkey policy was not deleted: an application ' +
+      '(appPasskeyPolicy) or a group (stsPasskeyPolicy) of this realm ' +
+      'still names it (#1235).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0539',
+    summary: 'An application (appPasswordPolicy) or a group ' +
+      '(stsPasswordPolicy) names a password policy that this realm does ' +
+      'not hold — written past the console, or the policy was deleted by ' +
+      'hand — so that reference names nothing: the valid references that ' +
+      'remain still rank, and the default password policy applies where ' +
+      'none remains, until the policy exists or the reference changes ' +
+      '(#1236). Logged once per reference per process.',
+    spec: 'none (logged; the password is held to the remaining ranking)' },
+  { code: 'STS-AUTHN-0540',
+    summary: 'A named password policy was not deleted: an application ' +
+      '(appPasswordPolicy) or a group (stsPasswordPolicy) of this realm ' +
+      'still names it (#1236).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0541',
+    summary: 'A named authentication policy was not saved: its precedence ' +
+      'is not a whole number from 1 to 1000 (#1237).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0542',
+    summary: 'An application (appPostLoginPolicy) or a group ' +
+      '(stsPostLoginPolicy) names a post-login activity policy that this ' +
+      'realm does not hold — written past the console, or the policy was ' +
+      'deleted by hand — so that reference selects nothing (the default ' +
+      'post-login policy, where nothing else names one) until the policy ' +
+      'exists or the reference changes (#1239).',
+    spec: 'none (logged; the sign-in goes on under the profile the other ' +
+      'references select)' },
+  { code: 'STS-AUTHN-0543',
+    summary: 'A named post-login activity policy was not deleted: an ' +
+      'application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of ' +
+      'this realm still names it (#1239).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -14021,6 +14073,13 @@ const CODES = [
       'evidence, and this realm\'s own krb5.crossRealmClassicDelegation is ' +
       'off (both realms must turn it on).',
     spec: 'KDC_ERR_POLICY (12); [MS-SFU] 3.2.5.2' },
+  { code: 'STS-KRB-0243',
+    summary: 'A Kerberos principal named a person the directory found, and ' +
+      'the name on their stored keys differs from that principal even ' +
+      'after both are folded to lower case. The keys stay unused. A ' +
+      'case-only mismatch of the real principal is the older refusal and ' +
+      'is not this code (#644).',
+    spec: 'none (a log line; the principal is unknown to the KDC)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -14365,7 +14424,9 @@ const CODES = [
       'grid, carried a value that is too ' +
       'long, holds a control character, does not have its ' +
       'attribute\'s shape (a country code, a date, a language range, ' +
-      'an http(s) URL, a DN), or was empty for an add or a remove.',
+      'an http(s) URL, a DN), or was empty for an add or a remove; or, ' +
+      'for a policy reference a kind declared (#1235), named neither ' +
+      '`default` nor a named policy of the realm.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-LDAP-0107',
     summary: 'A person\'s attribute edit (#228) added a value the attribute ' +
@@ -14770,6 +14831,51 @@ const CODES = [
       'stored in userCertificate on more than one entry of the bind\'s ' +
       'realm (#1061).',
     spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0194',
+    summary: 'A group\'s policy reference was not set: the attribute is ' +
+      'not one by which a group names a policy of a kind that has ' +
+      'declared one (stsPasskeyPolicy, ...) (#1235).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0195',
+    summary: 'A group\'s policy reference was not set: the value names ' +
+      'neither `default` nor a named policy of that kind this realm holds ' +
+      '(#1235).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-LDAP-0196',
+    summary: 'A person or one of their groups names an attribute policy ' +
+      'this realm does not hold: the reference selects nothing, and the ' +
+      'profile the rest name, or `default`, is applied (#1241).',
+    spec: 'none (a log line; the create or edit goes on)' },
+  { code: 'STS-LDAP-0197',
+    summary: 'A named attribute policy was not deleted: a person or a ' +
+      'group still names it through stsAttributePolicy (#1241).',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0198',
+    summary: 'An LDAP add or modify named stsPseudonym or one of its ' +
+      'pending verification attributes. Those are written by the portal ' +
+      'and by POST /admin-api/users/set-pseudonyms (#644).',
+    spec: 'LDAP constraintViolation (19)' },
+  { code: 'STS-LDAP-0199',
+    summary: 'A pseudonym was refused for its shape: empty, longer than ' +
+      '254 characters, a character a distinguished name reserves, a ' +
+      'distinguished name, a subject, a DID, a SPIFFE identity, a reserved ' +
+      'name, or an eighth value when the person already holds eight ' +
+      '(#644).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0200',
+    summary: 'A pseudonym is already another person\'s uid, RDN or live ' +
+      'pseudonym in this realm, or another cell already holds the name ' +
+      '(#644). The other cell is not named in the answer.',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0201',
+    summary: 'A pseudonym is this person\'s own uid or RDN (#644).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0202',
+    summary: 'An email-shaped pseudonym is already some other person\'s ' +
+      'mail address, or a mail address is already some other person\'s ' +
+      'uid or live pseudonym (#644). Two people may still share a mail ' +
+      'attribute with each other.',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -18183,7 +18289,8 @@ const CODES = [
   { code: 'STS-I18N-0004',
     summary: 'A locale policy save was refused: a field was missing, the ' +
       'default language was not a BCP 47 tag, a yes-or-no field was ' +
-      'neither, or a named profile named no application or too many (#539).',
+      'neither, or a named profile\'s precedence was not a whole number ' +
+      'from 1 to 1000 (#539, #1238).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-I18N-0005',
     summary: 'A locale policy could not be saved: this process has no ' +
@@ -18196,8 +18303,10 @@ const CODES = [
   { code: 'STS-I18N-0007',
     summary: 'A named locale policy save was refused: an application it ' +
       'names is already on another named locale profile, and an ' +
-      'application is on one at most (#539).',
-    spec: 'HTTP 400 (management API)' },
+      'application is on one at most (#539). Retired by #1238: an ' +
+      'application names its locale profile in appLocalePolicy, one value, ' +
+      'so it cannot be on two.',
+    spec: '', retired: true },
   { code: 'STS-I18N-0008',
     summary: 'The language chooser was posted a value that is not a BCP 47 ' +
       'tag a catalog answers, or a malformed form; nothing was set (#539).',
@@ -18225,6 +18334,19 @@ const CODES = [
       '<catalog>.json; nothing is read from disk by a requested name ' +
       '(#570).',
     spec: 'HTTP 404' },
+  { code: 'STS-I18N-0013',
+    summary: 'An application (appLocalePolicy) or a group (stsLocalePolicy) ' +
+      'names a locale policy that this realm does not hold — written past ' +
+      'the console, or the policy deleted by hand. The reference selects ' +
+      'nothing and `default` applies where nothing else names a profile: ' +
+      'the locale policy decides only a fallback language, so it does not ' +
+      'fail closed (#1238).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-I18N-0014',
+    summary: 'A named locale policy was not deleted: an application ' +
+      '(appLocalePolicy) or a group (stsLocalePolicy) of this realm still ' +
+      'names it (#1238).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -20026,6 +20148,12 @@ const CODES = [
       'every other grant).',
     spec: 'RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 ' +
       '(active: false)' },
+  { code: 'STS-GNAP-0908',
+    summary: 'The custom claims configured for a GNAP access-token JWT ' +
+      'could not be read. The token is still minted, without those claims. ' +
+      'The protocol claims are unaffected.',
+    spec: 'RFC 9635 section 3.2.1 (the access token is opaque to the ' +
+      'client); the JWT is what a resource server verifies' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +
@@ -20313,8 +20441,9 @@ const CODES = [
     spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
-    summary: 'A service-account policy profile other than `default` was ' +
-      'named; there is one profile per realm, and nothing assigns a second.',
+    summary: 'A service-account policy profile was named with something ' +
+      'that is neither `default` nor a name of lower-case letters, digits ' +
+      'and hyphens (#1240).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-SVCACCT-0002',
     summary: 'A service-account policy save was refused: a field was missing ' +
@@ -20444,6 +20573,25 @@ const CODES = [
       'satisfied the password policy, so the rotation stopped before pushing ' +
       'anything.',
     spec: 'none — a warning in the log and an audit row' },
+  { code: 'STS-SVCACCT-0047',
+    summary: 'A service account names, in stsServiceAccountPolicy, a ' +
+      'service-account policy the realm does not hold; `default` governs it ' +
+      'until the policy exists or the reference changes (#1240).',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-SVCACCT-0048',
+    summary: 'stsServiceAccountPolicy was written on a person who is not a ' +
+      'service account; only a service account names a service-account ' +
+      'policy (#1240).',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0049',
+    summary: 'A named service-account policy was not deleted because a ' +
+      'service account still names it in stsServiceAccountPolicy (#1240).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0050',
+    summary: 'stsServiceAccountPolicy was written, over LDAP or at a ' +
+      'create, naming neither `default` nor a service-account policy of ' +
+      'this realm (#1240).',
+    spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
@@ -23381,6 +23529,21 @@ const CODES = [
       'application\'s entry was refused: the registry holds no ' +
       'application by that identifier, and none is created (#1227).',
     spec: 'HTTP 400 (API) or a refusal on the application\'s page' },
+  { code: 'STS-ADMIN-0907',
+    summary: 'Setting or clearing the policy a group names of one kind was ' +
+      'refused by the directory (#1235); the refusal carries the ' +
+      'directory\'s own code.',
+    spec: 'HTTP 400 (API) or a refusal on the group\'s page' },
+  { code: 'STS-ADMIN-0908',
+    summary: 'set-pseudonyms was given a body that does not name exactly ' +
+      'one of add, remove or cancelPending, or that names no person ' +
+      '(#644).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0909',
+    summary: 'set-pseudonyms named nobody in this realm, or the directory ' +
+      'refused the value. The directory\'s own STS-LDAP code is recorded ' +
+      'on its log (#644).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -24301,6 +24464,15 @@ const CODES = [
       'directory was installed, or the store could not be read. The page ' +
       'says so and the DN form still works (2026-10-20).',
     spec: 'HTTP 503 JSON' },
+  { code: 'STS-PORTAL-0623',
+    summary: 'A pseudonym change on /account-api could not be attempted: ' +
+      'the directory module was not loaded. A directory refusal records ' +
+      'its own STS-LDAP code instead (#644).',
+    spec: 'HTTP 503 JSON' },
+  { code: 'STS-PORTAL-0624',
+    summary: 'A /portal/verify-pseudonym link is unknown, expired, ' +
+      'mismatched or already spent (#644).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
@@ -25702,7 +25874,84 @@ const CODES = [
       'are off in the realm (authzen.searchEnabled), or the report\'s ' +
       'owner is not a person of the realm it runs in, and a search runs ' +
       'as its owner (#1176).',
-    spec: 'unavailable or forbidden (the job fails)' }
+    spec: 'unavailable or forbidden (the job fails)' },
+  { code: 'STS-AUDIT-0001',
+    summary: 'An audit export destination was refused because its ' +
+      'configuration is not usable: an unknown action or type, a missing ' +
+      'field, or an id that is not the shape the register takes (#641).',
+    spec: 'invalid_request (the act is refused)' },
+  { code: 'STS-AUDIT-0002',
+    summary: 'An audit export act named a destination id this realm does ' +
+      'not have (#641).',
+    spec: 'invalid_request (the act is refused)' },
+  { code: 'STS-AUDIT-0003',
+    summary: 'An audit export secret could not be sealed under the ' +
+      'realm\'s data key, so the destination was not stored (#641).',
+    spec: 'invalid_request (the act is refused)' },
+  { code: 'STS-AUDIT-0004',
+    summary: 'A filesystem audit export path was refused: it is not ' +
+      'absolute, it climbs out of its directory, or it is outside ' +
+      'auditExport.fileRoots (#641).',
+    spec: 'invalid_request (the act is refused); none (a delivery failure)' },
+  { code: 'STS-AUDIT-0005',
+    summary: 'An audit export URL or host was refused: a scheme other than ' +
+      'http or https, userinfo, a private or loopback address the settings ' +
+      'do not allow, or a cloud metadata address, which is never allowed ' +
+      '(#641).',
+    spec: 'invalid_request (the act is refused); none (a delivery failure)' },
+  { code: 'STS-AUDIT-0006',
+    summary: 'A syslog audit export could not be sent: the socket would ' +
+      'not connect, the write failed, or TLS was refused (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0007',
+    summary: 'An HTTP audit export (webhook or Splunk HEC) failed: the ' +
+      'connection failed, the peer answered 401 or 403, or it answered a ' +
+      'status that is not acceptance. The cursor stays, and the destination ' +
+      'retries (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0008',
+    summary: 'A filesystem audit export could not append the event: the ' +
+      'path could not be opened or the write failed (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0009',
+    summary: 'Audit events were trimmed off this process\'s ring before ' +
+      'audit export delivered them. The bookmark of the next undelivered ' +
+      'event was gone. The count is one episode, not a sequence-number ' +
+      'gap, and what remains is delivered (#641).',
+    spec: 'none (a warning)' },
+  { code: 'STS-AUDIT-0010',
+    summary: 'The audit export test event could not be delivered to the ' +
+      'destination. The synthetic event is not an audit row (#641).',
+    spec: 'invalid_request (the test act fails)' },
+  { code: 'STS-AUDIT-0011',
+    summary: 'An audit export destination has been failing for ' +
+      'auditExport.retryMaxPeriodMs, so the event at the head was probed ' +
+      'once more. On failure that event, and further events in the same ' +
+      'run up to the batch, are counted permanently failed without ' +
+      'another send, and the destination waits the first retry delay. ' +
+      'The ids are on the row. Delivery is at-least-once, not ' +
+      'exactly-once (#641).',
+    spec: 'none (a warning)' },
+  { code: 'STS-AUDIT-0012',
+    summary: 'auditExport.skipTlsVerification is on and is ignored, because ' +
+      'this realm is in product mode: webhook, Splunk HEC and syslog TLS ' +
+      'verify the peer. Said once per process (#641).',
+    spec: 'none (a warning)' },
+  { code: 'STS-AUDIT-0014',
+    summary: 'A webhook or Splunk HEC destination answered a redirect. ' +
+      'Audit export does not follow it. The cursor stays and the ' +
+      'destination pauses (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0015',
+    summary: 'A webhook or Splunk HEC destination rejected the event ' +
+      'itself (HTTP 400). That event is counted permanently failed and the ' +
+      'cursor moves past it. The destination is not paused for the events ' +
+      'after it (#641).',
+    spec: 'none (that event is dropped; later events are still delivered)' }
   // ===== END ===============================================================
 ];
 
@@ -25936,7 +26185,12 @@ function tag(code) {
 function escapeCell(text) {
   log.debug("Entering escapeCell().");
   log.debug("Leaving escapeCell().");
-  return String(text || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  // The backslash first, since the pipe's escape adds one: a summary that
+  // carried `\|` would otherwise come out as `\\|`, which Markdown reads as
+  // a literal backslash and a cell boundary (CodeQL js/incomplete-sanitization,
+  // 2026-10-30). No row carries a backslash today, so the page is unchanged.
+  return String(text || '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
 }
 
 /**

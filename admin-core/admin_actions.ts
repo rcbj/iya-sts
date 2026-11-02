@@ -367,6 +367,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
+                       // Sign-in names a person can use in place of their
+                       // uid (#644).
+                       'set-pseudonyms',
                        // The account id a client knows the person by
                        // (#148, Enterprise Extensions `aud_sub`).
                        'set-aud-sub',
@@ -3852,8 +3855,10 @@ class AdminActions {
     }
     const done = result as any;
     let signedOut = null;
+    // ITS OWN PROFILE (#1240), the one the account names.
     if (wanted && done.changed &&
-        !serviceAccountPolicy.allowsDoor('browser')) {
+        !serviceAccountPolicy.allowsDoor('browser',
+          serviceAccountPolicy.profileFor(done.username || who))) {
       signedOut = this.signOutEverywhere(who, ctx,
                                          'becoming a service account');
     }
@@ -4527,24 +4532,93 @@ class AdminActions {
           'send to: it ' + bad + '.'] });
       }
       const dir = require('../common/mail').directory();
-      const written = !!(dir && typeof dir.writeAddress === 'function' &&
-                         dir.writeAddress(who, address, 'admin'));
-      auditLog.record({
-        category: 'admin', action: 'admin.mail.set',
-        actor: ctx.actor, target: who, outcome: written ? 'success'
-                                                        : 'failure',
-        summary: (written ? 'set' : 'could not set') + ' the address of ' +
-                 who,
-        detail: { username: who, via: ctx.via } });
-      log.debug("Leaving AdminActions.usersAction(). set-mail " +
-                (written ? "ok." : "refused."));
-      return written
-        ? { ok: true, mail: address, verified: true,
-            message: 'The address of ' + who + ' is ' + address + ', and ' +
-                     'it is verified: an administrator set it.' }
-        : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
-            'no person called "' + who + '" in this realm, or the directory ' +
-            'would not write the address.'] });
+      const self = this;
+      // writeAddress() is a promise (#644). Returning it from this
+      // synchronous function is what the management API already awaits.
+      return (async function () {
+        const written = dir && typeof dir.writeAddress === 'function'
+          ? await dir.writeAddress(who, address, 'admin') : null;
+        const ok = written === true || (written && written.ok === true);
+        auditLog.record({
+          category: 'admin', action: 'admin.mail.set',
+          actor: ctx.actor, target: who, outcome: ok ? 'success' : 'failure',
+          summary: (ok ? 'set' : 'could not set') + ' the address of ' + who,
+          detail: { username: who, via: ctx.via } });
+        log.debug("Leaving AdminActions.usersAction(). set-mail " +
+                  (ok ? "ok." : "refused."));
+        return ok
+          ? { ok: true, mail: address, verified: true,
+              message: 'The address of ' + who + ' is ' + address + ', and ' +
+                       'it is verified: an administrator set it.' }
+          : self.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
+              'no person called "' + who + '" in this realm, or the ' +
+              'directory would not write the address.'] });
+      })();
+    }
+
+    // ---------------------------------------------------------------------
+    // A PERSON'S SIGN-IN NAMES (#644). An administrator stores an email
+    // live, unless it is already somebody else's address. The directory
+    // records that refusal on its own line; this answer marks 0909 and
+    // does not repeat the name. The directory is reached through the
+    // cache, so a call before it has loaded does not start a load.
+    // ---------------------------------------------------------------------
+    if (action === 'set-pseudonyms') {
+      const who = String(body.user || body.username || '').trim();
+      const hasAdd = Object.prototype.hasOwnProperty.call(body, 'add');
+      const hasRemove = Object.prototype.hasOwnProperty.call(body,
+                                                              'remove');
+      const hasCancel = Object.prototype.hasOwnProperty.call(body,
+                                                              'cancelPending');
+      const picked = (hasAdd ? 1 : 0) + (hasRemove ? 1 : 0) +
+                     (hasCancel ? 1 : 0);
+      const add = String(body.add == null ? '' : body.add).trim();
+      const remove = String(body.remove == null ? '' : body.remove).trim();
+      const cancelText = String(body.cancelPending == null ? ''
+                                 : body.cancelPending).trim().toLowerCase();
+      const cancelYes = cancelText === 'true' || cancelText === 'on' ||
+                        cancelText === '1' || cancelText === 'yes';
+      if (!who || picked !== 1 || (hasAdd && !add) ||
+          (hasRemove && !remove) || (hasCancel && !cancelYes)) {
+        log.debug("Leaving AdminActions.usersAction(). A malformed " +
+                  "set-pseudonyms.");
+        return this.refused('STS-ADMIN-0908', { ok: false, errors: ['Name ' +
+          'the person and exactly one of add, remove or cancelPending.'] });
+      }
+      const op = hasAdd ? 'add' : (hasRemove ? 'remove' : 'cancel');
+      const value = hasAdd ? add : (hasRemove ? remove : '');
+      const cached = require.cache[require.resolve('../ldap/ldap_server')];
+      const dir = cached && cached.exports;
+      const self = this;
+      return (async function () {
+        const written = dir && typeof dir.writePseudonyms === 'function'
+          ? await dir.writePseudonyms(who, { op: op, value: value,
+                                             source: 'admin' })
+          : null;
+        const ok = !!(written && written.ok === true);
+        const names = ok && written.pseudonyms ? written.pseudonyms : [];
+        const email = value
+          ? require('../common/mail_transports').addressProblem(value) === ''
+          : false;
+        auditLog.record({
+          category: 'admin', action: 'admin.pseudonym.set',
+          actor: ctx.actor, target: who,
+          outcome: ok ? 'success' : 'failure',
+          summary: (ok ? 'changed' : 'could not change') +
+                   ' the sign-in names of ' + who,
+          detail: { username: who, via: ctx.via, op: op,
+                    length: names.length, email: email } });
+        log.debug("Leaving AdminActions.usersAction(). set-pseudonyms " +
+                  (ok ? "ok." : "refused."));
+        return ok
+          ? { ok: true, pseudonyms: names,
+              pending: written.pending === true ? null
+                                                : (written.pending || null),
+              message: 'The sign-in names of ' + who + ' were changed.' }
+          : self.refused('STS-ADMIN-0909', { ok: false, errors: ['There is ' +
+              'no person called "' + who + '" in this realm, or the ' +
+              'directory would not write the name.'] });
+      })();
     }
 
     // ENTERPRISE EXTENSIONS SECTION 2.3 (#148): the account id a client
@@ -4984,9 +5058,28 @@ class AdminActions {
       // exists, so a refused owner or destination leaves nobody behind as an
       // ordinary person.
       const asServiceAccount = this.truthy(body.serviceAccount);
+      // THE NAMED SERVICE-ACCOUNT POLICY A CREATE NAMES (#1240), a field
+      // like any other on the form: held only by a service account, naming
+      // one the realm holds, and the policy whose `requireOwner` the
+      // precheck below asks.
+      const typedReference = typed.stsServiceAccountPolicy;
+      const policyReference = Array.isArray(typedReference)
+        ? typedReference[0] : typedReference;
+      const referenceRefused = this.deps.serviceAccountPolicy.writeRefusal({
+        stsServiceAccount: asServiceAccount ? 'TRUE' : '',
+        stsServiceAccountPolicy: policyReference === undefined ? ''
+          : String(policyReference) });
+      if (referenceRefused) {
+        log.debug("Leaving AdminActions.usersAction(). The service-account " +
+                  "policy reference was refused before the create.");
+        return this.refusedBy(referenceRefused.code,
+          { ok: false, errors: [referenceRefused.message] });
+      }
       if (asServiceAccount) {
         const { serviceAccounts } = this.deps;
-        const precheck = serviceAccounts.check(body, '');
+        const precheck = serviceAccounts.check(
+          Object.assign({}, body, { policy: policyReference === undefined
+            ? '' : String(policyReference) }), '');
         if (precheck.ok !== true) {
           log.debug("Leaving AdminActions.usersAction(). The service " +
                     "account was refused before the create.");
@@ -5340,6 +5433,25 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0896', result);
       }
       log.debug("Leaving AdminActions.groupsAction(). set-mail " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
+    // A GROUP NAMES ITS POLICY OF A KIND (#1235, rule 3cx): the group page's
+    // picker and `POST /admin-api/groups/set-policy`, both reaching the
+    // directory's one writer, which checks the attribute is a declared
+    // reference and the value `default` or a named policy of the realm.
+    if (action === 'set-policy') {
+      const result = groupWriter.setGroupPolicy(
+        String(body.group || '').trim(), String(body.attribute || '').trim(),
+        String(body.policy || '').trim(),
+        { origin: 'console', channel: 'console',
+          actor: String(body.actor || '') });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). set-policy refused.");
+        return this.refusedBy('STS-ADMIN-0907', result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). set-policy " +
                 (result.changed ? "changed." : "already so."));
       return result;
     }
@@ -6753,8 +6865,9 @@ class AdminActions {
     // ---------------------------------------------------------------------
     // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES (rcbj,
     // 2026-10-01), from the Custom claims section of its OAuth / OpenID
-    // Connect tab and the Custom SAML attributes section of its SAML tab.
-    // `set` names one of the five claim sets; `set-custom-claim` adds a row
+    // Connect tab, the Custom SAML attributes section of its SAML tab, and
+    // the Custom claims section of its GNAP tab (#1250).
+    // `set` names one of the claim sets; `set-custom-claim` adds a row
     // or replaces the row of the same name, `remove-custom-claim` takes one
     // off. The whole list is held to the realm's rules
     // (`stats.checkClaimEntries()`) before it is written as one JSON array,
@@ -6788,7 +6901,9 @@ class AdminActions {
         id_token: ['oidc', 'oauth2'], userinfo: ['oidc', 'oauth2'],
         saml2: ['saml2'], saml11: ['saml11'],
         // #493: a Kerberos service's own PAC claims.
-        'kerberos-pac': ['krb5']
+        'kerberos-pac': ['krb5'],
+        // #1250: a GNAP client's own access-token JWT claims.
+        gnap_access_token: ['gnap']
       };
       const declaredFamilies = applications.declaredFamiliesOf(entry);
       if (action === 'set-custom-claim' &&
@@ -8948,32 +9063,44 @@ class AdminActions {
                  dn: result.profile.dn, appliesTo: kind.appliesTo }) };
     }
 
-    const result = module.reset(profileName);
-    if (!result.ok) {
-      log.debug("Leaving AdminActions.policiesAction(). reset refused.");
-      return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
-                          { ok: false, errors: result.errors });
-    }
-    if (result.removed) {
-      auditLog.audit({
-        action: kind.auditAction, actor: actor,
-        target: before.dn, channel: 'http',
-        summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
-                 kind.fallsBackTo,
-        detail: { via: ctx.via || '', kind: kind.id,
-                  before: valuesOf(before), after: valuesOf(result.profile) }
-      });
-    }
+    // A RESET MAY ANSWER A PROMISE (#1241): the attribute policy asks who
+    // names a named profile before removing it, and the people are a holder
+    // question asked asynchronously. Every other kind answers at once, and
+    // so does this, for them.
+    const finish = (result) => {
+      log.debug("Entering AdminActions.policiesAction() finish().");
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.policiesAction() finish(). reset " +
+                  "refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0550',
+                            { ok: false, errors: result.errors });
+      }
+      if (result.removed) {
+        auditLog.audit({
+          action: kind.auditAction, actor: actor,
+          target: before.dn, channel: 'http',
+          summary: 'put the ' + noun + ' "' + before.name + '" back to ' +
+                   kind.fallsBackTo,
+          detail: { via: ctx.via || '', kind: kind.id,
+                    before: valuesOf(before),
+                    after: valuesOf(result.profile) }
+        });
+      }
+      log.debug("Leaving AdminActions.policiesAction() finish(). reset.");
+      return { ok: true, kind: kind.id, removed: result.removed,
+               profile: result.profile,
+               rules: module.describe(result.profile),
+               message: result.removed
+                 ? fill(MESSAGES.removed, {
+                   fallsBackTo: kind.fallsBackTo,
+                   rules: module.describe(result.profile).join(', ') })
+                 : fill(MESSAGES.nothingStored,
+                        { fallsBackTo: kind.fallsBackTo }) };
+    };
+    const answered = module.reset(profileName);
     log.debug("Leaving AdminActions.policiesAction(). reset.");
-    return { ok: true, kind: kind.id, removed: result.removed,
-             profile: result.profile,
-             rules: module.describe(result.profile),
-             message: result.removed
-               ? fill(MESSAGES.removed, {
-                 fallsBackTo: kind.fallsBackTo,
-                 rules: module.describe(result.profile).join(', ') })
-               : fill(MESSAGES.nothingStored,
-                      { fallsBackTo: kind.fallsBackTo }) };
+    return answered && typeof (answered as any).then === 'function'
+      ? (answered as Promise<any>).then(finish) : finish(answered);
   }
 
   // ---------------------------------------------------------------------------
@@ -9002,11 +9129,13 @@ class AdminActions {
   // cosmetic: it is the set ids the door being knocked on carries, so a POST to
   // /admin/claims naming `saml2` is refused by name instead of quietly changing
   // a set whose page it is not on and then redirecting to a page that cannot
-  // show what it did. It defaults to all five, which is what a caller that has
-  // not been given a family — nothing today — would get.
+  // show what it did. It defaults to every claim set, which is what a caller
+  // that has not been given a family — nothing today — would get. The pages
+  // and the four doors pass their own lists, so the GNAP set (#1250) is not
+  // among them.
   /**
-   * Changes one of the five claim sets — `/admin/claims`,
-   * `/admin/saml-attributes` and `/admin/userinfo-claims` all post here.
+   * Changes one claim set — `/admin/claims`, `/admin/saml-attributes` and
+   * `/admin/userinfo-claims` all post here.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
    * @param names - the attribute names the form repeated, read at the transport

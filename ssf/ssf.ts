@@ -1685,6 +1685,8 @@ class SharedSignals {
                'ssf.deadLetterMaxPerStream; ' + dead.length +
                ' dead stream(s). Inspect them on /admin/ssf.');
     } else if (summary.expired || summary.orphaned) {
+      // Nothing failed. This count is debug while the sweep is a scheduler
+      // job (common/job_log.ts). A delivery failure is the warning above.
       log.info('ssf: ' + summary.expired + ' dead letter(s) older than ' +
                'ssf.deadLetterRetentionS and ' + summary.orphaned + ' of ' +
                'deleted streams were removed in the "' + realms.currentId() +
@@ -2888,6 +2890,12 @@ class SharedSignals {
         return;
       }
       const result: Json = streams.poll(record, body);
+      // This service's own receiver, collecting on the scheduler. A 200
+      // is the run row. The audit export would otherwise send one line
+      // per poll. A remote receiver's poll is recorded as before.
+      if (record === internal) {
+        res.locals.auditQuietWhenOk = true;
+      }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify({ sets: result.sets,

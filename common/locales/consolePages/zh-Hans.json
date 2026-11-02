@@ -12,6 +12,7 @@
   "title.caches": "缓存",
   "title.cert-issuance": "证书签发",
   "title.audit": "审计日志",
+  "title.audit-export": "审计导出",
   "title.caep": "CAEP",
   "title.caep-sessions-session": "CAEP 会话——单个会话",
   "title.caep-sessions": "CAEP 会话",

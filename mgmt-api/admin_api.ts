@@ -639,6 +639,8 @@ interface AdminApiDeps {
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // Directory → Post-login activities' operations (#1111).
   loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
+  // Monitoring → Audit export's operations (#641).
+  loadAuditExportApi(): typeof import('./audit_export_api');
   // The outbound SCIM clients' operations (#552).
   loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
@@ -765,6 +767,9 @@ class AdminApi {
       },
       loadPostLoginActivitiesApi: function () {
         return require('./post_login_activities_api');
+      },
+      loadAuditExportApi: function () {
+        return require('./audit_export_api');
       },
       loadScimClientsApi: function () {
         return require('./scim_clients_api');
@@ -1548,11 +1553,19 @@ class AdminApi {
     log.debug("Entering AdminApi.policyKindActions().");
     const PROSE = {
       password: {
-        save: 'Writes `cn=default,ou=passwordPolicies` in this realm\'s ' +
-              'directory, REPLACING what is there. Two rules relate fields: ' +
-              '`generatedLength` must be at least `minLength`, and at least ' +
-              'twice `minSymbols` plus two. **A change applies to the NEXT ' +
-              'password set in this realm and to nothing already stored**, ' +
+        save: 'Writes `cn=<profile>,ou=passwordPolicies` in this realm\'s ' +
+              'directory, REPLACING what is there: `default`, or a named ' +
+              'policy, created by its first save (#1236). Two rules relate ' +
+              'fields: `generatedLength` must be at least `minLength`, and ' +
+              'at least twice `minSymbols` plus two. An application ' +
+              '(`appPasswordPolicy`) and a group (`stsPasswordPolicy`) name ' +
+              'a named policy; of those naming one for a person the lowest ' +
+              '`precedence` applies (ties by name), else `default`, and a ' +
+              'reference to a policy the realm does not hold names ' +
+              'nothing, and the rest still rank (STS-AUTHN-0539). A named ' +
+              'policy still named is not removed (STS-AUTHN-0540). **A ' +
+              'change applies to the NEXT password set in this realm and ' +
+              'to nothing already stored**, ' +
               'which is a hash and cannot be re-checked.',
         example: { minLength: 14 }
       },
@@ -1581,7 +1594,16 @@ class AdminApi {
               'password policy\'s `minLength`, and `rotationEnabled` is ' +
               'refused while the realm has no push destination. The seven ' +
               '`allow*` door fields say which password doors a service ' +
-              'account may use.',
+              'account may use. **A NAMED profile (#1240)** — `profile` of ' +
+              'lower-case letters, digits and hyphens, with `precedence` — ' +
+              'is this realm\'s own and governs every service account ' +
+              'whose `stsServiceAccountPolicy` names it (set on the ' +
+              'person\'s Policies tab or by `POST ' +
+              '/admin-api/users/set-attribute`; only a service account may ' +
+              'hold it, STS-SVCACCT-0048). A reference the realm does not ' +
+              'hold gets `default` and is logged (STS-SVCACCT-0047), and a ' +
+              'named profile an account still names is not deleted ' +
+              '(STS-SVCACCT-0049).',
         example: { rotationEnabled: false, allowBrowserSignIn: false }
       },
       // #527: the fourth kind.
@@ -1677,7 +1699,8 @@ class AdminApi {
                    registrationMode: 'realm', lanes: 'realm',
                    clientRules: '' }
       },
-      // #539: the fifth kind, with named profiles chosen by application.
+      // #539: the fifth kind, with named profiles an application or a
+      // group names (#1238).
       locale: {
         save: 'Writes `cn=<profile>,ou=localePolicies` in this realm\'s ' +
               'directory, REPLACING what is there; a realm with no ' +
@@ -1687,8 +1710,12 @@ class AdminApi {
               'mail to a person who names none is written in. ' +
               '`populatePreferredLanguage` (on) gives a person created ' +
               'without a `preferredLanguage` that tag. A named profile ' +
-              'applies to the applications in `selectApplications`, and an ' +
-              'application is on one named profile at most.',
+              'carries a `precedence` (1 to 1000, 100 when left out) and ' +
+              'lists nothing: an application names it in ' +
+              '`appLocalePolicy` and a group in `stsLocalePolicy`, and of ' +
+              'those naming one for a page the lowest precedence applies, ' +
+              'else `default`. A named profile something names is not ' +
+              'deleted (STS-I18N-0014).',
         example: { defaultLocale: 'fr-CA', populatePreferredLanguage: true }
       },
       // #396: the sixth kind, with two acts of its own for the realm's
@@ -1729,11 +1756,19 @@ class AdminApi {
               'the person\'s first invitation Skip is refused ' +
               '(STS-AUTHN-0474) and the sign-in is held until it is done, ' +
               'and a door that cannot ask for it refuses the sign-in ' +
-              '(STS-AUTHN-0473). A named profile ' +
-              'applies to the members of `selectGroups`; the lowest ' +
-              '`precedence` wins, so a named profile with `enabled` off ' +
-              'excludes its groups. `method` (#1100) is how a classical ' +
-              'passkey is migrated: `upgrade` (proved once, then replaced ' +
+              '(STS-AUTHN-0473). A named profile carries a ' +
+              '`precedence` and nothing else: a group names it in ' +
+              '`stsPostLoginPolicy` (`POST /admin-api/groups/set-policy`) ' +
+              'and an application in `appPostLoginPolicy` ' +
+              '(`POST /admin-api/applications/set`). Of the profile the ' +
+              'application signed in to names and those the person\'s ' +
+              'groups name the lowest `precedence` wins, so a named ' +
+              'profile with `enabled` off excludes them; a started ' +
+              'activity\'s mail and the progress report know no ' +
+              'application and select by the groups alone. A profile ' +
+              'something names is not deleted (STS-AUTHN-0543). ' +
+              '`method` (#1100) is how a classical passkey is migrated: ' +
+              '`upgrade` (proved once, then replaced ' +
               'in place on its authenticator), `alongside` (an ML-DSA ' +
               'passkey beside it) or `automatic` (the lanes decide). ' +
               '`attestation` (#1102): `post-quantum` counts an ML-DSA ' +
@@ -1776,8 +1811,8 @@ class AdminApi {
                        description: 'What the profile is for, for the next ' +
                                     'person. Optional.' }
       };
-      // Each selector the kind declares, and no other (#539: the locale
-      // policy selects by application alone).
+      // Each selector the kind declares, and no other (#1235: a precedence;
+      // what a profile covers names it).
       const selects = function (key: string): boolean {
         log.debug("Entering selects().");
         log.debug("Leaving selects().");
@@ -1862,9 +1897,12 @@ class AdminApi {
         description: prose.save + '\n\n**Every field is required** and one ' +
                      'left out is refused by name rather than reset to a ' +
                      'default, because a save that quietly loosened a rule ' +
-                     'nobody mentioned is the mistake nobody sees. The only ' +
-                     'profile is `default`: nothing assigns a profile to a ' +
-                     'person, so another name is refused rather than stored.',
+                     'nobody mentioned is the mistake nobody sees.' +
+                     // A kind with named profiles takes another name
+                     // (#1236: said only of the kinds without them).
+                     (named ? '' : ' The only profile is `default`: ' +
+                       'nothing assigns a profile to a person, so another ' +
+                       'name is refused rather than stored.'),
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -2975,6 +3013,7 @@ class AdminApi {
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
+            loadAuditExportApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
@@ -7809,6 +7848,43 @@ class AdminApi {
             },
             responseDescription: 'The address now on the entry, verified.' },
 
+          { action: 'set-pseudonyms', operationId: 'setUserPseudonyms',
+            summary: 'Add or remove one of somebody\'s sign-in names',
+            description: 'A name the person can sign in with, in place of ' +
+                         'their username (#644). An email is stored live ' +
+                         'unless it is already somebody else\'s address; ' +
+                         'any other name is live at once. `cancelPending` ' +
+                         'drops a name that is still waiting for its link. ' +
+                         'Exactly one of `add`, `remove` and ' +
+                         '`cancelPending`. Audited as `admin.pseudonym.set`. ' +
+                         'The name is not ' +
+                         'repeated on that row.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                add: { type: 'string', maxLength: 254,
+                       description: 'A name to add.' },
+                remove: { type: 'string', maxLength: 254,
+                          description: 'A live name to remove.' },
+                cancelPending: {
+                  oneOf: [{ type: 'boolean' },
+                          { type: 'string', maxLength: 8 }],
+                  description: 'True cancels a name waiting for its link.'
+                }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice', add: 'alice.other' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The live names, and a pending address ' +
+                                 'when one is still waiting.' },
+
           { action: 'set-attribute', operationId: 'setUserAttribute',
             summary: 'Replace every value of one of somebody\'s attributes',
             description: 'One attribute of the person\'s directory entry, ' +
@@ -10156,6 +10232,52 @@ class AdminApi {
             },
             responseDescription: 'Whether anything changed, and the ' +
                                  'address now on the entry.' },
+
+          // THE POLICY A GROUP NAMES (#1235, rule 3cx): the group page's
+          // picker, one per kind a group selects. The directory owns the
+          // check and the refusals.
+          { action: 'set-policy', operationId: 'setGroupPolicy',
+            summary: 'Set or clear the named policy a group names of one ' +
+                     'kind',
+            description: 'Writes one value of `attribute` — the attribute ' +
+                         'by which a group names its policy of a kind, ' +
+                         '`stsPasskeyPolicy` for the passkey policy — onto ' +
+                         'the group\'s own entry, or removes it when ' +
+                         '`policy` is empty. `policy` is `default` or a ' +
+                         'named policy of that kind this realm holds ' +
+                         '(STS-LDAP-0195 otherwise); an attribute no kind ' +
+                         'declares is refused (STS-LDAP-0194). The policy a ' +
+                         'group names competes for each of its members on ' +
+                         'precedence with the policy the application ' +
+                         'names, the policy the person names and the ' +
+                         'policies their other groups name: the lowest ' +
+                         'applies, ties by name, else `default`. A named ' +
+                         'policy a group still names cannot be deleted. ' +
+                         '`GET /admin-api/groups?group=` lists the ' +
+                         'attributes and their choices as ' +
+                         '`policyReferences`. **Idempotent**: the value the ' +
+                         'group already names answers `changed: false`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                group: { type: 'string',
+                         description: 'The group\'s `cn` or its whole DN.' },
+                attribute: { type: 'string',
+                             description: 'The reference attribute, as ' +
+                                          '`policyReferences` lists it.' },
+                policy: { type: 'string',
+                          description: '`default`, a named policy of the ' +
+                                       'kind, or empty to remove it.' }
+              },
+              required: ['group', 'attribute'],
+              examples: [{ group: 'developers',
+                           attribute: 'stsPasskeyPolicy',
+                           policy: 'strict-keys' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and the policy ' +
+                                 'the group now names.' },
 
           // A GROUP'S OWNERS (#603): what the group page's Owners tab saves
           // the moment Add or Remove is pressed.
@@ -14816,23 +14938,18 @@ class AdminApi {
                      'recorded on a different worker is on the list.\n\n' +
                      '**The ?application= ' +
                      'reply\'s ' +
-                     '`page.passkeyPolicies`** (#609) is what the console ' +
-                     'draws as the read-only Passkey policy card of the ' +
-                     'Every protocol sub-tab: every named passkey policy of ' +
-                     'this realm whose `stsPasskeySelectApplication` names ' +
-                     'the application — by its identifier or a client_id, ' +
-                     'trimmed and in any case, as a sign-in is matched — ' +
-                     'in precedence order, each with `name`, `dn`, ' +
-                     '`precedence`, `matched` (the values that named it), ' +
-                     '`selectGroups`, `applies` and `link`; `applies` (the ' +
-                     'lowest precedence naming it by any of its names, else ' +
-                     '`default`); `appliesBy` (for each name, the policy a ' +
-                     'sign-in naming the application by it gets before any ' +
-                     'person is known — an OAuth sign-in names the ' +
-                     'client_id); and `groupPolicies`, how many named ' +
-                     'policies select by group and could still win for a ' +
-                     'given person. Nothing about it is stored on the ' +
-                     'application.\n\n**The ?application= reply\'s ' +
+                     '`page.passkeyPolicies`** (#609, #1235) is what the ' +
+                     'console draws as the read-only Passkey policy card of ' +
+                     'the Every protocol sub-tab: the passkey policy the ' +
+                     'application names in `appPasskeyPolicy` (`named`; ' +
+                     '`default` for none), `missing` (true where the realm ' +
+                     'holds no policy of that name, so the default ' +
+                     'applies), `applies` and its `precedence` (what a ' +
+                     'sign-in for the application gets before any person ' +
+                     'is known), `groupPolicies` (how many named policies ' +
+                     'a group names, which could still win for a member on ' +
+                     'a lower precedence) and `link`.' +
+                     '\n\n**The ?application= reply\'s ' +
                      '`credentials.stored`** (#1227) is what the entry ' +
                      'stores in `userCertificate`, each certificate\'s ' +
                      'SHA-256, subject, issuer, serial and validity, in ' +
@@ -15785,28 +15902,34 @@ class AdminApi {
                      'SAML attributes',
             description: 'Adds a row to one of the application\'s own claim ' +
                          'sets — `access_token`, `id_token`, `userinfo`, ' +
-                         '`saml2`, `saml11` or `kerberos-pac` (#493: added ' +
-                         'to a service ticket for one of its SPNs) — or ' +
-                         'replaces its row of the ' +
+                         '`saml2`, `saml11`, `kerberos-pac` (#493: added ' +
+                         'to a service ticket for one of its SPNs) or ' +
+                         '`gnap_access_token` (#1250: added to a jwt-signed ' +
+                         'GNAP access token and to the JWT inside a ' +
+                         'jwt-encrypted one; the protocol\'s own claims ' +
+                         'win, and groups, roles and the ticked catalogue ' +
+                         'are not added) — or replaces its row of the ' +
                          'same name. At issuance the application\'s rows are ' +
                          'ADDED to the realm\'s set and win by name. A row is ' +
                          'a typed value (`value`, with `${placeholders}`) or a ' +
                          'directory attribute of the person (`attribute`, ' +
-                         'with `multi` and, for the three JSON sets, `type`); ' +
+                         'with `multi` and, for the JSON sets including ' +
+                         '`gnap_access_token`, `type`); ' +
                          'a SAML 2.0 row may carry `nameFormat`, a SAML 1.1 ' +
                          'row `namespace`. Held to the realm\'s rules: a ' +
                          'reserved name, an attribute that may not be ' +
                          'released or an unknown type is refused ' +
-                         '(`STS-REG-0206`), as is an OAuth set on an ' +
-                         'application declared for no OAuth family.',
+                         '(`STS-REG-0206`), as is a set whose protocol the ' +
+                         'application is not declared for.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: {
                 application: { type: 'string' },
                 set: { type: 'string',
-                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11', 'kerberos-pac'] },
+                       enum: ['access_token', 'id_token', 'userinfo',
+                              'saml2', 'saml11', 'kerberos-pac',
+                              'gnap_access_token'] },
                 name: { type: 'string' },
                 value: { type: 'string' },
                 attribute: { type: 'string' },
@@ -15815,10 +15938,10 @@ class AdminApi {
                         enum: ['string', 'number', 'boolean', 'json',
                                'int64', 'uint64'],
                         description: 'The JSON type of an attribute row in ' +
-                                     'the three JSON sets; in `kerberos-pac` ' +
-                                     '(#493) every row\'s PAC claim type, ' +
-                                     'of string, int64, uint64 and ' +
-                                     'boolean.' },
+                                     'the JSON sets, `gnap_access_token` ' +
+                                     'among them; in `kerberos-pac` (#493) ' +
+                                     'every row\'s PAC claim type, of ' +
+                                     'string, int64, uint64 and boolean.' },
                 nameFormat: { type: 'string' },
                 namespace: { type: 'string' }
               },
@@ -15847,8 +15970,9 @@ class AdminApi {
               properties: {
                 application: { type: 'string' },
                 set: { type: 'string',
-                       enum: ['access_token', 'id_token', 'userinfo', 'saml2',
-                              'saml11', 'kerberos-pac'] },
+                       enum: ['access_token', 'id_token', 'userinfo',
+                              'saml2', 'saml11', 'kerberos-pac',
+                              'gnap_access_token'] },
                 name: { type: 'string' }
               },
               required: ['application', 'set', 'name'],
@@ -24601,6 +24725,23 @@ class AdminApi {
                      '`clientsPage` and `clientsPer` (`paging`), apart from ' +
                      'the profiles. `clear-passkey-client` and ' +
                      '`clear-passkey-clients` clear them.' +
+                     '\n\n**A kind with NAMED profiles (#535, #1235)** ' +
+                     'carries `selectors` (the selector fields its save ' +
+                     'takes), `references` (the attribute by which an ' +
+                     '`application`, a `group` and/or a `person` names one ' +
+                     'of its profiles: `appPasskeyPolicy` and ' +
+                     '`stsPasskeyPolicy` for the passkey policy; ' +
+                     '`stsServiceAccountPolicy`, on a service account ' +
+                     'and nobody else, for the service-account policy ' +
+                     '(#1240)) ' +
+                     'and `named`, each profile with its `precedence` and ' +
+                     '`namedBy` — the `applications`, `groups` and ' +
+                     '`people` whose reference names it. Of the profile an ' +
+                     'application names, the profile a person names and ' +
+                     'the profiles the person\'s groups name, the lowest ' +
+                     '`precedence` applies (ties by name), else ' +
+                     '`default`; a profile something still names cannot be ' +
+                     'deleted.' +
                      '\n\nIt is NOT the XACML policy repository, which ' +
                      'is `GET /admin-api/xacml/policies`.',
         mirrors: 'GET /admin/policies',
@@ -24634,7 +24775,19 @@ class AdminApi {
                           description: 'The policies register.' },
         handler: function (req, res) {
           log.debug("Entering the management API policies endpoint.");
-          self.sendJson(res, 200, adminViews.policiesView(req.query));
+          // ASYNCHRONOUS (#1241): the people naming a named profile are a
+          // holder question, asked without a synchronous walk.
+          adminViews.policiesViewAsync(req.query).then(function (view) {
+            log.debug("Entering the policies endpoint's answer.");
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the policies endpoint's answer.");
+          }, function (e) {
+            log.debug("Caught in the management API policies endpoint: " +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-API-0060');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The policies could not be read.'] });
+          });
           log.debug("Leaving the management API policies endpoint.");
         } },
 
@@ -24647,14 +24800,28 @@ class AdminApi {
           // the users action passes. `callerNameOf` reads the gate's
           // verified subject, and '' stays '' when development's open API
           // has no token.
-          const result =
+          // A RESET MAY ANSWER A PROMISE (#1241: who names a named
+          // attribute profile is asked asynchronously).
+          const answer = function (result) {
+            log.debug("Entering the policies action endpoint's answer.");
+            if (!result.ok) {
+              errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                   'STS-API-0060');
+            }
+            self.sendJson(res, result.ok ? 200 : 400, result);
+            log.debug("Leaving the policies action endpoint's answer.");
+          };
+          Promise.resolve(
             adminActions.policiesAction(self.withAction(req, body),
                                         { via: 'api',
-                                          actor: self.callerNameOf(res) });
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0060');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
+                                          actor: self.callerNameOf(res) }))
+            .then(answer, function (e) {
+              log.debug("Caught in the management API policies action " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0060');
+              self.sendJson(res, 500, { ok: false, errors: [
+                'The policy action failed.'] });
+            });
           log.debug("Leaving the management API policies action endpoint.");
         },
         actions: this.policyKindActions() },
@@ -25757,6 +25924,9 @@ class AdminApi {
       // DIRECTORY → POST-LOGIN ACTIVITIES (#1111): the started activities
       // and their four acts (`mgmt-api/post_login_activities_api.ts`).
       ...loadPostLoginActivitiesApi().ROUTES,
+      // MONITORING → AUDIT EXPORT (#641): the destinations and their six
+      // acts (`mgmt-api/audit_export_api.ts`).
+      ...loadAuditExportApi().ROUTES,
       // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
       // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
       ...loadScimClientsApi().ROUTES,

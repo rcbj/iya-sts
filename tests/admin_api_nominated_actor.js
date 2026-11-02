@@ -171,7 +171,6 @@ function passkeyBody(profile, stamp, actor) {
   log.debug("Entering passkeyBody().");
   const fields = Object.assign({}, passkeyPolicy.DEFAULTS, {
     profile: profile,
-    selectApplications: ['aa966-nobody-' + stamp],
     recoveryAssurance: 'not-weaker',
     adminEnrolment: 'on'
   });

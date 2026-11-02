@@ -345,13 +345,16 @@ function childMain() {
            return one.done.ok || one.done.errors;
          })) + ' ' + JSON.stringify(bobRow).slice(0, 200));
 
-    // 2. A named profile selected by application.
+    // 2. A named profile the application names (`appPasskeyPolicy`,
+    // #1235).
     const named = passkeyPolicy.save('pq-strict', Object.assign(
       withDefaults({ postQuantumRequired: 'sign-in' }),
-      { selectApplications: STRICT, precedence: 10 }));
-    note(named.ok, '(a named profile requiring a post-quantum passkey at ' +
-         'sign-in, selected by ' + STRICT + ')',
-         JSON.stringify(named.errors || []));
+      { precedence: 10 }));
+    const pointed = applications.updateApplication(STRICT,
+      { attribute: 'appPasskeyPolicy', mode: 'set', value: 'pq-strict' });
+    note(named.ok && pointed.ok, '(a named profile requiring a ' +
+         'post-quantum passkey at sign-in, named by ' + STRICT + ')',
+         JSON.stringify([named.errors || [], pointed.errors || []]));
     const before = refusals('pqr-alice', 'STS-AUTHN-0356');
     let posted = await usernameless(STRICT, aliceKey);
     note(refusedAct(posted) &&
@@ -574,7 +577,9 @@ function childMain() {
          '9. the device link refuses a classical key while a post-quantum ' +
          'one is required (STS-AUTHN-0356)', JSON.stringify(linked));
 
-    // 10. Off again.
+    // 10. Off again: the application names nothing, so the profile goes.
+    applications.updateApplication(STRICT,
+      { attribute: 'appPasskeyPolicy', mode: 'set', value: 'default' });
     passkeyPolicy.reset('pq-strict');
     passkeyPolicy.save('default', withDefaults());
     posted = await usernameless(STRICT, daveKey);

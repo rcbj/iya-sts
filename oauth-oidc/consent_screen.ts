@@ -505,7 +505,8 @@ class ConsentScreen {
   // IN THE PERSON'S LANGUAGE (#539), chosen in the browser from the
   // authorization request's `ui_locales` (`uiLocales` beside the view), the
   // person's own (`preferredLanguage`), the chooser, the browser's and the
-  // client's locale policy (the shell's `data-sts-locale-default`). What the
+  // locale policy for the client and the person, whose groups may name it
+  // (#1238; the shell's `data-sts-locale-default`). What the
   // request carried is data and is drawn as it is.
   // -------------------------------------------------------------------------
   /**
@@ -869,7 +870,8 @@ class ConsentScreen {
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
                     ['data-sts-authn', authnAt]] as Array<[string, string]>)
         .concat(PageLocale.shellAttributes(req,
-                                           String(record.clientId || ''))),
+                                           String(record.clientId || ''),
+                                           String(record.username || ''))),
       stylesheets: ['/web/card.css'],
       script: CONSENT_SCRIPT_PATH,
       open: '<div class="card consent">',

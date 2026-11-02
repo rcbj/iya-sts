@@ -187,6 +187,8 @@ const clusterConnections = require('./ldap_cluster_connections');
 // LIBRARY that registers nothing and requires nothing of this file; the names
 // it claims are computed here by `createClaimSpec()`.
 const createClaims = require('./directory_create_claims');
+// The shape of one stsPseudonym, shared with the bulk import. A leaf.
+const pseudonymRules = require('./pseudonym_rules');
 // WHO MAY READ WHAT OVER THE SOCKET (#106, 2026-09-23): the rule table, a
 // static utility class that reads nothing and requires nothing, so it can be
 // asked once per entry. This file classifies the reader and the entry and
@@ -395,6 +397,9 @@ const serviceAccounts = require('../common/service_accounts');
 // THE PASSKEY POLICY REGISTER (#527, 2026-10-08), `ou=passkeyPolicies`, for
 // the three policies' reason exactly: a LEAF whose store this directory is.
 const passkeyPolicy = require('../common/passkey_policy');
+// The references a group may make to a policy, declared by the kinds
+// (#1235, rule 3cx): a leaf.
+const PolicySelection = require('../common/policy_selection');
 // THE LOCALE POLICY REGISTER (#539, 2026-10-09), `ou=localePolicies`, for
 // the four policies' reason exactly: a LEAF whose store this directory is.
 // It is also asked at every person entry's creation, for the
@@ -2184,6 +2189,79 @@ function passkeyRowOf(stored) {
            values: (stored.attributes.stswebauthncredential || []).slice(0) };
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE NAMING A POLICY (#1235, rule 3cx): what refuses a named policy's
+// delete, and what its Named policies entry lists, for a kind a person
+// selects by a reference attribute on their own entry
+// (`stsServiceAccountPolicy`, `stsAttributePolicy`). `passkeyScanAsync()`'s
+// walk over the HOLDERS of that attribute — the store's asked-names index in
+// a window, so a question costs the people naming some policy of the kind and
+// never the realm; the realm's own Map outside one — reading at most
+// `POLICY_HOLDER_READ` holders and saying so where it stopped first. A kind
+// hands it to its policy module in its `setDirectory()` hooks.
+// ---------------------------------------------------------------------------
+const POLICY_HOLDER_READ = 10000;
+
+// One holder as the walk hands it over: the name and the reference's value.
+// Called once per holder read: no Entering/Leaving pair, the hot-path
+// exception the code style allows, stated as it requires.
+function policyHolderRowOf(attribute) {
+  return function (stored) {
+    return { id: String(usernameOfEntry(stored) || ''),
+             value: String((stored.attributes[attribute] || [])[0] || '')
+               .trim().toLowerCase() };
+  };
+}
+
+/**
+ * Lists the people of the ambient realm whose reference attribute names a
+ * policy.
+ *
+ * @param attribute - the person's reference attribute
+ * @param name - the policy's name, matched trimmed and in any case
+ * @param limit - the most names to answer (50 when left out)
+ * @returns a promise of `{ people, complete }`: `complete` false where more
+ *   might name it than were answered or read
+ */
+async function peopleNamingPolicyAsync(attribute, name, limit) {
+  log.debug('Entering peopleNamingPolicyAsync(). ' + attribute);
+  const held = String(attribute || '').toLowerCase();
+  const wanted = String(name == null ? '' : name).trim().toLowerCase();
+  if (!held || !wanted) {
+    log.debug('Leaving peopleNamingPolicyAsync(). Not a question.');
+    return { people: [], complete: true };
+  }
+  const most = Math.max(1, Math.floor(Number(limit) || 50));
+  const people = [];
+  let after = '';
+  let read = 0;
+  let complete = false;
+  while (people.length < most && read < POLICY_HOLDER_READ) {
+    const page = await passkeyScanAsync({
+      attribute: held, after: after,
+      readLimit: Math.min(PASSKEY_SCAN_PAGE, POLICY_HOLDER_READ - read),
+      wanted: most - people.length,
+      rowOf: policyHolderRowOf(held),
+      accept: function (row) {
+        if (row.value !== wanted) {
+          return false;
+        }
+        people.push(row.id);
+        return true;
+      }
+    });
+    read += page.read;
+    after = page.next;
+    if (page.done || !page.read) {
+      complete = true;
+      break;
+    }
+  }
+  log.debug('Leaving peopleNamingPolicyAsync(). ' + people.length +
+            (complete ? '.' : ', perhaps more.'));
+  return { people: people, complete: complete };
+}
+
 /**
  * The people of the ambient realm after a cursor, in key order — the holders
  * of `stsWebauthnCredential`, or every person — handed one at a time to
@@ -2205,6 +2283,9 @@ async function passkeyScanAsync(ask) {
   const wanted = Math.max(1, Number(a.wanted) || 1);
   const accept = typeof a.accept === 'function' ? a.accept
     : function () { return false; };
+  // What `accept()` is handed (#1235): the passkey report's row, or the
+  // caller's own shape of the entry.
+  const rowOf = typeof a.rowOf === 'function' ? a.rowOf : passkeyRowOf;
   const base = normalizeDn(usersDn());
   const suffix = ',' + base;
   let after = String(a.after || '');
@@ -2212,7 +2293,7 @@ async function passkeyScanAsync(ask) {
   let yes = 0;
   const take = function (stored) {
     read += 1;
-    const row = passkeyRowOf(stored);
+    const row = rowOf(stored);
     if (row.id && accept(row)) {
       yes += 1;
     }
@@ -2590,7 +2671,8 @@ const windowedUuidCount = cacheRegistry.counter('ldap.windowed-entryuuids');
 const listingCount = cacheRegistry.counter('ldap.subtree-listings');
 
 // Every name this entry answers to, lower-cased and without repeats: its `uid`
-// values and the value of its own RDN.
+// values, each live `stsPseudonym` (#644), and the value of its own RDN. A
+// pending verification address is not a name.
 //
 // **NO `Entering`/`Leaving` PAIR, deliberately**: this is called once per entry
 // inside buildUsernameIndex()'s walk, so at `debug` the pair would be two lines
@@ -2604,7 +2686,9 @@ const listingCount = cacheRegistry.counter('ldap.subtree-listings');
 // it is enforcing.
 function usernameKeysOf(entry) {
   log.debug("Entering usernameKeysOf().");
-  const names = (entry.attributes.uid || []).concat([usernameOfEntry(entry)]);
+  const names = (entry.attributes.uid || [])
+    .concat(entry.attributes.stspseudonym || [])
+    .concat([usernameOfEntry(entry)]);
   const out = [];
   names.forEach(function (value) {
     const key = String(value == null ? '' : value).trim().toLowerCase();
@@ -3597,6 +3681,11 @@ const OWN_NAMES = [
   // the pending link's hash, expiry and the address it was sent to.
   'stsMailVerified', 'stsMailVerifyToken', 'stsMailVerifyExpires',
   'stsMailVerifyAddress',
+  // A LOGIN NAME BESIDE THE UID (#644). The live values are what
+  // usernameKeysOf indexes. The pending triple is one address waiting for
+  // /portal/verify-pseudonym, and it is not a name until that link is spent.
+  'stsPseudonym', 'stsPseudonymVerifyToken', 'stsPseudonymVerifyExpires',
+  'stsPseudonymVerifyAddress',
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so
@@ -4849,8 +4938,9 @@ async function entriesByUuidsAsync(uuids) {
 // `preferredLanguage` of its own: an update never adds one, so a person or a
 // client that removes theirs keeps it removed. The language is the locale
 // policy's for `opts.application` — the application that caused the create,
-// where the door knows it — or the realm's default profile's, and none where
-// that profile's `populatePreferredLanguage` is off.
+// where the door knows it — and the groups already listing the new DN
+// (#1238), or the realm's default profile's, and none where that profile's
+// `populatePreferredLanguage` is off.
 function fillPreferredLanguage(stored, opts) {
   log.debug("Entering fillPreferredLanguage().");
   if (entries.get(normalizeDn(stored.dn)) || !isPersonEntry(stored) ||
@@ -4860,7 +4950,10 @@ function fillPreferredLanguage(stored, opts) {
   }
   let tag = '';
   try {
-    tag = localePolicy.populationFor(String(opts.application || ''));
+    // THE PERSON TOO (#1238): a group that already lists the DN being
+    // created may name a profile; one added later never rewrites the value.
+    tag = localePolicy.populationFor(String(opts.application || ''),
+                                     stored.dn);
   } catch (e) {
     // A policy that cannot be read gives nobody a language rather than
     // refusing the create: the entry is still made, and a page drawn for it
@@ -5317,7 +5410,8 @@ function seed() {
       'fall back to and give a new person. cn=default applies everywhere; ' +
       'while it is absent a realm other than the default one follows the ' +
       'DEFAULT REALM\'s, and the built-in defaults apply where neither ' +
-      'exists. A named profile applies to the applications it lists. ' +
+      'exists. A named profile applies where an application ' +
+      '(appLocalePolicy) or a group (stsLocalePolicy) names it. ' +
       'common/locale_policy.ts holds the schema; GET /admin/policies ' +
       'publishes it.'
   }, { origin: 'seed' });
@@ -6227,16 +6321,16 @@ persistence.setDirectory(directoryHooks);
 // ---------------------------------------------------------------------------
 function subjectForName(name) {
   log.debug('Entering subjectForName(). name=' + name);
-  // A namespaced federated uid is `<relationship>~<subject>`, and the
-  // subject may be an email (#358). identityKeyOf() would strip the
-  // partner's domain and resolve a different person. The whole name is
-  // tried first. A Kerberos principal that merely contains '~' still
-  // falls through to the fold when nothing is stored under the whole name.
-  const text = String(name == null ? '' : name);
-  const tilde = text.indexOf('~');
-  const at = text.indexOf('@');
+  // The whole typed string is tried first (#644). A live pseudonym that
+  // is an email must resolve to its owner, not to whoever holds the local
+  // part. A federated uid is `<relationship>~<subject>` and the subject
+  // may itself be an email (#358); identityKeyOf() would strip that
+  // domain too. The fold runs only when the whole string names nobody.
+  // A Kerberos principal that merely contains '~' still falls through
+  // when nothing is stored under the whole name.
+  const text = String(name == null ? '' : name).trim();
   let located = null;
-  if (tilde > 0 && at > tilde) {
+  if (text) {
     const whole = locateEntry(text);
     if (whole && whole.stored && isPersonEntry(whole.stored)) {
       located = whole;
@@ -6978,6 +7072,12 @@ function namePlan(name) {
   // person that nothing on it recorded. It also makes the next lookup the cheap
   // one — existingUserEntry() finds a uid without a scan.
   const already = existingUserEntry(name);
+  // AN ALIAS DOES NOT BECOME A SECOND UID (#644). existingUserEntry() now
+  // answers a live pseudonym, and merging the typed string onto that entry
+  // would store the alias beside the real uid. The name filed is the one
+  // the entry already has; a create still files the typed name.
+  const filed = already
+    ? String(personNameOf(already) || name) : String(name);
   log.debug('Leaving namePlan().' +
             (already ? ' Folding onto ' + already.dn + '.' : ''));
   // THE FIVE PERSONA ATTRIBUTES ARE INVENTED, AND PRODUCT MODE INVENTS NONE OF
@@ -6990,7 +7090,7 @@ function namePlan(name) {
   // halves of that rule now agree about product mode too.
   const attributes = {
     objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
-    uid: name
+    uid: filed
   };
   if (mode.inventsClaimValues()) {
     attributes.cn = persona.display;
@@ -7001,9 +7101,9 @@ function namePlan(name) {
   }
   log.debug("Leaving namePlan().");
   return {
-    dn: already ? already.dn : 'uid=' + name + ',' + usersDn(),
+    dn: already ? already.dn : 'uid=' + filed + ',' + usersDn(),
     attributes: attributes,
-    merge: already ? { uid: name } : {}
+    merge: already ? { uid: filed } : {}
   };
 }
 
@@ -9904,18 +10004,204 @@ function groupsFor(dn) {
 // The cache itself is declared beside the username index, up by the store —
 // see the note there. Everything else about it is here.
 
+// ---------------------------------------------------------------------------
+// A GROUP NAMES ITS POLICY OF EACH KIND (#1235, rcbj on #1234, 2026-10-30:
+// "groups point at their policy too"; rule 3cx). One single-valued attribute
+// per policy kind on the group's own entry, the person's spelling where the
+// kind maps to both:
+//
+//   stsPasswordPolicy   the password policy (#1236)
+//   stsAuthnPolicy      the authentication policy (#1237)
+//   stsPasskeyPolicy    the passkey policy (#1235)
+//   stsLocalePolicy     the locale policy (#1238)
+//   stsAttributePolicy  the attribute policy (#1241; on a person too)
+//   stsPostLoginPolicy  the post-login activity policy (#1239)
+//
+// All six are INDEXED by the group index from today, whichever kinds have
+// adopted them, so a kind adopting its reference touches nothing here: the
+// index answers a person's groups' references (`personGroupReferences()`,
+// riding `groupsOfUser()`, no walk) and which groups name a policy
+// (`groupsNamingPolicy()`, the inverse map). The directory is schemaless, so
+// no schema row is owed; what a value may be is checked at the one door that
+// writes it, `setGroupPolicy()`, against the kind's declaration
+// (`PolicySelection.declareReference('group', ...)`) — an attribute no kind
+// has declared is refused there.
+// ---------------------------------------------------------------------------
+const GROUP_POLICY_REFERENCES = ['stsPasswordPolicy', 'stsAuthnPolicy',
+  'stsPasskeyPolicy', 'stsLocalePolicy', 'stsAttributePolicy',
+  'stsPostLoginPolicy'];
+
+/**
+ * The person's groups with the policy each names through one reference
+ * attribute (#1235).
+ *
+ * @param key - the person
+ * @param attribute - the group reference attribute
+ * @returns `[{ cn, dn, value }]`, every group the person is in, `value` ''
+ *   where the group names nothing
+ */
+function personGroupReferences(key, attribute) {
+  log.debug('Entering personGroupReferences().');
+  const held = String(attribute || '').toLowerCase();
+  const index = groupIndexNow();
+  const out = (groupsOfUser(key).groups || []).map(function (group) {
+    const indexed = index.byDn.get(normalizeDn(group.dn));
+    return { cn: String(group.cn || ''), dn: String(group.dn || ''),
+             value: String(((indexed && indexed.policies) || {})[held] ||
+                           '') };
+  });
+  log.debug('Leaving personGroupReferences(). ' + out.length + '.');
+  return out;
+}
+
+/**
+ * The groups whose reference attribute names a policy (#1235), from the
+ * group index.
+ *
+ * @param attribute - the group reference attribute
+ * @param name - the policy's name, any case
+ * @returns the groups' cns, in DN order
+ */
+function groupsNamingPolicy(attribute, name) {
+  log.debug('Entering groupsNamingPolicy().');
+  const index = groupIndexNow();
+  const map = index.byPolicy &&
+    index.byPolicy.get(String(attribute || '').toLowerCase());
+  const keys = map ? (map.get(String(name == null ? '' : name).trim()
+    .toLowerCase()) || []) : [];
+  const out = keys.slice(0).sort().map(function (key) {
+    const group = index.byDn.get(key);
+    return group ? String(group.cn) : key;
+  });
+  log.debug('Leaving groupsNamingPolicy(). ' + out.length + '.');
+  return out;
+}
+
+/**
+ * Sets or clears the policy a group names through a reference attribute a
+ * policy kind declared (#1235).
+ *
+ * @param group - the group's `cn` or its whole DN
+ * @param attribute - the reference attribute
+ * @param value - `default`, a named policy of the kind, or '' to remove it
+ * @param options - `origin`, `channel`, `protocol`, `actor`
+ * @returns `{ ok, changed, dn, attribute, value }`, or a coded refusal
+ */
+function setGroupPolicy(group, attribute, value, options) {
+  log.debug('Entering setGroupPolicy().');
+  const opts = options || {};
+  const wantedGroup = String(group == null ? '' : group).trim();
+  const wanted = String(value == null ? '' : value).trim().toLowerCase();
+  if (!wantedGroup) {
+    log.debug('Leaving setGroupPolicy(). No group.');
+    return coded('STS-LDAP-0042', { ok: false, errors: [
+      'Which group? Send `group` with its `cn` or its whole DN.'] });
+  }
+  const reference = PolicySelection.referenceOf('group', attribute);
+  if (!reference || GROUP_POLICY_REFERENCES.indexOf(reference.attribute) < 0) {
+    log.debug('Leaving setGroupPolicy(). Not a reference.');
+    return coded('STS-LDAP-0194', { ok: false, errors: ['"' +
+      String(attribute).slice(0, 64) + '" is not an attribute by which a ' +
+      'group names a policy here. It is one of ' +
+      PolicySelection.referencesOn('group').map(function (one) {
+        return one.attribute;
+      }).join(', ') + '.'] });
+  }
+  const notHeld = PolicySelection.referenceProblem(wanted, reference.choices,
+                                                   reference.attribute);
+  if (notHeld) {
+    log.debug('Leaving setGroupPolicy(). Not a policy here.');
+    return coded('STS-LDAP-0195', { ok: false, errors: [notHeld] });
+  }
+  const dn = DN_SHAPED.test(wantedGroup) ? wantedGroup :
+             groupDnFor(wantedGroup);
+  const existing = readGroupEntry(dn);
+  if (!existing) {
+    log.debug('Leaving setGroupPolicy(). No group there.');
+    return coded('STS-LDAP-0050', { ok: false, errors: [
+      'There is no group at ' + dn + '.'] });
+  }
+  const lower = reference.attribute.toLowerCase();
+  const attributes = {};
+  let heldKey = reference.attribute;
+  Object.keys(existing.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0) {
+      return;
+    }
+    if (name.toLowerCase() === lower) {
+      heldKey = name;
+      return;
+    }
+    attributes[name] = existing.attributes[name].slice(0);
+  });
+  const before = String(((existing.attributes[heldKey] || [])[0]) || '');
+  if (before.toLowerCase() === wanted) {
+    log.debug('Leaving setGroupPolicy(). Unchanged.');
+    return { ok: true, changed: false, dn: existing.dn,
+             attribute: reference.attribute, value: wanted };
+  }
+  if (wanted) {
+    attributes[heldKey] = [wanted];
+  }
+  const written = writeGroupEntry(existing.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving setGroupPolicy(). Not written: ' + written.reason);
+    return coded(errorCodes.codeOf(written),
+                 { ok: false, reason: written.reason,
+             errors: ['The policy could not be written onto ' +
+                      existing.dn + ' (' + written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: 'group.set-policy',
+    actor: String(opts.actor || ''),
+    target: existing.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: wanted
+      ? existing.dn + ' now names the ' + reference.noun + ' ' + wanted
+      : existing.dn + ' no longer names a ' + reference.noun,
+    detail: { attribute: reference.attribute, value: wanted,
+              before: before }
+  });
+  log.debug('Leaving setGroupPolicy().');
+  return { ok: true, changed: true, dn: existing.dn,
+           attribute: reference.attribute, value: wanted };
+}
+
 // `uncounted`: a build for comparison (`groupIndexState()`), not kept and
 // not counted among the builds.
 function buildGroupIndex(uncounted) {
   log.debug('Entering buildGroupIndex().');
   const byMember = new Map();
   const byDn = new Map();
+  // THE POLICY EACH GROUP NAMES (#1235): reference attribute (lower-case) →
+  // policy name (lower-case) → the group keys naming it.
+  const byPolicy = new Map();
+  GROUP_POLICY_REFERENCES.forEach(function (attribute) {
+    byPolicy.set(attribute.toLowerCase(), new Map());
+  });
   eachGroupEntry(function (entry) {
     const rule = groupRuleFor(entry);
     if (!rule) {
       return;
     }
     const groupKey = normalizeDn(entry.dn);
+    const policies = {};
+    GROUP_POLICY_REFERENCES.forEach(function (attribute) {
+      const key = attribute.toLowerCase();
+      const named = String((entry.attributes[key] || [])[0] || '').trim()
+        .toLowerCase();
+      if (!named) {
+        return;
+      }
+      policies[key] = named;
+      const held = byPolicy.get(key);
+      if (!held.has(named)) {
+        held.set(named, []);
+      }
+      held.get(named).push(groupKey);
+    });
     byDn.set(groupKey, {
       dn: entry.dn,
       // The same two sources groupsFor() uses and in the same order, so the cn
@@ -9923,7 +10209,8 @@ function buildGroupIndex(uncounted) {
       // still has a name — its RDN — and a group with no name in a claim would
       // be an empty string in a list.
       cn: (entry.attributes.cn || [])[0] || commonNameOf(entry.dn),
-      rule: rule
+      rule: rule,
+      policies: policies
     });
     // MEMBER_ATTRIBUTES is walked in ITS order, once per group, which is what
     // keeps each `via` list in the order the old code produced: member,
@@ -9966,7 +10253,7 @@ function buildGroupIndex(uncounted) {
   log.debug('Leaving buildGroupIndex(). ' + byDn.size + ' group(s) and ' +
             byMember.size + ' member name(s), built ' + groupIndexes().builds +
             ' time(s) so far.');
-  return { byMember: byMember, byDn: byDn };
+  return { byMember: byMember, byDn: byDn, byPolicy: byPolicy };
 }
 
 // The index, rebuilt if a GROUP may have been written since it was made
@@ -10209,7 +10496,8 @@ if (typeof admin.setGroupWriter === 'function') {
                          addGroupMember: addGroupMember,
                          addGroupOwner: addGroupOwner,
                          removeGroupOwner: removeGroupOwner,
-                         setGroupMail: setGroupMail });
+                         setGroupMail: setGroupMail,
+                         setGroupPolicy: setGroupPolicy });
 } else {
   log.warn('ldap: the admin console offers no setGroupWriter(), so ' +
            '/admin/groups cannot create a group or add a member to one. The ' +
@@ -10442,7 +10730,11 @@ if (typeof passwordPolicy.setDirectory === 'function') {
   passwordPolicy.setDirectory({
     allPasswordPolicies: allPasswordPolicies,
     writePasswordPolicy: writePasswordPolicy,
-    deletePasswordPolicy: deletePasswordPolicy
+    deletePasswordPolicy: deletePasswordPolicy,
+    // THE POLICY EACH OF A PERSON'S GROUPS NAMES, AND THE GROUPS NAMING ONE
+    // (#1236): `stsPasswordPolicy` on the group, from the group index.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy
   });
 } else {
   log.warn('ldap: common/password_policy.ts offers no setDirectory(), so ' +
@@ -10455,7 +10747,11 @@ if (typeof authnPolicy.setDirectory === 'function') {
   authnPolicy.setDirectory({
     allAuthnPolicies: allAuthnPolicies,
     writeAuthnPolicy: writeAuthnPolicy,
-    deleteAuthnPolicy: deleteAuthnPolicy
+    deleteAuthnPolicy: deleteAuthnPolicy,
+    // A person's groups' references and the groups naming a policy
+    // (#1237), from the group index (rule 3cx).
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy
   });
 } else {
   log.warn('ldap: common/authn_policy.ts offers no setDirectory(), so ' +
@@ -10496,6 +10792,10 @@ if (typeof passkeyPolicy.setDirectory === 'function') {
         return { cn: String(group.cn || ''), dn: String(group.dn || '') };
       });
     },
+    // THE POLICY EACH OF THE PERSON'S GROUPS NAMES, AND THE GROUPS NAMING
+    // ONE (#1235): `stsPasskeyPolicy` on the group, from the group index.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy,
     personAttributeValues: function (key, attribute) {
       log.debug("Entering personAttributeValues().");
       const name = String(attribute || '').toLowerCase();
@@ -10520,6 +10820,10 @@ if (typeof localePolicy.setDirectory === 'function') {
     allLocalePolicies: allLocalePolicies,
     writeLocalePolicy: writeLocalePolicy,
     deleteLocalePolicy: deleteLocalePolicy,
+    // WHAT NAMES A PROFILE (#1238): a person's groups' references, and the
+    // groups naming one, from the group index (rule 3cx).
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy,
     // A PERSON'S OWN preferredLanguage (RFC 2798 section 2.7), which ranks
     // above the language chooser and the browser when a page is drawn for
     // them (#539). One attribute of one person, never anything else.
@@ -10562,7 +10866,29 @@ if (typeof attributePolicy.setDirectory === 'function') {
       return CANONICAL_NAMES[lower] || '';
     },
     holders: peopleHolding,
-    missing: peopleMissing
+    missing: peopleMissing,
+    // NAMED PROFILES (#1241, rule 3cx): a person's groups' references and
+    // the groups naming a profile from the group index, the references of
+    // groups a write adds, and the people naming a profile from the
+    // holders of `stsAttributePolicy`.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy,
+    groupReferences: function groupReferences(groups, attribute) {
+      log.debug('Entering groupReferences().');
+      const held = String(attribute || '').toLowerCase();
+      const index = groupIndexNow();
+      const out = (groups || []).map(function (group) {
+        const wanted = String(group == null ? '' : group).trim();
+        const dn = DN_SHAPED.test(wanted) ? wanted : groupDnFor(wanted);
+        const indexed = index.byDn.get(normalizeDn(dn));
+        return { cn: indexed ? String(indexed.cn) : wanted, dn: dn,
+                 value: String(((indexed && indexed.policies) || {})[held] ||
+                               '') };
+      });
+      log.debug('Leaving groupReferences(). ' + out.length + '.');
+      return out;
+    },
+    peopleNamingPolicyAsync: peopleNamingPolicyAsync
   });
 } else {
   log.warn('ldap: common/attribute_policy.ts offers no setDirectory(), so ' +
@@ -10570,7 +10896,7 @@ if (typeof attributePolicy.setDirectory === 'function') {
            'policy cannot be edited.');
 }
 // THE POST-LOGIN ACTIVITY POLICY'S CONTAINER (#1096), guarded the same way,
-// with the passkey policy's group hook (#535) for its group selection.
+// with the passkey policy's group hooks (#535, #1235) for its selection.
 if (typeof postLoginPolicy.setDirectory === 'function') {
   postLoginPolicy.setDirectory({
     allPostLoginPolicies: allPostLoginPolicies,
@@ -10583,7 +10909,11 @@ if (typeof postLoginPolicy.setDirectory === 'function') {
       return (found.groups || []).map(function (group) {
         return { cn: String(group.cn || ''), dn: String(group.dn || '') };
       });
-    }
+    },
+    // THE POLICY EACH OF THE PERSON'S GROUPS NAMES, AND THE GROUPS NAMING
+    // ONE (#1239): `stsPostLoginPolicy` on the group, from the group index.
+    personGroupReferences: personGroupReferences,
+    groupsNamingPolicy: groupsNamingPolicy
   });
 } else {
   log.warn('ldap: common/post_login_policy.ts offers no setDirectory(), so ' +
@@ -11494,6 +11824,9 @@ const SECRET_ATTRIBUTES = [
   'stspasswordresettoken',
   // An address verification link's hash (#63), for the same reason.
   'stsmailverifytoken',
+  // A pseudonym verification link's hash (#644), the same reason: the
+  // token itself never leaves the directory.
+  'stspseudonymverifytoken',
   'stskrb5keys', 'krb5servicekeys',
   // Certificate enrollment (2026-09-13): a private key this service generated
   // for an enrolled certificate, an ACME EAB key and a SCEP challenge record.
@@ -12003,6 +12336,36 @@ function credentialWriteRefusal(req, operation, dn, types) {
     new ldap.UnwillingToPerformError(
       named.join(', ') + ' is a credential and is not written over LDAP; ' +
       'use ' + doors.join('; ')),
+    dn);
+}
+
+// A live pseudonym and its pending link are written by writePseudonyms()
+// only (#644). An LDAP add or modify would skip the username claim, the
+// mail exclusion, and the verification rule. Refused in every mode, the
+// same placement as a credential attribute and a different code: this is
+// not a credential, and operationalWriteRefusal records STS-LDAP-0076.
+const PSEUDONYM_LDAP_ATTRIBUTES = ['stspseudonym', 'stspseudonymverifytoken',
+  'stspseudonymverifyexpires', 'stspseudonymverifyaddress'];
+
+function pseudonymWriteRefusal(req, operation, dn, types) {
+  log.debug('Entering pseudonymWriteRefusal(). ' + operation + ' ' + dn);
+  const named = (types || []).filter(function (type, index, all) {
+    return PSEUDONYM_LDAP_ATTRIBUTES.indexOf(type) !== -1 &&
+           all.indexOf(type) === index;
+  });
+  if (!named.length) {
+    log.debug('Leaving pseudonymWriteRefusal(). None named.');
+    return null;
+  }
+  log.info('ldap: refusing a ' + operation + ' of ' + dn + ' that writes ' +
+           named.join(', ') + '.');
+  log.debug('Leaving pseudonymWriteRefusal(). Refused.');
+  return ldapRefusal(req, 'STS-LDAP-0198', 'a ' + operation + ' of ' + dn +
+    ' named ' + named.join(', ') + ', which are written only through the ' +
+    'portal and POST /admin-api/users/set-pseudonyms',
+    new ldap.ConstraintViolationError(
+      named.join(', ') + ' is not written over LDAP; use the portal or ' +
+      'POST /admin-api/users/set-pseudonyms'),
     dn);
 }
 
@@ -14469,32 +14832,86 @@ if (typeof mailChannel.setDirectory === 'function') {
     // address is not `mail` until its link is clicked). `source` is
     // verifyWrittenMail()'s, plus `link`: the person proved it. The account
     // observer is told, so the FORMER address hears it changed.
-    writeAddress: function (username, address, source) {
+    //
+    // THE ADDRESS IS ALSO CLAIMED AS A USERNAME (#644). Two mail attributes
+    // may still match. What they may not do is match somebody else's uid
+    // or live pseudonym, and a later alias of this address has to see the
+    // claim. An empty address clears mail and claims nothing. The answer
+    // is `{ ok, code }`, never a boolean: a promise is truthy, and a caller
+    // that does not await it would report success before the write.
+    writeAddress: async function (username, address, source) {
       log.debug('Entering writeAddress(). source=' + source);
       const located = locateEntry(String(username || ''));
       const stored = located.stored;
       if (!stored || !usernameOfEntry(stored)) {
         log.debug('Leaving writeAddress(). No person.');
-        return false;
+        return { ok: false, code: '' };
       }
-      const before = attributeSnapshot(stored);
       const value = String(address || '').trim();
+      const fold = value.toLowerCase();
+      let held = null;
       if (value) {
-        stored.attributes.mail = [value];
-      } else {
-        delete stored.attributes.mail;
+        try {
+          held = await createClaims.claim({
+            realm: realms.currentId(), dns: [], usernames: [fold]
+          });
+        } catch (e) {
+          log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
+          log.debug('Leaving writeAddress(). The claim could not be asked.');
+          return { ok: false, code: 'STS-LDAP-0093' };
+        }
+        if (!held || !held.ok) {
+          const store = held && held.reason === 'store';
+          log.info(errorCodes.tag(store ? 'STS-LDAP-0093' :
+                                   'STS-LDAP-0202') +
+                   'ldap: an address was not written.');
+          log.debug('Leaving writeAddress(). The claim was refused.');
+          return { ok: false, code: store ? 'STS-LDAP-0093' :
+                                            'STS-LDAP-0202' };
+        }
+        const other = existingUserEntry(value);
+        if (other && normalizeDn(other.dn) !== normalizeDn(stored.dn)) {
+          if (held.settle) {
+            held.settle(false);
+          }
+          log.info(errorCodes.tag('STS-LDAP-0202') +
+                   'ldap: an address is already somebody else\'s name.');
+          log.debug('Leaving writeAddress(). Another person.');
+          return { ok: false, code: 'STS-LDAP-0202' };
+        }
       }
-      stored.attributes.modifytimestamp = [generalizedTime()];
-      touchDirectory(stored.dn);
-      if (source === 'link' && value) {
-        stored.attributes.stsmailverified = [value];
-      } else {
-        verifyWrittenMail(stored, before, source);
+      try {
+        const before = attributeSnapshot(stored);
+        if (value) {
+          stored.attributes.mail = [value];
+        } else {
+          delete stored.attributes.mail;
+        }
+        stored.attributes.modifytimestamp = [generalizedTime()];
+        // BEFORE the snapshot `touchDirectory()` takes (#644). Setting the
+        // flag afterwards left a durable copy without `stsMailVerified`.
+        if (source === 'link' && value) {
+          stored.attributes.stsmailverified = [value];
+        }
+        touchDirectory(stored.dn);
+        if (source !== 'link' || !value) {
+          verifyWrittenMail(stored, before, source);
+        }
+        noteAccountChange('updated', stored.dn, before,
+                          attributeSnapshot(stored));
+        if (held && held.settle) {
+          held.settle(true);
+        }
+        log.debug('Leaving writeAddress().');
+        return { ok: true, code: '' };
+      } catch (e) {
+        if (held && held.settle) {
+          held.settle(false);
+        }
+        log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
+        log.debug('Leaving writeAddress(). The write failed.');
+        return { ok: false, code: 'STS-LDAP-0093' };
       }
-      noteAccountChange('updated', stored.dn, before,
-                        attributeSnapshot(stored));
-      log.debug('Leaving writeAddress().');
-      return true;
     },
     writeMailFlag: function (username, name, value) {
       log.debug('Entering writeMailFlag(). ' + name);
@@ -14675,6 +15092,382 @@ if (typeof personAssertions.setDirectory === 'function') {
            'password can be verified or set. Development mode is unaffected ' +
            'because it verifies nothing; PRODUCT MODE WOULD REFUSE EVERY ' +
            'SIGN-IN, which credentials.js reports rather than passing.');
+}
+
+// ---------------------------------------------------------------------------
+// stsPseudonym (#644). ONE WRITER. A live value is a login name: it is in
+// usernameKeysOf(), so existingUserEntry() answers it, and the entry seal
+// is the encryption. A pending email is three attributes and not a name
+// until /portal/verify-pseudonym is spent. LDAP add and modify are refused
+// above; this function is what the portal and set-pseudonyms call.
+//
+// The claim is the username claim a create takes, held across the two
+// lookups that can still disagree with it (another person's mail, another
+// person's entry). settle(true) only after a write. A failed claim is not
+// settled. The other cell's id is never in the answer.
+// ---------------------------------------------------------------------------
+function pseudonymList(stored) {
+  log.debug('Entering pseudonymList().');
+  const values = (stored.attributes.stspseudonym || []).map(function (one) {
+    return String(one);
+  });
+  log.debug('Leaving pseudonymList().');
+  return values;
+}
+
+function pseudonymPendingAddress(stored) {
+  log.debug('Entering pseudonymPendingAddress().');
+  const value = (stored.attributes.stspseudonymverifyaddress || [])[0];
+  log.debug('Leaving pseudonymPendingAddress().');
+  return value ? String(value) : '';
+}
+
+function pseudonymAnswer(stored, extra) {
+  log.debug('Entering pseudonymAnswer().');
+  const pending = pseudonymPendingAddress(stored);
+  const answer = {
+    ok: true,
+    username: personNameOf(stored),
+    pseudonyms: pseudonymList(stored),
+    pending: pending || null
+  };
+  Object.keys(extra || {}).forEach(function (key) {
+    answer[key] = extra[key];
+  });
+  log.debug('Leaving pseudonymAnswer().');
+  return answer;
+}
+
+function refusePseudonym(code, sentence) {
+  log.debug('Entering refusePseudonym(). ' + code);
+  // The value is absent: an address in a log line is the thing the pending
+  // attribute exists to keep off the ordinary record.
+  log.info(errorCodes.tag(code) + 'ldap: a pseudonym was refused.');
+  log.debug('Leaving refusePseudonym().');
+  return { ok: false, code: code, sentence: sentence };
+}
+
+function holdsLivePseudonym(stored, fold) {
+  log.debug('Entering holdsLivePseudonym().');
+  const held = pseudonymList(stored).some(function (one) {
+    return one.trim().toLowerCase() === fold;
+  });
+  log.debug('Leaving holdsLivePseudonym().');
+  return held;
+}
+
+function ownPseudonymNames(stored) {
+  log.debug('Entering ownPseudonymNames().');
+  const out = [];
+  (stored.attributes.uid || []).concat([usernameOfEntry(stored)])
+    .forEach(function (value) {
+      const key = String(value == null ? '' : value).trim().toLowerCase();
+      if (key && out.indexOf(key) === -1) {
+        out.push(key);
+      }
+    });
+  log.debug('Leaving ownPseudonymNames().');
+  return out;
+}
+
+function clearPseudonymPending(stored, fold) {
+  log.debug('Entering clearPseudonymPending().');
+  const pending = pseudonymPendingAddress(stored).trim().toLowerCase();
+  if (!fold || pending === fold) {
+    delete stored.attributes.stspseudonymverifytoken;
+    delete stored.attributes.stspseudonymverifyexpires;
+    delete stored.attributes.stspseudonymverifyaddress;
+  }
+  log.debug('Leaving clearPseudonymPending().');
+}
+
+function commitPseudonymChange(stored, before, hadNames, wasCurrent) {
+  log.debug('Entering commitPseudonymChange().');
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  // touchDirectory() moved directoryVersion. The names this entry answers
+  // to have to be folded in now, including a removal: a refresh would leave
+  // the old name pointing here.
+  noteUsernameIndexPut(stored, hadNames, wasCurrent);
+  noteAccountChange('updated', stored.dn, before, attributeSnapshot(stored));
+  log.debug('Leaving commitPseudonymChange().');
+}
+
+// The pending link, checked and not spent. '' when it does not match.
+function pseudonymTokenMatches(stored, token) {
+  log.debug('Entering pseudonymTokenMatches().');
+  const hash = String((stored.attributes.stspseudonymverifytoken ||
+                       [])[0] || '');
+  const expires = Number((stored.attributes.stspseudonymverifyexpires ||
+                          [])[0] || 0);
+  const address = pseudonymPendingAddress(stored);
+  const fold = address.trim().toLowerCase();
+  if (!hash || !expires || expires < Date.now() || !address || !token) {
+    log.debug('Leaving pseudonymTokenMatches(). Not pending.');
+    return '';
+  }
+  const matches = stsCrypto.verifySecret(String(token) + '\n' + fold, hash);
+  log.debug('Leaving pseudonymTokenMatches().');
+  return matches ? address : '';
+}
+
+function pseudonymIsEmail(text) {
+  log.debug('Entering pseudonymIsEmail().');
+  let problem = 'unasked';
+  try {
+    problem = require('../common/mail_transports').addressProblem(text);
+  } catch (e) {
+    // Treated as not an email: the shape rules still apply, and a value
+    // that cannot be classified is not given the pending-mail path.
+    log.debug('Caught in pseudonymIsEmail(): ' + ((e && e.message) || e));
+    problem = 'unasked';
+  }
+  log.debug('Leaving pseudonymIsEmail().');
+  return problem === '';
+}
+
+async function releasePseudonymCell(fold, claimed) {
+  log.debug('Entering releasePseudonymCell().');
+  if (!claimed) {
+    log.debug('Leaving releasePseudonymCell(). Not inserted here.');
+    return;
+  }
+  try {
+    await require('../common/cell_routing').releaseName(realms.currentId(),
+                                                        fold, cells.id());
+  } catch (e) {
+    // The write was already refused. The row expires with the claim.
+    log.debug('Caught in releasePseudonymCell(): ' +
+              ((e && e.message) || e));
+  }
+  log.debug('Leaving releasePseudonymCell().');
+}
+
+/**
+ * Changes one person's pseudonyms.
+ *
+ * @param entryOrUsername - a username, a subject or a DN
+ * @param spec - `op` (`add`, `remove`, `cancel`, `check`), `value`,
+ *   `source` (`self`, `admin`, `link`, `import`) and `token` for a link
+ * @returns a promise of `{ ok, username, pseudonyms, pending }` or
+ *   `{ ok: false, code, sentence }`. `pending: true` carries `token` for
+ *   the caller that mails the link. No person is `{ ok: false, code: '' }`.
+ */
+async function writePseudonyms(entryOrUsername, spec) {
+  log.debug('Entering writePseudonyms().');
+  const asked = spec || {};
+  const op = String(asked.op || '');
+  const located = locateEntry(String(entryOrUsername || ''));
+  const stored = located && located.stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving writePseudonyms(). No person.');
+    return { ok: false, code: '' };
+  }
+  if (op === 'cancel') {
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    if (!pseudonymPendingAddress(stored)) {
+      log.debug('Leaving writePseudonyms(). Nothing pending.');
+      return pseudonymAnswer(stored);
+    }
+    clearPseudonymPending(stored, '');
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    log.debug('Leaving writePseudonyms(). Pending cleared.');
+    return pseudonymAnswer(stored);
+  }
+  if (op === 'check') {
+    const address = pseudonymTokenMatches(stored, asked.token);
+    if (!address) {
+      log.debug('Leaving writePseudonyms(). The link does not check.');
+      return refusePseudonym('STS-PORTAL-0624',
+        'This verification link is not valid.');
+    }
+    log.debug('Leaving writePseudonyms(). The link checks.');
+    return pseudonymAnswer(stored, { address: address });
+  }
+  if (op === 'remove') {
+    const fold = String(asked.value == null ? '' : asked.value)
+      .trim().toLowerCase();
+    const kept = pseudonymList(stored).filter(function (one) {
+      return one.trim().toLowerCase() !== fold;
+    });
+    if (kept.length === pseudonymList(stored).length) {
+      log.debug('Leaving writePseudonyms(). Not held.');
+      return pseudonymAnswer(stored);
+    }
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    if (kept.length) {
+      stored.attributes.stspseudonym = kept;
+    } else {
+      delete stored.attributes.stspseudonym;
+    }
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    log.debug('Leaving writePseudonyms(). Removed.');
+    return pseudonymAnswer(stored);
+  }
+  if (op !== 'add') {
+    log.debug('Leaving writePseudonyms(). Unknown operation.');
+    return refusePseudonym('STS-LDAP-0199',
+      'A pseudonym change is add, remove or cancel.');
+  }
+  const text = String(asked.value == null ? '' : asked.value).trim();
+  const fold = text.toLowerCase();
+  const source = String(asked.source || 'self');
+  if (source === 'link') {
+    const matched = pseudonymTokenMatches(stored, asked.token);
+    if (!matched || matched.trim().toLowerCase() !== fold) {
+      log.debug('Leaving writePseudonyms(). The link does not match.');
+      return refusePseudonym('STS-PORTAL-0624',
+        'This verification link is not valid.');
+    }
+    if (holdsLivePseudonym(stored, fold)) {
+      const before = attributeSnapshot(stored);
+      const hadNames = usernameKeysOf(stored);
+      const wasCurrent = usernameIndexIsCurrent();
+      clearPseudonymPending(stored, fold);
+      commitPseudonymChange(stored, before, hadNames, wasCurrent);
+      log.debug('Leaving writePseudonyms(). Already live.');
+      return pseudonymAnswer(stored);
+    }
+  } else if (holdsLivePseudonym(stored, fold)) {
+    log.debug('Leaving writePseudonyms(). Already held.');
+    return pseudonymAnswer(stored);
+  }
+  const email = pseudonymIsEmail(text);
+  const problem = pseudonymRules.pseudonymProblem(text, {
+    ownNames: ownPseudonymNames(stored),
+    email: email,
+    liveCount: pseudonymList(stored).length
+  });
+  if (!problem.ok) {
+    log.debug('Leaving writePseudonyms(). The shape was refused.');
+    return refusePseudonym(problem.code, problem.sentence);
+  }
+  const verified = String((stored.attributes.stsmailverified || [])[0] || '')
+    .trim().toLowerCase();
+  const liveNow = source === 'admin' || source === 'link' ||
+    source === 'import' || !email ||
+    (source === 'self' && email && verified === fold);
+  if (!liveNow) {
+    const token = asked.token
+      ? String(asked.token)
+      : stsCrypto.randomBytes(32).toString('base64url');
+    const ttl = Number(config.value('mail.verificationTtlMinutes'));
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    stored.attributes.stspseudonymverifytoken =
+      [stsCrypto.hashSecret(token + '\n' + fold)];
+    stored.attributes.stspseudonymverifyexpires =
+      [String(Date.now() + ttl * 60000)];
+    stored.attributes.stspseudonymverifyaddress = [text];
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    log.debug('Leaving writePseudonyms(). Pending.');
+    return pseudonymAnswer(stored, { pending: true, address: text,
+                                     token: token });
+  }
+  let held = null;
+  let cellClaimed = false;
+  try {
+    held = await createClaims.claim({
+      realm: realms.currentId(), dns: [], usernames: [fold]
+    });
+  } catch (e) {
+    log.debug('Caught in writePseudonyms(): ' + ((e && e.message) || e));
+    log.debug('Leaving writePseudonyms(). The claim could not be asked.');
+    return refusePseudonym('STS-LDAP-0093',
+      'Whether that name is already taken could not be decided.');
+  }
+  if (!held || !held.ok) {
+    const store = held && held.reason === 'store';
+    log.debug('Leaving writePseudonyms(). The claim was refused.');
+    return refusePseudonym(store ? 'STS-LDAP-0093' :
+      (email ? 'STS-LDAP-0202' : 'STS-LDAP-0200'),
+      store ? 'Whether that name is already taken could not be decided.'
+            : (email
+              ? 'That address is already somebody else\'s.'
+              : 'Somebody else in this realm already answers to that name.'));
+  }
+  try {
+    const mailHit = email && peopleByMail(text).some(function (one) {
+      return normalizeDn(one.dn) !== normalizeDn(stored.dn);
+    });
+    if (mailHit) {
+      if (held.settle) {
+        held.settle(false);
+      }
+      log.debug('Leaving writePseudonyms(). Another person\'s mail.');
+      return refusePseudonym('STS-LDAP-0202',
+        'That address is already somebody else\'s.');
+    }
+    const other = existingUserEntry(text);
+    if (other && normalizeDn(other.dn) !== normalizeDn(stored.dn)) {
+      if (held.settle) {
+        held.settle(false);
+      }
+      log.debug('Leaving writePseudonyms(). Another person\'s name.');
+      return refusePseudonym('STS-LDAP-0200',
+        'Somebody else in this realm already answers to that name.');
+    }
+    if (holdsLivePseudonym(stored, fold)) {
+      const pending = pseudonymPendingAddress(stored).trim().toLowerCase();
+      if (pending === fold) {
+        const before = attributeSnapshot(stored);
+        const hadNames = usernameKeysOf(stored);
+        const wasCurrent = usernameIndexIsCurrent();
+        clearPseudonymPending(stored, fold);
+        commitPseudonymChange(stored, before, hadNames, wasCurrent);
+        if (held.settle) {
+          held.settle(true);
+        }
+      } else if (held.settle) {
+        // Nothing was written, so the claim is given back now.
+        held.settle(false);
+      }
+      log.debug('Leaving writePseudonyms(). Already live after the claim.');
+      return pseudonymAnswer(stored);
+    }
+    const routing = require('../common/cell_routing');
+    const cellAnswer = await routing.claimName(realms.currentId(), fold,
+                                               cells.id());
+    if (!cellAnswer || !cellAnswer.ok) {
+      if (held.settle) {
+        held.settle(false);
+      }
+      await releasePseudonymCell(fold, !!(cellAnswer && cellAnswer.claimed));
+      log.debug('Leaving writePseudonyms(). Another cell holds the name.');
+      return refusePseudonym('STS-LDAP-0200',
+        'Somebody else in this realm already answers to that name.');
+    }
+    cellClaimed = !!cellAnswer.claimed;
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    const next = pseudonymList(stored).filter(function (one) {
+      return one.trim().toLowerCase() !== fold;
+    });
+    next.push(text);
+    stored.attributes.stspseudonym = next;
+    clearPseudonymPending(stored, fold);
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    if (held.settle) {
+      held.settle(true);
+    }
+    log.debug('Leaving writePseudonyms(). Stored.');
+    return pseudonymAnswer(stored);
+  } catch (e) {
+    if (held && held.settle) {
+      held.settle(false);
+    }
+    await releasePseudonymCell(fold, cellClaimed);
+    log.debug('Caught in writePseudonyms(): ' + ((e && e.message) || e));
+    log.debug('Leaving writePseudonyms(). The write failed.');
+    return refusePseudonym('STS-LDAP-0093',
+      'Whether that name is already taken could not be decided.');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -19342,6 +20135,14 @@ function ldapAddNow(req, res, next) {
     log.debug('Leaving the LDAP add handler. A credential attribute.');
     return next(addCredentialRefusal);
   }
+  const addPseudonymRefusal = pseudonymWriteRefusal(req, 'add', dn,
+    (req.attributes || []).map(function (attr) {
+      return String(attr.type || '').toLowerCase();
+    }));
+  if (addPseudonymRefusal) {
+    log.debug('Leaving the LDAP add handler. A pseudonym attribute.');
+    return next(addPseudonymRefusal);
+  }
   // Every realm's context, not baseDn(): THIS IS THE SOCKET, and the socket
   // has no realm. An
   // LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
@@ -19607,6 +20408,23 @@ function clearPasswordsIn(attributes) {
 // not read is `unavailable` (52), as it is there, and anything else an
 // operations error (STS-LDAP-0143).
 // ---------------------------------------------------------------------------
+// The person an LDAP add or modify writes a password for (#1236), for the
+// profile the off-loop hash uses; '' where the request names no entry, and
+// then the profile is `default`, as `preparePassword()` would make it.
+function prehashUsername(req) {
+  log.debug('Entering prehashUsername().');
+  let out = '';
+  try {
+    out = String(usernameOfEntry({ dn: String((req && req.dn) || '') }) ||
+                 '');
+  } catch (e) {
+    log.debug('Caught in prehashUsername(): ' + ((e && e.message) || e));
+    out = '';
+  }
+  log.debug('Leaving prehashUsername().');
+  return out;
+}
+
 function screenedThen(req, next, passwords, run) {
   log.debug('Entering screenedThen().');
   let breached = null;
@@ -19647,8 +20465,10 @@ function screenedThen(req, next, passwords, run) {
     // A PERSON'S PASSWORD, so the password policy's algorithm and
     // parameters (#847) — the same spec `preparePassword()` checks the hash
     // against before it takes it.
+    // THE PERSON'S OWN PROFILE (#1236): the entry being written, so a named
+    // policy's parameters are the ones hashed with here.
     return stsCrypto.hashPasswordAsync(one, passwordPolicy.hashSpec(
-      passwordPolicy.profileFor())).then(function (hash) {
+      passwordPolicy.profileFor(prehashUsername(req)))).then(function (hash) {
       return { password: one, hash: hash };
     }, function (e) {
       // The body hashes it itself, as it did before #756.
@@ -20046,6 +20866,14 @@ function ldapModifyNow(req, res, next) {
   if (modifyCredentialRefusal) {
     log.debug('Leaving the LDAP modify handler. A credential attribute.');
     return next(modifyCredentialRefusal);
+  }
+  const modifyPseudonymRefusal = pseudonymWriteRefusal(req, 'modify', dn,
+    req.changes.map(function (change) {
+      return String(change.modification.type || '').toLowerCase();
+    }));
+  if (modifyPseudonymRefusal) {
+    log.debug('Leaving the LDAP modify handler. A pseudonym attribute.');
+    return next(modifyPseudonymRefusal);
   }
   const stored = getEntry(dn);
   if (!stored) {
@@ -22658,10 +23486,10 @@ function deleteRole(name) {
 // ---------------------------------------------------------------------------
 // ou=passwordPolicies AS A STORE (2026-09-12).
 //
-// The same three functions a fourth time, named by the PROFILE (`cn=default`).
-// Two things differ from ou=roles and both are small: there is no cap of its
-// own, because `common/password_policy.ts` refuses every profile name but one
-// before a write reaches here; and the CONTAINER is put back if it is missing,
+// The same three functions a fourth time, named by the PROFILE (`cn=default`,
+// or a named policy's name since #1236). Two things differ from ou=roles and
+// both are small: there is no cap of its own beyond the directory's, as for
+// every other policy container; and the CONTAINER is put back if it is missing,
 // because a directory restored from a store written before this container
 // existed has none, and a profile whose parent is absent is an entry an
 // `ldapsearch` of the realm cannot reach.
@@ -23161,7 +23989,8 @@ function peopleHolding(name) {
 
 /**
  * Counts the people in the ambient realm who lack a value of any of the
- * attributes: those the attribute policy would not let be created now (#396).
+ * attributes: those the attribute policy would not let be created now (#396)
+ * — each against their own profile where a function is given (#1241).
  *
  * **A WALK OF THE REALM'S PEOPLE**, said here: there is no index of what an
  * entry LACKS. So it is asked only when a reader asks for it (the policies
@@ -23169,7 +23998,9 @@ function peopleHolding(name) {
  * store, which may hold millions — it is not asked at all: it answers null,
  * and the page gives the LDAP filter that finds them instead.
  *
- * @param names - the required attributes
+ * @param names - the required attributes, or a function from a person's
+ *   username and own `stsAttributePolicy` to the lower-cased names their
+ *   profile requires
  * @returns the count, or null in a windowed process
  */
 function peopleMissing(names) {
@@ -23178,12 +24009,23 @@ function peopleMissing(names) {
     log.debug('Leaving peopleMissing(). Windowed: not walked.');
     return null;
   }
-  const lowered = (names || []).map(function (one) {
+  // EACH PERSON AGAINST THEIR OWN PROFILE (#1241): a function answers the
+  // lower-cased names one person's profile requires, from their username
+  // and their own `stsAttributePolicy`; a list is every person's.
+  const judge = typeof names === 'function' ? names : null;
+  const lowered = judge ? [] : (names || []).map(function (one) {
     return String(one).toLowerCase();
   });
   let n = 0;
   eachEntryInRealm(function (stored) {
-    if (isPersonEntry(stored) && lowered.some(function (lower) {
+    if (!isPersonEntry(stored)) {
+      return;
+    }
+    const wanted = judge
+      ? judge(String(usernameOfEntry(stored) || ''),
+              String((stored.attributes.stsattributepolicy || [])[0] || ''))
+      : lowered;
+    if (wanted.some(function (lower) {
       return !holdsValue(stored, lower);
     })) {
       n += 1;
@@ -23349,7 +24191,10 @@ function resolveServiceAccountOwner(value) {
 //     service, refused in product as pwdHistory is;
 //   * a service account names an owner while the realm's policy requires one;
 //   * the owner is a person or a group, and the destination and the secret's
-//     name come together.
+//     name come together;
+//   * `stsServiceAccountPolicy` (#1240) is held by a service account only,
+//     and names `default` or a named profile of this realm — whose
+//     `requireOwner` is then the one asked above.
 //
 // Answers null or the ldapjs error, recorded by the caller.
 const SERVICE_ACCOUNT_MAINTAINED = ['stspasswordrotatedat',
@@ -23374,6 +24219,16 @@ function serviceAccountWriteRefusal(working, touched) {
       maintained.join(', ') + ' are maintained by this service\'s password ' +
       'rotation and cannot be written'));
   }
+  // THE NAMED POLICY (#1240): only a service account names one, and only
+  // one the realm holds. Asked before the flag's own check, so a person who
+  // is not one is refused it too.
+  const reference = serviceAccountPolicy.writeRefusal(working);
+  if (reference) {
+    log.debug('Leaving serviceAccountWriteRefusal(). The policy reference.');
+    return coded(reference.code === 'STS-SVCACCT-0048' ? 'STS-SVCACCT-0048'
+                   : 'STS-SVCACCT-0050',
+                 new ldap.ConstraintViolationError(reference.message));
+  }
   if (!serviceAccounts.isServiceAccount(working)) {
     log.debug('Leaving serviceAccountWriteRefusal(). Not a service account.');
     return null;
@@ -23390,7 +24245,9 @@ function serviceAccountWriteRefusal(working, touched) {
   }).filter(function (one) {
     return !!one;
   });
-  if (!owners.length && serviceAccountPolicy.requiresOwner()) {
+  if (!owners.length && serviceAccountPolicy.requiresOwner(
+    serviceAccountPolicy.profileForReference(
+      first('stsserviceaccountpolicy'), first('uid')))) {
     log.debug('Leaving serviceAccountWriteRefusal(). No owner.');
     return coded('STS-SVCACCT-0023', new ldap.ConstraintViolationError(
       'this realm\'s service-account policy requires stsServiceAccountOwner ' +
@@ -28997,6 +29854,11 @@ module.exports = {
   autoCreateUser: autoCreateUser,
   createUser: createUser,
   existingUserEntry: existingUserEntry,
+  // The name an entry is filed under, and the one writer of stsPseudonym
+  // (#644). recordAuthentication() asks the first once the directory is
+  // loaded; the portal and set-pseudonyms ask the second.
+  personNameOf: personNameOf,
+  writePseudonyms: writePseudonyms,
   // The census's asynchronous resolution and the census itself (#621), for
   // tests/credential_census_async.js, which compares each with its
   // synchronous twin and counts what the store was asked.
@@ -29041,6 +29903,11 @@ module.exports = {
   // The passkey report's two questions (#942), for its in-process test;
   // the report itself reaches them through its slot.
   passkeyScanAsync: passkeyScanAsync,
+  peopleNamingPolicyAsync: peopleNamingPolicyAsync,
+  personGroupReferences: personGroupReferences,
+  groupsNamingPolicy: groupsNamingPolicy,
+  setGroupPolicy: setGroupPolicy,
+  GROUP_POLICY_REFERENCES: GROUP_POLICY_REFERENCES,
   passkeyPopulationAsync: passkeyPopulationAsync,
   // A started post-login activity's walk of its groups' people after a
   // key cursor (#1111, #1123), reached lazily from the job's body; the

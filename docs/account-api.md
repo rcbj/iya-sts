@@ -23,11 +23,17 @@ the request can change that. This is the portal's own rule (OWASP A01,
 broken access control), now enforced at the API.
 
 The exceptions are the operations behind links that a person is mailed: an
-account activation, a password reset, an address verification and the
-forgotten-password form. Nobody is signed in when those are used, so they
-take no token. Their authority is the single-use secret in the link they
-carry. In the OpenAPI document they are marked `x-access: link` (or
-`public` for the forgotten-password form, which spends nothing).
+account activation, a password reset, an address verification, a sign-in-name
+confirmation and the forgotten-password form. Nobody is signed in when those
+are used, so they take no token. Their authority is the single-use secret in
+the link they carry. In the OpenAPI document they are marked `x-access: link`
+(or `public` for the forgotten-password form, which spends nothing).
+
+A sign-in name is another name for the same person.
+[People](people.md#sign-in-names) says what one is. The operations behind
+`/portal/pseudonyms` take no username. Confirming an email name is
+`/portal/verify-pseudonym`, a mailed link of its own, and a different page
+from `/portal/verify-email`.
 
 ## Getting a token
 

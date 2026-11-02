@@ -369,7 +369,7 @@ class PasskeyReportPage {
       return '<tr><td><code>' + kit.esc(p.name) + '</code></td><td><code>' +
         kit.esc(p.postQuantumRequired || 'off') + '</code></td><td>' +
         kit.esc((p.selectGroups || []).join(', ')) + '</td><td>' +
-        kit.esc((p.selectApplications || []).join(', ')) + '</td><td>' +
+        kit.esc((p.namedByApplications || []).join(', ')) + '</td><td>' +
         self.cell(t, p.precedence) + '</td><td>' + link + '</td></tr>';
     }).join('');
     return kit.note(t.html('consolePasskeyReport.profilesNote')) +
@@ -378,7 +378,7 @@ class PasskeyReportPage {
       '<table><tr><th>' + t.html('consolePasskeyReport.profileName') +
       '</th><th><code>postQuantumRequired</code></th><th>' +
       t.html('consolePasskeyReport.selectGroups') + '</th><th>' +
-      t.html('consolePasskeyReport.selectApplications') + '</th><th>' +
+      t.html('consolePasskeyReport.namedByApplications') + '</th><th>' +
       t.html('consolePasskeyReport.precedence') + '</th><th></th></tr>' +
       rows + '</table>';
   }

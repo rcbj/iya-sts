@@ -1259,6 +1259,11 @@ In product mode a provisioned person is held to the realm's attribute policy
   STS-LDAP-0164), compared on the merged attribute set; a PATCH reaches the
   ingress as the whole resource, so PUT and PATCH are one check. A person who
   never held one may still be updated.
+* **WHOSE PROFILE (#1241).** A create asks the newcomer's: SCIM maps
+  nothing to `stsAttributePolicy` and its `groups` is read-only (RFC 7643
+  4.1.2), so it is `default` unless a group already lists the DN they will
+  have. An update asks the person as the write leaves them: the entry's own
+  reference and the groups they are in.
 * **A HOBA REGISTRATION CREATES WITH NOTHING BUT A NAME**, through
   `createUser()`, so a product realm keeping the default policy refuses it
   (400, STS-LDAP-0162). That is the policy working, not a defect: the realm

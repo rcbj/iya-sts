@@ -20,6 +20,11 @@
       "text": "Kontot {{username}} anger {{address}} som sin e-postadress.\n\nÖppna den här länken inom {{expiresMinutes}} minuter för att bekräfta att det är din adress:\n\n{{link}}\n\nOm det inte är ditt konto kan du strunta i det här meddelandet.\n",
       "html": "<p>Kontot <strong>{{username}}</strong> anger {{address}} som sin e-postadress.</p><p><a href=\"{{link}}\">Bekräfta att det är din adress</a> inom {{expiresMinutes}} minuter.</p><p>Om det inte är ditt konto kan du strunta i det här meddelandet.</p>"
     },
+    "pseudonym-verification": {
+      "subject": "Bekräfta ett namn du kan logga in med för {{service}}",
+      "text": "Kontot {{username}} bad om att få logga in som {{address}}.\n\nÖppna den här länken inom {{expiresMinutes}} minuter för att bekräfta att du kan logga in med det här namnet:\n\n{{link}}\n\nTills du öppnar den loggar det namnet inte in dig. Om det inte är ditt konto kan du strunta i det här meddelandet.\n",
+      "html": "<p>Kontot <strong>{{username}}</strong> bad om att få logga in som {{address}}.</p><p><a href=\"{{link}}\">Bekräfta att du kan logga in med det här namnet</a> inom {{expiresMinutes}} minuter. Tills du öppnar den loggar det namnet inte in dig.</p><p>Om det inte är ditt konto kan du strunta i det här meddelandet.</p>"
+    },
     "password-changed": {
       "subject": "Ditt lösenord för {{service}} har ändrats",
       "text": "Lösenordet för kontot {{username}} ändrades {{when}} ({{how}}).\n\nOm det inte var du, kontakta genast den som administrerar ditt konto.\n",

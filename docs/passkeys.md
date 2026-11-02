@@ -381,8 +381,9 @@ one-time code or a recovery code is refused (`STS-AUTHN-0204`).
    [A second factor for administrators](authentication.md#a-second-factor-for-administrators).
 2. **Hold administrators' passkeys to stricter rules.** Create a
    [named passkey policy](#different-rules-for-different-applications-or-groups)
-   that selects the group your administrators are in, or the application
-   `sts-admin-console`. In it, set for example **backupEligibility** to
+   and name it from the group your administrators are in
+   (`stsPasskeyPolicy`), or from the application `sts-admin-console`
+   (`appPasskeyPolicy`). In it, set for example **backupEligibility** to
    `disallow` (device-bound passkeys only) or **postQuantumRequired** to
    `sign-in`. Give it a low precedence number, such as `5`.
 3. **Require a passkey, rather than any second factor, for the console.**
@@ -563,25 +564,38 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 
 ### Different rules for different applications or groups
 
-Beside the `default` passkey policy, a realm can keep **named passkey
-policies**. Each has every row above, plus three selectors: the applications
-it applies to, the groups whose members it applies to, and a precedence from
-1 to 1000. At a sign-in, the named policy that lists the application, or a
-group the person is in, applies. Where several match, the **lowest
-precedence number wins**. Where none matches, `default` applies.
-Registration on `/portal/keys` has no application, so only group selectors
-apply there.
+[Policies](policies.md#passkey-policy) is the rule this kind shares with the
+others. Beside the `default` passkey policy, a realm can keep **named passkey
+policies**. Each has every row above and a precedence from 1 to 1000. A named
+policy lists nothing itself: **the application and the group name it**.
+
+- An application names its passkey policy in **`appPasskeyPolicy`**, a field
+  of its Configuration tab (*Every protocol*).
+- A group names one in **`stsPasskeyPolicy`**, chosen on the group's page
+  under **Policies this group names**.
+
+Each holds `default` or the name of a named passkey policy of the realm, and
+nothing else is accepted. At a sign-in, the candidates are the policy the
+application names and the policy each of the person's groups names. The one
+with the **lowest precedence number wins**, ties by name. Where nothing names
+one, `default` applies. Registration on `/portal/keys` has no application, so
+only the groups' policies apply there.
+
+A named policy that an application or a group names cannot be removed: point
+them elsewhere first. A name the realm does not hold (written by hand with an
+LDAP client) names nothing, and is logged as STS-AUTHN-0537.
 
 **Console.** Directory → Policies → **Passkey policy** → **New policy**. Give
-it a name, list the applications (the **Find** box searches the realm's
-applications) and groups, set the precedence and the rows, and save. An
-application's own page shows which passkey policies select it
+it a name, set the precedence and the rows, and save. Then choose it in the
+application's `appPasskeyPolicy`, or on the group's page. **Named policies**
+lists, for each policy, the applications and groups that name it. An
+application's own page says which passkey policy applies to it
 ([The passkey policy that applies to it](applications.md#the-passkey-policy-that-applies-to-it)).
 
-**API.** Send the whole profile, with `profile` naming it:
+**API.** Send the whole profile, with `profile` naming it, then name it from
+the application or the group:
 ```bash
-api policies/save-passkey-policy '{"profile":"strict-admins",
-  "selectApplications":"sts-admin-console","selectGroups":"","precedence":5,
+api policies/save-passkey-policy '{"profile":"strict-admins","precedence":5,
   "allowUsernameless":true,"requireUsernameless":false,
   "securityKeyResidentKey":"required","backupEligibility":"disallow",
   "enforcePinLength":false,"minPinLength":4,"pinLengthOnlyIfSupported":false,
@@ -592,7 +606,15 @@ api policies/save-passkey-policy '{"profile":"strict-admins",
   "registrationAlgorithms":"realm","registrationMode":"realm",
   "adminEnrolment":"off","deviceBoundRequired":false}'
 
-# Remove it
+# The console names it
+api applications/set '{"application":"sts-admin-console",
+  "attribute":"appPasskeyPolicy","value":"strict-admins"}'
+
+# A group names it
+api groups/set-policy '{"group":"administrators",
+  "attribute":"stsPasskeyPolicy","policy":"strict-admins"}'
+
+# Remove it, once nothing names it
 api policies/reset-passkey-policy '{"profile":"strict-admins"}'
 ```
 
@@ -1410,14 +1432,17 @@ member, has every field's current value).
 
 * **The `default` profile** reaches everybody in the realm. A realm without
   its own follows the default realm's.
-* **A named profile** reaches the members of the groups in its
-  `selectGroups`. Where several reach one person, the lowest `precedence`
-  (1 to 1000) wins. Post-login profiles select by group only, never by
-  application: the activity is about the person, not what they signed in
-  to.
-* **To leave a group out**, give it a named profile with `enabled` off and a
+* **A named profile** lists nothing; a group names it in
+  `stsPostLoginPolicy` (the group's page, or
+  `POST /admin-api/groups/set-policy`) and an application in
+  `appPostLoginPolicy`. At a sign-in, of the profile the application names
+  and those the person's groups name, the lowest `precedence` (1 to 1000)
+  wins. Reminder mails and the progress report know no application and go
+  by the groups ([details](post-login-activities.md#which-profile-applies-groups-and-applications-name-it)).
+* **To leave a group out**, name from it a profile with `enabled` off and a
   lower precedence than the profile that would otherwise reach it. That
-  keeps them out of a started activity too (below).
+  keeps them out of a started activity too (below). Naming such a profile
+  from an application leaves a sign-in to that application out.
 * **Or start the activity for some groups instead** of switching the policy
   on: a started activity on **Directory → Post-login activities** asks the
   members of its groups (or the whole realm) at sign-in, under the rules of
@@ -1434,11 +1459,13 @@ A rollout usually goes like this:
 
    ```bash
    api policies/save-postLogin-policy '{"profile":"pqc-pilot",
-     "selectGroups":["pqc-pilot"],"precedence":10,
+     "precedence":10,
      "enabled":true,"activity":"pqc-passkey-migration",
      "snoozeDays":7,"graceDays":0,"noPasskey":"leave",
      "method":"automatic","attestation":"any",
      "noPasskeyFallback":"none"}'
+   api groups/set-policy '{"group":"pqc-pilot",
+     "attribute":"stsPostLoginPolicy","policy":"pqc-pilot"}'
    ```
 
 3. **Watch where it fails** in the `passkeyCeremonies` report source

@@ -148,11 +148,13 @@ class FederationPages {
    * @param res - the response
    * @param status - the status
    * @param view - the page's view
-   * @param opts - `application`, for the locale policy's default, and
-   *   `own`, a signed-in person's own language
+   * @param opts - `application`, for the locale policy's default,
+   *   `own`, a signed-in person's own language, and `person`, that person,
+   *   whose groups may name the locale profile (#1238)
    */
   static send(res: Json, status: number, view: Json,
-              opts?: { application?: string; own?: Json }): void {
+              opts?: { application?: string; own?: Json;
+                       person?: string }): void {
     log.debug("Entering FederationPages.send(). " + status + ' ' +
               String(view && view.kind));
     const req: Json = res.req || { headers: {} };
@@ -166,7 +168,8 @@ class FederationPages {
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
                     ['data-sts-authn', authnAt],
                     ['data-sts-state', state]] as Array<[string, string]>)
-        .concat(PageLocale.shellAttributes(req, asked.application || '')),
+        .concat(PageLocale.shellAttributes(req, asked.application || '',
+                                           asked.person || '')),
       stylesheets: ['/web/card.css'],
       script: SCRIPT_PATH,
       open: '<div class="card wide">',

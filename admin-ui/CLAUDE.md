@@ -57,6 +57,13 @@ configuration → Listeners (#423) have. The rules:
 * **A new page is tabbed when it is written.** A page that grows a second
   section gets tabs in the change that adds it. Converting the pages that
   predate this rule is #428.
+* **A documentation link is part of the design.** A new console screen
+  names the page that explains it in `common/web_doc_links.ts` in the same
+  change that adds the screen. Each leaf tab draws that link
+  (`WebKit.withDocLink()`). A page that is not tabbed draws the one link
+  under the trail. `tests/doc_links.js` fails when the row is missing or
+  the page is not in `docs/`. The argument is *A link to the documentation*
+  below.
 
 **It IS protected now, and it holds nothing on disk.** It is also the one surface
 that can CHANGE what the protocol endpoints do, which is why it is the one that
@@ -1463,7 +1470,11 @@ a second one. The application-configuration sub-panels are written by hand, so
 the link is put in there. A listener tab sets `docs` on the panel, because its
 id is minted and the same shape as a policy tab. An untabbed page gets the one
 link under the breadcrumb trail, in `WebShell.frame()`. The public sign-out
-page uses the same tab helper and is not given a link.
+page uses the same tab helper and is not given a link. **The row is part of
+the screen's design**, written in the same change as the screen (*A
+documentation link is part of the design*, above). `tests/doc_links.js` fails
+while the row is missing or names a page that is not in `docs/`. A portal
+page owes the same row (`portal/CLAUDE.md`).
 
 ### PROSE LONGER THAN A LINE IS COLLAPSED, AND THREE FUNCTIONS DECIDE IT
 
@@ -6393,6 +6404,13 @@ generic field rows.
   sends `false` for an unticked box only where the member is a boolean, and
   this one is a list, so without the hidden field the save would be refused as
   one that forgot its field.
+* **FOUR SUB-TABS SINCE #1241**: Default, Named policies, New policy (the
+  passkey arrangement, `kit.subTabbedPanels()`) and Custom attributes, the
+  register every profile may require and none owns. A named profile's form
+  is the same checkbox table with a precedence; its entry lists the people
+  and groups naming it (the people from `GET /admin-api/policies`, the
+  asynchronous view); the New policy form keeps a refused create's fields
+  (#841's `attributes-new` draft).
 * **THE CUSTOM ATTRIBUTES ARE ON THE SAME TAB**: a table with a Remove form
   per row, and a form that defines one (name, label, syntax, one value or
   several, description). Both post `/admin/policies` with the kind's own act
@@ -6925,6 +6943,9 @@ answers under that name.
   address, and until #228 that action had no console form at all — only
   `POST /admin-api/users/set-mail`. The withheld row pointing at "its own
   control" would have pointed at nothing, so the form sits in this section.
+* **`set-pseudonyms` (#644) is the sign-in-name card on the Contact
+  sub-tab**, beside `set-mail`. Add or remove one name. The grid section
+  below is where the card is drawn.
 * **`#attributes` is a fourth `userReturnTo()` anchor**, for the three edits
   and `set-mail`.
 * **A table in a `<details>` says what each attribute takes and what is not
@@ -7699,13 +7720,19 @@ sections on the application's configuration tabs:
 * **Each SAML family sub-sub-tab** opens with its own
   `applicationClaimsSection(..., [family])` and claim-selection section, so
   SAML 1.1 and SAML 2.0 values stay with the protocol that consumes them.
+* **The GNAP sub-tab** (#1250) opens with
+  `applicationClaimsSection(..., ['gnap_access_token'], 'cfg-gnap-claims')`.
+  The rows are what a `jwt-signed` access token, and the JWT inside a
+  `jwt-encrypted` one, carry besides the protocol's own. There is no
+  selection table. The Kerberos sub-tab's anchor is `#cfg-krb5-claims`.
 
 Each section draws `adminViews.applicationClaimsState()`: the rows in force,
 marked `realm` or `application`, with a replaced realm row marked as such.
 Its forms post `set-custom-claim` and `remove-custom-claim` to
 `/admin/applications`, both new arms of `applicationsAction()` mirrored at
 `/admin-api/applications/<action>` (rule 7), and come back to
-`#cfg-oauth-claims` or `#cfg-saml-attributes`, **on a refusal too**: the
+`#cfg-oauth-claims`, `#cfg-<family>-claims`, `#cfg-krb5-claims` or
+`#cfg-gnap-claims`, **on a refusal too**: the
 refusal is about one row and the reader is still on that application. The
 model is `common/CLAUDE.md`'s *An application's own claim sets*. The GET
 carries `customClaims` and `tokenLifetimes`.
@@ -7873,7 +7900,8 @@ an attribute differently.
 * `fieldGridCell()` takes `row.forText` for the label beside the name, since
   a person's field belongs to no protocol family.
 * The address is not a field. The `set-mail` form heads the Contact sub-tab
-  (`#mail`).
+  (`#mail`). The sign-in-name card sits on the same sub-tab
+  (`set-pseudonyms`, `#pseudonyms`, #644).
 
 **Rule 7.** `POST /admin-api/users/update-fields` mirrors the grid's Save,
 and the users resource's `mirrors` names `POST /admin/users/edit`.
@@ -8317,47 +8345,52 @@ tab, and a service account's section of the person page —
 * Without Admin Write the section says whether the mark is set and draws no
   form.
 
-## AN APPLICATION'S PASSKEY POLICY, AND THE PASSKEY POLICY TAB'S SEARCH AND SUB-TABS (#609; rcbj, 2026-10-13)
+## AN APPLICATION'S PASSKEY POLICY, AND THE POLICY KINDS' SUB-TABS (#609, rcbj 2026-10-13; reshaped by #1235, 2026-10-30)
 
-* **Nothing is stored on the application** (rcbj's decision 1). The relation
-  is a named passkey policy's `stsPasskeySelectApplication`, and
-  `passkeyPolicy.forApplication()` reads it, matching an application's
-  identifier and each client_id as `selectionFor()` matches the one a
-  sign-in names. The application read carries it as `page.passkeyPolicies`
-  (`admin_views.applicationPasskeyPolicies()`), and
-  `ApplicationsPage.applicationPasskeyPolicyCard()` draws it READ-ONLY at
-  the foot of the Every protocol sub-tab: the policies naming it with their
-  precedence, the lowest marked, each linked to `#passkey-profile-<name>`
-  on the Policies page, the group note. **`appliesBy` is there because a
-  sign-in names ONE of the names** — an OAuth sign-in the client_id — so two
-  policies naming the application by different names give different
-  answers; the card says so per name rather than pretending there is one.
-* **The Passkey policy tab is three sub-tabs** (`kit.subTabbedPanels()`):
-  `passkey-sub-default`, `passkey-sub-named`, `passkey-sub-new`, the schema
-  under all three. `PoliciesPage.isTabbedKind()` limits it to the passkey
-  policy; the locale policy's named profiles are drawn as they were.
-* **The applications box's search is #459's machinery in a plain form**: a
-  `fg-cell fg-search` around the comma-separated box, `WebKit.fieldSearchOf()`
-  with kind `policy-applications` (its own `boxTip` branch: no "this
-  application itself"), keyed per form (`passkey-apps` for New policy,
-  `passkey-apps.<name>` for a stored one) so no two forms share a cell. The
-  forms still post to `/admin/policies`; `isFieldSearch()` knows the page
-  (`WebAnswers.POLICIES_PAGE`) and `ConsoleRuntime.policySearch()` answers
-  the press in the browser: the Applications list, five a page, leaving out
-  what the box names, the form's posted fields kept as
-  `state.policyDrafts[<key>]` and an Add appending the IDENTIFIER
-  (`WebAnswers.withListedValue()`). Nothing is written until the form's
-  Save. **A refused create keeps that draft** (#841): the New policy form
-  posts `newProfile`, and `WebAnswers.redraw()` stores the posted fields in
-  the same `passkey-apps` cell and the refusal in
-  `state.policySaveErrors['passkey-apps']`, drawn above the form. The key
-  is the form's, not the typed name, so a collision with a stored profile
-  does not overlay that profile. **Each searching form opens with a hidden
-  `default-submit`**, the
-  application grid's reason: otherwise Enter in any box presses Find.
-  `tests/passkey_policy_on_application.js` holds the data, the card, the
-  sub-tabs and the search; `tests/protocol/sts_passkey_policy_application.js`
-  the API half.
+* **The application NAMES its passkey policy since #1235** (rcbj on #1234,
+  reversing #609's decision 1, "nothing is stored on the application"):
+  `appPasskeyPolicy`, a field of the Every protocol sub-tab with its closed
+  set (`default` and the realm's named profiles), is the control. The card
+  `ApplicationsPage.applicationPasskeyPolicyCard()` stays READ-ONLY at the
+  foot of that sub-tab and says what the reference comes to
+  (`page.passkeyPolicies`, `admin_views.applicationPasskeyPolicies()` over
+  `passkeyPolicy.forApplication()`): the profile named and its precedence,
+  a warning where the realm holds no profile of that name, a link to
+  `#passkey-profile-<name>`, and how many named profiles a group names and
+  could still win for a member. #609's `appliesBy` went: one attribute has
+  one value, whichever name a sign-in uses.
+* **A group names its policy on the group page** (#1235): one picker per
+  kind that declared a group reference (`GroupsPage.policyPickers()`, from
+  the group read's `policyReferences`), each its own `set-policy` form,
+  which the directory's `setGroupPolicy()` checks. A person's references are
+  the person editor's Policies tab (`ldap/CLAUDE.md`).
+* **Sub-tabs are a declaration** (`tabbed: true` on the kind's row in
+  `admin-core/policy_kinds.ts`, carried as `kind.tabbed` on the view):
+  `<kind>-sub-default`, `<kind>-sub-named`, `<kind>-sub-new`, the schema
+  under all three. The passkey policy declares it, and the password policy
+  since #1236 — whose own section (`passwordPolicySection()`) wraps its
+  default part in the same three sub-tabs and keeps the doors, the history,
+  the generator and the schema under them, as reference for all three —
+  and the locale policy since #1238, and the post-login policy since
+  #1239.
+* **`PoliciesPage.namedProfileParts()` draws what the kind declares**
+  (`member.selectors`, `member.references`): a box per list selector a kind
+  still keeps (none since #1238 and #1239: the locale policy's
+  applications and the post-login policy's groups both went), the
+  precedence, and on a tabbed kind's Named policies sub-tab,
+  above each profile's form, the applications, groups and people NAMING it
+  (`named.namedBy`), read-only. **The application search the forms carried
+  (#609) is gone with the applications box** — `policySearch()`, the
+  `policy-applications` kind and its `boxTip` branch were deleted.
+* **A refused create keeps its draft** (#841): the New policy form posts
+  `newProfile`, and `WebAnswers.redraw()` stores the posted fields in
+  `state.policyDrafts['<kind>-new']` and the refusal in
+  `state.policySaveErrors['<kind>-new']`, drawn above the form
+  (`PoliciesPage.draftKeyOf()`). The key is the form's, not the typed name,
+  so a collision with a stored profile does not overlay that profile.
+  `tests/passkey_policy_on_application.js` holds the references, the card,
+  the sub-tabs, the group picker and the delete;
+  `tests/protocol/sts_passkey_policy_application.js` the API half.
 
 ## AN APPLICATION'S DECLARED AND OBSERVED ATTRIBUTES (#706, #708; rcbj, 2026-10-19)
 
@@ -8511,3 +8544,28 @@ catalogs). The row's `deviceBound` is `deviceBindingOf()` — `fact` is
 `bound`, `skipped`, `pending`, `timedout` or `none`, and `reasons` are
 the tokens. The API stays language-free. `pending`, `timedout` and
 `none` stay "No".
+
+## Audit export (#641, 2026-11-01)
+
+Monitoring → Audit export, `/admin/audit-export`. `admin-ui/web_audit_export.ts`
+draws the destination list and the add form from `GET /admin-api/audit-export`.
+The prose is the `consoleAuditExport` namespace (seven base catalogs). The
+nav label and the page title are `console.nav.audit-export` and
+`consolePages.title.audit-export`. The fourteen `auditExport.*` settings are
+`SettingsForms`, from the settings catalogs, and `SETTING_HOMES` already
+names the page. Write controls are drawn when the shell says the reader can
+write (`c.write`); a reader with `admin:read` sees the figures. The lead
+says the figures are this process, and that a token and a secret header are
+sealed and absent afterwards. A test posts `test`. Each tab draws the
+documentation link to `docs/audit-export.md` (`common/web_doc_links.ts`,
+`audit-export.html`). A refused add or update is
+drawn again in place (`WebAnswers.redraw()`, `state.auditExportDraft`):
+the add form, or that destination's update form, open, with every posted
+field. A token and a secret header come back only from that draft; a
+stored destination still draws both empty. A success stays a notice.
+Body template, Headers and Secret headers are labels beside their
+textareas, each with its own tooltip. A textarea inside the label took
+the hover, so the name's tooltip never appeared. Those sentences are
+also the management API's field descriptions and `docs/audit-export.md`.
+The delivery, the cursor and the twenty-first outbound exception are
+`common/CLAUDE.md` (3da). The operations are `mgmt-api/CLAUDE.md`.

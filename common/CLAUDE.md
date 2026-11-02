@@ -12,6 +12,7 @@ more than one family needs it, not because it felt general.
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
 | `config.js` | Every setting this service has, and the refusal to start without one. The only module `helpers.js` depends on. |
 | `helpers.js` | Log, keys, `signJwt()`, `userFor()`, the cross-protocol parsers. |
+| `job_log.ts` | A scheduler job's routine `info` is written at debug: `JobLog.during()` around each of `cluster/scheduler.ts`'s three `job.run()` calls. A warning, an error, and an info line that carries an `STS-` code stay at the level asked. `cluster/CLAUDE.md`, *A job's body logs only when something is wrong*. |
 | `crypto.js` | **EVERY SIGNATURE AND EVERY CIPHER IN THIS SERVICE, since 2026-08-27.** XML Signature and XML Encryption, JWS, JWE, key and certificate generation, thumbprints, constant-time comparison — and since 2026-09-21 (#40) signatures over raw bytes and TPM 2.0 KDFa / MakeCredential (section 8), and since 2026-09-22 (#173) the Kerberos PRF and KRB-FX-CF2 (section 9), and since 2026-09-23 (#105) WebAuthn's COSE signatures (`verifyCoseSignature()`, RFC 9053/8230/9964 — PS256/384/512 and ML-DSA-44/65/87 among them) and the attestation structures: a TPM's TPMT_PUBLIC, TPMS_ATTEST and TPMT_SIGNATURE, Android's KeyDescription, Apple's nonce and FIDO's AAGUID extension (section 10). **And since 2026-09-23 (#168) XML Encryption 1.1's `rsa-oaep` with a named digest and MGF1 (SHA-256 by default) and ECDH-ES key agreement (ConcatKDF, AES key wrap) in both directions, and a caller's allow-list on `decryptElement()` (`allowedCiphers`, `allowedKeyManagement`, `allowedOaepDigests`), asked before any key operation** — which is what a federation relationship decrypts a partner's assertion under (`federation/CLAUDE.md`). **And since 2026-09-22 (#63) DKIM signing (RFC 6376 relaxed/relaxed, rsa-sha256 and RFC 8463 ed25519-sha256) and a verifier for this service's own tests (section 12)**, so the mail channel's SMTP transport signs through here and never through nodemailer's own signer (3ba). **And since 2026-10-05 (#178) HTTP Message Signatures (RFC 9421, `;req` included, every JWS algorithm under section 3.3.7 with post-quantum ones among them) and Content-Digest (RFC 9530) (section 14), moved here out of `gnap/`, and `digest()`, `hkdf()`, `publicKeyFromJwk()`, `publicKeyOf()` and `spkiDerOf()` (section 15). rcbj's rule as restated that day covers EVERY cryptographic operation in every protocol, digests and key import included, not only signatures and ciphers**: a feature module calls this file and never node's `crypto`. **#453 (2026-10-07) moved the rest of the service onto it** — 130 files — with section 17: `sha1Digest(purpose, …)` (SHA-1 only for a closed list of purposes a specification fixes: SAML artifact SourceID, UUIDv5, key identifiers, OCSP CertID and ETag, a displayed fingerprint, SPIRE agent paths), `hmac()`, `parseCertificate()`, `privateKeyFrom()`, `generateKeyPairSync/Async()`, `signBytes()` / `signatureValid()`, `digestSupported()`, and each sweep group's own region (GNAP's macaroon, zcap and Biscuit libraries held here and nowhere else; OCSP CertID hashes and pkijs's engine; SCEP's content cipher and key transport; TPM name digests; RFC 7616 HTTP Digest; `bytesEqualConstantTime()` for bytes, where `constantTimeEquals()` compares text). `tests/crypto_centralised.js` fails on `require('crypto')` anywhere but here, `pq_native.js`, `pq_jose.js` and the vendored copies, and on a token-format library required outside this file; its PENDING list (`authn/webauthn.js`'s standalone path for the parent's cross-implementation test) may only shrink. Its RFC 8941 codec is `structured_fields.ts`, a static utility class, because a module `crypto.js` requires is loaded before the composition root and cannot hold an instance it builds. A LEAF — it sits UNDER `helpers.js` and may never require it back. See below. |
 | `app.js` | The express app and every middleware. Requiring it is how a protocol module gets somewhere to register. |
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
@@ -1878,11 +1879,11 @@ the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
   `stats().memory.exits` keeps the last twenty exits.
 * **`process.memory-report`**, a per-process scheduler job every five minutes
   (registered in `protocol_stack.ts` beside the scheduler's page, so every
-  process lists it). It logs one line per process with the role, rss, heap
-  used and total, the heap limit, external memory and array buffers. A request
-  worker also sends its figures to the front process over the pool's channel.
-  The scheduler records the run's summary, so Monitoring → Scheduler shows
-  every process's latest figures.
+  process lists it). Each run records its summary with the role, rss, heap
+  used and total, the heap limit, external memory and array buffers; the log
+  line is debug. A request worker also sends its figures to the front process
+  over the pool's channel. The scheduler records the run's summary, so
+  Monitoring → Scheduler shows every process's latest figures.
 
 `tests/process_memory.js` holds it, including a real re-exec and a real heap
 exhaustion.
@@ -8995,8 +8996,45 @@ reads, and `pwdInHistory` keeps the draft's meaning: PREVIOUS passwords, with th
 current one refused beside them. The draft defines no composition rule, so those
 are `stsPwd*` and nobody mistakes them for the draft's.
 
-**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and `crypto.js`,
-and its directory arrives through a slot
+**NAMED POLICIES, AND WHAT NAMES ONE (#1236, 2026-10-30).** The container
+now holds named policies beside `cn=default` — every row, plus
+`stsPasswordPrecedence` — on rule 3cx's recipe: an application names one in
+`appPasswordPolicy`, a group in `stsPasswordPolicy`, a person none of their
+own. `profileFor(username, application)` was written in 2026-09 with a
+username it ignored precisely so that this day would change its body and no
+caller, and that is how it went: every door already handed the person in,
+so `setPassword()`/`preparePassword()` (the console, `/admin-api`, the
+portal's password page, activation, a reset link, an LDAP add or modify and
+the LDAP off-loop prehash), `generatePassword()`, `passwordRules()` and the
+sign-in upgrade's `rehashSpecFor()` resolve the person's groups' policy with
+no edit. Two readers gained an argument: the sign-in's forced change hands
+`step.authn.application` in as `opts.application`, the one door that holds
+an application; and service-account rotation draws from the account's own
+profile (`profileFor(facts.username)`) so its commit cannot be refused by
+it. **A reader with no person in hand reads `default`** — the
+service-account policy's save check of its rotated length against the
+password minimum is one, and is right to be: it is a property of the realm,
+not of an account. SCIM writes no password (`changePassword: false`).
+
+**A REFERENCE TO A POLICY THE REALM DOES NOT HOLD IS DROPPED, AND THE VALID
+REFERENCES THAT REMAIN STILL RANK** (STS-AUTHN-0539, logged once per
+reference per process — the sign-in upgrade asks at every verified
+password, and a per-event log of one misconfiguration is the flood the log
+rules forbid); `default` applies only where none remains. **The first cut
+(the same day) made the WHOLE answer `default` on any dangling reference,
+and was reversed on review**: that let a broken reference override a
+stricter policy a VALID reference names — an application's twenty-character
+minimum undone by a stale value on some group — which is a weakening
+dressed as failing closed. A dangling reference never named anything the
+realm can apply, so dropping it removes nothing that was in force. Only a
+write past the console can make one (both doors check, and a named policy
+still named is not deleted, STS-AUTHN-0540). The ranking is skipped
+outright where the realm holds no named policy, so the common case costs
+no group lookup. Named policies are the realm's own; neither they nor
+`default` are inherited (this kind never inherited).
+
+**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js`, `crypto.js` and
+`policy_selection.ts`, and its directory arrives through a slot
 `ldap_server.js` fills — `roles.js`'s arrangement exactly. **`FIELDS` is one
 table read five ways**: the schema, the console's form, the management API's
 request schema, the validation and the parse. Three decisions in it:
@@ -9068,7 +9106,8 @@ SAME kvno (`kerberos/krb5_person_keys.ts`). A failure is logged
 plaintext exists only at a sign-in. `tests/password_argon2id.js` holds it.
 
 **From the root `CLAUDE.md`'s `common/` row:** the profile is drawn at
-*Directory → Policies* (`/admin/policies`), ENFORCED IN PRODUCT MODE at every
+*Directory → Policies* (`/admin/policies`, Default / Named policies / New
+policy since #1236), ENFORCED IN PRODUCT MODE at every
 door that sets a password, and is the generator every made-up password is
 drawn from, which is now the default credential for a new user on the console
 and on `/admin-api`.
@@ -11129,14 +11168,28 @@ string claim, and the ticked attributes) and `kerberosApplicationPacClaims()`
 (`kerberos/CLAUDE.md`, *PAC CLIENT CLAIMS*). A ticket that carried claims is
 recorded with `claimSet: 'kerberos-pac'` and its username, so
 `liveClaimBearers()` lists it.
+
+**THE SEVENTH SET, `gnap_access_token` (#1250)**, is the claims a GNAP
+access-token JWT carries besides the protocol's own (`kind: 'gnap'`). It is
+on none of the claim-set pages: an application's GNAP configuration tab draws
+it (`gnapClaimsAccessToken`). `configuredJwtClaims()` reads the rows only, so
+the groups claim, the roles claim and the ticked catalogue are not added.
+The two JWT formats (`jwt-signed`, and the JWT inside `jwt-encrypted`) merge
+that object under the protocol claims, so a protocol name wins. Macaroon,
+biscuit and zcap do not carry it. A read that throws is `STS-GNAP-0908` and
+the token is still minted. Reserved names are the JWT list plus `access`,
+`flags`, `label` and `grant_id`. There is no directory-attribute selection
+and no combine attribute: unset stays union.
+
 `jwtClaims()` and `samlAttributes()` read `effectiveClaimSet(id, context)`
 instead of `claimSet(id)`. That is the realm's rows, with the application's
 **added and winning by name** (rcbj's choice), so an application with none
 issues exactly what the realm does.
 
 * **Which application:** `applicationForClaims()` finds it by `client_id`
-  for the three JSON sets and by `audience` for the two SAML sets, reading
-  by identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
+  for the three JSON sets and for the GNAP set (the client instance
+  identifier), and by `audience` for the two SAML sets, reading by
+  identifier, then `forClientId()`, then `forAppliesTo()`. Those are the
   keys `applications.settingFor()` already answers per-application settings
   for.
 * **One set of rules:** `checkClaimEntries()` was lifted out of
@@ -12185,9 +12238,10 @@ application's own `appAuthnMechanism` and `appMfaMechanism`: the application
 holds ONE reference, `appAuthnPolicy` (`common/applications.js`), and the
 lists live on a policy. rcbj's decisions:
 
-- **THE APPLICATION NAMES ITS POLICY**, one value — the opposite direction
-  from a named passkey policy (3ch), which names its applications.
-- **A NAMED POLICY HOLDS TWO LISTS AND NOTHING ELSE**: the first-factor
+- **THE APPLICATION NAMES ITS POLICY**, one value; since #1237 a GROUP
+  names one too (`stsAuthnPolicy`, rule 3cx), and the named passkey policy
+  went the same way in #1235.
+- **A NAMED POLICY HOLDS TWO LISTS AND A PRECEDENCE**: the first-factor
   mechanisms allowed (`stsAuthnPolicyMechanism`, `federation.MECHANISM_IDS`)
   and the second factors allowed (`stsAuthnPolicySecondFactor`), each "none
   is every one" exactly as the two attributes were. Everything else about
@@ -12198,12 +12252,12 @@ lists live on a policy. rcbj's decisions:
   applications name its own policies. `default` is not a name a policy can
   take (`STS-AUTHN-0532`); an application naming it, or nothing, is narrowed
   by nothing beyond the realm's policy.
-- **`mechanismsFor(fields)` IS THE ONE QUESTION** every reader of the two old
-  attributes asks now — the routing in `authn.ts`, `authn_mechanisms.ts`'s
-  and `mfa_mechanisms.ts`'s `allowedOf()` (and so the issuance gate), the
-  `authMechanisms` report source. **A name no policy holds allows NO
-  mechanism** (`missing`, `STS-AUTHN-0536`): a reference fails closed, as a
-  misspelt list did. The console's and the API's writes are checked against
+- **`mechanismsFor(fields, person)` IS THE ONE QUESTION** every reader of
+  the two old attributes asks now — the routing in `authn.ts`,
+  `authn_mechanisms.ts`'s and `mfa_mechanisms.ts`'s `allowedOf()` (and so
+  the issuance gate), the `authMechanisms` report source. **A name no policy
+  holds allows NO mechanism** (`missing`, `STS-AUTHN-0536`): a reference
+  fails closed, as a misspelt list did — a group's as an application's. The console's and the API's writes are checked against
   `default` and the realm's policies (`CHOICES_CHECKED_HERE`,
   `STS-REG-0203`), so that state is reached only past them — an
   `ldapmodify`; a delete of a name the realm does not hold is
@@ -12211,18 +12265,52 @@ lists live on a policy. rcbj's decisions:
 - **TWO ACTS BESIDE SAVE AND RESET**, `policy_kinds.ts`'s `extraActions`:
   `save-named-authn-policy` {name, description, mechanisms, secondFactors}
   (an unknown value is `STS-AUTHN-0533`) and `delete-named-authn-policy`
-  {name}, REFUSED while an application of the realm names it
-  (`STS-AUTHN-0534`; `applications.js`'s `applicationsNamingAuthnPolicy()`,
-  reached lazily because this file is a leaf). The console draws the
+  {name}, REFUSED while an application or a group of the realm names it
+  (`STS-AUTHN-0534`; `namedBy()`, which reaches `applications.js`'s
+  `applicationsNamingPolicy()` lazily because this file is a leaf, and the
+  directory's `groupsNamingPolicy()`). The console draws the
   Authentication policy tab as the passkey policy's three sub-tabs (rcbj):
   Default, Named policies and New policy, the last two from
   `admin-ui/web_policies.ts`'s `namedAuthnPoliciesSection()`.
 - **NO MIGRATION IS OWED** (`applications.js`): the two old attributes are
   no longer read.
 
-`tests/named_authn_policies.js` holds the named policies, and
-`tests/authn_policy.js` the module, the inheritance, the mail guard, the
-retired settings and a kind registered later.
+**GROUPS NAME ONE TOO, AND THE POLICIES COMPETE (#1237, rule 3cx).** A
+group's `stsAuthnPolicy` (declared with `PolicySelection.declareReference()`,
+so the group page draws its picker and `setGroupPolicy()` checks it) names a
+policy as `appAuthnPolicy` does, and a named policy carries
+`stsAuthnPolicyPrecedence` (1 to 1000, 100 when absent; a bad one on a save
+is `STS-AUTHN-0541`). `mechanismsFor(fields, person)` hands the
+application's reference and the person's groups' (`personGroupReferences()`,
+the group index) to `PolicySelection.rank()`; the lowest precedence wins,
+ties by name, `default` where nothing is named, and ANY missing name fails
+the sign-in closed. A person names none of their own.
+
+- **BEFORE THE PERSON IS KNOWN ONLY THE APPLICATION'S REFERENCE APPLIES**:
+  `authn.ts`'s routing (`mechanismFor()`, the screen's first draw) asks with
+  no person. The choice is made again with the person at the second factor
+  (`mfaAllowedFor()`), at the session's start (the gated doors' mechanism
+  question) and in the issuance gate's facts (`mechanismFactsOf()`,
+  `mfaFactsOf()`, from `asked.subject`).
+- **A SIGN-IN NAMING NO APPLICATION IS NOT ASKED**, as before #1237: the
+  gate answers "no application to decide about", so a group's policy is held
+  to when an application's issuance is asked for on that session, which every
+  browser issuance names.
+- **THE CONSOLE** draws the Named policies sub-tab with the generic section's
+  precedence row, "named by" sentences and `references` (rule 3cx), the two
+  checkbox lists staying this kind's own; the kind row is `tabbed`. The kind
+  exports no `SELECTORS`: its save and reset take `default` alone and its
+  named policies have acts of their own, so `authnPolicyExtras()` sets
+  `selectors` and `references` on the view itself.
+- **THE REPORT** (`authMechanisms`) gains a row per mechanism of the policy
+  each group names (`group`, `policy` columns); an application's rows are
+  its own reference's, as the screen's first draw reads it.
+
+`tests/named_authn_policies.js` holds the named policies,
+`tests/authn_policy_by_group.js` the group reference and the ranking (both
+ways round, at the issuance gate), and `tests/authn_policy.js` the module,
+the inheritance, the mail guard, the retired settings and a kind registered
+later.
 
 ## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
 
@@ -12273,6 +12361,30 @@ is the operator's page; each file's header argues its part.
   door (STS-SVCACCT-0013).
 * **ITS STATE IS ON THE ENTRY** — rotated-at, the previous hash and its
   expiry, failures — because any node may run the job next (#49).
+* **NAMED PROFILES, NAMED BY THE ACCOUNT (#1240, rule 3cx).** Beside
+  `default` (still inherited from the default realm) a realm holds named
+  profiles of its own, each the whole field set and
+  `stsServiceAccountPrecedence`. A service account names one in
+  `stsServiceAccountPolicy`, the kind's only reference: no application or
+  group is governed by this policy. The attribute is in
+  `service_accounts.ts`'s `ATTRIBUTES`, so it is read with the account (one
+  entry), never self-writable, and cleared with the flag; only a service
+  account holds it (STS-SVCACCT-0048) — the person editor asks the
+  `holderRefusal` the declaration carries (the one addition #1240 made to
+  `policy_selection.ts`), an LDAP add or modify and a create ask
+  `writeRefusal()`. **A reference the realm does not hold gets `default`
+  and is logged (STS-SVCACCT-0047), not refused**: every built-in default
+  here is the more secure one, refusing every door would stop a program and
+  stopping its rotation is weaker, and the reference cannot dangle through
+  this service (checked at every write; a named profile is not deleted
+  while named, STS-SVCACCT-0049). **Every reader resolves the account's
+  own profile** — `credentials.serviceAccountRefusesDoor()` (every door and
+  the browser), `mfaRequirementFor()`, `rotatesThroughDestination()`,
+  `service_accounts.check()` and the LDAP door's `requireOwner`, the
+  console's sign-out on becoming one, and the rotation job, which resolves
+  each reference once per run and is off only where no profile of the
+  realm rotates. **Who names a profile is the service-account index**
+  (`service_accounts.names()`), not a walk: only a service account can.
 
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 
@@ -12992,6 +13104,14 @@ draws a form per named profile and an add form (`namedProfilesSection()`).
 The API's `profile` became a pattern for this kind, and it takes the
 selectors.
 
+**#1235 TURNED THE SELECTION ROUND (2026-10-30)**: `stsPasskeySelectApplication`
+and `stsPasskeySelectGroup` are gone. An application names its profile in
+`appPasskeyPolicy` and a group in `stsPasskeyPolicy`; a profile keeps its
+precedence; `selectionFor()` hands the references to
+`PolicySelection.rank()` (3cx). A dangling reference selects nothing and is
+logged (STS-AUTHN-0537); a profile anything names is not deleted
+(STS-AUTHN-0538).
+
 **#536 (2026-10-09) MOVED THE REFUSALS INTO THE ISSUANCE POLICY.** rcbj first
 accepted them as code, then reversed: "move them into XACML policy, but
 continue to have all functionality available in the Passkey policy be
@@ -13210,11 +13330,31 @@ reasons for the shape:
   - `safeReturn()` turns anything that is not a local path into `/`.
 * **The locale policy is `passkey_policy.ts`'s pattern** with two rows,
   `defaultLocale` (`en`) and `populatePreferredLanguage` (on).
-  - Named profiles are chosen by APPLICATION alone (rcbj). An application is
-    on one named profile at most, refused with `STS-I18N-0007`, so nothing is
-    ranked and there is no precedence.
-  - Selection is an argument (`forApplication()`), not #535's ambient
-    `select()`, because every caller already holds its application.
+  - **Named profiles are NAMED BY WHAT THEY COVER since #1238** (rule
+    3cx): an application in `appLocalePolicy`, a group in
+    `stsLocalePolicy`; a profile carries `stsLocalePrecedence` and lists
+    nothing. #539's `stsLocaleSelectApplication` and its
+    one-profile-per-application refusal went, `STS-I18N-0007` is a retired
+    row, and no migration is owed. Nobody names one from their own entry:
+    a person's own language is `preferredLanguage`, which outranks every
+    profile.
+  - Selection is an argument (`forApplication(application, person)`,
+    `defaultLocaleFor()`, `populationFor()`), not #535's ambient
+    `select()`, because every caller already holds its application — and
+    passes the PERSON where it holds one: `PageLocale.translatorFor()`
+    (so every `forPage()` given a `username`, the portal's and the
+    console's locale answers), `PageLocale.shellAttributes(req,
+    application, person)` for a static surface's shell (the sign-in steps,
+    a locked sign-in, consent, sign-out, GNAP, federation, SPNEGO), mail
+    to a person, and a person's creation (`fillPreferredLanguage()`, the
+    new DN). A page drawn before anybody is known is chosen by its
+    application alone.
+  - **A reference to a profile the realm does not hold selects nothing**
+    and is logged (`STS-I18N-0013`); `default` applies where nothing else
+    names one. **It does not fail closed**, where the authentication
+    policy does: this policy decides only a fallback language, and
+    refusing a page over it would guard nothing. A named profile anything
+    names is not deleted (`STS-I18N-0014`).
   - It replaced `mail.defaultLanguage` (`REPLACED_SETTINGS`), so pages and
     mail share one default.
 * **Population happens in `putEntry()`** (`fillPreferredLanguage()`), the one
@@ -13580,7 +13720,7 @@ specification's endpoint is never converted**.
 | `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. **Since #561** `start()` reads the browser's account list first (`loadAccounts()`) and, with it on, `put()` draws the account control beside the chooser (`accountControl()`, in `#sts-accounts-slot`) — below. |
 | `web_accounts.ts` (`WebAccounts`) | **A browser's accounts as every static page reads them (#561, delivery steps 5 and 6).** `fetchList(env, prefix)`: `GET /authn-api/accounts` of THIS page's own origin with the cookie, **asked only where the shell carries `data-sts-accounts="on"`** (`announced()`) — `ShellDocument.document()` draws that attribute itself, for every static surface, where `authn.multipleAccounts` is on in the ambient realm (`accountsOn()`) and draws nothing where it is off, so with the setting off a shell is to the byte what it was and no page makes the extra request on each load it made before review (`tests/multi_account_protocols.js` 3b–3c, `tests/multi_account_tabs.js` 6 and 8) — never another listener's, since `common/cors.js` sends no `Access-Control-Allow-Credentials` to anybody — and anything but a 200 with `enabled: true` is OFF (`off()`). `live()`, `bySubject()`, `byKey()`, `fingerprint()` and `changed()`; `openChannel(env, onChange)` over `BroadcastChannel('sts-accounts')`, whose message is `{ type: 'accounts-changed', change }` and nothing about whose; `anotherHref()` (the list's `anotherAccount`, the portal's advertised address, else `/portal?accounts=another`); `controlHtml(list, t)`, the public surfaces' control; `actionOf()`, the console's and the portal's menu buttons (`data-account-action`, `data-account-key`). |
 | `web_nav_sections.ts` (`WebNavSections`) | **The collapsible navigation column the console and the portal share (#750, #1229).** `section()` draws one section as a `<details class="navsec" name="<group>" data-section="<key>">` with a `<summary class="navhead">` heading and the caller's `<li>`s, `current` marking the section that holds the page whether open or not; `initial(chosen, holding)` is the first drawing's choice (the section holding the page) and leaves any later one alone; `toggled(doc, selector, target, chosen)` answers a `toggle` (caught in the capture phase, since it does not bubble) with the reader's choice after it, closing the other open sections for a browser that predates the shared `name`; `css(accent, muted, inset)` and `narrowCss(accent, minWidth)` are the heading's rules in the caller's colours, read by `admin-ui/admin.ts` and `portal/web_portal_kit.ts`. Each runtime holds the choice (`openSection`), never storage. What each column lists, and its labels, stay its own. |
-| `web_doc_links.ts` (`WebDocLinks`) | The documentation link on every admin-console and user-portal page and tab (#895). Where it is drawn is in `admin-ui/CLAUDE.md` and `portal/CLAUDE.md`. |
+| `web_doc_links.ts` (`WebDocLinks`) | The documentation link on every admin-console and user-portal page and tab (#895). A new screen owes its row here in the same change; `tests/doc_links.js` fails without it. Where it is drawn is in `admin-ui/CLAUDE.md` and `portal/CLAUDE.md`. |
 | `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
 | `web_limits_form.ts` (`WebLimitsForm`) | A right's limits as controls a person may lower (#576): the markup `limits_form.ts`'s `controls()` drew for GNAP's approval page, the portal's absent-owner approvals and the consent screen, moved here so the consent screen's renderer draws it in the browser from the rows its view carries. `LimitsForm.controls()` hands its work to it with `AccessLimits.rows()`; `lowered()`, which reads the controls back, stays on the server. English, as it always was. |
 | `web_outcome.ts` (`WebOutcome`) | The one renderer of an error or outcome page (#580): a heading, what was refused (`.bad`), why (a paragraph, or the steps' `.err` box), notes (`.meta`, markup the caller built) and the ways on, the ids the caller's. Words are the caller's — a refusal's English (#539's decision 6), escaped here. The federation pages' refusals and 404s draw through it, and the emailed factor's `end` page (#573) does to the bytes it drew before. |
@@ -13752,6 +13892,38 @@ suite SWEPT rather than the policy weakened for it.
   from the default realm while a realm has none, else the built-in default.
   One field, `requiredAttributes` (`stsAttributeRequired`, multi-valued),
   default `givenName, sn, mail`.
+* **NAMED PROFILES, NAMED BY THE PERSON AND THEIR GROUPS (#1241, rule 3cx).**
+  `cn=<name>` beside `default`, the realm's own (never inherited), each a
+  required list and `stsAttributePolicyPrecedence`. `stsAttributePolicy` on
+  the person's entry and on a group names one (`REFERENCES`, declared for
+  both holders); `selectionFor(subject)` ranks the person's reference and
+  each group's, lowest precedence first, else `default`. **The subject** is
+  `{ uid, attributes, groups }`: the entry as written (the own reference is
+  read from it) and any group the write adds. **At a create** that is the
+  reference the write sets plus the groups already listing the DN the
+  person will have (a dangling member becomes a member when the entry
+  exists); no door adds a group in the same write today, so `groups` is for
+  the door that will. **At an edit** it is the person as the edit leaves
+  them, so changing one's own reference is asked of the profile it names.
+  Every refusal (`createRefusal()`, `editRefusal()`, `missingFrom()`,
+  `removedBy()`, `required()`) takes the subject as an optional last
+  argument and defaults it from the attributes handed in, which is why most
+  doors needed no change; the person editor and SCIM pass theirs. **A
+  dangling reference selects nothing and is logged (STS-LDAP-0196)**; it
+  does not fail closed, because this policy is a floor and `default` is the
+  floor everyone else is held to. `bulk_import.js` reads `default`: a record
+  carries neither the reference nor a group.
+* **The delete of a named profile answers a PROMISE.** It is refused while a
+  person or group names it (STS-LDAP-0197): the groups from the group index,
+  the people from `peopleNamingPolicyAsync()`, a holder question that may
+  not be asked synchronously on a request (rcbj's rule). `policiesAction()`
+  takes a thenable from `reset()` for that reason, `POST
+  /admin-api/policies/:action` awaits it, and `GET /admin-api/policies` is
+  `policiesViewAsync()`, which fills each named profile's people through the
+  kind's `namedByAsync()`; the synchronous `policiesView()` (and `namedBy()`)
+  name no people. `stsattributepolicy` is NOT among the store's asked
+  attribute names (`persistence/directory_queries.js`), so in a windowed
+  process that holder question is answered by the unindexed path.
 * **`uid`, `cn` and `sn` are always required** and are not in the field: the
   username, and `person`'s MUST list (RFC 4519 3.12). A create that names no
   `cn` is given `givenName sn` (`deriveCommonName()`), at the console, the
@@ -13786,18 +13958,28 @@ suite SWEPT rather than the policy weakened for it.
   and never binary: `inetorgperson.ts` keeps a fixed list so nothing appears
   on a page by accident, and a custom attribute is an administrator's act only
   while a credential cannot be stored as one. Removal is refused while anybody
-  holds a value (0172) or the realm's own profile requires it (0173).
+  holds a value (0172) or any of the realm's own profiles requires it (0173).
+  `catalogue()` never offers an `sts` name: the person editor's universe
+  holds the declared policy references, which are not facts a profile could
+  require.
 * **The count of people who lack one is a walk**, so it is asked only on
   request (`GET /admin-api/policies?missing=count`), and not at all where the
   directory is in the store; the view always gives the LDAP filter that finds
-  them (`missingFilter`).
+  them (`missingFilter`, the `default` profile's). **Each person is judged
+  against their own profile (#1241) in that same walk**: the directory hands
+  `missingJudge()`'s function each person's username and own reference, the
+  groups' references come off the group index, each distinct set of
+  references is ranked once and each profile's list read once. With no named
+  profile the directory is handed `default`'s list as before, and where no
+  group names one no group is read.
 * **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
   publishing `required` and the custom attributes as a per-realm extension;
   custom attributes as token, UserInfo and SAML claims and on the portal; and
   a sign-in step that collects a missing value instead of refusing a
   federated newcomer.
 
-`tests/attribute_policy.js` holds it in process.
+`tests/attribute_policy.js` holds it in process, and
+`tests/attribute_policy_named.js` the named profiles (#1241).
 
 ## 3cp. `phishing_resistance.ts`: WHAT EARNS OPENID CONNECT EAP's `phr` AND `phrh` (#723, 2026-10-19)
 
@@ -14021,9 +14203,27 @@ invitation ends Skip; a required activity BLOCKS the sign-in; off by
 default, and done inside the sign-in flow.
 
 * **`post_login_policy.ts` is the seventh kind on Directory → Policies**,
-  `locale_policy.ts`'s pattern with the passkey policy's group selection
-  (`selectGroups`, `precedence`). Exclusion is a disabled named profile at a
-  lower precedence — no second list.
+  `locale_policy.ts`'s pattern. **Since #1239 (3cx) what a named profile
+  covers NAMES it**: a group in `stsPostLoginPolicy`, an application in
+  `appPostLoginPolicy`; the profile keeps its rows and `precedence`, and
+  `stsPostLoginSelectGroup` is gone (schema too; no migration). Exclusion is
+  a disabled named profile at a lower precedence — no second list — named
+  from a group or, now, an application. A dangling reference selects
+  nothing (STS-AUTHN-0542: the policy asks, it guards no door, so it does
+  not fail closed); a named profile something names is not deleted
+  (STS-AUTHN-0543). The kind is tabbed.
+* **AN APPLICATION IS KNOWN ONLY AT A SIGN-IN (#1239).** `dueFor(username,
+  application)` hands `authn.ts`'s application to `forPerson(username,
+  groupsOf, application)`, which ranks it with the groups'. The questions
+  asked of a PERSON outside a sign-in — `post_login_activities.ts`'s
+  `decide()` (the reminder walk) and `report/sources.ts`'s
+  `postLoginProgress` (a row with no stamped profile) — pass none and rank
+  the groups alone. So a profile off that a group names keeps its members
+  out of the mail as well as the sign-in; one an application names keeps a
+  sign-in to that application out and does not stop a mail, which only asks
+  the person to sign in. `personGroups()` answers each group WITH the
+  profile it names (`personGroupReferences()`, one read shared with the
+  started activities' group test, as #1126 asked).
 * **`post_login.ts` answers the per-person question** (`dueFor()`) and keeps
   `post_login.progress` (cell-tier, on demand): first invitation, snooze,
   done. "Post-quantum" is the key's ALGORITHM, never its lane — a realm with
@@ -14184,3 +14384,246 @@ policy's to say; there is no second switch.
   because `credentials.ts` may not reach the audit log.
 * **`lanes`** on the passkey policy (#1104) feeds
   `webauthnPolicy.alongsideClassical()` through `registrationRows()`.
+
+## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
+
+rcbj's decisions on #1234 (2026-10-30, twice that day): every kind on
+Directory → Policies gets named policies, and
+
+* **WHAT A POLICY COVERS NAMES IT; THE POLICY LISTS NOTHING.** One
+  single-valued attribute per kind on each kind of holder the kind maps to:
+  `app<Kind>Policy` on the application (as `appAuthnPolicy` since #1148),
+  `sts<Kind>Policy` on the group and the person (one spelling for both).
+  A named policy keeps its rows and its precedence (`sts<Kind>Precedence`,
+  1 to 1000). The names: applications `appPasswordPolicy`,
+  `appAuthnPolicy`, `appPasskeyPolicy`, `appLocalePolicy`,
+  `appPostLoginPolicy`; groups `stsPasswordPolicy`, `stsAuthnPolicy`,
+  `stsPasskeyPolicy`, `stsLocalePolicy`, `stsAttributePolicy`,
+  `stsPostLoginPolicy`; people `stsServiceAccountPolicy`,
+  `stsAttributePolicy`.
+* **THE RANKING**: the candidates are the policy the application names, the
+  policy the person names and the policy each of the person's groups names.
+  The lowest precedence wins, ties by name, else `default`. An empty
+  reference and `default` are no candidate. A name the realm does not hold
+  is no candidate either and comes back in `missing`: what it MEANS is the
+  kind's (the authentication policy fails closed, #1148; the passkey policy
+  logs it and reads on, its default being the realm's baseline; so does the
+  password policy, #1236, 3ac, after a first cut that answered `default`
+  whatever else ranked was found to weaken a valid stricter reference).
+* **CHECKED AT THE WRITE, AND NOT DELETED WHILE NAMED.** Each holder has one
+  door: an application's field through `applications.js`'
+  CHOICES_CHECKED_HERE (STS-REG-0203), a group's through the directory's
+  `setGroupPolicy()` (STS-LDAP-0194, 0195), a person's through the person
+  editor (STS-LDAP-0106). A named policy any holder names is not deleted:
+  `PolicySelection.deleteProblem()` words the refusal, under the kind's own
+  code.
+* **SELECTION, NOT AUTHORIZATION** (#535's decision): it chooses which rows
+  apply; the rows' refusals decide, in the issuance policy where they are
+  decisions.
+
+What the module is: **a leaf of static methods** (rule 3) over values the
+caller hands in — `rank()`, `named()`, `precedenceOf()`, `groupReferences()`
+(a person's groups as references), `forReference()` (what one holder's
+reference comes to, the application page's card), `nameProblem()`,
+`checkPrecedence()`, `referenceProblem()`, `deleteProblem()`, and
+`MIN_PRECEDENCE`, `MAX_PRECEDENCE`, `DEFAULT_PRECEDENCE`. **Its one state is
+the register of person and group references** (`declareReference()`,
+`referenceOf()`, `referencesOn()`): a kind declares at load, and the person
+editor and the group writer read it, so neither requires any kind's module
+and the console draws one picker per declared kind.
+
+**Who names a policy is each register's own question**, reached lazily so
+the leaves stay leaves, and none of it a walk:
+`applications.applicationsNamingPolicy(attribute, name)` (the application
+listing indexes every attribute in `POLICY_REFERENCES`;
+`applicationsNamingAuthnPolicy()` is it for `appAuthnPolicy`), the
+directory's `groupsNamingPolicy()` (the group index, which holds all six
+group references already) and `peopleNamingPolicyAsync()` (the holders of
+the attribute, async: a kind whose delete must ask it awaits it).
+
+**The post-login policy converted in #1239** (3ct): `stsPostLoginPolicy`
+on the group, `appPostLoginPolicy` on the application, and the list it kept
+until then is gone.
+
+### The recipe a kind follows (#1236–#1241)
+
+1. **The module** (`common/<kind>_policy.ts`): a `SELECTION` spec
+   (`{ precedenceAttribute: 'sts<Kind>Precedence', defaultPrecedence:
+   PolicySelection.DEFAULT_PRECEDENCE }`), `REFERENCES` (`{ application?,
+   group?, person? }`, exported), `SELECTORS` holding the `precedence` row
+   only (the console and the API draw a field per row and nothing else),
+   a precedence on `read()` of a named profile
+   (`PolicySelection.precedenceOf()`), `checkPrecedence()` and
+   `nameProblem()` in `save()`, and `namedBy(name)` answering `{
+   applications, groups, people }`. The selection: gather the references —
+   the application's (lazily through `applications.js`), the person's (their
+   entry), the groups' (`directory.personGroupReferences(key,
+   REFERENCES.group)` and `PolicySelection.groupReferences()`) — and
+   `PolicySelection.rank(entries, SELECTION, references)`; decide what
+   `missing` means and log it under the kind's code. `reset()` of a named
+   profile refuses with `deleteProblem(noun, name, this.namedBy(name))`.
+   At load, after the slot: `PolicySelection.declareReference('group' |
+   'person', attribute, noun, choices)` for each group or person reference.
+2. **The kind's row** in `admin-core/policy_kinds.ts`: `tabbed: true` for
+   the Default / Named policies / New policy sub-tabs.
+3. **An application reference**: a declaration row in `applications.js`
+   (`appPasskeyPolicy`'s, beside `appAuthnPolicy`), and the attribute in
+   `EDITABLE` (`'set'`), `ATTRIBUTE_CHOICES` (`default` and the kind's
+   named policies, read lazily), `CHOICES_CHECKED_HERE`, `POLICY_REFERENCES`
+   and not `SIMPLE_FIELD_ATTRIBUTES`, whose set is what two working
+   applications hold (`tests/subtab_views.js` holds it to that): a
+   reference is an advanced field.
+4. **A group reference**: nothing in `ldap_server.js` beyond handing
+   `personGroupReferences` and `groupsNamingPolicy` to the module's
+   `setDirectory()`; the index and `setGroupPolicy()` are generic.
+5. **A person reference**: the declaration, `peopleNamingPolicyAsync` in the
+   module's hooks; the Policies tab is the person editor's.
+6. **The rest of what #1234 lists**: the kind's error codes, the prose
+   catalogs (the `SELECTORS` and `SCHEMA` sentences are the policies
+   namespace's), `docs/`, and tests on `tests/policy_selection.js`'s
+   pattern.
+
+## 3da. `audit_export.ts`: THIS PROCESS DELIVERS ITS OWN AUDIT RING (#641, 2026-11-01)
+
+Monitoring → Audit export and `GET` / `POST /admin-api/audit-export`. The
+file's header is the argument; what a maintainer must not undo:
+
+* **THE RING IS THE RECORD.** Delivery reads `audit.localEvents()`, this
+  process's own ring, oldest first. Nothing is copied into an outbox at
+  record time. In product mode on postgres the ring is the minted state the
+  store already keeps; in development and on memory it dies with the
+  process, and so does delivery. A spill file that outlived `audit.maxEvents`
+  is a later decision.
+* **DESTINATIONS ARE SHARED. CURSORS ARE THIS PROCESS'S.** `audit.export.destinations`
+  is a per-realm map, replace, every process reads the same rows.
+  `audit.export.cursors` is `merge: 'own'`, keyed by destination id. A second
+  `persist` handle logs `STS-CORE-0022` and is not the status. The page's
+  figures are this process. `contributionsOnRead` stays off.
+* **A NEW ENABLED DESTINATION BACKFILLS ONCE.** The first tick, while
+  `primed` is false, sets `cursor.seq` to one before the oldest event this
+  ring still holds, or `0` when the ring is empty, and sets `primed`. That
+  prime is the retained window, bounded by `audit.maxEvents`. A destination
+  that was enabled, then disabled, keeps its cursor and continues when it is
+  enabled again. A destination that has never been enabled is primed on the
+  first tick that visits it.
+* **A GAP IS A MISSING BOOKMARK, AND `seq` ARITHMETIC IS THE WRONG TEST.**
+  `seq` is leased in blocks. A numeric gap is unused space in another
+  worker's block (`docs/admin-console.md`). The cursor keeps `nextSeq`, the
+  event this process meant to send next. On a later tick, already primed,
+  when that event is gone and `cursor.seq` is still below it, the bookmark
+  was trimmed. One episode increments `droppedGap` and writes one
+  `STS-AUDIT-0009` row, then `cursor.seq` moves to one before the oldest
+  event still held. An empty ring leaves the cursor. After the tick,
+  `nextSeq` is the first remaining event that was not skipped, or
+  `inFlightSeq` while a Splunk acknowledgement is in flight.
+* **THE CURSOR MOVES ON SUCCESS AND ON A PERMANENT REJECTION.** A transient
+  failure calls `hold()` and leaves `cursor.seq`. `hold()` audits once, when
+  `failingSince` is first set (`service.failure`, summarised,
+  `detail.exportSkip`), then grows `retryMs` from `auditExport.retryInitialMs`
+  up to `auditExport.retryMaxMs`. `recover()` audits once, outcome success,
+  the same skip, and clears the episode. The cursor object is replaced
+  (`putCursor` assigns a new object) and saved once at the end of the tick.
+  `stillOwner()` false stops the destination without counting a failure, and
+  the events already accepted are still saved.
+* **GIVE-UP DROPS ONE BATCH, THEN WAITS.** Once `failingSince` is older than
+  `auditExport.retryMaxPeriodMs`, the head event is still sent. Success
+  recovers and the rest of the budget continues. A pause or a transient
+  failure of that probe counts the probed event permanently failed, advances
+  past it, and drops further events in that run up to `auditExport.batch`
+  without another send. One `STS-AUDIT-0011` row names the count and the
+  first and last ids. `pausedUntil` becomes now plus the first retry delay.
+  `failingSince` stays until a success. An HTTP 400 (`STS-AUDIT-0015`)
+  advances that one event and does not start the drop. `401` and `403` pause
+  and leave the cursor. A `3xx` is `STS-AUDIT-0014`: the response is
+  destroyed, the `Location` is absent from every string, and the cursor
+  stays. `429`, `408`, `5xx` and a timeout honour `Retry-After` (integer
+  seconds or an HTTP-date, capped at an hour) and pause. A non-zero Splunk
+  collector code on HTTP 2xx pauses (`STS-AUDIT-0007`).
+* **AT LEAST ONCE.** A crash after the send and before the cursor save
+  delivers the event again. The event id is `(origin || 'local') + ':' + seq`.
+  The guarantee stops there.
+* **ROWS THIS SUBSYSTEM WRITES CARRY `detail.exportSkip`.** The job advances
+  the cursor past them and sends nothing. The administrative test row does
+  not: `admin.audit-export.test` is exported. The synthetic event the test
+  sends (`id` `test:<destinationId>:<timestamp>`, `attributes.test`) is
+  absent from the ring. A test does not move the delivery cursor and does
+  not clear `failingSince`.
+* **REDACTION WALKS THE DETAIL.** `ALWAYS_REDACT` (password, secret, token,
+  authorization, client_secret, assertion, access_token, refresh_token,
+  id_token), union `auditExport.redactKeys`, union the destination's
+  `excludeAttributes`, case-insensitive, objects and arrays. A matching
+  value becomes `[redacted]`. `canonical()` receives the set from the
+  caller. `exportSkip` is read on the raw row before that.
+* **CREDENTIALS ARE SEALED, AND AN ANSWER CARRIES NONE.** A Splunk token and
+  secret headers are sealed under the realm's data key (`STS-AUDIT-0003`
+  when that fails, and the destination is not stored). The view returns
+  `tokenSet` and `secretHeaderSet`. A header whose name matches
+  authorization, token, api-key or secret is moved into the sealed set. An
+  empty token on update keeps the box. Plain headers, including an empty
+  text, replace. Deleting one secret header is absent from this version.
+  `lastFailure` strips `https?://` URLs. A duplicate id is `STS-AUDIT-0001`;
+  an unknown id is `STS-AUDIT-0002`. `refusal()` marks the object, so a test
+  reads `errorCodes.codeOf(result)`.
+* **SYSLOG IS RFC 5424, TCP BY DEFAULT.** PRI is facility times 8 plus
+  severity (facility defaults to local0, 16; success is notice 5, so
+  `<133>1`). The structured-data id is `iyaAudit`, a local name, not an
+  IANA enterprise number. The message has no trailing newline; TCP and TLS
+  use an RFC 6587 octet-counted frame. UDP is `transmitted` when `dgram.send`
+  calls back. One socket per destination per tick. LogRhythm is this adapter
+  with `type: 'logrhythm'`. Plain TCP is its own transport.
+  `auditExport.allowHttp` does not govern it.
+* **A FILE IS ONE APPEND.** `fs.promises` `write` of the NDJSON line on an
+  fd opened `a` (`O_APPEND`). Mode `640` unless the destination names three
+  octal digits (`"640"` and `640` are both `0o640`). Rotation renames when
+  the size is at least `rotateBytes` (`0` leaves rotation to the operator).
+  A path is absolute, has no `..` segment, and when `auditExport.fileRoots`
+  is set lies under one root. The path is checked again at send
+  (`STS-AUDIT-0004` pauses). `ENOSPC` and a permission error pause
+  (`STS-AUDIT-0008`). Two processes appending one path can interleave a line
+  longer than `PIPE_BUF` (4096). The handle map is this process, closed on
+  remove, on a path change, and in `resetForTests`.
+* **A WEBHOOK BODY IS ONE PASS.** Placeholders `{timestamp}` `{severity}`
+  `{event_type}` `{subject}` `{message}` `{id}` `{realm}` `{outcome}`
+  `{category}` `{target}` `{address}` `{origin}` `{protocol}` `{channel}`,
+  or the canonical JSON when the template is empty. A value that itself
+  contains `{message}` is left as text. An empty template is
+  `application/json`; a template is `text/plain; charset=utf-8` unless
+  `contentType` is set.
+* **SPLUNK ACKNOWLEDGEMENT IS ONE EVENT IN FLIGHT.** With `ack` on, the
+  cursor stores `ackId` and a stable `ackChannel`. The next event waits
+  until `POST` of the ack URL says that id is true, and the disposition
+  becomes `acknowledged`. Absent means resend. Pending waits for the job
+  interval and counts no failure. A failed poll keeps `ackId` and backs off.
+  The ack URL replaces a trailing `/event` or appends `/ack` to a trailing
+  `/collector`, and drops the query and the fragment.
+* **THE TWENTY-FIRST OUTBOUND EXCEPTION IS ARGUED HERE** (`federation/CLAUDE.md`).
+  Webhook, Splunk HEC and syslog TLS go through `outbound_tls.ts`: https,
+  product refuses plain http (`STS-AUDIT-0005`), skip-TLS is development
+  only and ignored in product (`STS-AUDIT-0012`, said once per process;
+  `STS-CORE-0104` passes through when the policy says so). No userinfo. The
+  name is resolved before connect and the pinned address is what the socket
+  uses; SNI and Host stay the name. A lookup failure or an empty answer at
+  send pauses and the cursor stays. The save checks the literal and, when
+  DNS answers, every address; a lookup failure at save still stores the
+  destination. Private ranges include RFC 6598 `100.64.0.0/10`. Cloud
+  metadata (`169.254.169.254` and its IPv6-mapped form, `metadata.google.internal`,
+  `metadata.azure.com` and their subdomains, `instance-data`,
+  `instance-data.ec2.internal`) is refused in every mode, including while
+  `auditExport.allowPrivateDestinations` is on. Development
+  (`mode.dialsPlainHttpOutbound()`) may dial a loopback host when every
+  resolved address is loopback. A public name that resolves to `127.0.0.1`
+  is refused at send. Redirects are not followed. The body read stops at
+  64 KiB. A TOCTOU between the lookup and the connect remains.
+* **THE JOB IS PER-PROCESS AND QUIET.** `audit.export`, scope realm,
+  `everySetting` `auditExport.intervalS` (0 is off; read the value, never
+  `|| n`). `requestRun` refuses every per-process job (`STS-SCHED-0005`),
+  so a test calls `runAsync`. One destination's throw is caught and the
+  others still run. Recording in `audit.js` stays a near-leaf: this module
+  is required lazily from the job, and `audit.js` grows no new top-level
+  require. `resetForTests` clears the installed maps and closes file
+  handles. A test that needs a private walk builds `new AuditExport(deps)`
+  and does not require the module from the parent of `tests/run.js`: the
+  slot builds the default once `deferToRoot` has not run, and a later
+  `installInstance` throws. `tests/audit_export.js` therefore requires it
+  only inside a child.
+

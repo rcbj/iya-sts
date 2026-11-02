@@ -177,6 +177,7 @@
   "nav.risk-scoring": "Puntuación de riesgo",
   "nav.geolocation": "Geolocalización",
   "nav.audit": "Registro de auditoría",
+  "nav.audit-export": "Exportación de auditoría",
   "nav.error-codes": "Códigos de error",
   "nav.realms": "Dominios de confianza",
   "nav.config": "Configuración",

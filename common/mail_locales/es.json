@@ -20,6 +20,11 @@
       "text": "La cuenta {{username}} indica {{address}} como su dirección de correo electrónico.\n\nPara confirmar que esta es su dirección, abra este enlace en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi esta no es su cuenta, ignore este mensaje.\n",
       "html": "<p>La cuenta <strong>{{username}}</strong> indica {{address}} como su dirección de correo electrónico.</p><p><a href=\"{{link}}\">Confirme que esta es su dirección</a> en los próximos {{expiresMinutes}} minutos.</p><p>Si esta no es su cuenta, ignore este mensaje.</p>"
     },
+    "pseudonym-verification": {
+      "subject": "Confirme un nombre con el que puede iniciar sesión en {{service}}",
+      "text": "La cuenta {{username}} pidió iniciar sesión como {{address}}.\n\nPara confirmar que puede iniciar sesión con este nombre, abra este enlace en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nHasta que lo abra, ese nombre no le permite iniciar sesión. Si esta no es su cuenta, ignore este mensaje.\n",
+      "html": "<p>La cuenta <strong>{{username}}</strong> pidió iniciar sesión como {{address}}.</p><p><a href=\"{{link}}\">Confirme que puede iniciar sesión con este nombre</a> en los próximos {{expiresMinutes}} minutos. Hasta que lo abra, ese nombre no le permite iniciar sesión.</p><p>Si esta no es su cuenta, ignore este mensaje.</p>"
+    },
     "password-changed": {
       "subject": "Se cambió su contraseña de {{service}}",
       "text": "La contraseña de la cuenta {{username}} se cambió el {{when}} ({{how}}).\n\nSi no fue usted, comuníquese ahora con quien administra su cuenta.\n",

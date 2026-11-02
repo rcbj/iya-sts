@@ -342,6 +342,34 @@ class WebMessages {
   static languageOf(tag: string): string {
     return String(tag || '').split('-')[0].toLowerCase();
   }
+
+  // THE ONE TAG STRIPPER, AND IT REPEATS (2026-10-30). One pass of
+  // `/<[^>]*>/g` is not a sanitizer. That class swallows a `<`, so
+  // `<scr<b>ipt>` loses `<scr<b>` and leaves `ipt>`; a class that stops
+  // before the inner `<` instead removes `<b>` and leaves `<script>`.
+  // CodeQL's js/incomplete-multi-character-sanitization found the three
+  // copies of that one-liner (here, `web_kit.ts`'s plainTextOf(),
+  // `web_pages.ts`'s textOf()); this replaces all three. A match may not
+  // contain `<`, and the pass repeats until it removes nothing, so a tag
+  // the removal assembles is taken on the next pass. Each pass that changes
+  // the string shortens it, so it ends. A `<` with no `>` after it stays:
+  // a lone `<` is text, and what the callers do with the result (HTML text
+  // that is valid already, or a value a renderer escapes) is unchanged.
+  /**
+   * Removes every tag from a fragment, repeatedly, until none is left.
+   *
+   * @param text - the fragment
+   * @returns the fragment with no `<…>` left in it
+   */
+  static stripTags(text: string): string {
+    let out = String(text == null ? '' : text);
+    let before: string;
+    do {
+      before = out;
+      out = out.replace(/<[^<>]*>/g, '');
+    } while (out !== before);
+    return out;
+  }
 }
 
 /**
@@ -510,7 +538,7 @@ class WebTranslator {
     if (asHtml) {
       return out;
     }
-    return out.replace(/<[^>]*>/g, '').replace(/\uE000(\d+)\uE001/g,
+    return WebMessages.stripTags(out).replace(/\uE000(\d+)\uE001/g,
       function (whole: string, index: string): string {
         const value = (slots as string[])[Number(index)];
         return value === undefined ? '' : value;

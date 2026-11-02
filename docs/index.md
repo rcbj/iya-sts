@@ -8,6 +8,11 @@ nav_order: 1
 An identity service that speaks every protocol family the sidebar lists in one
 Node process, in one of two modes (`global.mode`).
 
+What it speaks about is two protocol-independent objects. A
+[user](people.md) is one person. An [application](applications.md) is one
+application. The protocols name that pair.
+[Directory](directory.md).
+
 **Development mode, the default, exists to exercise *clients*:** it checks no
 end user's password, creates whoever and whatever a request names, and accepts
 tokens it cannot verify at the doors where a client under test needs to. A
@@ -47,13 +52,28 @@ each.
 **Administration** —
 [Admin console](admin-console.md): `/admin`, who may use it and what its pages
 do ·
-[Applications](applications.md): the registry of every client, relying party
-and service provider ·
+[Audit export destinations](audit-export.md): where this process sends its
+audit events, with an example for syslog, a file, a webhook, Splunk HEC and
+LogRhythm ·
 [Management API](management-api.md): `/admin-api`, every console control
 reachable by a machine with an OAuth 2.0 access token ·
 [Delegation and impersonation](delegation.md): who may obtain a token about
 somebody else, the same controls for RFC 8693, WS-Trust, Kerberos and GNAP,
 the token types and claims, and a worked example of each.
+
+**Directory** — a user and an application, which belong to no protocol,
+then the policy they are held to, then how each is configured.
+[Directory](directory.md) ·
+[People](people.md) ·
+[Applications](applications.md): one application, whichever protocol it
+spoke ·
+[Policies](policies.md): the seven kinds, and how a named policy is chosen ·
+[Service accounts](service-accounts.md) ·
+[LDAP](ldap.md) ·
+[LDAP schema](ldap-schema.md) ·
+[Configuring LDAP](configure-ldap.md) ·
+[SCIM 2.0](scim.md) ·
+[Bulk directory import](bulk-import.md).
 
 **Configuration recipes** — what to register, which settings to change and
 what the client sends, each given as admin console steps and as Management
@@ -116,7 +136,6 @@ macOS apps.
 [The compose stack](docker-compose.md) ·
 [Persistence](persistence.md) ·
 [PostgreSQL schema](postgres-schema.md) ·
-[LDAP schema](ldap-schema.md) ·
 [Encryption at rest](encryption-at-rest.md) ·
 [Caches](caches.md) ·
 [A cluster in AWS](aws-cluster.md) ·

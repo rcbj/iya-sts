@@ -8375,6 +8375,118 @@
     "en": "4270a8167905dee9",
     "text": "Hur många dagar av bedömda inloggningar Senaste inloggningar på användarportalen listar för den inloggade personen. Varje sfär sätter sin egen, eftersom värdet läses i den omgivande sfären. Konsolens flik Autentiseringsförsök för en person listar varje försök som granskningsloggen fortfarande har, hela loggen. Loggens eget tak kan fortfarande ta bort äldre rader."
   },
+  "auditExport.enabled|label": {
+    "en": "6215b564a1d4430f",
+    "text": "Granskningsexport"
+  },
+  "auditExport.enabled|description": {
+    "en": "2e61f36553b98426",
+    "text": "Om den här processen levererar sina egna granskningshändelser till de mål som är konfigurerade på Granskningsexport. Av lämnar varje måls markör där den är. Ett leveransfel gör aldrig att den granskade åtgärden misslyckas."
+  },
+  "auditExport.intervalS|label": {
+    "en": "6a9505dd2d6963e2",
+    "text": "Leveransintervall (sekunder)"
+  },
+  "auditExport.intervalS|description": {
+    "en": "5c29c7ea071c4eb6",
+    "text": "Hur ofta jobbet audit.export levererar den här processens nya granskningshändelser. 0 stänger av jobbet. Varje mål har sin egen kö, så ett långsamt mål håller inte uppe de andra."
+  },
+  "auditExport.batch|label": {
+    "en": "34237c7149141d00",
+    "text": "Händelser per mål och körning"
+  },
+  "auditExport.batch|description": {
+    "en": "5ecf10b9df08bb78",
+    "text": "Hur många händelser ett mål erbjuds under en körning av audit.export. Det som återstår väntar till nästa körning."
+  },
+  "auditExport.timeoutMs|label": {
+    "en": "e14f8cf09c36084d",
+    "text": "Leveranstimeout (millisekunder)"
+  },
+  "auditExport.timeoutMs|description": {
+    "en": "a45c9c5b557ccf8e",
+    "text": "Hur länge ett leveransförsök väntar på att ett mål ska ta emot det. En timeout håller det målets markör och försöker igen senare. Den släpper inte händelsen."
+  },
+  "auditExport.budgetMs|label": {
+    "en": "b4b3d688e0baf71b",
+    "text": "Tidsbudget per mål (millisekunder)"
+  },
+  "auditExport.budgetMs|description": {
+    "en": "99dc6d58f6281c96",
+    "text": "Hur länge en körning får lägga på ett mål. Det som återstår väntar till nästa körning, så ett långsamt mål kan inte hålla upp jobbet."
+  },
+  "auditExport.retryInitialMs|label": {
+    "en": "e970ebf994887a91",
+    "text": "Första fördröjning vid nytt försök (millisekunder)"
+  },
+  "auditExport.retryInitialMs|description": {
+    "en": "3efbeb32b15064b4",
+    "text": "Hur länge ett mål väntar efter sitt första leveransfel innan nästa försök. Varje ytterligare fel väntar längre, upp till den längsta fördröjningen."
+  },
+  "auditExport.retryMaxMs|label": {
+    "en": "a2b0ee21a36fc1ec",
+    "text": "Längsta fördröjning vid nytt försök (millisekunder)"
+  },
+  "auditExport.retryMaxMs|description": {
+    "en": "23a00041cb4de752",
+    "text": "Den längsta tid ett mål väntar mellan leveransförsök medan det misslyckas. Fördröjningen växer från den första fördröjningen upp till denna."
+  },
+  "auditExport.retryMaxPeriodMs|label": {
+    "en": "c3ed6629c0e4f8ca",
+    "text": "Ge upp efter (millisekunder)"
+  },
+  "auditExport.retryMaxPeriodMs|description": {
+    "en": "8223c47d559c0791",
+    "text": "Hur länge ett mål som misslyckas prövas igen innan händelsen längst fram räknas som permanent misslyckad och markören flyttas förbi den. Upp till en omgång händelser bakom den räknas på samma sätt i den körningen, och målet prövas igen efter den första fördröjningen. Detta är inte leverans exakt en gång."
+  },
+  "auditExport.allowHttp|label": {
+    "en": "d26d6720b84d76cb",
+    "text": "Tillåt klartext-http"
+  },
+  "auditExport.allowHttp|description": {
+    "en": "f675b6fdb38c923c",
+    "text": "Om ett webhook- eller Splunk HEC-mål får använda http. Endast utvecklingsläge, och det ignoreras i produktläge, där de målen använder https. Varje sådan leverans loggas. Syslog-TCP är en egen transport och är inte den här inställningen."
+  },
+  "auditExport.skipTlsVerification|label": {
+    "en": "c389cb92e8fdb20b",
+    "text": "Hoppa över TLS-kontroll (endast utveckling)"
+  },
+  "auditExport.skipTlsVerification|description": {
+    "en": "5770424e0835bb19",
+    "text": "VARNING. Endast utvecklingsläge. På skickar webhook, Splunk HEC och syslog-TLS utan att kontrollera certifikatet hos den som svarar. Varje sådan leverans loggas. I produktläge ignoreras det och kan inte sättas. Ange en privat CA i inställningen för CA-filen i stället."
+  },
+  "auditExport.caFile|label": {
+    "en": "0821b8a548294613",
+    "text": "Fil med CA-certifikat"
+  },
+  "auditExport.caFile|description": {
+    "en": "e91f3272d5ded195",
+    "text": "En PEM-fil med CA-certifikat som ett webhook-, Splunk HEC- eller syslog-TLS-mål får kedja till, vid sidan av nodes eget CA-lager. Tom använder bara nodes lager. En fil som inte kan läsas vägrar leveransen."
+  },
+  "auditExport.allowPrivateDestinations|label": {
+    "en": "f9c38f2342841463",
+    "text": "Tillåt privata adresser"
+  },
+  "auditExport.allowPrivateDestinations|description": {
+    "en": "eeefca8d6e68f82f",
+    "text": "Om ett mål får vara en loopback-, länklokal eller privat adress. Av vägrar produktläge dem, och utvecklingsläge tillåter fortfarande loopback så att en testlyssnare fungerar. Molnets metadataadresser vägras även när detta är på."
+  },
+  "auditExport.fileRoots|label": {
+    "en": "c47d1eb20e5be4de",
+    "text": "Tillåtna filsystemsrötter"
+  },
+  "auditExport.fileRoots|description": {
+    "en": "d4771342a5f6444b",
+    "text": "Absoluta kataloger som ett filsystemsmål får skriva under, åtskilda med kommatecken. Tom tillåter varje absolut sökväg en administratör anger. En relativ sökväg, en sökväg som klättrar ur sin katalog, och en sökväg utanför dessa rötter vägras."
+  },
+  "auditExport.redactKeys|label": {
+    "en": "f84773415c7f59e9",
+    "text": "Attribut som aldrig exporteras"
+  },
+  "auditExport.redactKeys|description": {
+    "en": "b538c89d9bed6559",
+    "text": "Namn på detaljattribut, åtskilda med kommatecken, som tas bort från varje exporterad händelse. Matchningen är okänslig för skiftläge. Ett mål får ange fler. Lösenord, token och intyg finns på standardlistan."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Högsta antal lagrade delegeringshandlingar"

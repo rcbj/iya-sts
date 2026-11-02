@@ -643,6 +643,10 @@
     "en": "00a6e30371abdc2d",
     "text": "Un administrador estableció la dirección de una persona"
   },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "Un administrador cambió los nombres de inicio de sesión de una persona"
+  },
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "Un operador borró la aplicación de autenticación de alguien"
@@ -1822,5 +1826,29 @@
   "audit.actions.report.job.retrieve.label": {
     "en": "2f81320658ea37b8",
     "text": "Se recuperó el resultado de un informe"
+  },
+  "audit.actions.admin.audit-export.add.label": {
+    "en": "8c0a46b4a7286c31",
+    "text": "Se añadió un destino de exportación de auditoría"
+  },
+  "audit.actions.admin.audit-export.update.label": {
+    "en": "5dffabe5c58492fb",
+    "text": "Se actualizó un destino de exportación de auditoría"
+  },
+  "audit.actions.admin.audit-export.remove.label": {
+    "en": "a1ce8547b7eb7431",
+    "text": "Se retiró un destino de exportación de auditoría"
+  },
+  "audit.actions.admin.audit-export.enable.label": {
+    "en": "8b7b2ef9c33fe419",
+    "text": "Se activó un destino de exportación de auditoría"
+  },
+  "audit.actions.admin.audit-export.disable.label": {
+    "en": "7dbb1b1d2bdf4aec",
+    "text": "Se desactivó un destino de exportación de auditoría"
+  },
+  "audit.actions.admin.audit-export.test.label": {
+    "en": "e523fcd6d4957e6d",
+    "text": "Se probó un destino de exportación de auditoría"
   }
 }
