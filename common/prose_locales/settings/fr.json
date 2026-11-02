@@ -8375,6 +8375,118 @@
     "en": "4270a8167905dee9",
     "text": "Combien de jours de connexions évaluées la page Connexions récentes du portail utilisateur liste pour la personne connectée. Chaque domaine fixe le sien, car la valeur est lue dans le domaine ambiant. L’onglet Tentatives d’authentification de la console, sur une personne, liste chaque tentative que le journal d’audit détient encore, le journal entier. Le plafond propre du journal peut encore retirer les lignes plus anciennes."
   },
+  "auditExport.enabled|label": {
+    "en": "6215b564a1d4430f",
+    "text": "Export d’audit"
+  },
+  "auditExport.enabled|description": {
+    "en": "2e61f36553b98426",
+    "text": "Indique si ce processus livre ses propres événements d’audit aux destinations configurées sur Export d’audit. Désactivé, le curseur de chaque destination reste où il est. Un échec de livraison ne fait jamais échouer l’opération qui a été auditée."
+  },
+  "auditExport.intervalS|label": {
+    "en": "6a9505dd2d6963e2",
+    "text": "Intervalle de livraison (secondes)"
+  },
+  "auditExport.intervalS|description": {
+    "en": "5c29c7ea071c4eb6",
+    "text": "À quelle fréquence la tâche audit.export livre les nouveaux événements d’audit de ce processus. 0 arrête la tâche. Chaque destination a sa propre file, de sorte qu’une destination lente ne retient pas les autres."
+  },
+  "auditExport.batch|label": {
+    "en": "34237c7149141d00",
+    "text": "Événements par destination et par exécution"
+  },
+  "auditExport.batch|description": {
+    "en": "5ecf10b9df08bb78",
+    "text": "Combien d’événements une destination reçoit au cours d’une exécution d’audit.export. Ce qui reste attend la prochaine exécution."
+  },
+  "auditExport.timeoutMs|label": {
+    "en": "e14f8cf09c36084d",
+    "text": "Délai de livraison (millisecondes)"
+  },
+  "auditExport.timeoutMs|description": {
+    "en": "a45c9c5b557ccf8e",
+    "text": "Combien de temps une tentative de livraison attend qu’une destination l’accepte. Un dépassement maintient le curseur de cette destination et réessaie plus tard. Il ne supprime pas l’événement."
+  },
+  "auditExport.budgetMs|label": {
+    "en": "b4b3d688e0baf71b",
+    "text": "Budget de temps par destination (millisecondes)"
+  },
+  "auditExport.budgetMs|description": {
+    "en": "99dc6d58f6281c96",
+    "text": "Combien de temps une exécution peut consacrer à une destination. Ce qui reste attend la prochaine exécution, de sorte qu’une destination lente ne peut pas retenir la tâche."
+  },
+  "auditExport.retryInitialMs|label": {
+    "en": "e970ebf994887a91",
+    "text": "Premier délai de nouvel essai (millisecondes)"
+  },
+  "auditExport.retryInitialMs|description": {
+    "en": "3efbeb32b15064b4",
+    "text": "Combien de temps une destination attend après son premier échec de livraison avant la tentative suivante. Chaque échec supplémentaire attend plus longtemps, jusqu’au délai maximal de nouvel essai."
+  },
+  "auditExport.retryMaxMs|label": {
+    "en": "a2b0ee21a36fc1ec",
+    "text": "Délai maximal de nouvel essai (millisecondes)"
+  },
+  "auditExport.retryMaxMs|description": {
+    "en": "23a00041cb4de752",
+    "text": "Le plus long délai qu’une destination attend entre deux tentatives de livraison pendant qu’elle échoue. Le délai croît depuis le premier délai de nouvel essai jusqu’à celui-ci."
+  },
+  "auditExport.retryMaxPeriodMs|label": {
+    "en": "c3ed6629c0e4f8ca",
+    "text": "Abandon après (millisecondes)"
+  },
+  "auditExport.retryMaxPeriodMs|description": {
+    "en": "8223c47d559c0791",
+    "text": "Combien de temps une destination en échec est retentée avant que l’événement en tête soit compté comme définitivement échoué et que le curseur le dépasse. Jusqu’à un lot d’événements derrière celui-ci sont comptés de la même façon au cours de cette exécution, et la destination est retentée après le premier délai de nouvel essai. Ce n’est pas une livraison exactement une fois."
+  },
+  "auditExport.allowHttp|label": {
+    "en": "d26d6720b84d76cb",
+    "text": "Autoriser le http en clair"
+  },
+  "auditExport.allowHttp|description": {
+    "en": "f675b6fdb38c923c",
+    "text": "Indique si une destination webhook ou Splunk HEC peut utiliser http. Mode développement seulement, et ignoré en mode produit, où ces destinations utilisent https. Chaque livraison de ce genre est journalisée. Le TCP syslog est un transport distinct et n’est pas ce réglage."
+  },
+  "auditExport.skipTlsVerification|label": {
+    "en": "c389cb92e8fdb20b",
+    "text": "Ignorer la vérification TLS (développement seulement)"
+  },
+  "auditExport.skipTlsVerification|description": {
+    "en": "5770424e0835bb19",
+    "text": "AVERTISSEMENT. Mode développement seulement. Activé, envoie le webhook, Splunk HEC et le syslog TLS sans vérifier le certificat de celui qui répond. Chaque livraison de ce genre est journalisée. En mode produit il est ignoré et ne peut pas être défini. Nommez une AC privée dans le réglage du fichier d’AC à la place."
+  },
+  "auditExport.caFile|label": {
+    "en": "0821b8a548294613",
+    "text": "Fichier de certificats d’AC"
+  },
+  "auditExport.caFile|description": {
+    "en": "e91f3272d5ded195",
+    "text": "Un fichier PEM de certificats d’AC auquel une destination webhook, Splunk HEC ou syslog TLS peut se chaîner, à côté du magasin d’AC propre de node. Vide utilise le magasin de node seul. Un fichier qui ne peut pas être lu refuse la livraison."
+  },
+  "auditExport.allowPrivateDestinations|label": {
+    "en": "f9c38f2342841463",
+    "text": "Autoriser les adresses privées"
+  },
+  "auditExport.allowPrivateDestinations|description": {
+    "en": "eeefca8d6e68f82f",
+    "text": "Indique si une destination peut être une adresse de bouclage, lien-local ou privée. Désactivé, le mode produit refuse celles-ci, et le mode développement autorise encore le bouclage pour qu’un écouteur de test fonctionne. Les adresses de métadonnées infonuagiques sont refusées même lorsque ceci est activé."
+  },
+  "auditExport.fileRoots|label": {
+    "en": "c47d1eb20e5be4de",
+    "text": "Racines de système de fichiers autorisées"
+  },
+  "auditExport.fileRoots|description": {
+    "en": "d4771342a5f6444b",
+    "text": "Répertoires absolus sous lesquels une destination de système de fichiers peut écrire, séparés par des virgules. Vide autorise tout chemin absolu qu’un administrateur nomme. Un chemin relatif, un chemin qui sort de son répertoire, et un chemin hors de ces racines sont refusés."
+  },
+  "auditExport.redactKeys|label": {
+    "en": "f84773415c7f59e9",
+    "text": "Attributs jamais exportés"
+  },
+  "auditExport.redactKeys|description": {
+    "en": "b538c89d9bed6559",
+    "text": "Noms d’attributs de détail, séparés par des virgules, retirés de chaque événement exporté. La correspondance ne tient pas compte de la casse. Une destination peut en nommer d’autres. Les mots de passe, les jetons et les assertions figurent sur la liste par défaut."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Nombre maximal d’actes de délégation conservés"

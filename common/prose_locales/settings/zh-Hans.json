@@ -8375,6 +8375,118 @@
     "en": "4270a8167905dee9",
     "text": "用户门户上的“最近的登录”为已登录的人列出多少天已评估的登录。每个领域各自设置，因为该值在当前领域中读取。控制台上某人的“身份验证尝试”选项卡列出审计日志仍保存的每一次尝试，即整份日志。日志自身的上限仍可能丢掉更早的行。"
   },
+  "auditExport.enabled|label": {
+    "en": "6215b564a1d4430f",
+    "text": "审计导出"
+  },
+  "auditExport.enabled|description": {
+    "en": "2e61f36553b98426",
+    "text": "本进程是否把自身的审计事件投递到审计导出上配置的目标。关闭时，每个目标的游标留在原处。投递失败从不会使被审计的操作失败。"
+  },
+  "auditExport.intervalS|label": {
+    "en": "6a9505dd2d6963e2",
+    "text": "投递间隔（秒）"
+  },
+  "auditExport.intervalS|description": {
+    "en": "5c29c7ea071c4eb6",
+    "text": "audit.export 任务隔多久投递本进程的新审计事件。0 关闭该任务。每个目标有自己的队列，因此一个慢目标不会拖住其他目标。"
+  },
+  "auditExport.batch|label": {
+    "en": "34237c7149141d00",
+    "text": "每次运行每个目标的事件数"
+  },
+  "auditExport.batch|description": {
+    "en": "5ecf10b9df08bb78",
+    "text": "一次 audit.export 运行向一个目标提供多少事件。剩下的等到下一次运行。"
+  },
+  "auditExport.timeoutMs|label": {
+    "en": "e14f8cf09c36084d",
+    "text": "投递超时（毫秒）"
+  },
+  "auditExport.timeoutMs|description": {
+    "en": "a45c9c5b557ccf8e",
+    "text": "一次投递尝试等待目标接受多久。超时保持该目标的游标并稍后重试。它不丢弃该事件。"
+  },
+  "auditExport.budgetMs|label": {
+    "en": "b4b3d688e0baf71b",
+    "text": "每个目标的时间预算（毫秒）"
+  },
+  "auditExport.budgetMs|description": {
+    "en": "99dc6d58f6281c96",
+    "text": "一次运行可以在一个目标上花费多久。剩下的等到下一次运行，因此一个慢目标不能拖住该任务。"
+  },
+  "auditExport.retryInitialMs|label": {
+    "en": "e970ebf994887a91",
+    "text": "首次重试延迟（毫秒）"
+  },
+  "auditExport.retryInitialMs|description": {
+    "en": "3efbeb32b15064b4",
+    "text": "目标在第一次投递失败后等待多久再尝试。之后的每次失败等待更久，直到最大重试延迟。"
+  },
+  "auditExport.retryMaxMs|label": {
+    "en": "a2b0ee21a36fc1ec",
+    "text": "最大重试延迟（毫秒）"
+  },
+  "auditExport.retryMaxMs|description": {
+    "en": "23a00041cb4de752",
+    "text": "目标在失败期间两次投递尝试之间最长等待多久。延迟从首次重试延迟增长到这个值。"
+  },
+  "auditExport.retryMaxPeriodMs|label": {
+    "en": "c3ed6629c0e4f8ca",
+    "text": "放弃前的时长（毫秒）"
+  },
+  "auditExport.retryMaxPeriodMs|description": {
+    "en": "8223c47d559c0791",
+    "text": "失败的目标被重试多久之后，队首事件被计为永久失败并且游标越过它。该次运行中，它后面最多一个批次的事件也按同样方式计数，然后目标在首次重试延迟之后再试。这不是恰好一次投递。"
+  },
+  "auditExport.allowHttp|label": {
+    "en": "d26d6720b84d76cb",
+    "text": "允许明文 http"
+  },
+  "auditExport.allowHttp|description": {
+    "en": "f675b6fdb38c923c",
+    "text": "webhook 或 Splunk HEC 目标是否可以使用 http。仅开发模式，在产品模式中被忽略，那些目标使用 https。每一次这样的投递都会记入日志。Syslog TCP 是另一种传输，不是这个设置。"
+  },
+  "auditExport.skipTlsVerification|label": {
+    "en": "c389cb92e8fdb20b",
+    "text": "跳过 TLS 验证（仅开发）"
+  },
+  "auditExport.skipTlsVerification|description": {
+    "en": "5770424e0835bb19",
+    "text": "警告。仅开发模式。打开后，webhook、Splunk HEC 和 syslog TLS 不验证应答方的证书。每一次这样的投递都会记入日志。在产品模式中它被忽略且不能设置。请改在 CA 文件设置中指定私有 CA。"
+  },
+  "auditExport.caFile|label": {
+    "en": "0821b8a548294613",
+    "text": "CA 证书文件"
+  },
+  "auditExport.caFile|description": {
+    "en": "e91f3272d5ded195",
+    "text": "一份 PEM 文件，其中的 CA 证书可供 webhook、Splunk HEC 或 syslog TLS 目标链接，位于 node 自带的 CA 库之外。留空则只用 node 的库。无法读取的文件会拒绝投递。"
+  },
+  "auditExport.allowPrivateDestinations|label": {
+    "en": "f9c38f2342841463",
+    "text": "允许私有地址"
+  },
+  "auditExport.allowPrivateDestinations|description": {
+    "en": "eeefca8d6e68f82f",
+    "text": "目标是否可以是环回、链路本地或私有地址。关闭时，产品模式拒绝这些地址，开发模式仍允许环回，以便测试监听器工作。即使打开此项，云元数据地址也仍被拒绝。"
+  },
+  "auditExport.fileRoots|label": {
+    "en": "c47d1eb20e5be4de",
+    "text": "允许的文件系统根目录"
+  },
+  "auditExport.fileRoots|description": {
+    "en": "d4771342a5f6444b",
+    "text": "文件系统目标可以在其下写入的绝对目录，以逗号分隔。留空则允许管理员指定的任何绝对路径。相对路径、越出其所在目录的路径，以及这些根目录之外的路径会被拒绝。"
+  },
+  "auditExport.redactKeys|label": {
+    "en": "f84773415c7f59e9",
+    "text": "从不导出的属性"
+  },
+  "auditExport.redactKeys|description": {
+    "en": "b538c89d9bed6559",
+    "text": "从每个导出事件中移除的明细属性名，以逗号分隔。匹配不区分大小写。目标可以再指定更多。密码、令牌和断言在默认列表上。"
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "保留的最大委托行为数"

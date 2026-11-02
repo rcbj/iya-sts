@@ -8529,3 +8529,18 @@ catalogs). The row's `deviceBound` is `deviceBindingOf()` — `fact` is
 `bound`, `skipped`, `pending`, `timedout` or `none`, and `reasons` are
 the tokens. The API stays language-free. `pending`, `timedout` and
 `none` stay "No".
+
+## Audit export (#641, 2026-11-01)
+
+Monitoring → Audit export, `/admin/audit-export`. `admin-ui/web_audit_export.ts`
+draws the destination list and the add form from `GET /admin-api/audit-export`.
+The prose is the `consoleAuditExport` namespace (seven base catalogs). The
+nav label and the page title are `console.nav.audit-export` and
+`consolePages.title.audit-export`. The fourteen `auditExport.*` settings are
+`SettingsForms`, from the settings catalogs, and `SETTING_HOMES` already
+names the page. Write controls are drawn when the shell says the reader can
+write (`c.write`); a reader with `admin:read` sees the figures. The lead
+says the figures are this process, and that a token and a secret header are
+sealed and absent afterwards. A test posts `test`. The delivery, the cursor
+and the twenty-first outbound exception are `common/CLAUDE.md` (3da). The
+operations are `mgmt-api/CLAUDE.md`.

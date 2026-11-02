@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5054** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5068** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -100,6 +100,7 @@ is an ordinary outcome.
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 54
+* [Audit export (`STS-AUDIT`)](#sts-audit) — 14
 
 ## STS-HTTP
 
@@ -5797,6 +5798,29 @@ Raised from: report/.
 | `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
 | `STS-REPORT-0054` | A query on an AuthZEN search source (authzenSubjects, authzenResources, authzenActions) does not give every input the search is asked with as an eq filter of the top-level "and", so it was refused rather than run (#1176). | invalid_query (the job fails) |
 | `STS-REPORT-0055` | An AuthZEN search source could not be asked: the search APIs are off in the realm (authzen.searchEnabled), or the report's owner is not a person of the realm it runs in, and a search runs as its owner (#1176). | unavailable or forbidden (the job fails) |
+
+## STS-AUDIT
+
+**Audit export.** Delivery of this process's audit events to operator-configured destinations: syslog, a file, a webhook, Splunk HEC and LogRhythm (#641).
+
+Raised from: common/audit_export.ts, mgmt-api/audit_export_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-AUDIT-0001` | An audit export destination was refused because its configuration is not usable: an unknown action or type, a missing field, or an id that is not the shape the register takes (#641). | invalid_request (the act is refused) |
+| `STS-AUDIT-0002` | An audit export act named a destination id this realm does not have (#641). | invalid_request (the act is refused) |
+| `STS-AUDIT-0003` | An audit export secret could not be sealed under the realm's data key, so the destination was not stored (#641). | invalid_request (the act is refused) |
+| `STS-AUDIT-0004` | A filesystem audit export path was refused: it is not absolute, it climbs out of its directory, or it is outside auditExport.fileRoots (#641). | invalid_request (the act is refused); none (a delivery failure) |
+| `STS-AUDIT-0005` | An audit export URL or host was refused: a scheme other than http or https, userinfo, a private or loopback address the settings do not allow, or a cloud metadata address, which is never allowed (#641). | invalid_request (the act is refused); none (a delivery failure) |
+| `STS-AUDIT-0006` | A syslog audit export could not be sent: the socket would not connect, the write failed, or TLS was refused (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0007` | An HTTP audit export (webhook or Splunk HEC) failed: the connection failed, the peer answered 401 or 403, or it answered a status that is not acceptance. The cursor stays, and the destination retries (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0008` | A filesystem audit export could not append the event: the path could not be opened or the write failed (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0009` | Audit events were trimmed off this process's ring before audit export delivered them. The bookmark of the next undelivered event was gone. The count is one episode, not a sequence-number gap, and what remains is delivered (#641). | none (a warning) |
+| `STS-AUDIT-0010` | The audit export test event could not be delivered to the destination. The synthetic event is not an audit row (#641). | invalid_request (the test act fails) |
+| `STS-AUDIT-0011` | An audit export destination has been failing for auditExport.retryMaxPeriodMs, so the event at the head was probed once more. On failure that event, and further events in the same run up to the batch, are counted permanently failed without another send, and the destination waits the first retry delay. The ids are on the row. Delivery is at-least-once, not exactly-once (#641). | none (a warning) |
+| `STS-AUDIT-0012` | auditExport.skipTlsVerification is on and is ignored, because this realm is in product mode: webhook, Splunk HEC and syslog TLS verify the peer. Said once per process (#641). | none (a warning) |
+| `STS-AUDIT-0014` | A webhook or Splunk HEC destination answered a redirect. Audit export does not follow it. The cursor stays and the destination pauses (#641). | none (the destination retries; the audited operation is unaffected) |
+| `STS-AUDIT-0015` | A webhook or Splunk HEC destination rejected the event itself (HTTP 400). That event is counted permanently failed and the cursor moves past it. The destination is not paused for the events after it (#641). | none (that event is dropped; later events are still delivered) |
 
 ## Adding a code
 

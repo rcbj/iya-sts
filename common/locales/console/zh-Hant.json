@@ -177,6 +177,7 @@
   "nav.risk-scoring": "風險評分",
   "nav.geolocation": "地理位置",
   "nav.audit": "稽核記錄",
+  "nav.audit-export": "稽核匯出",
   "nav.error-codes": "錯誤代碼",
   "nav.realms": "信任領域",
   "nav.config": "設定",

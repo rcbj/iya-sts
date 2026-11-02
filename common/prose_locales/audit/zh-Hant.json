@@ -1822,5 +1822,29 @@
   "audit.actions.report.job.retrieve.label": {
     "en": "2f81320658ea37b8",
     "text": "已取得報表結果"
+  },
+  "audit.actions.admin.audit-export.add.label": {
+    "en": "8c0a46b4a7286c31",
+    "text": "已新增稽核匯出目的地"
+  },
+  "audit.actions.admin.audit-export.update.label": {
+    "en": "5dffabe5c58492fb",
+    "text": "已更新稽核匯出目的地"
+  },
+  "audit.actions.admin.audit-export.remove.label": {
+    "en": "a1ce8547b7eb7431",
+    "text": "已移除稽核匯出目的地"
+  },
+  "audit.actions.admin.audit-export.enable.label": {
+    "en": "8b7b2ef9c33fe419",
+    "text": "已啟用稽核匯出目的地"
+  },
+  "audit.actions.admin.audit-export.disable.label": {
+    "en": "7dbb1b1d2bdf4aec",
+    "text": "已停用稽核匯出目的地"
+  },
+  "audit.actions.admin.audit-export.test.label": {
+    "en": "e523fcd6d4957e6d",
+    "text": "已測試稽核匯出目的地"
   }
 }

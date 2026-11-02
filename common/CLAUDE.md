@@ -14482,3 +14482,147 @@ until then is gone.
    namespace's), `docs/`, and tests on `tests/policy_selection.js`'s
    pattern.
 
+## 3da. `audit_export.ts`: THIS PROCESS DELIVERS ITS OWN AUDIT RING (#641, 2026-11-01)
+
+Monitoring → Audit export and `GET` / `POST /admin-api/audit-export`. The
+file's header is the argument; what a maintainer must not undo:
+
+* **THE RING IS THE RECORD.** Delivery reads `audit.localEvents()`, this
+  process's own ring, oldest first. Nothing is copied into an outbox at
+  record time. In product mode on postgres the ring is the minted state the
+  store already keeps; in development and on memory it dies with the
+  process, and so does delivery. A spill file that outlived `audit.maxEvents`
+  is a later decision.
+* **DESTINATIONS ARE SHARED. CURSORS ARE THIS PROCESS'S.** `audit.export.destinations`
+  is a per-realm map, replace, every process reads the same rows.
+  `audit.export.cursors` is `merge: 'own'`, keyed by destination id. A second
+  `persist` handle logs `STS-CORE-0022` and is not the status. The page's
+  figures are this process. `contributionsOnRead` stays off.
+* **A NEW ENABLED DESTINATION BACKFILLS ONCE.** The first tick, while
+  `primed` is false, sets `cursor.seq` to one before the oldest event this
+  ring still holds, or `0` when the ring is empty, and sets `primed`. That
+  prime is the retained window, bounded by `audit.maxEvents`. A destination
+  that was enabled, then disabled, keeps its cursor and continues when it is
+  enabled again. A destination that has never been enabled is primed on the
+  first tick that visits it.
+* **A GAP IS A MISSING BOOKMARK, AND `seq` ARITHMETIC IS THE WRONG TEST.**
+  `seq` is leased in blocks. A numeric gap is unused space in another
+  worker's block (`docs/admin-console.md`). The cursor keeps `nextSeq`, the
+  event this process meant to send next. On a later tick, already primed,
+  when that event is gone and `cursor.seq` is still below it, the bookmark
+  was trimmed. One episode increments `droppedGap` and writes one
+  `STS-AUDIT-0009` row, then `cursor.seq` moves to one before the oldest
+  event still held. An empty ring leaves the cursor. After the tick,
+  `nextSeq` is the first remaining event that was not skipped, or
+  `inFlightSeq` while a Splunk acknowledgement is in flight.
+* **THE CURSOR MOVES ON SUCCESS AND ON A PERMANENT REJECTION.** A transient
+  failure calls `hold()` and leaves `cursor.seq`. `hold()` audits once, when
+  `failingSince` is first set (`service.failure`, summarised,
+  `detail.exportSkip`), then grows `retryMs` from `auditExport.retryInitialMs`
+  up to `auditExport.retryMaxMs`. `recover()` audits once, outcome success,
+  the same skip, and clears the episode. The cursor object is replaced
+  (`putCursor` assigns a new object) and saved once at the end of the tick.
+  `stillOwner()` false stops the destination without counting a failure, and
+  the events already accepted are still saved.
+* **GIVE-UP DROPS ONE BATCH, THEN WAITS.** Once `failingSince` is older than
+  `auditExport.retryMaxPeriodMs`, the head event is still sent. Success
+  recovers and the rest of the budget continues. A pause or a transient
+  failure of that probe counts the probed event permanently failed, advances
+  past it, and drops further events in that run up to `auditExport.batch`
+  without another send. One `STS-AUDIT-0011` row names the count and the
+  first and last ids. `pausedUntil` becomes now plus the first retry delay.
+  `failingSince` stays until a success. An HTTP 400 (`STS-AUDIT-0015`)
+  advances that one event and does not start the drop. `401` and `403` pause
+  and leave the cursor. A `3xx` is `STS-AUDIT-0014`: the response is
+  destroyed, the `Location` is absent from every string, and the cursor
+  stays. `429`, `408`, `5xx` and a timeout honour `Retry-After` (integer
+  seconds or an HTTP-date, capped at an hour) and pause. A non-zero Splunk
+  collector code on HTTP 2xx pauses (`STS-AUDIT-0007`).
+* **AT LEAST ONCE.** A crash after the send and before the cursor save
+  delivers the event again. The event id is `(origin || 'local') + ':' + seq`.
+  The guarantee stops there.
+* **ROWS THIS SUBSYSTEM WRITES CARRY `detail.exportSkip`.** The job advances
+  the cursor past them and sends nothing. The administrative test row does
+  not: `admin.audit-export.test` is exported. The synthetic event the test
+  sends (`id` `test:<destinationId>:<timestamp>`, `attributes.test`) is
+  absent from the ring. A test does not move the delivery cursor and does
+  not clear `failingSince`.
+* **REDACTION WALKS THE DETAIL.** `ALWAYS_REDACT` (password, secret, token,
+  authorization, client_secret, assertion, access_token, refresh_token,
+  id_token), union `auditExport.redactKeys`, union the destination's
+  `excludeAttributes`, case-insensitive, objects and arrays. A matching
+  value becomes `[redacted]`. `canonical()` receives the set from the
+  caller. `exportSkip` is read on the raw row before that.
+* **CREDENTIALS ARE SEALED, AND AN ANSWER CARRIES NONE.** A Splunk token and
+  secret headers are sealed under the realm's data key (`STS-AUDIT-0003`
+  when that fails, and the destination is not stored). The view returns
+  `tokenSet` and `secretHeaderSet`. A header whose name matches
+  authorization, token, api-key or secret is moved into the sealed set. An
+  empty token on update keeps the box. Plain headers, including an empty
+  text, replace. Deleting one secret header is absent from this version.
+  `lastFailure` strips `https?://` URLs. A duplicate id is `STS-AUDIT-0001`;
+  an unknown id is `STS-AUDIT-0002`. `refusal()` marks the object, so a test
+  reads `errorCodes.codeOf(result)`.
+* **SYSLOG IS RFC 5424, TCP BY DEFAULT.** PRI is facility times 8 plus
+  severity (facility defaults to local0, 16; success is notice 5, so
+  `<133>1`). The structured-data id is `iyaAudit`, a local name, not an
+  IANA enterprise number. The message has no trailing newline; TCP and TLS
+  use an RFC 6587 octet-counted frame. UDP is `transmitted` when `dgram.send`
+  calls back. One socket per destination per tick. LogRhythm is this adapter
+  with `type: 'logrhythm'`. Plain TCP is its own transport.
+  `auditExport.allowHttp` does not govern it.
+* **A FILE IS ONE APPEND.** `fs.promises` `write` of the NDJSON line on an
+  fd opened `a` (`O_APPEND`). Mode `640` unless the destination names three
+  octal digits (`"640"` and `640` are both `0o640`). Rotation renames when
+  the size is at least `rotateBytes` (`0` leaves rotation to the operator).
+  A path is absolute, has no `..` segment, and when `auditExport.fileRoots`
+  is set lies under one root. The path is checked again at send
+  (`STS-AUDIT-0004` pauses). `ENOSPC` and a permission error pause
+  (`STS-AUDIT-0008`). Two processes appending one path can interleave a line
+  longer than `PIPE_BUF` (4096). The handle map is this process, closed on
+  remove, on a path change, and in `resetForTests`.
+* **A WEBHOOK BODY IS ONE PASS.** Placeholders `{timestamp}` `{severity}`
+  `{event_type}` `{subject}` `{message}` `{id}` `{realm}` `{outcome}`
+  `{category}` `{target}` `{address}` `{origin}` `{protocol}` `{channel}`,
+  or the canonical JSON when the template is empty. A value that itself
+  contains `{message}` is left as text. An empty template is
+  `application/json`; a template is `text/plain; charset=utf-8` unless
+  `contentType` is set.
+* **SPLUNK ACKNOWLEDGEMENT IS ONE EVENT IN FLIGHT.** With `ack` on, the
+  cursor stores `ackId` and a stable `ackChannel`. The next event waits
+  until `POST` of the ack URL says that id is true, and the disposition
+  becomes `acknowledged`. Absent means resend. Pending waits for the job
+  interval and counts no failure. A failed poll keeps `ackId` and backs off.
+  The ack URL replaces a trailing `/event` or appends `/ack` to a trailing
+  `/collector`, and drops the query and the fragment.
+* **THE TWENTY-FIRST OUTBOUND EXCEPTION IS ARGUED HERE** (`federation/CLAUDE.md`).
+  Webhook, Splunk HEC and syslog TLS go through `outbound_tls.ts`: https,
+  product refuses plain http (`STS-AUDIT-0005`), skip-TLS is development
+  only and ignored in product (`STS-AUDIT-0012`, said once per process;
+  `STS-CORE-0104` passes through when the policy says so). No userinfo. The
+  name is resolved before connect and the pinned address is what the socket
+  uses; SNI and Host stay the name. A lookup failure or an empty answer at
+  send pauses and the cursor stays. The save checks the literal and, when
+  DNS answers, every address; a lookup failure at save still stores the
+  destination. Private ranges include RFC 6598 `100.64.0.0/10`. Cloud
+  metadata (`169.254.169.254` and its IPv6-mapped form, `metadata.google.internal`,
+  `metadata.azure.com` and their subdomains, `instance-data`,
+  `instance-data.ec2.internal`) is refused in every mode, including while
+  `auditExport.allowPrivateDestinations` is on. Development
+  (`mode.dialsPlainHttpOutbound()`) may dial a loopback host when every
+  resolved address is loopback. A public name that resolves to `127.0.0.1`
+  is refused at send. Redirects are not followed. The body read stops at
+  64 KiB. A TOCTOU between the lookup and the connect remains.
+* **THE JOB IS PER-PROCESS AND QUIET.** `audit.export`, scope realm,
+  `everySetting` `auditExport.intervalS` (0 is off; read the value, never
+  `|| n`). `requestRun` refuses every per-process job (`STS-SCHED-0005`),
+  so a test calls `runAsync`. One destination's throw is caught and the
+  others still run. Recording in `audit.js` stays a near-leaf: this module
+  is required lazily from the job, and `audit.js` grows no new top-level
+  require. `resetForTests` clears the installed maps and closes file
+  handles. A test that needs a private walk builds `new AuditExport(deps)`
+  and does not require the module from the parent of `tests/run.js`: the
+  slot builds the default once `deferToRoot` has not run, and a later
+  `installInstance` throws. `tests/audit_export.js` therefore requires it
+  only inside a child.
+

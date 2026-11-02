@@ -1659,7 +1659,23 @@ const ACTIONS = [
   { action: 'report.query', category: 'admin',
     label: 'A report query was run' },
   { action: 'report.job.retrieve', category: 'admin',
-    label: 'A report result was retrieved' }
+    label: 'A report result was retrieved' },
+  // AUDIT EXPORT (#641). A destination's configuration changed, or an
+  // operator asked it to take a synthetic event. The delivery itself is
+  // service.failure, and those rows carry detail.exportSkip so the export
+  // does not ship its own failures back out.
+  { action: 'admin.audit-export.add', category: 'admin',
+    label: 'An audit export destination was added' },
+  { action: 'admin.audit-export.update', category: 'admin',
+    label: 'An audit export destination was updated' },
+  { action: 'admin.audit-export.remove', category: 'admin',
+    label: 'An audit export destination was removed' },
+  { action: 'admin.audit-export.enable', category: 'admin',
+    label: 'An audit export destination was enabled' },
+  { action: 'admin.audit-export.disable', category: 'admin',
+    label: 'An audit export destination was disabled' },
+  { action: 'admin.audit-export.test', category: 'admin',
+    label: 'An audit export destination was tested' }
 ];
 
 const CATEGORY_OF_ACTION = {};
@@ -2611,6 +2627,26 @@ function list() {
   return out;
 }
 
+// THIS PROCESS'S RING, OLDEST FIRST (#641). Delivery reads this and not
+// list(): list() is every process's events, newest first, and a second
+// process delivering those would send each event twice. The array is the
+// local ring, oldest at the front — the same copy merged() takes as `mine`.
+// A copy, so a record during a tick cannot move the ground under the tick.
+/**
+ * Lists this process's own events, oldest first.
+ *
+ * The export job delivers these. `list()` is every process, newest first,
+ * and is the wrong source for a cursor.
+ *
+ * @returns a copy of this process's ring
+ */
+function localEvents() {
+  log.debug("Entering localEvents(). " + events.length + " event(s) held.");
+  const out = events.slice(0);
+  log.debug("Leaving localEvents(). " + out.length);
+  return out;
+}
+
 // What an application's Authentication attempts tab counts as an attempt
 // (#954). The acceptance and the refusal are the standard authentication
 // event. A session refused after a credential was accepted is a different
@@ -2966,6 +3002,7 @@ module.exports = {
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
   list: list,
+  localEvents: localEvents,
   authenticationEventsFor: authenticationEventsFor,
   authenticationEventsForPerson: authenticationEventsForPerson,
   summary: summary,

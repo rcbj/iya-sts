@@ -8375,6 +8375,118 @@
     "en": "4270a8167905dee9",
     "text": "使用者入口網站上的「最近的登入」為已登入的人列出多少天已評估的登入。每個領域各自設定，因為該值在目前領域中讀取。主控台上某人的「驗證嘗試」分頁列出稽核日誌仍保存的每一次嘗試，即整份日誌。日誌自身的上限仍可能丟掉更早的列。"
   },
+  "auditExport.enabled|label": {
+    "en": "6215b564a1d4430f",
+    "text": "稽核匯出"
+  },
+  "auditExport.enabled|description": {
+    "en": "2e61f36553b98426",
+    "text": "本處理程序是否把自身的稽核事件投遞到稽核匯出上設定的目的地。關閉時，每個目的地的游標留在原處。投遞失敗從不會使被稽核的操作失敗。"
+  },
+  "auditExport.intervalS|label": {
+    "en": "6a9505dd2d6963e2",
+    "text": "投遞間隔（秒）"
+  },
+  "auditExport.intervalS|description": {
+    "en": "5c29c7ea071c4eb6",
+    "text": "audit.export 工作隔多久投遞本處理程序的新稽核事件。0 關閉該工作。每個目的地有自己的佇列，因此一個慢目的地不會拖住其他目的地。"
+  },
+  "auditExport.batch|label": {
+    "en": "34237c7149141d00",
+    "text": "每次執行每個目的地的事件數"
+  },
+  "auditExport.batch|description": {
+    "en": "5ecf10b9df08bb78",
+    "text": "一次 audit.export 執行向一個目的地提供多少事件。剩下的等到下一次執行。"
+  },
+  "auditExport.timeoutMs|label": {
+    "en": "e14f8cf09c36084d",
+    "text": "投遞逾時（毫秒）"
+  },
+  "auditExport.timeoutMs|description": {
+    "en": "a45c9c5b557ccf8e",
+    "text": "一次投遞嘗試等待目的地接受多久。逾時保持該目的地的游標並稍後重試。它不捨棄該事件。"
+  },
+  "auditExport.budgetMs|label": {
+    "en": "b4b3d688e0baf71b",
+    "text": "每個目的地的時間預算（毫秒）"
+  },
+  "auditExport.budgetMs|description": {
+    "en": "99dc6d58f6281c96",
+    "text": "一次執行可以在一個目的地上花費多久。剩下的等到下一次執行，因此一個慢目的地不能拖住該工作。"
+  },
+  "auditExport.retryInitialMs|label": {
+    "en": "e970ebf994887a91",
+    "text": "首次重試延遲（毫秒）"
+  },
+  "auditExport.retryInitialMs|description": {
+    "en": "3efbeb32b15064b4",
+    "text": "目的地在第一次投遞失敗後等待多久再嘗試。之後的每次失敗等待更久，直到最大重試延遲。"
+  },
+  "auditExport.retryMaxMs|label": {
+    "en": "a2b0ee21a36fc1ec",
+    "text": "最大重試延遲（毫秒）"
+  },
+  "auditExport.retryMaxMs|description": {
+    "en": "23a00041cb4de752",
+    "text": "目的地在失敗期間兩次投遞嘗試之間最長等待多久。延遲從首次重試延遲增長到這個值。"
+  },
+  "auditExport.retryMaxPeriodMs|label": {
+    "en": "c3ed6629c0e4f8ca",
+    "text": "放棄前的時長（毫秒）"
+  },
+  "auditExport.retryMaxPeriodMs|description": {
+    "en": "8223c47d559c0791",
+    "text": "失敗的目的地被重試多久之後，佇列前端事件被計為永久失敗並且游標越過它。該次執行中，它後面最多一個批次的事件也按同樣方式計數，然後目的地在首次重試延遲之後再試。這不是恰好一次投遞。"
+  },
+  "auditExport.allowHttp|label": {
+    "en": "d26d6720b84d76cb",
+    "text": "允許明文 http"
+  },
+  "auditExport.allowHttp|description": {
+    "en": "f675b6fdb38c923c",
+    "text": "webhook 或 Splunk HEC 目的地是否可以使用 http。僅開發模式，在產品模式中被忽略，那些目的地使用 https。每一次這樣的投遞都會記入日誌。Syslog TCP 是另一種傳輸，不是這個設定。"
+  },
+  "auditExport.skipTlsVerification|label": {
+    "en": "c389cb92e8fdb20b",
+    "text": "略過 TLS 驗證（僅開發）"
+  },
+  "auditExport.skipTlsVerification|description": {
+    "en": "5770424e0835bb19",
+    "text": "警告。僅開發模式。開啟後，webhook、Splunk HEC 和 syslog TLS 不驗證應答方的憑證。每一次這樣的投遞都會記入日誌。在產品模式中它被忽略且不能設定。請改在 CA 檔案設定中指定私有 CA。"
+  },
+  "auditExport.caFile|label": {
+    "en": "0821b8a548294613",
+    "text": "CA 憑證檔案"
+  },
+  "auditExport.caFile|description": {
+    "en": "e91f3272d5ded195",
+    "text": "一份 PEM 檔案，其中的 CA 憑證可供 webhook、Splunk HEC 或 syslog TLS 目的地鏈結，位於 node 自帶的 CA 庫之外。留空則只用 node 的庫。無法讀取的檔案會拒絕投遞。"
+  },
+  "auditExport.allowPrivateDestinations|label": {
+    "en": "f9c38f2342841463",
+    "text": "允許私有位址"
+  },
+  "auditExport.allowPrivateDestinations|description": {
+    "en": "eeefca8d6e68f82f",
+    "text": "目的地是否可以是回送、連結本機或私有位址。關閉時，產品模式拒絕這些位址，開發模式仍允許回送，以便測試接聽程式工作。即使開啟此項，雲端中繼資料位址也仍被拒絕。"
+  },
+  "auditExport.fileRoots|label": {
+    "en": "c47d1eb20e5be4de",
+    "text": "允許的檔案系統根目錄"
+  },
+  "auditExport.fileRoots|description": {
+    "en": "d4771342a5f6444b",
+    "text": "檔案系統目的地可以在其下寫入的絕對目錄，以逗號分隔。留空則允許管理員指定的任何絕對路徑。相對路徑、越出所在目錄的路徑，以及這些根目錄之外的路徑會被拒絕。"
+  },
+  "auditExport.redactKeys|label": {
+    "en": "f84773415c7f59e9",
+    "text": "永不匯出的屬性"
+  },
+  "auditExport.redactKeys|description": {
+    "en": "b538c89d9bed6559",
+    "text": "從每個匯出事件中移除的明細屬性名稱，以逗號分隔。比對不區分大小寫。目的地可以再指定更多。密碼、權杖和判斷提示在預設清單上。"
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "保存的最大委派行為數"
