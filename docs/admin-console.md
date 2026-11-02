@@ -360,7 +360,8 @@ the entry's current name (so a rename does not split one person into two rows),
 the older `urn:sts:user:` prefix is still read and stripped, and the realm is
 split off at the last `@`. The cost is shown rather than hidden: two different
 people called `alice` in two Kerberos realms are one row, which the Realms
-column makes visible. Case is never collapsed.
+column makes visible. Case is never collapsed. A live sign-in name reaches
+that same row. [People](people.md#sign-in-names).
 
 **The list is built from three sources**: the authentications recorded, every
 token's `sub`/`username`, and every artifact's subject. An identity can be
