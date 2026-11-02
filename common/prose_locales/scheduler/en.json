@@ -1,6 +1,8 @@
 {
   "sched.jobs.attribute-sources.refresh.title": "Attribute sources: scheduled refresh",
   "sched.jobs.attribute-sources.refresh.describe": "Reads the next page of the realm's people from each attribute source whose scheduled interval is due, onto their entries (#94). attributeSources.refreshBatch people per source per run.",
+  "sched.jobs.audit.export.title": "Audit export",
+  "sched.jobs.audit.export.describe": "In every process, for each realm: delivers this process's own new audit events to that realm's enabled destinations. One destination's failure does not hold the others. Delivery is at least once.",
   "sched.jobs.authn.account-set-expiry.title": "Account set expiry",
   "sched.jobs.authn.account-set-expiry.describe": "Brings every browser's account set up to date (#561): an account whose session ended is remembered as signed out, one remembered longer than authn.rememberedAccountDays is dropped, and an empty set is deleted.",
   "sched.jobs.authn.session-expiry.title": "Session expiry",
@@ -84,7 +86,7 @@
   "sched.jobs.post-login.activity-mail.title": "Post-login activity mail",
   "sched.jobs.post-login.activity-mail.describe": "Mails the people a running post-login activity reaches (#1111) a reminder to sign in, where the activity then asks them to register a post-quantum passkey. Reads one slice of each started activity's population (the realm, or the union of its groups) after a cursor per run, mails only the people the activity is due for, never inside the reminder interval or past its maximum, and writes one audit row per started activity per run.",
   "sched.jobs.process.memory-report.title": "Memory report",
-  "sched.jobs.process.memory-report.describe": "Logs, in this process, one line with its role and its memory: resident size, heap used and total, the heap limit, external memory and array buffers (#341).",
+  "sched.jobs.process.memory-report.describe": "Records, in this process, the run's summary with its role and its memory: resident size, heap used and total, the heap limit, external memory and array buffers. The log line is debug (#341).",
   "sched.jobs.report.build-cleanup.title": "Report build clean-up",
   "sched.jobs.report.build-cleanup.describe": "In every process: keeps the report files this process is building fresh, and deletes from risk.uploadDirectory a report build no live process has touched for report.asyncMaxMs and fifteen minutes — what a process that stopped mid-build left behind.",
   "sched.jobs.report.drain.title": "Report jobs",
