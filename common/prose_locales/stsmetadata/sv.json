@@ -2071,6 +2071,14 @@
     "en": "853d31fe2e7b16e4",
     "text": "ICKE-SPEC. Den centrala tabellen över varje felvillkor som den här tjänsten kan framställa, STS-<SUBSYSTEM>-<NNNN>, som JSON: varje kod med sitt delsystem, vad som misslyckades, vad KLIENTEN får veta i sitt eget protokolls vokabulär, och på hur många rader den förekommer i den hållna granskningsloggen i den här sfären — filtrerad efter delsystem, text och ?seen=1, sidindelad med ?page= och ?per=. EN KOD SKICKAS ALDRIG TILL EN KLIENT: den finns endast på granskningsraden och i loggraden. ENDAST LÄSNING — tabellen är källkod. Speglar GET /admin/error-codes; samma tabell är docs/error-codes.md."
   },
+  "stsmetadata.endpoints./admin-api/audit-export.what": {
+    "en": "c975b83632fa12f4",
+    "text": "ICKE-SPEC (#641). Vad Övervakning → Granskningsexport ritar: varje destination utan dess hemligheter, och den här processens kö och leveransräknare. Varje process levererar sina egna händelser."
+  },
+  "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
+    "en": "c3015da7d4779805",
+    "text": "ICKE-SPEC (#641). add, update, remove, enable, disable och test: konsolens sex handlingar, var och en granskad. En token tas emot och returneras aldrig. Testhändelsen är ingen granskningsrad."
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "ICKE-SPEC. Vad som hänt här, i ordning, som JSON: varje autentisering, inloggningssession, LDAP-katalogoperation, konsolinteraktion, anrop till hanterings-API:t och anrop till protokollslutpunkter, nyast först, filtrerad efter kategori, åtgärd, utfall, aktör och fritext och sidindelad med ?page= och ?per=. INGEN INLOGGNINGSUPPGIFT FINNS NÅGONSIN PÅ EN RAD — inget lösenord, ingen bärartoken, inget intyg och ingen kropp; en modify namnger de attribut den ändrade och aldrig deras värden. ÅTERUPPTA EFTER `at`, inte efter `seq` (#465). `seq` är unik i tjänstens alla processer och återanvänds aldrig, och den stiger inom varje process, men varje arbetstråd numrerar från ett eget block, så talen är inte en enda ordning och \"allt efter 4102\" missar en senare händelse som en annan arbetare antecknat under ett lägre tal. `origin` avgör vid lika `seq`. Sida 2 hämtad en sekund efter sida 1 kan upprepa en rad som förskjutits dit. ENDAST LÄSNING — en av de två resurserna här som är det, den andra är /admin-api/delegation. Det finns ingen rensningsoperation, eftersom en raderingskontroll på ett oskyddat API skulle göra en granskningslogg oförmögen att besvara den enda fråga den finns för. Speglar GET /admin/audit."

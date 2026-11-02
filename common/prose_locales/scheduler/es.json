@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Lee la siguiente página de personas del dominio desde cada fuente de atributos cuyo intervalo programado haya vencido, sobre sus entradas (#94). attributeSources.refreshBatch personas por fuente y por ejecución."
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "Exportación de auditoría"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "En cada proceso, para cada dominio: entrega los eventos de auditoría nuevos de este proceso a los destinos habilitados de ese dominio. El fallo de un destino no retiene a los demás. La entrega es al menos una vez."
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "Caducidad de los conjuntos de cuentas"
@@ -340,8 +348,8 @@
     "text": "Informe de memoria"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "Registra, en este proceso, una línea con su rol y su memoria: tamaño residente, heap usado y total, el límite del heap, la memoria externa y los array buffers (#341)."
+    "en": "d4a21d654747ddc9",
+    "text": "Registra, en este proceso, el resumen de la ejecución con su rol y su memoria: tamaño residente, heap usado y total, el límite del heap, la memoria externa y los array buffers. La línea de registro es de depuración (#341)."
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",

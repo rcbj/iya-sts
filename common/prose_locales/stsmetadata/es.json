@@ -2071,6 +2071,14 @@
     "en": "853d31fe2e7b16e4",
     "text": "NO ESTÁNDAR. La tabla central de cada condición de fallo que puede producir este servicio, STS-<SUBSYSTEM>-<NNNN>, como JSON: cada código con su subsistema, lo que falló, lo que se le dice al CLIENTE en el vocabulario de su propio protocolo y en cuántas filas del registro de auditoría mantenido aparece en este dominio; filtrado por subsistema, texto y ?seen=1, y paginado con ?page= y ?per=. UN CÓDIGO NUNCA SE ENVÍA A UN CLIENTE: está solo en la fila de auditoría y en la línea de registro. DE SOLO LECTURA: la tabla es código fuente. Refleja GET /admin/error-codes; la misma tabla es docs/error-codes.md."
   },
+  "stsmetadata.endpoints./admin-api/audit-export.what": {
+    "en": "c975b83632fa12f4",
+    "text": "NO ESTÁNDAR (#641). Lo que dibuja Supervisión → Exportación de auditoría: cada destino sin sus secretos, y la cola y los contadores de entrega de este proceso. Cada proceso entrega sus propios eventos."
+  },
+  "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
+    "en": "c3015da7d4779805",
+    "text": "NO ESTÁNDAR (#641). add, update, remove, enable, disable y test: los seis actos de la consola, cada uno auditado. Un token se recibe y nunca se devuelve. El evento de prueba no es una fila de auditoría."
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "NO ESTÁNDAR. Lo que ocurrió aquí, en orden, como JSON: cada autenticación, sesión de inicio de sesión, operación del directorio LDAP, interacción con la consola, llamada a la API de gestión y llamada a un endpoint de protocolo, de la más reciente a la más antigua, filtrado por categoría, acción, resultado, actor y texto libre, y paginado con ?page= y ?per=. NUNCA HAY UNA CREDENCIAL EN UNA FILA (ninguna contraseña, token bearer, aserción ni cuerpo); una modificación nombra los atributos que cambió y nunca sus valores. REANUDE POR `at`, no por `seq` (#465). `seq` es único en todos los procesos del servicio y nunca se reutiliza, y crece dentro de cada proceso, pero cada hilo de trabajo numera desde un bloque propio, así que los números no son un orden y \"todo lo posterior a 4102\" omite un evento posterior anotado con un número menor. `origin` desempata con `seq`. La página 2 tomada un segundo después de la página 1 puede repetir una fila que se desplazó a ella. DE SOLO LECTURA: uno de los dos recursos de aquí que lo son, junto con /admin-api/delegation. No hay operación de vaciado, porque un control de borrado en una API sin protección dejaría a un registro de auditoría incapaz de responder la única pregunta para la que existe. Refleja GET /admin/audit."

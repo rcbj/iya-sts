@@ -1151,6 +1151,14 @@
     "en": "b485a2ff39ac01b5",
     "text": "错误代码"
   },
+  "endpoints.route./admin-api/audit-export.name": {
+    "en": "6215b564a1d4430f",
+    "text": "审计导出"
+  },
+  "endpoints.route./admin-api/audit-export/:action.name": {
+    "en": "b9a19e739aa5ebd6",
+    "text": "更改审计导出目标"
+  },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",
     "text": "审计日志"

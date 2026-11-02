@@ -2952,8 +2952,8 @@
     "text": "Intervall för kommandosammanfattning (s)"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "Högst en loggrad per sfär så här ofta, som räknar de kommandon som skickats, prövats igen och lagts i dead letter."
+    "en": "3a91e7d305fbb684",
+    "text": "Hur ofta en sfärs antal kommandon får loggas. Ett dead letter eller en uppskjuten leverans är en varning; ett antal utan någotdera skrivs bara på debugnivå."
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3032,8 @@
     "text": "Intervall för sammanfattning av CIBA-aviseringar (s)"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "Högst en loggrad per sfär så här ofta, som räknar de pingar och pushar som skickats, prövats igen och lagts i dead letter."
+    "en": "27d25bd5cf11b057",
+    "text": "Hur ofta en sfärs antal pingar och pushar får loggas. Ett dead letter eller en uppskjuten leverans är en varning; ett antal utan någotdera skrivs bara på debugnivå."
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -4096,8 +4096,8 @@
     "text": "Intervall för sammanfattning av back-channel-utloggning (sekunder)"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "Högst en loggrad per sfär och intervall, som räknar vad den här processen skickat, prövat igen, tagit över och lagt i dead letter sedan förra gången — aldrig en rad per försök eller per fel. En varning (STS-OAUTH-0545) när något har lagts i dead letter."
+    "en": "4c2470b19d5277f2",
+    "text": "Hur ofta en sfärs antal utloggningar får loggas. Ett dead letter eller en uppskjuten leverans är en varning (STS-OAUTH-0545); ett antal utan någotdera skrivs bara på debugnivå. Aldrig en rad per försök."
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -6728,8 +6728,8 @@
     "text": "Sammanfattningsintervall (sekunder)"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "Högst en sammanfattande loggrad per sfär och intervall."
+    "en": "ea1e0599735008ca",
+    "text": "Hur ofta en sfärs antal leveranser får loggas. Ett dead letter eller en uppskjuten leverans är en varning; ett antal utan någotdera skrivs bara på debugnivå."
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -10044,8 +10044,8 @@
     "text": "Sammanfattningsintervall för leveranser mellan celler (s)"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "Högst en sammanfattningsrad per sfär per så här många sekunder, i stället för en rad per leverans."
+    "en": "6d3c80b9adce5ba8",
+    "text": "Hur ofta en sfärs antal leveranser mellan celler får loggas. Ett dead letter eller en uppskjuten leverans är en varning; ett antal utan någotdera skrivs bara på debugnivå."
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",

@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Läser nästa sida av sfärens personer från varje attributkälla vars schemalagda intervall har förfallit, in på deras poster (#94). attributeSources.refreshBatch personer per källa och körning."
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "Granskningsexport"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "I varje process, för varje sfär: levererar den här processens egna nya granskningshändelser till sfärens aktiverade destinationer. Ett fel hos en destination håller inte tillbaka de andra. Leveransen sker minst en gång."
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "Utgång för kontouppsättningar"
@@ -340,8 +348,8 @@
     "text": "Minnesrapport"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "Loggar, i den här processen, en rad med dess roll och dess minne: residenta storlek, använd och total heap, heapgränsen, externt minne och array buffers (#341)."
+    "en": "d4a21d654747ddc9",
+    "text": "Registrerar, i den här processen, körningens sammanfattning med dess roll och dess minne: residenta storlek, använd och total heap, heapgränsen, externt minne och array buffers. Loggraden är på debugnivå (#341)."
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",

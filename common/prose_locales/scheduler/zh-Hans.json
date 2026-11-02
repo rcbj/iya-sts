@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "对每个已到定时间隔的属性源，读取本领域人员的下一页数据并写入其条目（#94）。每次运行每个属性源处理 attributeSources.refreshBatch 个人员。"
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "审计导出"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "在每个进程中、针对每个领域：将本进程自己的新审计事件投递到该领域已启用的目标。一个目标失败不会阻碍其他目标。投递至少一次。"
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "账号集过期"
@@ -340,8 +348,8 @@
     "text": "内存报告"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "在本进程中记录一行日志，包含其角色和内存：常驻内存大小、已用堆和堆总量、堆限制、外部内存和数组缓冲区（#341）。"
+    "en": "d4a21d654747ddc9",
+    "text": "在本进程中记录本次运行的摘要，包含其角色和内存：常驻内存大小、已用堆和堆总量、堆限制、外部内存和数组缓冲区。该日志行为调试级别（#341）。"
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",

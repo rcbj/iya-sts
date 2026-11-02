@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "從每個已到排程間隔的屬性來源讀取此領域人員的下一頁資料，寫入其項目（#94）。每次執行每個來源處理 attributeSources.refreshBatch 位人員。"
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "稽核匯出"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "在每個程序中、針對每個領域：將此程序自己的新稽核事件投遞到該領域已啟用的目的地。一個目的地失敗不會阻擋其他目的地。投遞至少一次。"
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "帳號集到期"
@@ -340,8 +348,8 @@
     "text": "記憶體報告"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "在此程序中記錄一行，包含其角色與記憶體：常駐大小、已使用與總計的堆積、堆積上限、外部記憶體與陣列緩衝區（#341）。"
+    "en": "d4a21d654747ddc9",
+    "text": "在此程序中記錄本次執行的摘要，包含其角色與記憶體：常駐大小、已使用與總計的堆積、堆積上限、外部記憶體與陣列緩衝區。該記錄行為偵錯層級（#341）。"
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",

@@ -2952,8 +2952,8 @@
     "text": "Intervalo del resumen de comandos (s)"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "Como mucho una línea de registro por dominio con esta frecuencia, que cuenta los comandos enviados, reintentados y enviados a mensajes fallidos."
+    "en": "3a91e7d305fbb684",
+    "text": "Con qué frecuencia puede registrarse el recuento de comandos de un dominio. Un mensaje fallido o una entrega aplazada es una advertencia; un recuento sin ninguno de los dos solo se escribe en depuración."
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3032,8 @@
     "text": "Intervalo del resumen de notificaciones CIBA (s)"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "Como mucho una línea de registro por dominio con esta frecuencia, que cuenta los pings y pushes enviados, reintentados y enviados a mensajes fallidos."
+    "en": "27d25bd5cf11b057",
+    "text": "Con qué frecuencia puede registrarse el recuento de pings y pushes de un dominio. Un mensaje fallido o una entrega aplazada es una advertencia; un recuento sin ninguno de los dos solo se escribe en depuración."
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -4096,8 +4096,8 @@
     "text": "Intervalo del resumen de back-channel logout (segundos)"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "Como mucho una línea de registro por dominio y por intervalo, que cuenta lo que este proceso envió, reintentó, asumió y envió a mensajes fallidos desde la anterior — nunca una línea por intento o por fallo. Una advertencia (STS-OAUTH-0545) cuando algo se envió a mensajes fallidos."
+    "en": "4c2470b19d5277f2",
+    "text": "Con qué frecuencia puede registrarse el recuento de cierres de sesión de un dominio. Un mensaje fallido o una entrega aplazada es una advertencia (STS-OAUTH-0545); un recuento sin ninguno de los dos solo se escribe en depuración. Nunca una línea por intento."
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -6728,8 +6728,8 @@
     "text": "Intervalo de resumen (segundos)"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "Como máximo una línea de registro de resumen por dominio y por intervalo."
+    "en": "ea1e0599735008ca",
+    "text": "Con qué frecuencia puede registrarse el recuento de entregas de un dominio. Un mensaje fallido o una entrega aplazada es una advertencia; un recuento sin ninguno de los dos solo se escribe en depuración."
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -10044,8 +10044,8 @@
     "text": "Intervalo del resumen de entregas entre celdas (s)"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "Como máximo una línea de resumen por dominio cada tantos segundos, en lugar de una línea por entrega."
+    "en": "6d3c80b9adce5ba8",
+    "text": "Con qué frecuencia puede registrarse el recuento de entregas entre celdas de un dominio. Un mensaje fallido o una entrega aplazada es una advertencia; un recuento sin ninguno de los dos solo se escribe en depuración."
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",

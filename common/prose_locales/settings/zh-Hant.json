@@ -2952,8 +2952,8 @@
     "text": "命令摘要間隔（秒）"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "每個領域最多以此頻率寫一行記錄，統計已傳送、已重試與移入無法投遞佇列的命令數。"
+    "en": "3a91e7d305fbb684",
+    "text": "一個領域的命令計數可以多久記錄一次。移入無法投遞佇列或延後投遞是警告；兩者皆無的計數只在偵錯層級寫入。"
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3032,8 @@
     "text": "CIBA 通知摘要間隔（秒）"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "每個領域最多以此頻率寫一行記錄，統計已傳送、已重試與移入無法投遞佇列的 ping 與推送數。"
+    "en": "27d25bd5cf11b057",
+    "text": "一個領域的 ping 與 push 計數可以多久記錄一次。移入無法投遞佇列或延後投遞是警告；兩者皆無的計數只在偵錯層級寫入。"
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -4096,8 +4096,8 @@
     "text": "後端通道登出摘要間隔（秒）"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "每個領域每個間隔最多一行記錄，統計此程序自上次以來傳送、重試、接手與移入無法投遞佇列的數量——絕不會每次嘗試或每次失敗各一行。有任何項目移入無法投遞佇列時會發出警告（STS-OAUTH-0545）。"
+    "en": "4c2470b19d5277f2",
+    "text": "一個領域的登出計數可以多久記錄一次。移入無法投遞佇列或延後投遞是警告（STS-OAUTH-0545）；兩者皆無的計數只在偵錯層級寫入。絕不每次嘗試寫一行。"
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -6728,8 +6728,8 @@
     "text": "摘要間隔（秒）"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "每個領域在每個間隔內最多一行摘要記錄。"
+    "en": "ea1e0599735008ca",
+    "text": "一個領域的投遞計數可以多久記錄一次。移入無法投遞佇列或延後投遞是警告；兩者皆無的計數只在偵錯層級寫入。"
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -10044,8 +10044,8 @@
     "text": "單元間投遞摘要間隔（秒）"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "每個領域每隔這麼多秒最多一行摘要，而不是每次投遞一行。"
+    "en": "6d3c80b9adce5ba8",
+    "text": "一個領域的單元間投遞計數可以多久記錄一次。移入無法投遞佇列或延後投遞是警告；兩者皆無的計數只在偵錯層級寫入。"
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",

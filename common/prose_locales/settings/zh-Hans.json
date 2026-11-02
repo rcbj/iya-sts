@@ -2952,8 +2952,8 @@
     "text": "命令汇总间隔（秒）"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "每个领域最多每隔这么久写一行日志，统计已发送、已重试和已转入死信的命令数。"
+    "en": "3a91e7d305fbb684",
+    "text": "一个领域的命令计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3032,8 @@
     "text": "CIBA 通知汇总间隔（秒）"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "每个领域最多每隔这么久写一行日志，统计已发送、已重试和已转入死信的 ping 和推送数。"
+    "en": "27d25bd5cf11b057",
+    "text": "一个领域的 ping 和 push 计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -4096,8 +4096,8 @@
     "text": "后端通道注销汇总间隔（秒）"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "每个领域每个间隔最多写一行日志，统计本进程自上次以来发送、重试、接管和转入死信的投递数——绝不会每次尝试或每次失败写一行。有任何投递转入死信时发出警告（STS-OAUTH-0545）。"
+    "en": "4c2470b19d5277f2",
+    "text": "一个领域的注销计数可以多久记录一次日志。死信或延迟投递是警告（STS-OAUTH-0545）；两者都没有的计数只在调试级别写入。从不每次尝试写一行。"
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -6728,8 +6728,8 @@
     "text": "摘要间隔（秒）"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "每个领域在每个间隔内最多记录一条摘要日志。"
+    "en": "ea1e0599735008ca",
+    "text": "一个领域的投递计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -10044,8 +10044,8 @@
     "text": "单元间投递摘要间隔（秒）"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "每个领域每隔这么多秒最多输出一行摘要，而不是每次投递一行。"
+    "en": "6d3c80b9adce5ba8",
+    "text": "一个领域的单元间投递计数可以多久记录一次日志。死信或延迟投递是警告；两者都没有的计数只在调试级别写入。"
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",

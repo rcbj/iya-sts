@@ -2952,8 +2952,8 @@
     "text": "Interval ng command summary (s)"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "Hindi hihigit sa isang log line bawat realm sa ganito kadalas, na nagbibilang ng mga command na naipadala, sinubukan ulit at ginawang dead letter."
+    "en": "3a91e7d305fbb684",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng command ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3032,8 @@
     "text": "Interval ng CIBA notification summary (s)"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "Hindi hihigit sa isang log line bawat realm sa ganito kadalas, na nagbibilang ng mga ping at push na naipadala, sinubukan ulit at ginawang dead letter."
+    "en": "27d25bd5cf11b057",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng ping at push ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -4096,8 +4096,8 @@
     "text": "Interval ng back-channel logout summary (segundo)"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "Hindi hihigit sa isang log line bawat realm bawat interval, na nagbibilang ng naipadala, sinubukan ulit, inagaw at ginawang dead letter ng process na ito mula noong huli — hindi kailanman isang line bawat pagsubok o bawat pagkabigo. Isang warning (STS-OAUTH-0545) kapag may ginawang dead letter."
+    "en": "4c2470b19d5277f2",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng logout ng isang realm. Babala ang isang dead letter o naantalang paghahatid (STS-OAUTH-0545); ang bilang na wala ang alinman ay isinusulat lamang sa debug. Hindi kailanman isang linya bawat pagsubok."
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -6728,8 +6728,8 @@
     "text": "Interval ng summary (segundo)"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "Hindi hihigit sa isang summary log line kada realm kada interval."
+    "en": "ea1e0599735008ca",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng paghahatid ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -10044,8 +10044,8 @@
     "text": "Interval ng summary ng inter-cell delivery (s)"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "Hindi hihigit sa isang summary line kada realm kada ganitong karaming segundo, sa halip na isang linya kada delivery."
+    "en": "6d3c80b9adce5ba8",
+    "text": "Kung gaano kadalas maaaring i-log ang bilang ng paghahatid sa pagitan ng mga cell ng isang realm. Babala ang isang dead letter o naantalang paghahatid; ang bilang na wala ang alinman ay isinusulat lamang sa debug."
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",

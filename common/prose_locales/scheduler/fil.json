@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Binabasa ang susunod na page ng mga tao ng realm mula sa bawat attribute source na dapat nang i-refresh ayon sa nakaiskedyul na interval nito, papunta sa kanilang mga entry (#94). attributeSources.refreshBatch na tao bawat source bawat run."
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "Audit export"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "Sa bawat process, para sa bawat realm: inihahatid ang sariling bagong audit event ng process na ito sa mga naka-enable na destinasyon ng realm na iyon. Hindi pinipigilan ng pagkabigo ng isang destinasyon ang iba. Ang paghahatid ay hindi bababa sa isang beses."
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "Pag-expire ng mga account set"
@@ -340,8 +348,8 @@
     "text": "Ulat ng memory"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "Nagla-log, sa process na ito, ng isang linya na may role at memory nito: resident size, heap na nagamit at kabuuan, ang heap limit, external memory at array buffers (#341)."
+    "en": "d4a21d654747ddc9",
+    "text": "Itinatala, sa process na ito, ang buod ng run kasama ang role at memory nito: resident size, heap na nagamit at kabuuan, ang heap limit, external memory at array buffers. Debug ang log line (#341)."
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",

@@ -2071,6 +2071,14 @@
     "en": "853d31fe2e7b16e4",
     "text": "NON-SPEC. Ang sentral na table ng bawat failure condition na kayang gawin ng serbisyong ito, STS-<SUBSYSTEM>-<NNNN>, bilang JSON: bawat code kasama ang subsystem nito, kung ano ang nabigo, kung ano ang sinasabi sa CLIENT sa bokabularyo ng sarili nitong protocol, at ilang row ng hawak na audit log ang may dala nito sa realm na ito — sinasala ayon sa subsystem, text at ?seen=1, naka-page gamit ang ?page= at ?per=. HINDI KAILANMAN IPINAPADALA SA CLIENT ANG CODE: nasa audit row at sa log line lang ito. READ ONLY — source ang table. Sinasalamin ang GET /admin/error-codes; ang parehong table ay docs/error-codes.md."
   },
+  "stsmetadata.endpoints./admin-api/audit-export.what": {
+    "en": "c975b83632fa12f4",
+    "text": "NON-SPEC (#641). Ang iginuguhit ng Monitoring → Audit export: bawat destinasyon nang wala ang mga secret nito, at ang queue at mga delivery counter ng process na ito. Inihahatid ng bawat process ang sarili nitong mga event."
+  },
+  "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
+    "en": "c3015da7d4779805",
+    "text": "NON-SPEC (#641). add, update, remove, enable, disable at test: ang anim na kilos ng console, bawat isa ay naka-audit. Tinatanggap ang token at hindi kailanman ibinabalik. Hindi audit row ang test event."
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "NON-SPEC. Kung ano ang nangyari rito, sunud-sunod, bilang JSON: bawat authentication, sign-on session, LDAP directory operation, interaksyon sa console, tawag sa management API at tawag sa protocol endpoint, pinakabago muna, sinasala ayon sa category, action, outcome, actor at free text at naka-page gamit ang ?page= at ?per=. WALANG CREDENTIAL NA KAILANMAN NASA ROW — walang password, bearer token, assertion o body; pinangangalanan ng modify ang mga attribute na binago nito at hindi kailanman ang mga value nila. IPAGPATULOY AYON SA `at`, hindi ayon sa `seq` (#465). Natatangi ang `seq` sa bawat proseso ng serbisyo at hindi kailanman ginagamit muli, at tumataas ito sa loob ng bawat proseso, ngunit ang bawat worker thread ay nagbibilang mula sa sarili nitong bloke, kaya ang mga numero ay hindi iisang pagkakasunod-sunod at ang \"lahat pagkatapos ng 4102\" ay nakakaligtaan ng isang mas huling kaganapang naitala sa mas mababang numero. Ang `origin` ang pumapantay sa `seq`. Ang page 2 na kinuha isang segundo pagkatapos ng page 1 ay puwedeng umulit ng row na lumipat dito. READ ONLY — isa sa dalawang resource dito na ganoon, ang isa pa ay /admin-api/delegation. Walang clear operation, dahil ang erase control sa hindi protektadong API ay gagawing hindi masagot ng audit log ang nag-iisang tanong na dahilan ng pag-iral nito. Sinasalamin ang GET /admin/audit."

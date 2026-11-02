@@ -7,6 +7,14 @@
     "en": "e753a576c8530ce3",
     "text": "Lit la page suivante des personnes du domaine depuis chaque source d’attributs dont l’intervalle planifié est échu, vers leurs entrées (#94). attributeSources.refreshBatch personnes par source et par exécution."
   },
+  "sched.jobs.audit.export.title": {
+    "en": "6215b564a1d4430f",
+    "text": "Export d’audit"
+  },
+  "sched.jobs.audit.export.describe": {
+    "en": "81408374bf4dc25a",
+    "text": "Dans chaque processus, pour chaque domaine : livre les nouveaux événements d’audit propres à ce processus aux destinations activées de ce domaine. L’échec d’une destination ne retient pas les autres. La livraison est au moins une fois."
+  },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",
     "text": "Expiration des ensembles de comptes"
@@ -340,8 +348,8 @@
     "text": "Rapport mémoire"
   },
   "sched.jobs.process.memory-report.describe": {
-    "en": "4f2c054a1405a843",
-    "text": "Journalise, dans ce processus, une ligne avec son rôle et sa mémoire : taille résidente, tas utilisé et total, limite du tas, mémoire externe et tampons de tableaux (#341)."
+    "en": "d4a21d654747ddc9",
+    "text": "Enregistre, dans ce processus, le résumé de l’exécution avec son rôle et sa mémoire : taille résidente, tas utilisé et total, limite du tas, mémoire externe et tampons de tableaux. La ligne de journal est au niveau debug (#341)."
   },
   "sched.jobs.report.build-cleanup.title": {
     "en": "e5bd8efc07f0b31b",

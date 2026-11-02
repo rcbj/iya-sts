@@ -2952,8 +2952,8 @@
     "text": "Intervalle de synthèse des commandes (s)"
   },
   "oauth2.commandSummaryS|description": {
-    "en": "1045cb014a1ce125",
-    "text": "Au plus une ligne de journal par domaine à cette fréquence, comptant les commandes envoyées, retentées et mises en lettres mortes."
+    "en": "3a91e7d305fbb684",
+    "text": "La fréquence à laquelle le décompte des commandes d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "oauth2.commandSweepS|label": {
     "en": "ebf638b4c702db80",
@@ -3032,8 +3032,8 @@
     "text": "Intervalle de synthèse des notifications CIBA (s)"
   },
   "oauth2.cibaNotifySummaryS|description": {
-    "en": "251c4ae1278354cf",
-    "text": "Au plus une ligne de journal par domaine à cette fréquence, comptant les pings et pushes envoyés, retentés et mis en lettres mortes."
+    "en": "27d25bd5cf11b057",
+    "text": "La fréquence à laquelle le décompte des pings et pushes d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "oauth2.cibaSweepS|label": {
     "en": "722ae1b995e6c351",
@@ -4096,8 +4096,8 @@
     "text": "Intervalle de synthèse Back-Channel Logout (secondes)"
   },
   "oauth2.backchannelLogoutSummaryS|description": {
-    "en": "308efc32d526898a",
-    "text": "Au plus une ligne de journal par domaine et par intervalle, comptant ce que ce processus a envoyé, retenté, repris et mis en lettres mortes depuis la précédente — jamais une ligne par tentative ou par échec. Un avertissement (STS-OAUTH-0545) lorsque quelque chose a été mis en lettres mortes."
+    "en": "4c2470b19d5277f2",
+    "text": "La fréquence à laquelle le décompte des déconnexions d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement (STS-OAUTH-0545) ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug. Jamais une ligne par tentative."
   },
   "admin.readGroup|label": {
     "en": "990fd753159230d1",
@@ -6728,8 +6728,8 @@
     "text": "Intervalle de synthèse (secondes)"
   },
   "scimClient.summaryS|description": {
-    "en": "532d257e0c6e60fe",
-    "text": "Au plus une ligne de journal de synthèse par domaine et par intervalle."
+    "en": "ea1e0599735008ca",
+    "text": "La fréquence à laquelle le décompte des livraisons d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "scimClient.reconcileCheckS|label": {
     "en": "f122dddcfc10af98",
@@ -10044,8 +10044,8 @@
     "text": "Intervalle de synthèse des livraisons inter-cellules (s)"
   },
   "cells.deliverySummaryS|description": {
-    "en": "4d6c6babc8c6fdfa",
-    "text": "Au plus une ligne de synthèse par domaine pour ce nombre de secondes, plutôt qu’une ligne par livraison."
+    "en": "6d3c80b9adce5ba8",
+    "text": "La fréquence à laquelle le décompte des livraisons entre cellules d’un domaine peut être journalisé. Une lettre morte ou une livraison différée est un avertissement ; un décompte sans l’une ni l’autre n’est écrit qu’au niveau debug."
   },
   "cells.deliverySweepS|label": {
     "en": "f26150d48283cebf",
