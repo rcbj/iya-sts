@@ -26995,9 +26995,12 @@ class AdminApi {
   consoleGateOf(me) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleGateOf().");
+    // SECURITY_ADMIN is the roster's `security` (#645).
     const roles = (me.roles || []).map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
-        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+        : (role === 'ADMIN_WRITE' ? 'write'
+          : (role === 'SECURITY_ADMIN' ? 'security'
+            : String(role).toLowerCase()));
     });
     const held = me.console || {};
     const enforced = !!me.tokenRequired;
@@ -27008,7 +27011,8 @@ class AdminApi {
       username: me.caller ? String(me.caller.name || '') : '',
       authority: me.authority || null, identityRealm: me.realm || null,
       readGroup: me.readGroup, writeGroup: me.writeGroup,
-      read: !!me.read, write: !!me.write, roles: roles,
+      read: !!me.read, write: !!me.write, security: !!me.security,
+      roles: roles,
       open: enforced && !!held.open,
       closed: enforced && !!held.empty && !held.open && !roles.length,
       windowOpens: held.windowOpens !== false, empty: !!held.empty,
@@ -27154,6 +27158,8 @@ class AdminApi {
       roles: roles,
       read: !required || roles.indexOf('ADMIN_READ') >= 0,
       write: !required || roles.indexOf('ADMIN_WRITE') >= 0,
+      // #645: whether a security change would be let through.
+      security: !required || roles.indexOf('SECURITY_ADMIN') >= 0,
       expiresAt: caller ? caller.expiresAt : null,
       mode: mode.current(),
       readGroup: config.value('admin.readGroup'),

@@ -2567,14 +2567,17 @@ class WebKit {
    * @param t - the page's translator (#539 phase 5): the runtime's, built
    *   from `GET /admin-api/console`'s `locale`; without one, the default
    *   (English in node, set by `common/i18n.ts`; key-drawing in a browser)
-   * @returns `{ query, write, t }`, the query copied and `write` a boolean
+   * @param security - whether the reader holds the Security Administrator's
+   *   role (#645), which a policy page asks before it offers a Save
+   * @returns `{ query, write, security, t }`, the query copied and the two
+   *   flags booleans
    */
-  static context(query?, write?, t?) {
+  static context(query?, write?, t?, security?) {
     const copy = {};
     Object.keys(query || {}).forEach(function (name) {
       copy[name] = query[name];
     });
-    return { query: copy, write: write === true,
+    return { query: copy, write: write === true, security: security === true,
              t: t || webMessages.WebTranslator.fallback() };
   }
 

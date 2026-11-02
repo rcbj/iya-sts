@@ -29,13 +29,19 @@ registry has a page of its own, [Applications](applications.md).
 
 ## Who may use the console
 
-**Every page and every form under `/admin` needs a sign-in and one of two
+**Every page and every form under `/admin` needs a sign-in and one of three
 roles**:
 
 * **Admin Read** may look at every page and change nothing.
-* **Admin Write** may post every form. **Write implies read**, because a role
-  that could change a page it was not allowed to see would be a trap rather
-  than a permission.
+* **Admin Write** may post every form except the ones that change security.
+  **Write implies read**, because a role that could change a page it was not
+  allowed to see would be a trap rather than a permission.
+* **Security Administrator** may change security: save or reset a policy on
+  **Directory → Policies**, name a policy on an application, group or person,
+  grant or revoke this role, and act on the account of a person who holds it.
+  Admin Write cannot do any of these. It implies read and **not** write, so it
+  can be given to somebody who is not otherwise an administrator. See
+  [the Security Administrator](security-administrator.md).
 
 The console signs in **in your browser, as a client of this service's own
 authorization server**: the page sends you to `/oauth2/authorize` as the
@@ -80,11 +86,12 @@ whether the password typed at the sign-in screen is *checked*:
 * **In product mode** the password is verified, and the console is the
   administrative surface of a deployed identity service.
 
-### The roles are two directory groups
+### The roles are three directory groups
 
-The two roles are **two ordinary groups in the embedded directory** —
-`admin.readGroup` and `admin.writeGroup`, `cn=admin-read` and `cn=admin-write`
-by default — not a store of the console's own. So there are **four doors onto
+The three roles are **three ordinary groups in the embedded directory** —
+`admin.readGroup`, `admin.writeGroup` and `admin.securityGroup`,
+`cn=admin-read`, `cn=admin-write` and `cn=security-admin` by default — not a
+store of the console's own. So there are **four doors onto
 one membership**, and a grant made through any of them is visible through all
 of them:
 

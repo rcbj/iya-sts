@@ -96,12 +96,16 @@
     "text": "所有者（#607），同 OWNER_READ。授权 owner:write 权限：通过 /admin-api 更改其拥有的对象，范围以 access-control 策略的所有者规则对每种类型允许的操作为限——绝不创建、删除或重命名对象，也绝不涉及对所有者受保护的对象。"
   },
   "roles.native.ADMIN_READ.what": {
-    "en": "7d6481dffa0d517c",
-    "text": "Admin Read：/admin-api 上的每个读取操作。由控制台的 Admin Read 和 Admin Write 组（Admin Write 隐含 Admin Read）以及此处列出的应用持有。授权 admin:read 权限。"
+    "en": "a2f5894dfa0c0db6",
+    "text": "Admin Read：/admin-api 上的每项读取。由控制台的 Admin Read、Admin Write 和安全管理员组（另外两个均包含 Admin Read）以及此处列出的应用程序持有。授权 admin:read 权限。"
   },
   "roles.native.ADMIN_WRITE.what": {
     "en": "ecff5f0bc1a5a16a",
     "text": "Admin Write：/admin-api 上每个更改任何内容的操作。由控制台的 Admin Write 组以及此处列出的应用持有。授权 admin:write 权限。在令牌上它并不隐含 Admin Read：令牌可以携带任一范围，策略会要求操作所需的那一个。"
+  },
+  "roles.native.SECURITY_ADMIN.what": {
+    "en": "78a47eddc95e9db3",
+    "text": "安全管理员：更改安全性的 /admin-api 操作——目录 → 策略中的策略、为应用程序、组或人员指定的策略、授予此角色，以及持有此角色的人员的帐户。Admin Write 无法执行这些操作。由控制台的安全管理员组和此处列出的应用程序持有。授权 admin:security 权限。"
   },
   "roles.native.ADMIN_CONSOLE.what": {
     "en": "5661913dba04f59a",
@@ -164,7 +168,15 @@
     "text": "Admin Write"
   },
   "roles.console.write.what": {
-    "en": "476b1b61c16b02e4",
-    "text": "提交此控制台上的每个表单——吊销令牌、添加自定义声明、更改设置、创建人员、授予角色。它包含读取权限，因此仅拥有此角色的成员即可使用整个控制台。"
+    "en": "933448e4b37b9349",
+    "text": "提交此控制台上的每个表单——撤销令牌、添加自定义声明、更改设置、创建人员、授予角色——但更改安全性的表单除外，那些属于安全管理员。它包含读取，因此仅持有此角色的成员可以使用控制台的其余部分。"
+  },
+  "roles.console.security.label": {
+    "en": "eb026fe212244f20",
+    "text": "安全管理员"
+  },
+  "roles.console.security.what": {
+    "en": "238007ebd246b860",
+    "text": "更改安全性：在目录 → 策略中保存或重置策略，为应用程序、组或人员指定策略，授予或撤销此角色，以及对持有此角色的人员的帐户执行操作。Admin Write 无法执行其中任何操作。它包含读取而不包含写入，因此可以由本身不是管理员的人员持有。"
   }
 }

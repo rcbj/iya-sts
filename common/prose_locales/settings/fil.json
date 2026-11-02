@@ -4115,6 +4115,14 @@
     "en": "5bd2e65986c9ef86",
     "text": "Ang cn ng directory group na ang mga miyembro ay puwedeng mag-POST ng console form — mag-revoke ng token, magdagdag ng claim, magbago ng setting, magbigay ng role. KASAMA NG WRITE ANG READ: hindi na kailangan ng miyembro ng group na ito ang read group, dahil ang role na kayang baguhin ang pahinang hindi nito nakikita ay bitag sa halip na pahintulot."
   },
+  "admin.securityGroup|label": {
+    "en": "e208f88393e196ce",
+    "text": "Role na Security Administrator"
+  },
+  "admin.securityGroup|description": {
+    "en": "296a8d5721391215",
+    "text": "Ang cn ng grupo sa directory na ang mga miyembro ay mga Security Administrator: sila lamang ang maaaring magbago ng patakaran sa Directory → Policies, magtakda ng patakaran sa isang application, grupo o tao, magbigay ng role na ito, o kumilos sa account ng taong may hawak nito. Hindi ito magagawa ng Admin Write lamang. KASAMA SA ROLE ANG ADMIN READ at wala nang iba, kaya maaari itong hawakan ng taong hindi naman administrator. Ang grupo ng default realm ang mga Security Administrator ng serbisyo, sa bawat realm; ang sariling grupo ng isang realm ay naglilimita sa mga miyembro nito sa realm na iyon."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Kailanganin ang access token sa /admin-api"

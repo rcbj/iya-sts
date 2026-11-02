@@ -172,5 +172,6 @@
   "attributes.removeCustom": "Remove",
   "attributes.defineHeading": "Define a custom attribute",
   "attributes.labelPlaceholder": "Badge number",
-  "attributes.define": "Define the attribute"
+  "attributes.define": "Define the attribute",
+  "securityOnly": "Only a Security Administrator may save, reset or act on a policy here, or name one on an application, group or person. You can read every policy; a change is refused."
 }

@@ -4115,6 +4115,14 @@
     "en": "5bd2e65986c9ef86",
     "text": "Le cn du groupe d’annuaire dont les membres peuvent soumettre par POST un formulaire de la console — révoquer un jeton, ajouter une revendication, modifier un paramètre, attribuer un rôle. L’ÉCRITURE IMPLIQUE LA LECTURE : un membre de ce groupe n’a pas besoin d’appartenir aussi au groupe de lecture, car un rôle capable de modifier une page qu’il ne pourrait pas voir serait un piège plutôt qu’une autorisation."
   },
+  "admin.securityGroup|label": {
+    "en": "e208f88393e196ce",
+    "text": "Rôle Administrateur de la sécurité"
+  },
+  "admin.securityGroup|description": {
+    "en": "296a8d5721391215",
+    "text": "Le cn du groupe de l'annuaire dont les membres sont Administrateurs de la sécurité : eux seuls peuvent modifier une politique dans Annuaire → Politiques, désigner une politique sur une application, un groupe ou une personne, attribuer ce rôle, ou agir sur le compte d'une personne qui le détient. Admin Write seul ne le peut pas. LE RÔLE IMPLIQUE ADMIN READ et rien d'autre, de sorte qu'il peut être détenu par quelqu'un qui n'est pas administrateur par ailleurs. Le groupe du domaine par défaut constitue les Administrateurs de la sécurité du service, sur tous les domaines ; le groupe propre à un domaine limite ses membres à ce domaine."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Exiger un jeton d’accès sur /admin-api"

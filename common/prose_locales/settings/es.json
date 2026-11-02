@@ -4115,6 +4115,14 @@
     "en": "5bd2e65986c9ef86",
     "text": "El cn del grupo del directorio cuyos miembros pueden enviar por POST un formulario de la consola — revocar un token, añadir un claim, cambiar un ajuste, conceder un rol. ESCRITURA IMPLICA LECTURA: un miembro de este grupo no necesita además el grupo de lectura, porque un rol que pudiera cambiar una página que no puede ver sería una trampa y no un permiso."
   },
+  "admin.securityGroup|label": {
+    "en": "e208f88393e196ce",
+    "text": "Rol de Administrador de seguridad"
+  },
+  "admin.securityGroup|description": {
+    "en": "296a8d5721391215",
+    "text": "El cn del grupo del directorio cuyos miembros son Administradores de seguridad: solo ellos pueden cambiar una política en Directorio → Políticas, asignar una política a una aplicación, un grupo o una persona, conceder este rol o actuar sobre la cuenta de una persona que lo tiene. Admin Write por sí solo no puede. EL ROL IMPLICA ADMIN READ y nada más, de modo que puede tenerlo alguien que no sea administrador por lo demás. El grupo del dominio predeterminado son los Administradores de seguridad del servicio, en todos los dominios; el grupo propio de un dominio limita a sus miembros a ese dominio."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Exigir un token de acceso en /admin-api"

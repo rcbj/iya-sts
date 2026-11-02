@@ -172,5 +172,6 @@
   "attributes.removeCustom": "Ta bort",
   "attributes.defineHeading": "Definiera ett anpassat attribut",
   "attributes.labelPlaceholder": "Passerkortsnummer",
-  "attributes.define": "Definiera attributet"
+  "attributes.define": "Definiera attributet",
+  "securityOnly": "Endast en säkerhetsadministratör får spara, återställa eller agera på en policy här, eller ange en för ett program, en grupp eller en person. Du kan läsa varje policy; en ändring avvisas."
 }

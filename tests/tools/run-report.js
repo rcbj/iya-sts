@@ -1444,7 +1444,8 @@ async function mintTheManagementApiToken(url) {
   log.debug('Entering mintTheManagementApiToken().');
   try {
     process.env.STS_ADMIN_API_TOKEN = await adminApiToken.tokenFor(url);
-    log.info('minted an /admin-api access token (admin:read admin:write, ' +
+    log.info('minted an /admin-api access token (admin:read admin:write ' +
+             'admin:security, ' +
              'audience ' + adminApiToken.audienceFor(url) + ')');
   } catch (e) {
     log.error('could not mint an /admin-api access token from ' + url + ': ' +

@@ -172,5 +172,6 @@
   "attributes.removeCustom": "Eliminar",
   "attributes.defineHeading": "Definir un atributo personalizado",
   "attributes.labelPlaceholder": "Número de credencial",
-  "attributes.define": "Definir el atributo"
+  "attributes.define": "Definir el atributo",
+  "securityOnly": "Solo un administrador de seguridad puede guardar, restablecer o aplicar una política aquí, o asignar una a una aplicación, un grupo o una persona. Puede leer todas las políticas; un cambio se rechaza."
 }

@@ -1678,7 +1678,9 @@ class ConsoleRuntime extends SpaClient {
       ? Object.assign({}, this.view.json, { state: state })
       : this.view.json;
     const write = !!(this.me && this.me.write);
-    const ctx = kit.context(query, write, this.t);
+    // #645: the Security Administrator's role, which a policy page asks.
+    const security = !!(this.me && this.me.security);
+    const ctx = kit.context(query, write, this.t, security);
     const drilled = page.drill && query[page.drill.param];
     const up = drilled
       ? { href: page.path + kit.queryWith(kit.listViewOf(page.path, query),

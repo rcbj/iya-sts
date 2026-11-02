@@ -172,5 +172,6 @@
   "attributes.removeCustom": "删除",
   "attributes.defineHeading": "定义自定义属性",
   "attributes.labelPlaceholder": "工牌号码",
-  "attributes.define": "定义属性"
+  "attributes.define": "定义属性",
+  "securityOnly": "只有安全管理员可以在此保存、重置或执行策略，或为应用程序、组或人员指定策略。您可以查看所有策略；更改将被拒绝。"
 }
