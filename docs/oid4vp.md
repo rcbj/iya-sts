@@ -363,6 +363,18 @@ An ordinary sign-out of one application disowns nothing, and the person signs
 back in with the wallet they hold. A credential minted on an access token that
 had already been disowned is never put in the register.
 
+**A refusal says which of these happened, and when.** When a credential this
+realm issued is refused for its status, the wallet's `invalid_request`
+answer from `/oid4vp/response` and the browser's refusal page both name the
+act (a global sign-out, the holder's removal, an administrator's revocation
+or a status change), who or what did it, and the time. Apart from a
+suspension, both also say where to get a new credential issued: the
+person's **Wallet** page in the portal, `/portal/wallet`. The wallet gets
+the absolute address, and the browser page a link. A suspension instead says
+that an administrator may reinstate it. A credential issued in a batch has
+one status-list entry per copy, and a global sign-out disowns every copy,
+so each copy gives the same answer.
+
 ### DID Core and domain linkage
 
 | Path | What it is |

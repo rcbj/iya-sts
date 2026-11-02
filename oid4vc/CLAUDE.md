@@ -554,7 +554,8 @@ is accepted as well as the `jwt` proof's `key_attestation` header.
 
 ### Disowned: what stops a credential signing in
 
-Three acts, all of them read through `vc_issued.disownedReason()`:
+Three acts, all of them read through `vc_issued.disownedFact()` (and
+`disownedReason()`, its sentence):
 
 * an administrator's GLOBAL sign-out — `/admin/logout`, `/admin-api/logout` —
   or the `wallet-credential` row ticked on `/logout` (`logout/CLAUDE.md`). It
@@ -569,6 +570,29 @@ Three acts, all of them read through `vc_issued.disownedReason()`:
 * its holder's Remove on `/portal/wallet` (#661), of one copy or of every
   copy of one issuance (#670): `removeForSubject()` stamps each copy
   removed, sets its entry INVALID and revokes its register row.
+
+**A refusal says WHICH act, WHEN, and what to do (#653).** It once said only
+"Token Status List index 48658 is INVALID", and a person could not tell that
+their own earlier global sign-out had done it. `disownedFact()` answers
+`{ kind, reason, at, via, reissue }`, with `at` read from the act's own
+record: the row's `disownedAt`, the copy's `removedAt`, the issued
+register's mark, or the status list's last change (`vc_status.changeOf()`,
+counted only when it set the status that is read now). Two places use it:
+
+* `vc_verifier.ts`'s `statusCheck()` asks it of a JOSE credential this realm
+  signed whose status refused it, one lookup by digest, and appends
+  `— why: <reason>` to the *Credential status* check. An `ldp_vc`'s row is
+  found by its holder key, which only a sign-in does (`signInOutcome()`), so
+  its reason reaches the wallet from the sign-in outcome's `disowned`;
+* `signInOutcome()`'s STS-VC-0071 carries the fact as `disowned`. The
+  `/oid4vp/response` refusal ends with `Get a new credential issued at
+  <base>/portal/wallet`, and the browser's refused view carries `reissue:
+  '/portal/wallet'`, which `web_vc_signin.ts` draws as a link.
+
+`reissue` is false for a SUSPENSION alone, because an administrator may lift
+it and a new credential would not explain it. A batch's copies are rows of
+their own, and a global sign-out stamps each, so every copy gives the same
+answer. Refusals stay English (#539).
 
 **An ordinary session sign-out disowns nothing.** `/oauth2/logout`, SAML Single
 Logout, `wsignout1.0` and the console's and portal's Sign out end one session

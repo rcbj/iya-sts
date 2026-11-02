@@ -652,6 +652,30 @@ class VcStatus {
     return VALID;
   }
 
+  // WHEN AND BY WHAT AN ENTRY WAS LAST SET (#653), for a refusal that has to
+  // say why a credential of this realm's stopped being good: `{ status,
+  // changedAt, via }`, or null for an entry nobody ever set (one that reads
+  // INVALID because it expired, or because this realm never had it).
+  /**
+   * Returns when and by what an entry's explicit status was last set.
+   *
+   * @param key - the entry's key
+   * @returns `{ status, changedAt, via }`, or null
+   */
+  changeOf(key: unknown): { status: number; changedAt: number;
+                            via: string } | null {
+    const { log, entries } = this.deps;
+    log.debug("Entering VcStatus.changeOf().");
+    const row = entries.get(String(key));
+    if (!row || !row.changedAt) {
+      log.debug("Leaving VcStatus.changeOf(). Never set.");
+      return null;
+    }
+    log.debug("Leaving VcStatus.changeOf().");
+    return { status: Number(row.status), changedAt: Number(row.changedAt),
+             via: String(row.via || 'unstated') };
+  }
+
   // Sets an entry's explicit status. INVALID is final (the draft's "revoked,
   // annulled"); VALID and SUSPENDED move freely between each other.
   /**
@@ -1654,6 +1678,7 @@ export = {
   attach: slot.forward('attach'),
   statusOf: slot.forward('statusOf'),
   setStatus: slot.forward('setStatus'),
+  changeOf: slot.forward('changeOf'),
   rows: slot.forward('rows'),
   summary: slot.forward('summary'),
   counts: slot.forward('counts'),
