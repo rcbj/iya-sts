@@ -125,9 +125,10 @@ protocol's section of the sidebar:
 
 **Client libraries** —
 [Authentication libraries](authentication-libraries.md): client libraries
-for integrating an application with iya-sts. Node.js has six published npm
-modules. Python, Java, Rust, Go, and C# repositories cover the four
-server-side libraries; those packages are not on a public registry yet.
+for integrating an application with iya-sts. The four server-side
+libraries exist in Node.js, Python, Java, Rust, Go, C#, and C and C++, with
+links to the packages on npm, PyPI, crates.io and NuGet; there are also two
+in-browser clients and a Swift client.
 [OpenID Connect and CAEP clients](client-libraries.md) is the detailed
 guide to the browser OpenID Connect client and the Swift client for native
 macOS apps.
