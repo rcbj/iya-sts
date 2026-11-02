@@ -1682,7 +1682,12 @@ const ACTIONS = [
   { action: 'admin.audit-export.disable', category: 'admin',
     label: 'An audit export destination was disabled' },
   { action: 'admin.audit-export.test', category: 'admin',
-    label: 'An audit export destination was tested' }
+    label: 'An audit export destination was tested' },
+  // THE TEST EVENT ITSELF (#641). Never recorded here: it is what a
+  // destination RECEIVES when an administrator presses Test, and a SIEM
+  // filtering on actions needs this one named like every other.
+  { action: 'audit.export.test', category: 'service',
+    label: 'A test event an audit export destination was sent' }
 ];
 
 const CATEGORY_OF_ACTION = {};

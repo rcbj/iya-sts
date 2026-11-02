@@ -2073,7 +2073,7 @@
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
-    "text": "ICKE-SPEC (#641). Vad Övervakning → Granskningsexport ritar: varje destination utan dess hemligheter, och den här processens kö och leveransräknare. Varje process levererar sina egna händelser."
+    "text": "ICKE-SPEC (#641). Vad Övervakning → Granskningsexport ritar: varje mål utan dess hemligheter, och den här processens kö och leveransräknare. Varje process levererar sina egna händelser."
   },
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",

@@ -1854,5 +1854,9 @@
   "audit.actions.admin.audit-export.test.label": {
     "en": "e523fcd6d4957e6d",
     "text": "已测试审计导出目标"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "发送到审计导出目标的测试事件"
   }
 }

@@ -13,7 +13,7 @@
   },
   "sched.jobs.audit.export.describe": {
     "en": "81408374bf4dc25a",
-    "text": "I varje process, för varje sfär: levererar den här processens egna nya granskningshändelser till sfärens aktiverade destinationer. Ett fel hos en destination håller inte tillbaka de andra. Leveransen sker minst en gång."
+    "text": "I varje process, för varje sfär: levererar den här processens egna nya granskningshändelser till sfärens aktiverade mål. Ett fel hos ett mål håller inte tillbaka de andra. Leveransen sker minst en gång."
   },
   "sched.jobs.authn.account-set-expiry.title": {
     "en": "849356c9b70cc0f3",

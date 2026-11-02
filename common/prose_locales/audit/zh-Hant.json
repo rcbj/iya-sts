@@ -1854,5 +1854,9 @@
   "audit.actions.admin.audit-export.test.label": {
     "en": "e523fcd6d4957e6d",
     "text": "已測試稽核匯出目的地"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "傳送到稽核匯出目的地的測試事件"
   }
 }

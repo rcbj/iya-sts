@@ -1157,7 +1157,7 @@
   },
   "endpoints.route./admin-api/audit-export/:action.name": {
     "en": "b9a19e739aa5ebd6",
-    "text": "Ändra granskningsexportens destinationer"
+    "text": "Ändra granskningsexportens mål"
   },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",

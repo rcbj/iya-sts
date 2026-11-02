@@ -1854,5 +1854,9 @@
   "audit.actions.admin.audit-export.test.label": {
     "en": "e523fcd6d4957e6d",
     "text": "Une destination d’export d’audit a été testée"
+  },
+  "audit.actions.audit.export.test.label": {
+    "en": "25d9164b7269ce2d",
+    "text": "Un événement de test envoyé à une destination d’export d’audit"
   }
 }
