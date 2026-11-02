@@ -2002,8 +2002,14 @@ class AuditExport {
     } else if (action === 'test') {
       result = await this.testDestination(asked);
     } else {
+      // THE SENTENCE NAMES THE ACTIONS, in the "Unknown action" shape every
+      // other resource writes: `sts_admin_api_operations` compares it with
+      // the OpenAPI document, and `tests/admin_api.js`'s parity check reads
+      // it. "The action is not known." turned both checks off for this
+      // resource (2026-11-02).
       result = this.refusal('STS-AUDIT-0001',
-        'The action is not known.');
+        'Unknown action "' + action + '". The six are: add, update, ' +
+        'remove, enable, disable, test.');
     }
     logger.debug("Leaving AuditExport.act(). ok=" + result.ok);
     return result;
