@@ -163,26 +163,56 @@ class CellRouting {
    * @param realmId - the realm
    * @param name - the login name
    * @param cellId - the cell the person will be homed in
-   * @returns a promise of `{ ok: true }`, or `{ ok: false, cell }` when the
-   *   name is already homed in another cell
+   * @returns a promise of `{ ok: true, claimed }`, or `{ ok: false, cell }`
+   *   when the name is already homed in another cell. `claimed` is true
+   *   only when this call inserted the row, so a refusal releases only
+   *   that row (#644).
    */
-  claimName(realmId: string, name: string,
-            cellId: string): Promise<{ ok: boolean; cell?: string }> {
+  claimName(realmId: string, name: string, cellId: string): Promise<
+      { ok: boolean; cell?: string; claimed?: boolean }> {
     log.debug("Entering CellRouting.claimName().");
     const d = this.driver();
     const digest = CellRouting.digest(realmId, 'name', name);
     if (!cells.isMulti() || !d || !digest) {
       log.debug("Leaving CellRouting.claimName(). Nothing to claim.");
-      return Promise.resolve({ ok: true });
+      return Promise.resolve({ ok: true, claimed: false });
     }
     log.debug("Leaving CellRouting.claimName().");
     return d.routeClaim(realmId, 'name', digest, cellId).then(function (
         answer: { cell: string; claimed: boolean }) {
       if (answer && answer.cell && answer.cell !== cellId) {
-        return { ok: false, cell: answer.cell };
+        return { ok: false, cell: answer.cell, claimed: false };
       }
-      return { ok: true };
+      return { ok: true, claimed: !!(answer && answer.claimed) };
     });
+  }
+
+  /**
+   * Releases one login-name row this process inserted and then did not
+   * keep (#644). A name another cell already held is not released.
+   *
+   * @param realmId - the realm
+   * @param name - the login name, already lower-cased
+   * @param cellId - the cell that inserted the row
+   * @returns a promise that settles when the release has been asked
+   */
+  releaseName(realmId: string, name: string, cellId: string): Promise<void> {
+    log.debug("Entering CellRouting.releaseName().");
+    const d = this.driver();
+    const digest = CellRouting.digest(realmId, 'name', name);
+    if (!d || !digest) {
+      log.debug("Leaving CellRouting.releaseName(). Nothing to release.");
+      return Promise.resolve();
+    }
+    log.debug("Leaving CellRouting.releaseName().");
+    return d.routeRelease(realmId, 'name', digest, cellId).then(
+      function () {},
+      function (err: any) {
+        // A release that fails leaves a row the next flush of the person
+        // can still claim. The caller has already refused the write.
+        log.debug("Caught in CellRouting.releaseName(): " +
+                  ((err && err.message) || err));
+      });
   }
 
   /**
@@ -214,5 +244,7 @@ export = {
     routing.homeOf(realmId, kind, value),
   claimName: (realmId: string, name: string, cellId: string) =>
     routing.claimName(realmId, name, cellId),
+  releaseName: (realmId: string, name: string, cellId: string) =>
+    routing.releaseName(realmId, name, cellId),
   counts: () => routing.counts()
 };

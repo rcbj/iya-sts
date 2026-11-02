@@ -7842,6 +7842,43 @@ class AdminApi {
             },
             responseDescription: 'The address now on the entry, verified.' },
 
+          { action: 'set-pseudonyms', operationId: 'setUserPseudonyms',
+            summary: 'Add or remove one of somebody\'s sign-in names',
+            description: 'A name the person can sign in with, in place of ' +
+                         'their username (#644). An email is stored live ' +
+                         'unless it is already somebody else\'s address; ' +
+                         'any other name is live at once. `cancelPending` ' +
+                         'drops a name that is still waiting for its link. ' +
+                         'Exactly one of `add`, `remove` and ' +
+                         '`cancelPending`. Audited as `admin.pseudonym.set`. ' +
+                         'The name is not ' +
+                         'repeated on that row.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                add: { type: 'string', maxLength: 254,
+                       description: 'A name to add.' },
+                remove: { type: 'string', maxLength: 254,
+                          description: 'A live name to remove.' },
+                cancelPending: {
+                  oneOf: [{ type: 'boolean' },
+                          { type: 'string', maxLength: 8 }],
+                  description: 'True cancels a name waiting for its link.'
+                }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice', add: 'alice.other' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The live names, and a pending address ' +
+                                 'when one is still waiting.' },
+
           { action: 'set-attribute', operationId: 'setUserAttribute',
             summary: 'Replace every value of one of somebody\'s attributes',
             description: 'One attribute of the person\'s directory entry, ' +

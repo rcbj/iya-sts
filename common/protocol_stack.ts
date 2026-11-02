@@ -541,6 +541,11 @@ class ProtocolStack {
     this.build('common/mail_uses', require('./mail_uses'), 'MailUses');
     this.build('portal/portal_mail', require('../portal/portal_mail'),
                'PortalMail');
+    // #644: /portal/pseudonyms and /portal/verify-pseudonym. A library
+    // the account API gathers; the portal's own registerRoutes draws the
+    // pages. Built before the portal, beside the mail pages.
+    this.build('portal/portal_pseudonyms',
+               require('../portal/portal_pseudonyms'), 'PortalPseudonyms');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
     // THE ACCOUNT API (#568), `/account-api`: the user portal's only door

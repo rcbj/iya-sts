@@ -108,6 +108,34 @@ function loginNameOf(dnKey, attrs) {
   return name.trim().toLowerCase();
 }
 
+// Every live name a person answers to (#644): the filing name, each
+// stsPseudonym, and a username the caller resolved them by. A pending
+// verification address is not a name. One list, so the flush, a re-home
+// and the single-cell conversion cannot drift.
+function liveNamesOf(dnKey, attrs, username) {
+  log.debug("Entering liveNamesOf().");
+  const out = [];
+  const add = function (value) {
+    const key = String(value == null ? '' : value).trim().toLowerCase();
+    if (key && out.indexOf(key) === -1) {
+      out.push(key);
+    }
+  };
+  add(loginNameOf(dnKey, attrs));
+  const bag = attrs || {};
+  Object.keys(bag).forEach(function (name) {
+    if (String(name).toLowerCase() !== 'stspseudonym') {
+      return;
+    }
+    const value = bag[name];
+    const list = Array.isArray(value) ? value : [value];
+    list.forEach(add);
+  });
+  add(username);
+  log.debug("Leaving liveNamesOf().");
+  return out;
+}
+
 // A DN as the directory keys it (`ldap_server.js` normalizeDn()): each RDN
 // trimmed and lower-cased. The driver compares a loaded entry's DN with the
 // keys the flush hands it, so the two must be spelt the same way.
@@ -343,40 +371,53 @@ function create(options) {
   }
 
   // ---------------------------------------------------------------------
-  // THE INDEX, KEPT AT THE FLUSH. A person upserted for the first time here
-  // claims both keys; a person deleted releases both. Every step is
-  // best-effort: a failed claim is retried at the next write of that person
-  // (it is not recorded as indexed), and a failed release leaves a row that
-  // names this cell for a person it no longer holds, which the
-  // reconciliation at start (`cell_routing.ts`) clears.
+  // THE INDEX, KEPT AT THE FLUSH. A person upserted here claims every live
+  // name and the entryUUID; a person deleted releases the set this process
+  // remembered. A pseudonym added or removed is a change of that set, so an
+  // upsert whose only difference is a name is not skipped (#644). Every
+  // step is best-effort: a failed claim is retried at the next write of
+  // that person (it is not recorded as indexed), and a failed release
+  // leaves a row that names this cell for a person it no longer holds.
   // ---------------------------------------------------------------------
   function indexPeople(change) {
     log.debug("Entering indexPeople().");
     /** @type {Promise<any>} */
     let chain = Promise.resolve();
+    // Names an upsert in THIS flush successfully asked to claim, including
+    // one this cell already held (`claimed` false). A rename writes the new
+    // DN and deletes the old in one change; the delete must not release a
+    // name the upsert just kept.
+    const claimedNow = [];
     (change.upserts || []).forEach(function (row) {
       if (!tiers.isPersonDn(row.key)) {
         return;
       }
       const id = idOf(row.realm, row.key);
       const attrs = (row.entry && row.entry.attributes) || {};
-      const name = loginNameOf(row.key, attrs);
+      const names = liveNamesOf(row.key, attrs);
       const uuid = uuidOf(attrs);
       const was = indexed.get(id);
-      if (was && was.name === name && was.uuid === uuid) {
+      const previous = was
+        ? (was.names || (was.name ? [was.name] : [])) : [];
+      if (was && was.uuid === uuid &&
+          previous.join('\n') === names.join('\n')) {
         return;
       }
-      const nameDigest = name ? digest(row.realm, 'name', name) : null;
+      const nameRows = names.map(function (name) {
+        return { name: name, digest: digest(row.realm, 'name', name) };
+      }).filter(function (one) {
+        return !!one.digest;
+      });
       const uuidDigest = uuid ? digest(row.realm, 'uuid', uuid) : null;
-      if (!nameDigest && !uuidDigest) {
+      if (!nameRows.length && !uuidDigest) {
         return;
       }
       chain = chain.then(function () {
         const claims = [];
-        if (nameDigest) {
-          claims.push(globalDriver.routeClaim(row.realm, 'name', nameDigest,
+        nameRows.forEach(function (one) {
+          claims.push(globalDriver.routeClaim(row.realm, 'name', one.digest,
                                               cellId));
-        }
+        });
         if (uuidDigest) {
           claims.push(globalDriver.routeClaim(row.realm, 'uuid', uuidDigest,
                                               cellId));
@@ -384,6 +425,13 @@ function create(options) {
         return Promise.all(claims).then(function (answers) {
           const elsewhere = answers.filter(function (one) {
             return one && one.cell && one.cell !== cellId;
+          });
+          nameRows.forEach(function (one, i) {
+            const answer = answers[i];
+            const ours = !answer || !answer.cell || answer.cell === cellId;
+            if (ours && claimedNow.indexOf(one.name) === -1) {
+              claimedNow.push(one.name);
+            }
           });
           // A RE-HOMED PERSON IS NOT A CONFLICT (2026-09-28,
           // tests/protocol/sts_cells_rehome.js): `adopt-person` writes them
@@ -412,7 +460,17 @@ function create(options) {
                       'here will not be found by sign-in routing.');
             return;
           }
-          indexed.set(id, { name: name, uuid: uuid });
+          indexed.set(id, { names: names, uuid: uuid });
+          const drop = previous.filter(function (name) {
+            return names.indexOf(name) === -1 &&
+              claimedNow.indexOf(name) === -1;
+          });
+          return Promise.all(drop.map(function (name) {
+            const made = digest(row.realm, 'name', name);
+            return made
+              ? globalDriver.routeRelease(row.realm, 'name', made, cellId)
+              : null;
+          }));
         });
       });
     });
@@ -422,17 +480,24 @@ function create(options) {
       }
       const id = idOf(row.realm, row.key);
       const was = indexed.get(id);
-      const name = loginNameOf(row.key, {});
-      const nameDigest = name ? digest(row.realm, 'name', name) : null;
-      const uuidDigest = was && was.uuid ? digest(row.realm, 'uuid', was.uuid)
-                                         : null;
+      const remembered = was
+        ? (was.names || (was.name ? [was.name] : []))
+        : [loginNameOf(row.key, {})];
+      const uuidDigest = was && was.uuid
+        ? digest(row.realm, 'uuid', was.uuid) : null;
       indexed.delete(id);
       chain = chain.then(function () {
         const releases = [];
-        if (nameDigest) {
-          releases.push(globalDriver.routeRelease(row.realm, 'name',
-                                                  nameDigest, cellId));
-        }
+        remembered.forEach(function (name) {
+          if (!name || claimedNow.indexOf(name) !== -1) {
+            return;
+          }
+          const made = digest(row.realm, 'name', name);
+          if (made) {
+            releases.push(globalDriver.routeRelease(row.realm, 'name',
+                                                    made, cellId));
+          }
+        });
         if (uuidDigest) {
           releases.push(globalDriver.routeRelease(row.realm, 'uuid',
                                                   uuidDigest, cellId));
@@ -498,11 +563,12 @@ function create(options) {
         return;
       }
       const attrs = entry.attributes || {};
-      const name = loginNameOf(key, attrs);
+      const names = liveNamesOf(key, attrs);
       const uuid = uuidOf(attrs);
       // The digests are made when they are needed, not here: a load runs
-      // before the keystore holds the key they are made under.
-      indexed.set(idOf(realmId, key), { name: name, uuid: uuid });
+      // before the keystore holds the key they are made under. Recording
+      // does not claim (#644).
+      indexed.set(idOf(realmId, key), { names: names, uuid: uuid });
     });
     log.debug("Leaving noteLoaded().");
   }
@@ -1030,6 +1096,7 @@ module.exports = {
   // conversion of a single-cell store (`cell_convert.js`), whose backfill
   // must write exactly the rows `indexPeople()` would have.
   loginNameOf: loginNameOf,
+  liveNamesOf: liveNamesOf,
   uuidOf: uuidOf,
   normDn: normDn
 };

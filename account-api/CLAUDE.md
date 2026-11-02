@@ -32,6 +32,12 @@ rule (OWASP A01, `portal/CLAUDE.md`) moved to the layer every portal page now
 stands on. An id a body carries (a passkey's credential id, an assessment, a
 device) is looked up among the CALLER's own, as it always was.
 
+**Sign-in names (#644) are that person's.** `GET` and `POST
+/account-api/pseudonyms` take no username. An email added there stays off
+the username index until `GET` and `POST /account-api/verify-pseudonym`
+spend the mailed link. That pair is a `link` operation. It is not the
+recovery-address link.
+
 **`link` and `public` operations are the exception and are not one**, for
 `/portal/activate`'s reason: nobody is signed in, the person comes from the
 link, and the single-use secret the link carries is the credential. They keep

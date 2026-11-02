@@ -6932,6 +6932,9 @@ answers under that name.
   address, and until #228 that action had no console form at all — only
   `POST /admin-api/users/set-mail`. The withheld row pointing at "its own
   control" would have pointed at nothing, so the form sits in this section.
+* **`set-pseudonyms` (#644) is the sign-in-name card on the Contact
+  sub-tab**, beside `set-mail`. Add or remove one name. The grid section
+  below is where the card is drawn.
 * **`#attributes` is a fourth `userReturnTo()` anchor**, for the three edits
   and `set-mail`.
 * **A table in a `<details>` says what each attribute takes and what is not
@@ -7886,7 +7889,8 @@ an attribute differently.
 * `fieldGridCell()` takes `row.forText` for the label beside the name, since
   a person's field belongs to no protocol family.
 * The address is not a field. The `set-mail` form heads the Contact sub-tab
-  (`#mail`).
+  (`#mail`). The sign-in-name card sits on the same sub-tab
+  (`set-pseudonyms`, `#pseudonyms`, #644).
 
 **Rule 7.** `POST /admin-api/users/update-fields` mirrors the grid's Save,
 and the users resource's `mirrors` names `POST /admin/users/edit`.

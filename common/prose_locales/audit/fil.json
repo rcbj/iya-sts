@@ -643,6 +643,10 @@
     "en": "00a6e30371abdc2d",
     "text": "Naitakda ng isang administrator ang address ng isang tao"
   },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "Binago ng isang administrator ang mga pangalan sa pag-sign in ng isang tao"
+  },
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "May operator na nag-clear ng authenticator app ng isang tao"

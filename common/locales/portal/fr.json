@@ -18,6 +18,8 @@
   "nav.gnap.heading": "Les accès que vous avez accordés via GNAP",
   "nav.email.label": "E-mail",
   "nav.email.heading": "Votre adresse e-mail et vos messages",
+  "nav.pseudonyms.label": "Noms de connexion",
+  "nav.pseudonyms.heading": "Noms avec lesquels vous pouvez vous connecter",
   "section.owned.title": "Ressources dont je suis propriétaire",
   "section.owned.what": "Les rôles, groupes, comptes de service et applications qui vous désignent, vous ou un groupe dont vous êtes membre, comme propriétaire.",
   "nav.owned.roles.label": "Rôles",

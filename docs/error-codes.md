@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5054** of them, in **51** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5064** of them, in **51** subsystems.
 
 ## Where a code appears
 
@@ -70,8 +70,8 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 151
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 243
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 156
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -91,9 +91,9 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 256
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 258
 * [Management API (`STS-API`)](#sts-api) — 87
-* [User portal (`STS-PORTAL`)](#sts-portal) — 107
+* [User portal (`STS-PORTAL`)](#sts-portal) — 109
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -3101,6 +3101,7 @@ Raised from: kerberos/.
 | `STS-KRB-0240` | S4U2Proxy evidence that crossed a Kerberos trust was refused: its PAC's server, KDC or ticket signature does not verify with the inter-realm key that sealed it, so the ticket or its PAC was altered or forged after the issuing realm signed it. | [MS-SFU] 3.2.5.2.3, [MS-PAC] 2.8: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0241` | A Kerberos trust's key rotation or pairing was refused: no such key, no source for the new key, a partner that is not a trust realm of this service, or the partner realm's side could not be written. | none — the console and /admin-api (#430) |
 | `STS-KRB-0242` | Classic constrained delegation across a Kerberos trust was refused by the target's realm: the front end's realm referred the evidence, and this realm's own krb5.crossRealmClassicDelegation is off (both realms must turn it on). | KDC_ERR_POLICY (12); [MS-SFU] 3.2.5.2 |
+| `STS-KRB-0243` | A Kerberos principal named a person the directory found, and the name on their stored keys differs from that principal even after both are folded to lower case. The keys stay unused. A case-only mismatch of the real principal is the older refusal and is not this code (#644). | none (a log line; the principal is unknown to the KDC) |
 
 ## STS-LDAP
 
@@ -3261,6 +3262,11 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0195` | A group's policy reference was not set: the value names neither `default` nor a named policy of that kind this realm holds (#1235). | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0196` | A person or one of their groups names an attribute policy this realm does not hold: the reference selects nothing, and the profile the rest name, or `default`, is applied (#1241). | none (a log line; the create or edit goes on) |
 | `STS-LDAP-0197` | A named attribute policy was not deleted: a person or a group still names it through stsAttributePolicy (#1241). | HTTP 400 (console and API) |
+| `STS-LDAP-0198` | An LDAP add or modify named stsPseudonym or one of its pending verification attributes. Those are written by the portal and by POST /admin-api/users/set-pseudonyms (#644). | LDAP constraintViolation (19) |
+| `STS-LDAP-0199` | A pseudonym was refused for its shape: empty, longer than 254 characters, a character a distinguished name reserves, a distinguished name, a subject, a DID, a SPIFFE identity, a reserved name, or an eighth value when the person already holds eight (#644). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0200` | A pseudonym is already another person's uid, RDN or live pseudonym in this realm, or another cell already holds the name (#644). The other cell is not named in the answer. | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0201` | A pseudonym is this person's own uid or RDN (#644). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0202` | An email-shaped pseudonym is already some other person's mail address, or a mail address is already some other person's uid or live pseudonym (#644). Two people may still share a mail attribute with each other. | HTTP 400 JSON (the sentence; the code is recorded) |
 
 ## STS-ATTR
 
@@ -5229,6 +5235,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0905` | A message-signing certificate action named a person with no entry in this realm, and none is created (#521). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0906` | Storing, removing or listing a certificate on an application's entry was refused: the registry holds no application by that identifier, and none is created (#1227). | HTTP 400 (API) or a refusal on the application's page |
 | `STS-ADMIN-0907` | Setting or clearing the policy a group names of one kind was refused by the directory (#1235); the refusal carries the directory's own code. | HTTP 400 (API) or a refusal on the group's page |
+| `STS-ADMIN-0908` | set-pseudonyms was given a body that does not name exactly one of add, remove or cancelPending, or that names no person (#644). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0909` | set-pseudonyms named nobody in this realm, or the directory refused the value. The directory's own STS-LDAP code is recorded on its log (#644). | HTTP 400 (API) or a refusal on the person's page |
 
 ## STS-API
 
@@ -5441,6 +5449,8 @@ Raised from: portal/.
 | `STS-PORTAL-0620` | A search on /portal/delegate (GET /account-api/delegate/candidates) was refused: the text had fewer than three characters, the fewest the search takes, so that a search is never a listing of the directory (2026-10-20). | HTTP 400 JSON |
 | `STS-PORTAL-0621` | A search on /portal/delegate was refused: the person or their address had asked more times in the rate-limit window than the search allows (thirty a person, 120 an address). Where the limiter names its own bucket, its code is recorded instead (2026-10-20). | HTTP 429 JSON |
 | `STS-PORTAL-0622` | A search on /portal/delegate could not be answered: no directory was installed, or the store could not be read. The page says so and the DN form still works (2026-10-20). | HTTP 503 JSON |
+| `STS-PORTAL-0623` | A pseudonym change on /account-api could not be attempted: the directory module was not loaded. A directory refusal records its own STS-LDAP code instead (#644). | HTTP 503 JSON |
+| `STS-PORTAL-0624` | A /portal/verify-pseudonym link is unknown, expired, mismatched or already spent (#644). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 

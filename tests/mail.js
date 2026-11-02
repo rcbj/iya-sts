@@ -1130,9 +1130,9 @@ async function uses(t) {
     t.check(u.checkVerification('jan', 'wrong').ok === false &&
             u.checkVerification('jan', token).ok === true,
             '11c. only the token that was sent checks');
-    t.check(u.completeVerification('jan', token).ok &&
-            m.recipient('jan').verified &&
-            !u.completeVerification('jan', token).ok,
+    const followed = await u.completeVerification('jan', token);
+    const spent = await u.completeVerification('jan', token);
+    t.check(followed.ok && m.recipient('jan').verified && !spent.ok,
             '11d. following it verifies the address, once');
     dir.people.jan.mail = ['jan.new@example.com'];
     t.check(!m.recipient('jan').verified,
@@ -1655,7 +1655,7 @@ async function addressChange(t) {
             'one, never a request\'s', mailed && mailed.to);
     const token = new URL(/(https:\/\/idp\.example\S+)/.exec(mailed.text)[1])
       .searchParams.get('token');
-    const done = u.completeVerification('uma', token);
+    const done = await u.completeVerification('uma', token);
     t.check(done.ok && done.changed &&
             written[0].join(',') === 'uma,uma.new@example.com,link' &&
             m.recipient('uma').verified &&
@@ -1663,7 +1663,7 @@ async function addressChange(t) {
             '16d. following it makes the new address `mail`, verified, ' +
             'through the directory — which tells the former one',
             JSON.stringify([done, written]));
-    t.check(!u.completeVerification('uma', token).ok,
+    t.check(!(await u.completeVerification('uma', token)).ok,
             '16e. once');
     const second = u.startAddressChange('uma', 'uma.third@example.com',
                                         'test');

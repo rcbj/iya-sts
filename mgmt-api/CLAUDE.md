@@ -34,7 +34,9 @@ about that line had to change.
    The rule that does matter is **a control added to `/admin` gets an operation
    on `/admin-api` in the same commit** — `/admin/users` grew its first form
    (create a person in the directory) and `POST /admin-api/users/:action` with
-   its one `create` action arrived with it — — a CONTROL, which is why a page with no
+   its one `create` action arrived with it. `set-pseudonyms` (#644) is one of
+   those actions: add or remove one sign-in name, and the console's Contact
+   sub-tab is its form — a CONTROL, which is why a page with no
    form on it needs only its GET. Not eventually, and not when somebody
    asks: an API that covers eight of nine controls is worse than one that covers
    none, because the ninth is found by a caller who has already written the code

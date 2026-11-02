@@ -569,7 +569,8 @@ class MailUses {
    * @param token - the link's token
    * @returns `{ ok, address, changed }`, or a coded refusal
    */
-  completeVerification(username: string, token: string): Json {
+  async completeVerification(username: string, token: string):
+      Promise<Json> {
     const { log, mail, audit } = this.deps;
     log.debug("Entering MailUses.completeVerification(). " + username);
     const checked = this.checkVerification(username, token);
@@ -578,19 +579,36 @@ class MailUses {
       return checked;
     }
     const dir = mail.directory();
-    dir.writeMailFlag(username, 'stsMailVerifyToken', '');
-    dir.writeMailFlag(username, 'stsMailVerifyExpires', '');
-    dir.writeMailFlag(username, 'stsMailVerifyAddress', '');
     if (checked.change) {
       // A NEW ADDRESS BECOMES `mail` NOW, AND NOT BEFORE (D5), verified —
       // the person proved it — and the directory tells the former one.
-      if (typeof dir.writeAddress !== 'function' ||
-          !dir.writeAddress(username, checked.address, 'link')) {
+      // THE CLAIM IS ANSWERED BEFORE THE LINK IS SPENT (#644): a collision
+      // leaves the triple, so the link can be tried again, and is the
+      // code recorded. Any other failure still spends the link.
+      const written = dir && typeof dir.writeAddress === 'function'
+        ? await dir.writeAddress(username, checked.address, 'link') : false;
+      const accepted = written === true ||
+        (!!written && (written as Json).ok === true);
+      if (!accepted) {
+        const code = written && (written as Json).code;
+        if (code === 'STS-LDAP-0202') {
+          log.debug("Leaving MailUses.completeVerification(). The address " +
+                    "is already a name.");
+          return this.deps.errorCodes.mark({ ok: false, errors: ['The new ' +
+            'address could not be stored. Try again.'] }, 'STS-LDAP-0202');
+        }
+        dir.writeMailFlag(username, 'stsMailVerifyToken', '');
+        dir.writeMailFlag(username, 'stsMailVerifyExpires', '');
+        dir.writeMailFlag(username, 'stsMailVerifyAddress', '');
         log.debug("Leaving MailUses.completeVerification(). Not written.");
         return this.deps.errorCodes.mark({ ok: false, errors: ['The new ' +
           'address could not be stored. Try again.'] }, 'STS-MAIL-0038');
       }
-    } else {
+    }
+    dir.writeMailFlag(username, 'stsMailVerifyToken', '');
+    dir.writeMailFlag(username, 'stsMailVerifyExpires', '');
+    dir.writeMailFlag(username, 'stsMailVerifyAddress', '');
+    if (!checked.change) {
       dir.writeMailFlag(username, 'stsMailVerified', checked.address);
     }
     audit.audit({ action: 'mail.verified', actor: username, target: username,

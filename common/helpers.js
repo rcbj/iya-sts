@@ -8211,14 +8211,21 @@ function walletBaseUrl() {
  */
 function userFor(username) {
   log.debug("Entering userFor(). username=" + username);
-  const name = String(username || 'mock-user');
+  const typed = String(username || 'mock-user');
+  const sub = subjectForName(typed);
+  // Once the directory holds the person, every protocol that reads the
+  // session username sees the canonical uid, not the alias they typed
+  // (#644). A name the directory does not hold keeps the typed string, so
+  // a development sign-in of nobody still describes that name.
+  const filed = sub ? nameForSubject(sub) : '';
+  const name = filed || typed;
   const user = {
     // FROM THE DIRECTORY (2026-09-14), and '' where it holds nobody — see the
     // subject resolver above. Callers that ISSUE something to a person make
     // sure the entry exists first (`authn.startSession()`, the token grants),
     // so an empty value here is a preview, a lookup of somebody who is not
     // there, or a process with no directory.
-    sub: subjectForName(name),
+    sub: sub,
     username: name,
     preferred_username: name
   };

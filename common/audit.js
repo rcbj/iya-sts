@@ -800,6 +800,9 @@ const ACTIONS = [
   // administrator is a trusted source.
   { action: 'admin.mail.set', category: 'admin',
     label: 'A person\'s address was set by an administrator' },
+  // Sign-in names (#644). The address is absent from the detail.
+  { action: 'admin.pseudonym.set', category: 'admin',
+    label: 'A person\'s sign-in names were changed by an administrator' },
   { action: 'admin.mfa.totp.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',

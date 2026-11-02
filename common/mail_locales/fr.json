@@ -20,6 +20,11 @@
       "text": "Le compte {{username}} indique {{address}} comme adresse e-mail.\n\nPour confirmer qu’il s’agit bien de votre adresse, ouvrez ce lien dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nS’il ne s’agit pas de votre compte, ignorez ce message.\n",
       "html": "<p>Le compte <strong>{{username}}</strong> indique {{address}} comme adresse e-mail.</p><p><a href=\"{{link}}\">Confirmez qu’il s’agit bien de votre adresse</a> dans les {{expiresMinutes}} minutes.</p><p>S’il ne s’agit pas de votre compte, ignorez ce message.</p>"
     },
+    "pseudonym-verification": {
+      "subject": "Confirmez un nom avec lequel vous pouvez vous connecter pour {{service}}",
+      "text": "Le compte {{username}} a demandé à se connecter en tant que {{address}}.\n\nPour confirmer que vous pouvez vous connecter avec ce nom, ouvrez ce lien dans les {{expiresMinutes}} minutes :\n\n{{link}}\n\nTant que vous ne l’ouvrez pas, ce nom ne vous connecte pas. S’il ne s’agit pas de votre compte, ignorez ce message.\n",
+      "html": "<p>Le compte <strong>{{username}}</strong> a demandé à se connecter en tant que {{address}}.</p><p><a href=\"{{link}}\">Confirmez que vous pouvez vous connecter avec ce nom</a> dans les {{expiresMinutes}} minutes. Tant que vous ne l’ouvrez pas, ce nom ne vous connecte pas.</p><p>S’il ne s’agit pas de votre compte, ignorez ce message.</p>"
+    },
     "password-changed": {
       "subject": "Votre mot de passe {{service}} a été modifié",
       "text": "Le mot de passe du compte {{username}} a été modifié le {{when}} ({{how}}).\n\nSi ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.\n",

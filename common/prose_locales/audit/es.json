@@ -643,6 +643,10 @@
     "en": "00a6e30371abdc2d",
     "text": "Un administrador estableció la dirección de una persona"
   },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "Un administrador cambió los nombres de inicio de sesión de una persona"
+  },
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "Un operador borró la aplicación de autenticación de alguien"

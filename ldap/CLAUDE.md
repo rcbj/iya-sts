@@ -1516,6 +1516,13 @@ First entry wins, because the walk stopped at its first hit and the store
 iterates in insertion order — so the entry the index names is the entry the walk
 would have returned.
 
+**A LIVE `stsPseudonym` IS A NAME IN THAT INDEX (#644).** `writePseudonyms()`
+is the one writer. A value it has stored is found the way a `uid` is,
+lower-cased, and `name_keys` is that same set. A pending verification
+address is absent from the index, so signing in with it still finds whoever
+the fold already named. The issued subject stays `urn:uuid:<entryUUID>`.
+The issued username, once the entry exists, is the filing name.
+
 **IT IS MAINTAINED INCREMENTALLY, WHICH `groupIndexNow()` BESIDE IT DELIBERATELY
 IS NOT, and the difference is the shape of the load rather than a change of
 mind.** A group index is read once per token and written rarely, so rebuilding

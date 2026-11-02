@@ -187,6 +187,8 @@ const clusterConnections = require('./ldap_cluster_connections');
 // LIBRARY that registers nothing and requires nothing of this file; the names
 // it claims are computed here by `createClaimSpec()`.
 const createClaims = require('./directory_create_claims');
+// The shape of one stsPseudonym, shared with the bulk import. A leaf.
+const pseudonymRules = require('./pseudonym_rules');
 // WHO MAY READ WHAT OVER THE SOCKET (#106, 2026-09-23): the rule table, a
 // static utility class that reads nothing and requires nothing, so it can be
 // asked once per entry. This file classifies the reader and the entry and
@@ -2669,7 +2671,8 @@ const windowedUuidCount = cacheRegistry.counter('ldap.windowed-entryuuids');
 const listingCount = cacheRegistry.counter('ldap.subtree-listings');
 
 // Every name this entry answers to, lower-cased and without repeats: its `uid`
-// values and the value of its own RDN.
+// values, each live `stsPseudonym` (#644), and the value of its own RDN. A
+// pending verification address is not a name.
 //
 // **NO `Entering`/`Leaving` PAIR, deliberately**: this is called once per entry
 // inside buildUsernameIndex()'s walk, so at `debug` the pair would be two lines
@@ -2683,7 +2686,9 @@ const listingCount = cacheRegistry.counter('ldap.subtree-listings');
 // it is enforcing.
 function usernameKeysOf(entry) {
   log.debug("Entering usernameKeysOf().");
-  const names = (entry.attributes.uid || []).concat([usernameOfEntry(entry)]);
+  const names = (entry.attributes.uid || [])
+    .concat(entry.attributes.stspseudonym || [])
+    .concat([usernameOfEntry(entry)]);
   const out = [];
   names.forEach(function (value) {
     const key = String(value == null ? '' : value).trim().toLowerCase();
@@ -3676,6 +3681,11 @@ const OWN_NAMES = [
   // the pending link's hash, expiry and the address it was sent to.
   'stsMailVerified', 'stsMailVerifyToken', 'stsMailVerifyExpires',
   'stsMailVerifyAddress',
+  // A LOGIN NAME BESIDE THE UID (#644). The live values are what
+  // usernameKeysOf indexes. The pending triple is one address waiting for
+  // /portal/verify-pseudonym, and it is not a name until that link is spent.
+  'stsPseudonym', 'stsPseudonymVerifyToken', 'stsPseudonymVerifyExpires',
+  'stsPseudonymVerifyAddress',
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so
@@ -6311,16 +6321,16 @@ persistence.setDirectory(directoryHooks);
 // ---------------------------------------------------------------------------
 function subjectForName(name) {
   log.debug('Entering subjectForName(). name=' + name);
-  // A namespaced federated uid is `<relationship>~<subject>`, and the
-  // subject may be an email (#358). identityKeyOf() would strip the
-  // partner's domain and resolve a different person. The whole name is
-  // tried first. A Kerberos principal that merely contains '~' still
-  // falls through to the fold when nothing is stored under the whole name.
-  const text = String(name == null ? '' : name);
-  const tilde = text.indexOf('~');
-  const at = text.indexOf('@');
+  // The whole typed string is tried first (#644). A live pseudonym that
+  // is an email must resolve to its owner, not to whoever holds the local
+  // part. A federated uid is `<relationship>~<subject>` and the subject
+  // may itself be an email (#358); identityKeyOf() would strip that
+  // domain too. The fold runs only when the whole string names nobody.
+  // A Kerberos principal that merely contains '~' still falls through
+  // when nothing is stored under the whole name.
+  const text = String(name == null ? '' : name).trim();
   let located = null;
-  if (tilde > 0 && at > tilde) {
+  if (text) {
     const whole = locateEntry(text);
     if (whole && whole.stored && isPersonEntry(whole.stored)) {
       located = whole;
@@ -7062,6 +7072,12 @@ function namePlan(name) {
   // person that nothing on it recorded. It also makes the next lookup the cheap
   // one — existingUserEntry() finds a uid without a scan.
   const already = existingUserEntry(name);
+  // AN ALIAS DOES NOT BECOME A SECOND UID (#644). existingUserEntry() now
+  // answers a live pseudonym, and merging the typed string onto that entry
+  // would store the alias beside the real uid. The name filed is the one
+  // the entry already has; a create still files the typed name.
+  const filed = already
+    ? String(personNameOf(already) || name) : String(name);
   log.debug('Leaving namePlan().' +
             (already ? ' Folding onto ' + already.dn + '.' : ''));
   // THE FIVE PERSONA ATTRIBUTES ARE INVENTED, AND PRODUCT MODE INVENTS NONE OF
@@ -7074,7 +7090,7 @@ function namePlan(name) {
   // halves of that rule now agree about product mode too.
   const attributes = {
     objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
-    uid: name
+    uid: filed
   };
   if (mode.inventsClaimValues()) {
     attributes.cn = persona.display;
@@ -7085,9 +7101,9 @@ function namePlan(name) {
   }
   log.debug("Leaving namePlan().");
   return {
-    dn: already ? already.dn : 'uid=' + name + ',' + usersDn(),
+    dn: already ? already.dn : 'uid=' + filed + ',' + usersDn(),
     attributes: attributes,
-    merge: already ? { uid: name } : {}
+    merge: already ? { uid: filed } : {}
   };
 }
 
@@ -11808,6 +11824,9 @@ const SECRET_ATTRIBUTES = [
   'stspasswordresettoken',
   // An address verification link's hash (#63), for the same reason.
   'stsmailverifytoken',
+  // A pseudonym verification link's hash (#644), the same reason: the
+  // token itself never leaves the directory.
+  'stspseudonymverifytoken',
   'stskrb5keys', 'krb5servicekeys',
   // Certificate enrollment (2026-09-13): a private key this service generated
   // for an enrolled certificate, an ACME EAB key and a SCEP challenge record.
@@ -12317,6 +12336,36 @@ function credentialWriteRefusal(req, operation, dn, types) {
     new ldap.UnwillingToPerformError(
       named.join(', ') + ' is a credential and is not written over LDAP; ' +
       'use ' + doors.join('; ')),
+    dn);
+}
+
+// A live pseudonym and its pending link are written by writePseudonyms()
+// only (#644). An LDAP add or modify would skip the username claim, the
+// mail exclusion, and the verification rule. Refused in every mode, the
+// same placement as a credential attribute and a different code: this is
+// not a credential, and operationalWriteRefusal records STS-LDAP-0076.
+const PSEUDONYM_LDAP_ATTRIBUTES = ['stspseudonym', 'stspseudonymverifytoken',
+  'stspseudonymverifyexpires', 'stspseudonymverifyaddress'];
+
+function pseudonymWriteRefusal(req, operation, dn, types) {
+  log.debug('Entering pseudonymWriteRefusal(). ' + operation + ' ' + dn);
+  const named = (types || []).filter(function (type, index, all) {
+    return PSEUDONYM_LDAP_ATTRIBUTES.indexOf(type) !== -1 &&
+           all.indexOf(type) === index;
+  });
+  if (!named.length) {
+    log.debug('Leaving pseudonymWriteRefusal(). None named.');
+    return null;
+  }
+  log.info('ldap: refusing a ' + operation + ' of ' + dn + ' that writes ' +
+           named.join(', ') + '.');
+  log.debug('Leaving pseudonymWriteRefusal(). Refused.');
+  return ldapRefusal(req, 'STS-LDAP-0198', 'a ' + operation + ' of ' + dn +
+    ' named ' + named.join(', ') + ', which are written only through the ' +
+    'portal and POST /admin-api/users/set-pseudonyms',
+    new ldap.ConstraintViolationError(
+      named.join(', ') + ' is not written over LDAP; use the portal or ' +
+      'POST /admin-api/users/set-pseudonyms'),
     dn);
 }
 
@@ -14705,6 +14754,382 @@ if (typeof portal.setDirectory === 'function') {
 }
 
 // ---------------------------------------------------------------------------
+// stsPseudonym (#644). ONE WRITER. A live value is a login name: it is in
+// usernameKeysOf(), so existingUserEntry() answers it, and the entry seal
+// is the encryption. A pending email is three attributes and not a name
+// until /portal/verify-pseudonym is spent. LDAP add and modify are refused
+// above; this function is what the portal and set-pseudonyms call.
+//
+// The claim is the username claim a create takes, held across the two
+// lookups that can still disagree with it (another person's mail, another
+// person's entry). settle(true) only after a write. A failed claim is not
+// settled. The other cell's id is never in the answer.
+// ---------------------------------------------------------------------------
+function pseudonymList(stored) {
+  log.debug('Entering pseudonymList().');
+  const values = (stored.attributes.stspseudonym || []).map(function (one) {
+    return String(one);
+  });
+  log.debug('Leaving pseudonymList().');
+  return values;
+}
+
+function pseudonymPendingAddress(stored) {
+  log.debug('Entering pseudonymPendingAddress().');
+  const value = (stored.attributes.stspseudonymverifyaddress || [])[0];
+  log.debug('Leaving pseudonymPendingAddress().');
+  return value ? String(value) : '';
+}
+
+function pseudonymAnswer(stored, extra) {
+  log.debug('Entering pseudonymAnswer().');
+  const pending = pseudonymPendingAddress(stored);
+  const answer = {
+    ok: true,
+    username: personNameOf(stored),
+    pseudonyms: pseudonymList(stored),
+    pending: pending || null
+  };
+  Object.keys(extra || {}).forEach(function (key) {
+    answer[key] = extra[key];
+  });
+  log.debug('Leaving pseudonymAnswer().');
+  return answer;
+}
+
+function refusePseudonym(code, sentence) {
+  log.debug('Entering refusePseudonym(). ' + code);
+  // The value is absent: an address in a log line is the thing the pending
+  // attribute exists to keep off the ordinary record.
+  log.info(errorCodes.tag(code) + 'ldap: a pseudonym was refused.');
+  log.debug('Leaving refusePseudonym().');
+  return { ok: false, code: code, sentence: sentence };
+}
+
+function holdsLivePseudonym(stored, fold) {
+  log.debug('Entering holdsLivePseudonym().');
+  const held = pseudonymList(stored).some(function (one) {
+    return one.trim().toLowerCase() === fold;
+  });
+  log.debug('Leaving holdsLivePseudonym().');
+  return held;
+}
+
+function ownPseudonymNames(stored) {
+  log.debug('Entering ownPseudonymNames().');
+  const out = [];
+  (stored.attributes.uid || []).concat([usernameOfEntry(stored)])
+    .forEach(function (value) {
+      const key = String(value == null ? '' : value).trim().toLowerCase();
+      if (key && out.indexOf(key) === -1) {
+        out.push(key);
+      }
+    });
+  log.debug('Leaving ownPseudonymNames().');
+  return out;
+}
+
+function clearPseudonymPending(stored, fold) {
+  log.debug('Entering clearPseudonymPending().');
+  const pending = pseudonymPendingAddress(stored).trim().toLowerCase();
+  if (!fold || pending === fold) {
+    delete stored.attributes.stspseudonymverifytoken;
+    delete stored.attributes.stspseudonymverifyexpires;
+    delete stored.attributes.stspseudonymverifyaddress;
+  }
+  log.debug('Leaving clearPseudonymPending().');
+}
+
+function commitPseudonymChange(stored, before, hadNames, wasCurrent) {
+  log.debug('Entering commitPseudonymChange().');
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  touchDirectory(stored.dn);
+  // touchDirectory() moved directoryVersion. The names this entry answers
+  // to have to be folded in now, including a removal: a refresh would leave
+  // the old name pointing here.
+  noteUsernameIndexPut(stored, hadNames, wasCurrent);
+  noteAccountChange('updated', stored.dn, before, attributeSnapshot(stored));
+  log.debug('Leaving commitPseudonymChange().');
+}
+
+// The pending link, checked and not spent. '' when it does not match.
+function pseudonymTokenMatches(stored, token) {
+  log.debug('Entering pseudonymTokenMatches().');
+  const hash = String((stored.attributes.stspseudonymverifytoken ||
+                       [])[0] || '');
+  const expires = Number((stored.attributes.stspseudonymverifyexpires ||
+                          [])[0] || 0);
+  const address = pseudonymPendingAddress(stored);
+  const fold = address.trim().toLowerCase();
+  if (!hash || !expires || expires < Date.now() || !address || !token) {
+    log.debug('Leaving pseudonymTokenMatches(). Not pending.');
+    return '';
+  }
+  const matches = stsCrypto.verifySecret(String(token) + '\n' + fold, hash);
+  log.debug('Leaving pseudonymTokenMatches().');
+  return matches ? address : '';
+}
+
+function pseudonymIsEmail(text) {
+  log.debug('Entering pseudonymIsEmail().');
+  let problem = 'unasked';
+  try {
+    problem = require('../common/mail_transports').addressProblem(text);
+  } catch (e) {
+    // Treated as not an email: the shape rules still apply, and a value
+    // that cannot be classified is not given the pending-mail path.
+    log.debug('Caught in pseudonymIsEmail(): ' + ((e && e.message) || e));
+    problem = 'unasked';
+  }
+  log.debug('Leaving pseudonymIsEmail().');
+  return problem === '';
+}
+
+async function releasePseudonymCell(fold, claimed) {
+  log.debug('Entering releasePseudonymCell().');
+  if (!claimed) {
+    log.debug('Leaving releasePseudonymCell(). Not inserted here.');
+    return;
+  }
+  try {
+    await require('../common/cell_routing').releaseName(realms.currentId(),
+                                                        fold, cells.id());
+  } catch (e) {
+    // The write was already refused. The row expires with the claim.
+    log.debug('Caught in releasePseudonymCell(): ' +
+              ((e && e.message) || e));
+  }
+  log.debug('Leaving releasePseudonymCell().');
+}
+
+/**
+ * Changes one person's pseudonyms.
+ *
+ * @param entryOrUsername - a username, a subject or a DN
+ * @param spec - `op` (`add`, `remove`, `cancel`, `check`), `value`,
+ *   `source` (`self`, `admin`, `link`, `import`) and `token` for a link
+ * @returns a promise of `{ ok, username, pseudonyms, pending }` or
+ *   `{ ok: false, code, sentence }`. `pending: true` carries `token` for
+ *   the caller that mails the link. No person is `{ ok: false, code: '' }`.
+ */
+async function writePseudonyms(entryOrUsername, spec) {
+  log.debug('Entering writePseudonyms().');
+  const asked = spec || {};
+  const op = String(asked.op || '');
+  const located = locateEntry(String(entryOrUsername || ''));
+  const stored = located && located.stored;
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving writePseudonyms(). No person.');
+    return { ok: false, code: '' };
+  }
+  if (op === 'cancel') {
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    if (!pseudonymPendingAddress(stored)) {
+      log.debug('Leaving writePseudonyms(). Nothing pending.');
+      return pseudonymAnswer(stored);
+    }
+    clearPseudonymPending(stored, '');
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    log.debug('Leaving writePseudonyms(). Pending cleared.');
+    return pseudonymAnswer(stored);
+  }
+  if (op === 'check') {
+    const address = pseudonymTokenMatches(stored, asked.token);
+    if (!address) {
+      log.debug('Leaving writePseudonyms(). The link does not check.');
+      return refusePseudonym('STS-PORTAL-0624',
+        'This verification link is not valid.');
+    }
+    log.debug('Leaving writePseudonyms(). The link checks.');
+    return pseudonymAnswer(stored, { address: address });
+  }
+  if (op === 'remove') {
+    const fold = String(asked.value == null ? '' : asked.value)
+      .trim().toLowerCase();
+    const kept = pseudonymList(stored).filter(function (one) {
+      return one.trim().toLowerCase() !== fold;
+    });
+    if (kept.length === pseudonymList(stored).length) {
+      log.debug('Leaving writePseudonyms(). Not held.');
+      return pseudonymAnswer(stored);
+    }
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    if (kept.length) {
+      stored.attributes.stspseudonym = kept;
+    } else {
+      delete stored.attributes.stspseudonym;
+    }
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    log.debug('Leaving writePseudonyms(). Removed.');
+    return pseudonymAnswer(stored);
+  }
+  if (op !== 'add') {
+    log.debug('Leaving writePseudonyms(). Unknown operation.');
+    return refusePseudonym('STS-LDAP-0199',
+      'A pseudonym change is add, remove or cancel.');
+  }
+  const text = String(asked.value == null ? '' : asked.value).trim();
+  const fold = text.toLowerCase();
+  const source = String(asked.source || 'self');
+  if (source === 'link') {
+    const matched = pseudonymTokenMatches(stored, asked.token);
+    if (!matched || matched.trim().toLowerCase() !== fold) {
+      log.debug('Leaving writePseudonyms(). The link does not match.');
+      return refusePseudonym('STS-PORTAL-0624',
+        'This verification link is not valid.');
+    }
+    if (holdsLivePseudonym(stored, fold)) {
+      const before = attributeSnapshot(stored);
+      const hadNames = usernameKeysOf(stored);
+      const wasCurrent = usernameIndexIsCurrent();
+      clearPseudonymPending(stored, fold);
+      commitPseudonymChange(stored, before, hadNames, wasCurrent);
+      log.debug('Leaving writePseudonyms(). Already live.');
+      return pseudonymAnswer(stored);
+    }
+  } else if (holdsLivePseudonym(stored, fold)) {
+    log.debug('Leaving writePseudonyms(). Already held.');
+    return pseudonymAnswer(stored);
+  }
+  const email = pseudonymIsEmail(text);
+  const problem = pseudonymRules.pseudonymProblem(text, {
+    ownNames: ownPseudonymNames(stored),
+    email: email,
+    liveCount: pseudonymList(stored).length
+  });
+  if (!problem.ok) {
+    log.debug('Leaving writePseudonyms(). The shape was refused.');
+    return refusePseudonym(problem.code, problem.sentence);
+  }
+  const verified = String((stored.attributes.stsmailverified || [])[0] || '')
+    .trim().toLowerCase();
+  const liveNow = source === 'admin' || source === 'link' ||
+    source === 'import' || !email ||
+    (source === 'self' && email && verified === fold);
+  if (!liveNow) {
+    const token = asked.token
+      ? String(asked.token)
+      : stsCrypto.randomBytes(32).toString('base64url');
+    const ttl = Number(config.value('mail.verificationTtlMinutes'));
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    stored.attributes.stspseudonymverifytoken =
+      [stsCrypto.hashSecret(token + '\n' + fold)];
+    stored.attributes.stspseudonymverifyexpires =
+      [String(Date.now() + ttl * 60000)];
+    stored.attributes.stspseudonymverifyaddress = [text];
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    log.debug('Leaving writePseudonyms(). Pending.');
+    return pseudonymAnswer(stored, { pending: true, address: text,
+                                     token: token });
+  }
+  let held = null;
+  let cellClaimed = false;
+  try {
+    held = await createClaims.claim({
+      realm: realms.currentId(), dns: [], usernames: [fold]
+    });
+  } catch (e) {
+    log.debug('Caught in writePseudonyms(): ' + ((e && e.message) || e));
+    log.debug('Leaving writePseudonyms(). The claim could not be asked.');
+    return refusePseudonym('STS-LDAP-0093',
+      'Whether that name is already taken could not be decided.');
+  }
+  if (!held || !held.ok) {
+    const store = held && held.reason === 'store';
+    log.debug('Leaving writePseudonyms(). The claim was refused.');
+    return refusePseudonym(store ? 'STS-LDAP-0093' :
+      (email ? 'STS-LDAP-0202' : 'STS-LDAP-0200'),
+      store ? 'Whether that name is already taken could not be decided.'
+            : (email
+              ? 'That address is already somebody else\'s.'
+              : 'Somebody else in this realm already answers to that name.'));
+  }
+  try {
+    const mailHit = email && peopleByMail(text).some(function (one) {
+      return normalizeDn(one.dn) !== normalizeDn(stored.dn);
+    });
+    if (mailHit) {
+      if (held.settle) {
+        held.settle(false);
+      }
+      log.debug('Leaving writePseudonyms(). Another person\'s mail.');
+      return refusePseudonym('STS-LDAP-0202',
+        'That address is already somebody else\'s.');
+    }
+    const other = existingUserEntry(text);
+    if (other && normalizeDn(other.dn) !== normalizeDn(stored.dn)) {
+      if (held.settle) {
+        held.settle(false);
+      }
+      log.debug('Leaving writePseudonyms(). Another person\'s name.');
+      return refusePseudonym('STS-LDAP-0200',
+        'Somebody else in this realm already answers to that name.');
+    }
+    if (holdsLivePseudonym(stored, fold)) {
+      const pending = pseudonymPendingAddress(stored).trim().toLowerCase();
+      if (pending === fold) {
+        const before = attributeSnapshot(stored);
+        const hadNames = usernameKeysOf(stored);
+        const wasCurrent = usernameIndexIsCurrent();
+        clearPseudonymPending(stored, fold);
+        commitPseudonymChange(stored, before, hadNames, wasCurrent);
+        if (held.settle) {
+          held.settle(true);
+        }
+      } else if (held.settle) {
+        // Nothing was written, so the claim is given back now.
+        held.settle(false);
+      }
+      log.debug('Leaving writePseudonyms(). Already live after the claim.');
+      return pseudonymAnswer(stored);
+    }
+    const routing = require('../common/cell_routing');
+    const cellAnswer = await routing.claimName(realms.currentId(), fold,
+                                               cells.id());
+    if (!cellAnswer || !cellAnswer.ok) {
+      if (held.settle) {
+        held.settle(false);
+      }
+      await releasePseudonymCell(fold, !!(cellAnswer && cellAnswer.claimed));
+      log.debug('Leaving writePseudonyms(). Another cell holds the name.');
+      return refusePseudonym('STS-LDAP-0200',
+        'Somebody else in this realm already answers to that name.');
+    }
+    cellClaimed = !!cellAnswer.claimed;
+    const before = attributeSnapshot(stored);
+    const hadNames = usernameKeysOf(stored);
+    const wasCurrent = usernameIndexIsCurrent();
+    const next = pseudonymList(stored).filter(function (one) {
+      return one.trim().toLowerCase() !== fold;
+    });
+    next.push(text);
+    stored.attributes.stspseudonym = next;
+    clearPseudonymPending(stored, fold);
+    commitPseudonymChange(stored, before, hadNames, wasCurrent);
+    if (held.settle) {
+      held.settle(true);
+    }
+    log.debug('Leaving writePseudonyms(). Stored.');
+    return pseudonymAnswer(stored);
+  } catch (e) {
+    if (held && held.settle) {
+      held.settle(false);
+    }
+    await releasePseudonymCell(fold, cellClaimed);
+    log.debug('Caught in writePseudonyms(): ' + ((e && e.message) || e));
+    log.debug('Leaving writePseudonyms(). The write failed.');
+    return refusePseudonym('STS-LDAP-0093',
+      'Whether that name is already taken could not be decided.');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // THE MAIL CHANNEL'S SLOT (#63, 2026-09-22), for the portal's reason and in
 // the portal's shape: `common/mail.ts` is a library loaded long before this
 // module, so it cannot require it without loading these routes out of order
@@ -14783,32 +15208,86 @@ if (typeof mailChannel.setDirectory === 'function') {
     // address is not `mail` until its link is clicked). `source` is
     // verifyWrittenMail()'s, plus `link`: the person proved it. The account
     // observer is told, so the FORMER address hears it changed.
-    writeAddress: function (username, address, source) {
+    //
+    // THE ADDRESS IS ALSO CLAIMED AS A USERNAME (#644). Two mail attributes
+    // may still match. What they may not do is match somebody else's uid
+    // or live pseudonym, and a later alias of this address has to see the
+    // claim. An empty address clears mail and claims nothing. The answer
+    // is `{ ok, code }`, never a boolean: a promise is truthy, and a caller
+    // that does not await it would report success before the write.
+    writeAddress: async function (username, address, source) {
       log.debug('Entering writeAddress(). source=' + source);
       const located = locateEntry(String(username || ''));
       const stored = located.stored;
       if (!stored || !usernameOfEntry(stored)) {
         log.debug('Leaving writeAddress(). No person.');
-        return false;
+        return { ok: false, code: '' };
       }
-      const before = attributeSnapshot(stored);
       const value = String(address || '').trim();
+      const fold = value.toLowerCase();
+      let held = null;
       if (value) {
-        stored.attributes.mail = [value];
-      } else {
-        delete stored.attributes.mail;
+        try {
+          held = await createClaims.claim({
+            realm: realms.currentId(), dns: [], usernames: [fold]
+          });
+        } catch (e) {
+          log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
+          log.debug('Leaving writeAddress(). The claim could not be asked.');
+          return { ok: false, code: 'STS-LDAP-0093' };
+        }
+        if (!held || !held.ok) {
+          const store = held && held.reason === 'store';
+          log.info(errorCodes.tag(store ? 'STS-LDAP-0093' :
+                                   'STS-LDAP-0202') +
+                   'ldap: an address was not written.');
+          log.debug('Leaving writeAddress(). The claim was refused.');
+          return { ok: false, code: store ? 'STS-LDAP-0093' :
+                                            'STS-LDAP-0202' };
+        }
+        const other = existingUserEntry(value);
+        if (other && normalizeDn(other.dn) !== normalizeDn(stored.dn)) {
+          if (held.settle) {
+            held.settle(false);
+          }
+          log.info(errorCodes.tag('STS-LDAP-0202') +
+                   'ldap: an address is already somebody else\'s name.');
+          log.debug('Leaving writeAddress(). Another person.');
+          return { ok: false, code: 'STS-LDAP-0202' };
+        }
       }
-      stored.attributes.modifytimestamp = [generalizedTime()];
-      touchDirectory(stored.dn);
-      if (source === 'link' && value) {
-        stored.attributes.stsmailverified = [value];
-      } else {
-        verifyWrittenMail(stored, before, source);
+      try {
+        const before = attributeSnapshot(stored);
+        if (value) {
+          stored.attributes.mail = [value];
+        } else {
+          delete stored.attributes.mail;
+        }
+        stored.attributes.modifytimestamp = [generalizedTime()];
+        // BEFORE the snapshot `touchDirectory()` takes (#644). Setting the
+        // flag afterwards left a durable copy without `stsMailVerified`.
+        if (source === 'link' && value) {
+          stored.attributes.stsmailverified = [value];
+        }
+        touchDirectory(stored.dn);
+        if (source !== 'link' || !value) {
+          verifyWrittenMail(stored, before, source);
+        }
+        noteAccountChange('updated', stored.dn, before,
+                          attributeSnapshot(stored));
+        if (held && held.settle) {
+          held.settle(true);
+        }
+        log.debug('Leaving writeAddress().');
+        return { ok: true, code: '' };
+      } catch (e) {
+        if (held && held.settle) {
+          held.settle(false);
+        }
+        log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
+        log.debug('Leaving writeAddress(). The write failed.');
+        return { ok: false, code: 'STS-LDAP-0093' };
       }
-      noteAccountChange('updated', stored.dn, before,
-                        attributeSnapshot(stored));
-      log.debug('Leaving writeAddress().');
-      return true;
     },
     writeMailFlag: function (username, name, value) {
       log.debug('Entering writeMailFlag(). ' + name);
@@ -19656,6 +20135,14 @@ function ldapAddNow(req, res, next) {
     log.debug('Leaving the LDAP add handler. A credential attribute.');
     return next(addCredentialRefusal);
   }
+  const addPseudonymRefusal = pseudonymWriteRefusal(req, 'add', dn,
+    (req.attributes || []).map(function (attr) {
+      return String(attr.type || '').toLowerCase();
+    }));
+  if (addPseudonymRefusal) {
+    log.debug('Leaving the LDAP add handler. A pseudonym attribute.');
+    return next(addPseudonymRefusal);
+  }
   // Every realm's context, not baseDn(): THIS IS THE SOCKET, and the socket
   // has no realm. An
   // LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
@@ -20379,6 +20866,14 @@ function ldapModifyNow(req, res, next) {
   if (modifyCredentialRefusal) {
     log.debug('Leaving the LDAP modify handler. A credential attribute.');
     return next(modifyCredentialRefusal);
+  }
+  const modifyPseudonymRefusal = pseudonymWriteRefusal(req, 'modify', dn,
+    req.changes.map(function (change) {
+      return String(change.modification.type || '').toLowerCase();
+    }));
+  if (modifyPseudonymRefusal) {
+    log.debug('Leaving the LDAP modify handler. A pseudonym attribute.');
+    return next(modifyPseudonymRefusal);
   }
   const stored = getEntry(dn);
   if (!stored) {
@@ -29359,6 +29854,11 @@ module.exports = {
   autoCreateUser: autoCreateUser,
   createUser: createUser,
   existingUserEntry: existingUserEntry,
+  // The name an entry is filed under, and the one writer of stsPseudonym
+  // (#644). recordAuthentication() asks the first once the directory is
+  // loaded; the portal and set-pseudonyms ask the second.
+  personNameOf: personNameOf,
+  writePseudonyms: writePseudonyms,
   // The census's asynchronous resolution and the census itself (#621), for
   // tests/credential_census_async.js, which compares each with its
   // synchronous twin and counts what the store was asked.

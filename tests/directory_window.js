@@ -123,8 +123,10 @@ function fakeBridge(rows) {
     if (name === 'byName') {
       return sorted(args[0]).filter(function (r) {
         const rdn = r.dn_key.split(',')[0];
+        const names = (r.attrs.uid || [])
+          .concat(r.attrs.stspseudonym || []);
         return r.dn_key.slice(r.dn_key.indexOf(',') + 1) === args[1] &&
-          ((r.attrs.uid || []).map(function (v) {
+          (names.map(function (v) {
             return String(v).toLowerCase();
           }).indexOf(args[2]) >= 0 || rdn.slice(rdn.indexOf('=') + 1) ===
             args[2]);
@@ -455,7 +457,10 @@ function lookups(t) {
     rows.set('default\nuid=' + u + ',' + USERS,
              row('default', 'uid=' + u + ',' + USERS,
                  person(u, u === 'lee' ? { mail: ['Lee@Example.com'],
-                                           oauthconsent: ['c1'] } : {})));
+                                           oauthconsent: ['c1'],
+                                           stspseudonym: ['Lee.Other'],
+                                           stspseudonymverifyaddress:
+                                             ['pending@example.com'] } : {})));
   });
   rows.set('default\ncn=tab,' + DEVICES,
            row('default', 'cn=tab,' + DEVICES, { cn: ['tab'] }));
@@ -498,6 +503,28 @@ function lookups(t) {
                                });
   t.equal(kim.length, 0,
           'D2-5. and not an entry deleted here, whatever the store still says');
+  const named = function (entry, wanted) {
+    log.debug("Entering named().");
+    const values = (entry.attributes.uid || [])
+      .concat(entry.attributes.stspseudonym || []);
+    const hit = values.map(function (v) {
+      return String(v).toLowerCase();
+    }).indexOf(wanted) >= 0;
+    log.debug("Leaving named().");
+    return hit;
+  };
+  const alias = o.w.findWindowed('default', 'byName',
+    ['default', USERS, 'lee.other'], function (entry) {
+      return named(entry, 'lee.other');
+    }).map(function (hit) { return hit.key; });
+  t.equal(alias.join('|'), 'uid=lee,' + USERS,
+          'D2-5b. a live stsPseudonym is a name in byName');
+  const pendingName = o.w.findWindowed('default', 'byName',
+    ['default', USERS, 'pending@example.com'], function (entry) {
+      return named(entry, 'pending@example.com');
+    });
+  t.equal(pendingName.length, 0,
+          'D2-5c. a pending verification address is not a name in byName');
   const consent = o.w.holders('default', USERS, 'oauthconsent',
                               function () { return true; });
   t.check(consent.length === 1 && consent[0].key === 'uid=lee,' + USERS,

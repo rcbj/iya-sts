@@ -367,6 +367,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
+                       // Sign-in names a person can use in place of their
+                       // uid (#644).
+                       'set-pseudonyms',
                        // The account id a client knows the person by
                        // (#148, Enterprise Extensions `aud_sub`).
                        'set-aud-sub',
@@ -4529,24 +4532,93 @@ class AdminActions {
           'send to: it ' + bad + '.'] });
       }
       const dir = require('../common/mail').directory();
-      const written = !!(dir && typeof dir.writeAddress === 'function' &&
-                         dir.writeAddress(who, address, 'admin'));
-      auditLog.record({
-        category: 'admin', action: 'admin.mail.set',
-        actor: ctx.actor, target: who, outcome: written ? 'success'
-                                                        : 'failure',
-        summary: (written ? 'set' : 'could not set') + ' the address of ' +
-                 who,
-        detail: { username: who, via: ctx.via } });
-      log.debug("Leaving AdminActions.usersAction(). set-mail " +
-                (written ? "ok." : "refused."));
-      return written
-        ? { ok: true, mail: address, verified: true,
-            message: 'The address of ' + who + ' is ' + address + ', and ' +
-                     'it is verified: an administrator set it.' }
-        : this.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
-            'no person called "' + who + '" in this realm, or the directory ' +
-            'would not write the address.'] });
+      const self = this;
+      // writeAddress() is a promise (#644). Returning it from this
+      // synchronous function is what the management API already awaits.
+      return (async function () {
+        const written = dir && typeof dir.writeAddress === 'function'
+          ? await dir.writeAddress(who, address, 'admin') : null;
+        const ok = written === true || (written && written.ok === true);
+        auditLog.record({
+          category: 'admin', action: 'admin.mail.set',
+          actor: ctx.actor, target: who, outcome: ok ? 'success' : 'failure',
+          summary: (ok ? 'set' : 'could not set') + ' the address of ' + who,
+          detail: { username: who, via: ctx.via } });
+        log.debug("Leaving AdminActions.usersAction(). set-mail " +
+                  (ok ? "ok." : "refused."));
+        return ok
+          ? { ok: true, mail: address, verified: true,
+              message: 'The address of ' + who + ' is ' + address + ', and ' +
+                       'it is verified: an administrator set it.' }
+          : self.refused('STS-ADMIN-0816', { ok: false, errors: ['There is ' +
+              'no person called "' + who + '" in this realm, or the ' +
+              'directory would not write the address.'] });
+      })();
+    }
+
+    // ---------------------------------------------------------------------
+    // A PERSON'S SIGN-IN NAMES (#644). An administrator stores an email
+    // live, unless it is already somebody else's address. The directory
+    // records that refusal on its own line; this answer marks 0909 and
+    // does not repeat the name. The directory is reached through the
+    // cache, so a call before it has loaded does not start a load.
+    // ---------------------------------------------------------------------
+    if (action === 'set-pseudonyms') {
+      const who = String(body.user || body.username || '').trim();
+      const hasAdd = Object.prototype.hasOwnProperty.call(body, 'add');
+      const hasRemove = Object.prototype.hasOwnProperty.call(body,
+                                                              'remove');
+      const hasCancel = Object.prototype.hasOwnProperty.call(body,
+                                                              'cancelPending');
+      const picked = (hasAdd ? 1 : 0) + (hasRemove ? 1 : 0) +
+                     (hasCancel ? 1 : 0);
+      const add = String(body.add == null ? '' : body.add).trim();
+      const remove = String(body.remove == null ? '' : body.remove).trim();
+      const cancelText = String(body.cancelPending == null ? ''
+                                 : body.cancelPending).trim().toLowerCase();
+      const cancelYes = cancelText === 'true' || cancelText === 'on' ||
+                        cancelText === '1' || cancelText === 'yes';
+      if (!who || picked !== 1 || (hasAdd && !add) ||
+          (hasRemove && !remove) || (hasCancel && !cancelYes)) {
+        log.debug("Leaving AdminActions.usersAction(). A malformed " +
+                  "set-pseudonyms.");
+        return this.refused('STS-ADMIN-0908', { ok: false, errors: ['Name ' +
+          'the person and exactly one of add, remove or cancelPending.'] });
+      }
+      const op = hasAdd ? 'add' : (hasRemove ? 'remove' : 'cancel');
+      const value = hasAdd ? add : (hasRemove ? remove : '');
+      const cached = require.cache[require.resolve('../ldap/ldap_server')];
+      const dir = cached && cached.exports;
+      const self = this;
+      return (async function () {
+        const written = dir && typeof dir.writePseudonyms === 'function'
+          ? await dir.writePseudonyms(who, { op: op, value: value,
+                                             source: 'admin' })
+          : null;
+        const ok = !!(written && written.ok === true);
+        const names = ok && written.pseudonyms ? written.pseudonyms : [];
+        const email = value
+          ? require('../common/mail_transports').addressProblem(value) === ''
+          : false;
+        auditLog.record({
+          category: 'admin', action: 'admin.pseudonym.set',
+          actor: ctx.actor, target: who,
+          outcome: ok ? 'success' : 'failure',
+          summary: (ok ? 'changed' : 'could not change') +
+                   ' the sign-in names of ' + who,
+          detail: { username: who, via: ctx.via, op: op,
+                    length: names.length, email: email } });
+        log.debug("Leaving AdminActions.usersAction(). set-pseudonyms " +
+                  (ok ? "ok." : "refused."));
+        return ok
+          ? { ok: true, pseudonyms: names,
+              pending: written.pending === true ? null
+                                                : (written.pending || null),
+              message: 'The sign-in names of ' + who + ' were changed.' }
+          : self.refused('STS-ADMIN-0909', { ok: false, errors: ['There is ' +
+              'no person called "' + who + '" in this realm, or the ' +
+              'directory would not write the name.'] });
+      })();
     }
 
     // ENTERPRISE EXTENSIONS SECTION 2.3 (#148): the account id a client
