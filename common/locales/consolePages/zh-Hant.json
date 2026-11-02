@@ -12,6 +12,7 @@
   "title.caches": "快取",
   "title.cert-issuance": "憑證簽發",
   "title.audit": "稽核記錄",
+  "title.audit-export": "稽核匯出",
   "title.caep": "CAEP",
   "title.caep-sessions-session": "CAEP 工作階段——單一工作階段",
   "title.caep-sessions": "CAEP 工作階段",

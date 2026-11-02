@@ -8375,6 +8375,118 @@
     "en": "4270a8167905dee9",
     "text": "Ilang araw ng nasuring pag-sign-in ang inililista ng Mga kamakailang pag-sign-in sa portal ng user para sa taong naka-sign-in. Itinatakda ng bawat realm ang sarili nito, dahil binabasa ang halaga sa ambient na realm. Inililista ng tab na Mga pagtatangka sa pagpapatotoo ng console, sa isang tao, ang bawat pagtatangka na hawak pa ng audit log, ang buong log. Maaari pa ring alisin ng sariling kisame ng log ang mas lumang mga row."
   },
+  "auditExport.enabled|label": {
+    "en": "6215b564a1d4430f",
+    "text": "Audit export"
+  },
+  "auditExport.enabled|description": {
+    "en": "2e61f36553b98426",
+    "text": "Whether this process delivers its own audit events to the destinations configured on Audit export. Off leaves every destination's cursor where it is. A delivery failure never fails the operation that was audited."
+  },
+  "auditExport.intervalS|label": {
+    "en": "6a9505dd2d6963e2",
+    "text": "Delivery interval (seconds)"
+  },
+  "auditExport.intervalS|description": {
+    "en": "5c29c7ea071c4eb6",
+    "text": "How often the audit.export job delivers this process's new audit events. 0 turns the job off. Each destination has its own queue, so one slow destination does not hold the others."
+  },
+  "auditExport.batch|label": {
+    "en": "34237c7149141d00",
+    "text": "Events per destination per run"
+  },
+  "auditExport.batch|description": {
+    "en": "5ecf10b9df08bb78",
+    "text": "How many events one destination is offered in one run of audit.export. What remains waits for the next run."
+  },
+  "auditExport.timeoutMs|label": {
+    "en": "e14f8cf09c36084d",
+    "text": "Delivery timeout (milliseconds)"
+  },
+  "auditExport.timeoutMs|description": {
+    "en": "a45c9c5b557ccf8e",
+    "text": "How long one delivery attempt waits for a destination to accept it. A timeout holds that destination's cursor and retries later. It does not drop the event."
+  },
+  "auditExport.budgetMs|label": {
+    "en": "b4b3d688e0baf71b",
+    "text": "Time budget per destination (milliseconds)"
+  },
+  "auditExport.budgetMs|description": {
+    "en": "99dc6d58f6281c96",
+    "text": "How long one run may spend on one destination. What remains waits for the next run, so a slow destination cannot hold the job."
+  },
+  "auditExport.retryInitialMs|label": {
+    "en": "e970ebf994887a91",
+    "text": "First retry delay (milliseconds)"
+  },
+  "auditExport.retryInitialMs|description": {
+    "en": "3efbeb32b15064b4",
+    "text": "How long a destination waits after its first delivery failure before the next attempt. Each further failure waits longer, up to the maximum retry delay."
+  },
+  "auditExport.retryMaxMs|label": {
+    "en": "a2b0ee21a36fc1ec",
+    "text": "Maximum retry delay (milliseconds)"
+  },
+  "auditExport.retryMaxMs|description": {
+    "en": "23a00041cb4de752",
+    "text": "The longest a destination waits between delivery attempts while it is failing. The delay grows from the first retry delay up to this."
+  },
+  "auditExport.retryMaxPeriodMs|label": {
+    "en": "c3ed6629c0e4f8ca",
+    "text": "Give up after (milliseconds)"
+  },
+  "auditExport.retryMaxPeriodMs|description": {
+    "en": "8223c47d559c0791",
+    "text": "How long a failing destination is retried before the event at the head is counted permanently failed and the cursor moves past it. Up to one batch of events behind that one are counted the same way in that run, and the destination is tried again after the first retry delay. This is not exactly-once delivery."
+  },
+  "auditExport.allowHttp|label": {
+    "en": "d26d6720b84d76cb",
+    "text": "Allow plain http"
+  },
+  "auditExport.allowHttp|description": {
+    "en": "f675b6fdb38c923c",
+    "text": "Whether a webhook or Splunk HEC destination may use http. Development mode only, and ignored in product mode, where those destinations use https. Every such delivery is logged. Syslog TCP is a separate transport and is not this setting."
+  },
+  "auditExport.skipTlsVerification|label": {
+    "en": "c389cb92e8fdb20b",
+    "text": "Skip TLS verification (development only)"
+  },
+  "auditExport.skipTlsVerification|description": {
+    "en": "5770424e0835bb19",
+    "text": "WARNING. Development mode only. On sends webhook, Splunk HEC and syslog TLS without verifying the certificate of whoever answers. Every such delivery is logged. In product mode it is ignored and cannot be set. Name a private CA in the CA file setting instead."
+  },
+  "auditExport.caFile|label": {
+    "en": "0821b8a548294613",
+    "text": "CA certificates file"
+  },
+  "auditExport.caFile|description": {
+    "en": "e91f3272d5ded195",
+    "text": "A PEM file of CA certificates a webhook, Splunk HEC or syslog TLS destination may chain to, beside node's own CA store. Empty uses node's store alone. A file that cannot be read refuses the delivery."
+  },
+  "auditExport.allowPrivateDestinations|label": {
+    "en": "f9c38f2342841463",
+    "text": "Allow private addresses"
+  },
+  "auditExport.allowPrivateDestinations|description": {
+    "en": "eeefca8d6e68f82f",
+    "text": "Whether a destination may be a loopback, link-local or private address. Off, product mode refuses those, and development mode still allows loopback so a test listener works. Cloud metadata addresses are refused even when this is on."
+  },
+  "auditExport.fileRoots|label": {
+    "en": "c47d1eb20e5be4de",
+    "text": "Allowed filesystem roots"
+  },
+  "auditExport.fileRoots|description": {
+    "en": "d4771342a5f6444b",
+    "text": "Absolute directories a filesystem destination may write under, separated by commas. Empty allows any absolute path an administrator names. A relative path, a path that climbs out of its directory, and a path outside these roots are refused."
+  },
+  "auditExport.redactKeys|label": {
+    "en": "f84773415c7f59e9",
+    "text": "Attributes never exported"
+  },
+  "auditExport.redactKeys|description": {
+    "en": "b538c89d9bed6559",
+    "text": "Detail attribute names, separated by commas, removed from every exported event. Matching is case-insensitive. A destination may name more. Passwords, tokens and assertions are on the default list."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Pinakamaraming delegation act na hawak"

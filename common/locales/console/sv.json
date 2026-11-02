@@ -177,6 +177,7 @@
   "nav.risk-scoring": "Riskbedömning",
   "nav.geolocation": "Geolokalisering",
   "nav.audit": "Granskningslogg",
+  "nav.audit-export": "Granskningsexport",
   "nav.error-codes": "Felkoder",
   "nav.realms": "Förtroendesfärer",
   "nav.config": "Konfiguration",

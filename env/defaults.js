@@ -1237,6 +1237,24 @@ var config = {
     authenticationHistoryDays: 30  // Authentication history (days)
   },
 
+  // --- Audit export ----------------------------------------------------
+  auditExport: {
+    enabled: true,                                                                                                 // Audit export
+    intervalS: 5,                                                                                                  // Delivery interval (seconds)
+    batch: 50,                                                                                                     // Events per destination per run
+    timeoutMs: 5000,                                                                                               // Delivery timeout (milliseconds)
+    budgetMs: 2000,                                                                                                // Time budget per destination (milliseconds)
+    retryInitialMs: 1000,                                                                                          // First retry delay (milliseconds)
+    retryMaxMs: 300000,                                                                                            // Maximum retry delay (milliseconds)
+    retryMaxPeriodMs: 86400000,                                                                                    // Give up after (milliseconds)
+    allowHttp: false,                                                                                              // Allow plain http
+    skipTlsVerification: false,                                                                                    // Skip TLS verification (development only)
+    caFile: "",                                                                                                    // CA certificates file
+    allowPrivateDestinations: false,                                                                               // Allow private addresses
+    fileRoots: "",                                                                                                 // Allowed filesystem roots
+    redactKeys: "password,secret,token,authorization,client_secret,assertion,access_token,refresh_token,id_token"  // Attributes never exported
+  },
+
   // --- Delegation ------------------------------------------------------
   delegation: {
     maxRecords: 2000,               // Maximum delegation acts held

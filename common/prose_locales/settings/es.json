@@ -8375,6 +8375,118 @@
     "en": "4270a8167905dee9",
     "text": "Cuántos días de inicios de sesión evaluados lista Inicios de sesión recientes del portal de usuario para la persona que ha iniciado sesión. Cada dominio fija el suyo, porque el valor se lee en el dominio ambiental. La pestaña Intentos de autenticación de la consola, en una persona, lista cada intento que el registro de auditoría aún conserva, el registro entero. El tope propio del registro aún puede descartar las filas más antiguas."
   },
+  "auditExport.enabled|label": {
+    "en": "6215b564a1d4430f",
+    "text": "Exportación de auditoría"
+  },
+  "auditExport.enabled|description": {
+    "en": "2e61f36553b98426",
+    "text": "Si este proceso entrega sus propios eventos de auditoría a los destinos configurados en Exportación de auditoría. Desactivado, el cursor de cada destino se queda donde está. Un fallo de entrega nunca hace fallar la operación que se auditó."
+  },
+  "auditExport.intervalS|label": {
+    "en": "6a9505dd2d6963e2",
+    "text": "Intervalo de entrega (segundos)"
+  },
+  "auditExport.intervalS|description": {
+    "en": "5c29c7ea071c4eb6",
+    "text": "Con qué frecuencia la tarea audit.export entrega los nuevos eventos de auditoría de este proceso. 0 apaga la tarea. Cada destino tiene su propia cola, de modo que un destino lento no retiene a los demás."
+  },
+  "auditExport.batch|label": {
+    "en": "34237c7149141d00",
+    "text": "Eventos por destino y por ejecución"
+  },
+  "auditExport.batch|description": {
+    "en": "5ecf10b9df08bb78",
+    "text": "Cuántos eventos se ofrecen a un destino en una ejecución de audit.export. Lo que queda espera a la siguiente ejecución."
+  },
+  "auditExport.timeoutMs|label": {
+    "en": "e14f8cf09c36084d",
+    "text": "Tiempo de espera de entrega (milisegundos)"
+  },
+  "auditExport.timeoutMs|description": {
+    "en": "a45c9c5b557ccf8e",
+    "text": "Cuánto espera un intento de entrega a que un destino lo acepte. Un tiempo agotado mantiene el cursor de ese destino y reintenta más tarde. No descarta el evento."
+  },
+  "auditExport.budgetMs|label": {
+    "en": "b4b3d688e0baf71b",
+    "text": "Presupuesto de tiempo por destino (milisegundos)"
+  },
+  "auditExport.budgetMs|description": {
+    "en": "99dc6d58f6281c96",
+    "text": "Cuánto puede durar una ejecución en un destino. Lo que queda espera a la siguiente ejecución, de modo que un destino lento no puede retener la tarea."
+  },
+  "auditExport.retryInitialMs|label": {
+    "en": "e970ebf994887a91",
+    "text": "Primer retraso de reintento (milisegundos)"
+  },
+  "auditExport.retryInitialMs|description": {
+    "en": "3efbeb32b15064b4",
+    "text": "Cuánto espera un destino después de su primer fallo de entrega antes del siguiente intento. Cada fallo posterior espera más, hasta el retraso máximo de reintento."
+  },
+  "auditExport.retryMaxMs|label": {
+    "en": "a2b0ee21a36fc1ec",
+    "text": "Retraso máximo de reintento (milisegundos)"
+  },
+  "auditExport.retryMaxMs|description": {
+    "en": "23a00041cb4de752",
+    "text": "Lo máximo que un destino espera entre intentos de entrega mientras falla. El retraso crece desde el primer retraso de reintento hasta este."
+  },
+  "auditExport.retryMaxPeriodMs|label": {
+    "en": "c3ed6629c0e4f8ca",
+    "text": "Abandonar después de (milisegundos)"
+  },
+  "auditExport.retryMaxPeriodMs|description": {
+    "en": "8223c47d559c0791",
+    "text": "Cuánto se reintenta un destino que falla antes de que el evento al frente se cuente como fallido de forma permanente y el cursor lo pase. Hasta un lote de eventos detrás de ese se cuentan del mismo modo en esa ejecución, y el destino se intenta de nuevo tras el primer retraso de reintento. Esto no es una entrega exactamente una vez."
+  },
+  "auditExport.allowHttp|label": {
+    "en": "d26d6720b84d76cb",
+    "text": "Permitir http en claro"
+  },
+  "auditExport.allowHttp|description": {
+    "en": "f675b6fdb38c923c",
+    "text": "Si un destino webhook o Splunk HEC puede usar http. Solo en modo de desarrollo, y se ignora en modo de producto, donde esos destinos usan https. Cada entrega así se registra. El TCP de syslog es un transporte aparte y no es este ajuste."
+  },
+  "auditExport.skipTlsVerification|label": {
+    "en": "c389cb92e8fdb20b",
+    "text": "Omitir la verificación TLS (solo desarrollo)"
+  },
+  "auditExport.skipTlsVerification|description": {
+    "en": "5770424e0835bb19",
+    "text": "ADVERTENCIA. Solo en modo de desarrollo. Activado, envía el webhook, Splunk HEC y el syslog TLS sin verificar el certificado de quien responde. Cada entrega así se registra. En modo de producto se ignora y no se puede establecer. Nombre una AC privada en el ajuste del archivo de AC."
+  },
+  "auditExport.caFile|label": {
+    "en": "0821b8a548294613",
+    "text": "Archivo de certificados de AC"
+  },
+  "auditExport.caFile|description": {
+    "en": "e91f3272d5ded195",
+    "text": "Un archivo PEM de certificados de AC al que puede encadenarse un destino webhook, Splunk HEC o syslog TLS, junto al almacén de AC propio de node. Vacío usa solo el almacén de node. Un archivo que no se puede leer rechaza la entrega."
+  },
+  "auditExport.allowPrivateDestinations|label": {
+    "en": "f9c38f2342841463",
+    "text": "Permitir direcciones privadas"
+  },
+  "auditExport.allowPrivateDestinations|description": {
+    "en": "eeefca8d6e68f82f",
+    "text": "Si un destino puede ser una dirección de bucle local, de enlace local o privada. Desactivado, el modo de producto las rechaza, y el modo de desarrollo sigue permitiendo el bucle local para que funcione un oyente de prueba. Las direcciones de metadatos de nube se rechazan incluso cuando esto está activado."
+  },
+  "auditExport.fileRoots|label": {
+    "en": "c47d1eb20e5be4de",
+    "text": "Raíces de sistema de archivos permitidas"
+  },
+  "auditExport.fileRoots|description": {
+    "en": "d4771342a5f6444b",
+    "text": "Directorios absolutos bajo los que puede escribir un destino de sistema de archivos, separados por comas. Vacío permite cualquier ruta absoluta que nombre un administrador. Una ruta relativa, una ruta que sale de su directorio y una ruta fuera de estas raíces se rechazan."
+  },
+  "auditExport.redactKeys|label": {
+    "en": "f84773415c7f59e9",
+    "text": "Atributos que nunca se exportan"
+  },
+  "auditExport.redactKeys|description": {
+    "en": "b538c89d9bed6559",
+    "text": "Nombres de atributos de detalle, separados por comas, quitados de cada evento exportado. La comparación no distingue mayúsculas. Un destino puede nombrar más. Las contraseñas, los tokens y las aserciones están en la lista predeterminada."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Máximo de actos de delegación retenidos"

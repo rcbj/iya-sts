@@ -13719,7 +13719,7 @@ specification's endpoint is never converted**.
 | `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. **Since #561** `start()` reads the browser's account list first (`loadAccounts()`) and, with it on, `put()` draws the account control beside the chooser (`accountControl()`, in `#sts-accounts-slot`) — below. |
 | `web_accounts.ts` (`WebAccounts`) | **A browser's accounts as every static page reads them (#561, delivery steps 5 and 6).** `fetchList(env, prefix)`: `GET /authn-api/accounts` of THIS page's own origin with the cookie, **asked only where the shell carries `data-sts-accounts="on"`** (`announced()`) — `ShellDocument.document()` draws that attribute itself, for every static surface, where `authn.multipleAccounts` is on in the ambient realm (`accountsOn()`) and draws nothing where it is off, so with the setting off a shell is to the byte what it was and no page makes the extra request on each load it made before review (`tests/multi_account_protocols.js` 3b–3c, `tests/multi_account_tabs.js` 6 and 8) — never another listener's, since `common/cors.js` sends no `Access-Control-Allow-Credentials` to anybody — and anything but a 200 with `enabled: true` is OFF (`off()`). `live()`, `bySubject()`, `byKey()`, `fingerprint()` and `changed()`; `openChannel(env, onChange)` over `BroadcastChannel('sts-accounts')`, whose message is `{ type: 'accounts-changed', change }` and nothing about whose; `anotherHref()` (the list's `anotherAccount`, the portal's advertised address, else `/portal?accounts=another`); `controlHtml(list, t)`, the public surfaces' control; `actionOf()`, the console's and the portal's menu buttons (`data-account-action`, `data-account-key`). |
 | `web_nav_sections.ts` (`WebNavSections`) | **The collapsible navigation column the console and the portal share (#750, #1229).** `section()` draws one section as a `<details class="navsec" name="<group>" data-section="<key>">` with a `<summary class="navhead">` heading and the caller's `<li>`s, `current` marking the section that holds the page whether open or not; `initial(chosen, holding)` is the first drawing's choice (the section holding the page) and leaves any later one alone; `toggled(doc, selector, target, chosen)` answers a `toggle` (caught in the capture phase, since it does not bubble) with the reader's choice after it, closing the other open sections for a browser that predates the shared `name`; `css(accent, muted, inset)` and `narrowCss(accent, minWidth)` are the heading's rules in the caller's colours, read by `admin-ui/admin.ts` and `portal/web_portal_kit.ts`. Each runtime holds the choice (`openSection`), never storage. What each column lists, and its labels, stay its own. |
-| `web_doc_links.ts` (`WebDocLinks`) | The documentation link on every admin-console and user-portal page and tab (#895). Where it is drawn is in `admin-ui/CLAUDE.md` and `portal/CLAUDE.md`. |
+| `web_doc_links.ts` (`WebDocLinks`) | The documentation link on every admin-console and user-portal page and tab (#895). A new screen owes its row here in the same change; `tests/doc_links.js` fails without it. Where it is drawn is in `admin-ui/CLAUDE.md` and `portal/CLAUDE.md`. |
 | `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
 | `web_limits_form.ts` (`WebLimitsForm`) | A right's limits as controls a person may lower (#576): the markup `limits_form.ts`'s `controls()` drew for GNAP's approval page, the portal's absent-owner approvals and the consent screen, moved here so the consent screen's renderer draws it in the browser from the rows its view carries. `LimitsForm.controls()` hands its work to it with `AccessLimits.rows()`; `lowered()`, which reads the controls back, stays on the server. English, as it always was. |
 | `web_outcome.ts` (`WebOutcome`) | The one renderer of an error or outcome page (#580): a heading, what was refused (`.bad`), why (a paragraph, or the steps' `.err` box), notes (`.meta`, markup the caller built) and the ways on, the ids the caller's. Words are the caller's — a refusal's English (#539's decision 6), escaped here. The federation pages' refusals and 404s draw through it, and the emailed factor's `end` page (#573) does to the bytes it drew before. |
@@ -14481,4 +14481,148 @@ until then is gone.
    catalogs (the `SELECTORS` and `SCHEMA` sentences are the policies
    namespace's), `docs/`, and tests on `tests/policy_selection.js`'s
    pattern.
+
+## 3da. `audit_export.ts`: THIS PROCESS DELIVERS ITS OWN AUDIT RING (#641, 2026-11-01)
+
+Monitoring → Audit export and `GET` / `POST /admin-api/audit-export`. The
+file's header is the argument; what a maintainer must not undo:
+
+* **THE RING IS THE RECORD.** Delivery reads `audit.localEvents()`, this
+  process's own ring, oldest first. Nothing is copied into an outbox at
+  record time. In product mode on postgres the ring is the minted state the
+  store already keeps; in development and on memory it dies with the
+  process, and so does delivery. A spill file that outlived `audit.maxEvents`
+  is a later decision.
+* **DESTINATIONS ARE SHARED. CURSORS ARE THIS PROCESS'S.** `audit.export.destinations`
+  is a per-realm map, replace, every process reads the same rows.
+  `audit.export.cursors` is `merge: 'own'`, keyed by destination id. A second
+  `persist` handle logs `STS-CORE-0022` and is not the status. The page's
+  figures are this process. `contributionsOnRead` stays off.
+* **A NEW ENABLED DESTINATION BACKFILLS ONCE.** The first tick, while
+  `primed` is false, sets `cursor.seq` to one before the oldest event this
+  ring still holds, or `0` when the ring is empty, and sets `primed`. That
+  prime is the retained window, bounded by `audit.maxEvents`. A destination
+  that was enabled, then disabled, keeps its cursor and continues when it is
+  enabled again. A destination that has never been enabled is primed on the
+  first tick that visits it.
+* **A GAP IS A MISSING BOOKMARK, AND `seq` ARITHMETIC IS THE WRONG TEST.**
+  `seq` is leased in blocks. A numeric gap is unused space in another
+  worker's block (`docs/admin-console.md`). The cursor keeps `nextSeq`, the
+  event this process meant to send next. On a later tick, already primed,
+  when that event is gone and `cursor.seq` is still below it, the bookmark
+  was trimmed. One episode increments `droppedGap` and writes one
+  `STS-AUDIT-0009` row, then `cursor.seq` moves to one before the oldest
+  event still held. An empty ring leaves the cursor. After the tick,
+  `nextSeq` is the first remaining event that was not skipped, or
+  `inFlightSeq` while a Splunk acknowledgement is in flight.
+* **THE CURSOR MOVES ON SUCCESS AND ON A PERMANENT REJECTION.** A transient
+  failure calls `hold()` and leaves `cursor.seq`. `hold()` audits once, when
+  `failingSince` is first set (`service.failure`, summarised,
+  `detail.exportSkip`), then grows `retryMs` from `auditExport.retryInitialMs`
+  up to `auditExport.retryMaxMs`. `recover()` audits once, outcome success,
+  the same skip, and clears the episode. The cursor object is replaced
+  (`putCursor` assigns a new object) and saved once at the end of the tick.
+  `stillOwner()` false stops the destination without counting a failure, and
+  the events already accepted are still saved.
+* **GIVE-UP DROPS ONE BATCH, THEN WAITS.** Once `failingSince` is older than
+  `auditExport.retryMaxPeriodMs`, the head event is still sent. Success
+  recovers and the rest of the budget continues. A pause or a transient
+  failure of that probe counts the probed event permanently failed, advances
+  past it, and drops further events in that run up to `auditExport.batch`
+  without another send. One `STS-AUDIT-0011` row names the count and the
+  first and last ids. `pausedUntil` becomes now plus the first retry delay.
+  `failingSince` stays until a success. An HTTP 400 (`STS-AUDIT-0015`)
+  advances that one event and does not start the drop. `401` and `403` pause
+  and leave the cursor. A `3xx` is `STS-AUDIT-0014`: the response is
+  destroyed, the `Location` is absent from every string, and the cursor
+  stays. `429`, `408`, `5xx` and a timeout honour `Retry-After` (integer
+  seconds or an HTTP-date, capped at an hour) and pause. A non-zero Splunk
+  collector code on HTTP 2xx pauses (`STS-AUDIT-0007`).
+* **AT LEAST ONCE.** A crash after the send and before the cursor save
+  delivers the event again. The event id is `(origin || 'local') + ':' + seq`.
+  The guarantee stops there.
+* **ROWS THIS SUBSYSTEM WRITES CARRY `detail.exportSkip`.** The job advances
+  the cursor past them and sends nothing. The administrative test row does
+  not: `admin.audit-export.test` is exported. The synthetic event the test
+  sends (`id` `test:<destinationId>:<timestamp>`, `attributes.test`) is
+  absent from the ring. A test does not move the delivery cursor and does
+  not clear `failingSince`.
+* **REDACTION WALKS THE DETAIL.** `ALWAYS_REDACT` (password, secret, token,
+  authorization, client_secret, assertion, access_token, refresh_token,
+  id_token), union `auditExport.redactKeys`, union the destination's
+  `excludeAttributes`, case-insensitive, objects and arrays. A matching
+  value becomes `[redacted]`. `canonical()` receives the set from the
+  caller. `exportSkip` is read on the raw row before that.
+* **CREDENTIALS ARE SEALED, AND AN ANSWER CARRIES NONE.** A Splunk token and
+  secret headers are sealed under the realm's data key (`STS-AUDIT-0003`
+  when that fails, and the destination is not stored). The view returns
+  `tokenSet` and `secretHeaderSet`. A header whose name matches
+  authorization, token, api-key or secret is moved into the sealed set. An
+  empty token on update keeps the box. Plain headers, including an empty
+  text, replace. Deleting one secret header is absent from this version.
+  `lastFailure` strips `https?://` URLs. A duplicate id is `STS-AUDIT-0001`;
+  an unknown id is `STS-AUDIT-0002`. `refusal()` marks the object, so a test
+  reads `errorCodes.codeOf(result)`.
+* **SYSLOG IS RFC 5424, TCP BY DEFAULT.** PRI is facility times 8 plus
+  severity (facility defaults to local0, 16; success is notice 5, so
+  `<133>1`). The structured-data id is `iyaAudit`, a local name, not an
+  IANA enterprise number. The message has no trailing newline; TCP and TLS
+  use an RFC 6587 octet-counted frame. UDP is `transmitted` when `dgram.send`
+  calls back. One socket per destination per tick. LogRhythm is this adapter
+  with `type: 'logrhythm'`. Plain TCP is its own transport.
+  `auditExport.allowHttp` does not govern it.
+* **A FILE IS ONE APPEND.** `fs.promises` `write` of the NDJSON line on an
+  fd opened `a` (`O_APPEND`). Mode `640` unless the destination names three
+  octal digits (`"640"` and `640` are both `0o640`). Rotation renames when
+  the size is at least `rotateBytes` (`0` leaves rotation to the operator).
+  A path is absolute, has no `..` segment, and when `auditExport.fileRoots`
+  is set lies under one root. The path is checked again at send
+  (`STS-AUDIT-0004` pauses). `ENOSPC` and a permission error pause
+  (`STS-AUDIT-0008`). Two processes appending one path can interleave a line
+  longer than `PIPE_BUF` (4096). The handle map is this process, closed on
+  remove, on a path change, and in `resetForTests`.
+* **A WEBHOOK BODY IS ONE PASS.** Placeholders `{timestamp}` `{severity}`
+  `{event_type}` `{subject}` `{message}` `{id}` `{realm}` `{outcome}`
+  `{category}` `{target}` `{address}` `{origin}` `{protocol}` `{channel}`,
+  or the canonical JSON when the template is empty. A value that itself
+  contains `{message}` is left as text. An empty template is
+  `application/json`; a template is `text/plain; charset=utf-8` unless
+  `contentType` is set.
+* **SPLUNK ACKNOWLEDGEMENT IS ONE EVENT IN FLIGHT.** With `ack` on, the
+  cursor stores `ackId` and a stable `ackChannel`. The next event waits
+  until `POST` of the ack URL says that id is true, and the disposition
+  becomes `acknowledged`. Absent means resend. Pending waits for the job
+  interval and counts no failure. A failed poll keeps `ackId` and backs off.
+  The ack URL replaces a trailing `/event` or appends `/ack` to a trailing
+  `/collector`, and drops the query and the fragment.
+* **THE TWENTY-FIRST OUTBOUND EXCEPTION IS ARGUED HERE** (`federation/CLAUDE.md`).
+  Webhook, Splunk HEC and syslog TLS go through `outbound_tls.ts`: https,
+  product refuses plain http (`STS-AUDIT-0005`), skip-TLS is development
+  only and ignored in product (`STS-AUDIT-0012`, said once per process;
+  `STS-CORE-0104` passes through when the policy says so). No userinfo. The
+  name is resolved before connect and the pinned address is what the socket
+  uses; SNI and Host stay the name. A lookup failure or an empty answer at
+  send pauses and the cursor stays. The save checks the literal and, when
+  DNS answers, every address; a lookup failure at save still stores the
+  destination. Private ranges include RFC 6598 `100.64.0.0/10`. Cloud
+  metadata (`169.254.169.254` and its IPv6-mapped form, `metadata.google.internal`,
+  `metadata.azure.com` and their subdomains, `instance-data`,
+  `instance-data.ec2.internal`) is refused in every mode, including while
+  `auditExport.allowPrivateDestinations` is on. Development
+  (`mode.dialsPlainHttpOutbound()`) may dial a loopback host when every
+  resolved address is loopback. A public name that resolves to `127.0.0.1`
+  is refused at send. Redirects are not followed. The body read stops at
+  64 KiB. A TOCTOU between the lookup and the connect remains.
+* **THE JOB IS PER-PROCESS AND QUIET.** `audit.export`, scope realm,
+  `everySetting` `auditExport.intervalS` (0 is off; read the value, never
+  `|| n`). `requestRun` refuses every per-process job (`STS-SCHED-0005`),
+  so a test calls `runAsync`. One destination's throw is caught and the
+  others still run. Recording in `audit.js` stays a near-leaf: this module
+  is required lazily from the job, and `audit.js` grows no new top-level
+  require. `resetForTests` clears the installed maps and closes file
+  handles. A test that needs a private walk builds `new AuditExport(deps)`
+  and does not require the module from the parent of `tests/run.js`: the
+  slot builds the default once `deferToRoot` has not run, and a later
+  `installInstance` throws. `tests/audit_export.js` therefore requires it
+  only inside a child.
 

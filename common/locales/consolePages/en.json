@@ -12,6 +12,7 @@
   "title.caches": "Caches",
   "title.cert-issuance": "Cert issuance",
   "title.audit": "Audit log",
+  "title.audit-export": "Audit export",
   "title.caep": "CAEP",
   "title.caep-sessions-session": "CAEP sessions — one session",
   "title.caep-sessions": "CAEP sessions",

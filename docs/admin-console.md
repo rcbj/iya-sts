@@ -208,7 +208,8 @@ way. Its five sections:
   enrollment monitors, Verifiable Credentials, passkeys, OAuth activity,
   SCIM metrics, sign-out, the database,
   encryption, the secret store, caches, the worker pools, node health, the
-  scheduler, the mail outbox, risk, the audit log and the error codes.
+  scheduler, the mail outbox, risk, the audit log, the audit export and the
+  error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
   cluster, mail, admin roles, the protocol debugger, the service metadata, the
   API explorer, key pairs and cryptography.
@@ -1625,6 +1626,54 @@ categories and `/admin/metrics` untouched.
 The log is held per trust realm, in memory, and in product mode on postgres it
 is kept in the store with the rest of the minted state
 ([Persistence](persistence.md)).
+
+### Audit export — `/admin/audit-export`
+
+Monitoring → Audit export configures where this process delivers its own
+audit events, and shows how far that delivery has got. The same controls are
+`GET /admin-api/audit-export` (Admin Read, `admin:read`) and
+`POST /admin-api/audit-export/{add,update,remove,enable,disable,test}`
+(Admin Write, `admin:write`). The settings on the page are
+[Audit export](configuration.md#audit-export). Worked examples for syslog,
+a file, a webhook, Splunk HEC and LogRhythm are on
+[Audit export destinations](audit-export.md).
+
+A destination is syslog (TCP by default, or UDP, or TLS), a filesystem path,
+a webhook, Splunk HEC, or LogRhythm, which uses the syslog adapter. Each
+process delivers the events in its own audit ring. The figures on this page
+are this process: queue depth, delivered, awaiting, retrying, permanently
+failed, dropped, latency and availability. Another process has its own.
+
+The event id a destination receives is this process's origin and the event's
+`seq`. A numeric gap in `seq` is unused space in another worker's block, the
+same fact the audit log states above. Delivery keeps a bookmark of the next
+event it meant to send. When that bookmark is gone from this process's ring,
+one dropped episode is recorded and delivery continues from what the ring
+still holds.
+
+Delivery is at least once. A crash after a destination has accepted an event
+and before this process saves the cursor delivers that event again.
+Downstream systems deduplicate on the event id. After
+`auditExport.retryMaxPeriodMs` the destination is probed once more. When
+that probe fails, the probed event and further events in the same run, up to
+the batch, are counted permanently failed, and the destination waits the
+first retry delay. An HTTP 400 rejects that one event and moves the cursor
+past it; the batch drop starts on a later failure that is still a pause.
+
+A token and a secret header are sealed when they are saved and are absent
+from the page and from the API answer. Leaving the token box empty on an
+update keeps the sealed value. A test sends a synthetic event to that
+destination. The synthetic event is absent from the audit ring. The act of
+testing is an audit row, `admin.audit-export.test`.
+
+Webhook and Splunk HEC destinations use `https`. In development mode
+`auditExport.allowHttp` may allow plain `http`, and that delivery is logged.
+Product mode uses `https`. A loopback, link-local or private address,
+including RFC 6598 `100.64.0.0/10`, is refused in product mode unless
+`auditExport.allowPrivateDestinations` is on. Cloud metadata addresses stay
+refused when that setting is on. A filesystem path is absolute, and when
+`auditExport.fileRoots` is set it lies under one of those directories. The
+settings take effect on the next run.
 
 ## Protocols pages worth explaining
 

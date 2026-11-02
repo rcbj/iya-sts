@@ -455,5 +455,11 @@
   "audit.actions.report.job.cancel.label": "A report job was cancelled",
   "audit.actions.report.notify.label": "A report completion notice was sent",
   "audit.actions.report.query.label": "A report query was run",
-  "audit.actions.report.job.retrieve.label": "A report result was retrieved"
+  "audit.actions.report.job.retrieve.label": "A report result was retrieved",
+  "audit.actions.admin.audit-export.add.label": "An audit export destination was added",
+  "audit.actions.admin.audit-export.update.label": "An audit export destination was updated",
+  "audit.actions.admin.audit-export.remove.label": "An audit export destination was removed",
+  "audit.actions.admin.audit-export.enable.label": "An audit export destination was enabled",
+  "audit.actions.admin.audit-export.disable.label": "An audit export destination was disabled",
+  "audit.actions.admin.audit-export.test.label": "An audit export destination was tested"
 }

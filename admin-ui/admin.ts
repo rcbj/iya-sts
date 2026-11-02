@@ -2424,6 +2424,12 @@ const SECTIONS = [
                '<code>uid=carol</code> over LDAPS. It is a ring with a ' +
                'settable cap, so the oldest rows are dropped rather than ' +
                'kept forever.' },
+      { path: '/admin/audit-export', label: 'Audit export',
+        blurb: 'Where this realm\'s audit events are delivered: syslog, ' +
+               'a file, a webhook, Splunk HEC, or LogRhythm. Each process ' +
+               'delivers its own events. A failure to deliver does not ' +
+               'fail the operation that was audited, and a destination ' +
+               'never shows the secret it was given.' },
       // THE ERROR CODES (2026-09-12), filed under Monitoring and beside the
       // audit log, by the question it answers rather than by what it lists.
       // A reader arrives here holding a code off an audit row or a log line
@@ -9097,6 +9103,7 @@ const SETTING_HOMES = [
     pages: ['/admin/totp', '/admin/webauthn'] },
   { group: 'Group claim', pages: ['/admin/groups'] },
   { group: 'Audit log', pages: ['/admin/audit'] },
+  { group: 'Audit export', pages: ['/admin/audit-export'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },

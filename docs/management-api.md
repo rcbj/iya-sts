@@ -842,6 +842,7 @@ them on the console or with `POST /admin-api/config/set`.
 | `/admin/xacml` | The `access-control` policy the scope check runs through |
 | `/admin/error-codes` | The `STS-API-*` codes behind each refusal, also at `GET /admin-api/error-codes` |
 | `/admin/audit` | The audit log, also at `GET /admin-api/audit` |
+| `/admin/audit-export` | Audit export destinations and this process's delivery figures. `GET /admin-api/audit-export` is Admin Read (`admin:read`). `POST /admin-api/audit-export/{add,update,remove,enable,disable,test}` is Admin Write (`admin:write`). A token and a secret header are absent from every answer. Examples for each destination are on [Audit export destinations](audit-export.md) |
 
 At startup the service logs how many operations the API has and whether a
 token is currently required.

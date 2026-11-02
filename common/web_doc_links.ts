@@ -32,6 +32,11 @@
 // `server` and `clients` are exact for the same reason: the words are not
 // this service's.
 //
+// A NEW SCREEN OWES ITS ROW IN THE SAME CHANGE. The console and portal
+// page tables are what `tests/doc_links.js` walks. A screen added without
+// a row here draws no link, on a tabbed page and on an untabbed one. The
+// row is part of the screen's design (`admin-ui/CLAUDE.md`).
+//
 // A `web_` MODULE: it requires nothing, logs nothing, and names nothing of
 // node's. `admin-ui/CLAUDE.md` and `portal/CLAUDE.md` say where the link
 // is drawn.
@@ -63,6 +68,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/caches': 'caches.html',
   '/admin/cert-issuance': 'configure-enrollment.html',
   '/admin/audit': 'admin-console.html#audit-log--adminaudit',
+  '/admin/audit-export': 'audit-export.html',
   '/admin/caep-sessions': 'caep-events.html',
   '/admin/caep-sessions/session': 'caep-events.html',
   '/admin/cells': 'cells.html',

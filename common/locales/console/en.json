@@ -177,6 +177,7 @@
   "nav.risk-scoring": "Risk scoring",
   "nav.geolocation": "Geolocation",
   "nav.audit": "Audit log",
+  "nav.audit-export": "Audit export",
   "nav.error-codes": "Error codes",
   "nav.realms": "Trust realms",
   "nav.config": "Configuration",

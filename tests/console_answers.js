@@ -236,6 +236,89 @@ function checkRedraws(t) {
   t.check(WebAnswers.redraw('/admin/groups', 'create', {},
                             { ok: true }, {}) === null,
           'D5. an ordinary act is a notice, not a redraw');
+  // A refused audit-export destination was never stored, and the notice
+  // navigation drew the add form from the saved rows, empty. The posted
+  // fields stay on the form. A success, and every other act on the page,
+  // stays a notice.
+  const kept = WebAnswers.redraw('/admin/audit-export', 'add',
+    { id: 'local-syslog', name: 'Local syslog', type: 'syslog',
+      host: '172.29.0.1', port: '514', transport: 'tcp',
+      template: '{message}', headers: 'X-Trace: 1',
+      secretHeaders: 'Authorization: secret', token: 'hec-token',
+      enabled: 'true' },
+    { ok: false, errors: ['Private and loopback addresses are refused.'] },
+    { destinations: [], settings: { groups: [] } });
+  const AuditExportPage = require('../admin-ui/web_audit_export');
+  const webMessages = require('../common/web_messages');
+  const fs = require('fs');
+  const path = require('path');
+  const english = JSON.parse(fs.readFileSync(path.join(__dirname,
+    '../common/locales/consoleAuditExport/en.json'), 'utf8'));
+  const flat = {};
+  Object.keys(english).forEach(function (key) {
+    flat['consoleAuditExport.' + key] = english[key];
+  });
+  const translator = webMessages.WebTranslator.fromData({
+    negotiated: { locale: 'en', chain: ['en'], catalog: 'en',
+                  direction: 'ltr', matched: true },
+    catalogs: { en: flat } });
+  const html = AuditExportPage.render(kept.json,
+    kit.context({}, true, translator));
+  const stored = AuditExportPage.render({
+    destinations: [{ id: 'siem', name: 'SIEM', type: 'splunk',
+                     enabled: true, tokenSet: true,
+                     headerText: 'X-Trace: stored' }],
+    settings: { groups: [] },
+    state: { auditExportDraft: { action: 'add', fields: {
+      id: 'other', token: 'typed-now', secretHeaders: 'X-Secret: now' } } }
+  }, kit.context({}, true, translator));
+  t.check(kept && /The destination was not saved/.test(kept.banner) &&
+          /Private and loopback addresses are refused/.test(kept.banner) &&
+          kept.json.state.auditExportDraft.fields.host === '172.29.0.1' &&
+          /name="id"[^>]*value="local-syslog"/.test(html) &&
+          /name="host"[^>]*value="172\.29\.0\.1"/.test(html) &&
+          /name="template"[^>]*>\{message\}<\/textarea>/.test(html) &&
+          /name="headers"[^>]*>X-Trace: 1<\/textarea>/.test(html) &&
+          /name="secretHeaders"[^>]*>Authorization: secret<\/textarea>/
+            .test(html) &&
+          /name="token"[^>]*value="hec-token"/.test(html) &&
+          /name="enabled"[^>]*checked/.test(html) &&
+          /<label for="ax-add-template" title="[^"]*Webhook only[^"]*">/ 
+            .test(html) &&
+          /<label for="ax-add-headers" title="[^"]*Webhook only[^"]*">/
+            .test(html) &&
+          /<label for="ax-add-secretHeaders" title="[^"]*sealed[^"]*">/
+            .test(html) &&
+          !/<label[^>]*>[^<]*<textarea name="template"/.test(html) &&
+          WebAnswers.redraw('/admin/audit-export', 'add',
+                            { id: 'siem' }, { ok: true }, {}) === null &&
+          WebAnswers.redraw('/admin/audit-export', 'test', {},
+                            { ok: false, errors: ['No.'] }, {}) === null,
+          'D6. a refused audit-export destination keeps every posted ' +
+          'field, including a token and a secret header, and the three ' +
+          'webhook names carry their own tooltips; a success is a notice');
+  t.check(/name="token"[^>]*value=""/.test(stored) &&
+          /name="secretHeaders"[^>]*><\/textarea>/.test(stored) &&
+          /name="headers"[^>]*>X-Trace: stored<\/textarea>/.test(stored) &&
+          /name="id"[^>]*value="other"/.test(stored) &&
+          /name="token"[^>]*value="typed-now"/.test(stored),
+          'D7. a stored destination does not draw its token or its secret ' +
+          'headers; the refused add form beside it still does',
+          stored);
+  const opened = WebAnswers.redraw('/admin/audit-export', 'update',
+    { id: 'siem', host: '10.1.1.9', enabled: 'true',
+      secretHeaders: 'X-Secret: kept' },
+    { ok: false, errors: ['Refused.'] },
+    { destinations: [{ id: 'siem', name: 'SIEM', type: 'syslog',
+                       enabled: true, host: 'old.example' }],
+      settings: { groups: [] } });
+  const again = AuditExportPage.render(opened.json,
+    kit.context({}, true, translator));
+  t.check(/<details open>/.test(again) &&
+          /name="host"[^>]*value="10\.1\.1\.9"/.test(again) &&
+          /name="secretHeaders"[^>]*>X-Secret: kept<\/textarea>/.test(again),
+          'D8. a refused update reopens that destination with the posted ' +
+          'fields');
   log.debug("Leaving checkRedraws().");
 }
 

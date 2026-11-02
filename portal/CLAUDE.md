@@ -44,11 +44,12 @@ acts on — the person is the token's subject.
 
 Every portal page links to the public documentation
 (`https://rcbj.github.io/iya-sts/`), chosen by `common/web_doc_links.ts`. A
-signed-in page draws it at the top of `.main`, above a flash
-(`PortalShell.frame()`). A page drawn for nobody — activation, a password
-reset, forgot-password, verify-email — draws the same link in `drawView()`
-before `PortalShell.bare()`. A problem page and "not a page" do not: `bare()`
-stays path-agnostic.
+new portal page owes its row there in the same change that adds the page.
+`tests/doc_links.js` fails without it. A signed-in page draws it at the top
+of `.main`, above a flash (`PortalShell.frame()`). A page drawn for nobody
+— activation, a password reset, forgot-password, verify-email — draws the
+same link in `drawView()` before `PortalShell.bare()`. A problem page and
+"not a page" do not: `bare()` stays path-agnostic.
 
 
 ## THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT (2026-09-06)

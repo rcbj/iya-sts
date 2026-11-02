@@ -2759,3 +2759,16 @@ and `applicationPolicies` on `GET /admin-api/xacml/policies`;
   type on.
 
 `tests/fga_console.js` holds the operations' presence and the acts.
+
+## Audit export (#641, 2026-11-01)
+
+`mgmt-api/audit_export_api.ts` spreads two operations onto the management
+API, tag Monitoring. `GET /admin-api/audit-export` (`getAuditExport`) is the
+general gate's GET, so `admin:read`. `POST /admin-api/audit-export/:action`
+(`add`, `update`, `remove`, `enable`, `disable`, `test`) is `admin:write`.
+There is no separate monitor scope: Admin Read and Admin Write are the two
+console roles. The handler calls `common/audit_export`'s `view` and `act`.
+An answer carries `tokenSet` and `secretHeaderSet` and never the sealed
+values. The OpenAPI example is a syslog destination
+(`{ id, type, host, transport }`) and names no token. `common/CLAUDE.md`
+(3da) is the delivery. The console page is `admin-ui/CLAUDE.md`.

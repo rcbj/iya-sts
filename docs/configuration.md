@@ -2382,6 +2382,27 @@ above.
 | `audit.protocolCalls` | `AUDIT_PROTOCOL_CALLS` | `true` | yes | Whether every call into a protocol endpoint gets an audit event. |
 | `audit.authenticationHistoryDays` | `AUDIT_AUTHENTICATION_HISTORY_DAYS` | `30` | yes | How many days of assessed sign-ins Recent sign-ins on the user portal lists for the signed-in person. Each realm sets its own, because the value is read in the ambient realm. The console's Authentication attempts tab on a person lists every attempt the audit log still holds and does not use this window. The log's own cap can still drop older rows. |
 
+### Audit export
+
+The page is [Audit export](admin-console.md#audit-export--adminaudit-export). Examples for each destination are on [Audit export destinations](audit-export.md). Every row takes effect on the next run of `audit.export`. A delivery failure leaves the audited operation's answer as it was.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `auditExport.enabled` | `AUDIT_EXPORT_ENABLED` | `true` | yes | Whether this process delivers its own audit events to the destinations configured on Audit export. Off leaves every destination's cursor where it is. A delivery failure never fails the operation that was audited. |
+| `auditExport.intervalS` | `AUDIT_EXPORT_INTERVAL_S` | `5` | yes | How often the `audit.export` job delivers this process's new audit events. `0` turns the job off. Each destination has its own queue, so one slow destination does not hold the others. |
+| `auditExport.batch` | `AUDIT_EXPORT_BATCH` | `50` | yes | How many events one destination is offered in one run of `audit.export`. What remains waits for the next run. |
+| `auditExport.timeoutMs` | `AUDIT_EXPORT_TIMEOUT_MS` | `5000` | yes | How long one delivery attempt waits for a destination to accept it. A timeout holds that destination's cursor and retries later. It keeps the event. |
+| `auditExport.budgetMs` | `AUDIT_EXPORT_BUDGET_MS` | `2000` | yes | How long one run may spend on one destination. What remains waits for the next run, so a slow destination cannot hold the job. |
+| `auditExport.retryInitialMs` | `AUDIT_EXPORT_RETRY_INITIAL_MS` | `1000` | yes | How long a destination waits after its first delivery failure before the next attempt. Each further failure waits longer, up to the maximum retry delay. |
+| `auditExport.retryMaxMs` | `AUDIT_EXPORT_RETRY_MAX_MS` | `300000` | yes | The longest a destination waits between delivery attempts while it is failing. The delay grows from the first retry delay up to this. |
+| `auditExport.retryMaxPeriodMs` | `AUDIT_EXPORT_RETRY_MAX_PERIOD_MS` | `86400000` | yes | How long a failing destination is retried before the event at the head is counted permanently failed and the cursor moves past it. Up to one batch of events behind that one are counted the same way in that run, and the destination is tried again after the first retry delay. Delivery is at least once. |
+| `auditExport.allowHttp` | `AUDIT_EXPORT_ALLOW_HTTP` | `false` | yes | Whether a webhook or Splunk HEC destination may use `http`. Development mode only, and ignored in product mode, where those destinations use `https`. Every such delivery is logged. Syslog TCP is a separate transport. |
+| `auditExport.skipTlsVerification` | `AUDIT_EXPORT_SKIP_TLS_VERIFICATION` | `false` | yes | WARNING. Development mode only. On sends webhook, Splunk HEC and syslog TLS without verifying the certificate of whoever answers. Every such delivery is logged. In product mode it is ignored and cannot be set. Name a private CA in the CA file setting instead. |
+| `auditExport.caFile` | `AUDIT_EXPORT_CA_FILE` | `` | yes | A PEM file of CA certificates a webhook, Splunk HEC or syslog TLS destination may chain to, beside node's own CA store. Empty uses node's store alone. A file that cannot be read refuses the delivery. |
+| `auditExport.allowPrivateDestinations` | `AUDIT_EXPORT_ALLOW_PRIVATE_DESTINATIONS` | `false` | yes | Whether a destination may be a loopback, link-local or private address, including RFC 6598 carrier-grade NAT (`100.64.0.0/10`). Off, product mode refuses those, and development mode still allows loopback so a test listener works. Cloud metadata addresses are refused even when this is on. |
+| `auditExport.fileRoots` | `AUDIT_EXPORT_FILE_ROOTS` | `` | yes | Absolute directories a filesystem destination may write under, separated by commas. Empty allows any absolute path an administrator names. A relative path, a path that climbs out of its directory, and a path outside these roots are refused. |
+| `auditExport.redactKeys` | `AUDIT_EXPORT_REDACT_KEYS` | `password,secret,token,authorization,client_secret,assertion,access_token,refresh_token,id_token` | yes | Detail attribute names, separated by commas, removed from every exported event. Matching is case-insensitive. A destination may name more. Passwords, tokens and assertions are on the default list. |
+
 ### Delegation
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |

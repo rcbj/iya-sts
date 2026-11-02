@@ -501,7 +501,12 @@ const SUBSYSTEMS = [
     where: 'report/',
     what: 'The reports application at /report and its API at /report-api: ' +
           'catalog queries, saved definitions, jobs and stored results ' +
-          '(#956).' }
+          '(#956).' },
+  { id: 'AUDIT', label: 'Audit export',
+    where: 'common/audit_export.ts, mgmt-api/audit_export_api.ts',
+    what: 'Delivery of this process\'s audit events to operator-configured ' +
+          'destinations: syslog, a file, a webhook, Splunk HEC and ' +
+          'LogRhythm (#641).' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -25869,7 +25874,84 @@ const CODES = [
       'are off in the realm (authzen.searchEnabled), or the report\'s ' +
       'owner is not a person of the realm it runs in, and a search runs ' +
       'as its owner (#1176).',
-    spec: 'unavailable or forbidden (the job fails)' }
+    spec: 'unavailable or forbidden (the job fails)' },
+  { code: 'STS-AUDIT-0001',
+    summary: 'An audit export destination was refused because its ' +
+      'configuration is not usable: an unknown action or type, a missing ' +
+      'field, or an id that is not the shape the register takes (#641).',
+    spec: 'invalid_request (the act is refused)' },
+  { code: 'STS-AUDIT-0002',
+    summary: 'An audit export act named a destination id this realm does ' +
+      'not have (#641).',
+    spec: 'invalid_request (the act is refused)' },
+  { code: 'STS-AUDIT-0003',
+    summary: 'An audit export secret could not be sealed under the ' +
+      'realm\'s data key, so the destination was not stored (#641).',
+    spec: 'invalid_request (the act is refused)' },
+  { code: 'STS-AUDIT-0004',
+    summary: 'A filesystem audit export path was refused: it is not ' +
+      'absolute, it climbs out of its directory, or it is outside ' +
+      'auditExport.fileRoots (#641).',
+    spec: 'invalid_request (the act is refused); none (a delivery failure)' },
+  { code: 'STS-AUDIT-0005',
+    summary: 'An audit export URL or host was refused: a scheme other than ' +
+      'http or https, userinfo, a private or loopback address the settings ' +
+      'do not allow, or a cloud metadata address, which is never allowed ' +
+      '(#641).',
+    spec: 'invalid_request (the act is refused); none (a delivery failure)' },
+  { code: 'STS-AUDIT-0006',
+    summary: 'A syslog audit export could not be sent: the socket would ' +
+      'not connect, the write failed, or TLS was refused (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0007',
+    summary: 'An HTTP audit export (webhook or Splunk HEC) failed: the ' +
+      'connection failed, the peer answered 401 or 403, or it answered a ' +
+      'status that is not acceptance. The cursor stays, and the destination ' +
+      'retries (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0008',
+    summary: 'A filesystem audit export could not append the event: the ' +
+      'path could not be opened or the write failed (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0009',
+    summary: 'Audit events were trimmed off this process\'s ring before ' +
+      'audit export delivered them. The bookmark of the next undelivered ' +
+      'event was gone. The count is one episode, not a sequence-number ' +
+      'gap, and what remains is delivered (#641).',
+    spec: 'none (a warning)' },
+  { code: 'STS-AUDIT-0010',
+    summary: 'The audit export test event could not be delivered to the ' +
+      'destination. The synthetic event is not an audit row (#641).',
+    spec: 'invalid_request (the test act fails)' },
+  { code: 'STS-AUDIT-0011',
+    summary: 'An audit export destination has been failing for ' +
+      'auditExport.retryMaxPeriodMs, so the event at the head was probed ' +
+      'once more. On failure that event, and further events in the same ' +
+      'run up to the batch, are counted permanently failed without ' +
+      'another send, and the destination waits the first retry delay. ' +
+      'The ids are on the row. Delivery is at-least-once, not ' +
+      'exactly-once (#641).',
+    spec: 'none (a warning)' },
+  { code: 'STS-AUDIT-0012',
+    summary: 'auditExport.skipTlsVerification is on and is ignored, because ' +
+      'this realm is in product mode: webhook, Splunk HEC and syslog TLS ' +
+      'verify the peer. Said once per process (#641).',
+    spec: 'none (a warning)' },
+  { code: 'STS-AUDIT-0014',
+    summary: 'A webhook or Splunk HEC destination answered a redirect. ' +
+      'Audit export does not follow it. The cursor stays and the ' +
+      'destination pauses (#641).',
+    spec: 'none (the destination retries; the audited operation is ' +
+      'unaffected)' },
+  { code: 'STS-AUDIT-0015',
+    summary: 'A webhook or Splunk HEC destination rejected the event ' +
+      'itself (HTTP 400). That event is counted permanently failed and the ' +
+      'cursor moves past it. The destination is not paused for the events ' +
+      'after it (#641).',
+    spec: 'none (that event is dropped; later events are still delivered)' }
   // ===== END ===============================================================
 ];
 

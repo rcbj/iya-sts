@@ -1363,6 +1363,13 @@ class ProtocolStack {
     // routes forward.
     this.build('common/post_login_activities',
                require('./post_login_activities'), 'PostLoginActivities');
+    // 18j-vii. AUDIT EXPORT (#641): a library that registers its per-process
+    // job when built, and no route. Here, with the scheduler in hand, and
+    // before the management API spreads its operations. Requiring
+    // `ldap/ldap_server` from here would drag its routes forward; this
+    // module does not.
+    this.build('common/audit_export', require('./audit_export'),
+               'AuditExport');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
@@ -1580,6 +1587,10 @@ class ProtocolStack {
     this.build('mgmt-api/post_login_activities_api',
                require('../mgmt-api/post_login_activities_api'),
                'PostLoginActivitiesApi');
+    // #641: the audit export operations, spread by `mgmt-api/admin_api`.
+    // The register is built at 18j-vii and reached from the handlers lazily.
+    this.build('mgmt-api/audit_export_api',
+               require('../mgmt-api/audit_export_api'), 'AuditExportApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',
