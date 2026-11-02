@@ -14754,6 +14754,347 @@ if (typeof portal.setDirectory === 'function') {
 }
 
 // ---------------------------------------------------------------------------
+// THE MAIL CHANNEL'S SLOT (#63, 2026-09-22), for the portal's reason and in
+// the portal's shape: `common/mail.ts` is a library loaded long before this
+// module, so it cannot require it without loading these routes out of order
+// (rule 1, rule 3e). It is handed the AMBIENT realm's entries, as the portal
+// is, and a writer narrowed to the four verification flags — the channel may
+// record that an address was verified and nothing else about a person.
+//
+// `personByMail()` is what lets somebody name their account by its address on
+// the forgot-password form. It walks the realm's people, which is what an
+// unindexed lookup costs; the form is rate-limited and the answer is the same
+// whether or not it found anybody.
+// ---------------------------------------------------------------------------
+const MAIL_FLAGS = ['stsMailVerified', 'stsMailVerifyToken',
+                    'stsMailVerifyExpires', 'stsMailVerifyAddress',
+                    // #64: the emailed second factor a person opted in to,
+                    // and its consecutive failures (common/mail_factor.ts).
+                    'stsMailFactor', 'stsMailFactorFailures'];
+const mailChannel = require('../common/mail');
+if (typeof mailChannel.setDirectory === 'function') {
+  mailChannel.setDirectory({
+    personEntry: function (username) {
+      log.debug('Entering personEntry(). username=' + username);
+      const located = locateEntry(String(username || ''));
+      if (!located.stored || !usernameOfEntry(located.stored)) {
+        log.debug('Leaving personEntry(). No person.');
+        return null;
+      }
+      log.debug('Leaving personEntry().');
+      return { dn: located.stored.dn,
+               attributes: Object.assign({}, located.stored.attributes) };
+    },
+    // A GROUP BY DN, FOR A NOTICE ADDRESSED TO ITS OWN `mail` (#989): the
+    // stored entry's attributes as they are, so the channel reads `mail`
+    // and `cn` as it reads a person's. Null for anything that is not a
+    // group of this realm.
+    groupEntry: function (dn) {
+      log.debug('Entering groupEntry().');
+      const stored = getEntry(String(dn || ''));
+      if (!stored || !groupRuleFor(stored)) {
+        log.debug('Leaving groupEntry(). Not a group here.');
+        return null;
+      }
+      log.debug('Leaving groupEntry().');
+      return { dn: stored.dn,
+               attributes: Object.assign({}, stored.attributes) };
+    },
+    personByMail: function (address) {
+      log.debug('Entering personByMail().');
+      const wanted = String(address || '').trim().toLowerCase();
+      let found = '';
+      if (wanted && directoryWindow) {
+        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
+        // is the portal's unauthenticated forgot-password form, and
+        // `allPersons()` paged and copied every person in the realm to
+        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
+        // order; the first is the answer, as the first in `allPersons()`'
+        // order was.
+        const hits = peopleByMail(wanted);
+        found = hits.length ? hits[0].username || '' : '';
+      } else if (wanted) {
+        allPersons().some(function (entry) {
+          const values = (entry.attributes && entry.attributes.mail) || [];
+          if (values.some(function (v) {
+            return String(v).trim().toLowerCase() === wanted;
+          })) {
+            found = usernameOfEntry(entry) || '';
+          }
+          return !!found;
+        });
+      }
+      log.debug('Leaving personByMail(). ' + (found ? 'Found.' : 'None.'));
+      return found;
+    },
+    // THE ADDRESS ITSELF (#64): written by an administrator's set-mail, or
+    // by a person completing the verification of a NEW address (D5 — the
+    // address is not `mail` until its link is clicked). `source` is
+    // verifyWrittenMail()'s, plus `link`: the person proved it. The account
+    // observer is told, so the FORMER address hears it changed.
+    //
+    // THE ADDRESS IS ALSO CLAIMED AS A USERNAME (#644). Two mail attributes
+    // may still match. What they may not do is match somebody else's uid
+    // or live pseudonym, and a later alias of this address has to see the
+    // claim. An empty address clears mail and claims nothing. The answer
+    // is `{ ok, code }`, never a boolean: a promise is truthy, and a caller
+    // that does not await it would report success before the write.
+    writeAddress: async function (username, address, source) {
+      log.debug('Entering writeAddress(). source=' + source);
+      const located = locateEntry(String(username || ''));
+      const stored = located.stored;
+      if (!stored || !usernameOfEntry(stored)) {
+        log.debug('Leaving writeAddress(). No person.');
+        return { ok: false, code: '' };
+      }
+      const value = String(address || '').trim();
+      const fold = value.toLowerCase();
+      let held = null;
+      if (value) {
+        try {
+          held = await createClaims.claim({
+            realm: realms.currentId(), dns: [], usernames: [fold]
+          });
+        } catch (e) {
+          log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
+          log.debug('Leaving writeAddress(). The claim could not be asked.');
+          return { ok: false, code: 'STS-LDAP-0093' };
+        }
+        if (!held || !held.ok) {
+          const store = held && held.reason === 'store';
+          log.info(errorCodes.tag(store ? 'STS-LDAP-0093' :
+                                   'STS-LDAP-0202') +
+                   'ldap: an address was not written.');
+          log.debug('Leaving writeAddress(). The claim was refused.');
+          return { ok: false, code: store ? 'STS-LDAP-0093' :
+                                            'STS-LDAP-0202' };
+        }
+        const other = existingUserEntry(value);
+        if (other && normalizeDn(other.dn) !== normalizeDn(stored.dn)) {
+          if (held.settle) {
+            held.settle(false);
+          }
+          log.info(errorCodes.tag('STS-LDAP-0202') +
+                   'ldap: an address is already somebody else\'s name.');
+          log.debug('Leaving writeAddress(). Another person.');
+          return { ok: false, code: 'STS-LDAP-0202' };
+        }
+      }
+      try {
+        const before = attributeSnapshot(stored);
+        if (value) {
+          stored.attributes.mail = [value];
+        } else {
+          delete stored.attributes.mail;
+        }
+        stored.attributes.modifytimestamp = [generalizedTime()];
+        // BEFORE the snapshot `touchDirectory()` takes (#644). Setting the
+        // flag afterwards left a durable copy without `stsMailVerified`.
+        if (source === 'link' && value) {
+          stored.attributes.stsmailverified = [value];
+        }
+        touchDirectory(stored.dn);
+        if (source !== 'link' || !value) {
+          verifyWrittenMail(stored, before, source);
+        }
+        noteAccountChange('updated', stored.dn, before,
+                          attributeSnapshot(stored));
+        if (held && held.settle) {
+          held.settle(true);
+        }
+        log.debug('Leaving writeAddress().');
+        return { ok: true, code: '' };
+      } catch (e) {
+        if (held && held.settle) {
+          held.settle(false);
+        }
+        log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
+        log.debug('Leaving writeAddress(). The write failed.');
+        return { ok: false, code: 'STS-LDAP-0093' };
+      }
+    },
+    writeMailFlag: function (username, name, value) {
+      log.debug('Entering writeMailFlag(). ' + name);
+      if (MAIL_FLAGS.indexOf(name) < 0) {
+        log.debug('Leaving writeMailFlag(). Not a mail flag.');
+        return false;
+      }
+      log.debug('Leaving writeMailFlag().');
+      return writePersonFlag(String(username || ''), name, value);
+    }
+  });
+} else {
+  log.warn('ldap: common/mail.ts offers no setDirectory(), so the mail ' +
+           'channel has no recipients: every message is refused as having ' +
+           'nobody to go to.');
+}
+
+// ---------------------------------------------------------------------------
+// THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
+// in `ou=users` be an RFC 7523 issuer.
+//
+// `common/person_assertions.js` owns what a person's assertion key pair IS —
+// the seven attributes, the sealing, the refusal that a person may only assert
+// about themselves — and this module owns the store it lives in. That is the
+// same division `applications.js`, `federation.js` and the two XACML registers
+// already have with this file.
+//
+// **RULE 3e's TEST ANSWERS YES BOTH WAYS ROUND.** That module is required by
+// `oauth-oidc/assertion_grant.js`, which `oauth2.js` requires at 9, so a
+// require from there to this module would register all eight `/admin/ldap/*`
+// console pages ahead of the authorization server (rule 1); and a require from
+// this module to `assertion_grant.js` would be a second path to it through a
+// module at 21, which is where a cycle starts.
+//
+// **THREE FUNCTIONS AND THEY ARE THE THREE SHAPES THIS FILE ALREADY HANDS
+// OVER.** `read()` answers ONE PERSON'S assertion attributes in their canonical
+// spelling — not the whole entry, which is what the portal's slot takes,
+// because this register has no business with the other fifty; `write()` is one
+// attribute at a time so that the caller can report WHICH one failed, which
+// matters here more than anywhere else in this file (`common/pki.js` hands a
+// private key over once and keeps no copy); and `persons()` is the list of
+// NAMES, exactly as `credentials.persons()` takes it and for that comment's
+// reason.
+//
+// Guarded like the rest: an older `common/person_assertions.js` costs a
+// warning rather than a service that will not start, and the warning says what
+// is lost.
+// ---------------------------------------------------------------------------
+if (typeof personAssertions.setDirectory === 'function') {
+  personAssertions.setDirectory({
+    // EVERY PERSON HOLDING ANY OF THESE ATTRIBUTES, with those attributes'
+    // RAW values, in ONE walk (#352, 2026-09-29). `holders()` over there
+    // asked `persons()` for every name in the realm and `read()` for each —
+    // twenty-nine thousand lookups on testidp to find the handful who hold
+    // a key pair — and opened every sealed private key on the way. This
+    // answers the handful and opens nothing: the values are exactly as
+    // stored, sealed ones sealed, because a report of WHO holds a key pair
+    // never needs the private half. The ambient realm's, as below.
+    //
+    // **IN `allPersons()`'S ORDER** (the normalised DN), so a caller that
+    // walked `persons()` and filtered gets the same rows in the same order;
+    // only the matches are sorted, and each key is normalised once.
+    //
+    // **ONE STATEMENT UNDER #349's WINDOW**: this is
+    // `persistence/directory_queries.js`'s `withAttribute()` under
+    // `ou=users`, once per attribute named — which is how #349's window
+    // answers it (`eachHolderOfAny()`).
+    holdingAny: function (names) {
+      log.debug('Entering holdingAny().');
+      const wanted = (names || []).map(function (name) {
+        return String(name).toLowerCase();
+      });
+      const found = [];
+      // The holders only; in a windowed worker asked of the store (#349).
+      eachHolderOfAny(wanted, function (stored) {
+        const attrs = stored.attributes || {};
+        const held = wanted.some(function (one) {
+          return (attrs[one] || []).length > 0;
+        });
+        if (!held || !isPersonEntry(stored)) {
+          return;
+        }
+        const username = usernameOfEntry(stored);
+        if (!username) {
+          return;
+        }
+        // Canonical spellings out, for `read()`'s reason below.
+        const out = {};
+        personAssertions.ATTRIBUTES.forEach(function (name) {
+          const values = attrs[name.toLowerCase()];
+          if (values && values.length) {
+            out[name] = values.slice();
+          }
+        });
+        found.push({ key: normalizeDn(stored.dn), username: username,
+                     attributes: out });
+      });
+      found.sort(function (a, b) {
+        return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+      });
+      log.debug('Leaving holdingAny(). ' + found.length + ' person(s).');
+      return found.map(function (one) {
+        return { username: one.username, attributes: one.attributes };
+      });
+    },
+    // **THE AMBIENT REALM'S**, like the portal's and `credentials.persons()`:
+    // a realm is a logical copy of this service with its own people, and an
+    // assertion presented at `/realm/acme/oauth2/token` is about somebody in
+    // `acme`.
+    read: function (username) {
+      log.debug('Entering read(). username=' + username);
+      const located = locateEntry(String(username || ''));
+      if (!located.stored) {
+        log.debug('Leaving read(). Nothing at ' + located.dn + '.');
+        return null;
+      }
+      // CANONICAL SPELLINGS OUT, lower-cased ones in the store. This is the
+      // one place that translation happens for these attributes, so the
+      // register never has to know that this directory lower-cases an
+      // attribute name — which is the fact that made `ou=roles` report
+      // `0 user(s)` for a role somebody held.
+      const out = {};
+      personAssertions.ATTRIBUTES.forEach(function (name) {
+        const values = located.stored.attributes[name.toLowerCase()];
+        if (values && values.length) {
+          out[name] = values.slice();
+        }
+      });
+      log.debug('Leaving read(). ' + Object.keys(out).length +
+                ' attribute(s).');
+      return out;
+    },
+    write: function (username, name, value) {
+      log.debug('Entering write(). username=' + username + ' name=' + name);
+      const located = locateEntry(String(username || ''));
+      const stored = located.stored;
+      if (!stored) {
+        // NOT created here, for `writeStoredPassword()`'s reason: issuing a
+        // credential to somebody who does not exist would create them, and
+        // product mode refuses exactly that.
+        log.warn(errorCodes.tag('STS-LDAP-0040') +
+                 'ldap: "' + username + '" has no entry in this realm, so no ' +
+                 'assertion key material was written.');
+        log.debug('Leaving write(). No entry.');
+        return false;
+      }
+      const attribute = String(name).toLowerCase();
+      if (value === null || value === undefined || value === '') {
+        delete stored.attributes[attribute];
+      } else {
+        // ASSIGNED and not appended. Two JWKS values would be two public keys
+        // under one `kid` attribute, and a verifier that read the second would
+        // be checking a signature against a key nobody meant.
+        stored.attributes[attribute] = [String(value)];
+      }
+      touchDirectory();
+      log.debug('Leaving write(). ' +
+                (value ? 'Written to ' : 'Removed from ') +
+                stored.dn + '.');
+      return true;
+    },
+    persons: function () {
+      log.debug("Entering persons().");
+      log.debug("Leaving persons().");
+      // Names only, from the kept keys (#352): no entry is copied.
+      return personNames();
+    }
+  });
+} else {
+  log.warn('ldap: common/person_assertions.js offers no setDirectory(), so ' +
+           'nobody in ou=users can hold an RFC 7523 signing key pair and an ' +
+           'assertion naming a person as its issuer will be refused for want ' +
+           'of a registered issuer. That is the older register and is not an ' +
+           'error; /admin/pki says so on the control.');
+}
+} else {
+  log.warn('ldap: common/credentials.ts offers no setDirectory(), so no ' +
+           'password can be verified or set. Development mode is unaffected ' +
+           'because it verifies nothing; PRODUCT MODE WOULD REFUSE EVERY ' +
+           'SIGN-IN, which credentials.js reports rather than passing.');
+}
+
+// ---------------------------------------------------------------------------
 // stsPseudonym (#644). ONE WRITER. A live value is a login name: it is in
 // usernameKeysOf(), so existingUserEntry() answers it, and the entry seal
 // is the encryption. A pending email is three attributes and not a name
@@ -15127,347 +15468,6 @@ async function writePseudonyms(entryOrUsername, spec) {
     return refusePseudonym('STS-LDAP-0093',
       'Whether that name is already taken could not be decided.');
   }
-}
-
-// ---------------------------------------------------------------------------
-// THE MAIL CHANNEL'S SLOT (#63, 2026-09-22), for the portal's reason and in
-// the portal's shape: `common/mail.ts` is a library loaded long before this
-// module, so it cannot require it without loading these routes out of order
-// (rule 1, rule 3e). It is handed the AMBIENT realm's entries, as the portal
-// is, and a writer narrowed to the four verification flags — the channel may
-// record that an address was verified and nothing else about a person.
-//
-// `personByMail()` is what lets somebody name their account by its address on
-// the forgot-password form. It walks the realm's people, which is what an
-// unindexed lookup costs; the form is rate-limited and the answer is the same
-// whether or not it found anybody.
-// ---------------------------------------------------------------------------
-const MAIL_FLAGS = ['stsMailVerified', 'stsMailVerifyToken',
-                    'stsMailVerifyExpires', 'stsMailVerifyAddress',
-                    // #64: the emailed second factor a person opted in to,
-                    // and its consecutive failures (common/mail_factor.ts).
-                    'stsMailFactor', 'stsMailFactorFailures'];
-const mailChannel = require('../common/mail');
-if (typeof mailChannel.setDirectory === 'function') {
-  mailChannel.setDirectory({
-    personEntry: function (username) {
-      log.debug('Entering personEntry(). username=' + username);
-      const located = locateEntry(String(username || ''));
-      if (!located.stored || !usernameOfEntry(located.stored)) {
-        log.debug('Leaving personEntry(). No person.');
-        return null;
-      }
-      log.debug('Leaving personEntry().');
-      return { dn: located.stored.dn,
-               attributes: Object.assign({}, located.stored.attributes) };
-    },
-    // A GROUP BY DN, FOR A NOTICE ADDRESSED TO ITS OWN `mail` (#989): the
-    // stored entry's attributes as they are, so the channel reads `mail`
-    // and `cn` as it reads a person's. Null for anything that is not a
-    // group of this realm.
-    groupEntry: function (dn) {
-      log.debug('Entering groupEntry().');
-      const stored = getEntry(String(dn || ''));
-      if (!stored || !groupRuleFor(stored)) {
-        log.debug('Leaving groupEntry(). Not a group here.');
-        return null;
-      }
-      log.debug('Leaving groupEntry().');
-      return { dn: stored.dn,
-               attributes: Object.assign({}, stored.attributes) };
-    },
-    personByMail: function (address) {
-      log.debug('Entering personByMail().');
-      const wanted = String(address || '').trim().toLowerCase();
-      let found = '';
-      if (wanted && directoryWindow) {
-        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
-        // is the portal's unauthenticated forgot-password form, and
-        // `allPersons()` paged and copied every person in the realm to
-        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
-        // order; the first is the answer, as the first in `allPersons()`'
-        // order was.
-        const hits = peopleByMail(wanted);
-        found = hits.length ? hits[0].username || '' : '';
-      } else if (wanted) {
-        allPersons().some(function (entry) {
-          const values = (entry.attributes && entry.attributes.mail) || [];
-          if (values.some(function (v) {
-            return String(v).trim().toLowerCase() === wanted;
-          })) {
-            found = usernameOfEntry(entry) || '';
-          }
-          return !!found;
-        });
-      }
-      log.debug('Leaving personByMail(). ' + (found ? 'Found.' : 'None.'));
-      return found;
-    },
-    // THE ADDRESS ITSELF (#64): written by an administrator's set-mail, or
-    // by a person completing the verification of a NEW address (D5 — the
-    // address is not `mail` until its link is clicked). `source` is
-    // verifyWrittenMail()'s, plus `link`: the person proved it. The account
-    // observer is told, so the FORMER address hears it changed.
-    //
-    // THE ADDRESS IS ALSO CLAIMED AS A USERNAME (#644). Two mail attributes
-    // may still match. What they may not do is match somebody else's uid
-    // or live pseudonym, and a later alias of this address has to see the
-    // claim. An empty address clears mail and claims nothing. The answer
-    // is `{ ok, code }`, never a boolean: a promise is truthy, and a caller
-    // that does not await it would report success before the write.
-    writeAddress: async function (username, address, source) {
-      log.debug('Entering writeAddress(). source=' + source);
-      const located = locateEntry(String(username || ''));
-      const stored = located.stored;
-      if (!stored || !usernameOfEntry(stored)) {
-        log.debug('Leaving writeAddress(). No person.');
-        return { ok: false, code: '' };
-      }
-      const value = String(address || '').trim();
-      const fold = value.toLowerCase();
-      let held = null;
-      if (value) {
-        try {
-          held = await createClaims.claim({
-            realm: realms.currentId(), dns: [], usernames: [fold]
-          });
-        } catch (e) {
-          log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
-          log.debug('Leaving writeAddress(). The claim could not be asked.');
-          return { ok: false, code: 'STS-LDAP-0093' };
-        }
-        if (!held || !held.ok) {
-          const store = held && held.reason === 'store';
-          log.info(errorCodes.tag(store ? 'STS-LDAP-0093' :
-                                   'STS-LDAP-0202') +
-                   'ldap: an address was not written.');
-          log.debug('Leaving writeAddress(). The claim was refused.');
-          return { ok: false, code: store ? 'STS-LDAP-0093' :
-                                            'STS-LDAP-0202' };
-        }
-        const other = existingUserEntry(value);
-        if (other && normalizeDn(other.dn) !== normalizeDn(stored.dn)) {
-          if (held.settle) {
-            held.settle(false);
-          }
-          log.info(errorCodes.tag('STS-LDAP-0202') +
-                   'ldap: an address is already somebody else\'s name.');
-          log.debug('Leaving writeAddress(). Another person.');
-          return { ok: false, code: 'STS-LDAP-0202' };
-        }
-      }
-      try {
-        const before = attributeSnapshot(stored);
-        if (value) {
-          stored.attributes.mail = [value];
-        } else {
-          delete stored.attributes.mail;
-        }
-        stored.attributes.modifytimestamp = [generalizedTime()];
-        // BEFORE the snapshot `touchDirectory()` takes (#644). Setting the
-        // flag afterwards left a durable copy without `stsMailVerified`.
-        if (source === 'link' && value) {
-          stored.attributes.stsmailverified = [value];
-        }
-        touchDirectory(stored.dn);
-        if (source !== 'link' || !value) {
-          verifyWrittenMail(stored, before, source);
-        }
-        noteAccountChange('updated', stored.dn, before,
-                          attributeSnapshot(stored));
-        if (held && held.settle) {
-          held.settle(true);
-        }
-        log.debug('Leaving writeAddress().');
-        return { ok: true, code: '' };
-      } catch (e) {
-        if (held && held.settle) {
-          held.settle(false);
-        }
-        log.debug('Caught in writeAddress(): ' + ((e && e.message) || e));
-        log.debug('Leaving writeAddress(). The write failed.');
-        return { ok: false, code: 'STS-LDAP-0093' };
-      }
-    },
-    writeMailFlag: function (username, name, value) {
-      log.debug('Entering writeMailFlag(). ' + name);
-      if (MAIL_FLAGS.indexOf(name) < 0) {
-        log.debug('Leaving writeMailFlag(). Not a mail flag.');
-        return false;
-      }
-      log.debug('Leaving writeMailFlag().');
-      return writePersonFlag(String(username || ''), name, value);
-    }
-  });
-} else {
-  log.warn('ldap: common/mail.ts offers no setDirectory(), so the mail ' +
-           'channel has no recipients: every message is refused as having ' +
-           'nobody to go to.');
-}
-
-// ---------------------------------------------------------------------------
-// THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
-// in `ou=users` be an RFC 7523 issuer.
-//
-// `common/person_assertions.js` owns what a person's assertion key pair IS —
-// the seven attributes, the sealing, the refusal that a person may only assert
-// about themselves — and this module owns the store it lives in. That is the
-// same division `applications.js`, `federation.js` and the two XACML registers
-// already have with this file.
-//
-// **RULE 3e's TEST ANSWERS YES BOTH WAYS ROUND.** That module is required by
-// `oauth-oidc/assertion_grant.js`, which `oauth2.js` requires at 9, so a
-// require from there to this module would register all eight `/admin/ldap/*`
-// console pages ahead of the authorization server (rule 1); and a require from
-// this module to `assertion_grant.js` would be a second path to it through a
-// module at 21, which is where a cycle starts.
-//
-// **THREE FUNCTIONS AND THEY ARE THE THREE SHAPES THIS FILE ALREADY HANDS
-// OVER.** `read()` answers ONE PERSON'S assertion attributes in their canonical
-// spelling — not the whole entry, which is what the portal's slot takes,
-// because this register has no business with the other fifty; `write()` is one
-// attribute at a time so that the caller can report WHICH one failed, which
-// matters here more than anywhere else in this file (`common/pki.js` hands a
-// private key over once and keeps no copy); and `persons()` is the list of
-// NAMES, exactly as `credentials.persons()` takes it and for that comment's
-// reason.
-//
-// Guarded like the rest: an older `common/person_assertions.js` costs a
-// warning rather than a service that will not start, and the warning says what
-// is lost.
-// ---------------------------------------------------------------------------
-if (typeof personAssertions.setDirectory === 'function') {
-  personAssertions.setDirectory({
-    // EVERY PERSON HOLDING ANY OF THESE ATTRIBUTES, with those attributes'
-    // RAW values, in ONE walk (#352, 2026-09-29). `holders()` over there
-    // asked `persons()` for every name in the realm and `read()` for each —
-    // twenty-nine thousand lookups on testidp to find the handful who hold
-    // a key pair — and opened every sealed private key on the way. This
-    // answers the handful and opens nothing: the values are exactly as
-    // stored, sealed ones sealed, because a report of WHO holds a key pair
-    // never needs the private half. The ambient realm's, as below.
-    //
-    // **IN `allPersons()`'S ORDER** (the normalised DN), so a caller that
-    // walked `persons()` and filtered gets the same rows in the same order;
-    // only the matches are sorted, and each key is normalised once.
-    //
-    // **ONE STATEMENT UNDER #349's WINDOW**: this is
-    // `persistence/directory_queries.js`'s `withAttribute()` under
-    // `ou=users`, once per attribute named — which is how #349's window
-    // answers it (`eachHolderOfAny()`).
-    holdingAny: function (names) {
-      log.debug('Entering holdingAny().');
-      const wanted = (names || []).map(function (name) {
-        return String(name).toLowerCase();
-      });
-      const found = [];
-      // The holders only; in a windowed worker asked of the store (#349).
-      eachHolderOfAny(wanted, function (stored) {
-        const attrs = stored.attributes || {};
-        const held = wanted.some(function (one) {
-          return (attrs[one] || []).length > 0;
-        });
-        if (!held || !isPersonEntry(stored)) {
-          return;
-        }
-        const username = usernameOfEntry(stored);
-        if (!username) {
-          return;
-        }
-        // Canonical spellings out, for `read()`'s reason below.
-        const out = {};
-        personAssertions.ATTRIBUTES.forEach(function (name) {
-          const values = attrs[name.toLowerCase()];
-          if (values && values.length) {
-            out[name] = values.slice();
-          }
-        });
-        found.push({ key: normalizeDn(stored.dn), username: username,
-                     attributes: out });
-      });
-      found.sort(function (a, b) {
-        return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
-      });
-      log.debug('Leaving holdingAny(). ' + found.length + ' person(s).');
-      return found.map(function (one) {
-        return { username: one.username, attributes: one.attributes };
-      });
-    },
-    // **THE AMBIENT REALM'S**, like the portal's and `credentials.persons()`:
-    // a realm is a logical copy of this service with its own people, and an
-    // assertion presented at `/realm/acme/oauth2/token` is about somebody in
-    // `acme`.
-    read: function (username) {
-      log.debug('Entering read(). username=' + username);
-      const located = locateEntry(String(username || ''));
-      if (!located.stored) {
-        log.debug('Leaving read(). Nothing at ' + located.dn + '.');
-        return null;
-      }
-      // CANONICAL SPELLINGS OUT, lower-cased ones in the store. This is the
-      // one place that translation happens for these attributes, so the
-      // register never has to know that this directory lower-cases an
-      // attribute name — which is the fact that made `ou=roles` report
-      // `0 user(s)` for a role somebody held.
-      const out = {};
-      personAssertions.ATTRIBUTES.forEach(function (name) {
-        const values = located.stored.attributes[name.toLowerCase()];
-        if (values && values.length) {
-          out[name] = values.slice();
-        }
-      });
-      log.debug('Leaving read(). ' + Object.keys(out).length +
-                ' attribute(s).');
-      return out;
-    },
-    write: function (username, name, value) {
-      log.debug('Entering write(). username=' + username + ' name=' + name);
-      const located = locateEntry(String(username || ''));
-      const stored = located.stored;
-      if (!stored) {
-        // NOT created here, for `writeStoredPassword()`'s reason: issuing a
-        // credential to somebody who does not exist would create them, and
-        // product mode refuses exactly that.
-        log.warn(errorCodes.tag('STS-LDAP-0040') +
-                 'ldap: "' + username + '" has no entry in this realm, so no ' +
-                 'assertion key material was written.');
-        log.debug('Leaving write(). No entry.');
-        return false;
-      }
-      const attribute = String(name).toLowerCase();
-      if (value === null || value === undefined || value === '') {
-        delete stored.attributes[attribute];
-      } else {
-        // ASSIGNED and not appended. Two JWKS values would be two public keys
-        // under one `kid` attribute, and a verifier that read the second would
-        // be checking a signature against a key nobody meant.
-        stored.attributes[attribute] = [String(value)];
-      }
-      touchDirectory();
-      log.debug('Leaving write(). ' +
-                (value ? 'Written to ' : 'Removed from ') +
-                stored.dn + '.');
-      return true;
-    },
-    persons: function () {
-      log.debug("Entering persons().");
-      log.debug("Leaving persons().");
-      // Names only, from the kept keys (#352): no entry is copied.
-      return personNames();
-    }
-  });
-} else {
-  log.warn('ldap: common/person_assertions.js offers no setDirectory(), so ' +
-           'nobody in ou=users can hold an RFC 7523 signing key pair and an ' +
-           'assertion naming a person as its issuer will be refused for want ' +
-           'of a registered issuer. That is the older register and is not an ' +
-           'error; /admin/pki says so on the control.');
-}
-} else {
-  log.warn('ldap: common/credentials.ts offers no setDirectory(), so no ' +
-           'password can be verified or set. Development mode is unaffected ' +
-           'because it verifies nothing; PRODUCT MODE WOULD REFUSE EVERY ' +
-           'SIGN-IN, which credentials.js reports rather than passing.');
 }
 
 // ---------------------------------------------------------------------------
