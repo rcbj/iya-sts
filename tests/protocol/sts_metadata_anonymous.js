@@ -1155,7 +1155,13 @@ const WELL_KNOWN_ELSEWHERE = {
   "/.well-known/hoba/register":
     "NOT a document — it is where a client REGISTERS a HOBA key, and it is a " +
     "POST that changes state. sts_admin_console.js and the SCIM jobs are " +
-    "where that surface is driven."
+    "where that surface is driven.",
+  // The exact path only. app.get(METADATA_PATH) and app.get(METADATA_PATH +
+  // '/*') both name the constant, and the extractor records its value once.
+  "/.well-known/uma2-configuration":
+    "off by default (uma.enabled); the discovery document answers 501 until " +
+    "UMA is turned on, and sts_uma.js reads it in a realm where it is on. " +
+    "NO_PUBLIC_METADATA's UMA 2.0 row is the same fact."
 };
 
 // ---------------------------------------------------------------------------

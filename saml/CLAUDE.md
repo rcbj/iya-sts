@@ -694,14 +694,14 @@ skew. That is deliberate and conservative: the envelope describes what was asked
 for, the assertion states what it is actually valid for, and a relying party
 trusting the envelope discards early rather than late.
 
-**ONE CALLER HAD TO BE EDITED ANYWAY**, and it is the exception that proves the
-choke point. `saml2_sso.ts` passes its own
-`SubjectConfirmationData/NotOnOrAfter`, because the Web Browser SSO profile
-requires the bearer confirmation to carry one; it now adds the same skew. Two
-expiries inside one assertion that disagree is a defect a service provider
-reports as *assertion expired* while this console shows a window that has not
-closed. **A future caller that passes its own expiry has to do the same** — that
-is the one thing about this feature that is not automatic.
+**THE CONFIRMATION'S EXPIRY IS THE BUILDER'S.** When `subjectConfirmation` is
+present and `notOnOrAfter` is omitted, `SubjectConfirmationData/NotOnOrAfter`
+is the Conditions instant (`exp`), the same string. Two `iso()` calls are two
+`Date.now()` reads, and they disagreed by a millisecond
+(`tests/wsfed_saml2_token.js`, 2026-11-01). The Web Browser SSO profile and
+WS-Federation both omit it. A caller that passes its own expiry has to be
+that same instant — that is the one thing about this feature that is not
+automatic.
 
 **AND IT IS NOT `oauth2.clockSkewS`.** That one is a TOLERANCE applied wherever
 this service READS a document back, including an inbound partner assertion at
@@ -1643,6 +1643,12 @@ needs before changing it:
   is where every metadata-reading TLS engine looks. Last, so a consumer that
   takes the first signing certificate for XML signatures still takes the XML
   key (`tests/protocol/sts_xml_schema_validation.js` is one such consumer).
+  A reader that keeps one certificate per `X509Data` keeps the LAST instead.
+  pysaml2 7.5.5 does (cardinality max 1, and a later element overwrites),
+  which is why `helpers.x509DataXml()` repeats the signer's certificate
+  after the Root: that reader still holds the leaf, and this TLS descriptor
+  stays a separate key the same reader may try and reject. `common/CLAUDE.md`
+  (3w) argues the chain.
 * **In BOTH roles**: the IDPSSODescriptor (artifact resolution) and the
   AttributeAuthorityDescriptor (the attribute query), because a service
   provider looks up the keys of the role whose endpoint it is calling.

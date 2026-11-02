@@ -1009,11 +1009,15 @@ async function publication(world) {
               "with rsa-oaep (SHA-256, MGF1-SHA-256) and aes256-gcm, " +
               "no-store", async function () {
     const m = world.ours;
-    assert.ok(m.encryption && /xmlenc11#rsa-oaep/.test(m.encryption) &&
-              /mgf1sha256/.test(m.encryption) &&
-              /xmlenc#sha256/.test(m.encryption) &&
-              /xmlenc11#aes256-gcm/.test(m.encryption) &&
-              !/cbc|rsa-1_5/.test(m.encryption), m.encryption);
+    // Certificate bytes are not algorithms. A Root's base64 can contain
+    // the letters cbc, and the chain is inside this descriptor (#1064).
+    const algorithms = String(m.encryption || "").replace(
+      /<ds:X509Certificate>[^<]*<\/ds:X509Certificate>/g, "");
+    assert.ok(m.encryption && /xmlenc11#rsa-oaep/.test(algorithms) &&
+              /mgf1sha256/.test(algorithms) &&
+              /xmlenc#sha256/.test(algorithms) &&
+              /xmlenc11#aes256-gcm/.test(algorithms) &&
+              !/cbc|rsa-1_5/.test(algorithms), m.encryption);
     assert.ok(/no-store/.test(m.cacheControl), m.cacheControl);
   });
   await check("the WS-Federation relationship has metadata too: a " +

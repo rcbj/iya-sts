@@ -958,7 +958,10 @@ Root, wherever this service hands out one of its own certificates:
 
 The signer's own certificate is always **first**. Many verifiers take the
 first `X509Certificate` in `X509Data` as the signer's; XML Signature 1.1
-section 4.5.4 allows several certificates there, in any order.
+section 4.5.4 allows several certificates there, in any order. In an XML
+`X509Data` that same certificate is repeated after the Root, because a
+reader that keeps a single certificate per `X509Data` keeps the last one
+(pysaml2 does). A JOSE `x5c` and a TLS handshake still end at the Root.
 
 Sending the Root does not make anybody trust it: a relying party trusts only
 the Roots it already holds (RFC 5280 section 6.1). It is there so that a

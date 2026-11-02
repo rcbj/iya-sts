@@ -24801,7 +24801,10 @@ class AdminApi {
           // verified subject, and '' stays '' when development's open API
           // has no token.
           // A RESET MAY ANSWER A PROMISE (#1241: who names a named
-          // attribute profile is asked asynchronously).
+          // attribute profile is asked asynchronously). The promise is
+          // RETURNED: Express does not wait on it, and the `.then` still
+          // sends, but an in-process caller reads the answer only once
+          // this settles (`tests/admin_api_nominated_actor.js`).
           const answer = function (result) {
             log.debug("Entering the policies action endpoint's answer.");
             if (!result.ok) {
@@ -24811,7 +24814,7 @@ class AdminApi {
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the policies action endpoint's answer.");
           };
-          Promise.resolve(
+          const pending = Promise.resolve(
             adminActions.policiesAction(self.withAction(req, body),
                                         { via: 'api',
                                           actor: self.callerNameOf(res) }))
@@ -24823,6 +24826,7 @@ class AdminApi {
                 'The policy action failed.'] });
             });
           log.debug("Leaving the management API policies action endpoint.");
+          return pending;
         },
         actions: this.policyKindActions() },
 

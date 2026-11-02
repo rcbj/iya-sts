@@ -6846,7 +6846,18 @@ holds.**
   (`adoptStoredKeys()`), published over the pool marked `confirmed` so
   `request_pool.js`'s `receivePublishedKeys()` adopts it instead of arbitrating
   it away. The same set is JOINED: a member one side lacks (post-quantum keys,
-  the three encryption key pairs) is taken from the other.
+  the three encryption key pairs) is taken from the other. A higher generation
+  replaces that row only when it is the same birth certificate, or names that
+  certificate in `generations.parentCerts` or on a retired standby entry
+  (`supersedes()`). A generation minted from a set the store, or the key
+  channel, already refused does not win: `replaceKeySet()` publishes it marked
+  confirmed, and `receivePublishedKeys()` refuses that publish and sends the
+  set it holds back. That is what kept `sts_saml_interop_pysaml2` verifying
+  every response against a certificate the service had already stopped signing
+  with. Signer groups on a publish that is refused are still joined onto the
+  set that is kept (`offeredSignerGroups()`): `joinSignerGroups()` offers the
+  worker's own blob, often a generation behind, and without the join the JWKS
+  never gains them (`sts_signer_groups`, and the CRL that realm then publishes).
 * **A CERTIFICATE AUTHORITY ROW IS A THREE-WAY MERGE** against `pkiBase`, the
   ciphertext this process last read or wrote — equal ciphertexts are the fast
   path, since every seal has a fresh IV. `pki_merge.js` has the rules: a
@@ -8418,6 +8429,12 @@ check, so `signXml()` wraps it on that path and passes nothing when
 `includeKeyInfo` is false. **The signer's own certificate stays FIRST** in
 every X509Data: XML Signature 1.1 section 4.5.4 sets no order, but this
 service's verifier and xml-crypto's `getCertFromKeyInfo` take the first.
+**It is repeated after the Root** when the chain is longer than that one
+certificate. pysaml2 7.5.5 keeps a single `X509Certificate` per `X509Data`
+(cardinality max 1, and a later element overwrites), so the certificate it
+verifies with is the last, and a chain ending at the Root made every SAML
+response fail that check (`sts_saml_interop_pysaml2`). JOSE `x5c` still
+ends at the Root. `tests/tls_presented_root.js` section C holds both ends.
 
 **Outside it, on purpose**: the SPIFFE trust bundle (its `x5c` IS the
 anchors), the SAML EncryptedKey's KeyInfo (the RECIPIENT's certificate, whose

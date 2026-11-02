@@ -1691,9 +1691,13 @@ function generationsView(realmId, stored, privateOf) {
     }
     return entry;
   });
+  const parentCerts = (stored.parentCerts || []).filter(function (one) {
+    return typeof one === 'string' && one.length > 0;
+  });
   log.debug("Leaving generationsView(). " + standby.length + " standby.");
   return { generation: Number(stored.generation) || 0,
            rotated: Object.assign({}, stored.rotated || {}),
+           parentCerts: parentCerts,
            standby: standby, retiredRefresh: retiredRefresh };
 }
 
@@ -3843,7 +3847,8 @@ const STS = /** @type {any} */ (new Proxy({}, {
 // `keystore.replaceKeySet()`, which is the one door by which a realm's keys
 // change while in use and which bumps nothing itself — the GENERATION counter
 // on the blob is what every copy is judged by (`keystore.js`,
-// serialiseGenerations()).
+// serialiseGenerations()). A higher counter replaces the set in use only when
+// `keystore.supersedes()` says it is a rotation of that set.
 // ===========================================================================
 
 // Every unit a key set holds a current key for, with where that key sits.
@@ -4495,7 +4500,7 @@ function x5cOf(certificatePem, chainPem) {
 
 // ---------------------------------------------------------------------------
 // AN XML `ds:X509Data`: THE CHAIN THROUGH THE ROOT, ONE CERTIFICATE EACH
-// (#1064).
+// (#1064), AND THE SIGNER'S CERTIFICATE AGAIN AFTER IT.
 //
 // The XML half of `x5cOf()` above, and the one writer of it: every XML
 // signature's KeyInfo (`common/crypto.js` `signXml()`, handed this as
@@ -4509,10 +4514,25 @@ function x5cOf(certificatePem, chainPem) {
 // imposes nothing on KeyInfo. But this service's own verifier, and many a
 // relying party's, take the FIRST X509Certificate as the signer's, so the
 // leaf stays first and the Root comes last.
+//
+// **AND THE SAME CERTIFICATE LAST, WHEN A CHAIN FOLLOWS IT.** pysaml2 7.5.5
+// declares `X509Data.x509_certificate` with cardinality max 1, and
+// `SamlBase._convert_element_tree_to_member` assigns that member with
+// setattr, so each later X509Certificate replaces the one before it. The
+// certificate it verifies with is the LAST. A chain that ends at the Root
+// makes that the Root, which did not sign, and every later Response fails
+// (`sts_saml_interop_pysaml2`, both realms, from the first sign-on). Before
+// certification the X509Data holds the self-signed leaf alone, which is why
+// the same job used to pass. Repeating the leaf after the Root leaves a
+// first-certificate reader on the leaf and hands that last-certificate
+// reader the leaf as well. A chain of one certificate is already the leaf
+// and is not repeated. JOSE `x5c` is untouched: nothing there keeps only
+// the last member.
 // ---------------------------------------------------------------------------
 /**
  * Writes a certificate and its stored chain as a `ds:X509Data`, completed
- * through the Root that signs it.
+ * through the Root, with the signer's certificate repeated after that Root
+ * when the chain is longer than the certificate itself.
  *
  * @param certificatePem - the signing or encryption certificate
  * @param chainPem - its stored chain, leaf-first, without the Root
@@ -4520,10 +4540,14 @@ function x5cOf(certificatePem, chainPem) {
  */
 function x509DataXml(certificatePem, chainPem) {
   log.debug("Entering x509DataXml().");
-  const out = '<ds:X509Data>' + x5cOf(certificatePem, chainPem)
-    .map(function (b64) {
-      return '<ds:X509Certificate>' + b64 + '</ds:X509Certificate>';
-    }).join('') + '</ds:X509Data>';
+  const members = x5cOf(certificatePem, chainPem);
+  // The last certificate is what a max-1 reader keeps. See above.
+  if (members.length > 1 && members[members.length - 1] !== members[0]) {
+    members.push(members[0]);
+  }
+  const out = '<ds:X509Data>' + members.map(function (b64) {
+    return '<ds:X509Certificate>' + b64 + '</ds:X509Certificate>';
+  }).join('') + '</ds:X509Data>';
   log.debug("Leaving x509DataXml().");
   return out;
 }
@@ -5386,6 +5410,8 @@ function plainCopyOf(keys, overrides) {
     }),
     generations: {
       generation: Number(keys.generations && keys.generations.generation) || 0,
+      parentCerts: ((keys.generations && keys.generations.parentCerts) ||
+                    []).slice(),
       rotated: Object.assign({}, (keys.generations &&
                                   keys.generations.rotated) || {}),
       standby: standbyOf(keys).map(function (one) {
@@ -5412,6 +5438,20 @@ function plainCopyOf(keys, overrides) {
 // Hand a new generation to every copy, then certify its new keys.
 function replaceGeneration(realmId, next, why) {
   log.debug("Entering replaceGeneration(). realm=" + realmId);
+  // THE CERTIFICATE THIS GENERATION REPLACES. Read from the set still in
+  // use: a promotion has already swapped the copy's birth certificate, and
+  // an emergency rotation does not leave the old key on standby. Without
+  // this name, `supersedes()` would refuse the rotation and put the old
+  // set back.
+  const current = stsKeysFor.of(realmId);
+  const birth = (current &&
+                 (current.selfSignedCertB64 || current.certB64)) || '';
+  const prior = (next.generations && next.generations.parentCerts) || [];
+  const parents = prior.slice();
+  if (birth && parents.indexOf(birth) < 0) {
+    parents.push(birth);
+  }
+  next.generations.parentCerts = parents;
   next.generations.generation =
     (Number(next.generations.generation) || 0) + 1;
   const answer = keystore.replaceKeySet(realmId, next, why);

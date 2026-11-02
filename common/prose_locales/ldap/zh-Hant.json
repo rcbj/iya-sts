@@ -1263,6 +1263,10 @@
     "en": "0abf4d44f51d3755",
     "text": "此服務自己的 PAC 宣告，為 JSON 陣列，各列格式與領域的「Kerberos PAC 宣告」頁面相同。加入此應用程式某個 SPN 之服務票證所攜帶的宣告中（即其簽發來源 TGT 的宣告），應用程式的列會取代同名的宣告。僅在 krb5.pacClaims 開啟時有效。"
   },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "此用戶端自己的 GNAP 存取權杖 JWT 宣告，為 JSON 陣列，各列格式與其他自訂宣告集相同。加入簽發給此用戶端的 jwt-signed 權杖，以及 jwt-encrypted 權杖內部的 JWT；同名時應用程式的列會取代領域的列。權杖自身的宣告（access、flags、label、grant_id 以及 JWT 名稱）不能被覆蓋。macaroon、biscuit 與 zcap 權杖不攜帶這些列。"
+  },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE 或 FALSE，預設為 FALSE：此 Kerberos 服務「受信任可進行委派」——不受限制的委派（Active Directory 的 TRUSTED_FOR_DELEGATION）。其服務票證攜帶 ok-as-delegate，告訴用戶端可以將其 TGT 轉送到此處；持有轉送之 TGT 的人可以在任何地方以該人身分行事。受保護人員的 TGT 永遠不可轉送，因此無論此處如何設定都絕不會被轉送。受限制的委派（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是較安全的替代方案。"

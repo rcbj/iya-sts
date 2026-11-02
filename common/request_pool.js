@@ -2944,11 +2944,39 @@ function receivePublishedKeys(entry, published) {
   // and the two arbiters would disagree for as long as they kept exchanging
   // it. The store decides for every node; this channel only carries it.
   // -------------------------------------------------------------------------
-  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation, not a race: the
-  // higher generation is the set every process moves to, as the store's own
-  // merge decides (`keystore.js`, decideKeys()).
-  const newer = heldBlob &&
-    keystore.generationOf(published.blob) > keystore.generationOf(heldBlob);
+  // A NEWER KEY GENERATION (2026-09-22, #42) is a rotation of the set
+  // already held, not any larger counter (`keystore.supersedes()`). A
+  // worker that lost first-generator-wins and then minted `next` keys from
+  // its own set publishes that generation marked confirmed
+  // (`replaceKeySet()`). Adopting it replaced the winning key pair after a
+  // peer had fetched metadata for the winner, and every later SAML response
+  // failed to verify (`sts_saml_interop_pysaml2`, single-node, where the
+  // store does not arbitrate and this channel is the only agreement).
+  //
+  // A confirmed publish whose generation is NOT higher still adopts. That
+  // is the store's winner replacing a local generation of a set the store
+  // refused (`adoptStoredKeys()`). The two messages have the same shape, so
+  // a confirmed generation that is lower stays adopted: rolling a held
+  // generation back is the store's answer. The front process's own
+  // publisher broadcasts what it holds without this check; the mint this
+  // refuses is a worker's publish, which is where `signing.rotate` runs.
+  const newer = keystore.supersedes(published.blob, heldBlob);
+  if (keystore.strangerGeneration(heldBlob, published.blob)) {
+    // The refused set may be the only copy of the signer groups. They
+    // join the set this process keeps; the rest of the offer does not.
+    const joined = offeredSignerGroups(heldBlob, published.blob);
+    if (joined) {
+      keystore.adoptShared(realmId, joined);
+      broadcastKeys(realmId, joined, entry);
+    }
+    sendKeys(entry, realmId);
+    log.warn('request_pool: worker ' + (entry && entry.pid) + ' offered a ' +
+             'newer generation of a key set the "' + realmId + '" realm did ' +
+             'not choose; this process kept the set it holds and told the ' +
+             'worker.');
+    log.debug("Leaving receivePublishedKeys().");
+    return;
+  }
   if (published.confirmed || newer) {
     keystore.adoptShared(realmId, published.blob);
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
@@ -2984,8 +3012,40 @@ function receivePublishedKeys(entry, published) {
   // are the one window in which two processes disagree, and anything signed in
   // it is lost. That is the price of a synchronous property read that cannot
   // await, and it is written down rather than discovered.
+  //
+  // SIGNER GROUPS ARE THE EXCEPTION (2026-11-01). `joinSignerGroups()`
+  // publishes the worker's blob plus the groups it just made. That blob is
+  // often a generation behind this one — `signing.rotate` has already
+  // minted `next` — so `enriches()` refuses it and the groups never reach
+  // the JWKS. `sts_signer_groups` polled for three minutes and saw none,
+  // and the realm it left behind still published certificates the CRL had
+  // revoked (`sts_pki_distribution_points`). The groups join the set held
+  // here. The rest of the offer is still refused, and the worker is sent
+  // the set this process kept.
+  const joined = offeredSignerGroups(heldBlob, published.blob);
+  if (joined) {
+    keystore.adoptShared(realmId, joined);
+    broadcastKeys(realmId, joined, entry);
+  }
   sendKeys(entry, realmId);
   log.debug("Leaving receivePublishedKeys().");
+}
+
+// Signer groups carried by a publish this process is not adopting. Null
+// when there is nothing to join: no held set, no groups offered, or the
+// held set already has its own. The offered groups are keys of their own
+// and are copied onto the held blob; nothing else from the offer is.
+function offeredSignerGroups(heldBlob, offeredBlob) {
+  log.debug("Entering offeredSignerGroups().");
+  const offered = offeredBlob && offeredBlob.signerGroups;
+  const heldRows = heldBlob && heldBlob.signerGroups;
+  if (!heldBlob || !offered || !offered.length ||
+      (heldRows && heldRows.length)) {
+    log.debug("Leaving offeredSignerGroups(). Nothing to join.");
+    return null;
+  }
+  log.debug("Leaving offeredSignerGroups().");
+  return Object.assign({}, heldBlob, { signerGroups: offered });
 }
 
 // ---------------------------------------------------------------------------

@@ -2193,8 +2193,7 @@ class Saml2Sso {
   // The assertion, from the one builder. Everything the Web Browser SSO profile
   // requires of it and nothing this file decided for itself — see decision 4.
   private buildAssertionFor(request, session, spEntityId, idpEntityId, acsUrl) {
-    const { config } = this.deps;
-    const { iso, log } = this.deps.helpers;
+    const { log } = this.deps.helpers;
     const { buildSamlAssertion } = this.deps.saml2;
     log.debug("Entering Saml2Sso.buildAssertionFor(). sp=" + spEntityId);
     const user = session.user;
@@ -2218,17 +2217,12 @@ class Saml2Sso {
       // delivered to, and an InResponseTo that matches the request. A service
       // provider that checks either — and most do — refuses an assertion
       // without them, with a message that reads like a signature problem.
+      // NotOnOrAfter is omitted: the builder stamps the Conditions instant,
+      // skew included, so the two expiries are one string. A second iso()
+      // here disagreed with that instant by a millisecond.
       subjectConfirmation: {
         recipient: acsUrl,
-        inResponseTo: request.id,
-        // The SAME instant as the Conditions/NotOnOrAfter the builder computes,
-        // saml.clockSkewS included. Two expiries inside one assertion that
-        // disagree by the skew is the kind of defect a service provider reports
-        // as "assertion expired" while the console shows a window that has not
-        // closed, so this reads the setting the builder reads rather than
-        // re-deriving the lifetime on its own.
-        notOnOrAfter: iso(lifetimeMin +
-          Math.max(0, Number(config.value('saml.clockSkewS')) || 0) / 60)
+        inResponseTo: request.id
       },
       // The SESSION, not the assertion, is what a LogoutRequest names later.
       // This is the line that makes Single Logout able to find anything.

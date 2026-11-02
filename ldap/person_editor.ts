@@ -604,7 +604,9 @@ class PersonEditor {
       const custom = flags.custom;
       const format = custom ? (SYNTAX_FORMATS[custom.syntax] || '')
                             : (FORMATS[key] || '');
-      // A POLICY REFERENCE (#1235): one value, from a closed set.
+      // A POLICY REFERENCE (#1235): one value, from a closed set. Its
+      // example is the first choice (`default`), a value the box may hold.
+      // `tests/person_fields.js` fails an editable attribute with none.
       const reference = PolicySelection.referenceOf('person', name);
       editable.push({ name: name, label: label, schema: schema,
                       multi: reference ? false
@@ -614,9 +616,10 @@ class PersonEditor {
                       note: format ? FORMAT_HINTS[format] : '',
                       group: reference ? 'policies'
                         : custom ? 'custom' : groupOf(name),
-                      example: custom
-                        ? (SYNTAX_EXAMPLES[custom.syntax] || '')
-                        : (FIELD_EXAMPLES[key] || ''),
+                      example: reference ? reference.choices[0]
+                        : custom
+                          ? (SYNTAX_EXAMPLES[custom.syntax] || '')
+                          : (FIELD_EXAMPLES[key] || ''),
                       simple: reference ? true
                         : SIMPLE_FIELDS.indexOf(key) >= 0,
                       custom: !!custom,

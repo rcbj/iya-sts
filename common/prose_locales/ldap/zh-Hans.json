@@ -1263,6 +1263,10 @@
     "en": "0abf4d44f51d3755",
     "text": "此服务自己的 PAC 声明，以 JSON 数组形式保存，各行与本领域的 Kerberos PAC 声明页面相同。它们会添加到为此应用某个 SPN 签发的服务票据所携带的声明中（即签发它所用的 TGT 的声明），同名时应用的行替换该声明。仅在 krb5.pacClaims 开启时有效。"
   },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "此客户端自己的 GNAP 访问令牌 JWT 声明，以 JSON 数组形式保存，各行与其他自定义声明集相同。它们会添加到签发给此客户端的 jwt-signed 令牌中，以及 jwt-encrypted 令牌内部的 JWT 中；同名时应用的行替换领域的行。令牌自身的声明（access、flags、label、grant_id 以及 JWT 名称）不能被覆盖。macaroon、biscuit 和 zcap 令牌不携带这些行。"
+  },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE 或 FALSE，默认 FALSE：此 Kerberos 服务受信任可进行委托——不受约束的委托（Active Directory 的 TRUSTED_FOR_DELEGATION）。它的服务票据带有 ok-as-delegate，告诉客户端可以把它的 TGT 转发到这里；持有被转发 TGT 的任何人都可以在任何地方以此人的身份行事。受保护者的 TGT 永远不可转发，因此无论此项如何设置都不会被转发。约束委托（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是更安全的替代方案。"
