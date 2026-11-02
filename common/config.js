@@ -6510,8 +6510,9 @@ const SETTINGS = [
     label: 'Command summary interval (s)',
     env: 'STS_OAUTH2_COMMAND_SUMMARY_S', type: 'int', dflt: 60,
     min: 1, max: 86400, runtime: true,
-    description: 'At most one log line per realm this often, counting the ' +
-                 'commands sent, retried and dead-lettered.' },
+    description: 'How often one realm\'s command count may be logged. ' +
+                 'A dead letter or a deferred delivery is a warning; a ' +
+                 'count with neither is written only at debug.' },
   { key: 'oauth2.commandSweepS', group: 'OAuth 2.0 / OIDC',
     label: 'Command sweep interval (s)',
     env: 'STS_OAUTH2_COMMAND_SWEEP_S', type: 'int', dflt: 15,
@@ -6577,8 +6578,10 @@ const SETTINGS = [
     label: 'CIBA notification summary interval (s)',
     env: 'STS_OAUTH2_CIBA_NOTIFY_SUMMARY_S', type: 'int', dflt: 60,
     min: 1, max: 86400, runtime: true,
-    description: 'At most one log line per realm this often, counting the ' +
-                 'pings and pushes sent, retried and dead-lettered.' },
+    description: 'How often one realm\'s ping and push count may be ' +
+                 'logged. A dead letter or a deferred delivery is a ' +
+                 'warning; a count with neither is written only at ' +
+                 'debug.' },
 
   { key: 'oauth2.cibaSweepS', group: 'OAuth 2.0 / OIDC',
     label: 'CIBA sweep interval (s)',
@@ -8425,11 +8428,10 @@ const SETTINGS = [
     label: 'Back-channel logout summary interval (seconds)',
     env: 'STS_OAUTH2_BACKCHANNEL_LOGOUT_SUMMARY_S', type: 'int', dflt: 60,
     min: 1, max: 86400, runtime: true,
-    description: 'At most one log line per realm per interval, counting ' +
-                 'what this process sent, retried, took over and ' +
-                 'dead-lettered since the last — never a line per attempt ' +
-                 'or per failure. A warning (STS-OAUTH-0545) when anything ' +
-                 'was dead-lettered.' },
+    description: 'How often one realm\'s logout count may be logged. ' +
+                 'A dead letter or a deferred delivery is a warning ' +
+                 '(STS-OAUTH-0545); a count with neither is written ' +
+                 'only at debug. Never a line per attempt.' },
 
   // --- The admin console ---------------------------------------------------
   //
@@ -12981,7 +12983,9 @@ const SETTINGS = [
   { key: 'scimClient.summaryS', group: 'SCIM client',
     label: 'Summary interval (seconds)',
     env: 'STS_SCIM_CLIENT_SUMMARY_S', type: 'int', dflt: 300, min: 1, max: 86400, runtime: true,
-    description: 'At most one summary log line per realm per interval.' },
+    description: 'How often one realm\'s delivery count may be logged. ' +
+                 'A dead letter or a deferred delivery is a warning; a ' +
+                 'count with neither is written only at debug.' },
   { key: 'scimClient.reconcileCheckS', group: 'SCIM client',
     label: 'Reconciliation check (seconds)',
     env: 'STS_SCIM_CLIENT_RECONCILE_CHECK_S', type: 'int', dflt: 60, min: 10, max: 3600, runtime: true,
@@ -18125,8 +18129,10 @@ const SETTINGS = [
     label: 'Inter-cell delivery summary interval (s)',
     env: 'STS_CELL_DELIVERY_SUMMARY_S', type: 'int', dflt: 300,
     min: 10, max: 86400, runtime: true, perProcess: true,
-    description: 'At most one summary line per realm per this many ' +
-                 'seconds, rather than a line per delivery.' },
+    description: 'How often one realm\'s inter-cell delivery count may ' +
+                 'be logged. A dead letter or a deferred delivery is a ' +
+                 'warning; a count with neither is written only at ' +
+                 'debug.' },
 
   { key: 'cells.deliverySweepS', group: 'Cells',
     label: 'Inter-cell delivery sweep interval (s)',

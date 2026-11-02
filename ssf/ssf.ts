@@ -1685,6 +1685,8 @@ class SharedSignals {
                'ssf.deadLetterMaxPerStream; ' + dead.length +
                ' dead stream(s). Inspect them on /admin/ssf.');
     } else if (summary.expired || summary.orphaned) {
+      // Nothing failed. This count is debug while the sweep is a scheduler
+      // job (common/job_log.ts). A delivery failure is the warning above.
       log.info('ssf: ' + summary.expired + ' dead letter(s) older than ' +
                'ssf.deadLetterRetentionS and ' + summary.orphaned + ' of ' +
                'deleted streams were removed in the "' + realms.currentId() +

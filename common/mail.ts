@@ -1946,13 +1946,16 @@ class Mail {
 
   // -------------------------------------------------------------------------
   // THE SWEEP (header point 3): every realm, what is due, bounded by
-  // `mail.concurrency`; then retention; then the summary line. Resolves
-  // `{ attempted, removed, dead }`. Never rejects.
+  // `mail.concurrency`; then retention; then the summary. A dead letter or
+  // a deferred delivery is a warning; a count with neither is debug while
+  // this sweep is a scheduler job. Resolves `{ attempted, removed, dead }`.
+  // Never rejects.
   // -------------------------------------------------------------------------
   /**
    * Sweeps every realm's outbox: attempts what is due within
-   * `mail.concurrency`, applies retention, and writes the summary line. Never
-   * rejects.
+   * `mail.concurrency` and applies retention. A dead letter or a deferred
+   * delivery is a warning; a count with neither is debug while this sweep
+   * is a scheduler job. Never rejects.
    *
    * @returns a promise of `{ attempted, removed, dead }`
    */
@@ -2058,12 +2061,15 @@ class Mail {
     return { attempted: attempted, removed: removed, dead: dead };
   }
 
-  // ONE SUMMARY LINE per realm per sweep interval at most, and only when
-  // something happened — never a line per message (rcbj's rule for delivery
-  // failures).
+  // A dead letter or a deferred delivery is a warning (STS-MAIL-0028). A
+  // count with neither is info here and debug while the sweep is a
+  // scheduler job. At most one line per realm per mail.deliverS, and only
+  // when something happened.
   /**
-   * Writes at most one summary line per realm per sweep interval, and only when
-   * something happened.
+   * A dead letter or a deferred delivery is a warning (STS-MAIL-0028). A
+   * count with neither is info here and debug while the sweep is a
+   * scheduler job. At most one line per realm per mail.deliverS, and only
+   * when something happened.
    *
    * @param realmId - the realm
    * @param force - true to write it whatever the interval

@@ -355,7 +355,7 @@ verdict for each; a new undeclared store owes a row here.
 | `ldap_server.js` `entries` | Persisted another way — the directory's diff, above. |
 | `ldap_server.js` `usernameIndexes`, `subtreeClocks`, `groupIndexes`, `uuidIndexes`; `federation.js` `releaseIndexes` | Fine — derived from the directory and rebuilt from it. |
 | `helpers.js` `stsKeysFor` | Persisted another way — `keystore.js`. |
-| `ssf_streams.ts` `deadCounts`, `tally` | Fine — an estimate rebuilt at every sweep, and the count behind the sweep's one log line; the letters themselves are persisted. |
+| `ssf_streams.ts` `deadCounts`, `tally` | Fine — an estimate rebuilt at every sweep, and the count behind the sweep's one warning (`STS-SSF-0094`); the letters themselves are persisted. |
 | `ssf_dead_letter_report.ts` `sweepNotes` | **Persisted since 2026-09-18** as `ssf_dead_letter_report.sweeps`, `merge: 'own'`, and the page fans every process's in — it was the dead-letter page's sweep history, emptied by every restart. |
 
 `memory` is still the default. A run that says nothing about persistence behaves

@@ -122,10 +122,10 @@
 //
 // **7. LOGGING IS A SUMMARY.** One `logout.backchannel` audit row per
 // delivery when it reaches `sent` or `dead` — the row carries its code and is
-// `summarised`, so it writes no log line of its own — and at most one log
-// line per realm per `oauth2.backchannelLogoutSummaryS`, counting what was
-// sent, retried, taken over and dead-lettered (by code) since the last
-// (`STS-OAUTH-0545`). Never a line per attempt.
+// `summarised`, so it writes no log line of its own. A dead letter or a
+// deferred delivery is one warning per realm per
+// `oauth2.backchannelLogoutSummaryS` (`STS-OAUTH-0545`). A count with neither
+// is debug while the sweep is a scheduler job. Never a line per attempt.
 //
 // **SINCE #151 THE MACHINERY OF POINTS 3, 4, 5 AND 7 IS
 // `outbound_delivery.ts`**, shared with CIBA's notifications and OpenID

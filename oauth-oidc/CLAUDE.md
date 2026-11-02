@@ -3429,13 +3429,12 @@ produced is one good for a day and renewable.
    `jti`, a fresh attempt budget and the client's CURRENT address, because the
    commonest reason to retry is having corrected it.
 
-   **LOGGING IS A SUMMARY, NOT A LINE PER FAILURE.** One `logout.backchannel`
-   audit row per delivery when it reaches `sent` or `dead`, carrying its code
-   and marked `summarised` so `audit.js` writes no log line for it, and at most
-   one line per realm per `oauth2.backchannelLogoutSummaryS` counting what this
-   process sent, retried, took over and dead-lettered by code
-   (`STS-OAUTH-0545`). That is rcbj's standing rule, and the `summarised`
-   member on an audit row is new with it.
+   **LOGGING IS A SUMMARY.** One `logout.backchannel` audit row per delivery
+   when it reaches `sent` or `dead`, carrying its code and marked `summarised`
+   so `audit.js` writes no log line for it. A dead letter or a deferred
+   delivery is one warning per realm per `oauth2.backchannelLogoutSummaryS`
+   (`STS-OAUTH-0545`). A count with neither is debug while the sweep is a
+   scheduler job. The `summarised` member on an audit row is new with it.
 
    **THE OUTBOUND POLICY IS `federation_http.ts`'s, THROUGH A FUNCTION OF ITS
    OWN.** `deliverForm()` reads the address off a record by an attribute name
@@ -4942,7 +4941,8 @@ rcbj's answers were every recommendation:
   * retries only for a timeout, a connection failure, 5xx, 408 and 429;
   * dead letters retried by hand as a new generation;
   * retention and a row cap;
-  * one summary line per realm;
+  * one summary per realm: a warning when a delivery was dead-lettered or
+    deferred, and a debug line when the count has neither;
   * one sweep job per kind;
   * **what was sent leaves the row once it lands (#614)**: `finish()` turns
     a `sent` row's `token` and `body` into `tokenDigest` and `bodyDigest`, so

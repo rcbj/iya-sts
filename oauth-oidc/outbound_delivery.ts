@@ -48,8 +48,9 @@
 // retention is dead-lettered, so nothing is pending for ever.
 //
 // **5. LOGGING IS A SUMMARY**: the kind writes one audit row when a delivery
-// finishes (`onFinish`), and this file writes at most one line per kind per
-// realm per summary interval.
+// finishes (`onFinish`). A dead letter or a deferred delivery is one warning
+// per kind per realm per summary interval. A count with neither is info at
+// this call and debug while the sweep is a scheduler job.
 //
 // **6. WHAT WAS SENT LEAVES THE ROW ONCE IT LANDS (#614).** Until a delivery
 // is `sent`, its `token` and `body` are on the row because a retry has to
@@ -876,12 +877,15 @@ class OutboundDelivery {
   // -------------------------------------------------------------------------
   // THE SWEEP: every realm, the rows that are due, bounded by the kind's
   // concurrency in this process; retention; the kind's own per-realm work;
-  // the summary line. Resolves the totals; never rejects.
+  // the summary. A dead letter or a deferred delivery is a warning. A count
+  // with neither is debug while this sweep is a scheduler job. Resolves the
+  // totals; never rejects.
   // -------------------------------------------------------------------------
   /**
    * Sweeps every realm: attempts due rows within the kind's concurrency,
-   * applies retention, runs the kind's per-realm work and writes the summary
-   * line. Never rejects.
+   * applies retention and runs the kind's per-realm work. A dead letter or
+   * a deferred delivery is a warning; a count with neither is debug while
+   * this sweep is a scheduler job. Never rejects.
    *
    * @returns a promise of the totals
    */
@@ -1024,10 +1028,13 @@ class OutboundDelivery {
                            dead: dead }, extra);
   }
 
-  // At most one line per realm per summary interval, when something happened.
+  // A dead letter or a deferred delivery is a warning. A count with neither
+  // is info here and debug while the sweep is a scheduler job. At most one
+  // line per realm per summary interval, and only when something happened.
   /**
-   * Writes at most one summary line per realm per interval, when something
-   * happened.
+   * A dead letter or a deferred delivery is a warning. A count with neither
+   * is info here and debug while the sweep is a scheduler job. At most one
+   * line per realm per interval, when something happened.
    *
    * @param realmId - the realm
    * @param force - true to write it regardless of the interval

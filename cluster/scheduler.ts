@@ -20,7 +20,7 @@
 // short form.
 //
 // ---------------------------------------------------------------------------
-// SIX THINGS ARE WORTH KNOWING BEFORE READING FURTHER.
+// SEVEN THINGS ARE WORTH KNOWING BEFORE READING FURTHER.
 //
 // **1. TWO KINDS OF JOB.** A *cluster* job (the default) runs once for the
 // whole service, on the scheduler's leader: a CRL refresh, the session-expiry
@@ -91,6 +91,14 @@
 // fenced out and the front's timer fires on time, because the front's thread
 // was never the one held.
 //
+// **7. A JOB'S BODY LOGS ONLY WHEN SOMETHING IS WRONG.** Routine info from
+// `run()` and from everything it calls is written at debug. A warning, an
+// error, and an info line that carries an `STS-` code — a recorded failure,
+// including an audit refusal — are written as asked. `common/job_log.ts`
+// does it, around the three calls to `run()`. The run row on
+// /admin/scheduler still records the summary. Lines outside a body stay:
+// who leads, a run held for load, an outcome that cannot be written.
+//
 // A LIBRARY (rule 3): it registers no route. It requires `cluster.js`,
 // `cluster_claims.js` and `common/` leaves, and every job's owner requires it
 // in the ordinary direction to register — so no slot (rule 3e) is needed.
@@ -100,6 +108,7 @@
 
 import os = require('os');
 import helpers = require('../common/helpers');
+import JobLog = require('../common/job_log');
 // The one place this service hashes and draws random values (#453).
 import stsCrypto = require('../common/crypto');
 import config = require('../common/config');
@@ -2013,7 +2022,10 @@ class Scheduler {
     const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
     const inline = function (): Json {
       return realms.run(realm, function (): Json {
-        return job.run(ctx);
+        // Routine info from the body is debug (common/job_log.ts).
+        return JobLog.during(function (): Json {
+          return job.run(ctx);
+        });
       });
     };
     const work = Promise.resolve().then(function (): Json {
@@ -2431,7 +2443,10 @@ class Scheduler {
     log.debug("Leaving Scheduler.runDelegated(). Running.");
     return Promise.resolve().then(function (): Json {
       return realms.run(realm, function (): Json {
-        return job.run(ctx);
+        // Routine info from the body is debug (common/job_log.ts).
+        return JobLog.during(function (): Json {
+          return job.run(ctx);
+        });
       });
     }).then(function (result: Json): Json {
       // The leader keeps a summary of at most 500 characters; the same
@@ -2572,15 +2587,18 @@ class Scheduler {
     let outcome: Json;
     try {
       const result = await realms.run(realm, function (): Json {
-        return job.run({
-          realm: realmId, runId: key, trigger: 'schedule', params: null,
-          stillOwner: function (): boolean {
-            return !!self.started;
-          },
-          nowMs: function (): number {
-            return self.nowMs();
-          },
-          log: log
+        // Routine info from the body is debug (common/job_log.ts).
+        return JobLog.during(function (): Json {
+          return job.run({
+            realm: realmId, runId: key, trigger: 'schedule', params: null,
+            stillOwner: function (): boolean {
+              return !!self.started;
+            },
+            nowMs: function (): number {
+              return self.nowMs();
+            },
+            log: log
+          });
         });
       });
       outcome = { state: 'succeeded', errorCode: '', why: '',
