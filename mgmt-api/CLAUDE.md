@@ -1803,9 +1803,12 @@ console form target, so rule 7 needed no new operation. `GET
 /admin-api/policies` grew `missing=count`, a walk of the realm's people asked
 only on request. **Since #1241 both policies routes may answer late**: `GET`
 is `adminViews.policiesViewAsync()` (the people naming each named attribute
-profile, a holder question asked asynchronously), and `POST` awaits a
-`policiesAction()` whose kind's `reset()` answered a promise (the delete of a
-named attribute profile, refused while named, STS-LDAP-0197).
+profile, a holder question asked asynchronously), and `POST` returns the
+promise of a `policiesAction()` whose kind's `reset()` answered a promise
+(the delete of a named attribute profile, refused while named,
+STS-LDAP-0197). Express does not wait on that promise; the handler's
+`.then` sends. An in-process caller waits on the return
+(`tests/admin_api_nominated_actor.js`).
 
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 

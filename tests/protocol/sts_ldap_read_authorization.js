@@ -250,6 +250,31 @@ function namesOf(entry) {
   });
 }
 
+// One LDAPS connection stays on one cluster node, and that node applies a
+// realm override from the change log after the admin API has already
+// answered. The search is repeated until the node shows the widened list,
+// or ten seconds pass (sts_ldap_read_authorization, two nodes, 2026-11-01).
+async function searchWidened(client, dns) {
+  log.debug("Entering searchWidened().");
+  const deadline = Date.now() + 10000;
+  let widened = null;
+  let theirs = [];
+  while (Date.now() <= deadline) {
+    widened = await search(client, dns.users, { scope: "sub" });
+    theirs = namesOf(entryFor(widened, dns[OTHER]));
+    if (theirs.indexOf("mail") !== -1 &&
+        theirs.indexOf("telephonenumber") === -1) {
+      log.debug("Leaving searchWidened().");
+      return { widened: widened, theirs: theirs };
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 250);
+    });
+  }
+  log.debug("Leaving searchWidened().");
+  return { widened: widened, theirs: theirs };
+}
+
 function dnsOf(result) {
   log.debug("Entering dnsOf().");
   log.debug("Leaving dnsOf().");
@@ -397,8 +422,8 @@ async function productRealm() {
            { key: "ldap.directoryReadableAttributes", value: WIDENED },
            "widened ldap.directoryReadableAttributes in " + PROD);
   try {
-    const widened = await search(client, dns.users, { scope: "sub" });
-    const theirs = namesOf(entryFor(widened, dns[OTHER]));
+    const seen = await searchWidened(client, dns);
+    const theirs = seen.theirs;
     check("PRODUCT: widened, the other person shows mail and not " +
           "telephoneNumber", function () {
       assert.ok(theirs.indexOf("mail") !== -1 &&

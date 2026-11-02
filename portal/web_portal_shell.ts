@@ -155,7 +155,10 @@ class PortalShell {
    * @returns the column's HTML
    */
   static navBar(active: string, t: Json, openSection?: string | null): string {
-    // Composed keys, built first, for `headingFor()`'s reason.
+    // Composed keys, built first, for `headingFor()`'s reason. A call
+    // whose argument is the literal prefix `'portal.section.'` is read as
+    // the key `section.` (2026-11-01). The real keys are already in the
+    // catalog.
     const label = function (item: Json): string {
       const key = 'portal.nav.' + kit.navSlug(item.path) + '.label';
       return t.html(key);
@@ -163,12 +166,14 @@ class PortalShell {
     const holding = PortalShell.sectionKeyOf(active);
     return '<nav aria-label="' + kit.esc(t.text('portal.shell.navAria')) +
       '">' + kit.NAV.map(function (section: Json): string {
+        const whatKey = 'portal.section.' + section.key + '.what';
+        const titleKey = 'portal.section.' + section.key + '.title';
         return WebNavSections.section({
           group: PortalShell.NAV_GROUP, key: section.key,
           current: section.key === holding,
           open: openSection === section.key,
-          what: t.text('portal.section.' + section.key + '.what'),
-          title: t.html('portal.section.' + section.key + '.title'),
+          what: t.text(whatKey),
+          title: t.html(titleKey),
           items: section.items.map(function (item: Json): string {
             // A SPAN AND NOT A LINK for the page that is open, and
             // `aria-current` for a screen reader.

@@ -499,21 +499,28 @@ async function setUp() {
       "created " + who);
   }
   const apps = [
-    { id: RS, fields: { oauthGrantType: ["client_credentials",
-        "authorization_code"], oauthRedirectUri: [RS_REDIRECT],
+    { id: RS, protocols: ["oauth2"], fields: { oauthGrantType: [
+        "client_credentials", "authorization_code"],
+        oauthRedirectUri: [RS_REDIRECT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
-    { id: RS2, fields: { oauthGrantType: ["client_credentials"],
+    { id: RS2, protocols: ["oauth2"], fields: { oauthGrantType: [
+        "client_credentials"],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
-    { id: CLIENT, fields: { oauthGrantType: [GRANT, "authorization_code"],
+    // idTokenFor asks this client for an ID token. Product mode refuses
+    // that issuance to an application declared only for oauth2: the
+    // issue-id-token family is oidc (STS-XACML-0084). Development does
+    // not apply the gate.
+    { id: CLIENT, protocols: ["oauth2", "oidc"], fields: {
+        oauthGrantType: [GRANT, "authorization_code"],
         oauthClaimsRedirectUri: [CLAIMS_REDIRECT],
         oauthRedirectUri: [CLIENT_REDIRECT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } },
-    { id: CLIENT2, fields: { oauthGrantType: [GRANT],
+    { id: CLIENT2, protocols: ["oauth2"], fields: { oauthGrantType: [GRANT],
         oauthTokenEndpointAuthMethod: ["client_secret_basic"] } }
   ];
   for (const one of apps) {
     await must("/applications/create", { identifier: one.id,
-      protocols: ["oauth2"],
+      protocols: one.protocols,
       fields: Object.assign({ oauthClientId: one.id }, one.fields) },
       "created " + one.id);
     SECRETS[one.id] = crypto.randomBytes(48).toString("base64url");

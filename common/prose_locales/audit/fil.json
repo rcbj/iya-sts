@@ -1419,6 +1419,10 @@
     "en": "39413bc03154f800",
     "text": "Binigyan ng address ang isang grupo, o inalis ang address nito"
   },
+  "audit.actions.group.set-policy.label": {
+    "en": "7ca8946df0f9aee5",
+    "text": "Binigyan ng pinangalanang patakaran ang isang grupo, o inalis ang pangalan nito"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "Ginawa ang keytab ng isang tao mula sa password na hawak"

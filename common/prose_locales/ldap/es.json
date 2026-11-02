@@ -1263,6 +1263,10 @@
     "en": "0abf4d44f51d3755",
     "text": "LOS CLAIMS PAC PROPIOS DE ESTE SERVICIO, como un array JSON de filas como las de la página de claims PAC de Kerberos del dominio. Se añaden a los claims que lleva un ticket de servicio para uno de los SPN de esta aplicación (los del TGT a partir del cual se emitió), y una fila de la aplicación sustituye al claim con el mismo nombre. Solo mientras krb5.pacClaims esté activado."
   },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "LOS CLAIMS JWT DEL TOKEN DE ACCESO GNAP PROPIOS DE ESTE CLIENTE, como un array JSON de filas como los demás conjuntos de claims personalizados. Se añaden a un token jwt-signed y al JWT dentro de un token jwt-encrypted emitido a este cliente, y una fila de la aplicación sustituye a la fila del dominio con el mismo nombre. Los claims propios del token (access, flags, label, grant_id y los nombres JWT) no se pueden sustituir. Los tokens macaroon, biscuit y zcap no llevan estas filas."
+  },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE o FALSE, FALSE de forma predeterminada: este servicio Kerberos es DE CONFIANZA PARA DELEGACIÓN — sin restricciones (el TRUSTED_FOR_DELEGATION de Active Directory). Sus tickets de servicio llevan ok-as-delegate, que indica a un cliente que puede reenviar su TGT aquí; quien tenga un TGT reenviado puede actuar como esa persona en cualquier parte. El TGT de una persona protegida nunca es reenviable, así que nunca se reenvía se defina como se defina esto. La delegación restringida (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) es la alternativa más segura."

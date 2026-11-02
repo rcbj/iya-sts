@@ -233,6 +233,10 @@ async function test() {
   delete fields.stored;
   delete fields.inherited;
   delete fields.enforced;
+  // The default profile's precedence is 0, a sentinel. The save schema
+  // accepts a named profile's precedence only, from 1 to 1000, and the
+  // default profile does not store one.
+  delete fields.precedence;
   fields.allowWsTrust = false;
   await ok(realmApi + "/policies/save-serviceAccount-policy", fields,
            "saved the realm's service-account policy");

@@ -12,7 +12,8 @@
 //       for `required`, from the built-in defaults;
 //   P2. a save replaces the whole profile and is refused for a missing
 //       field, a value that is not one of the enum's (STS-AUTHN-0309) and a
-//       second profile (STS-AUTHN-0308);
+//       name that is not a profile name (STS-AUTHN-0308); a named profile
+//       with no holder is kept (#1235);
 //   P3. a realm with no entry of its own follows the default realm's, its
 //       own entry wins, and a reset goes back to inheriting;
 //   P4. rcbj's answers: while `allowUsernameless` is off the security key is
@@ -126,12 +127,19 @@ function saves(t) {
           'P2b. a resident key that is not one of WebAuthn\'s three is ' +
           'refused, naming them', JSON.stringify(bad.errors));
   const other = passkeyPolicy.save('Not A Name', withDefaults());
-  const unselected = passkeyPolicy.save('admins', withDefaults());
+  // A named profile with no holder is a profile (#1235): what it covers
+  // names it. The earlier half of this check expected STS-AUTHN-0309.
+  const named = passkeyPolicy.save('admins', withDefaults());
   t.check(!other.ok && errorCodes.codeOf(other) === 'STS-AUTHN-0308' &&
-          !unselected.ok && errorCodes.codeOf(unselected) === 'STS-AUTHN-0309',
+          named.ok,
           'P2c. a profile name that is not one is refused (STS-AUTHN-0308), ' +
-          'and a named profile that selects nobody (#535)',
-          JSON.stringify([other.errors, unselected.errors]));
+          'and a named profile with no holder is kept (#1235)',
+          JSON.stringify([other.errors, named.errors]));
+  if (named.ok) {
+    const cleared = passkeyPolicy.reset('admins');
+    t.check(cleared.ok, 'P2c. the profile nothing names is removed again',
+            JSON.stringify(cleared.errors || { removed: cleared.removed }));
+  }
   const form = passkeyPolicy.validate({ form: 'console',
                                         securityKeyResidentKey: 'preferred',
                                         backupEligibility: 'allow',

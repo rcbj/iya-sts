@@ -829,6 +829,15 @@ function deserialiseXmlKey(blob) {
 // merge, the sibling channel, a row another node wrote. Without it a promotion
 // would change the set's identifying certificate and read, everywhere, as a
 // DIFFERENT set that lost a race.
+//
+// **A HIGHER COUNTER WINS ONLY AS A ROTATION OF THE SET IT MEETS
+// (2026-11-01).**
+// `supersedes()` is that test: the same birth certificate, or the held
+// certificate named in `parentCerts` or on a retired standby entry. A counter
+// minted from a set the store or the key channel already refused does not
+// win. A next-key mint does not change the current key, so it carries the
+// same birth certificate; a promotion that drops the old key (an emergency)
+// records that certificate in `parentCerts` before the blob is sealed.
 // ---------------------------------------------------------------------------
 const STANDBY_META = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                       'slot', 'createdAt', 'retiredAt', 'retiredUntil',
@@ -880,6 +889,16 @@ function serialiseGenerations(held) {
                keys: serialiseRefreshTokenKeys(one.keys) };
     })
   };
+  // THE BIRTH CERTIFICATES THIS GENERATION DESCENDS FROM (2026-11-01).
+  // Omitted when empty, so a blob written before the field existed still
+  // compares equal to one that has never rotated. A later generation names
+  // the certificate it replaced.
+  const parents = (held.parentCerts || []).filter(function (one) {
+    return typeof one === 'string' && one.length > 0;
+  });
+  if (parents.length) {
+    out.parentCerts = parents;
+  }
   log.debug("Leaving serialiseGenerations(). " + out.standby.length +
             " standby key(s).");
   return out;
@@ -912,10 +931,14 @@ function deserialiseGenerations(blob) {
     log.debug("Leaving deserialiseGenerations(). None.");
     return null;
   }
+  const parents = (blob.parentCerts || []).filter(function (one) {
+    return typeof one === 'string' && one.length > 0;
+  });
   log.debug("Leaving deserialiseGenerations().");
   return {
     generation: Number(blob.generation) || 0,
     rotated: Object.assign({}, blob.rotated || {}),
+    parentCerts: parents,
     standby: (blob.standby || []).map(function (row) {
       return deserialiseStandbyEntry(row);
     }),
@@ -941,6 +964,63 @@ function generationOf(blob) {
   log.debug("Entering generationOf().");
   log.debug("Leaving generationOf().");
   return Number(blob && blob.generations && blob.generations.generation) || 0;
+}
+
+// A later generation of THIS set, rather than a larger counter on another
+// set. The birth certificate names the set (`serialise()`). A next-key mint
+// keeps it. A promotion either leaves the old certificate on standby or,
+// when the old key is dropped, names it in `parentCerts`.
+/**
+ * Tells whether `candidate` is a later generation of the set `held` is.
+ *
+ * @param candidate - the blob offered
+ * @param held - the blob already chosen
+ * @returns true when the candidate is a rotation of the held set
+ */
+function supersedes(candidate, held) {
+  log.debug("Entering supersedes().");
+  if (!candidate || !held ||
+      generationOf(candidate) <= generationOf(held)) {
+    log.debug("Leaving supersedes(). Not a later generation.");
+    return false;
+  }
+  if (candidate.certB64 && candidate.certB64 === held.certB64) {
+    log.debug("Leaving supersedes(). The same birth certificate.");
+    return true;
+  }
+  const parents = (candidate.generations &&
+                   candidate.generations.parentCerts) || [];
+  if (held.certB64 && parents.indexOf(held.certB64) >= 0) {
+    log.debug("Leaving supersedes(). The held certificate is a parent.");
+    return true;
+  }
+  const standby = (candidate.generations &&
+                   candidate.generations.standby) || [];
+  const retired = standby.some(function (one) {
+    return !!(one && held.certB64 && one.certB64 === held.certB64);
+  });
+  log.debug("Leaving supersedes(). " +
+            (retired ? "Retired onto standby." : "Another set."));
+  return retired;
+}
+
+// The publish `replaceKeySet()` marks confirmed: a higher generation that is
+// not a rotation of the set already held. A lower confirmed generation is
+// not this — that publish is the store's winner, and it is still adopted.
+/**
+ * Tells whether `blob` is a higher generation of a set other than `held`.
+ *
+ * @param held - the blob already chosen
+ * @param blob - the blob offered
+ * @returns true when the offer must not replace the set in use
+ */
+function strangerGeneration(held, blob) {
+  log.debug("Entering strangerGeneration().");
+  const answer = !!(held && blob &&
+                    generationOf(blob) > generationOf(held) &&
+                    !supersedes(blob, held));
+  log.debug("Leaving strangerGeneration(). " + answer);
+  return answer;
 }
 
 // ---------------------------------------------------------------------------
@@ -2368,8 +2448,9 @@ function remember(realmId, keys) {
 //   * the SHARED blob, which is also what a development-mode process rebuilds
 //     from — there it is the only copy there is;
 //   * the STORED material, sealed and written, where this service persists —
-//     the store's merge takes it because its generation is higher
-//     (`decideKeys()`), and every other node adopts the row;
+//     the store's merge takes it when `supersedes()` says this generation is
+//     a rotation of the set in the row (`decideKeys()`), and every other
+//     node adopts the row;
 //   * the CACHED set `helpers.js` signs with (the adopt listener), so the next
 //     read rebuilds from the blob above;
 //   * every other process of this node, through the key channel, marked
@@ -5343,11 +5424,18 @@ function decideKeys(stored, offered) {
     log.debug("Leaving decideKeys(). No row: first writer.");
     return { outcome: 'won', blob: offered, write: true };
   }
-  // A ROTATION IS NOT A RACE (2026-09-22, #42): the higher generation is the
-  // set every node moves to, whichever certificate it now leads with.
-  if (generationOf(offered) > generationOf(stored)) {
-    log.debug("Leaving decideKeys(). A newer generation.");
+  // A ROTATION IS NOT A RACE (2026-09-22, #42), AND A LARGER COUNTER IS NOT
+  // BY ITSELF A ROTATION (2026-11-01). The higher generation wins when it is
+  // this set — the same birth certificate, a next-key mint — or a rotation
+  // of it. A generation minted from a set this store already refused is
+  // another set with a larger integer, and it loses.
+  if (supersedes(offered, stored)) {
+    log.debug("Leaving decideKeys(). A newer generation of this set.");
     return { outcome: 'won', blob: offered, write: true };
+  }
+  if (generationOf(offered) > generationOf(stored)) {
+    log.debug("Leaving decideKeys(). A higher generation of another set.");
+    return { outcome: 'lost', blob: stored, write: false };
   }
   if (generationOf(offered) < generationOf(stored)) {
     log.debug("Leaving decideKeys(). The store holds a newer generation.");
@@ -5477,11 +5565,33 @@ function writeKeysNow(id, payload) {
     }
     const stored = result.material;
     const entry = material.get(id);
-    // A NEWER WRITE OF THIS REALM IS WAITING, or the realm's keys were rotated
-    // or removed while this one was in flight: that write, or that removal,
-    // decides what this process holds.
-    const superseded = !entry || (writes.get(id) && writes.get(id).queued);
+    const slot = writes.get(id);
+    const queued = slot && slot.queued;
+    // A NEWER WRITE OF THIS REALM IS WAITING, or the realm's keys were
+    // removed while this one was in flight. A removal decides what this
+    // process holds. A waiting write decides it ONLY when that write is a
+    // rotation of the set the store kept: a generation minted from a set
+    // the store refused would otherwise be the next payload, and skipping
+    // the adopt would leave this process signing with it.
+    const superseded = !entry || !!queued;
     if (superseded) {
+      const queuedBlob = queued && queued.payload && queued.payload.blob;
+      if (entry && queued && stored && queuedBlob &&
+          !supersedes(queuedBlob, decided.blob) &&
+          !sameKeySet(decided.blob, payload.blob)) {
+        queued.payload = {
+          cipher: stored,
+          blob: decided.blob,
+          why: 'the set the store kept, in place of a generation minted ' +
+               'from a set it did not choose'
+        };
+        adoptStoredKeys(id, decided.blob, stored, { publish: true });
+        log.warn('keystore: the "' + id + '" realm had a newer generation ' +
+                 'queued from a set the store did not choose; this process ' +
+                 'adopted the store\'s set and will write that instead.');
+        return { ok: true, outcome: decided.outcome, adopted: true,
+                 superseded: true };
+      }
       return { ok: true, outcome: decided.outcome, superseded: true };
     }
     if (sameKeySet(decided.blob, payload.blob)) {
@@ -5971,6 +6081,8 @@ module.exports = {
   // THE KEY GENERATIONS (2026-09-22, #42).
   replaceKeySet: replaceKeySet,
   generationOf: generationOf,
+  supersedes: supersedes,
+  strangerGeneration: strangerGeneration,
   sharedFor: sharedFor,
   sharedBlobFor: sharedBlobFor,
   adoptShared: adoptShared,

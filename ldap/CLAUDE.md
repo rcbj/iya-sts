@@ -3928,6 +3928,11 @@ Three things here are this directory's.
   are withheld) or the address verification (`mail` is withheld). That is why
   the in-place write is safe without `putEntry()`'s index bookkeeping.
 
+  A policy reference (`stsServiceAccountPolicy`, `stsAttributePolicy` and
+  the others `PolicySelection` declares on a person) is editable and is not
+  in `FIELD_EXAMPLES`. Its example is the first choice, `default`.
+  `tests/person_fields.js` fails an editable row that has none.
+
 **THE SLOT** is `personEditor.setDirectory({ locate, write })`, filled beside
 the group-claims slot and validated whole. `locate(key)` answers a person
 entry only (`isPersonEntry()`), with a snapshot of its attributes and its RDN's

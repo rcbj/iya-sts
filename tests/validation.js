@@ -137,6 +137,34 @@ async function run(t_) {
            }), 'query', MANY).value.fallback.length === 2,
            'and `.default([])` wraps it differently again, and is also found');
 
+  // The portal share form (portal/portal_shared.ts): one checkbox is a
+  // string, two are an array, and a JSON body posts a list of one. opt()
+  // hides the array inside a union, so the union has to count.
+  const SHARE = z.object({
+    scope: z.union([z.literal(''), z.union([
+      z.string().min(1), z.array(z.string().min(1))
+    ])]).optional()
+  });
+  const listed = validation.check(request({ body: { scope: ['view'] } }),
+                                  'body', SHARE);
+  t_.check(listed.ok && listed.value.scope.length === 1 &&
+           listed.value.scope[0] === 'view',
+           'a union of a name and a repeatable name keeps a list of one',
+           listed.ok ? JSON.stringify(listed.value.scope) : listed.code);
+  const posted = validation.check(request({ body: { scope: 'view' } }),
+                                  'body', SHARE);
+  t_.check(posted.ok && posted.value.scope.length === 1 &&
+           posted.value.scope[0] === 'view',
+           'and one occurrence of that union is a list of one',
+           posted.ok ? JSON.stringify(posted.value.scope) : posted.code);
+  const either = z.object({
+    pick: z.union([z.literal('a'), z.literal('b')]).optional()
+  });
+  const twice = validation.check(request({ query: { pick: ['a', 'b'] } }),
+                                 'query', either);
+  t_.check(!twice.ok && twice.code === 'repeated',
+           'a union of two scalars is still taken once', twice.code);
+
   // -----------------------------------------------------------------------
   // 3. CONTROL CHARACTERS, AND WHY THE RULE IS NOT THE SAME IN BOTH GROUPS.
   // -----------------------------------------------------------------------

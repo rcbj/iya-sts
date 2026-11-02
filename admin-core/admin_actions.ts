@@ -5410,8 +5410,9 @@ class AdminActions {
     log.debug("Leaving AdminActions.groupsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The five are: create, add-member, ' +
-                                 'set-mail, add-owner, remove-owner. ' +
+                                 'The six are: create, add-member, ' +
+                                 'set-mail, set-policy, add-owner, ' +
+                                 'remove-owner. ' +
                                  'Removing ' +
                                  'a member is /admin/rbac for the two ' +
                                  'console roles, and an ldapmodify or a SCIM ' +

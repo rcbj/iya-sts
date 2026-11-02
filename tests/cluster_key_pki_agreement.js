@@ -356,6 +356,106 @@ async function keysSection(t, kek) {
   log.debug("Leaving keysSection().");
 }
 
+// A generation minted from a set that already lost must not become the row.
+// Single-node does not merge (`cluster.mode=off`); the request pool adopts a
+// confirmed publish, and `replaceKeySet()` marks every generation confirmed.
+// The pool refuses that publish by the same `supersedes()` rule this section
+// holds the store to. `sts_saml_interop_pysaml2` failed when the losing set's
+// generation 1 replaced the certificate the peer had already fetched.
+async function lineageSection(t, kek) {
+  log.debug("Entering lineageSection().");
+  t.log.info('=== 5b. a generation of a set that lost does not win ===');
+  const probe = freshNode(['keystore']).keystore;
+  const held = { certB64: 'cert-a', generations: { generation: 0 } };
+  const same = { certB64: 'cert-a',
+                 generations: { generation: 1, parentCerts: ['cert-a'] } };
+  const child = { certB64: 'cert-b',
+                  generations: { generation: 1, parentCerts: ['cert-a'] } };
+  const retired = { certB64: 'cert-b',
+                    generations: { generation: 1,
+                                   standby: [{ certB64: 'cert-a' }] } };
+  const stranger = { certB64: 'cert-b',
+                     generations: { generation: 1, parentCerts: ['cert-b'] } };
+  t.check(probe.supersedes(same, held),
+          'a later generation of the same birth certificate supersedes it');
+  t.check(probe.supersedes(child, held),
+          'a later generation that names the held certificate as a parent ' +
+          'supersedes it');
+  t.check(probe.supersedes(retired, held),
+          'a promotion that left the held certificate on standby supersedes ' +
+          'it');
+  t.check(!probe.supersedes(stranger, held),
+          'a later generation of another set does not supersede the one held');
+  t.check(probe.strangerGeneration(held, stranger),
+          'that generation is a stranger');
+  t.check(!probe.strangerGeneration(held, same) &&
+          !probe.strangerGeneration(null, stranger),
+          'the same set, and a first publish, are not strangers');
+
+  const store = sharedStore(80);
+  const a = await startNode(store, { adopted: [], published: [] });
+  const b = await startNode(store, { adopted: [], published: [] });
+  const setA = keySet('line-a');
+  const setB = keySet('line-b');
+  a.remember('lineage', setA);
+  await a.settleAll();
+  b.remember('lineage', setB);
+  await sleep(20);
+  const bumped = keySet('line-b-next', {
+    certPem: setB.certPem,
+    certB64: setB.certB64,
+    generations: { generation: 1, parentCerts: [setB.certB64], standby: [] }
+  });
+  const replaced = b.replaceKeySet('lineage', bumped,
+    'a next key minted from the set this process generated');
+  t.equal(replaced.ok, true,
+          'the losing process accepts a higher generation of its own set');
+  await Promise.all([a.settleAll(), b.settleAll()]);
+  const stored = opened(kek, store.rows.get('lineage'));
+  t.equal(stored.certB64, setA.certB64,
+          'THE ROW STAYS THE FIRST WRITER\'S SET — generation 1 of the set ' +
+          'that lost does not replace it');
+  t.equal(a.generationOf(stored), 0,
+          'and the row\'s generation is still the first writer\'s');
+  t.equal(b.storedFor('lineage').certB64, setA.certB64,
+          'the process that minted the stranger generation holds the winner');
+
+  const gen1 = keySet('line-a-next', {
+    certPem: setA.certPem,
+    certB64: setA.certB64,
+    generations: { generation: 1, parentCerts: [setA.certB64], standby: [] }
+  });
+  const minted = a.replaceKeySet('lineage', gen1, 'a next key of the winner');
+  t.equal(minted.ok, true,
+          'a later generation of the winning set is accepted');
+  await a.settleAll();
+  const afterMint = opened(kek, store.rows.get('lineage'));
+  t.equal(afterMint.certB64, setA.certB64,
+          'a next-key mint keeps the birth certificate');
+  t.equal(a.generationOf(afterMint), 1, 'and the generation is the new one');
+
+  const gen2 = keySet('line-a-rotated', {
+    generations: { generation: 2, parentCerts: [setA.certB64], standby: [] }
+  });
+  const rotated = a.replaceKeySet('lineage', gen2,
+    'a promotion of the winning set');
+  t.equal(rotated.ok, true,
+          'a rotation that names the held certificate wins');
+  await a.settleAll();
+  const afterRotate = opened(kek, store.rows.get('lineage'));
+  t.equal(afterRotate.certB64, gen2.certB64, 'the rotated certificate is the ' +
+          'row');
+  t.equal(a.generationOf(afterRotate), 2, 'at generation 2');
+
+  const pool = fs.readFileSync(path.join(COMMON, 'request_pool.js'), 'utf8');
+  const strangerAt = pool.indexOf('keystore.strangerGeneration(');
+  const confirmedAt = pool.indexOf('published.confirmed || newer');
+  t.check(strangerAt >= 0 && confirmedAt > strangerAt,
+          'receivePublishedKeys refuses a stranger generation before a ' +
+          'confirmed publish is adopted');
+  log.debug("Leaving lineageSection().");
+}
+
 async function mergeSection(t, kek) {
   log.debug("Entering mergeSection().");
   t.log.info('=== 6. two nodes saving one CA row keep both changes ===');
@@ -1104,6 +1204,7 @@ async function run(t) {
   try {
     await offSection(t, kek);
     await keysSection(t, kek);
+    await lineageSection(t, kek);
     await mergeSection(t, kek);
     await publishedNotRevokedSection(t, kek);
     await unadoptedMergeSection(t, kek);

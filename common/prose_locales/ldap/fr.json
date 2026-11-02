@@ -1263,6 +1263,10 @@
     "en": "0abf4d44f51d3755",
     "text": "LES REVENDICATIONS PAC PROPRES À CE SERVICE, sous forme de tableau JSON de lignes semblables à celles de la page Revendications PAC Kerberos du domaine. Ajoutées aux revendications que porte un ticket de service pour l’un des SPN de cette application (celles du TGT à partir duquel il a été émis), une ligne de l’application remplaçant la revendication du même nom. Uniquement tant que krb5.pacClaims est activé."
   },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "LES REVENDICATIONS JWT DE JETON D’ACCÈS GNAP PROPRES À CE CLIENT, sous forme de tableau JSON de lignes semblables aux autres ensembles de revendications personnalisées. Ajoutées à un jeton jwt-signed et au JWT à l’intérieur d’un jeton jwt-encrypted émis pour ce client, une ligne de l’application remplaçant la ligne du domaine du même nom. Les revendications propres au jeton (access, flags, label, grant_id et les noms JWT) ne peuvent pas être remplacées. Les jetons macaroon, biscuit et zcap ne portent pas ces lignes."
+  },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE ou FALSE, FALSE par défaut : ce service Kerberos est APPROUVÉ POUR LA DÉLÉGATION — sans contrainte (le TRUSTED_FOR_DELEGATION d’Active Directory). Ses tickets de service portent ok-as-delegate, qui indique à un client qu’il peut transférer son TGT ici ; quiconque détient un TGT transféré peut agir au nom de cette personne n’importe où. Le TGT d’une personne protégée n’est jamais transférable ; il n’est donc jamais transféré, quel que soit ce réglage. La délégation contrainte (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) est l’alternative la plus sûre."

@@ -135,6 +135,12 @@ and `hosted_applications.js` gives the family its two prefixes.
   not this one.
 * **The routes answer 501 while off, discovery included** (0108; 0109
   without the API object), XACML's and AuthZEN's rule.
+* **A method an endpoint does not take is middleware, not `app.all()`.**
+  `app.all()` registers a layer for every verb, and
+  `tests/protocol/sts_metadata.js` calls each one; CONNECT never leaves
+  node. The 405 (`STS-UMA-0115`, and 501 while off) is path middleware
+  after the routes, as `/oauth2/par` is, so the router lists only the
+  verbs the routes take.
 * **Withdrawing a registration reaches the tokens that carried it**
   (decision 11): `revokeFor()` walks `uma.rpts`' resource index and
   revokes through `admin_stats.revoke()`, on a delete and on an update that

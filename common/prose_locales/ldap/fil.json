@@ -1263,6 +1263,10 @@
     "en": "0abf4d44f51d3755",
     "text": "ANG SARILING MGA PAC CLAIM NG SERBISYONG ITO, bilang JSON array ng mga row tulad ng sa Kerberos PAC claims page ng realm. Idinadagdag sa mga claim na dala ng service ticket para sa isa sa mga SPN ng application na ito (ang sa TGT na pinagmulan nito), pinapalitan ng row ng application ang claim na may parehong pangalan. Habang naka-on lang ang krb5.pacClaims."
   },
+  "applications.schema.attributes.gnapClaimsAccessToken.what": {
+    "en": "25a34aa763740ea3",
+    "text": "ANG SARILING MGA GNAP ACCESS-TOKEN JWT CLAIM NG CLIENT NA ITO, bilang JSON array ng mga row tulad ng ibang custom-claim set. Idinadagdag sa jwt-signed token at sa JWT sa loob ng jwt-encrypted token na na-issue sa client na ito, pinapalitan ng row ng application ang row ng realm na may parehong pangalan. Hindi maaaring i-override ang sariling mga claim ng token (access, flags, label, grant_id at ang mga JWT name). Hindi dala ng mga macaroon, biscuit at zcap token ang mga row na ito."
+  },
   "applications.schema.attributes.krb5TrustedForDelegation.what": {
     "en": "3b66e9eeaaad2290",
     "text": "TRUE o FALSE, FALSE bilang default: ang Kerberos service na ito ay TRUSTED FOR DELEGATION — unconstrained (ang TRUSTED_FOR_DELEGATION ng Active Directory). May dalang ok-as-delegate ang mga service ticket nito, na nagsasabi sa client na puwede nitong i-forward dito ang TGT nito; ang sinumang may hawak ng na-forward na TGT ay makakakilos bilang taong iyon saanman. Hindi kailanman forwardable ang TGT ng isang protektadong tao, kaya hindi ito kailanman nafo-forward anuman ang pagkakatakda nito. Ang constrained delegation (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) ang mas ligtas na alternatibo."

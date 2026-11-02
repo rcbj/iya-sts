@@ -150,6 +150,13 @@ function childMain() {
          JSON.stringify(minted));
     note(generationNow() > g0, 'B2. and the generation counter moves',
          g0 + ' -> ' + generationNow());
+    const mintedFrom = keysNow();
+    const mintedBirth = mintedFrom.selfSignedCertB64 || mintedFrom.certB64;
+    const mintedParents = (mintedFrom.generations &&
+                           mintedFrom.generations.parentCerts) || [];
+    note(mintedParents.indexOf(mintedBirth) >= 0,
+         'B2a. the generation names the birth certificate it was minted from',
+         mintedBirth);
     const again = await helpers.ensureNextGenerations(REALM,
       { units: ['jose:RS256', 'xml:RS256'] });
     note(again.minted.length === 0,
