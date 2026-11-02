@@ -538,8 +538,28 @@ async function pageEvidence(driver) {
   const shown = await driver.executeScript(`
     const strip = document.querySelector('.strip, .notice, .error, ' +
                                           '[role=status], [role=alert]');
+    // THE REQUESTS THE PAGE MADE (2026-11-02): the press timed out with no
+    // refusal in the service log, which leaves three causes — the request
+    // was never sent, it was never answered, or it was answered and not
+    // drawn. Resource Timing lists a request once it has ENDED, with its
+    // status, so the last few say which: no /admin-api entry after the
+    // press is the first two, one with a status the third. A reauth bar
+    // (a sign-in the runtime is waiting for) is read as well.
+    const now = performance.now();
+    const requests = performance.getEntriesByType('resource')
+      .filter(function (e) { return /\\/admin-api|\\/oauth2\\//.test(e.name); })
+      .slice(-8).map(function (e) {
+        return { url: e.name.replace(location.origin, ''),
+                 type: e.initiatorType,
+                 startedMsAgo: Math.round(now - e.startTime),
+                 ms: Math.round(e.duration),
+                 status: e.responseStatus };
+      });
+    const reauth = document.getElementById('reauth-bar');
     return { url: location.href, readyState: document.readyState,
-             strip: strip ? strip.textContent.trim().slice(0, 300) : '' };
+             strip: strip ? strip.textContent.trim().slice(0, 300) : '',
+             requests: requests,
+             reauth: reauth ? reauth.textContent.trim().slice(0, 200) : '' };
   `).catch(function (e) {
     log.debug("Caught in pageEvidence(): " + ((e && e.message) || e));
     return { error: String((e && e.message) || e) };
