@@ -59,7 +59,6 @@
 // ===========================================================================
 
 import bunyan = require('bunyan');
-import crypto = require('crypto');
 import dgram = require('dgram');
 import dns = require('dns');
 import fs = require('fs');
@@ -68,6 +67,8 @@ import https = require('https');
 import net = require('net');
 import os = require('os');
 import path = require('path');
+// Every random value is crypto.js's (`tests/crypto_centralised.js`).
+import stsCrypto = require('./crypto');
 import tls = require('tls');
 import audit = require('./audit');
 import config = require('./config');
@@ -208,7 +209,7 @@ class AuditExport {
       tls: tls,
       path: path,
       os: os,
-      crypto: crypto
+      crypto: stsCrypto
     };
     log.debug("Leaving AuditExport.defaultDeps().");
     return deps;
@@ -473,7 +474,7 @@ class AuditExport {
         if (result.kind === 'ack-wait') {
           cursor.ackId = result.ackId;
           cursor.ackChannel = cursor.ackChannel ||
-            this.deps.crypto.randomUUID();
+            this.deps.crypto.randomUuid();
           cursor.inFlightId = event.id;
           cursor.inFlightSeq = Number(row.seq);
           cursor.lastDisposition = 'accepted';
@@ -1152,7 +1153,7 @@ class AuditExport {
                why: screened.why, retryAfterMs: 0 };
     }
     if (!cursor.ackChannel) {
-      cursor.ackChannel = this.deps.crypto.randomUUID();
+      cursor.ackChannel = this.deps.crypto.randomUuid();
     }
     const headers: Json = {
       Authorization: 'Splunk ' + token,

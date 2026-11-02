@@ -1432,7 +1432,7 @@ async function childBody() {
   const dns = require('dns');
   const net = require('net');
   const tls = require('tls');
-  const crypto = require('crypto');
+  const crypto = require('../common/crypto');
   const t = recorder();
   t.check(auditExport.JOB_ID === 'audit.export' &&
           auditExport.instanceOrigin() === 'default',
