@@ -52,6 +52,9 @@ each.
 **Administration** —
 [Admin console](admin-console.md): `/admin`, who may use it and what its pages
 do ·
+[Security Administrator](security-administrator.md): the role that alone
+changes policies, and how to give it to somebody who is not an
+administrator ·
 [Audit export destinations](audit-export.md): where this process sends its
 audit events, with an example for syslog, a file, a webhook, Splunk HEC and
 LogRhythm ·

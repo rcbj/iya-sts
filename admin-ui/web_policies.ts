@@ -125,7 +125,13 @@ class PoliciesPage {
       t.html('consolePolicies.notXacmlLink') + '</a>' +
       t.html('consolePolicies.notXacmlEnd'));
 
-    return kit.tabbedPanels('policytabs', [
+    // NOT A SECURITY ADMINISTRATOR (#645): every policy is still drawn, and
+    // the page says above every tab that a Save will be refused — the
+    // management API decides (`common/security_operations.ts`); this only
+    // says so before the click.
+    return (ctx.security ? ''
+      : kit.warn(t.html('consolePolicies.securityOnly'))) +
+      kit.tabbedPanels('policytabs', [
       { id: 'policies-tab-metadata',
         label: t.text('consoleProtocolSettings.metadataHeading'),
         html: metadata }

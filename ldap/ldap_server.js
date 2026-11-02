@@ -400,6 +400,9 @@ const passkeyPolicy = require('../common/passkey_policy');
 // The references a group may make to a policy, declared by the kinds
 // (#1235, rule 3cx): a leaf.
 const PolicySelection = require('../common/policy_selection');
+// WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645): a leaf over
+// `helpers` and `policy_selection`, asked by `directoryWriteRefusal()`.
+const SecurityOperations = require('../common/security_operations');
 // THE LOCALE POLICY REGISTER (#539, 2026-10-09), `ou=localePolicies`, for
 // the four policies' reason exactly: a LEAF whose store this directory is.
 // It is also asked at every person entry's creation, for the
@@ -11609,9 +11612,12 @@ function selfWritableAttributes() {
 // role held only because the window is open (see above).
 function rolesGrant(roles, role) {
   log.debug("Entering rolesGrant(). " + role);
+  // `security` (#645) is the Security Administrator's role, which implies
+  // read and not write — so it is asked for by name, and a read is granted
+  // by it as `admin_rbac.ts` expands it.
   const held = role === 'read'
     ? (roles.read === true || roles.write === true)
-    : roles.write === true;
+    : (role === 'security' ? roles.security === true : roles.write === true);
   log.debug("Leaving rolesGrant().");
   return held && roles.open !== true;
 }
@@ -11671,7 +11677,90 @@ function boundDnHoldsRealmRole(boundDn, role) {
   return answer;
 }
 
-function directoryWriteRefusal(req, operation, dn, changedTypes) {
+// ---------------------------------------------------------------------------
+// THE SECURITY ADMINISTRATOR'S WRITES OVER THE SOCKET (#645, 2026-11-02).
+//
+// The management API asks `admin:security` for a policy change, a policy
+// reference, a grant of the role and an act on a holder's account
+// (`common/security_operations.ts`); this socket is a fourth door onto the
+// same entries, so it asks the same role for the same things, read in the
+// directory's own terms:
+//
+//   * an entry under a Directory → Policies container (`ou=passwordPolicies`
+//     and the rest, read off the kinds);
+//   * the Security Administrator's group itself, whatever the operation;
+//   * a policy REFERENCE attribute (an application's, a group's or a
+//     person's) on an add or a modify — an LDAP modify is an explicit change,
+//     so the console grids' "posted but unchanged" case does not arise;
+//   * a `memberOf` value naming that group, on any entry: `admin_rbac.ts`
+//     honours both directions of membership, so this is a grant;
+//   * the entry of a person who HOLDS the role, unless it is the bound DN's
+//     own (which the self-write rule below already narrows).
+//
+// A bound DN holding the role passes — Admin Write or not — and one that
+// does not is refused (STS-LDAP-0203), whatever else it holds. Product mode
+// only, as everything here: development binds any DN with any password.
+// `changedValues` is the add's or modify's attribute values by lower-cased
+// type; a delete and a rename have none.
+// ---------------------------------------------------------------------------
+function securityNeedOf(operation, dn, changedTypes, changedValues, boundDn) {
+  log.debug('Entering securityNeedOf(). ' + operation + ' ' + dn);
+  const target = normalizeDn(dn);
+  const rdns = target.split(',');
+  const container = SecurityOperations.policyContainers().filter(
+    function (one) {
+      return rdns.indexOf(one) >= 0;
+    })[0];
+  if (container) {
+    log.debug('Leaving securityNeedOf(). A policy container.');
+    return 'it is under ' + container + ', a Directory → Policies container';
+  }
+  const securityCn = String(config.value(
+    SecurityOperations.SECURITY_GROUP_SETTING) || '').trim();
+  const securityDn = securityCn ? normalizeDn(groupDnFor(securityCn)) : '';
+  if (securityDn && target === securityDn) {
+    log.debug('Leaving securityNeedOf(). The role\'s group.');
+    return 'it is ' + securityCn + ', the Security Administrator\'s group';
+  }
+  const types = changedTypes || [];
+  const references = ['application', 'group', 'person'].reduce(
+    function (all, holder) {
+      return all.concat(SecurityOperations.referenceAttributes(holder));
+    }, []);
+  const named = types.filter(function (type, n, all) {
+    return references.indexOf(type) >= 0 && all.indexOf(type) === n;
+  });
+  if (named.length) {
+    log.debug('Leaving securityNeedOf(). A policy reference.');
+    return 'it writes ' + named.join(', ') + ', which names a policy';
+  }
+  const memberOf = ((changedValues || {}).memberof || []).some(
+    function (value) {
+      const text = String(value || '').trim();
+      return !!securityDn && (normalizeDn(text) === securityDn ||
+                              text.toLowerCase() === securityCn.toLowerCase());
+    });
+  if (memberOf) {
+    log.debug('Leaving securityNeedOf(). memberOf names the role\'s group.');
+    return 'it writes a memberOf naming ' + securityCn + ', which grants ' +
+           'the Security Administrator\'s role';
+  }
+  if (operation !== 'add' && boundDn && normalizeDn(boundDn) !== target) {
+    const stored = getEntry(dn);
+    if (stored && isPersonEntry(stored) &&
+        adminRbac.holdsSecurity(consoleKeyFor(stored.dn, stored),
+                                realms.currentId())) {
+      log.debug('Leaving securityNeedOf(). A holder\'s entry.');
+      return 'it is the entry of a person who holds the Security ' +
+             'Administrator\'s role';
+    }
+  }
+  log.debug('Leaving securityNeedOf(). Not one.');
+  return '';
+}
+
+function directoryWriteRefusal(req, operation, dn, changedTypes,
+                               changedValues) {
   log.debug('Entering directoryWriteRefusal(). ' + operation + ' ' + dn);
   if (!mode.authorizesDirectoryWrites()) {
     log.debug('Leaving directoryWriteRefusal(). This mode does not authorize ' +
@@ -11687,6 +11776,27 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
       new ldap.InsufficientAccessRightsError(
         'an anonymous connection may not write this directory; bind first'),
       dn);
+  }
+  // THE SECURITY ADMINISTRATOR'S WRITES (#645) — see securityNeedOf().
+  const securityNeed = securityNeedOf(operation, dn, changedTypes,
+                                      changedValues, boundDn);
+  if (securityNeed) {
+    if (boundDnHoldsRole(boundDn, 'security') ||
+        boundDnHoldsRealmRole(boundDn, 'security')) {
+      log.debug('Leaving directoryWriteRefusal(). A Security ' +
+                'Administrator.');
+      return null;
+    }
+    log.info('ldap: refusing a ' + operation + ' of ' + dn + ' by ' +
+             boundDn + ': ' + securityNeed + '.');
+    log.debug('Leaving directoryWriteRefusal(). Not a Security ' +
+              'Administrator.');
+    return ldapRefusal(req, 'STS-LDAP-0203', boundDn + ' asked for a ' +
+      operation + ' of ' + dn + ' without holding the Security ' +
+      'Administrator\'s role: ' + securityNeed,
+      new ldap.InsufficientAccessRightsError(
+        'only a Security Administrator may make this change: ' +
+        securityNeed), dn);
   }
   if (boundDnHoldsRole(boundDn, 'write') ||
       boundDnHoldsRealmRole(boundDn, 'write')) {
@@ -20108,13 +20218,34 @@ function stampLdapRegistration(req, dn, attributes) {
   log.debug('Leaving stampLdapRegistration(). ' + attributes.appRegisteredBy);
 }
 
+// The values an add or a modify writes, by lower-cased attribute type, for
+// `securityNeedOf()` (#645).
+function ldapValuesByType(rows) {
+  log.debug('Entering ldapValuesByType().');
+  const out = {};
+  (rows || []).forEach(function (row) {
+    const type = String((row && row.type) || '').toLowerCase();
+    if (!type) {
+      return;
+    }
+    out[type] = (out[type] || []).concat((row.values || []).map(String));
+  });
+  log.debug('Leaving ldapValuesByType().');
+  return out;
+}
+
 // --- add -------------------------------------------------------------------
 function ldapAddNow(req, res, next) {
   log.debug('Entering the LDAP add handler.');
   const dn = req.dn.toString();
   // At debug (2026-09-21): one line per entry, and a bulk load is thousands.
   log.debug('ldap: ADD ' + dn);
-  const addRefusal = directoryWriteRefusal(req, 'add', dn);
+  const addRefusal = directoryWriteRefusal(req, 'add', dn,
+    (req.attributes || []).map(function (attr) {
+      return String(attr.type || '').toLowerCase();
+    }), ldapValuesByType((req.attributes || []).map(function (attr) {
+      return { type: attr.type, values: attr.values };
+    })));
   if (addRefusal) {
     log.debug('Leaving the LDAP add handler. Not authorized.');
     return next(addRefusal);
@@ -20846,7 +20977,13 @@ function ldapModifyNow(req, res, next) {
   const modifyRefusal = directoryWriteRefusal(req, 'modify', dn,
     req.changes.map(function (change) {
       return String(change.modification.type || '').toLowerCase();
-    }));
+    }), ldapValuesByType(req.changes.filter(function (change) {
+      // A delete of a value takes it away, which grants nothing.
+      return String(change.operation || '').toLowerCase() !== 'delete';
+    }).map(function (change) {
+      return { type: change.modification.type,
+               values: change.modification.values };
+    })));
   if (modifyRefusal) {
     log.debug('Leaving the LDAP modify handler. Not authorized.');
     return next(modifyRefusal);

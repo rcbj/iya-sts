@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5078** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5081** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -71,11 +71,11 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 243
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 156
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 157
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 80
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 258
-* [Management API (`STS-API`)](#sts-api) — 87
+* [Management API (`STS-API`)](#sts-api) — 88
 * [User portal (`STS-PORTAL`)](#sts-portal) — 109
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
@@ -3268,6 +3268,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0200` | A pseudonym is already another person's uid, RDN or live pseudonym in this realm, or another cell already holds the name (#644). The other cell is not named in the answer. | HTTP 400 JSON (the sentence; the code is recorded) |
 | `STS-LDAP-0201` | A pseudonym is this person's own uid or RDN (#644). | HTTP 400 JSON (the sentence; the code is recorded) |
 | `STS-LDAP-0202` | An email-shaped pseudonym is already some other person's mail address, or a mail address is already some other person's uid or live pseudonym (#644). Two people may still share a mail attribute with each other. | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0203` | In product mode, an LDAP add, modify, delete or rename that only a Security Administrator may make — an entry under a Directory → Policies container, the Security Administrator's group, a policy reference attribute, a memberOf naming that group, or the entry of a person who holds the role — was asked by a bound DN that does not hold it. Admin Write does not reach these. | LDAP insufficientAccessRights (50) |
 
 ## STS-ATTR
 
@@ -3449,6 +3450,7 @@ Raised from: scim/.
 | `STS-SCIM-0083` | A TLS client certificate this realm issued to an application was presented at /scim/v2, and the application does not declare the SCIM scope the operation needs in its oauthAllowedScope (#1048). | HTTP 403 (SCIM Error) |
 | `STS-SCIM-0084` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is not stored in userCertificate on any entry of the realm (#1061). The request is decided as if no certificate had been presented. | audit row; HTTP 401 when no other scheme authenticates |
 | `STS-SCIM-0085` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is stored in userCertificate on more than one entry of the realm (#1061). | audit row; HTTP 401 when no other scheme authenticates |
+| `STS-SCIM-0086` | A SCIM write that only a Security Administrator may make — the Security Administrator's group created, changed or deleted, or the User of a person who holds the role changed or deleted — was asked by a caller that does not hold SECURITY_ADMIN (a person on the roster, or an application that is a member of the role). | HTTP 403 |
 
 ## STS-SPIFFE
 
@@ -5334,6 +5336,7 @@ Raised from: mgmt-api/.
 | `STS-API-0135` | A Kerberos trusts action through POST /admin-api/kerberos/trusts/{action} threw inside this service; the log says why (#430). | HTTP 500 |
 | `STS-API-0136` | A management API users action that answers later (a by-value did:web enrolment, which fetches the DID document) failed inside this service; the log says why (#693). | HTTP 500 |
 | `STS-API-0137` | An /admin-api access token issued to a client that declares tls_client_auth, self_signed_tls_client_auth or tls_client_certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): such a client's tokens are accepted only certificate-bound. | invalid_token (HTTP 401) |
+| `STS-API-0138` | A management API write that only a Security Administrator may make — a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked by any door, or the account of a person who holds it acted on — was asked with a token that does not carry admin:security or whose subject does not hold SECURITY_ADMIN. Admin Write does not reach these. | HTTP 403 |
 
 ## STS-PORTAL
 

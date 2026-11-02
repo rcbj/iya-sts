@@ -4115,6 +4115,14 @@
     "en": "5bd2e65986c9ef86",
     "text": "cn för den kataloggrupp vars medlemmar får skicka ett konsolformulär med POST — återkalla en token, lägga till ett anspråk, ändra en inställning, tilldela en roll. SKRIV INNEBÄR LÄS: en medlem i den här gruppen behöver inte också läsgruppen, eftersom en roll som kunde ändra en sida den inte kunde se vore en fälla snarare än en behörighet."
   },
+  "admin.securityGroup|label": {
+    "en": "e208f88393e196ce",
+    "text": "Rollen Säkerhetsadministratör"
+  },
+  "admin.securityGroup|description": {
+    "en": "296a8d5721391215",
+    "text": "cn för den katalogrupp vars medlemmar är säkerhetsadministratörer: endast de får ändra en policy under Katalog → Policyer, ange en policy för ett program, en grupp eller en person, tilldela den här rollen eller agera på kontot för en person som har den. Admin Write ensamt får inte det. ROLLEN INNEFATTAR ADMIN READ och inget annat, så den kan innehas av någon som annars inte är administratör. Standardområdets grupp är tjänstens säkerhetsadministratörer, över alla områden; ett områdes egen grupp begränsar sina medlemmar till det området."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Kräv en åtkomsttoken på /admin-api"

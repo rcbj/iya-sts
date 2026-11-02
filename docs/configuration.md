@@ -687,12 +687,17 @@ reviewing by hand. See [what is not checked](what-is-not-checked.md).
 
 Each gate is explained under [what is not checked](what-is-not-checked.md).
 
-### `admin.readGroup`, `admin.writeGroup`, `admin.openWhenEmpty` and `admin.bootstrapUsername`
+### `admin.readGroup`, `admin.writeGroup`, `admin.securityGroup`, `admin.openWhenEmpty` and `admin.bootstrapUsername`
 
-The console's two roles are two ordinary groups in the embedded directory —
-`cn=admin-read` and `cn=admin-write` by default — so `/admin/rbac`, `POST
-/admin-api/rbac/grant`, an `ldapmodify` and a SCIM `PATCH` all write the same
-membership. **Write implies read.**
+The console's three roles are three ordinary groups in the embedded directory —
+`cn=admin-read`, `cn=admin-write` and `cn=security-admin` by default — so
+`/admin/rbac`, `POST /admin-api/rbac/grant`, an `ldapmodify` and a SCIM `PATCH`
+all write the same membership. **Write implies read**, and so does the
+**Security Administrator** role (`admin.securityGroup`), which does not imply
+write: it is the only role that may change a policy on Directory → Policies,
+name a policy on an application, group or person, grant the role itself, or
+act on the account of a person who holds it. See
+[the Security Administrator](security-administrator.md).
 
 `admin.bootstrapUsername` (`admin`) names the default realm's bootstrap
 administrator — and every trust realm's, where the account
@@ -1835,6 +1840,7 @@ turnstile proving somebody typed a name that holds a role.
 |---|---|---|---|---|
 | `admin.readGroup` | `ADMIN_READ_GROUP` | `admin-read` | yes | The cn of the directory group whose members may READ the console — every page, and every /admin-api read it is drawn from. It is an ordinary group under ou=groups, so an ldapmodify, a SCIM PATCH and the /admin/rbac screen are three doors onto the same membership. |
 | `admin.writeGroup` | `ADMIN_WRITE_GROUP` | `admin-write` | yes | The cn of the directory group whose members may POST a console form — revoke a token, add a claim, change a setting, grant a role. |
+| `admin.securityGroup` | `ADMIN_SECURITY_GROUP` | `security-admin` | yes | The cn of the directory group whose members are Security Administrators: only they may change a policy on Directory → Policies, name a policy on an application, group or person, grant this role, or act on the account of a person who holds it. The role implies Admin Read and nothing else. |
 | `admin.openWhenEmpty` | `ADMIN_OPEN_WHEN_EMPTY` | `true` | yes | **Development mode only** — product never opens the console to anybody, whatever this says, and until the bootstrap administrator has claimed the console its roles are honoured only from a password sign-in. In development: ON, anybody who signs in holds both roles UNTIL the bootstrap administrator (`admin.bootstrapUsername`) first signs in to `/admin`, and the console says so in a banner on every page; OFF, only members of the two role groups from the start. A process that never seeded the bootstrap administrator keeps the older rule: open while NEITHER role group has a member. |
 | `admin.bootstrapUsername` | `STS_ADMIN_BOOTSTRAP_USERNAME` | `admin` | **restart** — the account is seeded once, before the listener binds | The default realm's bootstrap administrator: made at startup if absent, a member of both console roles, forced to choose a new password at its first sign-in, and impossible to delete or rename. In product mode it is also who gets the generated password, logged once, when nobody holds a credential. |
 

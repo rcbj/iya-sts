@@ -196,13 +196,15 @@ function consoleRoles(t) {
   const rows = roles.all().filter(function (row) {
     return row.console;
   });
+  // THREE SINCE #645: SECURITY_ADMIN, authorizing admin:security.
+  const ownScope = { ADMIN_READ: 'admin:read', ADMIN_WRITE: 'admin:write',
+                     SECURITY_ADMIN: 'admin:security' };
   t.equal(rows.map(function (row) { return row.name; }).sort().join(','),
-          'ADMIN_READ,ADMIN_WRITE',
-          'A1. the realm was seeded with the two console roles');
+          'ADMIN_READ,ADMIN_WRITE,SECURITY_ADMIN',
+          'A1. the realm was seeded with the three console roles');
   t.check(rows.every(function (row) {
     return row.applications.indexOf('sts-api-client') >= 0 &&
-           row.permissions.join() === (row.name === 'ADMIN_READ'
-             ? 'admin:read' : 'admin:write');
+           row.permissions.join() === ownScope[row.name];
   }), 'A2. each is held by sts-api-client and authorizes its own scope',
           JSON.stringify(rows));
   t.check(!roles.isBuiltIn('ADMIN_READ') && !roles.isBuiltIn('ADMIN_WRITE'),

@@ -375,6 +375,17 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 
 ---
 
+## THE SECURITY ADMINISTRATOR'S GROUP AND HOLDERS (#645, 2026-11-02)
+
+A SCIM write of the role's group (create, PATCH, PUT, delete of
+`admin.securityGroup`'s cn) or of the User of a person who holds the role
+(update or delete) needs a caller holding SECURITY_ADMIN — a person on the
+realm's roster, an application that is a member of the role — or is refused
+403, `STS-SCIM-0086` (`Scim.securityRefusal()`). An unauthenticated caller
+(development's permissive SCIM) is asked nothing, as everywhere here. Not
+knowing whether an entry holds the role treats it as holding it.
+`admin-ui/CLAUDE.md` 8a-ii.
+
 ## What it deliberately does not do
 
 * **SCIM WRITES INTO THE DIRECTORY AND WAS THE FIRST SURFACE HERE THAT ASKED

@@ -4114,6 +4114,40 @@ interesting case for a mock — grant the role, then watch them arrive already
 holding it — and it is why the roster counts membership VALUES rather than
 resolvable members.
 
+## 8a-ii. THE THIRD ROLE: SECURITY ADMINISTRATOR (2026-11-02, #645)
+
+rcbj: "only a security administrator can modify policy object", as a global
+role and a realm role, held by the default realm's administrator by default
+and separable onto an account that is not an administrator. So `ROLES` has a
+third row — `security`, `admin.securityGroup` (`cn=security-admin`),
+**implying read and NOT write** — and everything 8a says about a role holds
+for it: a directory group, four doors, the roster of the realm signed in
+through (8d). What it gates is `common/security_operations.ts`'s, and the
+API's gate asks `admin:security` (SECURITY_ADMIN) for it INSTEAD of
+`admin:write`, refused in the gate itself (`STS-API-0138`) so that
+`xacml.enforceAccess=false` is no way round it. rcbj's decisions:
+
+* **The set** is Directory → Policies and the attributes that NAME a policy;
+  XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay
+  Admin Write's.
+* **Separation holds both ways round**: only a Security Administrator grants
+  or revokes the role (and changes `admin.securityGroup`, which would be a
+  grant), and only one acts on a holder's account — or Admin Write would
+  reset a holder's password and sign in as them.
+* **Seeding**: the DEFAULT realm's bootstrap administrator holds it;
+  `seedSecurityAdministrator()` grants it there ONLY WHILE THE GROUP DOES NOT
+  EXIST, claimed or not, which is what reaches an existing deployment (and
+  nobody else is copied). A trust realm's bootstrap administrator does NOT
+  get it, and a realm's open window hands out read and write only
+  (`windowRoleIds()`).
+* **`sts-api-client`** is a member of SECURITY_ADMIN, as of the other two.
+
+`holdsSecurity()` is membership only — never the open window, for the LDAP
+socket's reason. `personValues()` / `groupValues()` are here because this
+module already holds the realm's directory view, not a slot of their own.
+The console reads `/admin-api/me`'s `security` into `WebKit.context()`, and
+Directory → Policies warns a reader without it; the API decides.
+
 ## 8b. "A GROUP HERE GRANTS NOTHING" IS NOW QUALIFIED IN EIGHT PLACES
 
 It was asserted in `README.md`, three `CLAUDE.md` files, `sts_metadata.js`,

@@ -178,6 +178,12 @@ const JOBS = [
   // realm's roster only when that realm's bootstrap window is closed, and
   // then revokes what it granted.
   { file: 'sts_realm_administrators.js', browser: false },
+  // THE SECURITY ADMINISTRATOR (#645, 2026-11-02): Admin Write refused a
+  // Directory → Policies save, a grant of the role and a holder's account;
+  // a person holding only the role let through to the save and refused an
+  // ordinary write. `local: true`: the role and the gate are ours. It grants
+  // the role to a person of its own and takes it back.
+  { file: 'sts_security_admin.js',       browser: false },
   // HOW MANY REALMS ONE CLUSTER MAY HOLD (#368): the create past
   // realms.maxCount is refused (through /admin-api and the console),
   // lowering the cap removes nothing, and a write of the cap from inside

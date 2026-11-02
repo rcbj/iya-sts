@@ -428,7 +428,8 @@ class AdminApiSpec {
   // `isDeviceComplianceFeed()` — so a posture feed holds nothing else.
   /**
    * Returns the scope an operation needs: `admin:read` for a GET, `admin:write`
-   * for any other method, and `device:compliance` for `POST
+   * for any other method, `admin:security` for a write of
+   * `/admin-api/policies/{action}` (#645), and `device:compliance` for `POST
    * /admin-api/device-compliance`.
    *
    * A second copy of the gate's rule; `tests/admin_api_document_security.js`
@@ -450,6 +451,16 @@ class AdminApiSpec {
     // them: everything under `/admin-api/console` takes `admin:console`.
     if (/^\/admin-api\/console(\/|$)/.test(String(path || ''))) {
       return 'admin:console';
+    }
+    // A DIRECTORY → POLICIES WRITE (#645): every action of
+    // `/admin-api/policies/{action}` is a policy kind's save, reset or act,
+    // which the gate asks `admin:security` for
+    // (`common/security_operations.ts`). The other security changes depend
+    // on the body — which attribute, whose account — so their operations
+    // say `admin:write` and the scheme's description says the rest.
+    if (String(method).toUpperCase() !== 'GET' &&
+        /^\/admin-api\/policies\/\{action\}$/.test(String(path || ''))) {
+      return 'admin:security';
     }
     return String(method).toUpperCase() === 'GET' ? 'admin:read' :
            'admin:write';
@@ -483,7 +494,17 @@ class AdminApiSpec {
             scopes: {
               'admin:read': 'Read anything this API exposes (every GET).',
               'admin:write': 'Change anything this API can change ' +
-                             '(every other method).',
+                             '(every other method), except a security ' +
+                             'change.',
+              // #645.
+              'admin:security': 'A security change, in place of ' +
+                                'admin:write: a Directory → Policies ' +
+                                'policy saved, reset or acted on, a policy ' +
+                                'named on an application, group or person, ' +
+                                'the Security Administrator\'s role granted ' +
+                                'or revoked, and the account of a person ' +
+                                'who holds it. Issued only to a subject ' +
+                                'holding SECURITY_ADMIN.',
               'admin:console': 'The admin console\'s own operations, under ' +
                                '/admin-api/console (#454). Issued only to ' +
                                'the console\'s client, sts-admin-console, ' +
@@ -749,7 +770,8 @@ class AdminApiSpec {
       security: authRequired
         ? [{ oauth2: consoleDocument
             ? ['admin:console', 'admin:read', 'admin:write']
-            : ['admin:read', 'admin:write'] }, { bearerAuth: [] }]
+            : ['admin:read', 'admin:write', 'admin:security'] },
+           { bearerAuth: [] }]
         : [],
       paths: paths,
       components: components

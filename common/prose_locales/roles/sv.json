@@ -96,12 +96,16 @@
     "text": "En ÄGARE (#607), som OWNER_READ. Ger behörigheten owner:write: att via /admin-api ändra de objekt hen äger, inom de åtgärder som ägarregeln i policyn access-control tillåter för varje slag — aldrig skapa, ta bort eller byta namn på ett, och aldrig ett objekt som är skyddat mot sina ägare."
   },
   "roles.native.ADMIN_READ.what": {
-    "en": "7d6481dffa0d517c",
-    "text": "Admin Read: varje LÄSNING på /admin-api. Innehas av konsolens grupper Admin Read och Admin Write (Admin Write innebär Admin Read) och av applikationerna som listas här. Auktoriserar behörigheten admin:read."
+    "en": "a2f5894dfa0c0db6",
+    "text": "Admin Read: varje LÄSNING på /admin-api. Innehas av konsolens grupper Admin Read, Admin Write och Säkerhetsadministratör (de två andra innefattar Admin Read) och av programmen som anges här. Auktoriserar behörigheten admin:read."
   },
   "roles.native.ADMIN_WRITE.what": {
     "en": "ecff5f0bc1a5a16a",
     "text": "Admin Write: varje /admin-api-operation som ÄNDRAR något. Innehas av konsolens grupp Admin Write och av applikationerna som listas här. Auktoriserar behörigheten admin:write. Den innebär inte Admin Read på en token: en token kan bära vilket omfång som helst, och policyn ber om det som operationen behöver."
+  },
+  "roles.native.SECURITY_ADMIN.what": {
+    "en": "78a47eddc95e9db3",
+    "text": "Säkerhetsadministratör: de /admin-api-operationer som ändrar säkerheten — en policy under Katalog → Policyer, en policy angiven för ett program, en grupp eller en person, tilldelning av den här rollen och kontot för en person som har den. Admin Write når dem inte. Innehas av konsolens grupp Säkerhetsadministratör och av programmen som anges här. Auktoriserar behörigheten admin:security."
   },
   "roles.native.ADMIN_CONSOLE.what": {
     "en": "5661913dba04f59a",
@@ -164,7 +168,15 @@
     "text": "Admin Write"
   },
   "roles.console.write.what": {
-    "en": "476b1b61c16b02e4",
-    "text": "Skicka varje formulär i den här konsolen — återkalla en token, lägga till ett anpassat anspråk, ändra en inställning, skapa en person, bevilja en roll. DEN INNEFATTAR LÄSNING, så en medlem av enbart den här rollen kan använda hela konsolen."
+    "en": "933448e4b37b9349",
+    "text": "Skicka varje formulär i den här konsolen — återkalla en token, lägga till ett anpassat anspråk, ändra en inställning, skapa en person, tilldela en roll — utom de som ändrar säkerheten, som är säkerhetsadministratörens. DEN INNEFATTAR LÄSNING, så en medlem av enbart den här rollen kan använda resten av konsolen."
+  },
+  "roles.console.security.label": {
+    "en": "eb026fe212244f20",
+    "text": "Säkerhetsadministratör"
+  },
+  "roles.console.security.what": {
+    "en": "238007ebd246b860",
+    "text": "Ändra säkerheten: spara eller återställ en policy under Katalog → Policyer, ange en policy för ett program, en grupp eller en person, tilldela eller återkalla den här rollen och agera på kontot för en person som har den. Admin Write kan inte göra något av detta. DEN INNEFATTAR LÄSNING OCH INTE SKRIVNING, så den kan innehas av någon som annars inte är administratör."
   }
 }

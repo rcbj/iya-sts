@@ -20748,7 +20748,12 @@ const API_PERMISSIONS = Object.freeze({
     permissions: Object.freeze([
       ['admin:read', 'Every read on /admin-api (ADMIN_READ)'],
       ['admin:write', 'Every /admin-api operation that changes anything ' +
-                      '(ADMIN_WRITE)'],
+                      '(ADMIN_WRITE), except what changes security'],
+      // #645: what changes security, in place of admin:write.
+      ['admin:security', 'The /admin-api operations that change security: ' +
+                         'policies, the policies an object names, the ' +
+                         'Security Administrator role and its holders\' ' +
+                         'accounts (SECURITY_ADMIN)'],
       ['admin:console', 'The admin console\'s own operations under ' +
                         '/admin-api/console (ADMIN_CONSOLE)'],
       ['owner:read', 'Read what the person owns, through /admin-api ' +
@@ -20968,16 +20973,18 @@ function internalApplications() {
       // policy read `appAllowedProtocol`, which nothing seeded, so the
       // service's own client read as declared for nothing.
       // THE DELEGATED PERMISSION GRANTS ARE THE CLIENT'S HALF (#1141): of
-      // the three admin permissions on `sts-management-api`, which
-      // `scope_policy.ts` reads where `oauthAllowedScope` used to list the
-      // words.
+      // the four admin permissions (admin:security since #645) on
+      // `sts-management-api`, which `scope_policy.ts` reads where
+      // `oauthAllowedScope` used to list the words.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
                     oauthDelegatedPermission: delegatedPermissionGrants({
                       'sts-management-api': ['admin:read', 'admin:write',
+                                             'admin:security',
                                              'admin:console'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'admin:read',
-                                         'admin:write', 'admin:console'] },
+                                         'admin:write', 'admin:security',
+                                         'admin:console'] },
       registration: {
         client_id: 'sts-admin-console',
         client_name: 'Admin console',
@@ -21159,11 +21166,12 @@ function internalApplications() {
                    '(/report-api) are called as (applications.seedInternal)',
       // Declared OAuth 2.0 alone, the console's reason: a client_credentials
       // client with no ID Token, so not OpenID Connect.
-      // Delegated permission grants of admin:read, admin:write and
-      // report:use (#1141).
+      // Delegated permission grants of admin:read, admin:write,
+      // admin:security (#645) and report:use (#1141).
       attributes: { appAllowedProtocol: ['oauth2'],
                     oauthDelegatedPermission: delegatedPermissionGrants({
-                      'sts-management-api': ['admin:read', 'admin:write'],
+                      'sts-management-api': ['admin:read', 'admin:write',
+                                             'admin:security'],
                       'sts-report-api': ['report:use'] }) },
       registration: {
         client_id: 'sts-api-client',

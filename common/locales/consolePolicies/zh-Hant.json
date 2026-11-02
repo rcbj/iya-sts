@@ -172,5 +172,6 @@
   "attributes.removeCustom": "移除",
   "attributes.defineHeading": "定義自訂屬性",
   "attributes.labelPlaceholder": "識別證號碼",
-  "attributes.define": "定義屬性"
+  "attributes.define": "定義屬性",
+  "securityOnly": "只有安全管理員可以在此儲存、重設或執行原則，或為應用程式、群組或人員指定原則。您可以檢視所有原則；變更將被拒絕。"
 }

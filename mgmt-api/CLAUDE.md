@@ -2430,6 +2430,25 @@ override's value in force and its source. That is the same view model the
 console's Shared Signals section draws. Pausing and enabling a stream is
 `POST /admin-api/ssf/status`, as it always was.
 
+## `admin:security`: A SECURITY CHANGE TAKES THE SECURITY ADMINISTRATOR (#645, 2026-11-02)
+
+The gate asks `securityChangeOf()` — `common/security_operations.ts` over the
+console operation the request mirrors — before it picks the scope. A
+security change wants `admin:security` and `requiredRoles: [SECURITY_ADMIN]`
+in place of `admin:write` / ADMIN_WRITE, never takes the owner path, and is
+**refused in the gate** (`STS-API-0138`, in words) when the kept scopes lack
+`admin:security` or the effective roles lack SECURITY_ADMIN — the policy
+below is asked too, but with `xacml.enforceAccess` off it allows everything,
+and this must not be one setting away from gone. A security change depends
+on the BODY, so the OpenAPI document says `admin:security` only for
+`/admin-api/policies/{action}`, where every action is one, and the scheme's
+description names the rest. `/me` answers `security`. `sts-api-client` and
+`sts-admin-console` declare it; **an entry seeded before #645 is not
+migrated** (no migrations), and needs a delegated permission grant of
+`urn:sts:admin-api:admin:security` — `docs/security-administrator.md` says
+so. The harness's token asks for it (`tests/tools/admin-api-token.js`).
+`admin-ui/CLAUDE.md` 8a-ii has the role.
+
 ## 3cc. THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
 
 **Since #446 the console is a static application whose one data source is

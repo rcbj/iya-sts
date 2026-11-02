@@ -3263,6 +3263,20 @@ an unchanged hash written back, are handled before any of that. A refusal is
 **LDAP_CONSTRAINT_VIOLATION (19)**, what a ppolicy server answers.
 `tests/password_policy.js` drives both handlers in process.
 
+## THE SECURITY ADMINISTRATOR'S WRITES OVER THE SOCKET (#645, 2026-11-02)
+
+`securityNeedOf()`, asked by `directoryWriteRefusal()` before the Admin
+Write rule: an entry under a Directory → Policies container, the role's
+group (`admin.securityGroup`), a policy reference attribute on an add or a
+modify, a `memberOf` naming that group (a grant, since `admin_rbac.ts`
+honours both directions), and a holder's entry other than the bound DN's
+own need the Security Administrator's role (`rolesGrant(roles,
+'security')`), held through the default realm's roster or the operation's
+realm's — Admin Write or not; anybody else is refused `STS-LDAP-0203`.
+Product mode only, as the rest of this rule. The add and the modify pass
+their values by type (`ldapValuesByType()`); a modify's value DELETE is left
+out, since taking a value away grants nothing. `admin-ui/CLAUDE.md` 8a-ii.
+
 ## WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET, IN PRODUCT MODE (2026-09-12)
 
 **Nothing did until this date.** Product mode verified a bind, and the connection

@@ -172,5 +172,6 @@
   "attributes.removeCustom": "Alisin",
   "attributes.defineHeading": "Tukuyin ang isang custom attribute",
   "attributes.labelPlaceholder": "Numero ng badge",
-  "attributes.define": "Tukuyin ang attribute"
+  "attributes.define": "Tukuyin ang attribute",
+  "securityOnly": "Isang Security Administrator lamang ang maaaring mag-save, mag-reset o kumilos sa isang patakaran dito, o magtakda ng isa sa isang application, grupo o tao. Mababasa mo ang bawat patakaran; tinatanggihan ang isang pagbabago."
 }
