@@ -1634,7 +1634,9 @@ audit events, and shows how far that delivery has got. The same controls are
 `GET /admin-api/audit-export` (Admin Read, `admin:read`) and
 `POST /admin-api/audit-export/{add,update,remove,enable,disable,test}`
 (Admin Write, `admin:write`). The settings on the page are
-[Audit export](configuration.md#audit-export).
+[Audit export](configuration.md#audit-export). Worked examples for syslog,
+a file, a webhook, Splunk HEC and LogRhythm are on
+[Audit export destinations](audit-export.md).
 
 A destination is syslog (TCP by default, or UDP, or TLS), a filesystem path,
 a webhook, Splunk HEC, or LogRhythm, which uses the syslog adapter. Each

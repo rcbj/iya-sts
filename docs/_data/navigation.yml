@@ -147,6 +147,7 @@
 - section: Administration
   items:
     - { title: Admin console, url: /admin-console.html }
+    - { title: Audit export destinations, url: /audit-export.html }
     - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
     - { title: Account API, url: /account-api.html }

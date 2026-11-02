@@ -47,6 +47,9 @@ each.
 **Administration** —
 [Admin console](admin-console.md): `/admin`, who may use it and what its pages
 do ·
+[Audit export destinations](audit-export.md): where this process sends its
+audit events, with an example for syslog, a file, a webhook, Splunk HEC and
+LogRhythm ·
 [Policies](policies.md): Directory → Policies, the seven kinds, and how a
 named policy is chosen ·
 [Applications](applications.md): the registry of every client, relying party

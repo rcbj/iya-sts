@@ -2384,7 +2384,7 @@ above.
 
 ### Audit export
 
-The page is [Audit export](admin-console.md#audit-export--adminaudit-export). Every row takes effect on the next run of `audit.export`. A delivery failure leaves the audited operation's answer as it was.
+The page is [Audit export](admin-console.md#audit-export--adminaudit-export). Examples for each destination are on [Audit export destinations](audit-export.md). Every row takes effect on the next run of `audit.export`. A delivery failure leaves the audited operation's answer as it was.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|

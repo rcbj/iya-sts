@@ -902,6 +902,22 @@ class WebAnswers {
         policyDrafts: drafts, policySaveErrors: saveErrors });
       return { json: out, banner: '' };
     }
+    // A REFUSED AUDIT EXPORT DESTINATION (#641). The add form and each
+    // update form are drawn from the saved destinations. A refusal was
+    // never saved, and the notice navigation drew the add form empty,
+    // which dropped every field the reader had typed. The posted fields
+    // stay in `state.auditExportDraft`. A success stays a notice, so the
+    // form comes back clear once the destination is stored. Enable,
+    // disable, remove and test are not this form.
+    if (page === '/admin/audit-export' && !ok &&
+        (action === 'add' || action === 'update')) {
+      const out = WebAnswers.copy(json);
+      out.state = Object.assign({}, out.state || {}, {
+        auditExportDraft: { action: action, fields: fields || {} } });
+      return { json: out,
+               banner: kit.refusalBanner(errors.length ? errors
+                 : ['Refused.'], 'The destination was not saved.') };
+    }
     return null;
   }
 

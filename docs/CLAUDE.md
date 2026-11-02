@@ -37,7 +37,9 @@ step here; what the generator replaces is the typing, not the file.
 
 Adding a page: write the markdown, add it to the right section of
 `_data/navigation.yml` so it appears in the sidebar, and link it from
-`index.md`. There is no index to regenerate.
+`index.md`. A console or portal screen that page explains gets its row in
+`common/web_doc_links.ts` in the same change (`admin-ui/CLAUDE.md`, *A link
+to the documentation*). There is no index to regenerate.
 
 **A sidebar item may link to a SECTION of another page** (rcbj, 2026-10-30,
 #564): the *Authorization* section gathers the pages about a decision

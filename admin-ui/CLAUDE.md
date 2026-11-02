@@ -57,6 +57,13 @@ configuration → Listeners (#423) have. The rules:
 * **A new page is tabbed when it is written.** A page that grows a second
   section gets tabs in the change that adds it. Converting the pages that
   predate this rule is #428.
+* **A documentation link is part of the design.** A new console screen
+  names the page that explains it in `common/web_doc_links.ts` in the same
+  change that adds the screen. Each leaf tab draws that link
+  (`WebKit.withDocLink()`). A page that is not tabbed draws the one link
+  under the trail. `tests/doc_links.js` fails when the row is missing or
+  the page is not in `docs/`. The argument is *A link to the documentation*
+  below.
 
 **It IS protected now, and it holds nothing on disk.** It is also the one surface
 that can CHANGE what the protocol endpoints do, which is why it is the one that
@@ -1463,7 +1470,11 @@ a second one. The application-configuration sub-panels are written by hand, so
 the link is put in there. A listener tab sets `docs` on the panel, because its
 id is minted and the same shape as a policy tab. An untabbed page gets the one
 link under the breadcrumb trail, in `WebShell.frame()`. The public sign-out
-page uses the same tab helper and is not given a link.
+page uses the same tab helper and is not given a link. **The row is part of
+the screen's design**, written in the same change as the screen (*A
+documentation link is part of the design*, above). `tests/doc_links.js` fails
+while the row is missing or names a page that is not in `docs/`. A portal
+page owes the same row (`portal/CLAUDE.md`).
 
 ### PROSE LONGER THAN A LINE IS COLLAPSED, AND THREE FUNCTIONS DECIDE IT
 
@@ -8541,6 +8552,16 @@ nav label and the page title are `console.nav.audit-export` and
 names the page. Write controls are drawn when the shell says the reader can
 write (`c.write`); a reader with `admin:read` sees the figures. The lead
 says the figures are this process, and that a token and a secret header are
-sealed and absent afterwards. A test posts `test`. The delivery, the cursor
-and the twenty-first outbound exception are `common/CLAUDE.md` (3da). The
-operations are `mgmt-api/CLAUDE.md`.
+sealed and absent afterwards. A test posts `test`. Each tab draws the
+documentation link to `docs/audit-export.md` (`common/web_doc_links.ts`,
+`audit-export.html`). A refused add or update is
+drawn again in place (`WebAnswers.redraw()`, `state.auditExportDraft`):
+the add form, or that destination's update form, open, with every posted
+field. A token and a secret header come back only from that draft; a
+stored destination still draws both empty. A success stays a notice.
+Body template, Headers and Secret headers are labels beside their
+textareas, each with its own tooltip. A textarea inside the label took
+the hover, so the name's tooltip never appeared. Those sentences are
+also the management API's field descriptions and `docs/audit-export.md`.
+The delivery, the cursor and the twenty-first outbound exception are
+`common/CLAUDE.md` (3da). The operations are `mgmt-api/CLAUDE.md`.
