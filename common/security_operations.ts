@@ -158,6 +158,27 @@ class SecurityOperations {
     return out;
   }
 
+  /**
+   * Lists the RDNs of the Directory → Policies containers
+   * (`ou=passwordpolicies`, …), lower-cased: an entry under one is a policy,
+   * which the directory socket asks for (#645).
+   *
+   * @returns the containers' RDNs
+   */
+  static policyContainers(): string[] {
+    log.debug("Entering SecurityOperations.policyContainers().");
+    const out = SecurityOperations.policyKinds().list()
+      .map(function (kind: any) {
+        return String(kind.container || '').replace(/\s+/g, '').toLowerCase();
+      })
+      .filter(function (one: string, n: number, all: string[]) {
+        return !!one && all.indexOf(one) === n;
+      });
+    log.debug("Leaving SecurityOperations.policyContainers(). " +
+              out.length + ".");
+    return out;
+  }
+
   // LAZILY, for the header's reason.
   private static policyKinds(): any {
     log.debug("Entering SecurityOperations.policyKinds().");

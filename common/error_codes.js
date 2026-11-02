@@ -14876,6 +14876,15 @@ const CODES = [
       'uid or live pseudonym (#644). Two people may still share a mail ' +
       'attribute with each other.',
     spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  // #645 (2026-11-02): the Security Administrator's role, at the socket.
+  { code: 'STS-LDAP-0203',
+    summary: 'In product mode, an LDAP add, modify, delete or rename that only ' +
+      'a Security Administrator may make — an entry under a Directory → ' +
+      'Policies container, the Security Administrator\'s group, a policy ' +
+      'reference attribute, a memberOf naming that group, or the entry of a ' +
+      'person who holds the role — was asked by a bound DN that does not ' +
+      'hold it. Admin Write does not reach these.',
+    spec: 'LDAP insufficientAccessRights (50)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -15449,6 +15458,14 @@ const CODES = [
       'authority was not taken as a SCIM credential: it is stored in ' +
       'userCertificate on more than one entry of the realm (#1061).',
     spec: 'audit row; HTTP 401 when no other scheme authenticates' },
+  // #645 (2026-11-02): the Security Administrator's role, over SCIM.
+  { code: 'STS-SCIM-0086',
+    summary: 'A SCIM write that only a Security Administrator may make — ' +
+      'the Security Administrator\'s group created, changed or deleted, or ' +
+      'the User of a person who holds the role changed or deleted — was ' +
+      'asked by a caller that does not hold SECURITY_ADMIN (a person on the ' +
+      'roster, or an application that is a member of the role).',
+    spec: 'HTTP 403' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +

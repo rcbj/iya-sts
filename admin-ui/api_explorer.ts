@@ -137,6 +137,8 @@ type Json = any;
 interface GateState {
   read?: boolean;
   write?: boolean;
+  // #645: the Security Administrator's role.
+  security?: boolean;
   username?: string;
   [key: string]: any;
 }
@@ -222,6 +224,10 @@ class ApiExplorer {
     }
     if (gate.write) {
       scopes.push('admin:write');
+    }
+    // #645: a security change takes admin:security, not admin:write.
+    if (gate.security) {
+      scopes.push('admin:security');
     }
     log.debug("Leaving ApiExplorer.scopesFor().");
     return scopes.join(' ');

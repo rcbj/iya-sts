@@ -270,6 +270,11 @@ import attributePolicy = require('../common/attribute_policy');
 // library that registers nothing; `scim_cells.ts` argues every operation.
 import scimCells = require('./scim_cells');
 import realms = require('../common/realms');
+// THE SECURITY ADMINISTRATOR'S ROLE (#645): who holds it, a person on the
+// roster or an application that is a member of SECURITY_ADMIN.
+import adminRbac = require('../admin-ui/admin_rbac');
+import roles = require('../common/roles');
+import SecurityOperations = require('../common/security_operations');
 import cells = require('../common/cells');
 // THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `fill()` makes the
 // templated sentences of `description()`, and `harvest()` collects this
@@ -867,6 +872,100 @@ class Scim {
     log.debug("Leaving Scim.coded().");
     return errorCodes.mark(error, code);
   };
+
+  // ---------------------------------------------------------------------------
+  // A SECURITY ADMINISTRATOR'S WRITE OVER SCIM (#645, 2026-11-02). SCIM is a
+  // door onto the same directory the management API and the LDAP socket
+  // guard (`common/security_operations.ts`, `ldap_server.js`'s
+  // `securityNeedOf()`), and it reaches two of the things only a Security
+  // Administrator may change: the role's GROUP (a PATCH adding a member is a
+  // grant) and the User of a person who HOLDS the role (a password, an
+  // `active: false`, a delete). The caller passes when it holds the role — a
+  // person on the roster of the realm, an application that is a member of
+  // SECURITY_ADMIN — and is refused 403 otherwise. An unauthenticated caller
+  // (development's permissive SCIM) is asked nothing, as it is asked nothing
+  // anywhere else on this surface.
+  // ---------------------------------------------------------------------------
+  private securityRefusal(req: ScimRequest, what: string): any {
+    const { log, SCIMMY } = this.deps;
+    const { coded } = this;
+    log.debug("Entering Scim.securityRefusal().");
+    const decision: any = (req && (req as any).scimAuth) || null;
+    if (!decision || decision.anonymous || !decision.principal) {
+      log.debug("Leaving Scim.securityRefusal(). Nobody to ask.");
+      return null;
+    }
+    const name = String(decision.principal);
+    let holds = false;
+    try {
+      holds = decision.isClient
+        ? roles.rolesOf({ kind: 'application', name: name,
+                          authenticated: true })
+            .indexOf(SecurityOperations.REGISTER_ROLE) >= 0
+        : adminRbac.holdsSecurity(name, realms.currentId());
+    } catch (e) {
+      // A roster that cannot be read holds nobody: this is a refusal, and
+      // it does not open because the directory failed.
+      log.debug("Caught in Scim.securityRefusal(): " +
+                ((e && e.message) || e));
+      holds = false;
+    }
+    if (holds) {
+      log.debug("Leaving Scim.securityRefusal(). A Security Administrator.");
+      return null;
+    }
+    log.info('scim: refusing ' + name + ': ' + what + ' is a Security ' +
+             'Administrator\'s change.');
+    log.debug("Leaving Scim.securityRefusal(). Refused.");
+    return coded('STS-SCIM-0086', new SCIMMY.Types.Error(403, null,
+      'Only a Security Administrator may ' + what + '. "' + name + '" does ' +
+      'not hold SECURITY_ADMIN: a person is granted it on /admin/rbac, an ' +
+      'application is made a member of the role on /admin/roles.'));
+  }
+
+  // Whether a person's entry holds the Security Administrator's role, in the
+  // realm being served.
+  private entryHoldsSecurity(entry: any): boolean {
+    const { log, directory } = this.deps;
+    log.debug("Entering Scim.entryHoldsSecurity().");
+    let holds = false;
+    try {
+      holds = !!entry && adminRbac.holdsSecurity(
+        String(directory.usernameOfEntry(entry) || ''), realms.currentId());
+    } catch (e) {
+      // Not knowing whether they hold it treats them as holding it: the
+      // refusal is the safe answer about somebody's account.
+      log.debug("Caught in Scim.entryHoldsSecurity(): " +
+                ((e && e.message) || e));
+      holds = !!entry;
+    }
+    log.debug("Leaving Scim.entryHoldsSecurity(). " + holds);
+    return holds;
+  }
+
+  // Whether a group name is the Security Administrator's group.
+  private isSecurityGroup(name: unknown): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering Scim.isSecurityGroup().");
+    const wanted = String(config.value(
+      SecurityOperations.SECURITY_GROUP_SETTING) || '').trim().toLowerCase();
+    log.debug("Leaving Scim.isSecurityGroup().");
+    return !!wanted && String(name || '').trim().toLowerCase() === wanted;
+  }
+
+  // The cn of a group entry, or the first RDN's value.
+  private groupCnOf(entry: any, dn: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Scim.groupCnOf().");
+    const attributes = (entry && entry.attributes) || {};
+    const key = Object.keys(attributes).filter(function (one) {
+      return one.toLowerCase() === 'cn';
+    })[0];
+    const rdn = String(dn || '').split(',')[0] || '';
+    log.debug("Leaving Scim.groupCnOf().");
+    return key ? String([].concat(attributes[key])[0] || '')
+               : rdn.slice(rdn.indexOf('=') + 1);
+  }
 
   private sendScimError(req: ScimRequest, res: any, info: CallInfo,
                        ex: any): void {
@@ -2198,6 +2297,15 @@ class Scim {
             'There is no entry at ' + resource.id + ' under ' +
             directory.usersDn() + '.'));
         }
+        // A HOLDER'S ACCOUNT (#645): see securityRefusal().
+        if (existing && this.entryHoldsSecurity(existing)) {
+          const refusedHere = this.securityRefusal(req,
+            'change the User of a person who holds the Security ' +
+            'Administrator\'s role');
+          if (refusedHere) {
+            throw refusedHere;
+          }
+        }
 
         // THE FEDERATION LINKS, CHECKED BEFORE ANYTHING IS WRITTEN (#109): a
         // create refused for a bad link must not leave a person behind. null
@@ -2455,6 +2563,15 @@ class Scim {
       }))
       .degress(async (resource, ctx) => {
         log.debug("Entering the SCIM User degress handler. id=" + resource.id);
+        // A HOLDER'S ACCOUNT (#645): see securityRefusal().
+        if (this.entryHoldsSecurity(directory.readPerson(resource.id))) {
+          const refusedHere = this.securityRefusal((ctx || {}).req,
+            'delete the User of a person who holds the Security ' +
+            'Administrator\'s role');
+          if (refusedHere) {
+            throw refusedHere;
+          }
+        }
         const removed = directory.deletePerson(resource.id);
         if (!removed.ok && removed.reason === 'protected') {
           // THE DEFAULT REALM'S BOOTSTRAP ADMINISTRATOR (2026-09-13), which no
@@ -2538,6 +2655,15 @@ class Scim {
             new SCIMMY.Types.Error(404, null,
                                    'There is no group at ' + resource.id +
                                    '.'));
+        }
+        // THE ROLE'S GROUP (#645): see securityRefusal().
+        if (this.isSecurityGroup(existing
+              ? this.groupCnOf(existing, resource.id) : displayName)) {
+          const refusedHere = this.securityRefusal(req,
+            'change the Security Administrator\'s group');
+          if (refusedHere) {
+            throw refusedHere;
+          }
         }
 
         const converted = scimMap.fromScimGroup(data,
@@ -2628,6 +2754,16 @@ class Scim {
       }))
       .degress((resource, ctx) => {
         log.debug("Entering the SCIM Group degress handler. id=" + resource.id);
+        // THE ROLE'S GROUP (#645): see securityRefusal().
+        const doomed = directory.readGroupEntry(resource.id);
+        if (doomed && this.isSecurityGroup(this.groupCnOf(doomed,
+                                                          resource.id))) {
+          const refusedHere = this.securityRefusal((ctx || {}).req,
+            'delete the Security Administrator\'s group');
+          if (refusedHere) {
+            throw refusedHere;
+          }
+        }
         const removed = directory.deleteGroupEntry(resource.id);
         if (!removed.ok) {
           throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
