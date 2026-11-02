@@ -453,6 +453,12 @@ uses the name a specification already gave it (`sub`, `sid`, `auth_time`, RFC
 8176 `amr`, `acr`), so a projection into any protocol is a mapping and never an
 invention.
 
+**A presented username that is a live `stsPseudonym` is that filing person's
+session (#644).** The issued subject stays the entry's `urn:uuid`. The issued
+username is the filing name. `identityOf()` stays a pure fold. The directory
+probe is `recordAuthentication()`, at request time, and only when the
+directory module is already loaded.
+
 ### Three things, kept apart
 
 | Concept | What it is | Fields |

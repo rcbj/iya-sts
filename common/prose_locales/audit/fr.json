@@ -643,6 +643,10 @@
     "en": "00a6e30371abdc2d",
     "text": "L’adresse d’une personne a été définie par un administrateur"
   },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "Les noms de connexion d'une personne ont été modifiés par un administrateur"
+  },
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "Un opérateur a effacé l’application d’authentification de quelqu’un"

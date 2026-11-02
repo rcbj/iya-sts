@@ -761,7 +761,13 @@ class PersonEditor {
     // the page, whose `set-mail` form starts from it.
     return { dn: person.dn, attributes: attributes,
              withheld: universe.withheld,
-             mail: String((person.attributes.mail || [])[0] || '') };
+             mail: String((person.attributes.mail || [])[0] || ''),
+             // Sign-in names (#644), withheld from the attribute grid the
+             // same way mail is: the page draws them beside the address.
+             pseudonyms: (person.attributes.stspseudonym || []).map(String),
+             pseudonymPending: String(
+               (person.attributes.stspseudonymverifyaddress || [])[0] ||
+               '') };
   }
 
   // -------------------------------------------------------------------------

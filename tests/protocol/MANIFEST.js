@@ -1493,6 +1493,10 @@ const JOBS = [
   // A person's attributes set, added to and removed from through
   // /admin-api (#228), in a realm of its own.
   { file: 'sts_person_attributes.js',    browser: false },
+  // Sign-in names (#644): a live stsPseudonym resolves as that person's
+  // uid, a pending email does not, and the portal and the console edit
+  // the same attribute.
+  { file: 'sts_pseudonyms.js',           browser: false },
   // Attribute sources against the stack's real PostgreSQL and MariaDB
   // (#94, #356): a database, a read-only account and a table of the job's
   // own, TLS verified against the source's own chain, the password read

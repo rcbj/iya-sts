@@ -18,6 +18,8 @@
   "nav.gnap.heading": "Access na ibinigay mo sa pamamagitan ng GNAP",
   "nav.email.label": "Email",
   "nav.email.heading": "Ang iyong email address at mga mensahe",
+  "nav.pseudonyms.label": "Mga pangalan sa pag-sign in",
+  "nav.pseudonyms.heading": "Mga pangalang magagamit mong pang-sign in",
   "section.owned.title": "Mga resource na pag-aari ko",
   "section.owned.what": "Ang mga role, grupo, service account at application na nagpapangalan sa iyo, o sa isang grupong kinabibilangan mo, bilang may-ari.",
   "nav.owned.roles.label": "Mga role",

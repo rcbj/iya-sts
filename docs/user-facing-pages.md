@@ -136,6 +136,7 @@ not drawn.
 |---|---|
 | Your account | `/portal` |
 | Email address and verification | `/portal/email`, `/portal/verify-email` |
+| Sign-in names | `/portal/pseudonyms`, `/portal/verify-pseudonym` |
 | Forgotten password | `/portal/forgot-password`, `/portal/reset-password` |
 | Account activation | `/portal/activate` |
 | Change your password | `/portal/password` |

@@ -586,26 +586,32 @@ function planOf(source, cellId, digest, now) {
   return plan;
 }
 
-// The routing index rows of one person's entry — `indexPeople()`'s two
-// claims, made from the same two values under the same digest.
+// The routing index rows of one person's entry — `indexPeople()`'s claims,
+// one per live name plus the entryUUID, under the same digest.
 function routesOf(row, cellId, digest, now) {
   log.debug("Entering routesOf().");
   const attrs = row.attrs || {};
-  const name = tiered.loginNameOf(row.dn_key, attrs);
+  const names = tiered.liveNamesOf(row.dn_key, attrs);
   const uuid = tiered.uuidOf(attrs);
   const out = [];
-  [['name', name], ['uuid', uuid]].forEach(function (pair) {
-    if (!pair[1]) {
-      return;
-    }
-    const made = digest(row.realm, pair[0], pair[1]);
+  names.forEach(function (name) {
+    const made = digest(row.realm, 'name', name);
     if (!made) {
       throw refusal('STS-CELL-0207', 'the routing index\'s digest could not ' +
                     'be made: no service key-encryption key is held.');
     }
-    out.push({ realm: String(row.realm), kind: pair[0], digest: made,
+    out.push({ realm: String(row.realm), kind: 'name', digest: made,
                cell: cellId, written_at: String(now) });
   });
+  if (uuid) {
+    const made = digest(row.realm, 'uuid', uuid);
+    if (!made) {
+      throw refusal('STS-CELL-0207', 'the routing index\'s digest could not ' +
+                    'be made: no service key-encryption key is held.');
+    }
+    out.push({ realm: String(row.realm), kind: 'uuid', digest: made,
+               cell: cellId, written_at: String(now) });
+  }
   log.debug("Leaving routesOf().");
   return out;
 }

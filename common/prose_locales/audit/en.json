@@ -160,6 +160,7 @@
   "audit.actions.admin.role.change.label": "An admin console role was granted or taken away",
   "audit.actions.admin.console.bootstrap.label": "The bootstrap administrator was seeded, or first signed in to the console",
   "audit.actions.admin.mail.set.label": "A person's address was set by an administrator",
+  "audit.actions.admin.pseudonym.set.label": "A person's sign-in names were changed by an administrator",
   "audit.actions.admin.mfa.totp.cleared.label": "An operator cleared somebody's authenticator app",
   "audit.actions.admin.mfa.key.cleared.label": "An operator removed somebody's security key",
   "audit.actions.admin.mfa.key.renamed.label": "An operator renamed somebody's passkey",

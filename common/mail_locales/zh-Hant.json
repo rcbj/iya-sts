@@ -20,6 +20,11 @@
       "text": "帳戶 {{username}} 將 {{address}} 登記為其電子郵件地址。\n\n如需確認這是您的地址，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n如果這不是您的帳戶，請忽略此郵件。\n",
       "html": "<p>帳戶 <strong>{{username}}</strong> 將 {{address}} 登記為其電子郵件地址。</p><p>請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">確認這是您的地址</a>。</p><p>如果這不是您的帳戶，請忽略此郵件。</p>"
     },
+    "pseudonym-verification": {
+      "subject": "請確認為 {{service}} 可用來登入的名稱",
+      "text": "帳戶 {{username}} 請求以 {{address}} 登入。\n\n如需確認您可以用此名稱登入，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n在您開啟之前，該名稱不能用來登入。如果這不是您的帳戶，請忽略此郵件。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 請求以 {{address}} 登入。</p><p>請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">確認您可以用此名稱登入</a>。在您開啟之前，該名稱不能用來登入。</p><p>如果這不是您的帳戶，請忽略此郵件。</p>"
+    },
     "password-changed": {
       "subject": "您的 {{service}} 密碼已變更",
       "text": "帳戶 {{username}} 的密碼已於 {{when}} 變更（{{how}}）。\n\n如果這不是您本人的操作，請立即聯絡您的帳戶管理員。\n",

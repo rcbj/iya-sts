@@ -18,6 +18,8 @@
   "nav.gnap.heading": "您透過 GNAP 授予的存取權",
   "nav.email.label": "電子郵件",
   "nav.email.heading": "您的電子郵件地址與郵件",
+  "nav.pseudonyms.label": "登入名稱",
+  "nav.pseudonyms.heading": "可用來登入的名稱",
   "section.owned.title": "我擁有的資源",
   "section.owned.what": "將您或您所在的群組指定為擁有者的角色、群組、服務帳戶和應用程式。",
   "nav.owned.roles.label": "角色",

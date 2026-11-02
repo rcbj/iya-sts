@@ -27,6 +27,7 @@ import SignInsPages = require('./web_sign_ins');
 import ConsentsPages = require('./web_consents');
 import GnapPages = require('./web_gnap');
 import MailPages = require('./web_mail');
+import PseudonymPages = require('./web_pseudonyms');
 import OwnedPages = require('./web_owned');
 import SharedPages = require('./web_shared');
 import PasswordPages = require('./web_password');
@@ -61,6 +62,7 @@ const PAGES: PortalPage[] = [].concat(
   ConsentsPages.PAGES,
   GnapPages.PAGES,
   MailPages.PAGES,
+  PseudonymPages.PAGES,
   OwnedPages.PAGES,
   SharedPages.PAGES,
   PasswordPages.PAGES,

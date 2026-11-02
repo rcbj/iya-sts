@@ -20,6 +20,11 @@
       "text": "Ang account na {{username}} ay nakalagay ang {{address}} bilang email address nito.\n\nPara kumpirmahing iyo ang address na ito, buksan ang link na ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nKung hindi mo ito account, balewalain ang mensaheng ito.\n",
       "html": "<p>Ang account na <strong>{{username}}</strong> ay nakalagay ang {{address}} bilang email address nito.</p><p><a href=\"{{link}}\">Kumpirmahing iyo ang address na ito</a> sa loob ng {{expiresMinutes}} minuto.</p><p>Kung hindi mo ito account, balewalain ang mensaheng ito.</p>"
     },
+    "pseudonym-verification": {
+      "subject": "Kumpirmahin ang pangalang magagamit mong pang-sign in para sa {{service}}",
+      "text": "Ang account na {{username}} ay humiling na mag-sign in bilang {{address}}.\n\nPara kumpirmahing magagamit mo ang pangalang ito sa pag-sign in, buksan ang link na ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nHanggang hindi mo ito binubuksan, hindi ka nito pinapasign-in. Kung hindi mo ito account, balewalain ang mensaheng ito.\n",
+      "html": "<p>Ang account na <strong>{{username}}</strong> ay humiling na mag-sign in bilang {{address}}.</p><p><a href=\"{{link}}\">Kumpirmahing magagamit mo ang pangalang ito sa pag-sign in</a> sa loob ng {{expiresMinutes}} minuto. Hanggang hindi mo ito binubuksan, hindi ka nito pinapasign-in.</p><p>Kung hindi mo ito account, balewalain ang mensaheng ito.</p>"
+    },
     "password-changed": {
       "subject": "Napalitan ang iyong password sa {{service}}",
       "text": "Napalitan ang password ng account na {{username}} noong {{when}} ({{how}}).\n\nKung hindi ikaw ito, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",

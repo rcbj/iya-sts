@@ -1501,6 +1501,10 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   `entryParams()` makes — origin `bulk import`. **A change to what `putEntry()`
   or `entryParams()` writes is owed here too**; `tests/bulk_import.js` D1
   opens rows and recomputes their columns, and A5 pins the order.
+* **A LIVE `stsPseudonym` IS A NAME IN THAT LOAD (#644).** Its shape is the
+  writer's. An email-shaped value is refused when another accepted record's
+  mail folds to it. The import does not call `writePseudonyms()`.
+  `tests/bulk_import.js` A holds the shape.
 * **THE CHECK IS THREE STATEMENTS A BATCH, NEVER A CORRELATED EXISTS A ROW.**
   The first version guarded the insert with `EXISTS (… name_keys @>
   jsonb_build_array(x))` per row; the planner prices jsonb containment at a
@@ -3365,7 +3369,9 @@ minted rows split row by row. Three things it does beyond routing:
   (`common/cell_routing.ts` makes them), a delete releases both, and a claim
   answered with another cell is counted (STS-CELL-0020) rather than failing
   the flush — creation paths claim first, and this is the race that check
-  cannot close.
+  cannot close. The index remembers every live sign-in name, the filing
+  name and each `stsPseudonym`, and a rename releases the names that left.
+  A pending verification address is absent from it.
 * **A projected entry is never written here** (origin `projection:<home>`,
   `common/cell_sessions.ts`); a change to one is handed to the sessions module,
   which sends it home. `persistence.materializeEntry()` is how a projection

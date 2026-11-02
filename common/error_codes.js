@@ -14068,6 +14068,13 @@ const CODES = [
       'evidence, and this realm\'s own krb5.crossRealmClassicDelegation is ' +
       'off (both realms must turn it on).',
     spec: 'KDC_ERR_POLICY (12); [MS-SFU] 3.2.5.2' },
+  { code: 'STS-KRB-0243',
+    summary: 'A Kerberos principal named a person the directory found, and ' +
+      'the name on their stored keys differs from that principal even ' +
+      'after both are folded to lower case. The keys stay unused. A ' +
+      'case-only mismatch of the real principal is the older refusal and ' +
+      'is not this code (#644).',
+    spec: 'none (a log line; the principal is unknown to the KDC)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -14838,6 +14845,32 @@ const CODES = [
     summary: 'A named attribute policy was not deleted: a person or a ' +
       'group still names it through stsAttributePolicy (#1241).',
     spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-LDAP-0198',
+    summary: 'An LDAP add or modify named stsPseudonym or one of its ' +
+      'pending verification attributes. Those are written by the portal ' +
+      'and by POST /admin-api/users/set-pseudonyms (#644).',
+    spec: 'LDAP constraintViolation (19)' },
+  { code: 'STS-LDAP-0199',
+    summary: 'A pseudonym was refused for its shape: empty, longer than ' +
+      '254 characters, a character a distinguished name reserves, a ' +
+      'distinguished name, a subject, a DID, a SPIFFE identity, a reserved ' +
+      'name, or an eighth value when the person already holds eight ' +
+      '(#644).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0200',
+    summary: 'A pseudonym is already another person\'s uid, RDN or live ' +
+      'pseudonym in this realm, or another cell already holds the name ' +
+      '(#644). The other cell is not named in the answer.',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0201',
+    summary: 'A pseudonym is this person\'s own uid or RDN (#644).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0202',
+    summary: 'An email-shaped pseudonym is already some other person\'s ' +
+      'mail address, or a mail address is already some other person\'s ' +
+      'uid or live pseudonym (#644). Two people may still share a mail ' +
+      'attribute with each other.',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -23496,6 +23529,16 @@ const CODES = [
       'refused by the directory (#1235); the refusal carries the ' +
       'directory\'s own code.',
     spec: 'HTTP 400 (API) or a refusal on the group\'s page' },
+  { code: 'STS-ADMIN-0908',
+    summary: 'set-pseudonyms was given a body that does not name exactly ' +
+      'one of add, remove or cancelPending, or that names no person ' +
+      '(#644).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0909',
+    summary: 'set-pseudonyms named nobody in this realm, or the directory ' +
+      'refused the value. The directory\'s own STS-LDAP code is recorded ' +
+      'on its log (#644).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -24416,6 +24459,15 @@ const CODES = [
       'directory was installed, or the store could not be read. The page ' +
       'says so and the DN form still works (2026-10-20).',
     spec: 'HTTP 503 JSON' },
+  { code: 'STS-PORTAL-0623',
+    summary: 'A pseudonym change on /account-api could not be attempted: ' +
+      'the directory module was not loaded. A directory refusal records ' +
+      'its own STS-LDAP code instead (#644).',
+    spec: 'HTTP 503 JSON' },
+  { code: 'STS-PORTAL-0624',
+    summary: 'A /portal/verify-pseudonym link is unknown, expired, ' +
+      'mismatched or already spent (#644).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

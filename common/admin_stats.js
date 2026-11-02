@@ -3629,6 +3629,36 @@ function recordAuthentication(detail) {
       identity.realm = '';
     }
   }
+  // A LIVE PSEUDONYM IS THIS PERSON (#644). identityOf() stays a pure fold:
+  // this file is on the hot path, and ldap_server.js requires it while that
+  // module is still loading. The directory is asked only when it is already
+  // loaded, and only for the whole presented string. A hit replaces the
+  // fold with the name the entry is filed under, so a sign-in of an alias
+  // does not create a second person and does not issue the alias as the
+  // username. A miss leaves the fold, which is still how an ordinary
+  // address shares a row with its local part.
+  try {
+    const resolved = require.resolve('../ldap/ldap_server');
+    const loaded = require.cache[resolved];
+    const directory = loaded && loaded.exports;
+    const presented = String(identity.form || '');
+    if (directory && typeof directory.existingUserEntry === 'function' &&
+        presented) {
+      const hit = directory.existingUserEntry(presented);
+      const filed = hit && typeof directory.personNameOf === 'function'
+        ? String(directory.personNameOf(hit) || '') : '';
+      if (filed) {
+        identity.key = filed;
+        identity.name = filed;
+        identity.realm = '';
+      }
+    }
+  } catch (e) {
+    // The authentication stands on the fold. A directory that cannot be
+    // asked is the same outcome as a name it does not hold.
+    log.debug('Caught in recordAuthentication(): ' +
+              ((e && e.message) || e));
+  }
   const now = Date.now();
   const record = userRecord(identity);
   record.forms[identity.form] = (record.forms[identity.form] || 0) + 1;

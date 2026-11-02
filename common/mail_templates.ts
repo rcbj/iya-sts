@@ -159,6 +159,23 @@ const BUILT_IN: TemplateSpec[] = [
           'Confirm that this is your address</a> within {{expiresMinutes}} ' +
           'minutes.</p><p>If this is not your account, ignore this ' +
           'message.</p>' },
+  // #644: a name the person can sign in with. Not the recovery address,
+  // and not spent by /portal/verify-email.
+  { id: 'pseudonym-verification', category: 'account',
+    title: 'A sign-in name verification link',
+    values: ['username', 'address', 'expiresMinutes'],
+    links: ['link'],
+    subject: 'Confirm a name you can sign in with for {{service}}',
+    text: 'The account {{username}} asked to sign in as {{address}}.\n\n' +
+          'To confirm that you can sign in with this name, open this ' +
+          'link within {{expiresMinutes}} minutes:\n\n{{link}}\n\nUntil ' +
+          'you open it, that name does not sign you in. If this is not ' +
+          'your account, ignore this message.\n',
+    html: '<p>The account <strong>{{username}}</strong> asked to sign in ' +
+          'as {{address}}.</p><p><a href="{{link}}">Confirm that you can ' +
+          'sign in with this name</a> within {{expiresMinutes}} minutes. ' +
+          'Until you open it, that name does not sign you in.</p><p>If ' +
+          'this is not your account, ignore this message.</p>' },
   { id: 'password-changed', category: 'security',
     title: 'Your password was changed',
     values: ['username', 'when', 'how'],

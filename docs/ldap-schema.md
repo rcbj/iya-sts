@@ -176,6 +176,8 @@ uploaded instead.
 | `stsServiceAccountPolicy` | the [named service-account policy](service-accounts.md#named-policies) a service account is governed by, or `default`; single-valued, held only by a service account and cleared with `stsServiceAccount`. Set on the person's Policies tab, with `POST /admin-api/users/set-attribute`, or by an LDAP modify, each checked against the realm's policies (#1240) |
 | `stsMailVerified` | the address they proved they receive mail at (#63) |
 | `stsMailVerifyToken`, `stsMailVerifyExpires`, `stsMailVerifyAddress` | a pending verification link. The token is **withheld** |
+| `stsPseudonym` | another name this person can sign in with, in place of their `uid` (#644). At most eight. A live value is in the username index. An email an administrator sets is live; one the person adds waits for its link |
+| `stsPseudonymVerifyToken`, `stsPseudonymVerifyExpires`, `stsPseudonymVerifyAddress` | a pending sign-in name. The token is **withheld**. The address is absent from the username index |
 
 ---
 

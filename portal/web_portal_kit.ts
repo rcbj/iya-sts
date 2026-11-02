@@ -340,7 +340,13 @@ const NAV = [
       // service SAYS to the person, not a credential. Drawn by
       // `portal_mail.ts`.
       { path: BASE + '/email', label: 'Email',
-        heading: 'Your email address and messages' }
+        heading: 'Your email address and messages' },
+      // SIGN-IN NAMES (#644). Under *Your account* beside Email: another
+      // name for the same person, not a credential. Drawn by
+      // `portal_pseudonyms.ts`. The verification link is a page for
+      // nobody and is not in this column.
+      { path: BASE + '/pseudonyms', label: 'Sign-in names',
+        heading: 'Names you can sign in with' }
     ] },
   // RESOURCES I OWN (#604, rcbj): what the owner fields on roles, groups,
   // service accounts and applications name this person — or a group they are

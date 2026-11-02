@@ -1671,6 +1671,12 @@ keytab 0x502 writer and reader; this repository had no keytab code before, reade
 writer, so there was nothing to reuse and the test carries an independent reader). The
 directory's count above is sixteen files now.
 
+**An alias is not the principal (#644).** `personKeys()` does not treat a
+`stsPseudonym` as the name the keys were sealed under. `STS-KRB-0243` is
+logged only when the filing name and the principal still differ after
+`toLowerCase`, and the state stays `unknown`. A case-only difference of the
+real principal logs nothing.
+
 **THE PROBLEM WAS STRUCTURAL.** A person's password is a scrypt hash on their entry, and
 RFC 3961 string-to-key needs the plaintext. So the keys are derived at the two moments
 `common/credentials.ts` holds one — a password SET, and a password VERIFIED — and stored,

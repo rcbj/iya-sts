@@ -19,7 +19,10 @@
 // key every node holds), so an exact match is still one indexed probe and
 // nothing in the column says what it matched.
 //
-//   name_keys   the `uid` values, lower-cased      — `byName()`
+//   name_keys   the `uid` values and the live      — `byName()`
+//               `stsPseudonym` values, lower-cased
+//               (#644). A pending verification
+//               address is not a name.
 //   mail_keys   `mail`, lower-cased                — `byMail()`
 //   uuid_keys   `entryUUID` and its aliases        — `byUuid()`,
 //                                                   `withUuids()`
@@ -257,7 +260,10 @@ function indexOf(attrs) {
     });
   });
   const out = {
-    nameKeys: keyed('name', lowered(valuesOf(a, 'uid'))),
+    // `uid` and a live pseudonym answer the same question (#644). The
+    // pending address is a different attribute and is not a key.
+    nameKeys: keyed('name', lowered(valuesOf(a, 'uid')
+      .concat(valuesOf(a, 'stspseudonym')))),
     mailKeys: keyed('mail', lowered(valuesOf(a, 'mail'))),
     uuidKeys: keyed('uuid', lowered(valuesOf(a, 'entryuuid')
       .concat(valuesOf(a, 'stsentryuuidalias')))),

@@ -110,7 +110,10 @@ const ALLOWED_ATTRIBUTES = new Set([
   'businesscategory', 'carlicense', 'homepostaladdress', 'registeredaddress',
   'destinationindicator', 'preferreddeliverymethod', 'seealso',
   'internationalisdnnumber', 'x121address', 'telexnumber',
-  'teletexterminalidentifier', 'x500uniqueidentifier'
+  'teletexterminalidentifier', 'x500uniqueidentifier',
+  // A live alias (#644). The pending verification attributes stay off this
+  // list, so a record that names one is the existing STS-LDAP-0156.
+  'stspseudonym'
 ]);
 
 // A person, and nothing a GROUP could be: a groupOfNames under ou=users would
@@ -263,8 +266,38 @@ function candidateOf(record, usersKey, required) {
     return no('STS-LDAP-0163', 'the realm\'s attribute policy requires ' +
               missing.join(', ') + ', which the record does not carry');
   }
+  // A LIVE ALIAS (#644). An imported email is trusted the way an
+  // administrator's is: it is a name immediately. Its shape is the same
+  // rule the writer uses. Uniqueness against another login name is the
+  // name_keys probe below; uniqueness against another person's mail is
+  // the mail_keys probe. This record's own mail is not that collision.
+  const rules = require('../ldap/pseudonym_rules');
+  const transports = require('../common/mail_transports');
+  const own = Array.from(new Set(uids.concat([wanted])));
+  const aliasNames = [];
+  const mailAliases = [];
+  const pseudonyms = attributes.stspseudonym || [];
+  for (let i = 0; i < pseudonyms.length; i++) {
+    const text = String(pseudonyms[i]).trim();
+    const email = transports.addressProblem(text) === '';
+    const problem = rules.pseudonymProblem(text, {
+      ownNames: own, email: email, liveCount: i
+    });
+    if (!problem.ok) {
+      return no(problem.code, problem.sentence);
+    }
+    const fold = text.toLowerCase();
+    aliasNames.push(fold);
+    // This record's own mail is not in the store and not yet in the
+    // batch's mail map, so probing it still finds only somebody else.
+    if (email) {
+      mailAliases.push(fold);
+    }
+  }
   return { ok: true, dn: dn, dnKey: normalizeDn(dn),
-           names: Array.from(new Set([wanted].concat(uids))),
+           names: Array.from(new Set([wanted].concat(uids)
+             .concat(aliasNames))),
+           mailAliases: mailAliases,
            attributes: attributes };
 }
 
@@ -333,12 +366,24 @@ const HELD_NAME_KEYS =
   'WITH hit AS MATERIALIZED (SELECT realm, parent_key, name_keys FROM ' +
   'sts_ldap_entries WHERE name_keys @> ANY($3::jsonb[])) ' +
   'SELECT name_keys FROM hit WHERE realm = $1 AND parent_key = $2';
+// An email-shaped pseudonym against `mail` (#644). The same shape as the
+// name probe, on `mail_keys`. A hit is STS-LDAP-0202, not a login-name
+// collision: two people may still share a mail attribute with each other.
+const HELD_MAIL_KEYS =
+  'WITH hit AS MATERIALIZED (SELECT realm, parent_key, mail_keys FROM ' +
+  'sts_ldap_entries WHERE mail_keys @> ANY($3::jsonb[])) ' +
+  'SELECT mail_keys FROM hit WHERE realm = $1 AND parent_key = $2';
 
 // Who holds a name, for the report (the first twenty only).
 const HOLDER =
   'SELECT e.dn FROM sts_ldap_entries e WHERE e.realm = $1 AND ' +
   'e.parent_key = $2 AND (e.name_keys @> jsonb_build_array($3::text) OR ' +
   'e.rdn_value = $4) ORDER BY e.dn_key LIMIT 1';
+// Who holds the mail an email-shaped pseudonym named (#644).
+const MAIL_HOLDER =
+  'SELECT e.dn FROM sts_ldap_entries e WHERE e.realm = $1 AND ' +
+  'e.parent_key = $2 AND e.mail_keys @> jsonb_build_array($3::text) ' +
+  'ORDER BY e.dn_key LIMIT 1';
 
 // THE CHECK UNDER THE LOCK, AFTER THE INSERT (#637), IS THE SAME THREE
 // STATEMENTS ON A SECOND CONNECTION. It cannot see the batch's own rows (not
@@ -405,11 +450,12 @@ const INSERT =
  *   `digests`
  * @param inserted - true under the lock, after the insert: the DN needs no
  *   asking
- * @returns a promise of `{ present: Set<index>, taken: Set<index> }`
+ * @returns a promise of `{ present, taken, mailed }`, each a set of indexes.
+ *   `mailed` is an email-shaped pseudonym held as somebody else's mail.
  */
 async function classify(db, realmId, usersKey, fresh, inserted) {
   log.debug("Entering classify(). " + fresh.length);
-  const out = { present: new Set(), taken: new Set() };
+  const out = { present: new Set(), taken: new Set(), mailed: new Set() };
   if (!fresh.length) {
     log.debug("Leaving classify(). Nothing.");
     return out;
@@ -426,7 +472,18 @@ async function classify(db, realmId, usersKey, fresh, inserted) {
   const keys = inserted ? { rows: [] } : await db.query(PRESENT_KEYS,
     [realmId, fresh.map(function (one) { return one.c.dnKey; })]);
   const rdns = await db.query(HELD_RDNS, [realmId, usersKey, names]);
-  const held = await db.query(HELD_NAME_KEYS, [realmId, usersKey, digests]);
+  const held = digests.length
+    ? await db.query(HELD_NAME_KEYS, [realmId, usersKey, digests])
+    : { rows: [] };
+  const mailDigests = [];
+  fresh.forEach(function (one) {
+    (one.c.mailAliases || []).forEach(function (n, j) {
+      mailDigests.push(JSON.stringify([(one.mailDigests || [])[j]]));
+    });
+  });
+  const heldMail = mailDigests.length
+    ? await db.query(HELD_MAIL_KEYS, [realmId, usersKey, mailDigests])
+    : { rows: [] };
   const presentKeys = new Set((keys.rows || []).map(function (row) {
     return row.dn_key;
   }));
@@ -439,9 +496,19 @@ async function classify(db, realmId, usersKey, fresh, inserted) {
       heldDigests.add(one);
     });
   });
+  const heldMailDigests = new Set();
+  (heldMail.rows || []).forEach(function (row) {
+    (row.mail_keys || []).forEach(function (one) {
+      heldMailDigests.add(one);
+    });
+  });
   fresh.forEach(function (one, i) {
     if (presentKeys.has(one.c.dnKey)) {
       out.present.add(i);
+    } else if ((one.c.mailAliases || []).some(function (n, j) {
+      return heldMailDigests.has((one.mailDigests || [])[j]);
+    })) {
+      out.mailed.add(i);
     } else if (one.c.names.some(function (n, j) {
       return heldNames.has(n) || heldDigests.has(one.digests[j]);
     })) {
@@ -449,7 +516,7 @@ async function classify(db, realmId, usersKey, fresh, inserted) {
     }
   });
   log.debug("Leaving classify(). " + out.present.size + " present, " +
-            out.taken.size + " taken.");
+            out.taken.size + " taken, " + out.mailed.size + " mailed.");
   return out;
 }
 
@@ -623,12 +690,13 @@ async function namePendingMerger(db, rights) {
  * Imports the people of an LDIF file into one realm's `ou=users`.
  *
  * @param options - `{ db, realmId, usersDn, file, batch, skip, codec,
- *   digest, language, maxEntries, sealing, settle, seal, uuid, now,
- *   liveCheck }`: `db` a pg Pool (or anything with `connect()` and
+ *   digest, mailDigest, language, maxEntries, sealing, settle, seal, uuid,
+ *   now, liveCheck }`: `db` a pg Pool (or anything with `connect()` and
  *   `query()`), `codec` a `directory_codec` codec, `digest(name)` the name's
- *   lookup form, `seal(fn)` runs `fn` in the realm, `settle()` waits for
- *   data-key rows, `maxEntries()` the realm's ceiling, `sealing` whether a
- *   blob must come back sealed
+ *   lookup form, `mailDigest(address)` the mail lookup form of an
+ *   email-shaped pseudonym (#644), `seal(fn)` runs `fn` in the realm,
+ *   `settle()` waits for data-key rows, `maxEntries()` the realm's ceiling,
+ *   `sealing` whether a blob must come back sealed
  * @returns a promise of the report
  */
 async function importFile(options) {
@@ -643,7 +711,8 @@ async function importFile(options) {
   const report = {
     realm: realmId, file: o.file, usersDn: o.usersDn, origin: ORIGIN,
     batchSize: batchSize, records: 0, skipped: 0, imported: 0, present: 0,
-    taken: 0, refused: 0, refusals: {}, examples: [], batches: 0,
+    taken: 0, mailTaken: 0, refused: 0, refusals: {}, examples: [],
+    batches: 0,
     committedThrough: skip, stopped: '', seconds: 0, perSecond: 0,
     // Seconds spent waiting for the realm's import lock and holding it: the
     // share of a batch several imports at once cannot overlap (#637).
@@ -671,6 +740,27 @@ async function importFile(options) {
       const one = list[i];
       if (found.present.has(i)) {
         report.present += 1;
+      } else if (found.mailed.has(i)) {
+        // An email-shaped alias held as somebody else's mail (#644). Counted
+        // apart from a login-name collision, which stays STS-LDAP-0160.
+        report.mailTaken += 1;
+        let holder = '';
+        let address = '';
+        if (report.examples.length < EXAMPLES) {
+          const aliases = one.c.mailAliases || [];
+          for (let j = 0; j < aliases.length && !holder; j++) {
+            const h = await db.query(MAIL_HOLDER, [realmId, usersKey,
+                                                   (one.mailDigests || [])[j]]);
+            holder = ((h.rows || [])[0] || {}).dn || '';
+            if (holder) {
+              address = aliases[j];
+            }
+          }
+        }
+        example(one.r, 'STS-LDAP-0202', 'an email name of ' + one.c.dn +
+                (address ? ' (' + address + ')' : '') +
+                ' is somebody else\'s mail, held by ' +
+                (holder || 'another entry'));
       } else if (found.taken.has(i)) {
         report.taken += 1;
         let holder = '';
@@ -761,10 +851,12 @@ async function importFile(options) {
     }
     // WITHIN THE BATCH, IN JAVASCRIPT: the first record with a DN or a name
     // wins; a repeat of the same DN is present, a new DN with a held name is
-    // taken.
+    // taken. An email-shaped pseudonym that is another accepted record's
+    // mail is STS-LDAP-0202 (#644). This record's own mail is not that
+    // collision, and a mail attribute is not itself unique.
     const byKey = new Map();
     const byName = new Map();
-    const fresh = [];
+    const accepted = [];
     for (const one of records) {
       if (byKey.has(one.c.dnKey)) {
         report.present += 1;
@@ -784,8 +876,36 @@ async function importFile(options) {
       one.c.names.forEach(function (n) {
         byName.set(n, one.c.dn);
       });
+      accepted.push(one);
+    }
+    const mailOf = new Map();
+    accepted.forEach(function (one) {
+      (one.c.attributes.mail || []).forEach(function (value) {
+        const fold = String(value).trim().toLowerCase();
+        if (fold && !mailOf.has(fold)) {
+          mailOf.set(fold, one.c.dn);
+        }
+      });
+    });
+    const fresh = [];
+    const mailDigest = o.mailDigest || o.digest;
+    for (const one of accepted) {
+      const mailed = (one.c.mailAliases || []).filter(function (n) {
+        const holder = mailOf.get(n);
+        return holder && holder !== one.c.dn;
+      })[0];
+      if (mailed) {
+        report.mailTaken += 1;
+        example(one.r, 'STS-LDAP-0202', 'the email name ' + mailed +
+                ' of ' + one.c.dn + ' is somebody else\'s mail, held by ' +
+                mailOf.get(mailed) + ', in this file');
+        continue;
+      }
       one.digests = one.c.names.map(function (n) {
         return o.digest(n);
+      });
+      one.mailDigests = (one.c.mailAliases || []).map(function (n) {
+        return mailDigest(n);
       });
       fresh.push(one);
     }
@@ -1425,6 +1545,13 @@ async function main(argv) {
           return require('./directory_codec').lookupOf('name', name);
         });
       },
+      // An email-shaped pseudonym is probed as mail, not as a login name
+      // (#644). The fold is already lower-case.
+      mailDigest: function (name) {
+        return inRealm(function () {
+          return require('./directory_codec').lookupOf('mail', name);
+        });
+      },
       maxEntries: function () {
         log.debug("Entering maxEntries().");
         log.debug("Leaving maxEntries().");
@@ -1455,13 +1582,15 @@ async function main(argv) {
     }
     log.info('bulk_import: ' + report.imported + ' imported, ' +
              report.present + ' already present, ' + report.taken +
-             ' with a username held, ' + report.refused + ' refused, in ' +
-             report.seconds + ' s (' + report.perSecond + ' a second).');
+             ' with a username held, ' + report.mailTaken +
+             ' with an email name held as mail, ' + report.refused +
+             ' refused, in ' + report.seconds + ' s (' + report.perSecond +
+             ' a second).');
     log.debug("Leaving main().");
     if (report.stopped) {
       return 1;
     }
-    return report.refused || report.taken ? 3 : 0;
+    return report.refused || report.taken || report.mailTaken ? 3 : 0;
   } catch (e) {
     log.debug("Caught in main(): " + ((e && e.message) || e));
     const message = String((e && e.message) || e);

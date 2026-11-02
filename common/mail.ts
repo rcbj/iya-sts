@@ -223,8 +223,10 @@ interface Directory {
   writeMailFlag: (username: string, name: string, value: unknown) => boolean;
   personExists?: (username: string) => boolean;
   // #64: `mail` itself, by an administrator or a completed change.
-  writeAddress?: (username: string, address: string,
-                  source: string) => boolean;
+  // A promise of `{ ok, code }` (#644). A boolean is what a test stub
+  // still returns.
+  writeAddress?: (username: string, address: string, source: string) =>
+    boolean | Promise<boolean | { ok?: boolean; code?: string }>;
 }
 
 interface MailDeps {
@@ -1266,6 +1268,75 @@ class Mail {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // THE THIRD MESSAGE NOT SENT TO `mail` AS IT IS (#644): the link that makes
+  // an email-shaped sign-in name live, to `stsPseudonymVerifyAddress`. One
+  // template only, `pseudonym-verification`. The address is the entry's
+  // pending name, never a request's.
+  // -------------------------------------------------------------------------
+  /**
+   * Sends the sign-in-name link to the pending address on the entry; only the
+   * `pseudonym-verification` template.
+   *
+   * @param req - as for `send()`, with `username`
+   * @returns as for `send()`, or a coded refusal
+   */
+  sendToPseudonymAddress(req: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Mail.sendToPseudonymAddress().");
+    const out: Json = { ok: false, queued: [], refused: [], duplicates: [] };
+    const spec = MailTemplates.builtIn('pseudonym-verification');
+    if (!req || req.template !== 'pseudonym-verification' ||
+        !this.available()) {
+      out.error = 'no mail transport is configured';
+      log.debug("Leaving Mail.sendToPseudonymAddress(). Not this template, " +
+                "or no transport.");
+      return out;
+    }
+    const base = this.linkBase();
+    if (!base) {
+      out.error = 'global.publicBaseUrl is not set';
+      log.debug("Leaving Mail.sendToPseudonymAddress(). No link base.");
+      return out;
+    }
+    const entry = directory && req.username
+      ? directory.personEntry(String(req.username)) : null;
+    const pending = entry
+      ? String(((entry.attributes || {}).stspseudonymverifyaddress ||
+                [])[0] || '')
+      : '';
+    if (!pending) {
+      out.error = 'no sign-in name is pending';
+      log.debug("Leaving Mail.sendToPseudonymAddress(). Nothing pending.");
+      return out;
+    }
+    try {
+      const one = this.queueOne(req, spec, String(req.username || ''), base,
+                                pending);
+      if (one.refused) {
+        out.refused.push(one.refused);
+        out.error = one.refused.why;
+      } else if (one.duplicate) {
+        out.duplicates.push(one.duplicate);
+      } else {
+        out.queued.push(one.queued);
+      }
+      out.ok = out.queued.length + out.duplicates.length > 0;
+      Object.defineProperty(out, 'delivered',
+                            { value: this.dispatch(out.queued),
+                              enumerable: false });
+    } catch (e) {
+      log.debug("Caught in Mail.sendToPseudonymAddress(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0031') + 'mail: a sign-in name ' +
+               'verification could not be queued: ' +
+               ((e && e.message) || e));
+      out.error = String((e && e.message) || e);
+    }
+    log.debug("Leaving Mail.sendToPseudonymAddress().");
+    return out;
+  }
+
   /**
    * Sends the `address-changed` notice to the address the entry had, handed in
    * by the directory; only that template.
@@ -1407,8 +1478,9 @@ class Mail {
       .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
   }
 
-  // One recipient: every check, then the row. `former` is
-  // `sendToFormerAddress()`'s address, and only that.
+  // One recipient: every check, then the row. `former` overrides the
+  // address on the entry: a former address, a pending recovery address,
+  // or a pending sign-in name (#644).
   private queueOne(req: SendRequest, spec: Json, username: string,
                    base: string, former?: string, group?: Json): Json {
     const { log, realms, audit, now } = this.deps;
@@ -2326,6 +2398,7 @@ export = {
   send: slot.forward('send'),
   sendToFormerAddress: slot.forward('sendToFormerAddress'),
   sendToPendingAddress: slot.forward('sendToPendingAddress'),
+  sendToPseudonymAddress: slot.forward('sendToPseudonymAddress'),
   attempt: slot.forward('attempt'),
   dispatch: slot.forward('dispatch'),
   retry: slot.forward('retry'),

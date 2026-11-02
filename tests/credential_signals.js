@@ -176,7 +176,8 @@ function childMain() {
         // ================================================================
         // A1. The emailed factor.
         person('cs-amy');
-        mail.directory().writeAddress('cs-amy', 'amy@cs.example', 'admin');
+        await mail.directory().writeAddress('cs-amy', 'amy@cs.example',
+                                            'admin');
         const opened = authnPolicy.save('default', Object.assign({},
           authnPolicy.DEFAULTS, { emailCodeSecondFactor: true,
             emailLinkSecondFactor: true, emailFailureLimit: 5 }));

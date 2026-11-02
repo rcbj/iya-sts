@@ -18,6 +18,8 @@
   "nav.gnap.heading": "您通过 GNAP 授予的访问权限",
   "nav.email.label": "电子邮件",
   "nav.email.heading": "您的电子邮件地址和邮件",
+  "nav.pseudonyms.label": "登录名",
+  "nav.pseudonyms.heading": "可用于登录的名称",
   "section.owned.title": "我拥有的资源",
   "section.owned.what": "将您或您所在的组指定为所有者的角色、组、服务账户和应用程序。",
   "nav.owned.roles.label": "角色",

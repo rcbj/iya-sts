@@ -267,7 +267,8 @@ async function run(t) {
     checkTarget(url.slice(ORIGIN.length), row.path, problems, cache);
   });
   ['/portal/activate', '/portal/reset-password', '/portal/verify-email',
-   '/portal/forgot-password'].forEach(function (portalPath) {
+   '/portal/verify-pseudonym', '/portal/forgot-password']
+    .forEach(function (portalPath) {
     if (!DocLinks.forPortalPage(portalPath)) {
       problems.push('unsigned portal page ' + portalPath);
     }

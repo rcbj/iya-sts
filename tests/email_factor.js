@@ -109,17 +109,17 @@ function childMain() {
       config.setOverride('security.rateLimitPerIdentity', '200');
       config.setOverride('security.rateLimitPerAddress', '1000');
 
-      const person = function (name, address, verified) {
+      const person = async function (name, address, verified) {
         ldapServer.createUser(name, {});
         credentials.setPassword(name, 'Email-Factor-1!');
-        mail.directory().writeAddress(name, address,
-                                      verified ? 'admin' : '');
+        await mail.directory().writeAddress(name, address,
+                                            verified ? 'admin' : '');
       };
-      person('ef-amy', 'amy@example.com', true);
-      person('ef-bo', 'bo@example.com', true);
-      person('ef-cy', 'cy@example.com', true);
-      person('ef-dee', 'dee@example.com', false);
-      person('ef-eve', 'eve@example.com', true);
+      await person('ef-amy', 'amy@example.com', true);
+      await person('ef-bo', 'bo@example.com', true);
+      await person('ef-cy', 'cy@example.com', true);
+      await person('ef-dee', 'dee@example.com', false);
+      await person('ef-eve', 'eve@example.com', true);
 
       const startSignIn = async function () {
         const got = await request(port, 'GET', '/oauth2/authorize?' +

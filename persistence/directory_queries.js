@@ -41,8 +41,10 @@
 //   * `rdn_value` is the first RDN's value, lower-cased (the key is), still
 //     DN-escaped. `usernameOfEntry()` unescapes; a name whose RDN carries an
 //     escape is matched through `name_keys` (its `uid`) instead.
-//   * `name_keys` is the entry's `uid` values, lower-cased: with `rdn_value`,
-//     the pair `usernameKeysOf()` indexes.
+//   * `name_keys` is the entry's `uid` values and its live `stsPseudonym`
+//     values, lower-cased (#644): with `rdn_value`, the set
+//     `usernameKeysOf()` indexes. A pending verification address is not in
+//     the column.
 //   * `mail_keys` is `mail`, lower-cased; `uuid_keys` is `entryUUID` and its
 //     aliases (`stsEntryUuidAlias`), lower-cased.
 //

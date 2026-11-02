@@ -643,6 +643,10 @@
     "en": "00a6e30371abdc2d",
     "text": "管理員設定了某人的地址"
   },
+  "audit.actions.admin.pseudonym.set.label": {
+    "en": "eee8659e029f0eb1",
+    "text": "管理員更改了一個人的登入名稱"
+  },
   "audit.actions.admin.mfa.totp.cleared.label": {
     "en": "478c7ee15248637f",
     "text": "營運者清除了某人的驗證器應用程式"

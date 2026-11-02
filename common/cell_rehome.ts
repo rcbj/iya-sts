@@ -214,10 +214,18 @@ class CellRehome {
     const routing = require('./cell_routing');
     try {
       if (driver && driver.tiered) {
-        const name = String(username).trim().toLowerCase();
-        await driver.routeMove(realmId, 'name',
-                               routing.digest(realmId, 'name', name),
-                               cells.id(), home.cell);
+        // Every live name, not only the one the move was asked by (#644).
+        // The username may itself be an alias.
+        const tiered = require('../persistence/persistence_tiered');
+        const names = tiered.liveNamesOf(String(entry.dn), attrs,
+                                         String(username || ''));
+        for (let i = 0; i < names.length; i++) {
+          const made = routing.digest(realmId, 'name', names[i]);
+          if (made) {
+            await driver.routeMove(realmId, 'name', made, cells.id(),
+                                   home.cell);
+          }
+        }
         if (uuid) {
           await driver.routeMove(realmId, 'uuid',
                                  routing.digest(realmId, 'uuid', uuid),

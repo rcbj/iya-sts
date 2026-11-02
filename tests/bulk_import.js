@@ -175,6 +175,40 @@ function records(t) {
       return p.trim().toLowerCase();
     }).join(','), 'A9. normalizeDn(' + JSON.stringify(dn) + ')');
   });
+  const aliased = bi.candidateOf(recordOf(person('Cara', {
+    stspseudonym: ['Cara.Other', 'cara@elsewhere.example']
+  })), key);
+  t.check(aliased.ok && aliased.names.indexOf('cara') >= 0 &&
+          aliased.names.indexOf('cara.other') >= 0 &&
+          JSON.stringify(aliased.mailAliases) ===
+            '["cara@elsewhere.example"]',
+          'A10. a live stsPseudonym is a name, and an email-shaped one ' +
+          'is a mail alias', JSON.stringify(aliased));
+  const pendingAttr = bi.candidateOf(recordOf(person('Cara', {
+    stspseudonymverifytoken: ['x']
+  })), key);
+  t.check(!pendingAttr.ok && pendingAttr.code === 'STS-LDAP-0156',
+          'A11. a pending verification attribute is not imported',
+          JSON.stringify(pendingAttr));
+  const ownUid = bi.candidateOf(recordOf(person('Cara', {
+    stspseudonym: ['cara']
+  })), key);
+  t.check(!ownUid.ok && ownUid.code === 'STS-LDAP-0201',
+          'A11. a pseudonym that is the record\'s own uid is refused',
+          JSON.stringify(ownUid));
+  const bad = bi.candidateOf(recordOf(person('Cara', {
+    stspseudonym: ['bad,name']
+  })), key);
+  t.check(!bad.ok && bad.code === 'STS-LDAP-0199',
+          'A11. a pseudonym with a reserved character is refused',
+          JSON.stringify(bad));
+  const spaced = bi.candidateOf(recordOf(person('Cara', {
+    stspseudonym: ['bad name']
+  })), key);
+  t.check(spaced.ok && spaced.names.indexOf('bad name') >= 0 &&
+          spaced.mailAliases.length === 0,
+          'A11. a space is a name and not an email',
+          JSON.stringify(spaced));
   log.debug("Leaving records().");
 }
 

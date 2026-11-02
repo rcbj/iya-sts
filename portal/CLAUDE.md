@@ -2192,6 +2192,16 @@ Three pages over the mail channel (`common/CLAUDE.md`, 3ay), in a file beside
   works once it is set" rather than "your old password no longer works",
   because a self-service link removes nothing until it is used.
 
+## `portal_pseudonyms.ts`: `/portal/pseudonyms` and `/portal/verify-pseudonym` (#644)
+
+`/portal/pseudonyms` is signed in. The person is the token's subject, and
+the account API operations take no username. A name that is not an email is
+a sign-in name at once. An email is not, until `/portal/verify-pseudonym`
+spends the link mailed to that address. The GET of the link draws the
+confirmation and spends nothing, because a mail scanner follows every link.
+That page is not `/portal/verify-email`, which confirms the recovery
+address. `account-api/CLAUDE.md` has the operations.
+
 ## RESOURCES I OWN (#604, 2026-10-12)
 
 rcbj: a section of the column, *Resources I own*, with Roles, Groups, Service

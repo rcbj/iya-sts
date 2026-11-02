@@ -18,6 +18,8 @@
   "nav.gnap.heading": "El acceso que ha dado mediante GNAP",
   "nav.email.label": "Correo electrónico",
   "nav.email.heading": "Su dirección de correo y sus mensajes",
+  "nav.pseudonyms.label": "Nombres de inicio de sesión",
+  "nav.pseudonyms.heading": "Nombres con los que puede iniciar sesión",
   "section.owned.title": "Recursos de los que soy propietario",
   "section.owned.what": "Los roles, grupos, cuentas de servicio y aplicaciones que le nombran a usted, o a un grupo al que pertenece, como propietario.",
   "nav.owned.roles.label": "Roles",
