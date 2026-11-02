@@ -145,6 +145,18 @@ async function schedulerSites(t) {
   node.scheduler.register(spec('test.joblog.inline', 'cluster', inline));
   node.scheduler.register(spec('test.joblog.delegated', 'cluster',
                                delegated, true));
+  node.scheduler.register({
+    id: 'test.joblog.fails', title: 'A job-log test',
+    describe: 'For the test.', owner: 'tests/job_log.js',
+    kind: 'cluster',
+    everyMs: function () { return 60000; },
+    run: function failRun() {
+      log.debug('Entering failRun().');
+      const error = new Error('job failed');
+      log.debug('Leaving failRun().');
+      throw error;
+    }
+  });
   const answer = await node.scheduler.runDelegated({
     jobId: 'test.joblog.delegated', realm: 'default',
     runId: 'run-delegated', trigger: 'schedule', params: null,
@@ -183,6 +195,17 @@ async function schedulerSites(t) {
     return one.endsWith(':default');
   }), 'a service-scoped job runs in the default realm',
   JSON.stringify(realmsSeen));
+  const runs = w.audits.filter(function (row) {
+    return row.action === 'scheduler.run';
+  });
+  t.check(!runs.some(function (row) {
+    return row.outcome === 'success' ||
+           String(row.summary || '').indexOf('succeeded') >= 0;
+  }), 'a successful run writes no audit row',
+  JSON.stringify(runs.map(function (row) { return row.summary; })));
+  t.check(runs.some(function (row) {
+    return row.outcome === 'failure' && row.errorCode === 'STS-SCHED-0001';
+  }), 'a failed run is still an audit row', JSON.stringify(runs));
   log.debug('Leaving schedulerSites().');
 }
 
@@ -288,8 +311,25 @@ module.exports = {
     t.check(thrown === 'job blew up',
             'a body that throws is rethrown', thrown);
 
-    // H. The three run() sites.
+    // H. The three run() sites, and the audit row a success used to be.
     await schedulerSites(t);
+
+    // I. The job's own successful call is not an audit event. A failure is.
+    const audit = require('../common/audit');
+    const before = audit.localEvents().length;
+    const quietReq = { method: 'POST', originalUrl: '/ssf/poll',
+                        headers: {}, query: {} };
+    const quietWrote = audit.recordHttp(quietReq,
+      { statusCode: 200, locals: { auditQuietWhenOk: true } },
+      { matched: true });
+    t.check(quietWrote === null && audit.localEvents().length === before,
+            'a scheduler job\'s own successful call is not an audit event');
+    const failed = audit.recordHttp(quietReq,
+      { statusCode: 500, locals: { auditQuietWhenOk: true } },
+      { matched: true });
+    t.check(!!failed && failed.outcome === 'error',
+            'a failed call from that job is still recorded',
+            JSON.stringify(failed));
     log.debug('Leaving run().');
   }
 };

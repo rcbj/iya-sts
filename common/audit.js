@@ -503,9 +503,11 @@ const ACTIONS = [
   { action: 'logout.backchannel', category: 'session',
     label: 'A back-channel Logout Token reached a relying party, or finally ' +
            'did not' },
-  // THE SCHEDULER (2026-09-22, #49). A row per run when it finishes —
-  // succeeded, failed or abandoned — and one when a run is queued by hand;
-  // never one per tick. `cluster/scheduler.ts`.
+  // THE SCHEDULER (2026-09-22, #49). A row when a run fails or is
+  // abandoned, and one when a run is queued by hand. A run that succeeded
+  // is the run row only (`scheduler.runs`); it is not an audit event, so
+  // an export does not send one. Never one per tick.
+  // `cluster/scheduler.ts`.
   // THE MAIL CHANNEL (#63). One row when a message is QUEUED and one when it
   // reaches its final state — sent, captured or dead — never one per
   // attempt; and one per message the channel REFUSED to queue.
@@ -2390,6 +2392,15 @@ function recordHttp(req, res, detail) {
   const marked = errorCodes.codeOf(res);
   const errorCode = marked ||
                     errorCodes.fallbackFor(res.statusCode, !!info.matched);
+  // A SCHEDULER JOB CALLING THIS SERVICE. The poll of its own receiver
+  // (`POST /ssf/poll`, `ssf.ts`) sets this. A 200 is the run row. A
+  // refusal is still recorded.
+  if (res.locals && res.locals.auditQuietWhenOk && !errorCode &&
+      outcomeOfStatus(res.statusCode) === 'success') {
+    log.debug("Leaving recordHttp(). A scheduler job's own call " +
+              "succeeded; not recorded.");
+    return null;
+  }
   // A FAILURE IS RECORDED WITH THE FIREHOSE OFF. `audit.protocolCalls` exists
   // to silence the JWKS polls and metadata fetches; a refused request is the
   // row somebody turned the firehose off to be able to find.

@@ -999,10 +999,12 @@ stores.
 error, and an info line that carries an `STS-` code — a recorded failure,
 including an audit refusal — are written as asked. `STS_LOG_LEVEL=debug`
 still shows the routine lines. The run row on /admin/scheduler records a
-run that succeeded. Lines outside a body stay: who leads, a run held for
-load, an outcome that cannot be written. A job's `quiet: true` is the
-store's run-row rate limit (`QUIET_RECORD_MS`, above) and is a different
-thing.
+run that succeeded. That success is not an audit event, so the audit
+export does not send "Scheduler run … succeeded"; a failure and an
+abandonment are audit rows and are exported. Lines outside a body stay:
+who leads, a run held for load, an outcome that cannot be written. A
+job's `quiet: true` is the store's run-row rate limit (`QUIET_RECORD_MS`,
+above) and is a different thing.
 
 **A job registered at first use** (the four purges) requires the scheduler
 LAZILY, at that use: `scheduler.ts` requires `cluster_claims.js`, and

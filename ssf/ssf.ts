@@ -2890,6 +2890,12 @@ class SharedSignals {
         return;
       }
       const result: Json = streams.poll(record, body);
+      // This service's own receiver, collecting on the scheduler. A 200
+      // is the run row. The audit export would otherwise send one line
+      // per poll. A remote receiver's poll is recorded as before.
+      if (record === internal) {
+        res.locals.auditQuietWhenOk = true;
+      }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify({ sets: result.sets,

@@ -96,8 +96,10 @@
 // error, and an info line that carries an `STS-` code — a recorded failure,
 // including an audit refusal — are written as asked. `common/job_log.ts`
 // does it, around the three calls to `run()`. The run row on
-// /admin/scheduler still records the summary. Lines outside a body stay:
-// who leads, a run held for load, an outcome that cannot be written.
+// /admin/scheduler still records the summary. A run that succeeded writes
+// no audit row, so the audit export does not send one; a failure and an
+// abandonment do. Lines outside a body stay: who leads, a run held for
+// load, an outcome that cannot be written.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `cluster.js`,
 // `cluster_claims.js` and `common/` leaves, and every job's owner requires it
@@ -2093,19 +2095,22 @@ class Scheduler {
       }
       final.errorCode = errorCode;
       self.writeRow(realmId, final);
-      audit.record({
-        action: 'scheduler.run', protocol: 'scheduler', channel: 'internal',
-        target: job.id, errorCode: errorCode,
-        outcome: errorCode ? 'failure' : 'success', summarised: !!errorCode,
-        summary: 'Scheduler run ' + row.runId + ' of ' + job.id +
-                 (realmId !== realms.DEFAULT_ID ? ' in "' + realmId + '"'
-                   : '') + ' ' + final.state + ' (' + final.trigger +
-                 ', attempt ' + final.attempt + ').',
-        detail: { runId: row.runId, realm: realmId, trigger: final.trigger,
-                  attempt: final.attempt, durationMs: final.durationMs,
-                  why: final.why || '' }
-      });
+      // A success is the run row. The audit row is what the syslog
+      // destination exports, so a run that succeeded writes none. A
+      // failure does, and an abandonment is recorded above.
       if (errorCode) {
+        audit.record({
+          action: 'scheduler.run', protocol: 'scheduler',
+          channel: 'internal', target: job.id, errorCode: errorCode,
+          outcome: 'failure', summarised: true,
+          summary: 'Scheduler run ' + row.runId + ' of ' + job.id +
+                   (realmId !== realms.DEFAULT_ID ? ' in "' + realmId + '"'
+                     : '') + ' ' + final.state + ' (' + final.trigger +
+                   ', attempt ' + final.attempt + ').',
+          detail: { runId: row.runId, realm: realmId,
+                    trigger: final.trigger, attempt: final.attempt,
+                    durationMs: final.durationMs, why: final.why || '' }
+        });
         log.warn(errorCodes.tag(errorCode) + 'scheduler: ' + job.id + ' ' +
                  'failed: ' + final.why);
       }
