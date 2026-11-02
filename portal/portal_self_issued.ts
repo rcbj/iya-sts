@@ -57,6 +57,10 @@ interface PortalSelfIssuedDeps {
   // A did:jwk's or did:key's DID document, resolved from the identifier
   // (`oid4vc/vc_did_resolver.ts`, `resolve()`); never a fetch.
   resolveDid?: (did: string, req: Json) => Promise<Json>;
+  // Whether the person may change the realm's settings (#655): the console
+  // roster of the realm the request is in, `admin-ui/admin_rbac.ts`'s
+  // `rolesOf()`. Left out, nobody is told they may.
+  mayConfigure?: (username: string) => boolean;
 }
 
 const REMOVE_FORM = vz.object({
@@ -77,6 +81,17 @@ const DID_QUERY = vz.object({
 // The methods whose DID document is the identifier itself, and so can be
 // shown with nothing fetched.
 const RESOLVED_METHODS = /^did:(jwk|key):/;
+
+// THE SETTING THAT TURNS THE PAGE ON, AND WHERE IT IS CHANGED (#655). The
+// page said the sign-in was off and not how to change that. The view names
+// the row and its environment variable — `tests/self_issued_off_note.js`
+// holds both to `config.js`'s row — and the console tab that draws its
+// group (`admin-ui/admin.ts`'s `SETTING_HOMES`: OID4VP is on `/admin/vc`,
+// the OpenID4VP settings tab), not `/admin/config`, which is the index of
+// where the groups are and has no form for this one.
+const SETTING_KEY = 'oid4vp.signInSelfIssued';
+const SETTING_ENV = 'OID4VP_SIGN_IN_SELF_ISSUED';
+const SETTING_PAGE = '/admin/vc#vc-tab-oid4vp';
 
 const SELF_ISSUED_QUERY = vz.object({
   enrolled: vt.opt(vt.oneOf(['1']))
@@ -116,7 +131,45 @@ class PortalSelfIssued {
                const resolver = require('../oid4vc/vc_did_resolver');
                helpers.log.debug("Leaving resolveDid().");
                return resolver.resolve(did, {}, req);
+             },
+             // LAZILY, for `resolveDid`'s reason: the roster is the
+             // console's library, loaded at 18, after the portal (8a).
+             // Admin WRITE, because changing a setting is a write; asked of
+             // the realm the request is in, which is the realm whose
+             // setting is off — a realm administrator may write it
+             // (`admin_scope.ts` keeps only per-process rows from them).
+             mayConfigure: function mayConfigure(username: string): boolean {
+               helpers.log.debug("Entering mayConfigure().");
+               const rbac = require('../admin-ui/admin_rbac');
+               const realms = require('../common/realms');
+               const held = rbac.rolesOf(username, realms.currentId());
+               helpers.log.debug("Leaving mayConfigure().");
+               return !!(held && held.write);
              } };
+  }
+
+  // HOW TO TURN THE SIGN-IN ON, for a page that says it is off (#655):
+  // the setting, its environment variable and the console tab, and whether
+  // this person may change it there. A roster that cannot be read says
+  // "ask an administrator", the answer that sends nobody to a page that
+  // will refuse them.
+  private turnOn(username: string): Json {
+    const { log, mayConfigure } = this.deps;
+    log.debug("Entering PortalSelfIssued.turnOn().");
+    let administrator = false;
+    if (mayConfigure && username) {
+      try {
+        administrator = mayConfigure(username) === true;
+      } catch (e) {
+        log.debug("Caught in PortalSelfIssued.turnOn(): " +
+                  ((e && e.message) || e));
+        administrator = false;
+      }
+    }
+    log.debug("Leaving PortalSelfIssued.turnOn(). " + administrator);
+    return { setting: SETTING_KEY, env: SETTING_ENV,
+             administrator: administrator,
+             page: administrator ? SETTING_PAGE : null };
   }
 
   // WHERE A ROW'S DID DOCUMENT IS (2026-10-20, rcbj: "the link to the
@@ -157,8 +210,12 @@ class PortalSelfIssued {
     log.debug("Entering PortalSelfIssued.view().");
     const held: Json[] = (listed === undefined ? siop.list(username)
                                                : listed) || [];
+    const enabled = !!config.value(SETTING_KEY);
     log.debug("Leaving PortalSelfIssued.view(). " + held.length);
-    return { enabled: !!config.value('oid4vp.signInSelfIssued'),
+    return { enabled: enabled,
+             // Where it is off, how it is turned on (#655); asked only then,
+             // so a page with the sign-in on reads no roster.
+             turnOn: enabled ? null : self.turnOn(username),
              // The account the Enrol link names (2026-10-20): which of the
              // browser's sessions the enrolment is for, when Switch user has
              // left several live (`oid4vc/vc_signin.ts`, startable()).
@@ -406,7 +463,12 @@ class PortalSelfIssued {
           'document is (`didDocumentUrl`, a did:web\'s published ' +
           'address, or `didResolved`, a did:jwk or did:key resolved from ' +
           'the identifier at /portal/self-issued/did). `enabled`: whether ' +
-          'the self-issued sign-in is on; `didClaim`: whether the preferred ' +
+          'the self-issued sign-in is on; `turnOn`, where it is off: the ' +
+          'setting (`setting`) and environment variable (`env`) that turn ' +
+          'it on, whether you may change it (`administrator`: you hold ' +
+          'Admin Write in this realm) and, if you may, the console page ' +
+          'that does (`page`); null where it is on. `didClaim`: whether ' +
+          'the preferred ' +
           'DID may be released as the `did` claim here. A ' +
           'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
           'which comes back with `enrolled=1`; `notice` then says so. ' +

@@ -1755,6 +1755,20 @@ the directory holds no entry for the token's person, and the view read that as
 runtime's message; an entry with nothing enrolled is still the empty list.
 `tests/portal_list_refusals.js` holds both.
 
+**OFF SAYS HOW TO TURN IT ON** (#655). With `oid4vp.signInSelfIssued` off
+the view carries `turnOn`: the setting, its environment variable, and
+whether the person holds **Admin Write in the realm the request is in**
+(`admin_rbac.rolesOf()`, required lazily — the roster is the console's, at
+18). Write, because changing a setting is a write; that realm's roster,
+because it is that realm's setting, and a realm administrator may write it
+(`admin_scope.ts` keeps only per-process rows from them). An administrator
+gets the setting named and a link to `/admin/vc#vc-tab-oid4vp`, the tab
+`SETTING_HOMES` puts the OID4VP group on — not `/admin/config`, which is the
+index and has no form for it. Anybody else is told to ask an administrator,
+and gets no link to a console that would refuse them. The roster is asked
+only when the sign-in is off, and one that throws reads as "may not".
+`tests/self_issued_off_note.js`.
+
 ## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
 
 The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose
