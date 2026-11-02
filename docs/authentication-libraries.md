@@ -26,7 +26,7 @@ library is under the MIT License.
 | Go | No tagged release yet; `go get` resolves the latest commit through the Go module proxy |
 | C# | [NuGet](https://www.nuget.org/profiles/IyaSec) |
 | C and C++ | Not published to a package manager; build it from the repository |
-| Swift | No tagged release yet; add the repository URL to Swift Package Manager |
+| Swift | [GitHub Releases](https://github.com/rcbj/swift-oidc-caep-native-app/releases), through Swift Package Manager |
 
 Each repository has a test that signs its demo application in to a fresh
 iya-sts built from the latest `main` branch. The test then sends two CAEP
@@ -172,9 +172,12 @@ manager; the README says how to build one with CMake.
 
 `OIDCCAEPClient` is an OpenID Connect public client (PKCE, PAR, DPoP) and
 a CAEP receiver for native macOS apps, the native counterpart of
-`oidc-caep-client`. There is no tagged release yet: add
-`https://github.com/rcbj/swift-oidc-caep-native-app` to Swift Package
-Manager and depend on its `main` branch. The detailed guide is
+`oidc-caep-client`. Releases are tagged on GitHub; the first is
+[0.1.0](https://github.com/rcbj/swift-oidc-caep-native-app/releases/tag/0.1.0).
+Add `https://github.com/rcbj/swift-oidc-caep-native-app` to Swift Package
+Manager, for example
+`.package(url: "https://github.com/rcbj/swift-oidc-caep-native-app", from: "0.1.0")`,
+and depend on the `OIDCCAEPClient` product. The detailed guide is
 [OpenID Connect and CAEP clients](client-libraries.md).
 
 | Product | Platform | Repository | Documentation |
