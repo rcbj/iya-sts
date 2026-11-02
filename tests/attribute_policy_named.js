@@ -296,12 +296,19 @@ function socket(t, tag) {
   log.debug('Entering socket().');
   const admin = 'attrn-admin-' + tag;
   let granted = false;
+  let grantedSecurity = false;
   const newDn = 'uid=attrn-ldap-' + tag + ',' + ldap.usersDn();
   try {
     ldap.createUser(admin, { invent: false,
                              attributes: full('Admin', admin) });
     const grant = adminRbac.grant(admin, 'write', { via: 'test' });
     granted = !!grant && grant.ok !== false;
+    // AND THE SECURITY ADMINISTRATOR (#645): in product mode an LDAP write
+    // of stsAttributePolicy names a policy, which only that role may do
+    // (STS-LDAP-0203). Without it the add is refused before the profile is
+    // asked, and this check would be about the role rather than the policy.
+    const security = adminRbac.grant(admin, 'security', { via: 'test' });
+    grantedSecurity = !!security && security.ok !== false;
     attributePolicy.save('socketprobe',
       { requiredAttributes: ['givenName', 'mail', 'title'], precedence: 30 });
     config.setOverride('global.mode', 'product');
@@ -341,6 +348,9 @@ function socket(t, tag) {
   } finally {
     if (granted) {
       adminRbac.revoke(admin, 'write', { via: 'test' });
+    }
+    if (grantedSecurity) {
+      adminRbac.revoke(admin, 'security', { via: 'test' });
     }
     [newDn].concat([admin].map(function (name) {
       const found = ldap.objectFor(name);
