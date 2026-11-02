@@ -26678,6 +26678,14 @@ class AdminApi {
       return null;
     }
     const operation = this.consoleOperationOf(req);
+    // No body is read for a page no security change is a write of — an
+    // upload, the risk datasets, everything but the nine.
+    if (SecurityOperations.PATHS.indexOf(
+          String(operation.path).replace(/\/+$/, '')) < 0) {
+      log.debug("Leaving AdminApi.securityChangeOf(). Not a page one is " +
+                "a write of.");
+      return null;
+    }
     const body = Object.assign({}, parseBody(req) || {});
     const realm = realms.currentId();
     const change = SecurityOperations.classify({

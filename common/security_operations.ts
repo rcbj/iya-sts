@@ -71,6 +71,12 @@ const NO_POLICY = 'default';
 // The setting that names the Security Administrator's group.
 const SECURITY_GROUP_SETTING = 'admin.securityGroup';
 
+// The console pages a security change can be a write of — every `case` of
+// `classify()`. A caller may skip reading a body for any other page.
+const PATHS = Object.freeze(['/admin/policies', '/admin/config',
+  '/admin/rbac', '/admin/roles', '/admin/groups', '/admin/applications',
+  '/admin/users', '/admin/mfa', '/admin/pki']);
+
 // The role's names at the doors that spell it: the roster's id and the
 // register's entry.
 const ROSTER_ROLE = 'security';
@@ -120,6 +126,7 @@ interface SecurityChange {
  */
 class SecurityOperations {
   static readonly SECURITY_GROUP_SETTING = SECURITY_GROUP_SETTING;
+  static readonly PATHS = PATHS;
   static readonly ROSTER_ROLE = ROSTER_ROLE;
   static readonly REGISTER_ROLE = REGISTER_ROLE;
 
