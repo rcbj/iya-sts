@@ -214,6 +214,13 @@ interface VcIssuerDeps {
   // loads the audit log and the persistence layer behind it.
   provenSubjectsOf: (username: string) => any[];
   enrolledSubjectsOf: (username: string) => any[] | null;
+  // A did:web THIS REALM PUBLISHES FOR A PERSON (#1291), from
+  // `person_did.ts`: the key a `<did>#<key>` names in the current version,
+  // with the versioned DID URL a credential names (`{ jwk, kid, did }`),
+  // `{ error }` where it names none, or null for a DID this realm does not
+  // publish — and whether the realm publishes them now.
+  hostedProofKey: (kid: string) => any;
+  personPublishing: () => boolean;
   selfIssuedOwnerOf: (subject: string) => string;
   nameForSubject: (subject: string) => string;
   accountDisabled: (username: string) => boolean;
@@ -544,6 +551,21 @@ class VcIssuer {
         helpers.log.debug("Entering provenSubjectsOf().");
         helpers.log.debug("Leaving provenSubjectsOf().");
         return require('./siop').provenSubjectsOf(username);
+      },
+      // `person_did.ts` LAZILY, for `siop.ts`'s reason.
+      hostedProofKey: function hostedProofKey(kid: string): any {
+        helpers.log.debug("Entering hostedProofKey().");
+        const personDid = require('./person_did');
+        const key = personDid.keyOfDidUrl(kid, { current: true });
+        helpers.log.debug("Leaving hostedProofKey().");
+        return key && !key.error
+          ? { jwk: key.jwk, did: key.did,
+              kid: personDid.versionedKid(kid) } : key;
+      },
+      personPublishing: function personPublishing(): boolean {
+        helpers.log.debug("Entering personPublishing().");
+        helpers.log.debug("Leaving personPublishing().");
+        return config.value('did.personPublishing') === true;
       },
       enrolledSubjectsOf: function enrolledSubjectsOf(username: string):
         any[] | null {
@@ -887,6 +909,14 @@ class VcIssuer {
             vcConfigs.HOLDER_BINDING_DID) {
           entry.cryptographic_binding_methods_supported =
             vcConfigs.DID_BINDING_METHODS.slice();
+          // AND did:web (#1291), where this realm publishes DIDs for
+          // people: one it hosts and the person proved binds a JOSE
+          // credential, whose cnf.kid names the version. Not an ldp_vc,
+          // which has no cnf to name it.
+          if (this.deps.personPublishing() &&
+              this.deps.vciFormatOf(id) !== 'ldp_vc') {
+            entry.cryptographic_binding_methods_supported.push('did:web');
+          }
         }
         // OPENID4VCI 1.0 SECTION 12.2.4 (#187): a configuration's `display`
         // and `claims` are members of its `credential_metadata` object in
@@ -1476,9 +1506,10 @@ class VcIssuer {
   // relationship, and DID Core section 5.3.1 defines `authentication` as how
   // the DID subject is to be authenticated, which a proof of possession is
   // — a did:jwk whose key says `use: "enc"` has none, and is refused here
-  // rather than bound. A did:web is refused outright: holder binding to one
-  // is not built (oid4vc/CLAUDE.md, a host may change its document between
-  // the proof and a relying party's check). Answers `{ jwk, kid, did }`.
+  // rather than bound. A did:web is refused (a host may change its document
+  // between the proof and a relying party's check), except one THIS REALM
+  // PUBLISHES for the person (#1291), resolved from its own history, whose
+  // `kid` comes back naming the version. Answers `{ jwk, kid, did }`.
   // ---------------------------------------------------------------------------
   private async proofKeyOfKid(kid: unknown):
     Promise<{ jwk: any; kid: string; did: string }> {
@@ -1487,11 +1518,34 @@ class VcIssuer {
     const text = typeof kid === 'string' ? kid : '';
     const hash = text.indexOf('#');
     const did = hash > 0 ? text.slice(0, hash) : text;
+    // A did:web THIS REALM PUBLISHES FOR THE PERSON (#1291), where the realm
+    // publishes them: resolved from the realm's own history, never by a
+    // fetch, in its CURRENT version — and the credential names that
+    // version (`<did>?versionId=<n>#<key>`), which stays resolvable from
+    // the same history whatever the DID becomes later. That is what makes
+    // the binding sound here, and why any OTHER did:web is still refused:
+    // its host may change the document between the proof and a relying
+    // party's check.
+    const hosted = /^did:web:/.test(did) && this.deps.personPublishing()
+      ? this.deps.hostedProofKey(text) : null;
+    if (hosted) {
+      if (hosted.error || !hosted.kid) {
+        log.debug("Leaving VcIssuer.proofKeyOfKid(). A hosted DID with no " +
+                  "such key.");
+        throw VcIssuer.proofError('STS-VC-0143', 'the proof\'s kid ' +
+          text.slice(0, 160) + ' names no key of the current version of ' +
+          'the DID: ' + String(hosted.error || 'a version is named') + '.');
+      }
+      log.debug("Leaving VcIssuer.proofKeyOfKid(). A DID this realm " +
+                "publishes.");
+      return { jwk: hosted.jwk, kid: hosted.kid, did: hosted.did };
+    }
     if (/^did:web:/.test(did)) {
       log.debug("Leaving VcIssuer.proofKeyOfKid(). A did:web.");
       throw VcIssuer.proofError('STS-VC-0142', 'the proof\'s kid names a ' +
-        'did:web, and this issuer binds a credential to a did:jwk or a ' +
-        'did:key only.');
+        'did:web this realm does not publish for a person, and this issuer ' +
+        'binds a credential to a did:jwk, a did:key, or such a did:web ' +
+        'only.');
     }
     if (hash <= 0 || hash === text.length - 1 ||
         !/^did:(jwk|key):/.test(did) || !vcDidResolver.isDid(did)) {
@@ -1691,7 +1745,10 @@ class VcIssuer {
     // contained in the credentialSubject", and a DID there is the VCDM's own
     // holder binding; `cnf.kid` names the method the presentation must be
     // signed with, as `cnf.jwk` named the key.
-    const holderDid = holderKid ? String(holderKid).split('#')[0] : '';
+    // `?versionId=` too (#1291): the credential is about the DID, and its
+    // `cnf.kid` names the version.
+    const holderDid = holderKid
+      ? String(holderKid).replace(/[?#].*$/, '') : '';
     const subjectId = holderDid || subjectClaims.sub ||
                       ('urn:uuid:' + stsCrypto.randomUuid());
 
@@ -1869,7 +1926,7 @@ class VcIssuer {
     // BOUND TO THE PERSON'S DID (#693 phase 2b), the subject is that DID —
     // a did:jwk or a did:key the person proved — rather than the did:jwk of
     // the key; the holder's proof at presentation is still by its key.
-    const subjectId = holderKid ? String(holderKid).split('#')[0]
+    const subjectId = holderKid ? String(holderKid).replace(/[?#].*$/, '')
                                 : this.deps.vcDataIntegrity.didJwkOf(holderJwk);
     const unsecured: Record<string, any> = {
       '@context': ['https://www.w3.org/ns/credentials/v2',
@@ -2229,7 +2286,8 @@ class VcIssuer {
   // sends as one DID in every proof; nothing here makes them unlinkable,
   // which is why the binding is a configuration's choice.
   // ---------------------------------------------------------------------------
-  private didBindingRefusal(person: string, kids: string[]): any {
+  private didBindingRefusal(person: string, kids: string[],
+                            format?: string): any {
     const { log, nameForSubject, accountDisabled, provenSubjectsOf,
             enrolledSubjectsOf, selfIssuedOwnerOf } = this.deps;
     log.debug("Entering VcIssuer.didBindingRefusal(). " + kids.length +
@@ -2259,13 +2317,40 @@ class VcIssuer {
     const proved = (provenSubjectsOf(username) || []).map(function (one) {
       return String(one && one.subject || '');
     });
-    const enrolled = (enrolledSubjectsOf(username) || []).map(function (one) {
+    const rows = enrolledSubjectsOf(username) || [];
+    const enrolled = rows.map(function (one) {
       return String(one && one.subject || '');
     });
     for (const kid of kids) {
-      const did = String(kid).split('#')[0];
+      // A versioned DID URL (#1291) names its DID before the `?`.
+      const did = String(kid).replace(/[?#].*$/, '');
+      // A did:web THIS REALM PUBLISHES (#1291) binds a JOSE credential,
+      // whose `cnf.kid` names the version; an ldp_vc has no `cnf` and its
+      // subject is the bare DID, so nothing in it would say which version
+      // of the keys the holder proved.
+      if (/^did:web:/.test(did) && format === 'ldp_vc') {
+        return refuse('STS-VC-0166', 'invalid_proof', 'An ldp_vc names ' +
+          'its holder by the DID alone, with no version of its keys, so ' +
+          'it is not bound to a did:web; prove with a did:jwk or did:key, ' +
+          'or ask for a dc+sd-jwt or jwt_vc_json.');
+      }
       if (proved.indexOf(did) >= 0) {
         continue;
+      }
+      // A DID this realm published whose key no wallet proved (#1291):
+      // `realm` custody's key never leaves the realm, and an `issued` one
+      // is proved — becoming `wallet` — on the portal first.
+      const row = rows.filter(function (one: any) {
+        return one && one.subject === did;
+      })[0];
+      if (row && (row.proof === 'realm' || row.proof === 'issued')) {
+        return refuse('STS-VC-0165', 'invalid_proof', 'The proof\'s DID ' +
+          'was published for you with a key ' + (row.proof === 'realm'
+            ? 'this realm keeps, which no wallet holds, so a credential is ' +
+              'not bound to it.'
+            : 'this realm handed over, and nobody has proved it with a ' +
+              'wallet. Prove it on your portal\'s Self-issued IDs page, ' +
+              'then ask again.'));
       }
       if (enrolled.indexOf(did) >= 0) {
         return refuse('STS-VC-0149', 'invalid_proof', 'The proof\'s DID ' +
@@ -2347,7 +2432,7 @@ class VcIssuer {
         // A copy bound to the PERSON'S DID (#693) keeps that DID, in every
         // format.
         const boundTo = holderKids && holderKids[i]
-          ? String(holderKids[i]).split('#')[0] : '';
+          ? String(holderKids[i]).replace(/[?#].*$/, '') : '';
         const holderDid = boundTo || (format === 'ldp_vc' && holderJwks[i]
           ? String(didOf(holderJwks[i]) || '') : '');
         vcIssued.record({
@@ -3525,7 +3610,8 @@ class VcIssuer {
       const bindKids: string[] = bindsDid ? holderKids : [];
       if (bindsDid) {
         const refusal = this.didBindingRefusal(
-          this.signInSubjectOf(presented), holderKids);
+          this.signInSubjectOf(presented), holderKids,
+          this.deps.vciFormatOf(requestedConfigId));
         if (refusal) {
           log.info(errorCodes.tag(refusal.errorCode) + 'oid4vci: a ' +
                    'credential bound to the person\'s DID was refused. ' +
@@ -3752,7 +3838,8 @@ class VcIssuer {
         .map(String);
       if (deferredKids.length) {
         const refusal = this.didBindingRefusal(
-          String(record.signInSubject || ''), deferredKids);
+          String(record.signInSubject || ''), deferredKids,
+          this.deps.vciFormatOf(String(record.configId || '')));
         if (refusal) {
           log.info(errorCodes.tag(refusal.errorCode) + 'oid4vci: a deferred ' +
                    'credential bound to the person\'s DID was refused at ' +

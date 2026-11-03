@@ -671,6 +671,56 @@ what it does not; this is where each piece is and why it is there.
 
 `tests/pq_signing_switch.js` holds it.
 
+## EdDSA JOSE SIGNING AS A PER-REALM SWITCH (#1292, 2026-11-03)
+
+**`keys.eddsaSigning`, OFF BY DEFAULT.** rcbj, applying for OpenID Connect
+certification: "make the default be whatever passes OIDC conformance". The
+suite's nimbus throws `unknown key type 'OKP'` on an Ed25519 or Ed448 key in
+a rotated JWKS (`oidcc-server-rotate-keys`'s `VerifyNewJwksHasNewSigningKey`)
+instead of skipping it as RFC 7517 section 5 says, so by default no realm
+publishes one. It is the post-quantum switch above, mirrored, **with one
+deliberate difference: it is about what this realm SIGNS, never about what
+it ACCEPTS.** nimbus reads this realm's JWKS and no client's key, so an EdDSA
+client assertion, DPoP proof, request object or wallet proof is still
+verified, and the lists advertising what is accepted
+(`token_endpoint_auth_signing_alg_values_supported`, `dpop_…`,
+`request_object_…`, OpenID4VCI's proof types) still name EdDSA. Refusing
+them by default would refuse conforming clients for nothing.
+
+* **One reader, in `helpers.js`**: `eddsaSigningOn()` (the ambient realm,
+  per call) and `isEddsaJwsAlg()` (`EdDSA`, and the fully-specified
+  `Ed25519` / `Ed448`). Not in `crypto.js`: nothing on the verifying side
+  asks.
+* **What is published**: `withoutEddsaSigningKeys()` filters `/oauth2/jwks`'s
+  finished list after `withoutPqSigningKeys()` — a kty OKP key not marked
+  `use: "enc"` — so standby, pinned and signer-group keys leave together.
+* **What is advertised**: `withoutEddsaSigningAlgs()` narrows the four
+  members that list what THIS realm signs (`OWN_SIGNING_ALG_MEMBERS`: ID
+  Token, UserInfo, introspection, authorization/JARM), top level only,
+  replacing rather than editing; `oauth2.ts` calls it after both
+  `withoutPqSigningAlgs()` calls.
+* **What a client may choose**: `signableJwsAlgs()` is `offeredJwsAlgs()`
+  less EdDSA, and `applications.js` uses it for the four choices and the
+  three registration checks of those responses (`signedResponseAlgProblem()`,
+  `jarmMetadataProblem()`, `introspectionResponseProblem()`), which refuse
+  with their existing codes. `vc_configs.ts`'s `vciSigningAlgsFor()` drops
+  EdDSA from a portal offer's choices unless it is the configured algorithm.
+* **What is refused**: `signJwtAs()` and `signJwtAsAsync()` refuse an EdDSA
+  signature (`eddsaSignatureRefusal()`, `STS-KEYS-0165`, logged once per
+  realm) — every response a client chose the algorithm of goes through them,
+  and so do SSF, WS-Trust and Provider Commands tokens. **`signJwt()`,
+  `signingKeyFor()` and `ownPublicJwkFor()` are NOT refused**: they sign
+  what an operator CONFIGURED (`oauth2.accessTokenSigningAlg`,
+  `oidfed.signingAlg`, the credential algorithm, the Verifier's request
+  object, the DID and status-list signers), and the row says not to
+  configure EdDSA with the switch off rather than this code breaking those
+  surfaces. That is where this switch is weaker than the post-quantum one,
+  on purpose.
+* **Not changed**: the DID document, COSE, XML signatures (EdDSA there
+  too), DKIM's ed25519-sha256, the GNAP Ed25519 key and TLS.
+
+`tests/oidcc_conformance_defaults.js` section E holds it.
+
 ## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
 
 **JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service

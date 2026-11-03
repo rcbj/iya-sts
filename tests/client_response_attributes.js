@@ -195,12 +195,12 @@ function registration(t) {
   applications.updateApplication(DCR_ID, { mode: 'add',
     attribute: 'appAllowedProtocol', value: 'oidc' });
   const edited = applications.updateApplication(DCR_ID, { mode: 'set',
-    attribute: 'oauthIdTokenSignedResponseAlg', value: 'EdDSA' });
+    attribute: 'oauthIdTokenSignedResponseAlg', value: 'PS384' });
   t.check(edited && edited.ok === true,
           '2b. an operator may change a registered client\'s algorithm',
           JSON.stringify(edited && (edited.errors || edited.ok)));
   const read = applications.registrationOf(DCR_ID) || {};
-  t.check(read.id_token_signed_response_alg === 'EdDSA' &&
+  t.check(read.id_token_signed_response_alg === 'PS384' &&
           JSON.stringify(read.default_acr_values) === '["mfa","1"]' &&
           read.default_max_age === 120,
           '2b. the RFC 7592 read hands them back from the attributes — an ' +

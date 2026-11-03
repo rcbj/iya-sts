@@ -413,6 +413,12 @@ async function setUp() {
   await ok(realmApi + "/config/set", { key: "oauth2.openRegistration",
                                        value: true },
            "opened dynamic registration in the realm");
+  // EdDSA is in HASH_OF below, and since #1292 a realm signs with it only
+  // with `keys.eddsaSigning` on (off by default, for the OpenID
+  // conformance suite's sake).
+  await ok(realmApi + "/config/set", { key: "keys.eddsaSigning",
+                                       value: true },
+           "turned EdDSA signing on in the realm");
   const mode = await send(base + R + "/oauth2/rfc9700");
   strict = !!(mode.body && mode.body.enabled);
   log.info("RFC 9700 mode in the realm: " + strict +

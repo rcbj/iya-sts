@@ -504,8 +504,8 @@
     "text": "full（#151），作为 OpenID 提供方，在 oauth2.providerCommands 开启时（默认关闭）：注册 command_endpoint（DCR、控制台、API；https，不带片段）；命令令牌类型为 command+jwt，签名方式与客户端的 ID 令牌相同，有效期最长两分钟，每个命令带第 5 节的声明（sub 仅出现在账户命令中，metadata 仅出现在 metadata 中，authentication_provider 仅出现在 migrate 中，从不带 nonce；tenant 为领域 id；aud_sub 会发送并学习）；全部十个账户命令及其 _async 变体，经由共享的持久出站队列发送，读取第 3 节的应答和错误；metadata 记录每个依赖方所支持的内容；五个流式租户命令以 Server-Sent Events 形式读取，并用 Last-Event-ID 恢复；用于异步结果、metadata 和 audit_tenant 请求的回调端点；按依赖方的账户状态登记册；在目录变更和全局注销时自动发送 suspend、reactivate、delete、maintain 和 invalidate，只发往列出了该命令的依赖方。测试对端（tests/peer/）扮演一个应答每个命令的依赖方。缺失：作为其他 OP 的依赖方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full（#148），在每种模式下。第 2 节：ID 令牌和 claims_supported 中的 session_expiry（会话的绝对结束时间，每当基于会话签发令牌时）、tenant（信任领域的 id）和 aud_sub（管理员按人按客户端记录的账户 id，在控制台和 /admin-api 上）。第 3 节：tenant 指明其他领域时以 invalid_request 拒绝；domain_hint 将此人引导到其 fedHomeRealmDomain 包含该域的联合关系。第 4 节：门户的第三方发起登录会添加 tenant、domain_hint 和 target_link_uri。缺失：从客户端学习的 aud_sub，这将随 OpenID Provider Commands 一起到来（#151）。"
+    "en": "e8438c20973c8485",
+    "text": "full（#148），在每种模式下。第 2 节：session_expiry（会话的绝对结束时间，在基于会话签发令牌时）和 tenant（信任领域的 id）出现在其 claims 请求点名它们的 ID 令牌中，或在 oauth2.enterpriseClaimsAlways 开启时出现在每个 ID 令牌中（#1292）；aud_sub（管理员按人按客户端记录的账户 id，在控制台和 /admin-api 上）出现在 ID 令牌中；三者都在 claims_supported 中。第 3 节：tenant 指明其他领域时以 invalid_request 拒绝；domain_hint 将此人引导到其 fedHomeRealmDomain 包含该域的联合关系。第 4 节：门户的第三方发起登录会添加 tenant、domain_hint 和 target_link_uri。缺失：从客户端学习的 aud_sub，这将随 OpenID Provider Commands 一起到来（#151）。"
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",
@@ -660,8 +660,8 @@
     "text": "full：涵盖 Data Integrity 所需的部分。JSON-LD 上下文是内置副本，从不通过网络获取：依赖网络获取的规范化既不可重现，也不安全。"
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: 本服务发布一个带两个验证方法的 did:web 文档，并在 W3C VC API（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 及其自身的 did:web，以 W3C DID 测试套件为准。不抓取任何其他 did:web；不支持任何 DID 参数（service、versionId 等）。"
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: 本服务发布一个带两个验证方法的 did:web 文档、每个应用一个 did:web，以及每人一个位于随机地址、保留其密钥所有版本的 did:web（#1291）；在 W3C VC API（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 及其自身的 did:web，以 W3C DID 测试套件为准，并为个人发布的 DID 答复 versionId 和 versionTime DID 参数，附带 didDocumentMetadata（created、updated、versionId、nextVersionId、deactivated）。不抓取任何其他 did:web；不支持任何其他 DID 参数（service、relativeRef、hl）。"
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1838,6 +1838,10 @@
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
     "en": "5992e8bdddc060a8",
     "text": "非规范（#129）。为某人注册的 DID 和 JWK 指纹，每项附带其标签、注册者和注册方式（由此人的钱包证明，或按值），did:web 还附带其固定的密钥（#693），旁边显示 oid4vp.signInSelfIssued 是否打开。POST /admin-api/users/enrol-self-issued-subject 按值注册一个，并获取 did:web 的文档以固定其密钥；/admin-api/users/remove-self-issued-subject 将其删除。对应此人 /admin/users 页面上的“自签发 ID”块。"
+  },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "非规范（#1291）。本领域为某人发布的每个 did:web：其随机 id、DID、其文档地址、密钥由谁持有（wallet、realm 或 download）、其状态，以及每个版本及其密钥和授权来源，从不包含私钥。POST /admin-api/users/deactivate-published-did 停用其中一个；管理员从不创建或更改。对应此人 /admin/users 页面上的“已发布的 DID”区块。"
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -3410,6 +3414,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "除非应用已为 did 协议族声明且拥有密钥，否则应答 404"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "本领域为个人发布的 did:web 的 DID 文档（#1291），did:web 方法将 did:web:<host>[:realm:<id>]:users:<rid> 解析到此处，<rid> 为 128 位随机数：当前版本的密钥作为 authentication 和 assertionMethod 下的 JsonWebKey2020 方法，或 DID Core 的 versionId 或 versionTime 所要求的版本，取自从不改写的历史。application/did+json，no-store。被停用（由本人、由管理员，或在账户停用期间）时，它答复 410 Gone 和 { id, deactivated: true }，解析器在 didDocumentMetadata 中报告 deactivated。在 did.personPublishing 开启时从本人的门户发布。"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "DID 停用或账户停用后答复 410 Gone，从未发布的地址答复 404"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

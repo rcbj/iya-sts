@@ -41,11 +41,11 @@
 //      with the post-quantum ledger entries (PQ_ONLY) removed — the proof of
 //      compliance with no post-quantum exemption, beside the post-quantum
 //      run that keeps them (`conformance_suite.js`, THE CLASSICAL TWINS).
-//      The twin still publishes EdDSA keys (kty OKP). nimbus throws
-//      "unknown key type 'OKP'" from VerifyNewJwksHasNewSigningKey on
-//      oidcc-server-rotate-keys and stops before the new-key check. That
-//      one message stays in the ledger. Any other message from the
-//      condition is a finding.
+//      Neither run publishes an EdDSA key since #1292 (`keys.eddsaSigning`,
+//      off by default): nimbus threw "unknown key type 'OKP'" from
+//      VerifyNewJwksHasNewSigningKey on the twin's oidcc-server-rotate-keys,
+//      and that entry left the ledger with it, so the message is a finding
+//      again.
 //
 // OWNED HERE (local: true): this repository's OpenID Provider.
 // ---------------------------------------------------------------------------
@@ -239,17 +239,12 @@ const KNOWN_FAILURES = {
   // runs the module; the rotation itself succeeds.
   VerifyNewJwksHasNewSigningKey: "nimbus cannot parse the realm's " +
     "post-quantum keys (kty AKP); rcbj (2026-09-24): PQC support matters " +
-    "more than a clean run (3bg)",
+    "more than a clean run (3bg)"
   // The classical twin publishes no AKP key, so the entry above is removed
-  // from its ledger (PQ_ONLY). The same condition then throws on kty OKP
-  // (Ed25519 and Ed448, RFC 8037) instead of skipping a key type it does
-  // not know (RFC 7517 section 5), and stops before it can see a new
-  // signing key. Not listed in PQ_ONLY, so the twin keeps it. A different
-  // message from this condition is still a finding.
-  ["*/oidcc-server-rotate-keys/VerifyNewJwksHasNewSigningKey"]: {
-    why: "nimbus throws on kty OKP (Ed25519 and Ed448) instead of " +
-      "skipping a key type it does not know (RFC 7517 section 5)",
-    msg: /unknown key type 'OKP'/ }
+  // from its ledger (PQ_ONLY). It argued nimbus's `unknown key type 'OKP'`
+  // too, by message, until #1292 stopped publishing the Ed25519 and Ed448
+  // keys by default (`keys.eddsaSigning`); that entry is gone, and the
+  // message is a finding in either run.
 };
 
 // Conditions whose WARNING this service keeps, and why — the same sentences
@@ -258,30 +253,18 @@ const KNOWN_WARNINGS = {
   WarnOnUnusableJwksKeys: "the realm's JWKS carries post-quantum keys " +
     "(kty AKP, ML-DSA and SLH-DSA) the suite cannot parse; rcbj " +
     "(2026-09-24): PQC support matters more than a clean run (3bg)",
-  // The `profile` scope's claims no directory attribute answers —
-  // middle_name, profile, picture, gender, zoneinfo — are absent from
-  // UserInfo, which Core 5.4 allows ("claims ... when available"). 3bg's
-  // open item: map them or stop listing them in claims_supported.
-  VerifyScopesReturnedInUserInfoClaims: "five profile-scope claims have " +
-    "no directory attribute; rcbj's call (3bg) whether to map them",
-  // The same five, in an ID Token the implicit flow returns without an
-  // access token (Core 5.4 puts the scope claims there then).
-  VerifyScopesReturnedInAuthorizationEndpointIdToken: "the same five " +
-    "profile-scope claims, absent from an implicit-flow ID Token",
-  // OpenID Connect Enterprise Extensions 1.0 (#148): `session_expiry` and
-  // `tenant` MAY be in an ID Token, and rcbj's answer on #148 puts them in
-  // every one. Only those two are argued: any other unrequested claim is a
-  // finding.
-  EnsureIdTokenDoesNotContainNonRequestedClaims: { why: "session_expiry " +
-    "and tenant, in every ID Token by rcbj's answer on #148",
-    msg: /non-requested claim '(session_expiry|tenant)'|contains non-requested claims\. This may indicate/ }
+  // Three warnings left this ledger with #1292: the `profile` scope's
+  // claims (VerifyScopesReturnedInUserInfoClaims and
+  // …InAuthorizationEndpointIdToken) now each have a directory attribute,
+  // and the person below holds all fourteen; and `session_expiry` and
+  // `tenant` are in an ID Token only when a claims request names them
+  // (EnsureIdTokenDoesNotContainNonRequestedClaims). Any of the three is a
+  // finding now.
 };
 
 // THE ENTRIES ABOUT POST-QUANTUM KEYS AND ALGORITHMS, which a classical twin
 // is judged without (`oidf.ledgerFor()`): its realm publishes no AKP key and
 // lists no post-quantum algorithm, so either condition there is a finding.
-// The OKP entry above is not in this list. The twin still publishes EdDSA
-// keys, and nimbus's refusal of those is argued on its own message.
 const PQ_ONLY = ["VerifyNewJwksHasNewSigningKey", "WarnOnUnusableJwksKeys"];
 
 let checks = 0;
@@ -399,8 +382,21 @@ async function prepare(plan) {
   }
   await oidf.ok(api + "/users/create", { username: person, invent: false,
     credential: "password", password: PASSWORD,
+    // Every claim of the `profile` scope (OIDC Core 5.4) on the entry
+    // itself (#1292): the suite's VerifyScopesReturnedInUserInfoClaims and
+    // …InAuthorizationEndpointIdToken want all fourteen whatever
+    // claims_supported says, and a person whose values are typed answers
+    // them in product mode too, where nothing is invented.
     attributes: { cn: "Conformance " + person, givenName: "Conformance",
-                  sn: person, mail: person + "@conformance.test" } },
+                  sn: person, mail: person + "@conformance.test",
+                  middleName: "Middle", displayName: "Conf",
+                  labeledURI: "https://conformance.example/~" + person,
+                  profileUrl: "https://conformance.example/~" + person +
+                    "/profile",
+                  pictureUrl: "https://conformance.example/~" + person +
+                    "/photo.jpg",
+                  schacGender: "9", schacDateOfBirth: "19800131",
+                  timeZone: "Europe/Stockholm", preferredLanguage: "en-GB" } },
     "created " + person);
   const configuration = {
     alias: alias,

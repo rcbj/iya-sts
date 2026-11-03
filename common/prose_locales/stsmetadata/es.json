@@ -504,8 +504,8 @@
     "text": "full (#151), como OpenID Provider, donde oauth2.providerCommands esté activado (desactivado de forma predeterminada): command_endpoint registrado (DCR, consola, API; https, sin fragmento); Command Tokens de tipo command+jwt y firmados como el ID Token del cliente, de dos minutos como máximo, con los claims de la sección 5 por comando (sub solo en los comandos de cuenta, metadata solo en metadata, authentication_provider solo en migrate, nunca nonce; tenant es el id del dominio; aud_sub enviado y aprendido); los diez comandos de cuenta y sus variantes _async en la cola saliente duradera compartida, leyendo las respuestas y errores de la sección 3; metadata registrando lo que admite cada parte que confía; los cinco comandos de tenant en streaming leídos como Server-Sent Events y reanudados con Last-Event-ID; el endpoint de callback para resultados asíncronos y las solicitudes de metadata y audit_tenant; un registro de estado de cuentas por parte que confía; suspend, reactivate, delete, maintain e invalidate automáticos ante cambios en el directorio y cierres de sesión globales, solo para una parte que confía que haya listado el comando. El par de pruebas (tests/peer/) hace de parte que confía que responde a cada comando. FALTA: actuar como parte que confía de otro OP."
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full (#148), en todos los modos. Sección 2: session_expiry (el fin absoluto de la sesión, siempre que se emita un token sobre una sesión), tenant (el id del dominio de confianza) y aud_sub (un id de cuenta que un administrador registra por persona y por cliente, en la consola y /admin-api) en el ID Token y en claims_supported. Sección 3: tenant rechazado como invalid_request cuando nombra otro dominio; domain_hint envía a la persona a la relación de federación cuyo fedHomeRealmDomain lo contiene. Sección 4: el inicio de sesión iniciado por terceros del portal agrega tenant, domain_hint y target_link_uri. FALTA: un aud_sub aprendido del cliente, que llega con OpenID Provider Commands (#151)."
+    "en": "e8438c20973c8485",
+    "text": "full (#148), en todos los modos. Sección 2: session_expiry (el fin absoluto de la sesión, cuando se emite un token sobre una sesión) y tenant (el id del dominio de confianza) en un ID Token cuya solicitud de claims los nombra, o en todos con oauth2.enterpriseClaimsAlways (#1292), y aud_sub (un id de cuenta que un administrador registra por persona y por cliente, en la consola y /admin-api) en el ID Token; los tres en claims_supported. Sección 3: tenant rechazado como invalid_request cuando nombra otro dominio; domain_hint envía a la persona a la relación de federación cuyo fedHomeRealmDomain lo contiene. Sección 4: el inicio de sesión iniciado por terceros del portal agrega tenant, domain_hint y target_link_uri. FALTA: un aud_sub aprendido del cliente, que llega con OpenID Provider Commands (#151)."
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",
@@ -660,8 +660,8 @@
     "text": "full para lo que necesita Data Integrity. Los contextos JSON-LD están VENDORIZADOS y nunca se obtienen de la red: una canonicalización que dependiera de una descarga de red no sería ni reproducible ni segura."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: este servicio PUBLICA un documento did:web con dos métodos de verificación, y resuelve y desreferencia (sección 7) did:key, did:jwk y su propio did:web en ambas representaciones JSON en la W3C VC API (#199), sometido a la suite de pruebas W3C DID. No se descarga ningún otro did:web; no se admiten parámetros DID (service, versionId, …)."
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: este servicio PUBLICA un documento did:web con dos métodos de verificación, un did:web por aplicación y un did:web por persona en una dirección aleatoria con todas las versiones de sus claves conservadas (#1291); resuelve y desreferencia (sección 7) did:key, did:jwk y su propio did:web en ambas representaciones JSON en la W3C VC API (#199), ajustado a la suite de pruebas W3C DID, y responde a los parámetros DID versionId y versionTime, con didDocumentMetadata (created, updated, versionId, nextVersionId, deactivated), para el DID publicado de una persona. No se obtiene ningún otro did:web; no se admite ningún otro parámetro DID (service, relativeRef, hl)."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1838,6 +1838,10 @@
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
     "en": "5992e8bdddc060a8",
     "text": "NO ESTÁNDAR (#129). Los DID y las huellas JWK inscritos para una persona, cada uno con su etiqueta, quién lo inscribió y cómo (demostrado por la billetera de la persona, o por valor), y un did:web con sus claves fijadas (#693), junto a si oid4vp.signInSelfIssued está activado. POST /admin-api/users/enrol-self-issued-subject inscribe uno por valor, obteniendo el documento de un did:web para fijar sus claves; /admin-api/users/remove-self-issued-subject retira uno. Refleja el bloque Self-issued IDs de la página /admin/users de la persona."
+  },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "NO ESTÁNDAR (#1291). Cada did:web que este dominio publica para una persona: su id aleatorio, el DID, la dirección de su documento, quién guarda su clave (wallet, realm o download), su estado y todas las versiones con sus claves y lo que autorizó cada una, nunca una clave privada. POST /admin-api/users/deactivate-published-did desactiva uno; un administrador nunca crea ni cambia ninguno. Refleja el bloque DID publicados de la página /admin/users de la persona."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -3410,6 +3414,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "responde 404 salvo que la aplicación esté declarada para la familia did y tenga una clave"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "El documento DID de un did:web que este dominio publica para una persona (#1291), donde el método did:web resuelve did:web:<host>[:realm:<id>]:users:<rid>, con <rid> de 128 bits aleatorios: las claves de la versión actual como métodos JsonWebKey2020 bajo authentication y assertionMethod, o la versión que piden versionId o versionTime de DID Core, a partir de un historial que nunca se reescribe. application/did+json, no-store. Desactivado —por la persona, por un administrador o mientras la cuenta esté deshabilitada— responde 410 Gone con { id, deactivated: true }, y un resolutor informa deactivated en didDocumentMetadata. Se publica desde el portal de la persona cuando did.personPublishing está activado."
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "responde 410 Gone una vez que el DID se desactiva o la cuenta se deshabilita, y 404 para una dirección nunca publicada"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

@@ -263,6 +263,7 @@ the diagram and a walk through each layer.
 | SIOPv2 — the relying party of a Self-Issued OpenID Provider: a sign-in with an ID Token a wallet signs with an enrolled key, a preferred DID released as the `did` claim; off until a realm turns it on | `/authn/wallet`, `/portal/self-issued` | [verifiable-credentials](verifiable-credentials.md), [oid4vp](oid4vp.md#self-issued-id-tokens-siopv2) |
 | Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc/monitor` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
+| A did:web this realm publishes for a person, with every version of its keys kept; off until a realm turns it on | `/users/{rid}/did.json`, `/portal/self-issued` | [person-dids](person-dids.md) |
 | The W3C VC API (VCALM) — an issuer, holder, verifier and status service over Data Integrity (RDFC, JCS, ecdsa-sd-2023) and VC-JOSE-COSE, and DID resolution; off until a realm turns it on | `/vc-api/*` | [vc-api](vc-api.md) |
 | Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |
 | XACML 3.0 and ALFA — a PDP, a policy repository, and the PEPs that decide this service's own issuance | `/xacml/*`, `/admin/xacml` | [xacml](xacml.md) |

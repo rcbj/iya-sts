@@ -770,6 +770,15 @@ Connect Core section 12.2). An ID Token issued on a browser session carries
    **`claims` request**, read from the person's directory entry,
 4. `sub`, which is always set last.
 
+**Every claim of the four scopes has a directory attribute** (#1292), so a
+person whose entry holds them is answered all fourteen `profile` claims. The
+five that had none until then: `middle_name` (`middleName`), `gender`
+(SCHAC's `schacGender`, ISO/IEC 5218: `1` is answered `male`, `2` `female`,
+`0` `not known`, `9` `not applicable`), `zoneinfo` (`timeZone`, an IANA time
+zone), `picture` (`pictureUrl`) and `profile` (`profileUrl`). In development
+mode a value the entry lacks is invented, as for the rest; in product mode
+it is absent. [The LDAP schema](ldap-schema.md) lists them.
+
 **The Identity Assurance Claims Registration's claims** can be asked for by
 name in a `claims` request, and are listed in `claims_supported`:
 
@@ -976,7 +985,13 @@ OpenID Connect Enterprise Extensions 1.0 (#148), in every mode:
 * **The ID Token** carries `tenant` (the trust realm's id) and, when it is
   issued on a sign-on session, `session_expiry`: the session's absolute end.
   A later sign-in does not extend a session, so a relying party can end its
-  own session no later than this. Where an administrator recorded the
+  own session no later than this. **Each is put in an ID Token only when the
+  client asks for it by name** in the `id_token` member of the `claims`
+  request parameter (OpenID Connect Core 5.5), for example
+  `{"id_token":{"session_expiry":null,"tenant":null}}`, because a claim
+  nobody requested is what the OpenID conformance suite reports (#1292).
+  `oauth2.enterpriseClaimsAlways` (off by default, per realm) puts both in
+  every ID Token, as before #1292. Where an administrator recorded the
   account id a client knows the person by (`POST
   /admin-api/users/set-aud-sub`, or the person's page on the console), the
   ID Token for that client carries it as `aud_sub`.
@@ -1266,6 +1281,35 @@ Passkeys (COSE), XML signatures, TLS and certificates are not affected; a
 `x5c`. The OpenID conformance jobs run every plan twice, once in a realm with
 the setting on and once with it off, so the second run is the evidence of a
 clean result with no post-quantum exemption.
+
+#### EdDSA signing, off by default
+
+**`keys.eddsaSigning`** (Key material, per realm, **off by default**, #1292)
+decides whether the realm signs with EdDSA (RFC 8037, Ed25519 and Ed448) and
+publishes its `kty: OKP` signing keys. It is off by default because the
+OpenID conformance suite, which OpenID Connect certification runs, cannot
+parse an OKP key in a JWK Set. With it off:
+
+* `/oauth2/jwks` carries no OKP signing key (standby, pinned and signer-group
+  keys included).
+* `EdDSA` is not in `id_token_signing_alg_values_supported`,
+  `userinfo_signing_alg_values_supported`,
+  `introspection_signing_alg_values_supported` or
+  `authorization_signing_alg_values_supported`, and a client cannot register
+  it for those responses or be given it on the console or `/admin-api`
+  (`STS-REG-0185` and the members' own refusals).
+* A client registered for EdDSA while the setting was on is refused the
+  response it would need signed (`STS-KEYS-0165`), and so is an SSF,
+  WS-Trust or Provider Commands token whose algorithm names EdDSA.
+* A `/portal/wallet` offer cannot choose EdDSA for a credential.
+
+EdDSA that a **client** signs with is unaffected: client assertions, DPoP
+proofs, request objects and wallet proofs are still verified, and the lists
+that advertise what the realm accepts still name it. An algorithm an
+operator configures (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`,
+`oid4vci.credentialSigningAlgorithm`) still signs, so do not configure EdDSA
+there with the setting off. Turn it on to sign with EdDSA and publish the
+keys as `oauth2.eddsaCurve` says.
 
 ### Custom claims — `/admin/claims`
 

@@ -103,6 +103,14 @@ the End-User for the OpenID4VP verifier.
 * A repeated authorization code was answered again instead of refused.
 * `nonce` was optional in the hybrid flow.
 * `updated_at` and `phone_number_verified` were missing from UserInfo.
+* Five of the `profile` scope's claims (`middle_name`, `profile`,
+  `picture`, `gender`, `zoneinfo`) had no directory attribute, so UserInfo
+  and an implicit ID Token never carried them; each has one now (#1292).
+* `session_expiry` and `tenant` were in every ID Token, requested or not;
+  they are put there only when a `claims` request names them now (#1292).
+* The JWK Set carried EdDSA (`kty: OKP`) keys, which the suite throws on
+  during `oidcc-server-rotate-keys`; EdDSA signing is off by default now
+  ([`keys.eddsaSigning`](oauth-oidc.md#eddsa-signing-off-by-default), #1292).
 * A `post_logout_redirect_uri` with no `id_token_hint` or `client_id` was
   followed.
 * Identity Assurance's `value`/`values` were not enforced inside

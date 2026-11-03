@@ -12,5 +12,13 @@
   "locationAppTip": "Nombre que dio la aplicación de cartera: {name}",
   "locationAppUnnamedTip": "Una aplicación de cartera respondió a la solicitud; no indicó su nombre.",
   "locationAdminTip": "Añadido por un administrador; no intervino ninguna cartera.",
-  "locationNoneTip": "Se registró antes de que este servicio anotara de dónde procede una clave. Demostrarla de nuevo con su cartera lo anota."
+  "locationNoneTip": "Se registró antes de que este servicio anotara de dónde procede una clave. Demostrarla de nuevo con su cartera lo anota.",
+  "pubCustodyWallet": "Su cartera guarda la clave: este dominio publica solo su mitad pública. Cada cambio de claves requiere dos pruebas con su cartera: una firmada como el DID con una clave que nombra ahora y otra con la clave nueva.",
+  "pubCustodyRealm": "Este dominio genera la clave y la guarda sellada. El DID puede ser su DID preferido, pero no puede iniciar su sesión ni vincularse a una credencial, porque ninguna cartera tiene su clave.",
+  "pubCustodyDownload": "Este dominio genera la clave, le muestra la clave privada una sola vez y guarda solo la mitad pública. Demuestre la clave con su cartera antes de iniciar sesión con el DID o de vincular una credencial a él.",
+  "pubCustodyShortWallet": "Su cartera",
+  "pubPendingNote": "Hay un cambio de clave autorizado. Demuestre la clave nueva con su cartera en un plazo de diez minutos.",
+  "pubProveIssued": "Importe en su cartera la clave privada que descargó y luego use Registrar una cartera firmando como este DID: así queda demostrado y podrá iniciar su sesión y vincularse a una credencial.",
+  "pubFreshNote": "Guarde este archivo ahora e impórtelo en su cartera. Este dominio no guardó la clave privada y no puede volver a mostrarla; quien la tenga puede actuar como este DID.",
+  "pubAuthorizedDone": "El cambio está autorizado. Ahora demuestre la clave nueva con su cartera."
 }

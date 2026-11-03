@@ -288,6 +288,7 @@ var config = {
     encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
     offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
     postQuantumSigning: true,          // Post-quantum signing
+    eddsaSigning: false,               // EdDSA signing
     kidFormat: "internal",             // Signed token kid format
     kekProvider: "file",               // Key-encryption key provider; restart to apply
     kekTransitMount: "transit",        // Transit engine mount; restart to apply
@@ -505,6 +506,7 @@ var config = {
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
     errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
     keyBinding: true,                              // OpenID Connect Key Binding
+    enterpriseClaimsAlways: false,                 // Enterprise Extensions claims in every ID Token
     didClaim: false,                               // The did claim
     sessionManagement: false,                      // OpenID Connect Session Management
     frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
@@ -937,6 +939,14 @@ var config = {
     collectionMaxFetches: 100,                     // Lists fetched per crawl
     collectionMaxAgeS: 86400,                      // Crawl kept for (s)
     collectionCacheS: 300                          // In-process collection kept for (s)
+  },
+
+  // --- Person DIDs -----------------------------------------------------
+  did: {
+    personPublishing: false,     // Publish a did:web for a person
+    personCustody: "wallet",     // Who holds the private key of a person's DID
+    personMaxPerPerson: 3,       // Published DIDs one person may hold
+    personKeyAlgorithm: "ES256"  // Key algorithm of a realm-generated DID key
   },
 
   // --- W3C VC API ------------------------------------------------------

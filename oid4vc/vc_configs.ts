@@ -405,10 +405,17 @@ class VcConfigs {
     // `oid4vc.walletCompatibility` is on — the configured one included, which
     // then signs nothing (STS-VC-0152) — and none while keys.postQuantumSigning
     // is off, which the issuer metadata's own narrowing already said.
+    // AND NO EdDSA A PORTAL OFFER MAY CHOOSE while `keys.eddsaSigning` is
+    // off (#1292): the credential's key is found at `/oauth2/jwks`, which
+    // then publishes no OKP key. The CONFIGURED algorithm stays, being the
+    // operator's choice; the setting's row says not to make it EdDSA.
+    const eddsaOn = helpers.eddsaSigningOn();
     const out = VcAlgorithms.offered([configured].concat(
       allowed.filter(function (alg) {
         return alg !== configured;
-      })));
+      }))).filter(function (alg: string): boolean {
+        return alg === configured || eddsaOn || !helpers.isEddsaJwsAlg(alg);
+      });
     log.debug("Leaving VcConfigs.vciSigningAlgsFor(). " + out.length + ".");
     return out;
   }

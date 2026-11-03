@@ -3564,6 +3564,51 @@ const SETTINGS = [
                  'names an ML-DSA federation key keeps signing its ' +
                  'statements with it but refuses an ML-DSA statement it is ' +
                  'asked to verify, so leave that setting classical here.' },
+  // EdDSA JOSE SIGNING AS A SWITCH (#1292, 2026-11-03, rcbj: "make the
+  // default be whatever passes OIDC conformance"). The OpenID conformance
+  // suite's nimbus throws `unknown key type 'OKP'` on an Ed25519 or Ed448
+  // key in a rotated JWKS (`oidcc-server-rotate-keys`) instead of skipping a
+  // key type it does not know, so the default PUBLISHES NO OKP SIGNING KEY.
+  // Unlike `keys.postQuantumSigning` it is about what this realm SIGNS WITH
+  // and publishes, never about what it accepts: a client's own EdDSA key
+  // (a client assertion, a DPoP proof, a request object, a wallet's proof)
+  // is the client's, nimbus never reads it, and refusing it would refuse
+  // conforming clients for nothing. `common/helpers.js`'s
+  // `eddsaSigningOn()` is the one reader, and `common/CLAUDE.md` (*EdDSA
+  // JOSE SIGNING AS A PER-REALM SWITCH*) says where each piece is.
+  { key: 'keys.eddsaSigning', group: 'Key material',
+    label: 'EdDSA signing',
+    path: 'keys.eddsaSigning', env: 'STS_KEYS_EDDSA_SIGNING',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether this realm signs JOSE objects a client chose the ' +
+                 'algorithm of with EdDSA (RFC 8037, Ed25519 and Ed448) and ' +
+                 'publishes its kty OKP signing keys. **Off by default**, ' +
+                 'because the OpenID conformance suite cannot parse an OKP ' +
+                 'key in a JWKS and that is what OpenID Connect ' +
+                 'certification runs. Off: no OKP signing key is in ' +
+                 '`/oauth2/jwks` (standby, pinned and signer-group keys ' +
+                 'included); EdDSA is not in ' +
+                 '`id_token_signing_alg_values_supported`, ' +
+                 '`userinfo_signing_alg_values_supported`, ' +
+                 '`introspection_signing_alg_values_supported` or ' +
+                 '`authorization_signing_alg_values_supported`; a client ' +
+                 'may not register or be given EdDSA for an ID Token, ' +
+                 'UserInfo, introspection or JARM response; and such a ' +
+                 'signature still asked for — by a client registered while ' +
+                 'this was on, or by an SSF, WS-Trust or Provider Commands ' +
+                 'algorithm set to EdDSA — is refused rather than made ' +
+                 'with a key nobody can fetch. **Not changed:** EdDSA a ' +
+                 'client signs ' +
+                 'with (client assertions, DPoP proofs, request objects, ' +
+                 'wallet proofs) is still accepted and advertised as ' +
+                 'accepted; an access-token, federation or credential ' +
+                 'algorithm an operator configures ' +
+                 '(`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, ' +
+                 'OpenID4VCI\'s credential algorithm) still signs, so do ' +
+                 'not configure EdDSA there with this off; the DID ' +
+                 'document, COSE, XML signatures, DKIM and TLS are not ' +
+                 'JOSE JWKS publication. On: EdDSA is signed and published ' +
+                 'as `oauth2.eddsaCurve` says.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -8265,6 +8310,28 @@ const SETTINGS = [
                  'every advertised scope and know nothing of Key Binding ' +
                  '(#315). A grant already bound before it was turned off ' +
                  'keeps its key check on refresh.' },
+  // ENTERPRISE EXTENSIONS' TWO ID TOKEN CLAIMS IN EVERY ID TOKEN (#1292,
+  // 2026-11-03). Off by default: `session_expiry` and `tenant` are put in an
+  // ID Token only when the client names them in the `id_token` member of a
+  // claims request, which is what the OpenID conformance suite's
+  // `EnsureIdTokenDoesNotContainNonRequestedClaims` holds an OP to. On is
+  // #148's original behaviour.
+  { key: 'oauth2.enterpriseClaimsAlways', group: 'OAuth 2.0 / OIDC',
+    label: 'Enterprise Extensions claims in every ID Token',
+    env: 'STS_OAUTH2_ENTERPRISE_CLAIMS_ALWAYS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Put OpenID Connect Enterprise Extensions 1.0\'s ' +
+                 '`session_expiry` (the sign-on session\'s absolute end, ' +
+                 'when the token is issued on one) and `tenant` (this ' +
+                 'realm\'s id) in EVERY ID Token (#148). **Off by default:** ' +
+                 'each is put in an ID Token only when the client names it ' +
+                 'in the `id_token` member of an OpenID Connect Core 5.5 ' +
+                 'claims request, because a claim nobody requested is what ' +
+                 'the OpenID conformance suite reports, and OpenID Connect ' +
+                 'certification runs that suite. Both stay in ' +
+                 '`claims_supported` either way, and `aud_sub` is ' +
+                 'unaffected (it is in an ID Token only where an ' +
+                 'administrator recorded one for that client).' },
   // THE `did` CLAIM (#693, phase 2): a person's preferred, proved DID
   // released to a client they consented to. Off by default, and
   // `oauth-oidc/did_claim.ts` holds every other condition.
@@ -11886,6 +11953,72 @@ const SETTINGS = [
                  'batch carries the same DID, so they are linkable — the ' +
                  'trade this makes. Empty binds every configuration to a ' +
                  'key, as before. did:web is not offered.' },
+
+  // --- A person's published did:web (#1291) --------------------------------
+  //
+  // THE REALM CREATES AND PUBLISHES A did:web FOR A PERSON, from their
+  // portal's Self-issued IDs page: `did:web:<host>[:realm:<id>]:users:<rid>`,
+  // `<rid>` 128 random bits, its document at `/users/<rid>/did.json` with
+  // every version kept. Off until a realm turns it on, because a published
+  // document is a public record about a person. `oid4vc/person_did.ts`
+  // argues the design; these four rows are its realm's choices.
+  { key: 'did.personPublishing', group: 'Person DIDs',
+    label: 'Publish a did:web for a person',
+    env: 'STS_DID_PERSON_PUBLISHING', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Let a person create a did:web this realm publishes for ' +
+                 'them, on their portal\'s Self-issued IDs page (#1291): ' +
+                 'did:web:<host>[:realm:<id>]:users:<rid>, where <rid> is ' +
+                 '128 random bits, so nobody can enumerate accounts by ' +
+                 'probing addresses and two DIDs of one person cannot be ' +
+                 'linked. Its document is served at /users/<rid>/did.json ' +
+                 'with every version kept, and it can be the person\'s ' +
+                 'preferred DID. With it on, a DID-bound credential ' +
+                 'configuration (oid4vci.didHolderBinding) also offers ' +
+                 'did:web for a DID this realm hosts and the person proved ' +
+                 'with a wallet. Off: nothing new is published; a DID ' +
+                 'already published is still served, deactivated or not, ' +
+                 'because its address is kept for good. In product mode a ' +
+                 'DID is published only on a pinned global.publicBaseUrl.' },
+  { key: 'did.personCustody', group: 'Person DIDs',
+    label: 'Who holds the private key of a person\'s DID',
+    env: 'STS_DID_PERSON_CUSTODY', type: 'enum',
+    enumValues: ['wallet', 'realm', 'download'], dflt: 'wallet',
+    runtime: true,
+    description: 'Who holds the private key of a DID published for a ' +
+                 'person. `wallet` (the default, and the most secure): the ' +
+                 'person\'s wallet proves its own key in a self-issued ' +
+                 '(SIOPv2) round trip and the realm publishes only the ' +
+                 'public half; every later key change is authorized by a ' +
+                 'key the current version names and proved by the new key. ' +
+                 '`realm`: the realm generates the key and keeps it sealed, ' +
+                 'so the DID can be preferred and released in the did ' +
+                 'claim but can never sign a wallet in or bind a ' +
+                 'credential. `download`: the realm generates the pair, ' +
+                 'shows the private key ONCE and keeps only the public ' +
+                 'half; the DID is unproved until the person proves the key ' +
+                 'with a wallet. WARNING: with `download` the private key ' +
+                 'passes through the browser, and with `realm` the realm ' +
+                 'can act as the person; choose them only where that is ' +
+                 'acceptable.' },
+  { key: 'did.personMaxPerPerson', group: 'Person DIDs',
+    label: 'Published DIDs one person may hold',
+    env: 'STS_DID_PERSON_MAX_PER_PERSON', type: 'int', dflt: 3,
+    min: 1, max: 10, runtime: true,
+    description: 'How many ACTIVE published DIDs one person may hold. A ' +
+                 'deactivated DID does not count, and its address keeps ' +
+                 'answering 410 Gone. Each also counts towards the ten ' +
+                 'self-issued subjects a person may enrol.' },
+  { key: 'did.personKeyAlgorithm', group: 'Person DIDs',
+    label: 'Key algorithm of a realm-generated DID key',
+    env: 'STS_DID_PERSON_KEY_ALGORITHM', type: 'enum',
+    enumValues: ['ES256', 'ES384', 'EdDSA'], dflt: 'ES256',
+    runtime: true,
+    description: 'The algorithm of a key the realm generates for a ' +
+                 'person\'s DID, in the `realm` and `download` custody ' +
+                 'modes: ES256 (P-256), ES384 (P-384) or EdDSA (Ed25519). A ' +
+                 'wallet chooses its own key in `wallet` custody. A key ' +
+                 'already published keeps its algorithm.' },
 
   // --- The W3C VC API (#598) ------------------------------------------------
   //

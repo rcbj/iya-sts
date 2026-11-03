@@ -4638,10 +4638,15 @@ What the suite still reports as WARNING, and why it stays:
   suite cannot parse — every module. The suite's gap, not ours; rcbj
   (2026-09-24): PQC support matters more than a clean run. The #187 drivers'
   classical twins (2026-10-23, 3bp) run without it.
-* **`claims_supported` names claims no directory attribute answers** —
-  `middle_name`, `profile`, `picture`, `gender`, `zoneinfo`, `updated_at`,
-  `phone_number_verified` (the `profile` scope's list) — so a claims request
-  for them comes back without them. OPEN: map them or stop listing them.
+* ~~**`claims_supported` names claims no directory attribute answers**~~ —
+  closed. `updated_at` and `phone_number_verified` were answered by #187
+  (3bp); `middle_name`, `profile`, `picture`, `gender` and `zoneinfo` got
+  catalogue rows in #1292 (`middleName`, `profileUrl`, `pictureUrl`,
+  SCHAC's `schacGender`, `timeZone`; `oid4vc/vc_claims.ts`), because the
+  suite's `VerifyScopesReturnedIn*` conditions want EVERY claim of a granted
+  scope whatever `claims_supported` says — so un-listing them would not
+  have cleared the warning, and mapping all five was the only default that
+  passes (rcbj: "make the default be whatever passes OIDC conformance").
 * **`sid` and `address.country_code`** are claims the suite's list lacks;
   both come from specifications (Front/Back-Channel Logout, Identity
   Assurance).
@@ -4747,11 +4752,23 @@ absolute; `aud_sub` is recorded per person per client; `domain_hint` is
 home-realm discovery. All in every mode.
 
 * **`session_expiry`** is set in `idToken()` from `authn.sessionById()`'s
-  `expires` whenever the token is issued on a session — keyed on
-  `opts.session_id` ALONE, unlike `sid`, which only the logout features and
+  `expires` when the token is issued on a session — keyed on
+  `opts.session_id`, unlike `sid`, which only the logout features and
   Native SSO switch on.
-* **`tenant`** is `realms.current().id` in every ID Token. On the request it
-  is declared in `AUTHORIZE_QUERY` and refused in
+* **`tenant`** is `realms.current().id`.
+* **BOTH ONLY WHEN ASKED FOR, SINCE #1292 (2026-11-03).** rcbj's answer on
+  #148 put them in EVERY ID Token; the OpenID conformance suite reports
+  that as claims nobody requested
+  (`EnsureIdTokenDoesNotContainNonRequestedClaims`, whose allowed list is
+  the protocol claims plus the granted scopes' — it reads no claims
+  request), and rcbj's instruction for certification was the default that
+  passes. Enterprise Extensions defines no scope for them, so the request
+  is OIDC Core 5.5's: a name in the claims request's `id_token` member
+  (`requestedClaimNames()`). `oauth2.enterpriseClaimsAlways` (off) puts
+  both back in every ID Token. They stay in `claims_supported`; `aud_sub`
+  is unchanged (it is present only where recorded). Provider Commands
+  (#151) reads `tenant` from the realm, never from an ID Token.
+* **`tenant` on the request** (section 3) is declared in `AUTHORIZE_QUERY` and refused in
   `vetAuthorizationRequest()` when it names another realm
   (`STS-OAUTH-0688`, redirected `invalid_request`), before the response type
   is read. PAR runs the same vetting.
@@ -4859,6 +4876,16 @@ protection).
 * **SAML LEFT OUT.** An assertion's attributes have no per-attribute consent
   of the person's; condition 6 could not hold there, so no SP opt-in was
   built.
+* **A DID THIS REALM PUBLISHED FOR THE PERSON COUNTS AS PROVED (#1291)**,
+  rcbj's decision 4 ("treat it as a proved DID"): the preferred DID may be a
+  published one in any custody — `wallet`, or `realm` / `issued`, which the
+  person chose on their own portal even though no wallet proved the key —
+  because what the claim asserts is the person's choice of identifier, not
+  possession of a key (`siop.releasableSubjectsOf()`). An administrator's
+  by-value entry still never qualifies, and a deactivated published DID is
+  no longer enrolled, so it is never released. A sign-in and a credential
+  binding are held to more (`oid4vc/CLAUDE.md`, *A PERSON'S PUBLISHED
+  did:web*).
 * **LOGGING.** Each omission's code at the front of an info line, at most
   once per (client, code) in ten minutes, the remembered keys capped at the
   insert (no timer) — UserInfo may be polled, and a misconfigured client
@@ -5213,10 +5240,11 @@ failure in its driver):
   WITHOUT these entries — the proof that nothing but the suite's gap is
   behind them (`tests/CLAUDE.md`, *The classical twins*). The classical twin
   still publishes EdDSA (kty OKP, Ed25519 and Ed448). The same condition
-  then reports `unknown key type 'OKP'` and stops before the new-key check.
-  That one message, on `oidcc-server-rotate-keys` only, stays in the OpenID
-  Connect ledger. Any other message from the condition is a finding
-  (`tests/protocol/sts_oidcc_conformance.js`).
+  then reported `unknown key type 'OKP'` and stopped before the new-key
+  check, and that one message was argued in the OpenID Connect ledger until
+  #1292 turned EdDSA signing off by default (`keys.eddsaSigning`,
+  `common/CLAUDE.md`): no realm publishes an OKP key unless it asks, the
+  entry is gone, and the message is a finding again.
 * `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
   resolves a status list token's key only from a header `jwk`; this realm's
   names it by `kid` and carries its chain in `x5c`, which
@@ -5229,15 +5257,13 @@ failure in its driver):
   openid/sharedsignals#351).
 * `VCIValidateFormatOfCredentialConfigurationsInMetadata`: the ldp_vc
   configurations, a format the suite does not test.
-* 3bg's open items stand: `claims_supported` names five `profile` claims no
-  attribute answers (`middle_name`, `profile`, `picture`, `gender`,
-  `zoneinfo`), which is also why `VerifyScopesReturnedInUserInfoClaims`
-  warns — rcbj's call, map them or stop listing them.
-
-* `EnsureIdTokenDoesNotContainNonRequestedClaims`, for `session_expiry` and
-  `tenant` ONLY: Enterprise Extensions 1.0 lets an ID Token carry them and
-  rcbj's answer on #148 puts them in every one. The driver matches the
-  suite's message, so any other unrequested claim is still a finding.
+* **Gone with #1292 (2026-11-03), rcbj: "make the default be whatever
+  passes OIDC conformance"**: `VerifyScopesReturnedInUserInfoClaims` and
+  `…InAuthorizationEndpointIdToken` (the five `profile` claims now have
+  attributes, 3bg, and the job's person holds all fourteen), and
+  `EnsureIdTokenDoesNotContainNonRequestedClaims` (`session_expiry` and
+  `tenant` are in an ID Token only when its claims request names them, 3bi).
+  Each of the three is a finding now.
 * **Session Management's `oidcc-session-management-rp-initiated-logout`**:
   the suite's browser, HtmlUnit 4.17, checks `frame-ancestors` against the
   FRAMED document's own origin (it hands `Policy.allowsFrameAncestor()` its

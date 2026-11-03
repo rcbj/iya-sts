@@ -148,7 +148,9 @@ const APPLICATIONS = [
   // `/vc-api` has been a product surface since #598.
   { id: 'oid4vc', label: 'Verifiable credentials',
     what: 'OpenID4VCI, OpenID4VP, DIDs and the status lists.',
-    prefixes: ['/oid4vci', '/oid4vp', '/applications',
+    // `/users` is where a person's published did:web is (#1291,
+    // `oid4vc/person_did.ts`): `/users/<rid>/did.json`.
+    prefixes: ['/oid4vci', '/oid4vp', '/applications', '/users',
                '/bbs', '/vc-api', '/.well-known/did.json',
                '/.well-known/did-configuration.json',
                '/.well-known/openid-credential-issuer',

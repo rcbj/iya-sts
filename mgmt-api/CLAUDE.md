@@ -2807,3 +2807,20 @@ An answer carries `tokenSet` and `secretHeaderSet` and never the sealed
 values. The OpenAPI example is a syslog destination
 (`{ id, type, host, transport }`) and names no token. `common/CLAUDE.md`
 (3da) is the delivery. The console page is `admin-ui/CLAUDE.md`.
+
+## A person's published DIDs: one read and one act (#1291, 2026-11-03)
+
+`GET /admin-api/users/published-dids?user=` (`mirrors: 'GET /admin/users'`,
+`admin_views.publishedDidsJson()`) lists the did:web this realm publishes for
+the person — id, DID, document address, custody, state, provenance, versions
+with their keys and authorizations, never a private key — and
+`POST /admin-api/users/deactivate-published-did` (`did`: the DID or its
+`rid`) is the console's Deactivate, one act (rule 7) in `admin_actions.ts`
+that `oid4vc/person_did.ts` decides and audits (`admin.did.deactivated`, the
+administrator as the actor). **An administrator never creates or changes
+one** — rcbj's design on #1291: that is the person's act — so there is no
+publish, add or rotate here, and `remove-self-issued-subject` on a published
+DID DEACTIVATES it rather than leaving a document published for a subject
+that is gone. The operations walk drives the act's example
+(`sts_admin_api_operations.js`): the example names a DID nobody holds, which
+is refused about the referent (`STS-VC-0172`).

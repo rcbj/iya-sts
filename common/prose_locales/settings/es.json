@@ -1379,6 +1379,14 @@
     "en": "68ffd5da182ec911",
     "text": "Si este dominio firma, publica y verifica los algoritmos JWS poscuánticos y compuestos (ML-DSA, SLH-DSA y los ML-DSA compuestos). **Activado de forma predeterminada.** Desactivado: no hay ninguna clave de firma poscuántica en `/oauth2/jwks` ni en el documento DID (incluidas las claves en espera, fijadas y de grupo de firmantes); ningún algoritmo poscuántico aparece en ninguna lista `*_alg_values_supported` o `*_alg_values` de los documentos de descubrimiento, del servidor de autorización, de OpenID Federation, de OpenID4VCI y de OpenID4VP; un JWS firmado con uno se rechaza dondequiera que este dominio verifique uno; un cliente no puede registrar uno; y una firma que todavía necesitaría uno — para un cliente registrado mientras esto estaba activado, o una firma de mensaje HTTP — se rechaza en lugar de hacerse con una clave que nadie puede obtener. Existe para los clientes y las suites de pruebas cuyas bibliotecas JOSE no pueden leer una clave AKP o no conocen estos algoritmos, entre ellas la suite de conformidad de OpenID. **Sin cambios:** COSE (claves de acceso), las firmas XML, TLS, los algoritmos de certificado, las claves de cifrado ML-KEM (`keys.encryptionKemAlgs`), la clave alternativa ML-DSA que un certificado `hybrid-groups` lleva en `x5c` (las claves ML-DSA sueltas se retiran, los certificados no se vuelven a emitir) y `oidfed.signingAlg`: un dominio que nombra una clave de federación ML-DSA sigue firmando sus declaraciones con ella pero rechaza una declaración ML-DSA que se le pide verificar, así que mantenga ese ajuste clásico aquí."
   },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "Firma EdDSA"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "d14784fabbda974e",
+    "text": "Si este dominio firma con EdDSA (RFC 8037, Ed25519 y Ed448) los objetos JOSE cuyo algoritmo eligió un cliente, y publica sus claves de firma kty OKP. **Desactivado por defecto**, porque la suite de conformidad de OpenID no puede analizar una clave OKP en un JWKS, y es la que ejecuta la certificación OpenID Connect. Desactivado: ninguna clave de firma OKP en `/oauth2/jwks` (incluidas las claves en espera, fijadas y de grupo de firmantes); EdDSA no está en `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported`; un cliente no puede registrar ni recibir EdDSA para una respuesta de ID Token, UserInfo, introspección o JARM; y una firma así que aún se pida — por un cliente registrado mientras esto estaba activado, o por un algoritmo de SSF, WS-Trust o Provider Commands configurado en EdDSA — se rechaza en lugar de hacerse con una clave que nadie puede obtener. **Sin cambios:** el EdDSA con el que firma un cliente (aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de billetera) se sigue aceptando y anunciando como aceptado; un algoritmo de token de acceso, de federación o de credencial que configura un operador (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, el algoritmo de credencial de OpenID4VCI) sigue firmando, así que no configure EdDSA ahí con esto desactivado; el documento DID, COSE, las firmas XML, DKIM y TLS no son publicación JWKS de JOSE. Activado: EdDSA se firma y publica como indica `oauth2.eddsaCurve`."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Formato del kid de los tokens firmados"
@@ -3995,6 +4003,14 @@
     "en": "2394ee67a689920d",
     "text": "Aplica OpenID Connect Key Binding 1.0 (#150). Activado: el documento de descubrimiento incluye el ámbito `bound_key`, un cliente que no declara ámbitos puede pedirlo, y una solicitud que lo pida debe indicar `dpop_jkt` y usar el flujo de código (si no, se rechaza, STS-OAUTH-0704 y 0705); el ID Token nombra entonces la clave DPoP (`cnf.jwk`, `typ: dpop+id_token`), la solicitud de token debe probarla con `c_s256`, y cada actualización debe venir de la misma clave. **Desactivado, no existe, y el servicio es solo OpenID Connect Core**: `bound_key` no se anuncia, una solicitud que lo incluya no se rechaza — el ámbito se ignora y no se concede, como Core trata un ámbito sobre el que un OP no actúa — y ningún ID Token queda vinculado. Desactívelo donde las partes de confianza pidan todos los ámbitos anunciados y no sepan nada de Key Binding (#315). Una concesión ya vinculada antes de desactivarlo conserva la comprobación de su clave al actualizarse."
   },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "Claims de Enterprise Extensions en cada ID Token"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "Coloca `session_expiry` (el fin absoluto de la sesión de inicio de sesión único, cuando el token se emite sobre una) y `tenant` (el id de este dominio) de OpenID Connect Enterprise Extensions 1.0 en CADA ID Token (#148). **Desactivado por defecto:** cada uno se coloca en un ID Token solo cuando el cliente lo nombra en el miembro `id_token` de una solicitud de claims de OpenID Connect Core 5.5, porque un claim que nadie pidió es lo que informa la suite de conformidad de OpenID, y la certificación OpenID Connect ejecuta esa suite. Ambos siguen en `claims_supported` en cualquier caso, y `aud_sub` no se ve afectado (está en un ID Token solo donde un administrador registró uno para ese cliente)."
+  },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",
     "text": "La afirmación did"
@@ -6026,6 +6042,38 @@
   "oid4vci.didHolderBinding|description": {
     "en": "89f8d541b4738289",
     "text": "Las configuraciones de credencial cuyas credenciales se vinculan al DID de la persona en lugar de a una clave. Para cada una de ellas, la prueba de la cartera debe nombrar su clave mediante un kid que sea una URL did:jwk o did:key que la persona haya demostrado en su página Self-issued IDs (no basta con una entrada de un administrador), y la credencial lleva ese DID: cnf.kid en un dc+sd-jwt, credentialSubject.id, sub y cnf.kid en un jwt_vc_json, credentialSubject.id en un ldp_vc. Los metadatos indican did:jwk y did:key para ella. Cada copia de un lote lleva el mismo DID, por lo que se pueden correlacionar: ese es el precio. Vacío, todas las configuraciones se vinculan a una clave, como antes. No se ofrece did:web."
+  },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "Publicar un did:web para una persona"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "Permite que una persona cree un did:web que este dominio publica para ella, en la página Self-issued IDs de su portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, donde <rid> son 128 bits aleatorios, de modo que nadie puede enumerar cuentas probando direcciones y no se pueden vincular dos DID de una misma persona. Su documento se sirve en /users/<rid>/did.json con todas las versiones conservadas, y puede ser el DID preferido de la persona. Activado, una configuración de credencial vinculada al DID (oid4vci.didHolderBinding) ofrece también did:web para un DID que este dominio aloja y que la persona demostró con una cartera. Desactivado: no se publica nada nuevo; un DID ya publicado se sigue sirviendo, desactivado o no, porque su dirección se conserva para siempre. En modo producto solo se publica un DID sobre un global.publicBaseUrl fijado."
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "Quién guarda la clave privada del DID de una persona"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "Quién guarda la clave privada de un DID publicado para una persona. `wallet` (el valor predeterminado y el más seguro): la cartera de la persona demuestra su propia clave en un intercambio autoemitido (SIOPv2) y el dominio publica solo la mitad pública; cada cambio posterior de clave lo autoriza una clave que nombra la versión actual y lo demuestra la clave nueva. `realm`: el dominio genera la clave y la guarda sellada, así que el DID puede ser preferido y entregarse en el claim did, pero nunca puede iniciar la sesión de una cartera ni vincular una credencial. `download`: el dominio genera el par, muestra la clave privada UNA sola vez y guarda solo la mitad pública; el DID queda sin demostrar hasta que la persona demuestre la clave con una cartera. ADVERTENCIA: con `download` la clave privada pasa por el navegador, y con `realm` el dominio puede actuar como la persona; elíjalos solo donde eso sea aceptable."
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "DID publicados que puede tener una persona"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "Cuántos DID publicados ACTIVOS puede tener una persona. Un DID desactivado no cuenta, y su dirección sigue respondiendo 410 Gone. Cada uno cuenta además entre los diez sujetos autoemitidos que una persona puede inscribir."
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "Algoritmo de la clave de DID generada por el dominio"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "El algoritmo de una clave que el dominio genera para el DID de una persona, en los modos de custodia `realm` y `download`: ES256 (P-256), ES384 (P-384) o EdDSA (Ed25519). En la custodia `wallet` la cartera elige su propia clave. Una clave ya publicada conserva su algoritmo."
   },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",

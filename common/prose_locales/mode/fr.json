@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "Cette connexion est refusée (STS-VC-0127), auditée, et la personne enrôle de nouveau le DID en le prouvant sur /portal/self-issued. Dans les deux modes, une clé que l’épinglage ne nomme pas est refusée (STS-VC-0126)."
   },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "Le did:web publié d'une personne est frappé sur l'URL de base publique épinglée"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "Sans URL de base publique épinglée, un DID publié depuis /portal/self-issued est construit sur l'adresse à laquelle la requête est arrivée, et cette adresse fait partie du DID pour de bon."
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "En publier un est refusé (STS-VC-0168) tant que global.publicBaseUrl, ou le listener annoncé de l'application des attestations vérifiables, n'épingle pas la base : un en-tête Host ne devient jamais une partie d'un identifiant enregistré."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "La déclaration d’attestation d’une clé de sécurité est vérifiée avant l’enregistrement de la clé"

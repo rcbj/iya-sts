@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "该登录被拒绝（STS-VC-0127）并记入审计，此人需在 /portal/self-issued 上证明该 DID 以重新登记。在两种模式下，固定记录中未列出的密钥都会被拒绝（STS-VC-0126）。"
   },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "个人发布的 did:web 基于已固定的公共基础 URL 生成"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "未固定公共基础 URL 时，从 /portal/self-issued 发布的 DID 基于请求到达的地址构建，且该地址永久成为 DID 的一部分。"
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "在 global.publicBaseUrl（或可验证凭证应用所公布的监听器）固定基础地址之前，发布会被拒绝（STS-VC-0168）：Host 标头绝不会成为已存储标识符的一部分。"
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "安全密钥的证明声明会在密钥注册前被验证"

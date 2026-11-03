@@ -50,6 +50,13 @@ the token's person, and refuses anything else (`STS-PORTAL-0618`) before
 saying anything about it, so the door is never a general resolver, or a
 way to learn whether somebody else holds a subject.
 
+**`POST /account-api/self-issued/dids` (#1291) names a published DID by its
+`rid` and acts only on the CALLER's** — `person_did.ts` looks the id up in the
+token's person's own records, so another person's id is `STS-VC-0172`
+exactly as a made-up one is, and nothing says whether it exists. A downloaded
+private key leaves through this operation's answer once (`view.fresh`) and
+through no GET.
+
 **`GET /account-api/delegate/candidates` is the one operation that answers
 about OTHER people (2026-10-20, `/portal/delegate`'s search)**, and it is
 built for that: it needs at least three characters, matches only the `uid`,

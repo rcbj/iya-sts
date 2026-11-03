@@ -1379,6 +1379,14 @@
     "en": "68ffd5da182ec911",
     "text": "Om den här sfären signerar, publicerar och verifierar de postkvantsäkra och sammansatta JWS-algoritmerna (ML-DSA, SLH-DSA och de sammansatta ML-DSA-algoritmerna). **På som standard.** Av: ingen postkvantsäker signeringsnyckel finns i `/oauth2/jwks` eller i DID-dokumentet (vänte-, fästa och signerargruppsnycklar inräknade); ingen postkvantsäker algoritm finns i någon `*_alg_values_supported`- eller `*_alg_values`-lista i discovery-, auktoriseringsserver-, OpenID Federation-, OpenID4VCI- och OpenID4VP-dokumenten; en JWS signerad med en sådan vägras överallt där sfären verifierar en; en klient får inte registrera en; och en signatur som fortfarande skulle kräva en — för en klient som registrerades medan detta var på, eller en HTTP-meddelandesignatur — vägras i stället för att göras med en nyckel som ingen kan hämta. Den finns för klienter och testsviter vars JOSE-bibliotek inte kan tolka en AKP-nyckel eller inte känner till dessa algoritmer, bland dem OpenID-konformitetssviten. **Oförändrat:** COSE (passkeys), XML-signaturer, TLS, certifikatalgoritmer, ML-KEM-krypteringsnycklarna (`keys.encryptionKemAlgs`), den alternativa ML-DSA-nyckel som ett `hybrid-groups`-certifikat bär i `x5c` (de fristående ML-DSA-nycklarna tas bort, certifikaten utfärdas inte på nytt), och `oidfed.signingAlg`: en sfär som namnger en ML-DSA-federationsnyckel fortsätter att signera sina utsagor med den men vägrar en ML-DSA-utsaga som den ombeds verifiera, så behåll den inställningen klassisk här."
   },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "EdDSA-signering"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "d14784fabbda974e",
+    "text": "Om denna sfär signerar JOSE-objekt vars algoritm en klient valt med EdDSA (RFC 8037, Ed25519 och Ed448) och publicerar sina kty OKP-signeringsnycklar. **Av som standard**, eftersom OpenID:s konformitetssvit inte kan tolka en OKP-nyckel i en JWKS, och det är den som OpenID Connect-certifieringen kör. Av: ingen OKP-signeringsnyckel finns i `/oauth2/jwks` (reserv-, fästa och signerargruppsnycklar inräknade); EdDSA finns inte i `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` eller `authorization_signing_alg_values_supported`; en klient får inte registrera eller tilldelas EdDSA för ett ID Token-, UserInfo-, introspektions- eller JARM-svar; och en sådan signatur som ändå begärs — av en klient registrerad medan detta var på, eller av en SSF-, WS-Trust- eller Provider Commands-algoritm satt till EdDSA — nekas i stället för att göras med en nyckel som ingen kan hämta. **Oförändrat:** EdDSA som en klient signerar med (klientpåståenden, DPoP-bevis, begäranobjekt, plånboksbevis) accepteras fortfarande och annonseras som accepterat; en algoritm för åtkomsttoken, federation eller autentiseringsuppgift som en operatör konfigurerar (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, OpenID4VCI:s algoritm för autentiseringsuppgifter) signerar fortfarande, så konfigurera inte EdDSA där med detta av; DID-dokumentet, COSE, XML-signaturer, DKIM och TLS är inte JOSE JWKS-publicering. På: EdDSA signeras och publiceras som `oauth2.eddsaCurve` anger."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "kid-format för signerade tokener"
@@ -3995,6 +4003,14 @@
     "en": "2394ee67a689920d",
     "text": "Utför OpenID Connect Key Binding 1.0 (#150). På: discovery-dokumentet listar scopet `bound_key`, en klient som inte deklarerar några scopes får be om det, och en begäran om det måste ange `dpop_jkt` och använda kodflödet (avvisas annars, STS-OAUTH-0704 och 0705); ID-tokenet namnger då DPoP-nyckeln (`cnf.jwk`, `typ: dpop+id_token`), tokenbegäran måste bevisa den med `c_s256`, och varje förnyelse måste komma från samma nyckel. **Av finns det inte, och tjänsten är enbart OpenID Connect Core**: `bound_key` annonseras inte, en begäran som innehåller det avvisas inte — scopet ignoreras och beviljas inte, så som Core behandlar ett scope en OP inte agerar på — och inget ID-token binds. Stäng av det där förlitande parter begär varje annonserat scope och inte känner till Key Binding (#315). Ett beviljande som redan var bundet innan det stängdes av behåller sin nyckelkontroll vid förnyelse."
   },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "Enterprise Extensions-claims i varje ID Token"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "Lägg OpenID Connect Enterprise Extensions 1.0:s `session_expiry` (inloggningssessionens absoluta slut, när token utfärdas på en) och `tenant` (denna sfärs id) i VARJE ID Token (#148). **Av som standard:** var och en läggs i en ID Token bara när klienten namnger den i `id_token`-medlemmen i en claims-begäran enligt OpenID Connect Core 5.5, eftersom en claim som ingen begärt är vad OpenID:s konformitetssvit rapporterar, och OpenID Connect-certifieringen kör den sviten. Båda finns kvar i `claims_supported` i vilket fall som helst, och `aud_sub` påverkas inte (den finns i en ID Token bara där en administratör registrerat en för den klienten)."
+  },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",
     "text": "Anspråket did"
@@ -6026,6 +6042,38 @@
   "oid4vci.didHolderBinding|description": {
     "en": "89f8d541b4738289",
     "text": "De credential-konfigurationer vars credentials binds till personens DID i stället för till en nyckel. För var och en som anges måste plånbokens bevis ange sin nyckel med ett kid som är en did:jwk- eller did:key-URL som personen har bevisat på sin sida Self-issued IDs (en administratörs post räcker inte), och credentialen bär det DID:et: cnf.kid i en dc+sd-jwt, credentialSubject.id, sub och cnf.kid i en jwt_vc_json, credentialSubject.id i en ldp_vc. Metadata anger did:jwk och did:key för den. Varje kopia i en batch bär samma DID, så de kan kopplas till varandra — det är priset. Tom binder varje konfiguration till en nyckel, som tidigare. did:web erbjuds inte."
+  },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "Publicera en did:web åt en person"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "Låt en person skapa en did:web som den här sfären publicerar åt dem, på deras portals Self-issued IDs-sida (#1291): did:web:<host>[:realm:<id>]:users:<rid>, där <rid> är 128 slumpmässiga bitar, så att ingen kan räkna upp konton genom att pröva adresser och två DID:er för samma person inte kan kopplas ihop. Dess dokument tillhandahålls på /users/<rid>/did.json med alla versioner sparade, och den kan vara personens föredragna DID. När den är på erbjuder en DID-bunden credential-konfiguration (oid4vci.didHolderBinding) även did:web för en DID som den här sfären är värd för och som personen bevisat med en plånbok. Av: inget nytt publiceras; en DID som redan publicerats tillhandahålls fortfarande, avaktiverad eller inte, eftersom dess adress behålls för gott. I produktläge publiceras en DID bara på en fastlåst global.publicBaseUrl."
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "Vem som har den privata nyckeln till en persons DID"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "Vem som har den privata nyckeln till en DID som publicerats åt en person. `wallet` (standard, och det säkraste): personens plånbok bevisar sin egen nyckel i ett självutfärdat (SIOPv2) utbyte och sfären publicerar bara den publika halvan; varje senare nyckelbyte godkänns av en nyckel som den aktuella versionen nämner och bevisas av den nya nyckeln. `realm`: sfären skapar nyckeln och förvarar den förseglad, så DID:en kan föredras och lämnas ut i did-anspråket men kan aldrig logga in en plånbok eller binda ett credential. `download`: sfären skapar paret, visar den privata nyckeln EN gång och behåller bara den publika halvan; DID:en är obevisad tills personen bevisar nyckeln med en plånbok. VARNING: med `download` passerar den privata nyckeln genom webbläsaren, och med `realm` kan sfären uppträda som personen; välj dem bara där det är godtagbart."
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "Publicerade DID:er en person får ha"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "Hur många AKTIVA publicerade DID:er en person får ha. En avaktiverad DID räknas inte, och dess adress fortsätter att svara 410 Gone. Var och en räknas också bland de tio självutfärdade subjekt en person får registrera."
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "Algoritm för en DID-nyckel som sfären skapar"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "Algoritmen för en nyckel som sfären skapar för en persons DID, i förvaringslägena `realm` och `download`: ES256 (P-256), ES384 (P-384) eller EdDSA (Ed25519). I förvaringsläget `wallet` väljer plånboken sin egen nyckel. En nyckel som redan publicerats behåller sin algoritm."
   },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",

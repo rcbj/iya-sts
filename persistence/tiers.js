@@ -378,6 +378,9 @@ const CELL_MINTED = [
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
+  // A person's published DIDs' index (#1291): a random id to the person it
+  // belongs to — somebody's, beside their entry in this cell.
+  'did.personDids',
   // An administrator's enrolment for somebody (#945). Keyed by both
   // names, so it cannot share pendingKeys, and it is this cell's
   // ceremony in the same way: the begin and the finish may be two nodes

@@ -504,8 +504,8 @@
     "text": "full（#151），作為 OpenID 提供者，在 oauth2.providerCommands 開啟時（預設關閉）：註冊 command_endpoint（DCR、主控台、API；https，不含片段）；類型為 command+jwt 的 Command Token，簽署方式與用戶端的 ID Token 相同，最長兩分鐘，依命令攜帶第 5 節的宣告（sub 只在帳戶命令中，metadata 只在 metadata 中，authentication_provider 只在 migrate 中，絕不含 nonce；tenant 為領域 id；aud_sub 會送出並學習）；全部十個帳戶命令及其 _async 變體，透過共用的持久對外佇列傳送，並讀取第 3 節的回應與錯誤；metadata 記錄每個依賴方所支援的內容；五個串流租用戶命令以 Server-Sent Events 讀取，並以 Last-Event-ID 繼續；用於非同步結果以及 metadata 與 audit_tenant 請求的回呼端點；每個依賴方的帳戶狀態登錄；在目錄變更與全域登出時自動執行 suspend、reactivate、delete、maintain 與 invalidate，僅限列出了該命令的依賴方。測試對端（tests/peer/）扮演回應每個命令的依賴方。「尚缺」：為另一個 OP 擔任依賴方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full（#148），在每種模式下。第 2 節：ID Token 與 claims_supported 中的 session_expiry（工作階段的絕對結束時間，每當在工作階段上簽發權杖時）、tenant（信任領域的 id）與 aud_sub（管理員依個人依用戶端記錄的帳戶 id，主控台與 /admin-api）。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從用戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
+    "en": "e8438c20973c8485",
+    "text": "full（#148），在每種模式下。第 2 節：session_expiry（工作階段的絕對結束時間，在工作階段上簽發權杖時）與 tenant（信任領域的 id）出現在其 claims 請求指名它們的 ID Token 中，或在 oauth2.enterpriseClaimsAlways 開啟時出現在每個 ID Token 中（#1292）；aud_sub（管理員依個人依用戶端記錄的帳戶 id，主控台與 /admin-api）出現在 ID Token 中；三者都在 claims_supported 中。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從用戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",
@@ -660,8 +660,8 @@
     "text": "full：涵蓋 Data Integrity 所需的部分。JSON-LD 內容（context）為內建複本，從不擷取：依賴網路擷取的正規化既無法重現也不安全。"
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: 本服務發布一份帶兩個驗證方法的 did:web 文件，並在 W3C VC API（#199）上以兩種 JSON 表示法解析與解參照（第 7 節）did:key、did:jwk 及其自身的 did:web，以 W3C DID 測試套件為準。不擷取任何其他 did:web；不支援任何 DID 參數（service、versionId 等）。"
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: 本服務發布一份帶兩個驗證方法的 did:web 文件、每個應用程式一個 did:web，以及每人一個位於隨機位址、保留其金鑰所有版本的 did:web（#1291）；在 W3C VC API（#199）上以兩種 JSON 表示法解析與解參照（第 7 節）did:key、did:jwk 及其自身的 did:web，以 W3C DID 測試套件為準，並為個人發布的 DID 回應 versionId 與 versionTime DID 參數，附帶 didDocumentMetadata（created、updated、versionId、nextVersionId、deactivated）。不擷取任何其他 did:web；不支援任何其他 DID 參數（service、relativeRef、hl）。"
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1838,6 +1838,10 @@
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
     "en": "5992e8bdddc060a8",
     "text": "非規格端點（#129）。為某人註冊的 DID 與 JWK 指紋，各附其標籤、註冊者與註冊方式（由當事人的錢包證明，或依值），did:web 並附其固定的金鑰（#693），並說明 oid4vp.signInSelfIssued 是否開啟。POST /admin-api/users/enrol-self-issued-subject 以值註冊一個，並取得 did:web 的文件以固定其金鑰；/admin-api/users/remove-self-issued-subject 會將其移除。對應此人 /admin/users 頁面上的自我簽發 ID 區塊。"
+  },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "非規格端點（#1291）。本領域為某人發布的每個 did:web：其隨機 id、DID、其文件位址、金鑰由誰持有（wallet、realm 或 download）、其狀態，以及每個版本及其金鑰與授權來源，從不包含私密金鑰。POST /admin-api/users/deactivate-published-did 停用其中一個；管理員從不建立或變更。對應當事人 /admin/users 頁面上的「已發布的 DID」區塊。"
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -3410,6 +3414,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "除非應用程式已宣告屬於 did 系列且具有金鑰，否則回應 404"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "本領域為個人發布的 did:web 的 DID 文件（#1291），did:web 方法將 did:web:<host>[:realm:<id>]:users:<rid> 解析至此，<rid> 為 128 位元隨機數：目前版本的金鑰作為 authentication 與 assertionMethod 下的 JsonWebKey2020 方法，或 DID Core 的 versionId 或 versionTime 所要求的版本，取自從不改寫的歷史。application/did+json，no-store。遭停用（由當事人、由管理員，或在帳戶停用期間）時，它回應 410 Gone 與 { id, deactivated: true }，解析器在 didDocumentMetadata 中回報 deactivated。在 did.personPublishing 開啟時從當事人的入口網站發布。"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "DID 停用或帳戶停用後回應 410 Gone，從未發布的位址回應 404"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

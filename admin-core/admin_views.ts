@@ -15071,6 +15071,8 @@ class AdminViews {
         inventsClaimValues: mode.inventsClaimValues(),
         devices: this.devicesJson({ user: key }),
         selfIssued: this.selfIssuedSubjectsJson({ user: key }),
+        // The DIDs this realm publishes for them (#1291).
+        publishedDids: this.publishedDidsJson({ user: key }),
         // The certificates stored on the entry (#1061), as
         // `GET /admin-api/users/certificates` answers them. Required when
         // drawn: `admin_actions.ts` is this module's other half and requires
@@ -15605,6 +15607,39 @@ class AdminViews {
   }
 
   // ---------------------------------------------------------------------------
+  // ONE PERSON'S PUBLISHED DIDs (#1291) — `GET
+  // /admin-api/users/published-dids`, the list the Published DIDs block on
+  // their /admin/users page draws: each did:web this realm publishes for
+  // them, with its document's address, custody, state and versions. Never a
+  // private key. At most `PersonDid.MAX_RECORDS`, so not paged.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists one person's published DIDs; never a private key.
+   *
+   * @param query - the request's query
+   * @returns the JSON
+   */
+  publishedDidsJson(query) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.publishedDidsJson().");
+    // LAZILY: `person_did.ts` is built with the verifiable credentials
+    // family, after the console's libraries.
+    const personDid = require('../oid4vc/person_did');
+    const who = String((query && (query.user || query.username)) || '').trim();
+    const held = who ? personDid.list(who) : null;
+    const settings = personDid.settings();
+    log.debug("Leaving AdminViews.publishedDidsJson().");
+    return {
+      user: who,
+      entryFound: Array.isArray(held),
+      publishing: settings.publishing,
+      custody: settings.custody,
+      maxPerPerson: settings.maxPerPerson,
+      dids: held || []
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // ONE PERSON'S DEVICES (#130) — `GET /admin-api/users/devices`, the list
   // the Devices block on their /admin/users page draws: each device entry in
   // ou=devices they own, the applications that used it, and whether its
@@ -16097,6 +16132,7 @@ export = {
   appPasswordsJson: slot.forward('appPasswordsJson'),
   verificationsJson: slot.forward('verificationsJson'),
   selfIssuedSubjectsJson: slot.forward('selfIssuedSubjectsJson'),
+  publishedDidsJson: slot.forward('publishedDidsJson'),
   devicesJson: slot.forward('devicesJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),

@@ -3382,6 +3382,15 @@ const CODES = [
     summary: 'A WS-Security signature\'s KeyInfo names its certificate in no ' +
       'form of the X.509 Token Profile 1.1 this service reads (#521).',
     spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
+  { code: 'STS-KEYS-0165',
+    summary: 'An EdDSA signature through helpers.signJwtAs() (an ID ' +
+      'Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust ' +
+      'or Provider Commands token) was asked of a realm whose ' +
+      'keys.eddsaSigning is off — a client registered for EdDSA while it ' +
+      'was on, or a setting naming EdDSA — and was refused rather than ' +
+      'made with a key the realm does not publish (#1292).',
+    spec: 'the caller\'s: the response that needed the signature fails as ' +
+      'it does for an algorithm this realm holds no key for' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -17645,6 +17654,91 @@ const CODES = [
       'nonce, Response URI and encryption key), or used an algorithm not ' +
       'offered (#935): a presentation made for another request. Refused.',
     spec: 'invalid_request (HTTP 400) at the Response URI; logged' },
+  { code: 'STS-VC-0161',
+    summary: 'A person\'s published DID document was asked for at an ' +
+      'address this realm never published (#1291): no such random id in ' +
+      'the realm\'s index.',
+    spec: 'HTTP 404 at /users/{rid}/did.json' },
+  { code: 'STS-VC-0162',
+    summary: 'A person\'s published DID document was asked for after the ' +
+      'DID was deactivated — by the person, by an administrator, or because ' +
+      'the account is disabled now or its entry is gone (#1291). The ' +
+      'address is kept and answers that the DID is deactivated.',
+    spec: 'HTTP 410 {id, deactivated: true} at /users/{rid}/did.json' },
+  { code: 'STS-VC-0163',
+    summary: 'A person\'s published DID document was asked for with a ' +
+      'versionId or versionTime that is malformed, both, or names no ' +
+      'version of its history (#1291).',
+    spec: 'HTTP 400 or 404 at /users/{rid}/did.json' },
+  { code: 'STS-VC-0164',
+    summary: 'A self-issued ID Token named a DID this realm published for a ' +
+      'person whose key no wallet has proved — `realm` custody, whose key ' +
+      'never leaves the realm, or `issued` (downloaded) and not yet proved ' +
+      '(#1291). It signs nobody in.',
+    spec: 'HTTP 403 refusal of the wallet sign-in' },
+  { code: 'STS-VC-0165',
+    summary: 'An OpenID4VCI proof named a DID this realm published for the ' +
+      'person whose key no wallet has proved (`realm` or `issued`), for a ' +
+      'configuration bound to the person\'s DID (#1291). Refused.',
+    spec: 'invalid_proof (HTTP 400) at the credential endpoint' },
+  { code: 'STS-VC-0166',
+    summary: 'An ldp_vc configuration bound to the person\'s DID was asked ' +
+      'to bind to a did:web this realm publishes (#1291): an ldp_vc names ' +
+      'its holder by the bare DID, with no version of its keys. Refused.',
+    spec: 'invalid_proof (HTTP 400) at the credential endpoint' },
+  { code: 'STS-VC-0167',
+    summary: 'A person asked for a DID to be published while the realm ' +
+      'does not publish them (did.personPublishing is off) (#1291).',
+    spec: 'HTTP 400 or 403 refusal at /account-api or /authn-api/wallet' },
+  { code: 'STS-VC-0168',
+    summary: 'A person\'s DID was not published because no public base ' +
+      'URL is pinned in product mode, so the request\'s Host header would ' +
+      'have become part of a stored identifier ' +
+      '(mode.mintsPersonDidsOnRequestAddress()), or there was no base at ' +
+      'all (#1291).',
+    spec: 'HTTP 400 refusal at /account-api or /authn-api/wallet' },
+  { code: 'STS-VC-0169',
+    summary: 'A person\'s DID was not published because they hold the most ' +
+      'they may: did.personMaxPerPerson active DIDs, 25 DIDs counting ' +
+      'deactivated ones, or ten self-issued subjects (#1291).',
+    spec: 'HTTP 400 refusal at /account-api or /authn-api/wallet' },
+  { code: 'STS-VC-0170',
+    summary: 'A key a wallet proved for a person\'s published DID was not ' +
+      'taken (#1291): it was a did:web, it is enrolled for somebody else, ' +
+      'it is already in the current version, or the answer carried none.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
+  { code: 'STS-VC-0171',
+    summary: 'A change of a person\'s published DID was not authorized ' +
+      '(#1291): the new key came with no authorization by a key the ' +
+      'current version names (none given, or it expired), or the ' +
+      'authorization was not signed as the DID with such a key. A change ' +
+      'signed only by the new key is refused.',
+    spec: 'HTTP 400 or 403 refusal at /authn-api/wallet' },
+  { code: 'STS-VC-0172',
+    summary: 'An act named a published DID the person does not hold, one ' +
+      'already deactivated, or a person with no directory entry (#1291).',
+    spec: 'HTTP 400/404 refusal at /account-api, /admin-api or ' +
+      '/authn-api/wallet' },
+  { code: 'STS-VC-0173',
+    summary: 'An act on a person\'s published DID does not fit its custody ' +
+      '(#1291): a wallet act where the realm generates the key, a ' +
+      'realm-generated key where the wallet holds it, or a change of a ' +
+      'downloaded key nobody has proved yet.',
+    spec: 'HTTP 400 or 403 refusal at /account-api or /authn-api/wallet' },
+  { code: 'STS-VC-0174',
+    summary: 'The directory did not store a person\'s published DID, a new ' +
+      'version of it, its authorization or its deactivation, or its ' +
+      'self-issued subject could not be enrolled or re-pinned (#1291).',
+    spec: 'HTTP 400 refusal, or logged where the version was written' },
+  { code: 'STS-VC-0175',
+    summary: 'The private key of a realm-custody DID could not be sealed ' +
+      'under the key-encryption key, so nothing was published or changed ' +
+      '(#1291).',
+    spec: 'HTTP 400 refusal at /account-api' },
+  { code: 'STS-VC-0176',
+    summary: 'A person\'s published DID already has the most versions one ' +
+      'DID keeps (50), so it takes no more key changes (#1291).',
+    spec: 'HTTP 400 refusal at /account-api or /authn-api/wallet' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

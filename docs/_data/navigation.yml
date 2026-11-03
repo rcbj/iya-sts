@@ -82,6 +82,7 @@
     - { title: "Configuring OpenID4VCI", url: /configure-oid4vci.html }
     - { title: OpenID4VP and wallet sign-in, url: /oid4vp.html }
     - { title: "Configuring OpenID4VP and wallet sign-in", url: /configure-oid4vp.html }
+    - { title: Published DIDs for people, url: /person-dids.html }
     - { title: W3C VC API, url: /vc-api.html }
 
 # DIRECTORY IS A USER AND AN APPLICATION, protocol-independent, then the

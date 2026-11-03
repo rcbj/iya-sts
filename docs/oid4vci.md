@@ -252,7 +252,8 @@ means the whole configured set.
   to be listed under the DID document's `authentication`, which rules out a
   `did:jwk` whose key says `use: "enc"`. Appendix F.1 says that `jwk` and
   `kid` MUST NOT both be present, so such a proof is refused, and so is a
-  `did:web` `kid`. A configuration bound to a key binds to the key a `kid`
+  `did:web` `kid`, except one this realm publishes for the person
+  ([below](#bound-to-the-persons-did)). A configuration bound to a key binds to the key a `kid`
   names in the same way it binds to a `jwk`.
 * **Key attestations** (Appendix D). An attestation in a `jwt` proof's
   `key_attestation` header, or as an `attestation` proof, is verified against
@@ -367,11 +368,22 @@ is the trade a configuration makes by opting in, so the binding is opt-in per
 configuration and never the default. The nonces and rounded validity times are
 unchanged.
 
-**`did:web` is not offered.** The service pins a `did:web`'s key at
-enrolment, but the host can still change its document between the proof and
-the moment a relying party resolves the DID to check a presentation. Binding a
-credential to a DID whose key can change after issuance needs a design of its
-own.
+**A `did:web` is offered only when this realm publishes it.** The service
+pins a `did:web`'s key at enrolment, but a host elsewhere can still change its
+document between the proof and the moment a relying party resolves the DID to
+check a presentation, so a `did:web` hosted anywhere else is refused
+(`invalid_proof`). A did:web **this realm publishes for the person**
+([Published DIDs](person-dids.md)) is different: every version of its keys is
+kept and never rewritten. With `did.personPublishing` on, a DID-bound
+`dc+sd-jwt` or `jwt_vc_json` configuration adds `did:web` to
+`cryptographic_binding_methods_supported`. The proof's `kid` names
+`<did>#<key>` in the DID's current version, and the credential's `cnf.kid`
+names that **version**: `<did>?versionId=<n>#<key>`. A relying party resolves
+that version at any time, and this service's own Verifier resolves it from the
+realm's history without fetching anything. Only a DID the person proved with a
+wallet binds. A DID whose key the realm keeps, or a downloaded key nobody has
+proved yet, is refused. An `ldp_vc` names its holder by the bare DID, with no
+version, so it is never bound to a `did:web`.
 
 The Verifier reads the key that `cnf.kid` and a `did:key` subject name, so a
 DID-bound credential [signs its holder in](oid4vp.md#signing-in-with-a-wallet)
