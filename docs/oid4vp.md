@@ -115,7 +115,49 @@ the holder's `did:jwk`. Three cryptosuites are accepted for that proof:
 The Key Binding JWT accepts every asymmetric algorithm the issuer binds
 credentials to. A holder may bind a credential to an ML-DSA-44 key, and this
 realm may sign credentials with ML-DSA, SLH-DSA or a composite; the Verifier
-checks all of them.
+checks all of them, unless the realm is in
+[wallet compatibility mode](#wallet-compatibility-mode).
+
+### Post-quantum algorithms
+
+For the `dc+sd-jwt` and `jwt_vc_json` formats, and for the Request Object, the
+Verifier speaks eleven post-quantum and composite JWS algorithms beside the
+classical ones:
+
+| Algorithm | Defined by |
+|---|---|
+| `ML-DSA-44`, `ML-DSA-65`, `ML-DSA-87` | RFC 9964 (registered for JOSE) |
+| `SLH-DSA-SHA2-128s`, `SLH-DSA-SHAKE-128s` | draft-ietf-cose-sphincs-plus |
+| `ML-DSA-44-ES256`, `ML-DSA-65-ES256`, `ML-DSA-87-ES384`, `ML-DSA-44-Ed25519`, `ML-DSA-65-Ed25519`, `ML-DSA-87-Ed448` | draft-ietf-jose-pq-composite-sigs |
+
+Each can sign the Request Object (`oid4vp.x509SigningAlgorithm` for the x509
+prefixes, `oid4vp.requestObjectSigningAlgorithm` for the others), and each is
+accepted on a credential this realm or a [trusted issuer](#trusted-issuers)
+signed, on that issuer's status list, and on a Key Binding JWT or VP JWT.
+`ldp_vc` is not affected: its credential is `bbs-2023`, and its holder
+cryptosuites are listed above.
+
+No wallet in use today accepts these algorithms, and OpenID4VC HAIP has a
+wallet accept ES256. Sign Request Objects with one only for a wallet you know
+reads it.
+
+### Wallet compatibility mode
+
+`oid4vc.walletCompatibility` (off by default) turns every algorithm in the
+table above off for OpenID4VCI and OpenID4VP in the realm. They are the ones
+a wallet would refuse today, or that only an Internet-Draft defines. With it
+on:
+
+* The issuer's and the Verifier's metadata name none of them for the JOSE
+  formats.
+* A Request Object or a credential named for one is refused, with
+  `STS-VC-0152` in the log. Nothing is signed with another algorithm in its
+  place: set a classical one.
+* A credential, Key Binding JWT, VP JWT, proof of possession or foreign status
+  list signed with one is refused (`STS-VC-0153`).
+
+`ldp_vc` and every other protocol are unchanged. `keys.postQuantumSigning`
+is the switch that turns post-quantum signing off for the whole realm.
 
 ### Trusted issuers
 
@@ -124,6 +166,12 @@ certificates in `oid4vp.trustedIssuerCertificates` add issuers whose SD-JWT VC
 or `jwt_vc_json` signatures are accepted. A certificate is used as a key. No
 chain is built, but the certificate's revocation is consulted when it verifies
 a credential, under `pki.revocationCheck` (see [PKI](pki.md)).
+
+A certificate may hold a post-quantum key: ML-DSA, `SLH-DSA-SHA2-128s`,
+`SLH-DSA-SHAKE-128s`, or a composite ML-DSA key. It then verifies credentials
+and status lists signed with that algorithm. A certificate whose key is an
+SLH-DSA parameter set with no JOSE algorithm is ignored, with `STS-VC-0154` in
+the log.
 
 ### Status checks
 
@@ -507,16 +555,26 @@ wallet is configured with.
 * **When the certificate changes, `x509_hash` changes.** That happens on
   renewal, key rotation, or when `oid4vp.x509SigningAlgorithm` changes. A
   wallet configured with the hash must then be given the new one.
-* **Not offered: a post-quantum signing algorithm.** The Request Object is
-  signed on the request path, and this realm's post-quantum keys sign in
-  the worker pool.
+* **Post-quantum.** `oid4vp.x509SigningAlgorithm` may name any algorithm in
+  [the table above](#post-quantum-algorithms). The certificate is then over
+  the realm's key for it: an ML-DSA, SLH-DSA or composite key, under the
+  same classical Issuing CA.
+
+#### The other signed prefixes
+
+A signed request under `pre-registered`, `decentralized_identifier`,
+`verifier_attestation` or `openid_federation` is signed with
+`oid4vp.requestObjectSigningAlgorithm` (RS256 by default). The key is the
+realm's key for that algorithm. `/oauth2/jwks` publishes it, the DID document
+lists it, a self-issued Verifier Attestation names it in `cnf`, and the Entity
+Configuration's `openid_credential_verifier` metadata carries it in `jwks`. A
+configured Verifier Attestation must name that key too.
 
 ### Not implemented
 
 * The unsigned and multi-signed request forms of the Digital Credentials API
   (Appendix A.3.1, A.3.2.2), and `transaction_data`.
-* A trusted issuer certificate with a post-quantum key, and an `ldp_vc` holder
-  key of any post-quantum kind other than ML-DSA-44.
+* An `ldp_vc` holder key of any post-quantum kind other than ML-DSA-44.
 
 ## Development and product mode
 
@@ -565,7 +623,9 @@ check are the same in both modes. See
 | `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be. |
 | `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request an administrator starts names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation`, `openid_federation`, `x509_san_dns` or `x509_hash`. A sign-in's is `oid4vp.signInClientIdPrefix`. |
 | `oid4vp.x509DnsName` | `OID4VP_X509_DNS_NAME` | *(empty)* | yes | The DNS name of the `x509_san_dns` Client Identifier. It must be the Response URI's host. Empty: the host of `global.publicBaseUrl`, else (development only) the request's host. |
-| `oid4vp.x509SigningAlgorithm` | `OID4VP_X509_SIGNING_ALGORITHM` | `ES256` | yes | The algorithm an `x509_san_dns` or `x509_hash` request is signed with: `ES256`, `ES384`, `ES512`, `PS256`, `RS256` or `EdDSA`. |
+| `oid4vp.x509SigningAlgorithm` | `OID4VP_X509_SIGNING_ALGORITHM` | `ES256` | yes | The algorithm an `x509_san_dns` or `x509_hash` request is signed with: `ES256`, `ES384`, `ES512`, `PS256`, `RS256`, `EdDSA` or one of the [post-quantum algorithms](#post-quantum-algorithms). |
+| `oid4vp.requestObjectSigningAlgorithm` | `OID4VP_REQUEST_OBJECT_SIGNING_ALGORITHM` | `RS256` | yes | The algorithm a signed request under the other prefixes is signed with: an RS, PS or ES algorithm, `EdDSA`, or one of the [post-quantum algorithms](#post-quantum-algorithms). |
+| `oid4vc.walletCompatibility` | `OID4VC_WALLET_COMPATIBILITY` | `false` | yes | [Wallet compatibility mode](#wallet-compatibility-mode): no post-quantum or composite algorithm in OpenID4VCI or OpenID4VP. |
 | `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT for the `verifier_attestation` prefix. **Warning:** empty, this realm attests itself. |
 | `oid4vp.signInRegisterMaxEntries` | `OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES` | `10000` | yes | Rows the sign-in register keeps per realm; past it the oldest is dropped, which fails closed. **The oldest still-valid credential then signs nobody in**, and its holder has to be issued another; raise it for a realm that issues more. |
 
