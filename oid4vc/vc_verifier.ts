@@ -1760,10 +1760,10 @@ class VcVerifier {
     // setting's description says; it is what makes the prefix testable.
     const sub = String(this.vpClientId());
     const now = nowSec();
-    // certificate-header: none — a self-attestation names its key in `cnf`;
-    // a chain would claim a trust the attestation does not have.
     // Classical: the realm's RS256 key, as always — a self-attestation is
     // signed on the request path, and #657's setting is about the REQUEST.
+    // certificate-header: none — a self-attestation names its key in `cnf`;
+    // a chain would claim a trust the attestation does not have.
     const jwt = signJwt({ iss: baseUrlOf(req), sub: sub, iat: now,
                           exp: now + 3600, cnf: { jwk: ours } }, null,
                         { header: { typ: 'verifier-attestation+jwt' } });
@@ -2268,10 +2268,12 @@ class VcVerifier {
       kidDid: signed.kidDid || undefined
     };
     if (!stsCrypto.isPqJwsAlg(algorithm)) {
-      // certificate-header: none — `options` above names it, the
-      // vp-request-object use case (x509: signX509Request()'s own x5c).
+      // `options` above names the same use case; the x509 prefixes carry
+      // their own x5c (signX509Request()).
       const out = x509 ? this.signX509Request(payload, signed) :
-        signJwt(payload, REQUEST_OBJECT_KIND, options);
+        signJwt(payload, REQUEST_OBJECT_KIND,
+                Object.assign({ certificateHeader: 'vp-request-object' },
+                              options));
       log.debug("Leaving VcVerifier.signRequestObject(). " + algorithm);
       return out;
     }
