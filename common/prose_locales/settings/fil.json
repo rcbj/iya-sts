@@ -5320,8 +5320,8 @@
     "text": "Algorithm na ipinipirma sa mga credential"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "6503fe55086c7b70",
-    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito."
+    "en": "64dfa4a593f7ec50",
+    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito. Tinatanggihan dito ng oid4vc.walletCompatibility ang post-quantum o composite."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5504,8 +5504,24 @@
     "text": "Signing algorithm ng x509 Client Identifier request"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "Ang JWS algorithm na ipinapampirma sa Request Object na may x509_san_dns o x509_hash Client Identifier, at kaya ang realm key kung saan ini-issue ang certificate ng Verifier. ES256 bilang default, na hinihingi ng OpenID4VC HAIP na tanggapin ng wallet. Hindi pa inaalok ang post-quantum algorithm: pinipirmahan ang Request Object sa request path, at pumipirma ang mga post-quantum key ng realm na ito sa thread pool ng libuv (oid4vc/CLAUDE.md, ang mga x509 prefix)."
+    "en": "aa2c5eaf7760ef3f",
+    "text": "Ang JWS algorithm na ipinapampirma sa Request Object na may x509_san_dns o x509_hash Client Identifier, at kaya ang realm key kung saan ini-issue ang certificate ng Verifier. ES256 bilang default, na hinihingi ng OpenID4VC HAIP na tanggapin ng wallet. Inaalok din ang mga post-quantum at composite algorithm, para sa wallet na tumatanggap sa mga ito; tinatanggihan sila ng oid4vc.walletCompatibility, at ganoon din kapag naka-off ang keys.postQuantumSigning."
+  },
+  "oid4vp.requestObjectSigningAlgorithm|label": {
+    "en": "f3337ef9c128d22c",
+    "text": "Signing algorithm ng naka-sign na request"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|description": {
+    "en": "c8e10b889bf92533",
+    "text": "Ang JWS algorithm na ipinapampirma sa naka-sign na Request Object sa ilalim ng mga Client Identifier prefix na pre-registered, decentralized_identifier, verifier_attestation at openid_federation (ginagamit ng mga x509 prefix ang oid4vp.x509SigningAlgorithm). Ang realm key para rito ay ang pinapangalanan ng request: sa /oauth2/jwks, sa DID document, sa cnf ng sariling-isyung Verifier Attestation at sa openid_credential_verifier jwks ng Entity Configuration. RS256 bilang default, na siyang ginamit ng bawat naka-sign na request bago ang setting na ito. Inaalok ang mga post-quantum at composite algorithm para sa wallet na tumatanggap sa mga ito; tinatanggihan sila ng oid4vc.walletCompatibility, at ganoon din kapag naka-off ang keys.postQuantumSigning."
+  },
+  "oid4vc.walletCompatibility|label": {
+    "en": "50234c10261cc298",
+    "text": "Wallet compatibility mode"
+  },
+  "oid4vc.walletCompatibility|description": {
+    "en": "a8207c4165957956",
+    "text": "Ina-off, para sa OpenID4VCI at OpenID4VP, ang bawat JWS algorithm na tinatanggihan ng wallet na ginagamit ngayon o na walang inilathalang specification na tumutukoy para sa mga protocol na ito: ang mga post-quantum at composite (ang ML-DSA-44, -65 at -87 ay sa RFC 9964, pero wala pang wallet na tumatanggap sa mga ito; ang SLH-DSA at ang mga composite ML-DSA algorithm ay mga Internet-Draft). Naka-on: wala sa kanila ang nasa metadata ng issuer o ng Verifier, hindi kailanman ipinipirma sa isa sa kanila ang dc+sd-jwt o jwt_vc_json credential, OpenID4VP Request Object o alok ng portal (tinatanggihan ang setting na nagpapangalan ng isa sa halip na palitan), at tinatanggihan ang credential, Key Binding JWT, VP JWT, proof of possession o banyagang status list na pinirmahan ng isa sa kanila. NAKA-OFF, ang default: inaalok at tinatanggap ang bawat algorithm na hawak ng realm na ito, gaya ng dati. Hindi apektado ang ldp_vc (bbs-2023 at ang mga holder cryptosuite nito), at wala ring ibang protocol: ang keys.postQuantumSigning ang switch para sa buong realm."
   },
   "oid4vp.verifierAttestation|label": {
     "en": "43be5976a5b30428",
@@ -5792,8 +5808,8 @@
     "text": "Ibang pinagkakatiwalaang credential issuer (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "60a2c73b8c2c6aec",
-    "text": "Mga PEM certificate, pinagdugtong, na ang mga key ay tinatanggap ng Verifier ng serbisyong ito para sa pirma ng SD-JWT VC o jwt_vc_json credential BUKOD PA sa sariling issuer ng realm na ito. Walang laman — ang default — ay ang issuer na ito lang ang pinagkakatiwalaan, gaya ng dati. Ginagamit ang certificate bilang KEY: walang chain na binubuo, pero kinokonsulta ang revocation nito kapag nagve-verify ito ng credential (pki.revocationCheck, mula 2026-09-12)."
+    "en": "bbe880b9d434d9ab",
+    "text": "Mga PEM certificate, pinagdugtong, na ang mga key ay tinatanggap ng Verifier ng serbisyong ito para sa pirma ng SD-JWT VC o jwt_vc_json credential BUKOD PA sa sariling issuer ng realm na ito. Walang laman — ang default — ay ang issuer na ito lang ang pinagkakatiwalaan, gaya ng dati. Ginagamit ang certificate bilang KEY: walang chain na binubuo, pero kinokonsulta ang revocation nito kapag nagve-verify ito ng credential (pki.revocationCheck, mula 2026-09-12). Ang certificate na ang key ay ML-DSA, SLH-DSA o composite ML-DSA ay nagve-verify ng credential at status list na pinirmahan ng algorithm na iyon (#657), maliban kung naka-on ang oid4vc.walletCompatibility."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",

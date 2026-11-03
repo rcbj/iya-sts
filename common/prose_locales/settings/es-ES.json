@@ -112,8 +112,8 @@
     "text": "El nombre DNS que el certificado del verificador lleva en su subjectAltName y que nombra el Client Identifier x509_san_dns (OpenID4VP 1.0 sección 5.9.3). DEBE ser el host de la Response URI, lo que comprueba una cartera que por lo demás no confía en el verificador, así que se rechaza una solicitud cuya Response URI esté en otro host. VACÍO, el predeterminado: el host de global.publicBaseUrl cuando está fijado; si no — solo en desarrollo — el host al que llegó la solicitud. El modo producto nunca certifica una cabecera Host: quien la enviara elegiría adónde envía las presentaciones una solicitud firmada y de confianza."
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "El algoritmo JWS con el que se firma un Request Object con el Client Identifier x509_san_dns o x509_hash, y por tanto la clave del dominio sobre la que se emite el certificado del verificador. ES256 por defecto, que OpenID4VC HAIP exige que una cartera acepte. Aún no se ofrece un algoritmo poscuántico: el Request Object se firma en la ruta de la solicitud, y las claves poscuánticas de este dominio firman en el grupo de hilos de libuv (oid4vc/CLAUDE.md, los prefijos x509)."
+    "en": "aa2c5eaf7760ef3f",
+    "text": "El algoritmo JWS con el que se firma un Request Object con el Client Identifier x509_san_dns o x509_hash, y por tanto la clave del dominio sobre la que se emite el certificado del verificador. ES256 por defecto, que OpenID4VC HAIP exige que una cartera acepte. También se ofrecen los algoritmos poscuánticos y compuestos, para una cartera que los acepte; oid4vc.walletCompatibility los rechaza, y también keys.postQuantumSigning desactivado."
   },
   "oid4vp.verifierAttestation|description": {
     "en": "c39fa3d8102074f4",
