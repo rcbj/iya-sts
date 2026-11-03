@@ -4835,6 +4835,7 @@ class FederationSp {
         if (!got.ok) {
           errorCodes.mark(res, got.errorCode);
           log.debug("Leaving the federation login endpoint. Not discovered.");
+          // error-code: none — discovered()'s own code, in got.errorCode
           return this.refuse(res, record, 502, 'The OpenID Provider\'s ' +
                              'configuration could not be used', got.why);
         }
@@ -6413,6 +6414,7 @@ class FederationSp {
     const idToken = opened.token;
     const refused = (status, code, what, why) => {
       errorCodes.mark(res, code);
+      // error-code: none — each caller names its code, marked just above
       this.refuse(res, record, status, what, why);
       return { ok: false };
     };

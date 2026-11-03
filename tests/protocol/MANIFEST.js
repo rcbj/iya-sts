@@ -31,7 +31,7 @@ const log = bunyan.createLogger({ name: 'MANIFEST',
 // `browser: true` means the job drives Chrome through selenium-webdriver. There
 // are THREE that are coverage of this working tree's own pages, which is why
 // `--no-browser` names them when it leaves them out — and, since #571, the
-// four OpenID conformance drivers whose plans sign somebody in, which play
+// five OpenID conformance drivers whose plans sign somebody in, which play
 // the suite's person in Chrome (`conformance_browser.js`) because the
 // suite's own browser cannot run the scripted sign-in screen. Those stay in
 // their conformance lanes: one Chrome each, one page at a time.

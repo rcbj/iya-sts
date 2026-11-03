@@ -382,6 +382,8 @@
   "endpoints.route./federation.name": "What federation is here",
   "endpoints.route./federation/pages.js.name": "The federation pages' script",
   "endpoints.route./federation/login/:id.name": "Start a federated sign-in",
+  "endpoints.route./federation/initiate-login/:id.name": "A sign-in the partner starts (initiate_login_uri)",
+  "endpoints.route./federation/fragment.js.name": "The assertion consumer service's fragment script",
   "endpoints.route./federation/acs/:id.name": "Assertion consumer service / wreply / redirect_uri",
   "endpoints.route./federation/link/:handle.name": "Link a partner's subject at first sign-in",
   "endpoints.route./federation/stepup/:handle.name": "Finish a federated sign-in after a step-up on risk",

@@ -244,8 +244,8 @@
     "text": "EL SECRETO DE ESTE SERVICIO ANTE EL SOCIO, en claro, en un directorio donde todo bind tiene éxito. Es una credencial REAL en un servicio externo REAL, lo cual es una afirmación más fuerte que cualquier otra cosa de este directorio — vea el encabezado. Nunca se escribe en el registro de auditoría ni se imprime en una página."
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "CÓMO VUELVE EL CÓDIGO DE AUTORIZACIÓN: query (el predeterminado, el código en la redirección) o form_post (OAuth 2.0 Form Post Response Mode), que Sign in with Apple exige siempre que se pide un nombre o una dirección. form_post llega como un POST entre sitios, así que un navegador no le envía ninguna cookie SameSite=Lax."
+    "en": "fdcac3938c7dc0ec",
+    "text": "CÓMO VUELVE LA RESPUESTA DE AUTORIZACIÓN. Vacío, el valor predeterminado: query para code, y form_post (OAuth 2.0 Form Post Response Mode) para un tipo de respuesta de OpenID Connect que lleva un ID Token o un token de acceso. form_post, que Sign in with Apple exige siempre que se pide un nombre o una dirección, llega como un POST entre sitios, por lo que un navegador no le envía ninguna cookie SameSite=Lax. fragment, solo OpenID Connect, es el valor predeterminado de esos tipos de respuesta en la especificación: la respuesta está en el fragmento de la URL, y una página con un script aquí la reenvía. Deja el ID Token en el historial del navegador, cosa que form_post no hace: úselo solo para un socio que no puede enviar por POST. query no puede llevar un ID Token ni un token de acceso."
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,16 @@
     "text": "El ámbito que se pide al socio. `openid profile email` es el valor predeterminado para una relación OIDC y no hay valor predeterminado para una OAuth 2.0, porque lo que le dará un servidor de autorización OAuth 2.0 es completamente local a él."
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code (el valor predeterminado) o id_token. `id_token` con form_post es la forma que NO necesita canal posterior y por tanto ni endpoint de token, ni secreto de cliente, ni solicitud saliente — que es la única forma de federarse con un socio OIDC desde un despliegue sin ninguna salida a la red."
+    "en": "885dc55158b43f26",
+    "text": "code (el valor predeterminado), id_token, o uno de los otros cuatro de OpenID Connect: id_token token (implícito), code id_token, code token y code id_token token (híbridos). `id_token` con form_post es la forma que NO necesita canal de retorno y, por tanto, ningún punto de conexión de token, ningún secreto de cliente ni ninguna solicitud saliente, que es la única manera de federarse con un socio OIDC desde un despliegue sin ninguna salida de red. Un ID Token del punto de conexión de autorización debe llevar el nonce, y c_hash y at_hash siempre que lo acompañaba un código o un token de acceso."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "SOLO OPENID CONNECT. TRUE lee los puntos de conexión del socio y su jwks_uri de su documento de descubrimiento, {fedPeer}/.well-known/openid-configuration, al comienzo de cada inicio de sesión (OpenID Connect Discovery 1.0 sección 4), cuyo issuer debe ser exactamente fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl y fedJwksUri no se leen entonces. La dirección se deriva de fedPeer, que configuró un administrador, y nunca de una solicitud. FALSE, el valor predeterminado: los puntos de conexión se configuran a mano."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "SOLO OPENID CONNECT. TRUE atiende el punto de conexión de inicio de sesión de esta relación, /federation/initiate-login/{id}, que el socio registra como initiate_login_uri (OpenID Connect Core 1.0 sección 4): un inicio de sesión que inicia el SOCIO, nombrándose en iss, que debe ser fedPeer. Un login_hint se transmite, y un target_link_uri solo se sigue hacia una ruta de este servicio. FALSE, el valor predeterminado, lo rechaza: de lo contrario, cualquier página podría iniciar un inicio de sesión en el navegador de una persona."
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",

@@ -818,9 +818,10 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
 | each public surface #569 converts | its own bundle over `common/web_surface.ts`; no token, the `sts_session` cookie | `common/CLAUDE.md` (3cl) |
 
 **A SERVER-DRAWN PAGE WITH ONE NAMED SCRIPT** is the older exception, and each
-but the OP iframe carries a REAL SUBMIT BUTTON as well, because with the
-script blocked the button is the whole mechanism; the OP iframe has no person
-in front of it and nothing to submit. A row leaves this table when its
+but the OP iframe and the fragment page carries a REAL SUBMIT BUTTON as well,
+because with the script blocked the button is the whole mechanism; the OP
+iframe has no person in front of it and nothing to submit, and the fragment
+page has nothing a form could carry without the script. A row leaves this table when its
 surface is converted; the protocol documents never do.
 
 | Page | Script | Argued in |
@@ -830,6 +831,7 @@ surface is converted; the protocol documents never do.
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
 | `/oauth2/check_session` (#121, off by default) | `/oauth2/check_session.js` — no submit button | `oauth-oidc/CLAUDE.md` |
+| a federation relationship's fragment-encoded response at `/federation/acs/{id}` (#930, only where `fedResponseMode` is `fragment`) | `/federation/fragment.js` — no submit button: no markup can read a URL fragment | `federation/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
 this origin** (2026-09-13): `debugger/debugger_server.ts` serves them on a
@@ -1121,6 +1123,7 @@ the file the row names.
 | Enforce anything by default, **in development mode** — product mode implies RFC 9700 mode | `oauth-oidc/CLAUDE.md`, `common/mode.js` |
 | Federate with anybody it was not CONFIGURED to federate with — the one refusal by default | `federation/CLAUDE.md` |
 | Poll a partner about a person while the session lasts; ~~consume a federated sign-out~~ reversed 2026-09-23 (#167); ~~decrypt a partner's encrypted assertion~~ reversed 2026-09-23 (#168) | `federation/CLAUDE.md` |
+| Keep a partner's refresh token, or register itself at a partner, find one by WebFinger or send it request objects — #930's argued relying-party modules | `federation/CLAUDE.md`, *THE OPENID CONNECT RELYING PARTY PLANS* |
 | Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-one argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
 | ~~Ask anybody's permission before it issues something~~ — reversed 2026-09-01 (`/oauth2/consent`) | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer, unless it is this service's own or listed in `appCorsOrigin` | `common/CLAUDE.md` (`cors.js`) |

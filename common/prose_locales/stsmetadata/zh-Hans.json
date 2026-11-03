@@ -2571,6 +2571,18 @@
     "en": "2f7afe4a35fac4a3",
     "text": "将浏览器发送到外部身份提供方——<AuthnRequest>、站点间传输 URL、wa=wsignin1.0 或 OAuth 2.0 授权请求，以关系所规定的为准"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 第 4 节（#930）：OpenID Connect 关系在其合作伙伴处注册为 initiate_login_uri 的登录发起端点，支持 GET 或 POST。除非关系设置了 fedInitiateLogin，否则予以拒绝（403），因为任何页面都可以把浏览器发送到这里；`iss` 为必需项，且必须是该关系的 fedPeer（否则为 400）；`login_hint` 会转交给合作伙伴；`target_link_uri` 仅在指向本服务上的路径时才会被跟随，否则予以丢弃，因此该端点不是开放重定向器。"
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "以一个普通的授权请求把浏览器发送到合作伙伴 OpenID 提供方，与 /federation/login/{id} 的做法相同"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "规范端点的非规范资源（#930）：当 OpenID Connect 关系选择 fedResponseMode=fragment 时，断言消费服务的页面所运行的唯一脚本。片段永远不会到达服务器，因此页面读取它，将其从地址和历史记录条目中移除，再以 POST 发送到同一地址，在那里像 form_post 响应一样被处理。没有任何标记能够读取片段，因此没有可退而求其次的按钮。"
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "一个路径接收全部五种协议：五个路径意味着要在合作方处配置五个 URL，以及配错的四种方式，而其失败表现为在别处成功登录之后浏览器中的 404。**这是本服务中唯一不宽松、也不可能宽松的端点。** 到达的是一个声称代表某个人的未经认证的 HTTP 请求；它与会话之间唯一的屏障，就是针对关系上所配置证书的签名检查。因此：签名必须针对那个密钥验证，而不是针对文档自带的密钥；颁发者必须是所配置的合作方；断言必须在其有效窗口内；响应必须应答本服务发出的请求，除非 fedAllowUnsolicited 另有规定。每次拒绝都会绘制一个指明检查项的页面，并在关系上写入 fedLastError——它从不重定向，因为此人在合作方处的登录已经成功，唯一值得关心的问题是本服务对答复的哪一点不满意。加密的断言、标识符或属性，或 JWE ID Token，会使用关系自身的密钥、严格按照其公布的算法解密，并对其中的内容检查签名（#168）；所有解密失败都是同一个代码，因此答复不会成为预言机；AES-CBC 和 rsa-1_5 在每种模式下都被拒绝，而在产品模式下，明文断言会被拒绝，除非关系设置了 fedAllowUnencrypted。"

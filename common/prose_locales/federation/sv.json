@@ -244,8 +244,8 @@
     "text": "DEN HÄR TJÄNSTENS HEMLIGHET HOS PARTNERN, i klartext, i en katalog där varje bind lyckas. Det är en VERKLIG autentiseringsuppgift hos en VERKLIG extern tjänst, vilket är ett starkare påstående än något annat i den här katalogen — se rubriken. Skrivs aldrig till granskningsloggen och skrivs aldrig ut på en sida."
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "HUR AUKTORISERINGSKODEN KOMMER TILLBAKA: query (standard, koden i omdirigeringen) eller form_post (OAuth 2.0 Form Post Response Mode), som Sign in with Apple kräver när ett namn eller en adress efterfrågas. form_post kommer som en POST mellan webbplatser, så en webbläsare skickar ingen SameSite=Lax-cookie med den."
+    "en": "fdcac3938c7dc0ec",
+    "text": "HUR AUKTORISERINGSSVARET KOMMER TILLBAKA. Tomt, standardvärdet: query för code, och form_post (OAuth 2.0 Form Post Response Mode) för en OpenID Connect-svarstyp som bär en ID-token eller en åtkomsttoken. form_post, som Sign in with Apple kräver när ett namn eller en adress efterfrågas, anländer som en POST mellan webbplatser, så en webbläsare skickar ingen SameSite=Lax-cookie med den. fragment, endast OpenID Connect, är specifikationens standardvärde för de svarstyperna: svaret finns i URL-fragmentet, och en sida med ett skript här skickar det vidare. Det lägger ID-token i webbläsarens historik, vilket form_post inte gör: använd det bara för en partner som inte kan posta. query kan inte bära en ID-token eller en åtkomsttoken."
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,16 @@
     "text": "Det omfång som begärs av partnern. `openid profile email` är standard för en OIDC-relation och det finns ingen standard för en OAuth 2.0-relation, eftersom det en OAuth 2.0-auktoriseringsserver ger dig är helt lokalt för den."
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code (standard) eller id_token. `id_token` med form_post är den form som INTE behöver någon bakkanal och därför ingen tokenslutpunkt, ingen klienthemlighet och ingen utgående begäran — vilket är det enda sättet att federera med en OIDC-partner från en driftsättning som inte har någon utgående trafik alls."
+    "en": "885dc55158b43f26",
+    "text": "code (standardvärdet), id_token, eller en av OpenID Connects fyra andra: id_token token (implicit), code id_token, code token och code id_token token (hybrid). `id_token` med form_post är formen som INTE behöver någon bakkanal och därför ingen tokenslutpunkt, ingen klienthemlighet och ingen utgående begäran — vilket är det enda sättet att federera med en OIDC-partner från en driftsättning helt utan utgående trafik. En ID-token från auktoriseringsslutpunkten måste bära nonce, och c_hash och at_hash där en kod eller en åtkomsttoken kom med den."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "ENDAST OPENID CONNECT. TRUE läser partnerns slutpunkter och dess jwks_uri från dess upptäcktsdokument, {fedPeer}/.well-known/openid-configuration, i början av varje inloggning (OpenID Connect Discovery 1.0 avsnitt 4), vars issuer måste vara exakt fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl och fedJwksUri läses då inte. Adressen härleds från fedPeer, som en administratör har konfigurerat, och aldrig från en begäran. FALSE, standardvärdet: slutpunkterna konfigureras för hand."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "ENDAST OPENID CONNECT. TRUE besvarar den här relationens slutpunkt för att initiera inloggning, /federation/initiate-login/{id}, som partnern registrerar som initiate_login_uri (OpenID Connect Core 1.0 avsnitt 4): en inloggning som PARTNERN startar och där den namnger sig själv i iss, som måste vara fedPeer. En login_hint skickas vidare, och en target_link_uri följs endast till en sökväg på den här tjänsten. FALSE, standardvärdet, avvisar den: annars skulle vilken sida som helst kunna starta en inloggning i en persons webbläsare."
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",

@@ -2571,6 +2571,18 @@
     "en": "2f7afe4a35fac4a3",
     "text": "將瀏覽器送往「外部」身分識別提供者——依關係所指定，為 <AuthnRequest>、站台間轉送 URL、wa=wsignin1.0 或 OAuth 2.0 授權請求"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 第 4 節（#930）：OpenID Connect 關係在其夥伴處註冊為 initiate_login_uri 的登入發起端點，支援 GET 或 POST。除非關係設定了 fedInitiateLogin，否則予以拒絕（403），因為任何頁面都能把瀏覽器送到這裡；`iss` 為必要項，且必須是該關係的 fedPeer（否則為 400）；`login_hint` 會轉交給夥伴；`target_link_uri` 僅在指向本服務上的路徑時才會被跟隨，否則予以捨棄，因此此端點不是開放重新導向器。"
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "以一個一般的授權請求把瀏覽器送到夥伴 OpenID 提供者，與 /federation/login/{id} 的做法相同"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "規格端點的非規格資源（#930）：當 OpenID Connect 關係選擇 fedResponseMode=fragment 時，斷言取用服務的頁面所執行的唯一指令碼。片段永遠不會到達伺服器，因此頁面讀取它，將其從位址與歷史紀錄項目中移除，再以 POST 送到同一位址，在那裡像 form_post 回應一樣被處理。沒有任何標記能讀取片段，因此沒有可退而求其次的按鈕。"
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "「一個路徑接收全部五種協定」：五個路徑意味著要在合作夥伴處設定五個 URL，以及設定錯誤的四種方式，而其失敗會在別處成功登入「之後」以瀏覽器中的 404 呈現。**這是本服務中唯一不寬鬆、也不可能寬鬆的端點。**抵達的是一個未經驗證、聲稱代表某人的 HTTP 請求；它與工作階段之間唯一的屏障，就是依關係上所設定之憑證進行的簽章檢查。因此：簽章必須依「那把」金鑰驗證，而不是依文件自帶的金鑰，簽發者必須是已設定的合作夥伴，判斷提示必須在其有效期間內，而且回應必須是對本服務所送出請求的回答，除非 fedAllowUnsolicited 另有規定。每次拒絕都會繪製一個指出該檢查的頁面，並在關係上寫入 fedLastError——它絕不重新導向，因為該人在合作夥伴處的登入已經成功，唯一值得關心的問題是本服務對回答有什麼不滿。「已加密」的判斷提示、識別碼或屬性，或 JWE ID Token，會以關係本身的金鑰、嚴格依其公布的演算法解密，並對內部內容檢查簽章（#168）；每種解密失敗都是同一個代碼，因此回答不會成為預言機；AES-CBC 與 rsa-1_5 在每種模式下都會被拒絕，而在產品模式下，「明文」判斷提示會被拒絕，除非關係設定了 fedAllowUnencrypted。"

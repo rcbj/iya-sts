@@ -41,6 +41,12 @@
 //   * A page of the suite's own (Session Management's check page) is opened
 //     and given time for its script.
 //
+// AND IN THE RELYING-PARTY PLANS (#930), where the suite is the OpenID
+// Provider and lists nothing to visit, the person STARTS at this service —
+// `start()` opens a federation relationship's /federation/login/{id} and
+// follows it through the suite and back — and `signOut()` signs out here and
+// follows the partner's RP-Initiated Logout link the signed-out page offers.
+//
 // THE PERSON'S BROWSER IS ONE BROWSER. Everything a module's person does —
 // the authorization, the second authorization that finds the session, the
 // end-session page — happens in this Chrome, because a session is a cookie
@@ -170,7 +176,8 @@ function serially(work) {
  *
  * @param {object} o - `suite(method, path, body, contentType)` (the driver's
  *   client of the suite's API), `suiteBase` (its base URL), `serviceBase`
- *   (this service's root), `username`, `password` and `actions`: module
+ *   (this service's root), `username`, `password`, `markFirst` (report a
+ *   listed address visited before opening it, #930) and `actions`: module
  *   name → `cancel`, `load-only`, `photograph` or `photograph-only`, a key
  *   ending in `*` matching by prefix and one beginning `*` by suffix
  * @returns {object} `{ visit(id, info) }`, a driver's `onWaiting`
@@ -443,8 +450,16 @@ async function visitOne(o, id, moduleName, one, jars, action) {
   await useJar(driver, jars, id);
   const suiteBase = String(o.suiteBase);
   try {
+    // MARKED FIRST for a person who asks (#930): the third-party-initiated
+    // login module refuses an authorization request that arrives before the
+    // suite has recorded the visit to its initiate_login_uri, and opening
+    // that address sends the browser straight on to the suite.
+    if (!one.noMark && o.markFirst) {
+      await o.suite("POST", "api/runner/browser/" + id + "/visit?url=" +
+                    encodeURIComponent(one.url));
+    }
     await open(driver, one);
-    if (!one.noMark) {
+    if (!one.noMark && !o.markFirst) {
       await o.suite("POST", "api/runner/browser/" + id + "/visit?url=" +
                     encodeURIComponent(one.url));
     }

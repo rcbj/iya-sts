@@ -252,6 +252,9 @@ async function prepare(plan) {
                 "created the relationship " + id);
   const fields = {
     fedName: "The conformance suite (" + plan.key + ")",
+    // The suite's one subject is a person this realm has never seen, and a
+    // relationship created in product mode does not create entries.
+    fedAutocreateUsers: "TRUE",
     fedClientId: clientId, fedClientSecret: secret,
     fedTokenAuth: "client_secret_basic",
     fedScope: "openid profile email",
@@ -367,7 +370,7 @@ async function runOnePlan(plan) {
     const person = conformanceBrowser.person({
       suite: oidf.suite, suiteBase: oidf.SUITE,
       serviceBase: prepared.realm.base, username: "", password: "",
-      actions: {} });
+      markFirst: true, actions: {} });
     const operator = operatorFor(plan, prepared, person);
     const modules = created.body.modules || [];
     for (let i = 0; i < modules.length; i++) {

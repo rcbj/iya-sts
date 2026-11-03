@@ -1531,6 +1531,14 @@
     "en": "561e36f4539a01de",
     "text": "開始聯盟登入"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "由夥伴發起的登入（initiate_login_uri）"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "斷言取用服務的片段指令碼"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "斷言取用者服務／wreply／redirect_uri"

@@ -2571,6 +2571,18 @@
     "en": "2f7afe4a35fac4a3",
     "text": "ipinapadala ang browser sa isang BANYAGANG identity provider — isang <AuthnRequest>, isang inter-site transfer URL, wa=wsignin1.0 o isang OAuth 2.0 authorization request, alinman ang sinasabi ng relationship"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 seksiyon 4 (#930): ang login initiation endpoint na inirerehistro ng isang OpenID Connect na ugnayan sa partner nito bilang initiate_login_uri, GET o POST. TINATANGGIHAN (403) maliban kung itinakda ng ugnayan ang fedInitiateLogin, dahil kahit anong pahina ay makapagpapadala ng browser dito; ang `iss` ay KINAKAILANGAN at dapat ay ang fedPeer ng ugnayan (400 kung hindi); ang `login_hint` ay ipinapasa sa partner; ang `target_link_uri` ay sinusundan lamang patungo sa isang path sa serbisyong ito at itinatapon kung hindi, kaya ang endpoint ay hindi isang open redirector."
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "ipinapadala ang browser sa partner na OpenID Provider na may karaniwang authorization request, gaya ng ginagawa ng /federation/login/{id}"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "HINDI-SPEC na resource ng isang spec endpoint (#930): ang iisang script na pinapatakbo ng pahina ng assertion consumer service kapag pinili ng isang OpenID Connect na ugnayan ang fedResponseMode=fragment. Ang fragment ay hindi kailanman umaabot sa server, kaya binabasa ito ng pahina, inaalis ito sa address at sa history entry, at ipino-POST ito sa parehong address, kung saan ito kinokonsumo gaya ng isang form_post na response. Walang markup na makababasa ng fragment, kaya walang button na mababalikan."
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "IISANG PATH ANG TUMATANGGAP NG LAHAT NG LIMANG PROTOCOL: ang lima ay mangangahulugan ng limang URL na iko-configure sa partner at apat na paraan para mai-configure ang mali, na ang pagkabigo ay 404 sa browser PAGKATAPOS ng matagumpay na sign-in sa ibang lugar. **ITO ANG NAG-IISANG ENDPOINT SA SERBISYONG ITO NA HINDI PERMISSIVE, AT HINDI MAAARING MAGING GANOON.** Ang dumarating ay isang unauthenticated na HTTP request na nagsasabing isang tao ito; ang tanging nasa pagitan niyon at ng session ay ang signature check laban sa certificate na naka-configure sa relationship. Kaya: dapat ma-verify ang signature laban sa KEY NA IYON at hindi laban sa isang dala ng dokumento, ang issuer ay dapat ang naka-configure na partner, ang assertion ay dapat nasa loob ng validity window nito, at ang response ay dapat sumasagot sa request na ipinadala ng serbisyong ito maliban kung iba ang sinasabi ng fedAllowUnsolicited. Bawat pagtanggi ay gumuguhit ng page na nagpapangalan sa check at nagsusulat ng fedLastError sa relationship — hindi ito kailanman nagre-redirect, dahil nagtagumpay na ang sign-in ng tao sa partner at ang tanging kawili-wiling tanong ay kung ano ang hindi nagustuhan ng serbisyong ito sa sagot. Ang ENCRYPTED na assertion, identifier o attribute, o JWE ID Token, ay dine-decrypt gamit ang sariling key ng relationship sa ilalim ng eksaktong mga algorithm na inilalathala nito at sinusuri ang signature nito sa nasa loob (#168); iisang code ang bawat decryption failure, kaya hindi oracle ang sagot; tinatanggihan ang AES-CBC at rsa-1_5 sa bawat mode, at tinatanggihan ang PLAINTEXT na assertion sa product mode maliban kung itinatakda ng relationship ang fedAllowUnencrypted."

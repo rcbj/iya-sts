@@ -1531,6 +1531,14 @@
     "en": "561e36f4539a01de",
     "text": "Iniciar un inicio de sesión federado"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "Un inicio de sesión que inicia el socio (initiate_login_uri)"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "El script de fragmento del servicio consumidor de aserciones"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "Servicio consumidor de aserciones / wreply / redirect_uri"

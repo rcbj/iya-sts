@@ -56,6 +56,8 @@ an `ldapmodify`.
 | `GET\|POST /federation/acs/{id}` | **finish**: the assertion consumer service, the WS-Federation `wreply` and the OAuth 2.0 `redirect_uri`, all one path. **This is the URL to configure at the partner** |
 | `GET /federation/link/{handle}` | where the linking sign-in of `link-at-first-sign-in` returns: after the person has signed in here as the account the partner named, this records the link and finishes the federated sign-in (#109). Single-use, and it records the link only for a fresh local sign-in as that person |
 | `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned — with its `SingleLogoutService` on the Redirect and POST bindings and, for SAML 2.0, its encryption key (`KeyDescriptor use="encryption"`, #168). For a WS-Federation partner, an `EntityDescriptor` with a `fed:ApplicationServiceType` role, its passive requestor endpoint and its encryption key |
+| `GET\|POST /federation/initiate-login/{id}` | an OpenID Connect relationship's `initiate_login_uri` (OpenID Connect Core section 4): a sign-in the **partner** starts. Off unless `fedInitiateLogin` is on; `iss` must be the relationship's `fedPeer`; `login_hint` is passed on; `target_link_uri` is followed only to a path on this service |
+| `GET /federation/fragment.js` | the one script of the assertion consumer service, for a relationship whose `fedResponseMode` is `fragment`: it posts the fragment-encoded answer back to `/federation/acs/{id}` |
 | `GET /federation/jwks/{id}` | an OpenID Connect relationship's encryption key as a JWKS (`use: enc`), what the partner registers to encrypt its ID Token to (#168) |
 | `GET\|POST /federation/slo/{id}` | **a partner's sign-out, in a browser** (#167): a SAML 2.0 `<LogoutRequest>` or `<LogoutResponse>`, a WS-Federation `wsignoutcleanup1.0` or `wsignout1.0`, and the browser coming back from an OpenID Provider's `end_session_endpoint`. The SAML `SingleLogoutService`, the WS-Federation sign-out URL and the OpenID Connect `post_logout_redirect_uri` to configure at the partner |
 | `POST /federation/backchannel-logout/{id}` | the OpenID Connect `backchannel_logout_uri` to register at the partner |
@@ -95,7 +97,9 @@ The five protocols, and where each differs:
 * **OpenID Connect** — the authorization code flow by default.
   `fedResponseType: id_token` with `response_mode=form_post` needs **no back
   channel at all**, which is the way to federate with an OIDC partner from a
-  deployment with no egress. The `nonce` is checked. Attributes come off the ID
+  deployment with no egress. The other response types are taken too — see
+  [OpenID Connect as the relying party](#openid-connect-as-the-relying-party).
+  The `nonce` is checked. Attributes come off the ID
   Token and, when configured, UserInfo. **With the code flow, configure
   `fedUserinfoUrl`**: a provider that follows OpenID Connect Core section 5.4
   (this service among them, since #118) puts profile claims such as
@@ -135,6 +139,59 @@ What is checked on the way in, in every mode:
   unless `fedAllowUnsolicited` is on;
 * the partner's signing certificate for **revocation**, under
   `pki.revocationCheck`.
+
+### OpenID Connect as the relying party
+
+An inbound OpenID Connect relationship is checked against the OpenID
+Foundation's relying-party certification plans ([conformance](conformance.md)).
+What it does, in every mode:
+
+* **The ID Token** must carry `sub`, `iat` and `exp`. Its `azp`, when present,
+  must be this service's client id, and it must be present when there are
+  several audiences. The `nonce` this service always sends must come back, from
+  either endpoint (`STS-FED-0195` to `0198`, `0039`). **A partner that leaves
+  the nonce out of a code-flow ID Token is refused**; until #930 that was
+  accepted with a warning.
+* **UserInfo** must answer for the ID Token's `sub`, or the sign-in is refused
+  (`STS-FED-0202`). A UserInfo endpoint that does not answer still only costs
+  its attributes.
+* **Every response type**: `code`, `id_token`, `id_token token`,
+  `code id_token`, `code token` and `code id_token token`. Whatever the
+  authorization endpoint sends is checked first. Its ID Token needs `c_hash`
+  next to a code and `at_hash` next to an access token, and the code is
+  redeemed only after that. The token endpoint's ID Token must name the same
+  `iss` and `sub` (`STS-FED-0199` to `0201`). PKCE goes with every code.
+* **`fedResponseMode`**: empty asks for `form_post` for every type that carries
+  an ID Token or an access token, and nothing (`query`) for `code`.
+  `fragment` is the specification's default for those types. The answer
+  comes back after `#`, and a page with one script posts it to
+  `/federation/acs/{id}`. **This is a warning: the ID Token is in the
+  browser's history until the script replaces the entry.** Use it only for a
+  partner that cannot post. `query` cannot carry an ID Token and makes the
+  relationship not ready.
+* **`fedDiscovery`** reads `fedSsoUrl`, `fedTokenUrl`, `fedUserinfoUrl` and
+  `fedJwksUri` from `{fedPeer}/.well-known/openid-configuration` at the start
+  of every sign-in. The document's `issuer` must be `fedPeer` exactly
+  (`STS-FED-0203`, `0204`). Off by default. `fedEndSessionUrl` is still
+  written by hand.
+* **`fedInitiateLogin`** answers `/federation/initiate-login/{id}`, the
+  `initiate_login_uri` to register at the partner (`STS-FED-0205`, `0206`).
+  Off by default, because any page could otherwise start a sign-in in a
+  person's browser.
+
+Three things the plans test are not done, by design:
+
+* **Refresh tokens.** The partner's tokens are used once to learn who the
+  person is, and then discarded. The session here ends when the partner signs
+  the person out or sends a Shared Signal.
+* **Session Management.** This service does not poll the partner's
+  `check_session_iframe`. Back-Channel Logout tells it the same thing.
+* **Dynamic registration, WebFinger and request objects.** A relationship is
+  configured by an administrator. This service does not register itself at a
+  partner, find a partner from an identifier somebody types, or send
+  `request_uri`.
+
+### The request context
 
 The request context — the request id, `nonce`, PKCE verifier and where the
 person was going — is kept on the server, per trust realm; the partner carries
@@ -405,7 +462,9 @@ mechanism because a relationship preferred one.
 
 Federation is where this service first made an **outbound** request, and it
 dials only URLs an administrator wrote on a relationship: the partner's token
-endpoint (`fedTokenUrl`), UserInfo (`fedUserinfoUrl`) and JWKS (`fedJwksUri`).
+endpoint (`fedTokenUrl`), UserInfo (`fedUserinfoUrl`) and JWKS (`fedJwksUri`),
+and with `fedDiscovery` on, the discovery document at an address derived from
+`fedPeer`.
 The distinction is not "this feature needs it", which is the argument every
 server-side request forgery ever shipped was made with: a URL a **caller**
 supplies (WS-Federation's `wreqptr`) is refused, while these are supplied by an
@@ -694,7 +753,9 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedJwksUri`, `fedJwks` | SP | the partner's keys, fetched or pasted (pasted is read first and never refreshed) |
 | `fedSigningCertificate` | SP | the partner's signing certificate, base64 DER — what every SAML and WS-Federation assertion is verified against |
 | `fedClientId`, `fedClientSecret` | SP | this service's client credentials at the partner |
-| `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` or `id_token` |
+| `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` (default), `id_token`, `id_token token`, `code id_token`, `code token` or `code id_token token` |
+| `fedResponseMode` | SP | empty, `query`, `form_post` or (OIDC) `fragment` — **`fragment` is a warning**: see [OpenID Connect as the relying party](#openid-connect-as-the-relying-party) |
+| `fedDiscovery`, `fedInitiateLogin` | SP (OIDC) | read the endpoints from the partner's discovery document; answer a sign-in the partner starts. Both `FALSE` by default |
 | `fedBinding`, `fedSignRequest` | SP | the outbound SAML binding; whether the `AuthnRequest` is signed |
 | `fedSloUrl`, `fedSloBinding` | SP | the partner's SAML `SingleLogoutService`, and the binding (`HTTP-Redirect`, the default, or `HTTP-POST`) this service's `LogoutRequest` and `LogoutResponse` go on |
 | `fedEndSessionUrl` | SP | the partner's OpenID Connect `end_session_endpoint`; the ID Token is kept for `id_token_hint` only while this is set |
@@ -719,8 +780,9 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 What each protocol requires before a relationship is usable: for the five
 sign-in protocols, `fedSsoUrl` and `fedPeer` always; `fedSigningCertificate`
 for the three SAML-shaped protocols; `fedClientId` for OIDC, with
-`fedTokenUrl` for the code flow or `fedJwks` / `fedJwksUri` for
-`fedResponseType` `id_token`; `fedTokenUrl` and `fedClientId` for OAuth 2.0,
+`fedTokenUrl` for a response type with a code and `fedJwks` / `fedJwksUri` for
+one with an ID Token from the authorization endpoint (neither, nor `fedSsoUrl`,
+with `fedDiscovery`); `fedTokenUrl` and `fedClientId` for OAuth 2.0,
 with `fedUserinfoUrl` (or `fedJwks` / `fedJwksUri`, when the access token is a
 JWT); for `ssf`, `fedPeer` and a way to reach the partner's stream (a bearer,
 or a token endpoint and client). An OIDC relationship with `fedTrustAnchor`
