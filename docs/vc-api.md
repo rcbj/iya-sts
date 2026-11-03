@@ -132,8 +132,12 @@ above, each checked for its shape, and anything else is `400` naming it.
 `GET /vc-api/dereference?didUrl=…` are DID Core's resolve,
 resolveRepresentation and dereference for `did:key`, `did:jwk` and the
 realm's own `did:web`, in `application/did+json` and
-`application/did+ld+json`. Another `did:web` is `notFound`: it would have to
-be fetched.
+`application/did+ld+json`. A `did:web` this realm publishes for a person is
+answered from its version history: `&versionId=…` or `&versionTime=…` on
+`resolve`, or `?versionId=…` in the DID URL on `dereference`, and
+`didDocumentMetadata` carries `created`, `updated`, `versionId`,
+`nextVersionId` and `deactivated` ([Published DIDs](person-dids.md)).
+Another `did:web` is `notFound`: it would have to be fetched.
 
 ### Publishing a status list
 

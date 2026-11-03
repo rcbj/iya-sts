@@ -660,8 +660,8 @@
     "text": "full för det Data Integrity behöver. JSON-LD-kontexter är VENDORERADE och hämtas aldrig: en kanonisering som berodde på en hämtning över nätverket vore varken reproducerbar eller säker."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, och slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), hållet mot W3C:s DID-testsvit. Ingen annan did:web hämtas; inga DID-parametrar (service, versionId, …) stöds."
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, en did:web per applikation och en did:web per person på en slumpmässig adress med alla versioner av dess nycklar sparade (#1291); den slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), prövat mot W3C:s DID-testsvit, och besvarar DID-parametrarna versionId och versionTime, med didDocumentMetadata (created, updated, versionId, nextVersionId, deactivated), för en persons publicerade DID. Ingen annan did:web hämtas; ingen annan DID-parameter (service, relativeRef, hl) stöds."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1838,6 +1838,10 @@
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
     "en": "5992e8bdddc060a8",
     "text": "ICKE-SPEC (#129). De DID:er och JWK-tumavtryck som registrerats för en person, var och en med sin etikett, vem som registrerade den och hur (bevisad av personens plånbok, eller efter värde), och en did:web med sina fästa nycklar (#693), bredvid om oid4vp.signInSelfIssued är på. POST /admin-api/users/enrol-self-issued-subject registrerar en efter värde och hämtar en did:webs dokument för att fästa dess nycklar; /admin-api/users/remove-self-issued-subject tar bort en. Speglar blocket Självutfärdade ID:n på personens /admin/users-sida."
+  },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "ICKE-SPEC (#1291). Varje did:web som den här sfären publicerar åt en person: dess slumpmässiga id, DID:en, dess dokuments adress, vem som har dess nyckel (wallet, realm eller download), dess tillstånd och varje version med dess nycklar och vad som godkände den, aldrig en privat nyckel. POST /admin-api/users/deactivate-published-did avaktiverar en; en administratör skapar eller ändrar aldrig någon. Speglar blocket Publicerade DID:er på personens /admin/users-sida."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -3410,6 +3414,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "svarar 404 om inte applikationen är deklarerad för did-familjen och har en nyckel"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "DID-dokumentet för en did:web som den här sfären publicerar åt en person (#1291), där did:web-metoden slår upp did:web:<host>[:realm:<id>]:users:<rid>, <rid> 128 slumpmässiga bitar: den aktuella versionens nycklar som JsonWebKey2020-metoder under authentication och assertionMethod, eller den version som DID Cores versionId eller versionTime ber om, ur en historik som aldrig skrivs om. application/did+json, no-store. Avaktiverad — av personen, av en administratör eller medan kontot är inaktiverat — svarar den 410 Gone med { id, deactivated: true }, och en uppslagstjänst rapporterar deactivated i didDocumentMetadata. Publiceras från personens portal där did.personPublishing är på."
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "svarar 410 Gone när DID:en har avaktiverats eller kontot inaktiverats, och 404 för en adress som aldrig publicerats"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

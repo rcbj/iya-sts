@@ -395,6 +395,9 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'remove-self-issued-subject',
                        // The preferred DID (#693, phase 2).
                        'set-preferred-self-issued-subject',
+                       // A DID this realm published for them, deactivated
+                       // (#1291).
+                       'deactivate-published-did',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
@@ -501,6 +504,14 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // marks one subject the person PROVED, a DID, as the one the `did` claim
   // releases (`subject`; empty clears the mark). `siop.setPreferred()`.
   'set-preferred-self-issued-subject',
+  // A PUBLISHED DID (#1291): `deactivate-published-did` deactivates one of
+  // the did:web this realm publishes for the person (`did`, the DID or its
+  // random id): its address answers 410 Gone for good, its history stays
+  // resolvable, and it no longer signs them in, nor is it preferred or
+  // released. An administrator never creates or changes one — that is the
+  // person's act on /portal/self-issued. `oid4vc/person_did.ts` decides and
+  // audits it (`admin.did.deactivated`).
+  'deactivate-published-did',
   // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
   // device entries (`id`), and its Native SSO secret with it — the apps on
   // it are asked to sign in again. `common/devices.ts` keeps them.
@@ -3638,9 +3649,49 @@ class AdminActions {
         return siop.enrolByValue(who, subject, body.label, ctx.actor)
           .then(answer);
       }
+      // A DID THIS REALM PUBLISHED FOR THEM (#1291) is DEACTIVATED, never
+      // just removed from the list: its address is kept and answers 410,
+      // and the subject goes with it — `deactivate-published-did`'s act.
+      const personDid = require('../oid4vc/person_did');
+      if (personDid.isHosted(siop.normalise(subject))) {
+        const done = personDid.deactivate(who, siop.normalise(subject),
+                                          ctx.actor, 'admin');
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  ", a published DID deactivated.");
+        return answer(done.ok ? { ok: true, removed: done.record.did }
+                              : { ok: false, code: done.code,
+                                  error: done.error });
+      }
       log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                 ".");
       return answer(siop.remove(who, subject, ctx.actor));
+    }
+
+    if (action === 'deactivate-published-did') {
+      // LAZILY: `person_did.ts` is built with the verifiable credentials
+      // family, and this module is the console's.
+      const personDid = require('../oid4vc/person_did');
+      const asked = String(body.did == null ? '' : body.did).trim();
+      if (!asked) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " named no DID.");
+        return this.refusedBy('STS-VC-0172', { ok: false, errors: [
+          'Which published DID? Send `did`: the DID, or its random id, as ' +
+          'GET /admin-api/users/published-dids lists it.'] });
+      }
+      const done = personDid.deactivate(who, asked, ctx.actor, 'admin');
+      if (!done.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  " was refused.");
+        // error-code: none — the library decided the code, on done.code
+        return this.refusedBy(done.code, { ok: false, errors: [done.error] });
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return { ok: true, username: who, deactivated: done.record.did,
+               message: done.record.did + ' is deactivated: its address ' +
+                        'answers 410 Gone, its history stays resolvable, ' +
+                        'and it no longer signs ' + who + ' in.' };
     }
 
     if (action === 'set-preferred-self-issued-subject') {

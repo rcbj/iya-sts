@@ -132,6 +132,26 @@ const PROOF_WALLET = 'wallet';
  * The provenance of a subject an administrator enrolled by value, unproven.
  */
 const PROOF_ADMIN = 'admin';
+// AND TWO FOR A DID THIS REALM PUBLISHES FOR THE PERSON (#1291,
+// `oid4vc/person_did.ts`): `realm`, whose key the realm generated and keeps
+// sealed, and `issued`, whose key the realm generated and handed over once
+// and which nobody has yet proved with a wallet (proving it makes it
+// `wallet`). Both are the PERSON'S choice made on their own portal, so
+// either may be preferred and released in the `did` claim; neither signs a
+// wallet in or binds a credential, because no wallet has shown it holds the
+// key.
+/**
+ * The provenance of a published DID whose key the realm keeps sealed.
+ */
+const PROOF_REALM = 'realm';
+/**
+ * The provenance of a published DID whose key the realm handed over once,
+ * not yet proved with a wallet.
+ */
+const PROOF_ISSUED = 'issued';
+// The provenances that are the person's own choice and may be preferred and
+// released (#1291); `admin` is not among them.
+const RELEASABLE_PROOFS = [PROOF_WALLET, PROOF_REALM, PROOF_ISSUED];
 
 // The `by` the wallet enrolment writes, which is how a value from before
 // #693 (no `proof` member) is told to have been proved.
@@ -163,6 +183,10 @@ interface SiopDeps {
   mode: typeof mode;
   vcDataIntegrity: typeof vcDataIntegrity;
   fetchDocument: (url: string) => Promise<Json>;
+  // The key a DID URL of a did:web THIS REALM PUBLISHES names (#1291):
+  // `{ jwk }`, `{ error }` where it names none now, or null for any DID
+  // this realm does not host.
+  hostedKey: (didUrl: string) => Json;
   audit: (event: Json) => void;
   nowSec: () => number;
 }
@@ -215,6 +239,15 @@ class Siop {
    * The provenance of a subject an administrator enrolled by value.
    */
   static readonly PROOF_ADMIN = PROOF_ADMIN;
+  /**
+   * The provenance of a published DID whose key the realm keeps sealed.
+   */
+  static readonly PROOF_REALM = PROOF_REALM;
+  /**
+   * The provenance of a published DID whose key was handed over once and
+   * is not yet proved.
+   */
+  static readonly PROOF_ISSUED = PROOF_ISSUED;
   /**
    * The kinds of place an enrolled key may have come from.
    */
@@ -345,6 +378,13 @@ class Siop {
             return JSON.parse(got.body.toString('utf8'));
           });
       },
+      // `oid4vc/person_did.ts` LAZILY: it requires this module.
+      hostedKey: function (didUrl: string): Json {
+        helpers.log.debug("Entering hostedKey().");
+        const personDid = require('./person_did');
+        helpers.log.debug("Leaving hostedKey().");
+        return personDid.keyOfDidUrl(didUrl, { current: true });
+      },
       nowSec: helpers.nowSec
     };
   }
@@ -421,16 +461,18 @@ class Siop {
   // reading, since a value nobody can show was proved must not be released
   // as though it had been.
   /**
-   * Returns how an enrolled value was enrolled: `wallet` (proved) or `admin`
-   * (by value, unproven).
+   * Returns how an enrolled value was enrolled: `wallet` (proved), `admin`
+   * (by value, unproven), or for a DID this realm published (#1291) `realm`
+   * or `issued`.
    *
    * @param one - an enrolled value, as `list()` returns it
-   * @returns `wallet` or `admin`
+   * @returns `wallet`, `admin`, `realm` or `issued`
    */
   static provenanceOf(one: Json): string {
     helpers.log.debug("Entering Siop.provenanceOf().");
-    const said = one && (one.proof === PROOF_WALLET ||
-                         one.proof === PROOF_ADMIN) ? one.proof : '';
+    const said = one && (one.proof === PROOF_ADMIN ||
+                         RELEASABLE_PROOFS.indexOf(one.proof) >= 0)
+      ? one.proof : '';
     const out = said || (one && SELF_BY.test(String(one.by || ''))
       ? PROOF_WALLET : PROOF_ADMIN);
     helpers.log.debug("Leaving Siop.provenanceOf(). " + out);
@@ -462,10 +504,12 @@ class Siop {
       return self.parseValue(value);
     }).filter(Boolean).map(function (one: Json) {
       const proof = Siop.provenanceOf(one);
-      // PREFERRED (#693) only where it was PROVED: a flag on a value an
+      // PREFERRED (#693) only where it was PROVED — or, since #1291, is a
+      // DID the person had this realm publish: a flag on a value an
       // administrator typed in is read as absent, whoever wrote it.
       return Object.assign({}, one, { proof: proof,
-        preferred: proof === PROOF_WALLET && one.preferred === true });
+        preferred: RELEASABLE_PROOFS.indexOf(proof) >= 0 &&
+                   one.preferred === true });
     });
     log.debug("Leaving Siop.list(). " + out.length + ".");
     return out;
@@ -491,10 +535,33 @@ class Siop {
     return out;
   }
 
+  // THE SUBJECTS A PERSON MAY HAVE RELEASED (#1291): the proved ones, and
+  // the DIDs this realm published at their own request (`realm`, `issued`)
+  // — never one an administrator typed in. What the preferred DID is chosen
+  // from; a BINDING reads `provenSubjectsOf()`, which is narrower.
+  /**
+   * Returns the subjects a person may mark as preferred: those proved with
+   * a wallet, and the DIDs this realm published for them.
+   *
+   * @param username - the person
+   * @returns the rows, as `list()` returns them; [] for none
+   */
+  releasableSubjectsOf(username: unknown): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Siop.releasableSubjectsOf(). user=" + username);
+    const out = (this.list(username) || []).filter(function (one: Json) {
+      return RELEASABLE_PROOFS.indexOf(one.proof) >= 0;
+    });
+    log.debug("Leaving Siop.releasableSubjectsOf(). " + out.length + ".");
+    return out;
+  }
+
   // THE PERSON'S PREFERRED DID (#693, phase 2): the one proved subject they
   // marked, and only while it is a DID — what the `did` claim releases
   // (`oauth-oidc/did_claim.ts`). null where none is marked, or the marked
-  // one is a JWK thumbprint, which identifies a key and not a DID.
+  // one is a JWK thumbprint, which identifies a key and not a DID. Since
+  // #1291 a DID this realm published for them qualifies too
+  // (`releasableSubjectsOf()`).
   /**
    * Returns the person's preferred subject: the one proved DID they marked,
    * or null.
@@ -505,9 +572,10 @@ class Siop {
   preferredSubjectOf(username: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering Siop.preferredSubjectOf(). user=" + username);
-    const one = this.provenSubjectsOf(username).filter(function (row: Json) {
-      return row.preferred === true && /^did:/.test(String(row.subject));
-    })[0] || null;
+    const one = this.releasableSubjectsOf(username)
+      .filter(function (row: Json) {
+        return row.preferred === true && /^did:/.test(String(row.subject));
+      })[0] || null;
     log.debug("Leaving Siop.preferredSubjectOf(). " +
               (one ? one.subject : 'none'));
     return one;
@@ -549,7 +617,7 @@ class Siop {
       return { ok: false, code: 'not-enrolled',
                error: 'that subject is not enrolled for "' + name + '".' };
     }
-    if (target && target.proof !== PROOF_WALLET) {
+    if (target && RELEASABLE_PROOFS.indexOf(target.proof) < 0) {
       log.debug("Leaving Siop.setPreferred(). Not proved.");
       return { ok: false, code: 'not-proved',
                error: 'only a subject the person proved with their wallet ' +
@@ -610,7 +678,8 @@ class Siop {
   // Why `wanted` may not be enrolled for `name`, or '' — the checks every
   // enrolment makes before anything is fetched or written. `again` is true
   // when it is already theirs and this is a PROOF, which re-proves it (and
-  // re-pins a did:web) rather than refusing (#693).
+  // re-pins a did:web) rather than refusing (#693) — or, since #1291, a DID
+  // this realm publishes whose pin follows a new version of its keys.
   private enrolProblem(name: string, wanted: string, proof: string): Json {
     const { log } = this.deps;
     log.debug("Entering Siop.enrolProblem().");
@@ -632,7 +701,7 @@ class Siop {
       return { error: 'that subject is already enrolled for another ' +
                       'person in this realm; one key signs in one person.' };
     }
-    if (owner && proof !== PROOF_WALLET) {
+    if (owner && proof === PROOF_ADMIN) {
       log.debug("Leaving Siop.enrolProblem(). Already theirs.");
       return { error: 'that subject is already enrolled for ' + name + '.' };
     }
@@ -661,7 +730,8 @@ class Siop {
    * @param subject - the subject
    * @param label - a label for it
    * @param by - who enrolled it
-   * @param options - `proof` (`wallet` or `admin`, the default), for a
+   * @param options - `proof` (`wallet`, `realm` or `issued` — the last two
+   *   for a DID this realm publishes — or `admin`, the default), for a
    *   did:web `pinnedKeys`: the RFC 7638 thumbprints its sign-ins may use,
    *   and for a proof `location`: where the key came from
    * @returns `{ ok, enrolled, again }`, or `{ ok: false, error }`
@@ -674,7 +744,10 @@ class Siop {
     const { log, credentials } = this.deps;
     log.debug("Entering Siop.enrol(). user=" + username);
     const opts = options || {};
-    const proof = opts.proof === PROOF_WALLET ? PROOF_WALLET : PROOF_ADMIN;
+    // `realm` and `issued` (#1291) are written only by
+    // `oid4vc/person_did.ts`, for a DID this realm publishes.
+    const proof = RELEASABLE_PROOFS.indexOf(String(opts.proof)) >= 0
+      ? String(opts.proof) : PROOF_ADMIN;
     const name = String(username || '').trim();
     const wanted = this.normalise(subject);
     const problem = this.enrolProblem(name, wanted, proof);
@@ -723,8 +796,10 @@ class Siop {
       record.location = location;
     }
     // PROVING A SUBJECT AGAIN KEEPS IT PREFERRED (#693): the mark is the
-    // person's choice, and re-pinning a did:web is not a change of mind.
-    if (before && before.preferred === true && proof === PROOF_WALLET) {
+    // person's choice, and re-pinning a did:web is not a change of mind —
+    // nor is a published DID's new version (#1291).
+    if (before && before.preferred === true &&
+        RELEASABLE_PROOFS.indexOf(proof) >= 0) {
       record.preferred = true;
     }
     if (web) {
@@ -1053,6 +1128,22 @@ class Siop {
       }
       log.debug("Leaving Siop.didKey(). Resolved from the identifier.");
       return resolved.jwk;
+    }
+    // A did:web THIS REALM PUBLISHES (#1291) is resolved from its own
+    // history — the CURRENT version, the one a sign-in or a change's
+    // authorization is made with — and never fetched: it is this service's
+    // own document, and dialling yourself is a fetch the internal-address
+    // rule refuses in product. A deactivated one, or one of a disabled
+    // account, names no key.
+    const hosted = this.deps.hostedKey(absolute);
+    if (hosted) {
+      if (hosted.error) {
+        log.debug("Leaving Siop.didKey(). A hosted DID with no key.");
+        throw new Error(String(hosted.error));
+      }
+      log.debug("Leaving Siop.didKey(). Resolved from this realm's own " +
+                "history.");
+      return vcDataIntegrity.publicJwkOf(hosted.jwk);
     }
     if (!enrolment && !this.ownerOf(did)) {
       log.debug("Leaving Siop.didKey(). An unenrolled did:web.");
@@ -1387,6 +1478,23 @@ class Siop {
                  'which rule it broke.');
     }
     const username = this.ownerOf(verified.subject);
+    // A DID THIS REALM PUBLISHED WHOSE KEY NO WALLET PROVED (#1291) signs
+    // nobody in: `realm` custody's key never leaves the realm, and an
+    // `issued` one is proved — and becomes `wallet` — by enrolling it on
+    // the portal, which is where its holder shows they hold it.
+    const row = username ? (this.list(username) || [])
+      .filter(function (one: Json) {
+        return one.subject === verified.subject;
+      })[0] : null;
+    if (row && (row.proof === PROOF_REALM || row.proof === PROOF_ISSUED)) {
+      return refuse('STS-VC-0164', 'The self-issued ID Token names ' +
+                    verified.subject + ', a DID this realm published ' +
+                    (row.proof === PROOF_REALM
+                      ? 'with a key it keeps, which signs nobody in.'
+                      : 'with a key it handed over and nobody has proved ' +
+                        'with a wallet; prove it on your portal\'s ' +
+                        'Self-issued IDs page first.'));
+    }
     if (!username) {
       return refuse('STS-VC-0091', 'The self-issued ID Token verified, and ' +
                     'its subject ' + verified.subject + ' is not enrolled ' +
@@ -1441,6 +1549,8 @@ export = {
   MAX_SUBJECTS: MAX_SUBJECTS,
   PROOF_WALLET: PROOF_WALLET,
   PROOF_ADMIN: PROOF_ADMIN,
+  PROOF_REALM: PROOF_REALM,
+  PROOF_ISSUED: PROOF_ISSUED,
   didWebUrl: Siop.didWebUrl,
   provenanceOf: Siop.provenanceOf,
   LOCATION_KINDS: LOCATION_KINDS,
@@ -1452,6 +1562,7 @@ export = {
   enrol: slot.forward('enrol'),
   enrolByValue: slot.forward('enrolByValue'),
   provenSubjectsOf: slot.forward('provenSubjectsOf'),
+  releasableSubjectsOf: slot.forward('releasableSubjectsOf'),
   preferredSubjectOf: slot.forward('preferredSubjectOf'),
   setPreferred: slot.forward('setPreferred'),
   authenticationKeys: slot.forward('authenticationKeys'),

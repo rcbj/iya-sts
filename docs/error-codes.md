@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5162** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5178** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 147
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 163
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 52
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -3907,6 +3907,22 @@ Raised from: oid4vc/.
 | `STS-VC-0158` | An element an mso_mdoc disclosed does not hash to the digest its Mobile Security Object signed under that namespace and digestID (#935): an element the issuer never signed. The presentation is refused. | invalid_request (HTTP 400) at the Response URI; logged |
 | `STS-VC-0159` | An mso_mdoc authenticated its device by MAC (deviceMac), whose key is agreed with a reader's ephemeral key that an OpenID4VP request does not carry, rather than by a deviceSignature (#935). The presentation is refused. | invalid_request (HTTP 400) at the Response URI; logged |
 | `STS-VC-0160` | An mso_mdoc's device signature did not verify under its Mobile Security Object's device key over this request's session transcript (OpenID4VP 1.0 Appendix B.2.6.1: the Client Identifier, nonce, Response URI and encryption key), or used an algorithm not offered (#935): a presentation made for another request. Refused. | invalid_request (HTTP 400) at the Response URI; logged |
+| `STS-VC-0161` | A person's published DID document was asked for at an address this realm never published (#1291): no such random id in the realm's index. | HTTP 404 at /users/{rid}/did.json |
+| `STS-VC-0162` | A person's published DID document was asked for after the DID was deactivated — by the person, by an administrator, or because the account is disabled now or its entry is gone (#1291). The address is kept and answers that the DID is deactivated. | HTTP 410 {id, deactivated: true} at /users/{rid}/did.json |
+| `STS-VC-0163` | A person's published DID document was asked for with a versionId or versionTime that is malformed, both, or names no version of its history (#1291). | HTTP 400 or 404 at /users/{rid}/did.json |
+| `STS-VC-0164` | A self-issued ID Token named a DID this realm published for a person whose key no wallet has proved — `realm` custody, whose key never leaves the realm, or `issued` (downloaded) and not yet proved (#1291). It signs nobody in. | HTTP 403 refusal of the wallet sign-in |
+| `STS-VC-0165` | An OpenID4VCI proof named a DID this realm published for the person whose key no wallet has proved (`realm` or `issued`), for a configuration bound to the person's DID (#1291). Refused. | invalid_proof (HTTP 400) at the credential endpoint |
+| `STS-VC-0166` | An ldp_vc configuration bound to the person's DID was asked to bind to a did:web this realm publishes (#1291): an ldp_vc names its holder by the bare DID, with no version of its keys. Refused. | invalid_proof (HTTP 400) at the credential endpoint |
+| `STS-VC-0167` | A person asked for a DID to be published while the realm does not publish them (did.personPublishing is off) (#1291). | HTTP 400 or 403 refusal at /account-api or /authn-api/wallet |
+| `STS-VC-0168` | A person's DID was not published because no public base URL is pinned in product mode, so the request's Host header would have become part of a stored identifier (mode.mintsPersonDidsOnRequestAddress()), or there was no base at all (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
+| `STS-VC-0169` | A person's DID was not published because they hold the most they may: did.personMaxPerPerson active DIDs, 25 DIDs counting deactivated ones, or ten self-issued subjects (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
+| `STS-VC-0170` | A key a wallet proved for a person's published DID was not taken (#1291): it was a did:web, it is enrolled for somebody else, it is already in the current version, or the answer carried none. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0171` | A change of a person's published DID was not authorized (#1291): the new key came with no authorization by a key the current version names (none given, or it expired), or the authorization was not signed as the DID with such a key. A change signed only by the new key is refused. | HTTP 400 or 403 refusal at /authn-api/wallet |
+| `STS-VC-0172` | An act named a published DID the person does not hold, one already deactivated, or a person with no directory entry (#1291). | HTTP 400/404 refusal at /account-api, /admin-api or /authn-api/wallet |
+| `STS-VC-0173` | An act on a person's published DID does not fit its custody (#1291): a wallet act where the realm generates the key, a realm-generated key where the wallet holds it, or a change of a downloaded key nobody has proved yet. | HTTP 400 or 403 refusal at /account-api or /authn-api/wallet |
+| `STS-VC-0174` | The directory did not store a person's published DID, a new version of it, its authorization or its deactivation, or its self-issued subject could not be enrolled or re-pinned (#1291). | HTTP 400 refusal, or logged where the version was written |
+| `STS-VC-0175` | The private key of a realm-custody DID could not be sealed under the key-encryption key, so nothing was published or changed (#1291). | HTTP 400 refusal at /account-api |
+| `STS-VC-0176` | A person's published DID already has the most versions one DID keeps (50), so it takes no more key changes (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
 
 ## STS-SSF
 

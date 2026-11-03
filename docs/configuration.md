@@ -2118,6 +2118,15 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oidfed.resolveCacheMax` | `STS_OIDFED_RESOLVE_CACHE_MAX` | `1000` | yes | How many resolved Trust Chains a realm keeps; the oldest is dropped for a new one. |
 | `oidfed.clockSkewS` | `STS_OIDFED_CLOCK_SKEW_S` | `60` | yes | The leeway on iat and exp when a federation statement is read (3.2). |
 
+### Person DIDs
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `did.personPublishing` | `STS_DID_PERSON_PUBLISHING` | `false` | yes | Let a person have this realm publish a `did:web` for them from their portal's Self-issued IDs page (#1291): `did:web:<host>[:realm:<id>]:users:<rid>`, `<rid>` 128 random bits, its document at `/users/<rid>/did.json` with every version of its keys kept. It can be their preferred DID; with it on, a DID-bound credential configuration also offers `did:web` for one they proved with a wallet. Off, nothing new is published and those already published are still served. In product mode a DID is published only on a pinned `global.publicBaseUrl`. [`person-dids.md`](person-dids.md). |
+| `did.personCustody` | `STS_DID_PERSON_CUSTODY` | `wallet` | yes | Who holds the private key of a published DID: `wallet` (the person's wallet proves its key; the most secure), `realm` (generated and kept sealed here; can be preferred, never signs in or binds a credential) or `download` (generated, shown once, kept only as its public half; unproved until the wallet proves it). **Warning:** `realm` lets this realm act as the person, and `download` sends a private key through the browser. |
+| `did.personMaxPerPerson` | `STS_DID_PERSON_MAX_PER_PERSON` | `3` | yes | How many active published DIDs one person may hold (1 to 10). Deactivated ones do not count; their addresses answer 410 Gone for good. |
+| `did.personKeyAlgorithm` | `STS_DID_PERSON_KEY_ALGORITHM` | `ES256` | yes | The algorithm of a key this realm generates for a published DID in `realm` and `download` custody: `ES256`, `ES384` or `EdDSA`. A wallet chooses its own key. |
+
 ### W3C VC API
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |

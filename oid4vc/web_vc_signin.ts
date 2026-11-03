@@ -448,6 +448,10 @@ class WalletFlow {
     if (query.enrol === '1' && query.login_hint) {
       body.login_hint = String(query.login_hint);
     }
+    // A published DID's wallet act (#1291), on an enrolment.
+    if (query.enrol === '1' && query.did_act) {
+      body.did_act = String(query.did_act);
+    }
     const answer = await this.surface.send(String(op.path), body);
     const json = answer.json;
     if (json && json.ok && json.go) {

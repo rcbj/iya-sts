@@ -11887,6 +11887,72 @@ const SETTINGS = [
                  'trade this makes. Empty binds every configuration to a ' +
                  'key, as before. did:web is not offered.' },
 
+  // --- A person's published did:web (#1291) --------------------------------
+  //
+  // THE REALM CREATES AND PUBLISHES A did:web FOR A PERSON, from their
+  // portal's Self-issued IDs page: `did:web:<host>[:realm:<id>]:users:<rid>`,
+  // `<rid>` 128 random bits, its document at `/users/<rid>/did.json` with
+  // every version kept. Off until a realm turns it on, because a published
+  // document is a public record about a person. `oid4vc/person_did.ts`
+  // argues the design; these four rows are its realm's choices.
+  { key: 'did.personPublishing', group: 'Person DIDs',
+    label: 'Publish a did:web for a person',
+    env: 'STS_DID_PERSON_PUBLISHING', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Let a person create a did:web this realm publishes for ' +
+                 'them, on their portal\'s Self-issued IDs page (#1291): ' +
+                 'did:web:<host>[:realm:<id>]:users:<rid>, where <rid> is ' +
+                 '128 random bits, so nobody can enumerate accounts by ' +
+                 'probing addresses and two DIDs of one person cannot be ' +
+                 'linked. Its document is served at /users/<rid>/did.json ' +
+                 'with every version kept, and it can be the person\'s ' +
+                 'preferred DID. With it on, a DID-bound credential ' +
+                 'configuration (oid4vci.didHolderBinding) also offers ' +
+                 'did:web for a DID this realm hosts and the person proved ' +
+                 'with a wallet. Off: nothing new is published; a DID ' +
+                 'already published is still served, deactivated or not, ' +
+                 'because its address is kept for good. In product mode a ' +
+                 'DID is published only on a pinned global.publicBaseUrl.' },
+  { key: 'did.personCustody', group: 'Person DIDs',
+    label: 'Who holds the private key of a person\'s DID',
+    env: 'STS_DID_PERSON_CUSTODY', type: 'enum',
+    enumValues: ['wallet', 'realm', 'download'], dflt: 'wallet',
+    runtime: true,
+    description: 'Who holds the private key of a DID published for a ' +
+                 'person. `wallet` (the default, and the most secure): the ' +
+                 'person\'s wallet proves its own key in a self-issued ' +
+                 '(SIOPv2) round trip and the realm publishes only the ' +
+                 'public half; every later key change is authorized by a ' +
+                 'key the current version names and proved by the new key. ' +
+                 '`realm`: the realm generates the key and keeps it sealed, ' +
+                 'so the DID can be preferred and released in the did ' +
+                 'claim but can never sign a wallet in or bind a ' +
+                 'credential. `download`: the realm generates the pair, ' +
+                 'shows the private key ONCE and keeps only the public ' +
+                 'half; the DID is unproved until the person proves the key ' +
+                 'with a wallet. WARNING: with `download` the private key ' +
+                 'passes through the browser, and with `realm` the realm ' +
+                 'can act as the person; choose them only where that is ' +
+                 'acceptable.' },
+  { key: 'did.personMaxPerPerson', group: 'Person DIDs',
+    label: 'Published DIDs one person may hold',
+    env: 'STS_DID_PERSON_MAX_PER_PERSON', type: 'int', dflt: 3,
+    min: 1, max: 10, runtime: true,
+    description: 'How many ACTIVE published DIDs one person may hold. A ' +
+                 'deactivated DID does not count, and its address keeps ' +
+                 'answering 410 Gone. Each also counts towards the ten ' +
+                 'self-issued subjects a person may enrol.' },
+  { key: 'did.personKeyAlgorithm', group: 'Person DIDs',
+    label: 'Key algorithm of a realm-generated DID key',
+    env: 'STS_DID_PERSON_KEY_ALGORITHM', type: 'enum',
+    enumValues: ['ES256', 'ES384', 'EdDSA'], dflt: 'ES256',
+    runtime: true,
+    description: 'The algorithm of a key the realm generates for a ' +
+                 'person\'s DID, in the `realm` and `download` custody ' +
+                 'modes: ES256 (P-256), ES384 (P-384) or EdDSA (Ed25519). A ' +
+                 'wallet chooses its own key in `wallet` custody. A key ' +
+                 'already published keeps its algorithm.' },
+
   // --- The W3C VC API (#598) ------------------------------------------------
   //
   // **A PRODUCT SURFACE SINCE #598, AND OFF UNTIL A REALM TURNS IT ON.** Until

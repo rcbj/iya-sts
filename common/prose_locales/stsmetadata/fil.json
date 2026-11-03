@@ -660,8 +660,8 @@
     "text": "full para sa kailangan ng Data Integrity. Ang mga JSON-LD context ay VENDORED, hindi kailanman fine-fetch: ang canonicalization na umaasa sa network fetch ay hindi magiging reproducible at hindi rin ligtas."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: ang serbisyong ito ay NAGPAPALATHALA ng isang did:web na dokumento na may dalawang verification method, at nagre-resolve at nagde-dereference (seksiyon 7) ng did:key, did:jwk at ng sarili nitong did:web sa parehong JSON na representasyon sa W3C VC API (#199), sinusukat sa W3C DID test suite. Walang ibang did:web na kinukuha; walang DID parameter (service, versionId, …) na sinusuportahan."
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: ang serbisyong ito ay NAGPAPALATHALA ng isang did:web na dokumento na may dalawang verification method, isang did:web bawat application, at isang did:web bawat tao sa isang random na address na iniingatan ang bawat bersyon ng mga susi nito (#1291); nagre-resolve at nagde-dereference ito (seksiyon 7) ng did:key, did:jwk at sarili nitong did:web sa parehong JSON na representasyon sa W3C VC API (#199), batay sa W3C DID test suite, at sinasagot ang mga DID parameter na versionId at versionTime, kasama ang didDocumentMetadata (created, updated, versionId, nextVersionId, deactivated), para sa inilathalang DID ng isang tao. Walang ibang did:web na kinukuha; walang ibang DID parameter (service, relativeRef, hl) ang suportado."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1838,6 +1838,10 @@
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
     "en": "5992e8bdddc060a8",
     "text": "NON-SPEC (#129). Ang mga DID at JWK thumbprint na naka-enroll para sa isang tao, bawat isa kasama ang label nito, kung sino ang nag-enroll nito at kung paano (pinatunayan ng wallet ng tao, o ayon sa value), at ang isang did:web kasama ang mga naka-pin na key nito (#693), katabi ng kung naka-on ang oid4vp.signInSelfIssued. Nag-e-enroll ng isa ayon sa value ang POST /admin-api/users/enrol-self-issued-subject, kinukuha ang dokumento ng isang did:web para i-pin ang mga key nito; inaalis ng /admin-api/users/remove-self-issued-subject ang isa. Sinasalamin ang Self-issued IDs block sa /admin/users page ng tao."
+  },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "NON-SPEC (#1291). Bawat did:web na inilalathala ng realm na ito para sa isang tao: ang random na id nito, ang DID, ang address ng dokumento nito, kung sino ang may hawak ng susi nito (wallet, realm o download), ang kalagayan nito, at bawat bersyon kasama ang mga susi nito at kung ano ang nag-awtorisa rito, kailanman ay hindi isang pribadong susi. Ide-deactivate ng POST /admin-api/users/deactivate-published-did ang isa; hindi kailanman gumagawa o nagbabago ng isa ang administrator. Sinasalamin ang bloke ng Mga inilathalang DID sa pahinang /admin/users ng tao."
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -3410,6 +3414,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "sumasagot ng 404 maliban kung idineklara ang application para sa did family at may key ito"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "Ang dokumento ng DID ng isang did:web na inilalathala ng realm na ito para sa isang tao (#1291), kung saan nire-resolve ng did:web method ang did:web:<host>[:realm:<id>]:users:<rid>, ang <rid> ay 128 random na bit: ang mga susi ng kasalukuyang bersyon bilang mga JsonWebKey2020 method sa ilalim ng authentication at assertionMethod, o ang bersyong hinihingi ng versionId o versionTime ng DID Core, mula sa isang kasaysayang hindi kailanman muling isinusulat. application/did+json, no-store. Kapag naka-deactivate — ng tao, ng isang administrator, o habang naka-disable ang account — sumasagot ito ng 410 Gone na may { id, deactivated: true }, at iniuulat ng isang resolver ang deactivated sa didDocumentMetadata. Inilalathala mula sa portal ng tao kung saan naka-on ang did.personPublishing."
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "sumasagot ng 410 Gone kapag naka-deactivate na ang DID o naka-disable ang account, at 404 para sa address na hindi kailanman nailathala"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

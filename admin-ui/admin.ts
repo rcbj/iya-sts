@@ -9018,6 +9018,10 @@ const SETTING_HOMES = [
   // realm's other way of issuing a credential, and it signs over the same
   // status lists the Credential status tab beside it draws.
   { group: 'W3C VC API', pages: ['/admin/vc'] },
+  // A PERSON'S PUBLISHED did:web (#1291), on the OpenID4VCI tab of the same
+  // page: the DID a credential may be bound to, and the realm's choice of
+  // who holds its key.
+  { group: 'Person DIDs', pages: ['/admin/vc'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },
   { group: 'LDAP', pages: ['/admin/ldap'] },
   // A page of its own rather than a section of /admin/ldap, and the reason is
@@ -10315,7 +10319,7 @@ const PROTOCOL_SETTINGS_PAGES = [
   { path: '/admin/oid4vci', title: 'OpenID4VCI', settingsPath: '/admin/vc',
     settingsPage: '/admin/oid4vci',
     // The W3C VC API's rows are drawn on this tab too (#598).
-    settingsGroup: ['OID4VCI', 'W3C VC API'],
+    settingsGroup: ['OID4VCI', 'W3C VC API', 'Person DIDs'],
     lead: '<strong>The OpenID4VCI credential issuer, and the settings ' +
           'around it.</strong> What a credential CONTAINS is <a ' +
           'href="/admin/vc#vc-tab-claims">Credential claims</a> on the ' +
@@ -10344,7 +10348,16 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>did:key</code> the person proved on their Self-issued IDs ' +
            'page, and its credentials carry that DID — so every copy, a ' +
            'batch\'s too, is linkable to the others. Off for every ' +
-           'configuration by default; <code>did:web</code> is not offered.',
+           'configuration by default; <code>did:web</code> is offered only ' +
+           'for a DID this realm publishes for the person and they proved ' +
+           'with a wallet, and the credential names its version.',
+           '<strong>A person may have this realm publish a did:web for ' +
+           'them</strong> (<code>did.personPublishing</code>, off by ' +
+           'default), from their Self-issued IDs page, at a random address ' +
+           'with every version of its keys kept. ' +
+           '<code>did.personCustody</code> says who holds the key: their ' +
+           'wallet (the default), this realm, or the person after one ' +
+           'download.',
            '<strong>The two DID settings change what a VERIFIER has to ' +
            'resolve, and they are restart-only.</strong> With ' +
            '<code>oid4vci.sdJwtIssuerDid</code> or ' +

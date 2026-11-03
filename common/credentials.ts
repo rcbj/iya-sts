@@ -8490,6 +8490,50 @@ class Credentials {
     return owner;
   }
 
+  // A person's PUBLISHED DIDs (#1291), for `oid4vc/person_did.ts`: the
+  // values as stored (null where there is no store or no entry) and the
+  // whole list written back — hooks the directory passes in, as the
+  // self-issued subjects' are.
+  /**
+   * Reads a person's published DIDs.
+   *
+   * @param username - the person
+   * @returns the values as stored, or null with no store or entry
+   */
+  readPublishedDids(username) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.readPublishedDids().');
+    if (!directory || typeof directory.readPublishedDids !== 'function') {
+      log.debug('Leaving Credentials.readPublishedDids(). No store.');
+      return null;
+    }
+    const values = directory.readPublishedDids(String(username || ''));
+    log.debug('Leaving Credentials.readPublishedDids().');
+    return values;
+  }
+
+  /**
+   * Writes a person's whole list of published DIDs.
+   *
+   * @param username - the person
+   * @param values - the list
+   * @returns what the directory write answered, or false with no store
+   */
+  writePublishedDids(username, values) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.writePublishedDids().');
+    if (!directory || typeof directory.writePublishedDids !== 'function') {
+      log.debug('Leaving Credentials.writePublishedDids(). No store.');
+      return false;
+    }
+    const written = !!directory.writePublishedDids(String(username || ''),
+                                                   values);
+    log.debug('Leaving Credentials.writePublishedDids(). ' + written);
+    return written;
+  }
+
   // THE DEVICE REGISTER (#130), for `common/devices.ts`: the directory's
   // seven hooks, each answering nothing (an empty list, false, '', null)
   // where no directory is loaded in this process — and `hasHook`, which says
@@ -12490,6 +12534,8 @@ export = {
   readIdaVerifications: slot.forward('readIdaVerifications'),
   writeIdaVerifications: slot.forward('writeIdaVerifications'),
   readSelfIssuedSubjects: slot.forward('readSelfIssuedSubjects'),
+  readPublishedDids: slot.forward('readPublishedDids'),
+  writePublishedDids: slot.forward('writePublishedDids'),
   writeSelfIssuedSubjects: slot.forward('writeSelfIssuedSubjects'),
   selfIssuedSubjectOwner: slot.forward('selfIssuedSubjectOwner'),
   deviceStore: slot.forward('deviceStore'),

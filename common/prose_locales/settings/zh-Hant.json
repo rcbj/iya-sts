@@ -6027,6 +6027,38 @@
     "en": "89f8d541b4738289",
     "text": "其憑證綁定到本人的 DID 而非金鑰的憑證設定。對列出的每一個設定，錢包的證明必須以 kid 指明其金鑰，且該 kid 是本人在其 Self-issued IDs 頁面上證明過的 did:jwk 或 did:key URL（管理員輸入的項目不夠），憑證會攜帶該 DID：dc+sd-jwt 中為 cnf.kid，jwt_vc_json 中為 credentialSubject.id、sub 和 cnf.kid，ldp_vc 中為 credentialSubject.id。中繼資料會為其聲明 did:jwk 和 did:key。同一批次的每個副本都攜帶同一個 DID，因此可以互相關聯——這就是所做的取捨。留空時，每個設定都像以前一樣綁定到金鑰。不提供 did:web。"
   },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "為個人發布 did:web"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "允許個人在其入口網站的 Self-issued IDs 頁面上建立一個由本領域為其發布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 為 128 位元隨機數，因此沒有人能藉由探測位址來列舉帳戶，同一個人的兩個 DID 也無法被連結。其文件在 /users/<rid>/did.json 提供，所有版本均保留，並且可以作為當事人的偏好 DID。開啟後，繫結到 DID 的憑證設定（oid4vci.didHolderBinding）也會為本領域託管且當事人已用錢包證明的 DID 提供 did:web。關閉：不發布任何新的 DID；已發布的 DID 無論是否停用仍繼續提供，因為其位址會永久保留。在產品模式下，只有在固定的 global.publicBaseUrl 上才會發布 DID。"
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "個人 DID 私密金鑰的持有方"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "為個人發布的 DID 的私密金鑰由誰持有。`wallet`（預設值，也最安全）：當事人的錢包在自行簽發（SIOPv2）往返中證明自己的金鑰，本領域只發布其公開部分；之後的每次金鑰變更都須由目前版本列出的金鑰授權，並由新金鑰證明。`realm`：本領域產生金鑰並加密封存，因此該 DID 可以作為偏好並在 did 聲明中發布，但絕不能用於錢包登入或繫結憑證。`download`：本領域產生金鑰對，只顯示一次私密金鑰，並且只保留公開部分；在當事人用錢包證明該金鑰之前，該 DID 處於未證明狀態。警告：使用 `download` 時私密金鑰會經過瀏覽器，使用 `realm` 時本領域可以代表當事人行事；只應在可以接受的情況下選擇它們。"
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "每人可持有的已發布 DID 數量"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "一個人可持有的有效已發布 DID 數量。已停用的 DID 不計入，其位址會繼續回應 410 Gone。每個 DID 也計入一個人可登記的十個自行簽發主體。"
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "本領域產生的 DID 金鑰演算法"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "在 `realm` 與 `download` 保管模式下，本領域為個人 DID 產生的金鑰所用的演算法：ES256（P-256）、ES384（P-384）或 EdDSA（Ed25519）。在 `wallet` 保管模式下，由錢包自行選擇金鑰。已發布的金鑰維持其演算法不變。"
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "提供 W3C VC API"

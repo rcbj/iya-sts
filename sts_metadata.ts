@@ -3360,11 +3360,16 @@ const SPECS: Spec[] = [
   { id: 'did-core', name: 'W3C DID Core 1.0 (did:web, did:key, did:jwk)',
     where: 'W3C', url: 'https://www.w3.org/TR/did-1.0/',
     coverage: 'partial: this service PUBLISHES a did:web document with two ' +
-              'verification methods, and resolves and dereferences (section ' +
-              '7) did:key, did:jwk and its own did:web in both JSON ' +
-              'representations at the W3C VC API (#199), held to ' +
-              'the W3C DID test suite. No other did:web is fetched; no DID ' +
-              'parameters (service, versionId, …) are supported.' },
+              'verification methods, a did:web per application, and a ' +
+              'did:web per person at a random address with every version ' +
+              'of its keys kept (#1291); it resolves and dereferences ' +
+              '(section 7) did:key, did:jwk and its own did:web in both JSON ' +
+              'representations at the W3C VC API (#199), held to the W3C DID ' +
+              'test suite, and answers the versionId and versionTime DID ' +
+              'parameters, with didDocumentMetadata (created, updated, ' +
+              'versionId, nextVersionId, deactivated), for a person\'s ' +
+              'published DID. No other did:web is fetched; no other DID ' +
+              'parameter (service, relativeRef, hl) is supported.' },
   { id: 'did-config', name: 'DIF Well Known DID Configuration',
     where: 'DIF',
     url: 'https://identity.foundation/well-known-did-configuration/resources/did-configuration/',
@@ -6139,6 +6144,15 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin-api/users/remove-self-issued-subject takes one away. ' +
           'Mirrors the Self-issued IDs block on the person\'s /admin/users ' +
           'page.' },
+  { path: '/admin-api/users/published-dids', group: 'Management API',
+    name: 'One person\'s published DIDs', specs: ['did-core'],
+    what: 'NON-SPEC (#1291). Each did:web this realm publishes for a ' +
+          'person: its random id, the DID, its document\'s address, who ' +
+          'holds its key (wallet, realm or download), its state, and every ' +
+          'version with its keys and what authorized it, never a private ' +
+          'key. POST /admin-api/users/deactivate-published-did deactivates ' +
+          'one; an administrator never creates or changes one. Mirrors the ' +
+          'Published DIDs block on the person\'s /admin/users page.' },
   { path: '/admin-api/users/verifications', group: 'Management API',
     name: 'One person\'s identity verifications', specs: ['oidc-ida'],
     what: 'NON-SPEC (#127). The identity verifications recorded for a ' +
@@ -9666,6 +9680,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'generated on the application\'s Configuration tab or with ' +
           'POST /admin-api/applications/generate-did-key, which hands the ' +
           'private key out once.' },
+  { path: '/users/:rid/did.json',
+    group: 'Decentralized Identifiers',
+    name: 'A person\'s published DID document', specs: ['did-core'],
+    effect: 'answers 410 Gone once the DID is deactivated or the account ' +
+            'is disabled, and 404 for an address never published',
+    what: 'The DID document of a did:web this realm publishes for a person ' +
+          '(#1291), where the did:web method resolves ' +
+          'did:web:<host>[:realm:<id>]:users:<rid>, <rid> 128 random bits: ' +
+          'the current version\'s keys as JsonWebKey2020 methods under ' +
+          'authentication and assertionMethod, or the version DID Core\'s ' +
+          'versionId or versionTime asks for, from a history that is never ' +
+          'rewritten. application/did+json, no-store. Deactivated — by the ' +
+          'person, by an administrator, or while the account is disabled — ' +
+          'it answers 410 Gone with { id, deactivated: true }, and a ' +
+          'resolver reports deactivated in didDocumentMetadata. Published ' +
+          'from the person\'s portal where did.personPublishing is on.' },
   { path: '/.well-known/did-configuration.json', group: 'Decentralized ' +
                                                         'Identifiers',
     name: 'Domain Linkage Credential', specs: ['did-config', 'vcdm', 'rfc7519'],

@@ -1374,6 +1374,28 @@ function pinsSelfIssuedKeysOnFirstUse() {
   return !isProduct();
 }
 
+// May a PERSON'S PUBLISHED did:web be minted on the address the request
+// arrived at, when no public base URL is pinned (#1291)? The DID is FIXED
+// when it is created and stored on the person's entry, so whatever base it
+// is built on becomes part of a stored identifier for good. Development
+// says yes and builds it on the request's base (`helpers.baseUrlOf()`), so a
+// tester reaching the service as localhost can publish one. Product says no:
+// a `Host` header must never become part of a stored identifier, so creating
+// one is refused (STS-VC-0168) until `global.publicBaseUrl` (or the
+// verifiable credentials application's advertised listener) pins the base.
+// `oid4vc/person_did.ts` asks it.
+/**
+ * Tells whether a person's published `did:web` may be minted on the request's
+ * own base URL when no public base URL is pinned.
+ *
+ * @returns true in development mode
+ */
+function mintsPersonDidsOnRequestAddress() {
+  log.debug("Entering mintsPersonDidsOnRequestAddress().");
+  log.debug("Leaving mintsPersonDidsOnRequestAddress().");
+  return !isProduct();
+}
+
 // May a WebAuthn registration's ATTESTATION STATEMENT go unverified (#105,
 // 2026-09-23)? `webauthn.attestationPolicy`'s default, `by-mode`, asks it:
 // development records the statement's format and verifies nothing, as it
@@ -2470,6 +2492,18 @@ const REQUIREMENTS = [
              '/portal/self-issued. In both modes a key the pin does not ' +
              'name is refused (STS-VC-0126).',
     where: 'oid4vc/siop.ts' },
+  // #1291 (2026-11-03).
+  { id: 'person-did-base',
+    what: 'A person\'s published did:web is minted on the pinned public ' +
+          'base URL',
+    development: 'With no public base URL pinned, a DID published from ' +
+                 '/portal/self-issued is built on the address the request ' +
+                 'arrived at, and that address is part of the DID for good.',
+    product: 'Publishing one is refused (STS-VC-0168) until ' +
+             'global.publicBaseUrl, or the advertised listener of the ' +
+             'verifiable credentials application, pins the base: a Host ' +
+             'header never becomes part of a stored identifier.',
+    where: 'oid4vc/person_did.ts' },
   // #105 (2026-09-23).
   { id: 'webauthn-attestation',
     what: 'A security key\'s attestation statement is verified before the ' +
@@ -4136,6 +4170,7 @@ module.exports = {
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   pinsSelfIssuedKeysOnFirstUse: pinsSelfIssuedKeysOnFirstUse,
+  mintsPersonDidsOnRequestAddress: mintsPersonDidsOnRequestAddress,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
   refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,

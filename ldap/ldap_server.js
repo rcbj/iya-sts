@@ -3782,6 +3782,17 @@ const OWN_NAMES = [
   // withheld from every read (SECRET_ATTRIBUTES). `oid4vc/siop.ts` keeps them.
   'stsSelfIssuedSubject',
 
+  // AND ITS PUBLISHED DIDs (#1291, 2026-11-03): each did:web this realm
+  // created and publishes for the person, one JSON value per DID — its
+  // random id, the DID, the custody, every version of its keys and what
+  // authorized each, its deactivation, and in `realm` custody the private
+  // key, sealed. The history is what a verifier resolves a versioned DID
+  // URL against, and the key is a credential, so the whole value is
+  // withheld from every read (SECRET_ATTRIBUTES). `oid4vc/person_did.ts`
+  // keeps them; the random id finds its entry through a per-realm index
+  // (`did.personDids`), never a walk.
+  'stsPublishedDid',
+
   // AND THE DEVICE REGISTER'S (#130, 2026-09-23): RFC 4519's `device` class
   // has `cn`, `owner` and `description` and nothing about what a device is
   // used for or what it holds, so these are this service's own — the class
@@ -11933,6 +11944,9 @@ const SECRET_ATTRIBUTES = [
   // A person's enrolled self-issued subjects (#129): whoever holds one of
   // these keys signs in as them.
   'stsselfissuedsubject',
+  // A person's published DIDs (#1291): the version history a verifier
+  // resolves, and in `realm` custody the sealed private key.
+  'stspublisheddid',
   // A device's Native SSO secret, hashed (#130): a credential's verifier.
   'stsdevicesecrethash',
   // A person's CIBA user code, hashed (#131).
@@ -12386,6 +12400,11 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   stsapppassword: '/portal/app-passwords, or /admin/users',
   hobapublickey: 'the SCIM HOBA registration (/scim/v2 with Hobareg)',
   stsselfissuedsubject: '/portal/self-issued, or /admin/users',
+  // Written whole by `oid4vc/person_did.ts` (#1291): a version written
+  // by hand would publish a key nobody proved, or rewrite history a
+  // verifier resolved.
+  stspublisheddid: '/portal/self-issued (publish, change a key, ' +
+    'deactivate), or /admin/users (deactivate)',
   stsmailfactor: '/portal/mfa, or /admin/users',
   stsmailfactorfailures: 'the emailed factor\'s own sign-in step',
   stskrb5keys: 'a verified sign-in, or the Kerberos keys controls on ' +
@@ -13911,6 +13930,45 @@ function writeSelfIssuedSubjects(key, values) {
   return true;
 }
 
+// A PERSON'S PUBLISHED DIDs (#1291): every value, as stored, and the whole
+// list written back. `oid4vc/person_did.ts` reads and writes the JSON; this
+// only carries it, as it carries the self-issued subjects above.
+function readPublishedDids(key) {
+  log.debug('Entering readPublishedDids(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readPublishedDids(). No entry.');
+    return null;
+  }
+  const values = (stored.attributes.stspublisheddid || []).map(String);
+  log.debug('Leaving readPublishedDids(). ' + values.length + '.');
+  return values;
+}
+
+function writePublishedDids(key, values) {
+  log.debug('Entering writePublishedDids(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no ' +
+             'published DID was recorded.');
+    log.debug('Leaving writePublishedDids(). No entry.');
+    return false;
+  }
+  const list = (Array.isArray(values) ? values : []).map(String);
+  if (!list.length) {
+    delete stored.attributes.stspublisheddid;
+  } else {
+    stored.attributes.stspublisheddid = list;
+  }
+  touchDirectory();
+  log.debug('Leaving writePublishedDids(). ' + list.length +
+            ' on ' + stored.dn + '.');
+  return true;
+}
+
 // WHO IN THIS REALM HAS ENROLLED A SELF-ISSUED SUBJECT (#129): the username,
 // or '' for nobody. A walk over the realm's people, asked once per SIOPv2
 // sign-in — a sign-in is rare beside the searches the indexes exist for, and
@@ -14554,6 +14612,9 @@ if (typeof credentials.setDirectory === 'function') {
     // reason the pair above is.
     readIdaVerifications: readIdaVerifications,
     readSelfIssuedSubjects: readSelfIssuedSubjects,
+    // A person's published DIDs (#1291), checked where they are used.
+    readPublishedDids: readPublishedDids,
+    writePublishedDids: writePublishedDids,
     // The CIBA user code (#131), checked where it is used.
     readCibaUserCode: readCibaUserCode,
     writeCibaUserCode: writeCibaUserCode,
