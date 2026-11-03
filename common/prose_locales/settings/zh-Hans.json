@@ -9652,8 +9652,8 @@
     "text": "持久化模式"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
+    "en": "9017af2918cf94be",
+    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。mariadb 是 MariaDB 上的同一存储（mariadb/schema.sql），是测试套件所针对的第二种引擎：此时 persistence.databaseUrl 是一个 mariadb:// 地址，必须安装 mysql2 包，而需要 PostgreSQL 本身的功能（单元、批量导入、目录窗口）会被拒绝。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",

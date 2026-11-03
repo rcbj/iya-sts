@@ -67,6 +67,9 @@ const log = require('bunyan').createLogger({
 // How many times a value that only rises re-asks after losing a race to an
 // insert. Two is enough: the second UPDATE finds the row the race made.
 const RACE_RETRIES = 3;
+// How many times a transaction the engine refused with a deadlock or a lock
+// timeout is run again (see inTransaction()).
+const TRANSACTION_RETRIES = 8;
 
 /**
  * Builds the portable statements over one driver's connections.
@@ -113,7 +116,42 @@ function create(deps) {
    */
   function inTransaction(from, fn) {
     log.debug("Entering inTransaction().");
+    // A DEADLOCK OR A LOCK TIMEOUT IS RUN AGAIN, a few times with a jittered
+    // pause (#677): InnoDB answers concurrent inserts of one key that way
+    // where PostgreSQL waits, and the engine's own advice is to restart the
+    // transaction. Everything a portable transaction does is safe to run
+    // twice, because a rolled-back attempt left nothing.
+    const attempt = function (left) {
+      return once().catch(function (err) {
+        if (left <= 0 || !dialect.isRetryable(err)) {
+          throw err;
+        }
+        log.debug("Caught in inTransaction(): " + ((err && err.message) ||
+                  err) + "; again.");
+        return new Promise(function (resolve) {
+          setTimeout(resolve, 5 + Math.floor(Math.random() * 20));
+        }).then(function () {
+          return attempt(left - 1);
+        });
+      });
+    };
+    const once = function () {
+      return oneTransaction(from, fn);
+    };
     log.debug("Leaving inTransaction().");
+    return attempt(TRANSACTION_RETRIES);
+  }
+
+  /**
+   * One attempt of a transaction on a held connection.
+   *
+   * @param from - a pool with `connect()`
+   * @param fn - given the held connection; answers a promise
+   * @returns what `fn` answered
+   */
+  function oneTransaction(from, fn) {
+    log.debug("Entering oneTransaction().");
+    log.debug("Leaving oneTransaction().");
     return from.connect().then(function (client) {
       return client.query('BEGIN').then(function () {
         return fn(client);
@@ -675,7 +713,17 @@ function create(deps) {
     const where = at(scope, realmId, key);
     const ended = '?? <= ' + dialect.nowText;
     log.debug("Leaving countWindow().");
-    return inTransaction(tallyPool, function (client) {
+    // THE ROW FIRST, OUTSIDE THE TRANSACTION, as an ENDED window (count 0,
+    // ends now): then the transaction below only ever updates a row that
+    // exists, and takes that row's lock and no gap lock — concurrent first
+    // counts of one key deadlocked InnoDB when each inserted inside its own
+    // transaction. The bump turns an ended window into a new one at 1.
+    return run(tallyPool, 'countWindow.ensure',
+      kx('sts_cluster_windows').insert(Object.assign({}, where, {
+        count: 0, window_ends_at: dialect.now(), origin: processId()
+      })).onConflict(['scope', 'realm', 'key']).ignore()
+    ).then(function () {
+      return inTransaction(tallyPool, function (client) {
       const bump = function () {
         return run(client, 'countWindow.bump',
           kx('sts_cluster_windows').update({
@@ -689,23 +737,13 @@ function create(deps) {
             origin: processId()
           }).where(where));
       };
-      return bump().then(function (r) {
-        if (dialect.affected(r) > 0) {
-          return null;
-        }
-        return run(client, 'countWindow.insert',
-          kx('sts_cluster_windows').insert(Object.assign({}, where, {
-            count: 1, window_ends_at: dialect.now(span), origin: processId()
-          })).onConflict(['scope', 'realm', 'key']).ignore()
-        ).then(function (inserted) {
-          return dialect.affected(inserted) > 0 ? null : bump();
-        });
-      }).then(function () {
+      return bump().then(function () {
         return run(client, 'countWindow.read',
           kx('sts_cluster_windows')
             .select('count', kx.raw('?? - ' + dialect.nowText +
                                     ' AS remaining', ['window_ends_at']))
             .where(where));
+      });
       });
     }).then(function (answer) {
       const row = first(answer) || {};

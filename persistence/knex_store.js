@@ -122,6 +122,128 @@ const IDLE_TIMEOUT_MS = 30000;
 // (`KnexTimeoutError`), which `timedOutWaiting()` recognises.
 const ACQUIRE_TIMEOUT_TEXT = /Timeout acquiring a connection/i;
 
+// ---------------------------------------------------------------------------
+// TWO ENGINES, ONE SHAPE (#677). The store's second engine is MariaDB, dialled
+// by Knex's `mysql2` client. Everything above the layer was written against
+// `pg`'s answer — `{ rows, rowCount }` from a promise — so a MariaDB answer is
+// made into that shape HERE and nowhere else (`runOn()`): a result set is
+// `{ rows, rowCount: rows.length }`, a write's header is `{ rows: [],
+// rowCount: affectedRows, affectedRows, insertId }`.
+//
+// A MARIADB SESSION IS SET UP TO READ LIKE POSTGRESQL'S, once per connection
+// (`MARIADB_SESSION`): UTC, READ COMMITTED (InnoDB's REPEATABLE READ would
+// make a long transaction's plain reads stale where PostgreSQL's are not),
+// and a strict SQL mode with `PIPES_AS_CONCAT` (so `||` concatenates, as
+// every hand-written statement here means). NOT `NO_BACKSLASH_ESCAPES`,
+// though it would make `ESCAPE '\'` read as it does in PostgreSQL: `mysql2`
+// puts a statement's values into its text ON THE CLIENT and escapes a quote
+// with a backslash, so under that mode every bound string holding a quote
+// arrived with the backslash in it, and a JSON value failed its CHECK (found
+// by `tests/cluster_portable.js` against MariaDB 11.8). A MariaDB statement
+// that needs an escape character names it itself. `FOUND_ROWS` makes an
+// UPDATE's count the rows it MATCHED, as PostgreSQL's is, not the rows whose
+// value changed — a heartbeat in the same millisecond would otherwise read
+// as a node that is not alive. Big integers come back as strings, as `pg`
+// returns `bigint`.
+// ---------------------------------------------------------------------------
+const MARIADB_SESSION = [
+  // Binary comparison of literals too, as PostgreSQL's is: `'A' = 'a'` is
+  // false there, and true under MariaDB's default collation. NO PAD, as
+  // every table is (`mariadb/CLAUDE.md`): under `utf8mb4_bin` `'a' = 'a '`
+  // is true, and PostgreSQL holds them as two keys.
+  'SET NAMES utf8mb4 COLLATE utf8mb4_nopad_bin',
+  "SET time_zone = '+00:00'",
+  'SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED',
+  "SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ZERO_DATE," +
+    "NO_ENGINE_SUBSTITUTION,PIPES_AS_CONCAT,ERROR_FOR_DIVISION_BY_ZERO'"
+];
+
+/**
+ * Which engine a set of settings dials: `engine` when given, otherwise the
+ * connection string's scheme.
+ *
+ * @param settings - `{ engine?, connectionString? }`
+ * @returns 'postgres' or 'mariadb'
+ */
+function engineOf(settings) {
+  log.debug("Entering engineOf().");
+  const named = settings && settings.engine;
+  if (named === 'mariadb' || named === 'postgres') {
+    log.debug("Leaving engineOf(). Named.");
+    return named;
+  }
+  const url = String((settings && settings.connectionString) || '');
+  log.debug("Leaving engineOf().");
+  return /^(mariadb|mysql):/i.test(url) ? 'mariadb' : 'postgres';
+}
+
+/**
+ * `mysql2`'s connection options from a `mariadb://user:password@host:port/db`
+ * string (`mysql://` too), with the TLS the caller decided.
+ *
+ * @param settings - `{ connectionString, ssl, connectionTimeoutMillis }`
+ * @returns the options
+ */
+function mariadbConnection(settings) {
+  log.debug("Entering mariadbConnection().");
+  const url = new URL(String(settings.connectionString || '')
+    .replace(/^(mariadb|mysql):/i, 'http:'));
+  const out = {
+    host: url.hostname || 'localhost',
+    port: Number(url.port) || 3306,
+    user: decodeURIComponent(url.username || ''),
+    password: decodeURIComponent(url.password || ''),
+    database: decodeURIComponent((url.pathname || '/').slice(1)),
+    charset: 'utf8mb4',
+    timezone: 'Z',
+    supportBigNumbers: true,
+    bigNumberStrings: true,
+    flags: ['FOUND_ROWS'],
+    connectTimeout: Number(settings.connectionTimeoutMillis) || CONNECT_TIMEOUT_MS
+  };
+  if (settings.ssl) {
+    out.ssl = settings.ssl === true ? {} : settings.ssl;
+  }
+  log.debug("Leaving mariadbConnection().");
+  return out;
+}
+
+/**
+ * One statement on one connection, answered in `pg`'s shape whatever the
+ * engine.
+ *
+ * @param engine - 'postgres' or 'mariadb'
+ * @param connection - the dialect's raw connection
+ * @param text - the statement
+ * @param [values] - its parameters
+ * @returns a promise of `{ rows, rowCount, ... }`
+ */
+function runOn(engine, connection, text, values) {
+  log.debug("Entering runOn().");
+  if (engine !== 'mariadb') {
+    log.debug("Leaving runOn(). PostgreSQL.");
+    return connection.query(text, values);
+  }
+  log.debug("Leaving runOn(). MariaDB.");
+  return new Promise(function (resolve, reject) {
+    connection.query({ sql: String(text), values: values || [] },
+                     function (err, answer) {
+      if (err) {
+        reject(err);
+        return;
+      }
+      if (Array.isArray(answer)) {
+        resolve({ rows: answer, rowCount: answer.length });
+        return;
+      }
+      const header = answer || {};
+      resolve({ rows: [], rowCount: Number(header.affectedRows) || 0,
+                affectedRows: Number(header.affectedRows) || 0,
+                insertId: header.insertId });
+    });
+  });
+}
+
 /**
  * Loads Knex, lazily: see the header. The message names both packages,
  * because "Cannot find module 'knex'" arriving out of an identity service
@@ -209,7 +331,7 @@ class StoreClient {
   query(text, values) {
     log.debug("Entering StoreClient.query().");
     log.debug("Leaving StoreClient.query().");
-    return this.connection.query(text, values);
+    return runOn(this.pool.engine, this.connection, text, values);
   }
 
   on(event, fn) {
@@ -311,7 +433,20 @@ class StoreConnection {
       self.listeners.forEach(function (one) {
         connection.on(one.event, one.fn);
       });
-      return self;
+      if (self.pool.engine !== 'mariadb') {
+        return self;
+      }
+      // Outside the pool, so the pool's afterCreate did not run: the same
+      // session setup here (MARIADB_SESSION).
+      let chain = Promise.resolve();
+      MARIADB_SESSION.forEach(function (statement) {
+        chain = chain.then(function () {
+          return runOn('mariadb', connection, statement, []);
+        });
+      });
+      return chain.then(function () {
+        return self;
+      });
     });
   }
 
@@ -329,7 +464,7 @@ class StoreConnection {
       return Promise.reject(new Error('the connection is not open'));
     }
     log.debug("Leaving StoreConnection.query().");
-    return this.connection.query(text, values);
+    return runOn(this.pool.engine, this.connection, text, values);
   }
 
   /**
@@ -382,11 +517,21 @@ class StorePool {
     // borrower's (`guardClient()`), not the pool's idle report.
     this.held = new Set();
     this.max = Number(opts.max) > 0 ? Number(opts.max) : 4;
+    // Which engine (#677): `pg` for PostgreSQL, `mysql2` for MariaDB.
+    this.engine = engineOf(Object.assign({}, settings,
+                                         { engine: opts.engine ||
+                                                   settings.engine }));
+    const mariadb = this.engine === 'mariadb';
+    const pgSettings = Object.assign({}, settings);
+    delete pgSettings.engine;
     try {
       this.knex = knex({
-        client: 'pg',
-        connection: Object.assign({}, settings,
-                                  { connectionTimeoutMillis: connectMs }),
+        client: mariadb ? 'mysql2' : 'pg',
+        connection: mariadb
+          ? mariadbConnection(Object.assign({}, settings,
+                                            { connectionTimeoutMillis:
+                                                connectMs }))
+          : Object.assign(pgSettings, { connectionTimeoutMillis: connectMs }),
         log: KNEX_LOG,
         pool: {
           // Made on demand, as `pg-pool` made them: a process that never
@@ -407,7 +552,24 @@ class StorePool {
           propagateCreateError: true,
           afterCreate: function (connection, done) {
             self.watchIdle(connection);
-            done(null, connection);
+            if (!mariadb) {
+              done(null, connection);
+              return;
+            }
+            // A MariaDB session read like PostgreSQL's (MARIADB_SESSION).
+            let chain = Promise.resolve();
+            MARIADB_SESSION.forEach(function (statement) {
+              chain = chain.then(function () {
+                return runOn('mariadb', connection, statement, []);
+              });
+            });
+            chain.then(function () {
+              done(null, connection);
+            }, function (err) {
+              log.debug("Caught in afterCreate(): " +
+                        ((err && err.message) || err));
+              done(err, connection);
+            });
           }
         }
       });
@@ -511,7 +673,7 @@ class StorePool {
     log.debug("Leaving StorePool.query().");
     return this.acquire().then(function (connection) {
       return Promise.resolve().then(function () {
-        return connection.query(text, values);
+        return runOn(self.engine, connection, text, values);
       }).then(function (result) {
         self.giveBack(connection);
         return result;
@@ -600,5 +762,7 @@ function openConnection(settings) {
 module.exports = {
   openPool: openPool,
   openConnection: openConnection,
-  timedOutWaiting: timedOutWaiting
+  timedOutWaiting: timedOutWaiting,
+  engineOf: engineOf,
+  MARIADB_SESSION: MARIADB_SESSION
 };

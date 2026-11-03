@@ -172,6 +172,27 @@ contracts, statically for MariaDB and against a real PostgreSQL when
 `STS_TEST_POSTGRES_URL` is set; `./run-tests.sh --modes=cluster-portable`
 runs the two-node mode on them (`tests/CLAUDE.md`).
 
+**`persistence.mode=mariadb` (#677, phase 3).** The same driver with
+`engine: 'mariadb'`: `knex_store.js` dials MariaDB through Knex's `mysql2`
+client (an optional package, `STS_CLOUD_SDKS`) and answers in `pg`'s shape
+(`runOn()`), with a session set up to read like PostgreSQL's
+(`MARIADB_SESSION`: NO PAD binary collation, UTC, READ COMMITTED, strict mode
+with `PIPES_AS_CONCAT`, `FOUND_ROWS`; NOT `NO_BACKSLASH_ESCAPES`, which
+corrupted every bound string holding a quote because `mysql2` escapes on
+the client). The schema is `mariadb/schema.sql` and its copy
+`schema_mariadb.js` (`mariadb/CLAUDE.md`, `tests/mariadb_schema.js`).
+`store_modes.js` is the one "is this a database" question. The engine has
+no LISTEN/NOTIFY and no bridge thread: the change log is polled, and the
+windowed directory and on-demand minted stores are held whole. **What runs
+on MariaDB today**: the connection layer, the schema, and the coordination
+statements (`cluster_portable.js`, proved against MariaDB 11.8 by
+`tests/cluster_portable.js` section C). **What does not yet**: every other
+family's PostgreSQL text (the directory, minted state, sessions, keys,
+realms, settings, risk, reports, the metrics probes and open()'s catalog
+probes) — the next steps of phase 3, each proved the same way before it is
+switched on. Refused on MariaDB, each for its own reason: cells, the bulk
+import, cell conversion, the directory window, the risk installer.
+
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,
 `bulk_import.js`, `cell_convert.js`), not `knex.transaction()`: that runs its

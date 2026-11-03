@@ -17500,7 +17500,7 @@ const SETTINGS = [
   // -------------------------------------------------------------------------
   { key: 'persistence.mode', group: 'Persistence', label: 'Persistence mode',
     env: 'STS_PERSISTENCE_MODE', type: 'enum',
-    enumValues: ['memory', 'ldif', 'postgres'], dflt: 'memory',
+    enumValues: ['memory', 'ldif', 'postgres', 'mariadb'], dflt: 'memory',
     runtime: false,
     restartReason: 'the store is opened and read before the listener binds',
     description: 'Where the embedded directory, the trust realm registry and ' +
@@ -17511,7 +17511,12 @@ const SETTINGS = [
                  'which is the local-development answer and needs no ' +
                  'database. postgres writes a set of tables ' +
                  '(postgres/schema.sql lists them) and is the shared ' +
-                 'store. WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
+                 'store. mariadb is the same store on MariaDB ' +
+                 '(mariadb/schema.sql), a second engine the test suite ' +
+                 'runs against: persistence.databaseUrl is then a ' +
+                 'mariadb:// address, the mysql2 package must be installed, ' +
+                 'and what needs PostgreSQL itself (cells, the bulk ' +
+                 'import, the directory window) is refused. WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
                  'artifacts, Kerberos principals, the replay caches, the ' +
                  'counters and the audit log — is persisted in PRODUCT mode ' +
                  'on postgres and in no other configuration; see ' +

@@ -275,10 +275,27 @@ function create(engine) {
       (err && err.errno === 1062) || false;
   }
 
+  /**
+   * Whether a failure is one the engine expects the client to retry: a
+   * deadlock, a serialization failure, a lock wait that timed out.
+   *
+   * @param err - what the connection rejected with
+   * @returns true when running the transaction again is the answer
+   */
+  function isRetryable(err) {
+    log.debug("Entering isRetryable().");
+    const code = err && err.code;
+    log.debug("Leaving isRetryable().");
+    return code === '40P01' || code === '40001' ||
+      code === 'ER_LOCK_DEADLOCK' || code === 'ER_LOCK_WAIT_TIMEOUT' ||
+      (!!err && (err.errno === 1213 || err.errno === 1205));
+  }
+
   log.debug("Leaving create().");
   return {
     engine: engine,
     ago: ago,
+    isRetryable: isRetryable,
     isUniqueViolation: isUniqueViolation,
     kx: kx,
     compile: compile,

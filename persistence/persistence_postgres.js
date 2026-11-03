@@ -3299,14 +3299,21 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
  * string's `sslmode` does not decide it (none, `require`, `prefer`)
  * @param [ca] - PEM text of the certificates trusted for this connection in
  * place of node's default store, or '' for that store
+ * @param [engine] - 'postgres' (the default) or 'mariadb' (#677)
  * @returns `{ connectionString, ssl, refused, verifyChain, verifyHostname }`;
  * `refused` is '' or why the string is not dialled (it would be in the
  * clear, or cannot be told); `verifyChain` and `verifyHostname` say what is
  * checked of the server's certificate
  */
-function dialOptions(url, verifyTls, ca) {
+function dialOptions(url, verifyTls, ca, engine) {
   const raw = String(url || '');
-  if (/(^|[?&\s])sslmode\s*=\s*(disable|allow)\b/i.test(raw)) {
+  const mariadb = engine === 'mariadb';
+  // A MariaDB string spells "no TLS" as `ssl=false` or `ssl-mode=DISABLED`
+  // (#677); refused for the reason `sslmode=disable` is.
+  if (/(^|[?&\s])sslmode\s*=\s*(disable|allow)\b/i.test(raw) ||
+      (mariadb &&
+       /(^|[?&\s])(ssl\s*=\s*(false|0)|ssl-mode\s*=\s*disabled)\b/i
+         .test(raw))) {
     return { connectionString: '', ssl: undefined,
              refused: 'its sslmode asks for a connection in the clear, ' +
                       'which this service never opens; use ' +
@@ -3326,7 +3333,13 @@ function dialOptions(url, verifyTls, ca) {
                       'cannot be told; write it as a URL',
              verifyChain: false, verifyHostname: false };
   }
-  if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
+  if (mariadb && !/^(mariadb|mysql):$/i.test(parsed.protocol)) {
+    return { connectionString: '', ssl: undefined,
+             refused: 'persistence.mode is mariadb and it is not a ' +
+                      'mariadb:// URL (' + parsed.protocol + ')',
+             verifyChain: false, verifyHostname: false };
+  }
+  if (!mariadb && !/^postgres(ql)?:$/i.test(parsed.protocol)) {
     return { connectionString: '', ssl: undefined,
              refused: 'it is not a postgres:// URL (' + parsed.protocol +
                       '), so whether it would be dialled in the clear ' +
@@ -3338,6 +3351,8 @@ function dialOptions(url, verifyTls, ca) {
   const sslmode = String(parsed.searchParams.get('sslmode') || '')
     .toLowerCase();
   parsed.searchParams.delete('sslmode');
+  parsed.searchParams.delete('ssl');
+  parsed.searchParams.delete('ssl-mode');
   const verifyChain = sslmode === 'verify-ca' || sslmode === 'verify-full' ||
     !!verifyTls;
   const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
@@ -3368,18 +3383,6 @@ function dialOptions(url, verifyTls, ca) {
   };
 }
 
-/**
- * Creates the postgres persistence driver.
- *
- * A connection pool, a transaction per flush, the change log that several
- * processes coordinate through, and the minted, key, cluster and risk tables.
- * Every connection is TLS; a string whose `sslmode` would dial in the clear
- * is refused (`dialOptions()`, #273).
- * @param options - `url`, the connection string; `log`, the logger;
- * `verifyTls`, whether the server certificate is verified; `tlsCa`, the PEM
- * trust anchors for it or ''; and `poolMax`, the pool size
- * @returns the driver object, with the methods the persistence contract names
- */
 // ---------------------------------------------------------------------------
 // THE CHANGE LOG'S SEQUENCE MUST BE DENSE (#677, rcbj 2026-11-03).
 //
@@ -3435,6 +3438,21 @@ function checkChangeLogDense(client, log) {
   });
 }
 
+/**
+ * Creates the database persistence driver: PostgreSQL, or (#677) MariaDB
+ * with `options.engine` 'mariadb'.
+ *
+ * A connection pool, a transaction per flush, the change log that several
+ * processes coordinate through, and the minted, key, cluster and risk tables.
+ * Every connection is TLS; a string whose `sslmode` would dial in the clear
+ * is refused (`dialOptions()`, #273).
+ * @param options - `url`, the connection string; `log`, the logger;
+ * `verifyTls`, whether the server certificate is verified; `tlsCa`, the PEM
+ * trust anchors for it or ''; `poolMax`, the pool size; `engine`,
+ * 'postgres' (the default) or 'mariadb'; `sqlDialect`, 'native' or
+ * 'portable'
+ * @returns the driver object, with the methods the persistence contract names
+ */
 function create(options) {
   const url = options.url;
   const log = options.log;
@@ -4218,7 +4236,11 @@ function create(options) {
   // statement is text and values, sent on the same connections and inside
   // the same held-connection transactions as every hand-written statement.
   // `persistence/sql_dialect.js` argues it.
-  const dialect = sqlDialect.forEngine('postgres');
+  // THE ENGINE (#677): PostgreSQL, or MariaDB — one driver, the statements
+  // compiled for it (`sql_dialect.js`) and the coordination that needs
+  // PostgreSQL's features in its portable form (`cluster_portable.js`).
+  const engine = options.engine === 'mariadb' ? 'mariadb' : 'postgres';
+  const dialect = sqlDialect.forEngine(engine);
   const kx = dialect.kx;
 
   // ---------------------------------------------------------------------
@@ -4243,7 +4265,7 @@ function create(options) {
   // `dialOptions()`, above create(), is the one reading of it (#98): this
   // driver's pools and an out-of-process tool dial the same way.
   const tlsCa = String(options.tlsCa || '');
-  const dial = dialOptions(url, options.verifyTls, tlsCa);
+  const dial = dialOptions(url, options.verifyTls, tlsCa, engine);
   if (dial.refused) {
     throw new Error(errorCodes.tag('STS-STORE-0078') +
                     'persistence: the database connection string is not ' +
@@ -4307,6 +4329,7 @@ function create(options) {
     log.debug("Entering clientOptions().");
     log.debug("Leaving clientOptions().");
     return {
+      engine: engine,
       connectionString: dialled,
       ssl: dial.ssl,
       connectionTimeoutMillis: 5000
@@ -4380,13 +4403,14 @@ function create(options) {
     if (!readUrl || readUrl === url) {
       return pool;
     }
-    const readDial = dialOptions(readUrl, verify, tlsCa);
+    const readDial = dialOptions(readUrl, verify, tlsCa, engine);
     if (readDial.refused) {
       throw new Error(errorCodes.tag('STS-STORE-0078') +
                       'persistence: the read database connection string is ' +
                       'not dialled: ' + readDial.refused + ' (#273).');
     }
     readOptions = {
+      engine: engine,
       connectionString: readDial.connectionString,
       ssl: readDial.ssl,
       connectionTimeoutMillis: 5000
@@ -10791,6 +10815,13 @@ function create(options) {
   // polls (`intervalMs()`). `announce()` sends nothing either.
   if (portable) {
     delete api.watchChanges;
+  }
+  // NO BRIDGE THREAD ON MARIADB (#677): `common/sync_query_thread.ts` builds
+  // a `pg` connection inside its worker, so the windowed directory and the
+  // on-demand minted reader are PostgreSQL's, and without `bridgeConnection()`
+  // persistence.js holds those stores whole instead.
+  if (engine !== 'postgres') {
+    delete api.bridgeConnection;
   }
   return api;
 }

@@ -440,7 +440,8 @@ class ProcessMemory {
       const source = config.sourceOf('workers.requestCount');
       byDefault = source === 'default' || source === 'defaults';
       mode = String(config.value('persistence.mode'));
-      coordinates = mode === 'postgres' &&
+      // A database store of either engine (#677).
+      coordinates = require('../persistence/store_modes').isDatabase(mode) &&
         config.value('persistence.coordinate') !== false;
     } catch (e) {
       log.debug("Caught in ProcessMemory.requestWorkers(): " +

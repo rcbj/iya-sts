@@ -691,7 +691,9 @@ class Scheduler {
         return minted.flushThrough(minted.generation());
       },
       storeConnections: function (): number {
-        if (config.value('persistence.mode') !== 'postgres') {
+        // A database store of either engine (#677).
+        if (!require('../persistence/store_modes').isDatabase(
+              config.value('persistence.mode'))) {
           return 0;
         }
         // LAZILY: the driver is persistence's to load, and a require here

@@ -14,6 +14,9 @@
 //      `RETURNING`, no double-quoted identifier, no advisory lock. Driven
 //      against a runner that records what it is sent and answers what each
 //      statement would.
+//   C. THE SAME CONTRACTS AGAINST A REAL MARIADB, when STS_TEST_MARIADB_URL
+//      names a server the test may create a database on (it makes one and
+//      drops it), its tables from `persistence/schema_mariadb.js`.
 //   B. AGAINST A REAL DATABASE, only when STS_TEST_POSTGRES_URL names one the
 //      test may create tables in (a scratch database: it creates the cluster
 //      tables it needs in a schema of its own and drops it): every contract
@@ -252,6 +255,8 @@ async function againstPostgres(t) {
 
 async function contracts(t, ops, pool, dialect) {
   log.debug("Entering contracts().");
+  // `key` is a reserved word in MariaDB.
+  const KEY = dialect.engine === 'mariadb' ? '`key`' : 'key';
   // ---- claims --------------------------------------------------------
   const one = await ops.claimOnce('s', '', 'k', { ttlMs: 60000,
                                                    reservation: 'r1' });
@@ -281,7 +286,7 @@ async function contracts(t, ops, pool, dialect) {
                                        { scope: 'm', key: 'a' }], '',
                                       { ttlMs: 60000, reservation: 'many2' });
   const leftC = await pool.query('SELECT 1 FROM sts_cluster_claims WHERE ' +
-                                 'scope = \'m\' AND key = \'c\'');
+                                 'scope = \'m\' AND ' + KEY + ' = \'c\'');
   t.check(many.claimed && !overlap.claimed && overlap.refused === 1 &&
           overlap.partial === true && leftC.rows.length === 0,
           'B4. claimMany is all or none: an overlapping set is refused at ' +
@@ -291,15 +296,19 @@ async function contracts(t, ops, pool, dialect) {
                                    reservation: 'many1' },
                                  { scope: 'm', realm: '', key: 'b',
                                    reservation: 'wrong' }]);
-  const kept = await pool.query('SELECT key FROM sts_cluster_claims WHERE ' +
-                                'scope = \'m\' ORDER BY key');
+  const kept = await pool.query('SELECT ' + KEY + ' FROM sts_cluster_claims ' +
+                                'WHERE scope = \'m\' ORDER BY ' + KEY);
   t.check(kept.rows.map(function (r) { return r.key; }).join() === 'b',
           'B5. a release is pinned to its reservation',
           JSON.stringify(kept.rows));
   // ---- membership, leases, fences, join ------------------------------
-  await pool.query('INSERT INTO sts_cluster_nodes (node_id, expires_at) ' +
-                   'VALUES (\'node-1\', ' + dialect.nowText + ' + 60000), ' +
-                   '(\'node-2\', ' + dialect.nowText + ' + 60000)');
+  const node = function (id) {
+    return '(\'' + id + '\', \'active-active\', 0, 0, ' + dialect.nowText +
+      ' + 60000)';
+  };
+  await pool.query('INSERT INTO sts_cluster_nodes (node_id, mode, ' +
+                   'started_at, heartbeat_at, expires_at) VALUES ' +
+                   node('node-1') + ', ' + node('node-2'));
   const l1 = await ops.acquireLease('service', 'node-1', 60000);
   const l2 = await ops.acquireLease('service', 'node-2', 60000);
   const l1again = await ops.acquireLease('service', 'node-1', 60000);
@@ -365,7 +374,7 @@ async function contracts(t, ops, pool, dialect) {
   }
   await Promise.all(values);
   const top = await pool.query('SELECT value FROM sts_cluster_counters ' +
-                               'WHERE key = \'race\'');
+                               'WHERE ' + KEY + ' = \'race\'');
   t.check(Number(top.rows[0].value) === 40,
           'B13. thirty concurrent raises end at the highest',
           JSON.stringify(top.rows));
@@ -401,13 +410,11 @@ async function contracts(t, ops, pool, dialect) {
           Number(mark.rows[0].applied) === 5,
           'B17. a reader\'s mark is inserted once and never moves back',
           JSON.stringify([first, again, mark.rows]));
+  const twoHoursAgo = dialect.engine === 'mariadb'
+    ? 'NOW(6) - INTERVAL 2 HOUR' : 'now() - interval \'2 hours\'';
+  const old = '(\'o\', \'k\', ' + twoHoursAgo + ')';
   await pool.query('INSERT INTO sts_changes (origin, kind, at) VALUES ' +
-                   '(\'o\', \'k\', now() - interval \'2 hours\'), ' +
-                   '(\'o\', \'k\', now() - interval \'2 hours\'), ' +
-                   '(\'o\', \'k\', now() - interval \'2 hours\'), ' +
-                   '(\'o\', \'k\', now() - interval \'2 hours\'), ' +
-                   '(\'o\', \'k\', now() - interval \'2 hours\'), ' +
-                   '(\'o\', \'k\', now() - interval \'2 hours\')');
+                   [old, old, old, old, old, old].join(', '));
   const trim = await ops.purgeChangeLog({ readerTtlMs: 600000,
                                           retentionMs: 3600000 });
   const leftRows = await pool.query('SELECT seq FROM sts_changes ORDER BY ' +
@@ -420,10 +427,57 @@ async function contracts(t, ops, pool, dialect) {
   log.debug("Leaving contracts().");
 }
 
+async function againstMariadb(t) {
+  log.debug("Entering againstMariadb().");
+  const url = process.env.STS_TEST_MARIADB_URL || '';
+  if (!url) {
+    t.log.info('=== C. skipped: STS_TEST_MARIADB_URL names no database ===');
+    log.debug("Leaving againstMariadb(). Skipped.");
+    return;
+  }
+  t.log.info('=== C. the same contracts against a real MariaDB ===');
+  const knexStore = require('../persistence/knex_store');
+  const schemaMariadb = require('../persistence/schema_mariadb');
+  const scratch = 'portable_' + process.pid;
+  const admin = knexStore.openConnection({ connectionString: url });
+  await admin.connect();
+  await admin.query('CREATE DATABASE ' + scratch);
+  const scoped = url.replace(/\/[^/?]*(\?|$)/, '/' + scratch + '$1');
+  const pool = knexStore.openPool({ connectionString: scoped }, { max: 8 });
+  try {
+    const wanted = ['sts_cluster_claims', 'sts_cluster_nodes',
+                    'sts_cluster_leases', 'sts_cluster_counters',
+                    'sts_cluster_windows', 'sts_cluster_budgets',
+                    'sts_change_readers', 'sts_changes', 'sts_cluster_locks'];
+    for (const object of schemaMariadb.SCHEMA_OBJECTS) {
+      if (wanted.indexOf(object.name) >= 0) {
+        await pool.query(object.statement);
+      }
+    }
+    const dialect = sqlDialect.create('mariadb');
+    const ops = clusterPortable.create({
+      dialect: dialect, pool: pool, tallyPool: pool, live: pool,
+      originScope: ORIGIN_SCOPE,
+      processId: function () {
+        log.debug("Entering processId().");
+        log.debug("Leaving processId().");
+        return 'proc-1';
+      }
+    });
+    await contracts(t, ops, pool, dialect);
+  } finally {
+    await pool.end();
+    await admin.query('DROP DATABASE ' + scratch);
+    await admin.end();
+  }
+  log.debug("Leaving againstMariadb().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await staticChecks(t);
   await againstPostgres(t);
+  await againstMariadb(t);
   log.debug("Leaving run().");
 }
 
