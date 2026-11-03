@@ -98,7 +98,7 @@ function adoptOtherNodesListener(serialHex) {
   row.issuedKeyPairs = (row.issuedKeyPairs || []).concat([
     pkiMerge.displacedRecord('tls:server', {
       serialHex: serialHex,
-      subject: 'CN=sts-lb, O=sts',
+      subject: 'CN=sts-lb, O=iya-sts',
       notAfter: new Date(Date.now() + 86400000).toISOString(),
       useCase: 'tls',
       createdAt: Date.now()

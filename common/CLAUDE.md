@@ -8478,11 +8478,12 @@ nothing else**: sections 5, 6.1 and 6.1.1 forbid the trust anchor in the
 `x5c` of a credential, a Status List Token and a signed OpenID4VP request.
 Its callers state that at the call site.
 
-**WHY.** Every Root is `CN=sts Root CA, O=sts` and a fresh install builds a new
-one, so a reader never handed the current Root matched the top certificate's
-issuer NAME to an older Root it already held: "the Root is the same on every
-install", reported from Windows, when it never was. Sending the Root trusts
-nothing (RFC 5280 section 6.1); it lets a reader show the thumbprint.
+**WHY.** Every Root is `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts`
+before #1294) and a fresh install builds a new one, so a reader never handed the
+current Root matched the top certificate's issuer NAME to an older Root it
+already held: "the Root is the same on every install", reported from Windows,
+when it never was. Sending the Root trusts nothing (RFC 5280 section 6.1); it
+lets a reader show the thumbprint.
 
 **`chainPem` keeps its meaning everywhere: what a certificate is STORED with,
 no Root.** Only the REPORTING sites go through this function. Each has one

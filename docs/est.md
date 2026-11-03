@@ -213,7 +213,7 @@ subjectAltName of the certificate being renewed; the old one goes on the EST
 CRL as `superseded`:
 
 ```sh
-openssl req -new -key alice-new.key -subj "/CN=alice/O=sts" \
+openssl req -new -key alice-new.key -subj "/CN=alice/O=iya-sts" \
   -addext "subjectAltName=URI:urn:sts:person:alice" -outform DER \
   -out renew.csr.der
 base64 renew.csr.der | curl -s --cacert sts-root.pem \

@@ -34,7 +34,9 @@ timestamps differ again, and alice signed in afresh for them.
 authority and session is made again at each start, so the keys that signed
 these samples no longer exist. To make your own, run the requests shown with
 each sample against your instance and paste the result into any JWT or ASN.1
-decoder. Which door accepts which token is covered in
+decoder. The certificate subjects are shown as a build since #1294 issues
+them, with `O=iya-sts` and authorities named `iya-sts …`; the captures
+themselves said `sts`, the product's old name. Which door accepts which token is covered in
 [Accepted tokens](accepted-tokens.md); every endpoint is listed live at
 [`/admin/sts-metadata`](endpoints.md).
 
@@ -697,8 +699,8 @@ its long values shortened.
               "MIIEdDCCA16gAwIBAgIQUQ9nOdaSZAtOWjYVehkR…",
               "… 2 more"
             ],
-            "subject": "CN=JOSE signing (RS256), O=sts",
-            "issuer": "CN=sts JOSE Signing CA (default), O=sts",
+            "subject": "CN=JOSE signing (RS256), O=iya-sts",
+            "issuer": "CN=iya-sts JOSE Signing CA (default), O=iya-sts",
             "serialNumber": "510F6739D692640B4E5A36157A191114",
             "notBefore": "2026-09-22T21:12:06.000Z",
             "notAfter": "2027-09-22T21:12:06.000Z",
@@ -3008,7 +3010,7 @@ Certificate:
         Serial Number:
             78:ff:fc:21:b3:fb:0b:35:8d:ad:2d:8b:a2:39:35:1f
         Signature Algorithm: ecdsa-with-SHA256
-        Issuer: CN = sts SPIFFE Issuing CA (default), O = sts
+        Issuer: CN = iya-sts SPIFFE Issuing CA (default), O = iya-sts
         Validity
             Not Before: Sep 22 20:59:52 2026 GMT
             Not After : Sep 22 21:59:52 2026 GMT
@@ -3050,11 +3052,11 @@ Certificate:
         Serial Number:
             68:ee:8f:0f:cb:40:8b:34:17:43:a9:13:06:57:4f:90
         Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN = sts Root CA, O = sts
+        Issuer: CN = iya-sts Root CA, O = iya-sts
         Validity
             Not Before: Sep 22 20:54:03 2026 GMT
             Not After : Sep 22 20:54:03 2046 GMT
-        Subject: CN = sts Root CA, O = sts
+        Subject: CN = iya-sts Root CA, O = iya-sts
         Subject Public Key Info:
             Public Key Algorithm: rsaEncryption
         X509v3 extensions:
@@ -3081,11 +3083,11 @@ Certificate:
         Serial Number:
             02:60:d0:8e:90:c2:88:75:2c:17:13:fd:94:a0:5c:0b
         Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN = sts JOSE Signing CA (default), O = sts
+        Issuer: CN = iya-sts JOSE Signing CA (default), O = iya-sts
         Validity
             Not Before: Sep 22 20:54:03 2026 GMT
             Not After : Sep 22 20:54:03 2027 GMT
-        Subject: CN = JOSE signing (RS256), O = sts
+        Subject: CN = JOSE signing (RS256), O = iya-sts
         Subject Public Key Info:
             Public Key Algorithm: rsaEncryption
         X509v3 extensions:
@@ -3120,11 +3122,11 @@ Certificate:
         Serial Number:
             10:55:f5:57:f5:4c:a6:39:7e:b6:81:b7:11:3c:22:19
         Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN = sts TLS Issuing CA (Process), O = sts
+        Issuer: CN = iya-sts TLS Issuing CA (Process), O = iya-sts
         Validity
             Not Before: Sep 22 20:54:03 2026 GMT
             Not After : Sep 22 20:54:03 2027 GMT
-        Subject: CN = localhost, O = sts
+        Subject: CN = localhost, O = iya-sts
         Subject Public Key Info:
             Public Key Algorithm: rsaEncryption
         X509v3 extensions:
@@ -3173,11 +3175,11 @@ Certificate:
         Serial Number:
             74:62:05:25:d1:b7:85:5b:bd:fa:ab:e3:57:64:d1:bc
         Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN = sts EST Issuing CA (default), O = sts
+        Issuer: CN = iya-sts EST Issuing CA (default), O = iya-sts
         Validity
             Not Before: Sep 22 21:00:11 2026 GMT
             Not After : Sep 22 21:00:11 2027 GMT
-        Subject: CN = alice, O = sts
+        Subject: CN = alice, O = iya-sts
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
         X509v3 extensions:
@@ -3264,11 +3266,11 @@ Certificate:
         Serial Number:
             2c:d3:a1:51:d8:43:46:ca:2d:e8:b9:1d:a0:be:b5:f8
         Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN = sts ACME Issuing CA (default), O = sts
+        Issuer: CN = iya-sts ACME Issuing CA (default), O = iya-sts
         Validity
             Not Before: Sep 22 21:12:33 2026 GMT
             Not After : Dec 21 21:12:33 2026 GMT
-        Subject: CN = alice, O = sts
+        Subject: CN = alice, O = iya-sts
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
         X509v3 extensions:
@@ -3334,11 +3336,11 @@ Certificate:
         Serial Number:
             7a:65:f3:29:38:9d:9a:3b:77:82:3d:2e:78:fb:99:cb
         Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN = sts SCEP Issuing CA (default), O = sts
+        Issuer: CN = iya-sts SCEP Issuing CA (default), O = iya-sts
         Validity
             Not Before: Sep 22 21:13:06 2026 GMT
             Not After : Sep 22 21:13:06 2027 GMT
-        Subject: CN = alice, O = sts
+        Subject: CN = alice, O = iya-sts
         Subject Public Key Info:
             Public Key Algorithm: rsaEncryption
         X509v3 extensions:
@@ -3375,7 +3377,7 @@ timestamp in milliseconds.
 Certificate Revocation List (CRL):
         Version 2 (0x1)
         Signature Algorithm: sha256WithRSAEncryption
-        Issuer: CN = sts JOSE Signing CA (default), O = sts
+        Issuer: CN = iya-sts JOSE Signing CA (default), O = iya-sts
         Last Update: Sep 22 20:57:34 2026 GMT
         Next Update: Sep 22 21:57:34 2026 GMT
         CRL extensions:

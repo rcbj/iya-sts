@@ -17,6 +17,8 @@
 //   (Process), O=sts and CN=sts Intermediate CA (Process), O=sts — and one
 //   list can have only one issuer
 //
+// (the names before #1294, which made the default organisation `iya-sts`)
+//
 // Observed on the kept stack: the TLS handshake and `GET
 // /tls/server-certificate` chained to a process Intermediate the FRONT process
 // built at 14:53:56, while `/pki/ca/process/intermediate.cer` — and every
@@ -131,7 +133,7 @@ function childSource() {
     '    await tls.reconcileWithHierarchy({ buildBranch: false });',
     '',
     '  // 2. a Root arriving ahead of its branch',
-    "  await pki.buildRoot({ organisation: 'sts' });",
+    "  await pki.buildRoot({ organisation: 'iya-sts' });",
     '  const held2 = heldChain();',
     '  const listener2 = listenerChain();',
     '  out.twoReconciled =',
@@ -152,7 +154,7 @@ function childSource() {
     '  out.threeAnchorSigns = anchorSignsListener();',
     '',
     '  // 4. it never arrives, and the repair is asked for',
-    "  await pki.buildRoot({ organisation: 'sts' });",
+    "  await pki.buildRoot({ organisation: 'iya-sts' });",
     '  const held4 = heldChain();',
     '  out.fourWaited =',
     '    await tls.reconcileWithHierarchy({ buildBranch: false });',
@@ -166,7 +168,7 @@ function childSource() {
     '  await pool.reconcileTheListener();',
     '  out.fiveACurrent = current();',
     '  out.fiveAArmed = pool.listenerRepairArmed();',
-    "  await pki.buildRoot({ organisation: 'sts' });",
+    "  await pki.buildRoot({ organisation: 'iya-sts' });",
     '  const held5 = heldChain();',
     '  await pool.reconcileTheListener();',
     '  out.fiveBHeldUntouched = same(held5, heldChain());',

@@ -976,8 +976,9 @@ reader that keeps a single certificate per `X509Data` keeps the last one
 Sending the Root does not make anybody trust it: a relying party trusts only
 the Roots it already holds (RFC 5280 section 6.1). It is there so that a
 reader can see *which* Root the chain ends at. Every install's Root has the
-same name, `CN=sts Root CA, O=sts`, so the name alone does not tell two
-installs apart. The thumbprint does.
+same name, `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts` for a
+hierarchy built before #1294), so the name alone does not tell two installs
+apart. The thumbprint does.
 
 **Four signed objects leave the Root out of `x5c`.** HAIP 1.0 forbids it in
 three (sections 5, 6.1 and 6.1.1): an OpenID4VCI credential, a Token Status
@@ -1535,13 +1536,19 @@ They are **defaults for a form** rather than policy: what a hierarchy was built
 with is stored on the hierarchy, so a change here reaches the next build and
 never a certificate that exists.
 
+**A hierarchy already persisted keeps the subject it was built with.** The
+default organisation became `iya-sts` (it was `sts`) in #1294; that changes
+what a NEW hierarchy, and a leaf issued under a tier with no organisation of
+its own, carries. To change an existing one, set `pki.organisation` and
+rebuild the hierarchy.
+
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off leaves every generated key uncertified. |
 | `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
 | `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). `sha1-rsa` and `sha1-ecdsa` are development mode only: product uses the key's default instead and refuses setting either, or a build naming one (#181). |
 | `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `none` | yes | The post-quantum key every authority built holds beside its classical one, and signs everything it issues with a second time (ITU-T X.509 clause 9.8) — see [Hybrid authorities](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default). One of `ml-dsa-87` (the recommended value when it is turned on), `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. `none`, the default, builds classical-only authorities, because many relying parties refuse a hybrid certificate's size. **Warning:** SLH-DSA costs seconds per certificate issued. |
-| `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
+| `pki.organisation` | `STS_PKI_ORGANISATION` | `iya-sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
 | `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
 | `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | A new Root CA's lifetime when the build names none; `0` is the profile's twenty years. |
 | `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | A new Intermediate CA's lifetime; `0` is the profile's ten years, clamped to the Root's expiry. |

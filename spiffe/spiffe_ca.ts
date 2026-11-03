@@ -510,9 +510,12 @@ class SpiffeCa {
   // word and both name their trust domain: `{kind}` becomes `CA` or
   // `downstream CA` and `{trustDomain}` the realm's domain. The default
   // rendered the old two strings byte for byte until the product name in every
-  // identifier this service emits became `sts` the same day, so it now renders
-  // `CN=sts SPIFFE CA (<domain>),O=sts`; no migration, because a SPIFFE CA is
-  // minted per start in development and taken from /admin/pki everywhere else.
+  // identifier this service emits became `sts` the same day, so it rendered
+  // `CN=sts SPIFFE CA (<domain>),O=sts`; and since #1294 (2026-11-03), which
+  // made every certificate this service issues say the product's name, it
+  // renders `CN=iya-sts SPIFFE CA (<domain>),O=iya-sts`. No migration either
+  // time, because a SPIFFE CA is minted per start in development and taken
+  // from /admin/pki everywhere else.
   //
   // The PKI path is untouched: a realm with a hierarchy takes its Issuing CA's
   // subject from `common/pki.js`, which owns it.
@@ -538,7 +541,8 @@ class SpiffeCa {
       // about an RDN. Named here instead.
       throw new Error('spiffe.caSubject is empty, and a CA certificate needs ' +
                       'a subject. Set it to an X.501 name — the default is ' +
-                      '`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`.');
+                      '`CN=iya-sts SPIFFE {kind} ({trustDomain}),' +
+                      'O=iya-sts`.');
     }
     log.debug("Leaving SpiffeCa.caSubjectFor().");
     return rendered;

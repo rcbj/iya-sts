@@ -569,7 +569,7 @@ var config = {
     keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
     signatureAlgorithm: "",                     // Default CA signature algorithm
     alternativeKeyAlgorithm: "none",            // CA alternative (post-quantum) key algorithm
-    organisation: "sts",                        // Default organisation name (O=)
+    organisation: "iya-sts",                    // Default organisation name (O=)
     personSelfService: true,                    // Let a person issue their own signing key pair
     leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
     rootLifetimeYears: 0,                       // Root CA lifetime (years, 0 = the profile's)
@@ -803,7 +803,7 @@ var config = {
     trustAnchorsFile: "",                                                                                                                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
     selfSignedKeyBits: 2048,                                                                                                                                                                                                                                                                                   // Self-signed certificate RSA key size; restart to apply
     selfSignedValidityYears: 2,                                                                                                                                                                                                                                                                                // Self-signed certificate validity (years); restart to apply
-    selfSignedOrganization: "sts"                                                                                                                                                                                                                                                                              // Self-signed certificate organization; restart to apply
+    selfSignedOrganization: "iya-sts"                                                                                                                                                                                                                                                                          // Self-signed certificate organization; restart to apply
   },
 
   // --- Listener: LDAPS -------------------------------------------------
@@ -1307,7 +1307,7 @@ var config = {
     jwtSvidTtl: 300,                                                          // JWT-SVID lifetime (seconds)
     refreshHint: 300,                                                         // Bundle refresh hint (seconds)
     svidSubject: "C=US,O=SPIRE",                                              // SVID subject DN
-    caSubject: "CN=sts SPIFFE {kind} ({trustDomain}),O=sts",                  // CA subject DN template
+    caSubject: "CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts",          // CA subject DN template
     retainedAuthorities: 4,                                                   // Authorities kept published after a rotation
     agentSvidTtl: 0,                                                          // Agent SVID lifetime (seconds)
     joinTokenTtl: 600,                                                        // Join token lifetime (seconds)

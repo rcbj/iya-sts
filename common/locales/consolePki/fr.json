@@ -162,7 +162,7 @@
   "downloadTip": "Télécharge la paire de clés. Ce bouton envoie le même formulaire à l’export, dont la réponse est le FICHIER que le navigateur enregistre plutôt qu’une page.",
   "download": "Télécharger",
   "dnCnTip": "commonName (2.5.4.3) — le nom de ce certificat. Le profil le remplit et remplace sa propre valeur par défaut quand le profil change, mais jamais un nom que vous avez saisi. Pour un serveur TLS, le nom que vérifie réellement un client est dans subjectAltName, pas ici.",
-  "dnOTip": "organizationName (2.5.4.10) — à qui appartient le sujet. Il est rempli à partir de pki.organisation, que porte la hiérarchie ci-dessus, car deux certificats d’un même domaine portant O=Example et O=sts sont deux organisations pour un validateur de chemin.",
+  "dnOTip": "organizationName (2.5.4.10) — à qui appartient le sujet. Il est rempli à partir de pki.organisation, que porte la hiérarchie ci-dessus, car deux certificats d’un même domaine portant O=Example et O=iya-sts sont deux organisations pour un validateur de chemin.",
   "dnOuTip": "organizationalUnitName (2.5.4.11) — la division au sein de l’organisation. Répétez-le en ajoutant des lignes OU=… dans Attributs supplémentaires ci-dessous ; un DN peut en porter plusieurs.",
   "dnLTip": "localityName (2.5.4.7) — la ville ou la localité.",
   "dnStTip": "stateOrProvinceName (2.5.4.8) — écrit en toutes lettres plutôt qu’abrégé, comme le demande le CA/Browser Forum.",

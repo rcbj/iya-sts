@@ -6939,7 +6939,8 @@ const SETTINGS = [
                  'quantum-capable attacker.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
-    env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',
+    env: 'STS_PKI_ORGANISATION', type: 'string',
+    dflt: 'iya-sts',
     runtime: true,
     description: 'The O= every tier of a new hierarchy carries, and the O= ' +
                  'of every leaf issued from it. It is also what the tiers ' +
@@ -10734,7 +10735,7 @@ const SETTINGS = [
   { key: 'tls.selfSignedOrganization', group: 'TLS',
     label: 'Self-signed certificate organization',
     env: 'STS_TLS_SELF_SIGNED_ORGANIZATION', type: 'string',
-    dflt: 'sts', runtime: false,
+    dflt: 'iya-sts', runtime: false,
     restartReason: 'the certificate is generated when the process starts',
     description: 'The O= of the self-signed listener certificate\'s subject. ' +
                  'The CN is the first of tls.hostnames.' },
@@ -16505,7 +16506,7 @@ const SETTINGS = [
 
   { key: 'spiffe.caSubject', group: 'SPIFFE', label: 'CA subject DN template',
     env: 'STS_SPIFFE_CA_SUBJECT', type: 'string',
-    dflt: 'CN=sts SPIFFE {kind} ({trustDomain}),O=sts',
+    dflt: 'CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts',
     runtime: true,
     description: 'The X.501 subject of a CA certificate this service builds ' +
                  'for SPIFFE itself: the SELF-SIGNED authority a realm with ' +

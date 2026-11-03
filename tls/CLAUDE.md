@@ -175,13 +175,14 @@ is why that function is not a convenience.
 
 ## The serial number is random, and a constant one was a browser-only bug
 
-The self-signed certificate this module mints is regenerated at every start,
-its subject never varies (`CN=localhost, O=sts`), and it is the one a
-PERSON is asked to trust in a browser. Its serial was the constant `'03'` until
-2026-09-01 — chosen so that two of this service's certificates could be told
-apart in a packet capture — and NSS files a certificate under **(issuer,
-serial)**. So the second start of this service produced a different key under a
-pair Firefox had already seen, and Firefox refused the port outright:
+The self-signed certificate this module mints is regenerated at every start, its
+subject never varies (`CN=localhost, O=iya-sts`; `O=sts` before #1294), and it
+is the one a PERSON is asked to trust in a browser. Its serial was the constant
+`'03'` until 2026-09-01 — chosen so that two of this service's certificates
+could be told apart in a packet capture — and NSS files a certificate under
+**(issuer, serial)**. So the second start of this service produced a different
+key under a pair Firefox had already seen, and Firefox refused the port
+outright:
 
 ```
 SEC_ERROR_REUSED_ISSUER_AND_SERIAL
@@ -662,9 +663,10 @@ CA, Intermediate, Root.** Until #1064 it sent three. RFC 8446 section 4.4.2
 (RFC 5246 section 7.4.2 before it) allows either, and leaving the Root out was
 the old reading of "it is the anchor; relying on it having been sent is the
 mistake". What that reading missed is what a client SHOWS. Every Root this
-service builds is `CN=sts Root CA, O=sts`, and a fresh install builds a new
-one. So a client never handed the current Root completed the path from the
-Intermediate's issuer NAME against whatever same-named Root it already held.
+service builds is `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts`
+before #1294), and a fresh install builds a new one. So a client never
+handed the current Root completed the path from the Intermediate's issuer
+NAME against whatever same-named Root it already held.
 A Windows user reported it as "the Issuing CA and the Intermediate differ
 between installs but the Root is the same". Six fresh installs on two machines
 each had a Root of their own; the name was the only thing shared.
@@ -908,11 +910,12 @@ protocol job now; `tests/CLAUDE.md` carries that half.
 `tests/protocol/sts_pki_distribution_points.js` failed in `dispatch` mode only:
 *`…/pki/crl/process/intermediate.crl` is named by certificates of two different
 authorities — CN=sts Intermediate CA (Process), O=sts and CN=sts Intermediate CA
-(Process), O=sts*. Read off the kept stack, not guessed: the handshake and
-`GET /tls/server-certificate` chained to a process Intermediate built at
-14:53:56 **by the front process**, while `/pki/ca/process/intermediate.cer`
-(served by the front process) and every worker's `/admin-api/pki` held one
-built at 14:53:57 **by worker 33**. Same subject, same Root, different keys.
+(Process), O=sts* (the names before #1294). Read off the kept stack, not
+guessed: the handshake and `GET /tls/server-certificate` chained to a process
+Intermediate built at 14:53:56 **by the front process**, while
+`/pki/ca/process/intermediate.cer` (served by the front process) and every
+worker's `/admin-api/pki` held one built at 14:53:57 **by worker 33**. Same
+subject, same Root, different keys.
 
 The log gave the sequence, a `build-root` from `sts_admin_api_operations` on
 worker 33:

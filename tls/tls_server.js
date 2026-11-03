@@ -967,7 +967,7 @@ function handedInCertificate() {
 function selfSignedOrganization() {
   log.debug("Entering selfSignedOrganization().");
   log.debug("Leaving selfSignedOrganization().");
-  return String(config.value('tls.selfSignedOrganization') || 'sts');
+  return String(config.value('tls.selfSignedOrganization') || 'iya-sts');
 }
 
 function makeServerCertificate() {
@@ -2523,7 +2523,7 @@ function secureContextOptions(policy) {
 //   * a rebuild half-fails and leaves a new Root over an old branch.
 //
 // What comes out is a bundle whose four certificates look perfectly right —
-// `CN=sts Root CA` at the top, correct names all the way down — and whose
+// `CN=iya-sts Root CA` at the top, correct names all the way down — and whose
 // Root has a different KEY from the one that signed the Intermediate. OpenSSL
 // calls it `error 30 at 2 depth lookup: authority and subject key identifier
 // mismatch`; node calls it `unable to get local issuer certificate`; curl is
@@ -2816,7 +2816,8 @@ function presentedBundlePem(record) {
 // It reached the suite as `tests/protocol/sts_pki_distribution_points.js` in
 // dispatch mode only: *http://…/pki/crl/process/intermediate.crl is named by
 // certificates of two different authorities — CN=sts Intermediate CA
-// (Process), O=sts and CN=sts Intermediate CA (Process), O=sts*. Measured on
+// (Process), O=sts and CN=sts Intermediate CA (Process), O=sts* (the names
+// before #1294). Measured on
 // the kept stack: the handshake and `GET /tls/server-certificate` chained to
 // an Intermediate made at 14:53:56 by the FRONT process, every worker and the
 // front process's own register held one made at 14:53:57 by worker 33. The
