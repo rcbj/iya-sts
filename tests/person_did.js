@@ -798,6 +798,17 @@ function childMain() {
          listOf(DAVE)[0].currentVersion === PersonDid.MAX_VERSIONS,
          '9b. a DID whose history is full takes no more changes, ' +
          'STS-VC-0176', JSON.stringify(full));
+    // An administrator's REMOVAL of a published DID from the self-issued
+    // list deactivates it, as the portal's does.
+    const daveDid = (listOf(DAVE)[0] || {}).did;
+    const adminRemove = await actions.usersAction({
+      action: 'remove-self-issued-subject', user: DAVE, subject: daveDid },
+      { actor: 'pd-admin', via: 'api' });
+    note(adminRemove && adminRemove.ok &&
+         listOf(DAVE)[0].state === 'deactivated' &&
+         subjectRow(DAVE, daveDid) === null,
+         '9c. an administrator removing a published DID from the ' +
+         'self-issued list deactivates it', JSON.stringify(adminRemove));
     ['did.personCustody', 'did.personPublishing',
      'oid4vci.didHolderBinding', 'oid4vp.signIn',
      'oid4vp.signInSelfIssued', 'risk.assessSignIns'].forEach(clear);
