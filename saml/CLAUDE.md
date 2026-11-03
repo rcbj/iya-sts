@@ -181,15 +181,12 @@ registry which application has it. That is a scan of a mock's in-memory
 directory, and it is why `/admin/saml2` exists — nobody derives that digest by
 hand.
 
-**AND THE PARENT PROJECT'S LAUNCHERS COMPUTE THAT SEGMENT THEMSELVES, WITH
-`sha256sum`.** The metadata URL carries the digest because the document is
-published per service provider, and three shell scripts over there build it
-rather than guessing it — so **a change to `slugOf()` breaks three files nothing
-in this repository can see**, and it breaks them in the parent's suite rather
-than here: this repository moves, and the other one has to be moved with it
-in the same change. (It was once likened to the Kerberos COPY set, an
-obligation #1280 ended; this one is a URL the parent's scripts compute, not a
-file it copies.) Nothing is provisioned for
+**THE PARENT PROJECT'S LAUNCHERS COMPUTE THAT SEGMENT THEMSELVES, WITH
+`sha256sum`**, because the metadata URL carries the digest and the document is
+published per service provider. Until #1280 this file made a change to
+`slugOf()` an obligation to move those three scripts in the same change; rcbj
+ended that with the rest of what this repository owed the parent, so keeping
+them in step is the parent's business. Nothing is provisioned for
 the `sts` side of those jobs — any entityID is accepted, the metadata is minted
 on the ask, and the application entry is created by the first valid AuthnRequest
 — which is why there is no `configureX` step for it anywhere in those launchers,

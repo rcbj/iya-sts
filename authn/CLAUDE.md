@@ -3054,18 +3054,17 @@ header; what a maintainer of THIS directory needs is where it sits:
   `credential algorithm was offered` (only when the caller passes
   `expectedAlgorithms`), `credential ID is at most 1023 bytes` and `backup state
   only where backup eligible` — mapped to `STS-AUTHN-0228`–`0230` in
-  `webauthn_policy.ts`'s table. It stays loadable on its own for the parent
-  project's cross-implementation test; the six new COSE algorithms (PS256/384/
-  512, ML-DSA-44/65/87 from RFC 9964) go through `crypto.verifyCoseSignature()`
-  and a standalone copy refuses them rather than misreading them. **The stored
+  `webauthn_policy.ts`'s table. The six new COSE algorithms (PS256/384/512,
+  ML-DSA-44/65/87 from RFC 9964) go through `crypto.verifyCoseSignature()`, as
+  every algorithm has since #1280 removed the standalone copy's node-crypto
+  path. **The stored
   JWK now carries `alg`**, so an assertion is checked with the credential's own
   hash and padding; a key stored before has none and is read by key type — which
   fixed ES384 and ES512 keys, checked with SHA-256 until then.
 * **EVERY ALGORITHM, REQUESTED BY DEFAULT (2026-10-01, rcbj).** The verifier
   also checks RFC 9864's fully specified ESP256/384/512 (-9/-51/-52) and
   Ed25519/Ed448 (-19/-53), whose curve is checked against the key, and RFC
-  8812's ES256K (-47) — nineteen in all, and a standalone copy refuses the
-  six new ones too. `webauthn.algorithms` now defaults to all nineteen, ML-DSA
+  8812's ES256K (-47) — nineteen in all. `webauthn.algorithms` now defaults to all nineteen, ML-DSA
   first (-48, -49, -50), where it was `ES256,RS256`; an authenticator takes
   the first it supports. `tests/webauthn_attestation.js` section B
   registers and asserts every one.
