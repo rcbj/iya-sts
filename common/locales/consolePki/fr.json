@@ -372,6 +372,8 @@
   "person": "Personne",
   "personPlaceholder": "un nom d’utilisateur dans ou=users",
   "declaredIssuer": "Émetteur déclaré",
+  "keyLabel": "Nom (facultatif)",
+  "revokePersonKey": "Révoquer",
   "theirUsername": "(son nom d’utilisateur)",
   "takeOff": "Retirer cette paire de clés",
   "noDirectory": "Ce processus n’a pas d’annuaire : personne ne peut donc détenir une paire de clés d’assertion, et une assertion nommant une personne comme émetteur est refusée faute d’émetteur enregistré.",

@@ -12707,8 +12707,9 @@ class AdminViews {
   // assertion profile, EVERY key pair on the person's own entry (several
   // since #1290, each with its state) — issued here or a certificate uploaded
   // — read into which certificate, issued by whom, through what chain, and
-  // whether this service holds the private half. `person_assertions.KEY_PAIR_ATTRIBUTES` names the attributes, which
-  // is the table the writer uses.
+  // whether this service holds the private half.
+  // `person_assertions.KEY_PAIR_ATTRIBUTES` names the attributes, which is
+  // the table the writer uses.
   //
   // **THERE IS NO PRIVATE KEY IN THE STATE, EITHER HALF**, and that is a
   // difference from the application's which is the point rather than an

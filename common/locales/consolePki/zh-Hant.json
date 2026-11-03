@@ -372,6 +372,8 @@
   "person": "人員",
   "personPlaceholder": "ou=users 中的使用者名稱",
   "declaredIssuer": "宣告的簽發者",
+  "keyLabel": "名稱（選填）",
+  "revokePersonKey": "撤銷",
   "theirUsername": "（其使用者名稱）",
   "takeOff": "移除此金鑰對",
   "noDirectory": "此程序沒有目錄，因此任何人都不能持有判斷提示金鑰對，以個人為簽發者的判斷提示會因缺少已註冊的簽發者而被拒絕。",

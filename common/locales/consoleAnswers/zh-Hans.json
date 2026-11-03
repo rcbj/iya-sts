@@ -105,7 +105,7 @@
   "pep.chain": "证书及其后的证书链（签发 CA 和此领域的中间 CA）&mdash; 即 <code>PEP_HTTPS_CERT</code> 所指定的文件：",
   "pep.anchor": "该监听器的客户端所安装的信任锚 &mdash; 此服务的根 CA，证书链中刻意不包含它：",
   "pep.back": "返回远程 PEP",
-  "person.warn": "这是此服务唯一一次向您显示此密钥。它以 <code>{attribute}</code> 的形式密封在 <code>{person}</code> 的条目上，此控制台或 <code>/admin-api</code> 中的任何内容都不会再次打开它。请立即复制；再次签发会替换它。",
+  "person.warn": "这是此服务唯一一次向您显示此密钥。它以 <code>{attribute}</code> 的形式密封在 <code>{person}</code> 的条目上，此控制台或 <code>/admin-api</code> 中的任何内容都不会再次打开它。请立即复制；再次签发会新增一个密钥对，此密钥对继续有效。",
   "person.saml": "它签署的断言带有值为 <code>{issuer}</code> 的 <code>&lt;Issuer&gt;</code> 和 <code>&lt;Subject&gt;</code>、指向此服务令牌端点的 <code>&lt;AudienceRestriction&gt;</code>、bearer 类型的 <code>&lt;SubjectConfirmation&gt;</code>、<code>NotOnOrAfter</code> 和 <code>ID</code>，以覆盖 <code>&lt;Assertion&gt;</code> 的 XML 签名签署，并以 <code>grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer</code> 加 <code>assertion=&lt;base64url&gt;</code> 的形式出示。证书的指纹为 <code>{thumbprint}</code>。",
   "person.jwt": "它签署的断言带有值为 <code>{issuer}</code> 的 <code>iss</code> 和 <code>sub</code>、值为此服务令牌端点或颁发者的 <code>aud</code>、<code>exp</code> 和 <code>jti</code>，并以 <code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer</code> 加 <code>assertion=&lt;the JWT&gt;</code> 的形式出示。<code>kid</code> 为 <code>{kid}</code>，算法为 <code>{alg}</code>。",
   "person.certificate": "证书（它是公开的，也在条目上）：",

@@ -3280,7 +3280,9 @@ class UsersPage {
              managed + '<h4>' + T('addHeading') + '</h4>' +
              (p.atCap
                ? kit.note(T('atCap', { max: String(state.maxPerPerson) }))
-               : kit.note(T('addNote')) + issueForm + uploadForm);
+               : kit.note(T('addNote',
+                            { max: String(state.maxPerPerson) })) +
+                 issueForm + uploadForm);
     }).join('');
     return heading + purposeHtml +
       (state.selfService
