@@ -187,7 +187,7 @@ windowed directory and on-demand minted stores are held whole. **What runs
 on MariaDB today**: the connection layer, the schema, and the coordination
 statements (`cluster_portable.js`, proved against MariaDB 11.8 by
 `tests/cluster_portable.js` section C). **What does not yet**: every other
-family's PostgreSQL text (the directory, minted state, sessions, risk, the
+family's PostgreSQL text (the directory, minted state, sessions, the
 metrics probes and open()'s catalog probes) — the next steps of phase 3,
 each proved the same way before it is switched on. Refused on MariaDB, each
 for its own reason: cells, the bulk import, cell conversion, the directory
@@ -217,6 +217,28 @@ A static, B the library on PostgreSQL, C on MariaDB 11.8 with the races
 (twenty-five claims of one assertion, ten merges into one key row, ten
 override deltas on one realm, ten change-row transactions), D through the
 driver with `engine: 'mariadb'`.
+
+**The risk engine's store runs on MariaDB (#677, phase 3b):
+`risk_portable.js`**, every `risk*` method of the driver, built only when the
+engine is not PostgreSQL — its statements are written for INET6, prefix text
+and JSON lists, so `sqlDialect=portable` on PostgreSQL keeps this family's
+native text, which is unchanged. A range lookup is still one descending seek
+of the primary key, bounded to the address's family because INET6 sorts IPv4
+(`::ffff:a.b.c.d`) inside IPv6: an IPv4 address finds only IPv4 ranges and an
+IPv6 one only IPv6 ones (an IPv6 range inside `::ffff:0:0/96` cannot be told
+from IPv4 here). A batch of dataset rows is `INSERT IGNORE`, every value
+checked first and the batch refused whole (STS-STORE-0100, STS-STORE-0160)
+because IGNORE would store a substitute; an action is claimed once by one
+conditional `JSON_SET()` UPDATE; a standing's replaced level is read under its
+row lock in a transaction; the ctid deletes are `DELETE … LIMIT n`; the
+analytics are `SUM(CASE…)`, `JSON_TABLE()`, window `PERCENTILE_DISC()`, `DIV`
+and `WITH ROLLUP`; a `real` is read through DOUBLE at its shortest float
+spelling. The tally pool has no asynchronous commit on MariaDB. The header
+argues each. `tests/risk_portable.js`: A static, C on MariaDB 11.8 with the
+races (eight beginnings of one version, twenty sign-ins counted, ten claims of
+one action, five first standings, two stalled-import sweeps) and the seek's
+EXPLAIN, D `risk/risk_store`'s RiskStore over the driver with `engine:
+'mariadb'`.
 
 **Opening a MariaDB store and `/admin/database` on it (#677, phase 3b).**
 `open()` hands a MariaDB store to `open_mariadb.js`: what exists is asked of
