@@ -6188,8 +6188,10 @@ const ATTRIBUTE_CHOICES = {
   oauthTokenEndpointAuthSigningAlg: function () {
     return helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   },
+  // What this realm SIGNS a response with: EdDSA left out too while
+  // `keys.eddsaSigning` is off (helpers.signableJwsAlgs(), #1292).
   oauthIntrospectionSignedResponseAlg: function () {
-    return helpers.offeredJwsAlgs(INTROSPECTION_SIGNING_ALGS);
+    return helpers.signableJwsAlgs(INTROSPECTION_SIGNING_ALGS);
   },
   oauthIntrospectionEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(INTROSPECTION_ENCRYPTION_ALGS);
@@ -6210,7 +6212,7 @@ const ATTRIBUTE_CHOICES = {
   // #290's nine algorithms, from the lists clientResponseMetadataProblem()
   // checks.
   oauthIdTokenSignedResponseAlg: function () {
-    return helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+    return helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   },
   oauthIdTokenEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
@@ -6219,7 +6221,7 @@ const ATTRIBUTE_CHOICES = {
     return ID_TOKEN_ENCRYPTION_ENCS.slice(0);
   },
   oauthUserinfoSignedResponseAlg: function () {
-    return helpers.offeredJwsAlgs(USERINFO_SIGNING_ALGS);
+    return helpers.signableJwsAlgs(USERINFO_SIGNING_ALGS);
   },
   oauthUserinfoEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
@@ -6228,7 +6230,7 @@ const ATTRIBUTE_CHOICES = {
     return ID_TOKEN_ENCRYPTION_ENCS.slice(0);
   },
   oauthAuthorizationSignedResponseAlg: function () {
-    return helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+    return helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   },
   oauthAuthorizationEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
@@ -9046,8 +9048,9 @@ function introspectionResponseProblem(values) {
   const alg = text.introspection_encrypted_response_alg;
   const enc = text.introspection_encrypted_response_enc;
   // The classical algorithms alone while `keys.postQuantumSigning` is off
-  // (helpers.offeredJwsAlgs(), 2026-10-23) — what discovery advertises.
-  const signable = helpers.offeredJwsAlgs(INTROSPECTION_SIGNING_ALGS);
+  // (helpers.offeredJwsAlgs(), 2026-10-23) — what discovery advertises —
+  // and without EdDSA while `keys.eddsaSigning` is off (#1292).
+  const signable = helpers.signableJwsAlgs(INTROSPECTION_SIGNING_ALGS);
   if (sign && signable.indexOf(sign) < 0) {
     log.debug("Leaving introspectionResponseProblem(). Signing alg.");
     return refusal('introspection_signed_response_alg', '"' + sign + '" ' +
@@ -9256,8 +9259,9 @@ function jarmMetadataProblem(values) {
     }
   }
   const signAlg = String(asked.authorization_signed_response_alg || '').trim();
-  // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
-  const signable = helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23), and
+  // no EdDSA while `keys.eddsaSigning` is off (#1292).
+  const signable = helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   if (signAlg && signable.indexOf(signAlg) < 0) {
     log.debug("Leaving jarmMetadataProblem(). Signing alg.");
     return refusal(names[0], '"' + signAlg + '" is not an algorithm this ' +
@@ -9834,11 +9838,12 @@ function signedResponseAlgProblem(values) {
   log.debug("Entering signedResponseAlgProblem().");
   const asked = values || {};
   /** @type {Array<{ member: string, algs: string[] }>} */
-  // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23), and
+  // no EdDSA while `keys.eddsaSigning` is off (#1292).
   const algs = [{ member: 'id_token_signed_response_alg',
-                  algs: helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS) },
+                  algs: helpers.signableJwsAlgs(stsCrypto.JWS_SIGNING_ALGS) },
                 { member: 'userinfo_signed_response_alg',
-                  algs: helpers.offeredJwsAlgs(USERINFO_SIGNING_ALGS) }];
+                  algs: helpers.signableJwsAlgs(USERINFO_SIGNING_ALGS) }];
   for (let i = 0; i < algs.length; i++) {
     const value = asked[algs[i].member];
     if (value !== undefined && value !== null &&

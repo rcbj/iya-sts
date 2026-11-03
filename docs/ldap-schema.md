@@ -94,6 +94,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `title`, `employeeType`, `telephoneNumber`, `mobile`, `street`, `l`, `st`, `postalCode`, `c`, `postalAddress`, `o`, `ou`, `departmentNumber`, `employeeNumber`, `preferredLanguage`, `labeledURI`, `manager` | released as claims (`oid4vc/vc_claims.ts`) and mapped by SCIM (`scim/scim_map.ts`) |
 | `schacDateOfBirth`, `schacCountryOfCitizenship`, `schacPersonalTitle` | SCHAC names, released as `birthdate`, `nationalities`, `title` |
 | `salutation`, `birthFamilyName`, `birthGivenName`, `birthMiddleName`, `alsoKnownAs`, `placeOfBirthCountry`, `placeOfBirthRegion`, `placeOfBirthLocality` | this service's own, for Identity Assurance claims |
+| `schacGender`, `middleName`, `timeZone`, `pictureUrl`, `profileUrl` | the `profile` scope's `gender` (SCHAC, ISO/IEC 5218 codes, answered `male`, `female`, `not known` or `not applicable`), `middle_name`, `zoneinfo`, `picture` and `profile` (#1292); all but `schacGender` are this service's own |
 | `scimExternalId` | SCIM `externalId`, on people and groups |
 | `userPrincipalName` | read by certificate enrollment's smartcard-logon profile. Nothing in the service writes it; a client supplies it |
 | `pwdChangedTime`, `pwdHistory` | draft-behera password policy: when the password last changed, and earlier hashes for the history rule |

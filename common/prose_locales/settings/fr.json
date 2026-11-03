@@ -1379,6 +1379,14 @@
     "en": "68ffd5da182ec911",
     "text": "Indique si ce domaine signe, publie et vérifie les algorithmes JWS post-quantiques et composites (ML-DSA, SLH-DSA et les ML-DSA composites). **Activé par défaut.** Désactivé : aucune clé de signature post-quantique ne figure dans `/oauth2/jwks` ni dans le document DID (clés en attente, épinglées et de groupe de signataires comprises) ; aucun algorithme post-quantique ne figure dans une liste `*_alg_values_supported` ou `*_alg_values` des documents de découverte, du serveur d’autorisation, d’OpenID Federation, d’OpenID4VCI et d’OpenID4VP ; un JWS signé avec l’un d’eux est refusé partout où ce domaine en vérifie un ; un client ne peut pas en enregistrer un ; et une signature qui en exigerait encore un — pour un client enregistré pendant que ce paramètre était activé, ou une signature de message HTTP — est refusée plutôt que faite avec une clé que personne ne peut récupérer. Il existe pour les clients et les suites de tests dont les bibliothèques JOSE ne savent pas lire une clé AKP ou ne connaissent pas ces algorithmes, la suite de conformité OpenID parmi elles. **Inchangés :** COSE (clés d’accès), les signatures XML, TLS, les algorithmes de certificat, les clés de chiffrement ML-KEM (`keys.encryptionKemAlgs`), la clé alternative ML-DSA qu’un certificat `hybrid-groups` porte dans `x5c` (les clés ML-DSA nues sont retirées, les certificats ne sont pas réémis), et `oidfed.signingAlg` : un domaine qui nomme une clé de fédération ML-DSA continue d’en signer ses déclarations mais refuse une déclaration ML-DSA qu’on lui demande de vérifier, alors gardez ce paramètre classique ici."
   },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "Signature EdDSA"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "d14784fabbda974e",
+    "text": "Indique si ce domaine signe avec EdDSA (RFC 8037, Ed25519 et Ed448) les objets JOSE dont un client a choisi l’algorithme, et publie ses clés de signature kty OKP. **Désactivé par défaut**, car la suite de conformité OpenID ne sait pas analyser une clé OKP dans un JWKS, et c’est elle que la certification OpenID Connect exécute. Désactivé : aucune clé de signature OKP dans `/oauth2/jwks` (clés en attente, épinglées et de groupe de signataires comprises) ; EdDSA ne figure pas dans `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported` ; un client ne peut ni enregistrer ni se voir attribuer EdDSA pour une réponse ID Token, UserInfo, d’introspection ou JARM ; et une telle signature encore demandée — par un client enregistré pendant que ce réglage était activé, ou par un algorithme SSF, WS-Trust ou Provider Commands réglé sur EdDSA — est refusée plutôt que produite avec une clé que personne ne peut récupérer. **Inchangé :** l’EdDSA avec lequel un client signe (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) est toujours accepté et annoncé comme accepté ; un algorithme de jeton d’accès, de fédération ou de justificatif configuré par un opérateur (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, l’algorithme de justificatif d’OpenID4VCI) signe toujours, donc n’y configurez pas EdDSA lorsque ce réglage est désactivé ; le document DID, COSE, les signatures XML, DKIM et TLS ne relèvent pas de la publication JWKS JOSE. Activé : EdDSA est signé et publié comme l’indique `oauth2.eddsaCurve`."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Format du kid des jetons signés"
@@ -3994,6 +4002,14 @@
   "oauth2.keyBinding|description": {
     "en": "2394ee67a689920d",
     "text": "Applique OpenID Connect Key Binding 1.0 (#150). Activé : le document de découverte liste la portée `bound_key`, un client qui ne déclare aucune portée peut la demander, et une requête qui la demande doit indiquer `dpop_jkt` et utiliser le flux par code (refusée sinon, STS-OAUTH-0704 et 0705) ; l’ID Token nomme alors la clé DPoP (`cnf.jwk`, `typ: dpop+id_token`), la requête de jeton doit la prouver avec `c_s256`, et chaque actualisation doit venir de la même clé. **Désactivé, il n’existe pas, et le service est OpenID Connect Core seul** : `bound_key` n’est pas annoncée, une requête qui la porte n’est pas refusée — la portée est ignorée et non accordée, comme Core traite une portée sur laquelle un OP n’agit pas — et aucun ID Token n’est lié. Désactivez-le là où des parties de confiance demandent toutes les portées annoncées et ignorent tout de Key Binding (#315). Une autorisation déjà liée avant la désactivation garde la vérification de sa clé à l’actualisation."
+  },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "Claims des Enterprise Extensions dans chaque ID Token"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "Place `session_expiry` (la fin absolue de la session d’authentification unique, lorsque le jeton est émis sur une session) et `tenant` (l’identifiant de ce domaine) d’OpenID Connect Enterprise Extensions 1.0 dans CHAQUE ID Token (#148). **Désactivé par défaut :** chacun n’est placé dans un ID Token que lorsque le client le nomme dans le membre `id_token` d’une requête de claims d’OpenID Connect Core 5.5, car un claim que personne n’a demandé est ce que signale la suite de conformité OpenID, et la certification OpenID Connect exécute cette suite. Les deux restent dans `claims_supported` dans tous les cas, et `aud_sub` n’est pas concerné (il ne figure dans un ID Token que lorsqu’un administrateur en a consigné un pour ce client)."
   },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",

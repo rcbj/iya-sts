@@ -256,7 +256,12 @@ const MAX_VALUE_LENGTH = 1024;
 const SINGLE_VALUED = ['displayname', 'employeenumber', 'preferredlanguage',
                        'c', 'schacdateofbirth', 'employeestatus',
                        'placeofbirthcountry', 'placeofbirthregion',
-                       'placeofbirthlocality'];
+                       'placeofbirthlocality',
+                       // #1292: SCHAC's gender is SINGLE-VALUE, and the
+                       // other four stand for one fact each, as the OpenID
+                       // Connect claim each becomes is one value.
+                       'schacgender', 'middlename', 'timezone',
+                       'pictureurl', 'profileurl'];
 
 // The shaped attributes, lower-cased name -> format. See the header.
 const FORMATS: Record<string, string> = {
@@ -265,6 +270,9 @@ const FORMATS: Record<string, string> = {
   schacdateofbirth: 'date',
   preferredlanguage: 'language',
   labeleduri: 'uri',
+  // #1292: an http(s) URL, as `labeledURI`; the OpenID Connect claim each
+  // becomes is a URL, so a label after it is not offered in the example.
+  pictureurl: 'uri', profileurl: 'uri',
   seealso: 'dn', manager: 'dn', secretary: 'dn'
 };
 
@@ -323,7 +331,8 @@ const FIELD_GROUPS = [
   { id: 'name', label: 'Name',
     what: 'What the person is called: the two names every person must hold ' +
           '(cn and sn), the parts of them, and the names they were known by.',
-    attributes: ['cn', 'sn', 'givenName', 'displayName', 'initials',
+    attributes: ['cn', 'sn', 'givenName', 'middleName', 'displayName',
+                 'initials', 'schacGender',
                  'schacPersonalTitle', 'salutation', 'alsoKnownAs',
                  'birthFamilyName', 'birthGivenName', 'birthMiddleName'] },
   { id: 'contact', label: 'Contact',
@@ -332,7 +341,7 @@ const FIELD_GROUPS = [
           'is marked verified and the former one is told.',
     attributes: ['telephoneNumber', 'mobile', 'homePhone', 'pager',
                  'facsimileTelephoneNumber', 'preferredLanguage',
-                 'labeledURI'] },
+                 'timeZone', 'labeledURI', 'profileUrl', 'pictureUrl'] },
   { id: 'organization', label: 'Organization',
     what: 'Where they sit in the organization.',
     attributes: ['title', 'o', 'ou', 'businessCategory', 'departmentNumber',
@@ -404,7 +413,10 @@ const FIELD_EXAMPLES: Record<string, string> = {
   seealso: 'cn=staff,ou=groups,dc=example,dc=com',
   internationalisdnnumber: '+1 555 0105', telexnumber: '123456 ACME US',
   teletexterminalidentifier: 'ACME-01', x121address: '31102100000123',
-  mail: 'alice@example.com'
+  mail: 'alice@example.com',
+  middlename: 'Jane', schacgender: '2', timezone: 'Europe/Stockholm',
+  pictureurl: 'https://example.com/~alice/photo.jpg',
+  profileurl: 'https://example.com/~alice/'
 };
 
 // WHAT THE SIMPLE VIEW OFFERS: the names, the address and the contact details

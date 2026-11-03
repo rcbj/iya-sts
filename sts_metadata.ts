@@ -2655,10 +2655,12 @@ const SPECS: Spec[] = [
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-enterprise-extensions-1_0.html',
     coverage: 'full (#148), in every mode. Section 2: session_expiry (the ' +
-              'session\'s absolute end, whenever a token is issued on a ' +
-              'session), tenant (the trust realm\'s id) and aud_sub (an ' +
+              'session\'s absolute end, when a token is issued on a ' +
+              'session) and tenant (the trust realm\'s id) in an ID Token ' +
+              'whose claims request names them, or in every one with ' +
+              'oauth2.enterpriseClaimsAlways (#1292), and aud_sub (an ' +
               'account id an administrator records per person per client, ' +
-              'console and /admin-api) in the ID Token and ' +
+              'console and /admin-api) in the ID Token; all three in ' +
               'claims_supported. Section 3: tenant refused as ' +
               'invalid_request when it names another realm; domain_hint ' +
               'sends the person to the federation relationship whose ' +

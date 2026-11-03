@@ -1379,6 +1379,14 @@
     "en": "68ffd5da182ec911",
     "text": "Om den här sfären signerar, publicerar och verifierar de postkvantsäkra och sammansatta JWS-algoritmerna (ML-DSA, SLH-DSA och de sammansatta ML-DSA-algoritmerna). **På som standard.** Av: ingen postkvantsäker signeringsnyckel finns i `/oauth2/jwks` eller i DID-dokumentet (vänte-, fästa och signerargruppsnycklar inräknade); ingen postkvantsäker algoritm finns i någon `*_alg_values_supported`- eller `*_alg_values`-lista i discovery-, auktoriseringsserver-, OpenID Federation-, OpenID4VCI- och OpenID4VP-dokumenten; en JWS signerad med en sådan vägras överallt där sfären verifierar en; en klient får inte registrera en; och en signatur som fortfarande skulle kräva en — för en klient som registrerades medan detta var på, eller en HTTP-meddelandesignatur — vägras i stället för att göras med en nyckel som ingen kan hämta. Den finns för klienter och testsviter vars JOSE-bibliotek inte kan tolka en AKP-nyckel eller inte känner till dessa algoritmer, bland dem OpenID-konformitetssviten. **Oförändrat:** COSE (passkeys), XML-signaturer, TLS, certifikatalgoritmer, ML-KEM-krypteringsnycklarna (`keys.encryptionKemAlgs`), den alternativa ML-DSA-nyckel som ett `hybrid-groups`-certifikat bär i `x5c` (de fristående ML-DSA-nycklarna tas bort, certifikaten utfärdas inte på nytt), och `oidfed.signingAlg`: en sfär som namnger en ML-DSA-federationsnyckel fortsätter att signera sina utsagor med den men vägrar en ML-DSA-utsaga som den ombeds verifiera, så behåll den inställningen klassisk här."
   },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "EdDSA-signering"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "d14784fabbda974e",
+    "text": "Om denna sfär signerar JOSE-objekt vars algoritm en klient valt med EdDSA (RFC 8037, Ed25519 och Ed448) och publicerar sina kty OKP-signeringsnycklar. **Av som standard**, eftersom OpenID:s konformitetssvit inte kan tolka en OKP-nyckel i en JWKS, och det är den som OpenID Connect-certifieringen kör. Av: ingen OKP-signeringsnyckel finns i `/oauth2/jwks` (reserv-, fästa och signerargruppsnycklar inräknade); EdDSA finns inte i `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` eller `authorization_signing_alg_values_supported`; en klient får inte registrera eller tilldelas EdDSA för ett ID Token-, UserInfo-, introspektions- eller JARM-svar; och en sådan signatur som ändå begärs — av en klient registrerad medan detta var på, eller av en SSF-, WS-Trust- eller Provider Commands-algoritm satt till EdDSA — nekas i stället för att göras med en nyckel som ingen kan hämta. **Oförändrat:** EdDSA som en klient signerar med (klientpåståenden, DPoP-bevis, begäranobjekt, plånboksbevis) accepteras fortfarande och annonseras som accepterat; en algoritm för åtkomsttoken, federation eller autentiseringsuppgift som en operatör konfigurerar (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, OpenID4VCI:s algoritm för autentiseringsuppgifter) signerar fortfarande, så konfigurera inte EdDSA där med detta av; DID-dokumentet, COSE, XML-signaturer, DKIM och TLS är inte JOSE JWKS-publicering. På: EdDSA signeras och publiceras som `oauth2.eddsaCurve` anger."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "kid-format för signerade tokener"
@@ -3994,6 +4002,14 @@
   "oauth2.keyBinding|description": {
     "en": "2394ee67a689920d",
     "text": "Utför OpenID Connect Key Binding 1.0 (#150). På: discovery-dokumentet listar scopet `bound_key`, en klient som inte deklarerar några scopes får be om det, och en begäran om det måste ange `dpop_jkt` och använda kodflödet (avvisas annars, STS-OAUTH-0704 och 0705); ID-tokenet namnger då DPoP-nyckeln (`cnf.jwk`, `typ: dpop+id_token`), tokenbegäran måste bevisa den med `c_s256`, och varje förnyelse måste komma från samma nyckel. **Av finns det inte, och tjänsten är enbart OpenID Connect Core**: `bound_key` annonseras inte, en begäran som innehåller det avvisas inte — scopet ignoreras och beviljas inte, så som Core behandlar ett scope en OP inte agerar på — och inget ID-token binds. Stäng av det där förlitande parter begär varje annonserat scope och inte känner till Key Binding (#315). Ett beviljande som redan var bundet innan det stängdes av behåller sin nyckelkontroll vid förnyelse."
+  },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "Enterprise Extensions-claims i varje ID Token"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "Lägg OpenID Connect Enterprise Extensions 1.0:s `session_expiry` (inloggningssessionens absoluta slut, när token utfärdas på en) och `tenant` (denna sfärs id) i VARJE ID Token (#148). **Av som standard:** var och en läggs i en ID Token bara när klienten namnger den i `id_token`-medlemmen i en claims-begäran enligt OpenID Connect Core 5.5, eftersom en claim som ingen begärt är vad OpenID:s konformitetssvit rapporterar, och OpenID Connect-certifieringen kör den sviten. Båda finns kvar i `claims_supported` i vilket fall som helst, och `aud_sub` påverkas inte (den finns i en ID Token bara där en administratör registrerat en för den klienten)."
   },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",

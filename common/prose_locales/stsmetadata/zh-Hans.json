@@ -504,8 +504,8 @@
     "text": "full（#151），作为 OpenID 提供方，在 oauth2.providerCommands 开启时（默认关闭）：注册 command_endpoint（DCR、控制台、API；https，不带片段）；命令令牌类型为 command+jwt，签名方式与客户端的 ID 令牌相同，有效期最长两分钟，每个命令带第 5 节的声明（sub 仅出现在账户命令中，metadata 仅出现在 metadata 中，authentication_provider 仅出现在 migrate 中，从不带 nonce；tenant 为领域 id；aud_sub 会发送并学习）；全部十个账户命令及其 _async 变体，经由共享的持久出站队列发送，读取第 3 节的应答和错误；metadata 记录每个依赖方所支持的内容；五个流式租户命令以 Server-Sent Events 形式读取，并用 Last-Event-ID 恢复；用于异步结果、metadata 和 audit_tenant 请求的回调端点；按依赖方的账户状态登记册；在目录变更和全局注销时自动发送 suspend、reactivate、delete、maintain 和 invalidate，只发往列出了该命令的依赖方。测试对端（tests/peer/）扮演一个应答每个命令的依赖方。缺失：作为其他 OP 的依赖方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full（#148），在每种模式下。第 2 节：ID 令牌和 claims_supported 中的 session_expiry（会话的绝对结束时间，每当基于会话签发令牌时）、tenant（信任领域的 id）和 aud_sub（管理员按人按客户端记录的账户 id，在控制台和 /admin-api 上）。第 3 节：tenant 指明其他领域时以 invalid_request 拒绝；domain_hint 将此人引导到其 fedHomeRealmDomain 包含该域的联合关系。第 4 节：门户的第三方发起登录会添加 tenant、domain_hint 和 target_link_uri。缺失：从客户端学习的 aud_sub，这将随 OpenID Provider Commands 一起到来（#151）。"
+    "en": "e8438c20973c8485",
+    "text": "full（#148），在每种模式下。第 2 节：session_expiry（会话的绝对结束时间，在基于会话签发令牌时）和 tenant（信任领域的 id）出现在其 claims 请求点名它们的 ID 令牌中，或在 oauth2.enterpriseClaimsAlways 开启时出现在每个 ID 令牌中（#1292）；aud_sub（管理员按人按客户端记录的账户 id，在控制台和 /admin-api 上）出现在 ID 令牌中；三者都在 claims_supported 中。第 3 节：tenant 指明其他领域时以 invalid_request 拒绝；domain_hint 将此人引导到其 fedHomeRealmDomain 包含该域的联合关系。第 4 节：门户的第三方发起登录会添加 tenant、domain_hint 和 target_link_uri。缺失：从客户端学习的 aud_sub，这将随 OpenID Provider Commands 一起到来（#151）。"
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",

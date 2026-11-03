@@ -346,6 +346,49 @@ const VC_ATTRIBUTES: CatalogueRow[] = [
   { ldap: 'labeledURI', claim: ['website'], label: 'Web page',
     // RFC 2079's sections are unnumbered, so there is no `2` to cite.
     schema: 'RFC 2079', from: 'website', ldpTerm: null, byDefault: false },
+  // THE `profile` SCOPE'S LAST FIVE CLAIMS (#1292, 2026-11-03). OpenID
+  // Connect Core 5.4 lists fourteen claims under `profile`, and this
+  // catalogue answered nine: `middle_name`, `profile`, `picture`, `gender`
+  // and `zoneinfo` were in `claims_supported` with nothing behind them, so
+  // the OpenID conformance suite warned that the scope's claims were
+  // missing from UserInfo and from an implicit ID Token
+  // (VerifyScopesReturnedInUserInfoClaims, …InAuthorizationEndpointIdToken:
+  // it wants EVERY claim of a granted scope, whatever claims_supported
+  // says), and rcbj's instruction for certification was the default that
+  // passes. SCHAC's `schacGender` is the one standard type among them; the
+  // other four are this service's own, as #128's are, because inetOrgPerson
+  // defines no middle name, no time zone and no URL attribute but
+  // `labeledURI` (already `website`) — `jpegPhoto` is the photograph, not a
+  // URL to one.
+  { ldap: 'middleName', claim: ['middle_name'], label: 'Middle name',
+    schema: "this service's own (no standard type)", from: 'middle',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'schacGender', claim: ['gender'], label: 'Gender',
+    schema: 'SCHAC 1.5.0 (not RFC 4519)', from: 'gender', ldpTerm: null,
+    byDefault: false,
+    // ISO/IEC 5218 in the directory (SCHAC's syntax), OIDC Core 5.1's
+    // `female` / `male` in the claim, and the standard's own words for its
+    // other two codes, which Core 5.1 allows ("other values MAY be used").
+    // Any other value is passed through unchanged.
+    toClaim: function (value) {
+      helpers.log.debug("Entering toClaim().");
+      const named: Record<string, string> = { '0': 'not known', '1': 'male',
+                                              '2': 'female',
+                                              '9': 'not applicable' };
+      const code = String(value).trim();
+      helpers.log.debug("Leaving toClaim().");
+      return Object.prototype.hasOwnProperty.call(named, code)
+        ? named[code] : String(value);
+    } },
+  { ldap: 'timeZone', claim: ['zoneinfo'], label: 'Time zone',
+    schema: "this service's own (no standard type)", from: 'zoneinfo',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'pictureUrl', claim: ['picture'], label: 'Picture URL',
+    schema: "this service's own (no standard type)", from: 'picture',
+    ldpTerm: null, byDefault: false },
+  { ldap: 'profileUrl', claim: ['profile'], label: 'Profile page URL',
+    schema: "this service's own (no standard type)", from: 'profile',
+    ldpTerm: null, byDefault: false },
   { ldap: 'description', claim: ['description'], label: 'Description',
     schema: 'RFC 4519 2.5', from: null, ldpTerm: null, byDefault: false },
   { ldap: 'employeeStatus', claim: ['employee_status'],
@@ -496,6 +539,14 @@ const UNITS = ['Engineering', 'Operations', 'Research', 'Support', 'Security'];
 const EMPLOYEE_TYPES = ['Full time', 'Contractor', 'Intern', 'Part time'];
 const EMPLOYEE_STATUSES = ['Active', 'On leave', 'Probation'];
 const LOCALES = ['en-US', 'en-GB', 'sv-SE', 'ja-JP', 'pt-BR', 'nl-NL'];
+// The IANA time zones of those locales (#1292), drawn independently: an
+// invented person is not obliged to live where their language is spoken.
+const TIME_ZONES = ['America/New_York', 'Europe/London', 'Europe/Stockholm',
+                    'Asia/Tokyo', 'America/Sao_Paulo', 'Europe/Amsterdam'];
+// ISO/IEC 5218's codes, which `schacGender` holds (#1292): 1 male, 2 female,
+// 9 not applicable. 0 (not known) is never invented — an invented person
+// is known, by definition.
+const GENDER_CODES = ['2', '1', '2', '1', '9'];
 // example.com, example.org and example.net are reserved for exactly this by
 // RFC 2606, so an invented address cannot be somebody's real mailbox.
 const MAIL_DOMAINS = ['example.com', 'example.org', 'example.net'];
@@ -983,7 +1034,16 @@ class VcClaims {
       // Drawn LAST (#128), so every value above is what it was for every
       // person before these two existed.
       honorific: this.pick(random, HONORIFICS),
-      salutation: this.pick(random, SALUTATIONS)
+      salutation: this.pick(random, SALUTATIONS),
+      // Drawn LAST again (#1292), after the two above, so nothing drawn
+      // before them changes: the `profile` scope's last five claims.
+      middle: this.pick(random, GIVEN_NAMES),
+      gender: this.pick(random, GENDER_CODES),
+      zoneinfo: this.pick(random, TIME_ZONES),
+      picture: 'https://www.example.com/~' + username.toLowerCase() +
+               '/photo.jpg',
+      profile: 'https://www.example.com/~' + username.toLowerCase() +
+               '/profile'
     };
     log.debug("Leaving VcClaims.personaFor(). " + username + " is " +
               persona.display +
