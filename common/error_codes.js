@@ -3382,6 +3382,15 @@ const CODES = [
     summary: 'A WS-Security signature\'s KeyInfo names its certificate in no ' +
       'form of the X.509 Token Profile 1.1 this service reads (#521).',
     spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
+  { code: 'STS-KEYS-0165',
+    summary: 'An EdDSA signature through helpers.signJwtAs() (an ID ' +
+      'Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust ' +
+      'or Provider Commands token) was asked of a realm whose ' +
+      'keys.eddsaSigning is off — a client registered for EdDSA while it ' +
+      'was on, or a setting naming EdDSA — and was refused rather than ' +
+      'made with a key the realm does not publish (#1292).',
+    spec: 'the caller\'s: the response that needed the signature fails as ' +
+      'it does for an algorithm this realm holds no key for' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

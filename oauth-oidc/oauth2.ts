@@ -2399,6 +2399,9 @@ class OAuth2Server {
     // the JWKS and the verifiers apply. Before the profile, as the two modes
     // above are, for the reason given below.
     helpers.withoutPqSigningAlgs(metadata);
+    // `keys.eddsaSigning` off (#1292, the default): EdDSA out of the lists
+    // of what this realm SIGNS, as the JWKS leaves its OKP keys out.
+    helpers.withoutEddsaSigningAlgs(metadata);
     // The PROFILE, last, so it can override anything above it — including what
     // RFC 9700 mode just narrowed. That order is deliberate and it is the one a
     // reader of the form expects: a profile is somebody saying "publish this",
@@ -3350,6 +3353,9 @@ class OAuth2Server {
     // UserInfo and request object lists among them — are narrowed here,
     // before the profile, as there.
     helpers.withoutPqSigningAlgs(metadata);
+    // And EdDSA out of the ID Token and UserInfo signing lists while
+    // `keys.eddsaSigning` is off (#1292).
+    helpers.withoutEddsaSigningAlgs(metadata);
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3504,7 +3510,14 @@ class OAuth2Server {
         // ML-DSA partner all leave together — filtering the finished list
         // rather than each source is what keeps a source added later from
         // being missed. The ML-KEM decryption keys stay (`use: "enc"`).
-        keys: helpers.withoutPqSigningKeys(joseKid.withThumbprintUriEntries([{
+        //
+        // **AND WITH `keys.eddsaSigning` OFF — THE DEFAULT SINCE #1292 — NO
+        // kty OKP SIGNING KEY**, by the same filter of the finished list:
+        // the OpenID conformance suite's nimbus throws on an Ed25519 or Ed448
+        // key in a rotated JWKS rather than skipping it, and OpenID Connect
+        // certification runs that suite.
+        keys: helpers.withoutEddsaSigningKeys(helpers.withoutPqSigningKeys(
+          joseKid.withThumbprintUriEntries([{
           kty: 'RSA', use: 'sig', kid: STS.kid,
           n: b64u(pub.n.toString(16)), e: b64u(pub.e.toString(16)),
           // **THE CHAIN AND NOT ONLY THE LEAF, SINCE 2026-09-11.** RFC 7517
@@ -3577,7 +3590,7 @@ class OAuth2Server {
         // one without the key.
           .concat(helpers.kemEncryptionKeysFor().map(function (one) {
             return stsCrypto.publicJweKemJwk(one.publicJwk);
-          })))
+          }))))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {

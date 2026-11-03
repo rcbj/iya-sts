@@ -3335,6 +3335,177 @@ function pqSignatureRefusal(alg) {
 }
 
 // ---------------------------------------------------------------------------
+// EdDSA JOSE SIGNING, SWITCHED OFF IN A REALM (#1292, 2026-11-03):
+// `keys.eddsaSigning`, OFF BY DEFAULT. The OpenID conformance suite's nimbus
+// throws `unknown key type 'OKP'` on an Ed25519 or Ed448 key in a JWKS
+// instead of skipping it (RFC 7517 section 5), and OpenID Connect
+// certification runs that suite, so by default this realm publishes no OKP
+// signing key and stops OFFERING EdDSA for what it signs.
+//
+// It mirrors the post-quantum switch above on the SIGNING side only, and
+// that difference is the decision: nimbus reads this realm's JWKS, never a
+// client's key, so an EdDSA client assertion, DPoP proof, request object or
+// wallet proof is still verified and still advertised as accepted. What is
+// narrowed is what THIS realm signs with for a client that chose the
+// algorithm — the ID Token, UserInfo, introspection and JARM responses:
+//
+//   signableJwsAlgs(list)            a list of algorithms this realm signs a
+//                                    client's response with, narrowed — for
+//                                    the four registration checks and the
+//                                    console's choices;
+//   withoutEddsaSigningAlgs(doc)     the four `*_signing_alg_values_supported`
+//                                    members that list what this realm
+//                                    signs, narrowed as the document leaves;
+//   withoutEddsaSigningKeys(jwks)    a JWK Set's keys without a kty OKP
+//                                    signing key, for `/oauth2/jwks`;
+//   eddsaSignatureRefusal(alg)       `signJwtAs()` and its asynchronous twin
+//                                    refuse an EdDSA signature
+//                                    (STS-KEYS-0165), which every response a
+//                                    client chose the algorithm of goes
+//                                    through.
+//
+// An algorithm an operator CONFIGURES (`signJwt()`'s `opts.algorithm`, the
+// federation key, the credential algorithm) is not refused: it is the
+// operator's choice, and the setting's row says not to make it EdDSA here.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm signs with EdDSA and publishes its OKP
+ * signing keys (`keys.eddsaSigning`, off by default).
+ *
+ * @returns true only when the setting is on
+ */
+function eddsaSigningOn() {
+  log.debug("Entering eddsaSigningOn().");
+  const on = config.value('keys.eddsaSigning') === true;
+  log.debug("Leaving eddsaSigningOn(). " + on);
+  return on;
+}
+
+/**
+ * Tells whether a JWS algorithm is an EdDSA one: RFC 8037's `EdDSA`, or the
+ * fully-specified `Ed25519` and `Ed448`.
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true for an EdDSA algorithm
+ */
+function isEddsaJwsAlg(alg) {
+  log.debug("Entering isEddsaJwsAlg().");
+  const name = String(alg);
+  const spec = Object.prototype.hasOwnProperty.call(stsCrypto.JWS_ALGS, name)
+    ? stsCrypto.JWS_ALGS[name] : null;
+  log.debug("Leaving isEddsaJwsAlg().");
+  return name === 'Ed25519' || name === 'Ed448' ||
+         (!!spec && spec.family === 'okp');
+}
+
+/**
+ * The JWS algorithms of `base` this realm signs a client's response with:
+ * `offeredJwsAlgs()`, less EdDSA while `keys.eddsaSigning` is off.
+ *
+ * @param base - the list to narrow; `JWS_SIGNING_ALGS` by default
+ * @returns the narrowed list, a new array
+ */
+function signableJwsAlgs(base) {
+  log.debug("Entering signableJwsAlgs().");
+  const on = eddsaSigningOn();
+  const out = offeredJwsAlgs(base).filter(function (alg) {
+    return on || !isEddsaJwsAlg(alg);
+  });
+  log.debug("Leaving signableJwsAlgs(). " + out.length);
+  return out;
+}
+
+// The members of a metadata document that list what THIS realm signs: the
+// ID Token (OpenID Connect Discovery), UserInfo (the same), introspection
+// (RFC 9701) and the authorization response (JARM). Every other
+// `*_alg_values_supported` member lists what this realm ACCEPTS, which the
+// switch does not touch.
+const OWN_SIGNING_ALG_MEMBERS = ['id_token_signing_alg_values_supported',
+  'userinfo_signing_alg_values_supported',
+  'introspection_signing_alg_values_supported',
+  'authorization_signing_alg_values_supported'];
+
+/**
+ * Narrows the members of a metadata document that list what this realm
+ * signs (`OWN_SIGNING_ALG_MEMBERS`) to leave EdDSA out while
+ * `keys.eddsaSigning` is off. Top-level members only, replaced rather than
+ * edited, so a module's constant list is never changed.
+ *
+ * @param doc - the document
+ * @returns the same document
+ */
+function withoutEddsaSigningAlgs(doc) {
+  log.debug("Entering withoutEddsaSigningAlgs().");
+  if (!doc || typeof doc !== 'object' || eddsaSigningOn()) {
+    log.debug("Leaving withoutEddsaSigningAlgs(). Unchanged.");
+    return doc;
+  }
+  OWN_SIGNING_ALG_MEMBERS.forEach(function (name) {
+    if (Array.isArray(doc[name])) {
+      doc[name] = doc[name].filter(function (one) {
+        return typeof one !== 'string' || !isEddsaJwsAlg(one);
+      });
+    }
+  });
+  log.debug("Leaving withoutEddsaSigningAlgs(). Narrowed.");
+  return doc;
+}
+
+/**
+ * A JWK Set's keys without an EdDSA signing key while `keys.eddsaSigning`
+ * is off: a kty OKP key that is not marked `use: "enc"`, or a key whose
+ * `alg` is an EdDSA one.
+ *
+ * @param keys - the public JWKs
+ * @returns the keys to publish
+ */
+function withoutEddsaSigningKeys(keys) {
+  log.debug("Entering withoutEddsaSigningKeys().");
+  if (eddsaSigningOn()) {
+    log.debug("Leaving withoutEddsaSigningKeys(). Unchanged.");
+    return keys;
+  }
+  const out = (keys || []).filter(function (jwk) {
+    return !(jwk && ((jwk.kty === 'OKP' && jwk.use !== 'enc') ||
+                     isEddsaJwsAlg(jwk.alg)));
+  });
+  log.debug("Leaving withoutEddsaSigningKeys(). " + out.length + " of " +
+            (keys || []).length + ".");
+  return out;
+}
+
+// Said once per realm, as `pqSignatureRefusal()` is, because the cause is a
+// registration made while the setting was on, not the request.
+const eddsaSignaturesRefusedSaid = new Set();
+
+/**
+ * The refusal of an EdDSA signature a client chose, in a realm with
+ * `keys.eddsaSigning` off, or null.
+ *
+ * @param alg - the JWS algorithm
+ * @returns an Error marked STS-KEYS-0165, or null
+ */
+function eddsaSignatureRefusal(alg) {
+  log.debug("Entering eddsaSignatureRefusal(). alg=" + alg);
+  if (!isEddsaJwsAlg(alg) || eddsaSigningOn()) {
+    log.debug("Leaving eddsaSignatureRefusal(). Allowed.");
+    return null;
+  }
+  const realmId = String(realms.currentId());
+  if (!eddsaSignaturesRefusedSaid.has(realmId)) {
+    eddsaSignaturesRefusedSaid.add(realmId);
+    log.warn(errorCodes.tag('STS-KEYS-0165') + 'helpers: the "' + realmId +
+             '" realm was asked for an ' + alg + ' signature while ' +
+             'keys.eddsaSigning is off there, and refused it; a client ' +
+             'registered while it was on still names EdDSA.');
+  }
+  log.debug("Leaving eddsaSignatureRefusal(). Refused.");
+  return errorCodes.mark(new Error('this realm does not sign with ' + alg +
+    ': keys.eddsaSigning is off, so it publishes no EdDSA key to verify ' +
+    'the signature with.'), 'STS-KEYS-0165');
+}
+
+// ---------------------------------------------------------------------------
 // THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
 // WRITTEN BEFORE THEY EXISTED (2026-09-13). `refreshTokenKeysFor()` above, step
 // for step: ask whether some process already made them, make them in the set's
@@ -7738,6 +7909,12 @@ function signJwtAs(payload, alg, secret, opts) {
     return stsCrypto.signJws(payload, secret,
                              { algorithm: alg, header: options.header });
   }
+  // EdDSA in a realm that publishes no EdDSA key (#1292, keys.eddsaSigning).
+  const eddsaRefused = eddsaSignatureRefusal(alg);
+  if (eddsaRefused) {
+    log.debug("Leaving signJwtAs(). EdDSA signing is off.");
+    throw eddsaRefused;
+  }
   const signer = signingKeyFor(alg, options.certificateHeader);
   log.debug("Leaving signJwtAs(). " + alg + ".");
   return stsCrypto.signJws(payload, signer.key,
@@ -7787,6 +7964,12 @@ function signJwtAsAsync(payload, alg, secret, opts) {
       log.debug("Leaving signJwtAsAsync(). Refused.");
       return Promise.reject(e);
     }
+  }
+  // See signJwtAs() (#1292, keys.eddsaSigning).
+  const eddsaRefused = eddsaSignatureRefusal(alg);
+  if (eddsaRefused) {
+    log.debug("Leaving signJwtAsAsync(). EdDSA signing is off.");
+    return Promise.reject(eddsaRefused);
   }
   log.debug("Leaving signJwtAsAsync(). " + alg + ".");
   return signingKeyForAsync(alg, options.certificateHeader)
@@ -8791,6 +8974,11 @@ module.exports = {
   offeredJwsAlgs: offeredJwsAlgs,
   withoutPqSigningAlgs: withoutPqSigningAlgs,
   withoutPqSigningKeys: withoutPqSigningKeys,
+  eddsaSigningOn: eddsaSigningOn,
+  isEddsaJwsAlg: isEddsaJwsAlg,
+  signableJwsAlgs: signableJwsAlgs,
+  withoutEddsaSigningAlgs: withoutEddsaSigningAlgs,
+  withoutEddsaSigningKeys: withoutEddsaSigningKeys,
   browserDeviceKeysFor: browserDeviceKeysFor,
   vcApiKeysFor: vcApiKeysFor,
   vcApiKeyFor: vcApiKeyFor,

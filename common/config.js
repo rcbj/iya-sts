@@ -3564,6 +3564,51 @@ const SETTINGS = [
                  'names an ML-DSA federation key keeps signing its ' +
                  'statements with it but refuses an ML-DSA statement it is ' +
                  'asked to verify, so leave that setting classical here.' },
+  // EdDSA JOSE SIGNING AS A SWITCH (#1292, 2026-11-03, rcbj: "make the
+  // default be whatever passes OIDC conformance"). The OpenID conformance
+  // suite's nimbus throws `unknown key type 'OKP'` on an Ed25519 or Ed448
+  // key in a rotated JWKS (`oidcc-server-rotate-keys`) instead of skipping a
+  // key type it does not know, so the default PUBLISHES NO OKP SIGNING KEY.
+  // Unlike `keys.postQuantumSigning` it is about what this realm SIGNS WITH
+  // and publishes, never about what it accepts: a client's own EdDSA key
+  // (a client assertion, a DPoP proof, a request object, a wallet's proof)
+  // is the client's, nimbus never reads it, and refusing it would refuse
+  // conforming clients for nothing. `common/helpers.js`'s
+  // `eddsaSigningOn()` is the one reader, and `common/CLAUDE.md` (*EdDSA
+  // JOSE SIGNING AS A PER-REALM SWITCH*) says where each piece is.
+  { key: 'keys.eddsaSigning', group: 'Key material',
+    label: 'EdDSA signing',
+    path: 'keys.eddsaSigning', env: 'STS_KEYS_EDDSA_SIGNING',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether this realm signs JOSE objects a client chose the ' +
+                 'algorithm of with EdDSA (RFC 8037, Ed25519 and Ed448) and ' +
+                 'publishes its kty OKP signing keys. **Off by default**, ' +
+                 'because the OpenID conformance suite cannot parse an OKP ' +
+                 'key in a JWKS and that is what OpenID Connect ' +
+                 'certification runs. Off: no OKP signing key is in ' +
+                 '`/oauth2/jwks` (standby, pinned and signer-group keys ' +
+                 'included); EdDSA is not in ' +
+                 '`id_token_signing_alg_values_supported`, ' +
+                 '`userinfo_signing_alg_values_supported`, ' +
+                 '`introspection_signing_alg_values_supported` or ' +
+                 '`authorization_signing_alg_values_supported`; a client ' +
+                 'may not register or be given EdDSA for an ID Token, ' +
+                 'UserInfo, introspection or JARM response; and such a ' +
+                 'signature still asked for — by a client registered while ' +
+                 'this was on, or by an SSF, WS-Trust or Provider Commands ' +
+                 'algorithm set to EdDSA — is refused rather than made ' +
+                 'with a key nobody can fetch. **Not changed:** EdDSA a ' +
+                 'client signs ' +
+                 'with (client assertions, DPoP proofs, request objects, ' +
+                 'wallet proofs) is still accepted and advertised as ' +
+                 'accepted; an access-token, federation or credential ' +
+                 'algorithm an operator configures ' +
+                 '(`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, ' +
+                 'OpenID4VCI\'s credential algorithm) still signs, so do ' +
+                 'not configure EdDSA there with this off; the DID ' +
+                 'document, COSE, XML signatures, DKIM and TLS are not ' +
+                 'JOSE JWKS publication. On: EdDSA is signed and published ' +
+                 'as `oauth2.eddsaCurve` says.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
