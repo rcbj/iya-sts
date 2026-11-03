@@ -259,6 +259,20 @@ const STYLE =
   // third of the width for the first cell is simply wrong.
   '.grid th{width:auto;color:#555}' +
   '.grid td strong{display:block}' +
+  // SECURITY ACTIVITY'S PAYLOADS SCROLL IN THEIR OWN BOX. A signal's
+  // payload is whatever its transmitter sent and can be any size, and a
+  // table cell grows to fit its content, so one long line of JSON pushed the
+  // whole table past the card's edge. With a FIXED layout the columns keep
+  // the card's width, the two narrow ones wrap a long event type URI, and
+  // the payload scrolls inside a box of bounded size, sideways and down.
+  'table.grid.signals{table-layout:fixed}' +
+  'table.grid.signals th:nth-child(1){width:11em}' +
+  'table.grid.signals th:nth-child(2){width:30%}' +
+  'table.grid.signals td{overflow-wrap:anywhere;vertical-align:top}' +
+  'pre.signal-payload{overflow:auto;max-width:100%;max-height:24rem;' +
+  'white-space:pre;overflow-wrap:normal;background:#f7f7fb;' +
+  'border:1px solid #d5d5dd;border-radius:6px;padding:8px 10px;' +
+  'margin:6px 0;font-size:.85em}' +
   // THE APPLICATION'S NAME WHEN THERE IS SOMEWHERE TO GO, and when there is
   // not. The grey is the whole of what tells a reader the difference at a
   // glance, so it is a real colour change rather than the link colour with the

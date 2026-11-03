@@ -470,7 +470,8 @@ class OverviewPages {
         '</a>' + t.html('portal.signals.incompleteAfter') + '</p></div>'
       : '';
     const list = rows.length
-      ? '<table class="grid"><tr><th>' + t.html('portal.signals.when') +
+      ? '<table class="grid signals"><tr><th>' +
+        t.html('portal.signals.when') +
         '</th><th>' + t.html('portal.signals.what') + '</th><th>' +
         t.html('portal.signals.detail') + '</th></tr>' +
         rows.map(function (row: Json): string {
@@ -481,7 +482,8 @@ class OverviewPages {
             esc(row.type || '') + '</span></td><td>' +
             (Object.keys(payload).length
               ? '<details><summary>' + t.html('portal.signals.details',
-                  { n: Object.keys(payload).length }) + '</summary><pre>' +
+                  { n: Object.keys(payload).length }) + '</summary>' +
+                '<pre class="signal-payload">' +
                 esc(JSON.stringify(payload, null, 2)) + '</pre></details>'
               : '<span class="ident">' +
                 t.html('portal.signals.nothingMore') + '</span>') +
