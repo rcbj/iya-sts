@@ -4710,6 +4710,45 @@ const SETTINGS = [
                  'rather than of a request.' },
 
   // ---------------------------------------------------------------------
+  // RFC 9700 SECTION 2.1.2 WAIVED BY AN ADMINISTRATOR (#1295, rcbj's
+  // decision, 2026-11-03).
+  //
+  // Product mode implies RFC 9700 mode and no realm can turn that mode off
+  // (`common/mode.js`, `enforcesOauthSecurityBcp()`), so a product deployment
+  // could not be certified for the OpenID Connect Implicit, Hybrid and
+  // Dynamic OP profiles: they need `id_token token`, `code token` and `code
+  // id_token token`, which section 2.1.2's `no-implicit` refuses. That row is
+  // a SHOULD NOT — the one requirement of the mode an operator may knowingly
+  // decline — so this row waives IT and nothing else, per realm, and only an
+  // administrator can set it (every config write is). OAuth 2.1 removes the
+  // implicit grant outright (a MUST, not a SHOULD NOT) and a FAPI profile is
+  // a stricter profile layered on the mode, so `oauth2_bcp.js`'s
+  // `implicitWaived()` ignores the row while either is in force.
+  //
+  // `runtime: true` because nothing is derived from it: `oauth2_bcp.js` reads
+  // it per request through the realm layer, and the discovery documents are
+  // built per request.
+  { key: 'oauth2.allowImplicitTokenResponses', group: 'OAuth 2.0 / OIDC',
+    label: 'Allow token response types under RFC 9700',
+    env: 'STS_OAUTH2_ALLOW_IMPLICIT_TOKEN_RESPONSES', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Waive RFC 9700 section 2.1.2 (no-implicit, a SHOULD NOT) ' +
+                 'where RFC 9700 mode is in force — which product mode ' +
+                 'always is. On, the response types that issue an access ' +
+                 'token from the authorization endpoint (token, id_token ' +
+                 'token, code token, code id_token token) are accepted at ' +
+                 'the authorization endpoint and at dynamic registration, ' +
+                 'and both discovery documents advertise them and the ' +
+                 'implicit grant. Every other RFC 9700 requirement, and the ' +
+                 'rest of product mode, stays in force, and GET ' +
+                 '/oauth2/rfc9700 and /admin/mode report the requirement as ' +
+                 'waived. It exists for the OpenID Connect Implicit, Hybrid ' +
+                 'and Dynamic OP profiles. NO EFFECT while OAuth 2.1 mode or ' +
+                 'a FAPI profile is on: OAuth 2.1 removes the implicit grant ' +
+                 'outright, and a FAPI profile is a stricter profile this ' +
+                 'setting does not loosen. OFF by default; set it per realm.' },
+
+  // ---------------------------------------------------------------------
   // OAUTH 2.1 MODE (2026-09-13), AND IT IMPLIES THE ROW ABOVE.
   //
   // `realmRuntime` ON A SECOND OAUTH ROW, AND THE ARGUMENT IS MADE HERE RATHER

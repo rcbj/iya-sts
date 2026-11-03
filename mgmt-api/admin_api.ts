@@ -3813,7 +3813,11 @@ class AdminApi {
                      '`isProduct`) and everything it decides: ' +
                      '`requirements` — each with `id`, `what`, the ' +
                      '`development` and `product` answers, `inForce` (the ' +
-                     'one this realm gives) and `where` it is implemented; ' +
+                     'one this realm gives) and `where` it is implemented ' +
+                     '(and, on `oauth-security-bcp`, `waived` — each RFC ' +
+                     '9700 requirement an administrator waived in this ' +
+                     'realm, with its `requirement`, `section`, `level` ' +
+                     'and the `setting` that waives it, #1295); ' +
                      '`developmentOnlySettings` — every setting whose row ' +
                      'is marked development-only, with `key`, `group`, the ' +
                      '`predicate` in common/mode.js that must answer yes, ' +

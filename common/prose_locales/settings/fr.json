@@ -1955,6 +1955,14 @@
     "en": "41a2ff91a0055e49",
     "text": "il décide si le port principal est lié en HTTPS (global.https), et un écouteur est lié au démarrage du processus. Un DOMAINE peut néanmoins le porter — un domaine ne lie aucun socket ; il répond donc dans le schéma avec lequel ce processus a démarré et seules les vérifications du mode changent"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "Autoriser les types de réponse à jeton sous RFC 9700"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "4e3ee63eb21efc37",
+    "text": "Lever la section 2.1.2 de la RFC 9700 (no-implicit, un SHOULD NOT) là où le mode RFC 9700 est en vigueur — ce qui est toujours le cas en mode product. Activé, les types de réponse qui émettent un jeton d’accès depuis le point de terminaison d’autorisation (token, id_token token, code token, code id_token token) sont acceptés au point de terminaison d’autorisation et à l’enregistrement dynamique, et les deux documents de découverte les annoncent ainsi que l’octroi implicite. Toutes les autres exigences de la RFC 9700, et le reste du mode product, restent en vigueur, et GET /oauth2/rfc9700 et /admin/mode signalent l’exigence comme levée. Il existe pour les profils OpenID Connect Implicit, Hybrid et Dynamic OP. SANS EFFET tant que le mode OAuth 2.1 ou un profil FAPI est actif : OAuth 2.1 supprime purement et simplement l’octroi implicite, et un profil FAPI est un profil plus strict que ce paramètre n’assouplit pas. DÉSACTIVÉ par défaut ; à régler par domaine."
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "Mode OAuth 2.1"

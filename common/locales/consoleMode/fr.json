@@ -26,5 +26,6 @@
   "thWhy": "Pourquoi",
   "anythingBut": "tout sauf ",
   "ignoredMark": " — ignoré",
-  "notYetHeading": "Ce que le mode product ne vérifie toujours pas"
+  "notYetHeading": "Ce que le mode product ne vérifie toujours pas",
+  "waivedBy": "LEVÉE DANS CE DOMAINE PAR UN ADMINISTRATEUR : <code>{requirement}</code> ({section}, un {level}), car <code>{setting}</code> est activé. Toutes les autres exigences de la BCP restent en vigueur."
 }

@@ -42,7 +42,9 @@ runs. On, the authorization flow is held to the whole of RFC 9700 section 2:
   requires one, in every mode, for the implicit flow and for the hybrid
   `code id_token` and `code id_token token` — and
   no response type that issues an access token from the authorization endpoint
-  (the implicit grant) is accepted.
+  (the implicit grant) is accepted — unless an administrator waived that one
+  requirement in the realm with `oauth2.allowImplicitTokenResponses` (see
+  *The implicit grant*, below).
 * **Authorization codes**: a repeated redemption is refused, and everything the
   code bought is revoked (section 4.5).
 * **Refresh tokens rotate** with replay detection. A replay revokes the whole
@@ -69,7 +71,7 @@ met.
 **Every refusal names RFC 9700 and the section.** `GET /oauth2/rfc9700`
 publishes the whole model: every requirement, its section and level, and
 whether it is *enforced*, only *detected*, *always* true here, a property of the
-*deployment*, or *not* enforced, with the reason. Read it rather than a copy.
+*deployment*, *waived* by an administrator, or *not* enforced, with the reason. Read it rather than a copy.
 
 Some requirements belong to the client, so they are **observed rather than
 refused**: a reused challenge, an unbound access token, a client using a
@@ -886,8 +888,36 @@ it on is refused (`STS-CORE-0103`).
 
 Any `response_type` naming `token` (`token`, `code token`, `id_token token`,
 `code id_token token`) is refused `unsupported_response_type`, and the metadata
-drops all four and the `implicit` grant type. `id_token` and `code id_token`
-remain, because they issue no access token from the authorization endpoint.
+drops all four. `id_token` and `code id_token` remain, because they issue no
+access token from the authorization endpoint — and so does the `implicit` grant
+type, which RFC 7591 section 2.1 and OpenID Connect Registration pair them with.
+Registration accepts `grant_types: ["implicit"]` beside `id_token` or
+`code id_token` and refuses it otherwise (#1295).
+
+**An administrator may waive this one requirement per realm.** Section 2.1.2 is
+a SHOULD NOT, and the OpenID Connect Implicit, Hybrid and Dynamic OP profiles
+need `id_token token`, `code token` and `code id_token token` — which product
+mode, implying this mode in every realm, otherwise refuses.
+`oauth2.allowImplicitTokenResponses` (off by default, runtime, settable on a
+trust realm) turns the four response types back on in that realm: accepted at
+the authorization endpoint and at registration, and advertised in both
+discovery documents with the `implicit` grant. **Nothing else changes** — PKCE,
+exact redirect matching, the nonce, no password grant, refresh rotation and the
+rest of product mode stay in force — and `GET /oauth2/rfc9700` reports the row
+`enforced: waived` with the setting named (its `waived` member lists it), as
+`/admin/mode` does under the BCP row. **It has no effect under OAuth 2.1 mode or
+a FAPI profile**: OAuth 2.1 removes the implicit grant outright, and a FAPI
+profile is a stricter profile the setting does not loosen.
+
+It is set like any setting — on the realm's `/admin/oauth2` page, or through
+the management API with an administrator's `/admin-api` token, inside the realm
+(see [Changing one at runtime](configuration.md#changing-one-at-runtime)):
+
+```bash
+curl -s -X POST https://sts.example/realm/certification/admin-api/config/set \
+  -H 'content-type: application/json' \
+  -d '{"key":"oauth2.allowImplicitTokenResponses","value":true}'
+```
 
 ### Refresh tokens (section 2.2.2)
 
@@ -941,7 +971,9 @@ and cannot carry a second factor. In this mode `grant_type=password` is
 documents, and **`POST /oauth2/register` refuses to register a client for it**
 (`invalid_client_metadata`, RFC 7591 section 3.2.2), so the client learns when it
 registers rather than at its first token request. The same registration check
-refuses `grant_types: ["implicit"]`, any `response_types` naming `token`, and an
+refuses `grant_types: ["implicit"]` unless `id_token` or `code id_token` is
+what it is for, any `response_types` naming `token` (both unless an
+administrator waived section 2.1.2, above), and an
 `http://` redirect URI off the loopback. Returning metadata silently different
 from what was asked, which RFC 7591 permits, would make a client compare the
 two documents field by field to notice.

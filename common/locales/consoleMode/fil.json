@@ -26,5 +26,6 @@
   "thWhy": "Bakit",
   "anythingBut": "kahit ano maliban sa ",
   "ignoredMark": " — binabalewala",
-  "notYetHeading": "Ang hindi pa rin sinusuri ng product mode"
+  "notYetHeading": "Ang hindi pa rin sinusuri ng product mode",
+  "waivedBy": "INALIS SA REALM NA ITO NG ISANG ADMINISTRATOR: <code>{requirement}</code> ({section}, isang {level}), dahil naka-on ang <code>{setting}</code>. Nananatiling ipinapatupad ang lahat ng iba pang kinakailangan ng BCP."
 }

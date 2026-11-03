@@ -177,9 +177,25 @@ runtime for its checks and restart-only for its socket would report the mode as
 on while every authorization response still went out over plain HTTP.
 
 What it does and does not enforce is published at `GET /oauth2/rfc9700`, row by
-row, with `enforced` as `yes`, `detected`, `always`, `deployment` or `no` — two
+row, with `enforced` as `yes`, `detected`, `always`, `deployment`, `waived`
+(below) or `no` — two
 requirements are `no` because they are the *client's* and nothing this server
 observes can tell a client that checks from one that does not.
+
+### `oauth2.allowImplicitTokenResponses` — the one requirement of the mode an administrator may waive
+
+Off by default. Product mode implies the mode above in every realm, and its
+section 2.1.2 refuses the response types that issue an access token from the
+authorization endpoint — which the OpenID Connect Implicit, Hybrid and Dynamic
+OP profiles need. Section 2.1.2 is a SHOULD NOT, so an administrator may waive
+it, **per realm and for that requirement alone**: `token`, `id_token token`,
+`code token` and `code id_token token` are then accepted and advertised, with
+the `implicit` grant, while PKCE, exact redirect matching, the nonce and the
+rest of the mode and of product mode stay in force. `GET /oauth2/rfc9700`
+reports the row `waived`, and `/admin/mode` shows it under the BCP row.
+**OAuth 2.1 mode and the FAPI profiles ignore it** — the first removes the
+implicit grant outright, and a FAPI profile is stricter than the mode it is
+layered on. See [the implicit grant](oauth-security.md#the-implicit-grant-section-212).
 
 ### `oauth2.oauth21` — OAuth 2.1, and it turns the mode above on
 
@@ -1640,6 +1656,7 @@ passwords.
 |---|---|---|---|---|
 | `oauth2.issuer` | `STS_OAUTH2_ISSUER` | *(empty)* | yes | The `issuer` in the RFC 8414 and OpenID Provider metadata, and the `iss` of every token signed here. |
 | `oauth2.rfc9700` | `STS_OAUTH2_RFC9700` | `false` | **restart** — it decides whether the main port is bound as HTTPS (global.https), and a listener is bound when the process starts. A **trust realm** may carry it even so: a realm binds no socket, so only the mode's checks change | Enforce RFC 9700 (OAuth 2.0 Security Best Current Practice) on the authorization flow: exact-string redirect URI matching with the loopback port exception, no open redirects, no http redirect URI off the loopback, PKCE required of public clients with S256 only, PKCE downgrade and value-reuse refused, a nonce required with any id_token, and no response type that issues an access token from the authorization endpoint. |
+| `oauth2.allowImplicitTokenResponses` | `STS_OAUTH2_ALLOW_IMPLICIT_TOKEN_RESPONSES` | `false` | yes | Waive RFC 9700 section 2.1.2 (`no-implicit`, a SHOULD NOT) where RFC 9700 mode is in force, as it always is in product mode: `token`, `id_token token`, `code token` and `code id_token token` are accepted at the authorization endpoint and at registration, and advertised with the `implicit` grant. Every other requirement stays in force. No effect under OAuth 2.1 mode or a FAPI profile. Set it per realm. |
 | `oauth2.oauth21` | `STS_OAUTH2_OAUTH21` | `false` | **restart** — it turns RFC 9700 mode on, which decides whether the main port is bound as HTTPS (global.https). A **trust realm** may carry it even so: a realm binds no socket | Enforce the OAuth 2.1 Authorization Framework (draft-ietf-oauth-v2-1-16, still an Internet-Draft). It turns RFC 9700 mode on and adds PKCE for confidential clients (unless one relies on the OpenID Connect nonce), `code_challenge_method` required, a client that registered its own redirect URI (`oauth2.redirectUris` is not read), a token request naming an undeclared client refused, a presented credential that must verify, one authentication method per request, client credentials for authenticated clients only, a JWT client assertion addressed to the issuer alone, no SAML client authentication, no repeated parameters, a ten-minute code and `error_description`'s grammar. A token request may omit `redirect_uri`, and an authorization request may omit it when the client registered one. `GET /oauth2/oauth21` lists every requirement. |
 | `oauth2.fapi` | `STS_OAUTH2_FAPI` | `off` | **restart** — a profile turns RFC 9700 mode on, which decides whether the main port is bound as HTTPS (global.https). A **trust realm** may carry it even so, and so may a **named authorization server** (its `fapi` member, or `off` to opt out) | A FAPI security profile. `1-baseline` is FAPI 1.0 Part 1 (final): RFC 9700 mode on, and beyond it confidential clients authenticating with mTLS, `private_key_jwt` or `client_secret_jwt` (the secret methods refused at registration, the token and PAR endpoints), RSA keys of 2048 bits and EC keys of 160, PKCE S256 for every client, `redirect_uri` sent and https, `nonce` with `openid` and `state` without it, the person's own consent (a global consent does not count), one client per request, and unbound access tokens of at most 600 seconds. `1-advanced` is FAPI 1.0 Part 2 (final) on top: a signed request object (`exp` and `nbf` within 60 minutes, `aud` the issuer), `code id_token` or `code` with JARM, sender-constrained access tokens only, `tls_client_auth`, `self_signed_tls_client_auth` or `private_key_jwt` and no public client, PS256 or ES256 for every signature, and PKCE only for pushed requests. `2-security` is the FAPI 2.0 Security Profile (final), a profile of its own: confidential clients by mTLS or `private_key_jwt`, sender-constrained tokens by mTLS or DPoP, PAR required, `code` only, PKCE S256, codes of 60 seconds, request_uris under 600, no refresh-token rotation unless `oauth2.refreshTokenRotation` forces it, an `iat`/`nbf` over 60 seconds ahead refused, and PS256, ES256 or EdDSA. `2-message-signing` is FAPI 2.0 Message Signing (final) on top: a JAR-signed request object required at PAR (`exp`/`nbf` within 60 minutes, `aud` the issuer), JARM required, and signed RFC 9701 introspection responses. `GET /oauth2/fapi` lists every requirement. |
 | `oauth2.fapiRequireMtls` | `STS_OAUTH2_FAPI_REQUIRE_MTLS` | `false` | yes | Under `oauth2.fapi=1-advanced`, accept only a TLS client certificate (RFC 8705) as the sender constraint. Off, a DPoP-bound token counts too. |

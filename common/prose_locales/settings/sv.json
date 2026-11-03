@@ -1955,6 +1955,14 @@
     "en": "41a2ff91a0055e49",
     "text": "det avgör om huvudporten binds som HTTPS (global.https), och en lyssnare binds när processen startar. En SFÄR kan ändå bära det — en sfär binder ingen socket, så den svarar med det schema som processen startades med och bara lägets kontroller ändras"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "Tillåt svarstyper med token under RFC 9700"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "4e3ee63eb21efc37",
+    "text": "Gör undantag från RFC 9700 avsnitt 2.1.2 (no-implicit, ett SHOULD NOT) där RFC 9700-läget gäller — vilket det alltid gör i läget product. På accepteras de svarstyper som utfärdar en åtkomsttoken från auktoriseringsslutpunkten (token, id_token token, code token, code id_token token) vid auktoriseringsslutpunkten och vid dynamisk registrering, och båda upptäcktsdokumenten annonserar dem och det implicita beviljandet. Alla andra krav i RFC 9700, och resten av läget product, gäller fortfarande, och GET /oauth2/rfc9700 och /admin/mode rapporterar kravet som undantaget. Den finns för profilerna OpenID Connect Implicit, Hybrid och Dynamic OP. INGEN VERKAN medan läget OAuth 2.1 eller en FAPI-profil är på: OAuth 2.1 tar bort det implicita beviljandet helt, och en FAPI-profil är en striktare profil som den här inställningen inte lättar på. AV som standard; ställs in per sfär."
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "OAuth 2.1-läge"

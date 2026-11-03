@@ -26,5 +26,6 @@
   "thWhy": "Por qué",
   "anythingBut": "cualquier cosa menos ",
   "ignoredMark": " — ignorado",
-  "notYetHeading": "Lo que el modo product todavía no comprueba"
+  "notYetHeading": "Lo que el modo product todavía no comprueba",
+  "waivedBy": "EXENTO EN ESTE DOMINIO POR UN ADMINISTRADOR: <code>{requirement}</code> ({section}, un {level}), porque <code>{setting}</code> está activado. Todos los demás requisitos de la BCP siguen en vigor."
 }

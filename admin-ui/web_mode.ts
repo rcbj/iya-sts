@@ -52,6 +52,30 @@ class ModePage {
   }
 
   /**
+   * Draws what an administrator waived of a requirement in this realm
+   * (#1295): a row under it per waiver, naming the requirement, its section
+   * and the setting that waives it — so the BCP row, which says what the
+   * mode enforces, is not read as the whole story. Nothing when nothing is
+   * waived.
+   *
+   * @param row - one row of the report's `requirements`
+   * @param t - the page's translator (#539)
+   * @returns the rows as HTML
+   */
+  static waived(row: Json, t: Json): string {
+    const list = Array.isArray(row.waived) ? row.waived : [];
+    return list.map(function (one: Json): string {
+      return '<tr class="waived" id="waived-' + WebKit.esc(row.id) + '-' +
+        WebKit.esc(one.requirement) + '"><td colspan="4">' +
+        WebKit.warn('<p>' + t.html('consoleMode.waivedBy', {
+          requirement: String(one.requirement || ''),
+          section: String(one.section || ''),
+          level: String(one.level || ''),
+          setting: String(one.setting || '') }) + '</p>') + '</td></tr>';
+    }).join('');
+  }
+
+  /**
    * Draws the page's body from the mode report.
    *
    * @param json - `GET /admin-api/mode`'s answer
@@ -109,7 +133,8 @@ class ModePage {
           WebKit.esc(row.what) + '<br><small><code>' + WebKit.esc(row.id) +
           '</code></small></th>' + cell(row.development, !product) +
           cell(row.product, product) + '<td><small>' +
-          WebKit.esc(row.where || '') + '</small></td></tr>';
+          WebKit.esc(row.where || '') + '</small></td></tr>' +
+          ModePage.waived(row, t);
       }).join('') + '</tbody></table>';
     const settings = '<h2 data-tab="development">' +
       t.html('consoleMode.devOnlyHeading') + '</h2>' +

@@ -1955,6 +1955,14 @@
     "en": "41a2ff91a0055e49",
     "text": "它决定主端口是否以 HTTPS 绑定（global.https），而监听器在进程启动时绑定。即便如此，领域仍可携带此项——领域不绑定套接字，因此它以本进程启动时的协议方案应答，只有此模式的检查会改变"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "在 RFC 9700 下允许令牌响应类型"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "4e3ee63eb21efc37",
+    "text": "在 RFC 9700 模式生效之处（product 模式下始终生效）豁免 RFC 9700 第 2.1.2 节（no-implicit，一项 SHOULD NOT）。开启后，从授权端点签发访问令牌的响应类型（token、id_token token、code token、code id_token token）在授权端点和动态注册处均被接受，两份发现文档也会公布它们以及隐式授权。RFC 9700 的其他所有要求以及 product 模式的其余部分仍然有效，GET /oauth2/rfc9700 和 /admin/mode 会将该要求报告为已豁免。它为 OpenID Connect Implicit、Hybrid 和 Dynamic OP 配置文件而设。在 OAuth 2.1 模式或任一 FAPI 配置文件开启时无效：OAuth 2.1 彻底移除了隐式授权，而 FAPI 配置文件是本设置不会放宽的更严格配置文件。默认关闭；按领域设置。"
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "OAuth 2.1 模式"
