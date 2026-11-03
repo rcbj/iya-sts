@@ -6144,6 +6144,15 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin-api/users/remove-self-issued-subject takes one away. ' +
           'Mirrors the Self-issued IDs block on the person\'s /admin/users ' +
           'page.' },
+  { path: '/admin-api/users/published-dids', group: 'Management API',
+    name: 'One person\'s published DIDs', specs: ['did-core'],
+    what: 'NON-SPEC (#1291). Each did:web this realm publishes for a ' +
+          'person: its random id, the DID, its document\'s address, who ' +
+          'holds its key (wallet, realm or download), its state, and every ' +
+          'version with its keys and what authorized it, never a private ' +
+          'key. POST /admin-api/users/deactivate-published-did deactivates ' +
+          'one; an administrator never creates or changes one. Mirrors the ' +
+          'Published DIDs block on the person\'s /admin/users page.' },
   { path: '/admin-api/users/verifications', group: 'Management API',
     name: 'One person\'s identity verifications', specs: ['oidc-ida'],
     what: 'NON-SPEC (#127). The identity verifications recorded for a ' +
