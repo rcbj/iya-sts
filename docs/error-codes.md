@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5179** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5180** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 163
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 52
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -3924,6 +3924,7 @@ Raised from: oid4vc/.
 | `STS-VC-0174` | The directory did not store a person's published DID, a new version of it, its authorization or its deactivation, or its self-issued subject could not be enrolled or re-pinned (#1291). | HTTP 400 refusal, or logged where the version was written |
 | `STS-VC-0175` | The private key of a realm-custody DID could not be sealed under the key-encryption key, so nothing was published or changed (#1291). | HTTP 400 refusal at /account-api |
 | `STS-VC-0176` | A person's published DID already has the most versions one DID keeps (50), so it takes no more key changes (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
+| `STS-VC-0177` | The DID document of a person re-homed to another cell could not be fetched from that cell over the inter-cell channel (#1291). | HTTP 503 {error: temporarily_unavailable} at /users/{rid}/did.json |
 
 ## STS-SSF
 

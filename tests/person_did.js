@@ -833,6 +833,116 @@ function childMain() {
          '9d. a cell-stamped id (22 characters and the cell\'s 12) is ' +
          'published, read back from its DID, served and hosted',
          JSON.stringify(stamped));
+
+    // ==================================================================
+    // 10. A PERSON RE-HOMED TO ANOTHER CELL (`common/cell_rehome.ts`):
+    // two instances stand in for the two cells. "cella" minted the DID
+    // and keeps its index row, but no longer holds the person; "cellb" is
+    // their new home, with the entry (this process's directory) and an
+    // index of its own. The channel is a JSON round trip into cellb's
+    // operation, as `cell_channel.call()` is.
+    // ==================================================================
+    const moved = await w.inRealm(async function () {
+      const rid = stamped.rid;
+      const row = pd.lookup(rid);
+      const atB = new PersonDid(Object.assign(PersonDid.defaultDeps(), {
+        index: new Map(), isMulti: function () {
+          return true;
+        }, cellId: function () {
+          return 'cellb';
+        } }));
+      const indexedAtB = atB.indexMovedIn(DAVE);
+      let home = 'cellb';
+      let channelDown = false;
+      const asked = [];
+      const atA = new PersonDid(Object.assign(PersonDid.defaultDeps(), {
+        index: new Map([[rid, { did: row.did, sub: row.sub }]]),
+        nameForSubject: function () {
+          return '';
+        },
+        isMulti: function () {
+          return true;
+        },
+        cellId: function () {
+          return 'cella';
+        },
+        homeOfSubject: function (realmId, sub) {
+          asked.push(sub);
+          return Promise.resolve(home);
+        },
+        callCell: function (cellId, name, body) {
+          if (channelDown) {
+            return Promise.reject(new Error('the link is down'));
+          }
+          return Promise.resolve(JSON.parse(JSON.stringify(
+            atB.opDocument(JSON.parse(JSON.stringify(body))))));
+        } }));
+      const here = pd.served(rid, {});
+      const away = await atA.servedAnywhere(rid, {});
+      const v1 = await atA.servedAnywhere(rid, { versionId: '1' });
+      home = '';
+      const nobody = await atA.servedAnywhere(rid, {});
+      home = 'cellb';
+      channelDown = true;
+      const down = await atA.servedAnywhere(rid, {});
+      return {
+        indexedAtB: indexedAtB, foundAtB: !!atB.lookup(rid),
+        syncAtA: atA.lookup(rid), awayAtA: (atA.lookup(rid, { away: true }) ||
+                                             {}).away === true,
+        hostedAtA: atA.isHosted(row.did), asked: asked, sub: row.sub,
+        same: JSON.stringify(away.body) === JSON.stringify(here.body),
+        away: away.status, v1: v1.status, nobody: [nobody.status, nobody.code],
+        down: [down.status, down.code] };
+    });
+    note(moved.indexedAtB >= 1 && moved.foundAtB,
+         '10a. the new home indexes the re-homed person\'s DIDs from the ' +
+         'records their entry carried', JSON.stringify(moved));
+    note(moved.syncAtA === null && moved.awayAtA && !moved.hostedAtA,
+         '10b. the minting cell keeps its row but answers nothing of a ' +
+         'person it no longer holds — not hosted there, and away when asked',
+         JSON.stringify(moved));
+    note(moved.away === 200 && moved.same && moved.v1 === 200 &&
+         moved.asked[0] === moved.sub,
+         '10c. a fetch reaching the minting cell asks the routing index ' +
+         'for the person\'s subject and answers the document their new home ' +
+         'serves, a version included', JSON.stringify(moved));
+    note(moved.nobody[0] === 410 && moved.nobody[1] === 'STS-VC-0162' &&
+         moved.down[0] === 503 && moved.down[1] === 'STS-VC-0177',
+         '10d. a person no cell holds is gone (410, STS-VC-0162), and a new ' +
+         'home that cannot be reached is 503, STS-VC-0177',
+         JSON.stringify(moved));
+    // The key a realm-custody record holds, opened at the sending cell and
+    // sealed again at the receiving one; stand-ins for the two cells' keys.
+    const carrier = new PersonDid(Object.assign(PersonDid.defaultDeps(), {
+      open: function (text) {
+        return text.indexOf('S:') === 0 ? text.slice(2) : null;
+      },
+      seal: function (text) {
+        return { value: 'T:' + text, sealed: true };
+      } }));
+    const record = { rid: 'x', privateKeys: {
+      k1: { value: 'S:secret', sealed: true },
+      k2: { value: 'plain', sealed: false } } };
+    const out = carrier.movingOut([JSON.stringify(record), 'not a record']);
+    const sent = out ? JSON.parse(out[0]).privateKeys : {};
+    const back = out ? carrier.movingIn(out) : null;
+    const kept = back ? JSON.parse(back[0]).privateKeys : {};
+    const unopened = carrier.movingOut([JSON.stringify({ privateKeys: {
+      k: { value: 'X:other-cell', sealed: true } } })]);
+    const unsealed = new PersonDid(Object.assign(PersonDid.defaultDeps(), {
+      seal: function () {
+        return null;
+      } })).movingIn(out || []);
+    note(sent.k1 && sent.k1.value === 'secret' && sent.k1.moving === true &&
+         sent.k2.value === 'plain' && !sent.k2.moving &&
+         out[1] === 'not a record' &&
+         kept.k1.value === 'T:secret' && kept.k1.sealed === true &&
+         kept.k1.moving === undefined && kept.k2.value === 'plain' &&
+         unopened === null && unsealed === null,
+         '10e. a realm-custody key leaves its cell opened and arrives sealed ' +
+         'under the new cell\'s key; one that will not open, or cannot be ' +
+         'sealed again, stops the move', JSON.stringify({ sent: !!out,
+           kept: kept.k1, unopened: unopened, unsealed: unsealed }));
     ['did.personCustody', 'did.personPublishing',
      'oid4vci.didHolderBinding', 'oid4vp.signIn',
      'oid4vp.signInSelfIssued', 'risk.assessSignIns'].forEach(clear);

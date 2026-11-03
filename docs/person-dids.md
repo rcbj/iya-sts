@@ -28,7 +28,11 @@ characters follow: a keyed tag naming the cell that minted the DID, so a
 resolver reaching any cell is sent to the one that holds it. Without the
 service's key the tag is noise; all it shows is that two DIDs came from the
 same cell, which every person homed there shares. The DID is **fixed when it is created**, from
-the realm's public base URL, and never changes after that.
+the realm's public base URL, and never changes after that, even when an
+administrator moves the person to another cell: the cell that created it
+looks up where the person lives now and answers with the document from
+there. A realm-custody key moves with the person and is sealed again under
+the new cell's key.
 
 * In **product mode** a DID is published only when the base is pinned:
   `global.publicBaseUrl`, or the advertised listener of the verifiable
