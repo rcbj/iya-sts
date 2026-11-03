@@ -719,7 +719,7 @@ them by default would refuse conforming clients for nothing.
 * **Not changed**: the DID document, COSE, XML signatures (EdDSA there
   too), DKIM's ed25519-sha256, the GNAP Ed25519 key and TLS.
 
-`tests/eddsa_signing_switch.js` holds it.
+`tests/oidcc_conformance_defaults.js` section E holds it.
 
 ## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
 

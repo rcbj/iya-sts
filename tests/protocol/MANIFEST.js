@@ -1330,7 +1330,8 @@ const JOBS = [
   // repository's oid4vc/vc_api.ts.
   { file: 'sts_vc_api_product.js',       browser: false },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
-  // tenant and aud_sub in the ID Token, tenant refused for another realm,
+  // tenant and aud_sub in the ID Token (the first two when a claims request
+  // names them, #1292), tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
   // authorization server and API.
   { file: 'sts_enterprise_extensions.js', browser: false },
