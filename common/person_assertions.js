@@ -43,6 +43,7 @@
 // already existed**: register an application and declare the issuer on it.
 //
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // THE ATTRIBUTES, AND WHY THEY SHARE NO NAME WITH THE APPLICATION'S.
 //
 // `oauthAssertion*` is an APPLICATION's RFC 7523 key pair and
@@ -58,27 +59,77 @@
 // inetOrgPerson schema beside them, which is somebody else's and is listed in
 // `common/inetorgperson.ts`.
 //
-//   stsAssertionIssuer            the `iss` this person's assertions carry.
-//                                 Multi-valued. Absent means their own
-//                                 username, for the reason `issuerEntry()`
-//                                 resolves an application by its client_id:
-//                                 asking an operator to write a name down
-//                                 twice is a configuration step with no
-//                                 decision in it.
-//   stsAssertionJwks              the public half, as a JWKS carrying the
-//                                 certificate chain in `x5c`. This is what
-//                                 verifies a signature.
-//   stsAssertionCertificate       the leaf, PEM.
-//   stsAssertionCertificateChain  the Issuing CA and the Intermediate, PEM.
-//   stsAssertionKid               the `kid` inside the JWKS, so that a page
-//                                 can show it without parsing JSON.
-//   stsAssertionExpiresAt         the leaf's notAfter, as a GeneralizedTime.
-//   stsAssertionPrivateKey        the private half. **SEALED** — see below.
-//   stsAssertionKeySource         where the key pair came from (2026-09-13):
-//                                 issued here, or a certificate uploaded in
-//                                 its place — see the RFC 7522 block below.
+//   stsAssertionIssuer      the `iss` this person's assertions carry.
+//                           Multi-valued. Absent means their own username, for
+//                           the reason `issuerEntry()` resolves an application
+//                           by its client_id: asking an operator to write a
+//                           name down twice is a configuration step with no
+//                           decision in it.
+//   stsAssertionKeyPair     ONE VALUE PER KEY PAIR (#1290): a JSON record of
+//                           the public half — the `kid`, the JWK carrying the
+//                           certificate chain in `x5c`, the certificate and
+//                           its chain, the serial and the authority that
+//                           signed it, the label, where it came from, its
+//                           validity, and its revocation when it was revoked
+//                           here. This is what verifies a signature.
+//   stsAssertionPrivateKey  ONE VALUE PER KEY PAIR THIS SERVICE GENERATED:
+//                           `{ id, pem }` as JSON, the WHOLE VALUE **SEALED**
+//                           — see below. An uploaded certificate has none.
 //
 // ---------------------------------------------------------------------------
+// SEVERAL KEY PAIRS PER PROFILE, EACH REVOKED ON ITS OWN (#1290, rcbj,
+// 2026-11-03).
+//
+// Until #1290 a person held ONE key pair per profile, in seven single-valued
+// attributes (`stsAssertionJwks`, `…Certificate`, `…CertificateChain`,
+// `…Kid`, `…ExpiresAt`, `…KeySource` and the private key), and Generate
+// REPLACED it. `/portal/signing-key`'s third card, the TLS client
+// certificate, held several from the day it was written; rcbj asked for the
+// two signing-key cards to work the same way:
+//
+//   1. **GENERATE ADDS ONE**, optionally named after its use, and leaves the
+//      ones already held working — a key on a laptop and a key in a CI job
+//      are two keys, and rotating one must not break the other.
+//   2. **A KEY PAIR IS REMOVED BY REVOKING IT**, row by row, with the TLS
+//      card's two reasons (`REVOCATION_REASONS`): its certificate goes on the
+//      issuing authority's CRL and its OCSP responder answers `revoked`, and
+//      this service stops accepting what it signs. That REPLACES "take off",
+//      which cleared the attributes and put nothing on any list — a
+//      certificate this service had stopped believing that every other
+//      relying party went on believing.
+//   3. **A CAP PER PROFILE**, `pki.personSigningKeyMax` — the TLS card's
+//      `pki.personTlsClientCertificateMax` again. It counts VALID key pairs
+//      only, so revoking an old one makes room for a new one.
+//
+// **WHY THE RECORDS ARE ON THE ENTRY RATHER THAN IN THE CERTIFICATE REGISTER
+// THE TLS CARD USES.** `tls_client_certificates.js` keeps a person's
+// certificates in `pki.certify()`'s register by slot, and that was the
+// design to mirror; it does not fit here for two reasons. A signing key is
+// found by the VERIFIER — `assertion_grant.js` by `kid` in the person's JWKS,
+// `saml_assertion_grant.js` by certificate thumbprint — off the entry the
+// `iss` resolves to, and the register holds no JWK. And a person's key pair
+// may be a certificate an EXTERNAL authority issued (`upload-certificate`),
+// which no register of this service's authorities can hold. So the records
+// stay where the single key pair was, one value each, and what is mirrored is
+// the BEHAVIOUR: a list with a state per row (valid, expired, revoked,
+// superseded), labels, the cap counting what still works, revocation through
+// `pki_revocation.js` with the same two reasons, and expired records
+// forgotten at the next issue (RFC 5280 section 3.3).
+//
+// **THE REVOCATION STATE IS READ FROM THE AUTHORITY, NOT ONLY FROM THE
+// RECORD.** A key pair issued here records which authority signed it
+// (`caId`), and its state is that authority's list — so a serial revoked on
+// /admin/pki's revocation pane reads as revoked here too. A certificate an
+// external authority issued has no list of ours to go on: revoking it here
+// marks the record, the verifiers stop accepting it, and the reply says that
+// its own authority's list is not this service's to write.
+//
+// **THE ISSUER DECLARATION GOES WITH THE LAST KEY.** Revoking leaves the
+// other key pairs of the profile working and their declaration with them;
+// revoking the last valid one clears the profile's declaration, for the
+// reason "take off" cleared it: a person declared as an issuer with no key to
+// issue with reads on the page as a key pair that would not go away.
+//
 // THE PRIVATE HALF IS SEALED, AND IT IS HANDED OVER ONCE.
 //
 // `applications.js` seals `oauthAssertionPrivateKey` under the key-encryption
@@ -98,7 +149,9 @@
 // person's entry through a module that would open it. The alternatives were a
 // console page that renders somebody's private key on every visit, or a key
 // this service holds and no human can ever obtain. So it is returned by the
-// act that creates it, once, with the page saying so.
+// act that creates it, once, with the page saying so — and since #1290 it is
+// dropped from the entry when its key pair is revoked, because a revoked
+// key's private half is a liability with no use.
 //
 // ---------------------------------------------------------------------------
 // TWO DOORS WRITE THROUGH THIS MODULE AND THEY ARE THE SAME ACT (2026-09-12).
@@ -133,13 +186,16 @@
 // would close a cycle through this module's own caller.
 //
 // It is a LIBRARY in rule 3's sense: it registers no route, and it requires
-// `helpers.js`, `keystore.js` and `error_codes.js` — none of which requires it
-// back.
+// `helpers.js`, `keystore.js`, `config.js` and `error_codes.js` — none of
+// which requires it back — and `realms.js` and `pki_revocation.js` lazily.
 // ===========================================================================
 
 // The service's own logger, as every module here takes it.
 const { log, subjectForName, nameForSubject } = require('./helpers');
 const keystore = require('./keystore');
+// The cap, `pki.personSigningKeyMax` (#1290). `config.js` is below
+// `helpers.js` and requires nothing of this module.
+const config = require('./config');
 // A leaf. The refusal objects below carry `errorCode` for the caller that
 // sends the response; it is never part of anything serialised.
 const errorCodes = require('./error_codes');
@@ -155,10 +211,22 @@ function accountSignals() {
   return require('../ssf/account_signals');
 }
 
-// The declaration, and the seven the issue writes. A LIST rather than seven
-// constants, because the console's *take the key pair off* control clears
-// exactly this set and an eighth attribute added to the issue and not to the
-// list would be one that survived being taken off.
+// Revocation is `pki_revocation.js`'s, and the realm whose authorities it
+// asks is the ambient one. Both LAZILY, for `tls_client_certificates.js`'s
+// reason: `pki_revocation.js` requires `pki.js`, which requires modules this
+// file's callers load, and this file is on `app.js`'s own chain.
+function revocation() {
+  log.debug('Entering revocation().');
+  log.debug('Leaving revocation().');
+  return require('./pki_revocation');
+}
+
+function currentRealm() {
+  log.debug('Entering currentRealm().');
+  log.debug('Leaving currentRealm().');
+  return require('./realms').currentId();
+}
+
 /**
  * The attribute declaring the `iss` a person's RFC 7523 assertions are issued
  * under: `stsAssertionIssuer`.
@@ -166,18 +234,15 @@ function accountSignals() {
 const ISSUER_ATTRIBUTE = 'stsAssertionIssuer';
 
 /**
- * The seven attributes an RFC 7523 key pair issue writes on a person's entry,
- * which taking it off clears.
+ * The two attributes holding a person's RFC 7523 key pairs, one value per key
+ * pair: the public records, and the sealed private halves (#1290).
  */
-const KEY_ATTRIBUTES = ['stsAssertionJwks', 'stsAssertionCertificate',
-                        'stsAssertionCertificateChain',
-                        'stsAssertionPrivateKey', 'stsAssertionKid',
-                        'stsAssertionExpiresAt', 'stsAssertionKeySource'];
+const KEY_ATTRIBUTES = ['stsAssertionKeyPair', 'stsAssertionPrivateKey'];
 
 // ===========================================================================
-// AN RFC 7522 KEY PAIR TOO, SINCE 2026-09-13, AND IT IS A FOURTH SET.
+// AN RFC 7522 KEY PAIR TOO, SINCE 2026-09-13, AND IT IS A SECOND SET.
 //
-// Until this date a person could hold an RFC 7523 key pair and not an RFC
+// Until that date a person could hold an RFC 7523 key pair and not an RFC
 // 7522 one, and `/admin/pki` refused the second by name — the SAML verifier
 // read `oauthSamlAssertion*` off an application and nothing off a person, so a
 // SAML key pair on a person's entry would have been one nothing could use.
@@ -187,16 +252,16 @@ const KEY_ATTRIBUTES = ['stsAssertionJwks', 'stsAssertionCertificate',
 //
 // `stsSamlAssertion*` shares no name with `stsAssertion*`, for the reason the
 // two application sets share none: no code path crosses them, so a person's
-// JWT key pair cannot sign a SAML assertion and taking one off leaves the
-// other working. There is no JWKS — what an XML Signature is checked against
+// JWT key pair cannot sign a SAML assertion and revoking one leaves the other
+// working. Its records carry no JWK — what an XML Signature is checked against
 // is a certificate, and what matches a presented `<ds:KeyInfo>` is its
-// THUMBPRINT, which is the handle this set stores where the JWT set stores a
-// `kid`.
+// THUMBPRINT, which is the handle this set's records go by where the JWT
+// set's go by `kid`.
 //
-// **AND BOTH SETS RECORD WHERE THE KEY PAIR CAME FROM** (`…KeySource`): issued
-// here, or a certificate UPLOADED in its place — this realm's own, or an
-// external authority's with its whole chain — in which case the person keeps
-// the private key and the attribute that would hold it is empty. The words are
+// **AND EVERY RECORD SAYS WHERE THE KEY PAIR CAME FROM** (`source`): issued
+// here, or a certificate UPLOADED — this realm's own, or an external
+// authority's with its whole chain — in which case the person keeps the
+// private key and there is no private value for it. The words are
 // `applications.KEY_SOURCES`, which this module does not require for
 // `applications.js`'s own reason: it sits on the token endpoint's path, and a
 // vocabulary of three words is not worth a module.
@@ -208,50 +273,38 @@ const KEY_ATTRIBUTES = ['stsAssertionJwks', 'stsAssertionCertificate',
 const SAML_ISSUER_ATTRIBUTE = 'stsSamlAssertionIssuer';
 
 /**
- * The attributes an RFC 7522 key pair issue writes on a person's entry, which
- * taking it off clears.
+ * The two attributes holding a person's RFC 7522 key pairs, one value per key
+ * pair: the public records, and the sealed private halves (#1290).
  */
-const SAML_KEY_ATTRIBUTES = ['stsSamlAssertionCertificate',
-                             'stsSamlAssertionCertificateChain',
-                             'stsSamlAssertionPrivateKey',
-                             'stsSamlAssertionThumbprint',
-                             'stsSamlAssertionExpiresAt',
-                             'stsSamlAssertionKeySource'];
+const SAML_KEY_ATTRIBUTES = ['stsSamlAssertionKeyPair',
+                             'stsSamlAssertionPrivateKey'];
 
-// WHICH ATTRIBUTE HOLDS WHICH HALF, PER PROFILE — the shape
-// `applications.KEY_PAIR_ATTRIBUTES` has, so a page drawing an application's
-// key pairs and a person's reads one kind of table. `present` is the attribute
-// whose presence means the profile holds a key pair at all.
+// WHICH ATTRIBUTE HOLDS WHAT, PER PROFILE. `present` is the attribute whose
+// presence means the profile holds a key pair at all (valid or not), which
+// is what the directory is asked for its holders by; `handleLabel` is what
+// the records go by.
 /**
- * Which attribute holds which half of a key pair, per profile (`jwt` and
- * `saml`): the shape `applications.KEY_PAIR_ATTRIBUTES` has.
+ * Which attribute holds what, per profile (`jwt` and `saml`): the issuer
+ * declaration, the key pair records and the sealed private halves.
  */
 const KEY_PAIR_ATTRIBUTES = {
-  jwt: { issuer: ISSUER_ATTRIBUTE, certificate: 'stsAssertionCertificate',
-         chain: 'stsAssertionCertificateChain',
-         privateKey: 'stsAssertionPrivateKey', handle: 'stsAssertionKid',
-         handleLabel: 'kid', jwks: 'stsAssertionJwks',
-         expiresAt: 'stsAssertionExpiresAt', source: 'stsAssertionKeySource',
-         present: 'stsAssertionJwks',
+  jwt: { issuer: ISSUER_ATTRIBUTE, keys: 'stsAssertionKeyPair',
+         privateKey: 'stsAssertionPrivateKey', handleLabel: 'kid',
+         present: 'stsAssertionKeyPair', rfc: 'RFC 7523',
          attributes: KEY_ATTRIBUTES.slice() },
-  saml: { issuer: SAML_ISSUER_ATTRIBUTE,
-          certificate: 'stsSamlAssertionCertificate',
-          chain: 'stsSamlAssertionCertificateChain',
+  saml: { issuer: SAML_ISSUER_ATTRIBUTE, keys: 'stsSamlAssertionKeyPair',
           privateKey: 'stsSamlAssertionPrivateKey',
-          handle: 'stsSamlAssertionThumbprint', handleLabel: 'thumbprint',
-          jwks: '', expiresAt: 'stsSamlAssertionExpiresAt',
-          source: 'stsSamlAssertionKeySource',
-          present: 'stsSamlAssertionCertificate',
-          attributes: SAML_KEY_ATTRIBUTES.slice() }
+          handleLabel: 'thumbprint', present: 'stsSamlAssertionKeyPair',
+          rfc: 'RFC 7522', attributes: SAML_KEY_ATTRIBUTES.slice() }
 };
 
 /**
- * The profiles a person may hold a key pair for: `jwt` and `saml`.
+ * The profiles a person may hold key pairs for: `jwt` and `saml`.
  */
 const PURPOSE_IDS = Object.keys(KEY_PAIR_ATTRIBUTES);
 
 // Every attribute this module owns, which is what the directory has to hand
-// back. A clear removes ONE PROFILE's slice of it — see `clear()`.
+// back.
 /**
  * Every attribute this module owns, both profiles' declarations and key pairs.
  */
@@ -261,13 +314,20 @@ const ATTRIBUTES = [ISSUER_ATTRIBUTE].concat(KEY_ATTRIBUTES)
 // The ones that are private key material. A list for `applications.js`'s
 // reason: *is this attribute private key material* is a question somebody
 // adding a name above has to answer, and a list is where they will look for
-// it. The second arrived with the RFC 7522 set, which is that reason working.
+// it. Each VALUE is sealed whole, so `cell_rehome.ts` — which re-seals a
+// value that begins `$aesgcm$` — moves it like any other sealed value.
 /**
- * The attributes that hold private key material, sealed under the
+ * The attributes that hold private key material, each value sealed under the
  * key-encryption key where one persists.
  */
 const SEALED_ATTRIBUTES = ['stsAssertionPrivateKey',
                            'stsSamlAssertionPrivateKey'];
+
+/**
+ * The two RFC 5280 reasons a holder may give when revoking their own key
+ * pair: the TLS client certificate card's (#1290).
+ */
+const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
 
 // An unknown profile id is `''`, and every caller turns that into a refusal
 // rather than a default: quietly writing the other profile's key pair would
@@ -296,7 +356,8 @@ let directory = null;
  * refused (STS-OAUTH-0084).
  *
  * @param hooks - `{ read, write, persons }`, and optionally `holdingAny`
- *   (#352), which `holders()` walks the directory through once
+ *   (#352), which `holders()` walks the directory through once. `write`
+ *   takes an attribute name and a value, or an ARRAY of values (#1290)
  * @returns true when installed, false when refused
  */
 function setDirectory(hooks) {
@@ -334,6 +395,18 @@ function storable() {
 }
 
 /**
+ * Answers the most valid key pairs one person may hold for ONE profile:
+ * `pki.personSigningKeyMax` (#1290).
+ *
+ * @returns the configured cap
+ */
+function maxPerPerson() {
+  log.debug("Entering maxPerPerson().");
+  log.debug("Leaving maxPerPerson().");
+  return Number(config.value('pki.personSigningKeyMax'));
+}
+
+/**
  * Tells whether a stored value is sealed under the key-encryption key.
  *
  * @param value - the stored value
@@ -351,57 +424,44 @@ function isSealed(value) {
 // private key in the clear in product mode would put a working signing
 // credential in every directory dump, and doing it silently after being asked
 // not to is worse than refusing.
-function sealValue(name, value) {
+function sealValue(value) {
   log.debug("Entering sealValue().");
-  if (SEALED_ATTRIBUTES.indexOf(name) < 0 || !value) {
+  if (!value || isSealed(value) || !keystore.persists()) {
     log.debug("Leaving sealValue().");
     return String(value == null ? '' : value);
-  }
-  if (isSealed(value)) {
-    log.debug("Leaving sealValue().");
-    return String(value);
-  }
-  if (!keystore.persists()) {
-    log.debug("Leaving sealValue().");
-    return String(value);
   }
   // Under the CELL's key where there is one (#98): a person's key pair is
   // theirs and lives only in their home cell.
   const out = keystore.seal(String(value), SEAL_LABEL, 'cell');
-  if (!out) {
-    log.debug("Leaving sealValue().");
-    return null;
-  }
   log.debug("Leaving sealValue().");
-  return out;
+  return out || null;
 }
 
-// And open on the way out. A value that will NOT open is left as it is and
-// reported, which is `openSealedFields()`'s rule word for word: rotating the
-// key-encryption key produces one, the key pair is unusable either way, and a
-// reader seeing `$aesgcm$…` where a PEM belongs plus a line in the log naming
-// the person is a truer answer than an empty attribute — which would read as
-// *no key pair was ever issued*.
-function openValue(name, value, username) {
+// And open on the way out. A value that will NOT open is reported and treated
+// as a private key that is HELD but unusable, which is `openSealedFields()`'s
+// rule: rotating the key-encryption key produces one, and a line in the log
+// naming the person is a truer answer than an absent key — which would read
+// as *no key pair was ever issued here*.
+function openValue(value, username) {
   log.debug("Entering openValue().");
-  if (SEALED_ATTRIBUTES.indexOf(name) < 0 || !value || !isSealed(value)) {
+  const text = String(value == null ? '' : value);
+  if (!isSealed(text)) {
     log.debug("Leaving openValue().");
-    return String(value == null ? '' : value);
+    return text;
   }
-  const opened = keystore.open(String(value), SEAL_LABEL);
+  const opened = keystore.open(text, SEAL_LABEL);
   if (!opened) {
     log.warn(errorCodes.tag('STS-OAUTH-0088') +
-             'person_assertions: the assertion private key on "' + username +
+             'person_assertions: an assertion private key on "' + username +
              '" is sealed and will not open under this process\'s ' +
-             'key-encryption key — it was written under a different one. It ' +
-             'is reported as it is stored rather than as absent, because ' +
-             'absent would read as no key pair having been issued. Issue ' +
-             'again on /admin/pki.');
+             'key-encryption key — it was written under a different one. ' +
+             'It is counted as held and cannot be read; revoke that key ' +
+             'pair and issue another.');
     log.debug("Leaving openValue().");
-    return String(value);
+    return null;
   }
   log.debug("Leaving openValue().");
-  return opened;
+  return String(opened);
 }
 
 function valuesOf(value) {
@@ -416,6 +476,146 @@ function valuesOf(value) {
     .filter(Boolean);
 }
 
+// One stored record, or null for a value that is not one. A value that will
+// not parse is LOGGED and skipped rather than thrown: one damaged value must
+// not take every other key pair of the person down with it.
+function parseRecord(text, username) {
+  log.debug("Entering parseRecord().");
+  let out = null;
+  try {
+    out = JSON.parse(String(text));
+  } catch (e) {
+    log.warn('person_assertions: a key pair record on "' + username +
+             '" is not JSON and is ignored: ' + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug("Leaving parseRecord().");
+  return out && typeof out === 'object' && out.id ? out : null;
+}
+
+// The id a private value belongs to, without opening it where it is sealed:
+// a sealed value is opened only when the private key itself is asked for.
+// Null for a sealed value, which the caller resolves by opening it.
+function privateIdOf(text) {
+  log.debug("Entering privateIdOf().");
+  if (isSealed(text)) {
+    log.debug("Leaving privateIdOf(). Sealed.");
+    return null;
+  }
+  const parsed = parseRecord(text, '');
+  log.debug("Leaving privateIdOf().");
+  return parsed ? String(parsed.id) : '';
+}
+
+// RFC 5280 serials compared in one spelling — `pki_revocation.js`'s rule,
+// written out here because that module is required lazily and a comparison
+// must not fail for want of it.
+function normalSerial(text) {
+  log.debug("Entering normalSerial().");
+  const hex = String(text || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+  log.debug("Leaving normalSerial().");
+  return hex.replace(/^0+/, '') || '0';
+}
+
+// ---------------------------------------------------------------------------
+// ONE KEY PAIR'S STATE, the TLS card's four words: `valid`, `expired`,
+// `revoked`, or `superseded` (a revocation like any other, which a rebuilt
+// branch writes, and reported as what it is). The issuing authority's list
+// wins over the record, because it is what a relying party reads; the
+// record's own mark is what an external authority's certificate has.
+// ---------------------------------------------------------------------------
+function stateOf(record, scope) {
+  log.debug("Entering stateOf().");
+  let listed = null;
+  if (record.caId && record.serialHex) {
+    try {
+      listed = revocation().isRevoked(scope, record.caId, record.serialHex);
+    } catch (e) {
+      // No revocation register in this process (a test's stub directory, a
+      // process with no authority). The record's own mark is all there is.
+      log.debug("Caught in stateOf(): " + ((e && e.message) || e));
+      listed = null;
+    }
+  }
+  const revokedAt = listed ? listed.revokedAt
+                           : (record.withdrawnAt || null);
+  const reason = listed ? listed.reason : (record.withdrawnReason || null);
+  const expired = !!record.notAfter &&
+    new Date(record.notAfter).getTime() < Date.now();
+  const state = revokedAt
+    ? (reason === 'superseded' ? 'superseded' : 'revoked')
+    : (expired ? 'expired' : 'valid');
+  log.debug("Leaving stateOf(). " + state);
+  return { state: state, revokedAt: revokedAt, reason: reason };
+}
+
+// ---------------------------------------------------------------------------
+// ONE PROFILE'S KEY PAIRS OUT OF THE ATTRIBUTES ALREADY READ, newest first,
+// each with its state. **`openKeys` FALSE LEAVES THE PRIVATE KEYS OUT** — not
+// opened and not copied sealed either — and it is what `holders()` and every
+// page pass: a report of who holds which key pair is answered by public
+// halves, and opening the private ones cost a `keystore.open()` per key per
+// page view (#352). `privateKeyHeld` is answered either way, from the id a
+// plain value carries and, for a sealed value, from the count of them.
+// ---------------------------------------------------------------------------
+function keysOf(name, raw, purpose, openKeys, scope) {
+  log.debug('Entering keysOf(). purpose=' + purpose);
+  const names = KEY_PAIR_ATTRIBUTES[purpose];
+  const privates = valuesOf(raw[names.privateKey]);
+  const opened = {};
+  let sealedUnopened = 0;
+  privates.forEach(function (text) {
+    const id = privateIdOf(text);
+    if (id) {
+      opened[id] = openKeys ? (parseRecord(text, name) || {}).pem || '' : true;
+      return;
+    }
+    if (!openKeys) {
+      sealedUnopened += 1;
+      return;
+    }
+    const plain = openValue(text, name);
+    const parsed = plain ? parseRecord(plain, name) : null;
+    if (parsed) {
+      opened[String(parsed.id)] = String(parsed.pem || '');
+    }
+  });
+  const rows = valuesOf(raw[names.keys]).map(function (text) {
+    return parseRecord(text, name);
+  }).filter(Boolean).map(function (record) {
+    const state = stateOf(record, scope);
+    const issued = String(record.source || 'issued') === 'issued';
+    const row = Object.assign({}, record, {
+      id: String(record.id),
+      label: String(record.label || ''),
+      source: String(record.source || 'issued'),
+      chainPem: String(record.chainPem || ''),
+      state: state.state,
+      revokedAt: state.revokedAt,
+      reason: state.reason,
+      // A sealed value names no id until it is opened, so a page that did
+      // not open them reads "held" for every issued key pair that is not
+      // revoked while any sealed value is there — which is what the writer
+      // keeps true: an issued key pair's private half is written with it and
+      // dropped when it is revoked or forgotten.
+      privateKeyHeld: Object.prototype.hasOwnProperty.call(opened,
+                                                           String(record.id)) ||
+                      (!openKeys && issued && sealedUnopened > 0 &&
+                       (state.state === 'valid' || state.state === 'expired'))
+    });
+    if (openKeys) {
+      row.privateKeyPem = typeof opened[row.id] === 'string'
+        ? opened[row.id] : '';
+    }
+    return row;
+  });
+  rows.sort(function (a, b) {
+    return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
+  log.debug('Leaving keysOf(). ' + rows.length + ' key pair(s).');
+  return rows;
+}
+
 // ---------------------------------------------------------------------------
 // WHAT ONE PERSON HOLDS. `null` where there is no entry at all, which the
 // callers keep apart from an entry holding nothing: the first is a name
@@ -424,15 +624,17 @@ function valuesOf(value) {
 // ---------------------------------------------------------------------------
 /**
  * Reads what one person holds: declared issuers and both profiles' key pairs,
- * private keys opened.
+ * each with its state, private keys opened.
  *
- * A sealed private key that will not open is returned as stored and logged
- * (STS-OAUTH-0088).
+ * A sealed private key that will not open is logged (STS-OAUTH-0088) and its
+ * key pair reported with no private key.
  *
  * @param username - the person's username
- * @returns the record, with `hasKeyPair`, `hasSamlKeyPair` and the effective
- * issuers (the username where none is declared); null where there is no such
- * entry
+ * @returns the record — `keys.jwt` and `keys.saml` (newest first), `hasKeyPair`
+ * and `hasSamlKeyPair` (a VALID one is held), `jwks` (the valid RFC 7523 keys)
+ * and `samlCertificates` (the valid RFC 7522 certificates with their chains),
+ * and the effective issuers (the username where none is declared); null where
+ * there is no such entry
  */
 function recordFor(username) {
   log.debug('Entering recordFor(). username=' + username);
@@ -454,31 +656,40 @@ function recordFor(username) {
 // ONE PERSON'S RECORD OUT OF THE ATTRIBUTES ALREADY READ, which is
 // `recordFor()`'s body since #352 (2026-09-29) so that `holders()` can build
 // the same record out of a walk without a second read per person.
-//
-// **`openKeys` FALSE LEAVES THE PRIVATE KEYS OUT ALTOGETHER** — not opened and
-// not copied sealed either — and it is what `holders()` passes. A report of who
-// holds a key pair is answered by the JWKS and the certificate, which are
-// public; opening the private half to answer it cost a `keystore.open()` per
-// person per page view and made every console visit a decryption of every
-// person's signing key. A record without them says so by not having the
-// member, and nothing that builds a row from `holders()` reads it.
 // ---------------------------------------------------------------------------
 function recordOf(name, raw, openKeys) {
   log.debug('Entering recordOf(). username=' + name);
+  let scope = '';
+  try {
+    scope = currentRealm();
+  } catch (e) {
+    log.debug("Caught in recordOf(): " + ((e && e.message) || e));
+    scope = '';
+  }
+  const keys = { jwt: keysOf(name, raw, 'jwt', openKeys, scope),
+                 saml: keysOf(name, raw, 'saml', openKeys, scope) };
+  const valid = function (one) {
+    return one.state === 'valid';
+  };
   const out = { username: name,
                 issuers: valuesOf(raw[ISSUER_ATTRIBUTE]),
-                hasKeyPair: false,
                 samlIssuers: valuesOf(raw[SAML_ISSUER_ATTRIBUTE]),
-                hasSamlKeyPair: false };
-  KEY_ATTRIBUTES.concat(SAML_KEY_ATTRIBUTES).forEach(function (attribute) {
-    if (!openKeys && SEALED_ATTRIBUTES.indexOf(attribute) >= 0) {
-      return;
-    }
-    const first = valuesOf(raw[attribute])[0] || '';
-    out[attribute] = openKeys ? openValue(attribute, first, name) : first;
-  });
-  out.hasKeyPair = !!out.stsAssertionJwks;
-  out.hasSamlKeyPair = !!out.stsSamlAssertionCertificate;
+                keys: keys,
+                hasKeyPair: keys.jwt.some(valid),
+                hasSamlKeyPair: keys.saml.some(valid),
+                // WHAT THE VERIFIERS READ, and only the VALID key pairs: a
+                // revoked or expired one is not in it, so an assertion signed
+                // with it finds no key by its `kid` or thumbprint and is
+                // refused as one signed by nobody registered.
+                jwks: { keys: keys.jwt.filter(valid).map(function (one) {
+                  return one.jwk;
+                }).filter(Boolean) },
+                samlCertificates: keys.saml.filter(valid)
+                  .map(function (one) {
+                    return { pem: String(one.certificatePem || ''),
+                             chain: String(one.chainPem || ''),
+                             thumbprint: String(one.thumbprint || one.id) };
+                  }) };
   // THE ISSUER A PERSON ASSERTS UNDER, defaulted to their own name. It is
   // `effectiveIssuers` rather than an overwrite of `issuers` so that a page
   // can tell a DECLARED value from the default — the same distinction
@@ -489,10 +700,97 @@ function recordOf(name, raw, openKeys) {
   out.effectiveIssuers = out.issuers.length ? out.issuers.slice() : [name];
   out.samlEffectiveIssuers = out.samlIssuers.length
     ? out.samlIssuers.slice() : [name];
-  log.debug('Leaving recordOf(). ' +
-            (out.hasKeyPair ? 'A JWT key pair. ' : 'No JWT key pair. ') +
-            (out.hasSamlKeyPair ? 'A SAML key pair.' : 'No SAML key pair.'));
+  log.debug('Leaving recordOf(). ' + keys.jwt.length + ' JWT and ' +
+            keys.saml.length + ' SAML key pair(s).');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// ONE PERSON'S KEY PAIRS FOR ONE PROFILE, as the TLS card's `listFor()` reads
+// them: newest first, each with its state, NO private key. What
+// `/portal/signing-key`, `/admin/users` and `/admin-api` draw.
+// ---------------------------------------------------------------------------
+/**
+ * Lists one person's key pairs for one profile, each with its state: valid,
+ * expired, revoked or superseded. No private key is in the answer.
+ *
+ * @param username - the person's username
+ * @param purpose - `jwt` (the default) or `saml`
+ * @returns one row per key pair, newest first; empty where there is no such
+ *   person or profile
+ */
+function listFor(username, purpose) {
+  log.debug('Entering listFor(). username=' + username);
+  const id = purposeIdOf(purpose);
+  const name = String(username || '');
+  const raw = directory && name && id ? directory.read(name) : null;
+  if (!raw) {
+    log.debug('Leaving listFor(). Nothing to read.');
+    return [];
+  }
+  let scope = '';
+  try {
+    scope = currentRealm();
+  } catch (e) {
+    log.debug("Caught in listFor(): " + ((e && e.message) || e));
+    scope = '';
+  }
+  const rows = keysOf(name, raw, id, false, scope);
+  log.debug('Leaving listFor(). ' + rows.length + ' key pair(s).');
+  return rows;
+}
+
+/**
+ * Lists one person's key pairs for one profile that are still valid: what the
+ * cap counts.
+ *
+ * @param username - the person's username
+ * @param purpose - `jwt` (the default) or `saml`
+ * @returns the valid rows of `listFor()`
+ */
+function activeFor(username, purpose) {
+  log.debug('Entering activeFor().');
+  log.debug('Leaving activeFor().');
+  return listFor(username, purpose).filter(function (one) {
+    return one.state === 'valid';
+  });
+}
+
+/**
+ * Tells whether a person is at the cap for a profile: as many valid key pairs
+ * as `pki.personSigningKeyMax`. Callers ask BEFORE generating a key pair, so
+ * that one is not generated only to be refused by `write()`.
+ *
+ * @param username - the person's username
+ * @param purpose - `jwt` (the default) or `saml`
+ * @returns true at the cap
+ */
+function atCap(username, purpose) {
+  log.debug('Entering atCap().');
+  const held = activeFor(username, purpose).length;
+  log.debug('Leaving atCap(). ' + held + ' valid.');
+  return held >= maxPerPerson();
+}
+
+// A label is what a person calls the key pair — "CI job", "laptop" — and it
+// lands on their own page and on /admin/users. The TLS card's rule for its
+// device names, and for its reason: letters, digits, spaces and a little
+// punctuation, so that nothing in it needs escaping to be read.
+/**
+ * Checks a key pair's label: at most 40 letters, digits, spaces, dots,
+ * dashes, underscores and brackets.
+ *
+ * @param label - the label
+ * @returns the sentence describing the problem, or an empty string
+ */
+function labelProblem(label) {
+  log.debug("Entering labelProblem().");
+  const text = String(label || '');
+  log.debug("Leaving labelProblem().");
+  return text.length <= 40 && /^[A-Za-z0-9 ._()-]*$/.test(text)
+    ? ''
+    : 'A name for the key pair is at most 40 letters, digits, spaces, ' +
+      'dots, dashes, underscores and brackets.';
 }
 
 // ---------------------------------------------------------------------------
@@ -504,30 +802,31 @@ function recordOf(name, raw, openKeys) {
 // writing that down a second time is a configuration step with no decision in
 // it.
 //
-// **A PERSON WITH NO KEY PAIR IS NOT AN ISSUER**, and that is deliberate
+// **A PERSON WITH NO VALID KEY PAIR IS NOT AN ISSUER**, and that is deliberate
 // rather than an optimisation: every person in this realm would otherwise be
 // an issuer by the fallback above, so an assertion naming any of them would
 // get past the registered-issuer refusal and be judged on its `x5c` alone.
-// Holding a key pair is the thing an operator DID.
+// Holding a key pair is the thing an operator DID — and since #1290 a key
+// pair that was revoked or has expired is not one held.
 //
-// **IT IS A SCAN OF THE KEY PAIR'S HOLDERS, AND THE COST IS WRITTEN DOWN HERE
-// RATHER THAN HIDDEN.** One read per person holding the profile's key pair
+// **IT IS A SCAN OF THE KEY PAIRS' HOLDERS, AND THE COST IS WRITTEN DOWN HERE
+// RATHER THAN HIDDEN.** One read per person holding the profile's records
 // (since #616, which follows from the rule just above; it was one read per
 // person in the realm, so a realm carrying the bulk-load job's five thousand
 // entries paid five thousand reads for a grant whose `iss` matched no
-// application). Reading `iss` as a username
-// FIRST would make the common case one read, and it was refused: a DECLARED
-// value has to win over a bare name (that is what `issuerEntry()` does for an
-// application, and what lets somebody assert under a URI), and a shortcut that
-// answered before the declarations had been looked at would resolve one
-// person's declared issuer to a different person who happens to be called
-// that. An index keyed by declared issuer is the answer if this ever matters;
-// it would be a second copy of what is on the entries, which is the thing this
-// register deliberately does not keep.
+// application). Reading `iss` as a username FIRST would make the common case
+// one read, and it was refused: a DECLARED value has to win over a bare name
+// (that is what `issuerEntry()` does for an application, and what lets
+// somebody assert under a URI), and a shortcut that answered before the
+// declarations had been looked at would resolve one person's declared issuer
+// to a different person who happens to be called that. An index keyed by
+// declared issuer is the answer if this ever matters; it would be a second
+// copy of what is on the entries, which is the thing this register
+// deliberately does not keep.
 //
 // **`purpose` SAYS WHICH PROFILE IS ASKING** (2026-09-13), and it decides both
-// halves of the question: which declaration is searched and which key pair
-// makes somebody an issuer. A person holding only an RFC 7523 key pair is no
+// halves of the question: which declaration is searched and which key pairs
+// make somebody an issuer. A person holding only RFC 7523 key pairs is no
 // RFC 7522 issuer, and the reverse — which is the crossing the two attribute
 // sets exist to prevent, made once here instead of being hoped for. Absent
 // means `jwt`, which is what every caller written before the SAML set sends.
@@ -536,9 +835,9 @@ function recordOf(name, raw, openKeys) {
  * Finds the person, if any, who issues assertions under an issuer name for a
  * profile.
  *
- * A declared issuer wins over a bare username, and a person with no key pair
- * for the profile is no issuer. One read per HOLDER of the profile's key
- * pair (#616), not per person in the realm.
+ * A declared issuer wins over a bare username, and a person with no valid key
+ * pair for the profile is no issuer. One read per HOLDER of the profile's key
+ * pairs (#616), not per person in the realm.
  *
  * @param iss - the assertion's issuer
  * @param purpose - `jwt` (the default) or `saml`
@@ -552,14 +851,12 @@ function issuerFor(iss, purpose) {
     log.debug('Leaving issuerFor(). No directory, issuer or profile.');
     return null;
   }
-  // THE HOLDERS OF THE PROFILE'S KEY PAIR, NOT EVERY PERSON (#616). A person
+  // THE HOLDERS OF THE PROFILE'S KEY PAIRS, NOT EVERY PERSON (#616). A person
   // with no key pair for the profile is no issuer (below), so only they need
   // be read — and `holdingAny()` asks the directory for exactly them, in
   // `persons()`' order (in a windowed process the store's `attr_names`
-  // holders, a page at a time). This was `persons()`, which in a windowed
-  // process paged every person in the realm out of the store on the token
-  // endpoint's thread for each assertion grant whose `iss` named no
-  // application. A directory without `holdingAny()` is walked as before.
+  // holders, a page at a time). A directory without `holdingAny()` is walked
+  // as before.
   const holderNames = typeof directory.holdingAny === 'function'
     ? (directory.holdingAny([KEY_PAIR_ATTRIBUTES[saml ? 'saml' : 'jwt']
       .present]) || []).map(function (one) {
@@ -640,35 +937,90 @@ function subjectIsSelf(record, sub, purpose) {
 }
 
 // ---------------------------------------------------------------------------
-// THE WRITE. Every value or none of them, and a failure says which one —
+// WHICH AUTHORITY OF THIS REALM SIGNED A CERTIFICATE, by the id its
+// revocation list is kept under — what a revocation has to name, because a
+// serial is unique only within one issuer. An issued key pair says
+// (`useCase`, `pki.issueSigningKeyPair()`); an uploaded certificate this
+// realm's authority issued is found by asking each authority of the realm
+// whether it issued that serial; an external authority's certificate is
+// none of them, and answers ''.
+// ---------------------------------------------------------------------------
+function authorityOf(scope, record) {
+  log.debug('Entering authorityOf().');
+  const serial = String(record.serialHex || '');
+  if (!serial) {
+    log.debug('Leaving authorityOf(). No serial.');
+    return '';
+  }
+  if (record.useCase) {
+    log.debug('Leaving authorityOf(). Named by the issue.');
+    return String(record.useCase);
+  }
+  if (String(record.source || '') === 'uploaded-external-ca') {
+    log.debug('Leaving authorityOf(). An external authority.');
+    return '';
+  }
+  let found = '';
+  try {
+    const rev = revocation();
+    rev.authorities([scope]).some(function (one) {
+      if (one.scope !== String(scope) || one.ca === 'root' ||
+          one.ca === 'intermediate' || !rev.issuedHere(scope, one.ca, serial)) {
+        return false;
+      }
+      found = String(one.ca);
+      return true;
+    });
+  } catch (e) {
+    // No authority in this process to ask: the certificate is held to its
+    // record's own mark, which is what an external one is.
+    log.debug('Caught in authorityOf(): ' + ((e && e.message) || e));
+    found = '';
+  }
+  log.debug('Leaving authorityOf(). ' + (found || 'none of ours'));
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// THE WRITE. **IT ADDS ONE KEY PAIR** (#1290), where until then it replaced
+// the one held. Every value or none of them, and a failure says which one —
 // `common/pki.js` hands a key pair over ONCE and keeps no copy, so a write
 // that half-succeeded is a key pair that is gone with a certificate on the
 // entry claiming otherwise.
 //
-// **`opts.purpose` PICKS THE SET** (2026-09-13), defaulting to `jwt` so the two
-// callers written before the SAML set — `/admin/pki` and
-// `/portal/signing-key` — write exactly what they wrote. A record from
-// `pki.registerCertificate()` has an EMPTY private key, and writing it is what
-// makes an upload a REPLACEMENT: an issued key pair's private half left beside
-// somebody else's certificate would be a key for a certificate it does not
-// match. The private key goes
-// FIRST for the same reason: a write that fails after it leaves the old
-// certificate with no key, which refuses rather than signs.
+// **`opts.purpose` PICKS THE SET**, defaulting to `jwt`. A record from
+// `pki.registerCertificate()` has an EMPTY private key: the person holds it,
+// and no private value is written for that key pair. The private key goes
+// FIRST, for the reason it always did: a write that fails after it leaves a
+// private value with no record, which nothing reads, rather than a record
+// whose key is lost.
+//
+// **THE CAP IS CHECKED HERE AS WELL AS AT THE DOORS.** The doors ask
+// `atCap()` before generating a key pair, so that one is not generated only
+// to be refused; this is the check that holds whatever door is added next.
+// A record whose id is already held REPLACES that record — the same
+// certificate uploaded twice is one key pair — and is not counted twice.
+// Expired records are forgotten first (RFC 5280 section 3.3, and the TLS
+// card's rule), so a person who replaces a key pair a year is not kept a
+// record of every one; a REVOKED one that has not expired stays, because its
+// record is what lets the page say it was revoked.
 // ---------------------------------------------------------------------------
 /**
- * Writes an issued or uploaded key pair onto a person's entry, every attribute
- * or a failure naming which one.
+ * Adds an issued or uploaded key pair to a person's entry, every value or a
+ * failure naming which one.
  *
- * The private key is sealed and written first; a key pair that fails to seal or
- * write is lost, since this service keeps no copy. A CAEP credential-change
- * event follows a successful write.
+ * The private key is sealed and written first; a key pair that fails to seal
+ * or write is lost, since this service keeps no copy. Refused at the cap
+ * (`pki.personSigningKeyMax`, STS-PKI-0223) and for a label that is not a
+ * short name (STS-PKI-0225). A CAEP credential-change event follows a
+ * successful write.
  *
  * @param username - the person's username
  * @param record - the key pair from `pki.js`: private key, certificate, chain,
- * JWKS, `kid` or thumbprint, `notAfter`, `source`
- * @param opts - `purpose` (`jwt` by default), `issuer` to declare, and
- * `initiatingEntity` and `via` for the event
- * @returns `{ ok, written, errors }`, with `errorCode` on a refusal
+ * JWK, `kid`, thumbprint, serial, `notAfter`, `source`
+ * @param opts - `purpose` (`jwt` by default), `issuer` to declare, `label`,
+ * and `initiatingEntity` and `via` for the event
+ * @returns `{ ok, written, key, errors }`, with `errorCode` on a refusal
  */
 function write(username, record, opts) {
   log.debug('Entering write(). username=' + username);
@@ -690,45 +1042,131 @@ function write(username, record, opts) {
                       'may hold a key pair for. There are ' +
                       PURPOSE_IDS.join(' and ') + '.'] };
   }
+  const label = String(options.label || '').trim();
+  const labelSaid = labelProblem(label);
+  if (labelSaid) {
+    log.debug('Leaving write(). Label refused.');
+    return { ok: false, errorCode: 'STS-PKI-0225', errors: [labelSaid] };
+  }
   const names = KEY_PAIR_ATTRIBUTES[purpose];
-  // Whether this REPLACES a key pair, read before the write: CAEP's
-  // change_type is `update` for a replacement and `create` for a first one.
-  const prior = recordFor(name);
-  const replacing = !!(prior && prior[names.certificate]);
-  const values = [
-    [names.privateKey, record.privateKeyPem || ''],
-    [names.certificate, record.certificatePem],
-    [names.chain, (record.chainPem || []).join('')],
-    [names.handle, purpose === 'saml' ? record.certificateThumbprint
-                                      : record.kid],
-    [names.expiresAt, generalizedTime(new Date(record.notAfter))],
-    [names.source, record.source || 'issued']
-  ];
-  if (names.jwks) {
-    values.splice(2, 0, [names.jwks, JSON.stringify(record.jwks)]);
+  const raw = directory.read(name);
+  if (!raw) {
+    log.debug('Leaving write(). Nobody by that name.');
+    return { ok: false, errorCode: 'STS-OAUTH-0087', written: [],
+             errors: ['There is nobody called "' + name + '" in this ' +
+                      'realm, so the key pair could not be written. This ' +
+                      'service keeps no second copy of a private key, so ' +
+                      'that key pair is gone.'] };
   }
-  if (options.issuer) {
-    values.push([names.issuer, String(options.issuer)]);
+  let scope = '';
+  try {
+    scope = currentRealm();
+  } catch (e) {
+    log.debug("Caught in write(): " + ((e && e.message) || e));
+    scope = '';
   }
+  const id = String(purpose === 'saml' ? record.certificateThumbprint
+                                       : record.kid);
+  const nowMs = Date.now();
+  const held = keysOf(name, raw, purpose, false, scope);
+  // What stays: everything not expired, and not the record this one replaces.
+  const kept = held.filter(function (one) {
+    return one.id !== id && one.state !== 'expired';
+  });
+  const valid = kept.filter(function (one) {
+    return one.state === 'valid';
+  }).length;
+  if (valid >= maxPerPerson()) {
+    log.debug('Leaving write(). The cap is reached.');
+    return { ok: false, errorCode: 'STS-PKI-0223', written: [],
+             errors: ['"' + name + '" already holds ' + valid + ' ' +
+                      names.rfc + ' signing key pair(s) that are still ' +
+                      'valid, which is pki.personSigningKeyMax. Revoke one ' +
+                      'that is no longer used and issue again.'] };
+  }
+  const keptIds = kept.map(function (one) {
+    return one.id;
+  });
+  const source = String(record.source || 'issued');
+  const stored = {
+    id: id,
+    label: label,
+    kid: String(record.kid || ''),
+    thumbprint: String(record.certificateThumbprint || ''),
+    source: source,
+    serialHex: String(record.serialHex || '').toLowerCase(),
+    caId: authorityOf(scope, { serialHex: record.serialHex,
+                               useCase: record.useCase, source: source }),
+    subject: String(record.subject || ''),
+    keyAlg: String(record.keyAlg || ''),
+    jwsAlg: String(record.jwsAlg || ''),
+    notBefore: String(record.notBefore || ''),
+    notAfter: new Date(record.notAfter).toISOString(),
+    expiresAt: generalizedTime(new Date(record.notAfter)),
+    certificatePem: String(record.certificatePem || ''),
+    chainPem: (Array.isArray(record.chainPem) ? record.chainPem
+                                              : [record.chainPem || ''])
+      .join(''),
+    createdAt: new Date(nowMs).toISOString()
+  };
+  if (purpose === 'jwt') {
+    stored.jwk = record.publicJwk ||
+      ((record.jwks && record.jwks.keys) || [])[0] || null;
+  }
+  // THE PRIVATE HALVES THAT STAY: each value's id is read without opening a
+  // sealed one where it can be, and a sealed one is opened only to learn
+  // which key pair it belongs to. A private value whose key pair is not kept
+  // is dropped with it.
+  const privates = [];
+  const unreadable = [];
+  valuesOf(raw[names.privateKey]).forEach(function (text) {
+    const plainId = privateIdOf(text);
+    const ownId = plainId !== null ? plainId
+      : (parseRecord(openValue(text, name) || '', name) || {}).id;
+    if (ownId === undefined || ownId === null || ownId === '') {
+      // A value that will not open stays: dropping it would be this write
+      // destroying somebody's key material it could not read.
+      unreadable.push(text);
+      return;
+    }
+    if (keptIds.indexOf(String(ownId)) >= 0) {
+      privates.push(text);
+    }
+  });
   const written = [];
-  for (let i = 0; i < values.length; i++) {
-    const attribute = values[i][0];
-    const sealed = sealValue(attribute, values[i][1]);
+  if (record.privateKeyPem) {
+    const sealed = sealValue(JSON.stringify({ id: id,
+                                              pem: record.privateKeyPem }));
     if (sealed === null) {
       log.error(errorCodes.tag('STS-OAUTH-0086') +
                 'person_assertions: a signing key pair was issued to "' +
-                name + '" and ' + attribute + ' could not be sealed. Nothing ' +
+                name + '" and its private key could not be sealed. Nothing ' +
                 'was written and the key pair is lost; issue again.');
       log.debug('Leaving write(). The seal failed.');
       return { ok: false, errorCode: 'STS-OAUTH-0086', written: written,
-               errors: ['`' + attribute + '` could not be sealed under this ' +
-                        'service\'s key-encryption key, so it was not ' +
-                        'written. This service keeps no second copy of a ' +
-                        'private key, so that key pair is gone. Fix the ' +
+               errors: ['`' + names.privateKey + '` could not be sealed ' +
+                        'under this service\'s key-encryption key, so it ' +
+                        'was not written. This service keeps no second copy ' +
+                        'of a private key, so that key pair is gone. Fix the ' +
                         'key-encryption key — /admin/encryption says what is ' +
                         'wrong with it — and issue again.'] };
     }
-    if (!directory.write(name, attribute, sealed)) {
+    privates.push(sealed);
+  }
+  const plan = [[names.privateKey, privates.concat(unreadable)],
+                [names.keys, kept.map(function (one) {
+                  return JSON.stringify(storedOf(one));
+                }).concat([JSON.stringify(stored)])]];
+  if (options.issuer) {
+    const declared = valuesOf(raw[names.issuer]);
+    if (declared.indexOf(String(options.issuer)) < 0) {
+      plan.push([names.issuer, declared.concat([String(options.issuer)])]);
+    }
+  }
+  for (let i = 0; i < plan.length; i++) {
+    const attribute = plan[i][0];
+    if (!directory.write(name, attribute, plan[i][1].length ? plan[i][1]
+                                                            : '')) {
       log.error(errorCodes.tag('STS-OAUTH-0087') +
                 'person_assertions: a signing key pair was issued to "' +
                 name + '" and ' + attribute + ' could not be written. The ' +
@@ -743,26 +1181,42 @@ function write(username, record, opts) {
     }
     written.push(attribute);
   }
-  log.info('person_assertions: "' + name + '" now holds an ' +
-           (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') + ' signing ' +
-           'key pair (' + (record.source || 'issued') + '), ' +
-           names.handleLabel + '=' + values[3][1] + ', valid until ' +
-           record.notAfter + '. It signs assertions ABOUT THAT PERSON and ' +
-           'about nobody else.');
+  log.info('person_assertions: "' + name + '" now holds another ' +
+           names.rfc + ' signing key pair (' + source + '), ' +
+           names.handleLabel + '=' + id + ', valid until ' +
+           stored.notAfter + ' — ' + (valid + 1) + ' valid in all. It signs ' +
+           'assertions ABOUT THAT PERSON and about nobody else.');
   // The certificate is what a receiver can name: its issuer and serial.
   accountSignals().certificateChanged({ username: name,
-    pem: record.certificatePem, changeType: replacing ? 'update' : 'create',
-    friendlyName: (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') +
-                  ' assertion signing key',
+    pem: stored.certificatePem, changeType: 'create',
+    friendlyName: label || (names.rfc + ' assertion signing key'),
     initiatingEntity: String(options.initiatingEntity || 'admin'),
     via: String(options.via || ''),
     reasonAdmin: 'A signing key pair for ' + (purpose === 'saml' ? 'SAML' :
-                 'JWT') + ' assertions about ' + name + ' was ' +
-                 (replacing ? 'replaced' : 'issued') + '.',
-    reasonUser: 'A key that signs assertions about you was ' +
-                (replacing ? 'replaced' : 'issued') + '.' });
+                 'JWT') + ' assertions about ' + name + ' was issued.',
+    reasonUser: 'A key that signs assertions about you was issued.' });
   log.debug('Leaving write(). ' + written.length + ' attribute(s).');
-  return { ok: true, written: written, errors: [] };
+  return { ok: true, written: written, errors: [],
+           key: Object.assign({}, stored, { state: 'valid',
+                                            privateKeyHeld:
+                                              !!record.privateKeyPem }) };
+}
+
+// A row back to what is stored: the state, the revocation the authority's
+// list answered and the private-key flag are READ, never written — the list
+// is the authority's, and a stored copy would be a second answer to it. What
+// this module marked itself is `withdrawnAt` and `withdrawnReason`, which a
+// row carries through untouched.
+function storedOf(row) {
+  log.debug("Entering storedOf().");
+  const out = Object.assign({}, row);
+  delete out.state;
+  delete out.revokedAt;
+  delete out.reason;
+  delete out.privateKeyHeld;
+  delete out.privateKeyPem;
+  log.debug("Leaving storedOf().");
+  return out;
 }
 
 // RFC 4517 GeneralizedTime, which is how every timestamp in this directory is
@@ -792,69 +1246,196 @@ function generalizedTime(when) {
          pad(d.getUTCSeconds()) + 'Z';
 }
 
-// Take the key pair off. ONE PERSON'S, and the declaration with it: unlike an
-// application — which may hold a JWKS it registered itself beside the one this
-// service issued — everything in this set was put there by the issue, so
-// leaving the `iss` declaration behind would leave a person declared as an
-// issuer with no key to issue with, which reads on the page as a key pair that
-// would not clear.
+// ---------------------------------------------------------------------------
+// REVOKE ONE KEY PAIR (#1290), which REPLACES "take off".
 //
-// **ONE PROFILE AT A TIME** (2026-09-13). A person may hold both key pairs,
-// and a control that took one off must leave the other working — the
-// application arm's rule and for its reason. Absent means `jwt`, which is what
-// `/portal/signing-key`'s Remove and `/admin/pki`'s person arm meant when they
-// were written.
-// `opts.initiatingEntity` and `opts.via` go on the CAEP event (#145).
+// **FOUND AMONG THIS PERSON'S OWN KEY PAIRS AND NOWHERE ELSE**, by its
+// handle (`kid` or thumbprint) or by its certificate's serial — the TLS
+// card's `revoke()` rule, for its reason: a handle belonging to somebody else
+// matches nothing, so a door that takes one from a form body cannot be used
+// to revoke another person's key pair.
+//
+// What it does, in order:
+//
+//   1. the certificate goes on its authority's revocation list
+//      (`pki_revocation.revoke()`, idempotent — the earlier entry wins), so a
+//      relying party that checks the CRL or asks the OCSP responder is told;
+//      an external authority's certificate has no list here, and this step
+//      is skipped and said;
+//   2. the record is MARKED revoked with its reason, which is what an
+//      external certificate's state is read from, and its private value is
+//      dropped — a revoked key's private half is a liability with no use;
+//   3. the verifiers stop accepting it: both read only VALID key pairs
+//      (`recordOf()`), so an assertion signed with it finds no registered key;
+//   4. where it was the profile's last valid key pair, the issuer
+//      declaration goes with it (see the header);
+//   5. CAEP credential-change `revoke`, and for `keyCompromise` a RISC
+//      credential-compromise — the TLS card's events, for its reasons.
+// ---------------------------------------------------------------------------
 /**
- * Takes one profile's key pair off a person's entry, and the issuer declaration
- * with it; the other profile's is left working.
+ * Revokes one of a person's key pairs for one profile, found by handle or
+ * serial among that person's key pairs only.
+ *
+ * Puts the certificate on its authority's CRL (an external authority's is
+ * marked revoked here only), drops the private half, and clears the
+ * profile's issuer declaration when no valid key pair is left. Raises CAEP
+ * (and, for `keyCompromise`, RISC) events.
  *
  * @param username - the person's username
  * @param purpose - `jwt` (the default) or `saml`
- * @param opts - `initiatingEntity` and `via`, for the CAEP event
- * @returns `{ ok, removed }`, with `errorCode` and `unknown` on a refusal
+ * @param handle - the key pair's `kid` or thumbprint, or its serial in hex
+ * @param reasonId - one of `REVOCATION_REASONS`; `cessationOfOperation`
+ *   otherwise
+ * @param opts - `initiatingEntity` (`user` or `admin`) and `via`, for the
+ *   events and the revocation entry's note
+ * @returns `{ ok: true, key, reason, already, onList, why }`, or
+ *   `{ ok: false, errorCode, errors }` when the person holds no such key pair
  */
-function clear(username, purpose, opts) {
-  log.debug('Entering clear(). username=' + username + ' purpose=' + purpose);
+function revoke(username, purpose, handle, reasonId, opts) {
+  log.debug('Entering revoke(). username=' + username + ' purpose=' +
+            purpose + ' handle=' + handle);
   const options = opts || {};
   const name = String(username || '');
   const id = purposeIdOf(purpose);
-  if (!directory || !name || !id) {
-    log.debug('Leaving clear(). No directory, name or profile.');
-    return { ok: false, errorCode: 'STS-OAUTH-0089', removed: 0 };
+  const wanted = String(handle || '').trim();
+  if (!directory) {
+    log.debug('Leaving revoke(). No directory.');
+    return { ok: false, errorCode: 'STS-OAUTH-0085',
+             errors: ['This process has no directory, so nobody holds a key ' +
+                      'pair to revoke.'] };
   }
-  const before = recordFor(name);
-  if (!before) {
-    log.debug('Leaving clear(). Nobody by that name.');
-    return { ok: false, errorCode: 'STS-OAUTH-0090', removed: 0,
-             unknown: true };
+  if (!id) {
+    log.debug('Leaving revoke(). An unknown profile.');
+    return { ok: false, errorCode: 'STS-PKI-0011',
+             errors: ['"' + purpose + '" is not a profile a person may hold ' +
+                      'a key pair for. There are ' + PURPOSE_IDS.join(' and ') +
+                      '.'] };
   }
+  const reason = REVOCATION_REASONS.indexOf(String(reasonId)) >= 0
+    ? String(reasonId) : 'cessationOfOperation';
   const names = KEY_PAIR_ATTRIBUTES[id];
-  let removed = 0;
-  [names.issuer].concat(names.attributes).forEach(function (attribute) {
-    const held = attribute === names.issuer
-      ? (id === 'saml' ? before.samlIssuers : before.issuers).length
-      : !!before[attribute];
-    if (!held) {
-      return;
-    }
-    if (directory.write(name, attribute, '')) {
-      removed += 1;
-    }
-  });
-  if (removed > 0 && before[names.certificate]) {
-    accountSignals().certificateChanged({ username: name,
-      pem: before[names.certificate], changeType: 'delete',
-      friendlyName: (id === 'saml' ? 'RFC 7522' : 'RFC 7523') +
-                    ' assertion signing key',
-      initiatingEntity: String(options.initiatingEntity || 'admin'),
-      via: String(options.via || ''),
-      reasonAdmin: 'The ' + (id === 'saml' ? 'SAML' : 'JWT') + ' assertion ' +
-                   'signing key pair of ' + name + ' was taken off.',
-      reasonUser: 'A key that signed assertions about you was removed.' });
+  const raw = name && wanted ? directory.read(name) : null;
+  let scope = '';
+  try {
+    scope = currentRealm();
+  } catch (e) {
+    log.debug("Caught in revoke(): " + ((e && e.message) || e));
+    scope = '';
   }
-  log.debug('Leaving clear(). ' + removed + ' attribute(s).');
-  return { ok: removed > 0, removed: removed };
+  const rows = raw ? keysOf(name, raw, id, false, scope) : [];
+  const serial = /^[0-9A-Fa-f:]+$/.test(wanted) ? normalSerial(wanted) : '';
+  const mine = rows.filter(function (one) {
+    return one.id === wanted ||
+           (!!serial && !!one.serialHex &&
+            normalSerial(one.serialHex) === serial);
+  })[0];
+  if (!mine) {
+    log.debug('Leaving revoke(). Not one of theirs.');
+    return { ok: false, errorCode: 'STS-PKI-0224',
+             errors: ['"' + name + '" holds no ' + names.rfc + ' signing key ' +
+                      'pair with that ' + names.handleLabel + ' or serial ' +
+                      'number.'] };
+  }
+  const initiating = String(options.initiatingEntity || 'admin');
+  let onList = null;
+  if (mine.caId && mine.serialHex) {
+    onList = revocation().revoke(scope, mine.caId, {
+      serialHex: mine.serialHex,
+      reason: reason,
+      subject: mine.subject,
+      note: initiating === 'user'
+        ? 'revoked by ' + name + ' on the user portal'
+        : 'revoked for ' + name + ' by an administrator'
+    });
+    if (!onList.ok) {
+      log.debug('Leaving revoke(). The authority refused.');
+      return onList;
+    }
+  }
+  const already = mine.state === 'revoked' || mine.state === 'superseded';
+  // THE RECORD IS MARKED AND ITS PRIVATE HALF DROPPED. The mark is kept
+  // whether or not the authority's list holds the serial (`withdrawnAt`), so
+  // an external certificate's state survives, and a list entry that wins
+  // over it reads the same either way.
+  const revokedAt = (onList && onList.entry && onList.entry.revokedAt) ||
+                    mine.revokedAt || new Date().toISOString();
+  const kept = rows.map(function (one) {
+    if (one.id !== mine.id) {
+      return JSON.stringify(storedOf(one));
+    }
+    return JSON.stringify(storedOf(Object.assign({}, one, {
+      withdrawnAt: revokedAt, withdrawnReason: mine.reason || reason })));
+  });
+  const privates = valuesOf(raw[names.privateKey]).filter(function (text) {
+    const plainId = privateIdOf(text);
+    const ownId = plainId !== null ? plainId
+      : (parseRecord(openValue(text, name) || '', name) || {}).id;
+    return String(ownId || '') !== mine.id;
+  });
+  directory.write(name, names.privateKey, privates.length ? privates : '');
+  if (!directory.write(name, names.keys, kept)) {
+    log.error(errorCodes.tag('STS-OAUTH-0087') +
+              'person_assertions: the ' + names.rfc + ' key pair ' + mine.id +
+              ' of "' + name + '" was revoked' +
+              (onList ? ' on its authority\'s list' : '') + ' and its ' +
+              'record could not be marked.');
+  }
+  // THE DECLARATION GOES WITH THE LAST VALID KEY PAIR, for the reason the
+  // header gives.
+  const left = rows.filter(function (one) {
+    return one.id !== mine.id && one.state === 'valid';
+  }).length;
+  let undeclared = false;
+  if (!left && valuesOf(raw[names.issuer]).length) {
+    undeclared = directory.write(name, names.issuer, '');
+  }
+  log.info('person_assertions: the ' + names.rfc + ' key pair ' +
+           names.handleLabel + '=' + mine.id + ' of "' + name + '" was ' +
+           'REVOKED (' + reason + ')' +
+           (onList ? ', on the "' + mine.caId + '" authority\'s list'
+                   : ', on no list of this service — an external ' +
+                     'authority issued it') +
+           '. Assertions signed with it are refused from now on; ' + left +
+           ' valid key pair(s) of the profile remain.');
+  if (!already) {
+    const friendly = mine.label || (names.rfc + ' assertion signing key');
+    const signal = { username: name, initiatingEntity: initiating,
+                     via: String(options.via || '') };
+    accountSignals().certificateChanged(Object.assign({}, signal, {
+      pem: mine.certificatePem, x509Serial: mine.serialHex,
+      changeType: 'revoke', friendlyName: friendly,
+      reasonAdmin: 'A ' + names.rfc + ' signing key pair of ' + name +
+                   ' was revoked (' + reason + ').',
+      reasonUser: initiating === 'user'
+        ? 'You revoked a key that signs assertions about you.'
+        : 'A key that signs assertions about you was revoked.' }));
+    // "SOMEBODY ELSE MAY HAVE THE KEY" (#231): RISC 1.0 section 2.7's
+    // `credential-compromise`, beside the CAEP revoke above.
+    if (reason === 'keyCompromise') {
+      accountSignals().credentialCompromised(Object.assign({}, signal, {
+        credentialType: 'x509',
+        reasonAdmin: 'A ' + names.rfc + ' signing key pair of ' + name +
+                     ' (' + names.handleLabel + ' ' + mine.id + ') was ' +
+                     'revoked because its key was compromised.',
+        reasonUser: 'A key that signs assertions about you was revoked ' +
+                    'because somebody else may have it.' }));
+    }
+  }
+  log.debug('Leaving revoke(). Revoked.');
+  return { ok: true, already: already, reason: reason,
+           onList: !!onList, undeclared: undeclared, remaining: left,
+           key: Object.assign({}, mine, { state: 'revoked',
+                                          revokedAt: revokedAt,
+                                          reason: mine.reason || reason,
+                                          privateKeyHeld: false }),
+           why: (onList
+             ? 'The certificate is on the "' + mine.caId + '" authority\'s ' +
+               'CRL and its OCSP responder answers `revoked` for it'
+             : 'An external authority issued that certificate, so it is on ' +
+               'no list of this service\'s — revoking it at its own ' +
+               'authority is that authority\'s act — and this service has ' +
+               'marked it revoked') +
+             '. Assertions signed with it are refused from now on.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -865,30 +1446,22 @@ function clear(username, purpose, opts) {
 // read the console.
 //
 // **PRESENCE, READ IN ONE WALK, WITH NOTHING UNSEALED (#352, 2026-09-29).**
-// This was `persons()` — every name in the realm, uncapped — and then
-// `recordFor()` for each: a directory read per person and a `keystore.open()`
-// of both private keys per holder, to answer a list that carries no private
-// key. On testidp that was twenty-nine thousand reads per view of
-// `/admin/pki`. It is now the directory's `holdingAny()`: the people holding
-// any of the four attributes that make somebody a row here (either profile's
-// key pair or declared issuer), with their raw values, in the one walk the
-// directory makes anyway — and the record built from those values with
-// `openKeys` false, so no private key is opened or even copied.
-//
-// **THE ANSWER IS THE SAME ROWS IN THE SAME ORDER.** `holdingAny()` hands
-// them back in `allPersons()`'s order, and the test below is the old one
-// applied to the same record, so an entry carrying an attribute with only an
-// empty value is left out exactly as it was. A directory that offers no
-// `holdingAny()` — an older filler, or a test's stub — is walked the old way,
-// still without an unseal.
+// The directory's `holdingAny()`: the people holding any of the four
+// attributes that make somebody a row here (either profile's key pairs or
+// declared issuer), with their raw values, in the one walk the directory
+// makes anyway — and the record built from those values with `openKeys`
+// false, so no private key is opened or even copied. A directory that offers
+// no `holdingAny()` — an older filler, or a test's stub — is walked the old
+// way, still without an unseal.
 // ---------------------------------------------------------------------------
 /**
  * Lists everybody in the realm who holds a key pair or declares an issuer, for
  * `/admin/pki` and the management API. No private key is in the answer, and
  * none is opened to build it.
  *
- * @returns one row per person, the JWT profile's members at the top and the
- * SAML profile's under `saml`
+ * @returns one row per person: `jwt` and `saml`, each with `keys` (every key
+ * pair with its state, newest first), `hasKeyPair` (a valid one is held),
+ * the declared and effective issuers
  */
 function holders() {
   log.debug('Entering holders().');
@@ -911,42 +1484,29 @@ function holders() {
   }
   const out = [];
   found.forEach(function (record) {
-    if (!record || (!record.hasKeyPair && !record.issuers.length &&
-                    !record.hasSamlKeyPair && !record.samlIssuers.length)) {
+    if (!record || (!record.keys.jwt.length && !record.issuers.length &&
+                    !record.keys.saml.length && !record.samlIssuers.length)) {
       return;
     }
-    // THE JWT MEMBERS KEEP THEIR NAMES AND MEANINGS, and the SAML key pair is
-    // a nested member beside them (2026-09-13): `/admin/pki` and the
-    // certificate catalogue read the first set, and a row for somebody who
-    // holds only a SAML key pair reads `hasKeyPair: false` there, which is
-    // true of the profile those readers ask about.
+    const profile = function (keys, declared, effective, has) {
+      return { hasKeyPair: has, keys: keys, declaredIssuers: declared.slice(),
+               issuers: effective.slice(), declared: declared.length > 0 };
+    };
     out.push({ username: record.username,
-               hasKeyPair: record.hasKeyPair,
-               declaredIssuers: record.issuers.slice(),
-               issuers: record.effectiveIssuers.slice(),
-               declared: record.issuers.length > 0,
-               kid: record.stsAssertionKid,
-               expiresAt: record.stsAssertionExpiresAt,
-               source: record.stsAssertionKeySource ||
-                       (record.hasKeyPair ? 'issued' : ''),
-               certificatePem: record.stsAssertionCertificate,
-               saml: { hasKeyPair: record.hasSamlKeyPair,
-                       declaredIssuers: record.samlIssuers.slice(),
-                       issuers: record.samlEffectiveIssuers.slice(),
-                       declared: record.samlIssuers.length > 0,
-                       thumbprint: record.stsSamlAssertionThumbprint,
-                       expiresAt: record.stsSamlAssertionExpiresAt,
-                       source: record.stsSamlAssertionKeySource ||
-                               (record.hasSamlKeyPair ? 'issued' : ''),
-                       certificatePem: record.stsSamlAssertionCertificate } });
+               jwt: profile(record.keys.jwt, record.issuers,
+                            record.effectiveIssuers, record.hasKeyPair),
+               saml: profile(record.keys.saml, record.samlIssuers,
+                             record.samlEffectiveIssuers,
+                             record.hasSamlKeyPair) });
   });
   log.debug('Leaving holders(). ' + out.length + ' person(s).');
   return out;
 }
 
 /**
- * The register of people who hold an RFC 7523 or RFC 7522 signing key pair,
- * which may assert about that person and about nobody else.
+ * The register of people who hold RFC 7523 and RFC 7522 signing key pairs,
+ * which may assert about that person and about nobody else — several per
+ * profile, each revoked on its own (#1290).
  *
  * Key pairs live on the person's directory entry, reached through a slot the
  * directory fills.
@@ -962,14 +1522,20 @@ module.exports = {
   PURPOSE_IDS: PURPOSE_IDS,
   ATTRIBUTES: ATTRIBUTES,
   SEALED_ATTRIBUTES: SEALED_ATTRIBUTES,
+  REVOCATION_REASONS: REVOCATION_REASONS,
   setDirectory: setDirectory,
   storable: storable,
+  maxPerPerson: maxPerPerson,
   isSealed: isSealed,
   recordFor: recordFor,
+  listFor: listFor,
+  activeFor: activeFor,
+  atCap: atCap,
+  labelProblem: labelProblem,
   issuerFor: issuerFor,
   subjectIsSelf: subjectIsSelf,
   write: write,
-  clear: clear,
+  revoke: revoke,
   holders: holders,
   generalizedTime: generalizedTime
 };

@@ -806,17 +806,20 @@ function page(realm, baseKey, afterKey, limit, options) {
 // — how many hold one, and whether anybody does — are answered by the
 // counters (`COUNTED_ATTRIBUTES`).
 // ---------------------------------------------------------------------------
+// `stsassertionkeypair` and `stssamlassertionkeypair` replaced
+// `stsassertionjwks` and `stssamlassertioncertificate` in version 30 (#1290),
+// when a person's signing key pairs became several records per profile.
 const ASKED_ATTRIBUTES = Object.freeze([
   'federationlink', 'hobapublickey', 'memberof', 'oauthconsent',
   'pwdaccountlockedtime',
   'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer',
-  'stsassertionjwks', 'stsbackupcodes', 'stscertificatehostname',
+  'stsassertionkeypair', 'stsbackupcodes', 'stscertificatehostname',
   'stsclaimsourcetokens',
   'stsdefaultdelegationsemantics', 'stsdelegationsemantics',
   'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate',
   'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor',
-  'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate',
-  'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject',
+  'stsmayact', 'stsnotdelegated', 'stssamlassertionissuer',
+  'stssamlassertionkeypair', 'stsscepchallenge', 'stsselfissuedsubject',
   'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential',
   'stswebauthnuserhandle'
 ]);
