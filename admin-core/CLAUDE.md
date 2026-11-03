@@ -421,6 +421,21 @@ larger cap and listing everybody. So:
   (`ldap.credential-tallies` on `/admin/caches`).
   `tests/users_page_before_decoration.js` section 7 compares every tile
   with a count of every person.
+* **Which number is which, said on the page (#684, 2026-11-03).** `known`
+  stays the LIST's length — giving it the directory's meaning would undo
+  the cap — and past the cap it stood still while people outside the
+  slice were deleted, thousands away from SCIM's `totalResults`. The
+  footer now says so (`body.knownCapped`, `body.knownUncapped`) and draws
+  `directoryPeople` beside it, the figure a client compares with SCIM.
+* **The tiles' count has an AGE, and the page says it (#684).** The ten
+  seconds above mean two workers can answer two figures, and during a
+  fast delete a tile rose on the next load by the deletes another process
+  committed meanwhile. The tally carries `countedAt` and `keptForSeconds`
+  (null in memory, where nothing can lag); `directoryTilesOf()` lifts them
+  out of `directoryCounts`, which stays the tiles alone, into
+  `directoryCountedAt` and `directoryCountsKeptFor`, and the page draws
+  the time, the age and the bound (`body.tilesAge`) wherever the bound is
+  not null. `tests/users_page_count_age.js` covers both.
 
 Every other Directory page counts its container with `ldap_server.js`'s
 `countUnderContainer()` (`ldap/CLAUDE.md`, *the window*).

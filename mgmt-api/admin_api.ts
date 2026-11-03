@@ -6862,7 +6862,21 @@ class AdminApi {
                      'second factor) and `noWayIn` (neither a password nor ' +
                      'a sign-in key). Null where the directory offers no ' +
                      'such count. `factors`, `authenticatedHere` and the ' +
-                     '`factor` filter stay the LIST\'s.',
+                     '`factor` filter stay the LIST\'s. A client ' +
+                     'comparing this resource with SCIM\'s ' +
+                     '`totalResults` reads `directoryPeople`, never ' +
+                     '`known` (#684).\n\nTHE COUNT HAS AN AGE (#684). ' +
+                     '`directoryCountedAt` is when this process\'s ' +
+                     'directory counted `directoryCounts` (ISO 8601), ' +
+                     'and `directoryCountsKeptFor` the most seconds it ' +
+                     'keeps that count against another process\'s ' +
+                     'committed writes — its own writes, and the ones it ' +
+                     'has applied, end it at once. Two requests answered ' +
+                     'by two workers inside that window may carry two ' +
+                     'figures. Both are null where the directory offers ' +
+                     'no count, and `directoryCountsKeptFor` is null ' +
+                     'where no other process can lag it (the directory ' +
+                     'in memory).',
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'user', in: 'query', required: false,

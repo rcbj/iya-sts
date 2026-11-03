@@ -6753,7 +6753,16 @@ class Credentials {
     const out = { people: Number(tally.people) || 0,
                   withPassword: Number(tally.withPassword) || 0,
                   withSecond: 0, withTotp: 0, withKeys: 0, primaryKeys: 0,
-                  passwordOnly: 0, unreadable: 0, noWayIn: 0 };
+                  passwordOnly: 0, unreadable: 0, noWayIn: 0,
+                  // WHEN THE DIRECTORY COUNTED THEM, AND FOR HOW LONG IT
+                  // KEEPS A COUNT AGAINST ANOTHER PROCESS'S WRITES (#684):
+                  // `ldap_server.js`'s `credentialTallies()` says why.
+                  // Not tiles: `AdminViews.directoryTilesOf()` lifts both
+                  // out beside them. Null where the directory did not say.
+                  countedAt: Number(tally.countedAt) || null,
+                  keptForSeconds: tally.keptForSeconds === undefined ||
+                                  tally.keptForSeconds === null
+                    ? null : Number(tally.keptForSeconds) };
     // The holders with a password and a second factor come off
     // `passwordOnly`, and those with no password and a sign-in key off
     // `noWayIn`; everybody else is a password or nothing.

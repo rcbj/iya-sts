@@ -13592,9 +13592,11 @@ class AdminViews {
     // the page then draws the list's counts, as it always did.
     // -----------------------------------------------------------------------
     const { credentials } = this.deps;
+    const tallied = deferTiles ? null : credentials.directoryFactorCounts();
     const directoryCounts = deferTiles ? null
-      : this.directoryTilesOf(all, credentials.directoryFactorCounts(),
+      : this.directoryTilesOf(all, tallied,
                               credentials.directoryPeopleNamed);
+    const directoryAge = this.directoryAgeOf(tallied);
     const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
@@ -13634,6 +13636,16 @@ class AdminViews {
           // — see above. `factors` and `authenticatedHere` stay the LIST's,
           // for the `?factor=` filter and for a caller that asked them.
           directoryCounts: directoryCounts,
+          // HOW OLD THOSE COUNTS ARE (#684). `directoryCountedAt` is when
+          // this process's directory counted them (ISO 8601), and
+          // `directoryCountsKeptFor` the most seconds it keeps a count
+          // against ANOTHER process's committed writes — its own and the
+          // ones it has applied end a count at once — or null where no
+          // other process can lag it (the directory in memory). So two
+          // workers inside that window may answer two figures, and the page
+          // says so rather than letting a tile move without a reason.
+          directoryCountedAt: directoryAge.countedAt,
+          directoryCountsKeptFor: directoryAge.keptForSeconds,
           registryCap: population.registryCap,
           filter: { q: wantedText || null, protocol: wantedProtocol || null,
                     factor: wantedFactor || null, kind: wantedKind || null },
@@ -13831,12 +13843,34 @@ class AdminViews {
       : named;
     const signedIn = n === null || n === undefined ? null
       : Math.min(n, tallied.people);
+    // The count's age is not a tile: `directoryAgeOf()` answers it beside
+    // them, so `directoryCounts` stays the tiles alone.
+    const tiles = Object.assign({}, tallied);
+    delete tiles.countedAt;
+    delete tiles.keptForSeconds;
     log.debug("Leaving AdminViews.directoryTilesOf().");
-    return Object.assign({}, tallied, {
+    return Object.assign(tiles, {
       signedInHere: signedIn,
       neverSignedInHere: signedIn === null ? null
         : tallied.people - signedIn
     });
+  }
+
+  // When the directory counted its tiles, and for how many seconds it keeps
+  // a count against another process's writes (#684); both null where it
+  // offers no tally or did not say.
+  private directoryAgeOf(tallied) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.directoryAgeOf().");
+    const at = tallied ? Number(tallied.countedAt) : NaN;
+    const kept = tallied ? tallied.keptForSeconds : null;
+    log.debug("Leaving AdminViews.directoryAgeOf().");
+    return {
+      countedAt: Number.isFinite(at) && at > 0
+        ? new Date(at).toISOString() : null,
+      keptForSeconds: kept === null || kept === undefined ? null
+        : Number(kept)
+    };
   }
 
   // The keys of the list's rows the register has seen authenticate.
@@ -13874,6 +13908,9 @@ class AdminViews {
       : null;
     const directoryCounts = this.directoryTilesOf(view.all, tallied, named);
     json.directoryCounts = directoryCounts;
+    const directoryAge = this.directoryAgeOf(tallied);
+    json.directoryCountedAt = directoryAge.countedAt;
+    json.directoryCountsKeptFor = directoryAge.keptForSeconds;
     json.directoryPeople = directoryCounts ? directoryCounts.people
       : view.population.directoryPeople;
     const users = json.users || [];
@@ -15792,6 +15829,8 @@ class AdminViews {
       capped: list.json.capped, scanLimit: list.json.scanLimit,
       directoryPeople: list.json.directoryPeople,
       directoryCounts: list.json.directoryCounts,
+      directoryCountedAt: list.json.directoryCountedAt,
+      directoryCountsKeptFor: list.json.directoryCountsKeptFor,
       filter: list.json.filter,
       page: list.json.page, pages: list.json.pages, perPage: list.json.perPage,
       firstRow: list.json.firstRow, lastRow: list.json.lastRow,

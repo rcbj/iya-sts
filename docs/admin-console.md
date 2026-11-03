@@ -335,6 +335,17 @@ A request that was *refused* records nothing, so this is a list of identities
 that got somewhere, not of names that were tried. Applications are never listed
 here — they are on [Applications](applications.md).
 
+**The tiles count the realm's whole directory; the list is capped.** The
+list reads at most the first 5,000 directory people (`credentials.factorScanLimit`)
+and adds everybody this service has seen, so the footer's *known in total* is
+the list's length. The footer says when the list is capped and shows the
+directory's own count beside it, which is `directoryPeople` on
+`GET /admin-api/users`. Compare that figure, not `known`, with `totalResults`
+from `GET /scim/v2/Users`. With a database, the directory may keep its counts
+for up to ten seconds against changes another process committed. A note under
+the tiles shows when they were counted and how old they are, and the API
+carries the same as `directoryCountedAt` and `directoryCountsKeptFor`.
+
 `?user=<name>` drills into one person's page, **drawn as tabs**:
 
 | Tab | What it holds |

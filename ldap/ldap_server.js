@@ -15861,7 +15861,17 @@ function censusOfEntry(stored) {
 // KEPT until something is written under `ou=users` (the subtree clock, which
 // this process's own writes and the rows it applies move), and in a windowed
 // process for at most ten seconds besides, for another process's writes.
+//
+// **AND THE ANSWER SAYS SO (#684).** Two workers inside those ten seconds can
+// answer two figures, and during a fast delete the tile rose on the next load
+// by the deletes another process committed in the meantime, with nothing on
+// the page saying the figure had an age. So the value carries `countedAt`
+// (when this process counted it, in milliseconds) and `keptForSeconds` (the
+// bound on another process's writes: ten in a windowed process, null in
+// memory, where there is no other process to lag behind), and the page draws
+// both.
 // ---------------------------------------------------------------------------
+const CREDENTIAL_TALLIES_KEPT_MS = 10000;
 const credentialTalliesMemo = realms.keyed(function () {
   return { version: -1, at: 0, spec: '', value: null };
 });
@@ -15887,7 +15897,8 @@ function credentialTallies(spec) {
   const version = subtreeVersion(usersDn());
   const held = credentialTalliesMemo();
   if (held.value && held.version === version && held.spec === signature &&
-      (!directoryWindow || Date.now() - held.at <= 10000)) {
+      (!directoryWindow ||
+       Date.now() - held.at <= CREDENTIAL_TALLIES_KEPT_MS)) {
     credentialTalliesCount.hit();
     log.debug('Leaving credentialTallies(). Kept.');
     return held.value;
@@ -15899,7 +15910,10 @@ function credentialTallies(spec) {
     const values = stored.attributes[attribute];
     return Array.isArray(values) && values.length > 0;
   };
-  const value = { people: 0, withPassword: 0, holders: [] };
+  const value = { people: 0, withPassword: 0, holders: [],
+                  countedAt: Date.now(),
+                  keptForSeconds: directoryWindow
+                    ? CREDENTIAL_TALLIES_KEPT_MS / 1000 : null };
   if (directoryWindow) {
     const realmId = realms.currentId();
     const counted = directoryWindow.countHolding(realmId, base,
@@ -15976,7 +15990,7 @@ async function credentialTalliesAsync(spec) {
   const version = subtreeVersion(usersDn());
   const held = credentialTalliesMemo();
   if (held.value && held.version === version && held.spec === signature &&
-      Date.now() - held.at <= 10000) {
+      Date.now() - held.at <= CREDENTIAL_TALLIES_KEPT_MS) {
     credentialTalliesCount.hit();
     log.debug('Leaving credentialTalliesAsync(). Kept.');
     return held.value;
@@ -15985,7 +15999,9 @@ async function credentialTalliesAsync(spec) {
   const realmId = realms.currentId();
   const base = normalizeDn(usersDn());
   const suffix = ',' + base;
-  const value = { people: 0, withPassword: 0, holders: [] };
+  const value = { people: 0, withPassword: 0, holders: [],
+                  countedAt: Date.now(),
+                  keptForSeconds: CREDENTIAL_TALLIES_KEPT_MS / 1000 };
   const counted = await directoryWindow.countHoldingAsync(realmId, base,
                                                           passwordAttribute);
   value.people = counted.n;
