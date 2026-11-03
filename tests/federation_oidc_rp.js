@@ -139,8 +139,12 @@ function childMain() {
           op.registered = JSON.parse(body || '{}');
           op.registrations = (op.registrations || 0) + 1;
           return send(201, Object.assign({}, op.registered,
+            // A SECRET WITH WHAT FORM-ENCODING CHANGES (#930), as the
+            // suite's registrations hand out: 7g decodes the Basic header
+            // a token request carries against it.
             { client_id: 'dyn-' + op.registrations,
-              client_secret: 'dyn-secret-' + op.registrations }));
+              client_secret: 'dyn %+:<\u00e9/secret-' +
+                             op.registrations }));
         }
         if (/\/jwks$/.test(url.pathname)) {
           return send(200, { keys: [jwk] });
@@ -632,6 +636,44 @@ function childMain() {
          '7f. register-partner registers again; an unsigned Request Object ' +
          'registers no key and is sent alg none',
          JSON.stringify(rereg) + ' ' + r.text.slice(0, 80));
+
+    // --- 7g. the registered client's Basic credentials --------------------
+    // RFC 6749 section 2.3.1: id and secret each form-urlencoded, then
+    // joined and base64-encoded. Sent raw, the suite's URLDecoder refused
+    // a secret holding `%` ("Incomplete trailing escape") and its
+    // ValidateClientIdAndSecret failed the rest (2026-11-03).
+    const regd = federation.get(DYN);
+    const issued = federation.clientSecretOf(regd);
+    const callsBefore = op.calls.length;
+    await require(ROOT_DIR + '/federation/federation_http').fetchJson(
+      Object.assign({}, regd, { fedTokenUrl: opBase + 'basic-probe' }),
+      'fedTokenUrl', { method: 'POST', form: { grant_type: 'probe' },
+                       basic: { user: regd.fedClientId, pass: issued } });
+    const probe = op.calls.slice(callsBefore).filter(function (c) {
+      return /basic-probe$/.test(c.path);
+    })[0] || { auth: '' };
+    const joined = Buffer.from(probe.auth.replace(/^Basic /, ''), 'base64')
+      .toString('utf8');
+    const colon = joined.indexOf(':');
+    const formDecoded = function (v) {
+      return decodeURIComponent(String(v).replace(/\+/g, ' '));
+    };
+    let decodedId = '';
+    let decodedSecret = '';
+    try {
+      decodedId = formDecoded(joined.slice(0, colon));
+      decodedSecret = formDecoded(joined.slice(colon + 1));
+    } catch (e) {
+      decodedSecret = 'undecodable: ' + ((e && e.message) || e);
+    }
+    note(/[%+:<\u00e9 ]/.test(issued) && colon > 0 &&
+         decodedId === regd.fedClientId && decodedSecret === issued &&
+         joined.slice(colon + 1).indexOf(':') < 0,
+         '7g. a registered client\'s Basic header form-urlencodes the id and ' +
+         'the secret (RFC 6749 section 2.3.1), so a secret holding % + : < ' +
+         'and a space decodes to itself',
+         JSON.stringify({ issued: issued, joined: joined,
+                          decoded: [decodedId, decodedSecret] }));
 
     // --- 8. WebFinger from a typed identifier --------------------------------
     before = coded('STS-FED-0215');
