@@ -2035,6 +2035,22 @@
     "en": "3f48d3e7de647a63",
     "text": "À qui peut être adressée une assertion JWT RFC 7523 ou RFC 7522 / SAML 1.1 présentée comme subject_token ou actor_token RFC 8693. AUTHORIZATION-SERVER (la valeur par défaut) est la règle propre au grant par assertion : son audience nomme ce point de terminaison de jeton ou cet émetteur, et un Recipient SAML le point de terminaison de jeton. ANY-DECLARED-RELYING-PARTY accepte aussi une audience nommant une application enregistrée dans ce domaine (et, pour SAML, un Recipient qui est un assertion consumer service enregistré sur le client qui effectue l’échange) — TRANSMISSION DE JETON : un jeton émis pour une partie de confiance est échangé contre un autre, ce que l’acte sur /admin/delegation enregistre comme tel. AVERTISSEMENT : quiconque détient un tel jeton — chaque partie de confiance pour laquelle il a été émis — peut alors l’échanger ; ne l’activez que là où c’est la conception voulue."
   },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "Accepter un jeton Kerberos dans un échange de jetons"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "Indique si un subject_token ou un actor_token RFC 8693 peut être un jeton Kerberos (un AP-REQ destiné au SPN propre de ce serveur d'autorisation, en base64url, typé par l'un des six URI du Kerberos Token Profile 1.1). L'accepteur le vérifie dans les deux modes. Un jeton de sujet délégué nomme le client qui effectue l'échange comme dernier service dans le S4U_DELEGATION_INFO de son PAC, et la chaîne devient la revendication act imbriquée du jeton émis. Désactivé, ce type de jeton est refusé."
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "Émettre un jeton Kerberos à partir d'un échange de jetons"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "Indique si un requested_token_type qui nomme l'un des six URI du Kerberos Token Profile 1.1 reçoit en réponse un jeton Kerberos : un AP-REQ pour l'unique audience ou ressource, qui doit être une application qui est un service Kerberos, dans access_token avec issued_token_type égal à cet URI et token_type N_A. La chaîne act d'une délégation devient le S4U_DELEGATION_INFO du ticket. Désactivé, une telle demande est refusée."
+  },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
     "text": "Jeton d’actualisation issu d’un échange de jetons"
@@ -4850,6 +4866,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "Indique si une requête vers /sts dont l’en-tête wsse:Security ne porte aucun justificatif authentifie son demandeur par le certificat client TLS de la connexion. Seul un certificat vérifié lors de la négociation et que ce domaine a délivré à une personne ou à une application (un certificat client TLS du portail utilisateur ou des Credentials de l’application, ou un certificat inscrit par ACME, EST ou SCEP) est un justificatif, dans les deux modes ; un certificat révoqué, un certificat d’un autre domaine et un certificat que son titulaire ne détient plus sont refusés avec wst:FailedAuthentication. Le jeton délivré indique qu’un certificat a été utilisé : TLSClient dans une assertion SAML 2.0, urn:ietf:rfc:2246 dans une assertion SAML 1.1, amr swk dans un JWT. Désactivé, le certificat est ignoré ici."
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "Accepter un jeton Kerberos"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "Indique si une requête vers /sts peut présenter un jeton Kerberos (un AP-REQ destiné au SPN propre de ce service, dans un BinarySecurityToken de l'un des six ValueType du Kerberos Token Profile 1.1) comme justificatif du demandeur ou dans wst:OnBehalfOf ou wst14:ActAs. L'accepteur vérifie le ticket dans les deux modes. Dans l'un ou l'autre élément, ce doit être un ticket délégué : obtenu par le demandeur par S4U2Proxy (son PAC nomme le demandeur en dernier), ou acheté avec un TGT transmis à un demandeur approuvé pour la délégation. Désactivé, un tel jeton est refusé."
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "Émettre des jetons Kerberos"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "Indique si un wst:TokenType qui nomme l'un des six ValueType du Kerberos Token Profile 1.1 reçoit en réponse un jeton Kerberos : un AP-REQ portant un ticket de service que le KDC de ce domaine a émis pour le sujet vers le service Kerberos que nomme AppliesTo, la sous-clé de l'Authenticator étant renvoyée comme jeton de preuve sur TLS. Un ticket ActAs nomme chaque partie ayant agi dans le S4U_DELEGATION_INFO de son PAC. Désactivé, une telle demande est refusée."
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",

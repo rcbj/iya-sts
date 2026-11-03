@@ -2035,6 +2035,22 @@
     "en": "3f48d3e7de647a63",
     "text": "A qué puede ir dirigida una aserción JWT RFC 7523 o RFC 7522 / SAML 1.1 presentada como subject_token o actor_token de RFC 8693. AUTHORIZATION-SERVER (el valor predeterminado) es la propia regla de la concesión por aserción: su audiencia nombra este endpoint de token o emisor, y un Recipient SAML el endpoint de token. ANY-DECLARED-RELYING-PARTY acepta también una audiencia que nombra una aplicación registrada en este dominio (y, para SAML, un Recipient que es un servicio consumidor de aserciones registrado en el cliente que hace el intercambio) — REENVÍO DE TOKENS: un token emitido a una parte que confía se cambia por otro, y el acto en /admin/delegation lo registra como tal. ADVERTENCIA: cualquiera que tenga un token así — cada parte que confía a la que se emitió — puede entonces intercambiarlo; actívelo solo donde ese sea el diseño."
   },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "Aceptar un token Kerberos en un intercambio de tokens"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "Si un subject_token o actor_token de RFC 8693 puede ser un token Kerberos (un AP-REQ para el SPN propio de este servidor de autorización, en base64url, con el tipo de uno de los seis URI del Kerberos Token Profile 1.1). El aceptador lo comprueba en ambos modos. Un token de sujeto delegado nombra al cliente que hace el intercambio como último servicio en el S4U_DELEGATION_INFO de su PAC, y la cadena pasa a ser la notificación act anidada del token emitido. Desactivado, ese tipo de token se rechaza."
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "Emitir un token Kerberos desde un intercambio de tokens"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "Si un requested_token_type que nombra uno de los seis URI del Kerberos Token Profile 1.1 se responde con un token Kerberos: un AP-REQ para la única audiencia o recurso, que debe ser una aplicación que sea un servicio Kerberos, en access_token con issued_token_type igual a ese URI y token_type N_A. La cadena act de una delegación pasa a ser el S4U_DELEGATION_INFO del ticket. Desactivado, esa solicitud se rechaza."
+  },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
     "text": "Token de actualización de un intercambio de tokens"
@@ -4850,6 +4866,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "Indica si una solicitud a /sts cuya cabecera wsse:Security no lleva ninguna credencial autentica a su solicitante mediante el certificado de cliente TLS de la conexión. Solo es una credencial un certificado que se verificó en el protocolo de enlace y que este dominio emitió a una persona o a una aplicación (un certificado de cliente TLS del portal de usuario o de las Credentials de la aplicación, o uno inscrito por ACME, EST o SCEP), en ambos modos; uno revocado, uno de otro dominio y uno que su titular ya no tiene se rechazan con wst:FailedAuthentication. El token emitido indica que se usó un certificado: TLSClient en una aserción SAML 2.0, urn:ietf:rfc:2246 en una SAML 1.1, amr swk en un JWT. Desactivado, el certificado se ignora aquí."
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "Aceptar un token Kerberos"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "Si una solicitud a /sts puede presentar un token Kerberos (un AP-REQ para el SPN propio de este servicio, en un BinarySecurityToken de uno de los seis ValueType del Kerberos Token Profile 1.1) como credencial del solicitante o dentro de wst:OnBehalfOf o wst14:ActAs. El aceptador comprueba el ticket en ambos modos. Dentro de cualquiera de los dos elementos debe ser un ticket delegado: uno que el solicitante obtuvo por S4U2Proxy (su PAC nombra al solicitante en último lugar), o uno comprado con un TGT reenviado a un solicitante de confianza para la delegación. Desactivado, ese token se rechaza."
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "Emitir tokens Kerberos"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "Si un wst:TokenType que nombra uno de los seis ValueType del Kerberos Token Profile 1.1 se responde con un token Kerberos: un AP-REQ que lleva un ticket de servicio que el KDC de este reino emitió para el sujeto al servicio Kerberos que nombra AppliesTo, con la subclave del Authenticator devuelta como token de prueba por TLS. Un ticket ActAs nombra a cada parte que actuó en el S4U_DELEGATION_INFO de su PAC. Desactivado, esa solicitud se rechaza."
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",

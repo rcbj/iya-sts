@@ -6575,9 +6575,254 @@ function listen(port) {
 // registerWorkerOperation().
 registerWorkerOperation();
 
+// ---------------------------------------------------------------------------
+// A TICKET THE SECURITY TOKEN SERVICE ISSUES AS A TOKEN (#658).
+//
+// WS-Trust's `wst:TokenType` and RFC 8693's `requested_token_type` may ask
+// for a Kerberos token (the Web Services Security Kerberos Token Profile
+// 1.1's AP-REQ), and the ticket inside it is THIS KDC's: the STS and the KDC
+// are one process, so the ticket is sealed here, with the keys and the PAC
+// builder every other ticket of this realm goes through — not by a second
+// ticket builder in `kerberos/krb5_tokens.ts`, which would be a second copy
+// of what a ticket of this realm says. `krb5_tokens.ts` wraps what this
+// returns in an Authenticator and an AP-REQ.
+//
+// WHAT IS DIFFERENT FROM A TGS-REQ, and why each is right:
+//
+//   * NO TGT IS PRESENTED. The subject proved themselves to the STS (a
+//     UsernameToken, an assertion, a JWT, an earlier Kerberos token), and
+//     the STS's issuance and delegation policies decided the exchange before
+//     this is reached. This function decides nothing of the kind: it is
+//     asked to seal a ticket already decided, which is the position the
+//     KDC's own S4U2Self branch is in once the policy has answered.
+//   * THE PAC IS BUILT FRESH from the principal database (`buildPacFor()`),
+//     exactly as for a TGS-REQ whose client this KDC holds; a subject of
+//     ANOTHER Kerberos realm has no account here, so their PAC is the one
+//     their own token carried (`spec.carriedPac`, already SID-filtered on
+//     arrival), re-signed for the target — the referral branch's rule.
+//   * `S4U_DELEGATION_INFO` is written when the exchange was a DELEGATION
+//     (`spec.delegationInfo`), naming the target and every party that acted,
+//     in the order they acted — the record an S4U2Proxy ticket carries
+//     (#489's syntax: `SPN@REALM`, or an application's identifier for a
+//     party with no SPN, rcbj's decision D4 on #658).
+//   * PRE-AUTHENT IS NOT SET. RFC 4120 section 2.2 says the flag reports the
+//     client's INITIAL authentication; this ticket asserts an identity the
+//     STS was shown, not an AS exchange this KDC verified. A service that
+//     reads the flag is told the truth.
+//   * FORWARDABLE only where the caller asks AND the subject is not
+//     protected (`isProtected()`, [MS-SFU] 3.2.1's DelegationNotAllowed), as
+//     the S4U2Proxy branch decides it; OK-AS-DELEGATE on the service's
+//     `krb5TrustedForDelegation`, as every TGS-REP decides it.
+//   * A ticket for `krbtgt/<another realm>` is a REFERRAL toward a trust
+//     (#430), and its PAC is signed with the inter-realm key, server, KDC and
+//     ticket signature alike, as `issueReferral()` signs one — the one key
+//     the partner's KDC holds to check them with.
+//
+// NO REQUIRE WAS ADDED: every function this calls is in this file or in a
+// module it already requires, so the parent project's COPY closure is what
+// it was. `krb5_tokens.ts`, which calls this, is reached from WS-Trust and
+// the token endpoint, neither of which is in that closure.
+//
+// `spec`: { client: { name, realm }, service: { name }, forwardable,
+// forwarded, delegationInfo, carriedPac, lifetimeSeconds, etypes }.
+// Answers `{ ok: true, ticket, sessionKey, flags, … }` or `{ ok: false,
+// errorCode, reason }`.
+// ---------------------------------------------------------------------------
+async function mintTicket(spec) {
+  log.debug('Entering mintTicket(). ' + (spec && spec.client &&
+            (spec.client.name || []).join('/')) + ' for ' +
+            (spec && spec.service && (spec.service.name || []).join('/')));
+  const answeringRealm = ourRealm();
+  const refuse = function (code, reason) {
+    log.debug('Entering refuse().');
+    log.info(errorCodes.tag(code) + 'krb5: no ticket was minted for the ' +
+             'security token service: ' + reason);
+    log.debug('Leaving refuse().');
+    return { ok: false, errorCode: code, reason: reason };
+  };
+  const clientName = { type: msgs.NAME_TYPE.PRINCIPAL,
+                       name: (spec.client.name || []).map(String) };
+  const clientRealm = String(spec.client.realm || answeringRealm);
+  const sname = { type: msgs.NAME_TYPE.SRV_INST,
+                  name: (spec.service.name || []).map(String) };
+  const isTgt = isTgtRequest(sname);
+  const referral = isTgt && sname.name[1] !== answeringRealm;
+  const service = principals.find(sname.name, answeringRealm);
+  if (!service) {
+    log.debug('Leaving mintTicket(). No such service.');
+    return refuse('STS-KRB-0244', 'this realm (' + answeringRealm + ') ' +
+                  'holds no principal ' + sname.name.join('/') + ', so ' +
+                  'there is no key to seal a ticket for it with');
+  }
+  const offered = principals.supportedEtypes(service).filter(function (id) {
+    return principals.etypePermitted(id);
+  });
+  const preference = spec.etypes && spec.etypes.length ? spec.etypes
+                                                        : offered;
+  let etype = null;
+  for (const id of preference) {
+    if (offered.indexOf(id) !== -1) {
+      etype = id;
+      break;
+    }
+  }
+  if (etype === null) {
+    log.debug('Leaving mintTicket(). No enctype.');
+    return refuse('STS-KRB-0245', sname.name.join('/') + ' offers [' +
+                  offered.join(', ') + '] and the request named [' +
+                  (preference || []).join(', ') + ']');
+  }
+  let client = null;
+  if (clientRealm === answeringRealm) {
+    if (principals.personDisabled(clientName.name, clientRealm)) {
+      log.debug('Leaving mintTicket(). A disabled subject.');
+      return refuse('STS-KRB-0246', clientName.name.join('/') + '@' +
+                    clientRealm + ' is disabled');
+    }
+    const looked = principals.lookupUser(clientName.name, clientRealm);
+    // A person whose keys were never derived — nobody needs their key for
+    // this ticket, which nobody's password sealed — is the keyless record
+    // PKINIT uses (`certificatePerson()`).
+    client = looked.principal ||
+      principals.certificatePerson(clientName.name, clientRealm);
+    if (!client) {
+      log.debug('Leaving mintTicket(). Nobody to issue for.');
+      return refuse('STS-KRB-0247', 'this KDC holds no account for ' +
+                    clientName.name.join('/') + '@' + clientRealm +
+                    (looked.refusal ? ' (' + looked.refusal.eText + ')' : ''));
+    }
+  } else if (!spec.carriedPac) {
+    log.debug('Leaving mintTicket(). A foreign subject with no PAC.');
+    return refuse('STS-KRB-0248', clientName.name.join('/') + '@' +
+                  clientRealm + ' is of another Kerberos realm and brought ' +
+                  'no PAC of their own, and this KDC may not invent one');
+  }
+  const flags = [];
+  if (spec.forwardable &&
+      !krb5Delegation().isProtected(clientName.name, clientRealm)) {
+    flags.push(msgs.TICKET_FLAG.FORWARDABLE);
+  }
+  if (spec.forwarded) {
+    flags.push(msgs.TICKET_FLAG.FORWARDED);
+  }
+  if (!isTgt &&
+      krb5Delegation().trustedForDelegation(sname.name, answeringRealm)) {
+    flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
+  }
+  const at = now();
+  const lifetime = Math.min(Number(spec.lifetimeSeconds) ||
+                            ticketLifetimeSeconds(), ticketLifetimeSeconds());
+  const authtime = spec.authtime instanceof Date ? spec.authtime : at;
+  const endtime = kdcTime(lifetime);
+  const profile = kcrypto.etypeById(etype);
+  const sessionKey = kcrypto.randomBytes(profile.keyBytes);
+  const serverKey = await principals.longTermKey(service, etype);
+  const krbtgt = principals.find(['krbtgt', answeringRealm], answeringRealm);
+  const krbtgtEtype = krbtgt ? principals.supportedEtypes(krbtgt)[0] : null;
+  if (!krbtgt || krbtgtEtype === undefined || krbtgtEtype === null) {
+    log.debug('Leaving mintTicket(). No krbtgt key.');
+    return refuse('STS-KRB-0244', 'this realm (' + answeringRealm + ') ' +
+                  'holds no krbtgt key to sign the PAC with');
+  }
+  const serverKeyObj = { etype: etype, key: serverKey };
+  const kdcKey = referral ? serverKeyObj
+    : { etype: krbtgtEtype,
+        key: await principals.longTermKey(krbtgt, krbtgtEtype) };
+  const encodeTicketPart = function (authorizationData) {
+    log.debug('Entering encodeTicketPart().');
+    log.debug('Leaving encodeTicketPart().');
+    return msgs.encEncTicketPart({
+      flags: flags,
+      key: { etype: etype, key: sessionKey },
+      crealm: clientRealm,
+      cname: clientName,
+      authtime: authtime,
+      starttime: at,
+      endtime: endtime,
+      renewTill: null,
+      authorizationData: authorizationData || null
+    });
+  };
+  const spn = sname.name.join('/') + '@' + answeringRealm;
+  let claims = null;
+  let pacBytes;
+  if (client) {
+    claims = claimsForTicket({ username: clientName.name.join('/'),
+                               isTgt: isTgt, spn: spn });
+    pacBytes = await buildPacFor(client, {
+      clientClaims: claims,
+      authtime: authtime,
+      clientRealm: clientRealm,
+      serverKey: serverKeyObj,
+      kdcKey: kdcKey,
+      isTgt: isTgt,
+      pacRequested: true,
+      encodeTicketPart: encodeTicketPart
+    });
+  } else {
+    pacBytes = spec.carriedPac;
+  }
+  if (spec.delegationInfo || referral || !client) {
+    const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
+      new Uint8Array([0])));
+    pacBytes = await kpac.resignPac(pacForTarget(pacBytes, isTgt),
+      Object.assign({
+        serverKey: serverKeyObj,
+        kdcKey: kdcKey,
+        includeTicketSignature: !isTgt || referral,
+        includeExtendedKdcSignature: !isTgt,
+        ticketBytes: placeholder
+      }, spec.delegationInfo ? { delegationInfo: spec.delegationInfo } : {}));
+  }
+  const encTicketPart = encodeTicketPart(
+    kpac.wrapPacAsAuthorizationData(pacBytes));
+  const ticket = {
+    realm: answeringRealm,
+    sname: sname,
+    encPart: {
+      etype: etype,
+      kvno: service.kvno,
+      cipher: await profile.encrypt(serverKey,
+                                    kcrypto.KEY_USAGE.KDC_REP_TICKET,
+                                    encTicketPart)
+    }
+  };
+  stats.recordTicket(isTgt ? 'TGT' : 'service ticket', {
+    client: clientName.name.join('/') + '@' + clientRealm,
+    realm: answeringRealm,
+    service: sname.name.join('/'),
+    etype: profile.name,
+    expiresAt: endtime.getTime(),
+    claimSet: claims ? 'kerberos-pac' : '',
+    username: clientName.name.join('/'),
+    pacClaims: claims ? claims.count : 0
+  });
+  log.info('krb5: minted a ' + (isTgt ? 'TGT' : 'service ticket') + ' for ' +
+           clientName.name.join('/') + '@' + clientRealm + ' to ' + spn +
+           ' for the security token service (' + profile.name +
+           (spec.delegationInfo ? ', with S4U_DELEGATION_INFO' : '') + ')');
+  log.debug('Leaving mintTicket().');
+  return {
+    ok: true,
+    ticket: ticket,
+    sessionKey: { etype: etype, key: sessionKey },
+    flags: msgs.ticketFlagNames(flags),
+    flagBits: flags.slice(),
+    authtime: authtime,
+    starttime: at,
+    endtime: endtime,
+    crealm: clientRealm,
+    cname: clientName,
+    sname: sname,
+    realm: answeringRealm
+  };
+}
+
 module.exports = {
   listen: listen,
   handleMessage: handleMessage,
+  // #658: a ticket sealed for the security token service, decided there.
+  mintTicket: mintTicket,
   // PORT 88'S OPERATION SEAM (2026-10-07), exported for
   // tests/kerberos_worker_operation.js and for nothing else in the service:
   // the sockets call answerSocketMessage() and a worker reaches

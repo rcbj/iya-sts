@@ -2035,6 +2035,22 @@
     "en": "3f48d3e7de647a63",
     "text": "Vad ett RFC 7523-JWT eller ett RFC 7522- / SAML 1.1-intyg som visas upp som RFC 8693 subject_token eller actor_token får vara adresserat till. AUTHORIZATION-SERVER (standard) är intygsbeviljandets egen regel: dess målgrupp namnger den här tokenslutpunkten eller utfärdaren, och en SAML Recipient tokenslutpunkten. ANY-DECLARED-RELYING-PARTY godtar även en målgrupp som namnger en applikation registrerad i den här sfären (och, för SAML, en Recipient som är en assertion consumer service registrerad på den utväxlande klienten) — TOKENVIDAREBEFORDRAN: en token som utfärdats till en förlitande part byts mot en annan, vilket åtgärden på /admin/delegation registrerar som sådant. VARNING: vem som helst som har en sådan token — varje förlitande part som den utfärdades till — kan då utväxla den; slå på det bara där det är avsikten."
   },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "Godta en Kerberos-token i ett tokenutbyte"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "Om en subject_token eller actor_token enligt RFC 8693 får vara en Kerberos-token (en AP-REQ för den här auktoriseringsserverns egen SPN, base64url, typad med en av Kerberos Token Profile 1.1:s sex URI:er). Mottagaren kontrollerar den i båda lägena. En delegerad subjekttoken anger den utbytande klienten som sista tjänst i sin PAC:s S4U_DELEGATION_INFO, och kedjan blir den utfärdade tokenens nästlade act-anspråk. Av: en sådan tokentyp avvisas."
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "Utfärda en Kerberos-token från ett tokenutbyte"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "Om en requested_token_type som anger en av Kerberos Token Profile 1.1:s sex URI:er besvaras med en Kerberos-token: en AP-REQ för den enda målgruppen eller resursen, som måste vara ett program som är en Kerberos-tjänst, i access_token med issued_token_type lika med den URI:n och token_type N_A. En delegerings act-kedja blir biljettens S4U_DELEGATION_INFO. Av: en sådan begäran avvisas."
+  },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
     "text": "Uppdateringstoken från en tokenutväxling"
@@ -4850,6 +4866,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "Om en begäran till /sts vars wsse:Security-huvud inte bär någon autentiseringsuppgift autentiserar sin beställare med TLS-klientcertifikatet på anslutningen. Endast ett certifikat som verifierades i handskakningen och som denna sfär har utfärdat till en person eller ett program (ett TLS-klientcertifikat från användarportalen eller programmets Credentials, eller ett som registrerats via ACME, EST eller SCEP) är en autentiseringsuppgift, i båda lägena; ett återkallat, ett från en annan sfär och ett som innehavaren inte längre har avvisas med wst:FailedAuthentication. Den utfärdade token säger att ett certifikat användes: TLSClient i ett SAML 2.0-intyg, urn:ietf:rfc:2246 i ett SAML 1.1-intyg, amr swk i en JWT. Avstängt ignoreras certifikatet här."
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "Godta en Kerberos-token"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "Om en begäran till /sts får lägga fram en Kerberos-token (en AP-REQ för den här tjänstens egen SPN, i en BinarySecurityToken med en av Kerberos Token Profile 1.1:s sex ValueType) som den begärandes autentiseringsuppgift eller inuti wst:OnBehalfOf eller wst14:ActAs. Mottagaren kontrollerar biljetten i båda lägena. Inuti något av elementen måste det vara en delegerad biljett: en som den begärande fick genom S4U2Proxy (dess PAC anger den begärande sist), eller en som köpts med en TGT vidarebefordrad till en begärande som är betrodd för delegering. Av: en sådan token avvisas."
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "Utfärda Kerberos-token"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "Om en wst:TokenType som anger en av Kerberos Token Profile 1.1:s sex ValueType besvaras med en Kerberos-token: en AP-REQ med en tjänstebiljett som den här sfärens KDC utfärdade för subjektet till den Kerberos-tjänst som AppliesTo anger, med Authenticators undernyckel returnerad som bevistoken över TLS. En ActAs-biljett anger varje part som agerade i sin PAC:s S4U_DELEGATION_INFO. Av: en sådan begäran avvisas."
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",

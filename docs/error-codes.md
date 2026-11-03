@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5114** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5151** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -64,13 +64,13 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 421
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 734
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 745
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 68
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 195
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 243
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 157
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -2368,6 +2368,17 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0984` | An opaque access token was not minted: three fresh 256-bit handles each collided with a digest already stored (#501). | none — the mint throws; no token is issued |
 | `STS-OAUTH-0985` | A request at an endpoint a client presents itself at (authorization, token, PAR, introspection, revocation, device authorization, CIBA) named the client_id of an API resource object (kind oauth2-resource-server). A resource is never a client; refused in every mode (#1139). | invalid_client (RFC 6749 section 5.2), HTTP 401; HTTP 400 at the authorization endpoint, never redirected |
 | `STS-OAUTH-0986` | An access token was not minted: an audience it would carry — the default resource, a resource the request named, the client's own, or one a scope or authorization_details derived — is held by no application object (an own API whose object was deleted, or an audience nobody registered). Refused in every mode (#1140). | invalid_target (RFC 8707 section 2), HTTP 400; redirected from the authorization endpoint |
+| `STS-OAUTH-0987` | A token exchange named a Kerberos subject_token_type or actor_token_type while oauth2.tokenExchangeKerberosInput is off (#658). | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0988` | A Kerberos subject_token or actor_token was refused by the acceptor (#658): not for this authorization server's SPN, a bad key or Authenticator, the clock, a replay. Every mode. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0989` | A Kerberos subject_token's S4U_DELEGATION_INFO does not end at the exchanging client (#658). Every mode. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0990` | A Kerberos subject_token was bought with a forwarded TGT and the exchanging client is not trusted for unconstrained delegation (#658). Every mode. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0991` | A Kerberos subject_token was not obtained by Kerberos delegation and is not the exchanging client's own (#658, rcbj's decision D2). Every mode. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0992` | A Kerberos subject_token names a person with no directory entry here, or a principal of another realm while a token other than a Kerberos one was asked for (#658). | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0993` | A Kerberos actor_token's client is not the exchanging client's own service principal (#658). Every mode. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0994` | A token exchange asked for a Kerberos requested_token_type while oauth2.tokenExchangeKerberosOutput is off (#658). | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0995` | A token exchange asked for a Kerberos token for more or fewer than one target, or for a target that is not a Kerberos service (#658). | invalid_target (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0996` | A token exchange asked for a Kerberos token on a request that did not arrive over TLS, and its session key is in the response (#658, rcbj's decision D5). | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0997` | The KDC could not issue the Kerberos ticket a token exchange asked for (#658); its own code is in the log line beside this one. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
 
 ## STS-SAML
 
@@ -2556,6 +2567,21 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0051` | A signed RST could not be checked against the used-assertion history (not asked, full, or the store could not be asked), so it is refused rather than accepted unchecked. Product (#521). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0052` | A signed RST names a person whose account is disabled. Product (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0053` | A signed RST also carries a UsernameToken, assertion or JWT naming a different requester from its signer. Every mode (#521). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0054` | A Kerberos token was presented to /sts as the requester's credential or inside OnBehalfOf / ActAs while wstrust.acceptKerberos is off (#658). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 as the credential, wst:InvalidRequest inside an element |
+| `STS-WSTRUST-0055` | A Kerberos token reached handleRst() without having been accepted first, so there is no verdict to believe (#658). Fail-closed. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 as the credential, wst:InvalidRequest inside an element |
+| `STS-WSTRUST-0056` | The requester's Kerberos token was refused by the acceptor (#658): not for this service's SPN, a bad key or Authenticator, the clock, a replay, a withheld enctype. Every mode. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0057` | The requester's Kerberos token names a person whose account is disabled (#658). Every mode. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0058` | The Kerberos token inside OnBehalfOf / ActAs was refused by the acceptor (#658). Every mode. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0059` | The Kerberos ticket inside OnBehalfOf / ActAs was not obtained by Kerberos delegation: no S4U_DELEGATION_INFO in its PAC and not FORWARDED (#658, rcbj's decision D2). Every mode. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0060` | The delegated Kerberos ticket's S4U_DELEGATION_INFO does not end at the requester, or the request presented no credential beside it (#658). Every mode. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0061` | The delegated Kerberos ticket was bought with a forwarded TGT and the requester is not trusted for unconstrained delegation (krb5TrustedForDelegation) (#658). Every mode. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0062` | wst:TokenType asked for a Kerberos token while wstrust.issueKerberos is off (#658). | SOAP Fault wst:BadRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0063` | wst:TokenType asked for a Kerberos token on a request that did not arrive over TLS, and its session key is the proof token (#658, rcbj's decision D5). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0064` | wst:TokenType asked for a Kerberos token and the AppliesTo is not a Kerberos service: no application for it has an SPN@REALM identifier or a krb5ServicePrincipalName (#658). | SOAP Fault wst:BadRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0065` | wst:Delegatable asked for a forwarded TGT inside a Kerberos token and the target is not trusted for unconstrained delegation, or the subject may not be delegated (#658). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0066` | The KDC could not issue the ticket inside a requested Kerberos token (#658); its own code is in the log line beside this one. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0067` | A Renew or Cancel named a Kerberos token, which WS-Trust neither renews nor cancels: its ticket is renewed at the KDC and the AP-REQ was good once (#658). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0068` | A Validate named a Kerberos token the acceptor did not accept, or that was not checked because wstrust.acceptKerberos is off (#658). | HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section 7 |
 
 ## STS-WSFED
 
@@ -3127,6 +3153,17 @@ Raised from: kerberos/.
 | `STS-KRB-0241` | A Kerberos trust's key rotation or pairing was refused: no such key, no source for the new key, a partner that is not a trust realm of this service, or the partner realm's side could not be written. | none — the console and /admin-api (#430) |
 | `STS-KRB-0242` | Classic constrained delegation across a Kerberos trust was refused by the target's realm: the front end's realm referred the evidence, and this realm's own krb5.crossRealmClassicDelegation is off (both realms must turn it on). | KDC_ERR_POLICY (12); [MS-SFU] 3.2.5.2 |
 | `STS-KRB-0243` | A Kerberos principal named a person the directory found, and the name on their stored keys differs from that principal even after both are folded to lower case. The keys stay unused. A case-only mismatch of the real principal is the older refusal and is not this code (#644). | none (a log line; the principal is unknown to the KDC) |
+| `STS-KRB-0244` | The KDC was asked to mint a ticket for the security token service (#658) for a service, or with a krbtgt key, this realm does not hold. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0245` | The KDC was asked to mint a ticket for the security token service (#658) and the target service holds no key of an enctype the request named and the realm's mode permits. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0246` | The KDC was asked to mint a ticket for the security token service (#658) about a disabled person. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0247` | The KDC was asked to mint a ticket for the security token service (#658) about a name it holds no account for, not even a keyless one. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0248` | The KDC was asked to mint a ticket for the security token service (#658) about a principal of another Kerberos realm who brought no PAC of their own, and the KDC may not invent one. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0249` | A Kerberos token presented to WS-Trust or the token exchange (#658) is empty, or is not the form its declared type names: not a GSS InitialContextToken carrying an AP-REQ for a GSS type, or not an RFC 4120 AP-REQ for a bare one. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0250` | The Kerberos acceptor threw, or answered nothing, for a Kerberos token presented to WS-Trust or the token exchange (#658); the token is refused. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0251` | A Kerberos token was asked for a service in another Kerberos realm (#658) and no trust of this realm routes to it. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0252` | A Kerberos token was asked for a service in another Kerberos realm (#658) and a realm on the way is served by no trust realm of this process; no trust record carries a KDC address to send to, and none is dialled. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0253` | A Kerberos token was asked for a service in another Kerberos realm (#658) and a KDC on the way refused the security token service's TGS-REQ with an uncoded error. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0254` | A Kerberos token was asked for a service in another Kerberos realm (#658) and reaching it took more crossings than krb5.maxReferralHops allows. | none (the caller answers its own protocol's refusal) |
 
 ## STS-LDAP
 

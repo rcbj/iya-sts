@@ -14405,6 +14405,28 @@ function digest(algorithm, data, encoding) {
   return encoding ? hash.digest(encoding) : hash.digest();
 }
 
+// THE KERBEROS TOKEN PROFILE'S KEY IDENTIFIER (#658). The Web Services
+// Security Kerberos Token Profile 1.1 section 3.2 names a Kerberos token in a
+// SecurityTokenReference by `#Kerberosv5APREQSHA1`: the base64 SHA-1 of the
+// token's bytes. It is an IDENTIFIER that the profile fixes, compared for
+// equality and never trusted for integrity — the AP-REQ it names carries its
+// own, under the ticket's session key — so SHA-1 is not a choice made here
+// and `digest()`'s list, which refuses it to anything new, is not widened.
+/**
+ * Returns the Kerberos Token Profile 1.1 key identifier of a Kerberos token:
+ * the base64 SHA-1 of its bytes.
+ *
+ * @param bytes - the token as carried (an AP-REQ or its GSS wrapping)
+ * @returns the base64 identifier
+ */
+function kerberosTokenKeyIdentifier(bytes) {
+  log.debug("Entering kerberosTokenKeyIdentifier().");
+  const out = nodeCrypto.createHash('sha1').update(Buffer.from(bytes || []))
+    .digest('base64');
+  log.debug("Leaving kerberosTokenKeyIdentifier().");
+  return out;
+}
+
 // The name a store keeps for a credential it only looks up, spends or
 // compares (#614): a bearer value an authorization code, a device code, a
 // `request_uri`, an artifact handle, a nonce or a token is held as its SHA-256
@@ -17239,6 +17261,7 @@ module.exports = {
   // --- section 15: digests, key derivation and key import (#178) ---
   DIGESTS: DIGESTS,
   digest: digest,
+  kerberosTokenKeyIdentifier: kerberosTokenKeyIdentifier,
   credentialDigest: credentialDigest,
   hkdf: hkdf,
   publicKeyFromJwk: publicKeyFromJwk,

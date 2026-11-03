@@ -362,6 +362,8 @@ var config = {
     refreshRequiresConsent: true,                  // Refresh requires recorded consent
     delegatedPermissionsEnforced: false,           // Enforce delegated permissions
     tokenExchangeAudience: "authorization-server", // Audience of an assertion exchanged
+    tokenExchangeKerberosInput: true,              // Accept a Kerberos token in a token exchange
+    tokenExchangeKerberosOutput: false,            // Issue a Kerberos token from a token exchange
     tokenExchangeRefreshToken: "when-requested",   // Refresh token from a token exchange
     breakIdTokenNonce: false,                      // Break the ID Token nonce (development only)
     refreshIdleSeconds: 86400,                     // Refresh token idle timeout (s)
@@ -761,7 +763,9 @@ var config = {
     maxTokenLifetimeMin: 1440,     // Longest lifetime a request may ask for (minutes)
     jwtAlgorithm: "RS256",         // JWT signature algorithm
     jwtCertificateHeader: "x5u",   // JWT certificate header
-    acceptClientCertificate: true  // Accept the TLS client certificate as the requester's credential
+    acceptClientCertificate: true, // Accept the TLS client certificate as the requester's credential
+    acceptKerberos: true,          // Accept a Kerberos token
+    issueKerberos: false           // Issue Kerberos tokens
   },
 
   // --- WS-Federation ---------------------------------------------------

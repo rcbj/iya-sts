@@ -2035,6 +2035,22 @@
     "en": "3f48d3e7de647a63",
     "text": "作為 RFC 8693 subject_token 或 actor_token 出示的 RFC 7523 JWT 或 RFC 7522／SAML 1.1 斷言可以以什麼為對象。AUTHORIZATION-SERVER（預設）是斷言授權類型本身的規則：其對象指名此權杖端點或簽發者，SAML Recipient 則指名權杖端點。ANY-DECLARED-RELYING-PARTY 也接受指名此領域中已註冊之應用程式的對象（就 SAML 而言，也接受為進行交換之用戶端註冊的斷言取用服務作為 Recipient）——即「權杖轉送」：簽發給某個依賴方的權杖被換成另一個，/admin/delegation 上的行為記錄會如實記錄。警告：此時任何持有此類權杖的人——它被簽發給的每個依賴方——都能交換它；只有在設計如此時才開啟。"
   },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "在權杖交換中接受 Kerberos 權杖"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "RFC 8693 的 subject_token 或 actor_token 是否可以是 Kerberos 權杖（發給本授權伺服器自身 SPN 的 AP-REQ，base64url 編碼，類型為 Kerberos Token Profile 1.1 的六個 URI 之一）。接受器在兩種模式下都會檢查它。委派的主體權杖在其 PAC 的 S4U_DELEGATION_INFO 中把執行交換的用戶端列為最後一個服務，該鏈成為所簽發權杖的巢狀 act 宣告。關閉時，拒絕此類權杖類型。"
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "透過權杖交換簽發 Kerberos 權杖"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "指定 Kerberos Token Profile 1.1 六個 URI 之一的 requested_token_type 是否以 Kerberos 權杖回應：一個發給唯一受眾或資源的 AP-REQ（該受眾或資源必須是作為 Kerberos 服務的應用程式），放在 access_token 中，issued_token_type 為該 URI，token_type 為 N_A。委派的 act 鏈成為票證的 S4U_DELEGATION_INFO。關閉時，拒絕此類請求。"
+  },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
     "text": "權杖交換的重新整理權杖"
@@ -4850,6 +4866,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "當送往 /sts 的請求之 wsse:Security 標頭未攜帶任何認證資料時，是否以連線上的 TLS 用戶端憑證來驗證請求方。只有在交握時驗證通過、且由本領域核發給某個人或某個應用程式的憑證（來自使用者入口網站或應用程式 Credentials 的 TLS 用戶端憑證，或透過 ACME、EST 或 SCEP 註冊的憑證）才是認證資料，兩種模式皆然；已撤銷的憑證、來自其他領域的憑證，以及持有者已不再持有的憑證，會以 wst:FailedAuthentication 拒絕。核發的權杖會表明使用了憑證：SAML 2.0 斷言中為 TLSClient，SAML 1.1 斷言中為 urn:ietf:rfc:2246，JWT 中為 amr swk。關閉時，此處忽略該憑證。"
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "接受 Kerberos 權杖"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "對 /sts 的請求是否可以出示 Kerberos 權杖（發給本服務自身 SPN 的 AP-REQ，放在 ValueType 為 Kerberos Token Profile 1.1 六種之一的 BinarySecurityToken 中），作為請求者的憑證，或放在 wst:OnBehalfOf 或 wst14:ActAs 中。接受器在兩種模式下都會檢查票證。在這兩個元素中，它必須是委派票證：請求者透過 S4U2Proxy 取得的票證（其 PAC 把請求者列在最後），或用轉送給受信任可委派之請求者的 TGT 換得的票證。關閉時，拒絕此類權杖。"
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "簽發 Kerberos 權杖"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "指定 Kerberos Token Profile 1.1 六種 ValueType 之一的 wst:TokenType 是否以 Kerberos 權杖回應：一個 AP-REQ，攜帶本領域 KDC 為主體簽發、發給 AppliesTo 所指 Kerberos 服務的服務票證，並透過 TLS 把 Authenticator 的子金鑰作為證明權杖傳回。ActAs 票證在其 PAC 的 S4U_DELEGATION_INFO 中列出每個執行過動作的參與方。關閉時，拒絕此類請求。"
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
