@@ -15278,6 +15278,12 @@ const CODES = [
       'hold it. Admin Write does not reach these.',
     spec: 'LDAP insufficientAccessRights (50)' },
   // ===== ATTR ==============================================================
+  { code: 'STS-LDAP-0204',
+    summary: 'An entry was refused before it was created or renamed: its DN ' +
+      'is longer than the store can hold as a key (MariaDB, 352 ' +
+      'characters of normalised DN), and the flush would refuse it after ' +
+      'it was in memory.',
+    spec: '' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

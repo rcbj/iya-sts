@@ -694,7 +694,14 @@ const TABLES = SCHEMA_OBJECTS.filter(function (object) {
   return object.name;
 });
 
+// THE KEY LIMITS a DOOR asks before it creates an entry (#677): InnoDB's
+// 3072-byte key over (realm, parent_key, dn_key) fixes them, and a DN key
+// over them would be refused at the flush (STS-STORE-0140) after the entry
+// was already in memory. `persistence.dnKeyRefusal()` reads these.
+const LIMITS = { dnKey: 352, realm: 64 };
+
 module.exports = {
+  LIMITS: LIMITS,
   SCHEMA_VERSION: SCHEMA_VERSION,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   TABLES: TABLES

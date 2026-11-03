@@ -474,6 +474,34 @@ let restoredCounts = { realms: 0, entries: 0, overrides: 0 };
 // ---------------------------------------------------------------------------
 
 /**
+ * Whether a store in `storeMode` would refuse an entry at this DN key (#677):
+ * see `dnKeyRefusal()` on the exports.
+ *
+ * @param storeMode - the store's active mode
+ * @param realmId - the realm the entry would be in
+ * @param dnKey - its normalised DN
+ * @returns the refusal's sentence, or null
+ */
+function dnKeyRefusalFor(storeMode, realmId, dnKey) {
+  log.debug("Entering dnKeyRefusalFor().");
+  if (storeMode !== 'mariadb') {
+    log.debug("Leaving dnKeyRefusalFor(). No limit here.");
+    return null;
+  }
+  const limits = require('./schema_mariadb').LIMITS;
+  const keyLength = Array.from(String(dnKey || '')).length;
+  const realmLength = Array.from(String(realmId || '')).length;
+  if (keyLength <= limits.dnKey && realmLength <= limits.realm) {
+    log.debug("Leaving dnKeyRefusalFor(). Within the limits.");
+    return null;
+  }
+  log.debug("Leaving dnKeyRefusalFor(). Too long.");
+  return 'the store is MariaDB, whose directory keys hold at most ' +
+    limits.dnKey + ' characters of DN (this one is ' + keyLength + ')' +
+    (realmLength > limits.realm ? ' and ' + limits.realm + ' of realm' : '');
+}
+
+/**
  * Returns the configured persistence mode (`persistence.mode`).
  * @returns 'memory', 'ldif', 'postgres' or 'mariadb'
  */
@@ -5418,6 +5446,28 @@ module.exports = {
       return report;
     });
   },
+
+  /**
+   * Whether the store would refuse an entry at this DN key, BEFORE anything
+   * is created (#677). On MariaDB a DN key holds at most
+   * `schema_mariadb.LIMITS.dnKey` characters and a realm id
+   * `LIMITS.realm` (InnoDB's key limit); an entry over them would be refused
+   * at the flush, after it was already in memory, and every later flush that
+   * carried it with it. PostgreSQL has no such limit: the answer there, and
+   * in memory and ldif mode, is always null.
+   *
+   * @param realmId - the realm the entry would be in
+   * @param dnKey - its normalised DN
+   * @returns the refusal's sentence, or null
+   */
+  dnKeyRefusal: function (realmId, dnKey) {
+    log.debug("Entering dnKeyRefusal().");
+    log.debug("Leaving dnKeyRefusal().");
+    return dnKeyRefusalFor(activeMode, realmId, dnKey);
+  },
+
+  // The same question for a mode named, for `tests/directory_long_dn.js`.
+  dnKeyRefusalFor: dnKeyRefusalFor,
 
   /**
    * Returns how many change-log rows this process has written.
