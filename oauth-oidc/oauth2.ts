@@ -5125,12 +5125,30 @@ class OAuth2Server {
     // authenticated in — the one definition of a tenant here, which Provider
     // Commands (#151) shares. `aud_sub`: the account id this client knows
     // the person by, where an administrator recorded one.
+    //
+    // **`session_expiry` AND `tenant` ONLY WHEN ASKED FOR, SINCE #1292
+    // (2026-11-03).** Enterprise Extensions defines them as claims an ID
+    // Token MAY carry and gives a client no scope that asks for them, so
+    // the way to ask is OIDC Core 5.5's claims request: naming either in
+    // its `id_token` member is what puts it there. They were in EVERY ID
+    // Token until then (rcbj's answer on #148), which the OpenID
+    // conformance suite reports as claims nobody requested
+    // (`EnsureIdTokenDoesNotContainNonRequestedClaims`), and rcbj's
+    // instruction for certification was the default that passes.
+    // `oauth2.enterpriseClaimsAlways` puts both back in every ID Token, for
+    // a relying party built against the old behaviour.
+    const enterpriseAsked = self.requestedClaimNames(opts.claims, 'id_token');
+    const enterpriseAlways = !!config.value('oauth2.enterpriseClaimsAlways');
     const held = opts.session_id ?
       this.deps.authn.sessionById(String(opts.session_id)) : null;
-    if (held && Number(held.expires) > 0) {
+    if (held && Number(held.expires) > 0 &&
+        (enterpriseAlways ||
+         enterpriseAsked.indexOf('session_expiry') >= 0)) {
       payload.session_expiry = Math.floor(Number(held.expires) / 1000);
     }
-    payload.tenant = String(realms.current().id);
+    if (enterpriseAlways || enterpriseAsked.indexOf('tenant') >= 0) {
+      payload.tenant = String(realms.current().id);
+    }
     // OPENID CONNECT KEY BINDING SECTION 4 (#150): with `bound_key` granted
     // and a DPoP key proved, the ID Token names that key in `cnf.jwk`, and
     // its JOSE header says so (`typ: dpop+id_token`, below).

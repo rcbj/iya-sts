@@ -8310,6 +8310,28 @@ const SETTINGS = [
                  'every advertised scope and know nothing of Key Binding ' +
                  '(#315). A grant already bound before it was turned off ' +
                  'keeps its key check on refresh.' },
+  // ENTERPRISE EXTENSIONS' TWO ID TOKEN CLAIMS IN EVERY ID TOKEN (#1292,
+  // 2026-11-03). Off by default: `session_expiry` and `tenant` are put in an
+  // ID Token only when the client names them in the `id_token` member of a
+  // claims request, which is what the OpenID conformance suite's
+  // `EnsureIdTokenDoesNotContainNonRequestedClaims` holds an OP to. On is
+  // #148's original behaviour.
+  { key: 'oauth2.enterpriseClaimsAlways', group: 'OAuth 2.0 / OIDC',
+    label: 'Enterprise Extensions claims in every ID Token',
+    env: 'STS_OAUTH2_ENTERPRISE_CLAIMS_ALWAYS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Put OpenID Connect Enterprise Extensions 1.0\'s ' +
+                 '`session_expiry` (the sign-on session\'s absolute end, ' +
+                 'when the token is issued on one) and `tenant` (this ' +
+                 'realm\'s id) in EVERY ID Token (#148). **Off by default:** ' +
+                 'each is put in an ID Token only when the client names it ' +
+                 'in the `id_token` member of an OpenID Connect Core 5.5 ' +
+                 'claims request, because a claim nobody requested is what ' +
+                 'the OpenID conformance suite reports, and OpenID Connect ' +
+                 'certification runs that suite. Both stay in ' +
+                 '`claims_supported` either way, and `aud_sub` is ' +
+                 'unaffected (it is in an ID Token only where an ' +
+                 'administrator recorded one for that client).' },
   // THE `did` CLAIM (#693, phase 2): a person's preferred, proved DID
   // released to a client they consented to. Off by default, and
   // `oauth-oidc/did_claim.ts` holds every other condition.
