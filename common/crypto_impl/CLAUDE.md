@@ -22,12 +22,13 @@ another project's name, and the parent's copy signs against
 `https://iyasec.io/contexts/identity/v1`, its own terms
 (`IdentityCredential`, `isOver18`, `isOver21`) under
 `https://iyasec.io/contexts/identity#`, and the file follows this
-repository's rules. **The cost was accepted knowingly**: the parent's
-`tests/bbs2023_cryptosuite.js` drives this file against the debugger's
-wallet (`client/src/bbs2023.js`), whose closed loader knows only the old
-context, and its tests image copies this file flat beside the parent's
-`contexts/` — so the parent's next `sts/` pin bump needs the new context in
-`client/src/contexts/` and the wallet's loader, or that job fails at load.
+repository's rules. **And they are not vendored in either direction any
+more** (rcbj, 2026-11-02): nothing here is owed back to the parent, and the
+parent's copies — its `client/src/bbs2023.js` and `client/src/contexts/`,
+which know only the old context — are the parent's own business. The cost
+was accepted knowingly: the parent's `tests/bbs2023_cryptosuite.js` loads
+this file beside the parent's `contexts/`, so it fails at load until the
+parent stops doing that; the fix belongs there, never here.
 A credential issued before #663 named the old context and is refused by
 both loaders here now; there is no back-compatibility row for it. A re-sync
 must skip these two as well.
@@ -36,8 +37,8 @@ The rest are byte-identical copies of files in the parent project
 (`../id-proto-debugger`), and the parent's tests exist to keep them that way
 — `tests/krb5_codec_sync.js` compares the Kerberos codec, and
 `tests/bbs2023_cryptosuite.js` drives BOTH implementations of the
-cryptosuite against the same vectors (and so is the parent's test that #663
-breaks until the parent takes the new context). A local "improvement" here is not a change to this
+cryptosuite against the same vectors (and is the parent's test #663
+breaks, since `bbs2023.js` is no longer one of these copies). A local "improvement" here is not a change to this
 service, it is a divergence between two halves of one exchange, and the symptom
 arrives as a signature that does not verify rather than as a diff.
 
@@ -113,9 +114,8 @@ are vendored rather than fetched because Data Integrity signs canonicalized
 statements, so a one-byte difference in a context fails every signature later and
 looks like a crypto bug.
 
-`bbs2023.js` reads `./contexts` only, since #663. The parent's tests image
-still copies it flat beside the parent's own `contexts/`, which is why that
-directory needs `iya_identity_v1.json` before the parent's next pin bump.
+`bbs2023.js` reads `./contexts` only, since #663. Where the parent puts a
+copy of it is the parent's concern: this file is not vendored to it.
 
 ---
 
