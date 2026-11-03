@@ -1175,6 +1175,24 @@ const JOBS = [
   // self-issued sign-in and its refusals, and the Verifier's form_post.
   // `local: true`: this repository's own door.
   { file: 'sts_siop.js',                 browser: false },
+  // A PERSON'S DID (#693, 2026-11-03): a did:jwk proved and an administrator's
+  // by value, the preferred DID, the `did` claim in the ID Token and at
+  // UserInfo and never in the access token or introspection, left out for a
+  // claims request without the scope, a pairwise client (until it opts in),
+  // an undeclared client, a cleared preference and a disabled account; and
+  // OpenID4VCI holder binding to the proved DID by a `kid` proof, with its
+  // refusals. In a throwaway realm in the stack's mode. `local: true`: this
+  // repository's claim, binding and enrolment.
+  { file: 'sts_did_claim.js',            browser: false },
+  // A did:web PROVED AT THE TEST PEER (#693, 2026-11-03): the peer's `did`
+  // role (tests/peer/peer_did.js) publishes the document, and records each
+  // fetch — enrolled by proof with its key pinned after one fetch, a token
+  // failing its other checks dialling nothing, the sign-in, a key rotated
+  // under the pin refused, proved again, a withdrawn document, and a
+  // product realm never dialling the peer's private address. Needs the
+  // peer (`testPeer`). `local: true`.
+  { file: 'sts_siop_did_web.js',         browser: false,
+    testPeer: true },
   // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
   // each prefix's Request Object checked as a wallet checks it — the x5c
   // chain to the service Root, the signature, the dNSName or the hash — a

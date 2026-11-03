@@ -4854,10 +4854,16 @@ protection).
   must not write a line per call.
 
 `tests/did_claim.js` holds every condition, both endpoints over HTTP, the
-discovery document and the bypasses in process. **What has no test**: the
-consent screen drawing the `did` row (a browser page), and an HTTP job — no
-vendored claim job neighbours it, and a proved DID needs the wallet
-round trip the SIOP job drives with thumbprints.
+discovery document and the bypasses in process.
+**`tests/protocol/sts_did_claim.js`** (local, 2026-11-03) is the HTTP half,
+in the stack's mode: a did:jwk proved by the wallet round trip, preferred
+from the portal, the claim in the ID Token and at UserInfo after the
+person answered the consent screen, never in the access token or
+introspection, and left out for a claims request without the scope, a
+pairwise client until it opts in, an undeclared client, a cleared
+preference and a disabled account. **What has no test**: the consent
+screen DRAWING the `did` row (a browser page; the job answers the screen
+over `/authn-api`).
 
 ## 3bk. RFC 8628 DEVICE AUTHORIZATION AND OPENID CONNECT KEY BINDING (2026-09-26, #150)
 

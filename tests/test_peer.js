@@ -56,6 +56,11 @@
 //      relying party — a replayed jti, another typ, a nonce, another aud or
 //      issuer, no event, neither sub nor sid, a bad signature, an encrypted
 //      token it holds no key for, a body that is not a form.
+//   I. THE did:web HOST (#693): a document published and served over TLS
+//      as application/did+json, its DID named by the tenant's view, the
+//      fetch recorded; a document whose id is another DID and one carrying
+//      a private key refused; a replacement served in its place; a
+//      withdrawn document a 404, recorded as not found.
 //
 // IN PROCESS rather than a protocol job, because none of it is the service:
 // it is a test fixture's own correctness, and a stack is not needed to show
@@ -943,6 +948,80 @@ async function bclSection(t, state, port, ca, view) {
   log.debug("Leaving bclSection().");
 }
 
+async function didSection(t, peerBase, port, ca, view) {
+  log.debug("Entering didSection().");
+  const did = view.did.prefix + 'alice';
+  const at = '/t/' + encodeURIComponent(view.tenant) +
+             '/did/alice/did.json';
+  const put = function (doc) {
+    log.debug("Entering put().");
+    log.debug("Leaving put().");
+    return call(peerBase + at, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc) });
+  };
+  const jwkOf = function () {
+    log.debug("Entering jwkOf().");
+    const j = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' })
+      .publicKey.export({ format: 'jwk' });
+    log.debug("Leaving jwkOf().");
+    return { kty: 'EC', crv: 'P-256', x: j.x, y: j.y };
+  };
+  const docOf = function (id, jwk) {
+    log.debug("Entering docOf().");
+    log.debug("Leaving docOf().");
+    return { '@context': ['https://www.w3.org/ns/did/v1'], id: id,
+             verificationMethod: [{ id: id + '#key-1', type: 'JsonWebKey2020',
+                                    controller: id, publicKeyJwk: jwk }],
+             authentication: [id + '#key-1'] };
+  };
+  t.check(/^did:web:localhost%3A\d+:t:/.test(did) &&
+          view.did.documents === 'https://localhost:' + port + '/t/' +
+          view.tenant + '/did/',
+          'I. the view names the DID prefix and where documents are served',
+          JSON.stringify(view.did));
+  const since = (await call(peerBase + '/peer/tenants/' + view.tenant +
+                            '/received')).json.last;
+  const first = jwkOf();
+  let r = await put(docOf(did, first));
+  t.check(r.status === 200 && r.json.did === did && !r.json.replaced,
+          'I. a document is published under its DID', r.text);
+  r = await overTls(port, ca, 'GET', at, {}, null, null);
+  t.check(r.status === 200 &&
+          /application\/did\+json/.test(r.headers['content-type']) &&
+          r.json.id === did &&
+          r.json.verificationMethod[0].publicKeyJwk.x === first.x,
+          'I. it is served over TLS as application/did+json', r.text);
+  let back = await call(peerBase + '/peer/tenants/' + view.tenant +
+                        '/received?role=did&since=' + since);
+  t.check(back.json.events.length === 1 && back.json.events[0].ok &&
+          back.json.events[0].tls === true &&
+          back.json.events[0].name === 'alice',
+          'I. the fetch is recorded', JSON.stringify(back.json));
+  r = await put(docOf(did.replace(/alice$/, 'bob'), first));
+  t.check(r.status === 400 && /must be/.test(r.text),
+          'I. a document whose id is another DID is refused', r.text);
+  r = await put(docOf(did, Object.assign({ d: 'secret' }, first)));
+  t.check(r.status === 400 && /private key/.test(r.text),
+          'I. a document carrying a private key member is refused', r.text);
+  const second = jwkOf();
+  r = await put(docOf(did, second));
+  const again = await overTls(port, ca, 'GET', at, {}, null, null);
+  t.check(r.status === 200 && r.json.replaced === true &&
+          again.json.verificationMethod[0].publicKeyJwk.x === second.x,
+          'I. a replacement is served in its place', again.text);
+  r = await call(peerBase + at, { method: 'DELETE' });
+  const gone = await overTls(port, ca, 'GET', at, {}, null, null);
+  back = await call(peerBase + '/peer/tenants/' + view.tenant +
+                    '/received?role=did&since=' + since);
+  const last = back.json.events[back.json.events.length - 1];
+  t.check(r.status === 200 && gone.status === 404 && last.found === false &&
+          last.ok === false,
+          'I. a withdrawn document is a 404, recorded as not found',
+          gone.text + ' ' + JSON.stringify(last));
+  log.debug("Leaving didSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const caDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-peer-'));
@@ -996,6 +1075,7 @@ async function run(t) {
     await wsfedSection(t, state, view);
     await commandsSection(t, state, running.port, ca, view);
     await bclSection(t, state, running.port, ca, view);
+    await didSection(t, peerBase, running.port, ca, view);
     let back = await call(peerBase + '/peer/tenants/one/received?role=ssf');
     t.check(back.status === 200 && back.json.events.length >= 7 &&
             back.json.events.every(function (row) {
@@ -1027,7 +1107,7 @@ module.exports = {
   describe: 'the test peer (#586) against a fake realm: the RFC 9470 and ' +
             'GNAP resource servers, the SSF receiver, the SAML 2.0 ' +
             'service provider, the Provider Commands relying party and ' +
-            'the Back-Channel Logout relying party, ' +
+            'the Back-Channel Logout relying party, the did:web host, ' +
             'each refusing what a real party would',
   run: run
 };

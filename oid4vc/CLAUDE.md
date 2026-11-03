@@ -866,11 +866,16 @@ enrolment-only fetch, the internal-address refusal in product and the
 by-value refusals (sections 5, 8-11); `tests/protocol/sts_siop.js` (local)
 drives the sign-in, both enrolments, the refusals and the bar door's
 `form_post` over HTTP, and the provenance and the enrolment's audit row.
-**What has no test**: a did:web enrolled by proof end to end over HTTP —
-the job has no https document host on the service's network, and a did:web
-must be https (`didWebUrl()`), so the fetch is driven in process with a
-stubbed `fetchDocument` and, for the internal-address refusal, the real
-`fetchPublished()`.
+**A did:web enrolled by proof end to end over HTTP is
+`tests/protocol/sts_siop_did_web.js`** (local, `testPeer: true`, 2026-11-03):
+it had no https document host on the service's network, and a did:web must
+be https (`didWebUrl()`), until the test peer grew a `did` role
+(`tests/peer/peer_did.js`) that publishes the document the job hands it and
+records every fetch. It holds the one fetch per enrolment, the pin, a token
+failing its other checks dialling nothing, the sign-in, a rotated key
+refused under the pin, the re-proof, a withdrawn document, and product
+never dialling the peer's private address. With no peer (an AWS target) it
+is skipped; `tests/siop.js` keeps the stubbed and internal-address halves.
 
 ### #693's phase 2: the preferred DID and the `did` claim (2026-10-20)
 
@@ -981,8 +986,12 @@ the pin, or a key-named binding beside the DID: a design of its own.
 `tests/oid4vci_did_binding.js` holds all of it in process: the kid proofs and
 their five refusals, the metadata, each format's output, the batch, every
 refusal above including a DID removed after the token and during a deferral,
-and the sign-in in every format. **What has no test**: an HTTP job
-(`tests/protocol/`, `local: true`), and a real wallet sending a `kid` proof.
+and the sign-in in every format. **Over HTTP, `tests/protocol/sts_did_claim.js`**
+(local, 2026-11-03) section 5: the metadata, a `kid` proof's dc+sd-jwt and
+jwt_vc_json, the four `invalid_proof` refusals, the key-bound configuration
+and a removed DID. **What has no test**: a real wallet sending a `kid`
+proof, and a DID-bound credential PRESENTED at the sign-in over HTTP (in
+process only).
 
 ## AN ISO mdoc AT THE VERIFIER, AND THE HAIP VERIFIER PLAN (#935, 2026-11-02)
 
