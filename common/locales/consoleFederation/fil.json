@@ -139,6 +139,7 @@
   "actDeleteStream": "Burahin ang stream",
   "actDiscover": "Tuklasin",
   "actCheckPartner": "Suriin ang configuration ng partner",
+  "actRegisterPartner": "Magparehistro sa partner",
   "actCreateStream": "Gumawa ng stream",
   "actUnblock": "I-unblock",
   "headingBlocked": "Mga sign-in na hinarang ng partner na ito",

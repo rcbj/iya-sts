@@ -295,6 +295,26 @@
     "en": "d839fb1f30532e3a",
     "text": "Con fedRefreshTokens activado: cada cuántos segundos se actualizan los tokens de una sesión. Vacío: cuando caduca el token de acceso (su expires_in), o cada hora si el socio no indica caducidad. El trabajo programado federation.partner-refresh revisa cada quince segundos."
   },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "SOLO OPENID CONNECT, con fedDiscovery. TRUE hace que este servicio SE REGISTRE A SÍ MISMO en el socio (OpenID Connect Dynamic Client Registration 1.0, RFC 7591), en el registration_endpoint que nombra su documento de descubrimiento, siempre que la relación no tenga fedClientId o tenga uno registrado con otro emisor: al comenzar un inicio de sesión, o mediante el register-partner de un administrador. El client_id y el secreto que emite el socio se escriben en fedClientId y fedClientSecret (sellado). Lo que se registra es esta relación: su servicio consumidor de aserciones, su tipo de respuesta, su autenticación de cliente, los algoritmos establecidos aquí y, para objetos de solicitud, la clave pública que los firma. FALSE, el valor predeterminado: el cliente se registra en el socio a mano."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "El emisor con el que fedRegister registró fedClientId. Lo escribe el registro; bórrelo, junto con fedClientId, para registrarse de nuevo en el próximo inicio de sesión."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "SOLO OPENID CONNECT. Envía la solicitud de autorización como un objeto de solicitud (OpenID Connect Core 1.0 sección 6, RFC 9101): request (por valor) o request_uri (por referencia: el socio lo obtiene, una sola vez, de /federation/request/{id}/{handle}). Firmado con fedRequestObjectSigningAlg y la clave de este dominio. Vacío, el valor predeterminado: una solicitud de autorización simple."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "El algoritmo con el que se firma un objeto de solicitud: RS256 (el valor predeterminado), PS256 o ES256 con la clave de este dominio, o none: uno SIN FIRMAR, que Core 6.2 solo permite por referencia y en https; una advertencia: el socio solo tiene entonces el TLS de la obtención para saber que lo escribió este servicio."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "SOLO OPENID CONNECT, con fedDiscovery. TRUE atiende /federation/webfinger/{id}, donde una PERSONA escribe un identificador (acct:user@host o una URL) y este servicio pregunta a ese host cuál es el proveedor OpenID de la persona (OpenID Connect Discovery 1.0 sección 2, RFC 7033). UNA ADVERTENCIA: el host al que se llama lo eligió quien llama; es la única excepción argumentada de ese tipo de este servicio entre las solicitudes de federación, bajo la política saliente (ninguna dirección interna en modo producto, ninguna redirección, el límite). El emisor encontrado debe empezar por fedPeer, lo que lo limita al socio que configuró un administrador; a la persona se le muestra el emisor y solo continúa pulsando un botón. FALSE, el valor predeterminado, lo rechaza."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "SOLO OPENID CONNECT. TRUE lee los puntos de conexión del socio y su jwks_uri de su documento de descubrimiento, {fedPeer}/.well-known/openid-configuration, al comienzo de cada inicio de sesión (OpenID Connect Discovery 1.0 sección 4), cuyo issuer debe ser exactamente fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl y fedJwksUri no se leen entonces. La dirección se deriva de fedPeer, que configuró un administrador, y nunca de una solicitud. FALSE, el valor predeterminado: los puntos de conexión se configuran a mano."

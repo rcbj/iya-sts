@@ -2365,15 +2365,28 @@ CONNECT RELYING PARTY PLANS*.
   `fedRefreshTokens` on and `fedRefreshEverySeconds` 5, so the
   `federation.partner-refresh` job (every fifteen seconds) refreshes inside
   the module's time (rcbj's decision, 2026-11-03).
-* **Argued, not passed** (`EXPECTED` and `EXPECTED_PLANS` in the driver): the
-  logout plan's session-management module and the whole dynamic plan, each a decision `federation/CLAUDE.md` records. A
+* **The dynamic plan** (rcbj's decision, 2026-11-03) runs against a
+  relationship with `fedDiscovery`, `fedRegister`, `fedWebFinger` and
+  `fedRequestObject` `request_uri`; before each module the relationship
+  forgets its client (the suite keeps one for one module) and takes the
+  module's Request Object algorithm (`none` for the unsigned one). The
+  registration module is answered by the relationship's `register-partner`
+  (`REGISTER_ONLY`) and the two WebFinger modules by the person typing the
+  suite's `acct:` or URL identifier at `/federation/webfinger/{id}`
+  (`WEBFINGER`), stopping at the page that names the issuer: each module ends
+  at the registration or the discovery document. **It runs twice**, as
+  `dynamic` and its classical twin `dynamic-cl` (`withClassicalTwins()`),
+  with `PQ_ONLY` empty: only a classical key is registered.
+* **The third-party-initiated plan registers dynamically** too: with a
+  static client the module starts its background step while CREATED and
+  fails itself.
+* **Argued, not passed** (`EXPECTED` in the driver): the logout plan's
+  session-management module, each a decision `federation/CLAUDE.md` records. A
   module argued to wait out its time is given `ARGUED_SECONDS` (30) through
   `runModule()`'s new deadline argument rather than `MODULE_SECONDS`, and is
   not run again.
-* **No classical twin.** The relying party signs and publishes nothing the
-  suite reads in these plans, so no ledger entry concerns a post-quantum key,
-  which is the FAPI job's position. A dynamic plan built later would need
-  one: its request objects and registered JWKS would be the realm's keys.
+* **One classical twin, the dynamic plan's** (rcbj). The other plans sign and
+  publish nothing the suite reads, the FAPI job's position.
 * **A lane of its own** (`conformance-rp`), beside the OpenID Provider job's
   four-and-a-half-hour lane, so the conformance bound does not grow:
   about two hundred modules, most a sign-in of a few seconds or a negative

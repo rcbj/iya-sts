@@ -43,13 +43,14 @@
 //      to wait out its time — a relying-party feature this service does not
 //      have, by a decision recorded in `federation/CLAUDE.md` — is given a
 //      minute (ARGUED_SECONDS) rather than five, and is not run again.
-//   4. NO CLASSICAL TWIN, as the FAPI job has none, and for its reason: no
-//      post-quantum key or algorithm is in front of the suite here. The
-//      relying party signs nothing and publishes nothing the suite reads —
-//      the ID Tokens, keys and UserInfo answers are all the suite's — so no
-//      ledger entry is about a post-quantum key, and this run already is the
-//      classical proof (`tests/CLAUDE.md`, *THE OPENID CONNECT RELYING PARTY
-//      PLANS*).
+//   4. ONE CLASSICAL TWIN, THE DYNAMIC PLAN'S (rcbj, #930): the plan in
+//      which this relying party registers itself and signs its Request
+//      Objects runs again as `dynamic-cl`, keys.postQuantumSigning off
+//      (`conformance_suite.js`, THE CLASSICAL TWINS). PQ_ONLY is empty: the
+//      registration hands the suite one classical key, so neither run
+//      should need a post-quantum exemption. The other plans sign and
+//      publish nothing the suite reads, so their run already is the
+//      classical proof (the FAPI job's position).
 //
 // OWNED HERE (local: true): this repository's federation relying party.
 // ---------------------------------------------------------------------------
@@ -104,6 +105,12 @@ const WHOLE = Object.assign({ response_type: "code",
 // endpoints from its discovery document at each sign-in; `logout` and
 // `initiate` register the sign-out and login-initiation addresses.
 // ---------------------------------------------------------------------------
+const DYNAMIC_PLAN = { key: "dynamic",
+  name: "oidcc-client-dynamic-certification-test-plan",
+  variant: { response_mode: "default",
+             client_auth_type: "client_secret_basic" },
+  responseMode: "fragment", discovery: true, register: true,
+  webfinger: true, requestUri: true };
 const PLANS = [
   { key: "basic", name: "oidcc-client-basic-certification-test-plan",
     variant: STATIC, responseMode: "fragment" },
@@ -116,10 +123,10 @@ const PLANS = [
                              client_auth_type: "client_secret_basic" },
                            STATIC),
     responseMode: "fragment", discovery: true },
-  { key: "dynamic", name: "oidcc-client-dynamic-certification-test-plan",
-    variant: { response_mode: "default",
-               client_auth_type: "client_secret_basic" },
-    responseMode: "fragment", discovery: true, dynamic: true },
+  // THE DYNAMIC PLAN TWICE (rcbj, #930): as it is, and as its classical
+  // twin `dynamic-cl`, keys.postQuantumSigning off — the plan in which this
+  // relying party signs (its Request Objects) and registers a key.
+].concat(oidf.withClassicalTwins([DYNAMIC_PLAN])).concat([
   { key: "formpost-basic",
     name: "oidcc-client-formpost-basic-certification-test-plan",
     variant: STATIC, responseMode: "form_post" },
@@ -129,13 +136,20 @@ const PLANS = [
   { key: "formpost-hybrid",
     name: "oidcc-client-formpost-hybrid-certification-test-plan",
     variant: STATIC, responseMode: "form_post" },
+  // DYNAMICALLY REGISTERED: with a static client the suite's module starts
+  // its background step while it is still CREATED and fails itself
+  // ("Illegal test state change: CREATED -> RUNNING", the first full run);
+  // with a registration it starts it during the registration.
   { key: "3rdparty", name: "oidcc-client-test-3rd-party-init-login-test-plan",
-    variant: WHOLE, responseMode: "fragment", initiate: true },
+    variant: Object.assign({}, WHOLE,
+                           { client_registration: "dynamic_client" }),
+    responseMode: "fragment", initiate: true, discovery: true,
+    register: true },
   { key: "logout", name: "oidcc-client-logout-test-plan",
     variant: WHOLE, responseMode: "fragment", logout: true },
   { key: "refresh", name: "oidcc-client-refreshtoken-test-plan",
     variant: WHOLE, responseMode: "fragment", refresh: true }
-];
+]);
 
 // ---------------------------------------------------------------------------
 // KNOWN AND ARGUED DIFFERENCES. `<plan key>/<module>` (or `*/<module>`) ->
@@ -148,15 +162,23 @@ const SESSION_MANAGEMENT = "this relying party does not poll the " +
   "(federation/CLAUDE.md), because the script it needs is admitted only " +
   "where a page cannot work without one and Back-Channel Logout tells " +
   "this relying party what it would find out";
-const NO_DYNAMIC = "this relying party is configured by an administrator: " +
-  "it does not register itself at a partner (RFC 7591), discover a partner " +
-  "by WebFinger from an identifier somebody types, or send request " +
-  "objects by reference (federation/CLAUDE.md, #930)";
 const EXPECTED = {
   "logout/oidcc-client-test-session-management": SESSION_MANAGEMENT
 };
-// Every module of the dynamic plan.
-const EXPECTED_PLANS = { dynamic: NO_DYNAMIC };
+// A plan argued whole: none since rcbj's decision built the dynamic plan.
+const EXPECTED_PLANS = {};
+// The ledger entries about post-quantum keys, which a classical twin is
+// judged without: none, since the registration hands the partner only the
+// one classical key that signs Request Objects (`jwks` by value).
+const PQ_ONLY = [];
+// The modules that finish when the relying party registers, which the
+// person does not sign in for: a sign-in would reach a FINISHED module.
+const REGISTER_ONLY = ["oidcc-client-test-dynamic-registration"];
+// The modules whose person types an identifier for WebFinger, and how.
+const WEBFINGER = {
+  "oidcc-client-test-discovery-webfinger-acct": "acct",
+  "oidcc-client-test-discovery-webfinger-url": "url"
+};
 
 // The modules that finish when the partner's configuration is read, which
 // the person does not sign in for (see operatorFor()).
@@ -241,8 +263,10 @@ async function prepare(plan) {
     // What the service fetches from the suite — its token, UserInfo and
     // JWKS endpoints and its discovery document — and what it sends there
     // goes through the federation outbound policy, verified against the
-    // suite's own certificate (#171).
-    [["federation.outboundCaFile", oidf.suiteCaFile()]]);
+    // suite's own certificate (#171). A classical twin's own setting
+    // (withClassicalTwins()) comes after it.
+    [["federation.outboundCaFile", oidf.suiteCaFile()]]
+      .concat(plan.settings || []));
   const id = "suite-" + plan.key;
   const clientId = "iya-rp-" + plan.key + "-" + TAG;
   const secret = nodeCrypto.randomBytes(32).toString("base64url");
@@ -267,6 +291,20 @@ async function prepare(plan) {
   };
   if (plan.discovery) {
     fields.fedDiscovery = "TRUE";
+    // SELF-REGISTRATION (#930): no client written here; the relationship
+    // registers itself at the suite's registration endpoint.
+    if (plan.register) {
+      fields.fedRegister = "TRUE";
+      delete fields.fedClientId;
+      delete fields.fedClientSecret;
+    }
+    if (plan.webfinger) {
+      fields.fedWebFinger = "TRUE";
+    }
+    if (plan.requestUri) {
+      fields.fedRequestObject = "request_uri";
+      fields.fedRequestObjectSigningAlg = "RS256";
+    }
   } else {
     fields.fedSsoUrl = issuer + "authorize";
     fields.fedTokenUrl = issuer + "token";
@@ -305,20 +343,24 @@ async function prepare(plan) {
   const endpoints = view.endpoints || {};
   assert.ok(endpoints.assertionConsumerService, "the relationship " + id +
             " reports no assertion consumer service");
-  const client = { client_id: clientId, client_secret: secret,
-                   redirect_uri: endpoints.assertionConsumerService,
-                   id_token_signed_response_alg: "RS256" };
+  // A REGISTERED CLIENT is named only by its name: the suite takes the
+  // rest from the registration.
+  const client = plan.register
+    ? { client_name: "iya-sts " + plan.key }
+    : { client_id: clientId, client_secret: secret,
+        redirect_uri: endpoints.assertionConsumerService,
+        id_token_signed_response_alg: "RS256" };
   if (plan.logout) {
     client.post_logout_redirect_uri = endpoints.postLogoutRedirect;
     client.backchannel_logout_uri = endpoints.backchannelLogout;
     client.frontchannel_logout_uri = endpoints.frontchannelLogout;
   }
-  if (plan.initiate) {
+  if (plan.initiate && !plan.register) {
     client.initiate_login_uri = endpoints.initiateLogin;
   }
   log.debug("Leaving prepare().");
   return {
-    realm: made, id: id, issuer: issuer,
+    realm: made, id: id, issuer: issuer, alias: alias,
     login: made.base + "/federation/login/" + encodeURIComponent(id),
     configuration: {
       alias: alias,
@@ -350,6 +392,38 @@ function operatorFor(plan, prepared, person) {
     // a module already FINISHED, which the suite records as "Illegal test
     // state change: FINISHED -> RUNNING" (the first full run, 2026-11-03).
     // The administrator's check reads exactly those two and nothing else.
+    if (REGISTER_ONLY.indexOf(name) >= 0 ||
+        (plan.register && /3rd-party-init-login/.test(name))) {
+      // THE REGISTRATION MODULE ends when the relying party registers; the
+      // third-party-initiated one sends the person on from the
+      // registration, and they are visited below.
+      if (!started[id]) {
+        started[id] = 1;
+        await oidf.ok(prepared.realm.api + "/federation/register-partner",
+                      { id: prepared.id }, "registered at the partner");
+      }
+      await person.visit(id, info);
+      log.debug("Leaving the relying party's person. Registered.");
+      return;
+    }
+    if (WEBFINGER[name]) {
+      // THE PERSON TYPES AN IDENTIFIER (#930), in the suite's two shapes
+      // (its TestDispatcher reads the alias and the module from it); the
+      // module ends when the discovery document is read, so the page that
+      // names the issuer is where the person stops.
+      if (!started[id]) {
+        started[id] = 1;
+        const host = new URL(oidf.SUITE).host;
+        const resource = WEBFINGER[name] === "acct"
+          ? "acct:" + prepared.alias + "." + name + "@" + host
+          : oidf.SUITE + prepared.alias + "/" + name;
+        await person.start(id, info, prepared.realm.base +
+          "/federation/webfinger/" + encodeURIComponent(prepared.id) +
+          "?resource=" + encodeURIComponent(resource));
+      }
+      log.debug("Leaving the relying party's person. Looked up.");
+      return;
+    }
     if (CHECK_ONLY.indexOf(name) >= 0) {
       if (!started[id]) {
         started[id] = 1;
@@ -410,6 +484,21 @@ async function runOnePlan(plan) {
       // what an administrator configuring this partner for that flow does.
       await setField(prepared.realm.api, prepared.id, "fedResponseType",
                      responseTypeOf(plan, module));
+      // A REGISTERING RELATIONSHIP FORGETS ITS CLIENT before each module,
+      // as an administrator clearing it would: the suite keeps a client
+      // for one module only, so each registers again.
+      if (plan.register) {
+        await setField(prepared.realm.api, prepared.id, "fedClientId", "");
+        await setField(prepared.realm.api, prepared.id,
+                       "fedRegisteredIssuer", "");
+      }
+      // The unsigned Request Object module registers, and is sent, `none`.
+      if (plan.requestUri) {
+        await setField(prepared.realm.api, prepared.id,
+                       "fedRequestObjectSigningAlg",
+                       /request-uri-signed-none/.test(module.testModule)
+                         ? "none" : "RS256");
+      }
       const argued = expectedFor(plan, module.testModule);
       let got = await oidf.runModule(planId, module, argued ? null : operator,
                                      argued ? ARGUED_SECONDS : undefined);
@@ -445,7 +534,9 @@ async function runOnePlan(plan) {
     });
   }
   const judged = oidf.judge(plan.key, { planId: planId, results: results },
-                            expected, KNOWN_WARNINGS, KNOWN_FAILURES);
+                            oidf.ledgerFor(plan, expected, PQ_ONLY),
+                            oidf.ledgerFor(plan, KNOWN_WARNINGS, PQ_ONLY),
+                            oidf.ledgerFor(plan, KNOWN_FAILURES, PQ_ONLY));
   log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
            ", plan " + oidf.SUITE + "plan-detail.html?plan=" + planId);
   judged.unexplained.forEach(function (line) {

@@ -139,6 +139,7 @@
   "actDeleteStream": "Ta bort strömmen",
   "actDiscover": "Upptäck",
   "actCheckPartner": "Kontrollera partnerns konfiguration",
+  "actRegisterPartner": "Registrera hos partnern",
   "actCreateStream": "Skapa ström",
   "actUnblock": "Avblockera",
   "headingBlocked": "Inloggningar som den här partnern har blockerat",

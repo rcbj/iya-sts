@@ -276,6 +276,11 @@ const PATHS = {
   // carries a fragment-encoded OpenID Connect response to the server, which
   // never sees a URL fragment otherwise.
   fragmentScript: '/federation/fragment.js',
+  // A Request Object by reference (#930), fetched once by the partner.
+  requestObject: '/federation/request',
+  // Where a person types an identifier to find their OpenID Provider by
+  // WebFinger (#930), for a relationship with fedWebFinger on.
+  webfinger: '/federation/webfinger',
   // Where a partner PUSHES its Security Event Tokens (RFC 8935, #373), the
   // relationship's id after it. ssf/ssf_transmitters.ts registers it.
   signals: '/federation/signals'
@@ -1204,6 +1209,56 @@ const SCHEMA = {
             '(its expires_in), or hourly where the partner names no expiry. ' +
             'The scheduler job federation.partner-refresh looks every ' +
             'fifteen seconds.' },
+    { name: 'fedRegister', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'OPENID CONNECT ONLY, with fedDiscovery. TRUE has this service ' +
+            'REGISTER ITSELF at the partner (OpenID Connect Dynamic Client ' +
+            'Registration 1.0, RFC 7591) at the registration_endpoint its ' +
+            'discovery document names, whenever the relationship holds no ' +
+            'fedClientId or holds one registered with another issuer — at ' +
+            'the start of a sign-in, or by an administrator\'s ' +
+            'register-partner. The client_id and secret the partner issues ' +
+            'are written to fedClientId and fedClientSecret (sealed). What ' +
+            'is registered is this relationship: its assertion consumer ' +
+            'service, response type, client authentication, the algorithms ' +
+            'set here and, for request objects, the public key that signs ' +
+            'them. FALSE, the default: the client is registered at the ' +
+            'partner by hand.' },
+    { name: 'fedRegisteredIssuer', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'The issuer fedClientId was registered with by fedRegister. ' +
+            'Written by the registration; clear it, with fedClientId, to ' +
+            'register again at the next sign-in.' },
+    { name: 'fedRequestObject', kind: 'single', role: 'service-provider',
+      from: 'this register', enum: ['request', 'request_uri'],
+      what: 'OPENID CONNECT ONLY. Send the authorization request as a ' +
+            'Request Object (OpenID Connect Core 1.0 section 6, RFC 9101): ' +
+            'request (by value) or request_uri (by reference — the partner ' +
+            'fetches it, once, from /federation/request/{id}/{handle}). ' +
+            'Signed under fedRequestObjectSigningAlg with this realm\'s key. ' +
+            'Empty, the default: a plain authorization request.' },
+    { name: 'fedRequestObjectSigningAlg', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      enum: ['RS256', 'PS256', 'ES256', 'none'],
+      what: 'The algorithm a Request Object is signed with: RS256 (the ' +
+            'default), PS256 or ES256 under this realm\'s key, or none — ' +
+            'an UNSIGNED one, which Core 6.2 allows only by reference over ' +
+            'https; a warning: the partner then has only the TLS of the ' +
+            'fetch to say this service wrote it.' },
+    { name: 'fedWebFinger', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'OPENID CONNECT ONLY, with fedDiscovery. TRUE answers ' +
+            '/federation/webfinger/{id}, where a PERSON types an identifier ' +
+            '(acct:user@host or a URL) and this service asks that host who ' +
+            'the person\'s OpenID Provider is (OpenID Connect Discovery 1.0 ' +
+            'section 2, RFC 7033). A WARNING: the host dialled is one a ' +
+            'caller chose — this service\'s one argued exception of that ' +
+            'kind among the federation requests, under the outbound policy ' +
+            '(no internal address in product mode, no redirect, the cap). ' +
+            'The issuer found must begin with fedPeer, which bounds it to ' +
+            'the partner an administrator configured; the person is shown ' +
+            'the issuer and continues only by pressing a button. FALSE, the ' +
+            'default, refuses.' },
     { name: 'fedDiscovery', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'OPENID CONNECT ONLY. TRUE reads the partner\'s endpoints and ' +
@@ -1740,6 +1795,11 @@ const EDITABLE = {
   fedUserinfoSignedResponseAlg: 'set',
   fedRefreshTokens: 'set',
   fedRefreshEverySeconds: 'set',
+  fedRegister: 'set',
+  fedRegisteredIssuer: 'set',
+  fedRequestObject: 'set',
+  fedRequestObjectSigningAlg: 'set',
+  fedWebFinger: 'set',
   fedDiscovery: 'set',
   fedInitiateLogin: 'set',
   fedBinding: 'set',
@@ -2482,7 +2542,9 @@ function readinessOf(record) {
     const needs = row ? row.needs : [];
     // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930) has its endpoints
     // filled at each sign-in, so they are not asked of the entry.
-    const discovered = discovers(record) ? DISCOVERED_FIELDS : [];
+    const discovered = discovers(record)
+      ? DISCOVERED_FIELDS.concat(registers(record) ? ['fedClientId'] : [])
+      : [];
     needs.forEach(function (name) {
       if (discovered.indexOf(name) >= 0) return;
       if (!String(record[name] || '').trim()) missing.push(name);
@@ -2821,6 +2883,33 @@ function responseTypeParts(record) {
 // entry.
 const DISCOVERED_FIELDS = ['fedSsoUrl', 'fedTokenUrl', 'fedUserinfoUrl',
                            'fedJwksUri'];
+
+/**
+ * Says whether an OpenID Connect relationship registers itself at its
+ * partner (`fedRegister`, #930); only with discovery, which names the
+ * registration endpoint.
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function registers(record) {
+  log.debug("Entering registers().");
+  log.debug("Leaving registers().");
+  return discovers(record) && boolOf(record.fedRegister, false);
+}
+
+/**
+ * Says whether an OpenID Connect relationship answers a person's WebFinger
+ * discovery (`fedWebFinger`, #930); only with discovery.
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function webFingers(record) {
+  log.debug("Entering webFingers().");
+  log.debug("Leaving webFingers().");
+  return discovers(record) && boolOf(record.fedWebFinger, false);
+}
 
 /**
  * Says whether an OpenID Connect relationship reads its partner's endpoints
@@ -5544,6 +5633,8 @@ module.exports = {
   responseTypeOf: responseTypeOf,
   responseTypeParts: responseTypeParts,
   discovers: discovers,
+  registers: registers,
+  webFingers: webFingers,
   DISCOVERED_FIELDS: DISCOVERED_FIELDS,
   writeEncryptionKeys: writeEncryptionKeys,
   remove: remove,

@@ -508,7 +508,8 @@ class FederationPage {
               // OpenID Connect's discovery and partner-started sign-in
               // (#930), both off by default.
               .concat(row.protocol === 'oidc'
-                ? ['fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens']
+                ? ['fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens',
+                   'fedRegister', 'fedWebFinger']
                 : [])
           : []).map(function (name) {
         const field = json.schema.filter(
@@ -801,6 +802,16 @@ class FederationPage {
             '<input type="hidden" name="id" value="' + kit.esc(row.id) +
             '"> <button type="submit">' +
             t.html('consoleFederation.actCheckPartner') + '</button></form>'
+          : '') +
+        (row.role === 'service-provider' && row.protocol === 'oidc' &&
+         FederationPage.boolOf(record.fedRegister, false)
+          ? '<form method="post" action="/admin/federation" class="inline">' +
+            carryBack +
+            '<input type="hidden" name="action" value="register-partner">' +
+            '<input type="hidden" name="id" value="' + kit.esc(row.id) +
+            '"> <button type="submit">' +
+            t.html('consoleFederation.actRegisterPartner') +
+            '</button></form>'
           : '') +
         '<h2>' + t.html('consoleFederation.headingLists') + '</h2>' +
         multiSections +

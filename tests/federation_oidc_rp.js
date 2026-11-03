@@ -31,6 +31,13 @@
 //   5. the login initiation endpoint: off refuses (0205), another iss
 //      refuses (0206), the right one starts the sign-in with the
 //      login_hint passed on;
+//   7. self-registration (fedRegister) and Request Objects by reference:
+//      the registration's metadata and one public key, the client kept,
+//      the object verifying with that key and answered once (0218), no
+//      second registration for the same issuer, register-partner, alg none;
+//   8. WebFinger: off refuses (0215), the form, an address looked up as
+//      acct: with nothing continuing by itself, continuing registering at
+//      the found issuer, and an issuer outside fedPeer refused (0217);
 //   6. refresh tokens (fedRefreshTokens): a held token refreshed when due
 //      and UserInfo asked with the new access token; a refreshed ID Token
 //      naming another iss (0211) and a refused refresh (0210) end the
@@ -117,9 +124,23 @@ function childMain() {
         if (/openid-configuration$/.test(url.pathname)) {
           return send(200, Object.assign({
             issuer: s.issuer,
+            registration_endpoint: s.base + 'register',
             authorization_endpoint: s.base + 'disco-authorize',
             token_endpoint: s.base + 'token', jwks_uri: s.base + 'jwks',
             userinfo_endpoint: s.base + 'userinfo' }, s.discovery || {}));
+        }
+        if (url.pathname === '/.well-known/webfinger') {
+          op.webfinger = url.searchParams.get('resource');
+          return send(200, { subject: op.webfinger, links: [
+            { rel: 'http://openid.net/specs/connect/1.0/issuer',
+              href: s.webfingerIssuer } ] });
+        }
+        if (/\/register$/.test(url.pathname)) {
+          op.registered = JSON.parse(body || '{}');
+          op.registrations = (op.registrations || 0) + 1;
+          return send(201, Object.assign({}, op.registered,
+            { client_id: 'dyn-' + op.registrations,
+              client_secret: 'dyn-secret-' + op.registrations }));
         }
         if (/\/jwks$/.test(url.pathname)) {
           return send(200, { keys: [jwk] });
@@ -152,6 +173,28 @@ function childMain() {
       partner.listen(0, '127.0.0.1', r);
     });
     const opBase = 'http://127.0.0.1:' + partner.address().port + '/op/';
+    // THE SAME PARTNER OVER TLS, for WebFinger, which is https only: a
+    // certificate made here (verification is off for it below, as
+    // development's federation.outboundSkipTlsVerification allows).
+    const x509 = require(ROOT_DIR + '/common/crypto_impl/x509');
+    const keyMaterial = require(ROOT_DIR + '/common/crypto_impl/key_material');
+    const tlsPair = await keyMaterial.generateKeyPair('ec-p256');
+    const tlsCert = await x509.issueCertificate({
+      subject: [{ name: 'CN', value: '127.0.0.1' }],
+      subjectPublicKey: tlsPair.publicPem,
+      issuerPrivateKey: tlsPair.privatePem, signatureAlg: 'sha256-ecdsa',
+      serial: nodeCrypto.randomBytes(8).toString('hex'),
+      notBefore: new Date(Date.now() - 60000).toISOString(),
+      notAfter: new Date(Date.now() + 3600000).toISOString(),
+      extensions: { basicConstraints: { present: true, critical: true,
+                                        ca: false } } });
+    const tlsPartner = require('https').createServer(
+      { key: tlsPair.privatePem, cert: tlsCert.pem },
+      partner.listeners('request')[0]);
+    await new Promise(function (r) {
+      tlsPartner.listen(0, '127.0.0.1', r);
+    });
+    const tlsHost = '127.0.0.1:' + tlsPartner.address().port;
 
     // --- the service ---------------------------------------------------------
     const server = http.createServer(app);
@@ -173,6 +216,7 @@ function childMain() {
     };
     config.setOverride('federation.enabled', 'true');
     config.setOverride('federation.outboundAllowHttp', 'true');
+    config.setOverride('federation.outboundSkipTlsVerification', 'true');
     const stamp = String(Date.now()).slice(-6);
     const make = function (id, fields) {
       const made = federation.create({ fedId: id, fedRole: 'service-provider',
@@ -516,6 +560,125 @@ function childMain() {
          '6d. an ended session\'s token is gone: only the live one is ' +
          'refreshed again', JSON.stringify(counts));
 
+    // --- 7. self-registration and Request Objects -------------------------
+    const stateOf = function (text) {
+      const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(text || ''));
+      return m ? JSON.parse(m[1].replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')) : null;
+    };
+    const DYN = make('frp-dyn-' + stamp, { fedDiscovery: 'TRUE',
+      fedRegister: 'TRUE', fedRequestObject: 'request_uri',
+      fedRequestObjectSigningAlg: 'RS256', fedClientId: null,
+      fedClientSecret: null, fedSsoUrl: null, fedTokenUrl: null,
+      fedJwksUri: null, fedUserinfoUrl: null });
+    note(federation.readinessOf(federation.get(DYN)).ready,
+         '7a. a registering relationship is ready with no client written',
+         JSON.stringify(federation.readinessOf(federation.get(DYN))));
+    op.scenario = { issuer: opBase, base: opBase };
+    started = await begin(DYN, {});
+    const dyn = federation.get(DYN);
+    const md = op.registered || {};
+    const registeredKey = ((md.jwks || {}).keys || [])[0] || {};
+    note(started.status === 302 && dyn.fedClientId === 'dyn-1' &&
+         dyn.fedRegisteredIssuer === opBase &&
+         started.params.get('client_id') === 'dyn-1' &&
+         md.request_object_signing_alg === 'RS256' &&
+         registeredKey.kty === 'RSA' && !registeredKey.d &&
+         (md.redirect_uris || [])[0] ===
+           'http://127.0.0.1:' + port + '/federation/acs/' + DYN,
+         '7b. the sign-in registers the relationship at the partner, keeps ' +
+         'the client it is given, and registers one public RSA key',
+         started.status + ' ' + dyn.fedClientId + ' ' +
+         JSON.stringify(md).slice(0, 400));
+    const requestUri = String(started.params.get('request_uri') || '');
+    r = await call('GET', requestUri);
+    const parts = r.text.split('.');
+    const claimsOf = parts.length === 3
+      ? JSON.parse(Buffer.from(parts[1], 'base64url').toString()) : {};
+    const verifies = parts.length === 3 && nodeCrypto.verify('sha256',
+      Buffer.from(parts[0] + '.' + parts[1]),
+      nodeCrypto.createPublicKey({ key: registeredKey, format: 'jwk' }),
+      Buffer.from(parts[2], 'base64url'));
+    note(r.status === 200 &&
+         /oauth-authz-req\+jwt/.test(String(r.headers['content-type'])) &&
+         verifies && claimsOf.iss === 'dyn-1' && claimsOf.aud === opBase &&
+         claimsOf.client_id === 'dyn-1' &&
+         claimsOf.state === started.params.get('state') &&
+         claimsOf.nonce === started.params.get('nonce'),
+         '7c. the Request Object at request_uri carries the request, ' +
+         'verifies with the registered key, iss the client and aud the ' +
+         'partner', r.status + ' ' + JSON.stringify(claimsOf).slice(0, 300));
+    before = coded('STS-FED-0218');
+    r = await call('GET', requestUri);
+    note(r.status === 404 && coded('STS-FED-0218') === before + 1,
+         '7d. a Request Object is answered once (STS-FED-0218)', r.status);
+    started = await begin(DYN, {});
+    note(op.registrations === 1,
+         '7e. a relationship already registered with this issuer does not ' +
+         'register again', String(op.registrations));
+    federation.update(DYN, { field: 'fedRequestObjectSigningAlg',
+                             value: 'none' });
+    const rereg = await actions.federationAction(
+      { action: 'register-partner', id: DYN,
+        base: 'http://127.0.0.1:' + port });
+    started = await begin(DYN, {});
+    r = await call('GET', String(started.params.get('request_uri') || ''));
+    note(rereg.ok && op.registrations === 2 &&
+         op.registered.request_object_signing_alg === 'none' &&
+         !op.registered.jwks && /\.$/.test(r.text) &&
+         JSON.parse(Buffer.from(r.text.split('.')[0], 'base64url')
+           .toString()).alg === 'none',
+         '7f. register-partner registers again; an unsigned Request Object ' +
+         'registers no key and is sent alg none',
+         JSON.stringify(rereg) + ' ' + r.text.slice(0, 80));
+
+    // --- 8. WebFinger from a typed identifier --------------------------------
+    before = coded('STS-FED-0215');
+    r = await call('GET', '/federation/webfinger/' + DYN + '?resource=' +
+                   encodeURIComponent('acct:a@' + tlsHost));
+    note(r.status === 403 && coded('STS-FED-0215') === before + 1,
+         '8a. off by default: refused (STS-FED-0215)', r.status);
+    federation.update(DYN, { field: 'fedWebFinger', value: 'TRUE' });
+    r = await call('GET', '/federation/webfinger/' + DYN);
+    let view = (stateOf(r.text) || {}).view || {};
+    note(r.status === 200 && view.kind === 'webfinger' &&
+         view.step === 'ask',
+         '8b. the page asks for an identifier', r.status + ' ' +
+         JSON.stringify(view));
+    op.scenario = { issuer: opBase + 'tenant7', base: opBase,
+                    webfingerIssuer: opBase + 'tenant7' };
+    op.calls = [];
+    r = await call('GET', '/federation/webfinger/' + DYN + '?resource=' +
+                   encodeURIComponent('a@' + tlsHost));
+    view = (stateOf(r.text) || {}).view || {};
+    note(r.status === 200 && view.step === 'found' &&
+         view.issuer === opBase + 'tenant7' &&
+         op.webfinger === 'acct:a@' + tlsHost &&
+         op.calls.some(function (c) {
+           return c.path === '/op/tenant7/.well-known/openid-configuration';
+         }) && !op.calls.some(function (c) {
+           return /authorize|register/.test(c.path);
+         }),
+         '8c. an address is looked up as acct:, the issuer found and its ' +
+         'discovery document read, and nothing goes on by itself',
+         r.status + ' ' + JSON.stringify(view));
+    const registeredBefore = op.registrations;
+    r = await call('GET', String(view.continueHref || ''));
+    note(r.status === 302 &&
+         String(r.headers.location).indexOf(opBase + 'disco-authorize') ===
+           0 && op.registrations === registeredBefore + 1 &&
+         federation.get(DYN).fedRegisteredIssuer === opBase + 'tenant7',
+         '8d. continuing signs in at that issuer, registering there first',
+         r.status + ' ' + r.headers.location);
+    op.scenario.webfingerIssuer = 'https://elsewhere.example/';
+    before = coded('STS-FED-0217');
+    r = await call('GET', '/federation/webfinger/' + DYN + '?resource=' +
+                   encodeURIComponent('https://' + tlsHost + '/x'));
+    note(r.status === 403 && coded('STS-FED-0217') === before + 1,
+         '8e. an issuer outside fedPeer is refused (STS-FED-0217)',
+         r.status);
+
     // --- 5. the login initiation endpoint ------------------------------------
     before = coded('STS-FED-0205');
     r = await call('GET', '/federation/initiate-login/' + CODE + '?iss=' +
@@ -542,6 +705,7 @@ function childMain() {
     fs.writeFileSync(OUT, JSON.stringify(findings));
     server.close();
     partner.close();
+    tlsPartner.close();
     process.exit(0);
   })().catch(function (e) {
     findings.push({ ok: false, what: 'the child process threw',

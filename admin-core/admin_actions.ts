@@ -11139,6 +11139,30 @@ class AdminActions {
       return Object.assign({ ok: true, errors: [] }, checked);
     }
 
+    // THE PARTNER REGISTERED AGAIN (#930): an OpenID Connect relationship
+    // with fedDiscovery and fedRegister on registers itself at the partner
+    // now, whatever client it holds.
+    if (action === 'register-partner') {
+      const record = federation.get(id);
+      if (!record) {
+        log.debug("Leaving AdminActions.federationAction(). No such " +
+                  "relationship to register.");
+        return this.refusedBy('STS-ADMIN-0575', {
+          ok: false, errors: ['There is no relationship called "' + id +
+                              '".'] });
+      }
+      const done = await require('../federation/federation_sp')
+        .registerPartner(String(context.base || ''), record);
+      log.debug("Leaving AdminActions.federationAction(). register-partner " +
+                (done.ok ? 'ok' : 'refused') + ".");
+      if (!done.ok) {
+        return this.refusedBy(done.errorCode || 'STS-FED-0212', {
+          ok: false, errors: [String(done.why || 'the registration failed')] });
+      }
+      return { ok: true, errors: [], clientId: done.clientId,
+               issuer: done.issuer };
+    }
+
     if (action.indexOf('signals-') === 0) {
       const result = await loadSignals().act(body, context);
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +

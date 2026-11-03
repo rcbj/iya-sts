@@ -13142,7 +13142,8 @@ class AdminViews {
               'fedAllowUnsolicited', 'fedAcceptSignout',
               'fedRequireSignedLogout', 'fedAllowUnencrypted',
               // #930's two OpenID Connect switches.
-              'fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens']
+              'fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens',
+              'fedRegister', 'fedWebFinger']
         .indexOf(field.name) === -1 &&
         // A Trust Anchor to discover the OP through (#134) is OpenID
         // Connect's alone.

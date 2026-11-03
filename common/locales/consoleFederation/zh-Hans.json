@@ -139,6 +139,7 @@
   "actDeleteStream": "删除流",
   "actDiscover": "发现",
   "actCheckPartner": "检查合作伙伴的配置",
+  "actRegisterPartner": "在合作伙伴处注册",
   "actCreateStream": "创建流",
   "actUnblock": "解除阻止",
   "headingBlocked": "此合作方已阻止的登录",

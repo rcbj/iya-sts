@@ -295,6 +295,26 @@
     "en": "d839fb1f30532e3a",
     "text": "在 fedRefreshTokens 開啟時：工作階段的權杖每隔多少秒更新一次。空白：於存取權杖到期時（其 expires_in），若夥伴未給出到期時間則每小時一次。排程工作 federation.partner-refresh 每十五秒檢查一次。"
   },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "僅限 OPENID CONNECT，需搭配 fedDiscovery。TRUE 會讓本服務在夥伴處自行註冊（OpenID Connect Dynamic Client Registration 1.0，RFC 7591），註冊地點是其探索文件所指的 registration_endpoint；只要該關係沒有 fedClientId，或持有的 fedClientId 是向另一簽發者註冊的，就會註冊——於登入開始時，或由管理員的 register-partner 發起。夥伴簽發的 client_id 與密鑰會寫入 fedClientId 與 fedClientSecret（加密保存）。註冊的是此關係：其斷言取用服務、回應類型、用戶端驗證、此處設定的演算法，以及對於請求物件，簽署它們的公開金鑰。FALSE 為預設值：用戶端在夥伴處以人工註冊。"
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "fedRegister 為 fedClientId 註冊時所針對的簽發者。由註冊寫入；將它與 fedClientId 一併清除，即可於下次登入時重新註冊。"
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "僅限 OPENID CONNECT。以請求物件傳送授權請求（OpenID Connect Core 1.0 第 6 節，RFC 9101）：request（以值）或 request_uri（以參照——夥伴從 /federation/request/{id}/{handle} 取得一次）。以本領域的金鑰依 fedRequestObjectSigningAlg 簽署。空白即預設值：一般的授權請求。"
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "簽署請求物件所用的演算法：RS256（預設）、PS256 或 ES256（使用本領域的金鑰），或 none——未簽署的物件，Core 6.2 只允許透過 https 以參照傳遞；警告：此時夥伴只能憑取得時的 TLS 判斷該物件出自本服務。"
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "僅限 OPENID CONNECT，需搭配 fedDiscovery。TRUE 會回應 /federation/webfinger/{id}：由某人輸入一個識別碼（acct:user@host 或 URL），本服務向該主機詢問此人的 OpenID 提供者是誰（OpenID Connect Discovery 1.0 第 2 節，RFC 7033）。警告：所撥打的主機由呼叫端選擇——這是本服務在聯盟請求中唯一一個經過論證的此類例外，受外送政策約束（產品模式下不存取內部位址、不跟隨重新導向、有上限）。找到的簽發者必須以 fedPeer 開頭，從而被限定在管理員設定的夥伴範圍內；此人會看到該簽發者，只有按下按鈕才會繼續。FALSE 為預設值，予以拒絕。"
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "僅限 OPENID CONNECT。TRUE 會在每次登入開始時（OpenID Connect Discovery 1.0 第 4 節）從夥伴的探索文件 {fedPeer}/.well-known/openid-configuration 讀取其端點與 jwks_uri，該文件的 issuer 必須與 fedPeer 完全相同；此時不讀取 fedSsoUrl、fedTokenUrl、fedUserinfoUrl 與 fedJwksUri。此位址由管理員設定的 fedPeer 推導而來，絕不來自請求。FALSE 為預設值：端點以人工設定。"

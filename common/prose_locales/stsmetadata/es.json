@@ -2579,6 +2579,18 @@
     "en": "a3604c921948a069",
     "text": "envía el navegador al proveedor OpenID socio con una solicitud de autorización ordinaria, como hace /federation/login/{id}"
   },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 sección 6.2 (#930): el objeto de solicitud que nombra el request_uri de una solicitud de autorización, para una relación con fedRequestObject request_uri: application/oauth-authz-req+jwt, firmado con fedRequestObjectSigningAlg y la clave de este dominio (o sin firmar, none). Se responde UNA SOLA VEZ: la obtención del socio consume el handle, y una dirección que no nombra nada es un 404."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 sección 2 (#930), para una relación con fedWebFinger y fedDiscovery activados: un formulario para un identificador (acct:user@host o una URL), y su respuesta: WebFinger en ese host bajo la política saliente (ninguna dirección interna en modo producto, ninguna redirección, el límite), un emisor que debe empezar por fedPeer, su documento de descubrimiento y un enlace que la persona debe seguir para iniciar sesión allí. Desactivado, 403."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "llama al host que nombra el identificador escrito: la única solicitud de federación cuyo host elige quien llama"
+  },
   "stsmetadata.endpoints./federation/fragment.js.what": {
     "en": "4717183880c5fc95",
     "text": "Recurso NO ESPECIFICADO de un punto de conexión de especificación (#930): el único script que ejecuta la página del servicio consumidor de aserciones cuando una relación OpenID Connect eligió fedResponseMode=fragment. Un fragmento nunca llega a un servidor, así que la página lo lee, lo quita de la dirección y de la entrada del historial, y lo envía por POST a la misma dirección, donde se consume como una respuesta form_post. Ningún marcado puede leer un fragmento, así que no hay botón de reserva."

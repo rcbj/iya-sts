@@ -2579,6 +2579,18 @@
     "en": "a3604c921948a069",
     "text": "skickar webbläsaren till partnerns OpenID-leverantör med en vanlig auktoriseringsbegäran, som /federation/login/{id} gör"
   },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 avsnitt 6.2 (#930): det begäranobjekt som en auktoriseringsbegärans request_uri namnger, för en relation med fedRequestObject request_uri — application/oauth-authz-req+jwt, signerat under fedRequestObjectSigningAlg med den här realmens nyckel (eller osignerat, none). Besvaras EN GÅNG: partnerns hämtning förbrukar handtaget, och en adress som inte namnger något ger 404."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 avsnitt 2 (#930), för en relation med fedWebFinger och fedDiscovery på: ett formulär för en identifierare (acct:user@host eller en URL), och dess svar — WebFinger hos den värden under den utgående policyn (ingen intern adress i produktläge, ingen omdirigering, taket), en utfärdare som måste börja med fedPeer, dess upptäcktsdokument, och en länk personen måste följa för att logga in där. Av, 403."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "anropar den värd som den inskrivna identifieraren namnger — den enda federationsbegäran vars värd en anropare väljer"
+  },
   "stsmetadata.endpoints./federation/fragment.js.what": {
     "en": "4717183880c5fc95",
     "text": "ICKE-SPECIFICERAD resurs för en specificerad slutpunkt (#930): det enda skript som påståendekonsumenttjänstens sida kör när en OpenID Connect-relation har valt fedResponseMode=fragment. Ett fragment når aldrig en server, så sidan läser det, tar bort det från adressen och historikposten och POSTar det till samma adress, där det konsumeras som ett form_post-svar. Ingen märkning kan läsa ett fragment, så det finns ingen knapp att falla tillbaka på."

@@ -139,6 +139,7 @@
   "actDeleteStream": "Delete stream",
   "actDiscover": "Discover",
   "actCheckPartner": "Check the partner's configuration",
+  "actRegisterPartner": "Register at the partner",
   "actCreateStream": "Create stream",
   "actUnblock": "Unblock",
   "headingBlocked": "Sign-ins this partner has blocked",

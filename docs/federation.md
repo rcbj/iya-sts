@@ -57,6 +57,8 @@ an `ldapmodify`.
 | `GET /federation/link/{handle}` | where the linking sign-in of `link-at-first-sign-in` returns: after the person has signed in here as the account the partner named, this records the link and finishes the federated sign-in (#109). Single-use, and it records the link only for a fresh local sign-in as that person |
 | `GET /federation/metadata/{id}` | this service's own SAML metadata (an `SPSSODescriptor`) for one SAML partner, unsigned — with its `SingleLogoutService` on the Redirect and POST bindings and, for SAML 2.0, its encryption key (`KeyDescriptor use="encryption"`, #168). For a WS-Federation partner, an `EntityDescriptor` with a `fed:ApplicationServiceType` role, its passive requestor endpoint and its encryption key |
 | `GET\|POST /federation/initiate-login/{id}` | an OpenID Connect relationship's `initiate_login_uri` (OpenID Connect Core section 4): a sign-in the **partner** starts. Off unless `fedInitiateLogin` is on; `iss` must be the relationship's `fedPeer`; `login_hint` is passed on; `target_link_uri` is followed only to a path on this service |
+| `GET /federation/request/{id}/{handle}` | a Request Object by reference, fetched once by the partner (`fedRequestObject` `request_uri`) |
+| `GET\|POST /federation/webfinger/{id}` | where a person types an identifier to find their OpenID Provider (`fedWebFinger`) |
 | `GET /federation/fragment.js` | the one script of the assertion consumer service, for a relationship whose `fedResponseMode` is `fragment`: it posts the fragment-encoded answer back to `/federation/acs/{id}` |
 | `GET /federation/jwks/{id}` | an OpenID Connect relationship's encryption key as a JWKS (`use: enc`), what the partner registers to encrypt its ID Token to (#168) |
 | `GET\|POST /federation/slo/{id}` | **a partner's sign-out, in a browser** (#167): a SAML 2.0 `<LogoutRequest>` or `<LogoutResponse>`, a WS-Federation `wsignoutcleanup1.0` or `wsignout1.0`, and the browser coming back from an OpenID Provider's `end_session_endpoint`. The SAML `SingleLogoutService`, the WS-Federation sign-out URL and the OpenID Connect `post_logout_redirect_uri` to configure at the partner |
@@ -198,14 +200,33 @@ What it does, in every mode:
   partner's keys (`fedUserinfoSignedResponseAlg` pins its algorithm) before it
   is used.
 
-Two things the plans test are not done, by design:
+* **`fedRegister`** (off by default, needs `fedDiscovery`) registers this
+  service at the partner's `registration_endpoint` (RFC 7591) whenever the
+  relationship holds no client registered with that issuer: at a sign-in,
+  or with **Register at the partner** (`register-partner` on
+  `/admin-api`). The `client_id` and secret are written to the relationship,
+  the secret sealed. What is registered is the relationship's own addresses,
+  response type, client authentication and algorithms, and the one public
+  key that signs its Request Objects.
+* **`fedRequestObject`** sends the authorization request as a Request Object
+  (Core section 6, RFC 9101): `request` by value, or `request_uri` by
+  reference, served once at `/federation/request/{id}/{handle}`. Signed under
+  `fedRequestObjectSigningAlg` (`RS256` by default, `PS256`, `ES256`) with
+  the realm's key. **`none` is a warning**: an unsigned object, by reference
+  over https only.
+* **`fedWebFinger`** (off by default, needs `fedDiscovery`) answers
+  `/federation/webfinger/{id}`, where a person types an address or URL and
+  this service asks that host for their OpenID Provider (OpenID Connect
+  Discovery section 2). **This is a warning**: it is the one federation
+  request whose host a caller chooses. It goes through the outbound policy,
+  and the issuer it finds must begin with `fedPeer`. The person sees the
+  issuer and continues only by following the link
+  (`STS-FED-0215` to `0217`).
+
+One thing the plans test is not done, by design:
 
 * **Session Management.** This service does not poll the partner's
   `check_session_iframe`. Back-Channel Logout tells it the same thing.
-* **Dynamic registration, WebFinger and request objects.** A relationship is
-  configured by an administrator. This service does not register itself at a
-  partner, find a partner from an identifier somebody types, or send
-  `request_uri`.
 
 ### The request context
 
@@ -771,6 +792,9 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedClientId`, `fedClientSecret` | SP | this service's client credentials at the partner |
 | `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` (default), `id_token`, `id_token token`, `code id_token`, `code token` or `code id_token token` |
 | `fedResponseMode` | SP | empty, `query`, `form_post` or (OIDC) `fragment` — **`fragment` is a warning**: see [OpenID Connect as the relying party](#openid-connect-as-the-relying-party) |
+| `fedRegister`, `fedRegisteredIssuer` | SP (OIDC) | register this service at the partner (`FALSE` by default); the issuer the client was registered with |
+| `fedRequestObject`, `fedRequestObjectSigningAlg` | SP (OIDC) | `request` or `request_uri`; `RS256`, `PS256`, `ES256` or `none` (**a warning**) |
+| `fedWebFinger` | SP (OIDC) | find a person's provider from an identifier they type (`FALSE` by default — **a warning**) |
 | `fedRefreshTokens`, `fedRefreshEverySeconds` | SP (OIDC) | keep and use the partner's refresh token for each session (`FALSE` by default — **a warning** when on); how often, in seconds |
 | `fedUserinfoSignedResponseAlg` | SP (OIDC) | the algorithm a signed UserInfo answer must use |
 | `fedIdTokenSignedResponseAlg` | SP (OIDC) | the one algorithm the partner signs ID Tokens and Logout Tokens with (what was registered as `id_token_signed_response_alg`); a token under another is refused even when a partner key verifies it. **Empty is a warning**: any algorithm of the key's family is accepted |

@@ -295,6 +295,26 @@
     "en": "d839fb1f30532e3a",
     "text": "Med fedRefreshTokens på: hur ofta, i sekunder, en sessions token uppdateras. Tomt: när åtkomsttoken går ut (dess expires_in), eller varje timme om partnern inte anger någon utgång. Det schemalagda jobbet federation.partner-refresh tittar var femtonde sekund."
   },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "ENDAST OPENID CONNECT, med fedDiscovery. TRUE gör att den här tjänsten REGISTRERAR SIG SJÄLV hos partnern (OpenID Connect Dynamic Client Registration 1.0, RFC 7591) vid den registration_endpoint som dess upptäcktsdokument namnger, närhelst relationen saknar fedClientId eller har ett registrerat hos en annan utfärdare — i början av en inloggning, eller genom en administratörs register-partner. Det client_id och den hemlighet partnern utfärdar skrivs till fedClientId och fedClientSecret (förseglad). Det som registreras är den här relationen: dess påståendekonsumenttjänst, svarstyp, klientautentisering, algoritmerna som anges här och, för begäranobjekt, den publika nyckel som signerar dem. FALSE, standardvärdet: klienten registreras hos partnern för hand."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "Den utfärdare som fedClientId registrerades hos genom fedRegister. Skrivs av registreringen; töm den, tillsammans med fedClientId, för att registrera igen vid nästa inloggning."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "ENDAST OPENID CONNECT. Skicka auktoriseringsbegäran som ett begäranobjekt (OpenID Connect Core 1.0 avsnitt 6, RFC 9101): request (som värde) eller request_uri (som referens — partnern hämtar det, en gång, från /federation/request/{id}/{handle}). Signerat under fedRequestObjectSigningAlg med den här realmens nyckel. Tomt, standardvärdet: en vanlig auktoriseringsbegäran."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "Den algoritm ett begäranobjekt signeras med: RS256 (standardvärdet), PS256 eller ES256 under den här realmens nyckel, eller none — ett OSIGNERAT, som Core 6.2 bara tillåter som referens över https; en varning: partnern har då bara hämtningens TLS som belägg för att den här tjänsten skrev det."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "ENDAST OPENID CONNECT, med fedDiscovery. TRUE besvarar /federation/webfinger/{id}, där en PERSON skriver en identifierare (acct:user@host eller en URL) och den här tjänsten frågar den värden vilken personens OpenID-leverantör är (OpenID Connect Discovery 1.0 avsnitt 2, RFC 7033). EN VARNING: värden som anropas har valts av en anropare — tjänstens enda argumenterade undantag av det slaget bland federationsbegäranden, under den utgående policyn (ingen intern adress i produktläge, ingen omdirigering, taket). Den utfärdare som hittas måste börja med fedPeer, vilket begränsar den till den partner en administratör har konfigurerat; personen visas utfärdaren och fortsätter bara genom att trycka på en knapp. FALSE, standardvärdet, avvisar."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "ENDAST OPENID CONNECT. TRUE läser partnerns slutpunkter och dess jwks_uri från dess upptäcktsdokument, {fedPeer}/.well-known/openid-configuration, i början av varje inloggning (OpenID Connect Discovery 1.0 avsnitt 4), vars issuer måste vara exakt fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl och fedJwksUri läses då inte. Adressen härleds från fedPeer, som en administratör har konfigurerat, och aldrig från en begäran. FALSE, standardvärdet: slutpunkterna konfigureras för hand."

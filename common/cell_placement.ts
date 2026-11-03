@@ -327,6 +327,10 @@ const ROWS: Row[] = [
   // THE FRAGMENT PAGE'S SCRIPT (#930): a static file, as the one above.
   { prefix: '/federation/fragment.js', strategy: 'local',
     why: 'the fragment page\'s script, the same file in every cell (#930)' },
+  // A REQUEST OBJECT BY REFERENCE (#930): its handle is found where it was
+  // minted, whichever cell the partner's fetch reaches.
+  { prefix: '/federation/request', strategy: 'artifact', segment: 4,
+    why: 'a Request Object handle is found where it was minted (#930)' },
   { prefix: '/federation/link', strategy: 'artifact', browser: true,
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
   { prefix: '/federation/stepup', strategy: 'artifact', browser: true,

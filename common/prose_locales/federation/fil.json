@@ -295,6 +295,26 @@
     "en": "d839fb1f30532e3a",
     "text": "Kapag naka-on ang fedRefreshTokens: gaano kadalas, sa segundo, nire-refresh ang mga token ng isang session. Walang laman: kapag nag-expire ang access token (ang expires_in nito), o bawat oras kung walang expiry na binanggit ang partner. Tumitingin ang scheduler job na federation.partner-refresh bawat labinlimang segundo."
   },
+  "fed.schema.attributes.fedRegister.what": {
+    "en": "f4b0de6cbbd8105e",
+    "text": "OPENID CONNECT LAMANG, kasama ang fedDiscovery. Ang TRUE ay nagpaparehistro sa SERBISYONG ITO MISMO sa partner (OpenID Connect Dynamic Client Registration 1.0, RFC 7591) sa registration_endpoint na binabanggit ng discovery document nito, tuwing walang fedClientId ang ugnayan o may hawak itong nakarehistro sa ibang issuer — sa simula ng pag-sign in, o sa pamamagitan ng register-partner ng isang administrator. Ang client_id at secret na inilalabas ng partner ay isinusulat sa fedClientId at fedClientSecret (naka-seal). Ang inirerehistro ay ang ugnayang ito: ang assertion consumer service nito, response type, client authentication, ang mga algorithm na itinakda rito at, para sa mga request object, ang public key na nagsa-sign sa mga ito. FALSE, ang default: ang client ay inirerehistro sa partner nang mano-mano."
+  },
+  "fed.schema.attributes.fedRegisteredIssuer.what": {
+    "en": "0ef5d192e48176ae",
+    "text": "Ang issuer na pinagrehistruhan ng fedClientId sa pamamagitan ng fedRegister. Isinusulat ng pagpaparehistro; burahin ito, kasama ng fedClientId, upang magparehistro muli sa susunod na pag-sign in."
+  },
+  "fed.schema.attributes.fedRequestObject.what": {
+    "en": "7eaba1ff4f67ec99",
+    "text": "OPENID CONNECT LAMANG. Ipadala ang authorization request bilang Request Object (OpenID Connect Core 1.0 seksiyon 6, RFC 9101): request (by value) o request_uri (by reference — kinukuha ito ng partner, nang isang beses, mula sa /federation/request/{id}/{handle}). Naka-sign sa ilalim ng fedRequestObjectSigningAlg gamit ang key ng realm na ito. Walang laman, ang default: isang simpleng authorization request."
+  },
+  "fed.schema.attributes.fedRequestObjectSigningAlg.what": {
+    "en": "dd87fb6848bcdad0",
+    "text": "Ang algorithm na ginagamit sa pag-sign ng Request Object: RS256 (ang default), PS256 o ES256 sa ilalim ng key ng realm na ito, o none — isang HINDI NAKA-SIGN, na pinapayagan lamang ng Core 6.2 by reference sa https; isang babala: ang tanging patunay ng partner na ang serbisyong ito ang sumulat nito ay ang TLS ng pagkuha."
+  },
+  "fed.schema.attributes.fedWebFinger.what": {
+    "en": "6e8daf4993b3f3e7",
+    "text": "OPENID CONNECT LAMANG, kasama ang fedDiscovery. Ang TRUE ay sumasagot sa /federation/webfinger/{id}, kung saan nagta-type ang isang TAO ng identifier (acct:user@host o isang URL) at itinatanong ng serbisyong ito sa host na iyon kung sino ang OpenID Provider ng tao (OpenID Connect Discovery 1.0 seksiyon 2, RFC 7033). ISANG BABALA: ang host na tinatawagan ay pinili ng isang caller — ang nag-iisang ipinagtanggol na eksepsiyon ng ganoong uri ng serbisyong ito sa mga federation request, sa ilalim ng outbound policy (walang internal address sa product mode, walang redirect, ang limit). Ang nahanap na issuer ay dapat magsimula sa fedPeer, na naglilimita rito sa partner na kinumpigura ng administrator; ipinapakita sa tao ang issuer at nagpapatuloy lamang ito sa pagpindot ng button. FALSE, ang default, ay tumatanggi."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "OPENID CONNECT LAMANG. Ang TRUE ay binabasa ang mga endpoint ng partner at ang jwks_uri nito mula sa discovery document nito, {fedPeer}/.well-known/openid-configuration, sa simula ng bawat pag-sign in (OpenID Connect Discovery 1.0 seksiyon 4), na ang issuer ay dapat eksaktong fedPeer; ang fedSsoUrl, fedTokenUrl, fedUserinfoUrl at fedJwksUri ay hindi na binabasa. Ang address ay hinango mula sa fedPeer, na kinumpigura ng isang administrator, at hindi kailanman mula sa isang request. FALSE, ang default: ang mga endpoint ay kinukumpigura nang mano-mano."
