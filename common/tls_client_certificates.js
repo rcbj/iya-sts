@@ -758,6 +758,31 @@ async function bundle(issued, password) {
   };
 }
 
+/**
+ * The two files the PORTAL answers (#671): the private key as the issue
+ * handed it over (unencrypted PKCS#8 PEM) and the certificate chain, leaf
+ * first. No password, no PKCS#12 — rcbj's decision on #671, so the three
+ * cards of `/portal/signing-key` answer the same pair. `bundle()` above is
+ * still what the console's issue answers.
+ *
+ * @param issued - the `issued` object from `issue()`
+ * @returns `{ key, chain }`, each with a file name, MIME type and PEM text
+ */
+function pemFiles(issued) {
+  log.debug("Entering pemFiles().");
+  const stem = fileStem(issued);
+  const certs = [issued.certificatePem].concat(issued.chainPem || []);
+  log.debug("Leaving pemFiles().");
+  return {
+    key: { name: stem + '-key.pem', mime: 'application/x-pem-file',
+           text: String(issued.privateKeyPem).trim() + '\n' },
+    chain: { name: stem + '-chain.pem', mime: 'application/x-pem-file',
+             text: certs.map(function (one) {
+               return String(one).trim() + '\n';
+             }).join('') }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // REVOKE ONE OF YOUR OWN.
 //
@@ -1709,6 +1734,7 @@ module.exports = {
   issue: issue,
   pkcs12PasswordProblem: pkcs12PasswordProblem,
   bundle: bundle,
+  pemFiles: pemFiles,
   revoke: revoke,
   trustAnchorPem: trustAnchorPem,
   identityOf: identityOf,

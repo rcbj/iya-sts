@@ -24,11 +24,19 @@
 // VIEW.** Every other act here answers a message. These two cannot: a
 // credential on a URL is a credential in a browser history entry, this
 // service's own access log and every proxy log between here and the person.
-// So `generate` answers `view.fresh.privateKeyPem`, and `generate-tls-client`
-// answers `view.fresh.files` — the PKCS#12, the key and the chain, each as
-// base64 the page turns into a `download` link — and the runtime draws them
-// in place. **AND THERE IS NO SECOND CHANCE**: the key is written to the
-// entry sealed under the key-encryption key and nothing opens it again.
+// So both generations answer `view.fresh.files` — the private key and the
+// certificate chain, two PEM files, each as base64 the page turns into a
+// `download` link in the certificate's own row — and the runtime draws them
+// in place. **AND THERE IS NO SECOND CHANCE**: a signing key is written to
+// the entry sealed under the key-encryption key and nothing opens it again,
+// and a TLS client certificate's key is not kept at all.
+//
+// **NO FILE PASSWORD AND NO PKCS#12 (#671, rcbj, 2026-11-03).** The TLS card
+// asked for a password and answered a `.p12` beside an encrypted PEM key;
+// rcbj asked for the three cards to work alike, with no password, accepting
+// that a browser can no longer import the result. The key file is the
+// unencrypted PKCS#8 PEM the issue handed over, as the two signing keys'
+// are, and the files are the same pair on every card.
 //
 // **THE SETTING IS CHECKED AT THE DOOR AND NOT ONLY ON THE PAGE**
 // (`pki.personSelfService`, 403 when off), and BOTH generations are RATE
@@ -83,11 +91,6 @@ const SIGNING_KEY_FORM = vz.object({
     .describe('For `generate-tls-client`: what you call the device.'),
   key_alg: vt.opt(vt.oneOf(tlsClient.KEY_ALGS))
     .describe('For `generate-tls-client`: the key algorithm.'),
-  p12_password: vz.string().max(512).optional()
-    .describe('For `generate-tls-client`: the password protecting the ' +
-              'PKCS#12 file. Used once and not stored.'),
-  p12_confirm: vz.string().max(512).optional()
-    .describe('The same password again.'),
   serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional()
     .describe('For `revoke-tls-client`: the certificate\'s serial, one of ' +
               'yours.'),
@@ -252,7 +255,6 @@ class AccountSigningKey {
       maxPerPerson: Number(report.maxPerPerson || 0),
       keyAlgs: (tlsClient.KEY_ALGS || []).slice(0),
       defaultKeyAlg: tlsClient.DEFAULT_KEY_ALG,
-      passwordMin: tlsClient.PKCS12_PASSWORD_MIN,
       held: held.map(function (one: Json): Json {
         return { label: String(one.label || ''),
                  serialHex: String(one.serialHex || ''),
@@ -263,6 +265,21 @@ class AccountSigningKey {
                  revokedAt: String(one.revokedAt || '') };
       })
     };
+  }
+
+  // THE TWO FILES EVERY GENERATION ANSWERS (#671): the private key and the
+  // certificate chain, leaf first, each as base64 for a `data:` link. One
+  // shape for the three cards, so the page draws them one way.
+  /**
+   * A PEM file as the page's `download` link wants it.
+   *
+   * @param name - the file name
+   * @param text - the PEM text
+   * @returns `{ name, mime, base64 }`
+   */
+  static pemFile(name: string, text: string): Json {
+    return { name: name, mime: 'application/x-pem-file',
+             base64: Buffer.from(String(text), 'utf8').toString('base64') };
   }
 
   /**
@@ -375,12 +392,6 @@ class AccountSigningKey {
           'people issue their own certificates. An administrator can issue ' +
           'one to you.');
       }
-      const passwordSaid = tlsClient.pkcs12PasswordProblem(body.p12_password,
-                                                           body.p12_confirm);
-      if (passwordSaid) {
-        log.debug("Leaving AccountSigningKey.act(). File password.");
-        return refuse(400, 'STS-PORTAL-0040', passwordSaid);
-      }
       const allowedTls = await limited();
       if (!allowedTls.ok) {
         log.debug("Leaving AccountSigningKey.act(). Rate limited.");
@@ -399,24 +410,10 @@ class AccountSigningKey {
           (made.errors || ['A TLS client certificate could not be ' +
                            'issued.'])[0]);
       }
-      let files: Json = null;
-      try {
-        files = await tlsClient.bundle(made.issued, body.p12_password);
-      } catch (e) {
-        // THE CERTIFICATE EXISTS AND ITS KEY IS GONE. Revoked at once rather
-        // than left valid in the register: a certificate nobody can ever
-        // present is only a line on a list, and one nobody can revoke
-        // because nobody knows its key was lost is worse.
-        log.error(ctx.errorCodes.tag('STS-PORTAL-0042') + 'portal: a TLS ' +
-                  'client certificate was issued to ' + username + ' and ' +
-                  'its files could not be built, so it was revoked: ' +
-                  ((e && e.message) || e));
-        tlsClient.revoke(undefined, username, made.issued.serialHex,
-                         'cessationOfOperation');
-        log.debug("Leaving AccountSigningKey.act(). Not packaged.");
-        return refuse(500, 'STS-PORTAL-0042', 'The certificate could not be ' +
-                      'packaged for download, so it was revoked. Try again.');
-      }
+      // THE KEY AND THE CHAIN AS THEY CAME OUT OF THE ISSUE (#671): nothing
+      // is encrypted or packaged, so nothing between the issue and the
+      // answer can fail and leave a certificate whose key is lost.
+      const files: Json = tlsClient.pemFiles(made.issued);
       audit.record({
         category: 'authentication', action: 'portal.tls-client.issued',
         actor: username, outcome: 'success',
@@ -431,11 +428,6 @@ class AccountSigningKey {
                'certificate, serial ' + made.issued.serialHex + ', valid ' +
                'until ' + made.issued.notAfter + '. The private key went out ' +
                'once in the answer and is not readable again.');
-      // THE FILES AS BASE64, which the page turns into `download` links —
-      // the PKCS#12 already is; the key and the chain are PEM text.
-      const b64 = function (text: Json): string {
-        return Buffer.from(String(text), 'utf8').toString('base64');
-      };
       const fresh = {
         kind: 'tls-client',
         issued: { subject: String(made.issued.subject || ''),
@@ -443,12 +435,8 @@ class AccountSigningKey {
                   keyAlg: String(made.issued.keyAlg || ''),
                   notAfter: String(made.issued.notAfter || '') },
         files: {
-          pkcs12: { name: files.pkcs12.name, mime: files.pkcs12.mime,
-                    base64: files.pkcs12.base64 },
-          key: { name: files.key.name, mime: files.key.mime,
-                 base64: b64(files.key.text) },
-          chain: { name: files.chain.name, mime: files.chain.mime,
-                   base64: b64(files.chain.text) }
+          key: AccountSigningKey.pemFile(files.key.name, files.key.text),
+          chain: AccountSigningKey.pemFile(files.chain.name, files.chain.text)
         }
       };
       log.debug("Leaving AccountSigningKey.act(). TLS client issued.");
@@ -545,11 +533,23 @@ class AccountSigningKey {
                  ? 'thumbprint=' + record.certificateThumbprint
                  : 'kid=' + record.kid) +
                ', valid until ' + record.notAfter + '. The private half was ' +
-               'shown to them once and is not readable again.');
+               'offered to them once and is not readable again.');
       log.debug("Leaving AccountSigningKey.act(). Issued and showing.");
+      // The files are named for the person and the profile, as a TLS
+      // client certificate's are for the person and the device.
+      const stem = (String(username).replace(/[^A-Za-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'person') + '-' + profile.id + '-signing';
+      const chain = [record.certificatePem].concat(record.chainPem || [])
+        .map(function (one: Json): string {
+          return String(one).trim() + '\n';
+        }).join('');
       return ctx.json(res, 200, { ok: true, view: this.view(caller, base, {
         purpose: profile.id,
-        privateKeyPem: record.privateKeyPem,
+        files: {
+          key: AccountSigningKey.pemFile(stem + '-key.pem',
+                                         record.privateKeyPem),
+          chain: AccountSigningKey.pemFile(stem + '-chain.pem', chain)
+        },
         kid: record.kid || '',
         thumbprint: record.certificateThumbprint || '',
         jwsAlg: record.jwsAlg || '',
@@ -595,11 +595,12 @@ class AccountSigningKey {
         access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/signing-key',
         summary: 'Generates or takes off a signing key or TLS certificate',
         description: '`generate` issues a key pair for `purpose` from this ' +
-          'realm\'s Issuing CA and answers its private key ONCE, in ' +
-          '`view.fresh.privateKeyPem`; `remove` takes one off. ' +
-          '`generate-tls-client` issues a TLS client certificate and answers ' +
-          'its PKCS#12, key and chain ONCE, in `view.fresh.files` (base64); ' +
-          '`revoke-tls-client` revokes one of yours. Both generations are ' +
+          'realm\'s Issuing CA; `remove` takes one off. ' +
+          '`generate-tls-client` issues a TLS client certificate; ' +
+          '`revoke-tls-client` revokes one of yours. Both generations answer ' +
+          'the private key (unencrypted PKCS#8 PEM) and the certificate ' +
+          'chain ONCE, in `view.fresh.files.key` and ' +
+          '`view.fresh.files.chain` (base64). Both generations are ' +
           'refused (403) where self-service is off, and rate limited. A ' +
           'refusal carries the page\'s `view`.',
         body: SIGNING_KEY_FORM,

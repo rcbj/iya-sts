@@ -220,16 +220,37 @@ function personAttributes(who) {
            mail: who + "@" + MAIL_DOMAIN };
 }
 
-// The PEM as the page prints it. Anchored on the BEGIN line rather than on the
-// block, because the page carries a second <pre> holding a curl command and a
-// regex that matched any <pre> would read that one on the day the order
-// changed.
+// A `download` link's file, by the end of its name and its media type. The
+// link carries a `title` between `download` and `href` since #671, so other
+// attributes may sit between the two.
+function dataLink(text, suffix, mime) {
+  log.debug("Entering dataLink().");
+  const pattern = new RegExp('download="([^"]*' + suffix.replace(/\./g,
+    "\\.") + ')"[^>]*? href="data:' + mime.replace(/[/+.]/g, "\\$&") +
+    ';base64,([A-Za-z0-9+/=]+)"');
+  const found = pattern.exec(String(text || ""));
+  log.debug("Leaving dataLink().");
+  return found ? { name: found[1],
+                   bytes: Buffer.from(found[2], "base64") } : null;
+}
+
+// The private key a page offers. SINCE #671 (2026-11-03) it is a download
+// link in the certificate's row, `<name>-<profile>-signing-key.pem`, and not
+// a printed block; a PEM printed anywhere in the text is still found, so the
+// checks that a page carries NO key stay as strict as they were. Anchored on
+// the BEGIN line rather than on the block, because the page carries a <pre>
+// holding a curl command.
 function privateKeyOn(text) {
   log.debug("Entering privateKeyOn().");
-  const found = String(text).match(
-    /(-----BEGIN (?:RSA |EC )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC )?PRIVATE KEY-----)/);
+  const pemOf = function (one) {
+    const found = String(one).match(
+      /(-----BEGIN (?:RSA |EC )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC )?PRIVATE KEY-----)/);
+    return found ? found[1] : "";
+  };
+  const printed = pemOf(text);
+  const link = dataLink(text, "-key.pem", "application/x-pem-file");
   log.debug("Leaving privateKeyOn().");
-  return found ? found[1] : "";
+  return printed || (link ? pemOf(link.bytes.toString("utf8")) : "");
 }
 
 function thumbprintOn(text) {
@@ -430,11 +451,32 @@ async function test() {
             "no private key block on the page: " +
             String(issued.text).slice(0, 600));
         });
-  check("the page says it is the only time it will be shown, which is the " +
-        "whole contract — nothing in this service opens the stored copy again",
-        function () {
-          assert.ok(/only time it will be shown/i.test(issued.text),
-            "the page does not say the key is shown once");
+  check("the page says it is the only time it can be downloaded, which is " +
+        "the whole contract — nothing in this service opens the stored copy " +
+        "again", function () {
+          assert.ok(/only time it can be downloaded/i.test(issued.text),
+            "the page does not say the key is offered once");
+        });
+  // THE TWO FILES ARE IN THE CERTIFICATE'S ROW (#671), the same pair the
+  // TLS client certificate's row carries: the key, and the chain whose leaf
+  // is the certificate that key belongs to.
+  const issuedChain = dataLink(issued.text, "-jwt-signing-chain.pem",
+                               "application/x-pem-file");
+  check("the key and the certificate chain are download links in the " +
+        "card's Certificate row, and the chain's leaf holds the key's public " +
+        "half", function () {
+          const row = (String(issued.text)
+            .match(/<tr class="fresh-row">[\s\S]*?<\/tr>/) || [""])[0];
+          assert.ok(/-jwt-signing-key\.pem"/.test(row) &&
+                    /-jwt-signing-chain\.pem"/.test(row),
+            "the two downloads are not in the certificate's row");
+          assert.ok(issuedChain, "no chain download on the page");
+          const leaf = new nodeCrypto.X509Certificate((/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/
+            .exec(issuedChain.bytes.toString("utf8")) || [""])[0]);
+          assert.ok(nodeCrypto.createPublicKey(pem)
+            .export({ type: "spki", format: "der" })
+            .equals(leaf.publicKey.export({ type: "spki", format: "der" })),
+            "the chain's leaf is not the key's certificate");
         });
   check("and it is served no-store, like every page in this portal",
         function () {
@@ -788,73 +830,65 @@ async function test() {
   //    than a decision.
   // -------------------------------------------------------------------------
   log.info("=== 9. a TLS client certificate ===");
-  const FILE_PASSWORD = "file password " + jti().slice(0, 8);
-  const dataLink = function (text, suffix, mime) {
-    log.debug("Entering dataLink().");
-    const pattern = new RegExp('download="([^"]*' + suffix.replace(/\./g,
-      "\\.") + ')" href="data:' + mime.replace(/[/+.]/g, "\\$&") +
-      ';base64,([A-Za-z0-9+/=]+)"');
-    const found = pattern.exec(String(text || ""));
-    log.debug("Leaving dataLink().");
-    return found ? { name: found[1],
-                     bytes: Buffer.from(found[2], "base64") } : null;
-  };
   const tlsPage = await pageOf(b, "/portal/signing-key");
   check("the page carries a TLS client certificate card with a generate form " +
-        "asking for a file password twice", function () {
+        "that asks for NO file password (#671)", function () {
           assert.ok(/id="tls-client"/.test(tlsPage.text),
             "no TLS client certificate card on the page");
           assert.ok(/name="action" value="generate-tls-client"/.test(
-            tlsPage.text) && /name="p12_password"/.test(tlsPage.text) &&
-            /name="p12_confirm"/.test(tlsPage.text),
-            "the generate form is not on the page");
+            tlsPage.text), "the generate form is not on the page");
+          assert.ok(!/name="p12_password"|name="p12_confirm"/.test(
+            tlsPage.text), "the form still asks for a file password");
           assert.ok(/You have no TLS client certificate/.test(tlsPage.text),
             "the card does not say none is held");
         });
-  const mismatched = await act(b, "/portal/signing-key",
+  const withPassword = await act(b, "/portal/signing-key",
     { action: "generate-tls-client", label: "laptop",
-      p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD + "x" });
-  check("two different file passwords are refused 400 and nothing is issued",
+      p12_password: "a file password" });
+  check("a body still carrying a file password is refused 400 at the form's " +
+        "shape and nothing is issued — the field is gone, not ignored",
         function () {
-          assert.strictEqual(mismatched.status, 400,
-            "it answered " + mismatched.status);
-          assert.ok(!dataLink(mismatched.text, ".p12", "application/x-pkcs12"),
-            "a PKCS#12 came back for a mismatched password");
-          assert.ok(/You have no TLS client certificate/.test(mismatched.text),
-            "a certificate was issued anyway");
+          assert.strictEqual(withPassword.status, 400,
+            "it answered " + withPassword.status);
+          assert.ok(!dataLink(withPassword.text, "-key.pem",
+                              "application/x-pem-file"),
+            "a key file came back anyway");
         });
   const noTokenTls = await fetch(base + "/account-api/signing-key", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "generate-tls-client",
-                           p12_password: FILE_PASSWORD,
-                           p12_confirm: FILE_PASSWORD }) });
+    body: JSON.stringify({ action: "generate-tls-client" }) });
   const noTokenText = await noTokenTls.text();
   check("a generate with no access token is refused 401 and issues nothing " +
         "(it was the CSRF check until #568)", function () {
           assert.strictEqual(noTokenTls.status, 401,
             "it answered " + noTokenTls.status);
-          assert.ok(!/pkcs12/i.test(noTokenText), "a file came back");
+          assert.ok(!/x-pem-file/i.test(noTokenText), "a file came back");
         });
   const tlsIssued = await act(b, "/portal/signing-key",
-    { action: "generate-tls-client", label: "laptop", key_alg: "ec-p256",
-      p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD });
-  const p12 = dataLink(tlsIssued.text, ".p12", "application/x-pkcs12");
+    { action: "generate-tls-client", label: "laptop", key_alg: "ec-p256" });
   const keyFile = dataLink(tlsIssued.text, "-key.pem",
                            "application/x-pem-file");
   const chainFile = dataLink(tlsIssued.text, "-chain.pem",
                              "application/x-pem-file");
-  check("**THE POST ANSWERS WITH THE THREE FILES**, no-store, as download " +
-        "links on the page that also says how to install them", function () {
+  check("**THE POST ANSWERS WITH THE TWO FILES**, no-store, as download " +
+        "links in the new certificate's own row, and NO PKCS#12 (#671)",
+        function () {
           assert.strictEqual(tlsIssued.status, 200,
             "it answered " + tlsIssued.status + " " +
             String(tlsIssued.text).slice(0, 400));
-          assert.ok(p12 && keyFile && chainFile,
-            "the three download links are not all on the page");
+          assert.ok(keyFile && chainFile,
+            "the two download links are not both on the page");
+          assert.ok(!/\.p12"/.test(tlsIssued.text),
+            "a PKCS#12 is still offered");
+          const row = (String(tlsIssued.text)
+            .match(/<tr class="fresh-row">[\s\S]*?<\/tr>/) || [""])[0];
+          assert.ok(row.indexOf(keyFile.name) >= 0 &&
+                    row.indexOf(chainFile.name) >= 0,
+            "the downloads are not in the certificate's row");
           assert.ok(/no-store/.test(
             String(tlsIssued.headers.get("cache-control") || "")));
-          assert.ok(/Firefox/.test(tlsIssued.text) &&
-                    /Keychain Access/.test(tlsIssued.text),
-            "the page carries no install steps");
+          assert.ok(/curl --cert /.test(tlsIssued.text),
+            "the page does not say how to use the files");
           assert.ok(/only time these files can be downloaded/.test(
             tlsIssued.text), "the page does not say the files are shown once");
         });
@@ -877,19 +911,18 @@ async function test() {
                              "the chain file is not the leaf and two " +
                              "issuers");
         });
-  check("the key file is ENCRYPTED, opens with the file password, and holds " +
-        "the certificate's key; the PKCS#12 is DER", function () {
+  check("the key file is an UNENCRYPTED PKCS#8 block (#671: no file " +
+        "password) and holds the certificate's key", function () {
           const keyText = keyFile.bytes.toString("utf8");
-          assert.ok(/ENCRYPTED PRIVATE KEY/.test(keyText),
-            "the key file is not an encrypted PKCS#8 block");
+          assert.ok(/-----BEGIN PRIVATE KEY-----/.test(keyText) &&
+                    !/ENCRYPTED/.test(keyText),
+            "the key file is not an unencrypted PKCS#8 block");
           const opened = nodeCrypto.createPrivateKey({ key: keyText,
-            format: "pem", passphrase: FILE_PASSWORD });
+            format: "pem" });
           assert.ok(nodeCrypto.createPublicKey(opened)
             .export({ type: "spki", format: "der" })
             .equals(tlsLeaf.publicKey.export({ type: "spki", format: "der" })),
             "the key in the file is not the certificate's");
-          assert.ok(p12.bytes[0] === 0x30 && p12.bytes.length > 500,
-            "the .p12 is not a DER SEQUENCE");
         });
   const tlsSerial = tlsLeaf ? String(tlsLeaf.serialNumber).toLowerCase() : "";
   const tlsListed = await pageOf(b, "/portal/signing-key");
@@ -900,8 +933,9 @@ async function test() {
                     "the serial is not listed");
           assert.ok(/class="state-valid">valid/.test(tlsListed.text),
             "it is not listed as valid");
-          assert.ok(!dataLink(tlsListed.text, ".p12", "application/x-pkcs12"),
-            "the PKCS#12 is still on the page");
+          assert.ok(!dataLink(tlsListed.text, "-key.pem",
+                              "application/x-pem-file"),
+            "the key file is still on the page");
         });
   const otherBrowser = await signIn("/portal/signing-key", OTHER);
   const otherPage = await pageOf(otherBrowser, "/portal/signing-key");
@@ -947,7 +981,8 @@ const program = new Command();
 program
   .name("sts_portal_signing_key")
   .description("/portal/signing-key: a person issues themselves an RFC 7523 " +
-      "key pair, the private half is shown once on the page that comes back, " +
+      "key pair, the private half is offered once on the page that comes " +
+      "back, " +
       "it obtains an access token as them at /oauth2/token and obtains " +
       "nothing as anybody else, it never appears again, a post with no " +
       "access token is refused, a username in the body changes nothing, " +
