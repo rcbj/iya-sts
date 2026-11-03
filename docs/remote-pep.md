@@ -363,6 +363,68 @@ change made during an outage is not enforced here until the next successful
 pull.** The alternative, a PDP outage denying everything everywhere, is the
 failure mode that makes people remove authorization services.
 
+## Running more than one
+
+**Run as many as the load needs, side by side, and put a load balancer in
+front.** Instances share nothing and never talk to each other. There is no
+cluster to join, because nothing a PEP holds needs coordinating:
+
+| What an instance holds | Where it comes from |
+|---|---|
+| the policy set | pulled from the PDP. A new instance holds exactly what the others hold after one pull |
+| the AuthZEN catalogue and caller list | pulled from the PDP |
+| its decision counters | its own. Each instance counts only what it decided |
+| its HTTPS listener pair | the two files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name |
+| a person's attributes | asked of `POST /xacml/pip` before each decision, and not kept |
+
+The service is already the one place the policy comes from, so instances
+converge on it on their own: each within one `PEP_POLL_INTERVAL_MS`, or at once
+when nudged. An instance that cannot reach the service keeps enforcing what it
+last pulled, [as above](#when-the-pdp-goes-away). A peer could only hand it the
+same copy or an older one.
+
+### One certificate per instance, or one shared
+
+**This is the one choice to make.** The service files a remote PEP by its
+client certificate, so one certificate is one row on
+[the **Remote PEPs** tab](configure-xacml.md#stop-nudging-or-forget-a-pep). Both
+choices decide correctly. What differs is what you can see and how fast a
+change arrives:
+
+| | One certificate per instance | One certificate shared by every instance |
+|---|---|---|
+| rows on the **Remote PEPs** tab | one per instance | one for the whole deployment |
+| the nudge on a policy change | reaches every instance | reaches one instance: whichever registered or sent a heartbeat last, because its `PEP_NOTIFY_URL` replaces the row's. The rest pick the change up on their next poll |
+| decision counters, build, bias | each instance's own | whichever instance sent the last heartbeat. Each heartbeat replaces the row's numbers, so the row jumps between instances and is never the total |
+| an instance that stops | its row goes stale | hidden while any other instance still sends heartbeats |
+| stopping nudges, or revoking the certificate | one instance at a time | every instance at once |
+| adding an instance | first mint a certificate and store it on an entry in `remote-peps` ([Minting the certificate](#minting-the-certificate)) | start a container with the same files |
+| the HTTPS listener certificate | issued per instance, naming its own notify host | one certificate whose `dnsNames` include the load balancer's name |
+
+**For a fixed number of instances, give each its own certificate.** The console
+then tells you about every instance, and every one is nudged.
+
+**For an autoscaling group, share one certificate**, because a new instance
+then needs nothing minted before it starts. Accept the costs in the right-hand
+column: one row that is not a total, a policy change that reaches most
+instances on the poll rather than the nudge, and a dead instance you see in
+your load balancer's health checks rather than on the console. If a change has
+to arrive faster, lower `PEP_POLL_INTERVAL_MS`: an unchanged policy answers the
+poll with `304`, so that costs the service very little.
+
+### What more instances cost the service
+
+**Polling costs almost nothing per instance**: one conditional request every
+`PEP_POLL_INTERVAL_MS`, answered `304` while the policy is unchanged, and a
+heartbeat every `PEP_HEARTBEAT_INTERVAL_MS`.
+
+**The PIP query is the load that grows**, because it is one batched
+`POST /xacml/pip` per decision that needs an attribute the request did not
+carry. More PEP instances spread the decisions out but send the service the
+same number of queries. To cut that load, have the caller send the attributes
+in the request, or set `PEP_PIP=false` where the policy needs nothing from the
+directory.
+
 ## An HTTPS listener, certified by the realm it registered to
 
 A PEP answers its own clients, and it can answer them over HTTPS with a
