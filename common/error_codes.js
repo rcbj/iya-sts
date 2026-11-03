@@ -1880,6 +1880,16 @@ const CODES = [
       'not dense (an increment above one or a cache above one), so every ' +
       'reader would wait for numbers no transaction will commit.',
     spec: '' },
+  { code: 'STS-STORE-0120',
+    summary: 'A minted flush on MariaDB was refused: a value it writes is ' +
+      'longer than its MariaDB column (sts_minted.key holds 512 ' +
+      'characters), and the store refuses it rather than truncate it.',
+    spec: '' },
+  { code: 'STS-STORE-0121',
+    summary: 'A minted flush on MariaDB gave up on a new key that other ' +
+      'writers kept inserting and removing while it wrote it; the flush is ' +
+      'rolled back and tried again later.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

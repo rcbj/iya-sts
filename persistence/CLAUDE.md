@@ -164,10 +164,10 @@ PostgreSQL, or when `persistence.sqlDialect` is `portable`; then it also
 offers no `watchChanges()` and sends no `NOTIFY`, and the replication module
 polls every second unless `persistence.pollInterval` is set. The join lock
 is a row of `sts_cluster_locks` (schema version 30) locked FOR UPDATE.
-**What portable mode does NOT yet cover**: the minted flush (one statement
-with the fence inside, `MINTED_FLUSH`), the directory flush, the counts and
-everything else outside the cluster family still send PostgreSQL's text —
-those are phase 3, the MariaDB driver. `tests/cluster_portable.js` holds the
+**What portable mode does NOT yet cover**: the directory flush, the counts
+and everything else outside the cluster and minted families still send
+PostgreSQL's text — those are phase 3, the MariaDB driver.
+`tests/cluster_portable.js` holds the
 contracts, statically for MariaDB and against a real PostgreSQL when
 `STS_TEST_POSTGRES_URL` is set; `./run-tests.sh --modes=cluster-portable`
 runs the two-node mode on them (`tests/CLAUDE.md`).
@@ -187,11 +187,34 @@ windowed directory and on-demand minted stores are held whole. **What runs
 on MariaDB today**: the connection layer, the schema, and the coordination
 statements (`cluster_portable.js`, proved against MariaDB 11.8 by
 `tests/cluster_portable.js` section C). **What does not yet**: every other
-family's PostgreSQL text (the directory, minted state, sessions, keys,
-realms, settings, risk, reports, the metrics probes and open()'s catalog
-probes) — the next steps of phase 3, each proved the same way before it is
+family's PostgreSQL text (the directory, keys, realms, settings, risk,
+reports, the metrics probes and open()'s catalog probes) — the next steps
+of phase 3, each proved the same way before it is
 switched on. Refused on MariaDB, each for its own reason: cells, the bulk
 import, cell conversion, the directory window, the risk installer.
+
+**What this service mints, on MariaDB (#677, phase 3b).** Every statement of
+the minted family — `loadMinted` (its filter still required),
+`loadMintedKeys`, the reads by key, the minted index and its completion mark,
+`backfillMintedExpiry`, the session index's repairs and backfill pages, the
+purges, and the async questions of `minted_queries.js` and
+`session_queries.js` (a MariaDB twin per statement; PostgreSQL's text is
+unchanged) — is `minted_portable.js` there, and under `sqlDialect=portable`
+on PostgreSQL. **The minted flush is a transaction there, not
+`MINTED_FLUSH`**: `withTransaction()` (the fence first, the change rows
+counted at COMMIT), then every existing row locked FOR UPDATE in (handle,
+realm, key) order and its body read, the merges made under that lock (so no
+compare-and-set), the tombstone rule judged on the locked row, the writes in
+key order, the side tables and change rows only for bodies written. A key new
+at the lock is "insert or nothing", and one another flush took meanwhile is
+locked and judged. `retryableConflict()` reads `dialect.isRetryable()`, so an
+InnoDB deadlock is run again. A value longer than its MariaDB column is
+refused (STS-STORE-0120), since INSERT IGNORE would truncate it. The expiry
+purge's batch is `DELETE … LIMIT n`. **Held whole on MariaDB**: every
+on-demand store, and every session — the driver says `lendsNoBridge`, and
+`authn/session_window.ts` turns the window off for it (`on` is refused),
+because its synchronous reads need the `pg` bridge thread. `tests/minted_portable.js` proves it against both
+engines through the whole driver and the real minted module.
 
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,

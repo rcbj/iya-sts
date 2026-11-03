@@ -130,6 +130,9 @@ const sqlDialect = require('./sql_dialect');
 // The cluster's statements without PostgreSQL's features (#677). A LIBRARY,
 // built in create() only when they are used.
 const clusterPortable = require('./cluster_portable');
+// What this service mints, in statements a second engine runs (#677, 3b).
+// A LIBRARY, built in create() only when it is used.
+const mintedPortable = require('./minted_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -4600,6 +4603,24 @@ function create(options) {
     : null;
 
   // ---------------------------------------------------------------------
+  // THE PORTABLE MINTED STATEMENTS (#677, phase 3b), or null for
+  // PostgreSQL's own: the minted rows, their index and the session index,
+  // and the minted flush as a transaction rather than MINTED_FLUSH. Built
+  // where the cluster's are, for the same two cases — every statement runs
+  // against PostgreSQL's schema unchanged, so `persistence.sqlDialect=
+  // portable` proves it on the reference engine. `persistence/
+  // minted_portable.js` argues each contract.
+  // ---------------------------------------------------------------------
+  const mintedStatements = portable
+    ? mintedPortable.forDriver({
+        dialect: dialect, pool: pool, readPool: readPool,
+        tombstone: TOMBSTONE, indexMark: MINTED_INDEX_MARK,
+        sessionMark: { realm: SESSION_INDEX_MARK_REALM,
+                       key: SESSION_INDEX_MARK_KEY }
+      })
+    : null;
+
+  // ---------------------------------------------------------------------
   // THE FENCE (2026-09-14, #46), installed by `cluster/cluster.js`.
   //
   // A function answering `{ nodeId, leases: [{ name, token }] }` for the write
@@ -5173,11 +5194,14 @@ function create(options) {
   // ---------------------------------------------------------------------------
   const DEADLOCK_RETRIES = 3;
 
+  // MariaDB's deadlock (1213) and lock-wait timeout (1205) are the same
+  // contract (#677): InnoDB rolls the transaction back and asks for it again
+  // where PostgreSQL would often have waited. `dialect.isRetryable()` knows
+  // both engines' codes; on PostgreSQL it is 40P01 and 40001, as before.
   function retryableConflict(err) {
     log.debug("Entering retryableConflict().");
-    const code = err && err.code;
     log.debug("Leaving retryableConflict().");
-    return !(err && err.fenced) && (code === '40P01' || code === '40001');
+    return !(err && err.fenced) && dialect.isRetryable(err);
   }
 
   // ---------------------------------------------------------------------------
@@ -5295,8 +5319,10 @@ function create(options) {
           throw err;
         }
         log.info('persistence: ' + what + ' met ' +
-                 (err.code === '40P01' ? 'a deadlock' :
-                  'a serialization failure') + ' and was rolled back by ' +
+                 (err.code === '40001' ? 'a serialization failure'
+                   : err.code === 'ER_LOCK_WAIT_TIMEOUT' ||
+                     err.errno === 1205 ? 'a lock wait timeout'
+                     : 'a deadlock') + ' and was rolled back by ' +
                  'the database; running it again (attempt ' + (attempt + 2) +
                  ' of ' + (DEADLOCK_RETRIES + 1) + ').');
         await new Promise(function (resolve) {
@@ -5491,6 +5517,30 @@ function create(options) {
     });
   }
 
+  // -------------------------------------------------------------------------
+  // THE FLUSH WHERE THERE IS NO MINTED_FLUSH (#677, phase 3b): MariaDB has
+  // no data-modifying CTE, so the flush is a transaction — the fence first,
+  // then `minted_portable.js`'s statements, which lock every existing row
+  // in order and read each stored body, so the merges are made under the
+  // lock and there is no compare-and-set to miss. What is written is the
+  // same `mintedFlushWrites()` decides for the one statement, and the
+  // change rows are counted at COMMIT as MINTED_FLUSH's are.
+  // -------------------------------------------------------------------------
+  function flushMintedPortable(plan) {
+    log.debug("Entering flushMintedPortable().");
+    log.debug("Leaving flushMintedPortable().");
+    return withTransaction(function (client) {
+      return mintedStatements.flush(client, plan.touched, function (stored) {
+        const resolved = resolveMerges(plan, stored);
+        return { resolved: resolved,
+                 named: mintedFlushWrites(plan, resolved, processId) };
+      }).then(function (out) {
+        return settleMintedFlush(client, plan, out.resolved,
+                                 { unwritten: out.unwritten });
+      });
+    });
+  }
+
   // How many times the one statement is sent with a compare-and-set before
   // the flush is made a transaction: the guess, and the bodies the miss
   // answered with.
@@ -5505,6 +5555,10 @@ function create(options) {
   // -------------------------------------------------------------------------
   async function flushMinted(plan) {
     log.debug("Entering flushMinted().");
+    if (mintedStatements) {
+      log.debug("Leaving flushMinted(). Portable.");
+      return flushMintedPortable(plan);
+    }
     let expected = new Map();
     plan.merging.forEach(function (row) {
       const id = mintedIdOf(row);
@@ -6849,11 +6903,12 @@ function create(options) {
         where += ' AND NOT (handle = ANY($' + binds.length + '::text[]))';
       }
       log.debug("Leaving loadMinted().");
-      return readPool.query(
+      return (mintedStatements ? mintedStatements.loadMinted(filter)
+        : readPool.query(
         'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
         '* 1000)::bigint AS written_ms, expires_at, key_sealed ' +
         'FROM sts_minted ' + where, binds
-      ).then(function (r) {
+      )).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
             handle: row.handle,
@@ -6887,13 +6942,15 @@ function create(options) {
       if (!handles || !handles.length) {
         return Promise.resolve([]);
       }
-      return readPool.query(
+      return (mintedStatements
+        ? mintedStatements.loadMintedKeys(handles, realmIds, nowMs)
+        : readPool.query(
         'SELECT handle, realm, key FROM sts_minted WHERE handle = ANY($1::' +
         'text[]) AND realm = ANY($2::text[]) AND body <> $3 AND ' +
         '(expires_at IS NULL OR expires_at > $4)',
         [handles.map(String), (realmIds || []).map(String), TOMBSTONE,
          Number(nowMs) || Date.now()]
-      ).then(function (r) {
+      )).then(function (r) {
         return (r.rows || []).map(function (row) {
           return { handle: String(row.handle), realm: String(row.realm),
                    key: String(row.key) };
@@ -7087,14 +7144,16 @@ function create(options) {
         binds.push(String(ref.handle), String(ref.realm), String(ref.key));
       });
       log.debug("Leaving readMintedMany().");
-      return asking.query(
+      return (mintedStatements
+        ? mintedStatements.readMintedMany(asking, list)
+        : asking.query(
         'SELECT m.handle, m.realm, m.key, m.body, ' +
         '(extract(epoch from m.written_at) * 1000)::bigint AS written_ms ' +
         'FROM sts_minted m JOIN (VALUES ' + values.join(', ') +
         ') AS w(handle, realm, key) ' +
         'ON m.handle = w.handle AND m.realm = w.realm AND m.key = w.key',
         binds
-      ).then(function (res) {
+      )).then(function (res) {
         const rows = (res.rows || []).filter(function (row) {
           return row.body !== TOMBSTONE;
         }).map(function (row) {
@@ -7438,7 +7497,7 @@ function create(options) {
       const sessionQueries = require('./session_queries');
       let statement;
       try {
-        statement = sessionQueries.build(name, args);
+        statement = sessionQueries.build(name, args, engine);
       } catch (e) {
         log.debug("Caught in sessionIndexQuery(): " + ((e && e.message) || e));
         log.debug("Leaving sessionIndexQuery(). Unknown query.");
@@ -7462,7 +7521,7 @@ function create(options) {
       const mintedQueries = require('./minted_queries');
       let statement;
       try {
-        statement = mintedQueries.build(name, args);
+        statement = mintedQueries.build(name, args, engine);
       } catch (e) {
         log.debug("Caught in mintedQuery(): " + ((e && e.message) || e));
         log.debug("Leaving mintedQuery(). Unknown query.");
@@ -7513,12 +7572,14 @@ function create(options) {
     readMinted: function (handle, realmId, key) {
       log.debug("Entering readMinted().");
       log.debug("Leaving readMinted().");
-      return readPool.query(
+      return (mintedStatements
+        ? mintedStatements.readMinted(handle, realmId, key)
+        : readPool.query(
         'SELECT handle, realm, key, body,        (extract(epoch from ' +
         'written_at) * 1000)::bigint AS written_ms FROM sts_minted WHERE ' +
         'handle = $1 AND realm = $2 AND key = $3',
         [handle, realmId, key]
-      ).then(function (r) {
+      )).then(function (r) {
         const row = (r.rows || [])[0];
         // A TOMBSTONE IS AN ABSENCE to every reader: the key was ended.
         if (!row || row.body === TOMBSTONE) {
@@ -7541,11 +7602,13 @@ function create(options) {
     mintedIndexComplete: function (handles) {
       log.debug("Entering mintedIndexComplete().");
       log.debug("Leaving mintedIndexComplete().");
-      return pool.query(
+      return (mintedStatements
+        ? mintedStatements.mintedIndexComplete(handles)
+        : pool.query(
         'SELECT handle FROM sts_minted_index WHERE handle = ANY($1::text[]) ' +
         'AND realm = $2 AND index_key = $3 AND key = $3',
         [(handles || []).map(String), '', MINTED_INDEX_MARK]
-      ).then(function (r) {
+      )).then(function (r) {
         return (r.rows || []).map(function (row) {
           return String(row.handle);
         });
@@ -7557,6 +7620,15 @@ function create(options) {
       log.debug("Leaving writeMintedIndex().");
       if (!rows || !rows.length) {
         return Promise.resolve(0);
+      }
+      if (mintedStatements) {
+        return mintedStatements.insertIndex(rows.map(function (one) {
+          return { handle: String(one.handle), realm: String(one.realm),
+                   index_key: String(one.indexKey), key: String(one.key),
+                   sort_at: sortAtParam(one) };
+        })).then(function (r) {
+          return dialect.affected(r);
+        });
       }
       return pool.query(MINTED_INDEX_INSERT,
         [rows.map(function (one) { return String(one.handle); }),
@@ -7578,14 +7650,16 @@ function create(options) {
       log.debug("Entering backfillMintedExpiry(). " + handle);
       let total = 0;
       for (;;) {
-        const r = await pool.query(
+        const r = mintedStatements
+          ? await mintedStatements.backfillExpiryBatch(handle, addMs, 5000)
+          : await pool.query(
           'UPDATE sts_minted SET expires_at = (extract(epoch FROM ' +
           'written_at) * 1000)::bigint + $2 WHERE ctid IN (SELECT ctid FROM ' +
           'sts_minted WHERE handle = $1 AND expires_at IS NULL AND body <> ' +
           '$3 LIMIT 5000)', [String(handle), Math.max(0, Number(addMs) || 0),
                              TOMBSTONE]);
-        total += r.rowCount || 0;
-        if (!r.rowCount) {
+        total += dialect.affected(r);
+        if (!dialect.affected(r)) {
           break;
         }
       }
@@ -7596,6 +7670,9 @@ function create(options) {
     markMintedIndexed: function (handle) {
       log.debug("Entering markMintedIndexed(). " + handle);
       log.debug("Leaving markMintedIndexed().");
+      if (mintedStatements) {
+        return mintedStatements.markMintedIndexed(handle);
+      }
       return pool.query(MINTED_INDEX_INSERT,
         [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK],
          [null]]);
@@ -7617,14 +7694,18 @@ function create(options) {
       log.debug("Entering writeSessionIndex().");
       const wanted = sessionIndexParams(realmId, key, index);
       log.debug("Leaving writeSessionIndex().");
-      return readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)])
+      return (mintedStatements
+        ? mintedStatements.readSessionIndex(realmId, key)
+        : readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)]))
         .then(function (r) {
           const held = (r.rows || [])[0];
           if (held && sessionIndexRowMatches(held, wanted)) {
             return null;
           }
           return withTransaction(function (client) {
-            return upsertSessionIndex(client, realmId, key, index);
+            return mintedStatements
+              ? mintedStatements.upsertSession(client, wanted)
+              : upsertSessionIndex(client, realmId, key, index);
           });
         });
     },
@@ -7634,13 +7715,17 @@ function create(options) {
     deleteSessionIndex: function (realmId, key) {
       log.debug("Entering deleteSessionIndex().");
       log.debug("Leaving deleteSessionIndex().");
-      return readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)])
+      return (mintedStatements
+        ? mintedStatements.readSessionIndex(realmId, key)
+        : readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)]))
         .then(function (r) {
           if (!(r.rows || []).length) {
             return null;
           }
           return withTransaction(function (client) {
-            return deleteSessionIndexRow(client, realmId, key);
+            return mintedStatements
+              ? mintedStatements.deleteSession(client, realmId, key)
+              : deleteSessionIndexRow(client, realmId, key);
           });
         });
     },
@@ -7650,11 +7735,12 @@ function create(options) {
     sessionIndexDone: function () {
       log.debug("Entering sessionIndexDone().");
       log.debug("Leaving sessionIndexDone().");
-      return readPool.query(
+      return (mintedStatements ? mintedStatements.sessionIndexDone()
+        : readPool.query(
         'SELECT EXISTS (SELECT 1 FROM sts_sessions WHERE realm = $1 AND ' +
         'key = $2) AS done',
         [SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY]
-      ).then(function (r) {
+      )).then(function (r) {
         const row = (r.rows || [])[0];
         // node-pg answers a boolean; a text 't' is the same fact. 'f' is
         // truthy as a string, so it is not a truthiness check.
@@ -7667,12 +7753,14 @@ function create(options) {
     loadSessionBodies: function (afterRealm, afterKey, limit) {
       log.debug("Entering loadSessionBodies().");
       log.debug("Leaving loadSessionBodies().");
-      return readPool.query(
+      return (mintedStatements
+        ? mintedStatements.loadSessionBodies(afterRealm, afterKey, limit)
+        : readPool.query(
         'SELECT realm, key, body FROM sts_minted WHERE handle = $1 AND ' +
         'body <> $2 AND (realm, key) > ($3, $4) ORDER BY realm, key ' +
         'LIMIT $5',
         ['authn.sessions', TOMBSTONE, afterRealm, afterKey, limit]
-      ).then(function (r) {
+      )).then(function (r) {
         return (r.rows || []).map(function (row) {
           return { realm: row.realm, key: row.key, body: row.body };
         });
@@ -7695,23 +7783,30 @@ function create(options) {
         let chain = Promise.resolve();
         list.forEach(function (row) {
           chain = chain.then(function () {
-            return client.query(
+            return (mintedStatements
+              ? mintedStatements.lockSessionBody(client, row.realm, row.key)
+              : client.query(
               'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
               'realm = $2 AND key = $3 FOR UPDATE',
               ['authn.sessions', row.realm, row.key]
-            ).then(function (r) {
+            )).then(function (r) {
               const found = (r.rows || [])[0];
               if (!found || found.body === TOMBSTONE ||
                   found.body !== row.body) {
                 return null;
               }
-              return upsertSessionIndex(client, row.realm, row.key,
-                                        row.index);
+              return mintedStatements
+                ? mintedStatements.upsertSession(client,
+                    sessionIndexParams(row.realm, row.key, row.index))
+                : upsertSessionIndex(client, row.realm, row.key, row.index);
             });
           });
         });
         if (complete) {
           chain = chain.then(function () {
+            if (mintedStatements) {
+              return mintedStatements.sweepSessionIndex(client);
+            }
             return client.query(
               'DELETE FROM sts_sessions AS s WHERE NOT ' +
               '(s.realm = $1 AND s.key = $2) AND NOT EXISTS ' +
@@ -7722,9 +7817,13 @@ function create(options) {
             );
           });
           chain = chain.then(function () {
-            return upsertSessionIndex(client, SESSION_INDEX_MARK_REALM,
-                                      SESSION_INDEX_MARK_KEY,
-                                      SESSION_INDEX_MARK);
+            return mintedStatements
+              ? mintedStatements.upsertSession(client, sessionIndexParams(
+                  SESSION_INDEX_MARK_REALM, SESSION_INDEX_MARK_KEY,
+                  SESSION_INDEX_MARK))
+              : upsertSessionIndex(client, SESSION_INDEX_MARK_REALM,
+                                   SESSION_INDEX_MARK_KEY,
+                                   SESSION_INDEX_MARK);
           });
         }
         return chain;
@@ -10713,11 +10812,13 @@ function create(options) {
     purgeTombstones: function (beforeMs) {
       log.debug('Entering the postgres driver purgeTombstones().');
       log.debug("Leaving purgeTombstones().");
-      return pool.query(
+      return (mintedStatements
+        ? mintedStatements.purgeTombstones(beforeMs)
+        : pool.query(
         'DELETE FROM sts_minted WHERE body = $1 AND ' +
         'written_at < to_timestamp($2 / 1000.0)',
         [TOMBSTONE, Number(beforeMs)]
-      ).then(function (r) {
+      )).then(function (r) {
         return r.rowCount || 0;
       });
     },
@@ -10729,10 +10830,11 @@ function create(options) {
       log.debug('Entering the postgres driver purgeMinted(). before=' +
                 beforeMs);
       log.debug("Leaving purgeMinted().");
-      return pool.query(
+      return (mintedStatements ? mintedStatements.purgeMinted(beforeMs)
+        : pool.query(
         'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)',
         [Number(beforeMs)]
-      ).then(function (r) {
+      )).then(function (r) {
         log.debug('Leaving the postgres driver purgeMinted(). ' +
                   (r.rowCount || 0) + ' row(s).');
         return r.rowCount || 0;
@@ -10800,11 +10902,13 @@ function create(options) {
                                         String(kind)));
       }
       log.debug("Leaving purgeExpiredMinted().");
-      return pool.query(
+      return (mintedStatements
+        ? mintedStatements.purgeExpiredMinted(kind, o, limit)
+        : pool.query(
         'DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM ' +
         'sts_minted WHERE ' + where + ' LIMIT ' + limit + '))',
         binds
-      ).then(function (r) {
+      )).then(function (r) {
         return r.rowCount || 0;
       });
     }
@@ -10822,6 +10926,11 @@ function create(options) {
   // persistence.js holds those stores whole instead.
   if (engine !== 'postgres') {
     delete api.bridgeConnection;
+    // SAID, not only absent (#677): a driver without the method may be a
+    // test's stub, and the session window must tell "no bridge here" from
+    // that (`persistence_minted.lendsNoBridge()`, `authn/session_window.ts`).
+    // @ts-ignore a property added to this engine's driver only
+    api.lendsNoBridge = true;
   }
   return api;
 }
