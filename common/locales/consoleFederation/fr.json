@@ -138,6 +138,8 @@
   "actEnable": "Activer",
   "actDeleteStream": "Supprimer le flux",
   "actDiscover": "Découvrir",
+  "actCheckPartner": "Vérifier la configuration du partenaire",
+  "actRegisterPartner": "S’enregistrer chez le partenaire",
   "actCreateStream": "Créer le flux",
   "actUnblock": "Débloquer",
   "headingBlocked": "Connexions bloquées par ce partenaire",

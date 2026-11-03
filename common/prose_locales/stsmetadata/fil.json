@@ -2579,6 +2579,18 @@
     "en": "a3604c921948a069",
     "text": "ipinapadala ang browser sa partner na OpenID Provider na may karaniwang authorization request, gaya ng ginagawa ng /federation/login/{id}"
   },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 seksiyon 6.2 (#930): ang Request Object na binabanggit ng request_uri ng isang authorization request, para sa ugnayang may fedRequestObject request_uri — application/oauth-authz-req+jwt, naka-sign sa ilalim ng fedRequestObjectSigningAlg gamit ang key ng realm na ito (o hindi naka-sign, none). Sinasagot nang ISANG BESES: ginugugol ng pagkuha ng partner ang handle, at ang address na walang binabanggit ay 404."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 seksiyon 2 (#930), para sa ugnayang naka-on ang fedWebFinger at fedDiscovery: isang form para sa identifier (acct:user@host o isang URL), at ang sagot nito — WebFinger sa host na iyon sa ilalim ng outbound policy (walang internal address sa product mode, walang redirect, ang limit), isang issuer na dapat magsimula sa fedPeer, ang discovery document nito, at isang link na dapat sundan ng tao upang mag-sign in doon. Naka-off, 403."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "tinatawagan ang host na binabanggit ng na-type na identifier — ang nag-iisang federation request na pinipili ng caller ang host"
+  },
   "stsmetadata.endpoints./federation/fragment.js.what": {
     "en": "4717183880c5fc95",
     "text": "HINDI-SPEC na resource ng isang spec endpoint (#930): ang iisang script na pinapatakbo ng pahina ng assertion consumer service kapag pinili ng isang OpenID Connect na ugnayan ang fedResponseMode=fragment. Ang fragment ay hindi kailanman umaabot sa server, kaya binabasa ito ng pahina, inaalis ito sa address at sa history entry, at ipino-POST ito sa parehong address, kung saan ito kinokonsumo gaya ng isang form_post na response. Walang markup na makababasa ng fragment, kaya walang button na mababalikan."

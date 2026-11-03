@@ -13900,6 +13900,48 @@ class AdminApi {
             },
             responseDescription: 'The relationship, now disabled.' },
 
+          { action: 'check-partner', operationId: 'checkFederationPartner',
+            summary: 'Check an OpenID Connect partner\'s configuration',
+            description: 'Service-provider-side OpenID Connect relationships ' +
+                         'only (#930). Fetches what a sign-in would: the ' +
+                         'partner\'s discovery document where ' +
+                         '`fedDiscovery` is on — its issuer held to ' +
+                         '`fedPeer` — and its key set, and answers the ' +
+                         'endpoints and how many keys this service can ' +
+                         'read. Writes nothing and signs nobody in.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { id: { type: 'string',
+                                  description: 'The relationship.' } },
+              required: ['id'],
+              additionalProperties: false
+            },
+            responseDescription: '`issuer`, `endpoints`, `discovered`, ' +
+                                 '`keys` and `readable`.' },
+
+          { action: 'register-partner',
+            operationId: 'registerAtFederationPartner',
+            summary: 'Register this service at an OpenID Connect partner',
+            description: 'A relationship with `fedDiscovery` and ' +
+                         '`fedRegister` on (#930): reads the partner\'s ' +
+                         'discovery document and registers this ' +
+                         'relationship at its `registration_endpoint` ' +
+                         '(RFC 7591), writing the `client_id` and secret ' +
+                         'it answers to `fedClientId` and ' +
+                         '`fedClientSecret` (sealed) and the issuer to ' +
+                         '`fedRegisteredIssuer`. Registers again whatever ' +
+                         'client the relationship held.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { id: { type: 'string',
+                                  description: 'The relationship.' } },
+              required: ['id'],
+              additionalProperties: false
+            },
+            responseDescription: '`clientId` and `issuer`.' },
+
           { action: 'rotate-key', operationId: 'rotateFederationKey',
             summary: 'Rotate a relationship\'s encryption key',
             description: 'SAML 2.0, WS-Federation and OpenID Connect ' +

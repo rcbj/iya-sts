@@ -1535,6 +1535,14 @@
     "en": "b8fb585dd54cd123",
     "text": "由夥伴發起的登入（initiate_login_uri）"
   },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "以參照傳遞的請求物件"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "透過 WebFinger 尋找某人的 OpenID 提供者"
+  },
   "endpoints.route./federation/fragment.js.name": {
     "en": "87060058ad2ae994",
     "text": "斷言取用服務的片段指令碼"

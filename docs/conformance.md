@@ -132,14 +132,13 @@ the End-User for the OpenID4VP verifier.
 * Reading the provider's endpoints from its discovery document, and a sign-in
   the provider starts (`initiate_login_uri`). Both are off by default.
 
-**Relying-party modules that are argued, not passed:** the refresh-token
-plan, because iya-sts keeps no refresh token issued by a partner; the logout
+**The one relying-party module that is argued, not passed:** the logout
 plan's Session Management module, because iya-sts does not poll a partner's
-`check_session_iframe` (Back-Channel Logout tells it the same thing); and the
-Dynamic plan, because a relationship is configured by an administrator rather
-than registered by iya-sts itself, found by WebFinger, or sent request
-objects by reference. Each is a documented design decision on the
-[federation page](federation.md#openid-connect-as-the-relying-party).
+`check_session_iframe` (Back-Channel Logout tells it the same thing). It is a
+documented design decision on the
+[federation page](federation.md#openid-connect-as-the-relying-party). The
+Dynamic plan, which needs iya-sts to register itself, sign Request Objects and
+find a provider by WebFinger, also runs as a classical twin.
 
 **Every plan twice, with post-quantum signing on and off.** The suite cannot
 parse a post-quantum (`AKP`) key and its JWS algorithm table lacks SLH-DSA
@@ -152,7 +151,7 @@ off, where none of those exemptions applies: a twin that passes is a clean
 result with nothing post-quantum excused. The FAPI plans already pass with
 no such exemption, and so do the SSF receiver plans, in which the suite
 verifies nothing the realm signs, and the relying-party plans: iya-sts signs
-and publishes nothing the suite reads in them.
+with a classical key there and registers only that key.
 
 **Warnings that stay.** In the post-quantum realms, every module warns that
 the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Connect realms turn off

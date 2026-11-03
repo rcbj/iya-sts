@@ -7931,6 +7931,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'partner; `target_link_uri` is followed only to a path on this ' +
           'service and dropped otherwise, so the endpoint is no open ' +
           'redirector.' },
+  { path: '/federation/request/:id/:handle', group: 'Federation',
+    name: 'A Request Object by reference',
+    specs: ['oidc', 'rfc9101'],
+    what: 'OpenID Connect Core 1.0 section 6.2 (#930): the Request Object ' +
+          'an authorization request names in request_uri, for a ' +
+          'relationship with fedRequestObject request_uri — ' +
+          'application/oauth-authz-req+jwt, signed under ' +
+          'fedRequestObjectSigningAlg with this realm\'s key (or unsigned, ' +
+          'none). Answered ONCE: the handle is spent by the partner\'s ' +
+          'fetch, and an address that names nothing is a 404.' },
+  { path: '/federation/webfinger/:id', group: 'Federation',
+    name: 'Find a person\'s OpenID Provider by WebFinger',
+    specs: ['oidc-discovery', 'rfc7033'],
+    effect: 'dials the host the typed identifier names — the one ' +
+            'federation request whose host a caller chooses',
+    what: 'OpenID Connect Discovery 1.0 section 2 (#930), for a ' +
+          'relationship with fedWebFinger and fedDiscovery on: a form for ' +
+          'an identifier (acct:user@host or a URL), and its answer — ' +
+          'WebFinger at that host under the outbound policy (no internal ' +
+          'address in product mode, no redirect, the cap), an issuer that ' +
+          'must begin with fedPeer, its discovery document, and a link the ' +
+          'person must follow to sign in there. Off, 403.' },
   { path: '/federation/fragment.js', group: 'Federation',
     name: 'The assertion consumer service\'s fragment script',
     specs: ['oidc', 'oauth-multiple-response-types'],

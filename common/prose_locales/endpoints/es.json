@@ -1535,6 +1535,14 @@
     "en": "b8fb585dd54cd123",
     "text": "Un inicio de sesión que inicia el socio (initiate_login_uri)"
   },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "Un objeto de solicitud por referencia"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "Encontrar el proveedor OpenID de una persona por WebFinger"
+  },
   "endpoints.route./federation/fragment.js.name": {
     "en": "87060058ad2ae994",
     "text": "El script de fragmento del servicio consumidor de aserciones"

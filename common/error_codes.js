@@ -12719,6 +12719,64 @@ const CODES = [
     summary: 'An OpenID Connect relationship whose response type includes ' +
       'token was answered with no access_token (#930).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0208',
+    summary: 'An OpenID Connect partner\'s ID Token or Logout Token was ' +
+      'signed with an algorithm other than the relationship\'s ' +
+      'fedIdTokenSignedResponseAlg (OpenID Connect Core 1.0 section 3.1.3.7 ' +
+      'step 7, Back-Channel Logout 1.0 section 2.6, #930).',
+    spec: 'HTTP 401 page; HTTP 400 at the back-channel logout endpoint' },
+  { code: 'STS-FED-0209',
+    summary: 'A check of a partner\'s configuration (`check-partner`) was ' +
+      'asked of a relationship that is not a service-provider-side OpenID ' +
+      'Connect one, or the partner\'s key set could not be read (#930).',
+    spec: 'HTTP 400 (API) or a 303 with error='},
+  { code: 'STS-FED-0210',
+    summary: 'A federated session\'s partner refresh (fedRefreshTokens, ' +
+      'the federation.partner-refresh job) was refused by the partner, or ' +
+      'its held refresh token would not open, so the session was ended; ' +
+      'or the partner could not be reached, and the refresh is tried ' +
+      'again in a minute (#930).',
+    spec: 'none — the job\'s audit row and log' },
+  { code: 'STS-FED-0211',
+    summary: 'The ID Token a partner returned for a federated session\'s ' +
+      'refresh did not verify, or named another iss or sub than the ' +
+      'session\'s (OpenID Connect Core 1.0 section 12.2), so the session ' +
+      'was ended (#930).',
+    spec: 'none — the job\'s audit row and log' },
+  { code: 'STS-FED-0212',
+    summary: 'A relationship with fedRegister could not register this ' +
+      'service at its partner: the registration endpoint refused or did ' +
+      'not answer, answered no client_id, or what it answered could not ' +
+      'be written to the relationship (RFC 7591, #930).',
+    spec: 'HTTP 502 page; HTTP 400 (API)' },
+  { code: 'STS-FED-0213',
+    summary: 'Self-registration was asked of a relationship whose ' +
+      'partner names no registration_endpoint, or one without ' +
+      'fedDiscovery and fedRegister (#930).',
+    spec: 'HTTP 502 page; HTTP 400 (API)' },
+  { code: 'STS-FED-0214',
+    summary: 'A Request Object could not be signed under ' +
+      'fedRequestObjectSigningAlg: this realm holds no key for that ' +
+      'algorithm (#930).',
+    spec: 'HTTP 500 page' },
+  { code: 'STS-FED-0215',
+    summary: 'An identifier was sent to /federation/webfinger/{id} for a ' +
+      'relationship without fedWebFinger and fedDiscovery, or one not ' +
+      'usable (#930).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0216',
+    summary: 'A typed identifier could not be looked up by WebFinger: it is ' +
+      'not one, its host did not answer, or the answer named no OpenID ' +
+      'Connect issuer (OpenID Connect Discovery 1.0 section 2, #930).',
+    spec: 'HTTP 400 or 502 page' },
+  { code: 'STS-FED-0217',
+    summary: 'WebFinger named an issuer that does not begin with the ' +
+      'relationship\'s fedPeer, so it was not used (#930).',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-FED-0218',
+    summary: 'A Request Object was asked for at an address that names none: ' +
+      'never made, already fetched once, or expired (#930).',
+    spec: 'HTTP 404' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

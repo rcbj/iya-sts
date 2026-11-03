@@ -877,7 +877,7 @@ why, url }`.
 
 **Moved here verbatim from the root `CLAUDE.md`'s *Things this service
 deliberately does not do* on 2026-10-13**, where it was one row of an index
-that had grown eighteen exceptions (nineteen since #693, twenty since #1180, twenty-one since #641); the row is one
+that had grown eighteen exceptions (nineteen since #693, twenty since #1180, twenty-one since #641, twenty-two since #930); the row is one
 line now and points here.
 The rule is the row's: this service does not dial a URL a CALLER supplied to
 fetch something FROM (`wreqptr`, above) — the URLs it does dial are
@@ -905,6 +905,7 @@ argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `
 * **The nineteenth is a SIOPv2 `did:web` BEING ENROLLED (2026-10-20, #693)** — the twelfth's URL, before anybody enrolled it, at two doors only. (1) A person's OWN ENROLMENT TRANSACTION: started from a sign-on session they already hold (`/authn/wallet?siop=1&enrol=1`, refused with no session), answered with an ID Token whose nonce, `aud`, `exp`, `iat`, `iss === sub` and DID syntax have ALL passed before anything is dialled — so the token must answer that transaction, which an unauthenticated caller cannot start — and fetched at most ONCE per transaction (the mark written through the store before the fetch; a second is `STS-VC-0128`). (2) An administrator's by-value enrolment (Admin Write), which fetches the document to pin its `authentication` keys and refuses one it cannot fetch (`STS-ADMIN-0871`) — the checks that need no fetch run first. Both through `fetchPublished()`: the kill switch, https, internal addresses refused in product mode, no redirect, the body cap and timeout. What it buys is the PIN: the key the proof used is recorded, and the twelfth row's later fetches can no longer hand the sign-in to whoever holds the host next (`oid4vc/CLAUDE.md`, 3ba).
 * **The twentieth is an AuthZEN access request's CALLBACK (2026-10-30, #1180)** — the companion profile's `callback.endpoint`, which the request names, so the caller's kind of URL; what makes it an administrator's is that it must EQUAL one of the URLs registered for the requesting PEP (`appAuthzenCallbackUri` on an application, `stsAuthzenCallbackUri` on a person's or service account's entry, written only by the AuthZEN tab's `set-callbacks`, https, no credentials or fragment), checked at the submission, and never one taken from the request alone (rcbj's decision 4). It is SENT to, never fetched from: `federation_http.deliverJson()` under the SENDABLE attribute `authzenCallbackEndpoint` — the kill switch, https verified, no redirect, the internal-address refusal with the connection pinned, the cap — once per finished task, with a 300-second JWT the realm signs as the Bearer, carrying no `result`. A failure is recorded (`STS-AUTHZEN-0091`) and not retried, because the task status endpoint is the record (`authzen/CLAUDE.md`).
 * **The twenty-first is an AUDIT EXPORT DESTINATION an administrator names (2026-11-01, #641)** — a webhook URL, a Splunk HEC URL, or a syslog TLS host, SENT to, never a caller-supplied fetch. `https` by default (`common/outbound_tls.ts`); product mode refuses plain `http`; skip-TLS is development-only and ignored in product mode; a CA file sits beside node's store; no userinfo. Loopback, link-local and private addresses, including RFC 6598 `100.64.0.0/10`, are refused in product mode unless `auditExport.allowPrivateDestinations` is on. Cloud metadata addresses are refused in every mode, and while that setting is on. Development mode still allows a loopback host whose every resolved address is loopback. The name is resolved before connect, a private answer is refused, a lookup failure at send pauses the destination, and a redirect is left unfollowed (`common/audit_export.ts`, `common/CLAUDE.md` 3da).
+* **The twenty-second is a PERSON'S WEBFINGER (2026-11-03, #930, rcbj's decision)** — `/federation/webfinger/{id}`, where a person types an identifier and this service asks the host it names who their OpenID Provider is (OpenID Connect Discovery 1.0 section 2). The host is the caller's to choose, which is why it is an exception: OFF by default per relationship (`fedWebFinger`, with `fedDiscovery`), through `fetchPublished()` (https only, verified; internal addresses refused in product mode with the connection pinned; no redirect; the cap and timeout); the issuer it names must lie WITHIN `fedPeer` — parsed, never a string prefix: the same scheme, host and effective port, no userinfo, query or fragment, and `fedPeer`'s path or one below it at a `/` boundary (`FederationSp.issuerWithin()`) — so it selects only within the partner an administrator configured; its discovery document must name it exactly; and nothing continues until the person follows the link the answer shows. The registration endpoint and the discovery document after it are the administrator's kind (named by a document of an issuer bounded by `fedPeer`).
 
 ---
 
@@ -1322,10 +1323,10 @@ provider**, which is exactly the moment a deliberate click is worth having.
 | ~~Decrypt an `<EncryptedAssertion>`~~ — **reversed 2026-09-23 (#168)** | See *A PARTNER'S ENCRYPTED ASSERTION*. Product mode now refuses a PLAINTEXT one unless `fedAllowUnencrypted`. |
 | Verify the partner's certificate against a CA, or check its validity dates | `fedSigningCertificate` is trusted because an administrator pasted it there. It is a pinned key, not a chain, and pinning is the stronger of the two for this purpose. **Its REVOCATION is checked since 2026-09-12** — the one question a pin cannot answer — see *The signature check is the line*. |
 | ~~Consume a federated SIGN-OUT~~ — **reversed 2026-09-23 (#167)** | See *A PARTNER'S SIGN-OUT*. The ACS still refuses a sign-out sent to it (`STS-FED-0024`) and names the path that consumes one. |
-| Refresh anything | The tokens a partner issues are used once, to learn who the person is, and are then discarded. Nothing here holds a refresh token belonging to somebody else's service. **Kept by #930**, whose refresh-token plan this costs: see *THE OPENID CONNECT RELYING PARTY PLANS*. |
+| ~~Refresh anything~~ — **reversed by rcbj on #930 (2026-11-03), for a relationship that turns `fedRefreshTokens` on** | The default is unchanged: the tokens a partner issues are used once, to learn who the person is, and discarded. See *A PARTNER'S REFRESH TOKEN* below for what the switch does. |
 | Re-verify a person on a later request | The session is this service's from the moment it is created, and nothing here polls the partner. What reaches it since #167 is what the partner SENDS — its sign-out, which ends the session — and what it SAID at sign-in: a SAML `SessionNotOnOrAfter` bounds the session. |
 | Act as an OpenID Connect Session Management relying party (#167, rcbj's decision 3) | Polling a partner's `check_session_iframe` needs a script in this service's page, the root `CLAUDE.md` admits a script only where a page cannot work without one, and Back-Channel Logout already tells this relying party what that script would find out. The logout plan's session-management module is argued in #930's ledger on this decision. |
-| Register itself at a partner, discover a partner by WebFinger, or send a request object (#930) | A relationship is CONFIGURED by an administrator, which is the whole of *THE ONE FEATURE HERE THAT REFUSES BY DEFAULT*; the dynamic plan's eleven modules are argued in #930's ledger, and whether to build the three is rcbj's question on #930. |
+| ~~Register itself at a partner, discover a partner by WebFinger, or send a request object~~ — **built by rcbj's decision on #930 (2026-11-03)**, each behind a switch that is off by default | See *SELF-REGISTRATION, REQUEST OBJECTS AND WEBFINGER* below. |
 | ~~Restrict WHICH people a partner may assert~~ — **reversed 2026-09-22 (#109)** | See *WHICH PEOPLE A PARTNER MAY ASSERT*. |
 | Federate the ADMIN CONSOLE's roles | A federated sign-in produces a session like any other, so a federated identity holding `admin-write` in the directory reaches `/admin`. The partner does not decide that — `ldap_server.js` and `admin_rbac.js` do, from group membership, exactly as for a local sign-in. |
 
@@ -2429,30 +2430,142 @@ needed, built here:
   sign-ins. It goes through `loginEndpoint()`, so every check of an ordinary
   start is met. The relationship's view names it (`endpoints.initiateLogin`).
 
+* **THE REGISTERED ALGORITHM** (`fedIdTokenSignedResponseAlg`, the first
+  full run, 2026-11-03): an ID Token or a Logout Token signed under any
+  algorithm but the one the relationship registered is refused
+  (`STS-FED-0208`), even when one of the partner's own keys verifies it —
+  Core 3.1.3.7 step 7, and Back-Channel Logout 2.6's "in the same way that an
+  ID Token signature is validated". The back-channel logout's wrong-alg
+  module found it: a Logout Token signed ES256 by the partner's EC key was
+  accepted beside RS256 ID Tokens. `verifyForeignJwt()` takes the
+  expectation as `expectAlg`, so the plain OAuth 2.0 JWT access token is not
+  held to it. Empty keeps the key-family rule alone, and the schema row warns
+  against leaving it so.
+* **AN ADMINISTRATOR'S `check-partner`** (console and `/admin-api`, rule 7):
+  the discovery document where it is read and the key set, fetched and
+  reported, nothing written. Two discovery modules end the moment those are
+  read, so the plans' person does not sign in for them — a sign-in would
+  reach a FINISHED module, which the suite records as a failure.
+
 **WHAT IS NOT BUILT, AND IS ARGUED IN THE JOB'S LEDGER INSTEAD** (the ticket
 allows either, and each of these is a decision recorded here, not a gap
 noticed):
 
-* **Refresh tokens** — *Things this half deliberately does not do*'s
-  "Refresh anything", kept. The refresh-token plan (not part of the
-  certification program) wants the relying party to hold the partner's
-  refresh token and use it later. That is a long-lived credential at another
-  service held for nothing this service does with it: the session here is its
-  own, and what ends it early is what the partner SENDS — its Back-Channel,
-  Front-Channel or RP-Initiated sign-out, its Shared Signals. Most secure by
-  default, and rcbj may reverse it.
 * **Session Management** — rcbj's decision 3 on #167, above; the logout
   plan's one module that needs it.
-* **The dynamic plan** — registering itself at a partner (RFC 7591), finding
-  a partner by WebFinger from an identifier somebody TYPES, and request
-  objects by reference. WebFinger from a typed identifier is a caller's kind
-  of URL, which *`federation_http.ts`: THE ONLY OUTBOUND REQUEST* refuses;
-  registration and request objects could be an administrator's acts, and the
-  request object would be signed with the realm's key — post-quantum in the
-  default realm, so that plan would need the classical twin the others do not
-  (the relying party signs nothing the suite reads in them). Asked of rcbj on
-  #930.
 
 `tests/federation_oidc_rp.js` pins each refusal's code in process, and that
 nothing is dialled after it — no UserInfo after a refused ID Token, no token
 request after a refused front channel.
+
+### A PARTNER'S REFRESH TOKEN (#930, rcbj's decision, 2026-11-03)
+
+rcbj decided the refresh-token plan is built. **It is a switch,
+`fedRefreshTokens`, OFF by default**, because what it adds is a long-lived
+credential at another service held by this one; off, nothing changed.
+
+* **HELD FOR ONE SESSION.** The refresh token the token endpoint returns at
+  sign-in is sealed at once (`federation.js`'s `sealPartnerToken()`, the
+  client secret's arrangement under a label of its own — under a durable
+  key-encryption key, in clear where keys do not persist) and carried on the
+  sign-in's result, so a held step (linking, step-up, profile) never holds
+  it in clear. When the session starts, `holdPartnerRefresh()` writes it to
+  `federation_sp.partnerRefresh`, keyed by the SESSION's id: per realm,
+  persisted, cell-minted (`persistence/tiers.js`), as the session is.
+* **USED BY A SCHEDULER JOB**, `federation.partner-refresh` (per realm,
+  every fifteen seconds; rcbj's directive that periodic work is a job). It
+  reads that store alone — never the session store, so it is no scan of the
+  sessions — and refreshes an entry when it is due: `fedRefreshEverySeconds`
+  after the last, else the access token's `expires_in`, else an hour. The
+  client authentication is the code redemption's (Basic, the body, a public
+  client, or an OpenID Federation OP's `private_key_jwt`); a consumer
+  provider's own adapters are not repeated.
+* **WHAT IT HOLDS THE ANSWER TO** is Core section 12.2: a new ID Token is
+  verified as any is (the registered algorithm included) and must name the
+  session's `iss` and `sub`; UserInfo, asked with the new access token, must
+  answer for that `sub`. The person's attributes are NOT rewritten on a
+  refresh: what it keeps current is that the partner still vouches for the
+  subject.
+* **A FAILED REFRESH ENDS THE SESSION** — the partner refusing it
+  (`STS-FED-0210`), the token not opening, the new ID Token failing
+  (`STS-FED-0211`), UserInfo naming another `sub` (`STS-FED-0202`) —
+  through `logout.ts`'s `endPartnerSession()`, so the cascade is the one
+  every sign-out has. An RP that can no longer show the partner vouches for
+  the person has nothing to keep the session on. A refresh that could not be
+  MADE (no answer at all, a 5xx) is not the partner's answer and is tried
+  again a minute later.
+* **IT DIES WITH THE SESSION.** An entry whose session is gone — ended here,
+  by the partner, by expiry — is dropped the next time the job reads it, and
+  so is one whose relationship turned the switch off.
+
+**Signed and encrypted UserInfo** came with it (the dynamic plan's
+`userinfo-signed` module asks for it): a UserInfo answer that is a JWT is
+decrypted where it is a JWE, verified against the partner's keys under
+`fedUserinfoSignedResponseAlg` where one is registered, its `iss` and `aud`
+held to the partner and this service where present, and then used as a JSON
+answer is (`userinfoClaims()`). One that does not verify is not used, which
+costs its attributes and not the sign-in, as an unanswered UserInfo always
+has.
+
+### SELF-REGISTRATION, REQUEST OBJECTS AND WEBFINGER (#930, rcbj's decision, 2026-11-03)
+
+rcbj decided the dynamic plan is built, all of it. Each piece is a switch on
+an OpenID Connect relationship, **off by default**, and each needs
+`fedDiscovery`, which is what names the endpoints involved.
+
+* **`fedRegister` — THIS SERVICE REGISTERS ITSELF** (Dynamic Client
+  Registration 1.0, RFC 7591) at the `registration_endpoint` of the
+  partner's discovery document, whenever the relationship holds no
+  `fedClientId` or holds one `fedRegisteredIssuer` says belongs to another
+  issuer — at the start of a sign-in (`ensureRegistered()`) or by an
+  administrator's `register-partner` (console and `/admin-api`, rule 7). What
+  is registered is the relationship: its ACS, response type and grant types,
+  `fedTokenAuth`, the algorithms it pins, its sign-out and login-initiation
+  addresses, and for signed Request Objects ONE public key — the realm key
+  that signs them, as `jwks` by value, so nothing else of the realm's key set
+  (its post-quantum keys among them) is handed over. The answer's
+  `client_id` and secret are written through `federation.update()`, so the
+  secret is sealed as any `set` seals it. A failure refuses the sign-in
+  (`STS-FED-0212`, `0213`). No RFC 7592 management: to register again,
+  clear `fedClientId` or press register-partner.
+* **`fedRequestObject` — REQUEST OBJECTS** (Core section 6, RFC 9101): the
+  authorization request's parameters as the claims of a JWT, `iss` the
+  client and `aud` the partner's issuer, five minutes, a `jti`, signed with
+  the realm's key under `fedRequestObjectSigningAlg` (RS256 by default,
+  PS256, ES256), or `none` — UNSIGNED, a warning on the row, and only by
+  reference over https as Core 6.2 allows. By value it is `request`; by
+  reference the object is held in the flow context store behind a handle of
+  its own and answered ONCE at `/federation/request/{id}/{handle}`
+  (`STS-FED-0218` after that). The parameters stay on the query too, as
+  Core 6.1 requires. A realm with no key for the algorithm refuses
+  (`STS-FED-0214`). An OP found through an OpenID Federation still signs its
+  own (`oidfed_rp.ts`).
+* **`fedWebFinger` — A PERSON'S WEBFINGER**, the argued exception above
+  (the twenty-second URL): `/federation/webfinger/{id}` asks for an
+  identifier, normalises it as Discovery 2.1 says (`acct:` for an address,
+  `https://` for a host), asks the host it names, and holds the issuer found
+  within `fedPeer` (`STS-FED-0215`..`0217`). **The bound is a PARSED
+  comparison** (`issuerWithin()`, fixed before hand-off on 2026-11-03): a raw
+  string prefix let `https://op.example` admit `https://op.example.evil.com`,
+  `https://op.example:8443` and `https://op.example@evil`, whose keys would
+  then have been discovered and trusted. Scheme, host (case-insensitive) and
+  effective port must be identical, neither side may carry userinfo, the
+  issuer no query or fragment, and its path must be `fedPeer`'s or extend it
+  at a `/` (`/tenant` admits `/tenant/7`, not `/tenant2`). The handle the
+  confirmation page carries is checked with the same function. The page that names the
+  issuer is a view of the federation pages' surface with a link and no
+  submit of its own: following it reaches `/federation/login/{id}?found=`,
+  whose handle names the issuer server-side, so a request cannot choose
+  one. The discovery, registration and sign-in then run against that
+  issuer, which `context.discovered` carries as `fedPeer` for the response.
+* **Signed and encrypted UserInfo** — under *A PARTNER'S REFRESH TOKEN*
+  above.
+
+**Post-quantum.** Request Objects are signed with a classical realm key and
+only that key is registered, so nothing post-quantum reaches the suite. The
+dynamic plan still runs as its classical twin too (rcbj), with
+`PQ_ONLY` empty, and both are expected clean.
+
+**What the plans' harness had to do differently** is in `tests/CLAUDE.md`:
+the registration and the WebFinger modules end at the registration or the
+discovery document, so the person does not sign in for them.

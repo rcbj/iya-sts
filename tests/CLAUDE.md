@@ -2148,7 +2148,15 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
   355-minute timeout, because no number the `tests` job may have fits the
   plans (`tests/teardown_bounds.js` holds both jobs' arithmetic, and the
   six hours GitHub allows any job are why 15600 s is the most that bound
-  can be).
+  can be). **Since #930 (2026-11-03) it is two jobs, split by lane, and
+  neither passes `--no-browser`** (rcbj: the Chrome-driven conformance jobs
+  run in CI): `openid-conformance` runs `--not-lanes=conformance` (FAPI, the
+  relying-party plans, and `conformance-b`) and `openid-conformance-oidcc`
+  runs `--lanes=conformance` (the OpenID Provider job, the long pole), each
+  under the same 355 minutes. `run-report.js`'s `--lanes=` and
+  `--not-lanes=` name lanes exactly, so a job added to a lane lands in the
+  CI job that runs it; `tests/teardown_bounds.js` holds both jobs and that
+  together they cover every lane.
   `memory` because FAPI-CIBA
   approves through a development-mode test control, and each plan runs in a
   realm of its own under its FAPI profile, so a persisting mode would check the
@@ -2353,16 +2361,40 @@ CONNECT RELYING PARTY PLANS*.
   page, followed as far as it goes. Whatever a module lists — the
   third-party-initiated login's `initiate_login_uri`, the OP-initiated
   front-channel page — is visited as in the provider plans.
-* **Argued, not passed** (`EXPECTED` and `EXPECTED_PLANS` in the driver): the
-  refresh-token plan, the logout plan's session-management module and the
-  whole dynamic plan, each a decision `federation/CLAUDE.md` records. A
+* **What the first full run taught (2026-11-03).** The two discovery
+  modules that finish once the configuration is read (`CHECK_ONLY`) are not
+  signed in for: the job asks the relationship's `check-partner` instead,
+  since a sign-in reaches a FINISHED module and the suite records "Illegal
+  test state change". The key-rotation module gets its second sign-in
+  (`TWO_SIGN_INS`). The static client and the relationship register
+  `RS256` as `id_token_signed_response_alg`, which is what made the wrong-alg
+  Logout Token a refusal (`STS-FED-0208`).
+* **The refresh-token plan** runs against a relationship with
+  `fedRefreshTokens` on and `fedRefreshEverySeconds` 5, so the
+  `federation.partner-refresh` job (every fifteen seconds) refreshes inside
+  the module's time (rcbj's decision, 2026-11-03).
+* **The dynamic plan** (rcbj's decision, 2026-11-03) runs against a
+  relationship with `fedDiscovery`, `fedRegister`, `fedWebFinger` and
+  `fedRequestObject` `request_uri`; before each module the relationship
+  forgets its client (the suite keeps one for one module) and takes the
+  module's Request Object algorithm (`none` for the unsigned one). The
+  registration module is answered by the relationship's `register-partner`
+  (`REGISTER_ONLY`) and the two WebFinger modules by the person typing the
+  suite's `acct:` or URL identifier at `/federation/webfinger/{id}`
+  (`WEBFINGER`), stopping at the page that names the issuer: each module ends
+  at the registration or the discovery document. **It runs twice**, as
+  `dynamic` and its classical twin `dynamic-cl` (`withClassicalTwins()`),
+  with `PQ_ONLY` empty: only a classical key is registered.
+* **The third-party-initiated plan registers dynamically** too: with a
+  static client the module starts its background step while CREATED and
+  fails itself.
+* **Argued, not passed** (`EXPECTED` in the driver): the logout plan's
+  session-management module, each a decision `federation/CLAUDE.md` records. A
   module argued to wait out its time is given `ARGUED_SECONDS` (30) through
   `runModule()`'s new deadline argument rather than `MODULE_SECONDS`, and is
   not run again.
-* **No classical twin.** The relying party signs and publishes nothing the
-  suite reads in these plans, so no ledger entry concerns a post-quantum key,
-  which is the FAPI job's position. A dynamic plan built later would need
-  one: its request objects and registered JWKS would be the realm's keys.
+* **One classical twin, the dynamic plan's** (rcbj). The other plans sign and
+  publish nothing the suite reads, the FAPI job's position.
 * **A lane of its own** (`conformance-rp`), beside the OpenID Provider job's
   four-and-a-half-hour lane, so the conformance bound does not grow:
   about two hundred modules, most a sign-in of a few seconds or a negative

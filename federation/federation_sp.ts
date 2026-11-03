@@ -186,6 +186,7 @@ import audit = require('./../common/audit');
 // error_codes.js and nothing else here, so it registers no route and cannot
 // join a cycle — rule 3m.
 import realms = require('./../common/realms');
+import scheduler = require('./../cluster/scheduler');
 // The configured XML signature algorithms, for a signed outbound AuthnRequest.
 // A leaf in saml/ that registers nothing — the same answer every SAML signer in
 // this service reads, so a partner verifying our request and our assertions is
@@ -381,6 +382,15 @@ const contexts = realms.map({ persist: 'federation_sp.contexts',
                               retain: 'age',
                               // #333: the context's `expires`, ms.
                               expiresAt: realms.expiryField('expires', 1) });
+
+// A PARTNER'S REFRESH TOKEN, HELD FOR ONE SESSION (#930, rcbj's decision on
+// #930): keyed by the session's id, the token sealed, with the issuer and
+// subject the session started with and when the next refresh is due. Per
+// realm and persisted, as the session it serves is; an entry whose session
+// is gone is dropped by the job that reads it, so the token dies with the
+// session. Only a relationship with fedRefreshTokens on writes here.
+const partnerRefresh = realms.map({ persist: 'federation_sp.partnerRefresh' });
+const PARTNER_REFRESH_JOB = 'federation.partner-refresh';
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML
@@ -624,6 +634,19 @@ class FederationSp {
     });
     app.post(federation.PATHS.initiateLogin + '/:id', (req, res) => {
       return this.initiateLoginEndpoint(req, res);
+    });
+    // GET /federation/request/{id}/{handle} — a Request Object by
+    // reference (#930).
+    app.get(federation.PATHS.requestObject + '/:id/:handle', (req, res) => {
+      return this.requestObjectEndpoint(req, res);
+    });
+    // GET|POST /federation/webfinger/{id} — a person's OpenID Provider
+    // found from an identifier they type (#930).
+    app.get(federation.PATHS.webfinger + '/:id', (req, res) => {
+      return this.webfingerEndpoint(req, res);
+    });
+    app.post(federation.PATHS.webfinger + '/:id', (req, res) => {
+      return this.webfingerEndpoint(req, res);
     });
     // GET /federation/fragment.js — the fragment page's script (#930).
     app.get(federation.PATHS.fragmentScript, (req, res) => {
@@ -4015,6 +4038,10 @@ class FederationSp {
              ', ' + decision.how + '). ' + mapped.mapped.length +
              ' attribute(s) mapped, ' +
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
+    // THE PARTNER'S REFRESH TOKEN (#930), held for this session alone.
+    if (result.partnerRefresh) {
+      this.holdPartnerRefresh(record, session, result.partnerRefresh);
+    }
     // AN ACCOUNT THIS SIGN-IN CREATED (#565), recorded for risk scoring's
     // `network-signups`: who, from which network, when, in the failures
     // register's shape and under its own door, which no password signal
@@ -4535,6 +4562,25 @@ class FederationSp {
     if (context.loginHint) {
       params.set('login_hint', String(context.loginHint));
     }
+    // A REQUEST OBJECT (#930, Core section 6, RFC 9101): every parameter
+    // above, as claims of a JWT this realm signs, sent by value or by
+    // reference. The parameters stay on the query too — Core 6.1 requires
+    // response_type, client_id and scope there, and the rest are the same
+    // values. An OP found through an OpenID Federation signs its own
+    // (oidfed_rp.ts) and is left to it.
+    const by = String(record.fedRequestObject || '');
+    if (record.fedProtocol === 'oidc' && (by === 'request' ||
+        by === 'request_uri') && !String(record.fedTrustAnchor || '').trim()) {
+      const jwt = this.requestObjectJwt(record, params);
+      if (by === 'request') {
+        params.set('request', jwt);
+      } else {
+        const handle = this.putContext({ kind: 'request-object',
+                                         id: record.fedId, jwt: jwt });
+        params.set('request_uri', base + federation.PATHS.requestObject +
+                   '/' + encodeURIComponent(record.fedId) + '/' + handle);
+      }
+    }
     // THE TIKTOK ADAPTER (#565): its authorization endpoint calls the client
     // id `client_key`, and reads nothing else.
     if (consumerProviders.adapts(record, 'tiktok-client-key')) {
@@ -4831,7 +4877,10 @@ class FederationSp {
     // THIS sign-in are what the document says now, kept on the context so
     // the response is redeemed and verified against the same ones.
     if (federation.discovers(record)) {
-      this.discovered(record).then((got) => {
+      // AN ISSUER A PERSON'S WEBFINGER FOUND (#930): named by the handle
+      // the confirmation page carried, never by the request itself.
+      const found = this.foundIssuerOf(req, record);
+      this.discovered(record, found || undefined).then(async (got) => {
         if (!got.ok) {
           errorCodes.mark(res, got.errorCode);
           log.debug("Leaving the federation login endpoint. Not discovered.");
@@ -4839,10 +4888,38 @@ class FederationSp {
           return this.refuse(res, record, 502, 'The OpenID Provider\'s ' +
                              'configuration could not be used', got.why);
         }
+        // SELF-REGISTRATION (#930), where the relationship holds no client
+        // registered with this issuer.
+        let current = record;
+        if (federation.registers(record)) {
+          const registered = await this.ensureRegistered(base, record,
+                                                         got.endpoints);
+          if (!registered.ok) {
+            errorCodes.mark(res, registered.errorCode);
+            log.debug("Leaving the federation login endpoint. Not " +
+                      "registered.");
+            // error-code: none — ensureRegistered()'s own code
+            return this.refuse(res, record, 502, 'This service could not ' +
+                               'register at the OpenID Provider',
+                               registered.why);
+          }
+          current = registered.record;
+        }
         contextRecord.discovered = got.endpoints;
         const handle = this.putContext(contextRecord);
-        res.redirect(302, this.authorizationRequestUrl(base,
-          Object.assign({}, record, got.endpoints), this.heldContext(handle)));
+        let url = '';
+        try {
+          url = this.authorizationRequestUrl(base,
+            Object.assign({}, current, got.endpoints),
+            this.heldContext(handle));
+        } catch (e) {
+          log.debug("Caught in the federation login endpoint: " +
+                    ((e && e.message) || e));
+          errorCodes.mark(res, 'STS-FED-0214');
+          return this.refuse(res, record, 500, 'The Request Object could ' +
+                             'not be signed', String((e && e.message) || e));
+        }
+        res.redirect(302, url);
         log.debug("Leaving the federation login endpoint. A discovered " +
                   "OP's authorization request.");
         return undefined;
@@ -4862,7 +4939,17 @@ class FederationSp {
     // OIDC and OAuth 2.0.
     const handle = this.putContext(contextRecord);
     const stored = this.heldContext(handle);
-    res.redirect(302, this.authorizationRequestUrl(base, record, stored));
+    let url = '';
+    try {
+      url = this.authorizationRequestUrl(base, record, stored);
+    } catch (e) {
+      log.debug("Caught in the federation login endpoint: " +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-FED-0214');
+      return this.refuse(res, record, 500, 'The Request Object could not be ' +
+                         'signed', String((e && e.message) || e));
+    }
+    res.redirect(302, url);
     log.debug("Leaving the federation login endpoint. " + record.fedProtocol +
               ' authorization request.');
   }
@@ -4876,9 +4963,13 @@ class FederationSp {
   // document fills (DISCOVERED_FIELDS), or `{ ok: false, errorCode, why }`.
   // Never rejects.
   // ---------------------------------------------------------------------------
-  private discovered(record): Promise<any> {
+  private discovered(given, issuer?: string): Promise<any> {
     const { fedHttp, log } = this.deps;
-    log.debug("Entering FederationSp.discovered(). id=" + record.fedId);
+    log.debug("Entering FederationSp.discovered(). id=" + given.fedId);
+    // AN ISSUER A PERSON'S WEBFINGER FOUND (#930), already held to begin
+    // with fedPeer by the caller: its document, held to name IT.
+    const record = issuer ? Object.assign({}, given, { fedPeer: issuer })
+                          : given;
     return fedHttp.fetchDiscovery(record).then((answer) => {
       log.debug("Entering the discovery answer.");
       const doc = answer && answer.ok ? answer.json : null;
@@ -4904,12 +4995,18 @@ class FederationSp {
                       'another issuer published is how one provider would ' +
                       'impersonate another.' };
       }
-      const endpoints = {
+      const endpoints: any = {
         fedSsoUrl: String(doc.authorization_endpoint || ''),
         fedTokenUrl: String(doc.token_endpoint || ''),
         fedUserinfoUrl: String(doc.userinfo_endpoint || ''),
-        fedJwksUri: String(doc.jwks_uri || '')
+        fedJwksUri: String(doc.jwks_uri || ''),
+        // Where fedRegister registers this service (#930); dialled through
+        // fetchPublished(), never as an attribute.
+        fedRegistrationUrl: String(doc.registration_endpoint || '')
       };
+      if (issuer) {
+        endpoints.fedPeer = issuer;
+      }
       // Section 3 makes the authorization endpoint and jwks_uri REQUIRED,
       // and the token endpoint required unless only the implicit flow is
       // used.
@@ -4930,6 +5027,845 @@ class FederationSp {
       log.debug("Leaving the discovery answer.");
       log.debug("Leaving FederationSp.discovered(). Read.");
       return { ok: true, endpoints: endpoints };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PARTNER'S REFRESH TOKEN, KEPT AND USED (#930; rcbj decided to build it,
+  // reversing "Refresh anything" in federation/CLAUDE.md for a relationship
+  // that turns fedRefreshTokens on). The token the partner issued at sign-in
+  // is held, sealed, for the one session it came with; the scheduler job
+  // federation.partner-refresh refreshes it when it is due (OpenID Connect
+  // Core 1.0 section 12) and holds the answer to section 12.2: a new ID Token
+  // must name the same iss and sub, and UserInfo must still answer for that
+  // sub. The partner refusing the refresh, or an answer failing a check,
+  // ENDS the session (logout.ts's endPartnerSession(), the cascade every
+  // sign-out has): an RP that can no longer show the partner still vouches
+  // for the person has nothing to keep the session on. A refresh that could
+  // not be MADE — the partner unreachable — is tried again a minute later;
+  // that is not the partner's answer.
+  // ---------------------------------------------------------------------------
+  /**
+   * Holds a partner's sealed refresh token for the session a sign-in
+   * started.
+   *
+   * @param record - the relationship
+   * @param session - the session just started
+   * @param held - `{ token, expiresIn, iss, sub, endpoints }`
+   */
+  holdPartnerRefresh(record, session, held) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.holdPartnerRefresh().");
+    const after = federation.refreshAfterSeconds(record, held.expiresIn);
+    partnerRefresh.set(String(session.id), {
+      fedId: record.fedId, sessionId: String(session.id),
+      token: held.token, iss: held.iss, sub: held.sub,
+      endpoints: held.endpoints || null, refreshes: 0,
+      due: Date.now() + after * 1000 });
+    log.debug("Leaving FederationSp.holdPartnerRefresh(). Due in " + after +
+              "s.");
+  }
+
+  /**
+   * Registers the scheduler job that refreshes partners' tokens, once. It
+   * runs per realm every fifteen seconds while `federation.enabled` is on,
+   * and looks only at the sessions that hold a partner's refresh token.
+   */
+  static registerRefreshJob(): void {
+    helpers.log.debug("Entering FederationSp.registerRefreshJob().");
+    if (scheduler.job(PARTNER_REFRESH_JOB)) {
+      helpers.log.debug("Leaving FederationSp.registerRefreshJob(). " +
+                        "Registered.");
+      return;
+    }
+    scheduler.register({
+      id: PARTNER_REFRESH_JOB,
+      title: 'Federated sessions\' partner refresh',
+      describe: 'For an OpenID Connect relationship with fedRefreshTokens ' +
+                'on: refreshes the partner\'s tokens of each session that ' +
+                'holds one when it is due, checks the new ID Token and ' +
+                'UserInfo still name the person, and ends the session ' +
+                'when the partner refuses or the answer does not (#930).',
+      owner: 'federation/federation_sp.ts',
+      scope: 'realm',
+      everyMs: function (): number {
+        return 15000;
+      },
+      off: function (): string {
+        return config.value('federation.enabled') ? ''
+          : 'federation.enabled is off';
+      },
+      run: function (ctx: any): Promise<any> {
+        return slot.get().refreshDue(ctx.nowMs());
+      }
+    });
+    helpers.log.debug("Leaving FederationSp.registerRefreshJob().");
+  }
+
+  /**
+   * Refreshes, in the current realm, every held partner token that is due.
+   * The scheduler job's body.
+   *
+   * @param nowMs - the time to check against
+   * @returns a promise of `{ refreshed, ended, dropped }`
+   */
+  async refreshDue(nowMs?: number): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.refreshDue().");
+    const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+    const due: any[] = [];
+    partnerRefresh.forEach(function (value) {
+      if (value && Number(value.due) <= now) {
+        due.push(value);
+      }
+    });
+    const counts = { refreshed: 0, ended: 0, dropped: 0, retried: 0 };
+    for (let i = 0; i < due.length; i++) {
+      const outcome = await this.refreshOne(due[i]);
+      counts[outcome] = (counts[outcome] || 0) + 1;
+    }
+    log.debug("Leaving FederationSp.refreshDue(). " + JSON.stringify(counts));
+    return counts;
+  }
+
+  // One held token: `refreshed`, `ended` (the session), `dropped` (no
+  // session or relationship to refresh for) or `retried` (not made).
+  private async refreshOne(entry): Promise<string> {
+    const { federation, fedHttp, authn, log, errorCodes } = this.deps;
+    log.debug("Entering FederationSp.refreshOne(). session=" +
+              entry.sessionId);
+    const session = authn.sessionById(entry.sessionId);
+    const stored = federation.get(entry.fedId);
+    if (!session || !stored || !federation.refreshesTokens(stored) ||
+        !federation.isUsable(stored)) {
+      partnerRefresh.delete(String(entry.sessionId));
+      log.debug("Leaving FederationSp.refreshOne(). Dropped.");
+      return 'dropped';
+    }
+    const record = Object.assign({}, stored, entry.endpoints || {});
+    const token = federation.openPartnerToken(entry.token);
+    if (!token) {
+      log.debug("Leaving FederationSp.refreshOne(). The token will not open.");
+      return this.endForRefresh(session, record, entry, 'STS-FED-0210',
+                                'the held refresh token will not open');
+    }
+    const form: any = { grant_type: 'refresh_token', refresh_token: token };
+    const options: any = { method: 'POST', form: form };
+    let authenticated: Promise<any> = Promise.resolve(null);
+    if (record.fedTokenAuth === 'private_key_jwt' &&
+        this.deps.oidfedRp().isFederated(stored)) {
+      form.client_id = String(record.fedClientId || '');
+      form.client_assertion_type =
+        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+      authenticated = this.deps.oidfedRp().clientAssertion(record)
+        .then(function (assertion) {
+          form.client_assertion = assertion;
+        });
+    } else if (federation.clientSecretOf(record) &&
+               record.fedTokenAuth === 'client_secret_post') {
+      form.client_id = String(record.fedClientId || '');
+      form.client_secret = federation.clientSecretOf(record);
+    } else if (federation.clientSecretOf(record)) {
+      options.basic = { user: record.fedClientId,
+                        pass: federation.clientSecretOf(record) };
+    } else {
+      form.client_id = String(record.fedClientId || '');
+    }
+    await authenticated;
+    const answer = await fedHttp.fetchJson(record, 'fedTokenUrl', options);
+    if (!answer.ok || !answer.json) {
+      if (answer.status >= 400 && answer.status < 500) {
+        // The partner's ANSWER: it will not refresh for this session.
+        log.debug("Leaving FederationSp.refreshOne(). Refused.");
+        return this.endForRefresh(session, record, entry, 'STS-FED-0210',
+          'the partner refused the refresh (' + answer.why + ')');
+      }
+      log.warn(errorCodes.tag('STS-FED-0210') + 'federation: ' +
+               record.fedId + ' could not be asked to refresh session ' +
+               entry.sessionId + ' (' + answer.why + '); trying again in ' +
+               'a minute.');
+      partnerRefresh.set(String(entry.sessionId), Object.assign({}, entry,
+        { due: Date.now() + 60000 }));
+      log.debug("Leaving FederationSp.refreshOne(). Retried.");
+      return 'retried';
+    }
+    const tokens = answer.json;
+    if (tokens.id_token) {
+      const keySet = await this.keysFor(record);
+      const verified: any = keySet.ok
+        ? this.verifyForeignJwt(String(tokens.id_token), record,
+            keySet.keys, { audience: String(record.fedClientId || '') ||
+                             undefined,
+                           issuer: entry.iss,
+                           expectAlg: String(
+                             record.fedIdTokenSignedResponseAlg || '') })
+        : { ok: false, why: (keySet as any).why };
+      const payload = verified.ok ? (verified.payload || {}) : {};
+      // Section 12.2: the same iss and sub as the original ID Token.
+      if (!verified.ok || String(payload.sub || '') !== entry.sub ||
+          String(payload.iss || '') !== entry.iss) {
+        log.debug("Leaving FederationSp.refreshOne(). The new ID Token.");
+        return this.endForRefresh(session, record, entry, 'STS-FED-0211',
+          verified.ok ? 'the refreshed ID Token names iss "' +
+                        String(payload.iss || '') + '" and sub "' +
+                        String(payload.sub || '') + '", not the ' +
+                        'session\'s'
+                      : 'the refreshed ID Token did not verify: ' +
+                        verified.why);
+      }
+    }
+    const access = String(tokens.access_token || '');
+    if (access && String(record.fedUserinfoUrl || '').trim()) {
+      const info = await fedHttp.fetchJson(record, 'fedUserinfoUrl',
+        { method: 'GET', bearer: access });
+      const claims = info.ok ? await this.userinfoClaims(record, info) : null;
+      if (claims && String(claims.sub || '') !== entry.sub) {
+        log.debug("Leaving FederationSp.refreshOne(). UserInfo's sub.");
+        return this.endForRefresh(session, record, entry, 'STS-FED-0202',
+          'UserInfo answered the refreshed access token for sub "' +
+          String(claims.sub || '') + '"');
+      }
+    }
+    const next = tokens.refresh_token
+      ? federation.sealPartnerToken(String(tokens.refresh_token)) : null;
+    partnerRefresh.set(String(entry.sessionId), Object.assign({}, entry, {
+      token: next && next.ok ? next.value : entry.token,
+      refreshes: Number(entry.refreshes || 0) + 1,
+      due: Date.now() + federation.refreshAfterSeconds(stored,
+                                                       tokens.expires_in) *
+           1000 }));
+    log.info('federation: ' + record.fedId + ' refreshed the partner\'s ' +
+             'tokens for session ' + entry.sessionId + '; the partner ' +
+             'still vouches for ' + entry.sub + '.');
+    log.debug("Leaving FederationSp.refreshOne(). Refreshed.");
+    return 'refreshed';
+  }
+
+  /**
+   * Reads a partner's UserInfo answer: JSON as it is, or a signed (and
+   * possibly encrypted) JWT verified against the partner's keys (OpenID
+   * Connect Core 1.0 section 5.3.2) — under fedUserinfoSignedResponseAlg
+   * where the relationship registered one — whose iss and aud, when
+   * present, must be the partner and this service.
+   *
+   * @param record - the relationship
+   * @param answer - what fetchJson() answered
+   * @returns a promise of the claims, or null when the answer cannot be used
+   */
+  async userinfoClaims(record, answer): Promise<any> {
+    const { fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.userinfoClaims().");
+    if (answer && answer.json && typeof answer.json === 'object' &&
+        !Array.isArray(answer.json)) {
+      log.debug("Leaving FederationSp.userinfoClaims(). JSON.");
+      return answer.json;
+    }
+    let jws = String((answer && answer.text) || '').trim();
+    if (jws.split('.').length === 5) {
+      const opened = fedEncryption.decryptJwe(record, jws);
+      if (!opened.ok) {
+        log.debug("Leaving FederationSp.userinfoClaims(). Not decrypted.");
+        return null;
+      }
+      jws = String(opened.plaintext || '').trim();
+    }
+    if (jws.split('.').length !== 3) {
+      log.debug("Leaving FederationSp.userinfoClaims(). Not a JWT.");
+      return null;
+    }
+    const keySet = await this.keysFor(record);
+    if (!keySet.ok) {
+      log.debug("Leaving FederationSp.userinfoClaims(). No keys.");
+      return null;
+    }
+    const verified = this.verifyForeignJwt(jws, record, keySet.keys, {
+      expectAlg: String(record.fedUserinfoSignedResponseAlg || '') });
+    const claims = verified.ok ? (verified.payload || {}) : null;
+    if (!claims ||
+        (claims.iss !== undefined &&
+         String(claims.iss) !== String(record.fedPeer || '').trim()) ||
+        (claims.aud !== undefined &&
+         [].concat(claims.aud).indexOf(String(record.fedClientId || '')) <
+           0)) {
+      log.debug("Leaving FederationSp.userinfoClaims(). Did not verify.");
+      return null;
+    }
+    log.debug("Leaving FederationSp.userinfoClaims(). A verified JWT.");
+    return claims;
+  }
+
+  // The session a refresh could not keep, ended through the one model of a
+  // live session, and its held token dropped with it.
+  private endForRefresh(session, record, entry, code, why): string {
+    const { audit, log, errorCodes } = this.deps;
+    log.debug("Entering FederationSp.endForRefresh(). " + code);
+    partnerRefresh.delete(String(entry.sessionId));
+    log.warn(errorCodes.tag(code) + 'federation: ' + record.fedId + ' ' +
+             'ends session ' + entry.sessionId + ': ' + why + '.');
+    audit.failure(code, {
+      protocol: 'Federation', channel: 'http', target: record.fedId,
+      summary: 'the federated session of ' + entry.sub + ' through ' +
+               record.fedId + ' was ended at its partner refresh: ' + why,
+      outcome: 'denied', detail: { session: entry.sessionId } });
+    try {
+      require('./../logout/logout').endPartnerSession(session, {
+        issuer: entry.iss, by: 'federation:' + record.fedId,
+        initiatingEntity: 'policy', channel: 'http' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-FED-0210') + 'federation: the session ' +
+                entry.sessionId + ' could not be ended: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationSp.endForRefresh().");
+    return 'ended';
+  }
+
+  // ---------------------------------------------------------------------------
+  // A REQUEST OBJECT (#930): the authorization request's parameters as the
+  // claims of a JWT, with iss this service's client_id, aud the partner's
+  // issuer (Core 6.1: "SHOULD contain the Claims iss ... and aud"), a
+  // five-minute lifetime and a jti, signed under fedRequestObjectSigningAlg
+  // with this realm's key — or, for `none`, unsigned, which Core 6.2 allows
+  // only by reference over https. Throws when the realm holds no key for
+  // the algorithm; the login endpoint refuses (STS-FED-0214).
+  // ---------------------------------------------------------------------------
+  private requestObjectJwt(record, params): string {
+    const { log, randomId } = this.deps;
+    log.debug("Entering FederationSp.requestObjectJwt().");
+    const alg = String(record.fedRequestObjectSigningAlg || 'RS256');
+    const claims: any = {};
+    params.forEach(function (value, name) {
+      claims[name] = value;
+    });
+    const now = Math.floor(Date.now() / 1000);
+    claims.iss = String(record.fedClientId || '');
+    claims.aud = String(record.fedPeer || '');
+    claims.iat = now;
+    claims.nbf = now;
+    claims.exp = now + 300;
+    claims.jti = randomId(16);
+    if (alg === 'none') {
+      log.debug("Leaving FederationSp.requestObjectJwt(). Unsigned.");
+      return Buffer.from(JSON.stringify({ alg: 'none', typ:
+                                          'oauth-authz-req+jwt' }))
+               .toString('base64url') + '.' +
+             Buffer.from(JSON.stringify(claims)).toString('base64url') + '.';
+    }
+    log.debug("Leaving FederationSp.requestObjectJwt(). " + alg);
+    // certificate-header: none — a Request Object is verified against the
+    // key the relationship registered at the partner, and RFC 9101 asks for
+    // no certificate in its header.
+    return helpers.signJwtAs(claims, alg, null,
+                             { header: { typ: 'oauth-authz-req+jwt' } });
+  }
+
+  // The public key a Request Object under `alg` is verified with, as the
+  // JWK registered at the partner (`jwks` by value, so nothing else of the
+  // realm's key set — its post-quantum keys among them — is handed over).
+  private requestObjectJwk(alg: string): any {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.requestObjectJwk(). " + alg);
+    const signer = helpers.signingKeyFor(alg);
+    const jwk = Object.assign({}, helpers.publicJwkOfKid(signer.kid), {
+      kid: helpers.publishedKidFor(signer.kid), alg: alg, use: 'sig' });
+    log.debug("Leaving FederationSp.requestObjectJwk().");
+    return jwk;
+  }
+
+  // GET /federation/request/{id}/{handle} — A REQUEST OBJECT BY REFERENCE
+  // (#930): what the authorization request's request_uri names, answered
+  // ONCE (the handle is spent) to whoever holds the address, which is the
+  // partner the browser was sent to. Nothing else is behind the path.
+  private requestObjectEndpoint(req, res) {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.requestObjectEndpoint().");
+    const held = this.takeContext(String(req.params.handle || ''));
+    if (!held || held.kind !== 'request-object' ||
+        held.id !== String(req.params.id || '')) {
+      errorCodes.mark(res, 'STS-FED-0218');
+      res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+         .send('There is no Request Object at this address: it was never ' +
+               'made, it was already fetched, or it expired.');
+      log.debug("Leaving FederationSp.requestObjectEndpoint(). None.");
+      return;
+    }
+    res.status(200).type('application/oauth-authz-req+jwt')
+       .set('Cache-Control', 'no-store').send(String(held.jwt));
+    log.debug("Leaving FederationSp.requestObjectEndpoint().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // SELF-REGISTRATION AT THE PARTNER (#930; OpenID Connect Dynamic Client
+  // Registration 1.0, RFC 7591), for a relationship with fedRegister on:
+  // when it holds no fedClientId, or one registered with another issuer,
+  // this relationship is registered at the registration_endpoint the
+  // partner's discovery document names — its assertion consumer service,
+  // response type and grant types, client authentication, the algorithms it
+  // pins, its sign-out and login-initiation addresses, and for signed
+  // Request Objects the one public key that signs them. The client_id and
+  // secret the partner answers are written to the relationship (the secret
+  // sealed as any `set` seals it), with the issuer they belong to.
+  //
+  // THE ENDPOINT IS DIALLED THROUGH fetchPublished(): its address is named
+  // by the discovery document of an issuer an administrator configured (or
+  // one bounded by fedPeer, for WebFinger), and the request carries no
+  // credential of this service's — what comes back is one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Registers a relationship at its partner where it needs to be.
+   *
+   * @param base - this service's base URL, for its own addresses
+   * @param record - the relationship
+   * @param endpoints - the discovery document's, from discovered()
+   * @returns a promise of `{ ok, record }` or `{ ok: false, errorCode, why }`
+   */
+  async ensureRegistered(base, record, endpoints): Promise<any> {
+    const { federation, fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.ensureRegistered(). id=" + record.fedId);
+    const issuer = String((endpoints && endpoints.fedPeer) ||
+                          record.fedPeer || '');
+    if (String(record.fedClientId || '').trim() &&
+        String(record.fedRegisteredIssuer || '') === issuer) {
+      log.debug("Leaving FederationSp.ensureRegistered(). Registered.");
+      return { ok: true, record: record };
+    }
+    const url = String((endpoints && endpoints.fedRegistrationUrl) || '');
+    if (!url) {
+      log.debug("Leaving FederationSp.ensureRegistered(). No endpoint.");
+      return { ok: false, errorCode: 'STS-FED-0213',
+               why: 'The partner\'s discovery document names no ' +
+                    'registration_endpoint, so this service cannot register ' +
+                    'itself there (fedRegister). Register it by hand and ' +
+                    'set fedClientId, or turn fedRegister off.' };
+    }
+    const parts = federation.responseTypeParts(record);
+    const grants = (parts.code ? ['authorization_code'] : [])
+      .concat(parts.idToken || parts.token ? ['implicit'] : [])
+      .concat(federation.refreshesTokens(record) ? ['refresh_token'] : []);
+    const id = encodeURIComponent(record.fedId);
+    const metadata: any = {
+      application_type: 'web',
+      client_name: 'iya-sts ' + String(record.fedName || record.fedId),
+      redirect_uris: [this.acsUrl(base, record)],
+      response_types: [federation.responseTypeOf(record)],
+      grant_types: grants,
+      token_endpoint_auth_method: String(record.fedTokenAuth ||
+                                         'client_secret_basic'),
+      post_logout_redirect_uris: [this.sloUrl(base, record)],
+      backchannel_logout_uri: base + federation.PATHS.backchannelLogout +
+                              '/' + id,
+      backchannel_logout_session_required: true,
+      frontchannel_logout_uri: base + federation.PATHS.frontchannelLogout +
+                               '/' + id,
+      frontchannel_logout_session_required: true
+    };
+    if (String(record.fedIdTokenSignedResponseAlg || '')) {
+      metadata.id_token_signed_response_alg =
+        String(record.fedIdTokenSignedResponseAlg);
+    }
+    if (String(record.fedUserinfoSignedResponseAlg || '')) {
+      metadata.userinfo_signed_response_alg =
+        String(record.fedUserinfoSignedResponseAlg);
+    }
+    if (federation.boolOf(record.fedInitiateLogin, false)) {
+      metadata.initiate_login_uri = base + federation.PATHS.initiateLogin +
+                                    '/' + id;
+    }
+    const by = String(record.fedRequestObject || '');
+    if (by === 'request' || by === 'request_uri') {
+      const alg = String(record.fedRequestObjectSigningAlg || 'RS256');
+      metadata.request_object_signing_alg = alg;
+      if (alg !== 'none') {
+        try {
+          metadata.jwks = { keys: [this.requestObjectJwk(alg)] };
+        } catch (e) {
+          log.debug("Caught in FederationSp.ensureRegistered(): " +
+                    ((e && e.message) || e));
+          return { ok: false, errorCode: 'STS-FED-0214',
+                   why: 'This realm holds no key for ' + alg + ' to sign ' +
+                        'Request Objects with: ' + ((e && e.message) || e) };
+        }
+      }
+    }
+    const answer = await fedHttp.fetchPublished(url, {
+      method: 'POST', accept: 'application/json',
+      contentType: 'application/json', body: JSON.stringify(metadata) });
+    let registered: any = null;
+    try {
+      registered = answer.ok ? JSON.parse(answer.body.toString('utf8'))
+                             : null;
+    } catch (e) {
+      log.debug("Caught in FederationSp.ensureRegistered(): " +
+                ((e && e.message) || e));
+      registered = null;
+    }
+    if (!registered || !registered.client_id) {
+      log.debug("Leaving FederationSp.ensureRegistered(). Refused.");
+      return { ok: false, errorCode: 'STS-FED-0212',
+               why: 'The registration at ' + url + ' ' +
+                    (answer.ok ? 'answered no client_id'
+                               : 'failed: ' + answer.why) };
+    }
+    const writes = [['fedClientId', String(registered.client_id)],
+                    ['fedClientSecret',
+                     String(registered.client_secret || '')],
+                    ['fedRegisteredIssuer', issuer]];
+    for (let i = 0; i < writes.length; i++) {
+      const wrote = federation.update(record.fedId,
+        { field: writes[i][0], value: writes[i][1] });
+      if (!wrote || !wrote.ok) {
+        log.debug("Leaving FederationSp.ensureRegistered(). Not written.");
+        return { ok: false, errorCode: 'STS-FED-0212',
+                 why: 'The partner registered this service as "' +
+                      registered.client_id + '", and ' + writes[i][0] +
+                      ' could not be written to the relationship.' };
+      }
+    }
+    log.info('federation: ' + record.fedId + ' registered itself at ' +
+             issuer + ' as ' + registered.client_id + '.');
+    log.debug("Leaving FederationSp.ensureRegistered(). Registered now.");
+    return { ok: true, record: federation.get(record.fedId) };
+  }
+
+  /**
+   * An administrator's register-partner (#930): discovery, then a
+   * registration whatever the relationship holds.
+   *
+   * @param base - this service's base URL
+   * @param record - the relationship
+   * @returns a promise of `{ ok, clientId, issuer }` or `{ ok: false,
+   *   errorCode, why }`
+   */
+  async registerPartner(base, record): Promise<any> {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.registerPartner().");
+    if (!federation.registers(record)) {
+      log.debug("Leaving FederationSp.registerPartner(). Not asked for.");
+      return { ok: false, errorCode: 'STS-FED-0213',
+               why: 'register-partner needs an OpenID Connect relationship ' +
+                    'with fedDiscovery and fedRegister on' };
+    }
+    const got = await this.discovered(record);
+    if (!got.ok) {
+      log.debug("Leaving FederationSp.registerPartner(). Not discovered.");
+      return got;
+    }
+    const done = await this.ensureRegistered(base,
+      Object.assign({}, record, { fedClientId: '' }), got.endpoints);
+    log.debug("Leaving FederationSp.registerPartner().");
+    return done.ok ? { ok: true, clientId: done.record.fedClientId,
+                       issuer: done.record.fedRegisteredIssuer } : done;
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET|POST /federation/webfinger/{id} — A PERSON'S OPENID PROVIDER, FOUND
+  // FROM AN IDENTIFIER THEY TYPE (#930, OpenID Connect Discovery 1.0 section
+  // 2; RFC 7033), for a relationship with fedWebFinger on (rcbj's decision on
+  // #930). The ONE federation request whose host a caller chooses: the
+  // identifier names it. What bounds it:
+  //
+  //   * off by default, per relationship;
+  //   * the outbound policy of fetchPublished() — https only, verified; no
+  //     internal address in product mode, the connection pinned to the
+  //     address checked; no redirect; the cap and the timeout;
+  //   * the issuer found must BEGIN WITH fedPeer, so it can only select
+  //     within the partner an administrator configured, and its discovery
+  //     document must name it exactly (Discovery 4.3);
+  //   * nothing continues on its own: the person is shown the issuer and
+  //     goes on only by pressing a button, which the login endpoint answers
+  //     with the issuer held server-side behind a handle.
+  // ---------------------------------------------------------------------------
+  private webfingerEndpoint(req, res) {
+    const { federation, fedHttp, errorCodes, log } = this.deps;
+    log.debug("Entering the federation WebFinger endpoint. id=" +
+              req.params.id);
+    FederationPages.mark(res);
+    if (!this.enabled()) {
+      errorCodes.mark(res, 'STS-FED-0001');
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
+      log.debug("Leaving the WebFinger endpoint. Federation is off.");
+      return undefined;
+    }
+    const id = String(req.params.id || '');
+    const record = federation.get(id);
+    if (!record || record.fedRole !== 'service-provider' ||
+        record.fedProtocol !== 'oidc') {
+      errorCodes.mark(res, 'STS-FED-0002');
+      FederationPages.send(res, 404,
+                           FederationPages.notHereView('noRelationship', id));
+      log.debug("Leaving the WebFinger endpoint. No such relationship.");
+      return undefined;
+    }
+    if (!federation.webFingers(record) || !federation.isUsable(record)) {
+      errorCodes.mark(res, 'STS-FED-0215');
+      log.debug("Leaving the WebFinger endpoint. Not answered here.");
+      return this.refuse(res, record, 403, 'That partner is not found by ' +
+                                           'WebFinger here',
+        'fedWebFinger and fedDiscovery must both be on, and the ' +
+        'relationship enabled and fully configured, before an identifier ' +
+        'is looked up for it.');
+    }
+    const params: any = this.paramsOf(req);
+    const typed = String(params.resource || '').trim().slice(0, 512);
+    if (!typed) {
+      FederationPages.send(res, 200, { kind: 'webfinger', step: 'ask',
+        relationship: id, partner: String(record.fedName || id),
+        action: federation.PATHS.webfinger + '/' + encodeURIComponent(id) });
+      log.debug("Leaving the WebFinger endpoint. Asked.");
+      return undefined;
+    }
+    const target = FederationSp.webfingerTarget(typed);
+    if (!target) {
+      errorCodes.mark(res, 'STS-FED-0216');
+      log.debug("Leaving the WebFinger endpoint. Not an identifier.");
+      return this.refuse(res, record, 400, 'That is not an identifier ' +
+                                           'WebFinger can look up',
+        'Type an address such as user@example.com, or a URL.');
+    }
+    log.debug("Leaving the WebFinger endpoint. Looking it up.");
+    return fedHttp.fetchPublished(target.url, {
+      accept: 'application/jrd+json, application/json' }).then((answer) => {
+      let doc: any = null;
+      try {
+        doc = answer.ok ? JSON.parse(answer.body.toString('utf8')) : null;
+      } catch (e) {
+        log.debug("Caught in the WebFinger endpoint: " +
+                  ((e && e.message) || e));
+        doc = null;
+      }
+      const link = ((doc && Array.isArray(doc.links)) ? doc.links : [])
+        .filter(function (one) {
+          return one && one.rel === FederationSp.ISSUER_REL &&
+                 typeof one.href === 'string';
+        })[0];
+      if (!link) {
+        errorCodes.mark(res, 'STS-FED-0216');
+        return this.refuse(res, record, 502, 'No OpenID Provider was found ' +
+                                             'for that identifier',
+          'WebFinger at ' + target.host + ' ' + (answer.ok
+            ? 'named no OpenID Connect issuer.'
+            : 'did not answer: ' + answer.why + '.'));
+      }
+      const issuer = String(link.href);
+      const peer = String(record.fedPeer || '').trim();
+      if (!FederationSp.issuerWithin(issuer, peer)) {
+        errorCodes.mark(res, 'STS-FED-0217');
+        return this.refuse(res, record, 403, 'That OpenID Provider is not ' +
+                                             'this partner',
+          'WebFinger named the issuer "' + issuer + '", which does not ' +
+          'begin with this relationship\'s fedPeer "' + peer + '". Only an ' +
+          'issuer within the partner an administrator configured is used.');
+      }
+      return this.discovered(record, issuer).then((got) => {
+        if (!got.ok) {
+          errorCodes.mark(res, got.errorCode);
+          // error-code: none — discovered()'s own code, in got.errorCode
+          return this.refuse(res, record, 502, 'The OpenID Provider\'s ' +
+                             'configuration could not be used', got.why);
+        }
+        const handle = this.putContext({ kind: 'webfinger', id: id,
+                                         issuer: issuer });
+        FederationPages.send(res, 200, { kind: 'webfinger', step: 'found',
+          relationship: id, partner: String(record.fedName || id),
+          identifier: typed, issuer: issuer,
+          continueHref: federation.PATHS.login + '/' +
+                        encodeURIComponent(id) + '?found=' +
+                        encodeURIComponent(handle) });
+        return undefined;
+      });
+    }).catch((e) => {
+      log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + id +
+                ' threw while looking up an identifier: ' +
+                (e && e.stack ? e.stack : e));
+      errorCodes.mark(res, 'STS-FED-0042');
+      this.refuse(res, record, 500, 'This service failed while looking the ' +
+                  'identifier up', String((e && e.message) || e));
+    });
+  }
+
+  /**
+   * Says whether an issuer lies within a configured one (#930): the bound a
+   * WebFinger answer is held to. A PARSED comparison, never a string
+   * prefix — `https://op.example` must not admit `https://op.example.evil
+   * .com`, `https://op.example:8443` or `https://op.example@evil`. Both
+   * must parse, as https (http only where the configured one is http,
+   * which an administrator wrote), with no userinfo; the scheme, the host
+   * (case-insensitively) and the effective port must be identical; the
+   * issuer may carry no query or fragment; and its path must be the
+   * configured one's or extend it at a `/` boundary, one trailing slash
+   * on either side ignored — `/tenant` admits `/tenant/a` and not
+   * `/tenant2`.
+   *
+   * @param issuer - the issuer found
+   * @param peer - the issuer configured (fedPeer)
+   * @returns whether the first lies within the second
+   */
+  static issuerWithin(issuer: string, peer: string): boolean {
+    helpers.log.debug("Entering FederationSp.issuerWithin().");
+    let found: URL = null;
+    let bound: URL = null;
+    try {
+      found = new URL(String(issuer || ''));
+      bound = new URL(String(peer || ''));
+    } catch (e) {
+      helpers.log.debug("Caught in FederationSp.issuerWithin(): " +
+                        ((e && e.message) || e));
+      helpers.log.debug("Leaving FederationSp.issuerWithin(). Not URLs.");
+      return false;
+    }
+    const raw = String(issuer || '');
+    const schemeOk = (bound.protocol === 'https:' ||
+                      bound.protocol === 'http:') &&
+                     found.protocol === bound.protocol;
+    const plain = !found.username && !found.password &&
+                  !bound.username && !bound.password &&
+                  !found.search && !found.hash &&
+                  raw.indexOf('?') < 0 && raw.indexOf('#') < 0;
+    const port = function (u: URL): string {
+      return u.port || (u.protocol === 'https:' ? '443' : '80');
+    };
+    const sameOrigin = found.hostname.toLowerCase() ===
+                       bound.hostname.toLowerCase() &&
+                       port(found) === port(bound);
+    const trim = function (path: string): string {
+      return path.slice(-1) === '/' ? path.slice(0, -1) : path;
+    };
+    const within = trim(found.pathname) === trim(bound.pathname) ||
+                   trim(found.pathname).indexOf(trim(bound.pathname) + '/') ===
+                     0;
+    const answer = schemeOk && plain && sameOrigin && within;
+    helpers.log.debug("Leaving FederationSp.issuerWithin(). " + answer);
+    return answer;
+  }
+
+  // The link relation WebFinger names an OpenID Connect issuer with
+  // (Discovery 1.0 section 2).
+  static readonly ISSUER_REL = 'http://openid.net/specs/connect/1.0/issuer';
+
+  /**
+   * Where WebFinger asks about a typed identifier, normalised as OpenID
+   * Connect Discovery 1.0 section 2.1 says: `acct:` for an address with an
+   * `@` and no scheme, `https://` for a host with neither.
+   *
+   * @param typed - what the person typed
+   * @returns `{ resource, host, url }`, or null when it is not one
+   */
+  static webfingerTarget(typed: string): any {
+    helpers.log.debug("Entering FederationSp.webfingerTarget().");
+    let resource = String(typed || '').trim();
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(resource)) {
+      resource = resource.indexOf('@') > 0 ? 'acct:' + resource
+                                           : 'https://' + resource;
+    }
+    let host = '';
+    try {
+      if (/^acct:/i.test(resource)) {
+        host = resource.slice(resource.lastIndexOf('@') + 1);
+      } else if (/^https?:\/\//i.test(resource)) {
+        host = new URL(resource).host;
+        resource = resource.replace(/#.*$/, '');
+      }
+    } catch (e) {
+      helpers.log.debug("Caught in FederationSp.webfingerTarget(): " +
+                        ((e && e.message) || e));
+      host = '';
+    }
+    if (!/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(host)) {
+      helpers.log.debug("Leaving FederationSp.webfingerTarget(). None.");
+      return null;
+    }
+    helpers.log.debug("Leaving FederationSp.webfingerTarget(). " + host);
+    return { resource: resource, host: host,
+             url: 'https://' + host + '/.well-known/webfinger?resource=' +
+                  encodeURIComponent(resource) + '&rel=' +
+                  encodeURIComponent(FederationSp.ISSUER_REL) };
+  }
+
+  // The issuer a person's WebFinger found, from the handle the confirmation
+  // page carried (`found`), spent; '' when the sign-in did not come that way.
+  private foundIssuerOf(req, record): string {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.foundIssuerOf().");
+    const handle = String((req.query && req.query.found) || '');
+    if (!handle || !federation.webFingers(record)) {
+      log.debug("Leaving FederationSp.foundIssuerOf(). None.");
+      return '';
+    }
+    const held = this.takeContext(handle);
+    const peer = String(record.fedPeer || '').trim();
+    const issuer = held && held.kind === 'webfinger' &&
+      held.id === record.fedId &&
+      FederationSp.issuerWithin(String(held.issuer || ''), peer)
+      ? String(held.issuer) : '';
+    log.debug("Leaving FederationSp.foundIssuerOf(). " + (issuer || 'None.'));
+    return issuer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN ADMINISTRATOR'S CHECK OF AN OPENID CONNECT PARTNER (#930): what the
+  // relationship would dial at the start of a sign-in, dialled now and
+  // reported — the discovery document where fedDiscovery is on (its issuer
+  // held to fedPeer, as a sign-in holds it), and the partner's key set, with
+  // how many keys it holds that this service can read. Nothing is written
+  // and nobody is signed in. It is the console's and /admin-api's
+  // `check-partner` act, so an operator can see a misconfigured partner
+  // before a person meets it; the relying-party plans' discovery modules use
+  // it too, since they end the moment the document is read.
+  // ---------------------------------------------------------------------------
+  /**
+   * Fetches an OpenID Connect partner's discovery document (where the
+   * relationship reads one) and its key set, and reports them.
+   *
+   * @param record - the federation relationship
+   * @returns a promise of `{ ok, issuer, endpoints, keys, readable, why,
+   *   errorCode }`
+   */
+  checkPartner(record): Promise<any> {
+    const { federation, fedHttp, stsCrypto, log } = this.deps;
+    log.debug("Entering FederationSp.checkPartner(). id=" + record.fedId);
+    if (!record || record.fedRole !== 'service-provider' ||
+        record.fedProtocol !== 'oidc') {
+      log.debug("Leaving FederationSp.checkPartner(). Not an OIDC partner.");
+      return Promise.resolve({ ok: false, errorCode: 'STS-FED-0209',
+        why: 'only a service-provider-side OpenID Connect relationship ' +
+             'has a partner configuration to check' });
+    }
+    const discovered: Promise<any> = federation.discovers(record)
+      ? this.discovered(record)
+      : Promise.resolve({ ok: true, endpoints: null });
+    log.debug("Leaving FederationSp.checkPartner().");
+    return discovered.then((got) => {
+      if (!got.ok) {
+        return { ok: false, errorCode: got.errorCode, why: got.why };
+      }
+      const effective = Object.assign({}, record, got.endpoints || {});
+      return this.keysFor(effective).then((keySet) => {
+        let readable = 0;
+        (keySet.keys || []).forEach(function (jwk) {
+          try {
+            stsCrypto.publicKeyFromJwk(jwk);
+            readable += 1;
+          } catch (e) {
+            log.debug("Caught in FederationSp.checkPartner(): " +
+                      ((e && e.message) || e));
+            // A key this service cannot read is counted out, not fatal:
+            // RFC 7517 section 5 has a reader skip what it does not know.
+          }
+        });
+        return {
+          ok: !!keySet.ok, errorCode: keySet.ok ? '' : keySet.errorCode,
+          why: keySet.ok ? '' : keySet.why,
+          issuer: String(record.fedPeer || ''),
+          endpoints: {
+            authorization_endpoint: effective.fedSsoUrl || '',
+            token_endpoint: effective.fedTokenUrl || '',
+            userinfo_endpoint: effective.fedUserinfoUrl || '',
+            jwks_uri: effective.fedJwksUri || ''
+          },
+          discovered: !!got.endpoints,
+          keys: (keySet.keys || []).length, readable: readable
+        };
+      });
     });
   }
 
@@ -5939,6 +6875,22 @@ class FederationSp {
                     'presented as a signed one. It is refused by name rather ' +
                     'than by failing to find a key' };
     }
+    // THE REGISTERED ALGORITHM (#930), where the caller names one: an ID
+    // Token or a Logout Token signed under any other is refused, even by a
+    // key of the partner's own that verifies it. The family rule below only
+    // keeps an algorithm to its key's kind; this keeps it to the one the
+    // relationship registered (Core 3.1.3.7 step 7, Back-Channel Logout
+    // 2.6).
+    const opts = Object.assign({}, options || {});
+    const expected = String(opts.expectAlg || '').trim();
+    delete opts.expectAlg;
+    if (expected && String(header.alg) !== expected) {
+      log.debug("Leaving FederationSp.verifyForeignJwt(). Another algorithm.");
+      return { ok: false, errorCode: 'STS-FED-0208',
+               why: 'its header says alg=' + String(header.alg) + ', and ' +
+                    'this relationship registered ' + expected + ' ' +
+                    '(fedIdTokenSignedResponseAlg)' };
+    }
     const kid = header.kid || '';
     const candidates = keys.filter((key) => {
       if (kid && key.kid) return key.kid === kid;
@@ -5976,7 +6928,7 @@ class FederationSp {
           // setting naming HS256 must not be able to put the family rule back.
           algorithms: this.familyAlgorithms(candidates[i].kty),
           clockTolerance: config.value('oauth2.clockSkewS')
-        }, options || {}));
+        }, opts));
         log.debug("Leaving FederationSp.verifyForeignJwt(). Verified.");
         return { ok: true, payload: payload, kid: candidates[i].kid || '',
                  jwk: candidates[i] };
@@ -6249,7 +7201,7 @@ class FederationSp {
         return this.finishOidc(req, res, record, context,
                                String(tokens.id_token),
                                String(tokens.access_token || frontAccess || ''),
-                               front);
+                               front, tokens);
       }
       return this.finishOauth2(req, res, record, context, tokens);
     }).catch((e) => {
@@ -6341,7 +7293,7 @@ class FederationSp {
   // somebody other than the person the front channel named.
   // ---------------------------------------------------------------------------
   private finishOidc(req, res, record, context, sentToken, accessToken,
-                     front?: any) {
+                     front?: any, tokens?: any) {
     const { errorCodes, log } = this.deps;
     log.debug("Entering FederationSp.finishOidc().");
     log.debug("Leaving FederationSp.finishOidc().");
@@ -6366,7 +7318,7 @@ class FederationSp {
             'section 3.3.3.6 requires them to be identical.');
         }
         return this.completeOidc(req, res, record, context, verified,
-                                 accessToken);
+                                 accessToken, tokens);
       });
   }
 
@@ -6438,7 +7390,8 @@ class FederationSp {
         // verifyForeignJwt() is never reached without it. A consumer
         // provider's profile may name other spellings of the same issuer
         // beside it (#565: Google's bare host).
-        issuer: consumerProviders.issuersFor(record, idToken)
+        issuer: consumerProviders.issuersFor(record, idToken),
+        expectAlg: String(record.fedIdTokenSignedResponseAlg || '')
       });
       if (!verified.ok) {
         return refused(401, verified.errorCode || 'STS-FED-0036',
@@ -6544,11 +7497,24 @@ class FederationSp {
   // access token and an endpoint allow (whose `sub` must be the ID Token's,
   // #930), and the session.
   // ---------------------------------------------------------------------------
-  private completeOidc(req, res, record, context, verified, accessToken) {
-    const { fedHttp, errorCodes, audit, log } = this.deps;
+  private completeOidc(req, res, record, context, verified, accessToken,
+                       tokens?: any) {
+    const { fedHttp, errorCodes, audit, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeOidc().");
     const payload = verified.payload;
     const idToken = verified.token;
+    // THE PARTNER'S REFRESH TOKEN (#930), sealed at once, where the
+    // relationship keeps one: held for the session this sign-in starts
+    // (startFederatedSession()), never in clear on a held step's context.
+    const refreshToken = tokens && tokens.refresh_token &&
+      federation.refreshesTokens(record) ? String(tokens.refresh_token) : '';
+    const sealedRefresh = refreshToken
+      ? federation.sealPartnerToken(refreshToken) : null;
+    const partnerRefresh = sealedRefresh && sealedRefresh.ok
+      ? { token: sealedRefresh.value, expiresIn: Number(tokens.expires_in) ||
+          0, iss: String(payload.iss || ''), sub: String(payload.sub || ''),
+          endpoints: context.discovered || null }
+      : null;
     const bag = {};
     Object.keys(payload).forEach((name) => {
       // The protocol's own members are not attributes about a person and must
@@ -6632,6 +7598,7 @@ class FederationSp {
             ? String(idToken) : '',
           acr: reading.acr,
           signer: FederationSp.signerOf('jwk', verified.jwk),
+          partnerRefresh: partnerRefresh,
           returnTo: this.fromContext(context).returnTo,
           connect: this.fromContext(context).connect,
           application: this.fromContext(context).application,
@@ -6647,7 +7614,20 @@ class FederationSp {
               'well.');
     return fedHttp.fetchJson(record, 'fedUserinfoUrl',
                              { method: 'GET', bearer: accessToken })
-                  .then((answer) => {
+                  .then((fetched) => {
+      // A SIGNED OR ENCRYPTED UserInfo response (#930, Core 5.3.2) is a JWT
+      // rather than JSON: verified against the partner's keys, and its
+      // claims taken as the JSON answer's would be.
+      return (fetched.ok ? this.userinfoClaims(record, fetched)
+                         : Promise.resolve(null)).then((claims) => {
+        return Object.assign({}, fetched, {
+          json: claims,
+          ok: !!claims && fetched.ok,
+          why: fetched.ok && !claims
+            ? 'its answer is neither JSON nor a JWT that verifies against ' +
+              'the partner\'s keys' : fetched.why });
+      });
+    }).then((answer) => {
       if (!answer.ok || !answer.json) {
         // NOT a failure of the sign-in. The ID Token has already verified and
         // named the person; UserInfo adds attributes. Failing the whole
@@ -7383,6 +8363,7 @@ slot.buildNowUnlessDeferred();
 // A PEER'S QUESTION ABOUT A PARTNER'S LINK (#98 D9): see homeOfSubject().
 // Registered once at load; registering binds and dials nothing.
 fedProvision.registerIdleJob();
+FederationSp.registerRefreshJob();
 require('./../common/cell_channel').registerOp(LINK_HOME_OP,
   function (body: any) {
     return FederationSp.answerLinkHome(body);
@@ -7495,6 +8476,24 @@ export = {
    * Forwards to `FederationSp.verifyForeignJwt()`.
    */
   verifyForeignJwt: slot.forward('verifyForeignJwt'),
+  /**
+   * Forwards to `FederationSp.checkPartner()` (#930).
+   */
+  checkPartner: slot.forward('checkPartner'),
+  /**
+   * Forwards to `FederationSp.registerPartner()` (#930).
+   */
+  registerPartner: slot.forward('registerPartner'),
+  /**
+   * `FederationSp.issuerWithin()` (#930): the parsed bound a WebFinger
+   * issuer is held to.
+   */
+  issuerWithin: FederationSp.issuerWithin,
+  /**
+   * Forwards to `FederationSp.refreshDue()` (#930), the partner refresh
+   * job's body.
+   */
+  refreshDue: slot.forward('refreshDue'),
   SLO_PATH: SLO_PATH,
   // For tests/revocation_status.js: the check a configured signing certificate
   // or partner key gets once it has verified a response.

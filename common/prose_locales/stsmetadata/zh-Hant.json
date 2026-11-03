@@ -2579,6 +2579,18 @@
     "en": "a3604c921948a069",
     "text": "以一個一般的授權請求把瀏覽器送到夥伴 OpenID 提供者，與 /federation/login/{id} 的做法相同"
   },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 第 6.2 節（#930）：授權請求的 request_uri 所指的請求物件，適用於 fedRequestObject 為 request_uri 的關係——application/oauth-authz-req+jwt，以本領域的金鑰依 fedRequestObjectSigningAlg 簽署（或不簽署，none）。只回應一次：夥伴的取得會消耗該控制代碼，指向空的位址回傳 404。"
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 第 2 節（#930），適用於開啟了 fedWebFinger 與 fedDiscovery 的關係：一個輸入識別碼（acct:user@host 或 URL）的表單及其結果——在外送政策下向該主機發起 WebFinger（產品模式下不存取內部位址、不跟隨重新導向、有上限），一個必須以 fedPeer 開頭的簽發者及其探索文件，以及此人必須點選才能前往登入的連結。關閉時回傳 403。"
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "撥打所輸入識別碼指向的主機——唯一一個由呼叫端選擇主機的聯盟請求"
+  },
   "stsmetadata.endpoints./federation/fragment.js.what": {
     "en": "4717183880c5fc95",
     "text": "規格端點的非規格資源（#930）：當 OpenID Connect 關係選擇 fedResponseMode=fragment 時，斷言取用服務的頁面所執行的唯一指令碼。片段永遠不會到達伺服器，因此頁面讀取它，將其從位址與歷史紀錄項目中移除，再以 POST 送到同一位址，在那裡像 form_post 回應一樣被處理。沒有任何標記能讀取片段，因此沒有可退而求其次的按鈕。"

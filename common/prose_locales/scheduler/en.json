@@ -25,6 +25,8 @@
   "sched.jobs.devices.android-status-refresh.describe": "Downloads Google's Android key attestation status list from devices.androidStatusUrl and loads it as the risk dataset android.attestation-status: which attestation certificates are revoked or suspended. Daily (devices.androidStatusRefreshS); a list identical to the active one loads nothing.",
   "sched.jobs.federation.encryption-key-retire.title": "Federation encryption key retirement",
   "sched.jobs.federation.encryption-key-retire.describe": "Removes from each federation relationship the encryption key a rotation replaced, once federation.encryptionKeyGraceS has passed. The key stopped decrypting at that instant already; this takes it off the entry.",
+  "sched.jobs.federation.partner-refresh.title": "Federated sessions' partner refresh",
+  "sched.jobs.federation.partner-refresh.describe": "For an OpenID Connect relationship with fedRefreshTokens on: refreshes the partner's tokens of each session that holds one when it is due, checks the new ID Token and UserInfo still name the person, and ends the session when the partner refuses or the answer does not (#930).",
   "sched.jobs.federation.provision-idle.title": "Federated provisioning idle sweep",
   "sched.jobs.federation.provision-idle.describe": "Disables a person whose only sign-in path is one federation relationship, once federationLastSeen is older than that relationship's fedProvisionIdleMinutes. Empty or 0 leaves everybody. The entry and the link are kept. A local password, or a link through another relationship, is left alone.",
   "sched.jobs.gnap.grant-expiry.title": "GNAP: expired grants",

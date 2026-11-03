@@ -1535,6 +1535,14 @@
     "en": "b8fb585dd54cd123",
     "text": "由合作伙伴发起的登录（initiate_login_uri）"
   },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "按引用传递的请求对象"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "通过 WebFinger 查找某人的 OpenID 提供方"
+  },
   "endpoints.route./federation/fragment.js.name": {
     "en": "87060058ad2ae994",
     "text": "断言消费服务的片段脚本"

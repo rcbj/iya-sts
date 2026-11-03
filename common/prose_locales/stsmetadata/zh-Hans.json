@@ -2579,6 +2579,18 @@
     "en": "a3604c921948a069",
     "text": "以一个普通的授权请求把浏览器发送到合作伙伴 OpenID 提供方，与 /federation/login/{id} 的做法相同"
   },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 第 6.2 节（#930）：授权请求的 request_uri 所指的请求对象，适用于 fedRequestObject 为 request_uri 的关系——application/oauth-authz-req+jwt，用本领域的密钥按 fedRequestObjectSigningAlg 签名（或不签名，none）。只响应一次：合作伙伴的获取会消耗该句柄，指向空的地址返回 404。"
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 第 2 节（#930），适用于开启了 fedWebFinger 和 fedDiscovery 的关系：一个输入标识符（acct:user@host 或 URL）的表单及其结果——在出站策略下向该主机发起 WebFinger（产品模式下不访问内部地址、不跟随重定向、有上限），一个必须以 fedPeer 开头的签发方及其发现文档，以及此人必须点击才能前往登录的链接。关闭时返回 403。"
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "拨打所输入标识符指向的主机——唯一一个由调用方选择主机的联合请求"
+  },
   "stsmetadata.endpoints./federation/fragment.js.what": {
     "en": "4717183880c5fc95",
     "text": "规范端点的非规范资源（#930）：当 OpenID Connect 关系选择 fedResponseMode=fragment 时，断言消费服务的页面所运行的唯一脚本。片段永远不会到达服务器，因此页面读取它，将其从地址和历史记录条目中移除，再以 POST 发送到同一地址，在那里像 form_post 响应一样被处理。没有任何标记能够读取片段，因此没有可退而求其次的按钮。"

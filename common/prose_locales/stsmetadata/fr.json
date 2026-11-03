@@ -2579,6 +2579,18 @@
     "en": "a3604c921948a069",
     "text": "envoie le navigateur au fournisseur OpenID partenaire avec une demande d’autorisation ordinaire, comme le fait /federation/login/{id}"
   },
+  "stsmetadata.endpoints./federation/request/:id/:handle.what": {
+    "en": "6d385ce6406cf9af",
+    "text": "OpenID Connect Core 1.0 section 6.2 (#930) : l’objet de requête que nomme le request_uri d’une demande d’autorisation, pour une relation avec fedRequestObject request_uri — application/oauth-authz-req+jwt, signé sous fedRequestObjectSigningAlg avec la clé de ce domaine (ou non signé, none). Servi UNE SEULE FOIS : la récupération du partenaire consomme le handle, et une adresse qui ne nomme rien est un 404."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.what": {
+    "en": "0c9410e62fd9d162",
+    "text": "OpenID Connect Discovery 1.0 section 2 (#930), pour une relation avec fedWebFinger et fedDiscovery activés : un formulaire pour un identifiant (acct:user@host ou une URL), et sa réponse — WebFinger sur cet hôte sous la politique sortante (aucune adresse interne en mode produit, aucune redirection, le plafond), un émetteur qui doit commencer par fedPeer, son document de découverte, et un lien que la personne doit suivre pour s’y connecter. Désactivé, 403."
+  },
+  "stsmetadata.endpoints./federation/webfinger/:id.effect": {
+    "en": "f47b0d4c3244e2de",
+    "text": "appelle l’hôte que nomme l’identifiant saisi — la seule requête de fédération dont un appelant choisit l’hôte"
+  },
   "stsmetadata.endpoints./federation/fragment.js.what": {
     "en": "4717183880c5fc95",
     "text": "Ressource HORS SPÉCIFICATION d’un point de terminaison de spécification (#930) : le seul script qu’exécute la page du service consommateur d’assertions quand une relation OpenID Connect a choisi fedResponseMode=fragment. Un fragment n’atteint jamais un serveur, donc la page le lit, le retire de l’adresse et de l’entrée d’historique, et le POSTe à la même adresse, où il est consommé comme une réponse form_post. Aucun balisage ne peut lire un fragment, il n’y a donc pas de bouton de repli."

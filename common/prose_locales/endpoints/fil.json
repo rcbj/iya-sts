@@ -1535,6 +1535,14 @@
     "en": "b8fb585dd54cd123",
     "text": "Isang pag-sign in na sinisimulan ng partner (initiate_login_uri)"
   },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "Isang Request Object by reference"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "Hanapin ang OpenID Provider ng isang tao sa pamamagitan ng WebFinger"
+  },
   "endpoints.route./federation/fragment.js.name": {
     "en": "87060058ad2ae994",
     "text": "Ang fragment script ng assertion consumer service"

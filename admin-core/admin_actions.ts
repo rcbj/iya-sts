@@ -11115,6 +11115,54 @@ class AdminActions {
     const id = String(body.id || body.relationship || '').trim();
     const context = ctx || { via: 'console', actor: '', base: '' };
 
+    // AN OPENID CONNECT PARTNER CHECKED (#930): its discovery document and
+    // key set dialled and reported, nothing written. Required lazily, for
+    // the reason the signals module is: it is loaded at 10c, long before
+    // this, and requiring it here is a cache hit that moves no route.
+    if (action === 'check-partner') {
+      const record = federation.get(id);
+      if (!record) {
+        log.debug("Leaving AdminActions.federationAction(). No such " +
+                  "relationship to check.");
+        return this.refusedBy('STS-ADMIN-0575', {
+          ok: false, errors: ['There is no relationship called "' + id +
+                              '".'] });
+      }
+      const checked = await require('../federation/federation_sp')
+        .checkPartner(record);
+      log.debug("Leaving AdminActions.federationAction(). check-partner " +
+                (checked.ok ? 'ok' : 'refused') + ".");
+      if (!checked.ok) {
+        return this.refusedBy(checked.errorCode || 'STS-FED-0209', {
+          ok: false, errors: [String(checked.why || 'the check failed')] });
+      }
+      return Object.assign({ ok: true, errors: [] }, checked);
+    }
+
+    // THE PARTNER REGISTERED AGAIN (#930): an OpenID Connect relationship
+    // with fedDiscovery and fedRegister on registers itself at the partner
+    // now, whatever client it holds.
+    if (action === 'register-partner') {
+      const record = federation.get(id);
+      if (!record) {
+        log.debug("Leaving AdminActions.federationAction(). No such " +
+                  "relationship to register.");
+        return this.refusedBy('STS-ADMIN-0575', {
+          ok: false, errors: ['There is no relationship called "' + id +
+                              '".'] });
+      }
+      const done = await require('../federation/federation_sp')
+        .registerPartner(String(context.base || ''), record);
+      log.debug("Leaving AdminActions.federationAction(). register-partner " +
+                (done.ok ? 'ok' : 'refused') + ".");
+      if (!done.ok) {
+        return this.refusedBy(done.errorCode || 'STS-FED-0212', {
+          ok: false, errors: [String(done.why || 'the registration failed')] });
+      }
+      return { ok: true, errors: [], clientId: done.clientId,
+               issuer: done.issuer };
+    }
+
     if (action.indexOf('signals-') === 0) {
       const result = await loadSignals().act(body, context);
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +

@@ -138,6 +138,8 @@
   "actEnable": "Habilitar",
   "actDeleteStream": "Eliminar el flujo",
   "actDiscover": "Descubrir",
+  "actCheckPartner": "Comprobar la configuración del socio",
+  "actRegisterPartner": "Registrarse en el socio",
   "actCreateStream": "Crear el flujo",
   "actUnblock": "Desbloquear",
   "headingBlocked": "Inicios de sesión que este socio ha bloqueado",

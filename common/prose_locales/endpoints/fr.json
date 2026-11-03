@@ -1535,6 +1535,14 @@
     "en": "b8fb585dd54cd123",
     "text": "Une connexion que le partenaire lance (initiate_login_uri)"
   },
+  "endpoints.route./federation/request/:id/:handle.name": {
+    "en": "e38dd5a9bd371b4d",
+    "text": "Un objet de requête par référence"
+  },
+  "endpoints.route./federation/webfinger/:id.name": {
+    "en": "bb12b386b02e1d67",
+    "text": "Trouver le fournisseur OpenID d’une personne par WebFinger"
+  },
   "endpoints.route./federation/fragment.js.name": {
     "en": "87060058ad2ae994",
     "text": "Le script de fragment du service consommateur d’assertions"

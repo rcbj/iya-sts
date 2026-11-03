@@ -85,6 +85,13 @@ const PAGES = [
   // What a consumer provider's newcomer is asked for (#729): the form, or a
   // refusal.
   { path: '/federation/profile/:id', embedded: true, operation: none,
+    render: draw, title: title },
+  // Where a person types an identifier to find their OpenID Provider by
+  // WebFinger (#930): the form, the issuer found, or a refusal.
+  { path: '/federation/webfinger/:id', embedded: true, operation: none,
+    render: draw, title: title },
+  // Where a partner starts a sign-in (#930): only ever a refusal here.
+  { path: '/federation/initiate-login/:id', embedded: true, operation: none,
     render: draw, title: title }
 ];
 
