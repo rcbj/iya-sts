@@ -107,6 +107,10 @@ End-User for the OpenID4VP verifier.
 * FAPI 1.0 Advanced accepted `code` without JARM.
 * Several SSF, OpenID Federation and OpenID4VCI details departed from the
   final specification texts.
+* The OpenID4VP Verifier could not verify an ISO mdoc, which the HAIP
+  verifier plan certifies a Verifier for. It now can (see
+  [Accept an ISO mdoc](configure-oid4vp.md#accept-an-iso-mdoc)), and both
+  HAIP variants pass, the classical twins with no exemption.
 
 **Every plan twice, with post-quantum signing on and off.** The suite cannot
 parse a post-quantum (`AKP`) key and its JWS algorithm table lacks SLH-DSA
