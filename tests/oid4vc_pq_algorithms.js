@@ -193,8 +193,10 @@ function childMain() {
          'certificate it carries in x5c, read as X.509, and its Client ' +
          'Identifier is that certificate\'s hash', x509Results.join('; '));
 
-    const syncRefused = await w.inRealm(function () {
+    const syncRefused = await w.inRealm(async function () {
       m.config.setOverride('oid4vp.x509SigningAlgorithm', 'ML-DSA-65');
+      // The certificate in place first, so what is refused is the signature.
+      await m.verifier.prepareSignedClientId(w.fakeReq(''), 'x509_hash');
       try {
         m.verifier.buildVpRequest(w.fakeReq(''),
           { byReference: true, clientIdPrefix: 'x509_hash' });
@@ -419,8 +421,9 @@ function childMain() {
     }
 
     async function presentToBarDoor(format, presentationOf) {
+      // `+` in a query is a space: dc+sd-jwt is encoded.
       const begun = await w.verificationStart('by=reference&format=' +
-                                              format);
+                                              encodeURIComponent(format));
       if (begun.status !== 302) {
         return { status: begun.status, text: JSON.stringify(begun.json) };
       }
@@ -432,7 +435,9 @@ function childMain() {
       });
       return w.request('POST', '/oid4vp/response', {
         form: { state: ro.state,
-                vp_token: w.vpToken(format,
+                // The bar door asks one credential query, whatever the
+                // format, under the SD-JWT query's id (vc_status_list.js).
+                vp_token: w.vpToken('dc+sd-jwt',
                   presentationOf(ro.nonce, ro.client_id)) } });
     }
 
@@ -494,13 +499,12 @@ function childMain() {
       return w.presentSdJwt(sdJwt(issuers[1], pqHolder.jwk, listPath),
                             pqHolder, nonce, aud);
     });
-    const vpPq = await w.inRealm(function () {
+    await w.inRealm(function () {
       m.config.setOverride('oid4vp.requireStatusReference', 'own-only');
-    }).then(function () {
-      return presentToBarDoor('jwt_vc_json', function (nonce, aud) {
-        return w.presentJwtVc(jwtVc(issuers[1], pqHolder.jwk), pqHolder,
-                              nonce, aud);
-      });
+    });
+    const vpPq = await presentToBarDoor('jwt_vc_json', function (nonce, aud) {
+      return w.presentJwtVc(jwtVc(issuers[1], pqHolder.jwk), pqHolder,
+                            nonce, aud);
     });
     await w.inRealm(function () {
       m.config.clearOverride('oid4vp.requireStatusReference');
@@ -566,6 +570,12 @@ function childMain() {
          'their place', JSON.stringify([x509Off.json, roOff.json])
            .slice(0, 300));
 
+    // Back to classical request signers: in this mode a post-quantum one
+    // refuses every start, which 4b has just shown.
+    await w.inRealm(function () {
+      m.config.clearOverride('oid4vp.x509SigningAlgorithm');
+      m.config.clearOverride('oid4vp.requestObjectSigningAlgorithm');
+    });
     const foreignOff = await presentToBarDoor('dc+sd-jwt',
       function (nonce, aud) {
         return w.presentSdJwt(sdJwt(issuers[1], holder.jwk, ''), holder,
@@ -580,11 +590,10 @@ function childMain() {
       m.config.setOverride('oid4vp.trustedIssuerCertificates', '');
       m.config.setOverride('oid4vp.requireStatusReference', 'own-only');
     });
-    const kbOff = await w.inRealm(function () {
+    await w.inRealm(function () {
       m.config.setOverride('oid4vc.walletCompatibility', 'false');
-    }).then(function () {
-      return w.issue('pq-holder', pqHolder);
     });
+    const kbOff = await w.issue('pq-holder', pqHolder);
     await w.inRealm(function () {
       m.config.setOverride('oid4vc.walletCompatibility', 'true');
     });
