@@ -682,7 +682,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_nopad_bin;
 
 -- The same number as PostgreSQL's, so there is one SCHEMA_VERSION.
-INSERT IGNORE INTO sts_schema (version) VALUES (30);
+INSERT IGNORE INTO sts_schema (version) VALUES (31);
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ACCOUNT: SELECT, INSERT, UPDATE AND DELETE ON THIS

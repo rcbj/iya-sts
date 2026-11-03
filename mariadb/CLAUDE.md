@@ -121,7 +121,7 @@ The txid of a delta table is 64.
 | `sts_ldap_entries_asked_names`: GIN over a `jsonb_path_query_array` expression, partial on `attr_names ?| ARRAY[…]` | kind `attr`. Writing rows for `ASKED_ATTRIBUTES` only keeps the index's property that most people write none; that is the driver's choice |
 | `sts_ldap_entries_group_classes`: GIN, partial on `class_keys <> '[]'` | kind `class`; an entry with no group class writes no row |
 | `sts_ldap_entries_dek_keys`: GIN | kind `dek` |
-| `sts_ldap_entries_dek_unknown (realm, dn_key) WHERE dek_keys IS NULL` | **dropped**: it exists only for its predicate, and the full form would duplicate the primary key. A NULL `dek_keys` is an entry written before the column existed, which a store built at version 30 never has; finding one is a scan |
+| `sts_ldap_entries_dek_unknown (realm, dn_key) WHERE dek_keys IS NULL` | **dropped**: it exists only for its predicate, and the full form would duplicate the primary key. A NULL `dek_keys` is an entry written before the column existed, which a store built at version 31 never has; finding one is a scan |
 | `sts_ldap_entries_uid_trgm`: `pg_trgm` trigram GIN over `rdn_value`, partial on `ou=users` | **nothing**: a search by part of a `uid` scans the realm's `ou=users` children, through the `(realm, parent_key)` prefix of `sts_ldap_entries_rdn` |
 | `fastupdate = off`, `gin_clean_pending_list()` | nothing: no GIN |
 | partial `sts_ldap_entries_created`, `_modified` (`ou=users` only); `sts_minted_expires` (`IS NOT NULL`); the seven `sts_sessions_*` (`<> ''`, `chosen`, `IS NOT NULL`); `sts_minted_index_sort` (`IS NOT NULL`) | **whole indexes on the same columns**; `sts_minted_index_sort` keeps `DESC` |
@@ -129,7 +129,7 @@ The txid of a delta table is 64.
 | storage parameters: `fillfactor=80` on `sts_minted`, the autovacuum settings on `sts_ldap_entries` and `sts_changes`, `n_distinct=100000` on `parent_key` and its `ANALYZE` | nothing: InnoDB has no vacuum, and its statistics are its own |
 | the count and data-key triggers and their seven functions, `LOCK TABLE … SHARE ROW EXCLUSIVE`, the backfill INSERTs | nothing; the driver keeps the counts. A TRUNCATE of the directory resets nothing (the account cannot TRUNCATE: it needs DROP) |
 | `xid8 DEFAULT pg_current_xact_id()` | `VARCHAR(64) NOT NULL`, written by the driver |
-| the dropped retired indexes and triggers, the `ADD COLUMN IF NOT EXISTS` and shard-key `DO` upgrades | nothing: every MariaDB store is built at version 30 |
+| the dropped retired indexes and triggers, the `ADD COLUMN IF NOT EXISTS` and shard-key `DO` upgrades | nothing: every MariaDB store is built at version 31 |
 | `CREATE SCHEMA sts`, `ALTER DATABASE … SET search_path` | the database: in MariaDB a schema is a database, named on the command line |
 | `CREATE EXTENSION pg_stat_statements` | nothing; profiling is the server's configuration (`performance_schema`) |
 | `SET client_min_messages` | nothing: the batch client prints no notes |

@@ -30,8 +30,12 @@
 // WHAT IS NOT HERE, BECAUSE POSTGRESQL'S DRIVER NEEDS IT ONLY FOR AN OLDER
 // DATABASE: no SCHEMA_COLUMNS, SCHEMA_UPGRADES, SCHEMA_RETIRED or
 // SCHEMA_RELOPTIONS. Every MariaDB store is built at this version, so there
-// is no older shape to bring forward — the first change to this schema after
-// version 30 is the one that will need them. And no SCHEMA_ROUTINES: on this
+// is no older shape to bring forward — the first change to THIS schema
+// after it is the one that will need them. (31, #1290, rebuilt only
+// PostgreSQL's asked-names index, which MariaDB has no copy of: its key
+// table holds every name. The number moves with PostgreSQL's all the same,
+// so a store says one version on either engine — `tests/mariadb_schema.js`
+// B1 fails when the two differ.) And no SCHEMA_ROUTINES: on this
 // engine the driver keeps `sts_ldap_counts` and `sts_ldap_dek_counts` itself,
 // because MariaDB has no statement-level trigger to do it.
 //
@@ -43,7 +47,7 @@
  * The schema version these statements build — the same number as
  * PostgreSQL's (`persistence_postgres.js`), so there is one SCHEMA_VERSION.
  */
-const SCHEMA_VERSION = 30;
+const SCHEMA_VERSION = 31;
 
 /**
  * Every table and index of the MariaDB schema, each `{ name, statement }`, in
