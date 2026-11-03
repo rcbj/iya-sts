@@ -75,8 +75,20 @@ const STYLE =
   '.pagehead{display:flex;gap:12px;align-items:start;' +
   'justify-content:space-between;flex-wrap:wrap}.pagehead ' +
   'h1{margin:0}.pagehead form{margin:0}.pagehead .acts{display:flex;' +
-  'gap:8px;align-items:start}.pagehead ' +
+  'gap:8px;align-items:start;flex-wrap:wrap}.pagehead ' +
   'button{margin-top:0}' +
+  // THE OPEN CHOOSER STAYS IN THE HEADER'S ROW, not dropped below it: the
+  // shared row's drop-down sat over the Switch user button, so here the
+  // form is in the flow beside its summary, its label inline and its
+  // controls the header's size, and Refresh, Sign out and Switch user move
+  // left to make room. `.acts` wraps, so a narrow window puts the chooser
+  // on a line of its own rather than off the edge.
+  '.pagehead details.language-row[open]{display:flex;align-items:center;' +
+  'gap:6px}.pagehead details.language-row form.language-chooser{' +
+  'position:static;border:0;padding:0;box-shadow:none;background:none}' +
+  '.pagehead form.language-chooser label{display:inline;margin:0}' +
+  '.pagehead form.language-chooser select{padding:6px 8px}' +
+  '.pagehead form.language-chooser button{padding:7px 12px}' +
   // THE ACCOUNT MENU (#561), drawn only with several accounts on: a
   // `<details>` beside Sign out whose panel drops below it, its buttons
   // reading as links.
