@@ -4746,7 +4746,11 @@ class VcVerifier {
                     subject: idv.subject, enrol: true,
                     pinnedKeys: idv.keyThumbprint ? [idv.keyThumbprint]
                                                   : [],
-                    alg: String(idv.alg || '') };
+                    alg: String(idv.alg || ''),
+                    // The proved PUBLIC key itself (#1291): a published
+                    // DID's wallet act publishes it, or checks it against
+                    // the DID's current version.
+                    jwk: idv.jwk || null };
       } else {
         outcome = siop.signInOutcome(idv);
       }

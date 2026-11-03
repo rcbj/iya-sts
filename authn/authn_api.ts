@@ -229,7 +229,11 @@ const WALLET_START_BODY = vz.object(Object.assign({}, WALLET_IDS, {
   wallet: vt.opt(vt.uri),
   // An enrolment's account among this browser's (2026-10-20): the portal's
   // Enrol link names it, and `oid4vc/vc_signin.ts`'s startable() hints it.
-  login_hint: vt.opt(vt.opaque)
+  login_hint: vt.opt(vt.opaque),
+  // A published DID's wallet act, on an enrolment (#1291): `publish`,
+  // `authorize-add.<rid>`, `authorize-rotate.<rid>` or `key.<rid>`
+  // (`oid4vc/person_did.ts`, `actProblem()`).
+  did_act: vt.opt(vt.opaque)
 })).strict();
 
 const WALLET_STATUS_BODY = vz.object(Object.assign({}, WALLET_IDS, {
@@ -652,7 +656,8 @@ const WALLET_OPERATIONS: Operation[] = [
     description: 'Takes the start page\'s query — `authn` (a pending ' +
       'sign-in) or `mfa` (a second-factor step), `siop=1` for a ' +
       'self-issued ID Token, `enrol=1` to enrol one from a session (with ' +
-      '`login_hint` naming which of the browser\'s accounts) — and ' +
+      '`login_hint` naming which of the browser\'s accounts, and ' +
+      '`did_act` one of a published DID\'s wallet acts, #1291) — and ' +
       'answers what is being started and `csrf`, after the refusals a ' +
       'start would meet. It creates nothing.' },
   { method: 'POST', path: API + '/wallet', operationId: 'startWalletSignIn',
