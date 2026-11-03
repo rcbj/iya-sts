@@ -449,6 +449,9 @@ const RANK: Record<string, number> = { UNSCORED: 0, LOW: 1, MEDIUM: 2,
 // the gate's subject is a name.
 // ---------------------------------------------------------------------------
 const standings = new Map<string, Json>();
+// Realm and `sub` -> the key a standing is held under (#666), for a change
+// of level announced by another process, which names the `sub`.
+const standingNames = new Map<string, string>();
 const standingsCount = cacheRegistry.register({
   name: 'risk.standings',
   title: 'Risk standings',
@@ -1023,7 +1026,11 @@ class RiskEngine {
   }
 
   // Held from an assessment made in this process, or read from the store.
-  private holdStanding(realm: string, username: string, risk: Json): void {
+  // The person's `sub` is remembered beside it (#666), because a change of
+  // level made in ANOTHER process arrives naming the `sub`, and the
+  // standing is held under the name the gate is asked about.
+  private holdStanding(realm: string, subject: string, username: string,
+                       risk: Json): void {
     const { log, config } = this.deps;
     log.debug("Entering RiskEngine.holdStanding().");
     if (!username || !risk) {
@@ -1037,7 +1044,57 @@ class RiskEngine {
                            { name: 'risk.standings', counter: standingsCount,
                              setting: 'risk.standingCacheSize' });
     standings.set(key, risk);
+    if (subject) {
+      const bySubject = realm + '\u0000' + subject;
+      standingNames.delete(bySubject);
+      // Bounded with the standings: past the cap the oldest name goes, and
+      // a change of level for that person then finds nothing to refresh,
+      // which is right, since its standing went the same way.
+      while (standingNames.size >=
+             Number(config.value('risk.standingCacheSize'))) {
+        standingNames.delete(standingNames.keys().next().value);
+      }
+      standingNames.set(bySubject, key);
+    }
     log.debug("Leaving RiskEngine.holdStanding().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A PERSON'S LEVEL MOVED IN ANOTHER PROCESS (#666) — `persistence.js`'s
+  // `risk-standing` applier, told by the change row the postgres driver
+  // records when an upsert moves a level. The standing this process holds
+  // for them is stale: it is DROPPED at once, so nothing here decides on it
+  // again, and read back from the store behind that. Between the two an
+  // issuance with no session is decided on roles alone, which is what a
+  // standing never held means already. A person this process holds no
+  // standing for is left alone: there is nothing stale to replace.
+  // -------------------------------------------------------------------------
+  /**
+   * Drops the standing this process holds for a person whose level moved
+   * in another process, and reads it back from the store. Never throws.
+   *
+   * @param realm - the realm
+   * @param subject - the person's `sub`
+   */
+  noteStandingMoved(realm: string, subject: string): void {
+    const { log } = this.deps;
+    log.debug("Entering RiskEngine.noteStandingMoved().");
+    const key = standingNames.get(String(realm || '') + '\u0000' +
+                                  String(subject || ''));
+    if (!key || !standings.has(key)) {
+      log.debug("Leaving RiskEngine.noteStandingMoved(). None held.");
+      return;
+    }
+    standings.delete(key);
+    const username = key.slice(key.indexOf('\u0000') + 1);
+    this.loadStanding(String(realm || ''), username, String(subject))
+      .catch(function (e: Json): void {
+        log.debug("Caught in RiskEngine.noteStandingMoved(): " +
+                  ((e && e.message) || e));
+        // loadStanding() never rejects; if it did, nothing is held, and
+        // the next sessionless issuance is decided on roles alone.
+      });
+    log.debug("Leaving RiskEngine.noteStandingMoved(). Dropped.");
   }
 
   // -------------------------------------------------------------------------
@@ -1071,7 +1128,7 @@ class RiskEngine {
                        }),
                      assessmentId: String(row.lastAssessment || ''),
                      at: Number(row.updatedAt) || 0 };
-      this.holdStanding(realm, username, risk);
+      this.holdStanding(realm, subject, username, risk);
       log.debug("Leaving RiskEngine.loadStanding().");
       return risk;
     } catch (e) {
@@ -1292,7 +1349,7 @@ class RiskEngine {
             return s.signal;
           }).join(', ') || 'the model',
           lastAssessment: amended.id, updatedAt: at }, sealing);
-        self.holdStanding(realm, username, RiskEngine.riskOf(amended));
+        self.holdStanding(realm, subject, username, RiskEngine.riskOf(amended));
         self.noteChange(realm, subject, username, previous, amended,
                         String(amended.id) + ':device');
       }
@@ -2062,7 +2119,7 @@ class RiskEngine {
     }
     Object.defineProperty(assessment, 'sessionContext',
                           { value: sessionContext, enumerable: false });
-    this.holdStanding(realm, String(input.username || ''),
+    this.holdStanding(realm, subject, String(input.username || ''),
                       RiskEngine.riskOf(assessment));
     this.noteChange(realm, subject, String(input.username || ''),
                     before ? String(before.level || '') : '', assessment);
@@ -2495,7 +2552,7 @@ class RiskEngine {
       lastAssessment: assessment.id, updatedAt: at }, sealing);
     const username = String(session.user.username || '');
     const next = RiskEngine.riskOf(assessment);
-    this.holdStanding(realm, username, next);
+    this.holdStanding(realm, subject, username, next);
     this.noteChange(realm, subject, username,
                     before ? String(before.level || '') : '', assessment);
     log.info('risk: session ' + session.id + ' of ' + username +
@@ -2655,7 +2712,7 @@ class RiskEngine {
       await store.upsertSubject({ realm: realm, subject: subject,
         score: score, level: 'HIGH', reason: 'reported-not-me',
         lastAssessment: row.id, updatedAt: at }, sealing);
-      this.holdStanding(realm, String(input.username || ''),
+      this.holdStanding(realm, subject, String(input.username || ''),
         { level: 'HIGH', score: score, signals: ['reported-not-me'],
           assessmentId: row.id, at: at });
       this.noteChange(realm, subject, String(input.username || ''),
@@ -2671,7 +2728,7 @@ class RiskEngine {
         score: Math.min(Number(before.score) || 0, 0.5), level: 'LOW',
         reason: 'confirmed by the person', lastAssessment: row.id,
         updatedAt: at }, sealing);
-      this.holdStanding(realm, String(input.username || ''),
+      this.holdStanding(realm, subject, String(input.username || ''),
         { level: 'LOW', score: 0.5, signals: [], assessmentId: row.id,
           at: at });
       this.noteChange(realm, subject, String(input.username || ''),
@@ -2744,7 +2801,7 @@ class RiskEngine {
       await store.upsertSubject({ realm: realm, subject: subject,
         score: score, level: 'HIGH', reason: 'authenticator-compromised',
         lastAssessment: id, updatedAt: at }, sealing);
-      this.holdStanding(realm, username,
+      this.holdStanding(realm, subject, username,
         { level: 'HIGH', score: score,
           signals: ['authenticator-compromised'], assessmentId: id, at: at });
       this.noteChange(realm, subject, username,
@@ -3201,6 +3258,7 @@ export = {
   factsForIssuance: slot.forward('factsForIssuance'),
   standingOf: slot.forward('standingOf'),
   loadStanding: slot.forward('loadStanding'),
+  noteStandingMoved: slot.forward('noteStandingMoved'),
   settle: slot.forward('settle'),
   amend: slot.forward('amend'),
   respond: slot.forward('respond'),

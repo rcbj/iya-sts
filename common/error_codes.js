@@ -18303,6 +18303,12 @@ const CODES = [
       'version\'s: the address serves a newer version, which the scheduled ' +
       'download loads, and nothing was loaded (#1157).',
     spec: 'none (an administrator\'s act on Monitoring → Risk)' },
+  { code: 'STS-RISK-0054',
+    summary: 'A person\'s risk level moved and the standing was written, ' +
+      'but the risk-standing change row that tells every other process to ' +
+      'read it again could not be recorded. The others keep the standing ' +
+      'they hold until risk.standingValidMinutes runs out (#666).',
+    spec: 'none — a warning in the log' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +

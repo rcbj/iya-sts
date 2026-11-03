@@ -5381,8 +5381,13 @@ class OAuth2Server {
     // sign-in left at HIGH is refused here as the session itself would be.
     // Without one — client credentials, a grant with nobody behind it — the
     // gate finds the person's standing, or nothing.
-    const held = opts.session_id ? authn.sessionById(String(opts.session_id))
-                                 : null;
+    // A pre-authorized code names the session its offer was made on
+    // (#666) in `decided_on_session_id` rather than `session_id`: its
+    // tokens are judged on that session, and are not made the session's
+    // own (no `sid`, not ended with it) by this.
+    const sessionId = String(opts.session_id || opts.decided_on_session_id ||
+                             '');
+    const held = sessionId ? authn.sessionById(sessionId) : null;
     for (let i = 0; i < kinds.length; i += 1) {
       const answer = gate.check(Object.assign({
         application: String(opts.client_id || ''),
@@ -15706,6 +15711,16 @@ class OAuth2Server {
           }).join(', ') +
           ' cannot be authorized by it.');
       }
+      // The session the offer was made on (#666) is read synchronously by
+      // the issuance check, so it is admitted to the session window first,
+      // as the refresh grant admits its token's. A miss decides on the
+      // standing, as no session would.
+      await authn.warmSessionAsync(String(record.sessionId || ''))
+        .catch(function (e: Json): void {
+          log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                    ((e && e.message) || e));
+          // Not admitted: the check finds no session and reads the standing.
+        });
       const issued = await issue({
         jkt: dpopJkt,
         user: preAuthUser, client_id: client.client_id, scope: VCI_SCOPE,
@@ -15720,6 +15735,12 @@ class OAuth2Server {
         // the parameter and threw it away would be the bug this closes.
         audience: self.audienceClaim(requestedResources),
         grant: 'pre-authorized code',
+        // THE SESSION THE OFFER WAS MADE ON (#666): the issuance policy
+        // decides the risk question on ITS risk. Without it the gate fell
+        // back on the person's standing held in this process, which may be
+        // an earlier, refused sign-in's HIGH. An offer made on no session,
+        // or on one that has ended, still falls back on the standing.
+        decided_on_session_id: String(record.sessionId || ''),
         authorization_details: grantIdentifiers(askedFor.details, preAuthUser)
       });
       // Remember which access token belongs to a deferred issuance, so the
