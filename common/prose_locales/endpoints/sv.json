@@ -2155,6 +2155,10 @@
     "en": "7d0bcaaf2c946cba",
     "text": "En applikations DID-dokument"
   },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "En persons publicerade DID-dokument"
+  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "Domain Linkage Credential"

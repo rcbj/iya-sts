@@ -1349,6 +1349,7 @@ class VcSignin {
                    location: VcSignin.locationOf(tx) });
       if (!done.ok) {
         errorCodes.mark(res, done.code);
+        // error-code: none — marked on the line above: the library's code
         this.refuse(res, 400, String(done.error),
           this.refusedView('The DID was not changed', ctx));
         log.debug("Leaving VcSignin.finish(). The DID act was refused.");

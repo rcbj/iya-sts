@@ -6027,6 +6027,38 @@
     "en": "89f8d541b4738289",
     "text": "De credential-konfigurationer vars credentials binds till personens DID i stället för till en nyckel. För var och en som anges måste plånbokens bevis ange sin nyckel med ett kid som är en did:jwk- eller did:key-URL som personen har bevisat på sin sida Self-issued IDs (en administratörs post räcker inte), och credentialen bär det DID:et: cnf.kid i en dc+sd-jwt, credentialSubject.id, sub och cnf.kid i en jwt_vc_json, credentialSubject.id i en ldp_vc. Metadata anger did:jwk och did:key för den. Varje kopia i en batch bär samma DID, så de kan kopplas till varandra — det är priset. Tom binder varje konfiguration till en nyckel, som tidigare. did:web erbjuds inte."
   },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "Publicera en did:web åt en person"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "Låt en person skapa en did:web som den här sfären publicerar åt dem, på deras portals Self-issued IDs-sida (#1291): did:web:<host>[:realm:<id>]:users:<rid>, där <rid> är 128 slumpmässiga bitar, så att ingen kan räkna upp konton genom att pröva adresser och två DID:er för samma person inte kan kopplas ihop. Dess dokument tillhandahålls på /users/<rid>/did.json med alla versioner sparade, och den kan vara personens föredragna DID. När den är på erbjuder en DID-bunden credential-konfiguration (oid4vci.didHolderBinding) även did:web för en DID som den här sfären är värd för och som personen bevisat med en plånbok. Av: inget nytt publiceras; en DID som redan publicerats tillhandahålls fortfarande, avaktiverad eller inte, eftersom dess adress behålls för gott. I produktläge publiceras en DID bara på en fastlåst global.publicBaseUrl."
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "Vem som har den privata nyckeln till en persons DID"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "Vem som har den privata nyckeln till en DID som publicerats åt en person. `wallet` (standard, och det säkraste): personens plånbok bevisar sin egen nyckel i ett självutfärdat (SIOPv2) utbyte och sfären publicerar bara den publika halvan; varje senare nyckelbyte godkänns av en nyckel som den aktuella versionen nämner och bevisas av den nya nyckeln. `realm`: sfären skapar nyckeln och förvarar den förseglad, så DID:en kan föredras och lämnas ut i did-anspråket men kan aldrig logga in en plånbok eller binda ett credential. `download`: sfären skapar paret, visar den privata nyckeln EN gång och behåller bara den publika halvan; DID:en är obevisad tills personen bevisar nyckeln med en plånbok. VARNING: med `download` passerar den privata nyckeln genom webbläsaren, och med `realm` kan sfären uppträda som personen; välj dem bara där det är godtagbart."
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "Publicerade DID:er en person får ha"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "Hur många AKTIVA publicerade DID:er en person får ha. En avaktiverad DID räknas inte, och dess adress fortsätter att svara 410 Gone. Var och en räknas också bland de tio självutfärdade subjekt en person får registrera."
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "Algoritm för en DID-nyckel som sfären skapar"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "Algoritmen för en nyckel som sfären skapar för en persons DID, i förvaringslägena `realm` och `download`: ES256 (P-256), ES384 (P-384) eller EdDSA (Ed25519). I förvaringsläget `wallet` väljer plånboken sin egen nyckel. En nyckel som redan publicerats behåller sin algoritm."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Tillhandahåll W3C VC API"

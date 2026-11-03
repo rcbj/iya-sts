@@ -660,8 +660,8 @@
     "text": "full för det Data Integrity behöver. JSON-LD-kontexter är VENDORERADE och hämtas aldrig: en kanonisering som berodde på en hämtning över nätverket vore varken reproducerbar eller säker."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, och slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), hållet mot W3C:s DID-testsvit. Ingen annan did:web hämtas; inga DID-parametrar (service, versionId, …) stöds."
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, en did:web per applikation och en did:web per person på en slumpmässig adress med alla versioner av dess nycklar sparade (#1291); den slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), prövat mot W3C:s DID-testsvit, och besvarar DID-parametrarna versionId och versionTime, med didDocumentMetadata (created, updated, versionId, nextVersionId, deactivated), för en persons publicerade DID. Ingen annan did:web hämtas; ingen annan DID-parameter (service, relativeRef, hl) stöds."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -3410,6 +3410,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "svarar 404 om inte applikationen är deklarerad för did-familjen och har en nyckel"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "DID-dokumentet för en did:web som den här sfären publicerar åt en person (#1291), där did:web-metoden slår upp did:web:<host>[:realm:<id>]:users:<rid>, <rid> 128 slumpmässiga bitar: den aktuella versionens nycklar som JsonWebKey2020-metoder under authentication och assertionMethod, eller den version som DID Cores versionId eller versionTime ber om, ur en historik som aldrig skrivs om. application/did+json, no-store. Avaktiverad — av personen, av en administratör eller medan kontot är inaktiverat — svarar den 410 Gone med { id, deactivated: true }, och en uppslagstjänst rapporterar deactivated i didDocumentMetadata. Publiceras från personens portal där did.personPublishing är på."
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "svarar 410 Gone när DID:en har avaktiverats eller kontot inaktiverats, och 404 för en adress som aldrig publicerats"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

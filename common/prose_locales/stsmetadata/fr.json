@@ -660,8 +660,8 @@
     "text": "full pour ce dont Data Integrity a besoin. Les contextes JSON-LD sont EMBARQUÉS (vendored), jamais récupérés : une canonicalisation qui dépendrait d’une récupération sur le réseau ne serait ni reproductible ni sûre."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: ce service PUBLIE un document did:web avec deux méthodes de vérification, et résout et déréférence (section 7) did:key, did:jwk et son propre did:web dans les deux représentations JSON à la W3C VC API (#199), tenu à la suite de tests W3C DID. Aucun autre did:web n'est récupéré ; aucun paramètre DID (service, versionId, …) n'est pris en charge."
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: ce service PUBLIE un document did:web avec deux méthodes de vérification, un did:web par application et un did:web par personne à une adresse aléatoire dont toutes les versions des clés sont conservées (#1291) ; il résout et déréférence (section 7) did:key, did:jwk et son propre did:web dans les deux représentations JSON à la W3C VC API (#199), conformément à la suite de tests W3C DID, et répond aux paramètres DID versionId et versionTime, avec didDocumentMetadata (created, updated, versionId, nextVersionId, deactivated), pour le DID publié d'une personne. Aucun autre did:web n'est récupéré ; aucun autre paramètre DID (service, relativeRef, hl) n'est pris en charge."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -3410,6 +3410,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "répond 404 sauf si l’application est déclarée pour la famille did et possède une clé"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "Le document DID d'un did:web que ce domaine publie pour une personne (#1291), là où la méthode did:web résout did:web:<host>[:realm:<id>]:users:<rid>, <rid> faisant 128 bits aléatoires : les clés de la version courante comme méthodes JsonWebKey2020 sous authentication et assertionMethod, ou la version que demandent versionId ou versionTime de DID Core, à partir d'un historique jamais réécrit. application/did+json, no-store. Désactivé — par la personne, par un administrateur ou tant que le compte est désactivé — il répond 410 Gone avec { id, deactivated: true }, et un résolveur indique deactivated dans didDocumentMetadata. Publié depuis le portail de la personne là où did.personPublishing est activé."
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "répond 410 Gone une fois le DID désactivé ou le compte désactivé, et 404 pour une adresse jamais publiée"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

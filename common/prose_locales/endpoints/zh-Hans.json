@@ -2155,6 +2155,10 @@
     "en": "7d0bcaaf2c946cba",
     "text": "应用的 DID 文档"
   },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "个人已发布的 DID 文档"
+  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "域关联凭证"

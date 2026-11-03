@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "Ese inicio de sesión se rechaza (STS-VC-0127), se audita, y la persona vuelve a inscribir el DID demostrándolo en /portal/self-issued. En ambos modos se rechaza una clave que la fijación no nombra (STS-VC-0126)."
   },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "El did:web publicado de una persona se acuña sobre la URL base pública fijada"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "Sin una URL base pública fijada, un DID publicado desde /portal/self-issued se construye sobre la dirección a la que llegó la solicitud, y esa dirección forma parte del DID para siempre."
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "Publicar uno se rechaza (STS-VC-0168) hasta que global.publicBaseUrl, o el listener anunciado de la aplicación de credenciales verificables, fije la base: un encabezado Host nunca pasa a formar parte de un identificador almacenado."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "La declaración de atestación de una llave de seguridad se verifica antes de registrar la llave"
