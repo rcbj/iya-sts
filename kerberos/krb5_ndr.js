@@ -5,55 +5,61 @@
 // ---------------------------------------------------------------------------
 // Just enough NDR to read and write the Windows PAC's logon information.
 //
-// NDR is the RPC marshalling of [MS-RPCE], and nothing else in Kerberos prepares
-// you for it: the whole of RFC 4120 is ASN.1 DER, and then one authorization-data
-// element arrives in a completely different encoding because it came from a
-// different part of Windows. This file is the reader and writer for that, and it is
-// deliberately not a general NDR implementation — it covers the constructs
-// KERB_VALIDATION_INFO actually uses and refuses the rest rather than guessing.
+// NDR is the RPC marshalling of [MS-RPCE], and nothing else in Kerberos
+// prepares you for it: the whole of RFC 4120 is ASN.1 DER, and then one
+// authorization-data element arrives in a completely different encoding because
+// it came from a different part of Windows. This file is the reader and writer
+// for that, and it is deliberately not a general NDR implementation — it covers
+// the constructs KERB_VALIDATION_INFO actually uses and refuses the rest rather
+// than guessing.
 //
 // ---------------------------------------------------------------------------
 // FIVE RULES, and every one of them is a SILENT corruption when broken. None of
-// them produces an exception or an out-of-range value; each produces a structure
-// that parses cleanly and says something false.
+// them produces an exception or an out-of-range value; each produces a
+// structure that parses cleanly and says something false.
 //
-//  1. **Everything is little-endian.** The opposite of the wire format the rest of
-//     Kerberos uses. A big-endian read produces plausible-looking garbage: a SID's
-//     sub-authority count becomes 16 million, a RID becomes an address.
-//  2. **Alignment is by natural size, measured from the START OF THE STREAM.** A
-//     4-byte field is preceded by padding until the offset is a multiple of 4; an
-//     8-byte field until a multiple of 8. Miss one pad byte and every field after it
-//     is read from the wrong place — and the values stay in range, so nothing looks
-//     wrong.
-//  3. **`FILETIME` IS NOT A 64-BIT INTEGER.** It is `struct { DWORD dwLowDateTime;
-//     DWORD dwHighDateTime; }` ([MS-DTYP]), so its members are 4-byte and its
-//     alignment is **4**, not 8. Reading it with an 8-aligned 64-bit read inserts
-//     padding NDR never wrote. It happens to be harmless for the six FILETIMEs at
-//     the top of KERB_VALIDATION_INFO, because they sit at struct offsets 0, 8, 16…
-//     anyway — and that is exactly what makes it dangerous, since the bug hides
-//     until it reaches `LastSuccessfulILogon` halfway down. Note the consequence:
-//     KERB_VALIDATION_INFO contains no 8-aligned member at all, so a correct reader
-//     never pads inside it, and its fixed part is completely dense.
-//  4. **Pointers are REFERENT IDS, not offsets.** A non-zero 4-byte value means "the
-//     pointed-to data is present, and it appears LATER in the stream". Zero means
-//     NULL. The data does not live at that number. So a reader takes placeholders
-//     while walking the fixed part and then reads the deferred parts afterwards, IN
-//     FIELD ORDER. For an ARRAY of structures containing pointers, all the elements'
-//     fixed parts come first and only then the referents — reading each element's
-//     pointer target as it goes gets the right answer for a one-element array and
-//     the wrong one for every longer array, which is a bug that ships.
-//  5. **Conformant arrays carry their own count, again.** A `[size_is(n)]` array is
-//     preceded in its deferred position by a 4-byte maximum count, normally equal to
-//     the count already read in the fixed part — but it is what governs the read, and
-//     trusting the earlier copy is how a malformed PAC becomes an over-read.
+//  1. **Everything is little-endian.** The opposite of the wire format the rest
+//     of Kerberos uses. A big-endian read produces plausible-looking garbage: a
+//     SID's sub-authority count becomes 16 million, a RID becomes an address.
+//  2. **Alignment is by natural size, measured from the START OF THE STREAM.**
+//     A 4-byte field is preceded by padding until the offset is a multiple of
+//     4; an 8-byte field until a multiple of 8. Miss one pad byte and every
+//     field after it is read from the wrong place — and the values stay in
+//     range, so nothing looks wrong.
+//  3. **`FILETIME` IS NOT A 64-BIT INTEGER.** It is `struct { DWORD
+//     dwLowDateTime; DWORD dwHighDateTime; }` ([MS-DTYP]), so its members are
+//     4-byte and its alignment is **4**, not 8. Reading it with an 8-aligned
+//     64-bit read inserts padding NDR never wrote. It happens to be harmless
+//     for the six FILETIMEs at the top of KERB_VALIDATION_INFO, because they
+//     sit at struct offsets 0, 8, 16… anyway — and that is exactly what makes
+//     it dangerous, since the bug hides until it reaches `LastSuccessfulILogon`
+//     halfway down. Note the consequence: KERB_VALIDATION_INFO contains no
+//     8-aligned member at all, so a correct reader never pads inside it, and
+//     its fixed part is completely dense.
+//  4. **Pointers are REFERENT IDS, not offsets.** A non-zero 4-byte value means
+//     "the pointed-to data is present, and it appears LATER in the stream".
+//     Zero means NULL. The data does not live at that number. So a reader takes
+//     placeholders while walking the fixed part and then reads the deferred
+//     parts afterwards, IN FIELD ORDER. For an ARRAY of structures containing
+//     pointers, all the elements' fixed parts come first and only then the
+//     referents — reading each element's pointer target as it goes gets the
+//     right answer for a one-element array and the wrong one for every longer
+//     array, which is a bug that ships.
+//  5. **Conformant arrays carry their own count, again.** A `[size_is(n)]`
+//     array is preceded in its deferred position by a 4-byte maximum count,
+//     normally equal to the count already read in the fixed part — but it is
+//     what governs the read, and trusting the earlier copy is how a malformed
+//     PAC becomes an over-read.
 //
-// The reader is BOUNDED: a maximum length, a credible-array-size limit, and every
-// read checked against the buffer rather than against a length the buffer itself
-// declared. These are bytes out of a ticket issued by somebody else's KDC.
+// The reader is BOUNDED: a maximum length, a credible-array-size limit, and
+// every read checked against the buffer rather than against a length the buffer
+// itself declared. These are bytes out of a ticket issued by somebody else's
+// KDC.
 // ---------------------------------------------------------------------------
 
 var prim = require("./krb5_primitives.js");
 var bunyan = require("bunyan");
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_ndr",
   level: (function () {
@@ -61,10 +67,15 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_ndr log level: " + logLevelProblem);
+}
 
 var MAX_NDR_BYTES = 1024 * 1024;
 // A PAC listing more groups than this is not a PAC. Windows' own practical
@@ -86,6 +97,8 @@ function createReader(bytes) {
   }
   var at = 0;
 
+  // A hot path: called once per field of every NDR stream read, so no
+  // Entering/Leaving pair here — it would drown the log.
   function need(n, what) {
     if (at + n > b.length) {
       throw new Error("krb5: NDR ran off the end reading " + (what || (n +
@@ -94,12 +107,16 @@ function createReader(bytes) {
     }
   }
 
+  // A hot path: called once per aligned field of every NDR stream read, so no
+  // Entering/Leaving pair here — it would drown the log.
   function align(size) {
     var pad = (size - (at % size)) % size;
     need(pad, "alignment padding");
     at += pad;
   }
 
+  // A hot path: called once per 32-bit field of every NDR stream read, so no
+  // Entering/Leaving pair here — it would drown the log.
   function u32() {
     align(4); need(4, "a 32-bit value");
     var v = ((b[at]) | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at +
@@ -109,18 +126,29 @@ function createReader(bytes) {
   }
 
   var r = {
+    // The three getters are a hot path: asked once per field of every NDR
+    // stream read, so no Entering/Leaving pair on them — it would drown the
+    // log.
     get offset() { return at; },
     get length() { return b.length; },
     get remaining() { return b.length - at; },
     seek: function (n) {
+      log.debug("Entering seek().");
       if (n < 0 || n > b.length) {
+        log.debug("Leaving seek().");
         throw new Error("krb5: cannot seek to " + n + " in a " + b.length +
             "-byte NDR stream");
       }
       at = n;
+      log.debug("Leaving seek().");
     },
     align: align,
+    // A hot path: called once per byte field of every NDR stream read, so no
+    // Entering/Leaving pair here — it would drown the log.
     u8: function () { need(1, "a byte"); return b[at++]; },
+    // A hot path: called once per 16-bit field (and per UTF-16 code unit) of
+    // every NDR stream read, so no Entering/Leaving pair here — it would drown
+    // the log.
     u16: function () {
       align(2); need(2, "a 16-bit value");
       var v = b[at] | (b[at + 1] << 8);
@@ -130,6 +158,8 @@ function createReader(bytes) {
     u32: u32,
     // A genuine 8-aligned ULONG64. The PAC's own header uses one;
     // KERB_VALIDATION_INFO does not — see rule 3.
+    // A hot path: called once per 64-bit field of every NDR stream read, so no
+    // Entering/Leaving pair here — it would drown the log.
     u64: function () {
       align(8); need(8, "a 64-bit value");
       var lo = ((b[at]) | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at +
@@ -139,6 +169,8 @@ function createReader(bytes) {
       at += 8;
       return { low: lo, high: hi, value: hi * 0x100000000 + lo };
     },
+    // A hot path: called once per byte run of every NDR stream read, so no
+    // Entering/Leaving pair here — it would drown the log.
     bytes: function (n) {
       need(n, n + " bytes");
       var out = b.subarray(at, at + n);
@@ -147,6 +179,8 @@ function createReader(bytes) {
     },
     // A referent id: non-zero means the data follows later in the stream, zero
     // means NULL. It is NOT an offset, and that distinction is rule 4.
+    // A hot path: called once per pointer of every NDR stream read, so no
+    // Entering/Leaving pair here — it would drown the log.
     pointer: function () { return u32() !== 0; },
     arrayCount: function (what) {
       log.debug("Entering arrayCount().");
@@ -313,13 +347,16 @@ function readSid(r) {
 // sub-authority count appears AHEAD of the structure as well as inside it, and
 // the two must agree.
 function readConformantSid(r) {
+  log.debug("Entering readConformantSid().");
   var declaredCount = r.arrayCount("SID sub-authorit(ies)");
   var sid = readSid(r);
   if (declaredCount !== sid.subAuthorities.length) {
+    log.debug("Leaving readConformantSid().");
     throw new Error("krb5: a SID's conformant count (" + declaredCount +
         ") does not match its own " +
       "sub-authority count (" + sid.subAuthorities.length + ")");
   }
+  log.debug("Leaving readConformantSid().");
   return sid;
 }
 
@@ -345,17 +382,19 @@ function parseSidText(text) {
 }
 
 function sidWithRid(sid, rid) {
+  log.debug("Entering sidWithRid().");
+  log.debug("Leaving sidWithRid().");
   return (sid ? sid.text : "(no domain SID)") + "-" + rid;
 }
 
 // ---------------------------------------------------------------------------
 // Writing.
 //
-// The writer exists so the mock KDC can mint a PAC and so the tests can build one
-// by hand and read it back with the reader above. Round-tripping through our own
-// pair proves consistency and NOT correctness — the two halves can agree on the same
-// mistake — so the tests also check the bytes against fixed offsets taken from
-// [MS-PAC] and read a capture produced elsewhere.
+// The writer exists so the mock KDC can mint a PAC and so the tests can build
+// one by hand and read it back with the reader above. Round-tripping through
+// our own pair proves consistency and NOT correctness — the two halves can
+// agree on the same mistake — so the tests also check the bytes against fixed
+// offsets taken from [MS-PAC] and read a capture produced elsewhere.
 // ---------------------------------------------------------------------------
 
 function createWriter() {
@@ -367,29 +406,44 @@ function createWriter() {
   // with a real capture readable.
   var nextReferent = 0x00020000;
 
+  // A hot path: called once per field of every NDR stream written, so no
+  // Entering/Leaving pair here — it would drown the log.
   function push(arr) {
     chunks.push(arr);
     at += arr.length;
   }
 
   var w = {
+    // A hot path: asked once per field of every NDR stream written, so no
+    // Entering/Leaving pair here — it would drown the log.
     get offset() { return at; },
+    // A hot path: called once per aligned field of every NDR stream written, so
+    // no Entering/Leaving pair here — it would drown the log.
     align: function (size) {
       var pad = (size - (at % size)) % size;
       if (pad) push(new Uint8Array(pad));
     },
+    // A hot path: called once per byte field of every NDR stream written, so no
+    // Entering/Leaving pair here — it would drown the log.
     u8: function (v) { push(new Uint8Array([v & 0xff])); return w; },
+    // A hot path: called once per 16-bit field (and per UTF-16 code unit) of
+    // every NDR stream written, so no Entering/Leaving pair here — it would
+    // drown the log.
     u16: function (v) {
       w.align(2);
       push(new Uint8Array([v & 0xff, (v >>> 8) & 0xff]));
       return w;
     },
+    // A hot path: called once per 32-bit field of every NDR stream written, so
+    // no Entering/Leaving pair here — it would drown the log.
     u32: function (v) {
       w.align(4);
       push(new Uint8Array([v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff,
           (v >>> 24) & 0xff]));
       return w;
     },
+    // A hot path: called once per 64-bit field of every NDR stream written, so
+    // no Entering/Leaving pair here — it would drown the log.
     u64: function (lo, hi) {
       w.align(8);
       push(new Uint8Array([
@@ -398,9 +452,15 @@ function createWriter() {
       ]));
       return w;
     },
+    // A hot path: called once per byte run of every NDR stream written, so no
+    // Entering/Leaving pair here — it would drown the log.
     bytes: function (b) { push(prim.toBytes(b)); return w; },
+    // A hot path: called once per padding run of every NDR stream written, so
+    // no Entering/Leaving pair here — it would drown the log.
     zeros: function (n) { push(new Uint8Array(n)); return w; },
     // A non-NULL referent id, or NULL.
+    // A hot path: called once per pointer of every NDR stream written, so no
+    // Entering/Leaving pair here — it would drown the log.
     pointer: function (present) {
       if (!present) {
         return w.u32(0);
@@ -410,26 +470,32 @@ function createWriter() {
       return w.u32(id);
     },
     fileTime: function (date) {
+      log.debug("Entering fileTime().");
       var ft = fileTimeFromDate(date);
       // Two 32-bit halves, NOT an 8-aligned u64 — rule 3.
       w.u32(ft.low);
       w.u32(ft.high);
+      log.debug("Leaving fileTime().");
       return w;
     },
     build: function () {
+      log.debug("Entering build().");
       var out = new Uint8Array(at), o = 0;
       chunks.forEach(function (c) { out.set(c, o); o += c.length; });
+      log.debug("Leaving build().");
       return out;
     },
     // Overwrite four bytes already emitted — needed for a length that is only
     // known once the rest is encoded.
     patchU32: function (offset, v) {
+      log.debug("Entering patchU32().");
       var out = w.build();
       out[offset] = v & 0xff;
       out[offset + 1] = (v >>> 8) & 0xff;
       out[offset + 2] = (v >>> 16) & 0xff;
       out[offset + 3] = (v >>> 24) & 0xff;
       chunks = [out];
+      log.debug("Leaving patchU32().");
       return w;
     }
   };
@@ -441,24 +507,30 @@ function createWriter() {
 // MaximumLength equal to Length here (no terminator), and a reader that assumed
 // otherwise would read a stray character.
 function writeUnicodeStringHeader(w, value) {
+  log.debug("Entering writeUnicodeStringHeader().");
   var present = value !== null && value !== undefined;
   var bytesLength = present ? value.length * 2 : 0;
   w.u16(bytesLength);
   w.u16(bytesLength);
   w.pointer(present);
+  log.debug("Leaving writeUnicodeStringHeader().");
 }
 
 function writeUnicodeStringValue(w, value) {
+  log.debug("Entering writeUnicodeStringValue().");
   if (value === null || value === undefined) {
+    log.debug("Leaving writeUnicodeStringValue().");
     return;
   }
   w.u32(value.length);   // maximum count
   w.u32(0);              // offset
   w.u32(value.length);   // actual count
   for (var i = 0; i < value.length; i++) w.u16(value.charCodeAt(i));
+  log.debug("Leaving writeUnicodeStringValue().");
 }
 
 function writeSid(w, sid) {
+  log.debug("Entering writeSid().");
   var s = typeof sid === "string" ? parseSidText(sid) : sid;
   w.u8(s.revision);
   w.u8(s.subAuthorities.length);
@@ -466,37 +538,43 @@ function writeSid(w, sid) {
   for (var i = 5; i >= 0; i--) { a[i] = v % 256; v = Math.floor(v / 256); }
   w.bytes(a);
   s.subAuthorities.forEach(function (sub) { w.u32(sub); });
+  log.debug("Leaving writeSid().");
 }
 
 function writeConformantSid(w, sid) {
+  log.debug("Entering writeConformantSid().");
   var s = typeof sid === "string" ? parseSidText(sid) : sid;
   w.u32(s.subAuthorities.length);   // the conformance, ahead of the structure
   writeSid(w, s);
+  log.debug("Leaving writeConformantSid().");
 }
 
 // ---------------------------------------------------------------------------
-// The [MS-RPCE] section 2.2.6 type-marshalling headers, which wrap any structure
-// serialized on its own rather than as an RPC parameter. Sixteen bytes, and the PAC's
-// logon information is the only place in Kerberos you will meet them:
+// The [MS-RPCE] section 2.2.6 type-marshalling headers, which wrap any
+// structure serialized on its own rather than as an RPC parameter. Sixteen
+// bytes, and the PAC's logon information is the only place in Kerberos you will
+// meet them:
 //
 //   common header  (8): Version=1, Endianness=0x10 (little-endian, ASCII),
 //                       CommonHeaderLength=8, Filler=0xCCCCCCCC
 //   private header (8): ObjectBufferLength, Filler=0
 //
-// The 0xCC filler is not decoration — it is how you recognise these sixteen bytes in
-// a hex dump, and `01 10 08 00 cc cc cc cc` at the front of a buffer is the reliable
-// sign that what follows is NDR rather than DER.
+// The 0xCC filler is not decoration — it is how you recognise these sixteen
+// bytes in a hex dump, and `01 10 08 00 cc cc cc cc` at the front of a buffer
+// is the reliable sign that what follows is NDR rather than DER.
 // ---------------------------------------------------------------------------
 
 var TYPE_MARSHALLING_HEADER_BYTES = 16;
 
 function writeTypeMarshallingHeaders(w) {
+  log.debug("Entering writeTypeMarshallingHeaders().");
   w.u8(1);                                        // Version
   w.u8(0x10);                                     // little-endian, ASCII
   w.u16(8);                                       // CommonHeaderLength
   w.bytes([0xcc, 0xcc, 0xcc, 0xcc]);              // Filler
   w.u32(0);                                       // ObjectBufferLength — patched later
   w.u32(0);                                       // Filler
+  log.debug("Leaving writeTypeMarshallingHeaders().");
   return 8;                                       // the offset of ObjectBufferLength
 }
 
