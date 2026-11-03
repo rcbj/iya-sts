@@ -118,10 +118,12 @@ const bunyan = require("bunyan");
 const log = bunyan.createLogger({ name: "oidf_certification",
                                   level: process.env.LOG_LEVEL || "info" });
 
-// The management API's token on every /admin-api call, and a browser user
-// agent the risk policy does not refuse in product mode — the two preloads
-// the runner gives every job.
-require("./attach-admin-token.js");
+// A browser user agent the risk policy does not refuse in product mode — one
+// of the two preloads the runner gives every job. The other,
+// attach-admin-token.js, is required in main() AFTER the token is minted: it
+// installs its hooks only when STS_ADMIN_API_TOKEN is set as it loads (the
+// runner mints before it starts a job), so required here it attached
+// nothing and every /admin-api call answered 401 (2026-11-03).
 require("./browser-user-agent.js");
 const PROTOCOL = path.join(__dirname, "..", "protocol");
 const oidf = require(path.join(PROTOCOL, "conformance_suite.js"));
@@ -392,7 +394,8 @@ async function main() {
   assert.ok(adminSecret, "no management API secret for " + target +
             ": --admin-secret-file or STS_ADMIN_API_CLIENT_SECRET");
   assert.ok(plans.length, "no plan matches --plans " + opts.plans);
-  globalThis.stsAdminApiToken.set(await minter.tokenFor(target));
+  process.env.STS_ADMIN_API_TOKEN = await minter.tokenFor(target);
+  require("./attach-admin-token.js");
   await oidf.waitForSuite();
   const realm = await ensureRealm();
   const username = "oidf-cert-" +
