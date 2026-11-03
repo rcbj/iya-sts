@@ -164,10 +164,11 @@ PostgreSQL, or when `persistence.sqlDialect` is `portable`; then it also
 offers no `watchChanges()` and sends no `NOTIFY`, and the replication module
 polls every second unless `persistence.pollInterval` is set. The join lock
 is a row of `sts_cluster_locks` (schema version 30) locked FOR UPDATE.
-**What portable mode does NOT yet cover**: the minted flush (one statement
-with the fence inside, `MINTED_FLUSH`), the directory flush, the counts and
-everything else outside the cluster family still send PostgreSQL's text —
-those are phase 3, the MariaDB driver. `tests/cluster_portable.js` holds the
+**What portable mode covers on PostgreSQL**: the cluster family, the small
+tables (`store_portable.js`) and minted state with the session index
+(`minted_portable.js`). The directory and its counts, and risk, have MariaDB
+forms that need MariaDB's schema (the key table, INET6), so on PostgreSQL
+they always send PostgreSQL's text. `tests/cluster_portable.js` holds the
 contracts, statically for MariaDB and against a real PostgreSQL when
 `STS_TEST_POSTGRES_URL` is set; `./run-tests.sh --modes=cluster-portable`
 runs the two-node mode on them (`tests/CLAUDE.md`).
@@ -186,10 +187,9 @@ no LISTEN/NOTIFY and no bridge thread: the change log is polled, and the
 windowed directory and on-demand minted stores are held whole. **What runs
 on MariaDB today**: the connection layer, the schema, and the coordination
 statements (`cluster_portable.js`, proved against MariaDB 11.8 by
-`tests/cluster_portable.js` section C). **What does not yet**: every other
-family's PostgreSQL text (the directory, minted state, sessions, risk, the
-metrics probes and open()'s catalog probes) — the next steps of phase 3,
-each proved the same way before it is switched on. Refused on MariaDB, each
+`tests/cluster_portable.js` section C), the embedded directory, minted state,
+the small tables and risk (below). **Every family of the store now has its
+MariaDB form.** Refused on MariaDB, each
 for its own reason: cells, the bulk import, cell conversion, the directory
 window, the risk installer.
 
@@ -218,6 +218,28 @@ A static, B the library on PostgreSQL, C on MariaDB 11.8 with the races
 override deltas on one realm, ten change-row transactions), D through the
 driver with `engine: 'mariadb'`.
 
+**The risk engine's store runs on MariaDB (#677, phase 3b):
+`risk_portable.js`**, every `risk*` method of the driver, built only when the
+engine is not PostgreSQL — its statements are written for INET6, prefix text
+and JSON lists, so `sqlDialect=portable` on PostgreSQL keeps this family's
+native text, which is unchanged. A range lookup is still one descending seek
+of the primary key, bounded to the address's family because INET6 sorts IPv4
+(`::ffff:a.b.c.d`) inside IPv6: an IPv4 address finds only IPv4 ranges and an
+IPv6 one only IPv6 ones (an IPv6 range inside `::ffff:0:0/96` cannot be told
+from IPv4 here). A batch of dataset rows is `INSERT IGNORE`, every value
+checked first and the batch refused whole (STS-STORE-0100, STS-STORE-0160)
+because IGNORE would store a substitute; an action is claimed once by one
+conditional `JSON_SET()` UPDATE; a standing's replaced level is read under its
+row lock in a transaction; the ctid deletes are `DELETE … LIMIT n`; the
+analytics are `SUM(CASE…)`, `JSON_TABLE()`, window `PERCENTILE_DISC()`, `DIV`
+and `WITH ROLLUP`; a `real` is read through DOUBLE at its shortest float
+spelling. The tally pool has no asynchronous commit on MariaDB. The header
+argues each. `tests/risk_portable.js`: A static, C on MariaDB 11.8 with the
+races (eight beginnings of one version, twenty sign-ins counted, ten claims of
+one action, five first standings, two stalled-import sweeps) and the seek's
+EXPLAIN, D `risk/risk_store`'s RiskStore over the driver with `engine:
+'mariadb'`.
+
 **Opening a MariaDB store and `/admin/database` on it (#677, phase 3b).**
 `open()` hands a MariaDB store to `open_mariadb.js`: what exists is asked of
 `information_schema` for the current database, a missing object is created
@@ -233,6 +255,60 @@ and, where MariaDB keeps the same quantity, PostgreSQL's column names, so the
 page derives the same numbers; an index with no scan count is not called
 unused. `tests/open_mariadb.js` and `tests/database_metrics.js` hold both,
 every probe run as the least-privilege role against MariaDB 11.8.
+
+**What this service mints, on MariaDB (#677, phase 3b).** Every statement of
+the minted family — `loadMinted` (its filter still required),
+`loadMintedKeys`, the reads by key, the minted index and its completion mark,
+`backfillMintedExpiry`, the session index's repairs and backfill pages, the
+purges, and the async questions of `minted_queries.js` and
+`session_queries.js` (a MariaDB twin per statement; PostgreSQL's text is
+unchanged) — is `minted_portable.js` there, and under `sqlDialect=portable`
+on PostgreSQL. **The minted flush is a transaction there, not
+`MINTED_FLUSH`**: `withTransaction()` (the fence first, the change rows
+counted at COMMIT), then every existing row locked FOR UPDATE in (handle,
+realm, key) order and its body read, the merges made under that lock (so no
+compare-and-set), the tombstone rule judged on the locked row, the writes in
+key order, the side tables and change rows only for bodies written. A key new
+at the lock is "insert or nothing", and one another flush took meanwhile is
+locked and judged. `retryableConflict()` reads `dialect.isRetryable()`, so an
+InnoDB deadlock is run again. A value longer than its MariaDB column is
+refused (STS-STORE-0120), since INSERT IGNORE would truncate it. The expiry
+purge's batch is `DELETE … LIMIT n`. **Held whole on MariaDB**: every
+on-demand store, and every session — the driver says `lendsNoBridge`, and
+`authn/session_window.ts` turns the window off for it (`on` is refused),
+because its synchronous reads need the `pg` bridge thread. `tests/minted_portable.js` proves it against both
+engines through the whole driver and the real minted module.
+
+**The embedded directory on MariaDB (#677, phase 3b).** `directory_portable.js`
+(built only when the engine is not PostgreSQL — it writes
+`sts_ldap_entry_keys`, which PostgreSQL's schema has not got, so
+`sqlDialect=portable` does not build it) is the restore (a primary-key page
+at a time), `readEntry()`, the flush and the lost-row merge, a removed
+realm, the counts, `directoryDekCounts()`, `countSealed()`,
+`countAllSealed()` and `resealSealed()`; `directory_queries_mariadb.js` asks
+every `directory_queries.js` question by the same name and arguments, a
+value through the key table (kinds `name` `mail` `uuid` `class` `value`,
+`attr` for the asked names, `dek`), the parents by a recursive `MIN()` loose
+scan and each parent's page as one `UNION ALL` branch where PostgreSQL has
+LATERAL. **The driver keeps what PostgreSQL's triggers keep**: each flush's
+deltas are computed from the row its lock read and the row it wrote, and
+folded last, in key order, into one random shard of `sts_ldap_counts` /
+`sts_ldap_dek_counts` — a missing row made first by an autocommit `INSERT
+IGNORE` on the TALLY pool (the flush's own pool would starve under
+concurrent flushes), then `n = n + CASE …` under the transaction. A row
+another node commits between the lock and the insert (READ COMMITTED takes
+no gap lock) fails a plain INSERT, which is retried a row at a time: blind
+replaces, merged goes to the lost rows. Never `INSERT IGNORE` for an entry:
+it turns a strict-mode refusal into a truncated row. A DN key over 352 or a
+realm over 64 refuses the flush, STS-STORE-0140; a lookup form over 344 is
+stored and asked as `#` + SHA-256. `dek_keys` is never NULL here, so
+`indexSealed()` has nothing to do. An empty store starts at zero counts and
+every MariaDB writer of the table is this library; a table loaded any other
+way is not supported (no backfill). InnoDB's deadlock and lock-wait timeout
+are retried like PostgreSQL's (`retryableConflict()`). The driver's flush
+also needs `recordChanges()` in MariaDB's text, which is the small-tables
+family's. `tests/directory_portable.js` (A static, C against MariaDB 11.8, D
+the driver's doors) holds it.
 
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,

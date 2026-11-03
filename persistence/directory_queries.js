@@ -1588,6 +1588,11 @@ module.exports = {
   MAX_PAGE: MAX_PAGE,
   QUERIES: QUERIES,
   parentOf: parentOf,
+  // For `directory_queries_mariadb.js`, the same questions spelt for MariaDB
+  // (#677): one copy of how a value is keyed and a page is bounded.
+  keyed: keyed,
+  pageSize: pageSize,
+  suffixLength: suffixLength,
   build: build,
   answerOf: answerOf,
   rowOf: rowOf,
