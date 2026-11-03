@@ -150,6 +150,10 @@ import vcIssued = require('./vc_issued');
 // libraries over `common/`; neither requires this file.
 import vcStatus = require('./vc_status');
 import vcDataIntegrity = require('./vc_data_integrity');
+// AN ISO mdoc (#935): the fourth format's checks, a library over `common/`,
+// the codec and `authn/webauthn.js`'s COSE_Key reader; it requires nothing
+// in this directory but the codec, and registers nothing.
+import vcMdoc = require('./vc_mdoc');
 // THE KEY-ENCRYPTION KEY, for the one private key a transaction holds: the
 // Digital Credentials API response key (see dcApiRequest()).
 import keystore = require('../common/keystore');
@@ -210,6 +214,8 @@ interface VcVerifierDeps {
   vcIssued: typeof vcIssued;
   vcStatus: typeof vcStatus;
   vcDataIntegrity: typeof vcDataIntegrity;
+  // Optional, so a test's own deps need not name it (#935).
+  vcMdoc?: typeof vcMdoc;
   keystore: typeof keystore;
   allSigningKeysAsync: typeof helpers.allSigningKeysAsync;
   config: { value(key: string): any };
@@ -480,7 +486,10 @@ const OID4VC_QUERY = validation.z.looseObject({
   mode: validation.types.opt(validation.types.oneOf(
     START_MODES.concat(['deferred', 'direct']))),
   by: validation.types.opt(validation.types.oneOf(BY)),
-  format: validation.types.opt(validation.types.oneOf(VCI_FORMATS)),
+  // The issuer's formats and the Verifier's: an mso_mdoc is asked for and
+  // never issued here (#935).
+  format: validation.types.opt(validation.types.oneOf(
+    Array.from(new Set(VCI_FORMATS.concat(vpConfig.FORMAT_IDS))))),
   wallet: validation.types.opt(validation.types.uri),
   state: validation.types.opt(validation.types.opaque),
   credential_configuration_ids: validation.types.opt(
@@ -594,6 +603,7 @@ class VcVerifier {
       vcIssued: vcIssued,
       vcStatus: vcStatus,
       vcDataIntegrity: vcDataIntegrity,
+      vcMdoc: vcMdoc,
       keystore: keystore,
       allSigningKeysAsync: helpers.allSigningKeysAsync,
       config: config,
@@ -832,7 +842,9 @@ class VcVerifier {
     }
     const issuerRevocation = await revocationStatus.registeredVerdictFor({
       certificate: verified.issuerCertificatePem,
-      source: 'a certificate in oid4vp.trustedIssuerCertificates'
+      // An mdoc's document signer says where it came from (#935).
+      source: verified.issuerCertificateSource ||
+              'a certificate in oid4vp.trustedIssuerCertificates'
     });
     this.vpCheck(verified.checks, 'Issuer certificate revocation',
       !issuerRevocation.refused,
@@ -1316,6 +1328,56 @@ class VcVerifier {
     return this.deps.pki ? this.deps.pki() : require('../common/pki');
   }
 
+  // The mdoc verifier (#935): the one the deps name, else the module's.
+  private mdoc(): typeof vcMdoc {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.mdoc().");
+    log.debug("Leaving VcVerifier.mdoc().");
+    return this.deps.vcMdoc || vcMdoc;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN mdoc PRESENTATION (#935, OpenID4VP 1.0 Appendix B.2): `vc_mdoc.ts`
+  // checks it against this request — its Client Identifier, nonce and
+  // Response URI, the document type, namespace and elements frozen on the
+  // transaction, and, for `direct_post.jwt`, the RFC 7638 thumbprint of the
+  // key the response was encrypted to (`ctx.kid` names it), which the
+  // session transcript binds (B.2.6.1). A sign-in never asks for one.
+  // ---------------------------------------------------------------------------
+  private async verifyMdoc(presentation: unknown, record: any,
+                           ctx: any): Promise<any> {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.verifyMdoc().");
+    const question = record.mdoc || {};
+    let thumbprint: Buffer | null = null;
+    if (record.responseMode === 'direct_post.jwt') {
+      const keys = (((record.request || {}).client_metadata || {}).jwks ||
+                    {}).keys || [];
+      const used = keys.filter(function (one: any) {
+        return one && one.kid === String((ctx && ctx.kid) || '');
+      })[0];
+      thumbprint = used ? this.mdoc().thumbprintBytes(used) : null;
+    }
+    const verified = await this.mdoc().verify(presentation, {
+      clientId: String(record.clientId || ''),
+      nonce: String(record.nonce || ''),
+      responseUri: String(question.responseUri || ''),
+      jwkThumbprint: thumbprint,
+      doctype: String(question.doctype || ''),
+      namespace: String(question.namespace || ''),
+      elements: [].concat(question.elements || []),
+      anchorsPem: String(config.value('oid4vp.mdocTrustAnchors') || '')
+    });
+    if (record.responseMode === 'direct_post.jwt' && !thumbprint) {
+      this.vpCheck(verified.checks, 'Response encryption key', false,
+        'the response names no key this request offered, so the session ' +
+        'transcript cannot be built.');
+      verified.ok = false;
+    }
+    log.debug("Leaving VcVerifier.verifyMdoc(). ok=" + verified.ok);
+    return verified;
+  }
+
   // The name an x509 request is certified for: the x509_san_dns name, which
   // must resolve; for x509_hash that name where there is one, and '' (the
   // nameless certificate) where there is not.
@@ -1640,7 +1702,7 @@ class VcVerifier {
     if (wantsVp) {
       request.dcql_query = signIn ? this.signInDcqlQuery(formats, base) :
                            this.vpDcqlQuery(opts.format);
-      // All three formats are advertised whichever one this request asks
+      // All four formats are advertised whichever one this request asks
       // for: this is what the Verifier CAN accept, not what it wants this
       // time — the DCQL query is what says that.
       request.client_metadata.vp_formats_supported =
@@ -1693,6 +1755,18 @@ class VcVerifier {
       // reason as the claims. Only a sign-in pins it; the bar door reads
       // `oid4vp.expectedVct` when the answer arrives, as it always did.
       expectedVct: signIn ? VCI_VCT : '',
+      // AN mdoc'S QUESTION, frozen for the claims' reason (#935): the
+      // document type, the namespace and the elements the DCQL query
+      // named, and the Response URI its session transcript binds.
+      mdoc: wantsVp && !signIn &&
+            vpConfig.formatOf(opts.format) === 'mso_mdoc'
+        ? { doctype: vpConfig.expectedDoctype(),
+            namespace: vpConfig.mdocNamespace(),
+            elements: vpConfig.requestedClaims().map(function (name) {
+              return vpConfig.mdocElementFor(name);
+            }),
+            responseUri: responseUri }
+        : null,
       expires: Date.now() + ttlMs, verdict: null
     };
     if (signIn) {
@@ -1784,7 +1858,10 @@ class VcVerifier {
       'jwt_vc_json': { alg_values: algs },
       'ldp_vc': { proof_type_values: ['DataIntegrityProof'],
                   cryptosuite_values: ['bbs-2023'].concat(
-                    vcDataIntegrity.SUPPORTED_CRYPTOSUITES) }
+                    vcDataIntegrity.SUPPORTED_CRYPTOSUITES) },
+      // Appendix B.2.2 (#935): COSE algorithm identifiers, not JOSE names,
+      // for the issuer's signature and the device's.
+      'mso_mdoc': this.mdoc().vpFormat()
     };
   }
 
@@ -3773,7 +3850,9 @@ class VcVerifier {
       ? await this.verifyLdpVc(presentation, record, vctx)
       : format === 'jwt_vc_json'
         ? await this.verifyVpJwt(presentation, record, vctx)
-        : await this.verifyPresentation(presentation, record, vctx);
+        : format === 'mso_mdoc'
+          ? await this.verifyMdoc(presentation, record, ctx)
+          : await this.verifyPresentation(presentation, record, vctx);
     await issuerCertificateRevocation(verified);
     await this.statusCheck(verified, format, !!record.signIn);
     log.debug("Leaving VcVerifier.verifyAnswer(). ok=" + verified.ok + ".");
@@ -3854,13 +3933,25 @@ class VcVerifier {
         key = null;
       }
     }
+    // AN mdoc (#935): its reference is a COSE one, its list a CWT whose
+    // signer chains to the same anchors, and its issuer is exempted by the
+    // anchor it chained to — the document signer itself rotates.
+    const mdoc = format === 'mso_mdoc';
+    const anchorsPem = String(this.deps.config.value(
+      'oid4vp.mdocTrustAnchors') || '');
     const answer = await vcStatus.checkPresented({
       own: own, format: format,
-      claims: format === 'ldp_vc' ? {} : verified.credentialClaims,
+      claims: format === 'ldp_vc' || mdoc ? {} : verified.credentialClaims,
       credentialStatus: format === 'ldp_vc' ? verified.credentialStatus :
                         undefined,
       key: key, algs: ISSUER_ALGS, policy: policy,
-      exempt: !own && this.statusOptional(verified.issuerCertificatePem)
+      exempt: !own && (this.statusOptional(verified.issuerCertificatePem) ||
+                       (!!verified.anchorCertificatePem &&
+                        this.statusOptional(verified.anchorCertificatePem))),
+      coseReference: mdoc ? verified.statusReference : null,
+      cwtKeyFor: mdoc ? (cwt: Buffer): Promise<any> => {
+        return this.mdoc().statusListKey(cwt, anchorsPem);
+      } : undefined
     });
     // WHY THIS REALM'S OWN CREDENTIAL IS NO LONGER GOOD (#653). The list
     // says only INVALID; the issued register says what made it so — a
@@ -4121,7 +4212,9 @@ class VcVerifier {
                                       kid);
       const body = JSON.parse(plain.plaintext);
       log.debug("Leaving VcVerifier.openEncryptedResponse(). Opened.");
-      return { ok: true, encrypted: true,
+      // The kid too (#935): an mdoc's session transcript binds the key the
+      // response was encrypted to.
+      return { ok: true, encrypted: true, kid: kid,
                body: Object.assign({ state: record.state }, body) };
     } catch (e) {
       log.debug("Caught in VcVerifier.openEncryptedResponse(): " +
@@ -4737,7 +4830,8 @@ class VcVerifier {
       // other code path — and checked for revocation and status, by
       // verifyAnswer(), which the Digital Credentials API door shares.
       const answer = await this.verifyAnswer(record, body.vp_token,
-                                             { aud: record.clientId });
+                                             { aud: record.clientId,
+                                               kid: opened.kid || '' });
       if (!answer.shapeOk) {
         if (record.signIn) {
           this.recordAnswer(record, answer, String(record.responseMode));

@@ -11409,6 +11409,45 @@ const SETTINGS = [
                  'accept a credential another issuer mints under its own ' +
                  'type.' },
 
+  // AN ISO mdoc (#935, OpenID4VP 1.0 Appendix B.2, ISO/IEC 18013-5): the
+  // fourth format the Verifier asks for. This realm issues none, so every
+  // mdoc it accepts is another issuer's, and these three say whose and what:
+  // the IACA certificates a document signer must chain to (no chain, no
+  // mdoc — the default trusts nobody), the document type, and the namespace
+  // the requested claims are read from.
+  { key: 'oid4vp.mdocTrustAnchors', group: 'OID4VP',
+    label: 'Trusted mdoc issuing authorities (IACA certificates, PEM)',
+    env: 'OID4VP_MDOC_TRUST_ANCHORS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'PEM certificates, concatenated: the Issuing Authority CA ' +
+                 'certificates (ISO/IEC 18013-5 Annex B) a presented mdoc\'s ' +
+                 'document signer certificate must chain to. The chain is ' +
+                 'built and checked as RFC 5280 says, the document signer\'s ' +
+                 'revocation is consulted (pki.revocationCheck), and an mdoc ' +
+                 'whose signer chains to none of these is refused. Empty — ' +
+                 'the default — trusts no mdoc issuer, so an mso_mdoc ' +
+                 'presentation is refused until one is named.' },
+
+  { key: 'oid4vp.expectedDoctype', group: 'OID4VP',
+    label: 'Expected mdoc document type (docType)',
+    env: 'OID4VP_EXPECTED_DOCTYPE', type: 'string',
+    dflt: 'org.iso.18013.5.1.mDL', runtime: true,
+    description: 'The `docType` an mso_mdoc request asks for ' +
+                 '(`meta.doctype_value`) and the Verifier requires of the ' +
+                 'presented document and its Mobile Security Object. The ' +
+                 'default is the mobile driving licence of ISO/IEC 18013-5.' },
+
+  { key: 'oid4vp.mdocNamespace', group: 'OID4VP',
+    label: 'mdoc namespace the requested claims are read from',
+    env: 'OID4VP_MDOC_NAMESPACE', type: 'string',
+    dflt: 'org.iso.18013.5.1', runtime: true,
+    description: 'The namespace an mso_mdoc request\'s claim paths name ' +
+                 '(`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). ' +
+                 'Each requested claim is asked for as the data element of ' +
+                 'the same name, except birthdate (birth_date) and address ' +
+                 '(resident_address), which ISO/IEC 18013-5 names ' +
+                 'differently. The default is the mobile driving licence\'s.' },
+
   { key: 'oid4vp.maxRequestedClaims', group: 'OID4VP',
     label: 'Claims one request may ask for',
     env: 'OID4VP_MAX_REQUESTED_CLAIMS', type: 'int', dflt: 40, min: 1,

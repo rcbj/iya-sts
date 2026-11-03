@@ -824,6 +824,9 @@ class ProtocolStack {
     // references them. None requires the issuer or the verifier.
     this.build('oid4vc/vc_status_codec', require('../oid4vc/vc_status_codec'),
                'VcStatusCodec');
+    // #935: the ISO mdoc the Verifier checks — a library over the codec
+    // and `authn/webauthn.js`'s COSE_Key reader, which registers nothing.
+    this.build('oid4vc/vc_mdoc', require('../oid4vc/vc_mdoc'), 'VcMdoc');
     // #194-#196: the closed JSON-LD loader and RDFC-1.0 the RDFC
     // cryptosuites canonicalize with, and the VC Data Model's MUSTs. Two
     // libraries, built before the Data Integrity suites that read them.

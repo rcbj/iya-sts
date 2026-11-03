@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5081** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5086** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 143
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 51
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -3822,6 +3822,11 @@ Raised from: oid4vc/.
 | `STS-VC-0149` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID an administrator enrolled for the person by value: it was never proved, and only a proved DID is bound (#693). | invalid_proof (HTTP 400) |
 | `STS-VC-0150` | A credential bound to the person's DID was asked for, or a deferred one collected, with a proof by a DID enrolled for somebody else (#693). | invalid_proof (HTTP 400) |
 | `STS-VC-0151` | A row of the issued register that an index entry names (a person's history on /portal/wallet, or a wallet's notification) could not be read: the store threw. The row is left out of that answer and the index entry is KEPT as it was, since a read that failed says nothing about whether the row is gone (2026-10-20). | logged; the read answers the rows it could read |
+| `STS-VC-0152` | An mso_mdoc presentation (#935, OpenID4VP 1.0 Appendix B.2) could not be read: not a base64url DeviceResponse holding one Document with status 0, or its issuerAuth or Mobile Security Object is not the COSE_Sign1 and #6.24-encoded map ISO/IEC 18013-5 defines. The presentation is refused. | invalid_request (HTTP 400) at the Response URI; logged |
+| `STS-VC-0153` | An mso_mdoc's document signer certificate (its issuerAuth x5chain) did not chain to a certificate in oid4vp.mdocTrustAnchors, or that setting names none (#935). The presentation is refused. | invalid_request (HTTP 400) at the Response URI; logged |
+| `STS-VC-0154` | An element an mso_mdoc disclosed does not hash to the digest its Mobile Security Object signed under that namespace and digestID (#935): an element the issuer never signed. The presentation is refused. | invalid_request (HTTP 400) at the Response URI; logged |
+| `STS-VC-0155` | An mso_mdoc authenticated its device by MAC (deviceMac), whose key is agreed with a reader's ephemeral key that an OpenID4VP request does not carry, rather than by a deviceSignature (#935). The presentation is refused. | invalid_request (HTTP 400) at the Response URI; logged |
+| `STS-VC-0156` | An mso_mdoc's device signature did not verify under its Mobile Security Object's device key over this request's session transcript (OpenID4VP 1.0 Appendix B.2.6.1: the Client Identifier, nonce, Response URI and encryption key), or used an algorithm not offered (#935): a presentation made for another request. Refused. | invalid_request (HTTP 400) at the Response URI; logged |
 
 ## STS-SSF
 
