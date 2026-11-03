@@ -9470,6 +9470,18 @@ function create(options) {
     },
 
     // A person's current standing, replaced whole.
+    //
+    // **A CHANGE OF LEVEL IS A `risk-standing` CHANGE ROW (#666).** Every
+    // process holds the standings it last saw (`risk_engine.ts`'s
+    // `standings`, for an issuance with no session), so a person made HIGH
+    // in one worker and UNSCORED by a later sign-in in another stayed HIGH
+    // in the first for `risk.standingValidMinutes` — 720 by default — and
+    // refused every sessionless issuance there. The row tells every other
+    // process to read the standing again. Only a change of LEVEL is
+    // recorded, and not a person's first standing (nobody can hold one yet):
+    // a sign-in that leaves the level where it was writes nothing more, so
+    // the cost of a sign-in does not grow. `previous_level` is the level the
+    // row had before this statement, '' for an insert.
     riskUpsertSubject: function (s) {
       log.debug("Entering riskUpsertSubject().");
       log.debug("Leaving riskUpsertSubject().");
@@ -9483,12 +9495,32 @@ function create(options) {
         '= EXCLUDED.last_assessment, crossed_at = CASE WHEN ' +
         'sts_risk_subjects.level <> EXCLUDED.level THEN EXCLUDED.updated_at ' +
         'ELSE sts_risk_subjects.crossed_at END, updated_at = ' +
-        'EXCLUDED.updated_at',
+        'EXCLUDED.updated_at RETURNING level, previous_level',
         [s.realm || '', s.subject, Number(s.score), s.level, '', s.reason || '',
          s.lastAssessment || '', Number(s.updatedAt), JSON.stringify({}), '',
          Number(s.updatedAt)]
       ).then(function (r) {
-        return r.rowCount > 0;
+        const row = r.rows && r.rows[0];
+        if (!row || !row.previous_level ||
+            String(row.previous_level) === String(row.level)) {
+          return r.rowCount > 0;
+        }
+        return recordChanges(tallyPool, [{ kind: 'risk-standing',
+                                           realm: s.realm || '',
+                                           key: String(s.subject) }])
+          .then(function () {
+            return true;
+          }, function (e) {
+            log.debug("Caught in riskUpsertSubject(): " +
+                      ((e && e.message) || e));
+            // The standing is written; only the word to the other processes
+            // is lost, and they keep what they hold until it expires — what
+            // happened before #666 — so the write is not failed for it.
+            log.warn(errorCodes.tag('STS-RISK-0054') + 'risk: a change of ' +
+                     'standing could not be announced to the other ' +
+                     'processes: ' + ((e && e.message) || e));
+            return true;
+          });
       });
     },
 

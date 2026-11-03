@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5153** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5154** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -80,7 +80,7 @@ is an ordinary outcome.
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 147
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 51
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 52
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 14
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 359
@@ -4097,6 +4097,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0051` | A Reload of a risk dataset version was refused: the version is not removed, or this service does not download its dataset from the address it came from (an uploaded version is uploaded again, #1157). | none (an administrator's act on Monitoring → Risk) |
 | `STS-RISK-0052` | A Reload could not download the removed version again from the dataset's configured address; nothing was loaded (#1157). | none (an administrator's act on Monitoring → Risk) |
 | `STS-RISK-0053` | A Reload downloaded a file whose SHA-256 is not the removed version's: the address serves a newer version, which the scheduled download loads, and nothing was loaded (#1157). | none (an administrator's act on Monitoring → Risk) |
+| `STS-RISK-0054` | A person's risk level moved and the standing was written, but the risk-standing change row that tells every other process to read it again could not be recorded. The others keep the standing they hold until risk.standingValidMinutes runs out (#666). | none — a warning in the log |
 
 ## STS-MAIL
 

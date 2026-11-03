@@ -317,9 +317,14 @@ audit record, under `STS-RISK-0016` (refused) and `STS-RISK-0017` (a step-up
 the door could not ask for).
 
 **Every session carries the risk it was decided on**, and every token issued
-on it is decided on that risk. An issuance with no session, such as a Kerberos
-service ticket, uses the person's last assessed risk held by that node, for
-`risk.standingValidMinutes`.
+on it is decided on that risk. That includes a credential offer a person makes
+for themselves on the user portal: the wallet's token request is decided on
+the risk of the session the offer was made on. An issuance with no session,
+such as a Kerberos service ticket, uses the person's last assessed risk held
+by that process, for `risk.standingValidMinutes`. With postgres persistence,
+when a person's level changes, every other process drops the risk it holds
+for them and reads it again, so an earlier refused sign-in does not keep
+refusing after a later one has scored lower.
 
 **WS-Trust and the Kerberos KDC assess the sign-in being made.** Each WS-Trust
 Issue or Renew that signs its requester in, and each Kerberos AS-REQ whose

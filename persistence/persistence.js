@@ -4387,6 +4387,23 @@ function coordinate() {
       log.debug("Leaving the risk-dataset applier.");
       return null;
     },
+    // A PERSON'S RISK LEVEL MOVED IN ANOTHER PROCESS (#666): the standing
+    // this process holds for them, if any, is stale, so it is dropped and
+    // read again from the table. The key is the person's `sub`.
+    'risk-standing': function (change) {
+      log.debug("Entering the risk-standing applier.");
+      const engine = require('../risk/risk_engine');
+      // Not before the composition root built the engine: a facade called
+      // then would build a default instance the root's install refuses
+      // (`risk/CLAUDE.md`, the require-order trap), and nothing is held yet.
+      if (engine.instanceOrigin() === 'none') {
+        log.debug("Leaving the risk-standing applier. No engine yet.");
+        return null;
+      }
+      engine.noteStandingMoved(change.realm || '', change.key || '');
+      log.debug("Leaving the risk-standing applier.");
+      return null;
+    },
     // A FUNCTION WITH A `prepare` ON IT. The applier contract is a function —
     // `replication.js` checks `typeof applier === 'function'` — and `prepare`
     // is an optional property it looks for beside it, so this stays one
