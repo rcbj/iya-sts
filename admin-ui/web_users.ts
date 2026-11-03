@@ -267,6 +267,25 @@ class UsersPage {
          [factorCounts.noCredential,
           t.text('consoleUsers.body.tileNoWayIn')]];
     const unreadable = dc ? dc.unreadable : factorCounts.unreadable;
+    // HOW OLD THE DIRECTORY'S COUNTS ARE (#684). In a windowed process the
+    // directory keeps a count for up to `directoryCountsKeptFor` seconds
+    // against another process's writes, so two loads answered by two
+    // workers can draw two figures, and during a fast delete a tile could
+    // rise on the next load with nothing saying the first figure had an
+    // age. Drawn only where that bound exists: a directory in memory has no
+    // other process to lag. The age is this browser's clock against the
+    // counting process's, floored at nought for a clock that runs behind.
+    const countedAt = json.directoryCountedAt
+      ? Date.parse(json.directoryCountedAt) : NaN;
+    const tilesAge = dc && Number.isFinite(countedAt) &&
+                     json.directoryCountsKeptFor !== null &&
+                     json.directoryCountsKeptFor !== undefined
+      ? kit.note(t.html('consoleUsers.body.tilesAge', {
+        at: String(json.directoryCountedAt).slice(11, 19),
+        age: String(Math.max(0, Math.round((Date.now() - countedAt) /
+                                           1000))),
+        max: String(json.directoryCountsKeptFor) }))
+      : '';
     const inner = '<div class="tiles">' +
         tiles.filter(function (one) {
           return one[0] !== null && one[0] !== undefined;
@@ -289,6 +308,7 @@ class UsersPage {
         ? kit.note(t.html('consoleUsers.body.tilesCountDirectory',
                           { keeps: json.registryKeeps }))
         : '') +
+      tilesAge +
       (json.store
         ? ''
         : kit.warn(t.html('consoleUsers.body.noDirectory'))) +
@@ -461,6 +481,18 @@ class UsersPage {
       kit.note(t.html('consoleUsers.body.matched', {
         matched: json.matched, one: json.matched === 1 ? 'yes' : 'no',
         known: json.known })) +
+      // WHAT THAT TOTAL IS, AND THE DIRECTORY'S COUNT BESIDE IT (#684).
+      // `known` is the length of the list: at most `scanLimit` directory
+      // people united with the register, so past the cap it stays put while
+      // people outside the slice are deleted, and it disagreed with SCIM's
+      // `totalResults` by thousands. Giving `known` the directory's meaning
+      // would undo the cap; the footer says which number is which instead.
+      (json.directoryPeople === null || json.directoryPeople === undefined
+        ? ''
+        : kit.note(t.html(json.capped ? 'consoleUsers.body.knownCapped'
+                                      : 'consoleUsers.body.knownUncapped', {
+          limit: String(json.scanLimit),
+          people: String(json.directoryPeople) }))) +
       kit.note(t.html('consoleUsers.body.inMemory',
                       { keeps: json.registryKeeps }));
 
