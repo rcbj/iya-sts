@@ -846,6 +846,13 @@ class ProtocolStack {
     // and the enrolled subjects. A library the verifier, the sign-in, the
     // portal and the console ask; it registers nothing.
     this.build('oid4vc/siop', require('../oid4vc/siop'), 'Siop');
+    // #1291: a did:web the realm publishes for a person — a library over
+    // `siop.ts` that the sign-in, the issuer, the verifier, the resolver,
+    // the portal and the console reach LAZILY, with one route of its own,
+    // `/users/:rid/did.json`, which collides with nothing.
+    this.build('oid4vc/person_did', require('../oid4vc/person_did'),
+               'PersonDid');
+    this.register(app, require('../oid4vc/person_did'), 'oid4vc/person_did');
     this.build('oid4vc/vc_status', require('../oid4vc/vc_status'), 'VcStatus');
     this.register(app, require('../oid4vc/vc_status'), 'oid4vc/vc_status');
     // The trusted list (2026-10-17): ETSI TS 119 602's List of Trusted
