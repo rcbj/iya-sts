@@ -509,18 +509,11 @@ class AccountSigningKey {
           'people issue their own signing keys. An administrator can issue ' +
           'one to you.');
       }
-      // RATE LIMITED, two settings since 2026-09-12 whose defaults are the
-      // five it was: per identity, and per address so that everybody behind
-      // one NAT does not share five key generations a window between them.
-      const allowed = await limited();
-      if (!allowed.ok) {
-        log.debug("Leaving AccountSigningKey.act(). Rate limited.");
-        return refuse(429, codeOf(allowed, 'STS-PORTAL-0020'),
-                      allowed.detail);
-      }
-      // THE CAP AND THE LABEL BEFORE A KEY PAIR IS GENERATED (#1290): an
-      // RSA key pair is CPU on the one thread, and generating one only for
-      // `write()` to refuse it would spend that and lose the key.
+      // THE CAP AND THE LABEL BEFORE A KEY PAIR IS GENERATED (#1290), and
+      // before the rate limit: an RSA key pair is CPU on the one thread, and
+      // generating one only for `write()` to refuse it would spend that and
+      // lose the key — and a refusal that generates nothing should not use
+      // up one of the person's generations either.
       const label = String(body.label || '').trim();
       const labelSaid = personAssertions.labelProblem(label);
       if (labelSaid) {
@@ -534,6 +527,15 @@ class AccountSigningKey {
           'key pairs that are still valid, which is the most this service ' +
           'issues to one person. Revoke one you no longer use and generate ' +
           'again.');
+      }
+      // RATE LIMITED, two settings since 2026-09-12 whose defaults are the
+      // five it was: per identity, and per address so that everybody behind
+      // one NAT does not share five key generations a window between them.
+      const allowed = await limited();
+      if (!allowed.ok) {
+        log.debug("Leaving AccountSigningKey.act(). Rate limited.");
+        return refuse(429, codeOf(allowed, 'STS-PORTAL-0020'),
+                      allowed.detail);
       }
       const issued: Json = await pki.issueSigningKeyPair(undefined, {
         identifier: username,
