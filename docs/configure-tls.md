@@ -302,8 +302,9 @@ client certificate**:
 2. Types **A password for the downloaded file** and **The same password
    again**. This protects the key inside the file; it is not their account
    password.
-3. Clicks **Generate and download my TLS client certificate**, and downloads
-   the `.p12` (and the PEM files) from the page that follows. **That page is
+3. Clicks **Generate and download my TLS client certificate**. The page is
+   drawn again with the `.p12` and the two PEM files at the head of that same
+   card, scrolled into view, and the person downloads them there. **That is
    the only time the files can be downloaded.**
 4. Imports the `.p12` into a browser and opens `/tls/sign-in` there, choosing
    the certificate when the browser asks.

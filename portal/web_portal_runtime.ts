@@ -1116,6 +1116,7 @@ class PortalRuntime extends SpaClient {
           ? this.view.query : {}, json: json.view };
         this.flash = said;
         this.drawView();
+        this.showFresh();
         return;
       }
     }
@@ -1125,6 +1126,27 @@ class PortalRuntime extends SpaClient {
       return;
     }
     await this.route();
+  }
+
+  // WHAT AN ACT ANSWERED ONCE IS BROUGHT INTO VIEW (#671). A page drawn
+  // again keeps the window where it was, which is right for everything but
+  // the block a Generate just answered (`.fresh`, drawn at the head of the
+  // card whose button made it): the person is looking at the button, below
+  // it, and the files or the key are the one thing on the page that will not
+  // come back. The first `.fresh` is scrolled to the top of the window;
+  // a page without one is left where it was.
+  /**
+   * Scrolls the block an act answered once into view, if one was drawn.
+   *
+   * @returns nothing
+   */
+  showFresh(): void {
+    const doc = this.env.document;
+    const fresh = doc && doc.querySelector ? doc.querySelector('.fresh')
+                                           : null;
+    if (fresh && fresh.scrollIntoView) {
+      fresh.scrollIntoView({ block: 'start' });
+    }
   }
 
   // `saveBase64()` is `WebPage`'s (#570), inherited.

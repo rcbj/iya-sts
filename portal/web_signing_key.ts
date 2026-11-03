@@ -11,11 +11,20 @@
 // profiles (RFC 7523's JWT key pair and RFC 7522's SAML one) and the TLS
 // client certificates. The cards are `Portal.signingKeyPage()`'s, moved.
 //
-// THE CARD THAT ONLY EXISTS FOR ONE ANSWER: a private key, or the files of a
-// TLS client certificate, which arrive in `view.fresh` only in the answer to
-// the act that made them and are drawn in place — never on a URL, never in
-// the history. The files are `data:` links with `download` on them, the
+// WHAT ONLY EXISTS FOR ONE ANSWER: a private key, or the files of a TLS
+// client certificate, which arrive in `view.fresh` only in the answer to the
+// act that made them and are drawn in place — never on a URL, never in the
+// history. The files are `data:` links with `download` on them, the
 // arrangement that lets the page carrying them carry the install steps too.
+//
+// **AND IN THE PANE WHOSE BUTTON MADE IT (#671).** Until 2026-11-03 the
+// one-time block was a card of its own at the TOP of the page, while the
+// TLS client certificate's Generate is in the LAST card: a person pressed
+// Generate at the bottom, the page was drawn again with nothing new where
+// they were looking, and the downloads sat three cards above. rcbj read it
+// as "nothing was downloaded". So the block is drawn at the head of the card
+// that offered the act — the TLS files in the TLS card, a profile's private
+// key in that profile's card — and nowhere else.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -148,8 +157,9 @@ class SigningKeyPages {
         '<p class="note">' + t.html('portal.signingKey.notRevocation') +
         '</p>'
       : '';
-    return '<div class="card">' + heading + status + controls + removeForm +
-      '</div>';
+    return '<div class="card">' + heading +
+      SigningKeyPages.keyFresh(profile, view, t) + status + controls +
+      removeForm + '</div>';
   }
 
   /**
@@ -243,22 +253,26 @@ class SigningKeyPages {
           t.html('portal.tls.generate') + '</button>');
       }
     }
+    const fresh = view.fresh && view.fresh.kind === 'tls-client' &&
+                  view.fresh.files
+      ? SigningKeyPages.tlsClientFresh(view.fresh, view, t) : '';
     return '<div class="card"><h2 id="tls-client">' +
-      t.html('portal.tls.heading') + '</h2>' + what + rows + controls +
+      t.html('portal.tls.heading') + '</h2>' + fresh + what + rows +
+      controls +
       (active.length ? '<p class="note">' + t.html('portal.tls.revokingIs') +
                        '</p>' : '') + '</div>';
   }
 
   /**
-   * The one-time card of a TLS client certificate: the three files, and
-   * what to do with them.
+   * The one-time block of a TLS client certificate, drawn at the head of the
+   * TLS card (#671): the three files, and what to do with them.
    *
    * @param fresh - `view.fresh`
    * @param view - the page's view
    * @param t - the translator
-   * @returns the card's HTML
+   * @returns the block's HTML
    */
-  static tlsClientFreshCard(fresh: Json, view: Json, t: Json): string {
+  static tlsClientFresh(fresh: Json, view: Json, t: Json): string {
     const files = fresh.files || {};
     const issued = fresh.issued || {};
     const signIn = (view.tls || {}).signIn || '';
@@ -277,8 +291,9 @@ class SigningKeyPages {
           return '<li>' + one + '</li>';
         }).join('') + '</ol></details>';
     };
-    return '<div class="card"><h2>' + t.html('portal.tlsFresh.heading') +
-      '</h2><p class="sub">' + t.html('portal.tlsFresh.onlyTime') + '</p>' +
+    return '<div class="fresh" id="tls-client-fresh"><h3>' +
+      t.html('portal.tlsFresh.heading') + '</h3><p class="sub">' +
+      t.html('portal.tlsFresh.onlyTime') + '</p>' +
       '<p>' + link(files.pkcs12, '') + link(files.key, ' secondary') +
       link(files.chain, ' secondary') + '</p>' +
       '<table><tr><th>' + t.html('portal.tlsFresh.issuedTo') +
@@ -290,7 +305,7 @@ class SigningKeyPages {
       '</td></tr><tr><th>' + t.html('portal.signingKey.goodUntil') +
       '</th><td>' + kit.esc(String(issued.notAfter).slice(0, 10)) +
       '</td></tr></table><p class="note">' + t.html('portal.tlsFresh.files') +
-      '</p><h3>' + t.html('portal.tlsFresh.install') + '</h3>' +
+      '</p><h4>' + t.html('portal.tlsFresh.install') + '</h4>' +
       step(t.html('portal.tlsFresh.winTitle'), [
         t.html('portal.tlsFresh.win1', { file: p12 }),
         t.html('portal.tlsFresh.win2'), t.html('portal.tlsFresh.win3'),
@@ -313,7 +328,7 @@ class SigningKeyPages {
         t.html('portal.tlsFresh.legacy', { key: key, chain: chain })]) +
       // The two links are markup, so the sentence is three messages around
       // them (#539).
-      '<h3>' + t.html('portal.tlsFresh.use') + '</h3><p>' +
+      '<h4>' + t.html('portal.tlsFresh.use') + '</h4><p>' +
       t.html('portal.tlsFresh.useOpen') + ' <a href="' + kit.esc(signIn) +
       '">' + kit.esc(signIn) + '</a> ' + t.html('portal.tlsFresh.useChoose') +
       ' <a href="' + kit.BASE + '">' + t.html('portal.tlsFresh.yourAccount') +
@@ -321,31 +336,28 @@ class SigningKeyPages {
   }
 
   /**
-   * The one-time card, of whichever kind the answer carried.
+   * The one-time block of a signing key pair, drawn at the head of its own
+   * profile's card (#671) and in no other.
    *
+   * @param profile - the card's profile
    * @param view - the page's view
    * @param t - the translator
-   * @returns the card's HTML, or ''
+   * @returns the block's HTML, or ''
    */
-  static freshCard(view: Json, t: Json): string {
+  static keyFresh(profile: Json, view: Json, t: Json): string {
     const fresh = view.fresh;
-    if (!fresh) {
+    // A generation always names its profile; absent is `jwt`, as the form's
+    // own `purpose` is.
+    if (!fresh || fresh.kind === 'tls-client' || !fresh.privateKeyPem ||
+        String(fresh.purpose || 'jwt') !== profile.id) {
       return '';
     }
-    if (fresh.kind === 'tls-client' && fresh.files) {
-      return SigningKeyPages.tlsClientFreshCard(fresh, view, t);
-    }
-    if (!fresh.privateKeyPem) {
-      return '';
-    }
-    const profile = (view.profiles || []).filter(function (one: Json) {
-      return one.id === fresh.purpose;
-    })[0] || (view.profiles || [])[0] || { id: 'jwt', rfc: 'RFC 7523' };
-    return '<div class="card"><h2>' + t.html('portal.signingKey.saveHeading',
-        { rfc: profile.rfc }) + '</h2><p class="sub">' +
-      t.html('portal.signingKey.onlyTime') + '</p><pre class="pem">' +
-      kit.esc(String(fresh.privateKeyPem)) + '</pre>' +
-      SigningKeyPages.freshInstructions(profile, fresh, view, t) + '</div>';
+    return '<div class="fresh" id="' + kit.esc(profile.id) + '-fresh"><h3>' +
+      t.html('portal.signingKey.saveHeading', { rfc: profile.rfc }) +
+      '</h3><p class="sub">' + t.html('portal.signingKey.onlyTime') +
+      '</p><pre class="pem">' + kit.esc(String(fresh.privateKeyPem)) +
+      '</pre>' + SigningKeyPages.freshInstructions(profile, fresh, view, t) +
+      '</div>';
   }
 
   /**
@@ -377,8 +389,7 @@ class SigningKeyPages {
         (view.holdsAny ? ' ' + t.html('portal.signingKey.unaffected') : '') +
         '</p>';
     }
-    return SigningKeyPages.freshCard(view, t) +
-      '<div class="card">' + what + shared + '</div>' +
+    return '<div class="card">' + what + shared + '</div>' +
       (view.profiles || []).map(function (profile: Json): string {
         return SigningKeyPages.profileCard(profile, view, t);
       }).join('') + SigningKeyPages.tlsClientCard(view, t);
