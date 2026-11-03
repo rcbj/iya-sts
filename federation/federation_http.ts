@@ -343,6 +343,20 @@ const OUTBOUND_TRANSPORT = {
  * one checked.
  */
 class FederationHttp {
+
+  // ONE VALUE IN application/x-www-form-urlencoded (the WHATWG serializer:
+  // a space as `+`, everything else outside A-Z a-z 0-9 `*-._` escaped),
+  // which is what RFC 6749 section 2.3.1 asks of a Basic client id and
+  // secret.
+  /**
+   * Encodes one value as application/x-www-form-urlencoded.
+   *
+   * @param value - the text
+   * @returns the encoded text
+   */
+  static formEncoded(value: string): string {
+    return new URLSearchParams([['v', String(value)]]).toString().slice(2);
+  }
   /**
    * The three relationship attributes that may hold a URL this service will
    * fetch from.
@@ -2002,9 +2016,17 @@ class FederationHttp {
       headers['Authorization'] = 'Bearer ' + opts.bearer;
     }
     if (opts.basic) {
-      headers['Authorization'] = 'Basic ' +
-        Buffer.from(String(opts.basic.user) + ':' + String(opts.basic.pass))
-              .toString('base64');
+      // RFC 6749 SECTION 2.3.1: the client id and the secret are EACH
+      // application/x-www-form-urlencoded before they are joined and
+      // base64-encoded, and the server decodes them so. Joined raw, a secret
+      // holding `%`, `+`, `:` or a non-ASCII character reaches the partner
+      // as some other secret; the conformance suite's dynamically
+      // registered clients get such secrets on purpose (#930). An id and a
+      // secret of unreserved characters are unchanged by it.
+      headers['Authorization'] = 'Basic ' + Buffer.from(
+        FederationHttp.formEncoded(String(opts.basic.user)) + ':' +
+        FederationHttp.formEncoded(String(opts.basic.pass)))
+        .toString('base64');
     }
 
     const cap = this.maxBodyBytes();

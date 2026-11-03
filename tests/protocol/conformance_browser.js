@@ -239,12 +239,16 @@ function person(o) {
     // AND SIGNS OUT THERE (#930): this service's /logout, the sign-out of
     // every session, and the partner's RP-Initiated Logout link the
     // signed-out page offers, followed as far as it goes.
-    signOut: function (id, info, base) {
+    // `options.localOnly` ends the session here and follows no link to
+    // the partner: for a module the suite has already finished, which a
+    // visit would only disturb.
+    signOut: function (id, info, base, options) {
       log.debug("Entering signOut(). " + id);
       log.debug("Leaving signOut().");
       return serially(async function () {
         log.debug("Entering the sign-out.");
-        await signOutOne(o, id, (info && info.testName) || "", base, jars);
+        await signOutOne(o, id, (info && info.testName) || "", base, jars,
+                         options || {});
         log.debug("Leaving the sign-out.");
       });
     }
@@ -600,7 +604,7 @@ async function follow(o, driver, id, action, suiteBase) {
 // clicked and followed: the partner's front-channel page, its return to this
 // service's /federation/slo/{id}, or wherever it stops.
 // ---------------------------------------------------------------------------
-async function signOutOne(o, id, moduleName, base, jars) {
+async function signOutOne(o, id, moduleName, base, jars, options) {
   log.debug("Entering signOutOne(). " + moduleName);
   const driver = await browser(o.serviceBase);
   await useJar(driver, jars, id);
@@ -621,6 +625,12 @@ async function signOutOne(o, id, moduleName, base, jars) {
                "button.");
     } else {
       await global.click();
+      if (options && options.localOnly) {
+        await waitMs(1000);
+        log.debug("Leaving signOutOne(). Signed out here only.");
+        await keepJar(driver, jars, id);
+        return;
+      }
       const until = Date.now() + 20000;
       let link = null;
       while (!link && Date.now() < until) {

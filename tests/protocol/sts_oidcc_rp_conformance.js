@@ -515,6 +515,17 @@ async function runOnePlan(plan) {
                                       got.failures[0].msg : "") +
                (argued ? " (argued: " + argued + ")" : ""));
       results.push(got);
+      // THE REFRESH PLAN'S SESSIONS END WITH THEIR MODULE (2026-11-03).
+      // Each module signs in with a jar of its own, so the one before it
+      // stayed signed in, and the federation.partner-refresh job went on
+      // presenting that module's refresh token to the suite while the next
+      // module ran: its ValidateRefreshToken failed it ("Invalid
+      // refresh_token parameter"). Signed out here, its held token is
+      // dropped before it is dialled again (`refreshOne()`).
+      if (plan.refresh && got.id) {
+        await person.signOut(got.id, { testName: got.module },
+                             prepared.realm.base, { localOnly: true });
+      }
     }
   } catch (e) {
     // One plan that cannot be set up or created is reported with the rest
