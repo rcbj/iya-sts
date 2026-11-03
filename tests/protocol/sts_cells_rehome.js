@@ -22,6 +22,14 @@
 //      with the password they had (sealed again under cell A's key if it was
 //      sealed), with no restart elsewhere — nothing of the flow
 //      relayed — and the ID Token names the same `sub`.
+//   6. A PUBLISHED DID KEEPS ITS ADDRESS (#1291): before the move the
+//      person publishes a realm-custody did:web through the portal at cell
+//      B, which stamps its id with cell B's tag. After it, the document is
+//      fetched at cell A and at cell B and both answer it: a fetch is
+//      relayed to cell B by the tag, cell B finds the person gone, asks the
+//      routing index, and fetches the document from cell A. A key change
+//      made through the portal at cell A (which indexed the DID when it
+//      took them in) is version 2 at both.
 //   5. A MOVE THE REALM DOES NOT ALLOW IS REFUSED: once the realm lists only
 //      cell A's jurisdiction in `cells.jurisdictions`, a move back to cell B
 //      answers 400 naming the jurisdiction, and they stay at cell A. And a
@@ -38,6 +46,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const expectation = require("./expectation.js");
 const kit = require("./cells_kit.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -135,6 +144,128 @@ async function signInAt(realmBase, state) {
   return { jar: jar, hops: flow.hops, tokens: tokens.body };
 }
 
+// The person's published DIDs, from the management API at a cell.
+async function publishedAt(realmBase) {
+  log.debug("Entering publishedAt().");
+  const r = await kit.api(realmBase, "GET", "/users/published-dids?user=" +
+                          encodeURIComponent(PERSON));
+  assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+  log.debug("Leaving publishedAt().");
+  return (r.body && r.body.dids) || [];
+}
+
+// A person's DID document fetched at a cell, as any resolver fetches it.
+async function documentAt(realmBase, rid, query) {
+  log.debug("Entering documentAt().");
+  const r = await fetch(realmBase + "/users/" + rid + "/did.json" +
+                        (query ? "?" + query : ""),
+                        { headers: { Accept: "application/did+json" } });
+  const text = await r.text();
+  let body = null;
+  try {
+    body = JSON.parse(text);
+  } catch (e) {
+    // Not JSON: the assertion below names the status and the text.
+    log.debug("Caught in documentAt(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving documentAt(). " + r.status);
+  return { status: r.status, body: body, text: text };
+}
+
+function keysOf(doc) {
+  log.debug("Entering keysOf().");
+  log.debug("Leaving keysOf().");
+  return ((doc && doc.verificationMethod) || []).map(function (vm) {
+    return String(vm.id).split("#")[1];
+  }).join(",");
+}
+
+// Publishing on, realm custody, in the job's realm, seen at both cells.
+async function didSettings(realm) {
+  log.debug("Entering didSettings().");
+  for (const [key, value] of [["did.personPublishing", true],
+                              ["did.personCustody", "realm"]]) {
+    await kit.setSetting(realm.a, key, value);
+    await kit.until("cell B reads " + key, 30000, async function () {
+      return JSON.stringify(await kit.settingAt(realm.b, key)) ===
+             JSON.stringify(value);
+    });
+  }
+  log.debug("Leaving didSettings().");
+}
+
+// 6a: a realm-custody DID published through the portal at cell B.
+async function publishAtB(realm) {
+  log.debug("Entering publishAtB().");
+  await didSettings(realm);
+  const portal = await portalSignin.signInToThePortal(realm.b, PERSON, null,
+    { password: PASSWORD });
+  const made = await portal.act("/portal/self-issued/dids",
+                                { action: "publish" });
+  const mine = (await publishedAt(realm.b))[0] || {};
+  const before = await documentAt(realm.b, mine.rid);
+  check("a realm-custody DID published through the portal at cell B, its " +
+        "id carrying a cell's twelve-character tag", function () {
+          assert.ok(made.json && made.json.ok,
+                    String(made.text || JSON.stringify(made.json))
+                      .slice(0, 300));
+          assert.ok(/^[A-Za-z0-9_-]{34}$/.test(String(mine.rid || "")),
+                    JSON.stringify(mine));
+          assert.strictEqual(before.status, 200, before.text.slice(0, 300));
+          assert.strictEqual(before.body.id, mine.did, before.text);
+        });
+  log.debug("Leaving publishAtB().");
+  return { rid: mine.rid, did: mine.did, keys: keysOf(before.body) };
+}
+
+// 6b-6d: after the move, the same address at either cell, and a change made
+// at the new home.
+async function didAfterTheMove(realm, did) {
+  log.debug("Entering didAfterTheMove().");
+  log.info("=== 6. the published DID after the move ===");
+  const relayedBefore = await relayedAt(realm.a);
+  const atA = await documentAt(realm.a, did.rid);
+  const relayedAfter = await relayedAt(realm.a);
+  const atB = await documentAt(realm.b, did.rid);
+  check("fetched at cell A, the DID minted at cell B is answered — relayed " +
+        "there by its tag, and fetched back from cell A, where they live",
+        function () {
+          assert.strictEqual(atA.status, 200, atA.text.slice(0, 300));
+          assert.strictEqual(atA.body.id, did.did, atA.text.slice(0, 300));
+          assert.strictEqual(keysOf(atA.body), did.keys, atA.text);
+          assert.ok(relayedAfter > relayedBefore,
+                    "cell A relayed nothing: " + relayedBefore + " -> " +
+                    relayedAfter);
+        });
+  check("fetched at cell B, the same document", function () {
+    assert.strictEqual(atB.status, 200, atB.text.slice(0, 300));
+    assert.strictEqual(JSON.stringify(atB.body), JSON.stringify(atA.body));
+  });
+  const listed = (await publishedAt(realm.a)).filter(function (one) {
+    return one.rid === did.rid;
+  })[0];
+  check("cell A lists the DID among theirs", function () {
+    assert.ok(listed && listed.did === did.did, JSON.stringify(listed));
+  });
+  const portal = await portalSignin.signInToThePortal(realm.a, PERSON, null,
+    { password: PASSWORD });
+  const rotated = await portal.act("/portal/self-issued/dids",
+                                   { action: "rotate-key", rid: did.rid });
+  const v2 = await documentAt(realm.b, did.rid);
+  const v1 = await documentAt(realm.b, did.rid, "versionId=1");
+  check("a key rotated through the portal at cell A is version 2, served " +
+        "at cell B as well", function () {
+          assert.ok(rotated.json && rotated.json.ok,
+                    String(rotated.text || JSON.stringify(rotated.json))
+                      .slice(0, 300));
+          assert.strictEqual(v2.status, 200, v2.text.slice(0, 300));
+          assert.notStrictEqual(keysOf(v2.body), did.keys, v2.text);
+          assert.strictEqual(v1.status, 200, v1.text.slice(0, 300));
+          assert.strictEqual(keysOf(v1.body), did.keys, v1.text);
+        });
+  log.debug("Leaving didAfterTheMove().");
+}
+
 async function setUp(cells) {
   log.debug("Entering setUp().");
   const realm = await kit.throwawayRealm(cells, REALM);
@@ -183,6 +314,9 @@ async function test() {
           assert.ok(before.tokens.refresh_token,
             "no refresh token: " + JSON.stringify(before.tokens));
         });
+
+  log.info("=== 6a. a published DID, made at cell B ===");
+  const did = await publishAtB(realm);
 
   log.info("=== 1. the move, made at cell B ===");
   const conflictsBefore = await conflictsAt(realm.a);
@@ -273,6 +407,8 @@ async function test() {
                              subBefore);
         });
 
+  await didAfterTheMove(realm, did);
+
   log.info("=== 5. moves that are refused ===");
   const notHere = await kit.api(realm.b, "POST", "/cells/rehome",
                                 { username: PERSON, target: cells.ids.a });
@@ -313,7 +449,7 @@ async function test() {
               JSON.stringify({ a: stays.yes, b: notMoved.yes }));
   });
 
-  assert.ok(checks >= 16, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 21, "only " + checks + " checks ran; a section has " +
     "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

@@ -17739,6 +17739,11 @@ const CODES = [
     summary: 'A person\'s published DID already has the most versions one ' +
       'DID keeps (50), so it takes no more key changes (#1291).',
     spec: 'HTTP 400 refusal at /account-api or /authn-api/wallet' },
+  { code: 'STS-VC-0177',
+    summary: 'The DID document of a person re-homed to another cell could ' +
+      'not be fetched from that cell over the inter-cell channel (#1291).',
+    spec: 'HTTP 503 {error: temporarily_unavailable} at ' +
+      '/users/{rid}/did.json' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
