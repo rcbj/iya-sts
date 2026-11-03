@@ -25,7 +25,7 @@ library is under the MIT License.
 | Rust | [crates.io](https://crates.io/), with API documentation on [docs.rs](https://docs.rs/) |
 | Go | Git tags `v<version>`, served by the [Go module proxy](https://pkg.go.dev/), with API documentation on pkg.go.dev |
 | C# | [NuGet](https://www.nuget.org/profiles/IyaSec) |
-| C and C++ | Not published to a package manager; build it from the repository |
+| C and C++ | Not published to a package manager; build it from the repository with CMake, or put it in your Conan cache from a clone of a release tag |
 | Swift | [GitHub Releases](https://github.com/rcbj/swift-oidc-caep-native-app/releases), through Swift Package Manager |
 
 Each repository has a test that signs its demo application in to a fresh
@@ -240,6 +240,20 @@ through the C header, which is an `extern "C"` interface; a C++ program
 can use the C++ header's classes. Both link the same library. OpenSSL
 provides the cryptography. The libraries are not published to a package
 manager; the README says how to build one with CMake.
+
+Each repository also has a `conanfile.py` at its root, so a
+[Conan](https://conan.io/) 2 user can clone a release tag and create the
+package in their own local cache, then require it as usual. For example:
+
+```sh
+git clone --branch v0.1.2 https://github.com/rcbj/saml2-sp-c.git
+conan create saml2-sp-c --version=0.1.2 --build=missing
+```
+
+That gives `iya-saml2-sp/0.1.2`. The packages are `iya-gnap-caep-risc`,
+`iya-oidc-caep-risc`, `iya-saml2-sp` and `iya-wsfed-caep`; each README's
+*Using it from Conan* has its own command and version. They are not on
+ConanCenter.
 
 | Library | Protocol | Repository | Documentation |
 |---|---|---|---|
