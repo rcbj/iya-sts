@@ -1193,6 +1193,16 @@ const JOBS = [
   // peer (`testPeer`). `local: true`.
   { file: 'sts_siop_did_web.js',         browser: false,
     testPeer: true },
+  // A did:web THIS REALM PUBLISHES FOR A PERSON (#1291, 2026-11-03): wallet
+  // custody end to end over the sign-in surface — the wallet's round trip
+  // with did_act=publish, the document at /users/<rid>/did.json, a sign-in
+  // with the did:web — the two-proof key change and its refusals, versions
+  // answered from the history, holder binding naming the version, realm
+  // custody from the portal, the disabled account's 410 and its restoring,
+  // and the person's and an administrator's deactivations. In a throwaway
+  // realm in the stack's mode (product pins global.publicBaseUrl first).
+  // `local: true`: this repository's feature.
+  { file: 'sts_person_did.js',           browser: false },
   // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
   // each prefix's Request Object checked as a wallet checks it — the x5c
   // chain to the service Root, the signature, the dNSName or the hash — a

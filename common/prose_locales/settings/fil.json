@@ -6043,6 +6043,38 @@
     "en": "89f8d541b4738289",
     "text": "Ang mga credential configuration na ang mga credential ay naka-bind sa DID ng tao sa halip na sa isang key. Para sa bawat isang nakapangalan, dapat pangalanan ng proof ng wallet ang key nito sa pamamagitan ng kid na isang did:jwk o did:key URL na pinatunayan ng tao sa kanilang pahinang Self-issued IDs (hindi sapat ang entry ng administrator), at dala ng credential ang DID na iyon: cnf.kid sa isang dc+sd-jwt, credentialSubject.id, sub at cnf.kid sa isang jwt_vc_json, credentialSubject.id sa isang ldp_vc. Sinasabi ng metadata ang did:jwk at did:key para rito. Pareho ang DID na dala ng bawat kopya ng isang batch, kaya maiuugnay ang mga ito sa isa't isa — iyan ang kapalit. Kapag walang laman, naka-bind sa key ang bawat configuration, gaya ng dati. Hindi iniaalok ang did:web."
   },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "Maglathala ng did:web para sa isang tao"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "Hayaang gumawa ang isang tao ng did:web na inilalathala ng realm na ito para sa kanya, sa Self-issued IDs na pahina ng kanyang portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, kung saan ang <rid> ay 128 random na bit, kaya walang makapag-iisa-isa ng mga account sa pagsubok ng mga address at hindi mapag-uugnay ang dalawang DID ng iisang tao. Inihahain ang dokumento nito sa /users/<rid>/did.json na iniingatan ang bawat bersyon, at maaari itong maging preferred DID ng tao. Kapag naka-on, nag-aalok din ang isang credential configuration na nakatali sa DID (oid4vci.didHolderBinding) ng did:web para sa isang DID na hino-host ng realm na ito at pinatunayan ng tao gamit ang isang wallet. Kapag naka-off: walang bagong inilalathala; inihahain pa rin ang DID na nailathala na, naka-deactivate man o hindi, dahil iniingatan ang address nito magpakailanman. Sa product mode, inilalathala lang ang isang DID sa isang naka-pin na global.publicBaseUrl."
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "Sino ang may hawak ng pribadong susi ng DID ng isang tao"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "Sino ang may hawak ng pribadong susi ng isang DID na inilathala para sa isang tao. `wallet` (ang default, at ang pinakaligtas): pinatutunayan ng wallet ng tao ang sarili nitong susi sa isang self-issued (SIOPv2) na palitan at ang pampublikong kalahati lang ang inilalathala ng realm; bawat susunod na pagpapalit ng susi ay inaawtorisa ng isang susing pinangangalanan ng kasalukuyang bersyon at pinatutunayan ng bagong susi. `realm`: ang realm ang gumagawa ng susi at iniingatan itong naka-seal, kaya maaaring gawing preferred ang DID at ilabas sa did claim pero hindi kailanman makapagsa-sign in ng wallet o makapagtatali ng credential. `download`: ang realm ang gumagawa ng pares, ipinapakita ang pribadong susi nang ISANG beses at ang pampublikong kalahati lang ang iniingatan; hindi pa napapatunayan ang DID hanggang patunayan ng tao ang susi gamit ang isang wallet. BABALA: sa `download` dumaraan sa browser ang pribadong susi, at sa `realm` maaaring kumilos ang realm bilang ang tao; piliin lang ang mga ito kung katanggap-tanggap iyon."
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "Mga inilathalang DID na maaaring hawakan ng isang tao"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "Ilang AKTIBONG inilathalang DID ang maaaring hawakan ng isang tao. Hindi binibilang ang naka-deactivate na DID, at patuloy na sumasagot ng 410 Gone ang address nito. Binibilang din ang bawat isa sa sampung self-issued na subject na maaaring i-enroll ng isang tao."
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "Algorithm ng susi ng DID na ginawa ng realm"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "Ang algorithm ng susing ginagawa ng realm para sa DID ng isang tao, sa mga custody mode na `realm` at `download`: ES256 (P-256), ES384 (P-384) o EdDSA (Ed25519). Sa custody na `wallet`, ang wallet ang pumipili ng sarili nitong susi. Pinananatili ng susing nailathala na ang algorithm nito."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Ihain ang W3C VC API"

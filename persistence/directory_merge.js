@@ -76,7 +76,8 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
                 'stsactivationexpires', 'appregistrationjson',
                 'stsapppassword', 'stsidaverification',
-                'stsselfissuedsubject', 'stsdevicesecrethash',
+                'stsselfissuedsubject', 'stspublisheddid',
+                'stsdevicesecrethash',
                 'stsdevicesession', 'stscibausercode',
                 // A device's records of its last compliance and status
                 // change, and its enrolment (#164): each one JSON value.

@@ -660,8 +660,8 @@
     "text": "full：涵盖 Data Integrity 所需的部分。JSON-LD 上下文是内置副本，从不通过网络获取：依赖网络获取的规范化既不可重现，也不安全。"
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "a4e9c39575ac8ed8",
-    "text": "partial: 本服务发布一个带两个验证方法的 did:web 文档，并在 W3C VC API（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 及其自身的 did:web，以 W3C DID 测试套件为准。不抓取任何其他 did:web；不支持任何 DID 参数（service、versionId 等）。"
+    "en": "8ab3bcb1ed157bef",
+    "text": "partial: 本服务发布一个带两个验证方法的 did:web 文档、每个应用一个 did:web，以及每人一个位于随机地址、保留其密钥所有版本的 did:web（#1291）；在 W3C VC API（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 及其自身的 did:web，以 W3C DID 测试套件为准，并为个人发布的 DID 答复 versionId 和 versionTime DID 参数，附带 didDocumentMetadata（created、updated、versionId、nextVersionId、deactivated）。不抓取任何其他 did:web；不支持任何其他 DID 参数（service、relativeRef、hl）。"
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -1838,6 +1838,10 @@
   "stsmetadata.endpoints./admin-api/users/self-issued-subjects.what": {
     "en": "5992e8bdddc060a8",
     "text": "非规范（#129）。为某人注册的 DID 和 JWK 指纹，每项附带其标签、注册者和注册方式（由此人的钱包证明，或按值），did:web 还附带其固定的密钥（#693），旁边显示 oid4vp.signInSelfIssued 是否打开。POST /admin-api/users/enrol-self-issued-subject 按值注册一个，并获取 did:web 的文档以固定其密钥；/admin-api/users/remove-self-issued-subject 将其删除。对应此人 /admin/users 页面上的“自签发 ID”块。"
+  },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "非规范（#1291）。本领域为某人发布的每个 did:web：其随机 id、DID、其文档地址、密钥由谁持有（wallet、realm 或 download）、其状态，以及每个版本及其密钥和授权来源，从不包含私钥。POST /admin-api/users/deactivate-published-did 停用其中一个；管理员从不创建或更改。对应此人 /admin/users 页面上的“已发布的 DID”区块。"
   },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
@@ -3410,6 +3414,14 @@
   "stsmetadata.endpoints./applications/:application/did.json.effect": {
     "en": "590e41dd0e817cfb",
     "text": "除非应用已为 did 协议族声明且拥有密钥，否则应答 404"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.what": {
+    "en": "3e5d018883275bd9",
+    "text": "本领域为个人发布的 did:web 的 DID 文档（#1291），did:web 方法将 did:web:<host>[:realm:<id>]:users:<rid> 解析到此处，<rid> 为 128 位随机数：当前版本的密钥作为 authentication 和 assertionMethod 下的 JsonWebKey2020 方法，或 DID Core 的 versionId 或 versionTime 所要求的版本，取自从不改写的历史。application/did+json，no-store。被停用（由本人、由管理员，或在账户停用期间）时，它答复 410 Gone 和 { id, deactivated: true }，解析器在 didDocumentMetadata 中报告 deactivated。在 did.personPublishing 开启时从本人的门户发布。"
+  },
+  "stsmetadata.endpoints./users/:rid/did.json.effect": {
+    "en": "7c437811cbea893d",
+    "text": "DID 停用或账户停用后答复 410 Gone，从未发布的地址答复 404"
   },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",

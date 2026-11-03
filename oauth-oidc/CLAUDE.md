@@ -4876,6 +4876,16 @@ protection).
 * **SAML LEFT OUT.** An assertion's attributes have no per-attribute consent
   of the person's; condition 6 could not hold there, so no SP opt-in was
   built.
+* **A DID THIS REALM PUBLISHED FOR THE PERSON COUNTS AS PROVED (#1291)**,
+  rcbj's decision 4 ("treat it as a proved DID"): the preferred DID may be a
+  published one in any custody — `wallet`, or `realm` / `issued`, which the
+  person chose on their own portal even though no wallet proved the key —
+  because what the claim asserts is the person's choice of identifier, not
+  possession of a key (`siop.releasableSubjectsOf()`). An administrator's
+  by-value entry still never qualifies, and a deactivated published DID is
+  no longer enrolled, so it is never released. A sign-in and a credential
+  binding are held to more (`oid4vc/CLAUDE.md`, *A PERSON'S PUBLISHED
+  did:web*).
 * **LOGGING.** Each omission's code at the front of an info line, at most
   once per (client, code) in ten minutes, the remembered keys capped at the
   insert (no timer) — UserInfo may be polled, and a misconfigured client

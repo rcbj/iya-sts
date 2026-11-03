@@ -8611,3 +8611,17 @@ the hover, so the name's tooltip never appeared. Those sentences are
 also the management API's field descriptions and `docs/audit-export.md`.
 The delivery, the cursor and the twenty-first outbound exception are
 `common/CLAUDE.md` (3da). The operations are `mgmt-api/CLAUDE.md`.
+
+## A person's published DIDs on their page (#1291, 2026-11-03)
+
+The person's page draws *Published DIDs* after *Self-issued IDs*
+(`UsersPage.publishedDidsBlock()`, from `page.mfa.publishedDids`, which is
+`GET /admin-api/users/published-dids`'s answer): each did:web this realm
+publishes for them, a link to its document, who holds its key, its version,
+when it was made and its state, and — for Admin Write — *Deactivate*
+(`deactivate-published-did`). Nothing here creates or changes one: that is
+the person's act on `/portal/self-issued` (`oid4vc/CLAUDE.md`, *A PERSON'S
+PUBLISHED did:web*). The block is drawn only where the realm publishes DIDs
+or the person holds one. The self-issued table reads the two provenances
+#1291 added (`realm`, `issued`) and offers *Make preferred* on them, as the
+portal does.

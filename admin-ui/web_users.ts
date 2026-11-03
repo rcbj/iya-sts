@@ -2617,9 +2617,15 @@ class UsersPage {
         (one.by ? t.html('consoleUsers.mfaSection.by', { who: one.by }) : '') +
         // HOW IT WAS ENROLLED (#693): proved by the person's wallet, or by
         // value from this console or the API, unproven.
+        // A DID this realm published for them with a key it keeps, or
+        // handed over and not yet proved (#1291).
         '</td><td>' + (one.proof === 'wallet'
           ? t.html('consoleUsers.mfaSection.siopProofWallet')
-          : t.html('consoleUsers.mfaSection.siopProofAdmin')) +
+          : one.proof === 'realm'
+            ? t.html('consoleUsers.mfaSection.siopProofRealm')
+            : one.proof === 'issued'
+              ? t.html('consoleUsers.mfaSection.siopProofIssued')
+              : t.html('consoleUsers.mfaSection.siopProofAdmin')) +
         // WHERE THE KEY CAME FROM (2026-10-20), as the portal shows it:
         // one short line, the whole of it on hover.
         '</td><td>' + UsersPage.siopLocationCell(one.location, t) +
@@ -2628,8 +2634,10 @@ class UsersPage {
         '</td><td>' + (one.preferred
           ? '<strong>' + t.html('consoleUsers.mfaSection.siopIsPreferred') +
             '</strong> ' : '') +
-        (state.write && (one.preferred || (one.proof === 'wallet' &&
-                                           /^did:/.test(String(one.subject))))
+        (state.write && (one.preferred ||
+                         ((one.proof === 'wallet' || one.proof === 'realm' ||
+                           one.proof === 'issued') &&
+                          /^did:/.test(String(one.subject))))
           ? '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" ' +
             'value="set-preferred-self-issued-subject">' +
@@ -2708,7 +2716,8 @@ class UsersPage {
                                                 carryBack, data.mail) +
       keysBlock + recoveryBlock + appPasswordsBlock +
       devicesBlock + certificatesBlock + signingBlock +
-      selfIssuedBlock +
+      selfIssuedBlock + UsersPage.publishedDidsBlock(t, key, state, back,
+                                                     data.publishedDids) +
       verificationsBlock;
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
@@ -2752,6 +2761,76 @@ class UsersPage {
   // refuses to remove the last way in. An operator must not be able to do what
   // the person themselves is stopped from doing.
   // ===========================================================================
+  // ---------------------------------------------------------------------------
+  // THE DIDs THIS REALM PUBLISHES FOR THE PERSON (#1291): each one's DID, a
+  // link to its document, who holds its key, its version and state, and —
+  // for Admin Write — Deactivate, which is `deactivate-published-did`
+  // (rule 7). An administrator never creates or changes one: that is the
+  // person's act on /portal/self-issued. `GET /admin-api/users/
+  // published-dids` is this list.
+  // ---------------------------------------------------------------------------
+  /**
+   * The Published DIDs block of a person's page.
+   *
+   * @param t - the translator
+   * @param key - the person
+   * @param state - the page's state (`write`)
+   * @param back - where a form returns to
+   * @param view - `GET /admin-api/users/published-dids`'s answer
+   * @returns the HTML, or '' where the realm publishes none and they hold
+   *   none
+   */
+  static publishedDidsBlock(t, key, state, back, view) {
+    const dids = (view && view.dids) || [];
+    if (!view || (!view.publishing && !dids.length)) {
+      return '';
+    }
+    const row = function (one) {
+      const custody = one.custody === 'realm'
+        ? t.html('consoleUsers.mfaSection.pubCustodyRealm')
+        : one.custody === 'download'
+          ? t.html('consoleUsers.mfaSection.pubCustodyDownload')
+          : t.html('consoleUsers.mfaSection.pubCustodyWallet');
+      const stateText = one.state === 'active'
+        ? t.html('consoleUsers.mfaSection.pubStateActive')
+        : one.state === 'suspended'
+          ? t.html('consoleUsers.mfaSection.pubStateSuspended')
+          : t.html('consoleUsers.mfaSection.pubStateDeactivated');
+      return '<tr><td><code>' + kit.esc(one.did) + '</code><br><a href="' +
+        kit.esc(one.documentUrl) + '" target="_blank" rel="noopener ' +
+        'noreferrer">' + t.html('consoleUsers.mfaSection.pubDocument') +
+        '</a></td><td>' + custody + '</td><td>' +
+        kit.esc(String(one.currentVersion)) + '</td><td>' +
+        kit.esc(one.createdAt ? kit.whenText(one.createdAt) : '—') +
+        '</td><td>' + stateText + '</td><td>' +
+        (state.write && one.state !== 'deactivated'
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="deactivate-published-did">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="did" value="' +
+            kit.esc(one.did) + '"><input type="hidden" name="from" ' +
+            'value="user"><input type="hidden" name="back" value="' +
+            kit.esc(back) + '"><button class="danger" type="submit"' +
+            kit.tip(t.text('consoleUsers.mfaSection.pubDeactivateTip')) +
+            '>' + t.html('consoleUsers.mfaSection.pubDeactivate') +
+            '</button></form>'
+          : '') + '</td></tr>';
+    };
+    return '<h3>' + t.html('consoleUsers.mfaSection.pubHeading') + '</h3>' +
+      kit.note(t.html('consoleUsers.mfaSection.pubNote')) +
+      (dids.length
+        ? '<table><tr><th>' + t.html('consoleUsers.mfaSection.pubThDid') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThCustody') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThVersion') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThCreated') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.pubThState') +
+          '</th><th></th></tr>' + dids.map(row).join('') + '</table>'
+        : kit.note(t.html('consoleUsers.mfaSection.pubNone'))) +
+      (state.write ? ''
+        : kit.note(t.html('consoleUsers.mfaSection.pubNeedsWrite')));
+  }
+
   // WHERE A SELF-ISSUED KEY CAME FROM (2026-10-20), the portal's column on
   // this page too (rule 7's list is the same rows): one short line — a web
   // wallet's host, an app's reported name, a short label — and the whole of

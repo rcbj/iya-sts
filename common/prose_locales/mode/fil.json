@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "Tinatanggihan ang sign-in na iyon (STS-VC-0127), ina-audit, at ine-enroll muli ng tao ang DID sa pamamagitan ng pagpapatunay nito sa /portal/self-issued. Sa parehong mode, tinatanggihan ang key na hindi pinangalanan ng pin (STS-VC-0126)."
   },
+  "mode.requirements.person-did-base.what": {
+    "en": "58a07bbd2f445d15",
+    "text": "Ang inilathalang did:web ng isang tao ay ginagawa sa naka-pin na pampublikong base URL"
+  },
+  "mode.requirements.person-did-base.development": {
+    "en": "11156d2823005717",
+    "text": "Kung walang naka-pin na pampublikong base URL, ang DID na inilathala mula sa /portal/self-issued ay binubuo sa address na pinuntahan ng request, at bahagi na ng DID ang address na iyon magpakailanman."
+  },
+  "mode.requirements.person-did-base.product": {
+    "en": "b7878f2f5c762598",
+    "text": "Tinatanggihan ang paglathala ng isa (STS-VC-0168) hanggang i-pin ng global.publicBaseUrl, o ng ina-advertise na listener ng application ng verifiable credentials, ang base: hindi kailanman nagiging bahagi ng isang nakaimbak na identifier ang isang Host header."
+  },
   "mode.requirements.webauthn-attestation.what": {
     "en": "8c22563b2f23268b",
     "text": "Vine-verify ang attestation statement ng security key bago i-register ang key"

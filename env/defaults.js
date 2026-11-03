@@ -941,6 +941,14 @@ var config = {
     collectionCacheS: 300                          // In-process collection kept for (s)
   },
 
+  // --- Person DIDs -----------------------------------------------------
+  did: {
+    personPublishing: false,     // Publish a did:web for a person
+    personCustody: "wallet",     // Who holds the private key of a person's DID
+    personMaxPerPerson: 3,       // Published DIDs one person may hold
+    personKeyAlgorithm: "ES256"  // Key algorithm of a realm-generated DID key
+  },
+
   // --- W3C VC API ------------------------------------------------------
   vcApi: {
     enabled: false,    // Serve the W3C VC API

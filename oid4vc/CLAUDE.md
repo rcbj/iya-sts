@@ -800,6 +800,10 @@ signed request may use **all four Client Identifier prefixes** — six since
 * **Not built, by argument**: the `fragment` response mode (a Verifier
   chooses its mode, and a fragment needs a script on a page here) and dynamic
   discovery of a Self-Issued OP (the static `siopv2:` configuration).
+* **A did:web this realm publishes for the person (#1291)** is enrolled
+  here too, with provenance `wallet`, `realm` or `issued`, and resolved from
+  the realm's own history rather than fetched — *A PERSON'S PUBLISHED
+  did:web*, below.
 
 ### #693's four prerequisites (2026-10-20, rcbj: "Do all that")
 
@@ -976,12 +980,17 @@ for `did:jwk` and `did:key` only. Four pieces:
    the binding is a configuration's opt-in and never a default. The nonces and
    `unlinkableTimes()` are unchanged.
 
-**did:web is excluded, and why.** Phase 1 pins a did:web's key at
-enrolment, which protects a SIGN-IN. A credential is checked later, by a
-relying party who resolves the DID itself. The host can change its document
-between the proof here and that check, so a credential bound to a did:web says
-nothing durable about the key. Building it needs the relying party's half of
-the pin, or a key-named binding beside the DID: a design of its own.
+**did:web is excluded, and why — except the did:web this realm publishes
+(#1291).** Phase 1 pins a did:web's key at enrolment, which protects a
+SIGN-IN. A credential is checked later, by a relying party who resolves the
+DID itself. The host can change its document between the proof here and that
+check, so a credential bound to a did:web says nothing durable about the key.
+Building it needed the relying party's half of the pin, and #1291 built it for
+the one case where it can exist: a did:web THIS REALM publishes for the
+person keeps every version of its keys and never rewrites one, so a
+credential bound to it names the VERSION (`<did>?versionId=<n>#<key>`) and
+stays checkable from that history. A did:web hosted anywhere else is still
+`STS-VC-0142`. *A PERSON'S PUBLISHED did:web*, below, has the rules.
 
 `tests/oid4vci_did_binding.js` holds all of it in process: the kid proofs and
 their five refusals, the metadata, each format's output, the batch, every
@@ -1279,6 +1288,113 @@ application declared for the `did` family (its own checkbox, `applications.js`
   URL, the root `CLAUDE.md`'s row of URLs this service dials).
 
 `tests/application_did.js` holds it.
+
+## A PERSON'S PUBLISHED did:web (#1291, 2026-11-03)
+
+#693 let a person NAME a DID they control; #1291 has the realm CREATE and
+PUBLISH one for them. rcbj's four decisions are the specification: custody
+in all three modes, chosen per realm (`did.personCustody`: `wallet`, the
+default, `realm`, `download`); a random identifier minted per DID
+(`did:web:<host>[:realm:<id>]:users:<rid>`, `<rid>` 128 bits in base64url);
+deactivate and keep the URL; and "treat it as a proved DID". `person_did.ts`
+is the library and its header the design; what follows is what a change to
+it has to keep.
+
+* **THE DID IS FIXED AT CREATION AND STORED**, unlike the realm's and an
+  application's DIDs, which are derived from each request's base. A person's
+  DID is an identifier other parties keep, so it cannot follow a `Host`
+  header: it is minted on `baseUrlOf(req, 'oid4vc')` and written into the
+  record. **Product refuses an unpinned base** — `global.publicBaseUrl` or
+  the oid4vc application's advertised listener —
+  `mode.mintsPersonDidsOnRequestAddress()` (REQUIREMENTS `person-did-base`,
+  `STS-VC-0168`). `/users` is the oid4vc application's
+  (`common/hosted_applications.js`).
+* **STORAGE**: one JSON value per DID in `stsPublishedDid` on the person's
+  entry (`ldap/CLAUDE.md` argues the attribute), and the per-realm persisted
+  index `did.personDids` (`<rid> -> { did, sub }`, cell-tier in
+  `persistence/tiers.js`) — the person's `urn:uuid:` subject, so a rename
+  does not lose it, and a row is never removed: the address answers 410 for
+  good and an id is never drawn twice. **A lookup, never a walk** (rcbj's
+  rule): the index is one `get()`, and the entry one `locateEntry()`.
+* **VERSIONS ARE APPENDED AND NEVER REWRITTEN** (`append()` is the one
+  writer after creation): `versionId`, `created`, `change`, `keys` (each
+  keyed by its RFC 7638 thumbprint, which is also its fragment, so one key
+  keeps one id across versions) and `authorizedBy`. `versionOf()` answers
+  `versionId` and `versionTime` for the document's address, the resolver
+  (`vc_did_resolver.ts`, whose `didDocumentMetadata` has created, updated,
+  versionId, nextVersionId, deactivated), and a versioned DID URL. At most
+  `MAX_VERSIONS` (50) per DID (`STS-VC-0176`); at most `MAX_RECORDS` (25)
+  records per person, deactivated ones included, besides the active cap
+  `did.personMaxPerPerson`.
+* **THE DOCUMENT** is `GET /users/:rid/did.json`, the JSON representation
+  (`application/did+json`, no `@context`, the resolver's reading of DID Core
+  6.2/6.3.1), `no-store`. **Deactivated** — by the person (`deactivate`, or
+  removing the subject from the self-issued list, which routes to it), by an
+  administrator (`deactivate-published-did`), or while the account is
+  disabled (decided at SERVE time by `stateOf()`, never written, so
+  re-enabling restores it) — it is 410 `{ id, deactivated: true }`
+  (`STS-VC-0162`), and the resolver answers `deactivated: true` with no
+  document. A deactivation also drops a realm-custody key and removes the
+  self-issued subject (CAEP `delete`).
+* **IT IS ALSO A SELF-ISSUED SUBJECT**, enrolled through `siop.enrol()` with
+  the provenance its custody gives — `wallet`, or the two #1291 added to
+  `siop.ts`, `realm` and `issued` — and the CURRENT version's keys pinned;
+  `append()` re-pins it on every version (`again`, CAEP `update`). Who reads
+  which provenance:
+
+  | Reader | `wallet` | `realm` | `issued` | `admin` |
+  |---|---|---|---|---|
+  | `setPreferred()`, `preferredSubjectOf()`, the `did` claim | yes | yes | yes | never |
+  | `signInOutcome()` (a self-issued sign-in) | yes | `STS-VC-0164` | `STS-VC-0164` | yes, as before |
+  | `provenSubjectsOf()`, holder binding | yes | `STS-VC-0165` | `STS-VC-0165` | `STS-VC-0149` |
+
+  An `issued` DID becomes `wallet` by the ordinary enrolment round trip,
+  signing AS the did:web with the downloaded key: `enrol()`'s re-proof.
+* **A HOSTED did:web IS RESOLVED FROM THE HISTORY, NEVER FETCHED**: `siop.ts`
+  `didKey()` asks `deps.hostedKey()` (the CURRENT version — a sign-in or a
+  change's authorization), the issuer's `proofKeyOfKid()` (current, and the
+  credential then names the version), the Verifier's `cnfKeyOf()` (the
+  version the `cnf.kid` names; a versionless hosted `kid` is no key), and
+  the resolver. Dialling yourself would be a fetch the product internal-
+  address rule refuses, and the history is what makes the answer durable.
+* **`wallet` CUSTODY RIDES THE ENROLMENT ROUND TRIP**, with a marker:
+  `/authn/wallet?siop=1&enrol=1&did_act=<act>` — `publish`,
+  `authorize-add.<rid>`, `authorize-rotate.<rid>`, `key.<rid>` — carried by
+  `authn/web_authn_pages.ts`, `web_vc_signin.ts` and `authn_api.ts`'s start
+  body to `vc_signin.ts`, which checks it at the START (`actProblem()`, so a
+  wallet is never asked to prove what will be refused) and hands `finish()`'s
+  verified outcome (now carrying the proved `jwk`) to `finishWalletAct()`
+  instead of enrolling. **A change takes TWO proofs**: the authorization,
+  signed AS the DID by a key its current version names, kept as `pending`
+  for `PENDING_TTL_S` (600 s); then the new key, proved by the wallet's own
+  did:jwk, did:key or thumbprint subject (never a did:web, never another
+  person's, never a key already in the version — `STS-VC-0170`). A new key
+  without a live authorization is `STS-VC-0171`, at the start and at the
+  finish. Both proofs are the new version's `authorizedBy`.
+* **`realm` CUSTODY** generates with `crypto.js`'s
+  `generateSigningJwkPair(did.personKeyAlgorithm)` and seals the private JWK
+  with `keystore.seal(…, 'person-private-key')` where the key-encryption key
+  persists — `applications.js`'s `didPrivateKeys` rule, kept as written in
+  development (`STS-VC-0175` when sealing fails). Nothing reads it back yet:
+  it is kept so the realm can sign as the DID later, never answered. Add and
+  rotate are one portal act each, authorized by the signed-in person; a
+  rotated-out key is dropped. **`download` CUSTODY** answers the private JWK
+  ONCE as `view.fresh.file` (#671's one-time pane) and keeps only the public
+  half; its key changes wait until the person proves it (`STS-VC-0173`).
+* **HOLDER BINDING** to a hosted did:web needs `did.personPublishing` on (else
+  `STS-VC-0142`), a JOSE format (an `ldp_vc` names the bare DID with no
+  version, `STS-VC-0166`), and `wallet` provenance. The metadata adds
+  `did:web` to a DID-bound dc+sd-jwt or jwt_vc_json configuration's
+  `cryptographic_binding_methods_supported` while publishing is on.
+  `holderDid` everywhere strips `?versionId=` as well as the fragment.
+* **WHAT IS NOT BUILT**: signing anything with a realm-custody key; a
+  `service` or `alsoKnownAs` in a person's document; reactivating a
+  deactivated DID (a new one is published instead); a DID moved between
+  cells (the index is cell-tier, like the entry it names).
+
+`tests/person_did.js` holds it in process (every custody end to end, the
+two-proof change, versions, binding, deactivation, every code);
+`tests/protocol/sts_person_did.js` (local) drives it over HTTP.
 
 ## THE 2026-09-12 HARD-CODED-VALUE SWEEP
 

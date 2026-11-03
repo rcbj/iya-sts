@@ -955,6 +955,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "單一個人的自行簽發（SIOPv2）主體"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "單一個人已發布的 DID"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "單一個人的身分驗證紀錄"
@@ -2154,6 +2158,10 @@
   "endpoints.route./applications/:application/did.json.name": {
     "en": "7d0bcaaf2c946cba",
     "text": "應用程式的 DID 文件"
+  },
+  "endpoints.route./users/:rid/did.json.name": {
+    "en": "056966d689a17c3b",
+    "text": "個人已發布的 DID 文件"
   },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",

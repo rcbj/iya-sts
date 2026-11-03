@@ -23,7 +23,14 @@
 //   * did:jwk — the did:jwk method: one `JsonWebKey2020` method `#0`,
 //     referenced from the relationships its `use` allows;
 //   * did:web — ONLY THIS REALM'S OWN (`vc_did.ts`), built here rather than
-//     fetched. Any other did:web is `notFound`: resolving it would be a GET
+//     fetched, and since #1291 the DIDs this realm PUBLISHES FOR PEOPLE
+//     (`person_did.ts`), answered from their version history: DID Core's
+//     `versionId` and `versionTime` (as resolution options, or as the DID
+//     URL's query when dereferencing) choose the version, and
+//     `didDocumentMetadata` carries created, updated, versionId,
+//     nextVersionId and — removed by the person, deactivated by an
+//     administrator, or the account disabled — `deactivated: true`, with no
+//     document. Any other did:web is `notFound`: resolving it would be a GET
 //     of a URL a caller chose (the root `CLAUDE.md`'s rule), and this
 //     resolver makes none.
 //
@@ -54,6 +61,9 @@ interface VcDidResolverDeps {
   di: typeof vcDataIntegrity;
   ownDid: (req: any) => string;
   ownDocument: (req: any) => Promise<any>;
+  // A did:web this realm publishes for a person (#1291): its resolution
+  // from the history, or null for any other DID.
+  personDid: (did: string, asked: any) => any;
 }
 
 const DID_V1 = 'https://www.w3.org/ns/did/v1';
@@ -118,11 +128,67 @@ class VcDidResolver {
         helpers.log.debug("Entering ownDocument().");
         helpers.log.debug("Leaving ownDocument().");
         return vcDid.stsDidDocument(req);
+      },
+      // `person_did.ts` LAZILY: it requires `siop.ts`, which this
+      // library's readers load later.
+      personDid: function personDid(did: string, asked: any): any {
+        helpers.log.debug("Entering personDid().");
+        helpers.log.debug("Leaving personDid().");
+        return require('./person_did').resolve(did, asked);
       }
     };
   }
 
   // Is this a DID (section 3.1)?
+  /**
+   * The version a resolution's options ask for: `{ versionId?, versionTime?
+   * }`, each only where it is a string (#1291).
+   *
+   * @param options - the resolution options
+   * @returns the asked version
+   */
+  static versionAsked(options: any): any {
+    helpers.log.debug("Entering VcDidResolver.versionAsked().");
+    const o = options || {};
+    const out: any = {};
+    if (typeof o.versionId === 'string') {
+      out.versionId = o.versionId;
+    }
+    if (typeof o.versionTime === 'string') {
+      out.versionTime = o.versionTime;
+    }
+    helpers.log.debug("Leaving VcDidResolver.versionAsked().");
+    return out;
+  }
+
+  /**
+   * A DID URL's query as DID Core's version parameters, or null where it is
+   * anything else (#1291): exactly one of `versionId` and `versionTime`.
+   *
+   * @param query - the query, with its `?`, or ''
+   * @returns `{ versionId }` or `{ versionTime }`, or null
+   */
+  static versionParams(query: string): any {
+    helpers.log.debug("Entering VcDidResolver.versionParams().");
+    const m = /^\?(versionId|versionTime)=([^&=]+)$/.exec(String(query || ''));
+    if (!m) {
+      helpers.log.debug("Leaving VcDidResolver.versionParams(). None.");
+      return null;
+    }
+    const out: any = {};
+    let value = m[2];
+    try {
+      value = decodeURIComponent(m[2]);
+    } catch (e) {
+      helpers.log.debug("Caught in VcDidResolver.versionParams(): " +
+                        ((e && e.message) || e));
+      value = m[2];
+    }
+    out[m[1]] = value;
+    helpers.log.debug("Leaving VcDidResolver.versionParams().");
+    return out;
+  }
+
   /**
    * Says whether a value is a DID (section 3.1's syntax).
    *
@@ -202,8 +268,9 @@ class VcDidResolver {
   }
 
   // The document, or an error result.
-  private async documentOf(did: string, req: any): Promise<any> {
-    const { log, ownDid, ownDocument } = this.deps;
+  private async documentOf(did: string, req: any, asked?: any):
+      Promise<any> {
+    const { log, ownDid, ownDocument, personDid } = this.deps;
     log.debug("Entering VcDidResolver.documentOf().");
     if (!this.isDid(did)) {
       log.debug("Leaving VcDidResolver.documentOf(). Not a DID.");
@@ -227,6 +294,18 @@ class VcDidResolver {
       return { error: 'invalidDid', message: String((e && e.message) || e) };
     }
     if (method === 'web') {
+      // A PERSON'S PUBLISHED DID (#1291), from this realm's own history.
+      const hosted = personDid(did, asked || {});
+      if (hosted) {
+        if (hosted.error) {
+          log.debug("Leaving VcDidResolver.documentOf(). A person's DID: " +
+                    hosted.error);
+          return { error: hosted.error, message: hosted.message };
+        }
+        log.debug("Leaving VcDidResolver.documentOf(). A person's DID.");
+        return { document: hosted.didDocument,
+                 metadata: hosted.didDocumentMetadata };
+      }
       if (did !== ownDid(req)) {
         log.debug("Leaving VcDidResolver.documentOf(). Another did:web.");
         return { error: 'notFound', message: 'this resolver answers this ' +
@@ -263,14 +342,15 @@ class VcDidResolver {
       return this.failed('invalidOptions', 'accept MUST NOT be used with ' +
                          'resolve (section 7.1.1).', false);
     }
-    const got = await this.documentOf(did, req);
+    const got = await this.documentOf(did, req,
+                                      VcDidResolver.versionAsked(o));
     if (got.error) {
       log.debug("Leaving VcDidResolver.resolve(). " + got.error);
       return this.failed(got.error, got.message, false);
     }
     log.debug("Leaving VcDidResolver.resolve().");
     return { didDocument: got.document, didResolutionMetadata: {},
-             didDocumentMetadata: {} };
+             didDocumentMetadata: got.metadata || {} };
   }
 
   // resolveRepresentation() (section 7.1): the document as bytes in a
@@ -298,11 +378,20 @@ class VcDidResolver {
                          'representation this resolver produces (' +
                          JSON_TYPE + ', ' + JSONLD_TYPE + ').', true);
     }
-    const got = await this.documentOf(did, req);
+    const got = await this.documentOf(did, req,
+                                      VcDidResolver.versionAsked(o));
     if (got.error) {
       log.debug("Leaving VcDidResolver.resolveRepresentation(). " +
                 got.error);
       return this.failed(got.error, got.message, true);
+    }
+    // A DEACTIVATED DID (#1291) resolves with its metadata and no document.
+    if (!got.document) {
+      log.debug("Leaving VcDidResolver.resolveRepresentation(). " +
+                "Deactivated.");
+      return { didDocumentStream: '',
+               didResolutionMetadata: { contentType: accept },
+               didDocumentMetadata: got.metadata || {} };
     }
     const doc = Object.assign({}, got.document);
     if (accept === JSON_TYPE) {
@@ -311,7 +400,7 @@ class VcDidResolver {
     log.debug("Leaving VcDidResolver.resolveRepresentation().");
     return { didDocumentStream: JSON.stringify(doc),
              didResolutionMetadata: { contentType: accept },
-             didDocumentMetadata: {} };
+             didDocumentMetadata: got.metadata || {} };
   }
 
   // ---------------------------------------------------------------------------
@@ -346,7 +435,12 @@ class VcDidResolver {
       return fail('invalidDidUrl', JSON.stringify(text) + ' is not a DID ' +
                   'URL (DID Core section 3.2).');
     }
-    const got = await this.documentOf(m[1], req);
+    // DID CORE'S `versionId` AND `versionTime` DID PARAMETERS (section
+    // 3.2.1), the one query this service answers — for a person's
+    // published DID (#1291), whose versions it keeps. Anything else in a
+    // query, or a path, is still `notFound`.
+    const params = VcDidResolver.versionParams(m[3] || '');
+    const got = await this.documentOf(m[1], req, params || {});
     if (got.error) {
       log.debug("Leaving VcDidResolver.dereference(). " + got.error);
       // error-code: none — a DID Core result, not a response; the route
@@ -354,12 +448,18 @@ class VcDidResolver {
       return fail(got.error === 'invalidDid' ? 'invalidDidUrl' : got.error,
                   got.message);
     }
-    if (m[2] || m[3]) {
+    if (m[2] || (m[3] && (!params || !got.metadata))) {
       log.debug("Leaving VcDidResolver.dereference(). Path or query.");
       // error-code: none — a DID Core result, not a response; the route
       // that answers it marks STS-VC-0109.
       return fail('notFound', 'this service defines no resource at a DID ' +
                   'URL path or query (' + (m[2] || '') + (m[3] || '') + ').');
+    }
+    if (!got.document) {
+      log.debug("Leaving VcDidResolver.dereference(). Deactivated.");
+      // error-code: none — a DID Core result, not a response; the route
+      // that answers it marks STS-VC-0109.
+      return fail('notFound', m[1] + ' is deactivated.');
     }
     const doc = got.document;
     const accept = options && options.accept === JSON_TYPE ? JSON_TYPE
@@ -372,7 +472,7 @@ class VcDidResolver {
       log.debug("Leaving VcDidResolver.dereference(). The document.");
       return { dereferencingMetadata: { contentType: accept },
                contentStream: JSON.stringify(primary),
-               contentMetadata: {} };
+               contentMetadata: got.metadata || {} };
     }
     const wanted = m[1] + m[4];
     const found = [].concat(doc.verificationMethod || [],

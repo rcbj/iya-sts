@@ -233,6 +233,9 @@ interface VcVerifierDeps {
   vpTransactions: BoundedStore;
   vpRequests: Store;
   siop: typeof siop;
+  // The key a versioned DID URL of a did:web this realm publishes names
+  // (#1291): `{ jwk }`, `{ error }`, or null for a DID it does not publish.
+  hostedKey: (didUrl: string) => any;
   stsDid: typeof vcDid.stsDid;
   publishedKidFor: typeof helpers.publishedKidFor;
   // The x509 Client Identifier Prefixes (#230): the public half of the key a
@@ -624,6 +627,13 @@ class VcVerifier {
       vpTransactions: vpTransactions,
       vpRequests: vpRequests,
       siop: siop,
+      // `person_did.ts` LAZILY: it requires `siop.ts`, which this module
+      // loads, and it reads the directory only when asked.
+      hostedKey: function hostedKey(didUrl: string): any {
+        helpers.log.debug("Entering hostedKey().");
+        helpers.log.debug("Leaving hostedKey().");
+        return require('./person_did').keyOfDidUrl(didUrl);
+      },
       stsDid: vcDid.stsDid,
       publishedKidFor: helpers.publishedKidFor,
       ownPublicKeyFor: helpers.ownPublicKeyFor,
@@ -3137,6 +3147,17 @@ class VcVerifier {
       return cnf.jwk;
     }
     const kid = cnf && typeof cnf.kid === 'string' ? cnf.kid : '';
+    // A did:web THIS REALM PUBLISHES FOR A PERSON (#1291), as a credential
+    // bound to one names it: `<did>?versionId=<n>#<key>`, resolved from the
+    // realm's own history, never by a fetch. The version is required — a
+    // DID URL without one says nothing durable about the key — and a
+    // deactivated DID names no key.
+    if (/^did:web:[^?#]+\?versionId=[1-9][0-9]*#.+$/.test(kid)) {
+      const hosted = this.deps.hostedKey(kid);
+      log.debug("Leaving VcVerifier.cnfKeyOf(). A published DID's version: " +
+                (hosted && hosted.jwk ? 'resolved' : 'no key') + ".");
+      return hosted && hosted.jwk ? hosted.jwk : null;
+    }
     if (!/^did:(jwk|key):[^#]+#.+$/.test(kid)) {
       log.debug("Leaving VcVerifier.cnfKeyOf(). No key.");
       return null;
@@ -4746,7 +4767,11 @@ class VcVerifier {
                     subject: idv.subject, enrol: true,
                     pinnedKeys: idv.keyThumbprint ? [idv.keyThumbprint]
                                                   : [],
-                    alg: String(idv.alg || '') };
+                    alg: String(idv.alg || ''),
+                    // The proved PUBLIC key itself (#1291): a published
+                    // DID's wallet act publishes it, or checks it against
+                    // the DID's current version.
+                    jwk: idv.jwk || null };
       } else {
         outcome = siop.signInOutcome(idv);
       }

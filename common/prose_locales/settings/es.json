@@ -6043,6 +6043,38 @@
     "en": "89f8d541b4738289",
     "text": "Las configuraciones de credencial cuyas credenciales se vinculan al DID de la persona en lugar de a una clave. Para cada una de ellas, la prueba de la cartera debe nombrar su clave mediante un kid que sea una URL did:jwk o did:key que la persona haya demostrado en su página Self-issued IDs (no basta con una entrada de un administrador), y la credencial lleva ese DID: cnf.kid en un dc+sd-jwt, credentialSubject.id, sub y cnf.kid en un jwt_vc_json, credentialSubject.id en un ldp_vc. Los metadatos indican did:jwk y did:key para ella. Cada copia de un lote lleva el mismo DID, por lo que se pueden correlacionar: ese es el precio. Vacío, todas las configuraciones se vinculan a una clave, como antes. No se ofrece did:web."
   },
+  "did.personPublishing|label": {
+    "en": "e68b6af2230600ec",
+    "text": "Publicar un did:web para una persona"
+  },
+  "did.personPublishing|description": {
+    "en": "841dc751d16e1137",
+    "text": "Permite que una persona cree un did:web que este dominio publica para ella, en la página Self-issued IDs de su portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, donde <rid> son 128 bits aleatorios, de modo que nadie puede enumerar cuentas probando direcciones y no se pueden vincular dos DID de una misma persona. Su documento se sirve en /users/<rid>/did.json con todas las versiones conservadas, y puede ser el DID preferido de la persona. Activado, una configuración de credencial vinculada al DID (oid4vci.didHolderBinding) ofrece también did:web para un DID que este dominio aloja y que la persona demostró con una cartera. Desactivado: no se publica nada nuevo; un DID ya publicado se sigue sirviendo, desactivado o no, porque su dirección se conserva para siempre. En modo producto solo se publica un DID sobre un global.publicBaseUrl fijado."
+  },
+  "did.personCustody|label": {
+    "en": "057d429ef011ffab",
+    "text": "Quién guarda la clave privada del DID de una persona"
+  },
+  "did.personCustody|description": {
+    "en": "d6a546fec114599d",
+    "text": "Quién guarda la clave privada de un DID publicado para una persona. `wallet` (el valor predeterminado y el más seguro): la cartera de la persona demuestra su propia clave en un intercambio autoemitido (SIOPv2) y el dominio publica solo la mitad pública; cada cambio posterior de clave lo autoriza una clave que nombra la versión actual y lo demuestra la clave nueva. `realm`: el dominio genera la clave y la guarda sellada, así que el DID puede ser preferido y entregarse en el claim did, pero nunca puede iniciar la sesión de una cartera ni vincular una credencial. `download`: el dominio genera el par, muestra la clave privada UNA sola vez y guarda solo la mitad pública; el DID queda sin demostrar hasta que la persona demuestre la clave con una cartera. ADVERTENCIA: con `download` la clave privada pasa por el navegador, y con `realm` el dominio puede actuar como la persona; elíjalos solo donde eso sea aceptable."
+  },
+  "did.personMaxPerPerson|label": {
+    "en": "5a10d569545ab9fe",
+    "text": "DID publicados que puede tener una persona"
+  },
+  "did.personMaxPerPerson|description": {
+    "en": "ddaedbc77af9d48d",
+    "text": "Cuántos DID publicados ACTIVOS puede tener una persona. Un DID desactivado no cuenta, y su dirección sigue respondiendo 410 Gone. Cada uno cuenta además entre los diez sujetos autoemitidos que una persona puede inscribir."
+  },
+  "did.personKeyAlgorithm|label": {
+    "en": "2ba095f9fc035eca",
+    "text": "Algoritmo de la clave de DID generada por el dominio"
+  },
+  "did.personKeyAlgorithm|description": {
+    "en": "63a8db054fa27772",
+    "text": "El algoritmo de una clave que el dominio genera para el DID de una persona, en los modos de custodia `realm` y `download`: ES256 (P-256), ES384 (P-384) o EdDSA (Ed25519). En la custodia `wallet` la cartera elige su propia clave. Una clave ya publicada conserva su algoritmo."
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "Servir la W3C VC API"
