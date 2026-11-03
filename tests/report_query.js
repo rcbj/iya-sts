@@ -903,8 +903,15 @@ function directoryDouble(windowed) {
     // Signing keys and enrollment credentials (#1036): a JWT key pair
     // (its certificate is not a real PEM here, so no algorithm), an ACME
     // EAB key, a SCEP challenge, and an EST-issued TLS client certificate.
-    // One record per key pair since #1290; a revoked one is no row.
-    stsAssertionKeyPair: [JSON.stringify({ id: 'ada-kid-1',
+    // One record per key pair since #1290; a revoked one is no row —
+    // `ada-kid-0` by its own mark, `ada-kid-2` by the issuing authority's
+    // list alone (revoked on `/admin/pki`'s revocation pane, which writes the
+    // list and not the record; the test stubs that list's answer).
+    stsAssertionKeyPair: [JSON.stringify({ id: 'ada-kid-2',
+      kid: 'ada-kid-2', source: 'issued', caId: 'person-signing',
+      serialHex: '0c0ffee', certificatePem: 'not a certificate',
+      notAfter: '2099-01-01T00:00:00.000Z' }),
+      JSON.stringify({ id: 'ada-kid-1',
       kid: 'ada-kid-1', source: 'issued',
       certificatePem: 'not a certificate',
       notAfter: '2099-01-01T00:00:00.000Z' }),
@@ -2948,33 +2955,51 @@ async function holders(t) {
 
     // SIGNING KEYS, ENROLLMENT CREDENTIALS AND CERTIFICATES (#1036): each a
     // row with its id, its source or protocol, its profile, and no secret.
-    const kinds = ['jwtSigningKey', 'acmeAccountKey', 'scepChallenge',
-      'certificate'];
-    for (let k = 0; k < kinds.length; k++) {
+    // THE AUTHORITY'S LIST IS ASKED (#1290): `ada-kid-2`'s serial is on it,
+    // so that key pair is no row although its record carries no mark.
+    const pkiRevocation = require('../common/pki_revocation');
+    const realIsRevoked = pkiRevocation.isRevoked;
+    pkiRevocation.isRevoked = function (scope, caId, serialHex) {
+      return caId === 'person-signing' && serialHex === '0c0ffee'
+        ? { revokedAt: '2026-11-03T00:00:00.000Z', reason: 'keyCompromise' }
+        : null;
+    };
+    try {
+      const kinds = ['jwtSigningKey', 'acmeAccountKey', 'scepChallenge',
+        'certificate'];
+      for (let k = 0; k < kinds.length; k++) {
+        reset();
+        const got = await read({ source: 'credentialHolders',
+          select: fields.concat(['channel', 'format']), limit: 5,
+          where: { op: 'eq', field: 'mechanism', value: kinds[k] } });
+        t.equal((got.rows || []).length, 1, kinds[k] + ': one row for ada',
+          got.description || JSON.stringify(got.rows));
+      }
       reset();
-      const got = await read({ source: 'credentialHolders',
-        select: fields.concat(['channel', 'format']), limit: 5,
-        where: { op: 'eq', field: 'mechanism', value: kinds[k] } });
-      t.equal((got.rows || []).length, 1, kinds[k] + ': one row for ada',
-        got.description || JSON.stringify(got.rows));
+      const enrolled = await read({ source: 'credentialHolders',
+        select: fields.concat(['channel', 'format']), limit: 20,
+        where: { op: 'and', args: [
+          { op: 'eq', field: 'username', value: 'ada' },
+          { op: 'in', field: 'mechanism', value: ['jwtSigningKey',
+            'acmeAccountKey', 'scepChallenge', 'certificate'] }] } });
+      const byMech = {};
+      (enrolled.rows || []).forEach(function (row) {
+        byMech[row.mechanism] = row;
+      });
+      t.check(byMech.jwtSigningKey && byMech.jwtSigningKey.role === 'signer' &&
+        byMech.jwtSigningKey.credentialId === 'ada-kid-1' &&
+        byMech.jwtSigningKey.channel === 'issued' &&
+        byMech.jwtSigningKey.format === 'RFC 7523',
+        'a JWT signing key: its kid, issued here, RFC 7523',
+        JSON.stringify(byMech.jwtSigningKey));
+      t.check((enrolled.rows || []).filter(function (row) {
+        return row.credentialId === 'ada-kid-2';
+      }).length === 0,
+        'a key pair revoked on the authority\'s list alone is no row (#1290)',
+        JSON.stringify(enrolled.rows));
+    } finally {
+      pkiRevocation.isRevoked = realIsRevoked;
     }
-    reset();
-    const enrolled = await read({ source: 'credentialHolders',
-      select: fields.concat(['channel', 'format']), limit: 20,
-      where: { op: 'and', args: [
-        { op: 'eq', field: 'username', value: 'ada' },
-        { op: 'in', field: 'mechanism', value: ['jwtSigningKey',
-          'acmeAccountKey', 'scepChallenge', 'certificate'] }] } });
-    const byMech = {};
-    (enrolled.rows || []).forEach(function (row) {
-      byMech[row.mechanism] = row;
-    });
-    t.check(byMech.jwtSigningKey && byMech.jwtSigningKey.role === 'signer' &&
-      byMech.jwtSigningKey.credentialId === 'ada-kid-1' &&
-      byMech.jwtSigningKey.channel === 'issued' &&
-      byMech.jwtSigningKey.format === 'RFC 7523',
-      'a JWT signing key: its kid, issued here, RFC 7523',
-      JSON.stringify(byMech.jwtSigningKey));
     t.check(byMech.acmeAccountKey && byMech.acmeAccountKey.role ===
       'enrollment' && byMech.acmeAccountKey.credentialId === 'eab-1' &&
       byMech.acmeAccountKey.channel === 'acme' &&

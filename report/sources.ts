@@ -1772,16 +1772,16 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any,
     // holds — several per profile since #1290, each a record of the asked
     // name — with its certificate's key algorithm, its kid or thumbprint,
     // where the pair came from as the channel (`issued` here or
-    // `uploaded`), and the certificate's notBefore. A key pair revoked from
-    // the portal or the console (`withdrawnAt`) or past its expiry is not
-    // held and is no row. The private half is sealed on the entry and never
-    // read here.
+    // `uploaded`), and the certificate's notBefore. A key pair that is not
+    // VALID is no row: revoked from the portal or the console, revoked on
+    // `/admin/pki`'s revocation pane (the authority's list, which only
+    // `keyPairState()` reads), or past its expiry. The private half is
+    // sealed on the entry and never read here.
     const jwt = mechanism.id === 'jwtSigningKey';
-    const now = Date.now();
+    const personAssertions = require('../common/person_assertions');
     const held = reportParsedValues(values).filter(function (one: any):
         boolean {
-      return !!one.id && !one.withdrawnAt &&
-        !(one.notAfter && Date.parse(String(one.notAfter)) < now);
+      return !!one.id && personAssertions.keyPairState(one).state === 'valid';
     });
     held.forEach(function (one: any): void {
       const pem = String(one.certificatePem || '');

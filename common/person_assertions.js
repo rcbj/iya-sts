@@ -549,6 +549,34 @@ function stateOf(record, scope) {
   return { state: state, revokedAt: revokedAt, reason: reason };
 }
 
+// ONE STORED RECORD'S STATE IN THE CURRENT REALM, for a reader that has the
+// record in hand and not the entry — the reports source (#1290). Without it
+// that reader could see only the record's own mark, and a key pair revoked
+// on `/admin/pki`'s revocation pane, which writes the list and not the
+// record, would go on counting as held.
+/**
+ * A stored key pair record's state, from the issuing authority's list in
+ * the current realm and the record's own mark.
+ *
+ * @param record - one parsed `stsAssertionKeyPair` or
+ *   `stsSamlAssertionKeyPair` value
+ * @returns `{ state, revokedAt, reason }`; `state` is `valid`, `expired`,
+ *   `revoked` or `superseded`
+ */
+function keyPairState(record) {
+  log.debug("Entering keyPairState().");
+  let scope = '';
+  try {
+    scope = currentRealm();
+  } catch (e) {
+    log.debug("Caught in keyPairState(): " + ((e && e.message) || e));
+    scope = '';
+  }
+  const out = stateOf(record || {}, scope);
+  log.debug("Leaving keyPairState(). " + out.state);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // ONE PROFILE'S KEY PAIRS OUT OF THE ATTRIBUTES ALREADY READ, newest first,
 // each with its state. **`openKeys` FALSE LEAVES THE PRIVATE KEYS OUT** — not
@@ -1536,6 +1564,7 @@ module.exports = {
   subjectIsSelf: subjectIsSelf,
   write: write,
   revoke: revoke,
+  keyPairState: keyPairState,
   holders: holders,
   generalizedTime: generalizedTime
 };
