@@ -219,7 +219,10 @@ What it does, in every mode:
   this service asks that host for their OpenID Provider (OpenID Connect
   Discovery section 2). **This is a warning**: it is the one federation
   request whose host a caller chooses. It goes through the outbound policy,
-  and the issuer it finds must begin with `fedPeer`. The person sees the
+  and the issuer it finds must lie within `fedPeer`: the same scheme, host
+  and port, and `fedPeer`'s path or a path below it. Being a prefix of the
+  text is not enough, so `https://op.example` does not admit
+  `https://op.example.evil.com`. The person sees the
   issuer and continues only by following the link
   (`STS-FED-0215` to `0217`).
 

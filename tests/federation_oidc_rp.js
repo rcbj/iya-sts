@@ -679,6 +679,48 @@ function childMain() {
          '8e. an issuer outside fedPeer is refused (STS-FED-0217)',
          r.status);
 
+    // --- 9. the WebFinger bound is parsed, never a string prefix ----------
+    const within = require(ROOT_DIR + '/federation/federation_sp')
+      .issuerWithin;
+    const bounds = [
+      ['https://op.example', 'https://op.example', true],
+      ['https://op.example', 'https://op.example/', true],
+      ['https://op.example', 'https://OP.example/tenant/a', true],
+      ['https://op.example', 'https://op.example:443/x', true],
+      ['https://op.example/tenant', 'https://op.example/tenant', true],
+      ['https://op.example/tenant/', 'https://op.example/tenant/7', true],
+      ['https://op.example', 'https://op.example.evil.com', false],
+      ['https://op.example', 'https://op.example:8443', false],
+      ['https://op.example', 'https://op.example@evil.com', false],
+      ['https://op.example', 'https://u:p@op.example/x', false],
+      ['https://op.example/tenant', 'https://op.example/tenant2', false],
+      ['https://op.example/tenant', 'https://op.example/tenant/../x', false],
+      ['https://op.example', 'http://op.example', false],
+      ['https://op.example', 'https://op.example/x?a=1', false],
+      ['https://op.example', 'https://op.example/x#f', false],
+      ['https://op.example', 'not a url', false]];
+    bounds.forEach(function (one) {
+      note(within(one[1], one[0]) === one[2],
+           '9. ' + one[1] + ' is ' + (one[2] ? '' : 'NOT ') + 'within ' +
+           one[0], String(within(one[1], one[0])));
+    });
+    // And through the endpoint: fedPeer `http://127.0.0.1` and an issuer on
+    // another port of that host, which a string prefix admits — a real
+    // partner answering there, so only the bound can refuse it.
+    const BOUND = make('frp-bound-' + stamp, { fedDiscovery: 'TRUE',
+      fedWebFinger: 'TRUE', fedPeer: 'http://127.0.0.1', fedSsoUrl: null,
+      fedTokenUrl: null, fedJwksUri: null, fedUserinfoUrl: null });
+    op.scenario = { webfingerIssuer: opBase, issuer: opBase, base: opBase };
+    before = coded('STS-FED-0217');
+    r = await call('GET', '/federation/webfinger/' + BOUND + '?resource=' +
+                   encodeURIComponent('a@' + tlsHost));
+    note(BOUND === 'frp-bound-' + stamp &&
+         federation.get(BOUND).fedPeer === 'http://127.0.0.1' &&
+         r.status === 403 && coded('STS-FED-0217') === before + 1,
+         '9b. an issuer on another port of fedPeer\'s host is refused ' +
+         '(STS-FED-0217)', r.status + ' ' + BOUND + ' ' +
+         federation.get(BOUND).fedPeer);
+
     // --- 5. the login initiation endpoint ------------------------------------
     before = coded('STS-FED-0205');
     r = await call('GET', '/federation/initiate-login/' + CODE + '?iss=' +

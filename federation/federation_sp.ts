@@ -5648,7 +5648,7 @@ class FederationSp {
       }
       const issuer = String(link.href);
       const peer = String(record.fedPeer || '').trim();
-      if (!peer || issuer.indexOf(peer) !== 0) {
+      if (!FederationSp.issuerWithin(issuer, peer)) {
         errorCodes.mark(res, 'STS-FED-0217');
         return this.refuse(res, record, 403, 'That OpenID Provider is not ' +
                                              'this partner',
@@ -5681,6 +5681,61 @@ class FederationSp {
       this.refuse(res, record, 500, 'This service failed while looking the ' +
                   'identifier up', String((e && e.message) || e));
     });
+  }
+
+  /**
+   * Says whether an issuer lies within a configured one (#930): the bound a
+   * WebFinger answer is held to. A PARSED comparison, never a string
+   * prefix — `https://op.example` must not admit `https://op.example.evil
+   * .com`, `https://op.example:8443` or `https://op.example@evil`. Both
+   * must parse, as https (http only where the configured one is http,
+   * which an administrator wrote), with no userinfo; the scheme, the host
+   * (case-insensitively) and the effective port must be identical; the
+   * issuer may carry no query or fragment; and its path must be the
+   * configured one's or extend it at a `/` boundary, one trailing slash
+   * on either side ignored — `/tenant` admits `/tenant/a` and not
+   * `/tenant2`.
+   *
+   * @param issuer - the issuer found
+   * @param peer - the issuer configured (fedPeer)
+   * @returns whether the first lies within the second
+   */
+  static issuerWithin(issuer: string, peer: string): boolean {
+    helpers.log.debug("Entering FederationSp.issuerWithin().");
+    let found: URL = null;
+    let bound: URL = null;
+    try {
+      found = new URL(String(issuer || ''));
+      bound = new URL(String(peer || ''));
+    } catch (e) {
+      helpers.log.debug("Caught in FederationSp.issuerWithin(): " +
+                        ((e && e.message) || e));
+      helpers.log.debug("Leaving FederationSp.issuerWithin(). Not URLs.");
+      return false;
+    }
+    const raw = String(issuer || '');
+    const schemeOk = (bound.protocol === 'https:' ||
+                      bound.protocol === 'http:') &&
+                     found.protocol === bound.protocol;
+    const plain = !found.username && !found.password &&
+                  !bound.username && !bound.password &&
+                  !found.search && !found.hash &&
+                  raw.indexOf('?') < 0 && raw.indexOf('#') < 0;
+    const port = function (u: URL): string {
+      return u.port || (u.protocol === 'https:' ? '443' : '80');
+    };
+    const sameOrigin = found.hostname.toLowerCase() ===
+                       bound.hostname.toLowerCase() &&
+                       port(found) === port(bound);
+    const trim = function (path: string): string {
+      return path.slice(-1) === '/' ? path.slice(0, -1) : path;
+    };
+    const within = trim(found.pathname) === trim(bound.pathname) ||
+                   trim(found.pathname).indexOf(trim(bound.pathname) + '/') ===
+                     0;
+    const answer = schemeOk && plain && sameOrigin && within;
+    helpers.log.debug("Leaving FederationSp.issuerWithin(). " + answer);
+    return answer;
   }
 
   // The link relation WebFinger names an OpenID Connect issuer with
@@ -5739,8 +5794,9 @@ class FederationSp {
     const held = this.takeContext(handle);
     const peer = String(record.fedPeer || '').trim();
     const issuer = held && held.kind === 'webfinger' &&
-      held.id === record.fedId && String(held.issuer || '').indexOf(peer) ===
-        0 ? String(held.issuer) : '';
+      held.id === record.fedId &&
+      FederationSp.issuerWithin(String(held.issuer || ''), peer)
+      ? String(held.issuer) : '';
     log.debug("Leaving FederationSp.foundIssuerOf(). " + (issuer || 'None.'));
     return issuer;
   }
@@ -8428,6 +8484,11 @@ export = {
    * Forwards to `FederationSp.registerPartner()` (#930).
    */
   registerPartner: slot.forward('registerPartner'),
+  /**
+   * `FederationSp.issuerWithin()` (#930): the parsed bound a WebFinger
+   * issuer is held to.
+   */
+  issuerWithin: FederationSp.issuerWithin,
   /**
    * Forwards to `FederationSp.refreshDue()` (#930), the partner refresh
    * job's body.
