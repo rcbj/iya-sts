@@ -903,10 +903,16 @@ function directoryDouble(windowed) {
     // Signing keys and enrollment credentials (#1036): a JWT key pair
     // (its certificate is not a real PEM here, so no algorithm), an ACME
     // EAB key, a SCEP challenge, and an EST-issued TLS client certificate.
-    stsAssertionJwks: ['{"keys":[]}'],
-    stsAssertionCertificate: ['not a certificate'],
-    stsAssertionKid: ['ada-kid-1'],
-    stsAssertionKeySource: ['issued'],
+    // One record per key pair since #1290; a revoked one is no row.
+    stsAssertionKeyPair: [JSON.stringify({ id: 'ada-kid-1',
+      kid: 'ada-kid-1', source: 'issued',
+      certificatePem: 'not a certificate',
+      notAfter: '2099-01-01T00:00:00.000Z' }),
+      JSON.stringify({ id: 'ada-kid-0', kid: 'ada-kid-0', source: 'issued',
+        certificatePem: 'not a certificate',
+        notAfter: '2099-01-01T00:00:00.000Z',
+        withdrawnAt: '2026-10-01T00:00:00.000Z',
+        withdrawnReason: 'cessationOfOperation' })],
     stsAcmeEabKey: [JSON.stringify({ kid: 'eab-1', hmacKey: '$aesgcm$2$x',
       createdAt: '2026-10-01T00:00:00.000Z', expiresAt: '2026-11-01T00:00:00Z'
     })],

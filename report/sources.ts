@@ -1404,8 +1404,8 @@ const MECHANISM_TABLE = [
   // protocols authenticate a request with. EST has none of its own: it takes
   // the person's password or a client certificate. Each is an asked name,
   // so an indexed read; no secret half reaches a row.
-  { id: 'jwtSigningKey', attribute: 'stsAssertionJwks', role: 'signer' },
-  { id: 'samlSigningKey', attribute: 'stsSamlAssertionCertificate',
+  { id: 'jwtSigningKey', attribute: 'stsAssertionKeyPair', role: 'signer' },
+  { id: 'samlSigningKey', attribute: 'stsSamlAssertionKeyPair',
     role: 'signer' },
   { id: 'acmeAccountKey', attribute: 'stsAcmeEabKey', role: 'enrollment' },
   { id: 'scepChallenge', attribute: 'stsScepChallenge', role: 'enrollment' },
@@ -1515,10 +1515,9 @@ function reportDidAlgorithm(subject: string): string {
 // without it would show none of the person's wallet credentials when
 // another mechanism's read found the entry first.
 const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
-  'mfalastauthtime', 'pwdchangedtime', 'entryuuid',
-  // The signing keys' public facts (#1036), read beside their asked name.
-  'stsassertioncertificate', 'stsassertionkid', 'stsassertionkeysource',
-  'stssamlassertionthumbprint', 'stssamlassertionkeysource'];
+  'mfalastauthtime', 'pwdchangedtime', 'entryuuid'];
+// (The signing keys' public facts were five fields here (#1036) until
+// #1290 made each key pair one record of the asked name itself.)
 
 // A certificate's key algorithm, named as a report would (#1036): RSA with
 // its size, an EC curve by its JOSE name, EdDSA and the post-quantum keys by
@@ -1769,27 +1768,37 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any,
     return out;
   }
   if (mechanism.id === 'jwtSigningKey' || mechanism.id === 'samlSigningKey') {
-    // A SIGNING KEY PAIR (#1036): one row, its certificate's key algorithm,
-    // its kid or thumbprint, where the pair came from as the channel
-    // (`issued` here or `uploaded`), and the certificate's notBefore. The
-    // private half is sealed on the entry and never read here.
+    // A SIGNING KEY PAIR (#1036): one row per key pair the person still
+    // holds — several per profile since #1290, each a record of the asked
+    // name — with its certificate's key algorithm, its kid or thumbprint,
+    // where the pair came from as the channel (`issued` here or
+    // `uploaded`), and the certificate's notBefore. A key pair revoked from
+    // the portal or the console (`withdrawnAt`) or past its expiry is not
+    // held and is no row. The private half is sealed on the entry and never
+    // read here.
     const jwt = mechanism.id === 'jwtSigningKey';
-    const pem = jwt ? reportAttr(entry, 'stsAssertionCertificate')
-      : values[0];
-    out.push(Object.assign({}, common, {
-      role: mechanism.role,
-      credentials: 1,
-      credentialId: jwt ? reportAttr(entry, 'stsAssertionKid')
-        : reportAttr(entry, 'stsSamlAssertionThumbprint'),
-      algorithm: reportCertKeyAlg(pem),
-      lane: reportKeyLane(reportCertKeyAlg(pem)),
-      channel: reportAttr(entry, jwt ? 'stsAssertionKeySource'
-        : 'stsSamlAssertionKeySource'),
-      format: jwt ? 'RFC 7523' : 'RFC 7522',
-      enrolledAt: reportCertIssuedAt(pem),
-      lastUsedAt: null
-    }));
-    log.debug("Leaving reportHolderRows(). Signing key.");
+    const now = Date.now();
+    const held = reportParsedValues(values).filter(function (one: any):
+        boolean {
+      return !!one.id && !one.withdrawnAt &&
+        !(one.notAfter && Date.parse(String(one.notAfter)) < now);
+    });
+    held.forEach(function (one: any): void {
+      const pem = String(one.certificatePem || '');
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: held.length,
+        credentialId: String(one.id),
+        algorithm: reportCertKeyAlg(pem),
+        lane: reportKeyLane(reportCertKeyAlg(pem)),
+        channel: String(one.source || 'issued'),
+        format: jwt ? 'RFC 7523' : 'RFC 7522',
+        enrolledAt: reportCertIssuedAt(pem),
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). Signing keys, " + out.length +
+              '.');
     return out;
   }
   if (mechanism.id === 'acmeAccountKey' || mechanism.id === 'scepChallenge') {

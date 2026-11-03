@@ -74,8 +74,9 @@
 // somebody.
 //
 // A PERSON may hold a signing key pair now (`common/person_assertions.js`,
-// `stsAssertion*` on their own entry), and sign an assertion saying *this is
-// me, issue a token for me*. **That is RFC 7523 read literally rather than
+// `stsAssertion*` on their own entry — several since #1290, any VALID one
+// accepted, found by `kid`), and sign an assertion saying *this is me, issue
+// a token for me*. **That is RFC 7523 read literally rather than
 // extended**: section 3 claim 1 asks only that `iss` be "a unique identifier
 // for the JWT issuer", and claim 2 says the `sub` of an authorization grant
 // "typically identifies an authorized accessor or resource owner". A resource
@@ -562,18 +563,24 @@ function unwrapAssertion(presented, opts) {
 //
 // **AND A PERSON'S KEY LIVES SOMEWHERE ELSE ENTIRELY**, which is why this
 // function is told WHICH KIND of party it is reading rather than trying every
-// name it knows. `stsAssertionJwks` is on a person's own entry and
-// `oauthAssertionJwks` is on an application's; the store is schemaless, so a
-// function that read both lists off whatever it was handed would accept an
-// `oauthAssertionJwks` somebody put on a person — and that is precisely the
-// crossing the two attribute sets exist to prevent, made once here instead of
-// being hoped for.
+// name it knows. A person's key pairs are `stsAssertionKeyPair` records on
+// their own entry and `oauthAssertionJwks` is on an application's; the store
+// is schemaless, so a function that read both lists off whatever it was
+// handed would accept an `oauthAssertionJwks` somebody put on a person — and
+// that is precisely the crossing the two attribute sets exist to prevent,
+// made once here instead of being hoped for.
+//
+// **A PERSON'S FIELDS ARE `person_assertions.recordFor()`'s RECORD**, never
+// the raw entry, and what is read off it is `jwks`: the JWKS of the person's
+// VALID key pairs only (#1290). A person may hold several, each found by its
+// `kid`; one that was revoked or has expired is not in it, so an assertion
+// signed with it finds no registered key and is refused as such.
 /**
- * Returns the keys a party may sign with: a person's from `stsAssertionJwks` on
- * their entry, an application's from `oauthAssertionJwks`, its `jwks` or its
- * fetched `jwks_uri`.
+ * Returns the keys a party may sign with: a person's valid key pairs (the
+ * `jwks` of their `person_assertions` record), an application's from
+ * `oauthAssertionJwks`, its `jwks` or its fetched `jwks_uri`.
  *
- * @param fields - the party's entry
+ * @param fields - the party's entry, or a person's record
  * @param kind - `person` or `application`
  * @returns `{ keys, problems, ... }`
  */
@@ -581,11 +588,12 @@ function keysForParty(fields, kind) {
   log.debug('Entering keysForParty(). kind=' + (kind || 'application'));
   const found = [];
   const problems = [];
-  const names = String(kind) === 'person'
-    ? ['stsAssertionJwks']
-    : ['oauthJwks', 'oauthAssertionJwks'];
+  const person = String(kind) === 'person';
+  const names = person ? ['jwks'] : ['oauthJwks', 'oauthAssertionJwks'];
   names.forEach(function (name) {
-    const text = fields && fields[name];
+    const held = fields && fields[name];
+    const text = person && held && typeof held === 'object'
+      ? JSON.stringify(held) : held;
     if (!text) {
       return;
     }
@@ -595,7 +603,8 @@ function keysForParty(fields, kind) {
       return;
     }
     read.keys.forEach(function (one) {
-      found.push(Object.assign({ source: name }, one));
+      found.push(Object.assign({ source: person ? 'stsAssertionKeyPair'
+                                                : name }, one));
     });
   });
   // A REGISTERED `jwks_uri`, AS FETCHED (#120). Read only where the client
@@ -1031,7 +1040,7 @@ async function verify(opts) {
                           'key pair issued from /admin/pki — or, for a ' +
                           'person asserting about THEMSELVES, issue that ' +
                           'person a key pair from the same page, which ' +
-                          'writes `stsAssertionJwks` onto their entry. ' +
+                          'adds a `stsAssertionKeyPair` to their entry. ' +
                           '`oauth2.jwtBearerRequireRegisteredIssuer` turns ' +
                           'this refusal off, and reading what it says before ' +
                           'doing so is the point of it having a description.' };
