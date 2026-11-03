@@ -120,20 +120,19 @@ function fakeDatabase() {
       db.changes += 1;
       return rows([]);
     }
-    if (/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
-          .test(text)) {
+    if ((/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
+          .test(text) || /sts:(latestChangeSeq|changeCeiling) /.test(text))) {
       return rows([{ seq: db.log.length }]);
     }
-    if (/^SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq > /
-          .test(text)) {
+    if (/sts:changesSince /.test(text)) {
       return rows(db.log.filter(function (row) {
         return row.seq > Number(p[0]);
       }).slice(0, Number(p[1]) || 500));
     }
-    if (/^SELECT seq, origin, kind, realm, key FROM sts_changes WHERE seq = /
-          .test(text)) {
+    // `changesAt()` is built with `whereIn` (#677): one bound value a seq.
+    if (/sts:changesAt /.test(text)) {
       return rows(db.log.filter(function (row) {
-        return p[0].map(Number).indexOf(row.seq) >= 0;
+        return p.map(Number).indexOf(row.seq) >= 0;
       }));
     }
     // ---- the directory ----------------------------------------------------

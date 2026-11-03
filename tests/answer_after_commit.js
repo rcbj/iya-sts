@@ -617,7 +617,8 @@ function exhaustiblePg(db) {
       return Promise.resolve({ rowCount: 1, rows: [
         { claimed_at: 1, expires_at: 30001 }] });
     }
-    if (/^UPDATE sts_cluster_claims SET expires_at/.test(text)) {
+    if (/^UPDATE sts_cluster_claims SET expires_at/.test(text) ||
+        /sts:renewOrigin /.test(text)) {
       return Promise.resolve({ rowCount: 1, rows: [] });
     }
     if (/^WITH n AS \(UPDATE sts_cluster_nodes/.test(text)) {
@@ -756,9 +757,11 @@ async function theLivenessConnection(t) {
   db.statements.length = 0;
   await bounded(second.purgeClaims(), 2000);
   const purge = db.statements.filter(function (one) {
-    return /^DELETE FROM sts_cluster_claims/.test(one.sql);
+    return /sts:purgeClaims /.test(one.sql);
   })[0];
-  t.check(!!purge && /scope <> \$1/.test(purge.sql) &&
+  // Built with the Knex builder since #677: `NOT scope = $1` is the
+  // compiler's spelling of `scope <> $1`.
+  t.check(!!purge && /not "scope" = \$1/.test(purge.sql) &&
           purge.params[0] === 'persistence.origin' &&
           Number(purge.params[1]) >= 60 * 60 * 1000,
           'D: A LAPSED ORIGIN CLAIM IS NOT PURGED WITH THE OTHERS — a purged ' +

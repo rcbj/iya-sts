@@ -53,7 +53,9 @@ const PG_PARSER = /^pg\/lib\/connection-parameters(\.js)?$/;
 const KNEX_ALLOWED = {
   'persistence/knex_store.js': 'the one door to the service\'s store',
   'attribute-sources/attribute_source_drivers.ts': 'phase 1 of #94: an ' +
-    'operator\'s database, per dialect — not this service\'s store'
+    'operator\'s database, per dialect — not this service\'s store',
+  'persistence/sql_dialect.js': '#677: the store\'s statements COMPILED ' +
+    'per engine by a Knex with no connection; it dials nothing'
 };
 
 function walk(dir, out) {
@@ -116,7 +118,8 @@ function source(t) {
           'is loaded (a test may read a URL back through pg\'s parser)',
           pgOutside.join('; '));
   t.check(knexOutside.length === 0,
-          'A2. nothing but the layer (and phase 1\'s attribute sources) ' +
+          'A2. nothing but the layer, phase 1\'s attribute sources and ' +
+          'the dialect compiler (#677) ' +
           'requires `knex`', knexOutside.join('; '));
   const layer = fs.readFileSync(LAYER, 'utf8');
   t.check(!/^(const|let|var) [^\n]*require\('knex'\)/m.test(layer) &&

@@ -102,7 +102,7 @@ function fakeDatabase() {
       return Promise.resolve({ rowCount: 0, rows: [] });
     }
     if (/^SELECT origin, claimed_at, expires_at FROM sts_cluster_claims/
-          .test(text)) {
+          .test(text) || /sts:claimOnce\.holder /.test(text)) {
       const row = db.claims.get(keyOf(p[0], p[1], p[2]));
       return Promise.resolve({ rowCount: row ? 1 : 0, rows: row ? [
         { origin: row.origin, claimed_at: 0, expires_at: row.expires }] : [] });
@@ -123,6 +123,17 @@ function fakeDatabase() {
       }
       return Promise.resolve({ rowCount: 0, rows: [] });
     }
+    // THE RENEWAL, built with the Knex builder since #677: the new expiry's
+    // offset first, then scope, realm, key and reservation, and it asks
+    // for a live claim.
+    if (/sts:renewOrigin /.test(text)) {
+      const row = db.claims.get(keyOf(p[1], '', p[3]));
+      if (row && row.reservation === p[4] && row.expires > db.now) {
+        row.expires = db.now + Number(p[0]);
+        return Promise.resolve({ rowCount: 1, rows: [] });
+      }
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
     if (/^UPDATE sts_cluster_claims SET expires_at/.test(text)) {
       const row = db.claims.get(keyOf(p[0], '', p[1]));
       // The statement's own WHERE, not a copy of it: since 2026-09-21 the
@@ -137,7 +148,8 @@ function fakeDatabase() {
       }
       return Promise.resolve({ rowCount: 0, rows: [] });
     }
-    if (/^DELETE FROM sts_cluster_claims/.test(text)) {
+    if (/^DELETE FROM sts_cluster_claims/.test(text) ||
+        /sts:releaseClaim /.test(text)) {
       const k = keyOf(p[0], p[1], p[2]);
       const row = db.claims.get(k);
       if (row && row.reservation === p[3]) {
@@ -286,14 +298,15 @@ async function claimB2(t) {
   // every ten seconds. The reservation update is now the fallback only.
   const renewals = function () {
     return db.statements.filter(function (sql) {
-      return /^UPDATE sts_cluster_claims SET expires_at/.test(sql);
+      return /^UPDATE sts_cluster_claims SET expires_at/.test(sql) ||
+        /sts:renewOrigin /.test(sql);
     });
   };
   const before = renewals().length;
   t.equal(await only.renewOrigin(30000), true,
           'a routine renewal of a live claim succeeds');
   const routine = renewals().slice(before);
-  t.check(routine.length === 1 && /expires_at\s*>/.test(routine[0]),
+  t.check(routine.length === 1 && /expires_at"?\s*>/.test(routine[0]),
           'with ONE update that needs the claim live — not the lapsed-claim ' +
           'fallback, which is the one that says it lapsed',
           JSON.stringify(routine));
@@ -304,7 +317,7 @@ async function claimB2(t) {
           'a renewal that arrives after the lapse extends the claim, because ' +
           'the reservation on it is still this process\'s');
   const afterLapse = renewals().slice(beforeLapse);
-  t.check(afterLapse.length === 2 && /expires_at\s*>/.test(afterLapse[0]) &&
+  t.check(afterLapse.length === 2 && /expires_at"?\s*>/.test(afterLapse[0]) &&
           !/expires_at\s*>/.test(afterLapse[1]),
           'the live update matched nothing, so it fell back to the ' +
           'reservation update — the one path that logs a lapse',

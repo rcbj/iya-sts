@@ -222,8 +222,8 @@ function fakeDatabase() {
                  rowCount: 1 };
       });
     }
-    if (/^DELETE FROM sts_cluster_claims WHERE scope = \$1 AND realm = \$2 AND key = \$3 AND reservation = \$4/
-          .test(text)) {
+    // `releaseClaim()`, built (#677): scope, realm, key, reservation.
+    if (/sts:releaseClaim /.test(text)) {
       return later(function () {
         const k = claimKey(p[0], p[1], p[2]);
         const row = db.claims.get(k);
@@ -237,7 +237,8 @@ function fakeDatabase() {
     // The origin fence and its renewal: held.
     if (/^SELECT 1 FROM sts_cluster_claims WHERE scope = \$1 AND realm = '' /
           .test(text) ||
-        /^UPDATE sts_cluster_claims SET expires_at = /.test(text)) {
+        /^UPDATE sts_cluster_claims SET expires_at = /.test(text) ||
+        /sts:renewOrigin /.test(text)) {
       return Promise.resolve({ rows: [{ one: 1 }], rowCount: 1 });
     }
     if (/^INSERT INTO sts_changes/.test(text)) {
@@ -247,8 +248,8 @@ function fakeDatabase() {
       }
       return rows([]);
     }
-    if (/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
-          .test(text)) {
+    if ((/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
+          .test(text) || /sts:(latestChangeSeq|changeCeiling) /.test(text))) {
       return rows([{ seq: db.changes.length }]);
     }
     if (/^INSERT INTO sts_ldap_entries/.test(text)) {
@@ -307,9 +308,10 @@ function claimStatements(db, from) {
   // every transaction checks and a timer renews.
   const out = list.filter(function (s) {
     return /^(WITH wanted AS|WITH quiet AS|DELETE FROM sts_cluster_claims|INSERT INTO sts_cluster_claims)/
-      .test(s.text);
+      .test(s.text) || /sts:releaseClaim /.test(s.text);
   }).map(function (s) {
-    return { kind: /DELETE FROM sts_cluster_claims/.test(s.text) ? 'release'
+    return { kind: /DELETE FROM sts_cluster_claims|sts:releaseClaim /
+      .test(s.text) ? 'release'
       : 'claim',
              tx: s.tx, withEntry: entryTx.has(s.tx) };
   });
@@ -430,7 +432,7 @@ async function persistChild() {
     return s.text;
   });
   const releasedAt = between.findIndex(function (text) {
-    return /DELETE FROM sts_cluster_claims/.test(text);
+    return /DELETE FROM sts_cluster_claims|sts:releaseClaim /.test(text);
   });
   const transactionBefore = between.slice(0, Math.max(0, releasedAt))
     .indexOf('BEGIN') >= 0;

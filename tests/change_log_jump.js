@@ -173,13 +173,16 @@ async function run(t) {
   try {
     await check(catalogClient({ rows: [{ increment: 1, cache: 1 }] }));
     await check(catalogClient({ rows: [] }));
+    await check(catalogClient({ rows: [{ one: 1 }] }));
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     passed = false;
   }
   t.check(passed,
           'INCREMENT 1 CACHE 1 opens, and so does a server that says ' +
-          'nothing: the refusal is on evidence only', String(passed));
+          'nothing or answers a row without the two numbers (a double ' +
+          'that answers every statement): the refusal is on evidence only',
+          String(passed));
   log.debug("Leaving run().");
 }
 

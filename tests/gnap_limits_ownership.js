@@ -648,10 +648,12 @@ async function sharedStore(t) {
             'reset at a new one; no row back is the refusal',
             spend ? spend.sql : 'no statement');
     const refund = statements.filter(function (one) {
-      return /UPDATE sts_cluster_budgets/.test(one.sql);
+      return /sts:refundBudget /.test(one.sql);
     })[0];
-    t.check(!!refund && /period = \$4::bigint/.test(refund.sql) &&
-            /amount >= \$5::bigint AND count >= \$6::bigint/.test(refund.sql),
+    // Built with the Knex builder since #677: the same three conditions in
+    // the compiler's spelling.
+    t.check(!!refund && /"period" = \$6/.test(refund.sql) &&
+            /"amount" >= \$7 and "count" >= \$8/.test(refund.sql),
             'H2. a refund takes back only from its own period, never below ' +
             'zero', refund ? refund.sql : 'no statement');
   } finally {
