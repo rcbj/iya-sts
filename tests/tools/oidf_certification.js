@@ -401,7 +401,28 @@ async function main() {
   const username = "oidf-cert-" +
     nodeCrypto.randomBytes(3).toString("hex");
   const password = "Cert-" + nodeCrypto.randomBytes(12).toString("base64url");
-  await oidf.makePerson(realm.api, username, password);
+  // EVERY CLAIM OF THE `profile`, `phone` AND `address` SCOPES (OIDC Core
+  // 5.4), so each has a value in the entry: the suite's
+  // VerifyScopesReturnedInUserInfoClaims and ...InAuthorizationEndpoint-
+  // IdToken want all of them whatever claims_supported says, and product mode
+  // invents nothing. The profile attributes are sts_oidcc_conformance.js's
+  // (#1292, which mapped the last five); the phone and address ones are
+  // this tool's. INVENTED values: 555-01xx is reserved for fiction, the
+  // street does not exist, and conformance.example is a reserved name.
+  const site = "https://conformance.example/~" + username;
+  await oidf.makePerson(realm.api, username, password, {
+    middleName: "Middle", displayName: "Conf",
+    labeledURI: site,
+    profileUrl: site + "/profile",
+    pictureUrl: site + "/photo.jpg",
+    schacGender: "9", schacDateOfBirth: "19800131",
+    timeZone: "Europe/Stockholm", preferredLanguage: "en-GB",
+    telephoneNumber: "+1 512 555 0142",
+    street: "1 Conformance Way",
+    l: "Austin",
+    st: "TX",
+    postalCode: "78701"
+  });
   const someone = conformanceBrowser.person({
     suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: realm.base,
     username: username, password: password,
