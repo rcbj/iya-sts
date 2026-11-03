@@ -895,6 +895,9 @@ class FederationPage {
       ? act('signals-read-stream', t.text('consoleFederation.actReadStream')) +
         act('signals-update-stream',
             t.text('consoleFederation.actSendEvents')) +
+        act('signals-replace-stream',
+            t.text('consoleFederation.actReplaceStream')) +
+        act('signals-read-status', t.text('consoleFederation.actReadStatus')) +
         act('signals-verify', t.text('consoleFederation.actVerify')) +
         (s.streamDelivery === 'poll'
           ? act('signals-poll-now', t.text('consoleFederation.actPollNow'))
@@ -991,7 +994,9 @@ class FederationPage {
           kit.esc(s.streamDelivery) + ', aud <code>' +
           kit.esc((s.streamAud || []).join(' ')) + '</code>)' +
           (s.verifiedAt ? ' ' + t.html('consoleFederation.verifiedAt',
-                                       { at: s.verifiedAt }) : '')
+                                       { at: s.verifiedAt }) : '') +
+          (s.streamStatus ? ' ' + t.html('consoleFederation.streamStatus',
+                                         { status: s.streamStatus }) : '')
         : '<span class="sub">' + t.html('consoleFederation.noneLower') +
           '</span>') + '</td></tr>' +
       (s.streamDelivery === 'push' || s.delivery === 'push'

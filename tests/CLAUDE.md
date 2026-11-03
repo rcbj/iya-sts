@@ -1686,6 +1686,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/protocol/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
 | `tests/protocol/sts_oidcc_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID CONNECT PLANS** (#187, 2026-09-24): the nine OP certification profiles (basic twice, dynamic and static clients; implicit, hybrid, config, dynamic, the three form_post ones, 3rd-party-initiated login), `oidcc-test-plan` once per client authentication (`client_secret_basic`, `_post`, `_jwt`, `private_key_jwt`, mutual TLS) across query, fragment and form_post, the four logout plans (RP-Initiated, Front-Channel, Back-Channel, Session Management) and Identity Assurance's `ekyc-test-plan-oidccore`. A FAILED module, or a WARNING from a condition `KNOWN_WARNINGS` does not name, fails the job. `conformance: true`. See *The OpenID conformance suite*, below |
 | `tests/protocol/sts_ssf_oidf_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS PLANS** (#187): the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll; the job emits the CAEP events the interop module waits for. Not `sts_ssf_conformance.js` (#144, this repository's own SSF checks). `conformance: true` |
+| `tests/protocol/sts_ssf_receiver_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS RECEIVER PLANS** (#932): the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, the suite the transmitter. Per plan a realm receiving through a signals-only relationship; the job presses the stream buttons each module waits for, deletes the stream once a module ends, and asserts the suite's CAEP `session-revoked` ended the person's sessions (`signalsOnlyEndSessionEvents` turned on through the signal-response template). No classical twin: the suite verifies nothing the realm signs. `conformance: true`, lane `conformance-b` |
 | `tests/protocol/sts_oidfed_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID FEDERATION PLANS** (#187): the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor, and the plan in which the suite plays a federation (Trust Anchor and RP, keys made by the job) that a realm's OP has joined, registering the RP automatically. `conformance: true` |
 | `tests/protocol/sts_oid4vci_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID4VCI ISSUER PLANS** (#187): the issuer plan (`vci` profile, SD-JWT VC) wallet-initiated, offered by this issuer and pre-authorized with a transaction code, and the HAIP issuer plan; the job plays the issuer's operator, delivering the offer and the code. `conformance: true` |
 | `tests/protocol/sts_oid4vp_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID4VP VERIFIER PLANS** (#187, #230, #935): `oid4vp-1final-verifier-test-plan` for SD-JWT VC under the `redirect_uri`, `x509_san_dns` and `x509_hash` prefixes, each by `direct_post` and `direct_post.jwt`; and since #935 `oid4vp-1final-verifier-haip-test-plan` (`x509_hash`, a signed request by reference, `direct_post.jwt`) for SD-JWT VC and for an ISO mdoc (`iso_mdl`), in realms with `oid4vp.walletInvocation` `haip-vp`, a start naming a `redirect_uri` (HAIP 5.1), and for the mdoc the suite's IACA root fetched at run time as `oid4vp.mdocTrustAnchors`. Every plan also as its classical twin. The suite's SD-JWT issuer key is made at run time and trusted by the realm, and the job plays the End-User the Verifier sends to the wallet. `conformance: true` |
@@ -2259,7 +2260,12 @@ Management under Message Signing, CIBA ping).
   `ssf.pushCaFile`, and the drivers verify the suite's API against it.
 * **The operators**: SSF's CAEP interop module waits for events the
   transmitter's operator triggers (the job signs the person in and emits
-  them through `/admin-api/caep/emit`); an issuer-initiated OpenID4VCI module
+  them through `/admin-api/caep/emit`); every SSF RECEIVER module waits for
+  the receiver's administrator to create, read, update, replace, set the
+  status of, verify, poll and delete a stream (#932: the job presses the
+  relationship's buttons through `/admin-api/federation/signals-*`, and
+  deletes the stream once each module has ended, because a stream request
+  a later module never created is logged there as a failure); an issuer-initiated OpenID4VCI module
   waits for an offer and a pre-authorized one for its transaction code (the
   job reads both off the realm's own offer page, whose wallet URL is the
   suite's offer endpoint); the OpenID4VP verifier plan waits for the
@@ -2299,8 +2305,10 @@ Management under Message Signing, CIBA ping).
   watchdogs, `STS_CONFORMANCE_TIMEOUT` and the `openid-conformance` job's
   timeout were raised for it.
 * **Not run**: the relying-party plans (this service is nobody's RP but its
-  own), the Brazil and panva plans, the superseded drafts, AuthZEN, and the
-  SSF receiver plans (#153). The suite publishes no push-mode FAPI-CIBA plan.
+  own), the Brazil and panva plans, the superseded drafts and AuthZEN. The
+  SSF receiver plans (#153) run since #932 (2026-11-02), in
+  `sts_ssf_receiver_conformance.js`. The suite publishes no push-mode
+  FAPI-CIBA plan.
   The HAIP issuer plan (`attest_jwt_client_auth`, #229) and the OpenID4VP
   verifier plan's `x509_san_dns` and `x509_hash` variants (#230) waited on
   those tickets and run since 2026-09-26.
