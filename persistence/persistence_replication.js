@@ -199,6 +199,8 @@ function createReplication(label) {
   // what keeps a jump on a dense one from costing the node.
   // ---------------------------------------------------------------------------
   const HOLE_SPAN_LIMIT = 1000;
+  // The poll where the store sends no nudge (#677). See intervalMs().
+  const NO_NUDGE_INTERVAL_MS = 1000;
   const MAX_HOLE_RANGES = 64;
   const holeRanges = [];
 
@@ -372,6 +374,17 @@ function createReplication(label) {
 
   function intervalMs() {
     log.debug("Entering intervalMs().");
+    // A STORE THAT SENDS NO NUDGE IS POLLED EVERY SECOND (rcbj on #677) —
+    // unless somebody set the interval, which then stands. The five-second
+    // default is argued from the nudge arriving first; without one, the
+    // interval IS the convergence lag. One indexed read a process a second
+    // when nothing changed.
+    const noNudge = !!driver && typeof driver.watchChanges !== 'function';
+    const source = config.sourceOf('persistence.pollInterval');
+    if (noNudge && (source === 'default' || source === 'defaults')) {
+      log.debug("Leaving intervalMs(). No nudge, default interval.");
+      return NO_NUDGE_INTERVAL_MS;
+    }
     log.debug("Leaving intervalMs().");
     return Math.max(250,
                     Number(config.value('persistence.pollInterval')) || 5000);

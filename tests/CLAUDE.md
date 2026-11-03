@@ -4094,6 +4094,20 @@ over every bundle and a comma-separated pin list, which is
 `--ignore-certificate-errors-spki-list`'s own syntax; in every other mode it is
 the one fetch it always was.
 
+### `cluster-portable`: the same mode on the portable statements (#677)
+
+`./run-tests.sh --modes=cluster-portable` runs this mode with one value more,
+`STS_PERSISTENCE_SQL_DIALECT=portable` on both nodes, so they coordinate
+through the statements a second database engine (MariaDB) runs —
+`persistence/cluster_portable.js`: inserts that do nothing on a duplicate,
+row locks in `sts_cluster_locks` for the join, no `LISTEN`/`NOTIFY` and a
+one-second change-log poll. It runs only when named, like `cells`, and is
+not in `STS_ALL_MODES`. **A failure here and not in `cluster` is a finding
+about the portable statements**, which is what rcbj asked for on #677: the
+code MariaDB will run, proved on the reference engine first.
+`tests/cluster_portable.js` holds the same contracts in process, and against
+a real database when `STS_TEST_POSTGRES_URL` names one.
+
 ### What this mode does not cover
 
 * **UDP 88.** HAProxy balances TCP; the KDC's datagram socket is node A's alone.

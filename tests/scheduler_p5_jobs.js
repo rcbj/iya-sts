@@ -111,6 +111,11 @@ function childMain() {
         return Promise.resolve({ inserted: false });
       },
       leaveChangeReader: function () { return Promise.resolve(true); },
+      // A NUDGE, as the native postgres driver has: without one the pull
+      // runs every second whatever the default says (#677,
+      // `persistence_replication.js` intervalMs()), which is not what this
+      // assertion is about.
+      watchChanges: function () { return function () {}; },
       purgeChangeLog: function () {
         return Promise.resolve({ trimmed: 0, readers: 1, readersGone: 0,
                                  bound: 1 });
