@@ -3351,6 +3351,54 @@ function dialOptions(url, verifyTls, ca) {
  * trust anchors for it or ''; and `poolMax`, the pool size
  * @returns the driver object, with the methods the persistence contract names
  */
+// ---------------------------------------------------------------------------
+// THE CHANGE LOG'S SEQUENCE MUST BE DENSE (#677, rcbj 2026-11-03).
+//
+// The pull treats a number it stepped over as a transaction still
+// committing and asks for it again for ten minutes
+// (`persistence_replication.js`, HOLE_SPAN_LIMIT). That is right for what a
+// sequence of INCREMENT 1 and CACHE 1 leaves — one burnt number per
+// rollback — and wrong for one that leaves gaps by design: an increment
+// above one makes every row a hole, and a cache above one hands each
+// session a block it commits out of order, so a reader steps over numbers
+// another session will not use for minutes. Neither corrupts the store
+// (every applier reads the current row); both turn the pull's hole list
+// into noise in which a real late commit is eventually given up on.
+//
+// So open() REFUSES such a store (STS-STORE-0091), on EVIDENCE only:
+// `pg_sequence` is a catalog every role may read, and an answer with no
+// row (a server that does not say) is not a reason to refuse.
+// `postgres/schema.sql` and SCHEMA_OBJECTS both create `bigserial`, which
+// is INCREMENT 1 CACHE 1. Module level, handed the driver's logger, so
+// `tests/change_log_jump.js` can ask it of a catalog double.
+// ---------------------------------------------------------------------------
+function checkChangeLogDense(client, log) {
+  log.debug("Entering checkChangeLogDense().");
+  log.debug("Leaving checkChangeLogDense().");
+  return client.query(
+    'SELECT s.seqincrement AS increment, s.seqcache AS cache FROM ' +
+    'pg_sequence s WHERE s.seqrelid = ' +
+    'to_regclass(pg_get_serial_sequence(\'sts_changes\', \'seq\'))'
+  ).then(function (result) {
+    const row = ((result && result.rows) || [])[0];
+    if (!row) {
+      return null;
+    }
+    const increment = Number(row.increment);
+    const cache = Number(row.cache);
+    if (increment === 1 && cache <= 1) {
+      return null;
+    }
+    throw errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0091') +
+      'the change log\'s sequence (sts_changes.seq) is INCREMENT ' +
+      increment + ' CACHE ' + cache + ', which leaves gaps every reader ' +
+      'would wait for. It must be INCREMENT 1 CACHE 1, as ' +
+      'postgres/schema.sql creates it: ALTER SEQUENCE ' +
+      'sts_changes_seq_seq INCREMENT 1 CACHE 1, as the owner.'),
+      'STS-STORE-0091');
+  });
+}
+
 function create(options) {
   const url = options.url;
   const log = options.log;
@@ -5653,6 +5701,8 @@ function create(options) {
           // counters' keys, the old folds, the minted btree, the tables'
           // storage parameters — before the routines below.
           return upgradeSchema(client, created);
+        }).then(function () {
+          return checkChangeLogDense(client, log);
         }).then(function () {
           // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
           // function or a trigger is not a relation `to_regclass()` knows —
@@ -10628,6 +10678,9 @@ module.exports = {
   // (`tests/tools/minted_flush_double.js`), which play it by its layout.
   MINTED_FLUSH: MINTED_FLUSH,
   MINTED_FLUSH_LAYOUT: MINTED_FLUSH_LAYOUT,
+  // The change log's density check at open (#677), for
+  // `tests/change_log_jump.js`.
+  checkChangeLogDense: checkChangeLogDense,
   poolMax: poolMax,
   // What `pg` is given for a connection string (#98): for
   // `persistence/cell_convert.js`, which dials the service's databases

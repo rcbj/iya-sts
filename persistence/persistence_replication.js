@@ -174,6 +174,33 @@ function createReplication(label) {
   let highest = 0;
   // seq -> when this process first saw it missing (Date.now()).
   const holes = new Map();
+  // ---------------------------------------------------------------------------
+  // A JUMP IN THE SEQUENCE IS A RANGE, NOT A HOLE PER NUMBER (#677).
+  //
+  // `page()` used to remember every missing number between two rows it read,
+  // one Map entry each, in a synchronous loop. That is right for what a dense
+  // sequence leaves — a rollback burns one number, a burst of them a few — and
+  // it is an outage for anything else: a `setval()` forward, a sequence put
+  // back out of step with a dump, or an engine whose generator is unique but
+  // SPARSE (CockroachDB's `unique_rowid()`) leaves a gap of millions, and the
+  // loop held the event loop until the heartbeat lapsed and the node
+  // fail-stopped (STS-CLUSTER-0004), or ran the heap out. Below that,
+  // MAX_HOLES evicted the oldest holes first, so a real late commit among a
+  // few thousand burnt numbers was never applied in this process.
+  //
+  // So a gap wider than HOLE_SPAN_LIMIT is kept as ONE range `{ lo, hi,
+  // since, seen }` and re-asked for with one `changesSince(lo - 1)` a pull,
+  // taking the rows inside it that it has not applied. What can appear inside
+  // a jump is a transaction that took its number before the jump and had not
+  // committed — bounded by the connections open at the time, far below a
+  // page — so a page from `lo` reaches every one. Ranges expire as holes do,
+  // and are capped at MAX_HOLE_RANGES. A store whose generator is sparse by
+  // design is refused at open (`changeLogDense()`, STS-STORE-0091); this is
+  // what keeps a jump on a dense one from costing the node.
+  // ---------------------------------------------------------------------------
+  const HOLE_SPAN_LIMIT = 1000;
+  const MAX_HOLE_RANGES = 64;
+  const holeRanges = [];
 
   let unwatch = null;
   let running = false;   // one catch-up at a time
@@ -251,7 +278,46 @@ function createReplication(label) {
                'rolled back. ' + holes.size + ' hole(s) are still being ' +
                'asked for.');
     }
+    expireHoleRanges(now);
     log.debug("Leaving expireHoles().");
+  }
+
+  // A range is given up on as a hole is: after HOLE_EXPIRE_MS, or the oldest
+  // first past MAX_HOLE_RANGES. One line per pass, with the span.
+  function expireHoleRanges(now) {
+    log.debug("Entering expireHoleRanges().");
+    const kept = holeRanges.filter(function (range) {
+      return now - range.since < HOLE_EXPIRE_MS;
+    });
+    kept.sort(function (a, b) {
+      return a.lo - b.lo;
+    });
+    while (kept.length > MAX_HOLE_RANGES) {
+      kept.shift();
+    }
+    const dropped = holeRanges.length - kept.length;
+    if (dropped) {
+      holeRanges.length = 0;
+      Array.prototype.push.apply(holeRanges, kept);
+      holesAbandoned += dropped;
+      log.warn(errorCodes.tag('STS-STORE-0049') + 'persistence: ' + dropped +
+               ' jump(s) in the change-log sequence are no longer asked ' +
+               'for; ' + holeRanges.length + ' are still being asked for.');
+    }
+    log.debug("Leaving expireHoleRanges().");
+  }
+
+  // Remembers a gap wider than HOLE_SPAN_LIMIT as one range.
+  function addHoleRange(lo, hi, now) {
+    log.debug("Entering addHoleRange(). " + lo + '..' + hi);
+    holeRanges.push({ lo: lo, hi: hi, since: now, seen: new Set() });
+    log.warn(errorCodes.tag('STS-STORE-0090') + 'persistence: the ' +
+             'change-log sequence jumped from ' + (lo - 1) + ' to ' +
+             (hi + 1) + '; the ' + (hi - lo + 1) + ' number(s) between are ' +
+             'asked for as one range rather than one by one. A dense ' +
+             'sequence jumps only when somebody moved it (setval, a ' +
+             'restore).');
+    log.debug("Leaving addHoleRange().");
   }
 
   // `applied` is just below the oldest hole still asked for, or `highest`.
@@ -261,6 +327,11 @@ function createReplication(label) {
     holes.forEach(function (since, seq) {
       if (!oldest || seq < oldest) {
         oldest = seq;
+      }
+    });
+    holeRanges.forEach(function (range) {
+      if (!oldest || range.lo < oldest) {
+        oldest = range.lo;
       }
     });
     applied = oldest ? Math.max(applied, oldest - 1) : highest;
@@ -381,6 +452,7 @@ function createReplication(label) {
       applied = seq;
       highest = seq;
       holes.clear();
+      holeRanges.length = 0;
       startedAt = new Date().toISOString();
       // THE NUDGE FIRST, THE TIMER SECOND, and neither is load-bearing on its
       // own: the timer is the contract and the listener only makes it prompt.
@@ -757,6 +829,10 @@ function createReplication(label) {
         const now = Date.now();
         let expect = highest + 1;
         rows.forEach(function (row) {
+          if (row.seq - expect > HOLE_SPAN_LIMIT) {
+            addHoleRange(expect, row.seq - 1, now);
+            expect = row.seq;
+          }
           while (expect < row.seq) {
             if (!holes.has(expect)) {
               holes.set(expect, now);
@@ -783,10 +859,18 @@ function createReplication(label) {
     // hole still being asked for.
     function recheckHoles() {
       log.debug("Entering recheckHoles().");
-      if (!holes.size) {
+      if (!holes.size && !holeRanges.length) {
         applied = highest;
         log.debug("Leaving recheckHoles(). None.");
         return Promise.resolve(0);
+      }
+      if (!holes.size) {
+        log.debug("Leaving recheckHoles(). Ranges only.");
+        return recheckHoleRanges().then(function (n) {
+          expireHoles(Date.now());
+          settleWatermark();
+          return n;
+        });
       }
       const asked = Array.from(holes.keys());
       // A DRIVER THAT CANNOT BE ASKED FOR ONE SEQ is asked for everything above
@@ -811,11 +895,46 @@ function createReplication(label) {
               holes.delete(row.seq);
             });
             rowsApplied += rows.length;
+            return recheckHoleRanges();
+          }).then(function (inRanges) {
             expireHoles(Date.now());
             settleWatermark();
-            return rows.length;
+            return rows.length + inRanges;
           });
       });
+    }
+
+    // THE RANGES, ASKED FOR AGAIN: one `changesSince(lo - 1)` a range, the
+    // rows inside it not applied yet. See HOLE_SPAN_LIMIT for why a page from
+    // `lo` reaches every row a jump can hide.
+    function recheckHoleRanges() {
+      log.debug("Entering recheckHoleRanges().");
+      if (!holeRanges.length) {
+        log.debug("Leaving recheckHoleRanges(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving recheckHoleRanges().");
+      return holeRanges.slice().reduce(function (prior, range) {
+        return prior.then(function (total) {
+          return Promise.resolve(driver.changesSince(range.lo - 1, PAGE))
+            .then(function (found) {
+              const rows = (found || []).filter(function (row) {
+                return row.seq >= range.lo && row.seq <= range.hi &&
+                  !range.seen.has(row.seq);
+              });
+              if (!rows.length) {
+                return total;
+              }
+              return applyRows(rows).then(function () {
+                rows.forEach(function (row) {
+                  range.seen.add(row.seq);
+                });
+                rowsApplied += rows.length;
+                return total + rows.length;
+              });
+            });
+        });
+      }, Promise.resolve(0));
     }
 
     log.debug("Leaving pull().");
@@ -2102,6 +2221,7 @@ function createReplication(label) {
       appliedSeq: applied,
       highestSeq: highest,
       holes: holes.size,
+      holeRanges: holeRanges.length,
       holesAbandoned: holesAbandoned,
       pollIntervalMs: intervalMs(),
       pulls: pulls,
@@ -2153,6 +2273,7 @@ function createReplication(label) {
     applied = 0;
     highest = 0;
     holes.clear();
+    holeRanges.length = 0;
     holesAbandoned = 0;
     pullsStarted = 0;
     lastCompletedStartNo = 0;

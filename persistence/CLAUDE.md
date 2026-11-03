@@ -1264,6 +1264,28 @@ the list merge, the session rank).
   store is the arbiter*): the set adopted away from is one the store already
   refused. With the cluster off it still logs and does nothing.
 
+### THE SEQUENCE IS DENSE, AND A JUMP IS A RANGE (#677, 2026-11-03)
+
+**rcbj's decision: a store whose change-log sequence leaves gaps by design is
+refused at open** (`checkChangeLogDense()`, STS-STORE-0091): `sts_changes.seq`
+must be INCREMENT 1 CACHE 1, which `bigserial` is. The refusal is on evidence
+only (`pg_sequence`, readable by every role); an answer with no row opens. A
+gap does not corrupt the store, because every applier reads the current row.
+What it costs is the readers: a cache above one hands each session a block it
+commits out of order, and an increment above one makes every row a hole.
+
+**A jump is one range, not a hole per number.** The pull used to remember every
+number it stepped over, one Map entry each, in a synchronous loop. A `setval`
+forward, or a sequence restored out of step with a dump, held the event loop
+until the heartbeat lapsed. Now a gap wider than `HOLE_SPAN_LIMIT` (1000) is
+one `{ lo, hi }` range, logged STS-STORE-0090, re-asked with one
+`changesSince(lo - 1)` a pull, and expired like a hole. A page from `lo`
+reaches every row a jump can hide: those are transactions that took their
+number before the jump, bounded by the connections open at the time.
+`tests/change_log_jump.js`. This is phase 1 of #677: the MariaDB driver
+(`cluster/CLAUDE.md`'s primitives, spelt per engine) has to meet the same
+rule, with `innodb_autoinc_lock_mode = 1`.
+
 ### THE CHANGE LOG IS TRIMMED (2026-09-14, #46 section 8)
 
 `sts_changes` grew for ever: `purgeChanges()` existed and nothing called it.

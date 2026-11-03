@@ -1869,6 +1869,17 @@ const CODES = [
       'data-key rows again, and was skipped (another build\'s or a removed ' +
       'realm\'s); said once per key.',
     spec: '' },
+  { code: 'STS-STORE-0090',
+    summary: 'The change-log sequence jumped by more than a thousand numbers ' +
+      'between two rows a pull read (a setval, a sequence restored out of ' +
+      'step); the numbers between are asked for as one range rather than ' +
+      'one by one.',
+    spec: '' },
+  { code: 'STS-STORE-0091',
+    summary: 'The store was refused at open: the change log\'s sequence is ' +
+      'not dense (an increment above one or a cache above one), so every ' +
+      'reader would wait for numbers no transaction will commit.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
