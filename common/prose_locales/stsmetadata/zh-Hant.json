@@ -504,8 +504,8 @@
     "text": "full（#151），作為 OpenID 提供者，在 oauth2.providerCommands 開啟時（預設關閉）：註冊 command_endpoint（DCR、主控台、API；https，不含片段）；類型為 command+jwt 的 Command Token，簽署方式與用戶端的 ID Token 相同，最長兩分鐘，依命令攜帶第 5 節的宣告（sub 只在帳戶命令中，metadata 只在 metadata 中，authentication_provider 只在 migrate 中，絕不含 nonce；tenant 為領域 id；aud_sub 會送出並學習）；全部十個帳戶命令及其 _async 變體，透過共用的持久對外佇列傳送，並讀取第 3 節的回應與錯誤；metadata 記錄每個依賴方所支援的內容；五個串流租用戶命令以 Server-Sent Events 讀取，並以 Last-Event-ID 繼續；用於非同步結果以及 metadata 與 audit_tenant 請求的回呼端點；每個依賴方的帳戶狀態登錄；在目錄變更與全域登出時自動執行 suspend、reactivate、delete、maintain 與 invalidate，僅限列出了該命令的依賴方。測試對端（tests/peer/）扮演回應每個命令的依賴方。「尚缺」：為另一個 OP 擔任依賴方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full（#148），在每種模式下。第 2 節：ID Token 與 claims_supported 中的 session_expiry（工作階段的絕對結束時間，每當在工作階段上簽發權杖時）、tenant（信任領域的 id）與 aud_sub（管理員依個人依用戶端記錄的帳戶 id，主控台與 /admin-api）。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從用戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
+    "en": "e8438c20973c8485",
+    "text": "full（#148），在每種模式下。第 2 節：session_expiry（工作階段的絕對結束時間，在工作階段上簽發權杖時）與 tenant（信任領域的 id）出現在其 claims 請求指名它們的 ID Token 中，或在 oauth2.enterpriseClaimsAlways 開啟時出現在每個 ID Token 中（#1292）；aud_sub（管理員依個人依用戶端記錄的帳戶 id，主控台與 /admin-api）出現在 ID Token 中；三者都在 claims_supported 中。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從用戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",

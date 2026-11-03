@@ -280,8 +280,8 @@
     "text": "full（#142），在每種模式下：授權端點（包括 PAR 與 JAR）與 CIBA 端點上的 grant_management_action create、merge 與 replace，以及 grant_id；權杖回應中的 grant_id；僅限機密客戶端；依草案命名的 invalid_grant_id 與 invalid_request；授權在其權杖被領取時寫入，絕不提早；merge 與 replace 會依世代使較早的重新整理權杖失效，在每個節點上皆然；在 grant_management_query 與 grant_management_revoke 下的 GET 與 DELETE /oauth2/grants/{grant_id}，這是客戶端必須宣告的受保護範圍；DELETE 會撤銷該授權及其下記錄的每個權杖；grant_management_actions_supported 與 grant_management_endpoint。授權隨其最後一個權杖到期。「尚缺」：grant_management_action_required（選用，此處為 false）；在不同 client id 之間共用授權。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
-    "en": "a9d422b9ede39dbe",
-    "text": "full（#148），在每種模式下。第 2 節：ID Token 與 claims_supported 中的 session_expiry（工作階段的絕對結束時間，每當在工作階段上簽發權杖時）、tenant（信任領域的 id）與 aud_sub（管理員依個人依客戶端記錄的帳戶 id，主控台與 /admin-api）。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從客戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
+    "en": "e8438c20973c8485",
+    "text": "full（#148），在每種模式下。第 2 節：session_expiry（工作階段的絕對結束時間，在工作階段上簽發權杖時）與 tenant（信任領域的 id）出現在其 claims 請求指名它們的 ID Token 中，或在 oauth2.enterpriseClaimsAlways 開啟時出現在每個 ID Token 中（#1292）；aud_sub（管理員依個人依客戶端記錄的帳戶 id，主控台與 /admin-api）出現在 ID Token 中；三者都在 claims_supported 中。第 3 節：tenant 指名其他領域時以 invalid_request 拒絕；domain_hint 會將該人送到 fedHomeRealmDomain 包含它的聯盟關係。第 4 節：入口網站的第三方發起登入會加上 tenant、domain_hint 與 target_link_uri。「尚缺」：從客戶端學習的 aud_sub，這會隨 OpenID Provider Commands 一起到來（#151）。"
   },
   "stsmetadata.specs.oidc-ephemeral.coverage": {
     "en": "f7656881361a49fc",

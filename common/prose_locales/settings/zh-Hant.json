@@ -1379,6 +1379,14 @@
     "en": "68ffd5da182ec911",
     "text": "此領域是否簽署、發布並驗證後量子與複合 JWS 演算法（ML-DSA、SLH-DSA 以及複合 ML-DSA 演算法）。**預設為開啟。**關閉時：`/oauth2/jwks` 與 DID 文件中沒有任何後量子簽章金鑰（包括待命、釘選與簽署者群組金鑰）；探索文件、授權伺服器、OpenID Federation、OpenID4VCI 與 OpenID4VP 文件的任何 `*_alg_values_supported` 或 `*_alg_values` 清單中都沒有後量子演算法；以其中之一簽署的 JWS 在此領域驗證 JWS 的任何地方都會被拒絕；用戶端不能註冊其中之一；而仍需要其中之一的簽章——此設定開啟期間註冊的用戶端，或 HTTP 訊息簽章——會被拒絕，而不是用一把無人能取得的金鑰簽署。它是為 JOSE 程式庫無法解析 AKP 金鑰或不認識這些演算法的用戶端與測試套件而設，OpenID 一致性測試套件即為其一。**不受影響：**COSE（通行金鑰）、XML 簽章、TLS、憑證演算法、ML-KEM 加密金鑰（`keys.encryptionKemAlgs`）、`hybrid-groups` 憑證在 `x5c` 中攜帶的 ML-DSA 替代金鑰（單獨的 ML-DSA 金鑰會被移除，憑證不會重新簽發），以及 `oidfed.signingAlg`：指名 ML-DSA 聯盟金鑰的領域仍以它簽署自己的聲明，卻會拒絕要求它驗證的 ML-DSA 聲明，因此請在此將該設定維持為傳統演算法。"
   },
+  "keys.eddsaSigning|label": {
+    "en": "743f659a7fcaa776",
+    "text": "EdDSA 簽章"
+  },
+  "keys.eddsaSigning|description": {
+    "en": "d14784fabbda974e",
+    "text": "此領域是否以 EdDSA（RFC 8037，Ed25519 與 Ed448）為用戶端選擇演算法的 JOSE 物件簽章，並發布其 kty OKP 簽章金鑰。**預設關閉**，因為 OpenID 一致性測試套件無法剖析 JWKS 中的 OKP 金鑰，而 OpenID Connect 認證執行的正是該套件。關閉時：`/oauth2/jwks` 中沒有 OKP 簽章金鑰（包括備用、固定與簽署者群組金鑰）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；用戶端不能為 ID Token、UserInfo、內省或 JARM 回應註冊或被指定 EdDSA；仍被要求的此類簽章——由在此設定開啟時註冊的用戶端，或由設為 EdDSA 的 SSF、WS-Trust 或 Provider Commands 演算法——會被拒絕，而不是以無人能取得的金鑰產生。**不變：**用戶端用來簽章的 EdDSA（用戶端斷言、DPoP 證明、請求物件、錢包證明）仍被接受並宣告為接受；營運者設定的存取權杖、聯盟或憑證演算法（`oauth2.accessTokenSigningAlg`、`oidfed.signingAlg`、OpenID4VCI 的憑證演算法）仍會簽章，因此在此設定關閉時不要在那裡設定 EdDSA；DID 文件、COSE、XML 簽章、DKIM 與 TLS 不屬於 JOSE JWKS 發布。開啟時：依 `oauth2.eddsaCurve` 的設定簽章並發布 EdDSA。"
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "已簽署權杖的 kid 格式"
@@ -3994,6 +4002,14 @@
   "oauth2.keyBinding|description": {
     "en": "2394ee67a689920d",
     "text": "執行 OpenID Connect Key Binding 1.0（#150）。開啟時：探索文件列出 `bound_key` 範圍，未宣告任何範圍的用戶端可以請求它，請求它時必須提供 `dpop_jkt` 並使用授權碼流程（否則拒絕，STS-OAUTH-0704 與 0705）；隨後 ID Token 指明 DPoP 金鑰（`cnf.jwk`，`typ: dpop+id_token`），權杖請求必須以 `c_s256` 證明該金鑰，且每次更新都必須來自同一金鑰。**關閉時，它不存在，服務僅為 OpenID Connect Core**：不公布 `bound_key`，攜帶它的請求不會被拒絕——該範圍被忽略且不授予，正如 Core 對待 OP 不處理的範圍——也不綁定任何 ID Token。若信賴方會請求所有已公布的範圍且不了解 Key Binding，請將其關閉（#315）。關閉前已綁定的授權在更新時仍檢查其金鑰。"
+  },
+  "oauth2.enterpriseClaimsAlways|label": {
+    "en": "25c226f1b3654eee",
+    "text": "每個 ID Token 中的 Enterprise Extensions 宣告"
+  },
+  "oauth2.enterpriseClaimsAlways|description": {
+    "en": "fad892b6e39c3877",
+    "text": "將 OpenID Connect Enterprise Extensions 1.0 的 `session_expiry`（單一登入工作階段的絕對結束時間，在工作階段上簽發權杖時）與 `tenant`（此領域的 id）放入每個 ID Token（#148）。**預設關閉：**只有當用戶端在 OpenID Connect Core 5.5 宣告請求的 `id_token` 成員中指名時，才會將其放入 ID Token，因為無人要求的宣告正是 OpenID 一致性測試套件所回報的，而 OpenID Connect 認證執行該套件。兩者無論如何都保留在 `claims_supported` 中，`aud_sub` 不受影響（只有在管理員為該用戶端記錄了一個時才會出現在 ID Token 中）。"
   },
   "oauth2.didClaim|label": {
     "en": "d0b89f9c74f06728",
