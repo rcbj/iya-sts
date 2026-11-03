@@ -130,6 +130,30 @@ that emits different SQL is a behaviour change, and `DB_NOW`'s
 `clock_timestamp()` is not something a builder would keep. A builder call
 added later is a new decision, not this one extended.
 
+**THAT DECISION WAS TAKEN, FOR ORDINARY STATEMENTS ONLY (#677, rcbj
+2026-11-03).** The store's SQL is now three tiers:
+
+* **A, the builder.** An ordinary statement (equality and `IN`, order,
+  limit, a plain insert, update, delete or first-writer-wins insert) is
+  written ONCE with the Knex builder and compiled per engine by
+  `sql_dialect.js`. Its compiler is a Knex with no connection, so a compiled
+  statement is text and values that go to the held connection as above. A
+  statement's engine pieces (the statement clock, a JSON cast) are the
+  dialect's fragments, and `clock_timestamp()` is kept because the fragment
+  IS `DB_NOW` (one copy, `sqlDialect.NOW.postgres`).
+* **B, dialect text.** A statement that needs one engine's feature keeps
+  hand-written text per engine; PostgreSQL's is the text it always was.
+* **C, dialect code.** Where the design differs (triggers, GIN, LISTEN),
+  `capabilities` says which, and the driver takes its fallback.
+
+**A compiled statement carries its name**, `/* sts:<name> */` at the end. A
+test's double answers it BY NAME, with the builder's parameter order (SET
+values first, then the WHERE's, in the order written), never by its text,
+whose quoting the compiler owns. A double matching a hand-written statement
+by text is fine until that statement moves. The cluster family's ordinary
+statements moved first (28 of them); the classification of all 293 is on
+#677. Still no ORM and no ORM-level cache.
+
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,
 `bulk_import.js`, `cell_convert.js`), not `knex.transaction()`: that runs its
