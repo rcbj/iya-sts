@@ -629,8 +629,10 @@ const DEFAULT_SIG_ALG = 'sha256-rsa';
 
 // The default subject fields. Overridable per build; they are here so that a
 // hierarchy built with the button and nothing typed still reads as something
-// rather than as `CN=RootCA`.
-const DEFAULT_ORGANISATION = 'sts';
+// rather than as `CN=RootCA`. It is the product's name, `iya-sts`, since
+// #1294 (2026-11-03); it was `sts`, the product's old name, until then, and
+// a hierarchy built before that keeps the subject it was built with.
+const DEFAULT_ORGANISATION = 'iya-sts';
 
 // ---------------------------------------------------------------------------
 // THE ALTERNATIVE KEY EVERY AUTHORITY HOLDS (2026-09-26, #68 — rcbj's D4,
@@ -2394,7 +2396,8 @@ function chainPemFor(realmId) {
 // `/crypto/metadata`, and the XML signatures' and metadata's `X509Data`.
 //
 // **WHY THE ROOT GOES WITH IT.** Every Root this service builds is called
-// `CN=sts Root CA, O=sts`, and a fresh install builds a new one. A party never
+// `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts` before #1294),
+// and a fresh install builds a new one. A party never
 // handed the current Root sees only the top certificate's issuer NAME and can
 // match it to an older Root of that name it already holds — which a Windows
 // user reported as "the Root is the same on every install" when it never was.

@@ -4710,6 +4710,45 @@ const SETTINGS = [
                  'rather than of a request.' },
 
   // ---------------------------------------------------------------------
+  // RFC 9700 SECTION 2.1.2 WAIVED BY AN ADMINISTRATOR (#1295, rcbj's
+  // decision, 2026-11-03).
+  //
+  // Product mode implies RFC 9700 mode and no realm can turn that mode off
+  // (`common/mode.js`, `enforcesOauthSecurityBcp()`), so a product deployment
+  // could not be certified for the OpenID Connect Implicit, Hybrid and
+  // Dynamic OP profiles: they need `id_token token`, `code token` and `code
+  // id_token token`, which section 2.1.2's `no-implicit` refuses. That row is
+  // a SHOULD NOT — the one requirement of the mode an operator may knowingly
+  // decline — so this row waives IT and nothing else, per realm, and only an
+  // administrator can set it (every config write is). OAuth 2.1 removes the
+  // implicit grant outright (a MUST, not a SHOULD NOT) and a FAPI profile is
+  // a stricter profile layered on the mode, so `oauth2_bcp.js`'s
+  // `implicitWaived()` ignores the row while either is in force.
+  //
+  // `runtime: true` because nothing is derived from it: `oauth2_bcp.js` reads
+  // it per request through the realm layer, and the discovery documents are
+  // built per request.
+  { key: 'oauth2.allowImplicitTokenResponses', group: 'OAuth 2.0 / OIDC',
+    label: 'Allow token response types under RFC 9700',
+    env: 'STS_OAUTH2_ALLOW_IMPLICIT_TOKEN_RESPONSES', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Waive RFC 9700 section 2.1.2 (no-implicit, a SHOULD NOT) ' +
+                 'where RFC 9700 mode is in force — which product mode ' +
+                 'always is. On, the response types that issue an access ' +
+                 'token from the authorization endpoint (token, id_token ' +
+                 'token, code token, code id_token token) are accepted at ' +
+                 'the authorization endpoint and at dynamic registration, ' +
+                 'and both discovery documents advertise them and the ' +
+                 'implicit grant. Every other RFC 9700 requirement, and the ' +
+                 'rest of product mode, stays in force, and GET ' +
+                 '/oauth2/rfc9700 and /admin/mode report the requirement as ' +
+                 'waived. It exists for the OpenID Connect Implicit, Hybrid ' +
+                 'and Dynamic OP profiles. NO EFFECT while OAuth 2.1 mode or ' +
+                 'a FAPI profile is on: OAuth 2.1 removes the implicit grant ' +
+                 'outright, and a FAPI profile is a stricter profile this ' +
+                 'setting does not loosen. OFF by default; set it per realm.' },
+
+  // ---------------------------------------------------------------------
   // OAUTH 2.1 MODE (2026-09-13), AND IT IMPLIES THE ROW ABOVE.
   //
   // `realmRuntime` ON A SECOND OAUTH ROW, AND THE ARGUMENT IS MADE HERE RATHER
@@ -6939,7 +6978,8 @@ const SETTINGS = [
                  'quantum-capable attacker.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
-    env: 'STS_PKI_ORGANISATION', type: 'string', dflt: 'sts',
+    env: 'STS_PKI_ORGANISATION', type: 'string',
+    dflt: 'iya-sts',
     runtime: true,
     description: 'The O= every tier of a new hierarchy carries, and the O= ' +
                  'of every leaf issued from it. It is also what the tiers ' +
@@ -10734,7 +10774,7 @@ const SETTINGS = [
   { key: 'tls.selfSignedOrganization', group: 'TLS',
     label: 'Self-signed certificate organization',
     env: 'STS_TLS_SELF_SIGNED_ORGANIZATION', type: 'string',
-    dflt: 'sts', runtime: false,
+    dflt: 'iya-sts', runtime: false,
     restartReason: 'the certificate is generated when the process starts',
     description: 'The O= of the self-signed listener certificate\'s subject. ' +
                  'The CN is the first of tls.hostnames.' },
@@ -16505,7 +16545,7 @@ const SETTINGS = [
 
   { key: 'spiffe.caSubject', group: 'SPIFFE', label: 'CA subject DN template',
     env: 'STS_SPIFFE_CA_SUBJECT', type: 'string',
-    dflt: 'CN=sts SPIFFE {kind} ({trustDomain}),O=sts',
+    dflt: 'CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts',
     runtime: true,
     description: 'The X.501 subject of a CA certificate this service builds ' +
                  'for SPIFFE itself: the SELF-SIGNED authority a realm with ' +

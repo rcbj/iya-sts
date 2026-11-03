@@ -85,6 +85,8 @@ import mode = require('../common/mode');
 import realms = require('../common/realms');
 import vcDataIntegrity = require('./vc_data_integrity');
 import siop = require('./siop');
+import cellLocator = require('../common/cell_locator');
+import cells = require('../common/cells');
 
 type Json = any;
 
@@ -96,13 +98,21 @@ const JWS_2020_V1 = 'https://w3id.org/security/suites/jws-2020/v1';
  */
 const CUSTODIES = Object.freeze(['wallet', 'realm', 'download']);
 
-// The random id: 128 bits, base64url, no padding — 22 characters.
-const RID = /^[A-Za-z0-9_-]{22}$/;
+// The random id: 128 bits, base64url, no padding — 22 characters — and, in
+// a service deployed as cells, the minting cell's twelve-character tag
+// appended (`common/cell_locator.ts`), so a fetch that reaches any cell is
+// relayed to the one whose index holds it (`common/cell_placement.ts`'s
+// `/users` row). The index is cell-tier: an unstamped id names no cell.
+const RID_TEXT = '[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?';
+const RID = new RegExp('^' + RID_TEXT + '$');
 const RID_BITS = 128;
 
 // A wallet act's marker on the self-issued round trip: create the DID, the
 // change's authorization (by a key of the current version), or the new key.
-const ACT = /^(publish|authorize-(add|rotate)\.[A-Za-z0-9_-]{22}|key\.[A-Za-z0-9_-]{22})$/;
+const ACT = new RegExp('^(publish|authorize-(add|rotate)\\.' + RID_TEXT +
+                       '|key\\.' + RID_TEXT + ')$');
+// A DID this realm publishes for a person, its random id captured.
+const PERSON_DID = new RegExp('^did:web:[^?#]*:users:(' + RID_TEXT + ')$');
 
 // How long an authorization by the current key waits for the new key's
 // proof: two self-issued round trips, each at most `oid4vp.signInTtlS`.
@@ -136,6 +146,20 @@ interface PersonDidDeps {
   siop: typeof siop;
   // `did.personDids`: `<rid> -> { did, sub }`, per realm, persisted.
   index: Map<string, Json>;
+  // Appends this cell's tag to a minted id (`cell_locator.stamp()`).
+  stamp: (value: string) => string;
+  // Whether the service is deployed as cells, and this cell's id.
+  isMulti: () => boolean;
+  cellId: () => string;
+  // The cell a `urn:uuid:` subject is homed in now (the routing index), ''
+  // where nobody knows them.
+  homeOfSubject: (realmId: string, sub: string) => Promise<string>;
+  // An operation on another cell (`cell_channel.call()`).
+  callCell: (cellId: string, name: string, body: Json) => Promise<Json>;
+  // Opens a value `seal` sealed; null where it will not open here.
+  open: (text: string) => string | null;
+  // The ambient realm's id.
+  realmId: () => string;
   // The realm's base URL for this request, and whether it is pinned.
   baseOf: (req: Json) => { base: string; pinned: boolean };
   subjectForName: (name: string) => string;
@@ -213,6 +237,34 @@ class PersonDid {
       vcDataIntegrity: vcDataIntegrity,
       siop: siop,
       index: personDids as unknown as Map<string, Json>,
+      stamp: cellLocator.stamp,
+      isMulti: cells.isMulti,
+      cellId: cells.id,
+      // `common/cell_routing.ts` LAZILY: it reaches the persistence driver.
+      homeOfSubject: function (realmId: string, sub: string):
+          Promise<string> {
+        helpers.log.debug("Entering homeOfSubject().");
+        const uuid = String(sub || '').replace(/^urn:uuid:/i, '')
+          .toLowerCase();
+        helpers.log.debug("Leaving homeOfSubject().");
+        return require('../common/cell_routing').homeOf(realmId, 'uuid',
+                                                         uuid);
+      },
+      // `common/cell_channel.ts` LAZILY, as every module calling a peer.
+      callCell: function (cellId: string, name: string, body: Json):
+          Promise<Json> {
+        helpers.log.debug("Entering callCell().");
+        helpers.log.debug("Leaving callCell().");
+        return require('../common/cell_channel').call(cellId, name, body);
+      },
+      open: function (text: string): string | null {
+        helpers.log.debug("Entering open().");
+        const keystore = require('../common/keystore');
+        const plain = keystore.open(text, 'person-private-key');
+        helpers.log.debug("Leaving open().");
+        return plain === null || plain === undefined ? null : String(plain);
+      },
+      realmId: realms.currentId,
       // THE BASE OF THE VERIFIABLE CREDENTIALS APPLICATION, which serves
       // the document (`common/hosted_applications.js` gives it `/users`):
       // its advertised listener's `publicBaseUrl` or `global.publicBaseUrl`
@@ -339,8 +391,7 @@ class PersonDid {
   ridOf(did: unknown): string {
     const { log } = this.deps;
     log.debug("Entering PersonDid.ridOf().");
-    const m = /^did:web:[^?#]*:users:([A-Za-z0-9_-]{22})$/
-      .exec(String(did || ''));
+    const m = PERSON_DID.exec(String(did || ''));
     log.debug("Leaving PersonDid.ridOf().");
     return m ? m[1] : '';
   }
@@ -496,14 +547,22 @@ class PersonDid {
   // -------------------------------------------------------------------------
   /**
    * The DID a random id names in this realm, with its record and its
-   * person: `{ did, username, record }`, with `record` null where the entry
-   * or its value is gone; null where this realm never published it.
+   * person: `{ did, username, record, sub }`, with `record` null where the
+   * entry or its value is gone; null where this realm never published it.
+   *
+   * **IN A SERVICE DEPLOYED AS CELLS a row whose person is not homed here
+   * is NOT this cell's to answer** — they were re-homed (`cell_rehome.ts`)
+   * and the DID is served from their new home (`servedAnywhere()`) — so it
+   * is null here too, unless `{ away: true }` asks for it: then `away` is
+   * set and `record` is null. In one cell a person not found is a person
+   * gone, and the DID is gone with them.
    *
    * @param rid - the random id
+   * @param options - `{ away }`
    * @returns the found DID, or null
    */
-  lookup(rid: unknown): Json {
-    const { log, index, nameForSubject } = this.deps;
+  lookup(rid: unknown, options?: Json): Json {
+    const { log, index, nameForSubject, isMulti } = this.deps;
     const id = String(rid || '');
     log.debug("Entering PersonDid.lookup().");
     if (!RID.test(id)) {
@@ -516,13 +575,21 @@ class PersonDid {
       return null;
     }
     const username = String(nameForSubject(String(row.sub || '')) || '');
+    if (!username && isMulti()) {
+      log.debug("Leaving PersonDid.lookup(). Not homed in this cell.");
+      return options && options.away
+        ? { did: String(row.did), username: '', record: null,
+            sub: String(row.sub || ''), away: true }
+        : null;
+    }
     const record = username ? (this.read(username) || [])
       .filter(function (one: Json) {
         return one.rid === id && one.did === row.did;
       })[0] || null : null;
     log.debug("Leaving PersonDid.lookup(). " +
               (record ? 'found' : 'no record'));
-    return { did: String(row.did), username: username, record: record };
+    return { did: String(row.did), username: username, record: record,
+             sub: String(row.sub || '') };
   }
 
   /**
@@ -821,6 +888,221 @@ class PersonDid {
   }
 
   // -------------------------------------------------------------------------
+  // A PERSON RE-HOMED TO ANOTHER CELL (`common/cell_rehome.ts`)
+  //
+  // The id is stamped with the cell that MINTED it, and a fetch is relayed
+  // there by `common/cell_placement.ts` for good — a DID's address never
+  // changes. That cell keeps its index row (a row is never removed); when
+  // the person the row names is no longer homed there, the ROUTING INDEX
+  // says where they are now, one indexed read, and the document is asked of
+  // that cell over the inter-cell channel (`person-did-document`) rather
+  // than by a second relay, since a relayed request is never placed again.
+  // No forwarding row is written anywhere, so a person moved twice, or
+  // moved back, is found the same way, and a move that failed half-way
+  // cannot leave a forward pointing at the wrong cell.
+  //
+  // THE MOVE ITSELF carries the records on the entry, as it carries every
+  // attribute. A realm-custody private key inside one is sealed under the
+  // CELL's key, which opens nowhere else and sits inside a JSON value the
+  // move cannot see into, so `movingOut()` opens it at the sending cell and
+  // `movingIn()` seals it again at the receiving one — the treatment
+  // `cell_rehome.ts` gives every sealed attribute. `indexMovedIn()` then
+  // writes the person's ids into the receiving cell's index, so its own
+  // lookups (binding, sign-in, the portal) find them.
+  // -------------------------------------------------------------------------
+  /**
+   * The document at an address, wherever the person it names is homed now:
+   * `served()` here, or the answer of the cell they were re-homed to.
+   *
+   * @param rid - the random id
+   * @param query - the request's query (`versionId`, `versionTime`)
+   * @returns a promise of `served()`'s answer
+   */
+  servedAnywhere(rid: unknown, query: Json): Promise<Json> {
+    const { log, realmId, homeOfSubject, cellId, callCell } = this.deps;
+    log.debug("Entering PersonDid.servedAnywhere().");
+    const found = this.lookup(rid, { away: true });
+    if (!found || !found.away) {
+      log.debug("Leaving PersonDid.servedAnywhere(). Here.");
+      return Promise.resolve(this.served(rid, query));
+    }
+    const realm = realmId();
+    const self = this;
+    const q = query || {};
+    const asked: Json = {};
+    ['versionId', 'versionTime'].forEach(function (name) {
+      if (typeof q[name] === 'string') {
+        asked[name] = q[name];
+      }
+    });
+    log.debug("Leaving PersonDid.servedAnywhere(). Asking the index.");
+    return homeOfSubject(realm, String(found.sub || ''))
+      .then(function (home: string) {
+        if (!home || home === cellId()) {
+          // Nobody has them: the person is gone, and the DID with them.
+          return { status: 410, code: 'STS-VC-0162',
+                   type: 'application/json',
+                   body: { id: found.did, deactivated: true } };
+        }
+        return callCell(home, 'person-did-document',
+                        { realm: realm, rid: String(rid), query: asked })
+          .then(function (answer: Json) {
+            if (!answer || typeof answer.status !== 'number') {
+              throw new Error('a malformed answer');
+            }
+            return answer;
+          });
+      })
+      .then(null, function (err: any) {
+        log.warn(self.deps.errorCodes.tag('STS-VC-0177') + 'person-did: ' +
+                 'the DID document of a person homed in another cell could ' +
+                 'not be fetched from it: ' + ((err && err.message) || err));
+        return { status: 503, code: 'STS-VC-0177',
+                 type: 'application/json',
+                 body: { error: 'temporarily_unavailable',
+                         error_description: 'The DID document could not ' +
+                         'be read; try again later.' } };
+      });
+  }
+
+  /**
+   * The answer to `person-did-document`: `served()` in the realm a peer
+   * names.
+   *
+   * @param body - `{ realm, rid, query }`
+   * @returns `served()`'s answer
+   */
+  opDocument(body: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering PersonDid.opDocument().");
+    const realm = realms.get(String((body && body.realm) || '')) ||
+      (String((body && body.realm) || '') ? null
+                                          : realms.get(realms.DEFAULT_ID));
+    if (!realm) {
+      log.debug("Leaving PersonDid.opDocument(). No realm.");
+      throw new Error('no such realm');
+    }
+    const self = this;
+    const answer = realms.run(realm, function () {
+      return self.served(String(body.rid || ''), body.query || {});
+    });
+    log.debug("Leaving PersonDid.opDocument(). " + answer.status);
+    return answer;
+  }
+
+  // Each record of `stsPublishedDid` as `fn` makes it; null when `fn`
+  // answers null for any. A value that is not a record is kept as it is.
+  private eachRecord(values: unknown,
+                     fn: (record: Json) => Json | null): string[] | null {
+    const { log } = this.deps;
+    log.debug("Entering PersonDid.eachRecord().");
+    const out: string[] = [];
+    const list = Array.isArray(values) ? values : [];
+    for (let i = 0; i < list.length; i += 1) {
+      let record: Json = null;
+      try {
+        record = JSON.parse(String(list[i]));
+      } catch (e) {
+        log.debug("Caught in PersonDid.eachRecord(): " +
+                  ((e && e.message) || e));
+      }
+      if (!record || typeof record !== 'object') {
+        out.push(String(list[i]));
+        continue;
+      }
+      const made = fn(record);
+      if (!made) {
+        log.debug("Leaving PersonDid.eachRecord(). Refused.");
+        return null;
+      }
+      out.push(JSON.stringify(made));
+    }
+    log.debug("Leaving PersonDid.eachRecord().");
+    return out;
+  }
+
+  /**
+   * The values of `stsPublishedDid` as they leave this cell: every sealed
+   * private key opened and marked `moving`.
+   *
+   * @param values - the attribute's values
+   * @returns the values to send, or null when a key will not open here
+   */
+  movingOut(values: unknown): string[] | null {
+    const { log, open } = this.deps;
+    log.debug("Entering PersonDid.movingOut().");
+    const out = this.eachRecord(values, function (record: Json) {
+      const keys = record.privateKeys || {};
+      const kids = Object.keys(keys);
+      for (let i = 0; i < kids.length; i += 1) {
+        const held = keys[kids[i]] || {};
+        if (held.sealed) {
+          const plain = open(String(held.value || ''));
+          if (plain === null) {
+            return null;
+          }
+          keys[kids[i]] = { value: plain, sealed: false, moving: true };
+        }
+      }
+      return record;
+    });
+    log.debug("Leaving PersonDid.movingOut(). " + (out ? 'Opened.'
+                                                       : 'Unopened.'));
+    return out;
+  }
+
+  /**
+   * The values of `stsPublishedDid` as they arrive in this cell: every key
+   * `movingOut()` opened sealed again under THIS cell's key.
+   *
+   * @param values - the attribute's values as they arrived
+   * @returns the values to store, or null when a key could not be sealed
+   */
+  movingIn(values: unknown): string[] | null {
+    const { log, seal } = this.deps;
+    log.debug("Entering PersonDid.movingIn().");
+    const out = this.eachRecord(values, function (record: Json) {
+      const keys = record.privateKeys || {};
+      const kids = Object.keys(keys);
+      for (let i = 0; i < kids.length; i += 1) {
+        const held = keys[kids[i]] || {};
+        if (held.moving) {
+          const kept = seal(String(held.value || ''));
+          if (!kept) {
+            return null;
+          }
+          keys[kids[i]] = kept;
+        }
+      }
+      return record;
+    });
+    log.debug("Leaving PersonDid.movingIn(). " + (out ? 'Sealed.'
+                                                      : 'Unsealed.'));
+    return out;
+  }
+
+  /**
+   * Writes a re-homed person's DIDs into this cell's index, once their
+   * entry is here.
+   *
+   * @param username - the person
+   * @returns how many ids were indexed
+   */
+  indexMovedIn(username: string): number {
+    const { log, index, subjectForName } = this.deps;
+    log.debug("Entering PersonDid.indexMovedIn().");
+    const sub = String(subjectForName(username) || '');
+    const records = sub ? this.read(username) || [] : [];
+    records.forEach(function (record: Json) {
+      if (RID.test(String(record.rid || '')) && record.did) {
+        index.set(String(record.rid), { did: String(record.did), sub: sub });
+      }
+    });
+    log.debug("Leaving PersonDid.indexMovedIn(). " + records.length);
+    return records.length;
+  }
+
+  // -------------------------------------------------------------------------
   // CREATING ONE
   // -------------------------------------------------------------------------
   // The checks every creation makes before a key is made or proved: the
@@ -880,14 +1162,15 @@ class PersonDid {
   }
 
   // A random id this realm has never published: 128 bits from
-  // `common/crypto.js`. A collision is astronomically unlikely and is
-  // answered by drawing again, never by reusing an address.
+  // `common/crypto.js`, stamped with this cell's tag where the service is
+  // deployed as cells (a no-op otherwise). A collision is astronomically
+  // unlikely and is answered by drawing again, never by reusing an address.
   private freshRid(): string {
-    const { log, stsCrypto, index } = this.deps;
+    const { log, stsCrypto, index, stamp } = this.deps;
     log.debug("Entering PersonDid.freshRid().");
-    let rid = stsCrypto.randomToken(RID_BITS);
+    let rid = stamp(stsCrypto.randomToken(RID_BITS));
     while (index.has(rid)) {
-      rid = stsCrypto.randomToken(RID_BITS);
+      rid = stamp(stsCrypto.randomToken(RID_BITS));
     }
     log.debug("Leaving PersonDid.freshRid().");
     return rid;
@@ -1558,18 +1841,27 @@ class PersonDid {
     // published. no-store, for the rule every document describing a key
     // follows.
     // -----------------------------------------------------------------------
-    app.get('/users/:rid/did.json', function (req: any, res: any) {
+    app.get('/users/:rid/did.json', function (req: any, res: any,
+                                              next: (e?: any) => void) {
       log.debug("Entering the person DID document endpoint.");
-      const answer = self.served(String(req.params.rid || ''), req.query);
-      res.set('Cache-Control', 'no-store');
-      if (answer.code) {
-        errorCodes.mark(res, answer.code);
-      }
-      // error-code: none — marked on the line above where it is a refusal
-      res.status(answer.status).type(answer.type)
-         .send(JSON.stringify(answer.body, null, 2));
-      log.debug("Leaving the person DID document endpoint. " +
-                answer.status);
+      self.servedAnywhere(String(req.params.rid || ''), req.query)
+        .then(function (answer: Json) {
+          res.set('Cache-Control', 'no-store');
+          if (answer.code) {
+            errorCodes.mark(res, answer.code);
+          }
+          // error-code: none — marked on the line above where it is a refusal
+          res.status(answer.status).type(answer.type)
+             .send(JSON.stringify(answer.body, null, 2));
+          log.debug("Leaving the person DID document endpoint. " +
+                    answer.status);
+        }, function (e: any) {
+          // Express's own error handler answers it, as a throw in a
+          // synchronous handler would have been.
+          log.debug("Caught in the person DID document endpoint: " +
+                    ((e && e.message) || e));
+          next(e);
+        });
     });
     log.debug("Leaving PersonDid.registerRoutes().");
   }
@@ -1596,6 +1888,13 @@ const slot = new InstanceSlot<PersonDid>(
 
 // Standalone, build the default now, as loading a module always did.
 slot.buildNowUnlessDeferred();
+
+// A re-homed person's DID document, asked by the cell that minted it
+// (`servedAnywhere()`). Registered at load, as every module's operation is.
+require('../common/cell_channel').registerOp('person-did-document',
+  function (body: any) {
+    return slot.forward('opDocument')(body);
+  });
 
 /**
  * A did:web this realm creates and publishes for a person (#1291).
@@ -1634,6 +1933,10 @@ export = {
   keyOfDidUrl: slot.forward('keyOfDidUrl'),
   versionedKid: slot.forward('versionedKid'),
   served: slot.forward('served'),
+  servedAnywhere: slot.forward('servedAnywhere'),
+  movingOut: slot.forward('movingOut'),
+  movingIn: slot.forward('movingIn'),
+  indexMovedIn: slot.forward('indexMovedIn'),
   publishGenerated: slot.forward('publishGenerated'),
   publishWallet: slot.forward('publishWallet'),
   changeRealmKey: slot.forward('changeRealmKey'),

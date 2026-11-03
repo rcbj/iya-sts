@@ -7890,7 +7890,8 @@ const CODES = [
   { code: 'STS-OAUTH-0126',
     summary: 'In RFC 9700 mode, the authorization request asked for a ' +
       'response type that issues an access token from the ' +
-      'authorization endpoint (section 2.1.2).',
+      'authorization endpoint (section 2.1.2), and no administrator waived ' +
+      'that section with oauth2.allowImplicitTokenResponses.',
     spec: 'unsupported_response_type (redirected error)' },
   { code: 'STS-OAUTH-0127',
     summary: 'In RFC 9700 mode, a public client sent an authorization-code ' +
@@ -7917,11 +7918,14 @@ const CODES = [
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-OAUTH-0133',
     summary: 'In RFC 9700 mode, a dynamic client registration asked for the ' +
-      'implicit grant.',
+      'implicit grant with no token-free response type (id_token, code ' +
+      'id_token) that needs it, or beside a response type that issues an ' +
+      'access token (#1295).',
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-OAUTH-0134',
     summary: 'In RFC 9700 mode, a dynamic client registration asked for a ' +
-      'response type that issues an access token.',
+      'response type that issues an access token, and no administrator ' +
+      'waived section 2.1.2 with oauth2.allowImplicitTokenResponses.',
     spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-OAUTH-0135',
     summary: 'In RFC 9700 mode, a dynamic client registration carried a ' +
@@ -17739,6 +17743,11 @@ const CODES = [
     summary: 'A person\'s published DID already has the most versions one ' +
       'DID keeps (50), so it takes no more key changes (#1291).',
     spec: 'HTTP 400 refusal at /account-api or /authn-api/wallet' },
+  { code: 'STS-VC-0177',
+    summary: 'The DID document of a person re-homed to another cell could ' +
+      'not be fetched from that cell over the inter-cell channel (#1291).',
+    spec: 'HTTP 503 {error: temporarily_unavailable} at ' +
+      '/users/{rid}/did.json' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

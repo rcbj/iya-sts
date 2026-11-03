@@ -1295,7 +1295,11 @@ application declared for the `did` family (its own checkbox, `applications.js`
 PUBLISH one for them. rcbj's four decisions are the specification: custody
 in all three modes, chosen per realm (`did.personCustody`: `wallet`, the
 default, `realm`, `download`); a random identifier minted per DID
-(`did:web:<host>[:realm:<id>]:users:<rid>`, `<rid>` 128 bits in base64url);
+(`did:web:<host>[:realm:<id>]:users:<rid>`, `<rid>` 128 bits in base64url,
+and in a service deployed as cells the minting cell's `cell_locator.stamp()`
+tag appended — the index is cell-tier and a random id names no cell, so
+`common/cell_placement.ts`'s `/users` row relays a fetch by the tag, as it
+does an offer's or a link handle's);
 deactivate and keep the URL; and "treat it as a proved DID". `person_did.ts`
 is the library and its header the design; what follows is what a change to
 it has to keep.
@@ -1389,8 +1393,25 @@ it has to keep.
   `holderDid` everywhere strips `?versionId=` as well as the fragment.
 * **WHAT IS NOT BUILT**: signing anything with a realm-custody key; a
   `service` or `alsoKnownAs` in a person's document; reactivating a
-  deactivated DID (a new one is published instead); a DID moved between
-  cells (the index is cell-tier, like the entry it names).
+  deactivated DID (a new one is published instead).
+* **A PERSON RE-HOMED TO ANOTHER CELL** (`common/cell_rehome.ts`; rcbj
+  asked for it on 2026-11-03): the address never changes, so the cell the
+  id's tag names still receives every fetch. Its index row stays; when the
+  person it names is not homed there, `servedAnywhere()` asks the ROUTING
+  INDEX for the subject's home (one indexed read) and fetches the document
+  from that cell over the channel (`person-did-document`), since a relayed
+  request is never placed again; unreachable is 503 `STS-VC-0177`, nobody's
+  is 410. No forwarding row is written, so a second move or a move back is
+  found the same way and a half-failed move cannot leave a wrong forward.
+  `lookup()` answers null for such a row unless `{ away: true }` asks, so
+  `resolve()`, `isHosted()` and `keyOfDidUrl()` treat it as not hosted
+  there. The move carries the records on the entry like every attribute;
+  a realm-custody private key is sealed under the CELL's key INSIDE the
+  JSON, where `cell_rehome.ts`'s attribute walk cannot see it, so
+  `movingOut()` opens it (`STS-CELL-0046` if it will not) and `movingIn()`
+  seals it again at the target, which then writes its own index rows
+  (`indexMovedIn()`). `tests/person_did.js` 10a–10e hold it with two
+  instances; `tests/protocol/sts_cells_rehome.js` section 6 over two cells.
 
 `tests/person_did.js` holds it in process (every custody end to end, the
 two-proof change, versions, binding, deactivation, every code);

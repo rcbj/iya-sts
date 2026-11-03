@@ -442,7 +442,9 @@ async function test() {
   check("the wallet's round trip publishes a DID whose version 1 names the " +
         "key it proved, and the portal is told so", function () {
     assert.ok(landed(made, "published"), JSON.stringify(made.collected));
-    assert.ok(/^[A-Za-z0-9_-]{22}$/.test(mine.rid), JSON.stringify(mine));
+    // 22 characters, and a cell's 12-character tag where deployed as cells.
+    assert.ok(/^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$/.test(mine.rid),
+              JSON.stringify(mine));
     assert.strictEqual(mine.did, "did:web:" +
       new URL(root).host.replace(/:/g, "%3A") + ":realm:" + REALM +
       ":users:" + mine.rid);

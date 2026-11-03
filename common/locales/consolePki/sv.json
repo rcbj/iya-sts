@@ -162,7 +162,7 @@
   "downloadTip": "Ladda ner nyckelparet. Knappen skickar samma formulär till exporten, vars svar är FILEN som webbläsaren sparar snarare än en sida.",
   "download": "Ladda ner",
   "dnCnTip": "commonName (2.5.4.3) — vad certifikatet heter. Profilen fyller i det och ersätter sitt eget standardvärde när profilen ändras, men aldrig ett namn du skrivit. För en TLS-server finns namnet som en klient faktiskt kontrollerar i subjectAltName, inte här.",
-  "dnOTip": "organizationName (2.5.4.10) — vem subjektet tillhör. Det fylls i från pki.organisation, som är vad hierarkin ovan bär, eftersom två certifikat från samma sfär med O=Example och O=sts är två organisationer för en sökvägsvaliderare.",
+  "dnOTip": "organizationName (2.5.4.10) — vem subjektet tillhör. Det fylls i från pki.organisation, som är vad hierarkin ovan bär, eftersom två certifikat från samma sfär med O=Example och O=iya-sts är två organisationer för en sökvägsvaliderare.",
   "dnOuTip": "organizationalUnitName (2.5.4.11) — avdelningen inom organisationen. Upprepa det genom att lägga till OU=…-rader i Fler attribut nedan; ett DN kan innehålla flera.",
   "dnLTip": "localityName (2.5.4.7) — staden eller orten.",
   "dnStTip": "stateOrProvinceName (2.5.4.8) — utskrivet i stället för förkortat, vilket CA/Browser Forum efterfrågar.",

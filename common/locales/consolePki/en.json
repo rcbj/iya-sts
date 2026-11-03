@@ -162,7 +162,7 @@
   "downloadTip": "Download the key pair. This button sends the same form to the export, whose answer is the FILE the browser saves rather than a page.",
   "download": "Download",
   "dnCnTip": "commonName (2.5.4.3) — what this certificate is called. The profile fills it in and replaces its own default when the profile changes, but never a name you typed. For a TLS server the name a client actually checks is in subjectAltName, not here.",
-  "dnOTip": "organizationName (2.5.4.10) — who the subject belongs to. It is filled from pki.organisation, which is what the hierarchy above carries, because two certificates from one realm reading O=Example and O=sts are two organisations as far as a path validator is concerned.",
+  "dnOTip": "organizationName (2.5.4.10) — who the subject belongs to. It is filled from pki.organisation, which is what the hierarchy above carries, because two certificates from one realm reading O=Example and O=iya-sts are two organisations as far as a path validator is concerned.",
   "dnOuTip": "organizationalUnitName (2.5.4.11) — the division within the organization. Repeat it by adding OU=… lines to Further attributes below; a DN may carry several.",
   "dnLTip": "localityName (2.5.4.7) — the city or town.",
   "dnStTip": "stateOrProvinceName (2.5.4.8) — spelled out rather than abbreviated, which is what the CA/Browser Forum asks for.",

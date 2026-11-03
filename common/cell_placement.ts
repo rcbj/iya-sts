@@ -129,6 +129,17 @@ const ROWS: Row[] = [
   { prefix: '/policy', strategy: 'local', why: 'a static page' },
   { prefix: '/did.json', strategy: 'local',
     why: 'the realm\'s DID document is the global tier\'s' },
+  // A PERSON'S PUBLISHED did:web (#1291): `/users/<rid>/did.json`. The
+  // index `did.personDids` is CELL-tier, beside the entry it names, and the
+  // id is random, so nothing in an unstamped one says where it lives: the id
+  // is stamped with the minting cell's tag when it is drawn
+  // (`oid4vc/person_did.ts`), as an offer or a link handle is, and a resolver
+  // reaching any cell is relayed to that one. Not `browser`: a resolver
+  // carries no affinity cookie, and a pinned browser fetching somebody
+  // else's DID must still reach the cell that holds it.
+  { prefix: '/users', strategy: 'artifact', segment: 2,
+    why: 'a person\'s DID document is served where its id was minted ' +
+         '(#1291)' },
   { prefix: '/applications', strategy: 'local',
     why: 'an application\'s DID document is drawn from its entry, and ' +
          'ou=applications is the global tier\'s' },

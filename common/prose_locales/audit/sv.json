@@ -1587,6 +1587,30 @@
     "en": "51cd295b713684de",
     "text": "Ett formulär för signeringsnyckel avvisades på grund av sin CSRF-token"
   },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "En person återkallade ett av sina signeringsnyckelpar"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "En person publicerade en egen did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "En persons publicerade DID-dokument fick en ny version"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "En person auktoriserade en nyckel på sin publicerade DID"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "En person inaktiverade sin publicerade DID"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "En administratör inaktiverade en persons publicerade DID"
+  },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
     "text": "En person registrerade ett självutfärdat subjekt genom att bevisa det med en plånbok"

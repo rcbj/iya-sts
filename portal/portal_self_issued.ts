@@ -114,7 +114,7 @@ const SELF_ISSUED_QUERY = vz.object({
     .describe('A published DID\'s wallet act that has just finished ' +
               '(#1291): `published`, `authorized` (the change\'s first ' +
               'proof; prove the new key next) or `changed`.'),
-  rid: vt.opt(vz.string().regex(/^[A-Za-z0-9_-]{22}$/))
+  rid: vt.opt(vz.string().regex(/^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$/))
     .describe('The published DID that act was about.')
 });
 
@@ -124,7 +124,7 @@ const DID_FORM = vz.object({
     .describe('`publish` a DID whose key this realm generates (`realm` ' +
               'or `download` custody); `add-key` or `rotate-key` of a ' +
               '`realm`-custody DID; `deactivate` one of your DIDs.'),
-  rid: vt.opt(vz.string().regex(/^[A-Za-z0-9_-]{22}$/))
+  rid: vt.opt(vz.string().regex(/^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$/))
     .describe('The published DID\'s random id, from the list; every action ' +
               'but `publish` names one.')
 });

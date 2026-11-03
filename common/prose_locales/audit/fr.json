@@ -1587,6 +1587,30 @@
     "en": "51cd295b713684de",
     "text": "Un formulaire de clé de signature a été refusé en raison de son jeton CSRF"
   },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "Une personne a révoqué l’une de ses paires de clés de signature"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "Une personne a publié son propre did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "Le document DID publié d’une personne a reçu une nouvelle version"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "Une personne a autorisé une clé sur son DID publié"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "Une personne a désactivé son DID publié"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "Un administrateur a désactivé le DID publié d’une personne"
+  },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
     "text": "Une personne a enrôlé un sujet auto-émis en le prouvant avec un portefeuille"

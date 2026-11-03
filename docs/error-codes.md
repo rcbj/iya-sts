@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5179** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5180** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 163
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 52
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -1773,15 +1773,15 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0123` | An RP-Initiated Logout post_logout_redirect_uri is not among the ones the client registered — in every mode since #124 — so it is not followed; the person is signed out and told on the page. | none (the sign-out page says so) |
 | `STS-OAUTH-0124` | In RFC 9700 mode, a state, code_challenge or nonce value already used by another client was presented (section 2.1.1). | invalid_request (redirected error) |
 | `STS-OAUTH-0125` | In RFC 9700 mode, a state, code_challenge or nonce value was reused after its authorization code was redeemed. | invalid_request (redirected error) |
-| `STS-OAUTH-0126` | In RFC 9700 mode, the authorization request asked for a response type that issues an access token from the authorization endpoint (section 2.1.2). | unsupported_response_type (redirected error) |
+| `STS-OAUTH-0126` | In RFC 9700 mode, the authorization request asked for a response type that issues an access token from the authorization endpoint (section 2.1.2), and no administrator waived that section with oauth2.allowImplicitTokenResponses. | unsupported_response_type (redirected error) |
 | `STS-OAUTH-0127` | In RFC 9700 mode, a public client sent an authorization-code request with no PKCE code_challenge. | invalid_request (redirected error) |
 | `STS-OAUTH-0128` | In RFC 9700 mode, the code_challenge_method is not S256. | invalid_request (redirected error) |
 | `STS-OAUTH-0129` | In RFC 9700 mode, an S256 code_challenge is not 43 base64url characters. | invalid_request (redirected error) |
 | `STS-OAUTH-0130` | In RFC 9700 mode, a response type naming id_token was requested with no nonce. | invalid_request (redirected error) |
 | `STS-OAUTH-0131` | In RFC 9700 mode, the resource owner password credentials grant was requested (section 2.4). | unsupported_grant_type (HTTP 400) |
 | `STS-OAUTH-0132` | In RFC 9700 mode, a dynamic client registration asked for the password grant. | invalid_client_metadata (HTTP 400) |
-| `STS-OAUTH-0133` | In RFC 9700 mode, a dynamic client registration asked for the implicit grant. | invalid_client_metadata (HTTP 400) |
-| `STS-OAUTH-0134` | In RFC 9700 mode, a dynamic client registration asked for a response type that issues an access token. | invalid_client_metadata (HTTP 400) |
+| `STS-OAUTH-0133` | In RFC 9700 mode, a dynamic client registration asked for the implicit grant with no token-free response type (id_token, code id_token) that needs it, or beside a response type that issues an access token (#1295). | invalid_client_metadata (HTTP 400) |
+| `STS-OAUTH-0134` | In RFC 9700 mode, a dynamic client registration asked for a response type that issues an access token, and no administrator waived section 2.1.2 with oauth2.allowImplicitTokenResponses. | invalid_client_metadata (HTTP 400) |
 | `STS-OAUTH-0135` | In RFC 9700 mode, a dynamic client registration carried a redirect URI that is not absolute. | invalid_redirect_uri (HTTP 400) |
 | `STS-OAUTH-0136` | In RFC 9700 mode, a dynamic client registration carried an http redirect URI off the loopback address. | invalid_redirect_uri (HTTP 400) |
 | `STS-OAUTH-0137` | A confidential client failed client authentication at the token endpoint and the verifier did not name a more specific cause (fallback; normally one of STS-OAUTH-0001 to -0083). | invalid_client (HTTP 401) |
@@ -3924,6 +3924,7 @@ Raised from: oid4vc/.
 | `STS-VC-0174` | The directory did not store a person's published DID, a new version of it, its authorization or its deactivation, or its self-issued subject could not be enrolled or re-pinned (#1291). | HTTP 400 refusal, or logged where the version was written |
 | `STS-VC-0175` | The private key of a realm-custody DID could not be sealed under the key-encryption key, so nothing was published or changed (#1291). | HTTP 400 refusal at /account-api |
 | `STS-VC-0176` | A person's published DID already has the most versions one DID keeps (50), so it takes no more key changes (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
+| `STS-VC-0177` | The DID document of a person re-homed to another cell could not be fetched from that cell over the inter-cell channel (#1291). | HTTP 503 {error: temporarily_unavailable} at /users/{rid}/did.json |
 
 ## STS-SSF
 

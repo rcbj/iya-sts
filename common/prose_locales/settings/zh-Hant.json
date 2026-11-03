@@ -1955,6 +1955,14 @@
     "en": "41a2ff91a0055e49",
     "text": "它決定主連接埠是否以 HTTPS 繫結（global.https），而接聽程式在程序啟動時繫結。即便如此，「領域」仍可帶有此設定——領域不繫結通訊端，因此它以此程序啟動時的通訊協定回應，只有此模式的檢查會改變"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "在 RFC 9700 下允許權杖回應類型"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "4e3ee63eb21efc37",
+    "text": "在 RFC 9700 模式生效之處（product 模式下一律生效）豁免 RFC 9700 第 2.1.2 節（no-implicit，一項 SHOULD NOT）。開啟後，從授權端點簽發存取權杖的回應類型（token、id_token token、code token、code id_token token）在授權端點和動態註冊處皆被接受，兩份探索文件也會公布它們以及隱含授權。RFC 9700 的其他所有要求以及 product 模式的其餘部分仍然有效，GET /oauth2/rfc9700 和 /admin/mode 會將該要求回報為已豁免。它為 OpenID Connect Implicit、Hybrid 和 Dynamic OP 設定檔而設。在 OAuth 2.1 模式或任一 FAPI 設定檔開啟時無效：OAuth 2.1 徹底移除了隱含授權，而 FAPI 設定檔是本設定不會放寬的更嚴格設定檔。預設關閉；依領域設定。"
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "OAuth 2.1 模式"

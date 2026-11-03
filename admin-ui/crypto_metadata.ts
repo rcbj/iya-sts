@@ -2005,11 +2005,15 @@ class CryptoMetadata {
              'oauth2.httpSignatureResponseAlg)',
              [String(config.value('oauth2.httpSignatureResponseAlg') ||
                      'ES256')]],
+            // Narrowed to what the realm SIGNS (`keys.eddsaSigning`, #1292,
+            // and `keys.postQuantumSigning`), as discovery is: the page and
+            // the discovery document are the same table read twice.
             ['ID Token, when a client registers one',
-             oauth2.ID_TOKEN_SIGNING_ALGS],
-            ['UserInfo response', oauth2.USERINFO_SIGNING_ALGS],
+             helpers.signableJwsAlgs(oauth2.ID_TOKEN_SIGNING_ALGS)],
+            ['UserInfo response',
+             helpers.signableJwsAlgs(oauth2.USERINFO_SIGNING_ALGS)],
             ['JWT introspection response (RFC 9701)',
-             introspectionJwt.SIGNING_ALGS],
+             helpers.signableJwsAlgs(introspectionJwt.SIGNING_ALGS)],
             // Narrowed to what the realm OFFERS (`keys.offerKemEncryption`,
             // 2026-09-28), as discovery is.
             ['JWT introspection response encryption (RFC 9701)',

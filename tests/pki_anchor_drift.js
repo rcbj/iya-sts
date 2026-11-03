@@ -128,7 +128,7 @@ async function run(t) {
   // THE DRIFT, made the only way it can be. See the header: no endpoint
   // reaches this state, because the console's control rebuilds every branch in
   // the same act.
-  const replaced = await pki.buildRoot({ organisation: 'sts' });
+  const replaced = await pki.buildRoot({ organisation: 'iya-sts' });
   t.check(replaced.ok, 'a new Root is built',
           (replaced.errors || []).join(' '));
   const rootAfter = pki.serviceRoot();
@@ -234,7 +234,7 @@ async function run(t) {
   // pass for four more years and then fail for reasons nobody would connect
   // to this. Thirty years is asked for explicitly.
   // ---------------------------------------------------------------------
-  const long = await pki.buildRoot({ organisation: 'sts', years: 30 });
+  const long = await pki.buildRoot({ organisation: 'iya-sts', years: 30 });
   t.check(long.ok, 'a thirty-year Root is built',
           (long.errors || []).join(' '));
   const longPem = pki.serviceRoot().certificatePem;

@@ -2288,7 +2288,7 @@ class PkiAuthoring {
     const applied = self.applyProfile(draft, self.defaultProfileId());
     // The organisation is this service's setting rather than the encoder's
     // example, because a hierarchy built on the page above carries it and two
-    // certificates from one realm reading `O=Example` and `O=sts` are two
+    // certificates from one realm reading `O=Example` and `O=iya-sts` are two
     // organisations as far as a path validator is concerned.
     applied.pki_dn_o = config.value('pki.organisation');
     // An issuer is preselected where there is exactly one obvious answer — this

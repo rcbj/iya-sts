@@ -23,7 +23,13 @@
 //      are in. A value sealed here — a TOTP secret, a recovery-code vault, a
 //      private key — is OPENED here and sealed again at the target under ITS
 //      cell key, since a value sealed under this cell's key opens nowhere
-//      else (`keystore.seal(…, 'cell')`). This is the one act that sends a
+//      else (`keystore.seal(…, 'cell')`). A published DID's realm-custody
+//      key is sealed INSIDE its JSON record, where the attribute walk cannot
+//      see it, so `oid4vc/person_did.ts` opens it (`movingOut()`) and seals
+//      it again (`movingIn()`), and the target indexes the person's DIDs
+//      (`indexMovedIn()`). Their addresses do not change: the cell that
+//      minted each one still receives its fetches, finds the person gone,
+//      and asks the routing index where they are (#1291). This is the one act that sends a
 //      person's credentials between cells, over mutual TLS, and it is the act
 //      a residency move is: the data now lives there.
 //   4. **The entryUUID is carried**, because it is the person's `sub`
@@ -173,6 +179,19 @@ class CellRehome {
       .map(function (g: any) {
         return String(g.dn);
       });
+    // A published DID's sealed key, inside its record (#1291). LAZILY:
+    // `person_did.ts` is built with the verifiable credentials, long after
+    // this library.
+    if (attrs.stspublisheddid) {
+      const dids = require('../oid4vc/person_did')
+        .movingOut(attrs.stspublisheddid);
+      if (!dids) {
+        return refuse('STS-CELL-0046', 'a published DID\'s key will not ' +
+                                       'open in this cell, so it cannot be ' +
+                                       'moved');
+      }
+      attrs.stspublisheddid = dids;
+    }
     const openedEntry = CellRehome.opened(attrs);
     const openedDevices = devices.map(function (d) {
       return { dn: d.dn, opened: CellRehome.opened(d.attributes) };
@@ -307,8 +326,22 @@ class CellRehome {
       if (ldap.existingUserEntry(String((body.attributes.uid || [''])[0]))) {
         throw new Error('a person of that name is already here');
       }
-      ldap.adoptEntry(String(body.dn), reseal(body.attributes, body.sealed),
-                      'rehomed');
+      const attributes = reseal(body.attributes, body.sealed);
+      // A published DID's key, sealed again here, and its ids indexed once
+      // the entry is (#1291).
+      const personDid = attributes.stspublisheddid
+        ? require('../oid4vc/person_did') : null;
+      if (personDid) {
+        const dids = personDid.movingIn(attributes.stspublisheddid);
+        if (!dids) {
+          throw new Error('a published DID\'s key could not be sealed here');
+        }
+        attributes.stspublisheddid = dids;
+      }
+      ldap.adoptEntry(String(body.dn), attributes, 'rehomed');
+      if (personDid) {
+        personDid.indexMovedIn(String((body.attributes.uid || [''])[0]));
+      }
       (body.devices || []).forEach(function (d: any) {
         ldap.adoptEntry(String(d.dn), reseal(d.attributes, d.sealed),
                         'rehomed');

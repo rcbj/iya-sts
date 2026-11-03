@@ -140,6 +140,9 @@ whichever cell is nearest. Two things let you see the rest:
   * their entry, devices and group memberships move with their entryUUID
     (their `sub`) kept, and their credentials are sealed again under the
     receiving cell's key;
+  * the DIDs the realm publishes for them keep their addresses: a fetch
+    still reaches the cell that created the DID, which finds where the
+    person lives now and answers with the document that cell serves;
   * they are removed from the old cell.
 
 ## Turning a single-cell deployment into a cell

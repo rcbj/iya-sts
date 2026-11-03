@@ -162,7 +162,7 @@
   "downloadTip": "I-download ang key pair. Ipinapadala ng button na ito ang parehong form sa export, na ang sagot ay ang FILE na sine-save ng browser sa halip na isang pahina.",
   "download": "I-download",
   "dnCnTip": "commonName (2.5.4.3) — ang tawag sa certificate na ito. Pinupunan ito ng profile at pinapalitan ang sarili nitong default kapag nagbago ang profile, pero hindi kailanman ang pangalang tinype mo. Para sa TLS server, ang pangalang talagang sinusuri ng client ay nasa subjectAltName, wala rito.",
-  "dnOTip": "organizationName (2.5.4.10) — kung kanino nabibilang ang subject. Pinupunan ito mula sa pki.organisation, na siyang dala ng hierarchy sa itaas, dahil para sa isang path validator, dalawang organisasyon ang dalawang certificate mula sa iisang realm na may O=Example at O=sts.",
+  "dnOTip": "organizationName (2.5.4.10) — kung kanino nabibilang ang subject. Pinupunan ito mula sa pki.organisation, na siyang dala ng hierarchy sa itaas, dahil para sa isang path validator, dalawang organisasyon ang dalawang certificate mula sa iisang realm na may O=Example at O=iya-sts.",
   "dnOuTip": "organizationalUnitName (2.5.4.11) — ang dibisyon sa loob ng organisasyon. Ulitin ito sa pagdaragdag ng mga linyang OU=… sa Karagdagang attribute sa ibaba; puwedeng may dalang ilan ang isang DN.",
   "dnLTip": "localityName (2.5.4.7) — ang lungsod o bayan.",
   "dnStTip": "stateOrProvinceName (2.5.4.8) — buong baybay sa halip na pinaikli, gaya ng hinihingi ng CA/Browser Forum.",

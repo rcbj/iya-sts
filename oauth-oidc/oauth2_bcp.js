@@ -200,6 +200,11 @@ const errorCodes = require('../common/error_codes');
 //                true before this file existed. These are the rows that say
 //                what the service already did, and they are here so that
 //                nobody has to read the code to find out.
+//   'waived'   — enforced by the mode and turned off in this realm by an
+//                administrator's setting, which the row's note names. One row
+//                can say it, `no-implicit` (and `prefer-code`, which is what
+//                is left once it has refused), and only because section 2.1.2
+//                is a SHOULD NOT (#1295; see implicitWaived()).
 //
 // Most rows are cited by `requirement:` on the refusal they produce. Five are
 // not, and that is right rather than an omission — a requirement met by DOING
@@ -566,22 +571,44 @@ const REQUIREMENTS = [
           'detectable for a client that has no PKCE.' },
 
   // --- section 2.1.2 — the implicit grant ---------------------------------
+  // THE ONE ROW AN ADMINISTRATOR MAY WAIVE (#1295): both fields are
+  // functions, as response-over-tls's are, because the answer is the
+  // realm's `oauth2.allowImplicitTokenResponses` — see implicitWaived().
   { id: 'no-implicit', section: '2.1.2', level: 'SHOULD NOT',
-    appliesTo: 'client (enforced by this server)', enforced: 'yes',
+    appliesTo: 'client (enforced by this server)',
+    enforced: function () {
+      log.debug("Entering the no-implicit enforcement report.");
+      const waived = implicitWaived();
+      log.debug("Leaving the no-implicit enforcement report.");
+      return waived ? 'waived' : 'yes';
+    },
     title: 'Do not use the implicit grant or any response type issuing an ' +
            'access token',
-    note: 'response_type values naming `token` — token, code token, id_token ' +
-          'token, code id_token token — are refused with ' +
-          'unsupported_response_type, and the metadata stops advertising ' +
-          'them and drops the implicit grant type. `id_token` and `code ' +
-          'id_token` remain: they issue no access token from the ' +
-          'authorization endpoint, which is the property section 2.1.2 is ' +
-          'about.' },
+    note: function () {
+      log.debug("Entering the no-implicit note.");
+      const waived = implicitWaived();
+      log.debug("Leaving the no-implicit note.");
+      return (waived ? WAIVER_NOTE + ' ' : '') +
+        'response_type values naming `token` — token, code token, id_token ' +
+        'token, code id_token token — are refused with ' +
+        'unsupported_response_type, and the metadata stops advertising ' +
+        'them. `id_token` and `code id_token` remain, with the implicit ' +
+        'grant type RFC 7591 section 2.1 pairs them with: they issue no ' +
+        'access token from the authorization endpoint, which is the ' +
+        'property section 2.1.2 is about.';
+    } },
 
   { id: 'prefer-code', section: '2.1.2', level: 'SHOULD',
-    appliesTo: 'client', enforced: 'yes',
+    appliesTo: 'client',
+    enforced: function () {
+      log.debug("Entering the prefer-code enforcement report.");
+      const waived = implicitWaived();
+      log.debug("Leaving the prefer-code enforcement report.");
+      return waived ? 'waived' : 'yes';
+    },
     title: 'Use response_type=code',
-    note: 'What is left once the token-bearing response types are gone. The ' +
+    note: 'What is left once the token-bearing response types are gone, so ' +
+          'it is waived exactly where no-implicit is. The ' +
           'consequence is worth seeing rather than reading: with the mode ' +
           'on, the debugger\'s implicit pane gets a protocol error instead ' +
           'of an access token in a fragment.' },
@@ -1453,6 +1480,75 @@ function enabled() {
          fapi.enabled() || mode.enforcesOauthSecurityBcp();
 }
 
+// ---------------------------------------------------------------------------
+// SECTION 2.1.2 WAIVED BY AN ADMINISTRATOR (#1295, rcbj's decision,
+// 2026-11-03).
+//
+// Product mode implies this mode and no realm can turn it off, so before this
+// a product deployment could not offer `id_token token`, `code token` or `code
+// id_token token` — and the OpenID Connect Implicit, Hybrid and Dynamic OP
+// certification profiles need them. Section 2.1.2 is a SHOULD NOT, the one
+// requirement of the mode a deployment may knowingly decline, so
+// `oauth2.allowImplicitTokenResponses` waives THAT ROW and nothing else: the
+// mode stays on (enabled() is unchanged), and every other row — PKCE, exact
+// redirect matching, the nonce, the password grant, refresh rotation — still
+// holds. It is a config row, so only an administrator can set it, and
+// `config.set` audits the change.
+//
+// OAUTH 2.1 AND FAPI IGNORE IT. OAuth 2.1 removes the implicit grant from the
+// framework outright (a MUST, not a SHOULD NOT), and a FAPI profile is a
+// stricter profile layered on this mode that the setting has no business
+// loosening. A realm asking for either has asked for the stricter answer, and
+// the waiver would make the mode it named a lie.
+//
+// EVERY DOOR ASKS THIS ONE FUNCTION — the authorization endpoint
+// (checkAuthorizationRequest), registration (checkClientRegistration), the
+// metadata (applyToMetadata) and the report (the `no-implicit` row) — so the
+// four cannot disagree about which realm is waived.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether an administrator waived RFC 9700 section 2.1.2 in the
+ * ambient realm (`oauth2.allowImplicitTokenResponses`), which OAuth 2.1 mode
+ * and every FAPI profile override.
+ *
+ * @returns true when the token-bearing response types are allowed despite
+ *   the mode
+ */
+function implicitWaived() {
+  log.debug("Entering implicitWaived().");
+  const waived = !!config.value('oauth2.allowImplicitTokenResponses') &&
+                 !oauth21.enabled() && !fapi.enabled();
+  log.debug("Leaving implicitWaived(). " + waived);
+  return waived;
+}
+
+// The sentence the report carries when the row is waived: who, by what, and
+// what is still in force — so a reader of GET /oauth2/rfc9700 does not
+// conclude the mode is off.
+const WAIVER_NOTE = 'WAIVED IN THIS REALM BY AN ADMINISTRATOR: ' +
+  'oauth2.allowImplicitTokenResponses is on, so the response types below ' +
+  'are accepted and advertised. Section 2.1.2 is a SHOULD NOT, and every ' +
+  'other requirement of this mode stays in force.';
+
+/**
+ * The requirements an administrator waived in the ambient realm, as data for
+ * `GET /oauth2/rfc9700` and `/admin/mode`.
+ *
+ * @returns `[{ requirement, section, level, setting }]`, empty when nothing
+ *   is waived or the mode is off
+ */
+function waivers() {
+  log.debug("Entering waivers().");
+  if (!enabled() || !implicitWaived()) {
+    log.debug("Leaving waivers(). None.");
+    return [];
+  }
+  log.debug("Leaving waivers(). no-implicit.");
+  return [{ requirement: 'no-implicit', section: 'RFC 9700 2.1.2',
+            level: 'SHOULD NOT',
+            setting: 'oauth2.allowImplicitTokenResponses' }];
+}
+
 // OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
 // setting that can turn it off — see oauth21.js's `loopback-any-port` row.
 function loopbackPortWildcard() {
@@ -2122,8 +2218,9 @@ function checkAuthorizationRequest(opts) {
   const types = opts.types || [];
   const client = opts.client;
 
-  // Section 2.1.2 — no access token from the authorization endpoint.
-  if (types.indexOf('token') >= 0) {
+  // Section 2.1.2 — no access token from the authorization endpoint, unless
+  // an administrator waived it in this realm (#1295).
+  if (types.indexOf('token') >= 0 && !implicitWaived()) {
     log.debug("Leaving checkAuthorizationRequest(). The response type issues " +
               "an access token.");
     return { ok: false, errorCode: 'STS-OAUTH-0126',
@@ -2320,25 +2417,44 @@ function checkClientRegistration(metadata) {
                           'way to make it safe. Register for ' +
                           'authorization_code and use PKCE.' };
   }
-  if (grants.indexOf('implicit') >= 0) {
+  const responses = Array.isArray(meta.response_types) ?
+                    meta.response_types.map(String) : [];
+  const withToken = responses.filter(function (one) {
+    return one.split(/\s+/).indexOf('token') >= 0;
+  });
+  // THE IMPLICIT GRANT IS REFUSED ONLY WHERE NOTHING TOKEN-FREE NEEDS IT
+  // (#1295). RFC 7591 section 2.1 and OpenID Connect Registration pair
+  // `id_token` and `code id_token` with the implicit grant, and the
+  // authorization endpoint allows both in this mode — they issue no access
+  // token there, which is all section 2.1.2 is about. Refusing every
+  // `implicit` made the registration those response types call for
+  // impossible. So it is refused when no registered response type is one
+  // that needs it, and when a token-bearing one is registered beside it (the
+  // grant would then be for that one, which 0134 below refuses on its own).
+  // An administrator's waiver of section 2.1.2 lifts both refusals.
+  const waived = implicitWaived();
+  const tokenFreeIdToken = responses.some(function (one) {
+    const words = one.split(/\s+/);
+    return words.indexOf('id_token') >= 0 && words.indexOf('token') < 0;
+  });
+  if (grants.indexOf('implicit') >= 0 && !waived &&
+      (!tokenFreeIdToken || withToken.length)) {
     log.debug("Leaving checkClientRegistration(). It asked for the implicit " +
-              "grant.");
+              "grant with no token-free response type needing it.");
     return { ok: false, errorCode: 'STS-OAUTH-0133',
              error: 'invalid_client_metadata', requirement: 'no-implicit',
              description: 'RFC 9700 section 2.1.2: the implicit grant issues ' +
                           'an access token from the authorization endpoint, ' +
                           'where it travels through the browser and lands in ' +
                           'history, logs and referrers. This server refuses ' +
-                          'those response types, so it will not register a ' +
-                          'client for the grant either. Register for ' +
-                          'authorization_code.' };
+                          'those response types, so it registers the ' +
+                          'implicit grant only beside `id_token` or `code ' +
+                          'id_token`, which issue no access token there and ' +
+                          'are what RFC 7591 section 2.1 pairs it with. ' +
+                          'Register for authorization_code, or for one of ' +
+                          'those response types.' };
   }
-  const responses = Array.isArray(meta.response_types) ?
-                    meta.response_types.map(String) : [];
-  const withToken = responses.filter(function (one) {
-    return one.split(/\s+/).indexOf('token') >= 0;
-  });
-  if (withToken.length) {
+  if (withToken.length && !waived) {
     log.debug("Leaving checkClientRegistration(). A response type issues an " +
               "access token.");
     return { ok: false, errorCode: 'STS-OAUTH-0134',
@@ -4416,20 +4532,30 @@ function applyToMetadata(metadata) {
     log.debug("Leaving applyToMetadata(). RFC 9700 mode is off.");
     return metadata;
   }
-  if (Array.isArray(metadata.response_types_supported)) {
+  // Section 2.1.2's response types stay where an administrator waived it in
+  // this realm (#1295) — what the endpoint accepts is what is advertised.
+  if (Array.isArray(metadata.response_types_supported) && !implicitWaived()) {
     metadata.response_types_supported =
         metadata.response_types_supported.filter(function (type) {
       return String(type).split(/\s+/).indexOf('token') < 0;
     });
   }
   if (Array.isArray(metadata.grant_types_supported)) {
-    // `implicit` (section 2.1.2) and `password` (section 2.4) both come out. A
-    // metadata document is a promise the endpoint has to keep, and the token
-    // endpoint now refuses both — a client configured from a list that still
-    // named them would be misled by this server rather than by its own code.
+    // `password` (section 2.4) comes out: the token endpoint refuses it, and
+    // a client configured from a list that still named it would be misled by
+    // this server rather than by its own code.
+    //
+    // `implicit` STAYS WHILE A RESPONSE TYPE THAT USES IT IS ADVERTISED
+    // (#1295). It came out with the token response types until then, which
+    // left `id_token` and `code id_token` advertised beside a grant list
+    // without the grant RFC 7591 section 2.1 and OpenID Connect Discovery
+    // pair them with — and registration refused that grant too. Decided by
+    // impliesImplicitGrant(), which fapi.js's narrowing asks again.
+    const keepImplicit = impliesImplicitGrant(
+      metadata.response_types_supported);
     metadata.grant_types_supported = metadata.grant_types_supported.filter(
         function (grant) {
-      return grant !== 'implicit' && grant !== 'password';
+      return grant !== 'password' && (grant !== 'implicit' || keepImplicit);
     });
   }
   // S256 only, since `plain` is refused at the authorization endpoint. This is
@@ -4441,6 +4567,31 @@ function applyToMetadata(metadata) {
   oauth21.applyToMetadata(metadata);
   log.debug("Leaving applyToMetadata(). The mode narrowed three members.");
   return metadata;
+}
+
+// Whether a response_types_supported list needs the implicit grant beside it:
+// any value naming `token` or `id_token` (RFC 7591 section 2.1's table).
+// A list that is not an array says nothing, and is read as needing it, so the
+// grant is never dropped on a document this function did not see.
+/**
+ * Tells whether a `response_types_supported` list carries a response type
+ * that RFC 7591 section 2.1 pairs with the implicit grant.
+ *
+ * @param types - the list
+ * @returns true when the implicit grant belongs beside it
+ */
+function impliesImplicitGrant(types) {
+  log.debug("Entering impliesImplicitGrant().");
+  if (!Array.isArray(types)) {
+    log.debug("Leaving impliesImplicitGrant(). No list.");
+    return true;
+  }
+  const needs = types.some(function (type) {
+    const words = String(type).split(/\s+/);
+    return words.indexOf('token') >= 0 || words.indexOf('id_token') >= 0;
+  });
+  log.debug("Leaving impliesImplicitGrant(). " + needs);
+  return needs;
 }
 
 // What GET /oauth2/rfc9700 publishes, and what a test reads to find out whether
@@ -4483,6 +4634,10 @@ function state() {
       'oauth2.fapi': fapi.profile() || null,
       'oauth2.redirectUris': configuredRedirectUris(),
       'oauth2.loopbackPortWildcard': loopbackPortWildcard(),
+      // #1295: the stored value, beside `waived` below, which is whether it
+      // is in force (OAuth 2.1 and FAPI ignore it).
+      'oauth2.allowImplicitTokenResponses':
+        !!config.value('oauth2.allowImplicitTokenResponses'),
       'global.https': mainPortIsTls(),
       // Not part of this mode and reported beside it anyway: a client author
       // reading this page to find out what it is talking to needs to know that
@@ -4511,6 +4666,10 @@ function state() {
     // The same five as one block, with what turned rotation on — the console
     // page and both reports read this rather than each deciding for itself.
     sender_constraints: senderConstraints.state(),
+    // #1295: what an administrator waived in this realm, as data — the
+    // `no-implicit` row says `waived` and why; this is the list a caller
+    // reads without scanning the rows.
+    waived: waivers(),
     // Reported beside the settings because it is the one thing here that a
     // caller cannot infer from its own request: it already knows what scheme it
     // used, and what it wants to know is whether that was the only option.
@@ -4562,6 +4721,10 @@ capabilities.provide('oauth.refresh-rotation');
 module.exports = {
   REQUIREMENTS: REQUIREMENTS,
   enabled: enabled,
+  // #1295: section 2.1.2 waived by an administrator, and the list of waivers.
+  implicitWaived: implicitWaived,
+  waivers: waivers,
+  impliesImplicitGrant: impliesImplicitGrant,
   isConfidential: isConfidential,
   declaredPublic: declaredPublic,
   credentialOnFile: credentialOnFile,

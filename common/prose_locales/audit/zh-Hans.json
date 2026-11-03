@@ -1587,6 +1587,30 @@
     "en": "51cd295b713684de",
     "text": "签名密钥表单因其 CSRF 令牌被拒绝"
   },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "某人吊销了自己的一个签名密钥对"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "某人发布了自己的 did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "某人已发布的 DID 文档有了新版本"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "某人在其已发布的 DID 上授权了一个密钥"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "某人停用了其已发布的 DID"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "管理员停用了某人已发布的 DID"
+  },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
     "text": "某人用钱包证明并登记了一个自签发主体"

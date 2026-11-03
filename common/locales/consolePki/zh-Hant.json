@@ -162,7 +162,7 @@
   "downloadTip": "下載金鑰對。此按鈕將同一表單傳送到匯出，其回應是瀏覽器儲存的檔案，而不是頁面。",
   "download": "下載",
   "dnCnTip": "commonName（2.5.4.3）— 此憑證的名稱。設定檔會填入它，並在設定檔變更時取代自己的預設值，但絕不取代您輸入的名稱。對於 TLS 伺服器，用戶端實際檢查的名稱在 subjectAltName 中，不在這裡。",
-  "dnOTip": "organizationName（2.5.4.10）— 主體所屬的組織。它取自 pki.organisation，也就是上方階層結構所攜帶的值，因為在路徑驗證程式看來，同一領域中分別寫著 O=Example 與 O=sts 的兩個憑證屬於兩個組織。",
+  "dnOTip": "organizationName（2.5.4.10）— 主體所屬的組織。它取自 pki.organisation，也就是上方階層結構所攜帶的值，因為在路徑驗證程式看來，同一領域中分別寫著 O=Example 與 O=iya-sts 的兩個憑證屬於兩個組織。",
   "dnOuTip": "organizationalUnitName（2.5.4.11）— 組織內的部門。可以在下方的「其他屬性」中加入 OU=… 列來重複它；一個 DN 可以包含多個。",
   "dnLTip": "localityName（2.5.4.7）— 城市或鄉鎮。",
   "dnStTip": "stateOrProvinceName（2.5.4.8）— 寫全稱而不是縮寫，這是 CA/Browser Forum 的要求。",

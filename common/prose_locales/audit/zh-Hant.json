@@ -1587,6 +1587,30 @@
     "en": "51cd295b713684de",
     "text": "簽署金鑰表單因其 CSRF 權杖而被拒絕"
   },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "某人撤銷了自己的一個簽章金鑰組"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "某人發布了自己的 did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "某人已發布的 DID 文件有了新版本"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "某人在其已發布的 DID 上授權了一把金鑰"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "某人停用了其已發布的 DID"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "管理員停用了某人已發布的 DID"
+  },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
     "text": "某人以錢包證明並登記了一個自行簽發主體"

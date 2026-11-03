@@ -162,7 +162,7 @@
   "downloadTip": "下载密钥对。此按钮将同一表单发送到导出，其响应是浏览器保存的文件，而不是页面。",
   "download": "下载",
   "dnCnTip": "commonName（2.5.4.3）— 此证书的名称。配置文件会填入它，并在配置文件改变时替换自己的默认值，但绝不替换你输入的名称。对于 TLS 服务器，客户端实际检查的名称在 subjectAltName 中，不在这里。",
-  "dnOTip": "organizationName（2.5.4.10）— 主体所属的组织。它取自 pki.organisation，也就是上面层次结构所携带的值，因为在路径验证程序看来，同一领域中分别写着 O=Example 和 O=sts 的两个证书属于两个组织。",
+  "dnOTip": "organizationName（2.5.4.10）— 主体所属的组织。它取自 pki.organisation，也就是上面层次结构所携带的值，因为在路径验证程序看来，同一领域中分别写着 O=Example 和 O=iya-sts 的两个证书属于两个组织。",
   "dnOuTip": "organizationalUnitName（2.5.4.11）— 组织内的部门。可以在下面的“其他属性”中添加 OU=… 行来重复它；一个 DN 可以包含多个。",
   "dnLTip": "localityName（2.5.4.7）— 城市或城镇。",
   "dnStTip": "stateOrProvinceName（2.5.4.8）— 写全称而不是缩写，这是 CA/Browser Forum 的要求。",
