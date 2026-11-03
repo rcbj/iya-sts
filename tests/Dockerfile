@@ -148,6 +148,28 @@ RUN go install github.com/go-acme/lego/v5@v5.5.2 \
        /out/licenses/micromdm-scep.LICENSE \
  && /out/lego --version
 
+# THE EUDI-DEV WALLET (#668): a real OpenID4VCI and OpenID4VP wallet with a
+# web UI, which tests/protocol/sts_eudi_wallet_portal.js runs as a child
+# process beside the browser and drives the user portal with. Built from
+# rcbj's fork, rcbj/eudi-dev, at a commit on its `main` (the fork is the
+# source; nothing is ever sent upstream), as its own Dockerfile builds it:
+# the archive by sha256, a static binary, the version stamped in. A bump is
+# the commit, its archive's sha256 and nothing else.
+FROM golang:1.26.8-bookworm AS eudi-wallet
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath GOTOOLCHAIN=local
+ENV EUDI_DEV_COMMIT=c48269ec315bd21aa0b8d3d121934b2d0d268f3e
+ENV EUDI_DEV_SHA256=08008ea9a1e5083a0adc90c41e989bbedd2e9fe566695ed38da20463ebc97f93
+RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/eudi-dev.tgz \
+        https://github.com/rcbj/eudi-dev/archive/${EUDI_DEV_COMMIT}.tar.gz \
+ && echo "${EUDI_DEV_SHA256}  /tmp/eudi-dev.tgz" | sha256sum -c - \
+ && mkdir -p /usr/src && tar xzf /tmp/eudi-dev.tgz -C /usr/src \
+ && cd /usr/src/eudi-dev-${EUDI_DEV_COMMIT} \
+ && go build -ldflags "-s -w -X github.com/eudi-dev/eudi-dev/v3/cmd.Version=${EUDI_DEV_COMMIT}" \
+      -o /out/eudi . \
+ && mkdir -p /out/licenses && cp LICENSE /out/licenses/eudi-dev.LICENSE \
+ && echo "${EUDI_DEV_COMMIT}" > /out/COMMIT \
+ && /out/eudi wallet --help >/dev/null
+
 FROM ubuntu:latest AS enroll-c
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
@@ -422,6 +444,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=enroll-go /out/ /opt/enroll-clients/
 COPY --from=enroll-c /out/ /opt/enroll-clients/
+# The eudi-dev wallet (#668), from its stage at the top of this file.
+COPY --from=eudi-wallet /out/ /opt/eudi-wallet/
+ENV STS_EUDI_WALLET_BIN=/opt/eudi-wallet/eudi
 COPY tests/tools/certbot-requirements.txt /opt/enroll-clients/certbot-requirements.txt
 RUN python3 -m venv /opt/certbot \
  && /opt/certbot/bin/pip install --no-cache-dir --require-hashes --no-deps \
