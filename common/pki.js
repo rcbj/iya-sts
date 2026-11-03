@@ -8397,6 +8397,63 @@ function pqSubjectPublicKeyPem(alg, publicJwk) {
   return pem;
 }
 
+// THE OTHER DIRECTION (#657): the AKP JWK of a post-quantum key a CERTIFICATE
+// holds, for a key somebody else certified — `oid4vp.trustedIssuerCertificates`
+// — so the Verifier can check a credential and a status list that issuer
+// signed with it. `PQ_JOSE_IN_X509` read backwards, and the one translation
+// undone: an ECDSA composite's X.509 point loses its 0x04 prefix, because
+// JOSE carries `x || y`. Answers null for a classical key (node reads that
+// one), `{ alg, publicJwk }` for a post-quantum one with a JOSE name, and
+// THROWS for a post-quantum key with none (an SLH-DSA parameter set this
+// service does not speak in JOSE), naming it.
+/**
+ * Returns the AKP JWK of the post-quantum key a certificate holds.
+ *
+ * @param certificatePem - the certificate
+ * @returns null for a classical key, else `{ alg, publicJwk }`
+ * @throws Error, naming the algorithm, for a post-quantum key with no JOSE
+ * algorithm here
+ */
+function pqJwkFromCertificate(certificatePem) {
+  log.debug("Entering pqJwkFromCertificate().");
+  const spki = pqcX509.decodeSpki(new Uint8Array(
+    certificateSpkiDer(String(certificatePem || ''))));
+  if (!spki || !spki.alg) {
+    log.debug("Leaving pqJwkFromCertificate(). Classical.");
+    return null;
+  }
+  const alg = Object.keys(PQ_JOSE_IN_X509).filter(function (one) {
+    return PQ_JOSE_IN_X509[one].id === spki.alg;
+  })[0];
+  if (!alg) {
+    log.debug("Leaving pqJwkFromCertificate(). No JOSE name.");
+    // `noJoseName` tells this refusal from a certificate that could not be
+    // read at all, which a caller reports differently.
+    const refused = /** @type {any} */ (new Error('the certificate holds a ' +
+      spki.alg + ' key, which has no JOSE algorithm this service speaks.'));
+    refused.noJoseName = true;
+    throw refused;
+  }
+  let pub = Buffer.from(spki.pub);
+  const entry = PQ_JOSE_IN_X509[alg];
+  const composite = pqcX509.COMPOSITE_ALGS[entry.id];
+  if (composite && entry.ecField) {
+    const mlLength = pqc.SIGNATURE_ALGS[composite.mldsa].lengths.publicKey;
+    const trad = pub.subarray(mlLength);
+    if (trad.length !== 1 + 2 * entry.ecField || trad[0] !== 0x04) {
+      log.debug("Leaving pqJwkFromCertificate(). EC half is not an " +
+                "uncompressed point.");
+      throw new Error('the certificate\'s ' + alg + ' key\'s ECDSA half is ' +
+                      'not an uncompressed point on its curve.');
+    }
+    pub = Buffer.concat([pub.subarray(0, mlLength), trad.subarray(1)]);
+  }
+  log.debug("Leaving pqJwkFromCertificate(). " + alg);
+  return { alg: alg,
+           publicJwk: { kty: 'AKP', alg: alg, use: 'sig',
+                        pub: pub.toString('base64url') } };
+}
+
 // ---------------------------------------------------------------------------
 // CERTIFY A REALM'S POST-QUANTUM KEYS UNDER ITS JOSE ISSUING CA.
 //
@@ -13777,6 +13834,7 @@ module.exports = {
   certifyPqKeys: certifyPqKeys,
   PQ_JOSE_IN_X509: PQ_JOSE_IN_X509,
   pqSubjectPublicKeyPem: pqSubjectPublicKeyPem,
+  pqJwkFromCertificate: pqJwkFromCertificate,
   registerCertifiable: registerCertifiable,
   // Whether a certificate a registration holds may be presented again
   // (2026-10-08): `certifyRegistered()` asks it, and the tests.

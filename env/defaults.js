@@ -869,6 +869,7 @@ var config = {
     clientIdPrefix: "pre-registered",                // Client Identifier prefix of a signed request
     x509DnsName: "",                                 // DNS name of the x509_san_dns Client Identifier
     x509SigningAlgorithm: "ES256",                   // Signing algorithm of an x509 Client Identifier request
+    requestObjectSigningAlgorithm: "RS256",          // Signing algorithm of a signed request
     verifierAttestation: "",                         // Verifier Attestation JWT
     claims: "given_name,family_name",                // Requested claims
     presentationRequestTtlS: 600,                    // Presentation request lifetime (s)
@@ -891,6 +892,11 @@ var config = {
     statusListMaxCacheS: 3600,                       // Longest a fetched status list is kept (s)
     requireStatusReference: "all",                   // Require a status reference on every presented credential
     statusOptionalIssuers: ""                        // Trusted issuers exempt from the status reference
+  },
+
+  // --- OID4VCI ---------------------------------------------------------
+  oid4vc: {
+    walletCompatibility: false  // Wallet compatibility mode
   },
 
   // --- OpenID Federation -----------------------------------------------
