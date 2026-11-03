@@ -20,10 +20,10 @@
 //
 // EVERYTHING IN THIS FILE IS ASYNC, and that is not a style choice. Web Crypto
 // is promise-based, and this module runs in the browser as well as in node —
-// `globalThis.crypto.subtle` in both, so there is one code path rather than two.
-// It must not `require("crypto")`: browserify would substitute crypto-browserify
-// and ship `elliptic` (GHSA-848j-6mx2-7j84, no patched version) into the bundle.
-// See client/CLAUDE.md.
+// `globalThis.crypto.subtle` in both, so there is one code path rather than
+// two. It must not `require("crypto")`: browserify would substitute
+// crypto-browserify and ship `elliptic` (GHSA-848j-6mx2-7j84, no patched
+// version) into the bundle. See client/CLAUDE.md.
 //
 // Three things here are the ones that go wrong, and each fails as an opaque
 // integrity error rather than as anything that names itself:
@@ -49,6 +49,7 @@
 
 var prim = require("./krb5_primitives.js");
 var bunyan = require("bunyan");
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_crypto",
   level: (function () {
@@ -56,10 +57,15 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_crypto log level: " + logLevelProblem);
+}
 
 var toBytes = prim.toBytes;
 var concat = prim.concat;
@@ -83,8 +89,10 @@ function subtle() {
 }
 
 function randomBytes(n) {
+  log.debug("Entering randomBytes().");
   var out = new Uint8Array(n);
   globalThis.crypto.getRandomValues(out);
+  log.debug("Leaving randomBytes().");
   return out;
 }
 
@@ -106,6 +114,8 @@ function randomBytes(n) {
 // implementation, which is a much worse trade.
 // ---------------------------------------------------------------------------
 async function importAesKey(keyBytes) {
+  log.debug("Entering importAesKey().");
+  log.debug("Leaving importAesKey().");
   return subtle().importKey("raw", toBytes(keyBytes), { name: "AES-CBC" },
       false, ["encrypt", "decrypt"]);
 }
@@ -152,6 +162,8 @@ async function cbcDecryptRaw(aesKey, iv, data) {
 // A single-block ECB decryption, which CTS needs to recover the truncated
 // block. D(block) is a CBC decryption under a zero IV.
 async function ecbDecryptBlock(aesKey, block) {
+  log.debug("Entering ecbDecryptBlock().");
+  log.debug("Leaving ecbDecryptBlock().");
   return cbcDecryptRaw(aesKey, new Uint8Array(16), toBytes(block));
 }
 
@@ -170,6 +182,7 @@ async function ctsEncrypt(keyBytes, iv, plaintext) {
   log.debug("Entering ctsEncrypt(). bytes=" + toBytes(plaintext).length);
   var data = toBytes(plaintext);
   if (data.length < 16) {
+    log.debug("Leaving ctsEncrypt().");
     throw new Error("krb5: CTS needs at least one block; got " + data.length);
   }
   var aesKey = await importAesKey(keyBytes);
@@ -195,6 +208,7 @@ async function ctsDecrypt(keyBytes, iv, ciphertext) {
   log.debug("Entering ctsDecrypt(). bytes=" + toBytes(ciphertext).length);
   var data = toBytes(ciphertext);
   if (data.length < 16) {
+    log.debug("Leaving ctsDecrypt().");
     throw new Error("krb5: CTS ciphertext shorter than a block");
   }
   var aesKey = await importAesKey(keyBytes);
@@ -223,13 +237,16 @@ async function ctsDecrypt(keyBytes, iv, ciphertext) {
 // implementation because `crypto.subtle` does not know that hash.
 // ---------------------------------------------------------------------------
 async function hmac(hashName, keyBytes, message) {
+  log.debug("Entering hmac().");
   if (hashName === "MD5") {
+    log.debug("Leaving hmac().");
     return prim.hmacMd5(keyBytes, message);
   }
   var key = await subtle().importKey("raw", toBytes(keyBytes), {
     name: "HMAC",
     hash: hashName
   }, false, ["sign"]);
+  log.debug("Leaving hmac().");
   return new Uint8Array(await subtle().sign("HMAC", key, toBytes(message)));
 }
 
@@ -274,6 +291,8 @@ async function deriveRandom(baseKey, constant, outBytes) {
 // by the purpose byte — 0x99 for a checksum key, 0xAA for encryption, 0x55 for
 // integrity.
 function usageConstant(usage, purposeByte) {
+  log.debug("Entering usageConstant().");
+  log.debug("Leaving usageConstant().");
   return new Uint8Array([
     (usage >>> 24) & 0xff, (usage >>> 16) & 0xff, (usage >>> 8) & 0xff,
         usage & 0xff,
@@ -282,6 +301,8 @@ function usageConstant(usage, purposeByte) {
 }
 
 async function deriveKeyAes(baseKey, usage, purposeByte, keyBytes) {
+  log.debug("Entering deriveKeyAes().");
+  log.debug("Leaving deriveKeyAes().");
   return deriveRandom(baseKey, usageConstant(usage, purposeByte), keyBytes);
 }
 
@@ -378,6 +399,7 @@ function aesSha1Profile(id, name, keyBytes) {
         // RFC 3962: all-zero means 2^32, which no sane KDC sends and which
         // would hang the browser for hours. Refuse rather than attempt it.
         if (iterations === 0) {
+          log.debug("Leaving stringToKey().");
           throw new Error("krb5: s2kparams asks for 2^32 iterations");
         }
       }
@@ -388,12 +410,21 @@ function aesSha1Profile(id, name, keyBytes) {
       return key;
     },
 
-    async encryptionKey(baseKey, usage) { return deriveKeyAes(baseKey, usage,
-        0xAA, keyBytes); },
-    async integrityKey(baseKey, usage) { return deriveKeyAes(baseKey, usage,
-        0x55, keyBytes); },
-    async checksumKey(baseKey, usage) { return deriveKeyAes(baseKey, usage,
-        0x99, keyBytes); },
+    async encryptionKey(baseKey, usage) {
+      log.debug("Entering encryptionKey().");
+      log.debug("Leaving encryptionKey().");
+      return deriveKeyAes(baseKey, usage, 0xAA, keyBytes);
+    },
+    async integrityKey(baseKey, usage) {
+      log.debug("Entering integrityKey().");
+      log.debug("Leaving integrityKey().");
+      return deriveKeyAes(baseKey, usage, 0x55, keyBytes);
+    },
+    async checksumKey(baseKey, usage) {
+      log.debug("Entering checksumKey().");
+      log.debug("Leaving checksumKey().");
+      return deriveKeyAes(baseKey, usage, 0x99, keyBytes);
+    },
 
     // RFC 3961 section 5.3 simplified profile: the MAC is over the PLAINTEXT
     // (confounder included), not over the ciphertext. RFC 8009 is the other way
@@ -415,6 +446,7 @@ function aesSha1Profile(id, name, keyBytes) {
       log.debug("Entering decrypt(). etype=" + name + ", usage=" + usage);
       var data = toBytes(ciphertext);
       if (data.length < 16 + CHECKSUM_BYTES) {
+        log.debug("Leaving decrypt().");
         throw new Error("krb5: ciphertext too short for " + name);
       }
       var ke = await this.encryptionKey(baseKey, usage);
@@ -424,6 +456,7 @@ function aesSha1Profile(id, name, keyBytes) {
       var plain = await ctsDecrypt(ke, new Uint8Array(16), c);
       var expect = (await hmac("SHA-1", ki, plain)).slice(0, CHECKSUM_BYTES);
       if (!prim.equalConstantTime(h, expect)) {
+        log.debug("Leaving decrypt().");
         throw new Error("krb5: integrity check failed (" + name + ", usage " +
             usage + ")");
       }
@@ -432,11 +465,15 @@ function aesSha1Profile(id, name, keyBytes) {
     },
 
     async checksum(baseKey, usage, message) {
+      log.debug("Entering checksum().");
       var kc = await this.checksumKey(baseKey, usage);
+      log.debug("Leaving checksum().");
       return (await hmac("SHA-1", kc, message)).slice(0, CHECKSUM_BYTES);
     },
 
     async verifyChecksum(baseKey, usage, message, given) {
+      log.debug("Entering verifyChecksum().");
+      log.debug("Leaving verifyChecksum().");
       return prim.equalConstantTime(await this.checksum(baseKey, usage,
           message), given);
     }
@@ -467,6 +504,7 @@ function aesSha2Profile(id, name, keyBytes, hashName, macBytes) {
         var p = toBytes(params);
         iterations = ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
         if (iterations === 0) {
+          log.debug("Leaving stringToKey().");
           throw new Error("krb5: s2kparams asks for 2^32 iterations");
         }
       }
@@ -485,13 +523,19 @@ function aesSha2Profile(id, name, keyBytes, hashName, macBytes) {
     // aes256-cts-hmac-sha384-192 that means 256 bits against 192, and using one
     // number for all three is wrong for two of them.
     async encryptionKey(baseKey, usage) {
+      log.debug("Entering encryptionKey().");
+      log.debug("Leaving encryptionKey().");
       return kdfHmacSha2(hashName, baseKey, usageConstant(usage, 0xAA),
           keyBytes * 8);
     },
     async integrityKey(baseKey, usage) {
+      log.debug("Entering integrityKey().");
+      log.debug("Leaving integrityKey().");
       return kdfHmacSha2(hashName, baseKey, usageConstant(usage, 0x55), kiBits);
     },
     async checksumKey(baseKey, usage) {
+      log.debug("Entering checksumKey().");
+      log.debug("Leaving checksumKey().");
       return kdfHmacSha2(hashName, baseKey, usageConstant(usage, 0x99), kiBits);
     },
 
@@ -514,6 +558,7 @@ function aesSha2Profile(id, name, keyBytes, hashName, macBytes) {
       log.debug("Entering decrypt(). etype=" + name + ", usage=" + usage);
       var data = toBytes(ciphertext);
       if (data.length < 16 + macBytes) {
+        log.debug("Leaving decrypt().");
         throw new Error("krb5: ciphertext too short for " + name);
       }
       var ke = await this.encryptionKey(baseKey, usage);
@@ -525,6 +570,7 @@ function aesSha2Profile(id, name, keyBytes, hashName, macBytes) {
       var expect = (await hmac(hashName, ki, concat([iv, c]))).slice(0,
           macBytes);
       if (!prim.equalConstantTime(h, expect)) {
+        log.debug("Leaving decrypt().");
         throw new Error("krb5: integrity check failed (" + name + ", usage " +
             usage + ")");
       }
@@ -534,11 +580,15 @@ function aesSha2Profile(id, name, keyBytes, hashName, macBytes) {
     },
 
     async checksum(baseKey, usage, message) {
+      log.debug("Entering checksum().");
       var kc = await this.checksumKey(baseKey, usage);
+      log.debug("Leaving checksum().");
       return (await hmac(hashName, kc, message)).slice(0, macBytes);
     },
 
     async verifyChecksum(baseKey, usage, message, given) {
+      log.debug("Entering verifyChecksum().");
+      log.debug("Leaving verifyChecksum().");
       return prim.equalConstantTime(await this.checksum(baseKey, usage,
           message), given);
     }
@@ -576,6 +626,8 @@ function translateArcfourUsage(usage) {
 }
 
 function le32(n) {
+  log.debug("Entering le32().");
+  log.debug("Leaving le32().");
   return new Uint8Array([n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff,
       (n >>> 24) & 0xff]);
 }
@@ -595,6 +647,7 @@ var ARCFOUR = {
   // No salt, no iteration count: the key is the NT hash of the password.
   async stringToKey(password) {
     log.debug("Entering stringToKey(). etype=arcfour-hmac-md5 (unsalted)");
+    log.debug("Leaving stringToKey().");
     return prim.md4(prim.utf16le(password));
   },
 
@@ -615,6 +668,7 @@ var ARCFOUR = {
     log.debug("Entering decrypt(). etype=arcfour-hmac-md5, usage=" + usage);
     var data = toBytes(ciphertext);
     if (data.length < 16 + 8) {
+      log.debug("Leaving decrypt().");
       throw new Error("krb5: ciphertext too short for arcfour-hmac-md5");
     }
     var t = le32(translateArcfourUsage(usage));
@@ -625,6 +679,7 @@ var ARCFOUR = {
     var plain = prim.rc4(k3, data.slice(16));
     var expect = await hmac("MD5", k2, plain);
     if (!prim.equalConstantTime(cksum, expect)) {
+      log.debug("Leaving decrypt().");
       throw new Error("krb5: integrity check failed (arcfour-hmac-md5, usage " +
           usage + ")");
     }
@@ -635,14 +690,18 @@ var ARCFOUR = {
   // RFC 4757 section 4: a signature key derived from a fixed string, then MD5
   // over the usage and the message, then HMAC of that.
   async checksum(baseKey, usage, message) {
+    log.debug("Entering checksum().");
     var ksign = await hmac("MD5", baseKey, concat([prim.utf8("signaturekey"),
         new Uint8Array([0])]));
     var tmp = prim.md5(concat([le32(translateArcfourUsage(usage)),
         toBytes(message)]));
+    log.debug("Leaving checksum().");
     return hmac("MD5", ksign, tmp);
   },
 
   async verifyChecksum(baseKey, usage, message, given) {
+    log.debug("Entering verifyChecksum().");
+    log.debug("Leaving verifyChecksum().");
     return prim.equalConstantTime(await this.checksum(baseKey, usage, message),
         given);
   }
@@ -686,16 +745,21 @@ function etypeById(id) {
 }
 
 function etypeByName(name) {
+  log.debug("Entering etypeByName().");
   var ids = Object.keys(ETYPES);
   for (var i = 0; i < ids.length; i++) {
     if (ETYPES[ids[i]].name === name) {
+      log.debug("Leaving etypeByName().");
       return ETYPES[ids[i]];
     }
   }
+  log.debug("Leaving etypeByName().");
   throw new Error("krb5: no encryption type named " + name);
 }
 
 function etypeName(id) {
+  log.debug("Entering etypeName().");
+  log.debug("Leaving etypeName().");
   return (ETYPES[id] && ETYPES[id].name) || ETYPE_NAMES_UNSUPPORTED[id] || (
       "etype-" + id);
 }
@@ -711,8 +775,11 @@ module.exports = {
   etypeById: etypeById,
   etypeByName: etypeByName,
   etypeName: etypeName,
-  isSupportedEtype: function (id) { return Object.prototype.hasOwnProperty.call(ETYPES,
-      id); },
+  isSupportedEtype: function (id) {
+    log.debug("Entering isSupportedEtype().");
+    log.debug("Leaving isSupportedEtype().");
+    return Object.prototype.hasOwnProperty.call(ETYPES, id);
+  },
   // Exposed for the vector tests, which have to reach the layers individually:
   // a passing end-to-end encryption can hide two compensating errors.
   ctsEncrypt: ctsEncrypt,
