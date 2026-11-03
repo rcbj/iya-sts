@@ -277,6 +277,42 @@ so must `admin-ui/admin.ts`.
    documents to notice. **When a new refusal is added to an endpoint, look for
    the registration member that would have recorded it.**
 
+   **THE IMPLICIT GRANT IS REFUSED ONLY WHERE NOTHING TOKEN-FREE NEEDS IT
+   (#1295, 2026-11-03).** `STS-OAUTH-0133` used to refuse ANY `grant_types`
+   naming `implicit`, while the authorization endpoint allowed `id_token` and
+   `code id_token` — the response types RFC 7591 section 2.1 and OpenID
+   Connect Registration pair with that grant. The mirror rule above, applied
+   carelessly, had made the registration those response types call for
+   impossible in every mode the BCP governs. It is refused now when no
+   registered response type is `id_token`-without-`token`, or when a
+   token-bearing one is registered beside it (`0134`'s refusal on its own);
+   and `applyToMetadata()` keeps `implicit` in `grant_types_supported` while
+   a response type that uses it is advertised (`impliesImplicitGrant()`), with
+   `fapi.js` dropping it again when a profile narrows the list to `code`.
+
+   **ONE ROW AN ADMINISTRATOR MAY WAIVE: `no-implicit` (#1295, rcbj's decision,
+   2026-11-03: "ease off the strictness of our product mode so that we get
+   certified … It should require an admin to turn on these restricted flow /
+   grant types").** Product mode implies this mode in every realm and no realm
+   can turn it off, so a product deployment could not pass the OpenID
+   Connect Implicit, Hybrid or Dynamic OP plans, which need `id_token token`,
+   `code token` and `code id_token token`. `oauth2.allowImplicitTokenResponses`
+   (runtime, per realm, off) waives section 2.1.2 ALONE: the mode stays on —
+   `enabled()` is untouched, so PKCE, exact redirect matching, the nonce, the
+   password grant and rotation all still hold — and `implicitWaived()` is the
+   one answer the four doors ask (the authorization endpoint's `0126`,
+   registration's `0133`/`0134`, the metadata, and the report, where the row's
+   `enforced` reads `waived` and `state().waived` / `mode.report()`'s BCP row
+   carry it as data). It is a waiver and not a second mode because section
+   2.1.2 is a SHOULD NOT — a requirement of the BCP a deployment may
+   knowingly decline, with the reason recorded where a reader of the report
+   meets it — and a certification profile names it. **OAuth 2.1 mode
+   and the FAPI profiles ignore it**: OAuth 2.1 removes the implicit grant from
+   the framework (a MUST), and a FAPI profile is a stricter profile layered on
+   this mode that a setting about the mode has no business loosening. Do NOT
+   grow a second waiver by analogy: the argument is section 2.1.2's level, and
+   the next row has its own.
+
    **ONE DECISION ABOUT FORWARDED HEADERS, SHARED.** `helpers.forwardedFrom()`
    decides whether `X-Forwarded-Proto`/`X-Forwarded-Host` are believed, and both
    `baseUrlOf()` and `dpop.ts`'s `htuOf()` go through it. They used to disagree

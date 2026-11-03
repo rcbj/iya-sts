@@ -26,5 +26,6 @@
   "thWhy": "原因",
   "anythingBut": "除以下值外的任意值：",
   "ignoredMark": " — 已忽略",
-  "notYetHeading": "product 模式仍不检查的内容"
+  "notYetHeading": "product 模式仍不检查的内容",
+  "waivedBy": "管理员已在此领域豁免：<code>{requirement}</code>（{section}，{level}），因为 <code>{setting}</code> 已开启。BCP 的其他所有要求仍然有效。"
 }

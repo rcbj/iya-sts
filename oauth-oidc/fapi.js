@@ -1694,6 +1694,24 @@ function applyToMetadata(metadata) {
         .filter(function (one) {
           return types.indexOf(responseTypeOf(one)) >= 0;
         });
+      // The implicit grant follows the response types that use it (#1295):
+      // RFC 9700 mode keeps it beside `id_token` and `code id_token`, and a
+      // profile that narrowed the list to `code` alone leaves nothing for it
+      // to be paired with (RFC 7591 section 2.1). Written out rather than
+      // asked of oauth2_bcp.js's impliesImplicitGrant(), because that module
+      // requires this one.
+      const usesImplicit = metadata.response_types_supported.some(
+        function (one) {
+          const words = String(one).split(/\s+/);
+          return words.indexOf('token') >= 0 ||
+                 words.indexOf('id_token') >= 0;
+        });
+      if (!usesImplicit && Array.isArray(metadata.grant_types_supported)) {
+        metadata.grant_types_supported = metadata.grant_types_supported
+          .filter(function (one) {
+            return one !== 'implicit';
+          });
+      }
     }
     SIGNING_ALG_LISTS.concat(fapi2() ? ['dpop_signing_alg_values_supported']
                                      : []).forEach(function (name) {

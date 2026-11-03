@@ -4053,13 +4053,21 @@ function report() {
   log.debug("Entering report().");
   const product = isProduct();
   log.debug("Leaving report().");
+  // #1295: what an administrator waived of the BCP in this realm, carried on
+  // the row it qualifies as DATA (ids and a setting's name, no sentence), so
+  // the prose namespace below is unchanged and the page says it in the
+  // reader's language. `oauth2_bcp.js` is required LAZILY: it requires this
+  // file at load.
+  const waived = require('../oauth-oidc/oauth2_bcp').waivers();
   return {
     mode: current(),
     isProduct: product,
     requirements: REQUIREMENTS.map(function (row) {
+      const extra = row.id === 'oauth-security-bcp' && waived.length
+        ? { waived: waived } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
-                           row);
+                           row, extra);
     }),
     developmentOnlySettings: developmentOnlySettings(),
     notYet: NOT_YET

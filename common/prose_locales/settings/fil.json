@@ -1955,6 +1955,14 @@
     "en": "41a2ff91a0055e49",
     "text": "pinagpapasyahan nito kung ibina-bind bilang HTTPS ang main port (global.https), at bina-bind ang listener kapag nagsimula ang process. Puwede pa rin itong dalhin ng isang REALM — walang bina-bind na socket ang realm, kaya sumasagot ito sa anumang scheme na sinimulan ng process na ito at ang mga check lang ng mode ang nagbabago"
   },
+  "oauth2.allowImplicitTokenResponses|label": {
+    "en": "28cd231f5d568de0",
+    "text": "Payagan ang mga token response type sa ilalim ng RFC 9700"
+  },
+  "oauth2.allowImplicitTokenResponses|description": {
+    "en": "4e3ee63eb21efc37",
+    "text": "Alisin ang RFC 9700 section 2.1.2 (no-implicit, isang SHOULD NOT) kung saan umiiral ang RFC 9700 mode — na laging umiiral sa product mode. Kapag naka-on, ang mga response type na naglalabas ng access token mula sa authorization endpoint (token, id_token token, code token, code id_token token) ay tinatanggap sa authorization endpoint at sa dynamic registration, at ina-advertise ang mga ito at ang implicit grant ng parehong discovery document. Nananatiling umiiral ang lahat ng iba pang kinakailangan ng RFC 9700 at ang natitirang bahagi ng product mode, at iniuulat ng GET /oauth2/rfc9700 at /admin/mode na inalis ang kinakailangan. Para ito sa mga OpenID Connect Implicit, Hybrid at Dynamic OP profile. WALANG EPEKTO habang naka-on ang OAuth 2.1 mode o isang FAPI profile: tuluyang inaalis ng OAuth 2.1 ang implicit grant, at ang FAPI profile ay mas mahigpit na profile na hindi pinaluluwag ng setting na ito. NAKA-OFF bilang default; itakda ito bawat realm."
+  },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
     "text": "OAuth 2.1 mode"

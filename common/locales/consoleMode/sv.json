@@ -26,5 +26,6 @@
   "thWhy": "Varför",
   "anythingBut": "allt utom ",
   "ignoredMark": " — ignoreras",
-  "notYetHeading": "Vad läget product fortfarande inte kontrollerar"
+  "notYetHeading": "Vad läget product fortfarande inte kontrollerar",
+  "waivedBy": "UNDANTAGEN I DEN HÄR SFÄREN AV EN ADMINISTRATÖR: <code>{requirement}</code> ({section}, ett {level}), eftersom <code>{setting}</code> är på. Alla andra krav i BCP:n gäller fortfarande."
 }

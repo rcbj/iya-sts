@@ -26,5 +26,6 @@
   "thWhy": "Why",
   "anythingBut": "anything but ",
   "ignoredMark": " — ignored",
-  "notYetHeading": "What product mode still does not check"
+  "notYetHeading": "What product mode still does not check",
+  "waivedBy": "WAIVED IN THIS REALM BY AN ADMINISTRATOR: <code>{requirement}</code> ({section}, a {level}), because <code>{setting}</code> is on. Every other requirement of the BCP stays in force."
 }
