@@ -21,9 +21,11 @@
 // file's comment above them says why the chooser's rules are a constant of
 // their own.
 //
-// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires nothing and
-// logs nothing.
+// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires only
+// `web_locale.ts` (the language row's CSS, #1289) and logs nothing.
 // ---------------------------------------------------------------------------
+
+import WebLocale = require('./web_locale');
 
 /**
  * The card's stylesheets. A static utility class of constants.
@@ -37,10 +39,12 @@ class WebCardCss {
    * the chooser across the card.
    */
   static readonly CHOOSER_CSS =
-    'form.language-chooser{float:right;font-size:.75em;margin:0 0 6px 8px}for' +
-    'm.language-chooser select,form.language-chooser button{width:auto;displa' +
-    'y:inline;padding:2px 6px;margin:0;font-size:1em}form.language-chooser la' +
-    'bel{display:inline;margin:0 4px 0 0}';
+    'details.language-row{float:right;font-size:.75em;margin:0 0 6px 8px}' +
+    'form.language-chooser select,form.language-chooser button{width:auto;' +
+    'display:inline;padding:2px 6px;margin:0;font-size:1em}' +
+    'form.language-chooser label{display:inline;margin:0 4px 0 0}' +
+    // The row itself (#1289): collapsed to the page's language.
+    WebLocale.ROW_CSS;
 
   /**
    * What the sign-in surface's steps draw beyond the screen (#572, #573):

@@ -35,6 +35,7 @@
   "signingKey.downloadChain": "下載證書鏈",
   "signingKey.notRevocation": "<strong>這不是撤銷。</strong>證書仍然有效，也仍然鏈結到本服務的根證書；改變的是本服務不再接受此金鑰簽署的內容，因為該金鑰已不再註冊於您名下。您的另一把簽章金鑰、密碼、密碼金鑰和驗證器應用程式都不受影響——這不是您的登入方式。",
   "tls.heading": "TLS 客戶端證書",
+  "tls.aboutTitle": "TLS 客戶端證書如何讓您登入",
   "tls.what": "TLS 客戶端證書能讓您<strong>無需輸入密碼</strong>即可登入：伺服器要求時，您的瀏覽器會出示它，而此身分提供者會將其識別為您。它由此領域的 TLS 客戶端核證機關簽發，指名您（<code>CN={name}</code> 與 <code>urn:sts:person:{name}</code>），並帶有 <code>clientAuth</code>。您只需下載一次它的私密金鑰與證書鏈，格式為兩個 PEM 檔案，供接受金鑰與證書的客戶端使用——<code>curl</code>、<code>openssl</code> 或您自己的程式碼。",
   "tls.whereWorksAfter": "。本服務會向每個連線要求客戶端證書，但不強制要求，因此當您選擇此證書時，瀏覽器就會傳送它；該頁面會為您在此領域啟動單一登入工作階段，之後您在此的其他應用程式就會直接讓您登入，不再詢問。如果您的瀏覽器尚未信任本服務的伺服器證書，會先要求您信任它。",
   "tls.noneHeld": "您沒有 TLS 客戶端證書。",
