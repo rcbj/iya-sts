@@ -1880,6 +1880,16 @@ const CODES = [
       'not dense (an increment above one or a cache above one), so every ' +
       'reader would wait for numbers no transaction will commit.',
     spec: '' },
+  { code: 'STS-STORE-0100',
+    summary: 'A value was refused on MariaDB because it is longer than its ' +
+      'keyed column; it is never truncated, which would make it another ' +
+      'row\'s key.',
+    spec: '' },
+  { code: 'STS-STORE-0101',
+    summary: 'A realm\'s registry row was inserted and removed by other ' +
+      'writers twice while this write waited for it, and nothing was ' +
+      'written.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

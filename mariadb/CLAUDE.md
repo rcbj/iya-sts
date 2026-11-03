@@ -44,10 +44,9 @@ table. PostgreSQL has 44; the difference is listed below.
   are one primary key (a duplicate-key error on 11.8) where PostgreSQL holds
   two. `utf8mb4_nopad_bin` compares as PostgreSQL does, case and trailing
   space both. A JSON column is `utf8mb4_bin` whatever the table says (MariaDB
-  fixes it for the type). **The service's session still says `SET NAMES
-  utf8mb4 COLLATE utf8mb4_bin`** (`persistence/knex_store.js`), under which a
-  literal compared with a literal pads (`'a' = 'a '` is 1); a column compared
-  with a literal takes the column's NO PAD collation.
+  fixes it for the type). The service's session says `SET NAMES utf8mb4
+  COLLATE utf8mb4_nopad_bin` too (`persistence/knex_store.js`), so a literal
+  compared with a literal does not pad either.
 * **Types.** `bigint` BIGINT, `integer`/`int` INT, `smallint` SMALLINT,
   `boolean` BOOLEAN (TINYINT(1)), `real` FLOAT (single precision, as
   `real`), `double precision` DOUBLE, `bytea` LONGBLOB, `jsonb` JSON (LONGTEXT

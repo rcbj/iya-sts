@@ -74,6 +74,10 @@ const ALLOWED = {
     'not periodic: a jittered pause before a transaction the engine refused ' +
     'with a deadlock or a lock timeout is run again, a few times at most ' +
     '(#677, inTransaction())' },
+  'persistence/store_portable.js|go|timeout': { permanent:
+    'not periodic: a jittered pause before a transaction MariaDB refused ' +
+    'with a deadlock or a lock timeout is run again, a few times at most ' +
+    '(#677, retrying())' },
   'ldap/ldap_cluster_connections.ts|noteLocalChange|timeout': { permanent:
     'a debounce: one publish for a burst of connection changes' },
   'attribute-sources/attribute_sources.ts|lookup|timeout': { permanent:
