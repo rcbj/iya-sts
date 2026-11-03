@@ -288,6 +288,7 @@ var config = {
     encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
     offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
     postQuantumSigning: true,          // Post-quantum signing
+    eddsaSigning: false,               // EdDSA signing
     kidFormat: "internal",             // Signed token kid format
     kekProvider: "file",               // Key-encryption key provider; restart to apply
     kekTransitMount: "transit",        // Transit engine mount; restart to apply
@@ -505,6 +506,7 @@ var config = {
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
     errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
     keyBinding: true,                              // OpenID Connect Key Binding
+    enterpriseClaimsAlways: false,                 // Enterprise Extensions claims in every ID Token
     didClaim: false,                               // The did claim
     sessionManagement: false,                      // OpenID Connect Session Management
     frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
