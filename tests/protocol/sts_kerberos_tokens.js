@@ -250,6 +250,18 @@ function textOf(xml, local) {
   return m ? m[1].trim() : "";
 }
 
+// THE DELEGATE A SAML 2.0 ASSERTION NAMES (2026-11-03): the Delegation
+// Restriction condition holds each delegate as
+// `<del:Delegate><saml:NameID>…</saml:NameID></del:Delegate>`, so the name
+// is the NameID inside the first Delegate, which textOf() cannot reach.
+function delegateOf(xml) {
+  log.debug("Entering delegateOf().");
+  const m = /<(?:[A-Za-z0-9_]+:)?Delegate(?:\s[^>]*)?>([\s\S]*?)<\/(?:[A-Za-z0-9_]+:)?Delegate>/
+    .exec(String(xml));
+  log.debug("Leaving delegateOf().");
+  return m ? textOf(m[1], "NameID") : "";
+}
+
 // Opens a GSS Kerberos token with the target's keys: the ticket, then the
 // Authenticator under the ticket's session key, then the PAC's delegation
 // info.
@@ -374,7 +386,7 @@ async function delegatedSection(w) {
         "end as a delegate", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 600));
     assert.strictEqual(textOf(r.text, "NameID"), PERSON);
-    assert.strictEqual(textOf(r.text, "Delegate"), idOf("front"));
+    assert.strictEqual(delegateOf(r.text), idOf("front"));
   });
   r = await postRst(rst(await frontCredential(w.tgts.other),
     "<wst14:ActAs xmlns:wst14=\"" + WST14 + "\">" +
