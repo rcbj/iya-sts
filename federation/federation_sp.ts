@@ -6413,9 +6413,11 @@ class FederationSp {
     }
     const idToken = opened.token;
     const refused = (status, code, what, why) => {
+      log.debug("Entering refused(). " + code);
       errorCodes.mark(res, code);
       // error-code: none — each caller names its code, marked just above
       this.refuse(res, record, status, what, why);
+      log.debug("Leaving refused().");
       return { ok: false };
     };
     log.debug("Leaving FederationSp.verifyIdToken().");
