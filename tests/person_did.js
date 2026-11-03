@@ -809,6 +809,30 @@ function childMain() {
          subjectRow(DAVE, daveDid) === null,
          '9c. an administrator removing a published DID from the ' +
          'self-issued list deactivates it', JSON.stringify(adminRemove));
+    // IN A SERVICE DEPLOYED AS CELLS the id carries the minting cell's
+    // twelve-character tag (`common/cell_locator.ts`), so a fetch reaching
+    // another cell is relayed to the one whose index holds it. A stand-in
+    // tag here: this process is single-cell, where `stamp()` adds nothing.
+    const TAG = 'CeLLtAg_0-9z';
+    const stamped = await w.inRealm(function () {
+      const lib = new PersonDid(Object.assign(PersonDid.defaultDeps(), {
+        stamp: function (value) {
+          return String(value) + TAG;
+        } }));
+      const made = lib.publishGenerated(DAVE, w.fakeReq(''));
+      const rid = made.ok ? made.record.rid : '';
+      // Never the record itself: a realm-custody record carries the key.
+      return { ok: !!made.ok, code: made.code || '', rid: rid,
+               ridOf: made.ok ? lib.ridOf(made.record.did) : '',
+               served: rid ? lib.served(rid, {}).status : 0,
+               hosted: made.ok ? pd.isHosted(made.record.did) : false };
+    });
+    note(stamped.ok && stamped.rid.length === 34 &&
+         stamped.rid.slice(-12) === TAG && stamped.ridOf === stamped.rid &&
+         stamped.served === 200 && stamped.hosted,
+         '9d. a cell-stamped id (22 characters and the cell\'s 12) is ' +
+         'published, read back from its DID, served and hosted',
+         JSON.stringify(stamped));
     ['did.personCustody', 'did.personPublishing',
      'oid4vci.didHolderBinding', 'oid4vp.signIn',
      'oid4vp.signInSelfIssued', 'risk.assessSignIns'].forEach(clear);

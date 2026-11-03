@@ -23,7 +23,11 @@ did:web:<host>[:realm:<realm id>]:users:<rid>
 
 `<rid>` is 128 random bits in base64url (22 characters), drawn for each DID.
 Nobody can find an account by probing addresses, and two DIDs of one person
-cannot be linked to each other. The DID is **fixed when it is created**, from
+cannot be linked to each other. In a service deployed as cells, twelve more
+characters follow: a keyed tag naming the cell that minted the DID, so a
+resolver reaching any cell is sent to the one that holds it. Without the
+service's key the tag is noise; all it shows is that two DIDs came from the
+same cell, which every person homed there shares. The DID is **fixed when it is created**, from
 the realm's public base URL, and never changes after that.
 
 * In **product mode** a DID is published only when the base is pinned:

@@ -1295,7 +1295,11 @@ application declared for the `did` family (its own checkbox, `applications.js`
 PUBLISH one for them. rcbj's four decisions are the specification: custody
 in all three modes, chosen per realm (`did.personCustody`: `wallet`, the
 default, `realm`, `download`); a random identifier minted per DID
-(`did:web:<host>[:realm:<id>]:users:<rid>`, `<rid>` 128 bits in base64url);
+(`did:web:<host>[:realm:<id>]:users:<rid>`, `<rid>` 128 bits in base64url,
+and in a service deployed as cells the minting cell's `cell_locator.stamp()`
+tag appended — the index is cell-tier and a random id names no cell, so
+`common/cell_placement.ts`'s `/users` row relays a fetch by the tag, as it
+does an offer's or a link handle's);
 deactivate and keep the URL; and "treat it as a proved DID". `person_did.ts`
 is the library and its header the design; what follows is what a change to
 it has to keep.

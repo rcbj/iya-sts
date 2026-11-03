@@ -85,6 +85,7 @@ import mode = require('../common/mode');
 import realms = require('../common/realms');
 import vcDataIntegrity = require('./vc_data_integrity');
 import siop = require('./siop');
+import cellLocator = require('../common/cell_locator');
 
 type Json = any;
 
@@ -96,13 +97,21 @@ const JWS_2020_V1 = 'https://w3id.org/security/suites/jws-2020/v1';
  */
 const CUSTODIES = Object.freeze(['wallet', 'realm', 'download']);
 
-// The random id: 128 bits, base64url, no padding — 22 characters.
-const RID = /^[A-Za-z0-9_-]{22}$/;
+// The random id: 128 bits, base64url, no padding — 22 characters — and, in
+// a service deployed as cells, the minting cell's twelve-character tag
+// appended (`common/cell_locator.ts`), so a fetch that reaches any cell is
+// relayed to the one whose index holds it (`common/cell_placement.ts`'s
+// `/users` row). The index is cell-tier: an unstamped id names no cell.
+const RID_TEXT = '[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?';
+const RID = new RegExp('^' + RID_TEXT + '$');
 const RID_BITS = 128;
 
 // A wallet act's marker on the self-issued round trip: create the DID, the
 // change's authorization (by a key of the current version), or the new key.
-const ACT = /^(publish|authorize-(add|rotate)\.[A-Za-z0-9_-]{22}|key\.[A-Za-z0-9_-]{22})$/;
+const ACT = new RegExp('^(publish|authorize-(add|rotate)\\.' + RID_TEXT +
+                       '|key\\.' + RID_TEXT + ')$');
+// A DID this realm publishes for a person, its random id captured.
+const PERSON_DID = new RegExp('^did:web:[^?#]*:users:(' + RID_TEXT + ')$');
 
 // How long an authorization by the current key waits for the new key's
 // proof: two self-issued round trips, each at most `oid4vp.signInTtlS`.
@@ -136,6 +145,8 @@ interface PersonDidDeps {
   siop: typeof siop;
   // `did.personDids`: `<rid> -> { did, sub }`, per realm, persisted.
   index: Map<string, Json>;
+  // Appends this cell's tag to a minted id (`cell_locator.stamp()`).
+  stamp: (value: string) => string;
   // The realm's base URL for this request, and whether it is pinned.
   baseOf: (req: Json) => { base: string; pinned: boolean };
   subjectForName: (name: string) => string;
@@ -213,6 +224,7 @@ class PersonDid {
       vcDataIntegrity: vcDataIntegrity,
       siop: siop,
       index: personDids as unknown as Map<string, Json>,
+      stamp: cellLocator.stamp,
       // THE BASE OF THE VERIFIABLE CREDENTIALS APPLICATION, which serves
       // the document (`common/hosted_applications.js` gives it `/users`):
       // its advertised listener's `publicBaseUrl` or `global.publicBaseUrl`
@@ -339,8 +351,7 @@ class PersonDid {
   ridOf(did: unknown): string {
     const { log } = this.deps;
     log.debug("Entering PersonDid.ridOf().");
-    const m = /^did:web:[^?#]*:users:([A-Za-z0-9_-]{22})$/
-      .exec(String(did || ''));
+    const m = PERSON_DID.exec(String(did || ''));
     log.debug("Leaving PersonDid.ridOf().");
     return m ? m[1] : '';
   }
@@ -880,14 +891,15 @@ class PersonDid {
   }
 
   // A random id this realm has never published: 128 bits from
-  // `common/crypto.js`. A collision is astronomically unlikely and is
-  // answered by drawing again, never by reusing an address.
+  // `common/crypto.js`, stamped with this cell's tag where the service is
+  // deployed as cells (a no-op otherwise). A collision is astronomically
+  // unlikely and is answered by drawing again, never by reusing an address.
   private freshRid(): string {
-    const { log, stsCrypto, index } = this.deps;
+    const { log, stsCrypto, index, stamp } = this.deps;
     log.debug("Entering PersonDid.freshRid().");
-    let rid = stsCrypto.randomToken(RID_BITS);
+    let rid = stamp(stsCrypto.randomToken(RID_BITS));
     while (index.has(rid)) {
-      rid = stsCrypto.randomToken(RID_BITS);
+      rid = stamp(stsCrypto.randomToken(RID_BITS));
     }
     log.debug("Leaving PersonDid.freshRid().");
     return rid;
