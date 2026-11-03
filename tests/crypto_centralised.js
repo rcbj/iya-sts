@@ -59,7 +59,9 @@ const ROOT = path.resolve(__dirname, '..');
 // runtime (the tests, the deployment trees, the documentation, the Rust
 // conversion, the development companion container of #591 — a separate
 // party that reaches this service only over its doors, and ships in no
-// image of it), or the parent project's copies.
+// image of it), or common/crypto_impl/ — the engines common/crypto.js itself
+// rests on, which is what they are whoever wrote them (this service's own
+// since #1280; they were skipped as the parent project's copies before).
 const SKIP_DIRS = new Set(['node_modules', '.git', '.terraform', 'coverage',
                            '__pycache__']);
 const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded', 'tests',
@@ -70,7 +72,9 @@ const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded', 'tests',
 const THE_MODULE = ['common/crypto.js', 'common/pq_native.js',
                     'common/pq_jose.js'];
 
-// The parent project's byte-identical Kerberos codec copies (#431).
+// The Kerberos codec modules (#431), exempt for the same reason as
+// common/crypto_impl/: they are the RFC 3961/3962/8009 engines the KDC runs
+// on, not callers that could ask crypto.js. This service's own since #1280.
 const KERBEROS_COPIES = ['kerberos/krb5_primitives.js',
                          'kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
                          'kerberos/krb5_messages.js', 'kerberos/krb5_ndr.js',
@@ -198,8 +202,8 @@ function uses(rel, patterns) {
 module.exports = {
   name: 'crypto_centralised',
   describe: 'only common/crypto.js (and its two post-quantum engines and ' +
-    'the vendored copies) requires node\'s crypto or a token-format ' +
-    'library; every other module asks crypto.js (#453)',
+    'the crypto engines it rests on) requires node\'s crypto or a ' +
+    'token-format library; every other module asks crypto.js (#453)',
   run: function run(t) {
     const files = walk();
     t.check(files.length > 500, 'the walk found the source files it checks',

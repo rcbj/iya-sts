@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: key_material.js
 //
 // ---------------------------------------------------------------------------
@@ -39,6 +41,9 @@ var pkijs = require("pkijs");
 var pqx = require("./pqc_x509");
 var pqc = require("./pqc");
 var asn1js = require("asn1js");
+// A leaf: the table requires nothing of this service, so this directory
+// still reaches only its own files and npm packages (#1280).
+var errorCodes = require("../error_codes");
 
 // A node consumer (the tests load this module directly) may have no
 // CONFIG_FILE, so fall back to info rather than failing to load.
@@ -63,7 +68,10 @@ var log = bunyan.createLogger({
                       crypto: crypto }));
     }
   } catch (e) {
-    log.error('Failed to init PKI.js engine: ' + e.message);
+    log.debug("Caught in initPkiEngine(): " +
+              ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-PKI-0222') +
+              'Failed to init PKI.js engine: ' + e.message);
   }
 })();
 

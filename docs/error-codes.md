@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5114** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5115** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 153
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 208
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 209
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
@@ -955,6 +955,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0219` | A KDC certificate for PKINIT was asked for with no slot, no principal name, or a key algorithm it is not issued with (#179). | none (the KDC refuses PKINIT, STS-KRB-0197) |
 | `STS-PKI-0220` | A person or an application already holds pki.messageSigningCertificateMax valid message-signing certificates, so another was not issued (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0221` | A message-signing certificate revocation named a serial the holder holds no certificate under (#521). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0222` | PKI.js could not be given the WebCrypto engine when common/crypto_impl/key_material.js loaded, so its certificate and key operations fall back to PKI.js's default engine (#1280). | none (logged at load) |
 
 ## STS-ENROLL
 
