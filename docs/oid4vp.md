@@ -7,7 +7,8 @@ title: OpenID4VP
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all
-three credential formats its [issuer](oid4vci.md) mints. A
+three credential formats its [issuer](oid4vci.md) mints, and in a fourth it
+does not mint: an ISO/IEC 18013-5 mdoc (`mso_mdoc`) from an issuer you trust. A
 verified presentation is also **a way to sign in**: *Sign in with a wallet* on
 the sign-in screen, including through the
 [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/). The
@@ -84,7 +85,7 @@ request **by reference** uses the configured `oid4vp.clientId` and a Request
 Object ([RFC 9101](https://www.rfc-editor.org/rfc/rfc9101)) signed with this
 realm's key, whose certificate chain is named as
 `oid4vp.requestObjectCertificateHeader` says. The `client_metadata` advertises
-all three formats. The `dcql_query` states what this request wants.
+all four formats, an mdoc's algorithms as COSE identifiers. The `dcql_query` states what this request wants.
 
 ### What the Verifier checks
 
@@ -112,6 +113,26 @@ Data Integrity proof (`challenge` = the nonce, `domain` = the audience) made by
 the holder's `did:jwk`. Three cryptosuites are accepted for that proof:
 `ecdsa-jcs-2019`, `eddsa-jcs-2022` and `mldsa44-jcs-2024`.
 
+For an **ISO mdoc** (`mso_mdoc`, OpenID4VP Appendix B.2 and ISO/IEC 18013-5
+section 9.3.1), the presentation is a base64url `DeviceResponse` with one
+document:
+
+* the document signer certificate in `issuerAuth`'s `x5chain` chains to a
+  certificate in `oid4vp.mdocTrustAnchors`, and is checked for revocation;
+* `issuerAuth` verifies against that certificate's key;
+* the Mobile Security Object names the document's `docType`, which is
+  `oid4vp.expectedDoctype`, and is valid now, and it was signed while the
+  document signer certificate was valid;
+* every disclosed element hashes to the digest the Mobile Security Object
+  holds for it;
+* the `deviceSignature` verifies against the Mobile Security Object's device
+  key over the session transcript (Appendix B.2.6.1), which binds this
+  request's Client Identifier, nonce, Response URI and, for
+  `direct_post.jwt`, the key the response was encrypted to. A `deviceMac` is
+  refused;
+* a device-signed element is accepted only where the issuer authorized it;
+* every element the query asked for, in `oid4vp.mdocNamespace`, is present.
+
 The Key Binding JWT accepts every asymmetric algorithm the issuer binds
 credentials to. A holder may bind a credential to an ML-DSA-44 key, and this
 realm may sign credentials with ML-DSA, SLH-DSA or a composite; the Verifier
@@ -124,6 +145,11 @@ certificates in `oid4vp.trustedIssuerCertificates` add issuers whose SD-JWT VC
 or `jwt_vc_json` signatures are accepted. A certificate is used as a key. No
 chain is built, but the certificate's revocation is consulted when it verifies
 a credential, under `pki.revocationCheck` (see [PKI](pki.md)).
+
+An mdoc's issuers are trusted differently: `oid4vp.mdocTrustAnchors` holds
+Issuing Authority CA (IACA) certificates, and the document signer must chain
+to one of them. The setting is empty by default, so no mdoc is accepted until
+you add one.
 
 ### Status checks
 
@@ -547,6 +573,9 @@ check are the same in both modes. See
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims the Verifier request page lets a request name. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` required of a presented SD-JWT VC. |
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | *(empty)* | yes | PEM certificates of other issuers whose signatures are accepted. |
+| `oid4vp.mdocTrustAnchors` | `OID4VP_MDOC_TRUST_ANCHORS` | *(empty)* | yes | IACA certificates an mdoc's document signer must chain to. |
+| `oid4vp.expectedDoctype` | `OID4VP_EXPECTED_DOCTYPE` | `org.iso.18013.5.1.mDL` | yes | The `docType` an mso_mdoc request asks for and requires. |
+| `oid4vp.mdocNamespace` | `OID4VP_MDOC_NAMESPACE` | `org.iso.18013.5.1` | yes | The namespace an mso_mdoc request's claims are asked for in. |
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request waits for a wallet's response. |
 | `oid4vp.maxTransactions` | `OID4VP_MAX_TRANSACTIONS` | `5000` | yes | How many waiting requests a realm keeps; past it the oldest is dropped. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The longest a foreign issuer's status list is kept; `0` fetches every time. |

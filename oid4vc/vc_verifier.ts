@@ -479,6 +479,11 @@ const RESPONSE_MODES = ['direct_post', 'direct_post.jwt', 'form_post'];
 const START_MODES = ['same-device', 'cross-device'];
 const BY = ['value', 'reference'];
 
+// The formats a start may name: the issuer's and the Verifier's, since an
+// mso_mdoc is asked for and never issued here (#935).
+const START_FORMATS = Array.from(new Set(
+  VCI_FORMATS.concat(vpConfig.FORMAT_IDS)));
+
 const OID4VC_QUERY = validation.z.looseObject({
   // `deferred` and `direct` are accepted here as they always were, and the
   // start reads anything but `cross-device` as same-device. The operation's
@@ -486,10 +491,7 @@ const OID4VC_QUERY = validation.z.looseObject({
   mode: validation.types.opt(validation.types.oneOf(
     START_MODES.concat(['deferred', 'direct']))),
   by: validation.types.opt(validation.types.oneOf(BY)),
-  // The issuer's formats and the Verifier's: an mso_mdoc is asked for and
-  // never issued here (#935).
-  format: validation.types.opt(validation.types.oneOf(
-    Array.from(new Set(VCI_FORMATS.concat(vpConfig.FORMAT_IDS))))),
+  format: validation.types.opt(validation.types.oneOf(START_FORMATS)),
   wallet: validation.types.opt(validation.types.uri),
   state: validation.types.opt(validation.types.opaque),
   credential_configuration_ids: validation.types.opt(
@@ -5063,7 +5065,7 @@ export = {
   // What a start may name, read by `POST /admin-api/verifications/start`'s
   // document so its closed sets are these lists rather than copies (#86).
   START_VOCABULARY: {
-    format: VCI_FORMATS.slice(),
+    format: START_FORMATS.slice(),
     by: BY.slice(),
     mode: START_MODES.slice(),
     response_type: RESPONSE_TYPES.slice(),
