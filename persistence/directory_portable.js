@@ -467,9 +467,10 @@ function create(deps) {
       if (dialect.affected(r) !== chunk.length) {
         // Only a removed realm deletes count rows; a fold that lost one to it
         // would count into nothing, and must not commit as if it had not.
-        throw new Error('directory_portable: ' + table + ': ' +
-                        (chunk.length - dialect.affected(r)) + ' count ' +
-                        'row(s) vanished between their insert and the fold');
+        throw errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0141') +
+          'directory_portable: ' + table + ': ' +
+          (chunk.length - dialect.affected(r)) + ' count row(s) vanished ' +
+          'between their insert and the fold'), 'STS-STORE-0141');
       }
     });
     log.debug("Leaving foldInto().");

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5155** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5156** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 92
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 93
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
@@ -412,6 +412,7 @@ Raised from: persistence/.
 | `STS-STORE-0090` | The change-log sequence jumped by more than a thousand numbers between two rows a pull read (a setval, a sequence restored out of step); the numbers between are asked for as one range rather than one by one. | — |
 | `STS-STORE-0091` | The store was refused at open: the change log's sequence is not dense (an increment above one or a cache above one), so every reader would wait for numbers no transaction will commit. | — |
 | `STS-STORE-0140` | A directory flush was refused on MariaDB before it wrote: an entry's DN key is longer than the 352 characters `dn_key` holds (or its realm than 64), which InnoDB's key limit fixes; nothing of the flush was written. | — |
+| `STS-STORE-0141` | A directory write on MariaDB found one of the count rows it folds into gone between making it and adding to it (its realm was removed meanwhile); the write was rolled back rather than counted into nothing. | — |
 
 ## STS-CLUSTER
 
