@@ -376,8 +376,8 @@
     "text": "HEMLIGHETEN FÖR fedSignalsClientId, FÖRSEGLAD under nyckelkrypteringsnyckeln överallt där nycklar är beständiga och visas aldrig. Tomt använder fedClientSecret, förseglad på samma sätt."
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "ed55c437fcd421f1",
-    "text": "Det omfång som begärs med klientautentiseringsuppgifter. Tomt begär `ssf.manage`, som inkluderar läsning."
+    "en": "9a4b1c668a3d1dd5",
+    "text": "Det omfång som begärs med klientuppgifter. Tomt begär `ssf.read ssf.manage`, CAEP-interoperabilitetsprofilens två (avsnitt 2.7.3)."
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",
