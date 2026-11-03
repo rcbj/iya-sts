@@ -871,10 +871,10 @@ const slot = new InstanceSlot<SpnegoAuthn>(
 
 // The language chooser's look on this page (#539): the shell's own CSS knows
 // nothing of it, and its `button` and `select` would otherwise be unstyled.
-const CHOOSER_CSS = 'form.language-chooser{float:right;font-size:.8em;' +
+const CHOOSER_CSS = 'details.language-row{float:right;font-size:.8em;' +
   'margin:0 0 6px 8px}form.language-chooser select,form.language-chooser ' +
   'button{font-size:1em;padding:2px 6px}form.language-chooser label{margin:' +
-  '0 4px 0 0}';
+  '0 4px 0 0}' + PageLocale.ROW_CSS;
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the

@@ -12441,7 +12441,10 @@ class OAuth2Server {
       '0}table{border-collapse:collapse;width:100%;margin:.6rem ' +
       '0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid ' +
       '#ddd;vertical-align:top}code{background:#f4f4f4;padding:.05rem ' +
-      '.25rem;border-radius:3px;word-break:break-all}</style></head><body>' +
+      '.25rem;border-radius:3px;word-break:break-all}' +
+      // The language chooser, a collapsed row (#1289).
+      'details.language-row{float:right;margin:0 0 .5rem 1rem}' +
+      PageLocale.ROW_CSS + '</style></head><body>' +
       inner + '</body></html>';
   }
 

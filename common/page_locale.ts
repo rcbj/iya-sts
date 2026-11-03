@@ -346,6 +346,12 @@ class PageLocale {
   }
 
   /**
+   * The collapsed language row's CSS (#1289), for a server-drawn page's own
+   * stylesheet: `WebLocale.ROW_CSS`.
+   */
+  static readonly ROW_CSS = WebLocale.ROW_CSS;
+
+  /**
    * The language attributes a static surface's shell carries on its
    * `<html>` (#570), for its runtime to choose the page's language in the
    * browser: the build the catalogs are versioned by, the chooser's choice
