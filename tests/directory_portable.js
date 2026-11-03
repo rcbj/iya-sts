@@ -182,7 +182,7 @@ function transactions(pool, dialect) {
           throw e;
         }
         await new Promise(function (resolve) {
-          setTimeout(resolve, 5 + Math.floor(Math.random() * 30));
+          setTimeout(resolve, 5 + require('../common/crypto').randomInt(0, 30));
         });
       }
     }

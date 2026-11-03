@@ -129,7 +129,7 @@ function create(deps) {
         log.debug("Caught in inTransaction(): " + ((err && err.message) ||
                   err) + "; again.");
         return new Promise(function (resolve) {
-          setTimeout(resolve, 5 + Math.floor(Math.random() * 20));
+          setTimeout(resolve, 5 + require('../common/crypto').randomInt(0, 20));
         }).then(function () {
           return attempt(left - 1);
         });

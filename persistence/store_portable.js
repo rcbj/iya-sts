@@ -214,7 +214,7 @@ function create(deps) {
         log.debug("Caught in retrying(): " + ((err && err.message) || err) +
                   "; " + what + " again.");
         return new Promise(function (resolve) {
-          setTimeout(resolve, 5 + Math.floor(Math.random() * 20));
+          setTimeout(resolve, 5 + require('../common/crypto').randomInt(0, 20));
         }).then(function () {
           return go(left - 1);
         });
