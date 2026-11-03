@@ -409,6 +409,47 @@ const STYLE = 'body{font-family:system-ui,Segoe ' +
   '1rem;border:1px solid #333;background:#111;color:#fff;border-radius:4px;' +
   'cursor:pointer}ul{padding-left:1.2rem}';
 
+// ---------------------------------------------------------------------------
+// THE ASSERTION CONSUMER SERVICE'S ONE SCRIPT (#930), served at
+// /federation/fragment.js: a fragment-encoded OpenID Connect response
+// (Core 1.0 sections 3.2.2.5 and 3.3.2.5, the default of every response type
+// carrying an ID Token or an access token) never reaches a server — the
+// browser keeps what follows `#` — so the page answering the bare GET reads
+// it and POSTs it back to the same address, where it is consumed exactly as
+// a form_post one is. The root CLAUDE.md admits a script on a server-drawn
+// page only where the page cannot work without one, and this is that case:
+// no markup can read a URL fragment, so there is no submit button to fall
+// back on (the OP iframe's arrangement). The fragment is removed from the
+// address and the history entry before the post, so the ID Token is not left
+// in the browser's back button. Only a relationship that chose `fragment`
+// is ever answered with the page; every other one refuses the bare GET as it
+// always did.
+// ---------------------------------------------------------------------------
+const FRAGMENT_SCRIPT = [
+  '(function () {',
+  '  var form = document.getElementById("fed-fragment");',
+  '  var hash = String(window.location.hash || "").replace(/^#/, "");',
+  '  if (!form || !hash) { return; }',
+  '  hash.split("&").forEach(function (pair) {',
+  '    if (!pair) { return; }',
+  '    var at = pair.indexOf("=");',
+  '    var name = at < 0 ? pair : pair.slice(0, at);',
+  '    var value = at < 0 ? "" : pair.slice(at + 1);',
+  '    var input = document.createElement("input");',
+  '    input.type = "hidden";',
+  '    input.name = decodeURIComponent(name.replace(/\\+/g, " "));',
+  '    input.value = decodeURIComponent(value.replace(/\\+/g, " "));',
+  '    form.appendChild(input);',
+  '  });',
+  '  if (window.history && window.history.replaceState) {',
+  '    window.history.replaceState(null, "", window.location.pathname +',
+  '                                window.location.search);',
+  '  }',
+  '  form.submit();',
+  '})();',
+  ''
+].join('\n');
+
 // ONE KIND FOR ALL FIVE PROTOCOLS, and it is a ROW ADDED TO `applications.js`'s
 // KINDS rather than a reuse of one that was already there.
 //
@@ -575,6 +616,18 @@ class FederationSp {
     // GET /federation/metadata/{id}
     app.get(METADATA_PATH + '/:id', (req, res) => {
       return this.metadataEndpoint(req, res);
+    });
+    // GET|POST /federation/initiate-login/{id} — a sign-in the partner
+    // starts (#930).
+    app.get(federation.PATHS.initiateLogin + '/:id', (req, res) => {
+      return this.initiateLoginEndpoint(req, res);
+    });
+    app.post(federation.PATHS.initiateLogin + '/:id', (req, res) => {
+      return this.initiateLoginEndpoint(req, res);
+    });
+    // GET /federation/fragment.js — the fragment page's script (#930).
+    app.get(federation.PATHS.fragmentScript, (req, res) => {
+      return this.fragmentScript(req, res);
     });
     // GET /federation/jwks/{id} — an OpenID Connect relationship's
     // encryption key (#168).
@@ -4439,7 +4492,9 @@ class FederationSp {
   private authorizationParams(base, record, context) {
     const { federation, log } = this.deps;
     log.debug("Entering FederationSp.authorizationParams().");
-    const responseType = String(record.fedResponseType || 'code');
+    const responseType = federation.responseTypeOf(record);
+    const parts = federation.responseTypeParts(record);
+    const mode = String(record.fedResponseMode || '');
     const params = new URLSearchParams();
     params.set('response_type', responseType);
     params.set('client_id', String(record.fedClientId || ''));
@@ -4448,24 +4503,37 @@ class FederationSp {
     if (record.fedScope) params.set('scope', String(record.fedScope));
     if (record.fedProtocol === 'oidc') {
       params.set('nonce', context.nonce);
-      if (responseType !== 'code') {
+      if (parts.idToken || parts.token) {
         // An ID Token cannot come back on a query string — it would be in the
         // browser's history, in the Referer of everything that page loads, and
         // in every proxy log between here and there. form_post is OIDC's own
         // answer and is the same argument RFC 9700 section 4.3 makes for the
-        // authorization response this service ISSUES.
-        params.set('response_mode', 'form_post');
+        // authorization response this service ISSUES. It is asked for unless
+        // the relationship chose `fragment` (#930) — the specification's
+        // default for these types, so it is asked for by asking nothing —
+        // for a partner that cannot post; readinessOf() refuses `query`.
+        if (mode !== 'fragment') {
+          params.set('response_mode', 'form_post');
+        }
       }
     }
-    if (responseType === 'code') {
+    // PKCE WITH EVERY CODE (#930: the hybrid types carry one as well).
+    if (parts.code) {
       params.set('code_challenge', context.pkceChallenge);
       params.set('code_challenge_method', 'S256');
+    }
+    if (responseType === 'code') {
       // THE CODE BY FORM POST (#565, OAuth 2.0 Form Post Response Mode),
       // which Sign in with Apple requires when a name or an address is
       // asked for.
-      if (String(record.fedResponseMode || '') === 'form_post') {
+      if (mode === 'form_post') {
         params.set('response_mode', 'form_post');
       }
+    }
+    // A LOGIN HINT FROM A PARTNER THAT STARTED THE SIGN-IN (#930, OpenID
+    // Connect Core 1.0 section 4), passed back to it as it came.
+    if (context.loginHint) {
+      params.set('login_hint', String(context.loginHint));
     }
     // THE TIKTOK ADAPTER (#565): its authorization endpoint calls the client
     // id `client_key`, and reads nothing else.
@@ -4505,7 +4573,8 @@ class FederationSp {
   // ---------------------------------------------------------------------------
   // GET /federation/login/{id}
   // ---------------------------------------------------------------------------
-  private loginEndpoint(req, res) {
+  private loginEndpoint(req, res, initiated?: { returnTo: string;
+                                               loginHint: string }) {
     const {
       federation, errorCodes, log, xmlEscape, baseUrlOf, randomId
     } = this.deps;
@@ -4578,7 +4647,10 @@ class FederationSp {
     }
 
     const base = baseUrlOf(req);
-    const returnTo = this.returnToOf(req.query.returnTo || req.query.return_to);
+    // A sign-in the PARTNER started (#930) brings its own return address,
+    // already narrowed to a path here, and a login_hint.
+    const returnTo = this.returnToOf(initiated ? initiated.returnTo
+      : (req.query.returnTo || req.query.return_to));
     const pkce = this.pkcePair();
     const contextRecord: any = {
       id: record.fedId, protocol: record.fedProtocol, returnTo: returnTo,
@@ -4608,6 +4680,8 @@ class FederationSp {
       // this one bounds the MAP, that one bounds the DIRECTORY.
       application: String(req.query.application || '')
         .slice(0, this.maxApplicationLength()),
+      loginHint: initiated ? String(initiated.loginHint || '')
+        .slice(0, 256) : '',
       nonce: 'n-' + randomId(16),
       pkceVerifier: pkce.verifier, pkceChallenge: pkce.challenge
     };
@@ -4753,12 +4827,110 @@ class FederationSp {
       return;
     }
 
+    // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930): the endpoints of
+    // THIS sign-in are what the document says now, kept on the context so
+    // the response is redeemed and verified against the same ones.
+    if (federation.discovers(record)) {
+      this.discovered(record).then((got) => {
+        if (!got.ok) {
+          errorCodes.mark(res, got.errorCode);
+          log.debug("Leaving the federation login endpoint. Not discovered.");
+          // error-code: none — discovered()'s own code, in got.errorCode
+          return this.refuse(res, record, 502, 'The OpenID Provider\'s ' +
+                             'configuration could not be used', got.why);
+        }
+        contextRecord.discovered = got.endpoints;
+        const handle = this.putContext(contextRecord);
+        res.redirect(302, this.authorizationRequestUrl(base,
+          Object.assign({}, record, got.endpoints), this.heldContext(handle)));
+        log.debug("Leaving the federation login endpoint. A discovered " +
+                  "OP's authorization request.");
+        return undefined;
+      }).catch((e) => {
+        log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + id +
+                  ' threw while reading its OP\'s configuration: ' +
+                  (e && e.stack ? e.stack : e));
+        errorCodes.mark(res, 'STS-FED-0042');
+        this.refuse(res, record, 500, 'This service failed while starting ' +
+                    'the sign-in', String((e && e.message) || e));
+      });
+      log.debug("Leaving the federation login endpoint. Reading the OP's " +
+                "configuration.");
+      return;
+    }
+
     // OIDC and OAuth 2.0.
     const handle = this.putContext(contextRecord);
     const stored = this.heldContext(handle);
     res.redirect(302, this.authorizationRequestUrl(base, record, stored));
     log.debug("Leaving the federation login endpoint. " + record.fedProtocol +
               ' authorization request.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PARTNER'S DISCOVERY DOCUMENT (#930, OpenID Connect Discovery 1.0),
+  // for a relationship with fedDiscovery on: fetched through
+  // `federation_http.ts` from the address fedPeer derives, and held to
+  // section 4.3 — the issuer it names MUST be fedPeer exactly, or nothing in
+  // it is used. Answers `{ ok, endpoints }`, the four attributes the
+  // document fills (DISCOVERED_FIELDS), or `{ ok: false, errorCode, why }`.
+  // Never rejects.
+  // ---------------------------------------------------------------------------
+  private discovered(record): Promise<any> {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.discovered(). id=" + record.fedId);
+    return fedHttp.fetchDiscovery(record).then((answer) => {
+      log.debug("Entering the discovery answer.");
+      const doc = answer && answer.ok ? answer.json : null;
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        log.debug("Leaving the discovery answer. Not fetched.");
+        log.debug("Leaving FederationSp.discovered(). Not fetched.");
+        return { ok: false, errorCode: 'STS-FED-0203',
+                 why: 'The discovery document at ' +
+                      ((answer && answer.url) || 'the partner') + ' could ' +
+                      'not be read: ' +
+                      ((answer && answer.why) || 'it is not a JSON object') };
+      }
+      const peer = String(record.fedPeer || '').trim();
+      if (String(doc.issuer || '') !== peer) {
+        log.debug("Leaving the discovery answer. Another issuer.");
+        log.debug("Leaving FederationSp.discovered(). Another issuer.");
+        return { ok: false, errorCode: 'STS-FED-0204',
+                 why: 'The discovery document names the issuer "' +
+                      String(doc.issuer || '') + '", and this relationship ' +
+                      'is with "' + peer + '". OpenID Connect Discovery 1.0 ' +
+                      'section 4.3 requires them to be identical, so ' +
+                      'nothing in the document is used: a configuration ' +
+                      'another issuer published is how one provider would ' +
+                      'impersonate another.' };
+      }
+      const endpoints = {
+        fedSsoUrl: String(doc.authorization_endpoint || ''),
+        fedTokenUrl: String(doc.token_endpoint || ''),
+        fedUserinfoUrl: String(doc.userinfo_endpoint || ''),
+        fedJwksUri: String(doc.jwks_uri || '')
+      };
+      // Section 3 makes the authorization endpoint and jwks_uri REQUIRED,
+      // and the token endpoint required unless only the implicit flow is
+      // used.
+      const lacking = ['fedSsoUrl', 'fedJwksUri'].filter(function (name) {
+        return !endpoints[name];
+      });
+      if (lacking.length) {
+        log.debug("Leaving the discovery answer. Incomplete.");
+        log.debug("Leaving FederationSp.discovered(). Incomplete.");
+        return { ok: false, errorCode: 'STS-FED-0203',
+                 why: 'The discovery document names no ' +
+                      lacking.map(function (name) {
+                        return name === 'fedSsoUrl' ? 'authorization_endpoint'
+                                                    : 'jwks_uri';
+                      }).join(' and ') + ', which OpenID Connect ' +
+                      'Discovery 1.0 section 3 requires.' };
+      }
+      log.debug("Leaving the discovery answer.");
+      log.debug("Leaving FederationSp.discovered(). Read.");
+      return { ok: true, endpoints: endpoints };
+    });
   }
 
   private paramsOf(req) {
@@ -4773,6 +4945,148 @@ class FederationSp {
     log.debug("Leaving FederationSp.paramsOf(). " + Object.keys(out).length +
               ' parameter(s).');
     return out;
+  }
+
+  // Whether this bare GET is a fragment-encoded response arriving (#930): an
+  // OpenID Connect relationship that chose `fragment` for a response type
+  // carrying an ID Token or an access token, and a request with nothing on
+  // it — a response always carries `state`, so anything on the query string
+  // is consumed as before.
+  private awaitsFragment(req, record) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.awaitsFragment().");
+    const parts = federation.responseTypeParts(record);
+    const answer = req.method === 'GET' &&
+      Object.keys(req.query || {}).length === 0 &&
+      record.fedProtocol === 'oidc' &&
+      String(record.fedResponseMode || '') === 'fragment' &&
+      (parts.idToken || parts.token);
+    log.debug("Leaving FederationSp.awaitsFragment(). " + !!answer);
+    return !!answer;
+  }
+
+  // The page the fragment arrives on (#930): a form posting to this same
+  // address — no `action`, so the realm's path and the relationship are
+  // the page's own — filled and sent by /federation/fragment.js. Nothing
+  // of the response is in the markup; without the script the page says
+  // why it cannot go on.
+  private fragmentPage(req, res, record) {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering FederationSp.fragmentPage(). id=" + record.fedId);
+    res.status(200).type('html').set('Cache-Control', 'no-store')
+       .set('Content-Security-Policy',
+            app.contentSecurityPolicy({ 'script-src': "'self'" }))
+       .send(this.page('Signing in',
+         '<h1>Signing in</h1><p class="note">The answer from ' +
+         xmlEscape(String(record.fedName || record.fedId)) + ' is in this ' +
+         'page\'s address, where only this page\'s script can read it.</p>' +
+         '<form id="fed-fragment" method="post"></form><noscript><p ' +
+         'class="bad">This step needs its script: the partner sent its ' +
+         'answer in the URL fragment, which a browser never sends to a ' +
+         'server, and no form can carry it without one.</p></noscript>' +
+         '<script src="' + federation.PATHS.fragmentScript +
+         '"></script>'));
+    log.debug("Leaving FederationSp.fragmentPage().");
+  }
+
+  // GET /federation/fragment.js — the script above, the one static
+  // resource of the assertion consumer service.
+  private fragmentScript(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.fragmentScript().");
+    res.set('Content-Security-Policy',
+            app.contentSecurityPolicy({ 'style-src': null, 'img-src': null }));
+    res.status(200).type('application/javascript')
+       .set('Cache-Control', 'no-store').send(FRAGMENT_SCRIPT);
+    log.debug("Leaving FederationSp.fragmentScript().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET|POST /federation/initiate-login/{id} — A SIGN-IN THE PARTNER STARTS
+  // (#930, OpenID Connect Core 1.0 section 4). The OP, or a page it sent the
+  // person to, sends the browser here with `iss` (REQUIRED, the OP's
+  // issuer), an optional `login_hint` and an optional `target_link_uri`;
+  // this service then makes an ordinary authorization request, through
+  // loginEndpoint(), so every check a sign-in starting here meets is met.
+  //
+  // OFF unless the relationship says so (fedInitiateLogin), because the
+  // endpoint is a door any page can send a browser through: section 4 asks a
+  // relying party to guard it against a third party signing somebody in
+  // without their knowledge, and the strongest guard is not to answer for a
+  // partner that never asked to start sign-ins. `iss` must be fedPeer — a
+  // request naming another issuer is not this partner's — and
+  // `target_link_uri` is followed only to a path on this service, which
+  // section 4 requires of it ("MUST verify ... to prevent being used as an
+  // open redirector"); anything else is dropped and the person lands where a
+  // sign-in with no return address lands.
+  // ---------------------------------------------------------------------------
+  private initiateLoginEndpoint(req, res) {
+    const { federation, errorCodes, log, baseUrlOf } = this.deps;
+    log.debug("Entering the federation login initiation endpoint. id=" +
+              req.params.id);
+    FederationPages.mark(res);
+    if (!this.enabled()) {
+      errorCodes.mark(res, 'STS-FED-0001');
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
+      log.debug("Leaving the login initiation endpoint. Federation is off.");
+      return undefined;
+    }
+    const id = String(req.params.id || '');
+    const record = federation.get(id);
+    if (!record || record.fedRole !== 'service-provider' ||
+        record.fedProtocol !== 'oidc') {
+      errorCodes.mark(res, 'STS-FED-0002');
+      FederationPages.send(res, 404,
+                           FederationPages.notHereView('noRelationship', id));
+      log.debug("Leaving the login initiation endpoint. No such " +
+                "relationship.");
+      return undefined;
+    }
+    if (!federation.boolOf(record.fedInitiateLogin, false)) {
+      errorCodes.mark(res, 'STS-FED-0205');
+      log.debug("Leaving the login initiation endpoint. Not accepted.");
+      return this.refuse(res, record, 403, 'That partner may not start a ' +
+                                           'sign-in here',
+        'fedInitiateLogin is off on "' + id + '", so a sign-in its partner ' +
+        'starts (OpenID Connect Core 1.0 section 4) is refused. Turn it on ' +
+        'to accept one; until then a person signs in from this service.');
+    }
+    const params: any = this.paramsOf(req);
+    const iss = String(params.iss || '');
+    const peer = String(record.fedPeer || '').trim();
+    if (!iss || iss !== peer) {
+      errorCodes.mark(res, 'STS-FED-0206');
+      log.debug("Leaving the login initiation endpoint. Another issuer.");
+      return this.refuse(res, record, 400, 'That is not this partner',
+        (iss ? 'The request names the issuer "' + iss + '"'
+             : 'The request names no issuer') + ', and this relationship ' +
+        'is with "' + peer + '". OpenID Connect Core 1.0 section 4 makes ' +
+        'iss REQUIRED, and it is how this service knows which partner ' +
+        'started the sign-in.');
+    }
+    // `target_link_uri` on THIS service only, as a path; returnToOf() then
+    // narrows it the way every return address here is narrowed.
+    let target = String(params.target_link_uri || '');
+    if (/^[a-z][a-z0-9+.-]*:/i.test(target)) {
+      try {
+        const asked = new URL(target);
+        const here = new URL(baseUrlOf(req));
+        target = asked.origin === here.origin
+          ? asked.pathname + asked.search : '';
+      } catch (e) {
+        log.debug("Caught in the login initiation endpoint: " +
+                  ((e && e.message) || e));
+        // Not a URL this service can read: nowhere to send anybody.
+        target = '';
+      }
+      if (!target) {
+        log.warn('federation: ' + id + ': a target_link_uri off this ' +
+                 'service was dropped from a sign-in its partner started.');
+      }
+    }
+    log.debug("Leaving the login initiation endpoint. Starting the sign-in.");
+    return this.loginEndpoint(req, res, {
+      returnTo: target, loginHint: String(params.login_hint || '') });
   }
 
   // ---------------------------------------------------------------------------
@@ -5694,9 +6008,7 @@ class FederationSp {
   // configured URL is a different thing from a registered one.
   // ---------------------------------------------------------------------------
   private consumeOauthResponse(req, res, record, params) {
-    const {
-      config, fedHttp, errorCodes, log, xmlEscape, baseUrlOf
-    } = this.deps;
+    const { config, errorCodes, log, xmlEscape, baseUrlOf } = this.deps;
     log.debug("Entering FederationSp.consumeOauthResponse(). protocol=" +
               record.fedProtocol);
     if (params.error) {
@@ -5734,7 +6046,13 @@ class FederationSp {
             'response without one did not come from a flow it started.');
     }
 
-    const responseType = String(record.fedResponseType || 'code');
+    // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930): the endpoints the
+    // sign-in was started with, never what the document says by now.
+    if (context.discovered && federation.discovers(record)) {
+      record = Object.assign({}, record, context.discovered);
+    }
+    const responseType = federation.responseTypeOf(record);
+    const parts = federation.responseTypeParts(record);
     // APPLE'S `user` FORM FIELD (#565), posted beside the code on the first
     // authorization only: kept on the context, bounded, for the profile's
     // `form` source. Unsigned, so it is a display value and never identity.
@@ -5742,20 +6060,65 @@ class FederationSp {
       context.formUser = String(params.user || '').slice(0, 4096);
     }
 
-    // The front-channel shape: an ID Token straight back, no back channel at
-    // all.
-    if (responseType !== 'code') {
-      const idToken = String(params.id_token || '');
-      if (!idToken) {
+    // THE FRONT-CHANNEL SHAPES: an ID Token, an access token, or both,
+    // straight back from the authorization endpoint — with a code beside
+    // them in the hybrid types (#930, OpenID Connect Core 1.0 sections 3.2
+    // and 3.3). Whatever the authorization endpoint sent is verified FIRST,
+    // and a code is redeemed only once its ID Token has passed: c_hash binds
+    // the code to that token, so a code is not spent on an answer this
+    // service is about to refuse.
+    if (record.fedProtocol === 'oidc' && (parts.idToken || parts.token)) {
+      const frontToken = String(params.id_token || '');
+      const frontAccess = String(params.access_token || '');
+      const frontCode = String(params.code || '');
+      if (parts.idToken && !frontToken) {
         errorCodes.mark(res, 'STS-FED-0026');
-        log.debug("Leaving FederationSp.consumeOauthResponse().");
+        log.debug("Leaving FederationSp.consumeOauthResponse(). No ID Token.");
         return this.refuse(res, record, 400, 'No ID Token arrived',
-          'This relationship asks for response_type=' + responseType + ' ' +
-          'with response_mode=form_post, so the answer should have POSTed an ' +
-          'id_token here.');
+          'This relationship asks for response_type=' + responseType + ', ' +
+          'so the answer should have carried an id_token here.');
       }
-      log.debug("Leaving FederationSp.consumeOauthResponse().");
-      return this.finishOidc(req, res, record, context, idToken, '');
+      if (parts.token && !frontAccess) {
+        errorCodes.mark(res, 'STS-FED-0207');
+        log.debug("Leaving FederationSp.consumeOauthResponse(). No access " +
+                  "token.");
+        return this.refuse(res, record, 400, 'No access token arrived',
+          'This relationship asks for response_type=' + responseType + ', ' +
+          'so the answer should have carried an access_token here.');
+      }
+      if (parts.code && !frontCode) {
+        errorCodes.mark(res, 'STS-FED-0027');
+        log.debug("Leaving FederationSp.consumeOauthResponse(). No code.");
+        return this.refuse(res, record, 400, 'No authorization code arrived',
+          'This relationship asks for response_type=' + responseType + ', ' +
+          'so the answer should have carried a code here.');
+      }
+      const checked: Promise<any> = parts.idToken
+        ? this.verifyIdToken(res, record, context, frontToken, {
+            front: true, code: parts.code ? frontCode : '',
+            accessToken: parts.token ? frontAccess : '' })
+        : Promise.resolve({ ok: true, payload: null });
+      log.debug("Leaving FederationSp.consumeOauthResponse(). The front " +
+                "channel.");
+      return checked.then((front) => {
+        if (!front.ok) {
+          return undefined;
+        }
+        if (parts.code) {
+          return this.redeemCode(req, res, record, context, frontCode,
+                                 front.payload ? front : null, frontAccess);
+        }
+        return this.completeOidc(req, res, record, context, front,
+                                 frontAccess);
+      }).catch((e) => {
+        log.error(errorCodes.tag('STS-FED-0042') + 'federation: the ' +
+                  'front-channel response for ' + record.fedId + ' threw: ' +
+                  (e && e.stack ? e.stack : e));
+        errorCodes.mark(res, 'STS-FED-0042');
+        return this.refuse(res, record, 500, 'This service failed while ' +
+                           'finishing the sign-in',
+                           String((e && e.message) || e));
+      });
     }
 
     const code = String(params.code || '');
@@ -5766,6 +6129,24 @@ class FederationSp {
         'The partner redirected here with neither a code nor an error, which ' +
         'is not a response RFC 6749 section 4.1.2 describes.');
     }
+    log.debug("Leaving FederationSp.consumeOauthResponse(). Redeeming.");
+    return this.redeemCode(req, res, record, context, code, null, '');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TOKEN REQUEST: the code redeemed at the partner's token endpoint, for
+  // the code flow, plain OAuth 2.0 and the hybrid types (#930). `front` is
+  // the ID Token the authorization endpoint sent beside the code, already
+  // verified, whose iss and sub the token endpoint's must repeat;
+  // `frontAccess` the access token it sent, used where the token endpoint
+  // returns none.
+  // ---------------------------------------------------------------------------
+  private redeemCode(req, res, record, context, code, front, frontAccess) {
+    const {
+      fedHttp, errorCodes, log, xmlEscape, baseUrlOf
+    } = this.deps;
+    log.debug("Entering FederationSp.redeemCode(). protocol=" +
+              record.fedProtocol);
 
     // THE TOKEN REQUEST. `client_secret_basic` where there is a secret, because
     // RFC 6749 section 2.3.1 says a server MUST support it and MAY support the
@@ -5797,7 +6178,7 @@ class FederationSp {
       const minted = this.appleClientSecret(record);
       if (!minted) {
         errorCodes.mark(res, 'STS-FED-0185');
-        log.debug("Leaving FederationSp.consumeOauthResponse(). No Apple " +
+        log.debug("Leaving FederationSp.redeemCode(). No Apple " +
                   "client secret.");
         return this.refuse(res, record, 500, 'The client secret could not ' +
                                              'be signed',
@@ -5826,13 +6207,13 @@ class FederationSp {
       // section 4.1.3 requires when the client does not authenticate.
       form.client_id = String(record.fedClientId || '');
     }
-    log.debug('consumeOauthResponse(): redeeming the code at the partner.');
-    log.debug("Leaving FederationSp.consumeOauthResponse().");
+    log.debug('redeemCode(): redeeming the code at the partner.');
+    log.debug("Leaving FederationSp.redeemCode().");
     return authenticated.then(function () {
       return fedHttp.fetchJson(record, 'fedTokenUrl', options);
     }).then((answer) => {
       if (!answer.ok || !answer.json) {
-        log.debug("Leaving FederationSp.consumeOauthResponse(). The token " +
+        log.debug("Leaving FederationSp.redeemCode(). The token " +
                   'request failed.');
         errorCodes.mark(res, answer.errorCode || 'STS-FED-0056');
         return this.refuse(res, record, 502, 'The code could not be redeemed',
@@ -5867,7 +6248,8 @@ class FederationSp {
         }
         return this.finishOidc(req, res, record, context,
                                String(tokens.id_token),
-                               String(tokens.access_token || ''));
+                               String(tokens.access_token || frontAccess || ''),
+                               front);
       }
       return this.finishOauth2(req, res, record, context, tokens);
     }).catch((e) => {
@@ -5895,12 +6277,15 @@ class FederationSp {
   // token on a front-channel relationship that requires encryption is
   // refused as plaintext. Answers `{ token }` or `{ refused: true }`.
   // ---------------------------------------------------------------------------
-  private openIdToken(res, record, idToken) {
+  private openIdToken(res, record, idToken, frontChannel: boolean) {
     const { federation, errorCodes, fedEncryption, log } = this.deps;
     log.debug("Entering FederationSp.openIdToken().");
     const parts = String(idToken).split('.').length;
     if (parts !== 5) {
-      if (federation.encryptionRequired(record)) {
+      // Only an ID Token that crossed the browser must be encrypted (#930:
+      // a hybrid relationship's token-endpoint ID Token came over TLS from
+      // the partner, as a code-flow one always has).
+      if (frontChannel && federation.encryptionRequired(record)) {
         errorCodes.mark(res, 'STS-FED-0140');
         log.debug("Leaving FederationSp.openIdToken(). Plaintext, refused.");
         this.refuse(res, record, 401, 'The ID Token is not encrypted',
@@ -5948,23 +6333,97 @@ class FederationSp {
     return { token: inner, encrypted: true };
   }
 
-  private finishOidc(req, res, record, context, sentToken, accessToken) {
-    const { fedHttp, errorCodes, audit, log, xmlEscape } = this.deps;
+  // ---------------------------------------------------------------------------
+  // THE ID TOKEN FROM THE TOKEN ENDPOINT, verified, then — where the
+  // authorization endpoint sent one too (#930, the hybrid types) — held to
+  // it: OpenID Connect Core 1.0 section 3.3.3.6 requires the two to name
+  // the same issuer and the same subject, or the code was redeemed for
+  // somebody other than the person the front channel named.
+  // ---------------------------------------------------------------------------
+  private finishOidc(req, res, record, context, sentToken, accessToken,
+                     front?: any) {
+    const { errorCodes, log } = this.deps;
     log.debug("Entering FederationSp.finishOidc().");
-    const opened: any = this.openIdToken(res, record, sentToken);
+    log.debug("Leaving FederationSp.finishOidc().");
+    return this.verifyIdToken(res, record, context, sentToken,
+                              { front: false, accessToken: accessToken })
+      .then((verified) => {
+        if (!verified.ok) {
+          return undefined;
+        }
+        if (front && front.payload &&
+            (String(front.payload.iss) !== String(verified.payload.iss) ||
+             String(front.payload.sub) !== String(verified.payload.sub))) {
+          errorCodes.mark(res, 'STS-FED-0201');
+          return this.refuse(res, record, 401, 'The two ID Tokens name ' +
+                                               'different people',
+            'The ID Token the authorization endpoint sent names iss "' +
+            String(front.payload.iss) + '" and sub "' +
+            String(front.payload.sub) + '"; the one the token endpoint ' +
+            'returned for its code names iss "' +
+            String(verified.payload.iss) + '" and sub "' +
+            String(verified.payload.sub) + '". OpenID Connect Core 1.0 ' +
+            'section 3.3.3.6 requires them to be identical.');
+        }
+        return this.completeOidc(req, res, record, context, verified,
+                                 accessToken);
+      });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE ID TOKEN, VERIFIED (#930: from either endpoint). Opened if it is
+  // encrypted, its signature verified against the partner's keys with the
+  // audience and issuer the relationship names, and then held to every
+  // claim rule OpenID Connect Core 1.0 sets a relying party (sections
+  // 3.1.3.7, 3.2.2.11 and 3.3.2.12) that the signature check alone does not
+  // make:
+  //
+  //   * `sub`, `iat` and `exp` PRESENT (section 2: all three are REQUIRED);
+  //     a token without `exp` never expires, one without `sub` names
+  //     nobody.
+  //   * `azp` when there are several audiences, and this service's
+  //     client_id when it is there at all (3.1.3.7 steps 4 and 5).
+  //   * THE NONCE, which this service always sends, PRESENT and EQUAL
+  //     (3.1.3.7 step 11: "If a nonce value was sent ... a nonce Claim MUST
+  //     be present"). It was accepted with a warning when missing from a
+  //     code-flow token until #930; on the front channel it is the only
+  //     replay protection there is, and the specification draws no
+  //     difference.
+  //   * On the front channel, `c_hash` beside a code (3.3.2.11 REQUIRES it
+  //     for `code id_token` and `code id_token token`) and `at_hash` beside an
+  //     access token (3.2.2.10, 3.3.2.11) — present and equal to the left
+  //     half of the token's hash under the ID Token's own algorithm. From
+  //     the token endpoint `at_hash` is OPTIONAL, and checked where it is
+  //     sent.
+  //
+  // Answers `{ ok: true, payload, jwk, token }` — `token` the signed JWT,
+  // opened — or `{ ok: false }` after the refusal has been drawn.
+  // ---------------------------------------------------------------------------
+  private verifyIdToken(res, record, context, sentToken, checks): Promise<any> {
+    const { errorCodes, log, stsCrypto, jsonFromB64u } = this.deps;
+    log.debug("Entering FederationSp.verifyIdToken(). front=" +
+              !!checks.front);
+    const opened: any = this.openIdToken(res, record, sentToken,
+                                         !!checks.front);
     if (opened.refused) {
-      log.debug("Leaving FederationSp.finishOidc(). The ID Token.");
-      return undefined;
+      log.debug("Leaving FederationSp.verifyIdToken(). Not opened.");
+      return Promise.resolve({ ok: false });
     }
     const idToken = opened.token;
-    log.debug("Leaving FederationSp.finishOidc().");
+    const refused = (status, code, what, why) => {
+      log.debug("Entering refused(). " + code);
+      errorCodes.mark(res, code);
+      // error-code: none — each caller names its code, marked just above
+      this.refuse(res, record, status, what, why);
+      log.debug("Leaving refused().");
+      return { ok: false };
+    };
+    log.debug("Leaving FederationSp.verifyIdToken().");
     return this.keysFor(record).then((keySet) => {
       if (!keySet.ok) {
-        log.debug("Leaving FederationSp.finishOidc(). No keys.");
-        errorCodes.mark(res, keySet.errorCode || 'STS-FED-0031');
-        return this.refuse(res, record, 500, 'There is no key to verify the ' +
-                                        'ID Token with',
-                      keySet.why);
+        return refused(500, keySet.errorCode || 'STS-FED-0031',
+                       'There is no key to verify the ID Token with',
+                       keySet.why);
       }
       const verified = this.verifyForeignJwt(idToken, record, keySet.keys, {
         // The audience is this service's client_id at the partner, and the
@@ -5982,176 +6441,268 @@ class FederationSp {
         issuer: consumerProviders.issuersFor(record, idToken)
       });
       if (!verified.ok) {
-        log.debug("Leaving FederationSp.finishOidc(). The ID Token did not " +
-                  'verify.');
-        errorCodes.mark(res, verified.errorCode || 'STS-FED-0036');
-        return this.refuse(res, record, 401, 'The ID Token did not verify',
-                      verified.why +
+        return refused(401, verified.errorCode || 'STS-FED-0036',
+          'The ID Token did not verify', verified.why +
           '. It is checked against the keys in ' + keySet.from + ' on this ' +
           'relationship, with ' +
           'aud=' + (record.fedClientId || '(unset)') + ' and iss=' +
           (record.fedPeer || '(unset)') + '.');
       }
-      const payload = verified.payload;
-      if (context.nonce && payload.nonce && payload.nonce !== context.nonce) {
+      const payload = verified.payload || {};
+      if (typeof payload.sub !== 'string' || !payload.sub) {
+        return refused(401, 'STS-FED-0195', 'The ID Token names nobody',
+          'It carries no sub, which OpenID Connect Core 1.0 section 2 ' +
+          'makes REQUIRED: the subject is the one thing an ID Token is ' +
+          'for.');
+      }
+      if (typeof payload.iat !== 'number' || typeof payload.exp !== 'number') {
+        return refused(401, 'STS-FED-0196', 'The ID Token has no lifetime',
+          'It carries no ' + (typeof payload.iat !== 'number' ? 'iat' : 'exp') +
+          ' (as a number), and OpenID Connect Core 1.0 section 2 makes both ' +
+          'REQUIRED: a token without them cannot be told fresh from one ' +
+          'issued at any time.');
+      }
+      const clientId = String(record.fedClientId || '');
+      const audiences = [].concat(payload.aud || []);
+      if ((audiences.length > 1 && !payload.azp) ||
+          (payload.azp !== undefined && String(payload.azp) !== clientId)) {
+        return refused(401, 'STS-FED-0197', 'The ID Token was issued to ' +
+                                            'another party',
+          payload.azp !== undefined
+            ? 'Its azp is "' + String(payload.azp) + '", and this ' +
+              'service\'s client_id at the partner is "' + clientId + '" ' +
+              '(OpenID Connect Core 1.0 section 3.1.3.7 step 5).'
+            : 'It names ' + audiences.length + ' audiences and no azp ' +
+              '(OpenID Connect Core 1.0 section 3.1.3.7 step 4).');
+      }
+      if (context.nonce && payload.nonce === undefined) {
+        return refused(401, 'STS-FED-0198', 'The ID Token carries no nonce',
+          'This sign-in sent a nonce, and OpenID Connect Core 1.0 section ' +
+          '3.1.3.7 step 11 requires the ID Token to carry it back. Without ' +
+          'it nothing ties the token to this request: a token issued for ' +
+          'another one would be indistinguishable.');
+      }
+      if (context.nonce && payload.nonce !== context.nonce) {
         // The nonce check. OpenID Connect Core section 3.1.3.7 step 11, and it
         // is the check `oauth2_bcp.js` records as `enforced: 'no'` on the
         // ISSUING side because nothing there can observe a client doing it.
         // Here this service IS the client, so it does it.
-        log.debug("Leaving FederationSp.finishOidc(). The nonce does not " +
-                  'match.');
-        errorCodes.mark(res, 'STS-FED-0039');
-        return this.refuse(res, record, 401,
+        return refused(401, 'STS-FED-0039',
           'The ID Token answers a different request',
-          'Its nonce is "' + xmlEscape(String(payload.nonce)) + '" and this ' +
-              'sign-in sent "' +
-          xmlEscape(context.nonce) + '". A replayed ID Token looks exactly ' +
-                                     'like this.');
+          'Its nonce is "' + String(payload.nonce) + '" and this sign-in ' +
+          'sent "' + context.nonce + '". A replayed ID Token looks exactly ' +
+          'like this.');
       }
-      if (context.nonce && !payload.nonce) {
-        log.warn('federation: the ID Token from ' + record.fedId + ' carries ' +
-                 'no nonce and this service sent one. It is ACCEPTED — the ' +
-                 'code flow is protected by the state and the PKCE verifier ' +
-                 'as well — but a partner that drops the nonce cannot be ' +
-                 'used with response_type=id_token, where it is the only ' +
-                 'replay protection there is.');
+      let alg = '';
+      try {
+        alg = String((jsonFromB64u(String(idToken).split('.')[0]) || {}).alg ||
+                     '');
+      } catch (e) {
+        log.debug("Caught in FederationSp.verifyIdToken(): " +
+                  ((e && e.message) || e));
+        // The header already decoded once to be verified; a token that
+        // verified with a header this cannot read has no hash to check.
+        alg = '';
       }
-      const bag = {};
-      Object.keys(payload).forEach((name) => {
-        // The protocol's own members are not attributes about a person and must
-        // not become directory attributes. `sub` is handled separately as the
-        // subject; the rest are about the token.
-        if (['iss', 'aud', 'exp', 'iat', 'nbf', 'jti', 'nonce', 'at_hash',
-             'c_hash', 's_hash',
-             'azp', 'auth_time', 'sid', 'sub', 'acr', 'amr'].indexOf(
-                 name) !== -1) return;
-        bag[name] = payload[name];
-      });
-      // The partner's amr BEHIND `federated`, not instead of it — see
-      // federatedAmr().
-      const amr = this.federatedAmr(payload.amr);
-      // What UserInfo answered, whole, for a consumer provider's profile
-      // (#565), whose rules name the source a value comes from.
-      let userinfo: any = undefined;
-      const finish = (extra) => {
-        log.debug("Entering finish().");
-        // AGGREGATED AND DISTRIBUTED CLAIMS (#147, OIDC Core 5.6.2) from the
-        // ID Token and UserInfo together: gathered, taken out of the bag —
-        // they are references, never attributes about the person — and
-        // resolved by `claims_providers.ts`, which honours a source only
-        // when it names a Claims Provider THIS realm registered and its keys
-        // verify it. A resolved value fills a claim the partner did not send
-        // itself; a source that cannot be honoured is logged and skipped.
-        const names = Object.assign({}, bag['_claim_names'] || {},
-                                    (extra && extra._claim_names) || {});
-        const sources = Object.assign({}, bag['_claim_sources'] || {},
-                                      (extra && extra._claim_sources) || {});
-        delete bag['_claim_names'];
-        delete bag['_claim_sources'];
-        Object.keys(extra || {}).forEach((name) => {
-          if (name === '_claim_names' || name === '_claim_sources') return;
-          if (bag[name] === undefined) bag[name] = extra[name];
-        });
-        if (Object.keys(sources).length) {
-          log.debug("Leaving finish(). Resolving " +
-                    Object.keys(sources).length + " claim source(s).");
-          return Promise.resolve().then(() => {
-            return require('../oauth-oidc/claims_providers').resolve({
-              _claim_names: names, _claim_sources: sources });
-          }).then((resolved) => {
-            Object.keys(resolved.claims || {}).forEach((name) => {
-              if (bag[name] === undefined) bag[name] = resolved.claims[name];
-            });
-            return finish(null);
-          }, (e) => {
-            log.warn(errorCodes.tag('STS-OAUTH-0683') + 'federation: the ' +
-                     'claim sources ' + record.fedId + ' sent could not be ' +
-                     'resolved: ' + ((e && e.message) || e));
-            return finish(null);
-          });
+      const hashes = [
+        { claim: 'c_hash', value: String(checks.code || ''),
+          required: !!checks.front, what: 'code' },
+        { claim: 'at_hash', value: String(checks.accessToken || ''),
+          required: !!checks.front, what: 'access token' }];
+      for (let i = 0; i < hashes.length; i++) {
+        const one = hashes[i];
+        if (!one.value) {
+          continue;
         }
-        log.debug("Leaving finish().");
-        // A CONSUMER PROVIDER'S READING (#565): the profile's claims over
-        // the bag, the address unverified unless it says otherwise, and the
-        // provider's MFA claim believed only where the profile trusts it.
-        // The subject stays the ID Token's `sub`, which OpenID Connect Core
-        // section 5.7 makes the only stable one, whatever a profile says.
-        const reading = this.consumerReading(record,
-          { id_token: payload, userinfo: userinfo,
-            form: this.formSourceOf(record, context) }, bag,
-          String(payload.sub || ''), amr, String(payload.acr || ''));
-        // The key that verified the ID Token is checked for revocation here,
-        // on the one path into the sign-in, whether or not UserInfo was asked.
-        return this.signerStillAccepted(req, res, record, () => {
-          return this.completeSignIn(req, res, record, {
-            subject: String(payload.sub || ''), bag: reading.bag,
-            amr: reading.amr,
-            // `iss` + `sub` — OpenID Connect Core section 5.7's stable
-            // identifier (#109). `iss` has been checked against fedPeer.
-            issuer: String(payload.iss || record.fedPeer || ''),
-            // THE PARTNER'S SESSION (#167): the `sid` its Back-Channel and
-            // Front-Channel logouts will name, and the ID Token itself where
-            // this relationship will send it back as id_token_hint — kept
-            // only while fedEndSessionUrl is set, because a signed statement
-            // about the person is not something to hold for no reason.
-            sid: String(payload.sid || ''),
-            idToken: String(record.fedEndSessionUrl || '').trim()
-              ? String(idToken) : '',
-            acr: reading.acr,
-            signer: FederationSp.signerOf('jwk', verified.jwk),
-            returnTo: this.fromContext(context).returnTo,
-            connect: this.fromContext(context).connect,
-            application: this.fromContext(context).application,
-            authnPending: this.fromContext(context).authnPending
-          });
-        }, verified.jwk);
-      };
-      if (!accessToken || !String(record.fedUserinfoUrl || '').trim()) {
-        log.debug("Leaving FederationSp.finishOidc(). No UserInfo call.");
-        return finish(null);
+        const sent = payload[one.claim];
+        if (sent === undefined && !one.required) {
+          continue;
+        }
+        const wanted = stsCrypto.idTokenHalfHash(one.value, alg);
+        if (String(sent || '') !== wanted) {
+          return refused(401, one.claim === 'c_hash' ? 'STS-FED-0199'
+                                                     : 'STS-FED-0200',
+            'The ID Token does not vouch for the ' + one.what,
+            (sent === undefined
+              ? 'It carries no ' + one.claim + ', which OpenID Connect ' +
+                'Core 1.0 requires of an ID Token the authorization ' +
+                'endpoint sends beside a ' + one.what + ' (sections ' +
+                '3.2.2.10 and 3.3.2.11)'
+              : 'Its ' + one.claim + ' is not the left half of the ' +
+                one.what + '\'s hash under ' + (alg || 'its algorithm')) +
+            ': without it a ' + one.what + ' substituted on the way here ' +
+            'would be accepted as this person\'s.');
+        }
       }
-      log.debug('finishOidc(): asking the partner\'s UserInfo endpoint as ' +
-                'well.');
-      return fedHttp.fetchJson(record, 'fedUserinfoUrl',
-                               { method: 'GET', bearer: accessToken })
-                    .then((answer) => {
-        if (!answer.ok || !answer.json) {
-          // NOT a failure of the sign-in. The ID Token has already verified and
-          // named the person; UserInfo adds attributes. Failing the whole
-          // sign-in because an optional second call did not answer would be the
-          // wrong trade, and the warning is what says the attributes are
-          // missing.
-          log.warn('federation: UserInfo at ' + answer.url + ' did not ' +
-              'answer ' +
-              'for ' +
-                   record.fedId + ' (' + answer.why + '). The sign-in STANDS ' +
-                   'on the ID Token, which has already verified — what is ' +
-                   'lost is whatever attributes that endpoint would have ' +
-                   'added.');
-          // Not a refusal, so no response carries it: the sign-in goes on. The
-          // row names the relationship and the reason, never the access token.
-          audit.failure('STS-FED-0040', {
-            protocol: 'Federation', channel: 'http', target: record.fedId,
-            summary: 'the optional UserInfo request for the federation ' +
-                     'relationship ' +
-                     record.fedId + ' failed (' + answer.why + '); the ' +
-                     'sign-in continued on the verified ID Token without ' +
-                     'those attributes',
-            outcome: 'error',
-            detail: { cause: answer.errorCode || 'STS-FED-0056' }
+      log.debug("Leaving FederationSp.verifyIdToken(). Verified.");
+      return { ok: true, payload: payload, jwk: verified.jwk, token: idToken };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A VERIFIED ID TOKEN BECOMES A SIGN-IN: its claims, UserInfo's where an
+  // access token and an endpoint allow (whose `sub` must be the ID Token's,
+  // #930), and the session.
+  // ---------------------------------------------------------------------------
+  private completeOidc(req, res, record, context, verified, accessToken) {
+    const { fedHttp, errorCodes, audit, log } = this.deps;
+    log.debug("Entering FederationSp.completeOidc().");
+    const payload = verified.payload;
+    const idToken = verified.token;
+    const bag = {};
+    Object.keys(payload).forEach((name) => {
+      // The protocol's own members are not attributes about a person and must
+      // not become directory attributes. `sub` is handled separately as the
+      // subject; the rest are about the token.
+      if (['iss', 'aud', 'exp', 'iat', 'nbf', 'jti', 'nonce', 'at_hash',
+           'c_hash', 's_hash',
+           'azp', 'auth_time', 'sid', 'sub', 'acr', 'amr'].indexOf(
+               name) !== -1) return;
+      bag[name] = payload[name];
+    });
+    // The partner's amr BEHIND `federated`, not instead of it — see
+    // federatedAmr().
+    const amr = this.federatedAmr(payload.amr);
+    // What UserInfo answered, whole, for a consumer provider's profile
+    // (#565), whose rules name the source a value comes from.
+    let userinfo: any = undefined;
+    const finish = (extra) => {
+      log.debug("Entering finish().");
+      // AGGREGATED AND DISTRIBUTED CLAIMS (#147, OIDC Core 5.6.2) from the
+      // ID Token and UserInfo together: gathered, taken out of the bag —
+      // they are references, never attributes about the person — and
+      // resolved by `claims_providers.ts`, which honours a source only
+      // when it names a Claims Provider THIS realm registered and its keys
+      // verify it. A resolved value fills a claim the partner did not send
+      // itself; a source that cannot be honoured is logged and skipped.
+      const names = Object.assign({}, bag['_claim_names'] || {},
+                                  (extra && extra._claim_names) || {});
+      const sources = Object.assign({}, bag['_claim_sources'] || {},
+                                    (extra && extra._claim_sources) || {});
+      delete bag['_claim_names'];
+      delete bag['_claim_sources'];
+      Object.keys(extra || {}).forEach((name) => {
+        if (name === '_claim_names' || name === '_claim_sources') return;
+        if (bag[name] === undefined) bag[name] = extra[name];
+      });
+      if (Object.keys(sources).length) {
+        log.debug("Leaving finish(). Resolving " +
+                  Object.keys(sources).length + " claim source(s).");
+        return Promise.resolve().then(() => {
+          return require('../oauth-oidc/claims_providers').resolve({
+            _claim_names: names, _claim_sources: sources });
+        }).then((resolved) => {
+          Object.keys(resolved.claims || {}).forEach((name) => {
+            if (bag[name] === undefined) bag[name] = resolved.claims[name];
           });
           return finish(null);
-        }
-        log.debug("Leaving FederationSp.finishOidc(). UserInfo added " +
-                  Object.keys(answer.json).length + ' member(s).');
-        userinfo = answer.json;
-        const extra = {};
-        Object.keys(answer.json).forEach((name) => {
-          if (name === 'sub') return;
-          extra[name] = answer.json[name];
+        }, (e) => {
+          log.warn(errorCodes.tag('STS-OAUTH-0683') + 'federation: the ' +
+                   'claim sources ' + record.fedId + ' sent could not be ' +
+                   'resolved: ' + ((e && e.message) || e));
+          return finish(null);
         });
-        return finish(extra);
+      }
+      log.debug("Leaving finish().");
+      // A CONSUMER PROVIDER'S READING (#565): the profile's claims over
+      // the bag, the address unverified unless it says otherwise, and the
+      // provider's MFA claim believed only where the profile trusts it.
+      // The subject stays the ID Token's `sub`, which OpenID Connect Core
+      // section 5.7 makes the only stable one, whatever a profile says.
+      const reading = this.consumerReading(record,
+        { id_token: payload, userinfo: userinfo,
+          form: this.formSourceOf(record, context) }, bag,
+        String(payload.sub || ''), amr, String(payload.acr || ''));
+      // The key that verified the ID Token is checked for revocation here,
+      // on the one path into the sign-in, whether or not UserInfo was asked.
+      return this.signerStillAccepted(req, res, record, () => {
+        return this.completeSignIn(req, res, record, {
+          subject: String(payload.sub || ''), bag: reading.bag,
+          amr: reading.amr,
+          // `iss` + `sub` — OpenID Connect Core section 5.7's stable
+          // identifier (#109). `iss` has been checked against fedPeer.
+          issuer: String(payload.iss || record.fedPeer || ''),
+          // THE PARTNER'S SESSION (#167): the `sid` its Back-Channel and
+          // Front-Channel logouts will name, and the ID Token itself where
+          // this relationship will send it back as id_token_hint — kept
+          // only while fedEndSessionUrl is set, because a signed statement
+          // about the person is not something to hold for no reason.
+          sid: String(payload.sid || ''),
+          idToken: String(record.fedEndSessionUrl || '').trim()
+            ? String(idToken) : '',
+          acr: reading.acr,
+          signer: FederationSp.signerOf('jwk', verified.jwk),
+          returnTo: this.fromContext(context).returnTo,
+          connect: this.fromContext(context).connect,
+          application: this.fromContext(context).application,
+          authnPending: this.fromContext(context).authnPending
+        });
+      }, verified.jwk);
+    };
+    if (!accessToken || !String(record.fedUserinfoUrl || '').trim()) {
+      log.debug("Leaving FederationSp.completeOidc(). No UserInfo call.");
+      return finish(null);
+    }
+    log.debug('completeOidc(): asking the partner\'s UserInfo endpoint as ' +
+              'well.');
+    return fedHttp.fetchJson(record, 'fedUserinfoUrl',
+                             { method: 'GET', bearer: accessToken })
+                  .then((answer) => {
+      if (!answer.ok || !answer.json) {
+        // NOT a failure of the sign-in. The ID Token has already verified and
+        // named the person; UserInfo adds attributes. Failing the whole
+        // sign-in because an optional second call did not answer would be the
+        // wrong trade, and the warning is what says the attributes are
+        // missing.
+        log.warn('federation: UserInfo at ' + answer.url + ' did not ' +
+            'answer ' +
+            'for ' +
+                 record.fedId + ' (' + answer.why + '). The sign-in STANDS ' +
+                 'on the ID Token, which has already verified — what is ' +
+                 'lost is whatever attributes that endpoint would have ' +
+                 'added.');
+        // Not a refusal, so no response carries it: the sign-in goes on. The
+        // row names the relationship and the reason, never the access token.
+        audit.failure('STS-FED-0040', {
+          protocol: 'Federation', channel: 'http', target: record.fedId,
+          summary: 'the optional UserInfo request for the federation ' +
+                   'relationship ' +
+                   record.fedId + ' failed (' + answer.why + '); the ' +
+                   'sign-in continued on the verified ID Token without ' +
+                   'those attributes',
+          outcome: 'error',
+          detail: { cause: answer.errorCode || 'STS-FED-0056' }
+        });
+        return finish(null);
+      }
+      // THE SUBJECT UserInfo ANSWERS FOR (#930). OpenID Connect Core 1.0
+      // section 5.3.2: "The sub Claim in the UserInfo Response MUST be
+      // verified to exactly match the sub Claim in the ID Token; if they do
+      // not match, the UserInfo Response values MUST NOT be used." The
+      // sign-in is REFUSED rather than finished without them, because a
+      // mismatch is not an endpoint that failed to answer — it is an access
+      // token that belongs to somebody else, substituted between the two
+      // calls, and the ID Token beside it is no longer evidence of anything
+      // this service can account for.
+      if (String(answer.json.sub || '') !== String(payload.sub || '')) {
+        log.debug("Leaving FederationSp.completeOidc(). Another subject.");
+        errorCodes.mark(res, 'STS-FED-0202');
+        return this.refuse(res, record, 401, 'UserInfo answered for ' +
+                                             'somebody else',
+          'The ID Token names sub "' + String(payload.sub || '') + '" and ' +
+          'the partner\'s UserInfo endpoint answered for sub "' +
+          String(answer.json.sub || '') + '". OpenID Connect Core 1.0 ' +
+          'section 5.3.2 requires them to be identical.');
+      }
+      log.debug("Leaving FederationSp.completeOidc(). UserInfo added " +
+                Object.keys(answer.json).length + ' member(s).');
+      userinfo = answer.json;
+      const extra = {};
+      Object.keys(answer.json).forEach((name) => {
+        if (name === 'sub') return;
+        extra[name] = answer.json[name];
       });
+      return finish(extra);
     });
   }
 
@@ -6490,6 +7041,13 @@ class FederationSp {
           : 'It is disabled. A response arriving for a disabled relationship ' +
             'is refused without being looked at — which is what disabling is ' +
             'for.');
+    }
+    // A FRAGMENT-ENCODED RESPONSE (#930) reaches this server as a GET with
+    // nothing on it: the browser keeps the fragment. A relationship that
+    // chose the fragment mode is answered with the page that posts it here.
+    if (this.awaitsFragment(req, record)) {
+      log.debug("Leaving FederationSp.consume(). The fragment page.");
+      return this.fragmentPage(req, res, record);
     }
     const params = this.paramsOf(req);
     // THE FLOW'S CELL (#98 D10), before the response is verified or anything

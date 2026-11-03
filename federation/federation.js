@@ -267,6 +267,15 @@ const PATHS = {
   // An OpenID Connect relationship's encryption key as a JWKS (#168), what
   // the partner registers to encrypt its ID Token to.
   jwks: '/federation/jwks',
+  // An OpenID Connect relationship's login initiation endpoint (#930,
+  // OpenID Connect Core 1.0 section 4): what the partner registers as the
+  // client's `initiate_login_uri`, answered only where the relationship
+  // accepts a sign-in its partner starts (fedInitiateLogin).
+  initiateLogin: '/federation/initiate-login',
+  // The one script of the assertion consumer service (#930): the page that
+  // carries a fragment-encoded OpenID Connect response to the server, which
+  // never sees a URL fragment otherwise.
+  fragmentScript: '/federation/fragment.js',
   // Where a partner PUSHES its Security Event Tokens (RFC 8935, #373), the
   // relationship's id after it. ssf/ssf_transmitters.ts registers it.
   signals: '/federation/signals'
@@ -1075,12 +1084,19 @@ const SCHEMA = {
     // SIGN IN WITH APPLE (#565): a client secret that is a JWT this service
     // signs, and an authorization code returned by form_post.
     { name: 'fedResponseMode', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ['query', 'form_post'],
-      what: 'HOW THE AUTHORIZATION CODE COMES BACK: query (the default, the ' +
-            'code on the redirect) or form_post (OAuth 2.0 Form Post ' +
-            'Response Mode), which Sign in with Apple requires whenever a ' +
-            'name or an address is asked for. form_post arrives as a ' +
-            'cross-site POST, so a browser sends it no SameSite=Lax cookie.' },
+      from: 'this register', enum: ['query', 'form_post', 'fragment'],
+      what: 'HOW THE AUTHORIZATION RESPONSE COMES BACK. Empty, the default: ' +
+            'query for code, and form_post (OAuth 2.0 Form Post Response ' +
+            'Mode) for an OpenID Connect response type carrying an ID Token ' +
+            'or an access token. form_post, which Sign in with Apple ' +
+            'requires whenever a name or an address is asked for, arrives ' +
+            'as a cross-site POST, so a browser sends it no SameSite=Lax ' +
+            'cookie. fragment, OpenID Connect only, is the default of those ' +
+            'response types in the specification: the answer is in the URL ' +
+            'fragment, and a page with one script here posts it on. It puts ' +
+            'the ID Token in the browser\'s history, which form_post does ' +
+            'not: use it only for a partner that cannot post. query cannot ' +
+            'carry an ID Token or an access token.' },
     { name: 'fedAllowedTenants', kind: 'multi', role: 'service-provider',
       from: 'this register',
       what: 'MICROSOFT, ANY TENANT ONLY: the tenant ids whose people may sign ' +
@@ -1129,12 +1145,40 @@ const SCHEMA = {
             'OAuth 2.0 one, because what an OAuth 2.0 authorization server ' +
             'will give you is entirely local to it.' },
     { name: 'fedResponseType', kind: 'single', role: 'service-provider',
-      from: 'this register', enum: ['code', 'id_token'],
-      what: 'code (the default) or id_token. `id_token` with form_post is ' +
-            'the shape that needs NO back channel and therefore no token ' +
-            'endpoint, no client secret and no outbound request — which is ' +
-            'the only way to federate with an OIDC partner from a deployment ' +
-            'that has no egress at all.' },
+      from: 'this register',
+      enum: ['code', 'id_token', 'id_token token', 'code id_token',
+             'code token', 'code id_token token'],
+      what: 'code (the default), id_token, or one of OpenID Connect\'s ' +
+            'other four: id_token token (implicit), code id_token, code ' +
+            'token and code id_token token (hybrid). `id_token` with ' +
+            'form_post is the shape that needs NO back channel and ' +
+            'therefore no token endpoint, no client secret and no outbound ' +
+            'request — which is the only way to federate with an OIDC ' +
+            'partner from a deployment that has no egress at all. An ID ' +
+            'Token from the authorization endpoint must carry the nonce, ' +
+            'and c_hash and at_hash wherever a code or an access token came ' +
+            'with it.' },
+    { name: 'fedDiscovery', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'OPENID CONNECT ONLY. TRUE reads the partner\'s endpoints and ' +
+            'its jwks_uri from its discovery document, ' +
+            '{fedPeer}/.well-known/openid-configuration, at the start of ' +
+            'every sign-in (OpenID Connect Discovery 1.0 section 4), whose ' +
+            'issuer must be fedPeer exactly; fedSsoUrl, fedTokenUrl, ' +
+            'fedUserinfoUrl and fedJwksUri are then not read. The address ' +
+            'is derived from fedPeer, which an administrator configured, ' +
+            'and never from a request. FALSE, the default: the endpoints ' +
+            'are configured by hand.' },
+    { name: 'fedInitiateLogin', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'OPENID CONNECT ONLY. TRUE answers this relationship\'s login ' +
+            'initiation endpoint, /federation/initiate-login/{id}, which ' +
+            'the partner registers as initiate_login_uri (OpenID Connect ' +
+            'Core 1.0 section 4): a sign-in the PARTNER starts, naming ' +
+            'itself in iss, which must be fedPeer. A login_hint is passed ' +
+            'on, and a target_link_uri is followed only to a path on this ' +
+            'service. FALSE, the default, refuses it: a page anywhere could ' +
+            'otherwise start a sign-in in a person\'s browser.' },
     { name: 'fedBinding', kind: 'single', role: 'service-provider',
       from: 'this register', enum: ['HTTP-Redirect', 'HTTP-POST'],
       what: 'Which binding the outbound SAML AuthnRequest goes on: ' +
@@ -1646,6 +1690,8 @@ const EDITABLE = {
   fedClientSigningKey: 'set',
   fedScope: 'set',
   fedResponseType: 'set',
+  fedDiscovery: 'set',
+  fedInitiateLogin: 'set',
   fedBinding: 'set',
   fedSignRequest: 'set',
   fedUsernameSource: 'set',
@@ -2384,7 +2430,11 @@ function readinessOf(record) {
   } else if (record.fedRole === 'service-provider') {
     const row = protocolRow(record.fedProtocol);
     const needs = row ? row.needs : [];
+    // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930) has its endpoints
+    // filled at each sign-in, so they are not asked of the entry.
+    const discovered = discovers(record) ? DISCOVERED_FIELDS : [];
     needs.forEach(function (name) {
+      if (discovered.indexOf(name) >= 0) return;
       if (!String(record[name] || '').trim()) missing.push(name);
     });
     // A CONSUMER PROVIDER (#565): its profile's fields, and the realm's
@@ -2419,14 +2469,28 @@ function readinessOf(record) {
     // The two OIDC shapes need different things and the difference is exactly
     // what fedResponseType selects, so it cannot be a static list on the
     // protocol row. `code` needs somewhere to redeem the code; `id_token`
-    // needs a key to verify it with and needs no back channel at all.
+    // needs a key to verify it with and needs no back channel at all; the
+    // hybrid types (#930) need both. A partner read from its discovery
+    // document supplies all of them at the sign-in.
     if (record.fedProtocol === 'oidc') {
-      if (String(record.fedResponseType || 'code') === 'code') {
-        if (!String(record.fedTokenUrl || '').trim()) missing.push(
-            'fedTokenUrl');
-      } else if (!String(record.fedJwks || '').trim() &&
-                 !String(record.fedJwksUri || '').trim()) {
+      const parts = responseTypeParts(record);
+      if (parts.code && !discovers(record) &&
+          !String(record.fedTokenUrl || '').trim()) {
+        missing.push('fedTokenUrl');
+      }
+      if (parts.idToken && !discovers(record) &&
+          !String(record.fedJwks || '').trim() &&
+          !String(record.fedJwksUri || '').trim()) {
         missing.push('fedJwks or fedJwksUri');
+      }
+      // OAuth 2.0 Multiple Response Type Encoding Practices section 5: the
+      // query encoding MUST NOT be used for a response carrying an ID Token
+      // or an access token.
+      if ((parts.idToken || parts.token) &&
+          String(record.fedResponseMode || '') === 'query') {
+        missing.push('fedResponseMode other than query (' +
+                     responseTypeOf(record) + ' cannot come back on a ' +
+                     'query string)');
       }
     }
     // A JWT from an OAuth 2.0 partner is verified against a key like any
@@ -2655,11 +2719,72 @@ function encryptionRequired(record) {
     log.debug("Leaving encryptionRequired(). Not an encrypting protocol.");
     return false;
   }
+  // An OpenID Connect ID Token crosses the browser when the response type
+  // asks the authorization endpoint for one (#930: the hybrid types too);
+  // `code token` sends only an access token there, and its ID Token comes
+  // from the token endpoint.
   const frontChannel = record.fedProtocol !== 'oidc' ||
-    String(record.fedResponseType || 'code') !== 'code';
+    responseTypeParts(record).idToken;
   log.debug("Leaving encryptionRequired().");
   return frontChannel && !mode.acceptsUnencryptedFederatedAssertions() &&
          !boolOf(record.fedAllowUnencrypted, false);
+}
+
+// ---------------------------------------------------------------------------
+// THE OPENID CONNECT RESPONSE TYPE, IN ITS PARTS (#930). A response type is a
+// space-separated set (OAuth 2.0 Multiple Response Type Encoding Practices
+// section 3), so `code id_token` and `id_token code` are one type; the
+// register stores the spelling its enum lists, and everything that acts on
+// it asks which of the three members it has.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a relationship's response type as written, `code` when unset.
+ *
+ * @param record - the federation relationship
+ * @returns the response type
+ */
+function responseTypeOf(record) {
+  log.debug("Entering responseTypeOf().");
+  log.debug("Leaving responseTypeOf().");
+  return String((record && record.fedResponseType) || 'code').trim() ||
+         'code';
+}
+
+/**
+ * Returns which of `code`, `id_token` and `token` a relationship's response
+ * type asks the authorization endpoint for.
+ *
+ * @param record - the federation relationship
+ * @returns `{ code, idToken, token }`
+ */
+function responseTypeParts(record) {
+  log.debug("Entering responseTypeParts().");
+  const words = responseTypeOf(record).split(/\s+/);
+  log.debug("Leaving responseTypeParts().");
+  return { code: words.indexOf('code') >= 0,
+           idToken: words.indexOf('id_token') >= 0,
+           token: words.indexOf('token') >= 0 };
+}
+
+// The endpoint attributes a partner's discovery document supplies (#930):
+// with fedDiscovery on they are filled at each sign-in and not read from the
+// entry.
+const DISCOVERED_FIELDS = ['fedSsoUrl', 'fedTokenUrl', 'fedUserinfoUrl',
+                           'fedJwksUri'];
+
+/**
+ * Says whether an OpenID Connect relationship reads its partner's endpoints
+ * from the partner's discovery document (`fedDiscovery`, #930).
+ *
+ * @param record - the federation relationship
+ * @returns whether it does
+ */
+function discovers(record) {
+  log.debug("Entering discovers().");
+  log.debug("Leaving discovers().");
+  return !!record && record.fedProtocol === 'oidc' &&
+         !String(record.fedTrustAnchor || '').trim() &&
+         boolOf(record.fedDiscovery, false);
 }
 
 // The authorization request parameters this service sets itself (#565):
@@ -5287,6 +5412,10 @@ module.exports = {
   encryptionKeyView: encryptionKeyView,
   currentEncryptionKeyOf: currentEncryptionKeyOf,
   encryptionRequired: encryptionRequired,
+  responseTypeOf: responseTypeOf,
+  responseTypeParts: responseTypeParts,
+  discovers: discovers,
+  DISCOVERED_FIELDS: DISCOVERED_FIELDS,
   writeEncryptionKeys: writeEncryptionKeys,
   remove: remove,
   recordUse: recordUse,

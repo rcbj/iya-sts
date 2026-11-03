@@ -7917,6 +7917,31 @@ const ENDPOINTS: EndpointEntry[] = [
           'this service that refuse for a configuration reason. PKCE is ' +
           'always sent on the two OAuth-shaped protocols and there is no ' +
           'setting to stop it.' },
+  { path: '/federation/initiate-login/:id', group: 'Federation',
+    name: 'A sign-in the partner starts (initiate_login_uri)',
+    specs: ['oidc'],
+    effect: 'sends the browser to the partner OpenID Provider with an ' +
+            'ordinary authorization request, as /federation/login/{id} does',
+    what: 'OpenID Connect Core 1.0 section 4 (#930): the login initiation ' +
+          'endpoint an OpenID Connect relationship registers at its partner ' +
+          'as initiate_login_uri, GET or POST. REFUSED (403) unless the ' +
+          'relationship sets fedInitiateLogin, because any page can send a ' +
+          'browser here; `iss` is REQUIRED and must be the relationship\'s ' +
+          'fedPeer (400 otherwise); `login_hint` is passed on to the ' +
+          'partner; `target_link_uri` is followed only to a path on this ' +
+          'service and dropped otherwise, so the endpoint is no open ' +
+          'redirector.' },
+  { path: '/federation/fragment.js', group: 'Federation',
+    name: 'The assertion consumer service\'s fragment script',
+    specs: ['oidc', 'oauth-multiple-response-types'],
+    what: 'NON-SPEC resource of a spec endpoint (#930): the one script the ' +
+          'assertion consumer service\'s page runs when an OpenID Connect ' +
+          'relationship chose fedResponseMode=fragment. A fragment never ' +
+          'reaches a server, so the page reads it, removes it from the ' +
+          'address and the history entry, and POSTs it to the same ' +
+          'address, where it is consumed as a form_post response is. No ' +
+          'markup can read a fragment, so there is no button to fall back ' +
+          'on.' },
   { path: '/federation/acs/:id', group: 'Federation',
     name: 'Assertion consumer service / wreply / redirect_uri',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'saml11',

@@ -274,7 +274,11 @@ async function waitForSuite() {
 // module WAITING (or CONFIGURED and not started) — for a module that waits
 // on this service's OPERATOR (a credential offer to be sent, a transaction
 // code to be typed, the OP's keys to be rotated), which the driver plays.
-async function runModule(planId, module, onWaiting) {
+// `seconds`, when given, is this module's own deadline in place of
+// MODULE_SECONDS — for a module a driver argues will wait out its time
+// (#930: a relying-party feature this service deliberately lacks), so the
+// argued wait costs a minute rather than five.
+async function runModule(planId, module, onWaiting, seconds) {
   log.debug("Entering runModule(). " + module.testModule);
   const q = "test=" + encodeURIComponent(module.testModule) + "&plan=" +
             encodeURIComponent(planId) +
@@ -298,7 +302,7 @@ async function runModule(planId, module, onWaiting) {
             "creating " + module.testModule + ": " + created.raw.slice(0, 300));
   const id = created.body.id;
   let info = null;
-  const deadline = Date.now() + MODULE_SECONDS * 1000;
+  const deadline = Date.now() + (Number(seconds) || MODULE_SECONDS) * 1000;
   while (true) {
     info = (await suite("GET", "api/info/" + id)).body || {};
     if (info.status === "FINISHED" || info.status === "INTERRUPTED") {

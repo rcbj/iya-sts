@@ -244,8 +244,8 @@
     "text": "ANG SECRET NG SERBISYONG ITO SA PARTNER, nasa clear, sa isang directory kung saan nagtatagumpay ang bawat bind. TOTOONG credential ito sa isang TOTOONG dayuhang serbisyo, na mas malakas na pahayag kaysa sa anupaman sa directory na ito — tingnan ang header. Hindi kailanman isinusulat sa audit log at hindi kailanman ipini-print sa isang pahina."
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "KUNG PAANO BUMABALIK ANG AUTHORIZATION CODE: query (ang default, ang code sa redirect) o form_post (OAuth 2.0 Form Post Response Mode), na hinihingi ng Sign in with Apple tuwing may hinihinging pangalan o address. Dumarating ang form_post bilang cross-site na POST, kaya walang ipinapadalang SameSite=Lax na cookie ang browser kasama nito."
+    "en": "fdcac3938c7dc0ec",
+    "text": "KUNG PAANO BUMABALIK ANG AUTHORIZATION RESPONSE. Walang laman, ang default: query para sa code, at form_post (OAuth 2.0 Form Post Response Mode) para sa isang OpenID Connect response type na may dalang ID Token o access token. Ang form_post, na hinihingi ng Sign in with Apple tuwing may hinihinging pangalan o address, ay dumarating bilang isang cross-site na POST, kaya walang SameSite=Lax na cookie na ipinapadala ng browser kasama nito. Ang fragment, OpenID Connect lamang, ang default ng mga response type na iyon sa specification: ang sagot ay nasa URL fragment, at isang pahinang may iisang script dito ang nagpapasa nito. Inilalagay nito ang ID Token sa history ng browser, na hindi ginagawa ng form_post: gamitin lamang ito para sa partner na hindi makapag-post. Hindi makapagdadala ang query ng ID Token o access token."
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,16 @@
     "text": "Ang scope na hinihingi sa partner. `openid profile email` ang default para sa OIDC relationship at walang default para sa OAuth 2.0, dahil ang ibibigay sa iyo ng isang OAuth 2.0 authorization server ay ganap na lokal dito."
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code (ang default) o id_token. Ang `id_token` na may form_post ang hugis na HINDI nangangailangan ng back channel at samakatwid ng token endpoint, client secret o outbound request — na siyang tanging paraan para makipag-federate sa OIDC partner mula sa deployment na walang egress."
+    "en": "885dc55158b43f26",
+    "text": "code (ang default), id_token, o isa sa apat pang iba ng OpenID Connect: id_token token (implicit), code id_token, code token at code id_token token (hybrid). Ang `id_token` na may form_post ang anyong HINDI nangangailangan ng back channel at kaya walang token endpoint, walang client secret at walang outbound request — na siyang tanging paraan upang makipag-federate sa isang OIDC partner mula sa deployment na walang anumang egress. Ang isang ID Token mula sa authorization endpoint ay dapat may dalang nonce, at c_hash at at_hash saanman may kasamang code o access token."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "OPENID CONNECT LAMANG. Ang TRUE ay binabasa ang mga endpoint ng partner at ang jwks_uri nito mula sa discovery document nito, {fedPeer}/.well-known/openid-configuration, sa simula ng bawat pag-sign in (OpenID Connect Discovery 1.0 seksiyon 4), na ang issuer ay dapat eksaktong fedPeer; ang fedSsoUrl, fedTokenUrl, fedUserinfoUrl at fedJwksUri ay hindi na binabasa. Ang address ay hinango mula sa fedPeer, na kinumpigura ng isang administrator, at hindi kailanman mula sa isang request. FALSE, ang default: ang mga endpoint ay kinukumpigura nang mano-mano."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "OPENID CONNECT LAMANG. Ang TRUE ay sinasagot ang login initiation endpoint ng ugnayang ito, /federation/initiate-login/{id}, na inirerehistro ng partner bilang initiate_login_uri (OpenID Connect Core 1.0 seksiyon 4): isang pag-sign in na sinisimulan ng PARTNER, na nagpapangalan sa sarili nito sa iss, na dapat ay fedPeer. Ipinapasa ang isang login_hint, at ang isang target_link_uri ay sinusundan lamang patungo sa isang path sa serbisyong ito. FALSE, ang default, ay tinatanggihan ito: kung hindi, kahit anong pahina ay makapagsisimula ng pag-sign in sa browser ng isang tao."
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",

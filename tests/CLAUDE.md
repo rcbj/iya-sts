@@ -952,6 +952,7 @@ Three rules that are not optional here:
 | `federation_map_bands.js` | that the federation picture is THREE BANDS — left asks, right authenticates — that the four relationship states are four distinguishable strokes, that a brokered partner is ONE arrow which keeps that pair's counts, and that the per-application counts either add up or report the difference |
 | `spnego_identity.js` | what a SPNEGO sign-in claims: which part of a Kerberos principal becomes the session's username, and the `amr`/`acr` read off the ticket's own flags |
 | `federation_pages.js` | `GET /federation` and what `/federation/login/{id}` and `/federation/link/{handle}` say when they refuse are the federation pages' shell carrying `data-sts-state`, each with the status it always had (200, 404 twice, 400, 403 with `fedLastError` written, 409) and `no-store`, under a policy that runs `/federation/pages.js` and keeps `frame-ancestors`; the assertion consumer service's refusal of the same relationship still server-drawn under `script-src 'none'`; the script served; every kind of view drawn (escaped; the landing page's sign-in link through `/portal`); the emailed factor's end page the bytes it was; and the runtime drawing the landing page from its shell in French, asking for catalogs and nothing else (#580) |
+| `federation_oidc_rp.js` | **AN INBOUND OPENID CONNECT RELATIONSHIP AS THE RELYING-PARTY PLANS HOLD IT** (#930): the whole stack and a small OpenID Provider written in the file, in a child process over HTTP. The code flow's refusals each by code — no `sub` (`STS-FED-0195`), no `iat` (`0196`), a foreign `azp` or two audiences and none (`0197`), no nonce (`0198`), another nonce (`0039`) — with UserInfo never asked after them, and UserInfo answering for another `sub` (`0202`); `code id_token` with PKCE and form_post asked, a missing or wrong `c_hash` refused before the code is redeemed (`0199`) and the two ID Tokens held to one subject (`0201`); `id_token token` in the fragment mode (no `response_mode` asked, the page and `/federation/fragment.js` under `script-src 'self'`, a wrong `at_hash` refused (`0200`), a right one asking UserInfo with the front access token) and `query` with it not ready; discovery's endpoints used and another issuer refused (`0204`); the login initiation endpoint off (`0205`), another `iss` (`0206`), and the partner's own starting the sign-in with its `login_hint` |
 | `description_pages.js` | the six protocol families' description pages (#584): `/xacml` and `/xacml/description.js` (and its JSON form) refused alike with `xacml.enforceAccess` on and both answering with it off; each of `/saml2`, `/saml11`, `/xacml`, `/ssf`, `/scim`, `/spiffe` the shell (200, `no-store`, its family's script, a policy that keeps `frame-ancestors`) carrying its kind of view; the JSON form by `?format=json` and by `Accept`, `*/*` and `?format=html` the shell; each `description.js` served; no mock SP or RP in either mode (#592), and the embedded PEP listed in development and in neither JSON nor shell in product; the bare `/saml2/ars` and `/saml11/responder` still server-drawn under `script-src 'none'`, metadata, SSF configuration and SCIM discovery unchanged; every renderer drawing its real view in French with every key found, escaped; and the runtime drawing `/ssf` from its shell loading only `describeSsf` catalogs |
 | `diagnostic_pages.js` | **#583's diagnostic pages are gone.** The TLS half went with #597: `/tls`, `/tls/forwarded`, `/tls/pages.js`, `POST /tls/trust` and `/tls/trust/clear` answer as unrouted paths in development; and the SPNEGO half with #595: `/spnego`, `/spnego?format=json`, `/spnego/protected`, `/spnego/pages.js`, `/krb5/service` and `/krb5/principals` answer as unrouted paths too, with no Negotiate challenge (the first four are the companion's, `companion.js`; the RFC 4559 exchange of the sign-in is `spnego_shell.js`'s) |
 | `tls_connection_page.js` | **Monitoring → TLS connection** (#597): `GET /admin-api/tls-connection` over a real TLS listener of the child's own serving the shared app — no client certificate, an untrusted one (presented, NOT verified, OpenSSL's reason), a trusted one (verified, subject, fingerprint, thumbprint, the identity gate, no session); every forwarding header by its value, the certificate headers read by nothing, `global.trustProxy` off, on with no ranges and on with a range the peer is not in; the page drawn by the static console's renderer and escaped; pinned to the front process, not a service page, the operation mirroring the page; the old paths unrouted |
@@ -1685,6 +1686,7 @@ and carrying them twice is what made this table's own arithmetic wrong.
 | `tests/protocol/sts_fapi2_message_signing.js` **(ours)** | **FAPI 2.0 MESSAGE SIGNING OVER THE WIRE** (#141, 2026-09-22), in a throwaway realm on `2-message-signing`: the report's rows; discovery with JARM's modes only and a signed request object and PAR required; a plain push, a signed push asking for no JARM mode, and one with no nbf refused; a signed push answered with a PS256 JARM response verified here and redeemed for a DPoP-bound token; an RFC 9701 introspection response signed PS256 and verified; the portal signing in under the profile. 10 checks |
 | `tests/protocol/sts_fapi_conformance.js` **(ours)** | **THE OPENID FOUNDATION'S CONFORMANCE SUITE** (#176, 2026-09-24) — the independent check the four rows above are not. FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA, one plan each in a throwaway realm under the profile it tests, every module run through the suite's API; a FAILED or timed-out module fails the job unless `EXPECTED` names it with its reason (empty). `conformance: true`: SKIPPED with the reason where the launcher brought no suite up. See *The OpenID conformance suite*, below |
 | `tests/protocol/sts_oidcc_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID CONNECT PLANS** (#187, 2026-09-24): the nine OP certification profiles (basic twice, dynamic and static clients; implicit, hybrid, config, dynamic, the three form_post ones, 3rd-party-initiated login), `oidcc-test-plan` once per client authentication (`client_secret_basic`, `_post`, `_jwt`, `private_key_jwt`, mutual TLS) across query, fragment and form_post, the four logout plans (RP-Initiated, Front-Channel, Back-Channel, Session Management) and Identity Assurance's `ekyc-test-plan-oidccore`. A FAILED module, or a WARNING from a condition `KNOWN_WARNINGS` does not name, fails the job. `conformance: true`. See *The OpenID conformance suite*, below |
+| `tests/protocol/sts_oidcc_rp_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID CONNECT RELYING-PARTY PLANS** (#930, 2026-11-02): basic, implicit, hybrid, config, dynamic, the three form_post plans, third-party-initiated login, logout and refresh tokens, with the suite as the OpenID Provider and an inbound OpenID Connect federation relationship as the relying party. See *THE OPENID CONNECT RELYING PARTY PLANS* below. `conformance: true`, `browser: true`, lane `conformance-rp` |
 | `tests/protocol/sts_ssf_oidf_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS PLANS** (#187): the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll; the job emits the CAEP events the interop module waits for. Not `sts_ssf_conformance.js` (#144, this repository's own SSF checks). `conformance: true` |
 | `tests/protocol/sts_ssf_receiver_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S SHARED SIGNALS RECEIVER PLANS** (#932): the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, the suite the transmitter. Per plan a realm receiving through a signals-only relationship; the job presses the stream buttons each module waits for, deletes the stream once a module ends, and asserts the suite's CAEP `session-revoked` ended the person's sessions (`signalsOnlyEndSessionEvents` turned on through the signal-response template). No classical twin: the suite verifies nothing the realm signs. `conformance: true`, lane `conformance-b` |
 | `tests/protocol/sts_oidfed_conformance.js` **(ours)** | **THE CONFORMANCE SUITE'S OPENID FEDERATION PLANS** (#187): the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor, and the plan in which the suite plays a federation (Trust Anchor and RP, keys made by the job) that a realm's OP has joined, registering the RP automatically. `conformance: true` |
@@ -2221,7 +2223,8 @@ TypeScript 7 removed ES5) or keep a script-free page for the suite.
   are serialised by a lock however many plans run side by side, and since
   the suite gives each module a fresh browser, the cookies are kept PER
   MODULE — saved after a visit, put back before the next of that module,
-  the jar cleared in between. The four jobs are `browser: true` in
+  the jar cleared in between. The four jobs, and #930's relying-party job
+  (whose person starts at the relying party, below), are `browser: true` in
   MANIFEST.js and stay in their conformance lanes.
 * **Not changed**: SSF's job signs its person in itself and gives the suite
   no browser; OpenID4VP's plan sends no person to this service.
@@ -2304,14 +2307,66 @@ Management under Message Signing, CIBA ping).
   entry. The time roughly doubled for those four jobs; MANIFEST.js's
   watchdogs, `STS_CONFORMANCE_TIMEOUT` and the `openid-conformance` job's
   timeout were raised for it.
-* **Not run**: the relying-party plans (this service is nobody's RP but its
-  own), the Brazil and panva plans, the superseded drafts and AuthZEN. The
-  SSF receiver plans (#153) run since #932 (2026-11-02), in
-  `sts_ssf_receiver_conformance.js`. The suite publishes no push-mode
-  FAPI-CIBA plan.
+* **Not run**: the Brazil and panva plans, the superseded drafts and
+  AuthZEN. The relying-party plans run since #930 (2026-11-02), in
+  `sts_oidcc_rp_conformance.js`; the SSF receiver plans (#153) since #932
+  (2026-11-02), in `sts_ssf_receiver_conformance.js`. The suite publishes no
+  push-mode FAPI-CIBA plan.
   The HAIP issuer plan (`attest_jwt_client_auth`, #229) and the OpenID4VP
   verifier plan's `x509_san_dns` and `x509_hash` variants (#230) waited on
   those tickets and run since 2026-09-26.
+
+### THE OPENID CONNECT RELYING PARTY PLANS (#930, 2026-11-02)
+
+`docs/conformance.md` said the relying-party plans were not run because
+this service is nobody's relying party but its own. An inbound OpenID
+Connect federation relationship makes it one, and
+`tests/protocol/sts_oidcc_rp_conformance.js` runs eleven plans against such
+a relationship: basic, implicit, hybrid, config, dynamic, the three
+form_post ones, `oidcc-client-test-3rd-party-init-login-test-plan`,
+`oidcc-client-logout-test-plan` and `oidcc-client-refreshtoken-test-plan`.
+What it needed in the service is `federation/CLAUDE.md`'s *THE OPENID
+CONNECT RELYING PARTY PLANS*.
+
+* **The suite is the OpenID Provider** at `…/test/a/<alias>/`, one alias
+  per plan, and the relationship's `fedPeer`. Each plan is a throwaway realm
+  with one service-provider-side `oidc` relationship and a client id and
+  secret made at run time. The plan's static client names them, with the
+  relationship's assertion consumer service as `redirect_uri`. Its sign-out
+  and `initiate_login_uri` addresses are read off the relationship's view
+  (`/admin-api/federation?relationship=`), never composed. The config plan's
+  relationship sets `fedDiscovery` and no endpoint; the others are given the
+  suite's `authorize`, `token`, `userinfo` and `jwks`.
+* **One relationship, every response type.** A plan's modules span up to
+  three response types (hybrid) on one `redirect_uri`, so before each module
+  the job sets `fedResponseType` to the module's, as an administrator would.
+  `fedResponseMode` is `fragment` for the plans whose response mode is the
+  specification's default (the suite answers by fragment whatever is asked)
+  and `form_post` for the three formpost plans.
+* **The person starts at the relying party.** The suite lists no address in
+  these plans. `conformance_browser.js`'s `start()` opens
+  `/federation/login/{id}` in the one Chrome, which follows the suite's
+  authorization endpoint back to the assertion consumer service. The
+  address is not reported to the suite as visited. The logout modules that
+  want RP-Initiated Logout then `signOut()`: `/logout`, the sign-out of
+  every session (`button.global`), and the partner's link on the signed-out
+  page, followed as far as it goes. Whatever a module lists — the
+  third-party-initiated login's `initiate_login_uri`, the OP-initiated
+  front-channel page — is visited as in the provider plans.
+* **Argued, not passed** (`EXPECTED` and `EXPECTED_PLANS` in the driver): the
+  refresh-token plan, the logout plan's session-management module and the
+  whole dynamic plan, each a decision `federation/CLAUDE.md` records. A
+  module argued to wait out its time is given `ARGUED_SECONDS` (30) through
+  `runModule()`'s new deadline argument rather than `MODULE_SECONDS`, and is
+  not run again.
+* **No classical twin.** The relying party signs and publishes nothing the
+  suite reads in these plans, so no ledger entry concerns a post-quantum key,
+  which is the FAPI job's position. A dynamic plan built later would need
+  one: its request objects and registered JWKS would be the realm's keys.
+* **A lane of its own** (`conformance-rp`), beside the OpenID Provider job's
+  four-and-a-half-hour lane, so the conformance bound does not grow:
+  about two hundred modules, most a sign-in of a few seconds or a negative
+  module's five-second wait. A two-hour watchdog.
 
 **By hand, beside a service of your own**: start the three images on one
 docker network with the aliases above (`mongodb`, `server`,

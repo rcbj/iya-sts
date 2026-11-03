@@ -31,7 +31,7 @@ const log = bunyan.createLogger({ name: 'MANIFEST',
 // `browser: true` means the job drives Chrome through selenium-webdriver. There
 // are THREE that are coverage of this working tree's own pages, which is why
 // `--no-browser` names them when it leaves them out — and, since #571, the
-// four OpenID conformance drivers whose plans sign somebody in, which play
+// five OpenID conformance drivers whose plans sign somebody in, which play
 // the suite's person in Chrome (`conformance_browser.js`) because the
 // suite's own browser cannot run the scripted sign-in screen. Those stay in
 // their conformance lanes: one Chrome each, one page at a time.
@@ -1339,6 +1339,18 @@ const JOBS = [
   // the plans, so the watchdog went from three hours to four and a half.
   { file: 'sts_oidcc_conformance.js',    browser: true,
     conformance: true, timeoutMs: 16200000, lane: 'conformance' },
+  // THE SAME SUITE AS THE OPENID PROVIDER (#930, 2026-11-02): its OpenID
+  // Connect relying-party plans — basic, implicit, hybrid, configuration,
+  // dynamic, the three form-post ones, third-party-initiated login, logout
+  // and refresh tokens — against an inbound OpenID Connect federation
+  // relationship, the one way this service is somebody's relying party. A
+  // lane of its own, `conformance-rp`, beside the OpenID Provider job's,
+  // which is the memory mode's long pole by hours: about two hundred
+  // modules, most a sign-in of a few seconds and a negative one's
+  // five-second wait. A two-hour watchdog. `local: true`: this repository's
+  // federation relying party. No classical twin (its header says why).
+  { file: 'sts_oidcc_rp_conformance.js', browser: true,
+    conformance: true, timeoutMs: 7200000, lane: 'conformance-rp' },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
   { file: 'sts_ssf_oidf_conformance.js', browser: false,

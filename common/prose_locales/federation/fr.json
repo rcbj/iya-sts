@@ -244,8 +244,8 @@
     "text": "LE SECRET DE CE SERVICE CHEZ LE PARTENAIRE, en clair, dans un annuaire où chaque bind réussit. C’est un VÉRITABLE identifiant auprès d’un VÉRITABLE service étranger, ce qui est une affirmation plus forte que tout le reste de cet annuaire — voir l’en-tête. Jamais écrit dans le journal d’audit et jamais affiché sur une page."
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "COMMENT LE CODE D’AUTORISATION REVIENT : query (la valeur par défaut, le code dans la redirection) ou form_post (OAuth 2.0 Form Post Response Mode), qu’exige Sign in with Apple dès qu’un nom ou une adresse est demandé. form_post arrive sous forme de POST intersite, si bien qu’un navigateur ne lui envoie aucun cookie SameSite=Lax."
+    "en": "fdcac3938c7dc0ec",
+    "text": "COMMENT LA RÉPONSE D’AUTORISATION REVIENT. Vide, la valeur par défaut : query pour code, et form_post (OAuth 2.0 Form Post Response Mode) pour un type de réponse OpenID Connect portant un ID Token ou un jeton d’accès. form_post, qu’exige Sign in with Apple dès qu’un nom ou une adresse est demandé, arrive sous forme de POST intersite, si bien qu’un navigateur ne lui envoie aucun cookie SameSite=Lax. fragment, OpenID Connect seulement, est la valeur par défaut de ces types de réponse dans la spécification : la réponse est dans le fragment de l’URL, et une page munie d’un script ici la transmet. Il place l’ID Token dans l’historique du navigateur, ce que form_post ne fait pas : ne l’utilisez que pour un partenaire qui ne peut pas poster. query ne peut porter ni un ID Token ni un jeton d’accès."
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,16 @@
     "text": "La portée demandée au partenaire. `openid profile email` est la valeur par défaut pour une relation OIDC et il n’y a pas de valeur par défaut pour une relation OAuth 2.0, car ce qu’un serveur d’autorisation OAuth 2.0 vous accordera lui est entièrement propre."
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code (la valeur par défaut) ou id_token. `id_token` avec form_post est la forme qui n’a besoin d’AUCUN canal de retour, donc d’aucun point de terminaison de jeton, d’aucun secret client et d’aucune requête sortante — c’est la seule façon de se fédérer avec un partenaire OIDC depuis un déploiement qui n’a aucun accès sortant."
+    "en": "885dc55158b43f26",
+    "text": "code (la valeur par défaut), id_token, ou l’un des quatre autres d’OpenID Connect : id_token token (implicite), code id_token, code token et code id_token token (hybrides). `id_token` avec form_post est la forme qui n’a besoin d’AUCUN canal arrière, donc d’aucun point de terminaison de jeton, d’aucun secret client ni d’aucune requête sortante — la seule façon de se fédérer avec un partenaire OIDC depuis un déploiement sans aucune sortie réseau. Un ID Token venu du point de terminaison d’autorisation doit porter le nonce, ainsi que c_hash et at_hash partout où un code ou un jeton d’accès l’accompagnait."
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "OPENID CONNECT SEULEMENT. TRUE lit les points de terminaison du partenaire et son jwks_uri dans son document de découverte, {fedPeer}/.well-known/openid-configuration, au début de chaque connexion (OpenID Connect Discovery 1.0 section 4), dont l’issuer doit être exactement fedPeer ; fedSsoUrl, fedTokenUrl, fedUserinfoUrl et fedJwksUri ne sont alors pas lus. L’adresse est dérivée de fedPeer, qu’un administrateur a configuré, et jamais d’une requête. FALSE, la valeur par défaut : les points de terminaison sont configurés à la main."
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "OPENID CONNECT SEULEMENT. TRUE répond au point de terminaison d’initiation de connexion de cette relation, /federation/initiate-login/{id}, que le partenaire enregistre comme initiate_login_uri (OpenID Connect Core 1.0 section 4) : une connexion que le PARTENAIRE lance, en se nommant dans iss, qui doit être fedPeer. Un login_hint est transmis, et un target_link_uri n’est suivi que vers un chemin de ce service. FALSE, la valeur par défaut, la refuse : sinon n’importe quelle page pourrait lancer une connexion dans le navigateur d’une personne."
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",

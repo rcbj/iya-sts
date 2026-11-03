@@ -2571,6 +2571,18 @@
     "en": "2f7afe4a35fac4a3",
     "text": "skickar webbläsaren till en UTOMSTÅENDE identitetsleverantör — en <AuthnRequest>, en URL för överföring mellan webbplatser, wa=wsignin1.0 eller en OAuth 2.0-auktoriseringsbegäran, beroende på vad relationen anger"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 avsnitt 4 (#930): slutpunkten för att initiera inloggning som en OpenID Connect-relation registrerar hos sin partner som initiate_login_uri, med GET eller POST. AVVISAS (403) om inte relationen anger fedInitiateLogin, eftersom vilken sida som helst kan skicka en webbläsare hit; `iss` är OBLIGATORISK och måste vara relationens fedPeer (annars 400); `login_hint` skickas vidare till partnern; `target_link_uri` följs endast till en sökväg på den här tjänsten och släpps annars, så slutpunkten är ingen öppen omdirigerare."
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "skickar webbläsaren till partnerns OpenID-leverantör med en vanlig auktoriseringsbegäran, som /federation/login/{id} gör"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "ICKE-SPECIFICERAD resurs för en specificerad slutpunkt (#930): det enda skript som påståendekonsumenttjänstens sida kör när en OpenID Connect-relation har valt fedResponseMode=fragment. Ett fragment når aldrig en server, så sidan läser det, tar bort det från adressen och historikposten och POSTar det till samma adress, där det konsumeras som ett form_post-svar. Ingen märkning kan läsa ett fragment, så det finns ingen knapp att falla tillbaka på."
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "EN SÖKVÄG TAR EMOT ALLA FEM PROTOKOLLEN: fem skulle innebära fem URL:er att konfigurera hos en partner och fyra sätt att konfigurera fel, vars misslyckande är en 404 i en webbläsare EFTER en lyckad inloggning någon annanstans. **DETTA ÄR DEN ENDA SLUTPUNKTEN I DEN HÄR TJÄNSTEN SOM INTE ÄR TILLÅTANDE, OCH DEN KAN INTE VARA DET.** Det som anländer är en oautentiserad HTTP-begäran som påstår sig vara en person; det enda mellan den och en session är signaturkontrollen mot certifikatet som är konfigurerat på relationen. Alltså: signaturen måste verifieras mot DEN nyckeln och inte mot en som dokumentet hade med sig, utfärdaren måste vara den konfigurerade partnern, intyget måste vara inom sitt giltighetsfönster, och svaret måste besvara en begäran som den här tjänsten skickade om inte fedAllowUnsolicited säger annat. Varje vägran ritar en sida som namnger kontrollen och skriver fedLastError på relationen — den omdirigerar aldrig, eftersom personens inloggning redan lyckades hos partnern och den enda intressanta frågan är vad den här tjänsten ogillade i svaret. Ett KRYPTERAT intyg, en krypterad identifierare eller ett krypterat attribut, eller en JWE ID Token, dekrypteras med relationens egen nyckel under exakt de algoritmer den publicerar och dess signatur kontrolleras på det som fanns inuti (#168); varje dekrypteringsfel är en och samma kod, så svaret är inget orakel; AES-CBC och rsa-1_5 vägras i alla lägen, och ett intyg i KLARTEXT vägras i produktläge om inte relationen sätter fedAllowUnencrypted."

@@ -1531,6 +1531,14 @@
     "en": "561e36f4539a01de",
     "text": "Starta en federerad inloggning"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "En inloggning som partnern startar (initiate_login_uri)"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "Påståendekonsumenttjänstens fragmentskript"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "Assertion consumer service / wreply / redirect_uri"

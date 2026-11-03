@@ -2571,6 +2571,18 @@
     "en": "2f7afe4a35fac4a3",
     "text": "envoie le navigateur vers un fournisseur d’identité ÉTRANGER — une <AuthnRequest>, une URL de transfert intersite, wa=wsignin1.0 ou une requête d’autorisation OAuth 2.0, selon ce que dit la relation"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 section 4 (#930) : le point de terminaison d’initiation de connexion qu’une relation OpenID Connect enregistre chez son partenaire comme initiate_login_uri, en GET ou en POST. REFUSÉ (403) sauf si la relation définit fedInitiateLogin, car n’importe quelle page peut envoyer un navigateur ici ; `iss` est OBLIGATOIRE et doit être le fedPeer de la relation (400 sinon) ; `login_hint` est transmis au partenaire ; `target_link_uri` n’est suivi que vers un chemin de ce service et abandonné sinon, si bien que le point de terminaison n’est pas une redirection ouverte."
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "envoie le navigateur au fournisseur OpenID partenaire avec une demande d’autorisation ordinaire, comme le fait /federation/login/{id}"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "Ressource HORS SPÉCIFICATION d’un point de terminaison de spécification (#930) : le seul script qu’exécute la page du service consommateur d’assertions quand une relation OpenID Connect a choisi fedResponseMode=fragment. Un fragment n’atteint jamais un serveur, donc la page le lit, le retire de l’adresse et de l’entrée d’historique, et le POSTe à la même adresse, où il est consommé comme une réponse form_post. Aucun balisage ne peut lire un fragment, il n’y a donc pas de bouton de repli."
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "UN SEUL CHEMIN REÇOIT LES CINQ PROTOCOLES : cinq chemins signifieraient cinq URL à configurer chez un partenaire et quatre façons de configurer la mauvaise, dont l’échec est une 404 dans un navigateur APRÈS une connexion réussie ailleurs. **C’EST LE SEUL POINT DE TERMINAISON DE CE SERVICE QUI N’EST PAS PERMISSIF, ET QUI NE PEUT PAS L’ÊTRE.** Ce qui arrive est une requête HTTP non authentifiée prétendant être une personne ; la seule chose qui la sépare d’une session est la vérification de la signature au regard du certificat configuré sur la relation. Donc : la signature doit se vérifier avec CETTE clé et non avec une clé apportée par le document, l’émetteur doit être le partenaire configuré, l’assertion doit être dans sa fenêtre de validité, et la réponse doit répondre à une requête envoyée par ce service, sauf si fedAllowUnsolicited en dispose autrement. Chaque refus affiche une page nommant le contrôle et écrit fedLastError sur la relation — il ne redirige jamais, car la connexion de la personne a déjà réussi chez le partenaire et la seule question intéressante est ce que ce service a reproché à la réponse. Une assertion, un identifiant ou un attribut CHIFFRÉ, ou un ID Token JWE, est déchiffré avec la clé propre de la relation selon exactement les algorithmes qu’elle publie, et sa signature est vérifiée sur ce qu’il contenait (#168) ; chaque échec de déchiffrement porte un seul et même code, de sorte que la réponse ne sert pas d’oracle ; AES-CBC et rsa-1_5 sont refusés dans tous les modes, et une assertion EN CLAIR est refusée en mode produit sauf si la relation définit fedAllowUnencrypted."

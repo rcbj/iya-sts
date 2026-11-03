@@ -244,8 +244,8 @@
     "text": "本服务在伙伴处的密钥，以明文存放在一个任何绑定都会成功的目录中。它是真实外部服务上的真实凭据，这比此目录中的任何其他内容都更值得重视——参见标题。从不写入审计日志，也从不在页面上打印。"
   },
   "fed.schema.attributes.fedResponseMode.what": {
-    "en": "07cfe6e4177873df",
-    "text": "授权码的返回方式：query（默认值，代码在重定向中）或 form_post（OAuth 2.0 Form Post Response Mode）；只要请求姓名或地址，Sign in with Apple 就要求使用后者。form_post 以跨站 POST 的方式到达，因此浏览器不会随之发送任何 SameSite=Lax Cookie。"
+    "en": "fdcac3938c7dc0ec",
+    "text": "授权响应如何返回。为空即默认值：code 使用 query，携带 ID Token 或访问令牌的 OpenID Connect 响应类型使用 form_post（OAuth 2.0 Form Post Response Mode）。Sign in with Apple 在请求姓名或地址时要求使用 form_post，它以跨站 POST 的形式到达，因此浏览器不会随之发送 SameSite=Lax cookie。fragment 仅限 OpenID Connect，是规范中这些响应类型的默认值：响应位于 URL 片段中，由此处一个带脚本的页面转交。它会把 ID Token 留在浏览器历史记录中，而 form_post 不会：仅对无法发送 POST 的合作伙伴使用。query 无法携带 ID Token 或访问令牌。"
   },
   "fed.schema.attributes.fedAllowedTenants.what": {
     "en": "1436122fe8c92048",
@@ -276,8 +276,16 @@
     "text": "向伙伴请求的作用域。OIDC 关系的默认值为 `openid profile email`，OAuth 2.0 关系没有默认值，因为 OAuth 2.0 授权服务器会给您什么完全取决于它自己。"
   },
   "fed.schema.attributes.fedResponseType.what": {
-    "en": "b2682d37a527ee98",
-    "text": "code（默认）或 id_token。带 form_post 的 `id_token` 是一种不需要反向通道的形式，因此不需要令牌端点、客户端密钥或出站请求——这是在完全没有出站访问的部署中与 OIDC 伙伴联合的唯一方式。"
+    "en": "885dc55158b43f26",
+    "text": "code（默认值）、id_token，或 OpenID Connect 的其他四种之一：id_token token（隐式）、code id_token、code token 和 code id_token token（混合）。`id_token` 配合 form_post 是“不需要”后端通道的形式，因此不需要令牌端点、客户端密钥，也没有出站请求——这是在完全没有出站连接的部署中与 OIDC 合作伙伴联合的唯一方式。来自授权端点的 ID Token 必须携带 nonce，并且凡是随附了代码或访问令牌之处都必须携带 c_hash 和 at_hash。"
+  },
+  "fed.schema.attributes.fedDiscovery.what": {
+    "en": "bec8778c7adc894f",
+    "text": "仅限 OPENID CONNECT。TRUE 会在每次登录开始时（OpenID Connect Discovery 1.0 第 4 节）从合作伙伴的发现文档 {fedPeer}/.well-known/openid-configuration 读取其端点和 jwks_uri，该文档的 issuer 必须与 fedPeer 完全一致；此时不读取 fedSsoUrl、fedTokenUrl、fedUserinfoUrl 和 fedJwksUri。该地址由管理员配置的 fedPeer 推导而来，绝不来自请求。FALSE 为默认值：端点由人工配置。"
+  },
+  "fed.schema.attributes.fedInitiateLogin.what": {
+    "en": "f4c27cf4c2c9aa2c",
+    "text": "仅限 OPENID CONNECT。TRUE 会响应此关系的登录发起端点 /federation/initiate-login/{id}，合作伙伴将其注册为 initiate_login_uri（OpenID Connect Core 1.0 第 4 节）：由合作伙伴发起的登录，在 iss 中标明自身，且 iss 必须是 fedPeer。login_hint 会被转交，target_link_uri 仅在指向本服务上的路径时才会被跟随。FALSE 为默认值，会拒绝它：否则任何页面都可以在某人的浏览器中发起登录。"
   },
   "fed.schema.attributes.fedBinding.what": {
     "en": "a10d4406a67b3b1f",

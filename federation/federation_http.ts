@@ -1898,11 +1898,72 @@ class FederationHttp {
                                     'fedResponseType=id_token and its ' +
                                     'keys in fedJwks' });
     }
-    const raw = String((record && record[attribute]) || '');
+    log.debug("Leaving FederationHttp.fetchJson(). Dialling.");
+    return this.dial(record, attribute,
+                     String((record && record[attribute]) || ''), opts);
+  }
+
+  // -------------------------------------------------------------------------
+  // A PARTNER'S DISCOVERY DOCUMENT (#930), the fifth thing a relationship
+  // may dial, and a separate argument in a separate function as the header
+  // requires rather than a fifth name in DIALLABLE. Its address is not an
+  // attribute: it is {fedPeer}/.well-known/openid-configuration (OpenID
+  // Connect Discovery 1.0 section 4), DERIVED from the issuer an
+  // administrator configured and from nothing a request carries — the same
+  // provenance DIALLABLE stands on, one step removed. Only for a
+  // relationship that asked for it (`fedDiscovery`), and under every rule
+  // `fetchJson()` keeps: the kill switch, the transport policy, no
+  // redirect, the cap, the timeout. What comes back is judged by the
+  // caller: its issuer must be fedPeer exactly.
+  // -------------------------------------------------------------------------
+  /**
+   * Fetches an OpenID Connect relationship's discovery document, from the
+   * address its `fedPeer` names. Never rejects.
+   *
+   * @param record - the federation relationship, with `fedDiscovery` on
+   * @returns a promise of `{ ok, status, json, text, url, errorCode, why }`
+   */
+  fetchDiscovery(record: any): Promise<FetchResult> {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.fetchDiscovery().");
+    // The register's own `discovers()` is the caller's to ask (this module
+    // does not require federation.js — see its header); the attribute is
+    // read here as a second, cheaper guard.
+    if (!record || record.fedProtocol !== 'oidc' ||
+        !/^(true|yes|1|on)$/i.test(String(record.fedDiscovery || '').trim())) {
+      log.debug("Leaving FederationHttp.fetchDiscovery(). Not asked for.");
+      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                               url: '', errorCode: 'STS-FED-0046',
+                               why: 'this relationship does not read its ' +
+                                    'partner\'s discovery document ' +
+                                    '(fedDiscovery is off)' });
+    }
+    if (!this.outboundAllowed()) {
+      log.debug("Leaving FederationHttp.fetchDiscovery(). Outbound is off.");
+      return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                               url: '', errorCode: 'STS-FED-0047',
+                               why: 'federation.outbound is off, so this ' +
+                                    'service fetches no discovery document' });
+    }
+    const url = String(record.fedPeer || '').trim().replace(/\/+$/, '') +
+      '/.well-known/openid-configuration';
+    log.debug("Leaving FederationHttp.fetchDiscovery(). " + url);
+    return this.dial(record, 'the discovery document of fedPeer', url,
+                     { method: 'GET' });
+  }
+
+  // The request itself, for fetchJson() and fetchDiscovery(): `raw` is the
+  // address their own rules allowed, and `attribute` names it in a message.
+  private dial(record: any, attribute: string, raw: string,
+               options?: FetchOptions): Promise<FetchResult> {
+    const { log } = this.deps;
+    log.debug("Entering FederationHttp.dial().");
+    const opts = options || {};
+    const id = (record && record.fedId) || '?';
     const problem = this.urlVerdict(raw);
     if (problem.why) {
-      log.debug("Leaving FederationHttp.fetchJson(). " + problem.why);
-      log.debug("Leaving FederationHttp.fetchJson().");
+      log.debug("Leaving FederationHttp.dial(). " + problem.why);
+      log.debug("Leaving FederationHttp.dial().");
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
                                url: raw,
                                errorCode: problem.errorCode || 'STS-FED-0048',
@@ -1921,7 +1982,7 @@ class FederationHttp {
     }
     const policy = this.tlsFor(target.origin);
     if (secure && !policy.ok) {
-      log.debug("Leaving FederationHttp.fetchJson(). " + policy.why);
+      log.debug("Leaving FederationHttp.dial(). " + policy.why);
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
                                url: raw, errorCode: policy.errorCode,
                                why: attribute + ' cannot be dialled: ' +
@@ -1948,11 +2009,11 @@ class FederationHttp {
 
     const cap = this.maxBodyBytes();
     const transport = secure ? this.deps.https : this.deps.http;
-    log.debug("Leaving FederationHttp.fetchJson().");
+    log.debug("Leaving FederationHttp.dial().");
     return new Promise<FetchResult>((resolve) => {
       const done = function (result) {
         log.debug("Entering done().");
-        log.debug("Leaving FederationHttp.fetchJson(). ok=" + result.ok +
+        log.debug("Leaving FederationHttp.dial(). ok=" + result.ok +
                   ', status=' + result.status);
         resolve(Object.assign({ url: raw }, result));
         log.debug("Leaving done().");
@@ -2024,7 +2085,7 @@ class FederationHttp {
             try {
               json = JSON.parse(text);
             } catch (e) {
-              log.debug("Caught in a callback in fetchJson(): " +
+              log.debug("Caught in a callback in dial(): " +
                         ((e && e.message) || e));
               // Not JSON. Kept rather than failed here, because an OAuth
               // error is often served as HTML by a proxy in front of the
@@ -2048,7 +2109,7 @@ class FederationHttp {
           });
         });
       } catch (e) {
-        log.debug("Caught in FederationHttp.fetchJson(): " +
+        log.debug("Caught in FederationHttp.dial(): " +
                   ((e && e.message) || e));
         // A malformed option rather than a network failure — new URL() has
         // already succeeded by here, so this is a bug in the caller and is
@@ -2183,6 +2244,10 @@ export = {
    * Forwards to `FederationHttp.fetchJson()`.
    */
   fetchJson: slot.forward('fetchJson'),
+  /**
+   * Forwards to `FederationHttp.fetchDiscovery()`.
+   */
+  fetchDiscovery: slot.forward('fetchDiscovery'),
   /**
    * Forwards to `FederationHttp.outboundAllowed()`.
    */

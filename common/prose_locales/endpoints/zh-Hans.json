@@ -1531,6 +1531,14 @@
     "en": "561e36f4539a01de",
     "text": "开始联合登录"
   },
+  "endpoints.route./federation/initiate-login/:id.name": {
+    "en": "b8fb585dd54cd123",
+    "text": "由合作伙伴发起的登录（initiate_login_uri）"
+  },
+  "endpoints.route./federation/fragment.js.name": {
+    "en": "87060058ad2ae994",
+    "text": "断言消费服务的片段脚本"
+  },
   "endpoints.route./federation/acs/:id.name": {
     "en": "fff6118cbd019f5e",
     "text": "断言使用者服务 / wreply / redirect_uri"

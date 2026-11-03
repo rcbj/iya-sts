@@ -13140,7 +13140,9 @@ class AdminViews {
               'fedProvisionGroups',
               'fedMayAssertAdministrators', 'fedSignRequest',
               'fedAllowUnsolicited', 'fedAcceptSignout',
-              'fedRequireSignedLogout', 'fedAllowUnencrypted']
+              'fedRequireSignedLogout', 'fedAllowUnencrypted',
+              // #930's two OpenID Connect switches.
+              'fedDiscovery', 'fedInitiateLogin']
         .indexOf(field.name) === -1 &&
         // A Trust Anchor to discover the OP through (#134) is OpenID
         // Connect's alone.
@@ -13235,7 +13237,15 @@ class AdminViews {
                                   row.protocol === 'saml11' ||
                                   row.protocol === 'wsfed')
                          ? metadata : null,
-                       jwks: jwks },
+                       jwks: jwks,
+                       // What an OpenID Connect partner registers as
+                       // initiate_login_uri (#930), answered only while
+                       // fedInitiateLogin is on.
+                       initiateLogin: row.protocol === 'oidc' &&
+                         row.role === 'service-provider'
+                         ? base + federation.PATHS.initiateLogin + '/' +
+                           encodeURIComponent(row.id)
+                         : null },
                        row.role === 'service-provider' ? signOut : {}),
           // The whole record, MINUS the one sensitive field. `fedClientSecret`
           // is replaced by a boolean saying whether one is set — which is the

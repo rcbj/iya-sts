@@ -49,6 +49,7 @@ Every suite below passed in the full runs of 2026-09-26 and 2026-09-27.
 | Area | Suite | Published by | Scale |
 |---|---|---|---|
 | OpenID Connect, OAuth 2.0 | [OpenID conformance suite](#the-openid-foundation-conformance-suite), `release-v5.3.1` | OpenID Foundation | 9 OP certification profiles, `oidcc-test-plan` × 5 client authentications × 3 response modes, 4 logout plans, Identity Assurance |
+| OpenID Connect, relying party | the same suite | OpenID Foundation | the relying-party plans (Basic, Implicit, Hybrid, Config, Dynamic, the three form_post plans, third-party-initiated login, logout, refresh tokens) against a [federation relationship](federation.md), added 2026-11-02 |
 | FAPI | the same suite | OpenID Foundation | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced, FAPI-CIBA, with their variants |
 | Shared Signals, CAEP | the same suite | OpenID Foundation | SSF transmitter and CAEP interop transmitter, by push and by poll |
 | OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, and automatic registration into a federation the suite plays |
@@ -87,6 +88,7 @@ the End-User for the OpenID4VP verifier.
 | Job | Plans |
 |---|---|
 | `sts_oidcc_conformance` | the nine OP certification profiles (Basic with dynamic and static clients, Implicit, Hybrid, Config, Dynamic, the three form_post profiles, 3rd-party-initiated login); `oidcc-test-plan` once per client authentication (`client_secret_basic`, `client_secret_post`, `client_secret_jwt`, `private_key_jwt`, mutual TLS) across query, fragment and form_post; RP-Initiated, Front-Channel, Back-Channel and Session Management logout; Identity Assurance (`ekyc-test-plan-oidccore`) |
+| `sts_oidcc_rp_conformance` | the relying-party plans, with iya-sts as the relying party of an inbound OpenID Connect [federation relationship](federation.md) and the suite as the OpenID Provider: Basic, Implicit and Hybrid (every response type), Config (the endpoints read from the provider's discovery document), Dynamic, the three form_post plans, third-party-initiated login, logout (RP-Initiated, Back-Channel and Front-Channel, OP- and RP-initiated) and refresh tokens |
 | `sts_fapi_conformance` | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing (with Grant Management), FAPI 1.0 Advanced (with PAR and JARM), FAPI-CIBA (poll and ping), with mutual TLS as both client authentication and sender constraint |
 | `sts_ssf_oidf_conformance` | the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll |
 | `sts_ssf_receiver_conformance` | the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, against a realm receiving through a signals-only federation relationship; the job also checks that the suite's CAEP `session-revoked` ended the person's sessions |
@@ -117,6 +119,28 @@ the End-User for the OpenID4VP verifier.
   [Accept an ISO mdoc](configure-oid4vp.md#accept-an-iso-mdoc)), and both
   HAIP variants pass, the classical twins with no exemption.
 
+**What the relying-party plans needed**, built in every mode
+([federation](federation.md#openid-connect-as-the-relying-party)):
+
+* An ID Token without `sub`, `iat` or `exp`, with an `azp` that is not
+  iya-sts's client, or without the `nonce` iya-sts sent is refused. A
+  code-flow ID Token without the nonce used to be accepted with a warning.
+* A UserInfo answer for another `sub` refuses the sign-in.
+* The implicit `id_token token` and the three hybrid response types, with
+  `c_hash` and `at_hash` checked before the code is redeemed.
+* The fragment response mode, the specification's default for those types.
+* Reading the provider's endpoints from its discovery document, and a sign-in
+  the provider starts (`initiate_login_uri`). Both are off by default.
+
+**Relying-party modules that are argued, not passed:** the refresh-token
+plan, because iya-sts keeps no refresh token issued by a partner; the logout
+plan's Session Management module, because iya-sts does not poll a partner's
+`check_session_iframe` (Back-Channel Logout tells it the same thing); and the
+Dynamic plan, because a relationship is configured by an administrator rather
+than registered by iya-sts itself, found by WebFinger, or sent request
+objects by reference. Each is a documented design decision on the
+[federation page](federation.md#openid-connect-as-the-relying-party).
+
 **Every plan twice, with post-quantum signing on and off.** The suite cannot
 parse a post-quantum (`AKP`) key and its JWS algorithm table lacks SLH-DSA
 and the composite ML-DSA algorithms, so in a realm that publishes them some
@@ -127,7 +151,8 @@ realm with [`keys.postQuantumSigning`](oauth-oidc.md#post-quantum-signing-switch
 off, where none of those exemptions applies: a twin that passes is a clean
 result with nothing post-quantum excused. The FAPI plans already pass with
 no such exemption, and so do the SSF receiver plans, in which the suite
-verifies nothing the realm signs.
+verifies nothing the realm signs, and the relying-party plans: iya-sts signs
+and publishes nothing the suite reads in them.
 
 **Warnings that stay.** In the post-quantum realms, every module warns that
 the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Connect realms turn off
@@ -137,8 +162,6 @@ check.
 
 **Not run, and why:**
 
-* The relying-party plans: this service is no one's relying party but its
-  own.
 * The Brazil, panva and superseded-draft plans, and AuthZEN.
 * FAPI 1.0 Baseline: the suite no longer publishes a plan for it, so the
   repository's own `sts_fapi_baseline.js` is Baseline's only check.

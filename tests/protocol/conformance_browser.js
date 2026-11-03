@@ -41,6 +41,12 @@
 //   * A page of the suite's own (Session Management's check page) is opened
 //     and given time for its script.
 //
+// AND IN THE RELYING-PARTY PLANS (#930), where the suite is the OpenID
+// Provider and lists nothing to visit, the person STARTS at this service —
+// `start()` opens a federation relationship's /federation/login/{id} and
+// follows it through the suite and back — and `signOut()` signs out here and
+// follows the partner's RP-Initiated Logout link the signed-out page offers.
+//
 // THE PERSON'S BROWSER IS ONE BROWSER. Everything a module's person does —
 // the authorization, the second authorization that finds the session, the
 // end-session page — happens in this Chrome, because a session is a cookie
@@ -170,7 +176,8 @@ function serially(work) {
  *
  * @param {object} o - `suite(method, path, body, contentType)` (the driver's
  *   client of the suite's API), `suiteBase` (its base URL), `serviceBase`
- *   (this service's root), `username`, `password` and `actions`: module
+ *   (this service's root), `username`, `password`, `markFirst` (report a
+ *   listed address visited before opening it, #930) and `actions`: module
  *   name → `cancel`, `load-only`, `photograph` or `photograph-only`, a key
  *   ending in `*` matching by prefix and one beginning `*` by suffix
  * @returns {object} `{ visit(id, info) }`, a driver's `onWaiting`
@@ -210,6 +217,35 @@ function person(o) {
         // `load-only` is the FIRST visit's: the reused-request_uri module
         // then asks for the same request again and expects a sign-in.
         return action === "load-only" && visits[id] > 1 ? "sign-in" : action;
+      });
+    },
+    // THE PERSON STARTS AT THE RELYING PARTY (#930). In the suite's
+    // relying-party plans the suite is the OpenID Provider and lists no
+    // address: a person begins where an application sends them — this
+    // service's /federation/login/{id} — and the browser carries them to
+    // the suite's authorization endpoint and back. The address is not the
+    // suite's, so it is not reported to the suite as visited.
+    start: function (id, info, url) {
+      log.debug("Entering start(). " + id);
+      log.debug("Leaving start().");
+      return serially(async function () {
+        log.debug("Entering the start.");
+        await visitOne(o, id, (info && info.testName) || "",
+                       { url: String(url), method: "GET", noMark: true },
+                       jars, "sign-in");
+        log.debug("Leaving the start.");
+      });
+    },
+    // AND SIGNS OUT THERE (#930): this service's /logout, the sign-out of
+    // every session, and the partner's RP-Initiated Logout link the
+    // signed-out page offers, followed as far as it goes.
+    signOut: function (id, info, base) {
+      log.debug("Entering signOut(). " + id);
+      log.debug("Leaving signOut().");
+      return serially(async function () {
+        log.debug("Entering the sign-out.");
+        await signOutOne(o, id, (info && info.testName) || "", base, jars);
+        log.debug("Leaving the sign-out.");
       });
     }
   };
@@ -413,130 +449,204 @@ async function visitOne(o, id, moduleName, one, jars, action) {
   const driver = await browser(o.serviceBase);
   await useJar(driver, jars, id);
   const suiteBase = String(o.suiteBase);
-  let signedIn = false;
-  let photographed = false;
   try {
-    await open(driver, one);
-    await o.suite("POST", "api/runner/browser/" + id + "/visit?url=" +
-                  encodeURIComponent(one.url));
-    for (let step = 0; step < 12; step++) {
-      const here = await currentUrl(driver);
-      let path = "";
-      try {
-        path = new URL(here).pathname;
-      } catch (e) {
-        log.debug("Caught in visitOne(): " + ((e && e.message) || e));
-        // No address yet (a navigation in flight): taken as no page.
-        path = "";
-      }
-      if (here.indexOf(suiteBase) === 0) {
-        // THE SUITE'S OWN PAGE: its callback reports to the suite once its
-        // script has run (`submission_complete`); a check page (Session
-        // Management's) moves on by itself, to a result page of the suite.
-        if (await present(driver, "submission_complete", 10000)) {
-          break;
-        }
-        if (await moved(driver, here, 20000)) {
-          continue;
-        }
-        break;
-      }
-      if (/\/authn\/login$/.test(path)) {
-        const form = await present(driver, "kc-login", 15000);
-        if (!form) {
-          await photograph(o, driver, id, "a sign-in screen that never drew");
-          break;
-        }
-        if (action === "load-only") {
-          // Loaded, and left: the module's next request is the point.
-          break;
-        }
-        if ((action === "photograph" || action === "photograph-only") &&
-            !photographed) {
-          photographed = true;
-          await photograph(o, driver, id, "the sign-in screen");
-          if (action === "photograph-only") {
-            break;
-          }
-        }
-        if (action === "cancel") {
-          await (await driver.findElement(By.id("kc-cancel"))).click();
-        } else if (!signedIn) {
-          signedIn = true;
-          const name = await driver.findElement(By.id("username"));
-          await name.clear();
-          await name.sendKeys(o.username);
-          const pw = await driver.findElements(By.id("password"));
-          if (pw.length) {
-            await pw[0].sendKeys(o.password);
-          }
-          await (await driver.findElement(By.id("kc-login"))).click();
-        } else {
-          // Refused, and drawn again: the evidence, and where it stops.
-          await photograph(o, driver, id, "a refused sign-in");
-          break;
-        }
-        await moved(driver, here, 15000);
-        continue;
-      }
-      // AN ADMINISTRATOR'S OFFERED SECOND FACTOR (#246), a page of the
-      // sign-in surface since #572: Ignore, as a person who only wants to
-      // sign in does. A REQUIRED set-up step has no Ignore, and is where
-      // the flow stops (photographed below, as any page that stays).
-      if (/\/authn\/mfa-setup$/.test(path)) {
-        const ignore = await present(driver, "mfa-setup-ignore", 10000);
-        if (ignore) {
-          await ignore.click();
-          await moved(driver, here, 15000);
-          continue;
-        }
-      }
-      if (/\/oauth2\/consent$/.test(path)) {
-        const allow = await present(driver, "consent-allow", 10000);
-        if (allow) {
-          await allow.click();
-          await moved(driver, here, 15000);
-          continue;
-        }
-      }
-      if (/\/oauth2\/logout$/.test(path)) {
-        // THE END-SESSION PAGE: photographed as the module's evidence, the
-        // confirmation pressed where there is one, and the return followed
-        // (front-channel's notification page returns by a refresh). A page
-        // that stays — a refusal, or a logout with nowhere to return to —
-        // is where the flow ends, which is what those modules want.
-        const yes = await driver.findElements(
-          By.xpath("//button[@value='yes']"));
-        if (yes.length) {
-          await photograph(o, driver, id, "the end-session page");
-          await yes[0].click();
-          if (await moved(driver, here, 20000)) {
-            continue;
-          }
-          break;
-        }
-        if (await moved(driver, here, 20000)) {
-          continue;
-        }
-        await photograph(o, driver, id, "the page at " + path);
-        break;
-      }
-      // ANY OTHER PAGE OF THIS SERVICE: one that moves on (an auto-posting
-      // response, a redirect) is followed; one that stays is where the flow
-      // ends — an error page this service shows rather than redirecting —
-      // and is the module's evidence.
-      if (await moved(driver, here, SETTLE_MS)) {
-        continue;
-      }
-      await photograph(o, driver, id, "the page at " + path);
-      break;
+    // MARKED FIRST for a person who asks (#930): the third-party-initiated
+    // login module refuses an authorization request that arrives before the
+    // suite has recorded the visit to its initiate_login_uri, and opening
+    // that address sends the browser straight on to the suite.
+    if (!one.noMark && o.markFirst) {
+      await o.suite("POST", "api/runner/browser/" + id + "/visit?url=" +
+                    encodeURIComponent(one.url));
     }
+    await open(driver, one);
+    if (!one.noMark && !o.markFirst) {
+      await o.suite("POST", "api/runner/browser/" + id + "/visit?url=" +
+                    encodeURIComponent(one.url));
+    }
+    await follow(o, driver, id, action, suiteBase);
   } catch (e) {
     log.warn("The person's visit to " + one.url + " for " + moduleName +
              " stopped: " + ((e && e.message) || e));
   }
   await keepJar(driver, jars, id);
   log.debug("Leaving visitOne().");
+}
+
+// Where the browser goes from the page it is on, as a person would, until
+// it reaches the suite's callback or a page that stays.
+async function follow(o, driver, id, action, suiteBase) {
+  log.debug("Entering follow(). " + action);
+  let signedIn = false;
+  let photographed = false;
+  for (let step = 0; step < 12; step++) {
+    const here = await currentUrl(driver);
+    let path = "";
+    try {
+      path = new URL(here).pathname;
+    } catch (e) {
+      log.debug("Caught in visitOne(): " + ((e && e.message) || e));
+      // No address yet (a navigation in flight): taken as no page.
+      path = "";
+    }
+    if (here.indexOf(suiteBase) === 0) {
+      // THE SUITE'S OWN PAGE: its callback reports to the suite once its
+      // script has run (`submission_complete`); a check page (Session
+      // Management's) moves on by itself, to a result page of the suite.
+      if (await present(driver, "submission_complete", 10000)) {
+        break;
+      }
+      if (await moved(driver, here, 20000)) {
+        continue;
+      }
+      break;
+    }
+    if (/\/authn\/login$/.test(path)) {
+      const form = await present(driver, "kc-login", 15000);
+      if (!form) {
+        await photograph(o, driver, id, "a sign-in screen that never drew");
+        break;
+      }
+      if (action === "load-only") {
+        // Loaded, and left: the module's next request is the point.
+        break;
+      }
+      if ((action === "photograph" || action === "photograph-only") &&
+          !photographed) {
+        photographed = true;
+        await photograph(o, driver, id, "the sign-in screen");
+        if (action === "photograph-only") {
+          break;
+        }
+      }
+      if (action === "cancel") {
+        await (await driver.findElement(By.id("kc-cancel"))).click();
+      } else if (!signedIn) {
+        signedIn = true;
+        const name = await driver.findElement(By.id("username"));
+        await name.clear();
+        await name.sendKeys(o.username);
+        const pw = await driver.findElements(By.id("password"));
+        if (pw.length) {
+          await pw[0].sendKeys(o.password);
+        }
+        await (await driver.findElement(By.id("kc-login"))).click();
+      } else {
+        // Refused, and drawn again: the evidence, and where it stops.
+        await photograph(o, driver, id, "a refused sign-in");
+        break;
+      }
+      await moved(driver, here, 15000);
+      continue;
+    }
+    // AN ADMINISTRATOR'S OFFERED SECOND FACTOR (#246), a page of the
+    // sign-in surface since #572: Ignore, as a person who only wants to
+    // sign in does. A REQUIRED set-up step has no Ignore, and is where
+    // the flow stops (photographed below, as any page that stays).
+    if (/\/authn\/mfa-setup$/.test(path)) {
+      const ignore = await present(driver, "mfa-setup-ignore", 10000);
+      if (ignore) {
+        await ignore.click();
+        await moved(driver, here, 15000);
+        continue;
+      }
+    }
+    if (/\/oauth2\/consent$/.test(path)) {
+      const allow = await present(driver, "consent-allow", 10000);
+      if (allow) {
+        await allow.click();
+        await moved(driver, here, 15000);
+        continue;
+      }
+    }
+    if (/\/oauth2\/logout$/.test(path)) {
+      // THE END-SESSION PAGE: photographed as the module's evidence, the
+      // confirmation pressed where there is one, and the return followed
+      // (front-channel's notification page returns by a refresh). A page
+      // that stays — a refusal, or a logout with nowhere to return to —
+      // is where the flow ends, which is what those modules want.
+      const yes = await driver.findElements(
+        By.xpath("//button[@value='yes']"));
+      if (yes.length) {
+        await photograph(o, driver, id, "the end-session page");
+        await yes[0].click();
+        if (await moved(driver, here, 20000)) {
+          continue;
+        }
+        break;
+      }
+      if (await moved(driver, here, 20000)) {
+        continue;
+      }
+      await photograph(o, driver, id, "the page at " + path);
+      break;
+    }
+    // ANY OTHER PAGE OF THIS SERVICE: one that moves on (an auto-posting
+    // response, a redirect) is followed; one that stays is where the flow
+    // ends — an error page this service shows rather than redirecting —
+    // and is the module's evidence.
+    if (await moved(driver, here, SETTLE_MS)) {
+      continue;
+    }
+    await photograph(o, driver, id, "the page at " + path);
+    break;
+  }
+  log.debug("Leaving follow().");
+}
+
+// ---------------------------------------------------------------------------
+// A SIGN-OUT AT THIS SERVICE, carried to the partner (#930): /logout, the
+// sign-out of every session (`button.global`), and on the signed-out page the
+// link to the partner's end_session_endpoint (RP-Initiated Logout), which is
+// clicked and followed: the partner's front-channel page, its return to this
+// service's /federation/slo/{id}, or wherever it stops.
+// ---------------------------------------------------------------------------
+async function signOutOne(o, id, moduleName, base, jars) {
+  log.debug("Entering signOutOne(). " + moduleName);
+  const driver = await browser(o.serviceBase);
+  await useJar(driver, jars, id);
+  const suiteBase = String(o.suiteBase);
+  try {
+    await driver.get(String(base).replace(/\/+$/, "") + "/logout");
+    const end = Date.now() + 15000;
+    let global = null;
+    while (!global && Date.now() < end) {
+      const found = await driver.findElements(By.css("button.global"));
+      global = found.length ? found[0] : null;
+      if (!global) {
+        await waitMs(250);
+      }
+    }
+    if (!global) {
+      log.warn("The sign-out page for " + moduleName + " drew no sign-out " +
+               "button.");
+    } else {
+      await global.click();
+      const until = Date.now() + 20000;
+      let link = null;
+      while (!link && Date.now() < until) {
+        const links = await driver.findElements(
+          By.css("a[href^=\"" + suiteBase + "\"]"));
+        link = links.length ? links[0] : null;
+        if (!link) {
+          await waitMs(250);
+        }
+      }
+      if (!link) {
+        log.warn("The signed-out page for " + moduleName + " offered no " +
+                 "sign-out at the partner.");
+      } else {
+        const here = await currentUrl(driver);
+        await link.click();
+        await moved(driver, here, 15000);
+        await follow(o, driver, id, "sign-in", suiteBase);
+      }
+    }
+  } catch (e) {
+    log.warn("The person's sign-out for " + moduleName + " stopped: " +
+             ((e && e.message) || e));
+  }
+  await keepJar(driver, jars, id);
+  log.debug("Leaving signOutOne().");
 }
 
 module.exports = {

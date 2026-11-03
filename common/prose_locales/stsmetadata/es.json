@@ -2571,6 +2571,18 @@
     "en": "2f7afe4a35fac4a3",
     "text": "envía el navegador a un proveedor de identidad EXTERNO: una <AuthnRequest>, una URL de transferencia entre sitios, wa=wsignin1.0 o una solicitud de autorización OAuth 2.0, según lo que diga la relación"
   },
+  "stsmetadata.endpoints./federation/initiate-login/:id.what": {
+    "en": "13e887ac0bdf18ce",
+    "text": "OpenID Connect Core 1.0 sección 4 (#930): el punto de conexión de inicio de sesión que una relación OpenID Connect registra en su socio como initiate_login_uri, por GET o POST. RECHAZADO (403) salvo que la relación establezca fedInitiateLogin, porque cualquier página puede enviar un navegador aquí; `iss` es OBLIGATORIO y debe ser el fedPeer de la relación (400 si no); `login_hint` se transmite al socio; `target_link_uri` solo se sigue hacia una ruta de este servicio y se descarta en otro caso, de modo que el punto de conexión no es un redireccionador abierto."
+  },
+  "stsmetadata.endpoints./federation/initiate-login/:id.effect": {
+    "en": "a3604c921948a069",
+    "text": "envía el navegador al proveedor OpenID socio con una solicitud de autorización ordinaria, como hace /federation/login/{id}"
+  },
+  "stsmetadata.endpoints./federation/fragment.js.what": {
+    "en": "4717183880c5fc95",
+    "text": "Recurso NO ESPECIFICADO de un punto de conexión de especificación (#930): el único script que ejecuta la página del servicio consumidor de aserciones cuando una relación OpenID Connect eligió fedResponseMode=fragment. Un fragmento nunca llega a un servidor, así que la página lo lee, lo quita de la dirección y de la entrada del historial, y lo envía por POST a la misma dirección, donde se consume como una respuesta form_post. Ningún marcado puede leer un fragmento, así que no hay botón de reserva."
+  },
   "stsmetadata.endpoints./federation/acs/:id.what": {
     "en": "b08b39ce5a2fd9d9",
     "text": "UNA SOLA RUTA RECIBE LOS CINCO PROTOCOLOS: cinco significarían cinco URL que configurar en un socio y cuatro maneras de configurar la equivocada, cuyo fallo es un 404 en un navegador DESPUÉS de un inicio de sesión correcto en otro sitio. **ESTE ES EL ÚNICO ENDPOINT DE ESTE SERVICIO QUE NO ES PERMISIVO, NI PUEDE SERLO.** Lo que llega es una solicitud HTTP no autenticada que dice ser una persona; lo único que hay entre eso y una sesión es la comprobación de la firma contra el certificado configurado en la relación. Por tanto: la firma debe verificar contra ESA clave y no contra una que trajo el documento, el emisor debe ser el socio configurado, la aserción debe estar dentro de su ventana de validez, y la respuesta debe contestar a una solicitud que envió este servicio, salvo que fedAllowUnsolicited diga lo contrario. Cada rechazo dibuja una página que nombra la comprobación y escribe fedLastError en la relación; nunca redirige, porque el inicio de sesión de la persona ya tuvo éxito en el socio y la única pregunta interesante es qué no le gustó a este servicio de la respuesta. Una aserción, identificador o atributo CIFRADO, o un ID Token JWE, se descifra con la clave propia de la relación con exactamente los algoritmos que publica, y su firma se comprueba sobre lo que había dentro (#168); todo fallo de descifrado es un único código, para que la respuesta no sea un oráculo; AES-CBC y rsa-1_5 se rechazan en todos los modos, y una aserción en TEXTO PLANO se rechaza en modo producto salvo que la relación establezca fedAllowUnencrypted."
