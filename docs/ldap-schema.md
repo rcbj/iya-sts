@@ -113,6 +113,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `stsKrb5Keys`, `stsKrb5KeyInfo` | Kerberos long-term keys for every enctype, derived from the password, and their public half (kvno, enctypes, when) | keys **sealed and withheld**, including the ciphertext |
 | `hobaPublicKey` | RFC 7486 HOBA keys, `<kid> <base64 DER>` | public |
 | `stsSelfIssuedSubject` | SIOPv2 subjects the person enrolled (a DID or a JWK thumbprint URI), as JSON (#129) | withheld |
+| `stsPublishedDid` | Each did:web this realm publishes for the person, as JSON: its random id, the DID, who holds its key, every version of its keys and what authorized each, its deactivation, and in `realm` custody the private key, sealed (#1291). See [Published DIDs](person-dids.md) | withheld |
 | `stsCibaUserCode` | the CIBA user code the person set on `/portal/ciba` (#131) | scrypt-hashed, withheld |
 | `stsAudSub` | the account id a client knows the person by, `<client_id> <aud_sub>` per value, sent as that client's ID Token `aud_sub` (#148) | plain |
 | `stsClaimSourceTokens` | the person's access and refresh tokens at each Claims Provider they linked on `/portal/claim-sources`, one JSON value (#147) | **sealed** where keys persist, withheld |
@@ -486,7 +487,8 @@ included (`SECRET_ATTRIBUTES` in `ldap/ldap_server.js`):
 * passwords: `userPassword`, `pwdHistory`, `stsAppPassword`,
   `stsActivationToken`, `stsPasswordResetToken`, `stsMailVerifyToken`
 * second factors and subjects: `stsTotpCredential`, `stsBackupCodes`,
-  `stsSelfIssuedSubject`, `stsIdaVerification`, `stsCibaUserCode`
+  `stsSelfIssuedSubject`, `stsPublishedDid`, `stsIdaVerification`,
+  `stsCibaUserCode`
 * devices: `stsDeviceSecretHash`
 * client secrets: `oauthClientSecret`, `appRegistrationAccessToken`,
   `fedClientSecret`, `stsClaimProviderSecret`

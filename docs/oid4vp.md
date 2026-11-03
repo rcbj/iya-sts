@@ -527,6 +527,12 @@ never the Self-Issued OP itself.
   client allowed the `did` scope that the person consented to — see
   [Configure OIDC flows](configure-oidc-flows.md#release-a-persons-did-as-a-claim)
   for every condition. It is never released in a SAML assertion.
+* **A did:web this realm publishes.** Where `did.personPublishing` is on, a
+  person can have this realm create and publish a `did:web` for them on
+  `/portal/self-issued`. It is enrolled as one of their self-issued subjects,
+  its key is resolved from the realm's own history rather than fetched, and
+  the pin follows each new version of its keys. See
+  [Published DIDs](person-dids.md).
 * **With a presentation** (`response_type=vp_token id_token`), the ID Token
   must be signed by the presentation's holder key.
 * **A verification start** takes `response_type` `id_token` (or `vp_token

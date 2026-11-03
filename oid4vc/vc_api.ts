@@ -257,7 +257,11 @@ const vt = validation.types;
 const RESOLVE_QUERY = vz.object({
   did: vt.opt(vt.text),
   function: vt.opt(vt.oneOf(['resolve', 'resolveRepresentation'])),
-  accept: vt.opt(vt.text)
+  accept: vt.opt(vt.text),
+  // DID Core's version parameters (#1291), answered for a did:web this
+  // realm publishes for a person, whose versions it keeps.
+  versionId: vt.opt(vt.text),
+  versionTime: vt.opt(vt.text)
 });
 const DEREFERENCE_QUERY = vz.object({
   didUrl: vt.opt(vt.text),
@@ -1464,7 +1468,14 @@ class VcApi {
     const did = this.queryString(req, 'did') || '';
     const fn = this.queryString(req, 'function') || 'resolve';
     const accept = this.queryString(req, 'accept');
-    const options = accept === undefined ? {} : { accept: accept };
+    const options: any = accept === undefined ? {} : { accept: accept };
+    // The version a person's published DID is resolved at (#1291).
+    ['versionId', 'versionTime'].forEach((name) => {
+      const asked = this.queryString(req, name);
+      if (asked !== undefined) {
+        options[name] = asked;
+      }
+    });
     const out = fn === 'resolveRepresentation'
       ? await resolver.resolveRepresentation(did, options, req)
       : await resolver.resolve(did, options, req);
