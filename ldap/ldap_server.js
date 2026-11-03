@@ -8729,6 +8729,17 @@ function createUser(name, options) {
   // `application` (#539): the application that caused the create, whose
   // locale policy gives the person a language — SCIM's client; none from the
   // console or `/admin-api`, whose administrator is not the person's app.
+  // A DN THE STORE CANNOT HOLD (#677): a username long enough to make one
+  // is refused here, before putEntry(), which cannot be undone.
+  const keyRefusal = persistence.dnKeyRefusal(realms.currentId(),
+                                              normalizeDn(plan.dn));
+  if (keyRefusal) {
+    log.debug('Leaving createUser(). The DN is too long to store.');
+    return coded('STS-LDAP-0204', { ok: false, errors: ['"' +
+                                 wanted.slice(0, 48) + '…" cannot be ' +
+                                 'created: ' + keyRefusal + '. Choose a ' +
+                                 'shorter username.'] });
+  }
   const created = putEntry(plan.dn, attributes,
                            { origin: opts.origin || 'console',
                              application: String(opts.application || '') });
@@ -20295,6 +20306,16 @@ function ldapAddNow(req, res, next) {
     log.debug('Leaving the LDAP add handler. A pseudonym attribute.');
     return next(addPseudonymRefusal);
   }
+  // A DN THE STORE CANNOT HOLD (#677): refused here, before the entry is in
+  // memory, rather than at the flush, where it would block every later one.
+  const addKeyRefusal = persistence.dnKeyRefusal(realms.currentId(),
+                                                 normalizeDn(dn));
+  if (addKeyRefusal) {
+    log.debug('Leaving the LDAP add handler. The DN is too long to store.');
+    return next(ldapRefusal(req, 'STS-LDAP-0204', 'an add of ' +
+      dn.slice(0, 80) + '… was refused: ' + addKeyRefusal,
+      new ldap.AdminLimitExceededError(addKeyRefusal), dn));
+  }
   // Every realm's context, not baseDn(): THIS IS THE SOCKET, and the socket
   // has no realm. An
   // LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
@@ -21307,6 +21328,15 @@ server.modifyDN('', function (req, res, next) {
   if (renameRefusal) {
     log.debug('Leaving the LDAP modifyDN handler. Not authorized.');
     return next(renameRefusal);
+  }
+  // The NEW DN the store cannot hold (#677), as the add refuses one.
+  const renameKeyRefusal = persistence.dnKeyRefusal(realms.currentId(),
+                                                    normalizeDn(target));
+  if (renameKeyRefusal) {
+    log.debug('Leaving the LDAP modifyDN handler. The new DN is too long.');
+    return next(ldapRefusal(req, 'STS-LDAP-0204', 'a rename of ' +
+      dn.slice(0, 80) + '… was refused: ' + renameKeyRefusal,
+      new ldap.AdminLimitExceededError(renameKeyRefusal), dn));
   }
   const stored = getEntry(dn);
   if (!stored) {
