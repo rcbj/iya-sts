@@ -44,6 +44,14 @@ const SEVERAL_CELLS = 'authn.sessionWindow cannot be on: this process is ' +
   'one of several cells.';
 const NOT_A_DIGEST = 'authn.sessionWindow cannot be on: the minted key is ' +
   'not a digest.';
+// A store whose driver says it lends the bridge no connection (#677:
+// MariaDB, whose driver has no `bridgeConnection()`, the bridge's thread
+// speaking `pg` alone). A miss could not be read back, so the window is off
+// and sessions are held whole; `auto` says so once (STS-AUTHN-0339), `on`
+// refuses to start where the refusal is asked after the store is open.
+const NO_BRIDGE = 'authn.sessionWindow cannot be on: the store offers the ' +
+  'session bridge no connection (MariaDB has none), so a session the ' +
+  'window does not hold could not be read back.';
 
 interface RecentCount {
   n: number;
@@ -147,6 +155,9 @@ class SessionWindow {
       return false;
     }
     if (cells.isMulti()) {
+      return false;
+    }
+    if (!this.queryFn && minted.lendsNoBridge()) {
       return false;
     }
     return this.digestHeld();
@@ -929,6 +940,10 @@ class SessionWindow {
     if (cells.isMulti()) {
       log.debug("Leaving SessionWindow.refusal().");
       return SEVERAL_CELLS;
+    }
+    if (!this.queryFn && minted.lendsNoBridge()) {
+      log.debug("Leaving SessionWindow.refusal().");
+      return NO_BRIDGE;
     }
     const realmId = realms.currentId() || 'default';
     const column = minted.keyColumnOf(HANDLE, realmId, 'probe-sid');

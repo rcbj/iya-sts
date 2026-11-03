@@ -116,6 +116,82 @@ const COUNT = 'SELECT count(*)::bigint AS n FROM sts_minted WHERE ' +
 const ESTIMATE = 'EXPLAIN (FORMAT JSON) SELECT 1 FROM sts_minted WHERE ' +
   'handle = $1 AND realm = $2';
 
+// ---------------------------------------------------------------------------
+// THE SAME QUESTIONS IN MARIADB'S SPELLING (#677, phase 3b). The text above
+// is PostgreSQL's and stays byte for byte what it was (tests pin it); these
+// ask the same thing of the MariaDB schema (`mariadb/schema.sql`): `key` is a
+// reserved word there and is back-quoted, a count needs no cast, and a
+// planner estimate is `EXPLAIN FORMAT=JSON`. They are written with `$n` so
+// each keeps its PostgreSQL twin's values array, and `positional()` makes
+// them `?` text for `mysql2`. Only the driver's read pool asks them: the
+// bridge's thread speaks `pg` alone, so an on-demand store is held whole on
+// MariaDB (`persistence_minted.js`, onDemandActive()) and never reaches
+// `build()` from there. The console's asynchronous questions do.
+//
+// `minted.newest` IS A PLAIN JOIN HERE. The LATERAL above is PostgreSQL's
+// answer to its own generic plan (the comment above NEWEST); the subquery is
+// a primary-key probe with LIMIT 1, which is exactly an inner join on that
+// key, and InnoDB walks `sts_minted_index_sort` and probes the primary key
+// for each row of it either way.
+// ---------------------------------------------------------------------------
+const MARIADB = {
+  'minted.read': 'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
+    'realm = $2 AND `key` = $3',
+  'minted.byIndex': 'SELECT m.`key`, m.key_sealed, m.body FROM ' +
+    'sts_minted_index i JOIN sts_minted m ON m.handle = i.handle AND ' +
+    'm.realm = i.realm AND m.`key` = i.`key` WHERE i.handle = $1 AND ' +
+    'i.realm = $2 AND i.index_key = $3 AND m.body <> $4 ORDER BY m.`key` ' +
+    'LIMIT $5',
+  'minted.page': 'SELECT `key`, key_sealed, body FROM sts_minted WHERE ' +
+    'handle = $1 AND realm = $2 AND `key` > $3 AND body <> $4 AND ' +
+    '(expires_at IS NULL OR expires_at > $5) ORDER BY `key` LIMIT $6',
+  'minted.newest': 'SELECT m.`key`, m.key_sealed, m.body FROM ' +
+    'sts_minted_index i JOIN sts_minted m ON m.handle = i.handle AND ' +
+    'm.realm = i.realm AND m.`key` = i.`key` WHERE i.handle = $1 AND ' +
+    'i.realm = $2 AND i.sort_at IS NOT NULL AND m.body <> $3 AND ' +
+    '(m.expires_at IS NULL OR m.expires_at > $4) ' +
+    'ORDER BY i.sort_at DESC, i.`key` DESC LIMIT $5',
+  'minted.count': 'SELECT count(*) AS n FROM sts_minted WHERE handle = $1 ' +
+    'AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +
+    'expires_at > $4)',
+  'minted.estimate': 'EXPLAIN FORMAT=JSON SELECT 1 FROM sts_minted WHERE ' +
+    'handle = $1 AND realm = $2'
+};
+
+/**
+ * `$n` text and its values as `?` text and the values in the order the
+ * placeholders appear, for `mysql2`: a parameter used twice is bound twice,
+ * and an array parameter becomes one placeholder per element (`IN ($2)`),
+ * or NULL for none, which no `IN` matches. Nothing in the text but a
+ * placeholder carries a `$` followed by a digit.
+ *
+ * @param {string} text - the statement with `$1` ... `$n`
+ * @param {unknown[]} values - the values `$1` ... `$n` name
+ * @returns {{ text: string, values: unknown[] }}
+ */
+function positional(text, values) {
+  log.debug("Entering positional().");
+  const out = [];
+  const spelled = String(text).replace(/\$(\d+)/g, function (all, n) {
+    const value = values[Number(n) - 1];
+    if (Array.isArray(value)) {
+      if (!value.length) {
+        return 'NULL';
+      }
+      value.forEach(function (one) {
+        out.push(one);
+      });
+      return value.map(function () {
+        return '?';
+      }).join(', ');
+    }
+    out.push(value);
+    return '?';
+  });
+  log.debug("Leaving positional().");
+  return { text: spelled, values: out };
+}
+
 // The most rows one page answers.
 const PAGE_LIMIT = 500;
 
@@ -128,51 +204,72 @@ const NEWEST_LIMIT = 1000;
 const BY_INDEX_LIMIT = 10000;
 
 /**
- * Builds one named statement.
+ * Builds one named statement, for PostgreSQL unless `engine` says MariaDB.
  *
  * @param {string} name - `minted.read`, `minted.page`, `minted.byIndex`,
  *   `minted.newest`, `minted.count` or `minted.estimate`
  * @param {unknown[]} args - `[handle, realm, key]`,
  *   `[handle, realm, indexKey]`, `[handle, realm, now, limit]`,
  *   `[handle, realm, now]` or `[handle, realm]`
+ * @param {string} [engine] - 'mariadb' for MariaDB's spelling; anything
+ *   else (the bridge's thread passes nothing) is PostgreSQL's
  * @returns {{ text: string, values: unknown[] }}
  */
-function build(name, args) {
+function build(name, args, engine) {
   log.debug("Entering build().");
+  if (engine === 'mariadb') {
+    const native = buildPostgres(name, args);
+    log.debug("Leaving build(). MariaDB.");
+    return positional(MARIADB[name], native.values);
+  }
+  log.debug("Leaving build().");
+  return buildPostgres(name, args);
+}
+
+/**
+ * PostgreSQL's statement for one name: the text and values `build()`
+ * always answered. MariaDB's twin takes the same values.
+ *
+ * @param {string} name - the query
+ * @param {unknown[]} args - its arguments
+ * @returns {{ text: string, values: unknown[] }}
+ */
+function buildPostgres(name, args) {
+  log.debug("Entering buildPostgres().");
   const a = Array.isArray(args) ? args : [];
   if (name === 'minted.read') {
-    log.debug("Leaving build().");
+    log.debug("Leaving buildPostgres().");
     return { text: READ, values: [String(a[0]), String(a[1]), String(a[2])] };
   }
   if (name === 'minted.page') {
-    log.debug("Leaving build().");
+    log.debug("Leaving buildPostgres().");
     return { text: PAGE, values: [String(a[0]), String(a[1]), String(a[2]),
                                   TOMBSTONE, Number(a[3]) || Date.now(),
                                   PAGE_LIMIT] };
   }
   if (name === 'minted.newest') {
-    log.debug("Leaving build().");
+    log.debug("Leaving buildPostgres().");
     return { text: NEWEST, values: [String(a[0]), String(a[1]), TOMBSTONE,
                                     Number(a[2]) || Date.now(),
                                     Math.max(1, Math.min(NEWEST_LIMIT,
                                       Math.floor(Number(a[3]) || 1)))] };
   }
   if (name === 'minted.count') {
-    log.debug("Leaving build().");
+    log.debug("Leaving buildPostgres().");
     return { text: COUNT, values: [String(a[0]), String(a[1]), TOMBSTONE,
                                    Number(a[2]) || Date.now()] };
   }
   if (name === 'minted.estimate') {
-    log.debug("Leaving build().");
+    log.debug("Leaving buildPostgres().");
     return { text: ESTIMATE, values: [String(a[0]), String(a[1])] };
   }
   if (name === 'minted.byIndex') {
-    log.debug("Leaving build().");
+    log.debug("Leaving buildPostgres().");
     return { text: BY_INDEX, values: [String(a[0]), String(a[1]),
                                       String(a[2]), TOMBSTONE,
                                       BY_INDEX_LIMIT] };
   }
-  log.debug("Leaving build().");
+  log.debug("Leaving buildPostgres().");
   throw new Error('minted_queries: unknown query "' + name + '"');
 }
 
@@ -223,6 +320,10 @@ function answerOf(name, rows) {
  */
 function estimateOf(row) {
   log.debug("Entering estimateOf().");
+  if (row && row.EXPLAIN !== undefined) {
+    log.debug("Leaving estimateOf(). MariaDB.");
+    return mariadbEstimateOf(row.EXPLAIN);
+  }
   let plan = row ? row['QUERY PLAN'] : null;
   if (typeof plan === 'string') {
     try {
@@ -239,8 +340,50 @@ function estimateOf(row) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
 }
 
+/**
+ * MariaDB's row estimate out of `EXPLAIN FORMAT=JSON` (#677): the one
+ * column `EXPLAIN` holds `{ query_block: { table: { rows } } }`, or the
+ * table inside a `nested_loop`; the first table's `rows` is read wherever
+ * it sits.
+ *
+ * @param {unknown} plan - the column, text or parsed
+ * @returns {number | null} the estimate, or null where none can be read
+ */
+function mariadbEstimateOf(plan) {
+  log.debug("Entering mariadbEstimateOf().");
+  let parsed = plan;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (e) {
+      log.debug("Caught in mariadbEstimateOf(): " + ((e && e.message) || e));
+      log.debug("Leaving mariadbEstimateOf(). Unreadable.");
+      return null;
+    }
+  }
+  // A depth-first walk for the first `table` object carrying `rows`.
+  const seen = [parsed];
+  while (seen.length) {
+    const one = seen.shift();
+    if (one && typeof one === 'object') {
+      const table = /** @type {any} */ (one).table;
+      if (table && typeof table === 'object' && table.rows !== undefined) {
+        const n = Number(table.rows);
+        log.debug("Leaving mariadbEstimateOf().");
+        return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+      }
+      Object.keys(one).forEach(function (k) {
+        seen.push(/** @type {any} */ (one)[k]);
+      });
+    }
+  }
+  log.debug("Leaving mariadbEstimateOf(). No table.");
+  return null;
+}
+
 module.exports = {
   build: build,
+  positional: positional,
   answerOf: answerOf,
   TOMBSTONE: TOMBSTONE,
   BY_INDEX_LIMIT: BY_INDEX_LIMIT,

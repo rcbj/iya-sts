@@ -2342,6 +2342,19 @@ function pendingWrite(handle, realmId, key) {
 }
 
 /**
+ * Whether the installed driver says it lends the synchronous bridge no
+ * connection (#677: the MariaDB driver's `lendsNoBridge`). A driver that
+ * says nothing — PostgreSQL's, a test's stub — is not such a driver, so
+ * this changes nothing for them. Hot path (the session window asks it on
+ * every membership test): no Entering/Leaving pair.
+ *
+ * @returns true only for a driver that declares it
+ */
+function lendsNoBridge() {
+  return !!driver && driver.lendsNoBridge === true;
+}
+
+/**
  * Whether on-demand stores read from the store: a database driver that can
  * lend the bridge a connection, minted state persisted, and a key to open
  * its rows with. Otherwise every on-demand store is read back whole, as any
@@ -4226,6 +4239,7 @@ module.exports = {
   purgeExpired: purgeExpired,
   restoreFilter: restoreFilter,
   setDriver: setDriver,
+  lendsNoBridge: lendsNoBridge,
   setScheduler: setScheduler,
   applyChange: applyChange,
   prefetch: prefetch,

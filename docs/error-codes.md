@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5156** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5158** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 93
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 95
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
@@ -413,6 +413,8 @@ Raised from: persistence/.
 | `STS-STORE-0091` | The store was refused at open: the change log's sequence is not dense (an increment above one or a cache above one), so every reader would wait for numbers no transaction will commit. | — |
 | `STS-STORE-0100` | A value was refused on MariaDB because it is longer than its keyed column; it is never truncated, which would make it another row's key. | — |
 | `STS-STORE-0101` | A realm's registry row was inserted and removed by other writers twice while this write waited for it, and nothing was written. | — |
+| `STS-STORE-0120` | A minted flush on MariaDB was refused: a value it writes is longer than its MariaDB column (sts_minted.key holds 512 characters), and the store refuses it rather than truncate it. | — |
+| `STS-STORE-0121` | A minted flush on MariaDB gave up on a new key that other writers kept inserting and removing while it wrote it; the flush is rolled back and tried again later. | — |
 
 ## STS-CLUSTER
 
